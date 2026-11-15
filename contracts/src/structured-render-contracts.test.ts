@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import {
   ProtocolError, CallErrorObjectKindSchema, LeaseHolderRelationSchema, DispatchOperationSchema, EffectOutcomeSchema,
-  DispatchOutcomeFactsSchema, SCHEMA_REGISTRY, resolveCallErrorReason, type CallErrorReason,
+  DispatchNoteFactsSchema, DispatchJobFactsSchema, DispatchAttemptFactsSchema, SCHEMA_REGISTRY, resolveCallErrorReason, type CallErrorReason,
   EnvironmentRegistrationIssueSchema, RegistrationComparison,
 } from '../api.ts';
 import { SubmitResultOutput } from './tools.ts';
@@ -71,39 +71,37 @@ test('registration issue is a parallel closed comparison and never changes the s
   for (const role of ['user', 'admin'] as const) assert.equal(resolveCallErrorReason('SOURCE_NOT_PERMITTED', 'actor_not_active', role)?.nextAction, '请由有效的账户重新开始运行');
 });
 
-test('precheck stage complete and effect not_dispatched are distinct observations with no inferred flags', () => {
+test('precheck complete is a job observation and never synthesizes an attempt or effect', () => {
   assert.deepEqual([...DispatchOperationSchema.options], ['precheck', 'dispatch', 'conformance']);
   assert.equal(EffectOutcomeSchema.options.length, 8);
   assert.equal(EffectOutcomeSchema.safeParse('complete').success, false);
-  const precheck = { operation: 'precheck', phase: 'complete', outcome: 'not_dispatched' };
-  assert.deepEqual(DispatchOutcomeFactsSchema.parse(precheck), precheck);
-  assert.deepEqual(DispatchOutcomeFactsSchema.parse({ phase: 'complete' }), { phase: 'complete' }, 'old records do not gain an operation or effect from stage/prose');
-  assert.deepEqual(DispatchOutcomeFactsSchema.parse({}), {});
-  assert.equal(DispatchOutcomeFactsSchema.parse(precheck).not_sent, undefined);
-  assert.equal(DispatchOutcomeFactsSchema.safeParse({ operation: 'complete' }).success, false);
-  assert.equal(DispatchOutcomeFactsSchema.safeParse({ operation: 'precheck', outcome: 'complete' }).success, false);
-  for (const alias of ['effect_outcome', 'effects_unknown', 'request_not_sent', 'target_rejected']) assert.equal(DispatchOutcomeFactsSchema.safeParse({ [alias]: true }).success, false);
+  const value = {job_facts:{scope:{job:H},operation:'precheck',phase:'complete'}};
+  const parsed = DispatchNoteFactsSchema.parse(value);
+  assert.equal(parsed.dispatch_attempt,undefined);
+  assert.deepEqual(parsed,value);
+  assert.equal(DispatchJobFactsSchema.safeParse({scope:{job:H},outcome:'not_dispatched'}).success,false);
+  assert.deepEqual(DispatchNoteFactsSchema.parse({}),{});
+  for (const alias of ['outcome','operation','phase','not_sent','rejection_stage','request_id','submit_invoked','result','effect_outcome','effects_unknown','request_not_sent','target_rejected']) assert.equal(DispatchNoteFactsSchema.safeParse({[alias]:true}).success,false,alias);
 });
 
-test('public carrier is one generated model schema and requires valid authorized-reference shapes', () => {
-  assert.equal(SCHEMA_REGISTRY['dispatch-outcome@1'], DispatchOutcomeFactsSchema);
-  assert.deepEqual(DispatchOutcomeFactsSchema.parse({ outcome: 'issued', result: `src:${H}`, device_return: `src:${H}` }), { outcome: 'issued', result: `src:${H}`, device_return: `src:${H}` });
-  assert.equal(DispatchOutcomeFactsSchema.safeParse({ result: H }).success, false);
-  const shared = JSON.parse(readFileSync(new URL('../model.json', import.meta.url), 'utf8')).formatProposals.sharedInterfaces.definitions.find((entry: { name: string }) => entry.name === 'DispatchOutcomeFacts');
-  assert.equal(shared.id, 'dispatch-outcome@1');
-  assert.equal(shared.schema.properties.outcome.$ref, 'vocabulary:effect_outcome');
-  assert.deepEqual(shared.schema.required, []);
-  const output = SubmitResultOutput.safeParse({ call_result: 'ok', errors: [], trace: 'b'.repeat(32), acceptance: 'accepted', result: accepted, counts: acceptedCounts(), dispatch: [{ operation: 'precheck', phase: 'complete', outcome: 'not_dispatched', text: '只读核对完成' }] });
-  assert.equal(output.success, true, output.success ? undefined : JSON.stringify(output.error.issues));
-  if (output.success) assert.equal(output.data.dispatch?.[0].operation, 'precheck');
-  const json = JSON.parse(readFileSync(new URL('../generated/schemas/dispatch-outcome.v1.schema.json', import.meta.url), 'utf8'));
-  assert.equal(json.properties.phase.type, 'string');
-  assert.equal(json.properties.outcome.enum.length, 8);
-  assert.deepEqual(json.properties.operation.enum, ['precheck', 'dispatch', 'conformance']);
-  const description = 'The job result once it is complete (src:), readable by the runner: one row per dispatched item';
-  assert.equal(json.properties.result.description, description);
-  const tools = JSON.parse(readFileSync(new URL('../generated/tools.json', import.meta.url), 'utf8'));
-  assert.equal(tools.find((tool: { name: string }) => tool.name === 'submit_result').outputSchema.properties.dispatch.items.properties.result.description, description);
+test('public note and tool return use the generated canonical groups without old flat aliases', () => {
+  assert.equal(SCHEMA_REGISTRY['dispatch-note-facts@1'],DispatchNoteFactsSchema);
+  assert.equal('dispatch-outcome@1' in SCHEMA_REGISTRY,false);
+  const model = JSON.parse(readFileSync(new URL('../model.json',import.meta.url),'utf8'));
+  const definitions = model.formatProposals.sharedInterfaces.definitions;
+  assert.equal(definitions.some((entry:{name:string})=>entry.name==='DispatchOutcomeFacts'),false);
+  assert.equal(definitions.find((entry:{name:string})=>entry.name==='DispatchNoteFacts').id,'dispatch-note-facts@1');
+  assert.equal(DispatchAttemptFactsSchema.safeParse({scope:{operation:'dispatch',job:H,round:1},result:H}).success,false);
+  const item = {job:H,text:'只读核对完成',job_facts:{scope:{job:H},operation:'precheck',phase:'complete',result:`src:${H}`}};
+  const output = SubmitResultOutput.safeParse({call_result:'ok',errors:[],trace:'b'.repeat(32),acceptance:'accepted',result:accepted,counts:acceptedCounts(),dispatch:[item]});
+  assert.equal(output.success,true,output.success?undefined:JSON.stringify(output.error.issues));
+  if(output.success) assert.deepEqual(output.data.dispatch?.[0],item);
+  const tools = JSON.parse(readFileSync(new URL('../generated/tools.json',import.meta.url),'utf8'));
+  const properties = tools.find((tool:{name:string})=>tool.name==='submit_result').outputSchema.properties.dispatch.items.properties;
+  for(const retired of ['outcome','operation','phase','not_sent','rejection_stage','request_id','submit_invoked','result','worker_settled','frozen']) assert.equal(retired in properties,false,retired);
+  assert.equal(properties.job_facts.properties.phase.type,'string');
+  assert.equal(properties.dispatch_attempt.properties.outcome.enum.length,8);
+  assert.equal(properties.run_facts.properties.scope.properties.run.type,'string');
 });
 
 test('Common and shared schemas load cold in either order without a shared-module TDZ', () => {

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "dispatch"
+          ]
+        },
+        "job": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "operation",
+        "job",
+        "round"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "conformance"
+          ]
+        },
+        "job": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "operation",
+        "job"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "title": "dispatch-attempt-scope@1",
+  "description": "Canonical tagged attempt identity. Dispatch requires a real positive round; conformance is a distinct operation with no fabricated round. Precheck is readonly job metadata, never an attempt. request_id belongs only to this exact operation intent."
+}
