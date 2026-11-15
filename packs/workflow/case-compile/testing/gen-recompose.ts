@@ -38,7 +38,7 @@ const copy = (folder: string, files: string[]) => { for (const file of files) {
 for (const folder of ['authority', 'recompose', 'adjudicate'])
     copy(folder, ['functions/text.ts', 'functions/canonical-json.ts', 'functions/schema.ts', 'functions/recompose-evidence.ts', 'tables/recompose-format.json']);
 copy('authority', ['functions/recompose-authority.ts', 'tables/recompose-product.schema.json']);
-copy('recompose', ['functions/hub-retry.ts', 'functions/recompose-check.ts', 'tables/recompose-record.schema.json', 'tables/recompose-codes.json']);
+copy('recompose', ['functions/source-cache.ts', 'functions/source-materials.ts', 'functions/hub-retry.ts', 'functions/recompose-check.ts', 'tables/recompose-record.schema.json', 'tables/recompose-codes.json']);
 write('adjudicate/tables/decision.schema.json', obj({ atom: str, state: choice(T.states), load_bearing: { type: 'boolean' }, bed_independent: { type: 'boolean' }, reason: str }));
 if (import.meta.main)
     console.log('recompose local schemas and shared stage files generated');
