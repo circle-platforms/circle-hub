@@ -1,14 +1,17 @@
-// Console sign-in state, in memory only: a session id (the cookie) maps to the token it was opened with, so every page
-// re-authenticates that token and a revoked token or a disabled account ends the session at once. The token never goes into
-// the browser after sign-in. Login forms carry a one-time nonce the server issued (also in a cookie scoped to the login path).
-import { randomBytes } from 'node:crypto';
+// Console sign-in state: the session cookie holds the console-session token itself (principals.openConsoleSession).
+// Every page re-authenticates that token; a revoked token or a disabled account ends the session at once. Idle time is
+// tracked in memory by token digest only (restart with no row counts as just seen). Absolute lifetime is tokens.expires_at.
+// CSRF is derived from the token (SHA-256 of a fixed label plus the token) and never stored. Login forms carry a one-time
+// nonce the server issued (also in a cookie scoped to the login path).
+import { createHash, randomBytes } from 'node:crypto';
 
 export interface ConsoleSession {
+  /** Same value as the cookie: the console-session token. */
   id: string;
   token: string;
-  /** A proxy HTTPS session cannot be replayed over direct HTTP. */
+  /** A proxy HTTPS session cannot be replayed over direct HTTP while this process still remembers the channel. */
   secure: boolean;
-  /** CSRF token of the session's forms. */
+  /** CSRF token of the session's forms (derived from the token). */
   csrf: string;
   /** One response-only confirmation, set after a completed form action. Never carried by a URL. */
   notice?: string;
@@ -18,6 +21,7 @@ export interface ConsoleSession {
 
 export interface SessionLimits {
   idleMs: number;
+  /** Unused: absolute lifetime is tokens.expires_at. Kept so call sites that pass Partial<SessionLimits> still typecheck. */
   absoluteMs: number;
   nonceMs: number;
   maxSessions: number;
@@ -40,10 +44,25 @@ export const SECURE_LOGIN_COOKIE = '__Secure-circle_hub_login';
 export const DEVICE_COOKIE = 'circle_hub_device';
 export const SECURE_DEVICE_COOKIE = '__Secure-circle_hub_device';
 
+const CSRF_LABEL = 'circle-hub-console-csrf:';
+
 const secret = (): string => randomBytes(32).toString('base64url');
+const digestOf = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
+
+/** CSRF value derived from the console-session token; render and verify both recompute it. */
+export function csrfOf(token: string): string {
+  return createHash('sha256').update(CSRF_LABEL + token, 'utf8').digest('base64url');
+}
+
+/** Opaque id for artifact upload origin (never the bearer token). */
+export function sessionOriginId(token: string): string {
+  return digestOf(token);
+}
 
 export class SessionStore {
-  readonly #sessions = new Map<string, ConsoleSession>();
+  /** Token digest → last activity and the channel it was opened on. */
+  readonly #idle = new Map<string, { seen: number; secure: boolean; created: number }>();
+  readonly #notices = new Map<string, string>();
   readonly #nonces = new Map<string, { expires: number; secure: boolean }>();
   readonly #attempts = new Map<string, { count: number; expires: number }>();
   readonly #now: () => number;
@@ -58,10 +77,10 @@ export class SessionStore {
   takeLoginAttempt(key: string, maximum = 5): boolean {
     const now = this.#now();
     for (const [id, entry] of this.#attempts) if (entry.expires <= now) this.#attempts.delete(id);
-    const entry = this.#attempts.get(key) ?? {count:0,expires:now+15*60*1000};
+    const entry = this.#attempts.get(key) ?? { count: 0, expires: now + 15 * 60 * 1000 };
     if (entry.count >= maximum || (!this.#attempts.has(key) && this.#attempts.size >= 10_000)) return false;
     entry.count++;
-    this.#attempts.set(key,entry);
+    this.#attempts.set(key, entry);
     return true;
   }
   clearLoginAttempts(key: string): void { this.#attempts.delete(key); }
@@ -84,42 +103,72 @@ export class SessionStore {
 
   open(token: string, secure = false): ConsoleSession {
     const at = this.#now();
-    const session: ConsoleSession = { id: secret(), token, secure, csrf: secret(), created: at, seen: at };
-    this.#sessions.set(session.id, session);
-    while (this.#sessions.size > this.#limits.maxSessions) this.#sessions.delete(this.#sessions.keys().next().value!);
-    return session;
+    const dig = digestOf(token);
+    this.#idle.set(dig, { seen: at, secure, created: at });
+    this.#notices.delete(dig);
+    while (this.#idle.size > this.#limits.maxSessions) this.#idle.delete(this.#idle.keys().next().value!);
+    return this.#view(token, secure, at, at);
   }
 
-  get(id: string | undefined, secure = false): ConsoleSession | null {
-    if (id === undefined) return null;
-    const session = this.#sessions.get(id);
-    if (session === undefined || session.secure !== secure) return null;
-    const at = this.#now();
-    if (at - session.seen > this.#limits.idleMs || at - session.created > this.#limits.absoluteMs) {
-      this.#sessions.delete(id);
-      return null;
-    }
-    session.seen = at;
-    return session;
+  get(token: string | undefined, secure = false): ConsoleSession | null {
+    return this.#lookup(token, secure, true);
   }
 
   /** Like get(), but a look does not count as activity: a live stream must not keep an unattended session open. */
-  peek(id: string | undefined, secure = false): ConsoleSession | null {
-    if (id === undefined) return null;
-    const session = this.#sessions.get(id);
-    if (session === undefined || session.secure !== secure) return null;
-    const at = this.#now();
-    return at - session.seen > this.#limits.idleMs || at - session.created > this.#limits.absoluteMs ? null : session;
+  peek(token: string | undefined, secure = false): ConsoleSession | null {
+    return this.#lookup(token, secure, false);
   }
 
-  close(id: string | undefined): void {
-    if (id !== undefined) this.#sessions.delete(id);
+  close(token: string | undefined): void {
+    if (token === undefined) return;
+    const dig = digestOf(token);
+    this.#idle.delete(dig);
+    this.#notices.delete(dig);
   }
 
   clear(): void {
-    this.#sessions.clear();
+    this.#idle.clear();
+    this.#notices.clear();
     this.#nonces.clear();
     this.#attempts.clear();
+  }
+
+  #lookup(token: string | undefined, secure: boolean, touch: boolean): ConsoleSession | null {
+    if (token === undefined || token.length === 0) return null;
+    const dig = digestOf(token);
+    const at = this.#now();
+    const prior = this.#idle.get(dig);
+    // Restart: no idle row means just seen (do not kick the browser out). Record it even on peek so idle still runs.
+    if (prior === undefined) {
+      this.#idle.set(dig, { seen: at, secure, created: at });
+      while (this.#idle.size > this.#limits.maxSessions) this.#idle.delete(this.#idle.keys().next().value!);
+      return this.#view(token, secure, at, at);
+    }
+    if (prior.secure !== secure) return null;
+    // Keep the idle row on timeout so a later get/peek is not mistaken for a process restart
+    // (no row → treat as just seen). Logout and open() still clear or replace the row.
+    if (at - prior.seen > this.#limits.idleMs) return null;
+    if (touch) {
+      prior.seen = at;
+      this.#idle.set(dig, prior);
+    }
+    return this.#view(token, secure, prior.created, touch ? at : prior.seen);
+  }
+
+  #view(token: string, secure: boolean, created: number, seen: number): ConsoleSession {
+    const dig = digestOf(token);
+    const notices = this.#notices;
+    const session: ConsoleSession = { id: token, token, secure, csrf: csrfOf(token), created, seen };
+    Object.defineProperty(session, 'notice', {
+      enumerable: true,
+      configurable: true,
+      get: () => notices.get(dig),
+      set: (value: string | undefined) => {
+        if (value === undefined || value === '') notices.delete(dig);
+        else notices.set(dig, value);
+      },
+    });
+    return session;
   }
 }
 

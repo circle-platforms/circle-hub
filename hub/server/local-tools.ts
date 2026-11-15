@@ -7,6 +7,7 @@ import { PackManifest, packPathProblem } from '../../contracts/src/pack.ts';
 import { canonicalBytes, sha256Hex, type CallLogInput, type Principal } from '../records/api.ts';
 import { parsePackRef } from '../runs/packs/versions.ts';
 import type { ServerDeps } from './api.ts';
+import { authenticateAccessOnly, CONSOLE_SESSION_REFUSED } from './access-auth.ts';
 import { setCommonHeaders } from './http.ts';
 import { unassignedPackRefusal } from './pack-words.ts';
 import { newTraceId } from './trace.ts';
@@ -17,6 +18,7 @@ function unassignedBytes(packId: string): Buffer {
   return Buffer.from(`${unassignedPackRefusal(packId, 'workflow')}\n`);
 }
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
+const CONSOLE_REFUSED = Buffer.from(CONSOLE_SESSION_REFUSED + '\n');
 /** One verified open per user and version. Later requests in this window re-check assignment without extracting again. */
 const DISTRIBUTION_REUSE_MS = 60_000;
 const DISTRIBUTION_CACHE_MAX = 32;
@@ -96,9 +98,11 @@ export async function handleLocalTools(request: IncomingMessage, response: Serve
   const headers: Record<string, string> = {};
   request.resume();
   try {
-    principal = await deps.records.principals.authenticate(typeof request.headers.authorization === 'string' ? request.headers.authorization : null);
-    if (principal === null) { status = 401; bytes = UNAUTHENTICATED; note = '令牌不可用'; headers['www-authenticate'] = 'Bearer realm="circle-hub"'; }
-    else if (request.method !== 'GET' && request.method !== 'HEAD') { status = 405; bytes = Buffer.from('只接受 GET 和 HEAD\n'); note = '方法不可用'; headers.allow = 'GET, HEAD'; }
+    const access = await authenticateAccessOnly(deps.records.principals, typeof request.headers.authorization === 'string' ? request.headers.authorization : null);
+    if (!access.ok) {
+      if (access.reason === 'console_session') { status = 403; bytes = CONSOLE_REFUSED; note = '控制台会话令牌'; }
+      else { status = 401; bytes = UNAUTHENTICATED; note = '令牌不可用'; headers['www-authenticate'] = 'Bearer realm="circle-hub"'; }
+    } else if ((principal = access.principal) && request.method !== 'GET' && request.method !== 'HEAD') { status = 405; bytes = Buffer.from('只接受 GET 和 HEAD\n'); note = '方法不可用'; headers.allow = 'GET, HEAD'; }
     else {
       status = 404; bytes = ABSENT;
       const parsed = parsePackRef(ref);

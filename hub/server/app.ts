@@ -159,7 +159,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
         const secure = secureRequest(request);
         const session = sessions.get(cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE), secure);
         if (!session) return null;
-        const principal = await deps.records.principals.authenticate('Bearer ' + session.token);
+        const principal = await (deps.records.principals.authenticateConsoleSession?.('Bearer ' + session.token) ?? deps.records.principals.authenticate('Bearer ' + session.token));
         if (!principal || !isAdmin(principal)) return null;
         const password = await deps.records.principals.passwordState?.(principal.id);
         if (password?.mustChange) return null;

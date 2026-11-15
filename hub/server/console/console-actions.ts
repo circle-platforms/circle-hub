@@ -11,7 +11,7 @@ import { mediaTypeFor } from '../upload.ts';
 import { systemForgetPage, systemTrialPage } from './operations.ts';
 import { publication } from './pack-display.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
-import type { ConsoleSession } from './session.ts';
+import { sessionOriginId, type ConsoleSession } from './session.ts';
 import { runForgetTrial, runTrial } from './trial.ts';
 import { UploadError, boundaryOf, parseMultipart } from './upload.ts';
 import {
@@ -99,7 +99,7 @@ export async function action(request: IncomingMessage, response: ServerResponse,
         bytes: upload,
         mediaType: mediaTypeFor(upload, undefined, uploadName),
         name: uploadName,
-        origin: { upload: { session: session.id ?? null, message: null } },
+        origin: { upload: { session: sessionOriginId(session.token), message: null } },
         author: { user: ctx.principal.id },
         provenanceType: 'declared',
         visibility: { readers: [ctx.principal.id], admins: true, packs: [], shareable: false },

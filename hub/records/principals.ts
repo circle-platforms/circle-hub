@@ -198,11 +198,22 @@ export class PgPrincipals implements Principals {
     });
   }
 
+  /** Ends every open console session for the account (password change and disable; decision 46 / freeze). */
+  async #revokeConsoleSessions(tx: PgTransaction, by: string, userId: string, at: string): Promise<void> {
+    const revoked = await this.#db.query(
+      'UPDATE tokens SET revoked_at=$2, revoked_by=$1 WHERE user_id=$3 AND console_session AND revoked_at IS NULL RETURNING id',
+      [by, at, userId],
+      tx,
+    );
+    for (const token of revoked.rows.map((row) => String(row.id)).sort()) {
+      await appendTokenIssuance(this.#store, { action: REVOKE, token, user: userId, by, at }, tx);
+    }
+  }
+
   async #replacePassword(tx: PgTransaction, by: Principal, userId: string, hash: string, mustChange: boolean): Promise<void> {
     const at=this.#now().toISOString();
     const row=(await this.#db.query('UPDATE users SET password_hash=$2, password_must_change=$3, password_revision=password_revision+1, updated_at=$4 WHERE id=$1 RETURNING *',[userId,hash,mustChange,at],tx)).rows[0];
-    const revoked=await this.#db.query('UPDATE tokens SET revoked_at=$2, revoked_by=$1 WHERE user_id=$3 AND console_session AND revoked_at IS NULL RETURNING id',[by.id,at,userId],tx);
-    for (const token of revoked.rows.map(row=>String(row.id)).sort()) await appendTokenIssuance(this.#store,{action:REVOKE,token,user:userId,by:by.id,at},tx);
+    await this.#revokeConsoleSessions(tx, by.id, userId, at);
     await this.#db.query('INSERT INTO user_history (user_id,name,role,disabled,changed_by,changed_at,password_changed) VALUES ($1,$2,$3,$4,$5,$6,true)',[userId,row.name,row.role,row.disabled,by.id,at],tx);
   }
 
@@ -226,7 +237,10 @@ export class PgPrincipals implements Principals {
       const current = await this.#locked(tx, userId);
       if (current.disabled === disabled) return current;
       if (disabled && isAdmin(current)) await this.#keepAnAdmin(tx, current.id);
-      return this.#update(tx, current, { role: current.role, disabled }, by.id);
+      const updated = await this.#update(tx, current, { role: current.role, disabled }, by.id);
+      // Decision 46: cookie is the console-session token; disable must revoke it so re-enable does not revive the session (52-member-freeze).
+      if (disabled) await this.#revokeConsoleSessions(tx, by.id, userId, this.#now().toISOString());
+      return updated;
     }).finally(retireReadScope);
   }
 
@@ -457,18 +471,22 @@ export class PgPrincipals implements Principals {
     return new Map((await this.#db.query('SELECT * FROM oauth_clients WHERE id=ANY($1::text[])',[ids])).rows.map(row=>{const client=clientOf(row);return [client.id,client];}));
   }
 
-  async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,false))?.principal??null;}
-  authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,true);}
-  identify(authorization:string|null|undefined){return this.#authenticate(authorization,false);}
-  async #authenticate(authorization:string|null|undefined,accessOnly:boolean):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
+  async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,'any'))?.principal??null;}
+  /** Live access Bearer only, excluding console sessions. */
+  authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,'access');}
+  /** Console cookie Bearer only; access tokens are refused. */
+  async authenticateConsoleSession(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,'console'))?.principal??null;}
+  identify(authorization:string|null|undefined){return this.#authenticate(authorization,'any');}
+  async #authenticate(authorization:string|null|undefined,kind:'any'|'access'|'console'):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
     if (typeof authorization !== 'string' || authorization.length > 200) return null;
     const match = BEARER.exec(authorization);
     if (match === null) return null;
     const row = (
       await this.#db.query(
         `SELECT t.id AS token_id, t.client_id, u.id, u.name, u.role FROM tokens t JOIN users u ON u.id = t.user_id
-          WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2) AND (NOT $3 OR NOT t.console_session)`,
-        [sha256Hex(match[1]),this.#now().toISOString(),accessOnly],
+          WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2)
+            AND ($3 = 'any' OR ($3 = 'access' AND NOT t.console_session) OR ($3 = 'console' AND t.console_session))`,
+        [sha256Hex(match[1]),this.#now().toISOString(),kind],
       )
     ).rows[0];
     if (row === undefined || !isPermissionRole(row.role)) return null;
