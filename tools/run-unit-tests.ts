@@ -33,6 +33,7 @@ export const UNIT_PATTERNS = [
   'scripts/real/guard-preflight.test.ts',
   'scripts/real/guard-installation.test.ts',
   'scripts/real/guard-metadata.test.ts',
+  'scripts/real/guard-process-proofs.test.ts',
   'scripts/real/taught-commands.test.ts',
   'scripts/real/testing/remote-cli-probes.test.ts',
   'scripts/real/verify-case-compile-cli.test.ts',
