@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "kind": "workflow",
   "title": "recompose",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -90,8 +90,8 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "770581a7f3fe599bcdccb08a5c32ede2171894c4bdd4665ec17f276abeaf24a3",
-      "size": 4528
+      "sha256": "0f576bbc25d77a7df840b4078f42e4785a101bfa659b298184ec7f4c32067e20",
+      "size": 4547
     },
     {
       "path": "functions/schema.ts",
@@ -115,8 +115,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "51dc29071554842c8ab5ff399958c16b61675c2e151b5863954cc479751b392a",
-      "size": 1736
+      "sha256": "d336b39223d8629f122cd9394a0a482563676b12b43b8345156be90cbcad891f",
+      "size": 1790
     },
     {
       "path": "samples/negative/full_set.json",
@@ -190,8 +190,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "de2fcabe9dc4c18d1168f8fff6339db1930828996799c6a5dd35eb089ebcf35f",
-      "size": 2429
+      "sha256": "4c31a464f6af4457db4125239de3702affcf0b92aa8d099ab709d6270fec9ff8",
+      "size": 2513
     }
   ]
 }

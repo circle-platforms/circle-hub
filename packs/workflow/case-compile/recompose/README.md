@@ -1,3 +1,7 @@
+# recompose 1.2.7
+
+本地修正 1.2.7（2026-11-15）：在 `workflow.json` 的 `steps` 中声明本包唯一用户可见步骤 `{ id: "recompose", name: "用例重组" }`，并在 `requirements.json` 的 `record` 与 `full_set` 两项要求上显式标注 `"step": "recompose"`；同步 `testing/gen-recompose.ts` 生成的共享 `functions/recompose-evidence.ts`（接受 recompose `1.2.7` 与 authority/adjudicate `1.1.11`）；未发布或部署。
+
 # recompose 1.2.6
 
 本地修正 1.2.6（2026-11-14）：将内嵌 `mindmap-format` `case-structure` 版本由 `1.0.25` 对齐为 `1.0.26`（内嵌模块字节不变），并同步 `testing/gen-recompose.ts` 生成的共享 `functions/recompose-evidence.ts`（接受 recompose `1.2.6` 与 authority/adjudicate `1.1.10`）；能力与核对规则相对 1.2.5 不变；未发布或部署。

@@ -1,3 +1,7 @@
+# case-compile 3.20.4
+
+本地修正 3.20.4（2026-11-15）：在 `workflow.json` 的 `steps` 中声明 `case-compile` 自身负责的四个用户可见步骤（`authoring` 「脚本编写」、`merging` 「脚本合并」、`device_verification` 「上机验证」、`failure_analysis` 「失败分析」），并将 `requirements.json` 中 `plan` / `contract_methods` / `bed_addresses` / `commands_known` / `expected_grounded` / `scenario_kept` 标为 `"step": "authoring"`、`workbook_verified` 标为 `"step": "merging"`（其余两步暂留未引用）；同步独立子包 `recompose` 1.2.7（声明并全部映射到唯一步骤 `recompose` 「用例重组」）及共享证据模块所属 `recompose-authority` / `recompose-adjudication` 1.1.11（同步 `functions/recompose-evidence.ts` 接受 `1.2.7` 与 `1.1.11`），刷新生成器身份、四份合成工作簿样例、`pack.test.ts`/`publish.test.ts`/`tools/install-agents.test.ts` 与四个包清单，未发布或部署。
+
 # case-compile 3.20.3
 
 本地修正 3.20.3（2026-11-14）：随合约协议生成拆分与格式技能包仅镜像自身声明子集（`mindmap-format` 1.0.26、`workbook-format` 1.0.24、`html-format` 1.0.23、`xml-format` 1.0.24），同步内嵌 `mindmap-format` `case-structure` 版本为 `1.0.26`（内嵌模块字节不变）、独立子包 `recompose` 为 `1.2.6` 及共享证据模块所属 `recompose-authority` / `recompose-adjudication` 为 `1.1.10`（同步 `functions/recompose-evidence.ts` 接受 `1.2.6` 与 `1.1.10`），刷新生成器身份、四份合成工作簿样例、`pack.test.ts`/`publish.test.ts`/`tools/install-agents.test.ts` 与四个包清单，未发布或部署。

@@ -4,6 +4,7 @@
     {
       "key": "record",
       "name": "record",
+      "step": "recompose",
       "description": "结构及凭证由代码核对，语义由带引文模型判断",
       "target": "item",
       "required": true,
@@ -57,6 +58,7 @@
     {
       "key": "full_set",
       "name": "full_set",
+      "step": "recompose",
       "description": "结构及凭证由代码核对，语义由带引文模型判断",
       "target": "run",
       "required": true,

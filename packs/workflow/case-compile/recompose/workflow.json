@@ -1,5 +1,11 @@
 {
   "schema": "workflow@1",
+  "steps": [
+    {
+      "id": "recompose",
+      "name": "用例重组"
+    }
+  ],
   "inputs": [
     {
       "slot": "subject",

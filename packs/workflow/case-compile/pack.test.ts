@@ -5,7 +5,9 @@ import { test } from 'node:test';
 import ts from 'typescript';
 import {createHash} from 'node:crypto';
 import { PackManifest, WorkflowFile, RequirementsFile, SlotsFile } from '../../../contracts/src/pack.ts';
-import { computeManifest, packFiles, PACK_DIR } from './pack-files.ts';
+import { readPackDirectory, temporaryDirectory, validatePack } from '../../../hub/runs/api.ts';
+import { computeManifest, packFiles, PACK_DIR, stage } from './pack-files.ts';
+import { stagePack } from '../case-review/packaging.ts';
 import { parseRuntimeContract } from './functions/runtime-contract.ts';
 import { parseProfile } from './functions/profile.ts';
 import { parseManifest } from './functions/manifest.ts';
@@ -15,7 +17,7 @@ const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
   const manifest = await computeManifest();
   assert.equal(PackManifest.safeParse(manifest).success, true);
-  assert.equal(manifest.version, '3.20.3');
+  assert.equal(manifest.version, '3.20.4');
   assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`);
   assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles();
@@ -36,17 +38,52 @@ test('workflow binds the published profile and exposes reservation addresses und
   assert.deepEqual(workflow.inputs.map((v) => [v.slot, v.role, v.required]), [['subject', 'subject', true], ['contract', 'expected', true], ['inventory', 'expected', true], ['profile', 'expected', true], ['workbook', 'artifact_under_verification', false], ['plan_result', 'expected', false], ['case_index','expected',false],['criteria_review','expected',false],['criteria_review_run','expected',false],['recomposition_run','expected',false],['recomposition_result','expected',false]]);
   assert.equal(workflow.parameters.find((v) => v.name === 'autoid')?.required, false);
   assert.equal(workflow.leases?.prefix, 'bed/'); assert.deepEqual(workflow.context, ['leases']); assert.deepEqual(workflow.product.catalogs, ['commands@1']);
+  assert.deepEqual(workflow.steps, [
+    { id: 'authoring', name: '脚本编写' },
+    { id: 'merging', name: '脚本合并' },
+    { id: 'device_verification', name: '上机验证' },
+    { id: 'failure_analysis', name: '失败分析' },
+  ]);
 });
 test('every check serves one requirement and repairable codes have exactly two rounds', () => {
   const checks = json('checks.json').checks as Array<{ id: string; tier: string }>;
   const requirements = RequirementsFile.parse(json('requirements.json')).requirements;
   assert.deepEqual(checks.map((v) => v.id), ['contract_shape', 'bed_addresses', 'commands_catalog', 'expected_sources', 'expected_quotes', 'scenario_fidelity', 'workbook_verified', 'dispatch_policy']);
+  assert.deepEqual(
+    requirements.map((v) => [v.key, v.step]),
+    [
+      ['plan', 'authoring'],
+      ['contract_methods', 'authoring'],
+      ['bed_addresses', 'authoring'],
+      ['commands_known', 'authoring'],
+      ['expected_grounded', 'authoring'],
+      ['scenario_kept', 'authoring'],
+      ['workbook_verified', 'merging'],
+    ],
+  );
   assert.ok(checks.every((v) => v.tier === 'blocking'));
   assert.deepEqual([...new Set(requirements.flatMap((v) => v.checks))].sort(), checks.map((v) => v.id).sort());
   assert.ok(!requirements.some((v) => v.key === 'plan_deterministic'));
   const declared = new Set(json('tables/codes.json').violations.map((v: any) => v.code));
   const repairs = requirements.flatMap((v) => v.error_handling);
   for (const code of declared) assert.ok(repairs.some((v) => v.code === code && v.action === 'repair' && v.max_rounds === 2), String(code));
+});
+test('validatePack accepts declared workflow steps for case-compile and recompose', async () => {
+  const temp = await temporaryDirectory('cc-validate-steps-');
+  try {
+    const dirs = [
+      await stage(join(temp.path, 'case-compile')),
+      await stagePack(join(PACK_DIR, 'recompose'), join(temp.path, 'recompose')),
+    ];
+    for (const dir of dirs) {
+      const read = await readPackDirectory(dir);
+      assert.equal(read.ok, true, JSON.stringify(!read.ok && read.problems));
+      const validated = await validatePack(read.pack);
+      assert.equal(validated.ok, true, JSON.stringify(!validated.ok && validated.problems));
+    }
+  } finally {
+    await temp.remove();
+  }
 });
 test('complete slot schema retains legacy fields and declares B1 blocks', () => {
   SlotsFile.parse(json('slots.schema.json'));

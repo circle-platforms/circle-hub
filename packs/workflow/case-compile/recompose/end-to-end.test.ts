@@ -80,6 +80,7 @@ test('a product publication, genuine independent adjudication and append-only re
         const submit = (run: string, item: string, data: any) => ({ run, model: 'scripted-recomposer', items: [{ item, handling: 'handled' as const, slots: { record: [{ text: '合成重组判断', quotes, data }] } }] });
         const draft = await h.service.submitResult(h.alice, submit(original.run, original.items[0].id, record), call());
         assert.equal(draft.acceptance, 'accepted', JSON.stringify(draft.errors));
+        assert.equal(draft.step_name, '用例重组');
         // Decision 155: settling needs no ruling. The ruling below is the optional path, checked when a record names one.
         assert.ok(Object.values(draft.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(draft.result));
         const submission = (await h.kit.store.find({ kind: 'submission', key: INDEX.submissionRun, value: original.run })).items[0];
@@ -88,6 +89,7 @@ test('a product publication, genuine independent adjudication and append-only re
         assert.equal(review.answer.call_result, 'ok', JSON.stringify(review.answer.errors));
         const reviewed = await h.service.submitResult(h.bob, { run: review.answer.run!.run, model: 'scripted-independent-model', items: review.answer.run!.items.map(i => ({ item: i.id, handling: 'handled', slots: { decision: [{ text: '合成独立用例原句裁定', code: 'accept', location: i.location, quotes: [i.fields.quote as any], data: { atom: String(i.fields.atom), state: 'settled', load_bearing: i.fields.atom === 'a1', bed_independent: true, reason: '按真实原文与声明位置核对合成语义' } }] } })) }, call());
         assert.equal(reviewed.acceptance, 'accepted', JSON.stringify(reviewed.errors));
+        assert.equal(reviewed.step_name, undefined);
         assert.ok(Object.values(reviewed.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(reviewed.result));
         await h.kit.authorizations.share(h.admin, review.answer.run!.run, [h.alice.id]);
         const reviewRun = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: review.answer.run!.run })).items[0], reviewResult = (await h.kit.store.find({ kind: 'validation_result', key: INDEX.resultRun, value: review.answer.run!.run, newestFirst: true })).items[0], oldRun = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: original.run })).items[0], oldResult = (await h.kit.store.find({ kind: 'validation_result', key: INDEX.resultRun, value: original.run, newestFirst: true })).items[0];
@@ -98,6 +100,7 @@ test('a product publication, genuine independent adjudication and append-only re
             state.adjudicated_by = 'rec:' + reviewResult.digest;
         const done = await h.service.submitResult(h.alice, submit(second.answer.run!.run, second.answer.run!.items[0].id, record), call());
         assert.equal(done.acceptance, 'accepted', JSON.stringify(done.errors));
+        assert.equal(done.step_name, '用例重组');
         assert.ok(Object.values(done.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(done.result));
         assert.ok(done.result!.cross_item.some(c => c.requirement === 'full_set' && c.statement.verdict === 'support'));
         const saved = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: second.answer.run!.run })).items[0], result = (await h.kit.store.find({ kind: 'validation_result', key: INDEX.resultRun, value: second.answer.run!.run, newestFirst: true })).items[0];
@@ -130,6 +133,7 @@ test('a product publication, genuine independent adjudication and append-only re
         const planSubmission = (run: any) => ({ run: run.run, model: 'scripted-compiler', items: [{ item: run.items[0].id, handling: 'handled' as const, slots: { plan: [{ text: '合成编写消费已受理重组', quotes: [quote], data }] } }] });
         const planDraft = await h.service.submitResult(h.alice, planSubmission(planStarted.answer.run!), call());
         assert.equal(planDraft.acceptance, 'accepted', JSON.stringify(planDraft.errors));
+        assert.equal(planDraft.step_name, undefined);
         for (const requirement of Object.values(planDraft.result!.partitions).flat().flatMap(i => i.requirements).filter(r => ['contract_methods', 'commands_known', 'bed_addresses'].includes(r.requirement)))
             assert.equal(requirement.status, 'satisfied', JSON.stringify(requirement));
         const publishedReview = await h.registry.publish(h.alice, await stageRecompose('review', join(temp.path, 'criterion-review')));
@@ -140,6 +144,7 @@ test('a product publication, genuine independent adjudication and append-only re
         assert.equal(criterionRun.answer.call_result, 'ok', JSON.stringify(criterionRun.answer.errors));
         const criterionResult = await h.service.submitResult(h.admin, { run: criterionRun.answer.run!.run, model: 'scripted-criterion-reviewer', items: criterionRun.answer.run!.items.map(i => ({ item: i.id, handling: 'handled', slots: { review: [{ code: 'accept', text: '合成判据独立复核', location: i.location, quotes: [quote], data: { reason: '合成输出字段忠实覆盖原期望' } }] } })) }, call());
         assert.equal(criterionResult.acceptance, 'accepted', JSON.stringify(criterionResult.errors));
+        assert.equal(criterionResult.step_name, undefined);
         await h.kit.authorizations.share(h.admin, criterionRun.answer.run!.run, [h.alice.id]);
         const criterionSnapshot = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: criterionRun.answer.run!.run })).items[0], criterionReceipt = (await h.kit.store.find({ kind: 'validation_result', key: INDEX.resultRun, value: criterionRun.answer.run!.run, newestFirst: true })).items[0];
         const finalInputs = { ...compileInputs, criteria_review_run: { reference: 'rec:' + criterionSnapshot.digest }, criteria_review: { reference: 'rec:' + criterionReceipt.digest } };
@@ -151,6 +156,7 @@ test('a product publication, genuine independent adjudication and append-only re
         (data as unknown as Record<string, unknown>).fidelity = { brief_sha256: brief.brief_sha256, steps: brief.author_steps.map((s) => ({ n: s.n, verdict: 'preserved', step_indices: [brief.blocks.length], rationale: '合成审计：计划实现了作者这一步' })), disclosure: '合成审计：作者步骤逐条保住。' };
         const sent = planSubmission(ready.answer.run!), readyResult = await h.service.submitResult(h.alice, sent, call());
         assert.equal(readyResult.acceptance, 'accepted', JSON.stringify(readyResult.errors));
+        assert.equal(readyResult.step_name, undefined);
         for (const requirement of Object.values(readyResult.result!.partitions).flat().flatMap(i => i.requirements).filter(r => r.requirement !== 'workbook_verified'))
             assert.equal(requirement.status, 'satisfied', JSON.stringify(requirement));
         const recipe = satisfiedRecipe({ run: ready.answer, result: readyResult, submission: sent, contract: Buffer.from(JSON.stringify(contract)), profile: Buffer.from(JSON.stringify(profile)), inventory: Buffer.from(JSON.stringify(runtime.inventory)) }), workbook = generateWorkbook(recipe);
@@ -159,6 +165,7 @@ test('a product publication, genuine independent adjudication and append-only re
         assert.equal(verifiedStart.answer.call_result, 'ok', JSON.stringify(verifiedStart.answer.errors));
         const verified = await h.service.submitResult(h.alice, planSubmission(verifiedStart.answer.run!), call());
         assert.equal(verified.acceptance, 'accepted', JSON.stringify(verified.errors));
+        assert.equal(verified.step_name, undefined);
         assert.ok(Object.values(verified.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(verified.result));
         // Incremental candidates always retain the full task set; empty yet-unjudged slots do not spend repair rounds.
         const multi = { root: { data: { id: 'part-root', text: 'ORBIT / COMET synthetic parts' }, children: [JSON.parse(fixtureText('author-pass.km.json')).root.children[0], JSON.parse(fixtureText('author-underdetermined.km.json')).root.children[0]] } }, multiBytes = JSON.stringify(multi), multiRef = 'src:' + sha(multiBytes), multiExternal = 'agile:mindmap:synthetic-parts';
@@ -177,6 +184,7 @@ test('a product publication, genuine independent adjudication and append-only re
             assert.equal(aggregate.draft.items.length, 2);
             const partial = await h.service.submitResult(h.alice, aggregate.draft, call());
             assert.equal(partial.acceptance, 'accepted', JSON.stringify(partial.errors));
+            assert.equal(partial.step_name, '用例重组');
             assert.equal(partial.result!.rounds.used, 0, JSON.stringify(partial.errors));
             if (index === 0)
                 assert.ok(partial.result!.cross_item.some(c => c.requirement === 'full_set' && c.statement.verdict === 'unknown'));
@@ -193,6 +201,7 @@ test('a product publication, genuine independent adjudication and append-only re
         const files = wholeRun.items.map((item: any, index: number) => ({ item: item.id, method: { kind: 'recomposed', text: '从作者动作取验证方法', sources: [item.fields.atoms[0].reference], basis: '合成依据' }, ...(index === 1 ? { states: [{ atom: item.fields.atoms[0].id, state: 'missing_prerequisite', reason: '功能默认关闭', prerequisites: ['先打开功能'] }] } : {}) }));
         const whole = await h.service.submitResult(h.alice, submissionFor(wholeRun as any, files, 'scripted-recomposer') as any, call());
         assert.equal(whole.acceptance, 'accepted', JSON.stringify(whole.errors));
+        assert.equal(whole.step_name, '用例重组');
         assert.ok(Object.values(whole.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(whole.result));
         assert.ok(whole.result!.cross_item.some(c => c.requirement === 'full_set' && c.statement.verdict === 'support'));
         const wholeRecord = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: wholeRun.run })).items[0];

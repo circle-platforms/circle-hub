@@ -1,5 +1,23 @@
 {
   "schema": "workflow@1",
+  "steps": [
+    {
+      "id": "authoring",
+      "name": "脚本编写"
+    },
+    {
+      "id": "merging",
+      "name": "脚本合并"
+    },
+    {
+      "id": "device_verification",
+      "name": "上机验证"
+    },
+    {
+      "id": "failure_analysis",
+      "name": "失败分析"
+    }
+  ],
   "inputs": [
     {
       "slot": "subject",
