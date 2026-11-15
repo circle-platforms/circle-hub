@@ -872,3 +872,17 @@ test('assembly opts into immutable source caching while fresh run and job metada
     assert.ok(first.findIndex(candidate=>candidate===runPath||candidate===runPath+'/run'||candidate===runPath+'/jobs')<first.indexOf(path),'a source hit follows fresh metadata for its run');
   }
 });
+
+
+test('an excluded preceding item cannot shift the latest failed recipe to another case',async(t)=>{
+  const plan=planRun(PLAN1,CASES.slice(0,3),[CASES[0],CASES[3]]);
+  const h=await hub(undefined,undefined,{[WHOLE]:[job('a',WHOLE,PLAN1,[CASES[1],CASES[2]],plan.workbook,['fail','pass'])]},{[PLAN1]:plan});t.after(h.close);
+  const out=join(await mkdtemp(join(tmpdir(),'cc-excluded-preceding-')),'out');
+  const result=await run(h,await notes(NOTES),out);
+  assert.equal(result.code,0,result.stderr);
+  const recipes=satisfiedRecipes({run:plan.record,result:plan.result,submission:plan.submission,contract,profile,inventory});
+  assert.deepEqual(recipes.map(recipe=>recipe.fields.autoid),[CASES[1],CASES[2]]);
+  assert.deepEqual(await readFile(join(out,'unsuccessful_cases.xlsx')),Buffer.from(generateWorkbookSet(recipes.filter(recipe=>recipe.fields.autoid===CASES[1]),{merged:true})));
+  const summary=JSON.parse(await readFile(join(out,'delivery.json'),'utf8'));
+  assert.deepEqual(summary.unsuccessful_volume.items.map((item:{autoid:string})=>item.autoid),[CASES[1]]);
+});
