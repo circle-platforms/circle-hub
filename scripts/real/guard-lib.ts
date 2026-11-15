@@ -1083,16 +1083,35 @@ function tokenProblem(
   return null;
 }
 
+function configuredTools(env: GuardEnvironment): Set<string> {
+  const d = env.declaration;
+  return new Set([...Object.values(d.allow ?? {}).flat(), ...asList(d.files?.read), ...asList(d.files?.write)]);
+}
+
+function unavailableAdvice(env: GuardEnvironment): string {
+  const read = configuredTools(env).has('read_file') ? '用 read_file 读取规则全文' : '请主代理核对规则全文';
+  return `这次可以这样做：未提供等价工具；${read}，按实际任务选择已放行工具；仍无法完成时向主代理报告缺少的能力。`;
+}
+
 function shellHint(env: GuardEnvironment, words: string[], command: string): string | null {
+  const available = configuredTools(env);
   const alternatives = env.declaration.shellAlternatives ?? {};
   const virtual = asList(env.declaration.files?.virtualReadOnly).map((pattern) => new RegExp(pattern));
   const seen = (command.match(/\/(?:large_tool_results|background_jobs)\/[A-Za-z0-9._/-]+/g) ?? []).find((candidate) =>
     virtual.some((re) => re.test(candidate)),
   );
-  if (seen) return `这次可以这样做：读 ${seen} 用 read_file（路径照写），在里面找内容用 grep，不用 shell。`;
-  const first = words[0] ?? '';
-  const alt = alternatives[path.basename(first)];
-  if (alt) return `这次可以这样做：${path.basename(first)} 的事用 ${alt} 做（路径写相对工作目录）；execute 只运行已装脚本。`;
+  if (seen && available.has('read_file')) return `这次可以这样做：读 ${seen} 用 read_file（路径照写）${available.has('grep') ? '，在里面找内容用 grep' : ''}，不用 shell。`;
+  const first = path.basename(words[0] ?? '');
+  // Only this exact sed address grammar establishes a read-only intent.
+  if (first === 'sed' && words.length === 4 && words[1] === '-n' && /^[1-9][0-9]*(?:,[1-9][0-9]*)?p$/.test(words[2])) {
+    return available.has('read_file') ? '这次可以这样做：只读查看文件请用 read_file；需要定位文字时使用规则全文里放行的搜索工具。' : unavailableAdvice(env);
+  }
+  if (first === 'sed') {
+    const hints = [available.has('read_file') ? '如需读取，使用 read_file' : '', available.has('edit_file') ? '如需修改已有文件，先 read_file 读取，再用 edit_file 修改明确片段' : '当前配置没有放行编辑能力'].filter(Boolean);
+    return `这次可以这样做：不能从这条 sed 命令确定等价操作；${hints.join('；')}。`;
+  }
+  const alt = alternatives[first];
+  if (alt && available.has(alt)) return `这次可以这样做：如需执行 ${alt} 提供的操作，请直接调用 ${alt}（路径写相对工作目录）；这不是原 shell 命令的等价改写。`;
   return null;
 }
 
@@ -2009,7 +2028,7 @@ export async function decideRaw(
         return refuse(
           env,
           `不允许：${tool}。${why}。`,
-          '这次可以这样做：要查资料或操作设备，用 hub_list_task_packs 列出可用的工作流，再用 Hub 的工具。',
+          unavailableAdvice(env),
         );
       }
     }
@@ -2017,7 +2036,7 @@ export async function decideRaw(
     return refuse(
       env,
       `不允许：${tool || '这个工具'} 不在这个配置放行的工具里。`,
-      '这次可以这样做：放行的工具见规则全文；要查资料或操作设备，先用 hub_list_task_packs。',
+      unavailableAdvice(env),
     );
   } catch (error) {
     if (error instanceof GuardRefusal) {

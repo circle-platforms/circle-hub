@@ -73,7 +73,8 @@
     "docs/design/circle-design-system/components/Tooltip/preview.html",
     "docs/design/circle-design-system/components/WorkbenchShell/preview.html",
     "docs/design/circle-design-system/components/bundle.css",
-    "docs/design/circle-design-system/tokens.json"
+    "docs/design/circle-design-system/tokens.json",
+    "docs/hub-r4-tasks/guard-lifecycle.md"
   ],
   "historical": [],
   "reserved": [

@@ -6,7 +6,7 @@ import { basename, join, relative, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { profileDeclaration, writeHome, type Endpoint, type Profile } from './circle-home.ts';
+import { guardMain, profileDeclaration, writeHome, type Endpoint, type Profile } from './circle-home.ts';
 import { discoverTools, environment } from './guard-lib.ts';
 import { buildTaskBrief } from '../../packs/workflow/case-compile/tools/task-brief.ts';
 
@@ -276,7 +276,7 @@ test('guard-offline B/C: virtual readOnly files, ALLOWED.md access, shell altern
       h.assertAllowed(h.call('read_file', { file_path: 'hooks/ALLOWED.md' }, { paths: [h.allowedPath] }));
       h.assertRefused3(h.exec(`cat ${virtualLog}`), /read_file|cat|只放行技能目录里的脚本/, /read_file/);
       h.assertRefused3(h.exec('ls -la'), /只放行技能目录里的脚本/, /ls/);
-      h.assertRefused3(h.exec('sed -i s/a/b/ x.txt'), /只放行技能目录里的脚本/, /edit_file/);
+      h.assertRefused3(h.exec('sed -i s/a/b/ x.txt'), /只放行技能目录里的脚本/, h === hOps ? /先 read_file.*edit_file/ : /没有放行编辑能力/);
     }
     // write_file works in workdir on ops, denied on virtual paths / ALLOWED.md / outside work, and denied everywhere on skills.
     hOps.assertAllowed(hOps.call('write_file', { file_path: 'out/a.md' }, { paths: [join(hOps.workdir, 'out/a.md')] }));
@@ -1032,3 +1032,34 @@ test('epistemic refusal when a tool or command has no pure-data stdin declaratio
 function dirname_safe(p: string): string {
   return join(p, '..');
 }
+
+test('refusal advice follows the allowed capabilities and does not infer sed editing intent', () => {
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile);
+    try {
+      const read = h.exec("sed -n '1,20p' notes.txt");
+      assert.equal(read.decision, 'deny');
+      assert.match(read.reason!, /read_file/);
+      assert.doesNotMatch(read.reason!, /edit_file/);
+      const unknown = h.call('unknown_tool', {});
+      assert.equal(unknown.decision, 'deny');
+      assert.doesNotMatch(unknown.reason!, /hub_list_task_packs/);
+      assert.match(unknown.reason!, /没有等价工具|未提供等价/);
+      if (profile === 'skills') assert.doesNotMatch(h.exec('sed -i s/a/b/ notes.txt').reason!, /edit_file|write_file/);
+    } finally { h.close(); }
+  }
+});
+
+
+test('guard maintenance verifies the installed workflow skill set under both profiles', () => {
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile);
+    const messages: string[] = [];
+    const args = ['--home', h.home, '--workdir', h.workdir, '--profile', profile];
+    try {
+      assert.equal(guardMain(['verify', ...args], line => messages.push(line)), 1, 'new skill installation must invalidate the empty-home receipt');
+      assert.equal(guardMain(['update', ...args], line => messages.push(line)), 0, messages.join('\n'));
+      assert.equal(guardMain(['verify', ...args], line => messages.push(line)), 0, messages.join('\n'));
+    } finally { h.close(); }
+  }
+});

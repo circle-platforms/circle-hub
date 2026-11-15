@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, unlinkSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, circleEndpoint, endpointFrom, main, parseArgs, writeHome, type Endpoint } from './circle-home.ts';
+import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, guardMain, guardBundle, circleEndpoint, endpointFrom, main, parseArgs, writeHome, type Endpoint } from './circle-home.ts';
 import { parseEnvText } from './lib/env-file.ts';
+import { recordInstallation, RECEIPT } from './guard-installation.ts';
 
 // Invented content: section names follow the owner's file layout, every value is made up.
 const ENV = [
@@ -817,4 +818,102 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
       }
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+function installationFixture(profile: 'ops' | 'skills' = 'ops') {
+  const root = mkdtempSync(join(tmpdir(), 'guard-install-'));
+  const home = join(root, '中文 home');
+  const { workdir } = writeHome({ home, profile, hubUrl: 'http://127.0.0.1:7420/mcp' }, { protocol: 'anthropic', baseUrl: 'https://model.example.invalid', apiKey: 'synthetic-model', model: 'synthetic', sources: ['synthetic'] }, 'synthetic-token');
+  const messages: string[] = [];
+  const args = ['--home', home, '--profile', profile, '--workdir', workdir];
+  return { root, home, workdir, messages, run: (mode: string, extra: string[] = []) => guardMain([mode, ...args, ...extra], line => messages.push(line)), close: () => rmSync(root, { recursive: true, force: true }) };
+}
+
+test('guard verification covers code, skill bytes and derived rules without loading credentials', () => {
+  for (const profile of ['ops', 'skills'] as const) {
+    const f = installationFixture(profile);
+    try {
+      // Removing every credential source must not prevent guard-only maintenance.
+      unlinkSync(join(f.home, 'credentials.json')); unlinkSync(join(f.home, 'secrets.json'));
+      assert.equal(f.run('verify'), 0, f.messages.join('\n'));
+      mkdirSync(join(f.home, 'skills', 'synthetic'));
+      writeFileSync(join(f.home, 'skills', 'synthetic', 'notes.md'), 'synthetic');
+      assert.equal(f.run('verify'), 1);
+      assert.match(f.messages.at(-1)!, /技能安装已变化/);
+      assert.equal(f.run('update'), 0, f.messages.join('\n'));
+      assert.equal(f.run('verify'), 0);
+      writeFileSync(join(f.home, 'hooks', 'ALLOWED.md'), 'stale');
+      assert.equal(f.run('verify'), 1);
+      assert.equal(f.run('update'), 0);
+      assert.equal(f.run('verify'), 0);
+    } finally { f.close(); }
+  }
+});
+
+test('guard update preserves private settings and credentials and refuses customized rules', () => {
+  const f = installationFixture();
+  try {
+    const untouched = ['settings.json', 'credentials.json', 'secrets.json'].map(file => [file, readFileSync(join(f.home, file))] as const);
+    const file = join(f.home, 'hooks', 'guard-lib.ts');
+    const old = guardBundle(f.home, 'ops'); old['hooks/guard-lib.ts'] = '// synthetic old guard';
+    writeFileSync(file, old['hooks/guard-lib.ts']); recordInstallation(f.home, 'ops', old);
+    assert.equal(f.run('verify'), 1);
+    assert.match(f.messages.at(-1)!, /守卫版本/);
+    assert.equal(f.run('update'), 0);
+    assert.equal(f.run('verify'), 0);
+    for (const [name, bytes] of untouched) assert.deepEqual(readFileSync(join(f.home, name)), bytes);
+    const declaration = join(f.home, 'hooks', 'ops-allow.declaration.json');
+    writeFileSync(declaration, readFileSync(declaration, 'utf8') + '\n');
+    const before = readFileSync(file);
+    assert.equal(f.run('update'), 1);
+    assert.match(f.messages.at(-1)!, /未覆盖/);
+    assert.deepEqual(readFileSync(file), before);
+  } finally { f.close(); }
+});
+
+test('missing receipts require explicit reviewed baseline and never silently adopt a Home', () => {
+  const f = installationFixture();
+  try {
+    const baseline = join(f.root, 'reviewed.json');
+    writeFileSync(baseline, readFileSync(join(f.home, RECEIPT)));
+    unlinkSync(join(f.home, RECEIPT));
+    assert.equal(f.run('update'), 1);
+    assert.match(f.messages.at(-1)!, /已审查.*--baseline/);
+    assert.equal(f.run('update', ['--baseline', baseline]), 0);
+    assert.equal(f.run('verify'), 0);
+    const outside = join(f.root, 'outside'); writeFileSync(outside, 'untouched');
+    unlinkSync(join(f.home, 'hooks', 'guard-lib.ts'));
+    symlinkSync(outside, join(f.home, 'hooks', 'guard-lib.ts'));
+    assert.equal(f.run('update'), 1);
+    assert.equal(readFileSync(outside, 'utf8'), 'untouched');
+  } finally { f.close(); }
+});
+
+test('guard CLI bypasses environment loader and reports invalid arguments', () => {
+  const f = installationFixture();
+  try {
+    assert.equal(main(['guard', 'verify', '--home', f.home, '--profile', 'ops', '--workdir', f.workdir], {}, line => f.messages.push(line)), 0);
+    for (const args of [[], ['reset'], ['verify'], ['verify', '--env-file', 'unreadable']]) assert.equal(guardMain(args, () => {}), 1);
+  } finally { f.close(); }
+});
+
+test('skill installation discloses unknown stdin, refuses invalid declarations and detects changed bytes', () => {
+  const f = installationFixture();
+  try {
+    const skill = join(f.home, 'skills', 'synthetic');
+    mkdirSync(join(skill, 'tools'), { recursive: true });
+    writeFileSync(join(skill, 'SKILL.md'), '# Synthetic');
+    writeFileSync(join(skill, 'tools', 'probe.ts'), 'process.argv;');
+    assert.equal(f.run('update'), 0);
+    assert.match(f.messages.at(-1)!, /未声明标准输入.*协议仍未知/);
+    writeFileSync(join(skill, 'tools', 'probe.cli.json'), '{}');
+    assert.equal(f.run('update'), 1);
+    assert.match(f.messages.at(-1)!, /标准输入声明无效或不完整/);
+    writeFileSync(join(skill, 'tools', 'probe.cli.json'), JSON.stringify({ schema: 'tool-cli@1', stdin: [] }));
+    assert.equal(f.run('update'), 0, f.messages.join('\n'));
+    assert.equal(f.run('verify'), 0);
+    writeFileSync(join(skill, 'tools', 'probe.ts'), 'process.argv; // changed');
+    assert.equal(f.run('verify'), 1);
+    assert.match(f.messages.at(-1)!, /技能安装已变化/);
+  } finally { f.close(); }
 });
