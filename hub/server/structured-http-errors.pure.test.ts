@@ -1,4 +1,4 @@
-// Unconnected request/response streams only: no listener, database, HTTP server or service is constructed.
+// Unconnected streams and in-memory SDK protocol handling only: no database, listener or connected network endpoint is started.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { IncomingMessage, ServerResponse } from 'node:http';
@@ -190,6 +190,8 @@ test('actual SDK malformed tool parameters stay unknown when its schema layer re
   const error = (await failed.read()).json().error;
   assert.equal(error.code, -32602);
   assert.equal(businessCalls, 1);
+  assert.equal(HttpCallErrorData.parse(error.data).code, 'CALL_REQUEST_INVALID');
+  assert.equal(error.data.call_error_category, 'invalid_parameters', 'a known invalid-params cause is independent of unknown effects');
   assert.equal(Object.hasOwn(HttpCallErrorData.parse(error.data), 'call_not_executed'), false);
 });
 
@@ -197,7 +199,7 @@ test('actual SDK malformed tool parameters stay unknown when its schema layer re
 test('exact SDK invalid-params code proves a refused call only with a source witness that no business guard entered', () => {
   const sdkError = new McpError(-32602, 'arbitrary prose is not a classification source');
   assert.deepEqual(sdkCallErrorData(sdkError.code, false), httpCallErrorData('CALL_REQUEST_INVALID', true));
-  assert.deepEqual(sdkCallErrorData(sdkError.code, true), httpCallErrorData('CALL_INTERNAL_UNAVAILABLE'));
+  assert.deepEqual(sdkCallErrorData(sdkError.code, true), httpCallErrorData('CALL_REQUEST_INVALID'));
   assert.deepEqual(sdkCallErrorData(-32603, false), httpCallErrorData('CALL_INTERNAL_UNAVAILABLE'));
 });
 
