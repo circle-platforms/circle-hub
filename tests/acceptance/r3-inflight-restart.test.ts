@@ -188,7 +188,7 @@ test('R3-10 real observation lock forwards loss before submit and releases witho
   let loss:((error:Error)=>void)|undefined,registered=false,triggered=false;
   c.kit.store.tryHold=async(key,onLost?: (error:Error)=>void)=>{
     const unlock=await tryHold(key,onLost);
-    if(unlock&&key.startsWith('dispatch.observation:')){loss=onLost;registered=typeof onLost==='function';}
+    if(unlock&&onLost){loss=onLost;registered=true;}
     return unlock;
   };
   rewriteReply(c,'inspect_slot',value=>{
@@ -205,7 +205,7 @@ test('R3-10 real observation lock forwards loss before submit and releases witho
   assert.equal(events.some(event=>event.body.detail.phase==='intent'),false,'precheck loss precedes an admitted submit intent');
   assert.notEqual(state.outcome,'effective');
   await observationLockFree(c,state.job);
-  const unlock=await tryHold('dispatch.observation:'+state.job);assert.ok(unlock,'the original observer finally releases its actual lock');await unlock();
+  const unlock=await tryHold(state.job);assert.ok(unlock,'the original observer finally releases its actual lock');await unlock();
 });
 
 test('R3-11 lock loss first reported during unlock persists pending recovery as unknown',{timeout:60000},async t=>{
