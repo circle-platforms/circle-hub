@@ -141,14 +141,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const asList = <T>(value: readonly T[] | undefined): T[] => (Array.isArray(value) ? [...value] : []);
 const unknownList = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
-const readText = (file: string): string => {
-  try {
-    return fs.readFileSync(file, 'utf8');
-  } catch {
-    return '';
-  }
-};
-
 const readJson = <T>(file: string, fallback: T): T => {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8')) as T;
@@ -490,8 +482,8 @@ export function parseCommand(command: string): ParsedCommand {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Local tool discovery: reads options, required flags, booleans, and multiple flags from each tool's source & docs;
-// stdin declarations come strictly from pure-data sibling `<tool>.cli.json` or `declaration.scripts` (never via source regex).
+// Local tool discovery uses pure-data sibling `<tool>.cli.json` and explicit home declarations.
+// Module and documentation bytes never determine executable identity or argument semantics.
 
 function parsePlaceholderList(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
@@ -556,7 +548,7 @@ export function parseToolCliDeclaration(parsed: unknown): CliDeclaration {
   }
   return { stdinLines, subcommandStdin, options, forms };
 }
-function describeTool(env: GuardEnvironment, base: { id: string; file: string; cliFile: string | null; skill: string | null; docText: string; subcommands?: string[]; stdin?: string[]; subcommandStdin?: Record<string, string[]> }): DiscoveredTool {
+function describeTool(env: GuardEnvironment, base: { id: string; file: string; cliFile: string | null; skill: string | null; subcommands?: string[]; stdin?: string[]; subcommandStdin?: Record<string, string[]> }): DiscoveredTool {
   const cli = readToolCliDeclaration(base.cliFile);
   return {
     id: base.id, file: base.file, skill: base.skill,
@@ -601,12 +593,7 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
     const skillNames = listNames(env.skills, (name) => fs.existsSync(path.join(env.skills, name, 'SKILL.md')));
     for (const skill of skillNames) {
       const dir = path.join(env.skills, skill);
-      const docText = [
-        path.join(dir, 'SKILL.md'),
-        ...listNames(path.join(dir, 'tools'), (name) => name.endsWith('.md')).map((name) => path.join(dir, 'tools', name)),
-      ]
-        .map(readText)
-        .join('\n');
+
 
       const walkToolsDir = (subDir: string, relPrefix: string) => {
         for (const entry of listNames(subDir, () => true)) {
@@ -632,7 +619,7 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
           if (!real) continue;
           const cliFile = trySafeFile(`${full.slice(0, -3)}.cli.json`, env.skills, env.skills);
           if (!cliFile) continue;
-          add(describeTool(env, { id: `${skill}/${rel}`, file: real, cliFile, skill, docText }));
+          add(describeTool(env, { id: `${skill}/${rel}`, file: real, cliFile, skill }));
         }
       };
 
@@ -662,7 +649,6 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
               file: real,
               cliFile,
               skill,
-              docText,
               subcommands: script.subcommands,
               stdin: script.stdin,
               subcommandStdin: script.subcommandStdin,
@@ -682,7 +668,7 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
         if (!real) continue;
         const cliFile = trySafeFile(`${lexical.slice(0, -3)}.cli.json`, env.work, env.work);
         if (!cliFile) continue;
-        add(describeTool(env, { id: `local-tools/${pack}/tools/${file}`, file: real, cliFile, skill: null, docText: '' }));
+        add(describeTool(env, { id: `local-tools/${pack}/tools/${file}`, file: real, cliFile, skill: null }));
       }
     }
   }
@@ -1884,7 +1870,7 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
   else fileNotes.push('本目录禁止写文件');
   lines.push(`- 文件：${fileNotes.join('；')}。路径优先写相对工作目录的位置。`);
   lines.push(`- ${d.skillTool ?? 'skill'}：加载已装技能（现有：${installed.join('、') || '没有'}）。`);
-  lines.push(`- ${d.executeTool ?? 'execute'}：只运行已装技能目录下的签名 CLI 脚本${asList(d.commands).length ? `和 ${asList(d.commands).map((c) => c.name).join('、')}` : ''}，见下一节。`);
+  lines.push(`- ${d.executeTool ?? 'execute'}：只运行已装技能目录下的已声明 CLI 脚本${asList(d.commands).length ? `和 ${asList(d.commands).map((c) => c.name).join('、')}` : ''}，见下一节。`);
   for (const [prefix, why] of Object.entries(d.denyPrefix ?? {})) lines.push(`- ${prefix}* 不放行：${why}。`);
 
   lines.push('', '## 本地脚本怎么写', '');

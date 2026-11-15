@@ -7,6 +7,8 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, circleEndpoint, endpointFrom, main, parseArgs, writeHome, type Endpoint } from './circle-home.ts';
 import { parseEnvText } from './lib/env-file.ts';
+import { extractTaughtCommands, instantiateTaughtCommand } from './taught-commands.ts';
+import { parseCommand } from './guard-lib.ts';
 
 // Invented content: section names follow the owner's file layout, every value is made up.
 const ENV = [
@@ -534,108 +536,6 @@ test('model calls cannot create links or rename directories through direct tools
   }finally{f.close();}
 });
 
-type ParsedSkillCommand = { source: string; template: string; hasHeredoc: boolean };
-
-function splitAlternativesOutsideAngles(text: string): string[] {
-  const parts: string[] = [];
-  let depth = 0, start = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '<') depth++;
-    else if (text[i] === '>' && depth > 0) depth--;
-    else if (text[i] === '|' && depth === 0) { parts.push(text.slice(start, i)); start = i + 1; }
-  }
-  parts.push(text.slice(start));
-  return parts;
-}
-
-function extractSkillCommands(docPath: string, text: string): ParsedSkillCommand[] {
-  const out: ParsedSkillCommand[] = [];
-  // Every ```sh block line must be blank, a # comment, or a strict node <技能目录>/tools/*.ts command (with optional 3-line <<'EOF'/%HUB_TOKEN%/EOF heredoc).
-  for (const match of text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)) {
-    const lines = match[1].split('\n');
-    for (let i = 0; i < lines.length;) {
-      const line = lines[i];
-      if (line === '' || line.startsWith('#')) { i += 1; continue; }
-      assert.ok(line.startsWith('node <技能目录>/tools/'), `${docPath}: unparseable command line in sh block: ${line}`);
-      if (line.includes('<<')) {
-        assert.match(line, / <<'EOF'$/, `${docPath}: malformed heredoc start on line: ${line}`);
-        assert.equal(lines[i + 1], '%HUB_TOKEN%', `${docPath}: missing %HUB_TOKEN% heredoc line after: ${line}`);
-        assert.equal(lines[i + 2], 'EOF', `${docPath}: missing EOF closing line after: ${line}`);
-        out.push({ source: docPath, template: line.slice(0, -" <<'EOF'".length), hasHeredoc: true });
-        i += 3;
-      } else {
-        assert.ok(!line.includes('%HUB_URL%') && !line.includes('%HUB_TOKEN%'), `${docPath}: Hub command missing <<'EOF': ${line}`);
-        out.push({ source: docPath, template: line, hasHeredoc: false });
-        i += 1;
-      }
-    }
-  }
-  // Explicit "label: [node <技能目录>/]tools/..." command declarations in ```text summaries.
-  const heredocNote = " <<'EOF'（接两行 %HUB_TOKEN% 与 EOF，切勿在 <<'EOF' 前换行）";
-  for (const line of text.split('\n')) {
-    const labelled = /^[^:\n]+: ((?:node <技能目录>\/)?tools\/\S+\.ts(?: [^\n]*)?)$/.exec(line);
-    if (!labelled) continue;
-    let cmd = labelled[1], hasHeredoc = false;
-    if (cmd.endsWith(heredocNote)) { cmd = cmd.slice(0, -heredocNote.length); hasHeredoc = true; }
-    assert.ok(!cmd.includes('<<') && !cmd.includes('（'), `${docPath}: unparseable labelled command: ${line}`);
-    if (cmd.startsWith('tools/')) cmd = `node <技能目录>/${cmd}`;
-    out.push({ source: docPath, template: cmd, hasHeredoc });
-  }
-  // Inline backticked `node <技能目录>...` invocations (excluding the exact prose meta-syntax illustration).
-  for (const match of text.matchAll(/`(node <技能目录>[^`]*)`/g)) {
-    const cmd = match[1];
-    if (cmd === 'node <技能目录>/tools/<脚本>.ts --选项 值') continue;
-    assert.ok(!cmd.includes('<<') && !cmd.includes('\n'), `${docPath}: unparseable inline command: ${cmd}`);
-    out.push({ source: docPath, template: cmd, hasHeredoc: false });
-  }
-  return out;
-}
-
-function expandCommandVariants(source: string, template: string, values: Record<string, string>): string[] {
-  const groups: Array<{ start: number; end: number; branches: string[] }> = [];
-  for (const match of template.matchAll(/\[([^\[\]]+)\]/g)) {
-    groups.push({ start: match.index, end: match.index + match[0].length, branches: splitAlternativesOutsideAngles(match[1]) });
-  }
-  const renderBrackets = (chosen: Map<number, string>): string => {
-    let cursor = 0, result = '';
-    for (let idx = 0; idx < groups.length; idx++) {
-      result += template.slice(cursor, groups[idx].start);
-      result += chosen.get(idx) ?? '';
-      cursor = groups[idx].end;
-    }
-    result += template.slice(cursor);
-    const collapsed = result.replace(/ +/g, ' ').trim();
-    assert.ok(!/[\[\]]/.test(collapsed), `${source}: unmatched brackets in expanded command: ${collapsed}`);
-    return collapsed;
-  };
-  const bracketForms = new Set<string>([renderBrackets(new Map())]);
-  for (let idx = 0; idx < groups.length; idx++) {
-    for (const branch of groups[idx].branches) bracketForms.add(renderBrackets(new Map([[idx, branch]])));
-  }
-  if (groups.length > 1) {
-    bracketForms.add(renderBrackets(new Map(groups.map((group, idx) => [idx, group.branches[0]]))));
-  }
-
-  const concretes: string[] = [];
-  for (const form of bracketForms) {
-    const choices = [...form.matchAll(/<([^<>'\s]+\|[^<>'\s]+)>/g)];
-    assert.ok(choices.length <= 1, `${source}: expected at most one choice placeholder per command: ${form}`);
-    const choiceForms = choices.length === 1
-      ? choices[0][1].split('|').map((opt) => form.slice(0, choices[0].index) + opt + form.slice(choices[0].index + choices[0][0].length))
-      : [form];
-    for (const choiceForm of choiceForms) {
-      // Circle substitutes variables before hooks run and hands secrets over as their %NAME% placeholders.
-      const substituted = choiceForm.replace(/<([^<>'\s]+)>/g, (whole, name: string) => {
-        assert.ok(Object.hasOwn(values, name), `${source}: placeholder ${whole} has no synthetic value`);
-        return values[name];
-      });
-      assert.ok(!/[<>]/.test(substituted), `${source}: unreplaced angle bracket in command: ${substituted}`);
-      concretes.push(substituted);
-    }
-  }
-  return concretes;
-}
-
 test('the case-compile, recompose and jev skill commands, filled in as Circle hands them to hooks, pass both skills and ops unified home guards', () => {
   const dir = scratch();
   try {
@@ -682,12 +582,10 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
           writeFileSync(join(skill, rel), readFileSync(join(pack.dir, rel)));
         }
         const docs = staged.map((f) => f.path).filter((p) => p === 'SKILL.md' || (p.startsWith('tools/') && p.endsWith('.md')));
-        const parsed = docs.flatMap((docPath) => extractSkillCommands(`${pack.name}/${docPath}`, readFileSync(join(pack.dir, docPath), 'utf8')));
+        const parsed = docs.flatMap((docPath) => extractTaughtCommands(readFileSync(join(pack.dir, docPath), 'utf8'), `${pack.name}/${docPath}`));
         assert.ok(parsed.length >= pack.expectedScripts.length, `${pack.name}: extracted commands from ${docs.join(', ')}`);
 
-        const quotedSkill = skill.includes(' ') ? `'${skill}` : skill;
         const values: Record<string, string> = {
-          技能目录: quotedSkill,
           脚本编写编号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
           用例重组编号: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb',
           脚本合并编号: 'run_01cccccccccccccccccccccccc',
@@ -731,17 +629,12 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
         };
         const seenScripts = new Set<string>();
         for (const usage of parsed) {
-          for (const concrete of expandCommandVariants(usage.source, usage.template, values)) {
+          for (const concrete of instantiateTaughtCommand(usage, { skillDir: skill, skillName: pack.name, placeholders: values })) {
             let command = concrete.replaceAll('%HUB_URL%', hubUrl);
-            if (skill.includes(' ')) {
-              // When the installed home path contains spaces (e.g. Application Support), the unified quoting rule single-quotes the full script path.
-              command = command.replace(/^node '([^']+\.ts)/, "node '$1'");
-            }
-            const scriptMatch = /^node (?:'([^']+)'|(\S+))/.exec(command);
-            const scriptPath = scriptMatch?.[1] ?? scriptMatch?.[2] ?? '';
+            const scriptPath = parseCommand(command).words[1] ?? '';
             assert.ok(existsSync(scriptPath), `${label} ${usage.source}: installed script exists: ${command}`);
             seenScripts.add(scriptPath.split('/').pop()!);
-            const supplied = usage.hasHeredoc ? `${command} <<'EOF'\n%HUB_TOKEN%\nEOF` : command;
+            const supplied = command;
             const decision = decide(supplied);
             expectAllowed(decision, `${label} ${usage.source}: ${supplied}\n${decision.reason ?? ''}`);
           }
@@ -755,7 +648,7 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
       const jevDir = fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/tools/jev/', import.meta.url));
       const jevSkill = join(home, 'skills', 'jev');
       mkdirSync(join(jevSkill, 'lib'), { recursive: true });
-      for (const rel of ['SKILL.md', 'hooks.json', 'jev.ts', 'lib/api.ts', 'lib/validate.ts', 'lib/placement.ts']) {
+      for (const rel of ['SKILL.md', 'hooks.json', 'jev.ts', 'jev.cli.json', 'lib/api.ts', 'lib/validate.ts', 'lib/placement.ts']) {
         const src = join(jevDir, rel);
         if (existsSync(src)) writeFileSync(join(jevSkill, rel), readFileSync(src));
       }

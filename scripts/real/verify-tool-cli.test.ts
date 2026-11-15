@@ -71,3 +71,10 @@ test('the release tool inventory has explicit CLI metadata or a reviewed helper 
     }
   }
 });
+
+test('empty stdin is checked before complete-input side effects and exact distinct failures stay distinguishable', () => {
+  const f = fixture(['%TOKEN%'], "import{readFileSync,writeFileSync,existsSync}from'node:fs';const input=readFileSync(0,'utf8');process.stderr.write(input?'business-check\\n':existsSync('marker')?'occupied\\n':'missing-input\\n');if(input)writeFileSync('marker','synthetic');process.exitCode=1;");
+  try {
+    assert.equal(verifyCliInvocations(f.dir, new Set(), { 'tools/probe.ts': [{ argv: [], cwd: f.dir, subcommand: null, stdinValues: ['synthetic-token'], complete: { status: 1, stderr: 'business-check\n' }, empty: { status: 1, stderr: 'missing-input\n' } }] }).processes, 2);
+  } finally { f.close(); }
+});

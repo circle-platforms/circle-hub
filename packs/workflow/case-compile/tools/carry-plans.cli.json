@@ -99,7 +99,7 @@
         {
           "name": "briefs",
           "placeholder": "<核对目录>",
-          "optional": false
+          "optional": true
         },
         {
           "name": "rework",
@@ -110,16 +110,6 @@
           "name": "exclude",
           "placeholder": "<逗号分隔autoid>",
           "optional": true
-        }
-      ]
-    },
-    {
-      "positional": null,
-      "pairs": [
-        {
-          "name": "exclude",
-          "placeholder": "<逗号分隔autoid>",
-          "optional": false
         }
       ]
     }
