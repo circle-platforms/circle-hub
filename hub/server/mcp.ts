@@ -1,3 +1,4 @@
+import { TraceId } from '../../contracts/src/common.ts';
 import type { HttpCallErrorData } from '../../contracts/api.ts';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import { requestSummary } from './request-summary.ts';
@@ -458,7 +459,9 @@ async function answer(
           const malformed = !JSONRPCMessageSchema.safeParse(parsed).success;
           // Only the known SDK gates, witnessed before any business handler, establish a refused request.
           const invalidRequest = !handlerEntered && (envelope.error.code === -32000 && (unsupportedAccept || unsupportedProtocol) || envelope.error.code === -32700 && malformed);
-          envelope.error.data = sdkCallErrorData(typeof envelope.error.code === 'number' ? envelope.error.code : -32603, handlerEntered, invalidRequest);
+          const sourceData = sdkCallErrorData(typeof envelope.error.code === 'number' ? envelope.error.code : -32603, handlerEntered, invalidRequest);
+          const originalTrace = TraceId.safeParse(data.trace);
+          envelope.error.data = { ...sourceData, ...(originalTrace.success ? {trace: originalTrace.data} : {}) };
           text = JSON.stringify(envelope);
         }
       }
