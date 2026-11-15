@@ -355,7 +355,7 @@ export const PREREQ_SCAN_REASON =
   '重组记录与产品目录均未声明跨章节前置（如默认开关、监听前提、全局依赖对象）；编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
 /** Disclosed when the recompose record is present but `sources.states` is missing or not a list. */
 export const PREREQ_STATES_UNREADABLE_REASON =
-  '读不到重组记录的 sources.states（预期是数组）；不能据此断定没有前置。请核对重组回执形状后再开编写。';
+  '读不到重组记录的 sources.states（预期是数组）；不能据此断定没有前置。请核对重组返回的记录形状后再开编写。';
 export const RECOMPOSE_STATES_ORIGIN = 'record.sources.states' as const;
 
 export type CompileBriefMode = 'initial' | 'rework_gate' | 'rework_device' | 'fidelity_fix';

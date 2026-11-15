@@ -123,6 +123,8 @@ test('buildCompileBrief discloses when sources.states is missing instead of clai
   assert.equal(brief!.materials.prerequisites.status, 'recompose_states_unreadable');
   assert.equal(brief!.materials.prerequisites.from_recompose_states.length, 0);
   assert.match(brief!.materials.prerequisites.scan_reason, /读不到|sources\.states/);
+  assert.match(brief!.materials.prerequisites.scan_reason, /重组返回的记录形状/);
+  assert.doesNotMatch(brief!.materials.prerequisites.scan_reason, /回执/);
   assert.doesNotMatch(JSON.stringify(brief!.materials.prerequisites), /旧路径前置/);
 });
 
