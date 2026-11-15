@@ -406,6 +406,8 @@ if [ "${DRY_RUN}" != 1 ]; then
 fi
 
 HOST_FOR_URL="${HTTPS_HOST:-127.0.0.1}"
+# Checked-in minimal deployment definition (docs/examples/quickstart-deployment.json); deploy copies app/ to current/.
+QUICKSTART_DEFINITION="${DATA}/current/docs/examples/quickstart-deployment.json"
 say ""
 say "circle-hub 已安装。"
 say "  控制台：https://${HOST_FOR_URL}:${HTTPS_PORT}/console/"
@@ -414,6 +416,8 @@ say "  证书颁发机构：${DATA}/tls/ca.crt（浏览器和 Circle 信任它�
 if [ "${HUB_INSTALL_ADMIN_CREATED}" = 1 ]; then
   say "  管理员用户名：${HUB_INSTALL_ADMIN_NAME}；使用设置的密码或上面仅显示一次的初始密码登录。"
 fi
+say "  部署定义样例：${QUICKSTART_DEFINITION}"
+say "  下一步：circle-hub apply \"${QUICKSTART_DEFINITION}\""
 if [ "${OS}" = darwin ]; then
   case ":${PATH}:" in *":${WRAPPER_DIR}:"*) ;; *) say "  把 ${WRAPPER_DIR} 加进 PATH 后就能直接用 circle-hub 命令" ;; esac
 fi
