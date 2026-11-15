@@ -68,26 +68,30 @@ def runner_namespace(module, contract):
 
 def export_contract(framework_root, base_contract, objects):
     root = Path(framework_root).resolve()
-    sys.path.insert(0, str(root))
-    module = load_module('_circle_cell_export_runner', root / 'lib/test_xlsx.py')
-    verified_base = module._load_excel_contract()
+    # Export reads declared source bytes; framework and fixture imports may open device sessions.
+    verified_base = json.loads((root / 'lib/excel_contract.json').read_text(encoding='utf-8'))
     supplied_base = json.loads(Path(base_contract).read_text(encoding='utf-8'))
-    if canonical(verified_base) != canonical(supplied_base):
+    if (canonical(verified_base) != canonical(supplied_base)
+            or verified_base.get('schema') != 'ist.excel.function-contract'
+            or verified_base.get('complete') is not True
+            or contract_digest(verified_base) != verified_base.get('contract_sha256')):
         raise ValueError('指定原规则与原入口实际加载的规则不同')
+    sources = dict(verified_base['source_hashes'])
+    for relative, expected in sources.items():
+        path = (root / relative).resolve()
+        if root not in path.parents or file_digest(path) != expected:
+            raise ValueError('原规则声明的来源文件与实际内容不同')
+    for relative in ('lib/test_xlsx.py', 'smoke_test/conftest.py'):
+        if relative not in sources:
+            raise ValueError('原规则缺少入口或设备工厂的来源声明')
+    if (verified_base['runtime']['runner_source'] != 'lib/test_xlsx.py'
+            or verified_base['runtime']['runner_sha256'] != sources['lib/test_xlsx.py']):
+        raise ValueError('原规则的入口身份与来源声明不同')
     document = copy.deepcopy(verified_base)
     available = {item.get('e', item.get('name')) for item in document['objects']
                  if item['status'] == 'enabled'}
     if not objects or any(name not in available for name in objects):
         raise ValueError('取格对象须来自原规则已声明且启用的对象')
-    fixtures = root / 'smoke_test/conftest.py'
-    load_module('_circle_cell_export_fixtures', fixtures)
-    sources = dict(document['source_hashes'])
-    for loaded in list(sys.modules.values()):
-        source = getattr(loaded, '__file__', None)
-        if source:
-            path = Path(source).resolve()
-            if path.suffix == '.py' and root in path.parents:
-                sources[path.relative_to(root).as_posix()] = file_digest(path)
     for name in COMPONENT_FILES:
         sources[SOURCE_PREFIX + name] = file_digest(COMPONENT_ROOT / name)
     public_method = CellDevice(None).table_cell

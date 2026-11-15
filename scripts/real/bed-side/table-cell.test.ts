@@ -125,6 +125,33 @@ function fixture() {
   return { root, framework, original, exported, document: JSON.parse(readFileSync(exported, 'utf8')), close: () => rmSync(root, { recursive: true, force: true }) };
 }
 
+test('contract export reads verified files without executing framework or device fixture modules', () => {
+  const f = fixture();
+  try {
+    const poisonous = 'raise RuntimeError("synthetic import must never run")\n';
+    for (const relative of ['lib/test_xlsx.py', 'smoke_test/conftest.py']) {
+      writeFileSync(join(f.framework, relative), poisonous);
+      (f.original.source_hashes as Record<string, string>)[relative] = sha(poisonous);
+    }
+    (f.original.runtime as Record<string, unknown>).runner_sha256 = sha(poisonous);
+    const { contract_sha256: ignored, ...unsigned } = f.original;
+    f.original.contract_sha256 = sha(canonical(unsigned));
+    const base = join(f.framework, 'lib/excel_contract.json');
+    writeFileSync(base, JSON.stringify(f.original));
+    const exported = join(f.root, 'no-import-contract.json');
+    const args = [join(COMPONENT, 'entry.py'), 'export-contract', '--framework-root', f.framework,
+      '--base-contract', base, '--object', 'Device_0', '--out', exported];
+    const result = spawnSync('python3', args, { encoding: 'utf8', env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(readFileSync(exported, 'utf8')).source_hashes['lib/test_xlsx.py'], sha(poisonous));
+    writeFileSync(join(f.framework, 'lib/test_xlsx.py'), poisonous + '# changed\n');
+    args[args.length - 1] = join(f.root, 'rejected-contract.json');
+    const rejected = spawnSync('python3', args, { encoding: 'utf8', env });
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr, /来源文件与实际内容不同/);
+  } finally { f.close(); }
+});
+
 const FLOW = `from cell_runtime import Runtime
 from pathlib import Path
 from types import SimpleNamespace
