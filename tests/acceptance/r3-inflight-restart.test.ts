@@ -186,3 +186,20 @@ test('R3-10 real observation lock forwards loss before submit and releases witho
   await observationLockFree(c,state.job);
   const unlock=await tryHold('dispatch.observation:'+state.job);assert.ok(unlock,'the original observer finally releases its actual lock');await unlock();
 });
+
+test('R3-11 lock loss first reported during unlock persists pending recovery as unknown',{timeout:60000},async t=>{
+  const holder:{current?:ChildProcess}={};
+  const c=await journal(t,{lost:true,pendingReads:1,onSubmit:async()=>{holder.current!.kill('SIGKILL');}});
+  const job=await admittedAndKilled(t,c,holder);await observationLockFree(c,job);
+  const hold=c.kit.store.tryHold.bind(c.kit.store);let injected=false;
+  c.kit.store.tryHold=async(key,onLost)=>{
+    const unlock=await hold(key,onLost);if(!unlock)return null;
+    return async()=>{await unlock();if(!injected){injected=true;const error=Error('synthetic unlock acknowledgement loss');onLost?.(error);throw error;}};
+  };
+  t.after(()=>c.service.close());
+  await c.service.recoverPending();
+  const events=await eventual(()=>c.service.journal.events(job),rows=>rows.some(row=>row.body.detail.phase==='unknown'&&String(row.body.detail.missing_fact).includes('观察锁连接')));
+  assert.ok(events.some(row=>row.body.detail.phase==='query_pending'));
+  assert.equal((await c.service.status(c.admin,job)).outcome,'unknown');assert.equal(sends(c),1);assert.equal(tasks(c),1);
+  assert.equal(c.calls.filter(name=>name==='open_slot').length,1,'recovery never obtains a replacement lease');
+});

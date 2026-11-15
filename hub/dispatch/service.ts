@@ -376,9 +376,11 @@ export class DispatchService {
         else throw error;
         return;
       }finally{
-        const original=binding??cached?.binding;
-        if(lostObservation.signal.aborted&&!this.#shutdown.signal.aborted&&original)await this.recoveryUnknown(original,'原作业观察锁连接已中断，本次接回停止；需重新取得观察锁后只读核对');
-        await unlock();
+        try{await unlock();}
+        finally{
+          const original=binding??cached?.binding;
+          if(lostObservation.signal.aborted&&!this.#shutdown.signal.aborted&&original&&!currentDispatch(await this.journal.events(job)).finished)await this.recoveryUnknown(original,'原作业观察锁连接已中断，本次接回停止；需重新取得观察锁后只读核对');
+        }
       }
       await recoveryWait(delay,signal,this.options.sleep);
     }
