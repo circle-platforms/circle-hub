@@ -93,7 +93,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
 export async function observationLockFree(c: { kit: Awaited<ReturnType<typeof setup>>['kit'] }, job: string, ms = 15000): Promise<void> {
   const deadline = Date.now() + ms;
   for (;;) {
-    const unlock = await c.kit.store.tryHold(`dispatch.observation:${job}`);
+    const unlock = await c.kit.store.tryHold(job);
     if (unlock) { await unlock(); return; }
     if (Date.now() > deadline) throw new Error(`the observation lock of ${job} was still held ${ms} ms after its holder ended`);
     await new Promise(resolve => setTimeout(resolve, 50));

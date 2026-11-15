@@ -283,7 +283,7 @@ export class DispatchService {
     let cached:{intent:string;binding:JobBinding;d:ExecutorDefinition;client:RpcClient;lease:RemoteLease;confirmed:LeaseClock|null;heartbeatAt:number|null;heartbeatRejected:boolean}|undefined;
     let delay=1000;
     while(!signal.aborted){
-      const unlock=await this.options.records.store.tryHold('dispatch.observation:'+job,error=>lostObservation.abort(error));
+      const unlock=await this.options.records.store.tryHold(job,error=>lostObservation.abort(error));
       if(!unlock){await recoveryWait(delay,signal,this.options.sleep);continue;}
       let binding:JobBinding|undefined;
       try{
@@ -299,7 +299,7 @@ export class DispatchService {
         if(!intent){
           const gate=await this.journal.append(binding,'gate','validate','completed',{allow_submit:false},[],'dispatch.gate:'+job);
           if(!gate.created&&gate.body.detail.allow_submit===true){await this.recoveryUnknown(binding,'原提交准入已通过，但没有完整意图，缺少可核对的原请求身份');return;}
-          await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,recovery:true,public_reason:'服务重启后确认尚未写入派发意图，本次没有提交',next_action:'可以重新发起上机验证，须使用新一次核验和预订'},[], 'dispatch.recovery.no_intent:'+job);
+          await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,recovery:true,public_reason:'服务重启后确认尚未写入派发意图，本次没有提交',next_action:'原样重交，Hub 会再试一次'},[], 'dispatch.recovery.no_intent:'+job);
           return;
         }
         const detail=intent.body.detail,lease=detail.remote_lease;
@@ -350,7 +350,7 @@ export class DispatchService {
           await this.journal.append(binding,'complete','read_back','completed',{done:true,outcome,unfreeze:true,recovery:true,
             ...(cleanup.length?{member_missing_facts:cleanup}:{}),
             public_reason:decision.rejected?'原请求被目标明确拒收，本次上机验证没有执行':'服务重启后核对到原请求尚未开始，本次上机验证没有执行',
-            next_action:'可以重新发起上机验证；使用新一次核验和预订，不重发原请求'},[response.source],'dispatch.recovery.complete:'+intent.digest);
+            next_action:'原样重交，Hub 会再试一次'},[response.source],'dispatch.recovery.complete:'+intent.digest);
           return;
         }else if(decision.remoteId!==undefined){
           const prior=receiptOf(current.tail);
@@ -795,7 +795,7 @@ export class DispatchService {
     if(d.calls.submit.write)binding.target_key=digestOfValue(bind(d.calls.submit.write.target_key,this.context(binding)));
     delete binding.run; // Restricted response captures deliberately clear input; never leave a second run binding behind.
     const observation=new AbortController();
-    const unlockObservation=await this.options.records.store.tryHold('dispatch.observation:'+binding.job,error=>observation.abort(error));
+    const unlockObservation=await this.options.records.store.tryHold(binding.job,error=>observation.abort(error));
     if(!unlockObservation)throw new Error('同一作业的观察仍在进行，尚未预留或提交');
     this.#observationSignals.set(binding.job,observation.signal);
     try{
@@ -1003,7 +1003,7 @@ export class DispatchService {
     const events=await this.journal.events(job);
     if(!events.length)throw new Error('作业对当前账户不可用');
     if(eventOf(events,'probe_intent')&&!eventOf(events,'intent')){
-      const unlock=await this.options.records.store.tryHold('dispatch.observation:'+job);
+      const unlock=await this.options.records.store.tryHold(job);
       if(!unlock)return this.status(by,job);
       try{const binding={...await this.journal.binding(job),acting_by:by.id};const d=await this.readingDefinition(binding);const material=await this.secret(binding,d);if(material===null)return this.status(by,job);const client=this.session(binding,d,material);await client.connect();await this.probeFollowup(by,binding,d,client,true);return this.status(by,job);}
       finally{await unlock();}
@@ -1012,7 +1012,7 @@ export class DispatchService {
     if(!reservation)throw new Error('原派发绑定不可读取');
     if(reservation.body.detail.read_only===true&&!eventOf(events,'intent'))return this.status(by,job);
     if(this.#activeJobs.has(job)||this.#recoveryWorkers.has(job))return this.status(by,job);
-    const available=await this.options.records.store.tryHold('dispatch.observation:'+job);
+    const available=await this.options.records.store.tryHold(job);
     if(!available)return this.status(by,job);
     await available();
     const binding=reservation.body.detail.binding;
@@ -1026,7 +1026,7 @@ export class DispatchService {
   }
   private async disposeLocked(by:Principal,job:string,options:{choice:Disposition;remote_id?:string|number;reason?:string;acceptPossibleDuplicateEffects?:boolean}):Promise<JobStatus>{
     await this.registry.admin(by);
-    const unlock=await this.options.records.store.tryHold('dispatch.observation:'+job);
+    const unlock=await this.options.records.store.tryHold(job);
     if(!unlock)throw new Error('原作业正在只读核对，处置尚未执行，请稍后再试');
     try{return await this.disposeHeld(by,job,options);}finally{await unlock();}
   }
