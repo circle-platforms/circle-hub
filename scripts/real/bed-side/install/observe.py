@@ -25,6 +25,10 @@ class Unknown(Exception):
     pass
 
 
+class MissingAlive(Unknown):
+    pass
+
+
 def read_component_state(component):
     file = Path(component) / 'runtime/status.json'
     if file.is_symlink() or not file.is_file():
@@ -227,7 +231,15 @@ def task_locks(root, task_ids):
             if item.name.endswith(suffix):
                 ids.add(item.name[:-len(suffix)])
                 break
-    return sum(held_lock(root / (task + '.alive')) for task in sorted(ids))
+    held = 0
+    for task in sorted(ids):
+        alive = root / (task + '.alive')
+        try:
+            alive.lstat()
+        except FileNotFoundError:
+            raise MissingAlive('task_alive_missing') from None
+        held += held_lock(alive)
+    return held
 
 
 def inventory(root):
@@ -267,7 +279,7 @@ def inventory(root):
     return sorted(rows)
 
 
-def request_inventory(state):
+def request_inventories(state):
     journal = state.with_name(state.name + '.request-journal') / 'requests.db'
     with closing(readonly_database(journal)) as conn:
         # Hash the complete durable request rows in memory; no values leave this process.
@@ -278,7 +290,14 @@ def request_inventory(state):
             'request_meta': conn.execute('SELECT name,value FROM request_meta ORDER BY name').fetchall(),
             'request_tombstones': conn.execute('SELECT request_id,not_after FROM request_tombstones ORDER BY request_id').fetchall(),
         }
-    return digest(rows)
+    # clock_floor is the exact mutable clock key written by ed89f6c StateStore._request_now.
+    # Keep it in the full inventory; expose only a second hash from this SAME read transaction.
+    clock = [row for row in rows['request_meta'] if row[0] == 'clock_floor']
+    return digest(rows), digest(clock), bool(clock)
+
+
+def request_inventory(state):
+    return request_inventories(state)[0]
 
 
 def config_paths(config):
@@ -306,7 +325,7 @@ def config_paths(config):
 
 def observe(request, *, proc_root=Path('/proc'), cgroup_root=Path('/sys/fs/cgroup'), properties=system_properties):
     facts = dict(schema='value-pick-observation@1', jobs=None, leased=None, bed_busy=None,
-                 version=None, tools=None, component_state=None, task_inventory_sha256=None, request_records_sha256=None, verified=False)
+                 version=None, tools=None, component_state=None, diagnostics=[], task_inventory_sha256=None, request_records_sha256=None, request_clock_sha256=None, verified=False)
     required = {'operation', 'unit', 'phase', 'gateway_root', 'config_path'}
     if not isinstance(request, dict) or request.get('operation') != 'observe' or request.get('phase') not in ('original', 'wrapped', 'preflight', 'copy_version', 'export_original', 'export_typed', 'dropin', 'reload', 'restart', 'postcheck'):
         return facts
@@ -324,10 +343,15 @@ def observe(request, *, proc_root=Path('/proc'), cgroup_root=Path('/sys/fs/cgrou
         directory(state)
     except (OSError, ValueError, TypeError, KeyError, Unknown):
         return facts
-    def attempt(fn):
+    def attempt(fn, diagnostic=None):
         try:
             return fn()
+        except MissingAlive:
+            facts['diagnostics'].append('task_alive_missing')
+            return None
         except (OSError, ValueError, TypeError, KeyError, SyntaxError, sqlite3.Error, Unknown, subprocess.SubprocessError):
+            if diagnostic is not None:
+                facts['diagnostics'].append(diagnostic)
             return None
     values = attempt(lambda: properties(request['unit']))
     def declarations_now():
@@ -356,18 +380,24 @@ def observe(request, *, proc_root=Path('/proc'), cgroup_root=Path('/sys/fs/cgrou
     if declarations:
         facts['version'], facts['tools'], facts['component_state'] = declarations
     pids = attempt(lambda: cgroup_processes(request['unit'], proc_root, cgroup_root, lambda _unit: values))
+    if pids:
+        facts['diagnostics'].append('cgroup_extra_processes')
     boot = attempt(lambda: (proc_root / 'sys/kernel/random/boot_id').read_text().strip())
     lease = attempt(lambda: lease_and_tasks(state, boot, time.monotonic())) if boot else None
     if lease:
         facts['leased'] = lease[0]
-    held = attempt(lambda: task_locks(state / 'tasks', lease[1])) if lease else None
+    held = attempt(lambda: task_locks(state / 'tasks', lease[1]), 'task_locks_unknown') if lease else None
     if pids is not None and held is not None:
         # This is a conservative activity count; only zero asserts absence.
         facts['jobs'] = len(pids) + held
     facts['bed_busy'] = attempt(lambda: held_lock(state / 'bed.lock'))
     facts['task_inventory_sha256'] = attempt(lambda: digest([inventory(state / 'tasks'), inventory(staging)]))
-    facts['request_records_sha256'] = attempt(lambda: request_inventory(state))
-    facts['verified'] = all(facts[key] is not None for key in facts if key not in ('schema', 'verified', 'component_state'))
+    requests = attempt(lambda: request_inventories(state), 'request_inventory_unknown')
+    if requests is not None:
+        facts['request_records_sha256'], facts['request_clock_sha256'], clock_included = requests
+        if clock_included:
+            facts['diagnostics'].append('request_clock_included')
+    facts['verified'] = all(facts[key] is not None for key in facts if key not in ('schema', 'verified', 'component_state', 'diagnostics'))
     return facts
 
 
@@ -376,7 +406,7 @@ def main():
         value = observe(json.load(sys.stdin))
     except Exception:
         value = dict(schema='value-pick-observation@1', jobs=None, leased=None, bed_busy=None,
-                     version=None, tools=None, component_state=None, task_inventory_sha256=None, request_records_sha256=None, verified=False)
+                     version=None, tools=None, component_state=None, diagnostics=[], task_inventory_sha256=None, request_records_sha256=None, request_clock_sha256=None, verified=False)
     print(json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False))
 
 

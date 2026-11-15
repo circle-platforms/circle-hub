@@ -24,11 +24,13 @@ class Fixture:
   self.bundle=self.root/'bundle';(self.bundle/'bed-side').mkdir(parents=True);(self.bundle/'install').mkdir()
   for name in m.FILES:(self.bundle/'bed-side'/name).write_text('# synthetic code, not executed\n')
   (self.bundle/'install/observe.py').write_text('# synthetic observer, injected not executed\n')
+  (self.bundle/'install/probe.py').write_text('# synthetic probe, injected not executed\n')
   (self.bundle/'base-hub-contract.json').write_text('{}')
   self.plan={'release':'synthetic','source_commit':'a'*40,'component_sha256':{n:m.sha(self.bundle/'bed-side'/n) for n in m.FILES},'checker_sha256':m.sha(self.bundle/'install/observe.py'),'base_hub_sha256':m.sha(self.bundle/'base-hub-contract.json'),'installer_sha256':m.sha(Path(sys.argv[1])),'objects':['SYNTHETIC'],'missing_requirements':[]}
   self.write_plan()
+  self.plan['probe_sha256']=m.sha(self.bundle/'install/probe.py');self.write_plan()
   self.version=self.gateway.parent/'cell-runtime-releases/synthetic'
-  self.engine=m.Installer(systemctl=str(self.root/'fake-systemctl'),runner=self.run,clock=lambda:self.now,sleep=self.sleep,timeout=.5,stable_seconds=.4)
+  self.engine=m.Installer(systemctl=str(self.root/'fake-systemctl'),runner=self.run,clock=lambda:self.now,sleep=self.sleep,timeout=.5,stable_seconds=.4,euid=lambda:0,online_probe=lambda *args:{'status':'ok','outcome':'authentication_required'})
   self.patcher=patch.object(m.os,'chown',side_effect=lambda *args:self.chowns.append(args));self.patcher.start()
  def write_plan(self):(self.bundle/'install-plan.json').write_text(json.dumps(self.plan))
  def sleep(self,n):
@@ -44,7 +46,7 @@ class Fixture:
  def facts(self,request):
   state=json.loads((self.version/'runtime/status.json').read_text()) if request.get('component_root') else None
   tools=['case_submit','lease_status']+(['case_submit_cell'] if state and state['mode']=='cell' else [])
-  return {'schema':'value-pick-observation@1','component_state':state,'verified':True,'jobs':0,'leased':False,'bed_busy':False,'version':'0.4.7','tools':tools,'task_inventory_sha256':'b'*64,'request_records_sha256':'c'*64}
+  return {'schema':'value-pick-observation@1','component_state':state,'verified':True,'jobs':0,'leased':False,'bed_busy':False,'version':'0.4.7','tools':tools,'task_inventory_sha256':'b'*64,'request_records_sha256':'c'*64,'request_clock_sha256':'d'*64,'diagnostics':['request_clock_included']}
  def run(self,argv,timeout=30,input=None):
   self.calls.append((list(argv),timeout))
   if argv[0]==self.engine.systemctl:
@@ -356,4 +358,158 @@ answer=f.engine.status(f.unit)
 assert not answer['ok'] and answer['entry']=='wrapped' and answer['component_state_current'] is False and answer['component_state'] is None
 file.unlink();f.pid=42
 assert f.engine.status(f.unit)['component_state_current'] is False
+`));
+
+test('non-root mutations stop before discovery while read-only operations remain available',()=>check(`
+f.engine.euid=lambda:1000
+before={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+for operation in [lambda:f.engine.install(f.bundle,f.unit),lambda:f.engine.rollback(f.unit)]:
+ try:operation();raise AssertionError('must require root')
+ except m.InstallFailure as e:assert e.stage=='identity' and e.reason=='root_required'
+assert f.calls==[] and before=={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+assert f.engine.preflight(f.bundle,f.unit)['facts']['jobs']==0
+assert f.engine.status(f.unit)['entry']=='original'
+`));
+
+test('an unloaded drop-in is removed without restarting the original running PID',()=>check(`
+f.parent.mkdir()
+argv=[sys.executable,str(f.version/'entry.py'),'serve','--gateway-root',str(f.gateway),'--config',str(f.config),'--contract',str(f.version/'excel-contract.json')]
+f.drop.write_text(m.dropin_text(argv));f.restarts=4
+answer=f.engine.rollback(f.unit)
+assert answer['ok'] and not answer['restart_performed'] and not f.drop.exists()
+assert f.pid==42 and f.restarts==4 and not any(a[1]=='restart' for a,t in f.calls)
+again=f.engine.rollback(f.unit)
+assert again['ok'] and again['stage']=='already_original'
+assert not any(a[1]=='restart' for a,t in f.calls)
+`));
+
+test('rollback resumes after interrupted removal or reload using its durable ownership receipt',()=>check(`
+for point in ['reload','restart']:
+ f.wrap();original=f.run;fired=[False]
+ def interrupt(argv,timeout=30,input=None):
+  if argv[0]==f.engine.systemctl and argv[1]==('daemon-reload' if point=='reload' else 'restart') and not f.drop.exists() and not fired[0]:
+   fired[0]=True;raise KeyboardInterrupt()
+  return original(argv,timeout=timeout,input=input)
+ f.engine.runner=interrupt
+ partial=f.engine.rollback(f.unit)
+ assert fired[0] and not partial['ok'] and partial['resume_available']
+ assert not f.drop.exists() and len(list(f.parent.glob('.value-pick-rollback-*.json')))==1
+ f.engine.runner=original
+ final=f.engine.rollback(f.unit)
+ assert final['ok'] and final['resumed'] and final['restored']
+ assert not list(f.parent.glob('.value-pick-rollback-*.json'))
+ assert (f.version/'keep').read_text()=='retained'
+`));
+
+test('a restart interrupted before checkpoint is recognized by its changed original PID',()=>check(`
+f.wrap();original=f.run;fired=[False]
+def interrupt(argv,timeout=30,input=None):
+ result=original(argv,timeout=timeout,input=input)
+ if argv[0]==f.engine.systemctl and argv[1]=='restart' and not fired[0]:
+  fired[0]=True;f.pid=99;raise KeyboardInterrupt()
+ return result
+f.engine.runner=interrupt
+partial=f.engine.rollback(f.unit);assert not partial['ok'] and partial['resume_available']
+f.engine.runner=original;prior=len([a for a,t in f.calls if a[1]=='restart'])
+final=f.engine.rollback(f.unit)
+assert final['ok'] and final['restored'] and not final['restart_performed']
+assert len([a for a,t in f.calls if a[1]=='restart'])==prior
+`));
+
+test('INT TERM and HUP during install roll back and restore previous signal handlers',()=>check(`
+import signal
+for signum in [signal.SIGINT,signal.SIGTERM,signal.SIGHUP]:
+ original=f.run;fired=[False];previous=signal.getsignal(signum)
+ def terminate(argv,timeout=30,input=None):
+  result=original(argv,timeout=timeout,input=input)
+  if argv[0]==f.engine.systemctl and argv[1]=='daemon-reload' and f.drop.exists() and not fired[0]:
+   fired[0]=True;os.kill(os.getpid(),signum)
+  return result
+ f.engine.runner=terminate
+ with m.interrupt_signals():
+  try:f.engine.install(f.bundle,f.unit);raise AssertionError('must interrupt')
+  except m.InstallFailure as e:assert e.reason=='interrupted' and e.rollback['ok']
+ assert fired[0] and not f.drop.exists() and signal.getsignal(signum)==previous
+ f.engine.runner=original;shutil.rmtree(f.version)
+`));
+
+test('termination in the atomic publication window still rolls back the owned drop-in',()=>check(`
+import signal
+original=m.os.link
+def terminate(src,dst):
+ original(src,dst);os.kill(os.getpid(),signal.SIGTERM)
+with m.interrupt_signals(),patch.object(m.os,'link',terminate):
+ try:f.engine.install(f.bundle,f.unit);raise AssertionError('must interrupt')
+ except m.InstallFailure as e:assert e.reason=='interrupted' and e.rollback['ok']
+assert not f.drop.exists() and not any(a[1]=='restart' for a,t in f.calls)
+`));
+
+test('failed online postcheck rolls back instead of trusting static tools',()=>check(`
+seen=[]
+def offline(config,timeout):
+ seen.append((config,timeout));return {'status':'error','outcome':'connection_or_response_failed'}
+f.engine.online_probe=offline
+try:f.engine.install(f.bundle,f.unit);raise AssertionError('must fail')
+except m.InstallFailure as e:
+ assert e.stage=='online_probe' and e.reason=='online_probe_failed' and e.rollback['ok']
+ assert e.details['probe']['outcome']=='connection_or_response_failed'
+assert len(seen)==1 and seen[0][0]==f.config and not f.drop.exists()
+`));
+
+test('request clock drift has a distinct failure without weakening inventory equality',()=>check(`
+state=f.engine.preflight(f.bundle,f.unit)
+state['facts']['request_clock_sha256']='a'*64
+original=f.engine.observe
+def changed(*args):
+ facts=original(*args);return {**facts,'request_records_sha256':'d'*64,'request_clock_sha256':'e'*64}
+f.engine.observe=changed;f.engine.stage='copy_version'
+try:f.engine.guard(f.bundle,state,f.unit);raise AssertionError('must reject')
+except m.InstallFailure as e:assert e.reason=='request_clock_changed'
+`));
+
+test('rollback can resume from an initially absent main PID without restarting the restored original process twice',()=>check(`
+f.wrap();f.pid=0;f.active='failed';f.sub='failed';original=f.run;fired=[False]
+def interrupted(argv,timeout=30,input=None):
+ result=original(argv,timeout=timeout,input=input)
+ if argv[0]==f.engine.systemctl and argv[1]=='restart' and not fired[0]:
+  fired[0]=True;raise KeyboardInterrupt()
+ return result
+f.engine.runner=interrupted
+partial=f.engine.rollback(f.unit)
+assert not partial['ok'] and partial['resume_available']
+assert f.engine.status(f.unit)['rollback_pending'] is True
+f.engine.runner=original;prior=len([a for a,t in f.calls if a[1]=='restart'])
+final=f.engine.rollback(f.unit)
+assert final['ok'] and final['restored'] and not final['restart_performed']
+assert len([a for a,t in f.calls if a[1]=='restart'])==prior
+assert f.engine.status(f.unit)['rollback_pending'] is False
+`));
+
+test('preflight explanations distinguish auxiliary processes clocks and missing alive locks without printing values',()=>check(`
+details=m.observation_details({'diagnostics':['cgroup_extra_processes','request_clock_included','task_alive_missing']})
+assert len(details['notes'])==3
+assert any('短命读取' in note for note in details['notes'])
+assert any('时钟' in note for note in details['notes'])
+assert any('存活锁' in note for note in details['notes'])
+`));
+
+test('a broken SSH progress pipe after activation invokes rollback before exit',()=>check(`
+def lost(phase):
+ if phase=='postcheck':raise BrokenPipeError()
+f.engine.progress=lost
+try:f.engine.install(f.bundle,f.unit);raise AssertionError('must roll back a broken control channel')
+except m.InstallFailure as e:assert e.reason=='connection_lost' and e.rollback['ok']
+assert not f.drop.exists() and f.effective==f.original
+`));
+
+test('a second interruption before rollback starts is reported as resumable rather than before activation',()=>check(`
+f.fail='postcheck';original=f.engine.rollback
+def interrupted(*args):raise KeyboardInterrupt()
+f.engine.rollback=interrupted
+try:f.engine.install(f.bundle,f.unit);raise AssertionError('must fail')
+except m.InstallFailure as e:
+ assert e.stage=='postcheck' and e.rollback['reason']=='interrupted' and e.rollback['resume_available']
+ assert e.rollback['removed'] is None and f.drop.exists()
+f.engine.rollback=original
+assert f.engine.rollback(f.unit)['ok'] and not f.drop.exists()
 `));

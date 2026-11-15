@@ -39,10 +39,25 @@ with tempfile.TemporaryDirectory(prefix='synthetic-observe-') as tmp:
     journal=state.with_name(state.name+'.request-journal');journal.mkdir();jdb=journal/'requests.db'
     db=sqlite3.connect(jdb)
     db.executescript('CREATE TABLE requests(request_id TEXT,holder TEXT,reply TEXT,dispatch_sequence INTEGER,sequence_scope TEXT);CREATE TABLE request_events(event_id INTEGER);CREATE TABLE request_meta(name TEXT,value TEXT);CREATE TABLE request_tombstones(request_id TEXT,not_after REAL);')
-    db.execute('INSERT INTO requests VALUES(?,?,?,?,?)',('synthetic-request','synthetic-holder','SYNTHETIC_PRIVATE_REPLY',1,'synthetic-scope'));db.execute('INSERT INTO request_meta VALUES(?,?)',('storage_id','synthetic-identity'));db.execute('INSERT INTO request_events VALUES(1)');db.commit();db.close()
+    db.execute('INSERT INTO requests VALUES(?,?,?,?,?)',('synthetic-request','synthetic-holder','SYNTHETIC_PRIVATE_REPLY',1,'synthetic-scope'));db.execute('INSERT INTO request_meta VALUES(?,?)',('storage_id','synthetic-identity'));db.execute('INSERT INTO request_meta VALUES(?,?)',('clock_floor',1700000000));db.execute('INSERT INTO request_events VALUES(1)');db.commit();db.close()
     request={'operation':'observe','unit':'test.service','phase':'preflight','gateway_root':str(gw),'config_path':str(config)}
     def run():return m.observe(request,proc_root=proc,cgroup_root=cg,properties=properties)
     mode=p.get('mode','idle');handles=[];extra={}
+    if mode=='short-read':
+        procs.write_text('123\n456\n');write(proc/'456/cmdline','synthetic-python\0read_probe.py\0')
+        active=run();procs.write_text('123\n');settled=run()
+        extra['short_read_blocked']=active['jobs']==1 and 'cgroup_extra_processes' in active['diagnostics']
+        extra['short_read_later_idle']=settled['jobs']==0 and 'cgroup_extra_processes' not in settled['diagnostics']
+    if mode=='clock':
+        original=run()
+        with sqlite3.connect(jdb) as c:c.execute("UPDATE request_meta SET value=? WHERE name='clock_floor'",(1700000001,))
+        advanced=run()
+        extra['clock_changes_full']=advanced['request_records_sha256']!=original['request_records_sha256']
+        extra['clock_changes_clock']=advanced['request_clock_sha256']!=original['request_clock_sha256']
+        with sqlite3.connect(jdb) as c:c.execute("UPDATE requests SET reply='OTHER_PRIVATE_REPLY'")
+        unrelated=run()
+        extra['other_changes_full']=unrelated['request_records_sha256']!=advanced['request_records_sha256']
+        extra['other_keeps_clock']=unrelated['request_clock_sha256']==advanced['request_clock_sha256']
     if mode=='child':
         procs.write_text('123\n456\n');write(procs.parent/'nested/cgroup.procs','789\n')
     if mode in ('lock','bed-lock','missing-alive'):
@@ -217,7 +232,7 @@ test('the stdin entry returns only unknown facts for malformed JSON without insp
   const result = spawnSync('python3', ['-B', observer], {input: '{', encoding: 'utf8', env: {PATH: process.env.PATH ?? '', PYTHONDONTWRITEBYTECODE: '1'}});
   assert.equal(result.status, 0); assert.equal(result.stderr, '');
   const facts = JSON.parse(result.stdout); assert.equal(facts.verified, false); assert.equal(facts.jobs, null); assert.equal(facts.leased, null);
-  assert.deepEqual(Object.keys(facts).sort(), ['schema','jobs','leased','bed_busy','version','tools','component_state','task_inventory_sha256','request_records_sha256','verified'].sort());
+  assert.deepEqual(Object.keys(facts).sort(), ['schema','jobs','leased','bed_busy','version','tools','component_state','task_inventory_sha256','request_records_sha256','request_clock_sha256','diagnostics','verified'].sort());
 });
 
 test('current component state selects cell tools or a truthful original-only degraded observation', () => {
@@ -236,4 +251,25 @@ test('missing stale non-UTC or symlinked state and a missing positive current PI
 test('a loaded future ExecStart does not pretend the still-original MainPID has a wrapper state', () => {
   const r=run('pending-reload'); assert.equal(r.facts.verified,true); assert.equal(r.facts.component_state,null);
   assert.deepEqual(r.facts.tools,['case_submit','lease_status']); assert.equal(r.unchanged,true);
+});
+
+test('extra cgroup processes including a short-lived read helper remain activity with a distinct safe diagnostic', () => {
+  const child=run('child'); assert.equal(child.facts.jobs,2); assert.ok(child.facts.diagnostics.includes('cgroup_extra_processes'));
+  const read=run('short-read'); assert.equal(read.short_read_blocked,true); assert.equal(read.short_read_later_idle,true);
+  assert.equal(JSON.stringify(read).includes('read_probe.py'),false);
+});
+
+test('a missing alive file remains unknown with its own reason instead of being reported idle or generic activity', () => {
+  const r=run('missing-alive'); assert.equal(r.facts.jobs,null); assert.equal(r.facts.verified,false);
+  assert.ok(r.facts.diagnostics.includes('task_alive_missing')); assert.equal(r.facts.diagnostics.includes('cgroup_extra_processes'),false);
+  assert.equal(r.unchanged,true); assert.equal(JSON.stringify(r.facts).includes('synthetic-task'),false);
+});
+
+test('clock metadata stays in the full request digest and a same-snapshot clock-only digest explains changes without exposing values', () => {
+  const r=run('clock');
+  assert.equal(r.clock_changes_full,true); assert.equal(r.clock_changes_clock,true);
+  assert.equal(r.other_changes_full,true); assert.equal(r.other_keeps_clock,true);
+  assert.match(r.facts.request_clock_sha256,/^[a-f0-9]{64}$/); assert.ok(r.facts.diagnostics.includes('request_clock_included'));
+  const json=JSON.stringify(r); assert.doesNotMatch(json,/170000000[01]|SYNTHETIC_PRIVATE_REPLY|OTHER_PRIVATE_REPLY|synthetic-holder/);
+  assert.equal(r.unchanged,true);
 });

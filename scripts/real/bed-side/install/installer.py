@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import argparse
 import ast
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 import hashlib
+import importlib.util
 import json
 import os
 import pwd
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -21,13 +24,53 @@ PREFIX = 'zz-value-pick-'
 
 
 class InstallFailure(RuntimeError):
-    def __init__(self, stage, reason, rollback=None):
+    def __init__(self, stage, reason, rollback=None, details=None):
         super().__init__(reason)
         self.stage, self.reason, self.rollback = stage, reason, rollback
+        self.details = details
 
     def report(self):
         return {'ok': False, 'stage': self.stage, 'reason': self.reason,
-                **({'rollback': self.rollback} if self.rollback is not None else {})}
+                **({'rollback': self.rollback} if self.rollback is not None else {}),
+                **({'details': self.details} if self.details is not None else {})}
+
+
+class InstallationInterrupted(BaseException):
+    def __init__(self, signum):
+        self.signum = signum
+
+
+@contextmanager
+def interrupt_signals():
+    previous = {}
+    def interrupted(signum, _frame):
+        raise InstallationInterrupted(signum)
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            previous[signum] = signal.signal(signum, interrupted)
+        yield
+    finally:
+        for signum, handler in previous.items(): signal.signal(signum, handler)
+
+
+def atomic_json(path, value):
+    descriptor, temporary = tempfile.mkstemp(prefix='.rollback-', dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf8') as stream:
+            json.dump(value, stream); stream.flush(); os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary): os.unlink(temporary)
+
+
+def observation_details(facts):
+    diagnostics = facts.get('diagnostics', [])
+    messages = {
+        'cgroup_extra_processes': '控制组仍有主进程之外的活动；包括短命读取或探测进程，请先停止调用方',
+        'task_alive_missing': '任务缺少存活锁文件，不能确认是否仍在运行，保持未知',
+        'request_clock_included': '请求清单包含会被查询推进的时钟；安装窗口内的查询也会导致摘要变化',
+    }
+    return {'diagnostics':diagnostics,'notes':[messages[code] for code in diagnostics if code in messages]}
 
 
 def run_process(argv, timeout=30, input=None):
@@ -116,7 +159,7 @@ def read_component_state(component):
 
 class Installer:
     def __init__(self, systemctl='systemctl', runner=run_process, clock=time.monotonic,
-                 sleep=time.sleep, timeout=30, stable_seconds=10):
+                 sleep=time.sleep, timeout=30, stable_seconds=10, euid=os.geteuid, online_probe=None, progress=None):
         if not isinstance(timeout, (int, float)) or not 0 < timeout <= 3600:
             raise InstallFailure('arguments', 'timeout_invalid')
         if not isinstance(stable_seconds, (int, float)) or not 0 < stable_seconds <= 3600:
@@ -124,6 +167,13 @@ class Installer:
         self.stable_seconds = stable_seconds
         self.systemctl, self.runner, self.clock, self.sleep = systemctl, runner, clock, sleep
         self.timeout, self.stage = timeout, 'arguments'
+        self.euid = euid
+        self.online_probe = online_probe
+        self.progress = progress
+
+    def require_root(self):
+        if self.euid() != 0:
+            raise InstallFailure('identity', 'root_required', details={'message': '安装和撤回须使用已获批准的root或sudo管理身份；尚未写入或修改服务'})
 
     def call(self, argv, input=None):
         return self.runner([str(x) for x in argv], timeout=self.timeout, input=input)
@@ -145,7 +195,7 @@ class Installer:
         except Exception:
             return None
 
-    def running(self, unit, restart_baseline):
+    def running(self, unit, restart_baseline, reset_expected=True):
         # Observe start transitions, then a full stable interval; an automatic restart never gets another chance.
         if restart_baseline is None:
             return False
@@ -154,7 +204,7 @@ class Installer:
         while True:
             count = self.number(unit, 'NRestarts')
             # An explicit restart resets this counter; a nonzero first sample already witnessed an auto restart.
-            if count is None or (first_sample and count != 0) or count > previous:
+            if count is None or (first_sample and reset_expected and count != 0) or count > previous:
                 return False
             first_sample = False
             previous = count
@@ -208,6 +258,7 @@ class Installer:
         except Exception:
             pass
         result = {'ok': launch is not None, 'stage': 'status', 'entry': 'unknown', 'release': None, 'component_state': None, 'component_state_current': None,
+                  'rollback_pending': None,
                   'own_dropin': {'present': None, 'count': None, 'releases': None, 'content_matches': None},
                   'before': before, 'idle_checked': False, 'observer_required': False}
         if launch is not None:
@@ -226,6 +277,8 @@ class Installer:
                     result['ok'] = False
         try:
             owned = self.own_dropins(unit)
+            directory = safe_path(self.show(unit,'FragmentPath')).parent / (unit + '.d')
+            result['rollback_pending'] = any(directory.glob('.value-pick-rollback-*.json'))
             result['own_dropin'].update(present=bool(owned), count=len(owned), releases=sorted({p.name[len(PREFIX):-5] for p in owned if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', p.name[len(PREFIX):-5])}))
             if len(owned) == 1 and launch is not None:
                 tag = owned[0].name[len(PREFIX):-5]
@@ -244,12 +297,12 @@ class Installer:
             request['component_root'] = str(launch['component'])
         facts = json.loads(self.call([sys.executable, checker], json.dumps(request)))
         if facts.get('schema') != 'value-pick-observation@1' or facts.get('verified') is not True:
-            raise InstallFailure(phase, 'observation_unknown')
+            raise InstallFailure(phase, 'observation_unknown', details=observation_details(facts))
         if type(facts.get('jobs')) is not int or facts['jobs'] != 0 or facts.get('leased') is not False or facts.get('bed_busy') is not False:
-            raise InstallFailure(phase, 'not_idle_or_unknown')
+            raise InstallFailure(phase, 'not_idle_or_unknown', details=observation_details(facts))
         if facts.get('version') != '0.4.7' or not isinstance(facts.get('tools'), list) or not facts['tools'] or any(not isinstance(t, str) for t in facts['tools']):
             raise InstallFailure(phase, 'version_or_tools_unknown')
-        for key in ('task_inventory_sha256', 'request_records_sha256'):
+        for key in ('task_inventory_sha256', 'request_records_sha256', 'request_clock_sha256'):
             if not isinstance(facts.get(key), str) or not re.fullmatch(r'[a-f0-9]{64}', facts[key]):
                 raise InstallFailure(phase, 'inventory_unknown')
         return facts
@@ -271,6 +324,9 @@ class Installer:
             file = bundle / 'bed-side' / name
             if not file.is_file() or file.is_symlink() or sha(file) != plan['component_sha256'][name]:
                 raise InstallFailure(self.stage, 'component_identity_mismatch')
+        probe = bundle / 'install/probe.py'
+        if not probe.is_file() or probe.is_symlink() or sha(probe) != plan.get('probe_sha256'):
+            raise InstallFailure(self.stage, 'probe_identity_mismatch')
         typed = bundle / 'base-hub-contract.json'
         if not typed.is_file() or sha(typed) != plan.get('base_hub_sha256'):
             raise InstallFailure(self.stage, 'base_typed_missing_or_mismatch')
@@ -293,18 +349,23 @@ class Installer:
                 'typed': typed, 'facts': facts}
 
     def guard(self, bundle, state, unit):
+        if self.progress is not None: self.progress(self.stage)
         launch = self.launch(unit) if self.stage == 'postcheck' else state['launch']
         facts = self.observe(bundle, state['plan'], unit, launch, self.stage)
-        if any(facts[key] != state['facts'][key] for key in ('task_inventory_sha256', 'request_records_sha256')):
-            raise InstallFailure(self.stage, 'task_or_request_changed')
+        if facts['task_inventory_sha256'] != state['facts']['task_inventory_sha256']:
+            raise InstallFailure(self.stage, 'task_inventory_changed')
+        if facts['request_records_sha256'] != state['facts']['request_records_sha256']:
+            reason = 'request_clock_changed' if facts.get('request_clock_sha256') != state['facts'].get('request_clock_sha256') else 'request_records_changed'
+            raise InstallFailure(self.stage, reason)
         return facts
 
     def install(self, bundle, unit):
+        self.require_root()
         try:
             return self._install(bundle, unit)
         except InstallFailure as error:
             if error.stage == 'command':
-                raise InstallFailure(self.stage, error.reason, error.rollback) from None
+                raise InstallFailure(self.stage, error.reason, error.rollback, error.details) from None
             raise
         except Exception:
             raise InstallFailure(self.stage, 'operation_failed') from None
@@ -350,8 +411,13 @@ class Installer:
                 temporary = Path(name)
                 with os.fdopen(fd, 'w', encoding='utf8') as stream:
                     stream.write(text); stream.flush(); os.fsync(stream.fileno())
-                os.link(temporary, dropin)
-                activated = True
+                # A termination between publishing and recording ownership must not strand the drop-in.
+                mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT,signal.SIGTERM,signal.SIGHUP})
+                try:
+                    os.link(temporary, dropin)
+                    activated = True
+                finally:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             finally:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
@@ -368,50 +434,143 @@ class Installer:
                 raise InstallFailure(self.stage, 'component_not_cell')
             if set(after['tools']) != set(state['facts']['tools']) | {'case_submit_cell'}:
                 raise InstallFailure(self.stage, 'tools_changed')
-            return {'ok': True, 'stage': 'installed', 'component_sha256': plan['component_sha256']}
-        except Exception as error:
+            self.stage = 'online_probe'
+            probe = self.online_probe
+            if probe is None:
+                path = Path(bundle) / 'install/probe.py'
+                if path.is_symlink() or sha(path) != plan['probe_sha256']:
+                    raise InstallFailure(self.stage,'probe_identity_mismatch')
+                spec = importlib.util.spec_from_file_location('_cell_install_probe',str(path))
+                module = importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+                probe = module.probe
+            live = probe(launch['config'],self.timeout)
+            if not isinstance(live,dict) or set(live) != {'status','outcome'} or live['status'] != 'ok':
+                raise InstallFailure(self.stage,'online_probe_failed',details={'probe':live})
+            if self.progress is not None: self.progress('installed')
+            return {'ok': True, 'stage': 'installed', 'component_sha256': plan['component_sha256'],'online_probe':live}
+        except BaseException as error:
             failed = self.stage
-            restored = self.rollback(unit, plan['release']) if activated else None
-            reason = error.reason if isinstance(error, InstallFailure) else 'operation_failed'
-            raise InstallFailure(failed, reason, restored) from None
+            restored = None
+            if activated:
+                try: restored = self.rollback(unit, plan['release'])
+                except BaseException:
+                    restored = {'ok':False,'stage':'rollback_interrupted','removed':None,
+                                'restored':False,'resume_available':True,'reason':'interrupted'}
+            reason = error.reason if isinstance(error, InstallFailure) else 'interrupted' if isinstance(error, (InstallationInterrupted, KeyboardInterrupt)) else 'connection_lost' if isinstance(error,BrokenPipeError) else 'operation_failed'
+            raise InstallFailure(failed, reason, restored, error.details if isinstance(error, InstallFailure) else None) from None
 
     def rollback(self, unit, release=None):
-        # Emergency path: NO PLAN/checker/config/idle/running prerequisite. Only own exact drop-in.
+        # Persist only ownership hashes and progress, never configuration or discovered paths.
+        self.require_root()
         self.unit(unit)
+        if release is not None and (not isinstance(release,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*',release)):
+            raise InstallFailure('arguments','release_invalid')
         before = {'active': None, 'sub': None}
         for field, property in (('active', 'ActiveState'), ('sub', 'SubState')):
-            try:
-                before[field] = self.show(unit, property) or None
-            except Exception:
-                pass  # Observation is best-effort, never an emergency rollback prerequisite.
+            try: before[field] = self.show(unit, property) or None
+            except Exception: pass
         disclosure = {'before': before, 'idle_checked': False, 'observer_required': False}
-        removed, stage = False, 'rollback_identify'
+        removed, stage, restarted = False, 'rollback_identify', False
+        marker = None
         try:
             launch = self.launch(unit)
-            owned = self.own_dropins(unit, release)
-            if len(owned) != 1:
+            directory = safe_path(self.show(unit, 'FragmentPath')).parent / (unit + '.d')
+            if directory.is_symlink(): raise InstallFailure(stage, 'dropin_directory_symlink')
+            owned = [p for p in self.own_dropins(unit, release) if p.exists() or p.is_symlink()]
+            markers = [p for p in directory.glob('.value-pick-rollback-*.json')
+                       if release is None or p.name == '.value-pick-rollback-' + release + '.json']
+            if len(owned) > 1 or len(markers) > 1:
                 raise InstallFailure(stage, 'own_dropin_not_unique')
-            own = owned[0]
-            tag = own.name[len(PREFIX):-5]
-            if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', tag) or release is not None and tag != release:
-                raise InstallFailure(stage, 'release_mismatch')
-            if own.is_symlink() or not own.is_file() or own.read_text(encoding='utf8') != self.expected_dropin(launch, tag):
-                raise InstallFailure(stage, 'own_dropin_content_mismatch')
-            stage = 'rollback_remove'; own.unlink(); removed = True
-            stage = 'rollback_reload'; self.call([self.systemctl, 'daemon-reload'])
-            stage = 'rollback_restart'
-            restart_baseline = self.number(unit, 'NRestarts')
-            self.call([self.systemctl, 'restart', unit])
-            stage = 'rollback_wait'
-            if not self.running(unit, restart_baseline):
-                raise InstallFailure(stage, 'service_not_stable')
-            stage = 'rollback_verify'
+            resumed = bool(markers)
+            if markers:
+                marker = markers[0]
+                if marker.is_symlink() or not marker.is_file():
+                    raise InstallFailure(stage, 'rollback_marker_invalid')
+                progress = json.loads(marker.read_text(encoding='utf8'))
+                if (set(progress) != {'schema','release','dropin_sha256','restart_required','phase','pid_before_restart'}
+                        or progress['schema'] != 'cell-rollback@1'
+                        or progress['phase'] not in ('prepared','reloaded','restarting','restarted')
+                        or type(progress['restart_required']) is not bool
+                        or progress['pid_before_restart'] is not None and
+                        (type(progress['pid_before_restart']) is not int or progress['pid_before_restart'] <= 0)):
+                    raise InstallFailure(stage, 'rollback_marker_invalid')
+                tag = progress['release']
+                if (not isinstance(tag,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', tag)
+                        or marker.name != '.value-pick-rollback-' + tag + '.json'
+                        or release is not None and tag != release
+                        or progress['dropin_sha256'] != hashlib.sha256(self.expected_dropin(launch,tag).encode()).hexdigest()):
+                    raise InstallFailure(stage, 'rollback_marker_identity_mismatch')
+            elif owned:
+                own = owned[0]; tag = own.name[len(PREFIX):-5]
+                if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', tag):
+                    raise InstallFailure(stage, 'release_mismatch')
+                expected = self.expected_dropin(launch, tag)
+                if own.is_symlink() or not own.is_file() or own.read_text(encoding='utf8') != expected:
+                    raise InstallFailure(stage, 'own_dropin_content_mismatch')
+                loaded = {safe_path(p) for p in self.show(unit,'DropInPaths').split()}
+                progress = {'schema':'cell-rollback@1','release':tag,
+                            'dropin_sha256':hashlib.sha256(expected.encode()).hexdigest(),
+                            'restart_required':launch['component'] is not None or own in loaded,
+                            'phase':'prepared','pid_before_restart':None}
+                marker = directory / ('.value-pick-rollback-' + tag + '.json')
+                atomic_json(marker,progress)
+            else:
+                if launch['component'] is not None:
+                    raise InstallFailure(stage,'own_dropin_not_unique')
+                # Already original: this repeat is a no-op while the original service is running.
+                active = self.show(unit,'ActiveState') == 'active' and self.show(unit,'SubState') == 'running'
+                baseline = self.number(unit,'NRestarts')
+                if not active:
+                    stage='rollback_restart';self.call([self.systemctl,'restart',unit]);restarted=True
+                stage='rollback_wait'
+                if not self.running(unit,baseline,reset_expected=restarted):
+                    raise InstallFailure(stage,'service_not_stable')
+                return {'ok':True,'stage':'already_original','removed':False,'restored':True,
+                        'restart_performed':restarted,'version_files_retained':True,**disclosure}
+            tag = progress['release']
+            if owned:
+                own = owned[0]
+                if (own.name != PREFIX + tag + '.conf' or own.is_symlink()
+                        or own.read_text(encoding='utf8') != self.expected_dropin(launch,tag)):
+                    raise InstallFailure(stage,'own_dropin_content_mismatch')
+                stage='rollback_remove';own.unlink()
+            removed=True
+            # Reload is idempotent, including a previous interruption after file removal.
+            stage='rollback_reload';self.call([self.systemctl,'daemon-reload'])
+            if progress['phase'] == 'prepared':
+                progress['phase']='reloaded';atomic_json(marker,progress)
+            active=self.show(unit,'ActiveState')=='active' and self.show(unit,'SubState')=='running'
+            baseline=self.number(unit,'NRestarts')
+            if progress['restart_required']:
+                current_pid=self.number(unit,'MainPID')
+                if current_pid is None or current_pid <= 0: current_pid=None
+                previous_pid=progress['pid_before_restart']
+                restart_already_finished=active and (progress['phase']=='restarted' or
+                    progress['phase']=='restarting' and current_pid is not None and
+                    (previous_pid is None or current_pid!=previous_pid))
+                if not restart_already_finished:
+                    stage='rollback_restart'
+                    progress['pid_before_restart']=current_pid;progress['phase']='restarting';atomic_json(marker,progress)
+                    self.call([self.systemctl,'restart',unit]);restarted=True
+                progress['phase']='restarted';atomic_json(marker,progress)
+            elif not active:
+                # The original entry was never replaced, but its independent failure must not be called restored.
+                raise InstallFailure('rollback_wait','original_service_not_running')
+            stage='rollback_wait'
+            if not self.running(unit,baseline,reset_expected=progress['restart_required']):
+                raise InstallFailure(stage,'service_not_stable')
+            stage='rollback_verify'
             if self.launch(unit)['component'] is not None:
-                raise InstallFailure(stage, 'original_entry_not_restored')
-            return {'ok': True, 'stage': 'rolled_back', 'removed': True, 'restored': True, 'version_files_retained': True, **disclosure}
-        except Exception as error:
-            return {'ok': False, 'stage': stage, 'removed': removed, 'restored': False, **disclosure,
-                    'reason': error.reason if isinstance(error, InstallFailure) else 'rollback_operation_failed'}
+                raise InstallFailure(stage,'original_entry_not_restored')
+            marker.unlink()
+            return {'ok':True,'stage':'rolled_back','removed':True,'restored':True,
+                    'resumed':resumed,'restart_performed':restarted,'version_files_retained':True,**disclosure}
+        except BaseException as error:
+            return {'ok':False,'stage':stage,'removed':removed,'restored':False,
+                    'restart_performed':restarted,'resume_available':marker is not None and marker.exists(),
+                    **disclosure,'reason':error.reason if isinstance(error,InstallFailure) else
+                    'interrupted' if isinstance(error,(InstallationInterrupted,KeyboardInterrupt)) else 'rollback_operation_failed'}
+
 
 
 def main():
@@ -423,24 +582,30 @@ def main():
     parser.add_argument('--timeout', type=float, default=30)
     parser.add_argument('--stable-seconds', type=float, default=10)
     args = parser.parse_args()
-    installer = Installer(timeout=args.timeout, stable_seconds=args.stable_seconds)
+    progress = (lambda phase:print(json.dumps({'installer_phase':phase}),file=sys.stderr,flush=True)) if args.operation=='install' else None
+    installer = Installer(timeout=args.timeout, stable_seconds=args.stable_seconds,progress=progress)
     try:
+        if args.operation in ('install','rollback'): installer.require_root()
         if args.operation == 'status':
             answer = installer.status(args.unit)
         elif args.operation == 'rollback':
-            answer = installer.rollback(args.unit, args.release)
+            with interrupt_signals(): answer = installer.rollback(args.unit, args.release)
         elif args.bundle is None:
             raise InstallFailure('arguments', 'bundle_required')
         elif args.operation == 'preflight':
             state = installer.preflight(args.bundle, args.unit)
-            answer = {'ok': True, 'stage': 'preflight_only_stop_for_review', 'version': state['facts']['version'], 'jobs': 0, 'leased': False, 'component_sha256': state['plan']['component_sha256']}
+            answer = {'ok': True, 'stage': 'preflight_only_stop_for_review', 'version': state['facts']['version'], 'jobs': 0, 'leased': False, 'component_sha256': state['plan']['component_sha256'], **observation_details(state['facts'])}
         else:
-            answer = installer.install(args.bundle, args.unit)
+            with interrupt_signals(): answer = installer.install(args.bundle, args.unit)
     except InstallFailure as error:
         answer = error.report()
+    except (InstallationInterrupted, KeyboardInterrupt):
+        answer = {'ok':False,'stage':installer.stage,'reason':'interrupted',
+                  'next_action':'读取status；安装或撤回中断时用rollback继续，不重新install' if args.operation in ('install','rollback') else '只读操作被中断，重新读取即可'}
     except Exception:
         answer = {'ok': False, 'stage': installer.stage, 'reason': 'operation_failed'}
-    print(json.dumps(answer, ensure_ascii=False))
+    try: print(json.dumps(answer, ensure_ascii=False),flush=True)
+    except BrokenPipeError: return 1
     return 0 if answer['ok'] else 1
 
 

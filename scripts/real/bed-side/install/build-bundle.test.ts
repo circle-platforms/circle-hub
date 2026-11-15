@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {existsSync,mkdtempSync,mkdirSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
+import {existsSync,mkdtempSync,mkdirSync,readFileSync,realpathSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test,type TestContext} from 'node:test';
@@ -20,17 +20,18 @@ function fixture(t:TestContext) {
   git(['add','scripts/real/bed-side']);
   git(['-c','user.name=Synthetic','-c','user.email=synthetic@example.invalid','-c','commit.gpgsign=false','commit','--quiet','-m','Synthetic snapshot']);
   const commit=git(['rev-parse','HEAD']);
-  const installer=join(root,'installer.py'),observer=join(root,'observe.py');
+  const installer=join(root,'installer.py'),observer=join(root,'observe.py'),probe=join(root,'probe.py');
   writeFileSync(installer,'raise RuntimeError("must not install")\n');writeFileSync(observer,'raise RuntimeError("must not observe real host")\n');
-  return {root,repo,commit,installer,observer,out:join(root,'bundle')};
+  writeFileSync(probe,'raise RuntimeError("must not probe real host")\n');
+  return {root,repo,commit,installer,observer,probe,out:join(root,'bundle')};
 }
 
-test('the offline bundle uses five immutable Git blobs, includes both scripts and records byte hashes',t=>{
+test('the offline bundle uses five immutable Git blobs, includes all three install scripts and records byte hashes',t=>{
   const f=fixture(t);writeFileSync(join(f.repo,'scripts/real/bed-side/entry.py'),'working tree differs');
   const plan=buildBundle(f);
   assert.equal(plan.source_commit,f.commit);
   for(const name of names){const bytes=readFileSync(join(f.out,'bed-side',name));assert.match(bytes.toString(),/synthetic frozen/);assert.equal(plan.component_sha256[name],hash(bytes));}
-  for(const [name,field] of [['installer.py','installer_sha256'],['observe.py','checker_sha256']])assert.equal(plan[field],hash(readFileSync(join(f.out,'install',name))));
+  for(const [name,field] of [['installer.py','installer_sha256'],['observe.py','checker_sha256'],['probe.py','probe_sha256']])assert.equal(plan[field],hash(readFileSync(join(f.out,'install',name))));
   assert.deepEqual(JSON.parse(readFileSync(join(f.out,'install-plan.json'),'utf8')),plan);
 });
 
@@ -63,6 +64,7 @@ test('partial revisions, unknown commits and missing runtime blobs cannot produc
 test('missing scripts, malformed inventories and existing destinations fail without overwrite',t=>{
   const f=fixture(t),objectsFile=join(f.root,'objects.json');
   assert.throws(()=>buildBundle({...f,observer:join(f.root,'absent.py')}));
+  assert.throws(()=>buildBundle({...f,probe:join(f.root,'absent-probe.py')}));
   for(const objects of [[],['a','a'],[' '],['a',1],{name:'a'}]){writeFileSync(objectsFile,JSON.stringify(objects));assert.throws(()=>buildBundle({...f,objectsFile}));}
   assert.equal(existsSync(f.out),false);
   mkdirSync(f.out);writeFileSync(join(f.out,'keep'),'untouched');assert.throws(()=>buildBundle(f));assert.equal(readFileSync(join(f.out,'keep'),'utf8'),'untouched');
@@ -71,7 +73,18 @@ test('missing scripts, malformed inventories and existing destinations fail with
 test('CLI stdout discloses counts and hashes but no operator object names or rule contents',t=>{
   const f=fixture(t),objectsFile=join(f.root,'objects.json'),base=join(f.root,'base.json');
   writeFileSync(objectsFile,JSON.stringify(['synthetic-private-object']));writeFileSync(base,JSON.stringify({synthetic_private_rule:true}));
-  const p=spawnSync(process.execPath,[fileURLToPath(new URL('./build-bundle.mjs',import.meta.url)),'--repo',f.repo,'--commit',f.commit,'--out',f.out,'--installer',f.installer,'--observer',f.observer,'--objects-file',objectsFile,'--base-hub-contract',base],{encoding:'utf8'});
-  assert.equal(p.status,0,p.stderr);const result=JSON.parse(p.stdout);assert.equal(result.object_count,1);assert.deepEqual(result.missing_requirements,[]);
+  const p=spawnSync(process.execPath,[fileURLToPath(new URL('./build-bundle.mjs',import.meta.url)),'--repo',f.repo,'--commit',f.commit,'--out',f.out,'--installer',f.installer,'--observer',f.observer,'--probe',f.probe,'--objects-file',objectsFile,'--base-hub-contract',base],{encoding:'utf8'});
+  assert.equal(p.status,0,p.stderr);const result=JSON.parse(p.stdout);assert.equal(result.object_count,1);assert.equal(result.probe_sha256,hash(readFileSync(f.probe)));assert.deepEqual(result.missing_requirements,[]);
   assert.ok(!p.stdout.includes('synthetic-private-object'));assert.ok(!p.stdout.includes('synthetic_private_rule'));assert.ok(!p.stdout.includes(f.root));
+});
+
+
+test('CLI defaults probe to its own directory without reading or executing a host probe',t=>{
+  const f=fixture(t),script=join(realpathSync(f.root),'build-bundle.mjs');
+  writeFileSync(script,readFileSync(fileURLToPath(new URL('./build-bundle.mjs',import.meta.url))));
+  const p=spawnSync(process.execPath,[script,'--repo',f.repo,'--commit',f.commit,'--out',f.out,'--installer',f.installer,'--observer',f.observer],{encoding:'utf8'});
+  assert.equal(p.status,0,p.stderr);
+  const plan=JSON.parse(readFileSync(join(f.out,'install-plan.json'),'utf8'));
+  assert.equal(plan.probe_sha256,hash(readFileSync(f.probe)));
+  assert.deepEqual(readFileSync(join(f.out,'install/probe.py')),readFileSync(f.probe));
 });

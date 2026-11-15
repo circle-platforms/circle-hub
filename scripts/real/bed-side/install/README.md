@@ -56,6 +56,10 @@ sudo "$SERVICE_PYTHON" "$INSTALLER_FILE" rollback --unit "$SERVICE_UNIT" --timeo
 
 主机安装/撤回由具备权限的运维身份运行：须能读取服务配置及状态，创建独立版本和本次 unit drop-in、将规则属主改为服务 User，并执行 systemctl daemon-reload/restart。通常使用该主机批准的 root/sudo 管理身份；不用普通 Hub 成员身份代替主机权限，也不在命令里携带 Hub 密钥。status 不执行修改，但能否读完整事实仍取决于主机权限；未知如实保留。预检后由 Boss 审阅，再执行 install；本地开发者不代替运维运行这些主机命令。
 
+install/rollback开头强制euid=0，非root在读安装材料或写任何发布/单元文件前停止；preflight/status不要求root，读不到仍报未知。INT/TERM/HUP（包括由SSH断开发来的挂断信号）触发自动撤回；安装阶段还在stderr写不含配置的阶段回执，控制管道断开时同样撤回；不可捕获的强杀/断电不能承诺自动执行清理。撤回的自有进度文件只存发布名、配置内容摘要、阶段和PID，不存路径、配置或凭据；中断后再次执行同一rollback即可继续，status的rollback_pending会提示待完成。保留进度文件，不能用重新install代替继续撤回。
+
+若新drop-in从未被daemon-reload加载、原服务仍运行，只删除本次配置并reload，然后观察原PID，不重新restart。若确已换入口则按记录完成必要restart与稳定观察，重复rollback不会重复删除其它配置或重启已确认恢复的原服务。版本目录仍保留。
+
 按已交回的主机事实，安装器和观测器统一使用**从现行ExecStart发现的服务专用解释器**（已报为3.12），不依赖登录PATH中的python3（已报为3.8）选解释器。框架原格式导出仍使用配置里的py38；服务及Hub格式导出沿服务解释器。完整路径只在主机内存中发现，不写死在材料里。status/rollback可用单独保留的安装器文件，不要求bundle。
 
 建议整次安装/撤回在批准的sudo管理身份下运行，避免中途提权失败使自动撤回失去权限。不需要root的复制/独立目录创建/纯文件导出也在该事务内执行；必须root的步骤是unit目录写入、chown、daemon-reload/restart。这样新版本目录和五个代码文件归root，普通服务账户不能自行清理，后清理须另行由管理身份执行；runtime状态目录和两份规则单独赋给服务User，runtime为0700。现有配置、两行Environment和WorkingDirectory符号链接不改。运维使用已有口令通道，不假设sudo -n可用，不在命令或日志中写口令。
@@ -63,6 +67,10 @@ sudo "$SERVICE_PYTHON" "$INSTALLER_FILE" rollback --unit "$SERVICE_UNIT" --timeo
 观测对所有主进程外进程一视同仁：短命读取/探测辅助进程也会使jobs非零，不把它猜成“可忽略的非作业”。重启会打断这类在途读取，安装前由运维停止持续调用方并保持窗口，再按当前事实重跑预检；不按进程名字豁免、不伪造空闲。
 
 包装状态在版本目录runtime/status.json；装后必须是当前MainPID的mode=cell。mode=original表示服务已降级只提供旧工具，缺失或旧PID状态为未知，均不满足安装成功。status显示配置入口和组件状态是两件事，wrapped不代表已启用取值。
+
+装后还调用随包固定摘要的probe.py：从现有配置的[listen]只读host/port及TLS配置是否存在，wildcard映射到回环，其余使用明确配置的IP；不接受任意URL/hostname，不读密钥/证书文件或代理环境，不带Authorization/Cookie，不跟随重定向。只发一次POST /mcp固定ping，未认证拒绝或匹配的RPC响应证明在答；404/重定向/HTML/超时不算成功，配置不可读也失败并自动撤回。HTTPS这一步仅探活，不代替固定CA身份和在线工具核对。preflight会核probe.py摘要，旧的无probe材料不能用于本次安装。
+
+三种严格判断不放宽，预检给可区分的diagnostics和中文notes：cgroup_extra_processes（主进程外活动，短命读取也算）；request_clock_included（总清单含查询会推进的clock_floor），前后变化时报request_clock_changed且仍拒绝；task_alive_missing（任务存活锁缺失，保持未知）。额外时钟摘要仅供说明，不把时钟从总摘要剔除，也不补造锁或删除历史任务来绕过。
 
 ## 只读观测的边界
 

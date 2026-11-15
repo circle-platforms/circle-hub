@@ -300,7 +300,16 @@ test('the new MCP submission reaches private files and pin while the original su
     writeFileSync(fake, `import hashlib,json,types
 from pathlib import Path
 PINNED_CONTRACT_SHA256='old-pin'
+EXECUTION_HEADERS=tuple('ABCDEFGHI')
+EXECUTION_SHEET_MARKER='SYNTHETIC_EXECUTION'
+CONTRACT_MARKER='SYNTHETIC_CONTRACT'
+RUNTIME_SCHEMA='synthetic-runtime@1'
+class ExcelContractError(ValueError): pass
 def resolve_execution_sheet(value,allow_legacy=False):
+    if not isinstance(value,dict):
+        sheet=value.worksheets[0];rows=list(sheet.iter_rows(min_col=1,max_col=9,values_only=True))
+        if rows[0][2]!=PINNED_CONTRACT_SHA256:raise ExcelContractError('synthetic identity mismatch')
+        return sheet,types.SimpleNamespace(header_row=2)
     assert value['pin']==PINNED_CONTRACT_SHA256,'wrong pin'
     return value
 def freeze(value): return resolve_execution_sheet(value)
