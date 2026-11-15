@@ -177,7 +177,7 @@ test('mixed verdicts and absent case notes remain local while workbook identity 
   assert.equal(missing.code, 0, missing.stderr); assert.equal(JSON.parse(await readFile(join(missingOut, 'delivery.json'), 'utf8')).cases[3].model_claims.absent, true);
   const bad = join(dir, 'bad');
   const other = await hub(['pass', 'pass'], Buffer.from('另一份工作簿')); t.after(other.close);
-  const wrongWorkbook = await run(other, await notes(NOTES), bad); assert.equal(wrongWorkbook.code, 1); assert.match(wrongWorkbook.stderr, /重新生成的自动化用例 Excel 与上机验证使用的文件不一致/);
+  const wrongWorkbook = await run(other, await notes(NOTES), bad); assert.equal(wrongWorkbook.code, 1); assert.match(wrongWorkbook.stderr, /上机验证工作簿摘要与其脚本编写结果不一致/);
   const extra = await run(both, await notes({ ...NOTES, [CASES[0]]: NOTES[CASES[1]] }), bad);
   assert.equal(extra.code, 1); assert.match(extra.stderr, /多了 990000000000000101（交付的用例不写说明）/);
   await assert.rejects(readdir(bad), 'invalid batch inputs write nothing');
@@ -885,4 +885,21 @@ test('an excluded preceding item cannot shift the latest failed recipe to anothe
   assert.deepEqual(await readFile(join(out,'unsuccessful_cases.xlsx')),Buffer.from(generateWorkbookSet(recipes.filter(recipe=>recipe.fields.autoid===CASES[1]),{merged:true})));
   const summary=JSON.parse(await readFile(join(out,'delivery.json'),'utf8'));
   assert.deepEqual(summary.unsuccessful_volume.items.map((item:{autoid:string})=>item.autoid),[CASES[1]]);
+});
+
+test('each dispatched item list must match the actual generated workbook',async(t)=>{
+  const h=await hub(undefined,undefined,{[FINAL]:[job('b',FINAL,PLAN2,[CASES[0]],plan2.workbook,['pass'])]});t.after(h.close);
+  const out=join(await mkdtemp(join(tmpdir(),'cc-workbook-binding-')),'out');
+  const result=await run(h,await notes(NOTES),out);
+  assert.equal(result.code,1,'a partial job item list must not ship the larger workbook');assert.match(result.stderr,/用例清单.*实际工作簿/);
+  assert.deepEqual(await readdir(out).catch(()=>[]),[]);
+});
+
+test('every dispatched workbook digest must match its original plan even outside the final pass volume',async(t)=>{
+  const earlier=job('a',WHOLE,PLAN1,CASES.slice(0,3),Buffer.from('different synthetic workbook'),['pass','fail','pass']);
+  const h=await hub(undefined,undefined,{[WHOLE]:[earlier]});t.after(h.close);
+  const out=join(await mkdtemp(join(tmpdir(),'cc-workbook-binding-')),'out');
+  const result=await run(h,await notes(NOTES),out);
+  assert.equal(result.code,1,'an earlier dispatch digest mismatch must not become case-local pending');assert.match(result.stderr,/工作簿摘要.*脚本编写结果/);
+  assert.deepEqual(await readdir(out).catch(()=>[]),[]);
 });

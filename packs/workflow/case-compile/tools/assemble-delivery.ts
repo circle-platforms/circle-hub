@@ -344,6 +344,19 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
 
     const inputsOf = (plan: RunInputs) => ({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory });
     const recipesOf = (plan: RunInputs) => satisfiedRecipes(inputsOf(plan));
+    // A dispatch's scope is the generated workbook's scope; rows cannot silently name only part of that file.
+    const workbookBindings = new Map<string, { sha256: string; autoids: string[] }>();
+    for (const dispatch of dispatches) {
+      let binding = workbookBindings.get(dispatch.plan_run);
+      if (!binding) {
+        const recipes = recipesOf(plans.get(dispatch.plan_run)!);
+        binding = { sha256: sha256(generateWorkbookSet(recipes)), autoids: recipes.map(recipe => String(recipe.fields.autoid)).sort() };
+        workbookBindings.set(dispatch.plan_run, binding);
+      }
+      if (canonicalJson(binding.autoids) !== canonicalJson([...dispatch.items].sort())) failCall('temporarily_unavailable', '上机验证用例清单与其实际工作簿的完整用例清单不一致，交付物尚未写入', '请维护者核对派发工作簿、逐条结果和脚本编写运行绑定，恢复一致的原始记录后重试');
+      if (dispatch.sha256 !== binding.sha256) failCall('temporarily_unavailable', '上机验证工作簿摘要与其脚本编写结果不一致，交付物尚未写入', '请维护者核对派发产物与原脚本编写结果，恢复对应的原始工作簿和记录后重试');
+    }
+
     // The reference engine's pass review (functions/delivery.ts failureLine): a pass whose words carry an execution-failure line
     // that the case's own assertions do not read is no verdict. The markers are the contract declaration of each dispatch's plan
     // run; the words are the run log the Hub saved for the row, checked against its digest (the reference engine reads only
