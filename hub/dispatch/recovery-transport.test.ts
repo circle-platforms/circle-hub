@@ -3,7 +3,7 @@ import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {test} from 'node:test';
 import {ExecutorDefinition} from './definition.ts';
-import {RpcClient,IncompleteReplyError,InvocationDefinitionError} from './transport.ts';
+import {RpcClient,IncompleteReplyError,InvocationDefinitionError,ResponseStorageError} from './transport.ts';
 import {definition} from './testing/definition.ts';
 import {startEndpoint} from './testing/server.ts';
 
@@ -64,7 +64,9 @@ test('aborting a read saves received bytes and waits for committed storage befor
   await client.connect();
   const result=client.call('query',{request_id:'synthetic-request'}).then(value=>{settled=true;return value;},error=>{settled=true;return error;});
   await stored.promise;assert.equal(settled,false);assert.equal(bytes,'synthetic partial answer');assert.equal(complete,false);
-  commit.resolve();assert.ok(await result instanceof IncompleteReplyError);
+  let drained=false;const draining=client.drainReads().then(()=>{drained=true;});
+  await Promise.resolve();assert.equal(drained,false);
+  commit.resolve();assert.ok(await result instanceof IncompleteReplyError);await draining;assert.equal(drained,true);
 });
 
 test('an already aborted initialization performs no network call and stores the empty incomplete observation',async t=>{
@@ -88,4 +90,39 @@ test('an aborted read signal never cancels a normal submit',async t=>{
   const client=new RpcClient(ExecutorDefinition.parse(definition(endpoint.endpoint)),'synthetic-secret','synthetic-job',save,undefined,undefined,{signal:controller.signal});await client.connect();controller.abort();
   const answer=await client.call('submit',{request_id:'synthetic-request',dispatch_sequence:1,sequence_scope:'synthetic-scope',payload_base64:'eA==',sha256:'a'.repeat(64),items:[],lease_id:'synthetic-lease'});
   assert.equal((answer.value as {ok:boolean}).ok,true);assert.equal(endpoint.calls.filter(c=>c.method==='tools/call').length,1);
+});
+
+
+test('drain waits for every concurrent non-submit call storage commit, not merely aborted IO',{timeout:10000},async t=>{
+  const controller=new AbortController(),querySaved=Promise.withResolvers<void>(),statusSaved=Promise.withResolvers<void>(),queryCommit=Promise.withResolvers<void>(),statusCommit=Promise.withResolvers<void>();
+  const endpoint=await startEndpoint(reads,()=>({ok:true}));t.after(()=>endpoint.close());
+  const client=new RpcClient(recoveryDefinition(endpoint.endpoint),'synthetic-secret','synthetic-job',async(_bytes,_status,op)=>{if(op==='query'){querySaved.resolve();await queryCommit.promise;}if(op==='status'){statusSaved.resolve();await statusCommit.promise;}return source;},undefined,undefined,{recovery:true,signal:controller.signal});
+  await client.connect();
+  const query=client.call('query',{request_id:'synthetic-request'}),status=client.call('status',{remote_id:'synthetic-remote'});
+  await Promise.all([querySaved.promise,statusSaved.promise]);controller.abort();
+  let drained=false;const draining=client.drainReads().then(()=>{drained=true;});await Promise.resolve();assert.equal(drained,false);
+  queryCommit.resolve();await query;assert.equal(drained,false,'the second save commit is still pending');
+  statusCommit.resolve();await status;await draining;assert.equal(drained,true);
+});
+
+test('drain covers the whole connection sequence after abort during initialization storage',{timeout:10000},async t=>{
+  const controller=new AbortController(),saved=Promise.withResolvers<void>(),commit=Promise.withResolvers<void>();
+  const endpoint=await startEndpoint(reads,()=>({ok:true}));t.after(()=>endpoint.close());
+  const client=new RpcClient(recoveryDefinition(endpoint.endpoint),'synthetic-secret','synthetic-job',async(_bytes,_status,op)=>{if(op==='initialize'){saved.resolve();await commit.promise;}return source;},undefined,undefined,{recovery:true,signal:controller.signal});
+  const connection=client.connect().then(()=>null,error=>error);await saved.promise;controller.abort();
+  let drained=false;const draining=client.drainReads().then(()=>{drained=true;});await Promise.resolve();assert.equal(drained,false);
+  commit.resolve();assert.ok(await connection instanceof IncompleteReplyError);await draining;assert.equal(drained,true);
+  assert.deepEqual(endpoint.calls.map(call=>call.method),['initialize']);
+});
+
+test('drain includes declaredRead save failures and excludes a normal submit still awaiting its commit',{timeout:10000},async t=>{
+  const readSaved=Promise.withResolvers<void>(),readCommit=Promise.withResolvers<void>(),submitSaved=Promise.withResolvers<void>(),submitCommit=Promise.withResolvers<void>();
+  const endpoint=await startEndpoint(definition('x').allowed_tools,()=>({ok:true}));t.after(()=>endpoint.close());
+  const cfg=ExecutorDefinition.parse(definition(endpoint.endpoint));
+  const client=new RpcClient(cfg,'synthetic-secret','synthetic-job',async(_bytes,_status,op)=>{if(op==='synthetic-read'){readSaved.resolve();await readCommit.promise;throw new Error('synthetic commit refusal');}if(op==='submit'){submitSaved.resolve();await submitCommit.promise;}return source;});await client.connect();
+  const read=client.declaredRead(cfg.calls.precheck,{},'synthetic-read').then(()=>null,error=>error);await readSaved.promise;
+  let drained=false;const draining=client.drainReads().then(()=>{drained=true;});await Promise.resolve();assert.equal(drained,false);
+  readCommit.resolve();assert.ok(await read instanceof ResponseStorageError);await draining;assert.equal(drained,true);
+  const submit=client.call('submit',{request_id:'synthetic-request',dispatch_sequence:1,sequence_scope:'synthetic-scope',payload_base64:'eA==',sha256:'a'.repeat(64),items:[],lease_id:'synthetic-lease'});await submitSaved.promise;
+  await client.drainReads();submitCommit.resolve();await submit;
 });
