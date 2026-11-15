@@ -5326,8 +5326,8 @@
       },
       {
         "code": "CALL_METHOD_UNSUPPORTED",
-        "when": "HTTP调用的方法不受该入口支持，尚未进入业务处理器",
-        "fix": "请使用该入口支持的HTTP方法",
+        "when": "HTTP或RPC调用方法由抛出处明确判定不受支持；是否进入业务另由call_not_executed独立给出，不能由类别反推",
+        "fix": "请使用该入口支持的调用方法",
         "callErrorCategory": "invalid_parameters"
       },
       {
@@ -5338,7 +5338,7 @@
       },
       {
         "code": "CALL_REQUEST_INVALID",
-        "when": "HTTP入口实际核对请求无效，尚未进入业务处理器；不从任意业务错误或状态推断",
+        "when": "调用的请求格式或参数由抛出处明确判定无效；是否进入业务另由call_not_executed独立给出，不能由类别反推",
         "fix": "请按该入口的请求格式改正后重试",
         "callErrorCategory": "invalid_parameters"
       },
