@@ -1,3 +1,4 @@
+import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
 // The scenario-fidelity briefs of a plan directory (functions/fidelity.ts), for the audit a fresh session makes before the plans
 // are submitted (tools/fidelity.md). Length placeholders are expanded first, exactly as tools/submit-plans.ts does before
@@ -25,7 +26,7 @@ export const verdictFile = (directory: string, base: string, sha256: string): st
 /** Every case file of a plan directory that has authored actions, with the brief of its plan as it stands now (placeholders expanded). */
 export async function planCases(runPath: string, plans: string): Promise<{ cases: PlanCase[]; skipped: Array<{ file: string; reason: string }> }> {
   const run = parsedPlanFile('run.json', await readFile(runPath));
-  if (!isRecord(run) || !Array.isArray(run.items)) throw new Error('--run 请使用脚本编写时下载的原始用例文件');
+  if (!isRecord(run) || !Array.isArray(run.items)) throw new CallFailure('invalid_parameters', '--run 请使用脚本编写时下载的原始用例文件', "请核对 --run 的冻结运行和 --plans 中的当前计划，再重新生成保真简报");
   const items = new Map(run.items.filter(isRecord).filter((i) => typeof i.id === 'string').map((i) => [i.id as string, i]));
   await expandPlanFiles(plans);
   const cases: PlanCase[] = [], skipped: Array<{ file: string; reason: string }> = [];
@@ -34,7 +35,7 @@ export async function planCases(runPath: string, plans: string): Promise<{ cases
     if (!isRecord(value) || typeof value.item !== 'string') { skipped.push({ file, reason: '不是用例自动化用例文件（没有 item）' }); continue; }
     const item = items.get(value.item);
     if (!item) { skipped.push({ file, reason: `不属于本次脚本编写的原始用例` }); continue; }
-    const eligibility = planStateOf(value);
+    const eligibility = planStateOf(value, undefined, run);
     if (!eligibility.process) { skipped.push({ file, reason: eligibility.reason! }); continue; }
     const data = planDataOf(value);
     const { fidelity: _judged, ...plan } = isRecord(data) ? data : {};

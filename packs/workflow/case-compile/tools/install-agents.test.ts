@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cp, mkdtemp, mkdir, readFile, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
@@ -35,7 +36,7 @@ test('install-agents installs verified agents, skips matching ones, and updates 
     const fixedTime = new Date(1_700_000_000_000);
     for (const name of AGENT_FILES) {
       const dest = join(workDir, '.circle/agents', name);
-      const src = await readFile(join(packDir, 'agents', name));
+      const src = Buffer.from((await readFile(join(packDir, 'agents', name), 'utf8')).split('<技能目录>').join(realpathSync(packDir)));
       assert.deepEqual(await readFile(dest), src);
       await utimes(dest, fixedTime, fixedTime);
     }
@@ -52,18 +53,9 @@ test('install-agents installs verified agents, skips matching ones, and updates 
 
     // Mutate one target file -> only that file is updated; others remain untouched.
     await writeFile(join(workDir, '.circle/agents/compile-writer.md'), 'stale content\n');
-    const third = await installAgents({ packRoot: packDir, cwd: workDir });
-    assert.deepEqual(third.installed, []);
-    assert.deepEqual(third.updated, ['compile-writer.md']);
-    assert.deepEqual(third.unchanged, [
-      'compile-attributor.md',
-      'compile-fidelity.md',
-      'compile-recomposer.md',
-    ]);
-    assert.deepEqual(
-      await readFile(join(workDir, '.circle/agents/compile-writer.md')),
-      await readFile(join(packDir, 'agents/compile-writer.md')),
-    );
+    await assert.rejects(installAgents({ packRoot: packDir, cwd: workDir }), /用户修改或不属于本包/);
+    assert.equal(await readFile(join(workDir, '.circle/agents/compile-writer.md'), 'utf8'), 'stale content\n');
+
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -180,4 +172,55 @@ test('staged CLI executes in workDir without leaking absolute paths and rejects 
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('install-agents upgrades only receipted bytes and removes only unchanged obsolete definitions', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-install-upgrade-'));
+  try {
+    const packDir = await stage(join(root, 'skill with spaces'));
+    const workDir = join(root, 'work'); await mkdir(workDir);
+    await installAgents({ packRoot: packDir, cwd: workDir });
+    const target = join(workDir, '.circle/agents');
+    await writeFile(join(target, 'user-role.md'), 'user-owned definition');
+    const obsolete = Buffer.from('old packaged role');
+    await writeFile(join(target, 'old-role.md'), obsolete);
+    const receiptPath = join(target, '.case-compile.agents.json');
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
+    receipt.files['old-role.md'] = sha256Hex(obsolete);
+    await writeFile(receiptPath, JSON.stringify(receipt));
+    const manifestPath = join(packDir, 'pack.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    const definitionPath = join(packDir, 'agents/compile-writer.md');
+    const upgraded = Buffer.from((await readFile(definitionPath, 'utf8')) + '\nSynthetic role upgrade\n');
+    await writeFile(definitionPath, upgraded);
+    const entry = manifest.files.find((entry: { path: string }) => entry.path === 'agents/compile-writer.md');
+    entry.sha256 = sha256Hex(upgraded); entry.size = upgraded.length;
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    const result = await installAgents({ packRoot: packDir, cwd: workDir });
+    assert.deepEqual(result.updated, ['compile-writer.md']);
+    assert.match(await readFile(join(target, 'compile-writer.md'), 'utf8'), /Synthetic role upgrade/);
+    await assert.rejects(stat(join(target, 'old-role.md')));
+    assert.equal(await readFile(join(target, 'user-role.md'), 'utf8'), 'user-owned definition');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('install-agents preserves edited obsolete definitions and refuses before any definition write', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-install-user-'));
+  try {
+    const packDir = await stage(join(root, 'skill'));
+    const workDir = join(root, 'work'); await mkdir(workDir);
+    await installAgents({ packRoot: packDir, cwd: workDir });
+    const target = join(workDir, '.circle/agents');
+    const receiptPath = join(target, '.case-compile.agents.json');
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
+    receipt.files['old-role.md'] = sha256Hex(Buffer.from('old packaged role'));
+    await writeFile(receiptPath, JSON.stringify(receipt));
+    await writeFile(join(target, 'old-role.md'), 'user edited old role');
+    const before = await readFile(join(target, 'compile-writer.md'));
+    await assert.rejects(installAgents({ packRoot: packDir, cwd: workDir }), /用户修改或不属于本包/);
+    assert.equal(await readFile(join(target, 'old-role.md'), 'utf8'), 'user edited old role');
+    assert.deepEqual(await readFile(join(target, 'compile-writer.md')), before);
+    await writeFile(receiptPath, '{');
+    await assert.rejects(installAgents({ packRoot: packDir, cwd: workDir }), /安装回执不是完整 JSON/);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
