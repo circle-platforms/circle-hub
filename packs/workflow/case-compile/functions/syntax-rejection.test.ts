@@ -39,8 +39,8 @@ test('a case whose last device output holds a syntax rejection does not close as
   const texts = { c1: ['合成日志', TYPED_AT_THE_WRONG_PROMPT], c2: ['合成日志', 'seat(config)#widget sync to peer-b\nsync refused by the peer\nseat(config)#\n'] };
   const closed = closeFailed([failed('c1'), failed('c2')], notes, { c1: 3, c2: 1 }, authored, texts);
   assert.deepEqual(closed.cases.map((c) => c.closing), [undefined, 'device_defect'], 'the device accepted the command in c2 and refused to act: a candidate');
-  assert.equal(closed.problems.length, 1);
-  assert.match(closed.problems[0], /用例 c1 判断设备的问题时，它最后一次上机里设备用 \^ 拒绝了命令 “widget sync to peer-b”（在 seat# 下）、“widget sync rollback peer-b”（在 seat# 下）。.*请重新判断原因，先修这条命令再做上机验证；最多重交 3 次，仍未核对正确时写明编写模型的问题/);
+  assert.equal(closed.cases[0].pending!.length, 1);
+  assert.match(closed.cases[0].pending![0], /用例 c1 判断设备的问题时，它最后一次上机里设备用 \^ 拒绝了命令 “widget sync to peer-b”（在 seat# 下）、“widget sync rollback peer-b”（在 seat# 下）。.*请重新判断原因，先修这条命令再做上机验证；最多重交 3 次，仍未核对正确时只陈述这些内容的核验结果，原因未查清就保留未知/);
   // Without the candidate the same case closes by its rounds, as before.
   const plain = closeFailed([failed('c1')], { cases: { c1: { judged: '合成判断', remedy: '合成修法' } } }, { c1: 3 }, authored, texts);
   assert.deepEqual([plain.cases[0].closing, plain.problems], ['authoring_failure', []]);

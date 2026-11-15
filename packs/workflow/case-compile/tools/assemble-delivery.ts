@@ -1,15 +1,14 @@
-import { isAttribution } from '../functions/generated/vocabulary.ts';
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { formatCallError, isRecord } from '../functions/text.ts';
+import { formatCallError, isRecord, failCall, CallFailure } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
+import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { hubOrigin, HubReplyError, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { fetchBytesRetrying, getRetrying, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, RetryExhaustedError, type RetryControl } from '../functions/hub-retry.ts';
+import { fetchBytesRetrying, getRetrying, downloadRetryControl, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, RetryExhaustedError, type RetryControl } from '../functions/hub-retry.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
 import { parsedPlanFile } from './submit-plans.ts';
@@ -20,21 +19,22 @@ function options(argv: string[]): Record<string, string> {
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i]?.startsWith('--') ? argv[i].slice(2) : '';
     if (key === 'scope') {
-      throw new Error('参数无效：交付时不允许从本地 --scope 文件收窄范围（按范围交付须在开运行时传入 parameters.scope 锚定到 Hub 运行记录）。参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次');
+      failCall('invalid_parameters', '交付时不允许从本地 --scope 文件收窄范围（按范围交付须在开运行时传入 parameters.scope 锚定到 Hub 运行记录）。参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次', '请使用 --hub、--runs、--notes 和 --out 的合法写法重试');
     }
-    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) throw new Error('参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次');
+    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) failCall('invalid_parameters', '参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次', '请使用 --hub、--runs、--notes 和 --out 的合法写法重试');
     values[key] = argv[i + 1];
   }
   const missing = Object.entries(OPTIONS).filter(([key, required]) => required && !values[key]).map(([key]) => '--' + key);
   if (missing.length) {
-    throw new Error(
-      `参数无效：缺少参数：${missing.join('、')}${missing.includes('--notes') ? '（--notes 为模型手写的说明 JSON 文件路径）' : ''}。参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次`,
-    );
+    failCall('invalid_parameters', `缺少参数：${missing.join('、')}${missing.includes('--notes') ? '（--notes 为模型手写的说明 JSON 文件路径）' : ''}。参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次`, '请使用 --hub、--runs、--notes 和 --out 的合法写法重试');
   }
   return values;
 }
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
-const decode = (bytes: Uint8Array) => new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+function hubDocument(bytes: Uint8Array): unknown {
+  try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
+  catch { failCall('temporarily_unavailable', 'Hub 元数据不是完整的 UTF-8 JSON，尚未据此生成结论', '请维护者恢复原运行完整的元数据后重试'); }
+}
 function localTime(date: Date): string { const p = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}`; }
 const autoidOf = (item: unknown): string | null => isRecord(item) && isRecord(item.fields) && typeof item.fields.autoid === 'string' ? item.fields.autoid : null;
 function excludedOf(run: Record<string, unknown>): string[] { const p = run.parameters; return isRecord(p) && Array.isArray(p.exclude) ? p.exclude.filter((v): v is string => typeof v === 'string') : []; }
@@ -43,11 +43,11 @@ function frozenScopeOf(run: Record<string, unknown>, label: string): FrozenScope
   const p = run.parameters;
   if (!isRecord(p) || p.scope === undefined) return null;
   if (Array.isArray(p.exclude) && p.exclude.length > 0) {
-    throw new Error(`参数无效：Hub 运行记录 ${label} 同时写入了 parameters.scope 与 parameters.exclude，二者互斥。请重新用 start_run 单独使用其中一项后重试`);
+    failCall('invalid_parameters', `Hub 运行记录 ${label} 同时写入了 parameters.scope 与 parameters.exclude，二者互斥。请重新用 start_run 单独使用其中一项后重试`, '请重新开运行并传入一致的冻结范围后重试');
   }
   const raw = p.scope;
   if (!isRecord(raw) || Object.keys(raw).some((k) => k !== 'words' && k !== 'cases') || typeof raw.words !== 'string' || !raw.words.trim() || !Array.isArray(raw.cases) || !raw.cases.length || raw.cases.some((v) => typeof v !== 'string' || !v) || new Set(raw.cases).size !== raw.cases.length) {
-    throw new Error(`参数无效：Hub 运行记录 ${label} 中的 parameters.scope 不完整或格式无效。请重新用 start_run 按规范传入 parameters.scope 并完成上机验证后重试`);
+    failCall('invalid_parameters', `Hub 运行记录 ${label} 中的 parameters.scope 不完整或格式无效。请重新用 start_run 按规范传入 parameters.scope 并完成上机验证后重试`, '请重新开运行并传入一致的冻结范围后重试');
   }
   return { words: raw.words.trim(), cases: [...(raw.cases as string[])] };
 }
@@ -76,8 +76,8 @@ function atomOriginal(item: Record<string, unknown>): { autoid: string; original
   return { autoid: f.case_id, original: { title, lines: lines.map(({ text, expected }) => ({ text, expected })) } };
 }
 async function emptyOrAbsent(directory: string): Promise<void> {
-  const entries = await readdir(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return [] as string[]; throw new Error('--out 无法读取'); });
-  if (entries.length) throw new Error(`--out 目录里已有 ${entries.slice(0, 3).join('、')}${entries.length > 3 ? ' 等' : ''}，不覆盖；另选一个新目录`);
+  const entries = await readdir(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return [] as string[]; throw error; });
+  if (entries.length) failCall('occupied', `--out 目录里已有 ${entries.slice(0, 3).join('、')}${entries.length > 3 ? ' 等' : ''}，不覆盖；另选一个新目录`, '请检查目录读取权限并选择新的空输出目录');
 }
 
 /** The reference that names a compilation: the recomposition result a plan run is bound to, or else the document it judges. */
@@ -88,9 +88,9 @@ function lineageKeyOf(sources: unknown): string | null {
 const lineageKey = (run: Record<string, unknown>) => lineageKeyOf(run.sources);
 /** The Hub's run-successors@1 answer for `run`: the runs started from it that the reader may export. */
 function parseSuccessors(value: unknown, run: string): Array<{ run: string; pack: string; started_at: string; parameters: Record<string, unknown>; sources: unknown }> {
-  if (!isRecord(value) || value.schema !== 'run-successors@1' || value.run !== run || !Array.isArray(value.successors)) throw new Error(`Hub 返回的后续脚本编写和上机验证信息不完整`);
+  if (!isRecord(value) || value.schema !== 'run-successors@1' || value.run !== run || !Array.isArray(value.successors)) failCall('temporarily_unavailable', `Hub 返回的后续脚本编写和上机验证信息不完整`, '请维护者核对原运行导出协议与完整性后重试');
   return value.successors.map((r) => {
-    if (!isRecord(r) || typeof r.run !== 'string' || !RUN_ID.test(r.run) || typeof r.pack !== 'string' || typeof r.started_at !== 'string' || !isRecord(r.parameters) || !Array.isArray(r.sources)) throw new Error(`Hub 返回的后续脚本编写和上机验证信息不完整`);
+    if (!isRecord(r) || typeof r.run !== 'string' || !RUN_ID.test(r.run) || typeof r.pack !== 'string' || typeof r.started_at !== 'string' || !isRecord(r.parameters) || !Array.isArray(r.sources)) failCall('temporarily_unavailable', `Hub 返回的后续脚本编写和上机验证信息不完整`, '请维护者核对原运行导出协议与完整性后重试');
     return { run: r.run, pack: r.pack, started_at: r.started_at, parameters: r.parameters, sources: r.sources };
   });
 }
@@ -113,13 +113,9 @@ export function missingFactOf(exported: unknown, run: string, id: string): Missi
   if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== run || !isRecord(exported.result) || exported.result.run !== run || !isRecord(exported.result.partitions)) return null;
   for (const entries of Object.values(exported.result.partitions)) for (const entry of Array.isArray(entries) ? entries : []) {
     if (!isRecord(entry) || entry.item !== id || !Array.isArray(entry.requirements)) continue;
-    for (const requirement of entry.requirements) {
-      if (!isRecord(requirement) || typeof requirement.requirement !== 'string' || requirement.requirement === 'workbook_verified' || requirement.status === 'satisfied' || !Array.isArray(requirement.layers)) continue;
-      const layers = requirement.layers.filter(isRecord);
-      const gaps = layers.flatMap(layer => [layer, ...(Array.isArray(layer.gaps) ? layer.gaps.filter(isRecord) : [])]);
-      const dataGaps = gaps.filter(gap => (gap.attribution === 'data_gap' || gap.reason === 'missing_input') && typeof gap.missing === 'string' && isRecord(gap.exit) && gap.exit.action === 'request');
-      if (dataGaps.length) return { kind: 'data_gap', plan_run: run, requirement: requirement.requirement, missing: dataGaps.map(gap => gap.missing).join('；'), gaps: dataGaps.map(gap => ({ missing: gap.missing as string, reason: typeof gap.reason === 'string' ? gap.reason : undefined, exit: gap.exit })), exit: dataGaps[0].exit, attributions: [...new Set(['data_gap' as const, ...layers.flatMap(layer => isAttribution(layer.attribution) ? [layer.attribution] : [])])] };
-    }
+    const basis = caseBasisOf(exported, run, id);
+    const dataGaps = basis?.gaps.filter(gap => gap.requirement !== 'workbook_verified' && (gap.attribution === 'data_gap' || gap.reason === 'missing_input') && typeof gap.missing === 'string' && isRecord(gap.exit) && gap.exit.action === 'request') ?? [];
+    if (dataGaps.length) return { kind: 'data_gap', plan_run: run, requirement: dataGaps[0].requirement, missing: dataGaps.map(gap => gap.missing).join('；'), gaps: dataGaps.map(gap => ({ missing: gap.missing!, ...(gap.reason ? { reason: gap.reason } : {}), exit: gap.exit })), exit: dataGaps[0].exit, attributions: [...new Set(['data_gap' as const, ...(basis?.attributions ?? [])])] };
     // "The repair rounds were used up" is the run's own counter, not the reason alone: the Hub marks a requirement that has no
     // repair rounds of its own (the plan slot) repair_exhausted the first time an item is handed in as skipped, so in run 20 a
     // case declared skipped once, with every round still unused, already carried that reason.
@@ -144,13 +140,14 @@ function withoutAudit(slots: unknown): unknown {
   return { ...slots, ...(slots.plan !== undefined ? { plan: Array.isArray(slots.plan) ? slots.plan.map(strip) : strip(slots.plan) } : {}) };
 }
 /** A case's plan in a plan run, as its digest: the slots the model submitted for it (a rerun of the same plan has the same digest). */
-export function planDigest(plan: RunInputs, autoid: string): string {
+export function planDigest(plan: RunInputs, autoid: string): string | null {
   const item = (plan.run.items as unknown[] ?? []).find((i) => autoidOf(i) === autoid);
   const id = isRecord(item) ? item.id : undefined;
   const entry = Array.isArray(plan.submission.items) ? plan.submission.items.find((s) => isRecord(s) && s.item === id) : undefined;
-  return isRecord(entry) && id !== undefined ? sha256(canonicalJson(withoutAudit(entry.slots ?? null))) : `run:${String(plan.run.run)}`;
+  return isRecord(entry) && id !== undefined && isRecord(entry.slots) && entry.slots.plan !== undefined ? sha256(canonicalJson(withoutAudit(entry.slots))) : null;
 }
 
+class CitationUnavailable extends Error {}
 // A whole knowledge root uses the run download's larger response limit.
 async function knowledgeBatch(origin: string, bearer: string, run: string, retry?: RetryControl): Promise<Uint8Array> {
   let bytes: Uint8Array;
@@ -162,45 +159,51 @@ async function knowledgeBatch(origin: string, bearer: string, run: string, retry
       oversizeMessage: '手册和命令树超过可读取的大小，原始用例与手册冲突的判断尚未核对',
     }));
   } catch (error) {
-    if (error instanceof HubReplyError && error.status === 404) {
-      throw new Error(`Hub 无法读取脚本编写时使用的手册和命令树，原始用例与手册冲突的判断尚未核对`);
-    }
-    if (error instanceof RetryExhaustedError || error instanceof HubReplyError) throw error;
-    if (error instanceof Error && error.message === '手册和命令树超过可读取的大小，原始用例与手册冲突的判断尚未核对') throw error;
-    throw new Error(`暂时不可用：Hub 尚未返回脚本编写时使用的手册和命令树。请稍后用同一命令重新下载`);
+    throw new CitationUnavailable(error instanceof HubReplyError && error.status === 404
+      ? 'Hub 无法读取脚本编写时使用的手册和命令树，原始用例与手册冲突的判断尚未核对'
+      : '尚未取得可用于逐字核对的手册和命令树，缺少来源读取结果；本次不判断该模型主张真假');
   }
-  if (!digest || digest !== sha256(bytes)) throw new Error('手册和命令树与保存的原件不一致，原始用例与手册冲突的判断尚未核对');
+  if (!digest || digest !== sha256(bytes)) failCall('temporarily_unavailable', '手册和命令树与保存的原件不一致，原始用例与手册冲突的判断尚未核对', '请维护者按原摘要恢复可信原件，再核验引文');
   return bytes;
 }
-async function citedStatements(origin: string, bearer: string, cited: ReadonlySet<string>, planRuns: readonly string[], rootOf: (run: string) => unknown, retry?: RetryControl): Promise<Map<string, string>> {
+async function citedStatements(origin: string, bearer: string, cited: ReadonlySet<string>, planRuns: readonly string[], rootOf: (run: string) => unknown, retry?: RetryControl): Promise<{ statements: Map<string, string>; unavailable: Map<string, string> }> {
+  const unavailable = new Map<string, string>();
   const statements = new Map<string, string>();
   const roots = new Set([...cited].flatMap((reference) => { const root = /^tree:([0-9a-f]{64})\//.exec(reference)?.[1]; return root ? [root] : []; }));
   for (const root of roots) {
     const holder = [...planRuns].reverse().find((run) => rootOf(run) === root);
     if (!holder) continue;
-    const batch = lockedStatements(await knowledgeBatch(origin, bearer, holder, retry), holder, cited);
-    if (batch.root !== root) throw new Error(`手册和命令树与脚本编写时使用的构建不一致，原始用例与手册冲突的判断尚未核对`);
+    let bytes: Uint8Array;
+    try { bytes = await knowledgeBatch(origin, bearer, holder, retry); }
+    catch (error) {
+      if (!(error instanceof CitationUnavailable)) throw error;
+      for (const reference of cited) if (reference.startsWith(`tree:${root}/`)) unavailable.set(reference, error.message);
+      continue;
+    }
+    const batch = lockedStatements(bytes, holder, cited);
+    if (batch.root !== root) failCall('temporarily_unavailable', `手册和命令树与脚本编写时使用的构建不一致，原始用例与手册冲突的判断尚未核对`, '请维护者核对冻结构建、根身份与原件摘要后重试');
     for (const [reference, statement] of batch.statements) statements.set(reference, statement);
   }
-  return statements;
+  return { statements, unavailable };
 }
 
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, now: () => Date = () => new Date(), retry?: RetryControl): Promise<number> {
   try {
     const args = options(argv);
     const runs = args.runs.split(',').map((v) => v.trim()).filter(Boolean);
-    if (!runs.length || runs.some((run) => !RUN_ID.test(run)) || (args.recompose !== undefined && !RUN_ID.test(args.recompose))) throw new Error('--runs 请按上机验证的先后顺序填写编号，以逗号分隔；--recompose 请填写用例重组的编号');
-    // The notes are a file the model writes and edits by hand: a break in it is named with its place and the text around it, as
+    if (!runs.length || runs.some((run) => !RUN_ID.test(run)) || (args.recompose !== undefined && !RUN_ID.test(args.recompose))) failCall('invalid_parameters', '--runs 请按上机验证的先后顺序填写编号，以逗号分隔；--recompose 请填写用例重组的编号', '请核对运行、范围、产物身份和原始输入，修正后重试');
+    // The notes are model-authored input: a parse failure identifies the file and repair action, as
     // submit-plans does for a case file (in run 20 the shared reader's answer told the model to export the run's input again).
     const notesValue = parsedPlanFile(`说明文件 ${basename(args.notes)}`, await readSubmittedFileBytes(args.notes, 'notes'));
     await emptyOrAbsent(args.out);
     const origin = hubOrigin(args.hub);
     const bearer = await requireBearerToken(readToken);
+    const sourceRetry = downloadRetryControl(args.out, retry);
 
-    const jobsOf = async (run: string) => parseRunJobs(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/jobs`, bearer, retry))), run);
-    const successorsOf = async (run: string) => parseSuccessors(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/successors`, bearer, retry))), run);
+    const jobsOf = async (run: string) => parseRunJobs(hubDocument(await getRetrying(`${origin}/run-export/${run}/jobs`, bearer, retry)), run);
+    const successorsOf = async (run: string) => parseSuccessors(hubDocument(await getRetrying(`${origin}/run-export/${run}/successors`, bearer, retry)), run);
     const plans = new Map<string, RunInputs>();
-    const planOf = async (run: string) => { if (!plans.has(run)) plans.set(run, await fetchRunInputs(origin, bearer, run, retry)); return plans.get(run)!; };
+    const planOf = async (run: string) => { if (!plans.has(run)) plans.set(run, await fetchRunInputs(origin, bearer, run, sourceRetry)); return plans.get(run)!; };
     const given = new Map<string, Dispatch>();
     for (const run of runs) given.set(run, settledDispatch(run, await jobsOf(run)));
 
@@ -208,10 +211,14 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     // under the same booking bound to the same recomposition, or the same document without one) is read from the Hub's lineage,
     // so a dispatch the model left out still counts (decision 162).
     const keys = new Set<string>(), roots = new Set<string>(), started = new Map<string, string>(), planRuns = new Map<string, string>();
-    const runOf = async (run: string): Promise<Record<string, unknown> | null> => { const exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry))); return isRecord(exported) && isRecord(exported.run) && exported.run.run === run ? exported.run : null; };
+    const runOf = async (run: string): Promise<Record<string, unknown>> => {
+      const exported = hubDocument(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry));
+      if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== run) failCall('temporarily_unavailable', 'Hub 元数据不属于所请求的运行', '请维护者核对导出的运行身份后重试');
+      return exported.run;
+    };
     const ours = (run: Record<string, unknown> | null, key: string) => !!run && typeof run.pack === 'string' && run.pack.split('@')[0] === 'case-compile' && lineageKey(run) === key;
     for (const d of given.values()) { const key = lineageKey((await planOf(d.plan_run)).run as Record<string, unknown>); if (key) keys.add(key); }
-    if (keys.size !== 1) throw new Error('--runs 中的自动化用例不是来自同一份重组后的用例或原始用例，请只选择这份原始用例的上机验证');
+    if (keys.size !== 1) failCall('invalid_parameters', '--runs 中的自动化用例不是来自同一份重组后的用例或原始用例，请只选择这份原始用例的上机验证', '请核对运行、范围、产物身份和原始输入，修正后重试');
     const [key] = keys;
     // Up: a rework's plan run may name the booking or the verification run before it as predecessor (run 12 did the first, run 14
     // the second), so the walk climbs while the predecessor is a run of this compilation and starts below the first one that is not.
@@ -233,7 +240,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         queue.push(next.run);
       }
     }
-    for (const run of given.keys()) if (!started.has(run)) { const exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry))); started.set(run, isRecord(exported) && isRecord(exported.run) && typeof exported.run.started_at === 'string' ? exported.run.started_at : ''); }
+    for (const run of given.keys()) if (!started.has(run)) { const exported = hubDocument(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry)); started.set(run, isRecord(exported) && isRecord(exported.run) && typeof exported.run.started_at === 'string' ? exported.run.started_at : ''); }
     const dispatches: Dispatch[] = [], added: string[] = [];
     for (const run of [...started.keys()].sort((a, b) => (started.get(a)! < started.get(b)! ? -1 : started.get(a)! > started.get(b)! ? 1 : a < b ? -1 : 1))) {
       if (given.has(run)) { dispatches.push(given.get(run)!); continue; }
@@ -269,16 +276,16 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
           return `${run}（scope="${parsed.words}"，[${parsed.cases.join('、')}]）`;
         })
         .join(' 与 ');
-      throw new Error(`参数无效：所选运行的冻结 parameters.scope 不一致（${summary}），不能合并交付。中途改范围须用 start_run 重开运行；请只选择相同 parameters.scope 的上机验证后重试`);
+      failCall('invalid_parameters', `所选运行的冻结 parameters.scope 不一致（${summary}），不能合并交付。中途改范围须用 start_run 重开运行；请只选择相同 parameters.scope 的上机验证后重试`, '请核对运行、范围、产物身份和原始输入，修正后重试');
     }
     const activeScope = scopedRuns[0]?.scope ?? null;
 
     // The document's cases: the recomposition run's, or else every case, exclusion and frozen out-of-scope entry from plan runs.
     const originals: Record<string, Original> = {}; let population: string[] = [];
     if (args.recompose) {
-      const exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${args.recompose}/run`, bearer, retry)));
-      if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== args.recompose || !Array.isArray(exported.run.items)) throw new Error('Hub 返回的重组后的用例不完整或与本次用例重组不符');
-      for (const item of exported.run.items) { const read = isRecord(item) ? atomOriginal(item) : null; if (!read) throw new Error('重组后的用例缺少原始用例 ID 或原句'); population.push(read.autoid); originals[read.autoid] = read.original; }
+      const exported = hubDocument(await getRetrying(`${origin}/run-export/${args.recompose}/run`, bearer, retry));
+      if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== args.recompose || !Array.isArray(exported.run.items)) failCall('invalid_parameters', 'Hub 返回的重组后的用例不完整或与本次用例重组不符', '请核对运行、范围、产物身份和原始输入，修正后重试');
+      for (const item of exported.run.items) { const read = isRecord(item) ? atomOriginal(item) : null; if (!read) failCall('invalid_parameters', '重组后的用例缺少原始用例 ID 或原句', '请核对运行、范围、产物身份和原始输入，修正后重试'); population.push(read.autoid); originals[read.autoid] = read.original; }
       if (activeScope) {
         const rGroups = Array.isArray(exported.run.groups) ? exported.run.groups : [];
         const rScope = rGroups.find((g): g is Record<string, unknown> => isRecord(g) && g.kind === 'recompose-scope@1' && isRecord(g.scope))?.scope as Record<string, unknown> | undefined;
@@ -316,13 +323,13 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     if (activeScope) {
       const missingFromDoc = activeScope.cases.filter((autoid) => !population.includes(autoid));
       if (missingFromDoc.length) {
-        throw new Error(`参数无效：Hub 运行记录中的 parameters.scope 包含不在本次文档原始用例里的编号：${missingFromDoc.join('、')}。请核对运行参数与文档后重试`);
+        failCall('invalid_parameters', `Hub 运行记录中的 parameters.scope 包含不在本次文档原始用例里的编号：${missingFromDoc.join('、')}。请核对运行参数与文档后重试`, '请核对运行、范围、产物身份和原始输入，修正后重试');
       }
       const allowed = new Set(activeScope.cases);
       for (const d of dispatches) {
         const extra = d.items.filter((autoid) => !allowed.has(autoid));
         if (extra.length) {
-          throw new Error(`参数无效：上机验证 ${d.run} 包含未纳入本次 parameters.scope 的原始用例 ${extra.join('、')}。请核对运行范围并重新用 start_run 编写与上机后重试`);
+          failCall('invalid_parameters', `上机验证 ${d.run} 包含未纳入本次 parameters.scope 的原始用例 ${extra.join('、')}。请核对运行范围并重新用 start_run 编写与上机后重试`, '请核对运行、范围、产物身份和原始输入，修正后重试');
         }
       }
     }
@@ -344,10 +351,10 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const texts = new Map<string, string | null>();
     const textOf = async (run: string, reference: string): Promise<string | null> => {
       const found = /^src:([0-9a-f]{64})$/.exec(reference); if (!found) return null;
-      if (!texts.has(found[1])) { try { const bytes = await getRetrying(`${origin}/run-export/${run}/sources/${found[1]}`, bearer, retry); texts.set(found[1], sha256(bytes) === found[1] ? new TextDecoder('utf-8').decode(bytes) : null); } catch { texts.set(found[1], null); } }
+      if (!texts.has(found[1])) { try { const bytes = await getRetrying(`${origin}/run-export/${run}/sources/${found[1]}`, bearer, sourceRetry); if (sha256(bytes) !== found[1]) failCall('temporarily_unavailable', '设备输出原件的字节与摘要不一致', '请维护者恢复与原摘要一致的字节后重试'); texts.set(found[1], new TextDecoder('utf-8').decode(bytes)); } catch (error) { if (error instanceof CallFailure) throw error; texts.set(found[1], null); } }
       return texts.get(found[1]) ?? null;
     };
-    const hits = new Map<string, RowAudit>(); let markerCount: number | null = null, read = 0, wordless = 0;
+    const hits = new Map<string, RowAudit>(), missingOutputs = new Set<string>(); let markerCount: number | null = null, read = 0, wordless = 0;
     for (const d of dispatches) {
       const { markers, assertions: assertionsOf } = passReviewInputs(inputsOf(plans.get(d.plan_run)!));
       if (!markers.length) continue;
@@ -355,23 +362,21 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       for (const row of d.rows) {
         if (row.dynamic_terminal !== 'pass') continue;
         const text = row.evidence?.log ? await textOf(d.run, row.evidence.log) : null;
-        if (text === null) { wordless++; continue; }
+        if (text === null) { wordless++; missingOutputs.add(auditKey(d.run,row.item)); continue; }
         read++;
         const hit = failureLine({ 运行日志: text }, markers, assertionsOf.get(row.item) ?? []);
         if (hit) hits.set(auditKey(d.run, row.item), hit);
       }
     }
-    dispatches.splice(0, dispatches.length, ...auditPasses(dispatches, hits));
+    const audited = auditPasses(dispatches, hits).map(d => ({ ...d, rows: d.rows.map(row => missingOutputs.has(auditKey(d.run, row.item)) ? {
+      ...row, reported_terminal: row.dynamic_terminal, dynamic_terminal: 'no_verdict',
+      missing_fact: '缺少已声明执行失败规则所需的完整设备输出，交付资格尚未核验；请从原作业补齐原件后重评',
+    } : row) }));
+    dispatches.splice(0, dispatches.length, ...audited);
     // When no dispatch counts as a whole-volume pass, the pass review may be why: the refusal then names the passes it turned
     // into no verdict and the line that did it (in run 20 the tool only listed the passes that stood, and the model had to find
     // the missing one and its line by itself).
-    const assembly = (() => {
-      try { return assemble(inScope, dispatches); } catch (error) {
-        if (!(error instanceof Error) || !hits.size) throw error;
-        const told = [...hits.entries()].slice(-5).map(([key, hit]) => `原始用例 ${key.split('\u0000')[1]} ${originals[key.split('\u0000')[1]]?.title ?? '标题未知'} 的设备输出里有一行“${hit.line.length > 160 ? `${hit.line.slice(0, 160)}…` : hit.line}”`);
-        throw new Error(`${error.message}。核对设备输出后，以下原始用例状态未知，执行失败原话没有被自动化用例检查：${told.join('；')}。下一步由编写模型检查这行设备输出，或改用不会执行失败的观察，再把自动化用例 Excel 一起做上机验证`);
-      }
-    })();
+    const assembly = assemble(inScope, dispatches);
     const undelivered = assembly.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
     const notes = readNotes(notesValue, undelivered);
 
@@ -381,7 +386,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     if (assembly.pass) {
       const passRecipes = recipesOf(plans.get(assembly.pass.plan_run)!);
       const bytes = generateWorkbookSet(passRecipes);
-      if (sha256(bytes) !== assembly.pass.sha256) throw new Error(`重新生成的自动化用例 Excel 与上机验证使用的文件不一致；请使用最近一次一起做上机验证且全部正确的自动化用例 Excel`);
+      if (sha256(bytes) !== assembly.pass.sha256) failCall('invalid_parameters', `重新生成的自动化用例 Excel 与上机验证使用的文件不一致；请使用最近一次一起做上机验证且全部正确的自动化用例 Excel`, '请核对运行、范围、产物身份和原始输入，修正后重试');
       passLast = volumeOrder(passRecipes).moved;
       outputs.push({ name: 'case.xlsx', bytes }); passFile = { sha256: assembly.pass.sha256 };
     }
@@ -393,7 +398,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         const planRun = sources[autoid].plan_run; const plan = plans.get(planRun)!;
         if (!recipes.has(planRun)) recipes.set(planRun, recipesOf(plan));
         const k = (plan.run.items as unknown[]).findIndex((item) => autoidOf(item) === autoid);
-        if (k < 0) throw new Error(`原始用例 ${autoid} ${originals[autoid]?.title ?? '标题未知'} 的自动化用例不在脚本编写结果里，却在上机验证中出现`);
+        if (k < 0) failCall('invalid_parameters', `原始用例 ${autoid} ${originals[autoid]?.title ?? '标题未知'} 的自动化用例不在脚本编写结果里，却在上机验证中出现`, '请核对运行、范围、产物身份和原始输入，修正后重试');
         return recipes.get(planRun)![k];
       });
       const bytes = generateWorkbookSet(selected, { merged: true });
@@ -405,8 +410,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     for (const outcome of assembly.cases.filter((c) => c.status !== 'delivered')) {
       const last = outcome.history.at(-1); const found = last?.log ? /^src:([0-9a-f]{64})$/.exec(last.log) : null;
       if (!last || !found) continue;
-      try { const bytes = await getRetrying(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer, retry); if (sha256(bytes) !== found[1]) throw new Error('设备输出与保存的原件不一致'); logs[outcome.autoid] = { reference: last.log!, job: last.job, text: new TextDecoder('utf-8').decode(bytes) }; }
-      catch (error) { logs[outcome.autoid] = { reference: last.log!, job: last.job, text: null, withheld: error instanceof HubReplyError && error.status === 403 ? '没有读取这份设备输出的权限' : `没有取到：${error instanceof Error ? error.message : '读取失败'}` }; }
+      try { const bytes = await getRetrying(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer, sourceRetry); if (sha256(bytes) !== found[1]) failCall('temporarily_unavailable', '设备输出与保存的原件不一致', '请维护者恢复与原摘要一致的设备输出原件后重试'); logs[outcome.autoid] = { reference: last.log!, job: last.job, text: new TextDecoder('utf-8').decode(bytes) }; }
+      catch (error) { if (error instanceof CallFailure) throw error; logs[outcome.autoid] = { reference: last.log!, job: last.job, text: null, withheld: error instanceof HubReplyError && error.status === 403 ? '没有读取这份设备输出的权限' : '没有取得已核验的设备输出原件，缺少来源读取结果' }; }
     }
     // The reference engine's attribution rule: a case not delivered that went to the bed is explained with the device's own words,
     // verbatim from its last device output (the runner log or a device session), checked here against the bytes the Hub relays.
@@ -416,7 +421,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       const texts: string[] = []; const logText = logs[outcome.autoid]?.text; if (logText) texts.push(logText);
       for (const reference of Object.values(last.sessions ?? {})) {
         const found = /^src:([0-9a-f]{64})$/.exec(reference); if (!found) continue;
-        try { const bytes = await getRetrying(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer, retry); if (sha256(bytes) === found[1]) texts.push(new TextDecoder('utf-8').decode(bytes)); } catch { /* an unreadable session is evidence neither way */ }
+        try { const bytes = await getRetrying(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer, sourceRetry); if (sha256(bytes) !== found[1]) failCall('temporarily_unavailable', '设备会话原件的字节与摘要不一致', '请维护者恢复与原摘要一致的字节后重试'); texts.push(new TextDecoder('utf-8').decode(bytes)); } catch (error) { if (error instanceof CallFailure) throw error; /* an unreadable session is evidence neither way */ }
       }
       deviceTexts[outcome.autoid] = texts;
     }
@@ -424,44 +429,47 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     // authored versions of it did not pass on the bed, unless it closes earlier as a verbatim product-defect candidate
     // (closeFailed in functions/delivery.ts). A round is a distinct plan that failed or whose pass was dropped.
     const rounds: Record<string, number> = {};
-    for (const outcome of assembly.cases.filter(reworked)) rounds[outcome.autoid] = new Set(outcome.history.filter((h) => h.terminal === 'fail' || h.audit).map((h) => planDigest(plans.get(dispatches[h.ordinal - 1].plan_run)!, outcome.autoid))).size;
+    for (const outcome of assembly.cases.filter(reworked)) rounds[outcome.autoid] = new Set(outcome.history.filter((h) => h.terminal === 'fail' || h.audit).map((h) => planDigest(plans.get(dispatches[h.ordinal - 1].plan_run)!, outcome.autoid)).filter((digest): digest is string => digest !== null)).size;
     const authored = Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, original.lines.flatMap((line) => line.expected)]));
     const conflictGround: ConflictGround = {
       authored: Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, [original.title, ...original.lines.flatMap((line) => [line.text, ...line.expected])].filter((text) => text.length > 0)])),
-      statements: await citedStatements(origin, bearer, new Set(Object.values(notes.cases).flatMap((note) => (note.author_conflict ? [note.author_conflict.reference] : []))), dispatches.map((d) => d.plan_run), (run) => plans.get(run)?.run.root, retry),
+      ...(await citedStatements(origin, bearer, new Set(Object.values(notes.cases).flatMap((note) => (note.author_conflict ? [note.author_conflict.reference] : []))), dispatches.map((d) => d.plan_run), (run) => plans.get(run)?.run.root, sourceRetry)),
     };
     const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts, conflictGround);
     // The reference engine's exits for a case it could not compile: only what its own checks recorded certifies one. A case never
     // dispatched is looked up in the latest plan run of this compilation that holds it and has an accepted result: a plan run
     // opened but never answered judged no plan (closeUnrun in functions/delivery.ts).
     const facts: Record<string, MissingFact> = {};
-    const unrun = closed.cases.filter((c) => c.status === 'unrun').map((c) => c.autoid);
+    const unrun = closed.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
+    const bases = new Map<string, NonNullable<ReturnType<typeof caseBasisOf>>>();
     if (unrun.length) {
       const latestFirst = [...planRuns.keys()].sort((a, b) => (planRuns.get(a)! > planRuns.get(b)! ? -1 : planRuns.get(a)! < planRuns.get(b)! ? 1 : a > b ? -1 : 1));
       const itemsOf = new Map<string, unknown[]>();
-      for (const run of latestFirst) { try { const record = await runOf(run); itemsOf.set(run, Array.isArray(record?.items) ? record.items : []); } catch { itemsOf.set(run, []); } }
+      for (const run of latestFirst) { try { const record = await runOf(run); itemsOf.set(run, Array.isArray(record?.items) ? record.items : []); } catch (error) { if (error instanceof CallFailure) throw error; itemsOf.set(run, []); } }
       const answered = new Map<string, unknown>();
       for (const autoid of unrun) {
         for (const holder of latestFirst.filter((run) => itemsOf.get(run)!.some((item) => autoidOf(item) === autoid))) {
           const item = itemsOf.get(holder)!.find((i) => autoidOf(i) === autoid);
           if (!isRecord(item) || typeof item.id !== 'string') continue;
-          if (!answered.has(holder)) { let exported: unknown = null; try { exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${holder}`, bearer, retry))); } catch { /* no accepted submission */ } answered.set(holder, exported); }
+          if (!answered.has(holder)) { let exported: unknown = null; try { exported = hubDocument(await getRetrying(`${origin}/run-export/${holder}`, bearer, retry)); } catch (error) { if (error instanceof CallFailure) throw error; /* no accepted submission */ } if (exported !== null && (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== holder || !isRecord(exported.result) || exported.result.run !== holder)) failCall('temporarily_unavailable', 'Hub 接受结果不属于所请求的脚本编写运行', '请维护者核对运行身份与接受结果绑定后重试'); answered.set(holder, exported); }
           const exported = answered.get(holder);
           if (!isRecord(exported) || !isRecord(exported.result)) continue; // never answered: no plan was judged there
+          const basis = caseBasisOf(exported, holder, item.id); if (basis) bases.set(autoid, basis);
           const fact = missingFactOf(exported, holder, item.id); if (fact) facts[autoid] = fact;
           break;
         }
       }
     }
-    const settled = closeUnrun(closed.cases, facts, notes, conflictGround);
+    const settled = closeUnrun(closed.cases.map(outcome => ({ ...outcome, ...(bases.has(outcome.autoid) ? { basis: bases.get(outcome.autoid) } : {}) })), facts, notes, conflictGround);
     assembly.cases = settled.cases.map(outcome => {
       const note = notes.cases[outcome.autoid];
-      const problems = note && !note.absent ? evidenceProblems({ ...notes, cases: { [outcome.autoid]: note } }, { [outcome.autoid]: deviceTexts[outcome.autoid] ?? [] }) : [];
-      return problems.length ? { ...outcome, closing: undefined, pending: [...(outcome.pending ?? []), ...problems] } : outcome;
+      const problems = evidenceProblems({ ...notes, cases: note ? { [outcome.autoid]: note } : {} }, { [outcome.autoid]: deviceTexts[outcome.autoid] ?? [] });
+      return problems.length ? { ...outcome, closing: undefined, evidence_unverified: true as const, pending: [...(outcome.pending ?? []), ...problems] } : outcome;
     });
     const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run)!.run;
     const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast }, ...(scopeSummary ? { scope: scopeSummary } : {}) };
-    outputs.push({ name: 'delivery_report.md', bytes: Buffer.from(deliveryReport(input)) }, { name: 'unsuccessful_cases.md', bytes: Buffer.from(unsuccessfulReport(input)) });
+    input.artifacts = [...outputs.map(output => output.name), ...Object.values(REPORT_FILES)];
+    outputs.push({ name: REPORT_FILES.report, bytes: Buffer.from(deliveryReport(input)) }, { name: REPORT_FILES.unsuccessful, bytes: Buffer.from(unsuccessfulReport(input)) });
     const summary = {
       schema: 'case-delivery@1', generator: GENERATOR, name: input.name, generated_at: now().toISOString(), build: input.build, totals: assembly.totals,
       ...(scopeSummary ? {
@@ -476,14 +484,15 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       pass_volume: assembly.pass ? { file: 'case.xlsx', sha256: assembly.pass.sha256, run: assembly.pass.run, job: assembly.pass.job, plan_run: assembly.pass.plan_run, items: assembly.pass.items, ...(passLast.length ? { moved_tail: passLast } : {}) } : null,
       unsuccessful_volume: assembly.unsuccessful ? { file: 'unsuccessful_cases.xlsx', sha256: unsuccessfulFile!.sha256, items: assembly.unsuccessful.items.map((autoid) => ({ autoid, plan_run: assembly.unsuccessful!.sources[autoid].plan_run, run: assembly.unsuccessful!.sources[autoid].run })), dispatched: false, ...(unsuccessfulLast.length ? { moved_tail: unsuccessfulLast } : {}) } : null,
       closings: Object.fromEntries((Object.keys(CLOSING) as Array<keyof typeof CLOSING>).map((closing) => [closing, assembly.cases.filter((c) => c.closing === closing).length])),
-      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.pending?.length ? { pending: c.pending, reenter: true } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}), ...(h.qualifier ? { qualifier: h.qualifier, accepted_as_fact: h.accepted_as_fact ?? false } : {}), ...(h.missing_facts ? { missing_facts: h.missing_facts } : {}), ...(h.missing_fact ? { missing_fact: h.missing_fact } : {}), ...(h.next_action ? { next_action: h.next_action } : {}) })) })),
+      artifacts: input.artifacts,
+      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.basis ? { basis: c.basis } : {}), ...(notes.cases[c.autoid] ? { model_claims: notes.cases[c.autoid] } : {}), ...(c.pending?.length ? { pending: c.pending, reenter: true } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, dynamic_terminal: h.reported_terminal ?? h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}), ...(h.qualifier ? { qualifier: h.qualifier } : {}), ...(h.accepted_as_fact === undefined ? {} : { accepted_as_fact: h.accepted_as_fact }), ...(h.missing_facts ? { missing_facts: h.missing_facts } : {}), ...(h.missing_fact ? { missing_fact: h.missing_fact } : {}), ...(h.next_action ? { next_action: h.next_action } : {}) })) })),
     };
-    outputs.push({ name: 'delivery.json', bytes: json(summary) });
+    outputs.push({ name: REPORT_FILES.summary, bytes: json(summary) });
 
     await emptyOrAbsent(args.out);
     await mkdir(args.out, { recursive: true, mode: 0o700 });
     const written: string[] = []; const files: Record<string, string> = {};
-    try { for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); } }
+    try { for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); } if (canonicalJson(Object.keys(files).sort()) !== canonicalJson(input.artifacts.slice().sort())) failCall('invalid_parameters', '实际写出的文件与报告清单不一致，交付目录已撤回', '请核对运行、范围、产物身份和原始输入，修正后重试'); }
     catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
     const out = resolve(args.out);
     process.stdout.write(JSON.stringify({
@@ -496,6 +505,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       reply: replyText(out, assembly.totals, Object.keys(files), assembly.cases, input),
     }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatCallError(error instanceof RetryExhaustedError ? new CallFailure('temporarily_unavailable', `读取 Hub 达到重试上限，已等待 ${error.waitedMs / 1000} 秒并尝试 ${error.attempts} 次${error.code ? `（${error.code}）` : error.status ? `（HTTP ${error.status}）` : ''}`, '请运行者核对 --hub 地址与服务可用性，恢复后用同一命令重试') : error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));
