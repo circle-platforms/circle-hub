@@ -135,6 +135,6 @@ test('saved metadata records expected local RPC identity before validating a con
   const client=new RpcClient(recoveryDefinition(endpoint.endpoint),'synthetic-secret','synthetic-job',async(_bytes,_status,operation,_complete,value)=>{metadata.push({operation,value});if(operation==='result'){saved.resolve();await commit.promise;}return source;},undefined,undefined,{recovery:true});await client.connect();
   let settled=false;const result=client.call('result',{remote_id:'synthetic-remote'}).then(()=>{settled=true;return null;},error=>{settled=true;return error;});
   await saved.promise;assert.equal(settled,false,'response verification cannot precede committed capture');
-  assert.deepEqual(metadata.map(row=>[row.operation,row.value?.rpc_id,row.value?.rpc_method]),[['initialize',1,'initialize'],['notifications/initialized',2,'notifications/initialized'],['tools/list',3,'tools/list'],['result',4,'tools/call']]);
+  assert.deepEqual(metadata.map(row=>[row.operation,row.value?.rpc_id,row.value?.rpc_method]),[['initialize',1,'initialize'],['notifications/initialized',undefined,'notifications/initialized'],['tools/list',3,'tools/list'],['result',4,'tools/call']]);
   commit.resolve();assert.ok(await result instanceof RpcReplyError);await client.drainReads();
 });

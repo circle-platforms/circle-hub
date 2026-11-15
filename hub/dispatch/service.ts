@@ -1,4 +1,7 @@
 import { isAdmin } from '../records/api.ts';
+import {captureResponse} from './capture.ts';
+import {currentDispatch,recoveryQuery,recoveryWait} from './recovery.ts';
+import {rpcResponse,toolContent} from './observations.ts';
 import type { Heartbeat, LeaseClock, RemoteLease } from './session-types.ts';
 import * as bedOperations from './bed-lifecycle.ts';
 import * as deviceOperations from './devices.ts';
@@ -18,7 +21,7 @@ import { WHOLE_HUB, canonicalBytes, canonicalize, sha256Hex, type AuthorizationR
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
 import type { WorkflowStore } from '../ports.ts';
 import { labelOf, isCallErrorCategory, type CallErrorCategory, type EffectOutcome, type Disposition, type EffectMark, type QualifierMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, type DynamicTerminal, type Reason, isDisposition, isEffectOutcome, isDynamicTerminal } from '../../contracts/generated/vocabulary.ts';
-import { at, bind, mapped, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
+import { at, bind, mapped, registrationMissing,readDeclaredTime, type CallRole, type ExecutorDefinition } from './definition.ts';
 import { Redactor } from '../connectors/api.ts';
 import { background } from '../telemetry/api.ts';
 import { resolveExecutor } from './source.ts';
@@ -37,7 +40,7 @@ import { dynamicDisposition, DISPATCH_QUALIFICATIONS, missingOwnershipCertificat
 import { type BedBaselineRecord, type BedRead, type BedReport, type Canonical } from './bed-state.ts';
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
 import { expectationFor } from '../runs/engine/terminals.ts';
-import { RunId, Sha256 } from '../../contracts/src/common.ts';
+import { RunId, Sha256,UserId,idOf } from '../../contracts/src/common.ts';
 import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort, type VerifiedInput } from './proof.ts';
 
 /** Only validated generated outcomes can prove a submission retry is safe. */
@@ -149,15 +152,235 @@ export class DispatchService {
   #leaseClocks = new WeakMap<RemoteLease,LeaseClock>();
   #asking = new Map<string, Promise<void>>();
   #closing: Promise<void> | null = null;
+  #captures = new Set<Promise<string>>();
+  #clients = new Set<WeakRef<RpcClient>>();
+  #shutdown = new AbortController();
+  #recoveryWorkers = new Map<string,{controller:AbortController;done:Promise<void>}>();
+  #recoveryScan:Promise<void>|null=null;
+  #recoveryInit:Promise<void>|null=null;
+  #bootWatermark:number|null=null;
+  #activeJobs=new Set<string>();
+  #pulses=new Set<Heartbeat>();
+  #operations=new Set<Promise<unknown>>();
   constructor(options: DispatchOptions) {
     this.redactor=options.redactor??new Redactor();
     this.options = options; this.now = options.now ?? (() => new Date());
-    this.sleep = options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    this.sleep = options.sleep ?? (ms => recoveryWait(ms,this.#shutdown.signal));
     this.registry = new ExecutorRegistry(options.records); this.journal = new Journal(options.records, this.now);
   }
-  async close(): Promise<void> { await (this.#closing ??= this.options.close?.() ?? Promise.resolve()); }
+  async close(): Promise<void> {
+    await (this.#closing??=(async()=>{
+      this.#shutdown.abort();
+      await Promise.allSettled(this.#recoveryScan?[this.#recoveryScan]:[]);
+      for(const worker of this.#recoveryWorkers.values())worker.controller.abort();
+      const pulses=[...this.#pulses].map(pulse=>pulse.stop());
+      await Promise.allSettled([...pulses,...this.#operations,...[...this.#recoveryWorkers.values()].map(worker=>worker.done)]);
+      await Promise.allSettled([...this.#clients].flatMap(ref=>{const client=ref.deref();return client?[client.drainReads()]:[];}));
+      await Promise.allSettled([...this.#captures]);
+      await this.options.close?.();
+    })());
+  }
+  private operation<T>(work:Promise<T>):Promise<T>{
+    const tracked=work.finally(()=>this.#operations.delete(tracked));this.#operations.add(tracked);return tracked;
+  }
+  /** One cheap append watermark before listening; a new reservation is not mistaken for abandoned startup work. */
+  async initializeRecovery():Promise<void>{
+    await(this.#recoveryInit??=(async()=>{
+      try{this.#bootWatermark=await this.options.records.store.watermark?.()??null;}
+      catch{this.#bootWatermark=null;}
+    })());
+  }
+  /** Startup and maintenance share this scanner; remote observation never holds the run-maintenance pass open. */
+  async recoverPending():Promise<void>{
+    if(this.#shutdown.signal.aborted)return;
+    await(this.#recoveryScan??=this.scanRecovery().finally(()=>{this.#recoveryScan=null;}));
+  }
+  private async scanRecovery():Promise<void>{
+    await this.initializeRecovery();
+    for(const ref of this.#clients)if(!ref.deref())this.#clients.delete(ref);
+    let cursor:string|null=null;const jobs=new Set<string>();
+    do{
+      if(this.#shutdown.signal.aborted)return;
+      const page:import('../records/api.ts').Page<Event>=await this.options.records.store.find<ActionBody>({kind:'action',key:'dispatch.phase',value:'reservation',limit:200,cursor});
+      for(const reservation of page.items){
+        const value=reservation.body.detail.binding;
+        if(reservation.body.detail.read_only===true)continue;
+        if(!object(value)||typeof value.job!=='string'||!Sha256.safeParse(value.job).success||reservation.body.detail.job!==value.job){await this.recoveryUnavailable(reservation,'原派发预订缺少一致的作业身份，无法安全接回');continue;}
+        const job=value.job;
+        if(jobs.has(job)||this.#activeJobs.has(job)||this.#recoveryWorkers.has(job))continue;jobs.add(job);
+        const events=await this.journal.events(job),current=currentDispatch(events);
+        if(current.finished)continue;
+        if(!current.intent){
+          const position=await this.options.records.store.position?.(reservation.digest)??null;
+          if(position===null||this.#bootWatermark===null||position>this.#bootWatermark)continue;
+        }
+        void this.startRecovery(job,reservation.body.run);
+      }
+      cursor=page.next;
+    }while(cursor!==null);
+  }
+  private startRecovery(job:string,run:string|null):Promise<void>{
+    const existing=this.#recoveryWorkers.get(job);if(existing)return existing.done;
+    const controller=new AbortController(),worker={controller,done:Promise.resolve()};
+    worker.done=this.recoverJob(job,controller.signal).catch(error=>{
+      try{this.options.adminLog?.({traceId:null,run,what:'dispatch recovery',detail:this.redactor.maskText(String(error))});}catch{}
+    }).finally(()=>{if(this.#recoveryWorkers.get(job)===worker)this.#recoveryWorkers.delete(job);});
+    this.#recoveryWorkers.set(job,worker);return worker.done;
+  }
+  private recoveryBinding(value:unknown):value is JobBinding{
+    if(!object(value)||!Sha256.safeParse(value.job).success||!UserId.safeParse(value.user).success||
+      !UserId.safeParse(value.initiated_by).success||!idOf('exe').safeParse(value.executor).success||
+      !Sha256.safeParse(value.executor_digest).success||!Sha256.safeParse(value.target_key).success||
+      !Array.isArray(value.resources)||value.resources.some(key=>typeof key!=='string')||!object(value.input))return false;
+    return RunId.safeParse(value.input.run).success&&Sha256.safeParse(value.input.sha256).success&&
+      Array.isArray(value.input.items)&&value.input.items.every(item=>typeof item==='string')&&
+      typeof value.input.item==='string'&&(value.acting_by===undefined||UserId.safeParse(value.acting_by).success);
+  }
+  private async recoveryUnavailable(reservation:Event,missing:string):Promise<void>{
+    const job=reservation.body.detail.job,now=this.now().toISOString();
+    await this.options.records.store.put<ActionBody>({kind:'action',schema:'action@1',provenance:'observed',created_at:now,
+      body:{action:'read_back',run:reservation.body.run,item:reservation.body.item,inputs:['rec:'+reservation.digest],component:'dispatch@1',lease:null,started_at:now,ended_at:now,
+        result:'unknown',acceptance:null,error_code:null,codes:[],detail:{phase:'recovery_unavailable',...(Sha256.safeParse(job).success?{job}:{}),uncertain:true,outcome:'unknown',missing_fact:missing,next_action:'管理员恢复原派发绑定和只读通道后读取同一作业；不得重交'}},
+      index:[{key:'dispatch.phase',value:'recovery_unavailable'},...(typeof job==='string'&&Sha256.safeParse(job).success?[{key:'dispatch.job',value:job}]:[])],
+      unique_key:'dispatch.recovery.unavailable:'+reservation.digest});
+  }
+  private async recoveryUnknown(binding:JobBinding,reason:string,sources:string[]=[]):Promise<void>{
+    const current=currentDispatch(await this.journal.events(binding.job));
+    if(openRequests(current.tail).some(event=>event.body.detail.missing_fact===reason))return;
+    await this.unknown(binding,reason,sources,{recovery:true,next_action:'恢复原身份和只读通道后，继续读取同一作业；不要重新提交尚未证明结局的请求'});
+  }
+  /** The first committed, protocol-valid complete report of this intent is immutable evidence, not a new remote read. */
+  private async capturedRecoveryResult(binding:JobBinding,intent:Event,d:ExecutorDefinition,remoteId:unknown):Promise<Exchange|undefined>{
+    const current=currentDispatch(await this.journal.events(binding.job));
+    if(current.intent?.digest!==intent.digest||!current.tail.some(event=>event.body.detail.phase==='terminal'))return;
+    const owner=await this.options.records.principals.get(binding.user);
+    if(!owner||owner.disabled)return;
+    for(const event of current.tail){
+      const detail=event.body.detail;
+      if(detail.phase!=='result.response'||detail.complete!==true||typeof detail.http_status!=='number'||detail.http_status<200||detail.http_status>=300||
+        !Number.isSafeInteger(detail.rpc_id)||detail.rpc_method!=='tools/call'||typeof detail.source_record!=='string'||!detail.source_record.startsWith('rec:')||
+        typeof detail.started_at!=='string'||typeof detail.ended_at!=='string')continue;
+      try{
+        const record=await this.options.records.store.get<import('../records/api.ts').SourceArtifactBody>(detail.source_record.slice(4));
+        if(!record||record.kind!=='source_artifact'||!('read'in record.body.origin)||
+          record.body.origin.read.object!=='executor:'+binding.executor+':'+binding.job+':result')continue;
+        const source=await this.options.records.artifacts.source(owner,record.body.sha256,{consumer:'function',record:record.digest});
+        if(!source?.bytes||source.readTier!=='function_bytes_only'||sha256Hex(source.bytes)!==record.body.sha256)continue;
+        const rpc=rpcResponse(new TextDecoder('utf-8',{fatal:true}).decode(source.bytes),detail.rpc_id as number);
+        if(rpc.isError===true)continue;
+        const value=toolContent(rpc);
+        if(!same(at(value,d.result.id),remoteId)||at(value,d.result.sha256)!==binding.input!.sha256||
+          d.result.request_id!==undefined&&at(value,d.result.request_id)!==intent.body.detail.request_id||reportPending(value,d,binding.input!.items))continue;
+        return {value,source:'src:'+record.body.sha256,started_at:detail.started_at,received_at:detail.ended_at};
+      }catch{}
+    }
+  }
+  private async recoverJob(job:string,workerSignal:AbortSignal):Promise<void>{
+    const signal=AbortSignal.any([workerSignal,this.#shutdown.signal]);
+    let cached:{intent:string;binding:JobBinding;d:ExecutorDefinition;client:RpcClient;lease:RemoteLease;confirmed:LeaseClock|null;heartbeatAt:number|null;heartbeatRejected:boolean}|undefined;
+    let delay=1000;
+    while(!signal.aborted){
+      const unlock=await this.options.records.store.tryHold('dispatch.observation:'+job);
+      if(!unlock){await recoveryWait(delay,signal,this.options.sleep);continue;}
+      let binding:JobBinding|undefined;
+      try{
+        if(signal.aborted)return;
+        const events=await this.journal.events(job),current=currentDispatch(events);
+        if(current.finished)return;
+        const reservation=events.find(event=>event.body.detail.phase==='reservation');
+        if(!reservation)return;
+        const raw=reservation.body.detail.binding;
+        if(!this.recoveryBinding(raw)||raw.job!==job){await this.recoveryUnavailable(reservation,'原派发绑定缺少用户、作业、固定定义、资源或产物身份');return;}
+        binding={...raw};
+        const intent=current.intent;
+        if(!intent){
+          const gate=await this.journal.append(binding,'gate','validate','completed',{allow_submit:false},[],'dispatch.gate:'+job);
+          if(!gate.created&&gate.body.detail.allow_submit===true){await this.recoveryUnknown(binding,'原提交准入已通过，但没有完整意图，缺少可核对的原请求身份');return;}
+          await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,public_reason:'服务重启后确认尚未写入派发意图，本次没有提交',next_action:'可以重新发起上机验证，须使用新一次核验和预订'},[], 'dispatch.recovery.no_intent:'+job);
+          return;
+        }
+        const detail=intent.body.detail,lease=detail.remote_lease;
+        if(typeof detail.request_id!=='string'||!this.opaque(detail.request_id)||!Number.isFinite(readDeclaredTime(detail.not_after))||!Number.isSafeInteger(detail.dispatch_sequence)||Number(detail.dispatch_sequence)<1||
+          typeof detail.sequence_scope!=='string'||!this.opaque(detail.sequence_scope)||!object(detail.request_identity)||
+          typeof detail.request_identity.epoch!=='string'||typeof detail.request_identity.since!=='number'||!Number.isFinite(detail.request_identity.since)||detail.request_identity.subject===undefined||detail.request_protocol_verified!==true||
+          typeof detail.request_protocol_version!=='string'||!object(lease)||!this.opaque(lease.id)||!this.opaque(lease.token)||
+          typeof lease.ttl!=='number'||!Number.isFinite(lease.ttl)||lease.ttl<3||!Array.isArray(detail.fences)){
+          await this.recoveryUnknown(binding,'原意图缺少请求、协议、日志主体、序号、原预订或围栏事实',['rec:'+intent.digest]);return;
+        }
+        if(!cached||cached.intent!==intent.digest){
+          const d=await this.readingDefinition(binding);delay=d.poll_ms;
+          if(!d.calls.query||!d.reconciliation){await this.recoveryUnknown(binding,'原执行器未声明原请求查账调用');return;}
+          const material=await this.secret(binding,d);if(material===null){await this.recoveryUnknown(binding,'原执行器的命名凭据不可读取');return;}
+          const client=this.session(binding,d,material,true,signal);await client.connect();
+          if(!client.serverVersion||client.serverVersion!==detail.request_protocol_version||!d.reconciliation.protocol_versions.includes(client.serverVersion)){
+            await this.recoveryUnknown(binding,'读取会话版本与原投递协议证明不一致，缺少迁移兼容事实');return;
+          }
+          cached={intent:intent.digest,binding,d,client,lease:lease as unknown as RemoteLease,confirmed:null,heartbeatAt:null,heartbeatRejected:false};
+        }
+        const {client,d}=cached;
+        const context={...this.context(binding),request_id:detail.request_id,not_after:detail.not_after,dispatch_sequence:detail.dispatch_sequence,
+          sequence_scope:detail.sequence_scope,lease_id:cached.lease.id,lease_token:cached.lease.token};
+        const response=await this.retryRead(binding,client,'query',context,Infinity);
+        const decision=recoveryQuery(binding,intent,d,response.value);
+        if(decision.missing.length){await this.recoveryUnknown(binding,decision.missing.join('；'),[response.source]);return;}
+        if(decision.pending){
+          await this.journal.append(binding,'query_pending','read','completed',{recovery:true,missing_fact:'原请求仍在处理中，尚无启动或未执行的明确事实',next_action:'继续查询同一请求，不重交'},[response.source]);
+        }else if(decision.notExecuted){
+          if(current.tail.some(event=>event.body.detail.phase==='terminal')){await this.recoveryUnknown(binding,'未开始的回答与原已保存终态矛盾，缺少一致的原请求结局',[response.source]);return;}
+          if(!await this.certified(binding,d,client,'request_journal')||!await this.certified(binding,d,client,'request_journal',{version:detail.request_protocol_version})){
+            await this.recoveryUnknown(binding,'原请求未执行的回答缺少同版本协议认证',[response.source]);return;
+          }
+          const outcome:EffectOutcome=decision.rejected?'target_rejected':'proven_not_executed';
+          await this.answerRequests(binding,'reconciled','read_back','completed',{recovery:true,outcome,reached_device:false,unfreeze:true},[response.source],openRequests(current.tail).map(event=>'rec:'+event.digest));
+          const cleanup=await this.recoveryRelease(binding,client,cached.lease);
+          await this.journal.append(binding,'complete','read_back','completed',{done:true,outcome,unfreeze:true,recovery:true,
+            ...(cleanup.length?{member_missing_facts:cleanup}:{}),
+            public_reason:decision.rejected?'原请求被目标明确拒收，本次上机验证没有执行':'服务重启后核对到原请求尚未开始，本次上机验证没有执行',
+            next_action:'可以重新发起上机验证；使用新一次核验和预订，不重发原请求'},[response.source],'dispatch.recovery.complete:'+intent.digest);
+          return;
+        }else if(decision.remoteId!==undefined){
+          const prior=receiptOf(current.tail);
+          if(prior&&!same(prior.body.detail.remote_id,decision.remoteId)){await this.recoveryUnknown(binding,'原请求查回的任务身份与已保存回执不符',[response.source]);return;}
+          if(!prior||isFrozen(current.tail))await this.answerRequests(binding,'reconciled','read_back','completed',{remote_id:decision.remoteId,acceptance:'accepted',outcome:'issued',reconciled:true,unfreeze:true,recovery:true},[response.source],openRequests(current.tail).map(event=>'rec:'+event.digest));
+          if(!cached.heartbeatRejected&&(cached.heartbeatAt===null||this.now().getTime()-cached.heartbeatAt>=((cached.confirmed?.ttl??delay)*1/3))){
+            cached.heartbeatAt=this.now().getTime();
+            if(!client.hasTool('heartbeat')){cached.heartbeatRejected=true;await this.journal.append(binding,'heartbeat','lease','error',{op:'extend' satisfies LeaseOp,lease_interrupted:true,missing_fact:'原预订续约工具不可用；仍继续读取原任务，不重新申请'});}
+            else try{
+              const started={at:this.now().getTime(),mono:performance.now()};
+              const heartbeat=await this.read(binding,client,'heartbeat',context),ttl=Number(at(heartbeat.value,d.lease.ttl_ms))*d.lease.ttl_scale_ms;
+              if(mapped(d.lease.map,at(heartbeat.value,d.lease.acceptance))!=='accepted'||!same(at(heartbeat.value,d.lease.id),cached.lease.id)||!same(at(heartbeat.value,d.lease.token),cached.lease.token)||!Number.isFinite(ttl)||ttl<3){cached.heartbeatRejected=true;throw new Error('原预订未获确认');}
+              cached.confirmed={...started,ttl};
+            }catch(error){if(signal.aborted)return;if(error instanceof ToolReplyError)cached.heartbeatRejected=true;await this.journal.append(binding,'heartbeat','lease','error',{op:'extend' satisfies LeaseOp,lease_interrupted:true,missing_fact:'原预订已过期、被拒绝或续约回答未取得；继续读原任务，不重新申请'});}
+          }
+          let drift=true;try{drift=!this.sameFences(detail.fences as unknown as HolderSnapshot[],await this.options.leases.holderSnapshot(binding.resources));}catch{}
+          const confirmed=cached.confirmed,continuous=!cached.heartbeatRejected&&!!confirmed&&Math.max(this.now().getTime()-confirmed.at,performance.now()-confirmed.mono,0)<confirmed.ttl;
+          const previous=projectedResult(await this.journal.events(job))?.body.detail.execution_integrity;
+          const execution:ExecutionReadback=object(previous)&&previous.intent===intent.digest&&previous.continuity===true&&previous.drift===false&&previous.lease_interrupted===false?
+            {intent:intent.digest,continuity:true,drift:false,lease_interrupted:false}:
+            {intent:intent.digest,continuity:continuous&&!drift,drift,lease_interrupted:!continuous};
+          const savedResult=await this.capturedRecoveryResult(binding,intent,d,decision.remoteId);
+          await this.observe(undefined,binding,d,client,decision.remoteId,detail.fences as unknown as HolderSnapshot[],async()=>{},
+            {recovery:true,...(savedResult?{savedResult}:{}),execution,...(typeof detail.round==='number'?{round:detail.round}:{})});
+          const after=currentDispatch(await this.journal.events(job));
+          if(after.finished)return;
+          if(isFrozen(after.tail))return;
+        }
+      }catch(error){
+        if(signal.aborted)return;
+        if(binding)try{await this.recoveryUnknown(binding,'原请求、状态或结果只读尚未取得；缺少原身份下的完整回答');}
+        catch{const reservation=(await this.journal.events(job)).find(event=>event.body.detail.phase==='reservation');if(reservation)await this.recoveryUnavailable(reservation,'原固定执行器原件或必需读取证据不可用，无法安全接回');}
+        else throw error;
+        return;
+      }finally{await unlock();}
+      await recoveryWait(delay,signal,this.options.sleep);
+    }
+  }
   async status(by: Principal, job: string): Promise<JobStatus> {
-    await this.registry.admin(by); const events = await this.journal.events(job);
+    await this.registry.admin(by);
+    return this.jobStatus(job);
+  }
+  private async jobStatus(job:string):Promise<JobStatus>{
+    const events = await this.journal.events(job);
     if (!events.length) throw new Error('作业对当前账户不可用');
     const modelPremises=(events.find(event=>event.body.detail.phase==='reservation')?.body.detail.binding as JobBinding|undefined)?.input?.judgments;
     const probeIntent=eventOf(events,'probe_intent');
@@ -507,6 +730,12 @@ export class DispatchService {
   }
 
   async dispatch(by: Principal, run: string, executor: string, onReserved?: (job: string) => void, options: { initiatedBy?: string } = {}): Promise<JobStatus> {
+    if(this.#shutdown.signal.aborted)throw new Error('服务正在停止，不接受新的派发');
+    let created:string|undefined;
+    try{return await this.operation(this.dispatchTracked(by,run,executor,onReserved,options,job=>{created=job;this.#activeJobs.add(job);}));}
+    finally{if(created)this.#activeJobs.delete(created);}
+  }
+  private async dispatchTracked(by:Principal,run:string,executor:string,onReserved:((job:string)=>void)|undefined,options:{initiatedBy?:string},created:(job:string)=>void):Promise<JobStatus>{
     await this.registry.admin(by);
     const registered = await this.registry.get(executor);
     if (!registered?.definition.enabled) throw new Error('执行器不可用或已禁用');
@@ -516,6 +745,7 @@ export class DispatchService {
     if (registrationMissing(d).filter(name=>name!=='environment').length) throw new Error(`派发登记缺事实：${registrationMissing(d).filter(name=>name!=='environment').join('、')}；请先 precheck 采证、转换并发布清单，再 update 补齐`);
     const gate=await prepareEffectGate({records:this.options.records,runs:this.options.runs,workflows:this.options.workflows,recheck:this.options.recheckChecks,by,run,executor,definition:d,resolved_digest:registered.resolved_digest,now:this.now});
     const provisional:JobBinding={run,job:newJob(),initiated_by:options.initiatedBy??by.id,...(options.initiatedBy?{acting_by:by.id}:{}),executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,input:null,user:gate.detail.run.runner??by.id,resources:d.resources,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort())};
+    created(provisional.job);
     const preflight=await gate.preflight();if(!preflight.ok)return this.boundaryRefused(by,provisional,preflight);
     const input=preflight.input;
     const useFailure=await this.environmentUseFailure(input.user,executor);
@@ -550,22 +780,21 @@ export class DispatchService {
     const binding: JobBinding = { ...provisional, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if(d.calls.submit.write)binding.target_key=digestOfValue(bind(d.calls.submit.write.target_key,this.context(binding)));
     delete binding.run; // Restricted response captures deliberately clear input; never leave a second run binding behind.
+    const unlockObservation=await this.options.records.store.tryHold('dispatch.observation:'+binding.job);
+    if(!unlockObservation)throw new Error('同一作业的观察仍在进行，尚未预留或提交');
+    try{
     await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     try { onReserved?.(binding.job); } catch { /* A terminal sink never controls an effect already authorized by the command. */ }
     const secret=await this.secret(binding,d);if(secret===null)return this.credentialUnavailable(by,binding,true);
     let session = this.session(binding, d, secret);
     let remote: RemoteLease | undefined; let stop = async () => {}; let pulse:Heartbeat|undefined;
     const flags = { intended: false, submitInvoked: false };
-    let unlockObservation: (() => Promise<void>) | undefined;
     const hold = {
       setStop: (fn: () => Promise<void>) => { stop = fn; },
       setSession: (client: RpcClient) => { session = client; },
       setRemote: (value: RemoteLease) => { remote = value; },
     };
     try {
-      const held = await this.options.records.store.tryHold(`dispatch.observation:${binding.job}`);
-      if (!held) throw new Error('同一作业的观察仍在进行；请等它结束，或在原进程退出后用 circle-hub job resume 只读继续');
-      unlockObservation = held;
       await session.connect();
       remote = await this.acquire(binding, d, session, this.context(binding));
       pulse = this.heartbeat(binding,d,session,remote);stop=pulse.stop;
@@ -590,20 +819,7 @@ export class DispatchService {
       const key = attempts.length ? String(attempts[0].body.detail.intent_key) : digestOfValue([input.lineage, input.item, d.proof.slot, multi ? round : sequence]);
       context.request_id = `${key}:${attempt}`; context.not_after = notAfter;
       context.sequence_scope = binding.executor; context.dispatch_sequence = await this.journal.nextDispatchSequence(binding);
-      let requestSnapshot:Record<string,unknown>={};let requestSources:string[]=[];
-      if(d.reconciliation) {
-        const r=d.reconciliation;
-        if(!r.identity || !d.receipt.identity)throw new PrecheckFactError('缺少查询或投递回答的日志身份字段声明','管理员核对目标协议，补齐查询与投递回答的身份、起点及主体字段声明后重新派发；尚未提交');
-        if(!session.serverVersion || !r.protocol_versions.includes(session.serverVersion))throw new PrecheckFactError('投递会话版本未登记请求协议支持','管理员核对发送会话版本及协议证据，登记该版本支持或更换受支持版本后重新派发；尚未提交');
-        const response=await this.retryRead(binding,session,'query',context,Infinity);
-        const identity=requestIdentity(response.value,r.identity,r.time_scale_ms);
-        if(at(response.value,r.found)!==false || !identity) {
-          throw new PrecheckFactError('投递前缺少本请求号的查空记录或可靠日志身份与主体','管理员核对日志身份及主体声明后重新派发；尚未提交，时间只作记录');
-        }
-        const initialization=eventOf(await this.journal.events(binding.job),'initialize.response');
-        requestSnapshot={request_identity:identity,request_protocol_version:session.serverVersion,request_protocol_verified:true};requestSources=[...new Set([response.source,...(initialization?.body.inputs??[])])];
-        await this.journal.append(binding,'request_identity','validate','completed',requestSnapshot,requestSources);
-      }
+      const {snapshot:requestSnapshot,sources:requestSources}=await this.freezeRequestIdentity(binding,d,session,context);
       let beforeState:{bound:boolean;sha256:string|null;reference:string|null}={bound:false,sha256:null,reference:null};
       const readBeforeState=async()=>{
         const declaration=d.calls.submit.write?.before_state;if(!declaration)return;
@@ -700,6 +916,9 @@ export class DispatchService {
       if (observed.report_pending||observed.frozen || observed.outcome === 'unknown' || observed.outcome === 'not_dispatched' || observed.outcome === 'target_rejected' || observed.outcome === 'proven_not_executed') return observed;
       return await this.continueRounds({ by, run, executor, binding, d, gate, policy, source, initial, input, registered, secret, round, deviceIdentity, flags, hold, session, remote, pulse: pulse!, fresh });
     } catch (error) {
+      if(this.#shutdown.signal.aborted&&!flags.intended&&!eventOf(await this.journal.events(binding.job),'intent')){
+        error=new PrecheckFactError('服务关停时本次请求尚未提交','服务恢复后可以重新发起上机验证；不要重发已经提交的原请求');
+      }
       if(error instanceof EffectBoundaryError&&!flags.intended&&!eventOf(await this.journal.events(binding.job),'intent')){await stop();if(remote)await this.release(binding,session,remote);return this.boundaryRefused(by,binding,error.failure);}
       if (flags.intended || eventOf(await this.journal.events(binding.job), 'intent')) {
         if((!flags.submitInvoked || error instanceof SubmissionNotSentError || error instanceof InvocationDefinitionError) && remote) {await this.notSent(binding,session,remote,stop,'当前进程证明未调用提交或未写出请求字节',error instanceof SubmissionNotSentError?[error.source]:[]);return this.status(by,binding.job);}
@@ -712,7 +931,8 @@ export class DispatchService {
         if (remote) await this.release(binding, session, remote);
       }
       return await this.status(by, binding.job);
-    } finally { await stop(); await unlockObservation?.(); }
+    } finally { await stop(); }
+    }finally{await unlockObservation();}
   }
   /** The scheduler administrator authorizes orchestration, never the runner's environment use. */
   private async environmentUseFailure(userId:string,executor:string,tx?:Transaction):Promise<BoundaryFailure|null> {
@@ -756,71 +976,43 @@ export class DispatchService {
   }
 
   /** Report absence is a native projected missing fact, not an inference from a legacy gateway spelling. */
-  private async reportReadback(_by:Principal,binding:JobBinding,events:readonly Event[]):Promise<ExecutionReadback|null>{
-    const intent=eventOf(events,'intent'),result=projectedResult(events),end=eventOf(events,'complete');
-    const count=result?.body.detail.no_verdict;let incomplete=result?.body.detail.report_pending===true||typeof count==='number'&&count>0;
-    const skip=(condition:string):null=>{if(incomplete)try{this.options.adminLog?.({traceId:null,run:binding.input?.run??binding.run??null,what:'report resume skipped '+binding.job,detail:JSON.stringify({condition})});}catch{}return null;};
-    if(!binding.input)return skip('binding.input');
-    if(!intent)return skip('intent');
-    if(!receiptOf(events))return skip('receipt');
-    if(!eventOf(events,'terminal'))return skip('terminal');
-    if(!result)return skip('result.projection');
-    if(eventOf(events,'dispose'))return skip('management.disposition');
-    if(end?.body.detail.outcome==='not_dispatched')return skip('complete.outcome');
-    const reference=result.body.detail.reference;
-    if(typeof reference!=='string'||!reference.startsWith('src:'))return skip('result.reference');
-    const bytes=await this.options.records.objects.get(reference.slice(4));
-    if(!bytes||sha256Hex(bytes)!==reference.slice(4))return skip('result.original_bytes');
-    let report:Record<string,unknown>;try{const value=JSON.parse(new TextDecoder().decode(bytes));if(!object(value))return skip('result.json_object');report=value;}catch{return skip('result.json_object');}
-    if(report.job!==binding.job)return skip('result.job');
-    if(report.sha256!==binding.input.sha256)return skip('result.sha256');
-    if(!Array.isArray(report.rows))return skip('result.rows');
-    const missingReport=report.rows.some(row=>object(row)&&typeof row.item==='string'&&binding.input!.items.includes(row.item)&&row.dynamic_terminal==='no_verdict'&&Array.isArray(row.missing_facts)&&(row.missing_facts.includes('report')||row.missing_facts.includes('complete')));
-    incomplete ||= missingReport;
-    // A completed transport/read may have a nonempty placeholder result. It does not establish a device verdict.
-    // Manual resume is a new authorized read, even when old raw bytes or their old readiness flags are unavailable.
-    if(result.body.detail.report_pending!==true&&!missingReport)return skip('result.missing_report');
-    const saved=result.body.detail.execution_integrity;
-    if(object(saved)&&saved.intent===intent.digest&&typeof saved.continuity==='boolean')return {intent:intent.digest,continuity:saved.continuity,...(typeof saved.drift==='boolean'?{drift:saved.drift}:{}),...(typeof saved.lease_interrupted==='boolean'?{lease_interrupted:saved.lease_interrupted}:{})};
-    // Legacy report projections recorded these execution-window facts before normal remote lease release.
-    const drift=typeof report.lease_drift==='boolean'?report.lease_drift:undefined,interrupted=typeof report.lease_interrupted==='boolean'?report.lease_interrupted:undefined;
-    const continuity=drift!==undefined&&interrupted!==undefined?!drift&&!interrupted:report.rows.length>0&&report.rows.every(row=>object(row)&&Array.isArray(row.missing_facts)&&!row.missing_facts.includes('continuity'));
-    return {intent:intent.digest,continuity,...(drift!==undefined?{drift}:{}),...(interrupted!==undefined?{lease_interrupted:interrupted}:{})};
+  async resume(by:Principal,job:string):Promise<JobStatus>{
+    if(this.#shutdown.signal.aborted)throw new Error('服务正在停止，请在恢复后读取原作业');
+    return this.operation(this.resumeAuthorized(by,job));
   }
-  async resume(by: Principal, job: string): Promise<JobStatus> {
+  private async resumeAuthorized(by:Principal,job:string):Promise<JobStatus>{
     await this.registry.admin(by);
-    const unlock = await this.options.records.store.tryHold(`dispatch.observation:${job}`);
-    if (!unlock) return this.status(by, job);
-    try { return await this.resumeHeld(by, job); }
-    finally { await unlock(); }
-  }
-  private async resumeHeld(by: Principal, job: string): Promise<JobStatus> {
-    const binding = { ...await this.journal.binding(job), acting_by: by.id }; const events = await this.journal.events(job);
-    const reportRefresh=!isFrozen(events)?await this.reportReadback(by,binding,events):null;
-    if (isDone(events) && !isFrozen(events)&&!reportRefresh) return this.status(by, job);
-    if(eventOf(events,'probe_intent')) {const d=await this.readingDefinition(binding);const material=await this.secret(binding,d);if(material===null)return this.status(by,job);const client=this.session(binding,d,material);await client.connect();await this.probeFollowup(by,binding,d,client,true);return this.status(by,job);}
-    const intent = eventOf(events, 'intent'); const receipt = receiptOf(events);
-    if (!intent) {
-      const gate = await this.journal.append(binding, 'gate', 'validate', 'completed', { allow_submit: false }, [], `dispatch.gate:${job}`);
-      if (!gate.created && gate.body.detail.allow_submit === true) { await this.unknown(binding, '派发可能正在进行；没有完整回执，不能重交'); return this.status(by, job); }
-      await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', next_action: '从未写入派发意图，必要时重新核对后派发' });
-      return this.status(by, job);
+    const events=await this.journal.events(job);
+    if(!events.length)throw new Error('作业对当前账户不可用');
+    if(eventOf(events,'probe_intent')&&!eventOf(events,'intent')){
+      const unlock=await this.options.records.store.tryHold('dispatch.observation:'+job);
+      if(!unlock)return this.status(by,job);
+      try{const binding={...await this.journal.binding(job),acting_by:by.id};const d=await this.readingDefinition(binding);const material=await this.secret(binding,d);if(material===null)return this.status(by,job);const client=this.session(binding,d,material);await client.connect();await this.probeFollowup(by,binding,d,client,true);return this.status(by,job);}
+      finally{await unlock();}
     }
-    if(reportRefresh){const prior=projectedResult(events)!;await this.journal.append(binding,'result','read_back','completed',{reference:prior.body.detail.reference,...(typeof prior.body.detail.items==='number'?{items:prior.body.detail.items}:{}),...(typeof prior.body.detail.no_verdict==='number'?{no_verdict:prior.body.detail.no_verdict}:{}),report_pending:true,execution_integrity:reportRefresh,refresh_of:'rec:'+prior.digest},['rec:'+prior.digest]);}
-    const d = await this.readingDefinition(binding);
-    if ((!receipt || isFrozen(events)) && (!d.reconciliation || !d.calls.query)) { await this.unknown(binding, '有意图但无完整可信回执或仍被冻结；下一步由管理员对账'); return this.status(by, job); }
-    const material=await this.secret(binding,d);if(material===null)return this.status(by,job);
-    const client = this.session(binding, d, material);
-    await client.connect();
-    const remote = intent.body.detail.remote_lease as unknown as RemoteLease;
-    const stop = reportRefresh?async()=>{}:this.heartbeat(binding, d, client, remote).stop;
-    if (!receipt || isFrozen(events)) { try { return await this.reconcileRequest(by,binding,d,client,stop); } finally { await stop(); } }
-    if(!reportRefresh)await this.checkContinuity(binding,d,client,remote);
-    try { return await this.observe(by, binding, d, client, receipt!.body.detail.remote_id, intent.body.detail.fences as unknown as HolderSnapshot[], stop, {...(typeof intent.body.detail.round==='number'?{round:intent.body.detail.round}:{}),...(reportRefresh?{execution:reportRefresh}:{})}); }
-    catch { if(reportRefresh)await this.journal.append(binding,'report_wait','read','error',{report_pending:true,missing_fact:'原执行已结束，报告只读补取尚未成功；未重交',next_action:`恢复只读通道后 circle-hub job resume ${job}`});else await this.pendingRead(binding); return this.status(by, job); }
-    finally { await stop(); }
+    const reservation=events.find(event=>event.body.detail.phase==='reservation');
+    if(!reservation)throw new Error('原派发绑定不可读取');
+    if(reservation.body.detail.read_only===true&&!eventOf(events,'intent'))return this.status(by,job);
+    if(this.#activeJobs.has(job)||this.#recoveryWorkers.has(job))return this.status(by,job);
+    const available=await this.options.records.store.tryHold('dispatch.observation:'+job);
+    if(!available)return this.status(by,job);
+    await available();
+    const binding=reservation.body.detail.binding;
+    if(this.recoveryBinding(binding))await this.journal.append({...binding,acting_by:by.id},'recovery_requested','read','completed',{requested_by:by.id,recovery:true},['rec:'+reservation.digest]);
+    await this.startRecovery(job,reservation.body.run);
+    return this.status(by,job);
   }
-  async dispose(by: Principal, job: string, options: { choice: Disposition; remote_id?: string | number; reason?: string; acceptPossibleDuplicateEffects?: boolean }): Promise<JobStatus> {
+  async dispose(by:Principal,job:string,options:{choice:Disposition;remote_id?:string|number;reason?:string;acceptPossibleDuplicateEffects?:boolean}):Promise<JobStatus>{
+    if(this.#shutdown.signal.aborted)throw new Error('服务正在停止，处置尚未执行，请恢复后核对原作业');
+    return this.operation(this.disposeLocked(by,job,options));
+  }
+  private async disposeLocked(by:Principal,job:string,options:{choice:Disposition;remote_id?:string|number;reason?:string;acceptPossibleDuplicateEffects?:boolean}):Promise<JobStatus>{
+    await this.registry.admin(by);
+    const unlock=await this.options.records.store.tryHold('dispatch.observation:'+job);
+    if(!unlock)throw new Error('原作业正在只读核对，处置尚未执行，请稍后再试');
+    try{return await this.disposeHeld(by,job,options);}finally{await unlock();}
+  }
+  private async disposeHeld(by: Principal, job: string, options: { choice: Disposition; remote_id?: string | number; reason?: string; acceptPossibleDuplicateEffects?: boolean }): Promise<JobStatus> {
     await this.registry.admin(by);
     const binding = { ...await this.journal.binding(job), acting_by: by.id }; const events = await this.journal.events(job);
     if (isDone(events) && !isFrozen(events)) return this.status(by, job);
@@ -1145,17 +1337,12 @@ export class DispatchService {
     try { return `src:${(await this.saveText(binding, source, lines.join('\n'), 'device-return.txt')).body.sha256}`; }
     catch (error) { try { this.options.adminLog?.({ traceId: null, run: binding.input?.run ?? binding.run ?? null, what: 'device return ' + binding.job, detail: error instanceof Error ? error.message : String(error) }); } catch { /* logging never stalls the job */ } return undefined; }
   }
-  private session(binding: JobBinding, d: ExecutorDefinition, secret: string): RpcClient {
-    return new RpcClient(d, secret, `${binding.user}/${binding.job}`, async (bytes, status, operation, complete = true, metadata) => {
-      const captured = await this.journal.raw(binding, bytes, operation, complete);
-      const source = captured.reference;
-      const op:LeaseOp|undefined=operation==='acquire'?'acquire':operation==='heartbeat'?'extend':operation==='release'?'release':undefined;
-      const {received_sha256,...publicMetadata}=metadata??{};
-      if(metadata?.redacted && binding.input)await this.journal.append({...binding,input:null},`${operation}.private_response`,'read','completed',{received_sha256,redacted:true});
-      const visibleMetadata=metadata?.redacted && binding.input?publicMetadata:metadata;
-      await this.journal.append(binding, `${operation}.response`, op?'lease':operation === 'submit' ? 'dispatch' : 'read', complete ? 'completed' : operation==='submit' ? 'unknown' : 'error', { ...(op?{op}:{}),http_status: status, complete, source_record: captured.record, ...visibleMetadata }, [source, captured.record]);
-      return source;
-    }, this.now,this.redactor);
+  private session(binding: JobBinding, d: ExecutorDefinition, secret: string, recovery=false, signal:AbortSignal=this.#shutdown.signal): RpcClient {
+    const client=new RpcClient(d,secret,binding.user+'/'+binding.job,(bytes,status,operation,complete=true,metadata)=>{
+      const captured=captureResponse({records:this.options.records,journal:this.journal,binding,bytes,status,operation,complete,metadata});
+      const tracked=captured.finally(()=>this.#captures.delete(tracked));this.#captures.add(tracked);return tracked;
+    },this.now,this.redactor,{recovery,signal});
+    this.#clients.add(new WeakRef(client));return client;
   }
   private async read(binding: JobBinding, client: RpcClient, role: CallRole, context: Record<string, unknown>, readBack = false,timeoutMs?:number): Promise<Exchange> {
     const result = await client.call(role, context,timeoutMs);
@@ -1167,6 +1354,7 @@ export class DispatchService {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try { if(remainingMs&&remainingMs()<=0)throw new Error('只读窗口已用尽');return await this.read(binding,client,role,context,false,remainingMs?Math.max(1,Math.min(client.definition.calls[role]?.timeout_ms??30000,remainingMs())):undefined); }
       catch (error) {
+        if(this.#shutdown.signal.aborted)throw error;
         const retry=canRetryRead(error,client.definition,context);
         await this.journal.append(binding, `${role}.retry`, 'read', 'error', { attempt, missing_fact: '本次只读应答不可用，不等于未执行', next_action: retry && attempt < 3 ? '自动重读原作业，绝不重交' : `circle-hub job resume ${binding.job}` });
         if (!retry || attempt === 3 || this.now().getTime() >= deadline || remainingMs&&remainingMs()<=0) throw new Error('原作业只读查询待恢复');
@@ -1189,6 +1377,23 @@ export class DispatchService {
     await this.journal.append(binding, 'acquire', 'lease', 'completed', { op:'acquire' satisfies LeaseOp,remote_lease: lease }, [response.source]);this.#leaseClocks.set(lease,{...started,ttl:lease.ttl}); return lease;
   }
   private opaque(value: unknown): boolean { return (typeof value === 'string' && !/[\x00-\x1f\x7f-\x9f]/.test(value) && value.length > 0 && value.length <= 4096 && !value.includes('[已隐藏]')) || (typeof value === 'number' && Number.isSafeInteger(value)); }
+  private async freezeRequestIdentity(binding:JobBinding,d:ExecutorDefinition,client:RpcClient,context:Record<string,unknown>):Promise<{snapshot:Record<string,unknown>;sources:string[]}>{
+    let requestSnapshot:Record<string,unknown>={};let requestSources:string[]=[];
+      if(d.reconciliation) {
+        const r=d.reconciliation;
+        if(!r.identity || !d.receipt.identity)throw new PrecheckFactError('缺少查询或投递回答的日志身份字段声明','管理员核对目标协议，补齐查询与投递回答的身份、起点及主体字段声明后重新派发；尚未提交');
+        if(!client.serverVersion || !r.protocol_versions.includes(client.serverVersion))throw new PrecheckFactError('投递会话版本未登记请求协议支持','管理员核对发送会话版本及协议证据，登记该版本支持或更换受支持版本后重新派发；尚未提交');
+        const response=await this.retryRead(binding,client,'query',context,Infinity);
+        const identity=requestIdentity(response.value,r.identity,r.time_scale_ms);
+        if(at(response.value,r.found)!==false || !identity) {
+          throw new PrecheckFactError('投递前缺少本请求号的查空记录或可靠日志身份与主体','管理员核对日志身份及主体声明后重新派发；尚未提交，时间只作记录');
+        }
+        const initialization=eventOf(await this.journal.events(binding.job),'initialize.response');
+        requestSnapshot={request_identity:identity,request_protocol_version:client.serverVersion,request_protocol_verified:true};requestSources=[...new Set([response.source,...(initialization?.body.inputs??[])])];
+        await this.journal.append(binding,'request_identity','validate','completed',requestSnapshot,requestSources);
+      }
+    return {snapshot:requestSnapshot,sources:requestSources};
+  }
   private async assessConditions(binding:JobBinding,conditions:ExecutorDefinition['conditions'],response:Exchange,context:Record<string,unknown>,phase:string):Promise<boolean> {
     const checks=conditions.map(c=>{
       const operator=Object.hasOwn(c,'equals')?'equals':c.at_least!==undefined?'at_least':'sha256';
@@ -1337,6 +1542,7 @@ export class DispatchService {
     return verified;
   }
   private heartbeat(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, lease: RemoteLease): Heartbeat {
+    if(this.#shutdown.signal.aborted)return {held:()=>false,lastConfirmedAt:()=>null,stop:async()=>{}};
     let flight:Promise<void>|null=null;let available=true;let stopped=false;let overrun=false;
     let confirmed=this.#leaseClocks.get(lease);
     const notices=new Set<Promise<unknown>>();
@@ -1356,11 +1562,20 @@ export class DispatchService {
         }catch{available=false;notice('目标租约未获确认；后续心跳继续尝试，已发出作业只读恢复');}
       }).finally(()=>{flight=null;});
     },Math.max(1,Math.floor(lease.ttl/3)));
-    return {held,lastConfirmedAt:()=>confirmed?.at ?? null,stop:async()=>{stopped=true;clearInterval(timer);if(flight)await flight;await Promise.allSettled([...notices]);}};
+    const pulse:Heartbeat={held,lastConfirmedAt:()=>confirmed?.at ?? null,stop:async()=>{stopped=true;clearInterval(timer);if(flight)await flight;await Promise.allSettled([...notices]);this.#pulses.delete(pulse);}};
+    this.#pulses.add(pulse);return pulse;
   }
   private async release(binding: JobBinding, client: RpcClient, lease: RemoteLease): Promise<void> {
-    try { await this.read(binding, client, 'release', { ...this.context(binding), lease_id: lease.id, lease_token: lease.token }); }
-    catch { await this.journal.append(binding, 'release', 'lease', 'error', {op:'release' satisfies LeaseOp, next_action: '目标租约释放未核实；请管理员只读核对，不能重交' }); }
+    await this.releaseConfirmed(binding,client,lease);
+  }
+  private async releaseConfirmed(binding: JobBinding, client: RpcClient, lease: RemoteLease): Promise<boolean> {
+    try { await this.read(binding, client, 'release', { ...this.context(binding), lease_id: lease.id, lease_token: lease.token });return true; }
+    catch { await this.journal.append(binding, 'release', 'lease', 'error', {op:'release' satisfies LeaseOp, next_action: '目标租约释放未核实；请管理员只读核对，不能重交' });return false; }
+  }
+  private async recoveryRelease(binding:JobBinding,client:RpcClient,lease:RemoteLease):Promise<Array<{fact:string;next_action:string}>>{
+    if(client.hasTool('release')){if(await this.releaseConfirmed(binding,client,lease))return [];}
+    else await this.journal.append(binding,'release','lease','error',{op:'release' satisfies LeaseOp,missing_fact:'原预订释放工具不可用，未取得释放回答'});
+    return [{fact:'原任务结局已取得，但原预订释放尚未核对完成',next_action:'按原作业的释放记录核对预订；后续验证走新的核验和预订流程，不重发原请求'}];
   }
   private async unknown(binding: JobBinding, reason: string, sources: string[] = [], observation: Record<string, unknown> = {}): Promise<void> {
     const history=await this.journal.events(binding.job);
@@ -1374,38 +1589,40 @@ export class DispatchService {
     await this.journal.append(binding, 'unknown', 'validate', 'unknown', { ...observation, uncertain: true, outcome: 'unknown', missing_fact: reason,
       request_kind: requestKind,question_sha256,deadline,channel:{component:'cli-job',command:`circle-hub job dispose ${binding.job}`},audience_user:binding.acting_by ?? binding.initiated_by, audience_role: 'admin', next_action: typeof observation.next_action==='string' ? observation.next_action : identity?`管理员按已存原作业编号运行 ${command}；不得重交`:`管理员从原请求记录或审计取得编号后运行 ${command}；不得重交` }, sources);
   }
-  private async observe(by: Principal, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, remoteId: unknown, fences: HolderSnapshot[], stopHeartbeat: () => Promise<void> = async () => {}, options?: { seal?: boolean; round?: number;execution?:ExecutionReadback }): Promise<JobStatus> {
+  private async observe(by: Principal|undefined, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, remoteId: unknown, fences: HolderSnapshot[], stopHeartbeat: () => Promise<void> = async () => {}, options?: { seal?: boolean; round?: number;execution?:ExecutionReadback;recovery?:boolean;savedResult?:Exchange }): Promise<JobStatus> {
     const input = binding.input!; const events = await this.journal.events(binding.job); const intent = eventOf(events, 'intent')!;
     const remoteLease = intent.body.detail.remote_lease as unknown as RemoteLease;
-    const context = { ...this.context(binding),request_id:intent.body.detail.request_id,not_after:intent.body.detail.not_after, remote_id: remoteId, lease_id: remoteLease.id, lease_token: remoteLease.token };
+    const context = { ...this.context(binding),request_id:intent.body.detail.request_id,not_after:intent.body.detail.not_after,dispatch_sequence:intent.body.detail.dispatch_sequence,sequence_scope:intent.body.detail.sequence_scope, remote_id: remoteId, lease_id: remoteLease.id, lease_token: remoteLease.token };
     const deadline = Date.parse(String(intent.body.detail.not_after)) + d.max_run_ms; let drift = options?.execution?.drift??false;
-    for (;;) {
+    for (;!options?.savedResult;) {
       const response = await this.retryRead(binding, client, 'status', context, deadline);
       const observedHolders=!options?.execution&&!drift?await this.options.leases.holderSnapshot(binding.resources):[];
       if (!options?.execution&&!drift && !this.sameFences(fences, observedHolders)) {
         drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:observedHolders.some(row=>row.expires_at!==null && Date.parse(row.expires_at)<=this.now().getTime()), note: '派发后租约到期或围栏改变，不能声称保持同一租约；继续只读状态' });
       }
       const mapping = mapped(d.status.map, at(response.value, d.status.pointer));
-      if (!trustedStatus(mapping)) { await this.unknown(binding, '目标状态不能作为可信终态（未映射或缺拒绝阶段、未执行证明）；下一步管理员对账', [response.source], { reported_state: mapping ?? null }); return this.status(by, binding.job); }
+      if (!trustedStatus(mapping)) { await this.unknown(binding, '目标状态不能作为可信终态（未映射或缺拒绝阶段、未执行证明）；下一步管理员对账', [response.source], { reported_state: mapping ?? null }); return this.observedStatus(by,binding.job); }
       if (mapping && (mapping.action_result === 'completed' || mapping.action_result === 'error' || mapping.effect_outcome === 'effective' || mapping.effect_outcome === 'read_back_consistent' || mapping.dynamic_terminal !== undefined)) {
         await this.journal.append(binding, 'terminal', 'read', 'completed', { reported_state: mapping, ...(d.status.exit_code ? { exit_code: at(response.value, d.status.exit_code) ?? null } : {}) }, [response.source]);
         break;
       }
       if (this.now().getTime() >= deadline) {
         if (options?.round !== undefined) await this.noteRound(binding, { round: options.round, terminal: 'incomplete', meets: null, pending: true });
-        await this.unknown(binding, '最长运行窗口已过且没有可信终态；下一步管理员对账'); return this.status(by, binding.job);
+        await this.unknown(binding, '最长运行窗口已过且没有可信终态；下一步管理员对账'); return this.observedStatus(by,binding.job);
       }
+      if(options?.recovery)return this.observedStatus(by,binding.job);
       await this.sleep(d.poll_ms);
     }
     const reportStart=performance.now(),reportDeadline=this.now().getTime()+REPORT_READ_WINDOW_MS;
     const remaining=()=>REPORT_READ_WINDOW_MS-(performance.now()-reportStart);
-    let response=await this.retryRead(binding,client,'result',context,reportDeadline,remaining);
+    let response=options?.savedResult??await this.retryRead(binding,client,'result',context,reportDeadline,remaining);
     let pending=false;
     for(let attempt=1;attempt<=REPORT_READ_ATTEMPTS;attempt++){
       // A wrong identity is never a missing report and must take the existing reconciliation exit.
       if(!same(at(response.value,d.result.id),remoteId)||at(response.value,d.result.sha256)!==input.sha256)break;
       if(!reportPending(response.value,d,input.items))break;
       pending=true;
+      if(options?.recovery)break;
       if(attempt===REPORT_READ_ATTEMPTS||remaining()<=0)break;
       const delay=Math.min(reportReadDelay(d.poll_ms,attempt),Math.max(0,remaining()));
       await this.journal.append(binding,'report_wait','read','completed',{attempt,delay_ms:delay,missing_fact:'原请求报告尚未完整生成',next_action:'自动有界重取原请求状态与报告，绝不重发提交'},[response.source]);
@@ -1413,13 +1630,13 @@ export class DispatchService {
       if(remaining()<=0)break;
       try{
         const status=await this.retryRead(binding,client,'status',context,reportDeadline,remaining),mapping=mapped(d.status.map,at(status.value,d.status.pointer));
-        if(!trustedStatus(mapping)){await this.unknown(binding,'补读报告时原请求状态未取得可信映射；只读对账，不重交',[status.source]);return this.status(by,binding.job);}
+        if(!trustedStatus(mapping)){await this.unknown(binding,'补读报告时原请求状态未取得可信映射；只读对账，不重交',[status.source]);return this.observedStatus(by,binding.job);}
         response=await this.retryRead(binding,client,'result',context,reportDeadline,remaining);pending=false;
       }catch{await this.journal.append(binding,'report_wait','read','error',{attempt:attempt+1,missing_fact:'报告补读未取得可用应答，已有投递不重交',next_action:`circle-hub job resume ${binding.job}`});break;}
     }
     pending=reportPending(response.value,d,input.items);
     if (!same(at(response.value, d.result.id), remoteId) || at(response.value, d.result.sha256) !== input.sha256) {
-      await this.unknown(binding, '结果身份或摘要不符，整份不采信；请管理员对账', [response.source], { observed_outcome: 'read_back_mismatch' }); return this.status(by, binding.job);
+      await this.unknown(binding, '结果身份或摘要不符，整份不采信；请管理员对账', [response.source], { observed_outcome: 'read_back_mismatch' }); return this.observedStatus(by,binding.job);
     }
     const rows = at(response.value, d.result.items); const complete = at(response.value, d.result.complete) === true;
     const finalHolders=!options?.execution&&!drift?await this.options.leases.holderSnapshot(binding.resources):[];
@@ -1427,9 +1644,9 @@ export class DispatchService {
       drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:finalHolders.some(row=>row.expires_at!==null && Date.parse(row.expires_at)<=this.now().getTime()), note: '结果读取期间租约到期或围栏改变，不能声称保持同一租约' });
     }
     // Post probes need the remote lease. Heartbeats keep it alive; stopping or releasing first makes later probes fail.
-    const bed = options?.seal === false && !pending ? null : await this.finishBed(binding, d, client, context);
+    const bed = options?.recovery||options?.seal === false && !pending ? null : await this.finishBed(binding, d, client, context);
     await stopHeartbeat();
-    if (!options?.execution && await this.effectivelyComplete(binding.job)) return this.status(by, binding.job);
+    if (!options?.execution && await this.effectivelyComplete(binding.job)) return this.observedStatus(by,binding.job);
     const leaseInterrupted=options?.execution?(options.execution.lease_interrupted??false):(await this.journal.events(binding.job)).some(e=>e.body.detail.lease_interrupted===true);
     const ownershipCertified = await this.certified(binding,d,client,'result_ownership');
     const attribution=d.result.ownership;
@@ -1458,7 +1675,7 @@ export class DispatchService {
     const sideEffects = d.side_effects.map(declaration=>declaration.marker ? {message:declaration.message,marker_present:savedLogs.some(log=>log.includes(declaration.marker!)),text:savedLogs.some(log=>log.includes(declaration.marker!))?'本次日志里有这一项的标记':'本次日志里没有这一项的标记',reference:response.source,complete,scope:'只核对本次已保存字节中的标记，不推断动作是否发生'} : {message:declaration.message,text:'运行器会这样做（执行器定义声明，Hub 看不见）',provenance:'declared',definition_sha256:digestOfValue(d)});
     if (bed) for (const row of projected) row.limits = [...row.limits, ...bed.limits];
     if (options?.round !== undefined) await this.noteObservedRound(by,binding,d,options.round,projected,complete,pending,!!options.execution);
-    if (options?.seal === false&&!pending) return this.status(by, binding.job);
+    if (options?.seal === false&&!pending) return this.observedStatus(by,binding.job);
     const roundList = this.roundList(await this.journal.events(binding.job));
     const vocabularyLimits=[...DISPATCH_QUALIFICATIONS,...(input.judgments?.length?['conditional_on_judgment' as const]:[])].map(mark=>labelOf('qualifier_mark',mark));
     const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected,...(pending?{report_pending:true}:{}), ...(roundList.length ? { rounds: roundList } : {}), ownership:ownershipObservation, side_effects:sideEffects, executor_declarations: { provenance: 'declared', definition_sha256: digestOfValue(d), operation_definition_sha256:binding.executor_digest, limitations: d.limitations }, lease_drift:options?.execution?(options.execution.drift??null):drift,lease_interrupted:options?.execution?(options.execution.lease_interrupted??null):leaseInterrupted, qualifier_marks:[...DISPATCH_QUALIFICATIONS,...(input.judgments?.length?['conditional_on_judgment' as const]:[])],limits:[...vocabularyLimits, ...(bed?.limits ?? [])],...(bed?{bed_state:bed}:{}),...(input.judgments?.length?{judgment_premises:input.judgments}:{}) }), mediaType: 'application/json',
@@ -1466,9 +1683,10 @@ export class DispatchService {
     const deviceReturn = await this.deviceReturn(binding, response.source, projected, returned);
     await this.journal.append(binding, 'result', 'read_back', 'completed', {reference:`src:${artifact.body.sha256}`,items:projected.length,...(deviceReturn?{device_return:deviceReturn}:{}),no_verdict:projected.filter(row=>row.dynamic_terminal==='no_verdict').length,report_pending:pending,execution_integrity:options?.execution??{intent:intent.digest,continuity:!drift&&!leaseInterrupted,drift,lease_interrupted:leaseInterrupted}}, [response.source]);
     if(!options?.execution)await this.release(binding,client,remoteLease);
+    const cleanup=options?.recovery&&!pending?await this.recoveryRelease(binding,client,remoteLease):[];
     const unresolved=projected.filter(row=>row.dynamic_terminal==='no_verdict');
-    await this.journal.append(binding, 'complete', 'read_back', 'completed', { done: true, outcome: 'effective',...(pending?{report_pending:true,missing_fact:'原请求已执行结束，判定仍缺事实：'+unresolved.map(row=>'missing_fact' in row?row.missing_fact:row.missing_facts.join('、')).join('；'),next_action:unresolved.find(row=>'next_action'in row)?.next_action??`circle-hub job resume ${binding.job}；只读补齐报告，不重交`}:{}),...(!pending&&unresolved.length?{missing_fact:[...new Set(unresolved.map(row=>'missing_fact' in row?row.missing_fact:'动态完整性事实尚不齐全；见 missing_facts'))].join('；'),next_action:[...new Set(unresolved.map(row=>row.next_action))].join('；')}:{} ) });
-    return this.status(by, binding.job);
+    await this.journal.append(binding, options?.recovery&&pending?'report_wait':'complete', 'read_back', 'completed', { done: !(options?.recovery&&pending), ...(!(options?.recovery&&pending)?{outcome:'effective'}:{}), ...(options?.recovery?{recovery:true,public_reason:'重启后只读原请求的结果；没有重新提交'}:{}),...(cleanup.length?{member_missing_facts:cleanup}:{}),...(pending?{report_pending:true,missing_fact:'原请求已执行结束，判定仍缺事实：'+unresolved.map(row=>'missing_fact' in row?row.missing_fact:row.missing_facts.join('、')).join('；'),next_action:unresolved.find(row=>'next_action'in row)?.next_action??`circle-hub job resume ${binding.job}；只读补齐报告，不重交`}:{}),...(!pending&&unresolved.length?{missing_fact:[...new Set(unresolved.map(row=>'missing_fact' in row?row.missing_fact:'动态完整性事实尚不齐全；见 missing_facts'))].join('；'),next_action:[...new Set(unresolved.map(row=>row.next_action))].join('；')}:{} ) },[],options?.recovery&&!pending?'dispatch.recovery.complete:'+intent.digest:undefined);
+    return this.observedStatus(by,binding.job);
   }
 
   /** The next round that has not already succeeded. A closed window or an early stop refuses another dispatch. */
@@ -1494,22 +1712,23 @@ export class DispatchService {
     return count + 1;
   }
 
+  private observedStatus(by:Principal|undefined,job:string):Promise<JobStatus>{return by?this.status(by,job):this.jobStatus(job);}
   private async noteRound(binding: JobBinding, detail: Record<string, unknown>): Promise<void> {
     await this.journal.append(binding, 'round', 'validate', 'completed', detail);
   }
 
-  private async noteObservedRound(by: Principal, binding: JobBinding, d: ExecutorDefinition, round: number, projected: Array<{ dynamic_terminal: DynamicTerminal; code?: string }>, complete: boolean,pendingReport=false,refresh=false): Promise<void> {
+  private async noteObservedRound(by: Principal|undefined, binding: JobBinding, d: ExecutorDefinition, round: number, projected: Array<{ dynamic_terminal: DynamicTerminal; code?: string }>, complete: boolean,pendingReport=false,refresh=false): Promise<void> {
     const events = await this.journal.events(binding.job);
     const previous=roundRecords(events).find(event=>event.body.detail.round===round);
     if(previous&&(!refresh||!isDynamicTerminal(previous.body.detail.terminal)||previous.body.detail.terminal==='pass'||previous.body.detail.terminal==='fail'))return;
     const terminals = projected.map(row => row.dynamic_terminal);
     const terminal: DynamicTerminal = terminals.length > 0 && terminals.every(item => item === 'pass') ? 'pass' : terminals.some(item => item === 'fail') ? 'fail' : terminals.find(item => item === 'incomplete') ?? terminals.find(item => item === 'no_verdict') ?? 'no_verdict';
     const code = projected.find(row => typeof row.code === 'string')?.code;
-    const detail = binding.input ? await this.options.runs.getRun(by, binding.input.run) : null;
+    const detail = binding.input&&by ? await this.options.runs.getRun(by, binding.input.run) : null;
     const workflow = detail ? await this.options.workflows.byDigest(detail.run.pack_digest) : null;
     const template = workflow?.requirements.find(row => row.key === d.proof.requirement);
-    const expectation = template ? expectationFor(template, {}) : { outcome: 'support' as const, codes: [] as string[] };
-    const met = roundMeets(terminal, code, expectation);
+    const expectation = by?(template ? expectationFor(template, {}) : { outcome: 'support' as const, codes: [] as string[] }):null;
+    const met = expectation?roundMeets(terminal, code, expectation):null;
     await this.noteRound(binding, { round, terminal, outcome:'effective', ...(code ? { code } : {}), meets: terminal === 'pass' || terminal === 'fail' ? met : null, rows:projected,...(pendingReport?{report_pending:true,pending:true,reason:'missing_input'}:{}),...(complete?{}:{lost:true}) });
   }
 
@@ -1671,6 +1890,7 @@ export class DispatchService {
     const key = digestOfValue([input.lineage, input.item, d.proof.slot, round]);
     context.request_id = `${key}:${attempt}`; context.not_after = notAfter;
       context.sequence_scope = binding.executor; context.dispatch_sequence = await this.journal.nextDispatchSequence(binding);
+    const {snapshot:requestSnapshot,sources:requestSources}=await this.freezeRequestIdentity(binding,d,session,context);
     const finalBoundary = { ...gate.context,
       lease: async () => { if (!pulse.held()) return { ok: false as const, code: 'LEASE_EXPIRED', message: '目标租约心跳或确认时效中断；请恢复租约并重证基线' }; const current = await this.options.leases.holderSnapshot(d.resources); return this.sameFences(initial, current) ? { ok: true as const } : { ok: false as const, code: 'FENCING_STALE', message: 'Hub 围栏改变；请重证基线后开新修订' }; },
       content: async proof => !!source?.bytes && !!source.mediaType && proof.sha256 === input.sha256 && verifiedContent(source.bytes, input.sha256, source.mediaType),
@@ -1692,9 +1912,9 @@ export class DispatchService {
         if (!permitted.created) throw new Error('作业已经恢复或关闭，不能再提交');
         const ordinal = await this.journal.append(binding, 'sequence', 'validate', 'completed', { sequence }, [], `dispatch.sequence:${input.lineage}:${sequence}`, tx);
         if (!ordinal.created) throw new Error('血缘次序已由另一派发占用；未提交');
-        const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { effect_row: boundary.row.id, effect_duration_ms: d.max_run_ms, intent_key: key, verification_result: currentProof.result, request_id: context.request_id, dispatch_sequence:context.dispatch_sequence,sequence_scope:context.sequence_scope, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id, context.lease_token]), attempt, round, not_after: notAfter, sequence, action_digest: actionDigest,
+        const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { effect_row: boundary.row.id, effect_duration_ms: d.max_run_ms, intent_key: key, verification_result: currentProof.result, request_id: context.request_id, dispatch_sequence:context.dispatch_sequence,sequence_scope:context.sequence_scope, ...requestSnapshot, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id, context.lease_token]), attempt, round, not_after: notAfter, sequence, action_digest: actionDigest,
           dispatch_binding_digest: digestOfValue([input.run, input.item, input.sha256, fresh, remote]), target_key: binding.target_key, ...intentSemantics, on_behalf_of: input.user,
-          before_state_bound: false, before_state: { bound: false, sha256: null, reference: null }, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`], bytesKey(input.sha256, round, attempt, true,input.lineage), tx);
+          before_state_bound: false, before_state: { bound: false, sha256: null, reference: null }, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`,...requestSources], bytesKey(input.sha256, round, attempt, true,input.lineage), tx);
         if (!intent.created) throw new Error('这份字节已经写过意图；未重复提交');
       });
     } catch (error) {

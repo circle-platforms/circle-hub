@@ -251,6 +251,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   const engine=createRunsService(engineDeps);
   const runs = withCallNotes(engine, notes);
   dispatch = leases ? new DispatchService({ enforceEnvironmentAssignments: false, records, leases, runs, workflows, knowledge, ...(environments ? { environmentAccess: environments } : {}), adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  await dispatch?.initializeRecovery();
 
   const deps: ServerDeps = {
     startupSecretIssues: () => startupSecretIssues,
