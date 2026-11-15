@@ -114,7 +114,65 @@ export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile
  for(const [index,expect]of slots.expects.entries()){const target=assertionTarget(contract,profile,expect),a=target?.entry.authority,name=target?Object.keys(target.call.parameters).find(n=>target.call.parameters[n]==='literal_assertion'):null;if(a&&name&&a.parameters[name])put(a.parameters[name].type,expect.text,a,a.parameters[name].role,`/data/expects/${index}/text`);}
  return uses;
 }
+const DOC_LABELS: Readonly<Record<string, string>> = { blocks: '编写块步骤', catalog: '产品命令手册', contract: '执行器规则' };
+const oneBased = (raw: string | undefined): number | null => {
+ if (!raw || !/^(?:0|[1-9]\d*)$/.test(raw)) return null;
+ const n = Number(raw);
+ return Number.isSafeInteger(n) && n < Number.MAX_SAFE_INTEGER ? n + 1 : null;
+};
+/** Formats machine gap `(document, pointer)` into human-readable Chinese location prose while `data.problems` keeps exact machine pointers. */
+export function humanGapLocation(document: string, pointer: string): string {
+ const doc = DOC_LABELS[document] ?? '原合约与手册检查';
+ const parts = pointer === '' ? [] : pointer.startsWith('/') ? pointer.slice(1).split('/') : [];
+ if (!parts.length) return doc;
+ if (parts[0] === 'blocks') {
+  const block = oneBased(parts[1]);
+  if (block === null) return '编写块步骤';
+  if (parts[2] === 'call') {
+   if (parts[3] === 'args') {
+    const arg = oneBased(parts[4]);
+    if (arg !== null) {
+     const param = parts[5] === 'command_parameters' ? oneBased(parts[6]) : null;
+     return param !== null ? `第 ${block} 块调用步骤第 ${arg} 个参数的第 ${param} 个命令参数` : `第 ${block} 块调用步骤第 ${arg} 个参数`;
+    }
+   }
+   if (parts[3] === 'keywords') return `第 ${block} 块调用步骤的命名参数`;
+   return `第 ${block} 块的调用步骤`;
+  }
+  if (parts[2] === 'select') {
+   const row = parts[3] === 'where' ? oneBased(parts[4]) : null;
+   return row !== null ? `第 ${block} 块的第 ${row} 条选行条件` : `第 ${block} 块的选行条件`;
+  }
+  if (parts[2] === 'table') return `第 ${block} 块的表格设置`;
+  if (parts[2] === 'assertions') {
+   const assertion = oneBased(parts[3]);
+   return assertion !== null ? `第 ${block} 块的第 ${assertion} 条断言` : `第 ${block} 块的断言`;
+  }
+  return `第 ${block} 块`;
+ }
+ if (parts[0] === 'steps') {
+  const step = oneBased(parts[1]);
+  let loc = '执行步骤';
+  if (step !== null) {
+   if (parts[2] === 'args') {
+    const arg = oneBased(parts[3]);
+    if (arg !== null) {
+     const param = parts[4] === 'command_parameters' ? oneBased(parts[5]) : null;
+     loc = param !== null ? `第 ${step} 步第 ${arg} 个参数的第 ${param} 个命令参数` : `第 ${step} 步第 ${arg} 个参数`;
+    } else loc = `第 ${step} 步`;
+   } else if (parts[2] === 'keywords') loc = `第 ${step} 步的命名参数`;
+   else loc = `第 ${step} 步`;
+  }
+  return document === 'catalog' || document === 'contract' ? `${doc}・${loc}` : loc;
+ }
+ if (parts[0] === 'expects') {
+  const assertion = oneBased(parts[1]);
+  return assertion !== null ? `第 ${assertion} 条断言（${doc}）` : `断言配置（${doc}）`;
+ }
+ if (parts[0] === 'entries') return '产品命令手册条目';
+ return doc;
+}
 export const authorityRecovery = (gaps: readonly AuthorityGap[]): string => {
- const repair=gaps.some(gap=>gap.verdict==='refute')?'当前运行者按指针和未完成义务补齐作者命令、合法参数及逆序清理，再重新核验；不得改冻结授权绕过':'当前运行者按指针请求产品包、合约或自动化测试环境发布管理员补齐相应事实；产品命令规则更新后重新育苗并开新运行';
- return `缺少原合约的类型与效果事实或不符合显式授权：${gaps.map(gap => `${gap.document}${gap.pointer}：${gap.message}`).join('；')}。下一步：${repair}；原合约按 runtime-contract@2 核对。不得编辑冻结 profile 绕过。Hub 为缺失事实绑定具名受众与期限；当前不生成或派发工作簿。`;
+ const repair=gaps.some(gap=>gap.verdict==='refute')?'当前运行者按上述位置和未完成义务补齐作者命令、合法参数及逆序清理，再重新核验；不得改动已冻结的执行器配置来绕过':'当前运行者按上述位置请求产品包、合约或测试环境的管理员补齐相应事实；产品命令规则更新后，由管理员重新生成该构建的手册和命令树，再开新运行';
+ return `缺少原合约的类型与效果事实或不符合显式授权：${gaps.map(gap => `${humanGapLocation(gap.document, gap.pointer)}：${gap.message}`).join('；')}。下一步：${repair}；按现行执行器规则核对。不得改动已冻结的执行器配置来绕过。Hub 为缺失事实绑定具名对象与期限；当前不生成或派发自动化用例 Excel。`;
 };
