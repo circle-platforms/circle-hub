@@ -1,4 +1,4 @@
-// UNRUN until the integrator supplies the fixed recovery core SHA and the sole PostgreSQL slot.
+// Run only after checking the shared full-test lock and obtaining the sole PostgreSQL slot.
 // Actual SIGKILL/re-exec, one synthetic gateway ledger surviving the Hub children, one unchanged database.
 import assert from 'node:assert/strict';
 import {spawn,type ChildProcess} from 'node:child_process';
@@ -7,6 +7,7 @@ import {test,type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import type {ActionBody} from '../../hub/records/api.ts';
 import {setupJournal} from '../../hub/dispatch/testing/journal.ts';
+import {acceptedDispatch} from '../../hub/dispatch/accepted.ts';
 import {observationLockFree} from '../../hub/dispatch/testing/context.ts';
 
 type Context=Awaited<ReturnType<typeof setupJournal>>;
@@ -70,6 +71,13 @@ test('R3-2 admitted not_started converges and permits a fresh explicit gate with
   const holder:{current?:ChildProcess}={};const c=await journal(t,{stopped:true,onSubmit:async()=>{holder.current!.kill('SIGKILL');}});
   const job=await admittedAndKilled(t,c,holder);const syntheticLedger=c.rows;assert.equal(syntheticLedger.size,1);
   const worker=await recover(t,c,job);assert.equal((await completed(c,job)).outcome,'proven_not_executed');assert.equal(sends(c),1);await worker.close();
+  let automatic=0;const dispatch=c.service.dispatchAccepted.bind(c.service);
+  c.service.dispatchAccepted=(...args)=>{automatic++;return dispatch(...args);};
+  const reads=c.calls.filter(name=>name==='open_slot').length;
+  const notes=await acceptedDispatch(c.kit,c.service,c.run,true,0,c.owner);
+  assert.equal(automatic,0,'rereading the original accepted submission must not schedule another dispatch');
+  assert.equal(sends(c),1);assert.equal(c.calls.filter(name=>name==='open_slot').length,reads);
+  assert.ok(notes.some(note=>note.next_action?.includes('新的核验')));
   const fresh=await child(t,c,'dispatch','gate');await fresh.wait('checkpoint');await fresh.kill();assert.equal(sends(c),1,'new authorization gate is not an automatic retransmission');assert.equal(syntheticLedger.size,1);
 });
 
