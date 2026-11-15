@@ -26,7 +26,6 @@ const REAL_TOOL_REASON = 'real-system diagnostic/probe/review runner test: outsi
 export const NOT_RUN: readonly NotRunEntry[] = [
   ...withReason(REAL_TOOL_REASON, [
     'scripts/real/accept-circle.test.ts',
-    'scripts/real/bed-side/table-cell.test.ts',
     'scripts/real/benchmark/inject.test.ts',
     'scripts/real/console-page-resources.test.ts',
     'scripts/real/hub-call.test.ts',
