@@ -317,7 +317,15 @@
                 "SYNC_EPOCH_CHANGED",
                 "SYNC_RATE_LIMITED",
                 "SYNC_PURGE_CONFIRMATION_REQUIRED",
-                "GROUNDS_PURGED"
+                "GROUNDS_PURGED",
+                "CALL_AUTHENTICATION_REQUIRED",
+                "CALL_ORIGIN_REFUSED",
+                "CALL_METHOD_UNSUPPORTED",
+                "CALL_MEDIA_TYPE_UNSUPPORTED",
+                "CALL_REQUEST_INVALID",
+                "CALL_BUSY",
+                "CALL_INTERNAL_UNAVAILABLE",
+                "RUN_EXPORT_NOT_READY"
               ]
             },
             "row": {
