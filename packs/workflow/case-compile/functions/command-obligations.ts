@@ -31,6 +31,8 @@ function definitions(raw:unknown):CommandDefinition[]{
   return [{path,words:entry.words,signatures:entry.signatures} as CommandDefinition];
  });
 }
+/** Frozen catalog declarations shared by obligation checks and disclosure-only precheck. */
+export { definitions as commandDefinitions };
 /**
  * The typed addresses of the author's own commands (decision 115, the reference implementation's author provenance of addresses):
  * every address parameter of each case-text command line the locked tree resolves, compared by address. An address the

@@ -21,7 +21,8 @@ export interface PinnedIdentity { identity: string; bytes: string | null }
  * module-wide and are not a teardown a case may copy. `pinned` says whether the original contract's source_hashes record
  * the same digest for the source; when it does not, the digest is the Hub-side declaration only.
  */
-export interface RunnerCleanup { source: string; sha256: string; objects: string[]; rules: Array<{ prefixes: string[]; line: number | null }>; pinned: boolean }
+export interface CommandDomainProbe { command: string; reference: string; read_only: true }
+export interface RunnerCleanup { source: string; sha256: string; objects: string[]; rules: Array<{ prefixes: string[]; line: number | null; probe?: CommandDomainProbe }>; pinned: boolean }
 /**
  * Device commands the runner is never asked to send (a runtime-contract@2 addition, decision 114). The reference
  * implementation bans, unconditionally, the commands that take a shared environment's device down or wipe it with its
@@ -193,16 +194,17 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   if (value.cleanup !== undefined) {
     const c = value.cleanup;
     const rules = isRecord(c) && Array.isArray(c.rules) ? c.rules : [];
+    const probe = (p: unknown): boolean => p === undefined || isRecord(p) && Object.keys(p).every(key => ['command', 'reference', 'read_only'].includes(key)) && typeof p.command === 'string' && p.command.length > 0 && p.command.length <= 2000 && !/[\r\n\u0000]/.test(p.command) && typeof p.reference === 'string' && /^tree:[a-f0-9]{64}\/commands(?:\/[^@\s/]+)+(?:@[a-f0-9]{64})?$/.test(p.reference) && p.read_only === true;
     const prefix = (p: unknown): p is string => typeof p === 'string' && /\S/.test(p) && p.length <= 200 && !/[\r\n]/.test(p);
     if (value.schema !== 'runtime-contract@2' || !isRecord(c) || Object.keys(c).some((key) => !['source', 'sha256', 'objects', 'rules'].includes(key)) || !nonempty(c.source) || typeof c.sha256 !== 'string' || !SHA.test(c.sha256)
       || !Array.isArray(c.objects) || c.objects.length === 0 || c.objects.length > 16 || c.objects.some((o) => !nonempty(o)) || new Set(c.objects).size !== c.objects.length
-      || rules.length === 0 || rules.length > 512 || rules.some((r) => !isRecord(r) || Object.keys(r).some((key) => !['prefixes', 'line'].includes(key)) || !Array.isArray(r.prefixes) || r.prefixes.length === 0 || r.prefixes.length > 16 || !r.prefixes.every(prefix) || r.line !== undefined && (!Number.isSafeInteger(r.line) || (r.line as number) < 1))) {
-      issue('/cleanup', '运行器清理声明只能是 runtime-contract@2 里的 source、sha256、objects（1–16 个对象）和 rules（1–512 条，每条 1–16 个单行前缀，可带源码行号）');
+      || rules.length === 0 || rules.length > 512 || rules.some((r) => !isRecord(r) || Object.keys(r).some((key) => !['prefixes', 'line', 'probe'].includes(key)) || !Array.isArray(r.prefixes) || r.prefixes.length === 0 || r.prefixes.length > 16 || !r.prefixes.every(prefix) || !probe(r.probe) || r.line !== undefined && (!Number.isSafeInteger(r.line) || (r.line as number) < 1))) {
+      issue('/cleanup', '运行器清理声明只能是 runtime-contract@2 里的 source、sha256、objects（1–16 个对象）和 rules（1–512 条，每条 1–16 个单行前缀，可带源码行号与显式只读 probe）');
     } else {
       for (const [k, o] of (c.objects as string[]).entries()) if (!objects.has(o)) issue(`/cleanup/objects/${k}`, '清理声明的对象不在合约对象列表里');
       const recorded = isRecord(value.source_hashes) ? value.source_hashes[c.source as string] : undefined;
       if (recorded !== undefined && recorded !== c.sha256) issue('/cleanup/sha256', '清理源文件摘要与原合约源文件摘要表记的不同');
-      cleanup = { source: String(c.source), sha256: c.sha256, objects: [...c.objects as string[]], rules: rules.map((r) => ({ prefixes: [...(r as { prefixes: string[] }).prefixes], line: typeof (r as { line?: unknown }).line === 'number' ? (r as { line: number }).line : null })), pinned: recorded === c.sha256 };
+      cleanup = { source: String(c.source), sha256: c.sha256, objects: [...c.objects as string[]], rules: rules.map((r) => ({ prefixes: [...(r as { prefixes: string[] }).prefixes], line: typeof (r as { line?: unknown }).line === 'number' ? (r as { line: number }).line : null, ...((r as {probe?: CommandDomainProbe}).probe === undefined ? {} : { probe: structuredClone((r as {probe: CommandDomainProbe}).probe) }) })), pinned: recorded === c.sha256 };
     }
   }
   let destructive: DestructiveCommands | undefined;
