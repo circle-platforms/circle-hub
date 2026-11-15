@@ -5,7 +5,7 @@ import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateCompileBrief } from '../functions/authoring-brief.ts';
-import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { CallFailure, formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 import {
   resolveCwdRoots,
@@ -46,12 +46,12 @@ export async function checkBriefTarget(options: {
     : undefined;
 
   const targetPeek = resolveInsideCwd(cwd, options.file, '--file');
-  const st = await lstat(targetPeek.lexical).catch(() => null);
+  const st = await lstat(targetPeek.lexical).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
   if (!st) {
-    throw new Error(`不存在：找不到 --file 目标 ${options.file}。请核对路径后重试`);
+    throw new CallFailure('not_found', `找不到 --file 目标 ${options.file}`, '核对当前工作目录中的结构化简报路径后重试', { path: options.file, legal_form: '--file <已有简报文件或目录>' });
   }
   if (st.isSymbolicLink()) {
-    throw new Error(`参数无效：--file 目标 ${options.file} 不能是符号链接`);
+    throw new CallFailure('invalid_parameters', `--file 目标 ${options.file} 不能是符号链接`, '使用工作目录内的真实简报文件或目录后重试', { path: options.file });
   }
 
   const filesToCheck: Array<{ relative: string; canonical: string }> = [];
@@ -59,7 +59,7 @@ export async function checkBriefTarget(options: {
     const dir = resolveExistingDirInsideCwd(cwd, options.file, '--file');
     const entries = (await readdir(dir.canonical)).filter((n) => /\.round-\d+\.json$/.test(n)).sort();
     if (entries.length === 0) {
-      throw new Error(`不存在：目录 ${dir.relative} 下没有 *.round-<n>.json 结构化简报文件`);
+      throw new CallFailure('not_found', `目录 ${dir.relative} 下没有 *.round-<n>.json 结构化简报文件`, '先生成本轮结构化简报，再指定其文件或目录重试', { path: dir.relative, legal_form: '--file <已有简报文件或目录>' });
     }
     for (const name of entries) {
       const f = resolveExistingFileInsideCwd(cwd, join(dir.relative, name), '--file');

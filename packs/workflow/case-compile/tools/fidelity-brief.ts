@@ -9,13 +9,12 @@ import { planStateOf } from '../functions/plan-state.ts';
 // earlier plan is never merged (in run 19 the model kept five brief directories and tracked the changed digests by hand).
 //   node <skill directory>/tools/fidelity-brief.ts --run <directory>/run.json --plans <plan directory> --out <brief directory>
 import { realpathSync } from 'node:fs';
-import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fidelityBrief, type FidelityBrief } from '../functions/fidelity.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { formatCallError, isRecord } from '../functions/text.ts';
-import { argumentsOf, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { formatCallError, parseCliOptions, isRecord } from '../functions/text.ts';
 import { expandPlanFiles, parsedPlanFile } from './submit-plans.ts';
 
 export interface PlanCase { file: string; base: string; item: string; value: Record<string, unknown>; brief: FidelityBrief }
@@ -50,13 +49,15 @@ const readText = async (path: string): Promise<string | null> => { try { return 
 
 export async function main(argv: string[]): Promise<number> {
   try {
-    const args = argumentsOf(argv, ['run', 'plans', 'out']);
+    const parsedArgs = parseCliOptions(argv, { run: true, plans: true, out: true }, 'node <技能目录>/tools/fidelity-brief.ts --run <run> --plans <plans> --out <out>');
+    // Required options are checked by parseCliOptions.
+    const args = { run: parsedArgs.run!, plans: parsedArgs.plans!, out: parsedArgs.out! };
     const { cases, skipped } = await planCases(args.run, args.plans);
     await mkdir(args.out, { recursive: true, mode: 0o700 });
     const briefs: Array<Record<string, unknown>> = [], toAudit: string[] = [];
     for (const { file, base, item, brief } of cases) {
       const at = briefFile(args.out, base, brief.brief_sha256), verdict = verdictFile(args.out, base, brief.brief_sha256);
-      if ((await readText(at)) === null) await writeNew(at, Buffer.from(JSON.stringify(brief, null, 2) + '\n'));
+      if ((await readText(at)) === null) await writeFile(at, Buffer.from(JSON.stringify(brief, null, 2) + '\n'), { flag: 'wx', mode: 0o600 });
       const audited = (await readText(verdict)) !== null;
       if (!audited) toAudit.push(resolve(at));
       briefs.push({ file, item, brief: resolve(at), verdict: resolve(verdict), brief_sha256: brief.brief_sha256, author_steps: brief.author_steps.length, state: audited ? '未确认' : '未知' });

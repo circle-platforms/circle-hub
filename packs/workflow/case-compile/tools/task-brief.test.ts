@@ -11,6 +11,7 @@ import {
   resolveSubagentRole,
   SUBAGENT_ROLES,
 } from '../functions/subagent-roles.ts';
+import { ATTRIBUTION, labelOf } from '../functions/generated/vocabulary.ts';
 import { CONTRACT_DOC } from '../functions/test-support.ts';
 import { PROSE_WRAP_MAX_CHARS } from '../functions/text.ts';
 import { stage } from '../pack-files.ts';
@@ -1050,4 +1051,13 @@ test('task-brief dispatches named roles using workspace paths and supports batch
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+
+test('attribution instructions disclose marker observations and consume generated reason labels', () => {
+  const body = resolveSubagentRole('attribute')!.body;
+  for (const code of ATTRIBUTION) assert.ok(body.includes(labelOf('attribution', code)), code);
+  assert.ok(body.includes('不证明原因属于'));
+  assert.ok(body.includes('缺少可区分的证据时保留未知'));
+  assert.ok(!body.includes('属于本条自动化用例自己的命令顺序'));
 });

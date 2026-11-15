@@ -104,3 +104,12 @@ test('a verdict is merged only for the plan it answered, with the digest the too
   assert.match(returned.attention[0].message, /审计判作者步骤 a2 的场景被改了.*判断错误，原因编写模型的问题，下一步由编写模型修改这条自动化用例，再交给独立模型核对/);
   assert.equal((await w.planOf()).slots.plan[0].data.fidelity.steps[0].verdict, 'changed', 'the verdict is merged as the auditor gave it');
 });
+
+test('fidelity CLI missing arguments are declared parameter failures', async () => {
+  for (const entry of [brief, apply]) {
+    const reply = await quiet(() => entry([]));
+    assert.equal(reply.code, 1);
+    assert.match(reply.stderr, /^参数无效：/);
+    assert.match(reply.stderr, /请/);
+  }
+});
