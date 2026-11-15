@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
-import { Duplex } from 'node:stream';
 import { once } from 'node:events';
 import { HttpCallErrorData, HttpErrorEnvelope } from '../../contracts/api.ts';
 import { callErrorCategory } from '../../contracts/generated/protocol.ts';
@@ -13,17 +12,29 @@ import { handleMcp, sdkCallErrorData } from './mcp.ts';
 import { handleRunExport } from './run-export.ts';
 import type { ServerDeps } from './api.ts';
 
+class CaptureSocket extends Socket {
+  readonly chunks: Buffer[] = [];
+  override _write(chunk: Uint8Array, _encoding: BufferEncoding, done: (error?: Error | null) => void): void {
+    this.chunks.push(Buffer.from(chunk));
+    done();
+  }
+  override _writev(chunks: Array<{chunk: Uint8Array; encoding: BufferEncoding}>, done: (error?: Error | null) => void): void {
+    for (const {chunk, encoding} of chunks) this._write(chunk, encoding, () => {});
+    done();
+  }
+}
+
 function exchange(method: string, url: string, body = '', headers: Record<string, string> = {}) {
   const request = new IncomingMessage(new Socket());
   request.method = method; request.url = url; request.headers = { host: 'localhost', ...headers };
-  const response = new ServerResponse(request), chunks: Buffer[] = [];
-  const wire = new Duplex({ read() {}, write(chunk, _encoding, done) { chunks.push(Buffer.from(chunk)); done(); } });
+  const response = new ServerResponse(request);
+  const wire = new CaptureSocket();
   response.assignSocket(wire);
   const finished = once(response, 'finish');
   request.push(Buffer.from(body)); request.push(null);
   return { request, response, async read() {
     await finished;
-    const serialized = Buffer.concat(chunks);
+    const serialized = Buffer.concat(wire.chunks);
     const boundary = serialized.indexOf('\r\n\r\n');
     const payload = serialized.subarray(boundary + 4);
     request.destroy(); wire.destroy();
