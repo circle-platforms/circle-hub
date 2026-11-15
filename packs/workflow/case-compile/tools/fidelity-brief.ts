@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
 // The scenario-fidelity briefs of a plan directory (functions/fidelity.ts), for the audit a fresh session makes before the plans
@@ -14,7 +15,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fidelityBrief, type FidelityBrief } from '../functions/fidelity.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { formatCallError, parseCliOptions, isRecord } from '../functions/text.ts';
+import { parseCliOptions, isRecord } from '../functions/text.ts';
 import { expandPlanFiles, parsedPlanFile } from './submit-plans.ts';
 
 export interface PlanCase { file: string; base: string; item: string; value: Record<string, unknown>; brief: FidelityBrief }
@@ -64,6 +65,6 @@ export async function main(argv: string[]): Promise<number> {
     }
     process.stdout.write(JSON.stringify({ briefs, to_audit: toAudit, skipped }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

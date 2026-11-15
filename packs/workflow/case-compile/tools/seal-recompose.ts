@@ -1,7 +1,8 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 // Client-side lossless assembly only. This never confers Hub admission or chooses a semantic state.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { CallFailure, formatCallError, parseCliOptions } from '../functions/text.ts';
+import { CallFailure, parseCliOptions } from '../functions/text.ts';
 const object = (v: unknown): v is Record<string, any> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const body = (v: any, kind: string) => object(v) && v.kind === kind && object(v.body) ? v.body : v;
 export function assembleRecompose(runExport: unknown, parts: unknown[], model: string) {
@@ -51,7 +52,7 @@ if (import.meta.main) {
         console.log(JSON.stringify({ preview: true, admitted: false, items: result.draft.items.length, missing: result.missing.length, sha256: createHash('sha256').update(bytes).digest('hex'), next_action: result.missing.length ? '用例重组模型继续逐条补齐原始用例' : '把重组后的用例交给 Hub，重新核对全部原始用例' }));
     }
     catch (error) {
-        process.stderr.write(formatCallError(error) + '\n');
+        process.stderr.write(formatClientCallError(error) + '\n');
         process.exitCode = 1;
     }
 }

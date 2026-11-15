@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
 // 只读检查自动化用例 JSON、自动化用例目录或场景保真判断（.verdict.json）的语法、长度占位与结构，不用令牌，不写入磁盘：
@@ -15,7 +16,7 @@ import { describeExpansions, expandValue } from '../functions/length-literals.ts
 import { isItemHandling, ITEM_HANDLING, type ItemHandling } from '../functions/generated/vocabulary.ts';
 import { readSlots } from '../functions/slots.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { formatCallError, isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
+import { isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, brief: false };
@@ -196,7 +197,7 @@ function writeProblemStderr(
     .map((p) => (p.pointer ? `${p.pointer}: ${p.message}` : p.message))
     .join('；');
   const suffix = problems.length > 5 ? `（另有 ${problems.length - 5} 处见 stdout）` : '';
-  process.stderr.write(formatCallError(new CallFailure(category, `${summary}（${detail}${suffix}）`, nextStep, { path: problems[0]?.pointer })) + '\n');
+  process.stderr.write(formatClientCallError(new CallFailure(category, `${summary}（${detail}${suffix}）`, nextStep, { path: problems[0]?.pointer })) + '\n');
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -305,7 +306,7 @@ export async function main(argv: string[]): Promise<number> {
       process.stdout.write(
         JSON.stringify({ ok: false, mode: args.brief || name.endsWith('.verdict.json') ? 'verdict' : 'plan', file: args.file, problems: [problem] }) + '\n',
       );
-      process.stderr.write(formatCallError(error, { category: '参数无效' }) + '\n');
+      process.stderr.write(formatClientCallError(error, { category: '参数无效' }) + '\n');
       return 1;
     }
 
@@ -382,7 +383,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     return 0;
   } catch (error) {
-    process.stderr.write(formatCallError(error) + '\n');
+    process.stderr.write(formatClientCallError(error) + '\n');
     return 1;
   }
 }

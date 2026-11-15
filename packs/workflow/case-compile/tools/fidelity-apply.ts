@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 // Merges the auditors' verdicts into the case files of a plan directory, as data.fidelity (tools/fidelity.md). A verdict is merged
 // only when the brief it answered is still the brief of the plan as it stands, and only when it decides every authored action
 // once from the closed set (functions/fidelity.ts); the digest is written by this tool, never typed. In run 19 the model merged
@@ -8,7 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fidelityJudgmentProblems, embedFidelity } from '../functions/fidelity.ts';
-import { formatCallError, parseCliOptions, isRecord } from '../functions/text.ts';
+import { parseCliOptions, isRecord } from '../functions/text.ts';
 import { briefFile, planCases, verdictFile } from './fidelity-brief.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 
@@ -50,6 +51,6 @@ export async function main(argv: string[]): Promise<number> {
     }
     process.stdout.write(JSON.stringify({ ready: attention.length === 0, merged, attention, skipped }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

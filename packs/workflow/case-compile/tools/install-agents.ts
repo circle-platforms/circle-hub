@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 // 按 pack.json 声明校验包内 agents/*.md 摘要与字节数后，写入当前工作目录下 Circle 扫描的子代理目录（默认 .circle/agents）；已存在且摘要一致的文件保持原样：
 //   node <技能目录>/tools/install-agents.ts [--out <子代理目录>]
@@ -6,7 +7,7 @@ import { constants, realpathSync } from 'node:fs';
 import { lstat, mkdir, open, readFile, writeFile, rm } from 'node:fs/promises';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { isRecord, parseCliOptions } from '../functions/text.ts';
 import { isInsideRoot, resolveCwdRoots, resolveInsideCwd } from './workspace-path.ts';
 
 const OPTIONS: Record<string, boolean> = { out: false };
@@ -203,7 +204,7 @@ export async function main(argv: string[]): Promise<number> {
     process.stdout.write(JSON.stringify(result) + '\n');
     return 0;
   } catch (error) {
-    process.stderr.write(formatCallError(error) + '\n');
+    process.stderr.write(formatClientCallError(error) + '\n');
     return 1;
   }
 }

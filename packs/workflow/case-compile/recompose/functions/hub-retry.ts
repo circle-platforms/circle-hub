@@ -1,15 +1,14 @@
 // Local tool retry wrappers for Hub HTTP calls without modifying the embedded run-tools skill module.
-import { lstat, mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   HubReplyError,
   knowledgeFiles,
   sha256,
-  writeNew,
   type RunKnowledge,
 } from './generated/skills/run-tools/hub-client/index.ts';
-import { isRecord, failCall, CallFailure, formatCallError } from './text.ts';
+import { isRecord, failCall, CallFailure, formatCallError, callFailureData } from './text.ts';
 import { localSourceCache } from './source-cache.ts';
 import { assertEmptySourceOutput, sourceMaterialNames, type SourceMaterial } from './source-materials.ts';
 export { sourceFileName } from './source-materials.ts';
@@ -423,7 +422,7 @@ export async function downloadRunRetrying(
   try {
     for (const { name, bytes } of outputs) {
       const path = join(out, name);
-      await writeNew(path, bytes);
+      await writeFile(path, bytes, { flag: 'wx', mode: 0o600 });
       written.push(path);
       files[name] = sha256(bytes);
     }
@@ -600,12 +599,21 @@ export interface SubmittedItemFilesOptions {
   validateItem: (value: unknown, fileName: string) => { [key: string]: unknown };
 }
 
+/** Adds the caller-declared option to a native filesystem refusal without losing its cause. */
+function submittedReadFailure(error: unknown, flag: string, path: string, kind: string): never {
+  const failure = callFailureData(error);
+  if (failure.category === null) throw error;
+  const typed = new CallFailure(failure.category, `--${flag} 指定的${kind}无法读取：${failure.fact}`, `核对 --${flag} 的${kind}；${failure.next_action}`, { path, legal_form: `--${flag} <${kind}>` });
+  typed.cause = error;
+  throw typed;
+}
+
 /** Reads a single regular file up to 16 MiB for a CLI `--<flag>` path without "re-export raw bytes" advice. */
 export async function readSubmittedFileBytes(filePath: string, flag: string): Promise<Buffer> {
-  const info = await lstat(filePath);
+  const info = await lstat(filePath).catch(error => submittedReadFailure(error, flag, filePath, '普通文件'));
   if (info.isSymbolicLink() || !info.isFile()) failCall('invalid_parameters', `--${flag} 指定的路径不是普通文件`, `请为 --${flag} 提供工作目录内的普通文件后重试`, { path: filePath });
   if (info.size > MAX_BYTES) failCall('invalid_parameters', `--${flag} 文件超过 16 MiB 上限`, '请拆分或精简该文件后重试', { path: filePath });
-  const bytes = await readFile(filePath);
+  const bytes = await readFile(filePath).catch(error => submittedReadFailure(error, flag, filePath, '普通文件'));
   if (bytes.length > MAX_BYTES) failCall('invalid_parameters', `--${flag} 文件超过 16 MiB 上限`, '请拆分或精简该文件后重试', { path: filePath });
   return bytes;
 }
@@ -627,13 +635,7 @@ export function parseSubmittedJson(
     return JSON.parse(text);
   } catch (error) {
     const message = error instanceof Error ? error.message : '无法解析';
-    const at = /position (\d+)/.exec(message);
-    const position = at ? Number(at[1]) : null;
-    const around =
-      position === null
-        ? ''
-        : `；出错位置第 ${position} 个字符，附近原文：${JSON.stringify(text.slice(Math.max(0, position - 60), position + 20))}`;
-    failCall('invalid_parameters', `--${flag} 目录下的 ${fileName} 不是合法的 UTF-8 JSON（${message}）${around}`, `请按 JSON 格式修改该文件后${repairHint}`, { path: fileName });
+    failCall('invalid_parameters', `--${flag} 目录下的 ${fileName} 不是合法的 UTF-8 JSON（${message}）`, `请按 JSON 格式修改该文件后${repairHint}`, { path: fileName });
   }
 }
 
@@ -645,7 +647,7 @@ export async function readSubmittedItemFiles(
   directory: string,
   options: SubmittedItemFilesOptions,
 ): Promise<Array<{ [key: string]: unknown }>> {
-  const names = (await readdir(directory)).filter(name => name.endsWith('.json')).sort();
+  const names = (await readdir(directory).catch(error => submittedReadFailure(error, options.flag, directory, '普通目录'))).filter(name => name.endsWith('.json')).sort();
   if (!names.length) failCall('not_found', `--${options.flag} 目录里没有 .json 文件`, `请先写入${options.itemKind} JSON 文件再${options.repairHint}`, { path: directory });
   const items: Array<{ [key: string]: unknown }> = [];
   const seen = new Map<string, string>();

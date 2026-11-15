@@ -1,9 +1,9 @@
 import { realpathSync } from 'node:fs';
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { executionRefusals, failureLine, parseRunJobs, syntaxRejections, type ExecutionRefusal, type RowAudit, type SyntaxRejection } from '../functions/delivery.ts';
-import { hubOrigin, HubReplyError, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { HubReplyError, RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import {
   getOnce,
   getRetrying,
@@ -16,7 +16,8 @@ import {
   TransientHubReplyError,
   type RetryControl,
 } from '../functions/hub-retry.ts';
-import { formatCallError, CallFailure, failCall } from '../functions/text.ts';
+import { CallFailure, failCall, parseCliOptions } from '../functions/text.ts';
+import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
 import { fetchRunInputs } from './fetch-run.ts';
 import { passReviewInputs } from './generate-workbook.ts';
 
@@ -24,17 +25,6 @@ const SOURCE = /^src:([0-9a-f]{64})$/;
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/;
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 const OPTIONS: Record<string, boolean> = { hub: true, run: true, out: true, wait: false };
-function options(argv: string[]): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i += 2) {
-    const key = argv[i]?.startsWith('--') ? argv[i].slice(2) : '';
-    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) failCall('invalid_parameters', '参数缺值、重复或未声明', '使用 --hub <地址> --run <编号> --out <空目录>，可选 --wait <秒数>，每项只写一次');
-    values[key] = argv[i + 1];
-  }
-  const missing = Object.entries(OPTIONS).filter(([key, required]) => required && !values[key]).map(([key]) => '--' + key);
-  if (missing.length) failCall('invalid_parameters', `缺少参数：${missing.join('、')}`, '补齐必填参数后重试');
-  return values;
-}
 /** The longest wait (a background command of the client may run a day), how often the job list is read, and how long a run
  * that shows no job may be waited for: a submission the Hub did not dispatch never gets one, and its answer says why. */
 export const WAIT_MAX_SECONDS = 86_400, POLL_MS = 20_000, UNDISPATCHED_MS = 300_000;
@@ -43,18 +33,19 @@ const REAL_TIME: Timing = { now: () => Date.now(), pause: (ms) => new Promise((d
 
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, timing: Timing = REAL_TIME, retry?: Omit<RetryControl, 'timing'>): Promise<number> {
   try {
-    const args = options(argv);
+    const args = parseCliOptions(argv, OPTIONS, 'download-returns.ts --hub <MCP地址> --run <运行编号> --out <新的空目录> [--wait <秒数>]') as Record<string, string>;
     if (!RUN_ID.test(args.run)) failCall('invalid_parameters', '--run 不是声明格式的运行编号', '使用本次上机验证的编号后重试');
     const wait = args.wait === undefined ? 0 : Number(args.wait);
     if (args.wait !== undefined && !(/^[1-9][0-9]{0,4}$/.test(args.wait) && wait <= WAIT_MAX_SECONDS)) failCall('invalid_parameters', '--wait 不在允许范围内', `填写 1 到 ${WAIT_MAX_SECONDS} 的整数秒数后重试`);
-    const taken = await readdir(args.out).catch(() => [] as string[]);
+    const origin = parseHubOrigin(args.hub);
+    const taken = await readdir(args.out).catch((error) => { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [] as string[]; throw error; });
     if (taken.length) failCall('occupied', '输出目录里已有文件', '另选新的空目录下载，不覆盖已有资料', { path: args.out, legal_form: '--out <新的空目录>' });
-    const origin = hubOrigin(args.hub), bearer = await requireBearerToken(readToken);
+    const bearer = await requireBearerToken(readToken);
     const readRetry: RetryControl = { ...retry, timing };
     const jobsUrl = `${origin}/run-export/${args.run}/jobs`;
     const started = timing.now(), deadline = started + wait * 1000;
     const initialBudget = wait ? Math.min(retry?.maxWaitMs ?? READ_RETRY_BUDGET_MS, wait * 1000) : retry?.maxWaitMs;
-    const parsed = (bytes: Uint8Array) => { const answer = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); return { answer, own: parseRunJobs(answer, args.run).filter((job) => job.verification_run === args.run) }; };
+    const parsed = (bytes: Uint8Array) => { let answer: unknown; try { answer = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { failCall('temporarily_unavailable', '上机作业列表不是完整的 UTF-8 JSON', '请维护者恢复符合声明协议的完整作业列表，再按同一请求读取'); } return { answer, own: parseRunJobs(answer, args.run).filter((job) => job.verification_run === args.run) }; };
     let { answer: listed, own: jobs } = parsed(await getRetrying(jobsUrl, bearer, { ...readRetry, ...(initialBudget !== undefined ? { maxWaitMs: initialBudget } : {}) }));
     if (wait) {
       let pendingRetryAfterMs: number | null = null;
@@ -193,9 +184,9 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     }
     outputs.push({ name: 'index.json', bytes: json({ schema: 'device-returns@1', run: args.run, jobs: index, withheld, pass_review: passReview }) });
     for (const { name } of outputs) await mkdir(join(args.out, name, '..'), { recursive: true, mode: 0o700 });
-    for (const { name, bytes } of outputs) await writeNew(join(args.out, name), bytes);
+    for (const { name, bytes } of outputs) await writeFile(join(args.out, name), bytes, { flag: 'wx', mode: 0o600 });
     process.stdout.write(JSON.stringify({ run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, pass_review: passReview }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

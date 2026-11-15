@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 // 只读校验 compile-brief@1 结构化简报的闭合结构、原始条目零篡改、规模上限、未知/假设标注及 brief_sha256 摘要：
 //   node <技能目录>/tools/check-brief.ts --file <brief.round-n.json或目录> [--item <原始条目JSON>]
 import { realpathSync } from 'node:fs';
@@ -5,7 +6,7 @@ import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateCompileBrief } from '../functions/authoring-brief.ts';
-import { CallFailure, formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { CallFailure, isRecord, parseCliOptions } from '../functions/text.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 import {
   resolveCwdRoots,
@@ -104,7 +105,7 @@ export async function main(argv: string[]): Promise<number> {
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     return report.ok ? 0 : 1;
   } catch (error) {
-    process.stderr.write(formatCallError(error) + '\n');
+    process.stderr.write(formatClientCallError(error) + '\n');
     return 1;
   }
 }

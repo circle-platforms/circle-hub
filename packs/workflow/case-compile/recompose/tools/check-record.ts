@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 // 只读离线预检查用例重组（recompose）单条或整目录记录文件：UTF-8/JSON 语法、单一精简形状、item/method/重复 item 及可选 --run 原句完整性，不接触 Hub 或令牌，不写入磁盘：
 //   node <技能目录>/tools/check-record.ts --file <重组记录JSON或目录> [--run <下载运行目录>]
 import { realpathSync } from 'node:fs';
@@ -5,7 +6,8 @@ import { lstat, readdir } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSubmittedJson, readSubmittedFileBytes } from '../functions/hub-retry.ts';
-import { formatCallError, isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
+import { CallFailure, isRecord, parseCliOptions } from '../functions/text.ts';
+import type { CallErrorCategory } from '../functions/generated/vocabulary.ts';
 import { assertValidRecomposeShape, recordFor, submissionFor } from './submit-records.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, run: false };
@@ -45,18 +47,18 @@ export interface CheckRecordReport {
 type RunRow = { [key: string]: any };
 
 async function loadOptionalRun(runDir: string): Promise<RunRow> {
-  const dirStat = await lstat(runDir).catch(() => null);
+  const dirStat = await lstat(runDir).catch((error) => { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null; throw error; });
   if (!dirStat) {
-    throw new Error(`不存在：找不到 --run 运行目录 ${runDir}。请确认目录存在或先运行 download-run.ts`);
+    throw new CallFailure("not_found", `找不到 --run 运行目录 ${runDir}。请确认目录存在或先运行 download-run.ts`, "先用 download-run.ts 保存完整运行目录，再用 --run 指定该目录");
   }
   if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
-    throw new Error(`参数无效：--run 路径 ${runDir} 必须是普通目录`);
+    throw new CallFailure("invalid_parameters", `--run 路径 ${runDir} 必须是普通目录`, "把 --run 指向包含 run.json 的真实普通目录，不使用符号链接");
   }
   const runJsonPath = join(runDir, 'run.json');
   const bytes = await readSubmittedFileBytes(runJsonPath, 'run');
   const parsed = parseSubmittedJson('run', 'run.json', bytes, '重新下载运行目录');
   if (!isRecord(parsed) || !Array.isArray(parsed.items)) {
-    throw new Error('参数无效：--run 目录下的 run.json 缺少 items 数组。请重新运行 download-run.ts 后重试');
+    throw new CallFailure("invalid_parameters", '--run 目录下的 run.json 缺少 items 数组。请重新运行 download-run.ts 后重试', "重新下载该运行的完整 run.json，保留 items 数组后自检");
   }
   return parsed as RunRow;
 }
@@ -72,24 +74,24 @@ function writeProblemStderr(
     .map((p) => (p.file ? `${p.file}: ${p.message}` : p.message))
     .join('；');
   const suffix = problems.length > 5 ? `（另有 ${problems.length - 5} 处见 stdout）` : '';
-  process.stderr.write(formatCallError(`${summary}（${detail}${suffix}）。${nextStep}`, { category }) + '\n');
+  process.stderr.write(formatClientCallError(new CallFailure(category, `${summary}（${detail}${suffix}）`, nextStep)) + '\n');
 }
 
 /** Validates one lite recompose record file or a directory of `.json` record files offline. */
 export async function checkRecordTarget(options: { file: string; run?: string }): Promise<CheckRecordReport> {
-  const targetStat = await lstat(options.file).catch(() => null);
+  const targetStat = await lstat(options.file).catch((error) => { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null; throw error; });
   if (!targetStat) {
-    throw new Error(`不存在：找不到 --file 路径 ${options.file}。请先写入重组记录 JSON 文件或目录后再自检`);
+    throw new CallFailure("not_found", `找不到 --file 路径 ${options.file}。请先写入重组记录 JSON 文件或目录后再自检`, "先写入本次重组记录，再用 --file 指定存在的 JSON 文件或目录");
   }
   if (targetStat.isSymbolicLink()) {
-    throw new Error(`参数无效：--file 路径 ${options.file} 不能是符号链接。请改用真实文件或目录后再自检`);
+    throw new CallFailure("invalid_parameters", `--file 路径 ${options.file} 不能是符号链接。请改用真实文件或目录后再自检`, "把 --file 指向真实普通文件或目录，不使用符号链接");
   }
   const runData = options.run !== undefined ? await loadOptionalRun(options.run) : null;
 
   if (targetStat.isDirectory()) {
     const names = (await readdir(options.file)).filter((name) => name.endsWith('.json')).sort();
     if (names.length === 0) {
-      throw new Error(`不存在：--file 目录 ${options.file} 里没有 .json 文件。请先写入重组记录文件后再自检`);
+      throw new CallFailure("not_found", `--file 目录 ${options.file} 里没有 .json 文件。请先写入重组记录文件后再自检`, "在 --file 目录中为每条原始用例写一个 .json 重组记录后重新自检");
     }
     const items: CheckedRecordEntry[] = [];
     const seen = new Map<string, string>();
@@ -155,7 +157,7 @@ export async function checkRecordTarget(options: { file: string; run?: string })
   }
 
   if (!targetStat.isFile()) {
-    throw new Error(`参数无效：--file 路径 ${options.file} 必须是普通 .json 文件或目录`);
+    throw new CallFailure("invalid_parameters", `--file 路径 ${options.file} 必须是普通 .json 文件或目录`, "把 --file 指向普通 .json 文件或含重组记录 JSON 的目录");
   }
 
   const name = basename(options.file);
@@ -208,7 +210,7 @@ export async function main(argv: string[]): Promise<number> {
       const onlyDuplicate =
         report.problems.length > 0 && report.problems.every((p) => p.code === 'duplicate_item');
       writeProblemStderr(
-        onlyDuplicate ? '已被占用' : '参数无效',
+        onlyDuplicate ? 'occupied' : 'invalid_parameters',
         onlyDuplicate
           ? `目录 ${args.file} 中有多个文件使用了同一条目 item`
           : `${report.mode === 'directory' ? `目录 ${args.file}` : `文件 ${args.file}`} 未通过重组记录自检`,
@@ -221,7 +223,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     return 0;
   } catch (error) {
-    process.stderr.write(formatCallError(error) + '\n');
+    process.stderr.write(formatClientCallError(error) + '\n');
     return 1;
   }
 }
