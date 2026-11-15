@@ -101,7 +101,7 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
   const landed=Math.max(0,sent-owed);
   if(landed<row.count)note('/steps',`可以改参数，不可以删命令：作者写了命令 ${row.words}（没有写出参数）${row.count} 次，计划里这条命令 ${landed} 次，尚缺 ${row.count-landed} 次；换成别的命令不算`,'refute',{identity:{tree_root:raw.root,path},required_count:row.count,planned_count:landed,missing_count:row.count-landed});
  }
- if(!policy){if(operations.length)note('/command_policy','缺锁定根的产品命令范围与逆操作声明；下一步：产品包作者声明 command-policy@1 后重新育苗并核验','unknown');return gaps;}
+ if(!policy){if(operations.length)note('/command_policy','缺锁定根的产品命令范围与逆操作声明；下一步：产品包作者声明产品命令范围与逆操作后，由管理员重新生成该构建的手册和命令树并再核对','unknown');return gaps;}
  const modifies=(identity:Pick<CommandIdentity,'path'>)=>!policy.read_only.some(prefix=>within(identity.path,prefix));
  const selected=[...new Set([...operations.map(operation=>operation.line),...sourceTexts.flatMap(text=>commandLines(text).map(line=>line.text))])];
  const inversesRead=new Set([...selected,...inverseLines(policy,selected)]);
@@ -171,7 +171,7 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   const path='/'+[...pathSegments(rule.inverse_prefix)!,...pathSegments(identity.path)!.slice(pathSegments(rule.source_prefix)!.length)].join('/');
   // The catalog selection read the rule's line with the plan, so a path the catalog does not hold is one the locked tree does not have: no plan can send it.
   const line=inverseLine(policy,operation.line);
-  if(line!==null&&inversesRead.has(line)&&!native.some(definition=>definition.path===path))return {pointer:operation.pointer,message:`配置命令 ${identity.path} 按产品规则的逆操作 ${path} 不在锁定树里，计划写不出这条清理。照 InfoTest：不猜逆操作，也不改用范围更大的清除；先换一种在锁定树里有逐对象逆操作的等价写法，没有这样的写法才照实报告这个缺口；下一步由产品包作者在 inverse_rules 声明这条命令的真实逆操作并重新育苗后重核`,verdict:'unknown'};
+  if(line!==null&&inversesRead.has(line)&&!native.some(definition=>definition.path===path))return {pointer:operation.pointer,message:`配置命令 ${identity.path} 按产品规则的逆操作 ${path} 不在锁定树里，计划写不出这条清理。照 InfoTest：不猜逆操作，也不改用范围更大的清除；先换一种在锁定树里有逐对象逆操作的等价写法，没有这样的写法才照实报告这个缺口；下一步由产品包作者声明这条命令的真实逆操作，并由管理员重新生成该构建的手册和命令树后重核`,verdict:'unknown'};
   if(!received||received.object!==operation.object||received.identity!.path!==path)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 缺同设备、逆序的清理操作 ${path}（清理命令必须由锁定树完整解析）`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse_path:path,missing_count:1}};
   const parameters=[...identity.parameters].sort((a,b)=>a.position-b.position);
   const counts=rule.leading_parameters!==undefined?[rule.leading_parameters]:[...new Set(native.filter(definition=>definition.path===path).flatMap(definition=>definition.signatures.flatMap(signature=>Array.from({length:Math.min(signature.params.length,parameters.length)+1},(_,count)=>count))))];

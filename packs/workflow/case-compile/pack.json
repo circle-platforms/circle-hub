@@ -158,8 +158,8 @@
     },
     {
       "path": "functions/block-restore.ts",
-      "sha256": "e73f02d7cd52129af82fdf864864214dd460f4655d572e887715eb8b204cae96",
-      "size": 4806
+      "sha256": "d33ac4345d6a1561855ed3f67a1d271aca13ee91ee156761830fc6adfed87530",
+      "size": 4863
     },
     {
       "path": "functions/block-review-identity.ts",
@@ -208,8 +208,8 @@
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "29e0688c1e1e52a45d6da873b29ebb88e75a4fd80d23b7ca0a651a35cc935e68",
-      "size": 26848
+      "sha256": "bb7f5ce8d0f9b45145832705e605652615d26d8bf355f8b1f9ea684bca0caf7a",
+      "size": 26935
     },
     {
       "path": "functions/delivery.ts",
@@ -403,8 +403,8 @@
     },
     {
       "path": "functions/typed-authority.ts",
-      "sha256": "262709727a9eeb3486ed262592b01cf1d92280790eaa4e916e204d6ba02f29e9",
-      "size": 14938
+      "sha256": "40f94aea84dc4b50aa45c5ed2176f8f442d0ecc7a9765cd57c961727d9d7908b",
+      "size": 14993
     },
     {
       "path": "functions/typed-contract.ts",

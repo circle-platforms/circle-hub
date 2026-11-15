@@ -155,3 +155,14 @@ test('expansions of one signature that disagree on a paired enum stay ambiguous'
  bind.signatures[1].params[0].values=['on','off','auto'];
  assert.ok(obligations(value).some(gap=>gap.verdict==='unknown'));
 });
+test('F8 command obligation gaps avoid invented words and internal schema names',()=>{
+ const leaked=/重新育苗|育苗|command-policy@1|inverse_rules|runtime-contract@2/;
+ const missingPolicy=withUnions(['demo peer add 192.0.2.74 80']);
+ delete (missingPolicy.subject.command_catalog as {policy?:unknown}).policy;
+ const policyGaps=obligations(missingPolicy);
+ assert.ok(policyGaps.some(gap=>gap.verdict==='unknown'&&gap.pointer==='/command_policy'&&gap.message.includes('声明产品命令范围与逆操作后，由管理员重新生成该构建的手册和命令树并再核对')&&!leaked.test(gap.message)),JSON.stringify(policyGaps));
+ const missingInverse=withUnions(['demo peer add 192.0.2.74 80']);
+ catalogOf(missingInverse).entries=catalogOf(missingInverse).entries.filter(entry=>entry.words.join(' ')!=='no demo peer add');
+ const inverseGaps=obligations(missingInverse);
+ assert.ok(inverseGaps.some(gap=>gap.verdict==='unknown'&&gap.pointer==='/steps/0'&&gap.message.includes('声明这条命令的真实逆操作，并由管理员重新生成该构建的手册和命令树后重核')&&!leaked.test(gap.message)),JSON.stringify(inverseGaps));
+});
