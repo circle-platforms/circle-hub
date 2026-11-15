@@ -3,7 +3,7 @@
 // instead of one Hub call per item. It reads the run alone, so it works right after start_run; it decides nothing. When the
 // run brought its knowledge root and its items carry recomposition records, each case also gets its authoring brief
 // (`briefs/<index>.md`, tools/authoring-brief.ts): the tree entries the record names, so a writer reads one file first.
-//   node <skill directory>/tools/download-run.ts --hub %HUB_URL% --run <run id> --out <directory> <<'EOF'
+//   node '<skill directory>/tools/download-run.ts' --hub %HUB_URL% --run '<run id>' --out '<directory>' <<'EOF'
 //   %HUB_TOKEN%
 //   EOF
 import { realpathSync } from 'node:fs';

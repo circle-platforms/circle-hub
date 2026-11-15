@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { writeHome, type Endpoint, type Profile } from './circle-home.ts';
+import { buildTaskBrief } from '../../packs/workflow/case-compile/tools/task-brief.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const ENDPOINT: Endpoint = {
@@ -386,6 +387,241 @@ test('every command-form second line across all execute refusals passes replay, 
         verifyRefusalSecondLine('sleep extra heredoc', h.exec("sleep 10 <<'EOF'\n%HUB_TOKEN%\nEOF"), true);
       } else {
         verifyRefusalSecondLine('sleep disallowed on skills', h.exec('sleep 10'), false);
+      }
+    } finally {
+      h.close();
+    }
+  }
+});
+
+interface ExtractedDocCommand {
+  source: string;
+  kind: 'shell' | 'text' | 'inline';
+  raw: string;
+  isMetaTemplate?: boolean;
+}
+
+/**
+ * Structurally extracts every taught `node` CLI command from a markdown file:
+ * fenced `sh`/`bash`/`shell` command statements (including `<<'EOF'` heredocs),
+ * `text` fence command lines (with optional `label: ` prefix), and inline backticked
+ * `node ...` spans in prose.
+ */
+function extractTaughtCommands(markdown: string, sourceLabel: string): ExtractedDocCommand[] {
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  const out: ExtractedDocCommand[] = [];
+  let fence: '' | 'sh' | 'text' | 'other' = '';
+
+  const readHeredoc = (firstLine: string, startIndex: number): { command: string; nextIndex: number } => {
+    if (!firstLine.endsWith("<<'EOF'")) return { command: firstLine, nextIndex: startIndex };
+    const collected = [firstLine];
+    let j = startIndex + 1;
+    while (j < lines.length && lines[j] !== 'EOF') {
+      collected.push(lines[j]);
+      j += 1;
+    }
+    assert.equal(lines[j], 'EOF', `${sourceLabel}:${startIndex + 1} missing heredoc EOF terminator`);
+    collected.push('EOF');
+    return { command: collected.join('\n'), nextIndex: j };
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (fence === '') {
+      const open = /^```([^\s`]*)/.exec(line);
+      if (open) {
+        const lang = open[1].toLowerCase();
+        fence = lang === 'sh' || lang === 'bash' || lang === 'shell' ? 'sh' : lang === 'text' ? 'text' : 'other';
+        continue;
+      }
+      assert.doesNotMatch(line, /\bnode\s+<[^>]+>/, `${sourceLabel}:${i + 1} has unquoted placeholder in node command`);
+      for (const m of line.matchAll(/`([^`\n]+)`/g)) {
+        const span = m[1].trim();
+        if (!span.startsWith('node ')) continue;
+        if (span === 'node -e') {
+          assert.match(line, /严禁|禁止/, `${sourceLabel}:${i + 1} unexpected node -e mention outside prohibition: ${line}`);
+          continue;
+        }
+        const isMetaTemplate = span === "node '<技能目录>/tools/<脚本>.ts' --选项 值";
+        out.push({ source: `${sourceLabel}:${i + 1}`, kind: 'inline', raw: span, isMetaTemplate });
+      }
+      continue;
+    }
+
+    if (/^```\s*$/.test(line)) {
+      fence = '';
+      continue;
+    }
+    if (fence === 'other') continue;
+
+    if (fence === 'sh') {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      assert.ok(trimmed.startsWith('node '), `${sourceLabel}:${i + 1} unexpected shell block line: ${line}`);
+      const { command, nextIndex } = readHeredoc(trimmed, i);
+      i = nextIndex;
+      out.push({ source: `${sourceLabel}:${i + 1}`, kind: 'shell', raw: command });
+      continue;
+    }
+
+    const textMatch = /^(?:[^:\n`]+:\s*)?(node\s.+)$/.exec(line.trim());
+    if (textMatch) {
+      const { command, nextIndex } = readHeredoc(textMatch[1], i);
+      i = nextIndex;
+      out.push({ source: `${sourceLabel}:${i + 1}`, kind: 'text', raw: command });
+    }
+  }
+  return out;
+}
+
+const DOC_PLACEHOLDERS: Record<string, string> = {
+  '用例重组|脚本编写|保真核对|失败分析': '脚本编写',
+  '脚本编写编号': RUN_ID,
+  '脚本合并编号': RUN_ID,
+  '合并或上机编号': RUN_ID,
+  '用例重组编号': RUN_ID,
+  模型: 'synthetic model',
+  轮次: '2',
+  '逗号分隔autoid': 'case_1,case_2',
+  '用例或范围': 'case_1',
+  autoid: 'case_1',
+  补充: '补充 说明',
+  前缀: 'case_1',
+  '8位摘要': '12345678',
+  '计划或判断JSON': 'plans dir/plan 01.json',
+  计划JSON相对路径: 'plans dir/plan 01.json',
+  目标计划相对路径: 'plans dir/plan 01.json',
+  verdict相对路径: 'audit dir/case_1.12345678.verdict.json',
+  brief相对路径: 'audit dir/case_1.12345678.brief.json',
+  核对文件: 'audit dir/case_1.12345678.brief.json',
+  脚本编写目录: 'run dir',
+  上一轮脚本编写目录: 'prev run dir',
+  新脚本编写目录: 'next run dir',
+  运行目录: 'prev run dir',
+  下载运行目录: 'recompose run dir',
+  新目录: 'out dir',
+  自动化用例目录: 'plans dir',
+  上一轮自动化用例目录: 'prev plans dir',
+  核对目录: 'audit dir',
+  上一轮核对目录: 'prev audit dir',
+  核对任务目录: 'audit tasks dir',
+  简报或输入路径: 'briefs dir/case 01.md',
+  目标路径: 'plans dir/case 01.json',
+  任务文件路径: 'tasks dir/case 01.md',
+  条目JSON: 'briefs dir/item 01.json',
+  结构简报JSON: 'briefs dir/brief 01.json',
+  '路径...': 'prev plans dir/plan 01.json',
+  '目录...': 'prev returns dir',
+  导出文件: 'inputs/mindmap raw.km',
+  规整文件: 'inputs/mindmap norm.json',
+  重组后的用例目录: 'records dir',
+  '说明.json': 'delivery dir/notes 说明.json',
+};
+
+function instantiateTaughtVariants(entry: ExtractedDocCommand, skillDir: string, skillName: 'case-compile' | 'recompose'): string[] {
+  let command = entry.raw;
+  if (entry.isMetaTemplate) {
+    command = skillName === 'recompose'
+      ? "node '<技能目录>/tools/check-record.ts' --file '<重组后的用例目录>'"
+      : "node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>'";
+  }
+
+  assert.doesNotMatch(command, /["\\]/, `${entry.source} must not teach double quotes or backslashes: ${command}`);
+  if (command.includes('<技能目录>')) {
+    assert.ok(command.includes("'<技能目录>/tools/"), `${entry.source} must single-quote <技能目录>/tools/...: ${command}`);
+    command = command.replaceAll('<技能目录>', skillDir);
+  }
+
+  const optionalStripped = command.replace(/\s*\[[^\]]+\]/g, '');
+  const optionalExpanded = command.replace(/\[([^\]]+)\]/g, '$1');
+  const rawVariants = optionalStripped === optionalExpanded ? [optionalStripped] : [optionalStripped, optionalExpanded];
+
+  return rawVariants.map((variant) => {
+    const filled = variant.replace(/<([^>]+)>/g, (_, key: string) => {
+      assert.ok(Object.hasOwn(DOC_PLACEHOLDERS, key), `${entry.source} unmapped placeholder <${key}> in ${variant}`);
+      return DOC_PLACEHOLDERS[key];
+    });
+    assert.doesNotMatch(filled, /(?<!<)<(?!<)|>/, `${entry.source} still contains placeholder brackets: ${filled}`);
+    return filled;
+  });
+}
+
+test('every CLI command taught in case-compile docs, agents, and task-brief passes ops and skills guards under spaced home', async () => {
+  const docSources = [
+    { rel: 'packs/workflow/case-compile/SKILL.md', skill: 'case-compile' as const, required: true },
+    { rel: 'packs/workflow/case-compile/recompose/SKILL.md', skill: 'recompose' as const, required: true },
+    { rel: 'packs/workflow/case-compile/tools/delivery.md', skill: 'case-compile' as const, required: true },
+    { rel: 'packs/workflow/case-compile/tools/fidelity.md', skill: 'case-compile' as const, required: true },
+    { rel: 'packs/workflow/case-compile/agents/compile-attributor.md', skill: 'case-compile' as const, required: false },
+    { rel: 'packs/workflow/case-compile/agents/compile-fidelity.md', skill: 'case-compile' as const, required: true },
+    { rel: 'packs/workflow/case-compile/agents/compile-recomposer.md', skill: 'case-compile' as const, required: false },
+    { rel: 'packs/workflow/case-compile/agents/compile-writer.md', skill: 'case-compile' as const, required: true },
+  ];
+
+  const extractedBySkill: Array<{ skill: 'case-compile' | 'recompose'; entry: ExtractedDocCommand }> = [];
+  let metaTemplateCount = 0;
+  for (const doc of docSources) {
+    const content = readFileSync(join(REPO_ROOT, doc.rel), 'utf8');
+    const entries = extractTaughtCommands(content, doc.rel);
+    if (doc.required) assert.ok(entries.length >= 1, `${doc.rel} expected at least 1 taught node command`);
+    for (const entry of entries) {
+      if (entry.isMetaTemplate) metaTemplateCount += 1;
+      extractedBySkill.push({ skill: doc.skill, entry });
+    }
+  }
+  assert.ok(extractedBySkill.length >= 15, `expected at least 15 taught commands across docs/agents, got ${extractedBySkill.length}`);
+  assert.equal(metaTemplateCount, 2, 'expected abstract meta-template once each in SKILL.md and recompose/SKILL.md');
+
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile, { homeName: 'Application Support/circle home' });
+    try {
+      mkdirSync(join(h.workdir, 'briefs'), { recursive: true });
+      mkdirSync(join(h.workdir, 'audit'), { recursive: true });
+      mkdirSync(join(h.workdir, 'returns'), { recursive: true });
+      writeFileSync(join(h.workdir, 'scope.md'), '只做合成测试范围。\n');
+      writeFileSync(join(h.workdir, 'briefs', '01.md'), '# synthetic brief\n', 'utf8');
+      writeFileSync(join(h.workdir, 'audit', 'case-1.12345678.brief.json'), '{"schema":"fidelity-brief@1"}\n', 'utf8');
+      writeFileSync(join(h.workdir, 'returns', 'index.json'), '{"jobs":[]}\n', 'utf8');
+
+      const renderedBriefs = [
+        {
+          label: 'buildTaskBrief(脚本编写)',
+          text: await buildTaskBrief({
+            role: '脚本编写',
+            caseRef: 'case-101',
+            briefPath: 'briefs/01.md',
+            outPath: 'plans/01.json',
+            cwd: h.workdir,
+            packRoot: h.skillPath('case-compile'),
+          }),
+        },
+        {
+          label: 'buildTaskBrief(保真核对)',
+          text: await buildTaskBrief({
+            role: '保真核对',
+            caseRef: 'case-1',
+            briefPath: 'audit/case-1.12345678.brief.json',
+            outPath: 'audit/case-1.12345678.verdict.json',
+            cwd: h.workdir,
+            packRoot: h.skillPath('case-compile'),
+          }),
+        },
+      ];
+
+      for (const item of renderedBriefs) {
+        const briefEntries = extractTaughtCommands(item.text, item.label);
+        assert.ok(briefEntries.length >= 1, `${item.label} should teach at least one check-plan command`);
+        for (const entry of briefEntries) {
+          for (const cmd of instantiateTaughtVariants(entry, h.skillPath('case-compile'), 'case-compile')) {
+            h.assertAllowed(h.exec(cmd), `${profile} blocked ${item.label} (${entry.source}):\n${cmd}`);
+          }
+        }
+      }
+
+      for (const { skill, entry } of extractedBySkill) {
+        for (const cmd of instantiateTaughtVariants(entry, h.skillPath(skill), skill)) {
+          h.assertAllowed(h.exec(cmd), `${profile} blocked ${entry.source}:\n${cmd}`);
+        }
       }
     } finally {
       h.close();

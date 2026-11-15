@@ -2,7 +2,7 @@
 // concrete and what is missing. Everything the projection already knows (the atoms, their spans, the original ledger, the
 // coverage) is filled in here, as InfoTest's fill_mechanical_fields does, so a model never retypes author text. It decides
 // nothing: the Hub checks every record, and a file that says nothing about an atom leaves that atom settled.
-//   node <skill directory>/tools/submit-records.ts --hub %HUB_URL% --run <run id> --model <model> --records <directory> <<'EOF'
+//   node '<skill directory>/tools/submit-records.ts' --hub %HUB_URL% --run '<run id>' --model '<model>' --records '<directory>' <<'EOF'
 //   %HUB_TOKEN%
 //   EOF
 import { realpathSync } from 'node:fs';

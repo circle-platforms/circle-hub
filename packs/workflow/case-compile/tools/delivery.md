@@ -8,7 +8,7 @@
 
 ```sh
 # 命令行与 <<'EOF' 写在同一行，切勿在 <<'EOF' 前换行
-node <技能目录>/tools/download-returns.ts --hub %HUB_URL% --run <脚本合并编号> --out <新目录> --wait 3600 <<'EOF'
+node '<技能目录>/tools/download-returns.ts' --hub %HUB_URL% --run '<脚本合并编号>' --out '<新目录>' --wait 3600 <<'EOF'
 %HUB_TOKEN%
 EOF
 ```
@@ -29,7 +29,7 @@ EOF
 重新编写要保住原始用例的范围和每一项期望。判断写不出来就换写法，不删掉或改弱来换“正确”。只改错误或未知的自动化用例，已确认正确的与未改动部分通过 `tools/carry-plans.ts` 结转、不再重抄（未进入 `merge_run` 且 `scope`/`exclude`/`inputs` 未变、`rounds_left>0` 时，直接在原目录修改待改自动化用例并重交当前 `plan_run`）。沿用测试环境且 `rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时，先按 `SKILL.md` 第 2 节可照抄模板用 `start_run` 新开一次脚本编写运行（`predecessor` 填原 `test-bed` 预订号；禁止往已锁定的旧运行或脚本合并运行提交改动），下载新运行后再用下述命令结转未改自动化用例与保真核对结果（`.verdict.json`），再补写返工用例并重新做脚本合并和上机验证：
 
 ```sh
-node <技能目录>/tools/carry-plans.ts --source <上一轮脚本编写目录> --target <新脚本编写目录> --plans <自动化用例目录> [--source-plans <上一轮自动化用例目录>] [--source-briefs <上一轮核对目录> --briefs <核对目录>] [--rework <逗号分隔autoid>] [--exclude <逗号分隔autoid>]
+node '<技能目录>/tools/carry-plans.ts' --source '<上一轮脚本编写目录>' --target '<新脚本编写目录>' --plans '<自动化用例目录>' [--source-plans '<上一轮自动化用例目录>'] [--source-briefs '<上一轮核对目录>' --briefs '<核对目录>'] [--rework '<逗号分隔autoid>'] [--exclude '<逗号分隔autoid>']
 ```
 
 原始用例要求不存在、无残留或不再包含时，检查设备输出里没有对应记录；要求删除成功时，删除后再查询，检查这次查询的设备输出。按主技能的分块写法，不另立判定标准、不另请评审员再确认，不删掉这项检查。
@@ -83,13 +83,13 @@ parameters.exclude 排除尚未决定的原始用例
 
 最近一次已确认正确的自动化用例要放进同一份自动化用例 Excel，一起上机验证并逐条正确。最近一次已经如此，就直接组交付目录；只重跑其中几条不算。
 
-否则先按 `SKILL.md` 第 2 节模板用 `start_run` 新开一次脚本编写运行（`predecessor` 填原 `test-bed` 预订号、`parameters.exclude` 填入本次排除的 `autoid` 列表；禁止往已锁定的上一轮运行提交变更），保留所有已确认正确的自动化用例再重新做脚本编写。submit-plans 会跳过本次排除的原始用例，不用复制或改写文件；未改自动化用例与保真核对结果（`.verdict.json`）可用 `tools/carry-plans.ts` 带 `--exclude <逗号分隔autoid>` 结转。再做脚本合并和上机验证；其中又有错误的就再排除，一起上机验证。最多这样上机验证 2 次，仍有错误就停止并照实写结论。最后一次没有正确的自动化用例时，就没有可交付的自动化用例 Excel。
+否则先按 `SKILL.md` 第 2 节模板用 `start_run` 新开一次脚本编写运行（`predecessor` 填原 `test-bed` 预订号、`parameters.exclude` 填入本次排除的 `autoid` 列表；禁止往已锁定的上一轮运行提交变更），保留所有已确认正确的自动化用例再重新做脚本编写。submit-plans 会跳过本次排除的原始用例，不用复制或改写文件；未改自动化用例与保真核对结果（`.verdict.json`）可用 `tools/carry-plans.ts` 带 `--exclude '<逗号分隔autoid>'` 结转。再做脚本合并和上机验证；其中又有错误的就再排除，一起上机验证。最多这样上机验证 2 次，仍有错误就停止并照实写结论。最后一次没有正确的自动化用例时，就没有可交付的自动化用例 Excel。
 
 ## 5. 组交付目录
 
 ```sh
 # 命令行与 <<'EOF' 写在同一行，切勿在 <<'EOF' 前换行
-node <技能目录>/tools/assemble-delivery.ts --hub %HUB_URL% --runs <脚本合并编号>,<脚本合并编号> --recompose <用例重组编号> --notes <说明.json> --out <新目录> <<'EOF'
+node '<技能目录>/tools/assemble-delivery.ts' --hub %HUB_URL% --runs '<脚本合并编号>,<脚本合并编号>' --recompose '<用例重组编号>' --notes '<说明.json>' --out '<新目录>' <<'EOF'
 %HUB_TOKEN%
 EOF
 ```

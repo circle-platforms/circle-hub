@@ -1,5 +1,5 @@
 // 只读校验 compile-brief@1 结构化简报的闭合结构、原始条目零篡改、规模上限、未知/假设标注及 brief_sha256 摘要：
-//   node <技能目录>/tools/check-brief.ts --file <brief.round-n.json或目录> [--item <原始条目JSON>]
+//   node '<技能目录>/tools/check-brief.ts' --file '<brief.round-n.json或目录>' [--item '<原始条目JSON>']
 import { realpathSync } from 'node:fs';
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -15,7 +15,7 @@ import {
 } from './workspace-path.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, item: false };
-const USAGE = 'node <技能目录>/tools/check-brief.ts --file <brief.round-n.json或目录> [--item <原始条目JSON>]';
+const USAGE = "node '<技能目录>/tools/check-brief.ts' --file '<brief.round-n.json或目录>' [--item '<原始条目JSON>']";
 
 export interface CheckedBriefFile {
   ok: boolean;

@@ -1,5 +1,5 @@
 // 只读检查自动化用例 JSON、自动化用例目录或场景保真判断（.verdict.json）的语法、长度占位与结构，不用令牌，不写入磁盘：
-//   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>]
+//   node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>' [--brief '<核对文件>']
 import { realpathSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -19,7 +19,7 @@ import { formatCallError, isRecord, parseCliOptions, type CallErrorCategory } fr
 import { parsedPlanFile } from './submit-plans.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, brief: false };
-const USAGE = 'node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>]';
+const USAGE = "node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>' [--brief '<核对文件>']";
 
 export interface CheckProblem {
   code?: string;

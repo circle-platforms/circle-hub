@@ -321,12 +321,12 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
   assert.ok(attributor.includes('严禁调用'), 'attributor must ban execute even if exposed');
   assert.ok(!writer.includes('严禁调用 execute'), 'writer must keep check-plan.ts execute permission');
   assert.ok(!fidelityAgent.includes('严禁调用 execute'), 'fidelity must keep check-plan.ts execute permission');
-  assert.ok(writer.includes('node <技能目录>/tools/check-plan.ts --file'));
-  assert.ok(fidelityAgent.includes('node <技能目录>/tools/check-plan.ts --file'));
+  assert.ok(writer.includes("node '<技能目录>/tools/check-plan.ts' --file"));
+  assert.ok(fidelityAgent.includes("node '<技能目录>/tools/check-plan.ts' --file"));
 
   // fidelity.md aligned with task-brief.ts (removes outdated manual multi-file prompt)
   assert.ok(!fidelityDoc.includes('核对这些自动化用例是否改掉原始用例的场景：<文件路径，逐个列出>'));
-  assert.ok(fidelityDoc.includes("task-brief.ts --role '保真核对'"));
+  assert.ok(fidelityDoc.includes("task-brief.ts' --role '保真核对'"));
 
   // P2: recomposer & recompose/SKILL.md teach executable CLI rules + RFC test IP + positive & negative examples
   assert.ok(!recomposer.includes('保持命令树可解析原值'));

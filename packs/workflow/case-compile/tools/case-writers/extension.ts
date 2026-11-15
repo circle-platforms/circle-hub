@@ -113,7 +113,7 @@ export function writerMessage(value: PlannedCase, where: { runDirectory: string;
     '',
     `原始用例 ${value.item}。`,
     `运行下载目录：${where.runDirectory}（items/${value.index}.json 是这条用例，briefs/${value.index}.md 是下面的简报，knowledge/ 和 sources/ 也在其中）。`,
-    `技能目录：${where.skillDirectory}（SKILL.md 是写自动化用例的规则，slots.schema.json（在技能根目录，不在 tables/）和 examples/submit-result.json 是自动化用例的形状，可用 tools/check-plan.ts --file <文件路径> 本地核对）。`,
+    `技能目录：${where.skillDirectory}（SKILL.md 是写自动化用例的规则，slots.schema.json（在技能根目录，不在 tables/）和 examples/submit-result.json 是自动化用例的形状，可用 node '${where.skillDirectory}/tools/check-plan.ts' --file '<文件路径>' 本地核对）。`,
     `要写的文件：${value.path}。${value.exists ? '它已经存在，是这条用例上一轮的自动化用例，先读它；返工的规矩见技能目录里 tools/delivery.md 的第 1 步。' : '它还不存在。'}`,
     '只写这一个文件。最后一条回复是给主代理的报告，格式照系统提示。',
     ...(value.note === null ? [] : ['', '## 主代理的补充', '', value.note]),

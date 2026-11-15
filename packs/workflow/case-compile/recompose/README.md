@@ -1,5 +1,7 @@
 # recompose 1.2.7
 
+本地修正 1.2.7 补充（2026-11-15）：将 `recompose/SKILL.md` 及 `recompose/tools/{check-record,download-run,submit-records}.ts` 中的命令行脚本路径与参数值示例及出错提示统一改写为英文单引号形式（`'…'`），与 `scripts/real/guard-lib.ts` 放行清单及 `circle-guard.test.ts` 带空格主目录自动提取回放对齐，并重签 `recompose/pack.json`；未发布或部署。
+
 本地修正 1.2.7（2026-11-15）：对齐 `InfoTest_Engine` `compile-worker.md:44-45,70` 补充 `recompose/SKILL.md` 用例重组要求（在不替换作者被测对象/动作/约束、也不将“前置不存在”反向测试改配为正向前置的前提下，必须完整抽出手册正文与配置示例要求的命令运行前置写入 `sources.states` `missing_prerequisite`，并明确 `submit-records.ts` 前写回 `settled` 裁定、封批后界面决定转记入 `scope.md`），并同步 `testing/gen-recompose.ts` 生成的共享 `functions/recompose-evidence.ts`（接受 recompose `1.2.7` 与 authority/adjudicate `1.1.11`）；未发布或部署。
 
 # recompose 1.2.6

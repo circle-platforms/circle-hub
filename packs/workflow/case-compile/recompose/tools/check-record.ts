@@ -1,5 +1,5 @@
 // 只读离线预检查用例重组（recompose）单条或整目录记录文件：UTF-8/JSON 语法、单一精简形状、item/method/重复 item 及可选 --run 原句完整性，不接触 Hub 或令牌，不写入磁盘：
-//   node <技能目录>/tools/check-record.ts --file <重组记录JSON或目录> [--run <下载运行目录>]
+//   node '<技能目录>/tools/check-record.ts' --file '<重组记录JSON或目录>' [--run '<下载运行目录>']
 import { realpathSync } from 'node:fs';
 import { lstat, readdir } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -9,7 +9,7 @@ import { formatCallError, isRecord, parseCliOptions, type CallErrorCategory } fr
 import { assertValidRecomposeShape, recordFor, submissionFor } from './submit-records.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, run: false };
-const USAGE = 'node <技能目录>/tools/check-record.ts --file <重组记录JSON或目录> [--run <下载运行目录>]';
+const USAGE = "node '<技能目录>/tools/check-record.ts' --file '<重组记录JSON或目录>' [--run '<下载运行目录>']";
 const HELP_TEXT = [
   `用法：${USAGE}`,
   '',

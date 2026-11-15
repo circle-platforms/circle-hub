@@ -2,7 +2,7 @@
 // only when the brief it answered is still the brief of the plan as it stands, and only when it decides every authored action
 // once from the closed set (functions/fidelity.ts); the digest is written by this tool, never typed. In run 19 the model merged
 // seventeen verdicts by hand, and one case reached the Hub with the verdict of an earlier plan. Offline.
-//   node <skill directory>/tools/fidelity-apply.ts --run <directory>/run.json --plans <plan directory> --briefs <brief directory>
+//   node '<skill directory>/tools/fidelity-apply.ts' --run '<directory>/run.json' --plans '<plan directory>' --briefs '<brief directory>'
 import { realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';

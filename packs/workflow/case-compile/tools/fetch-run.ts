@@ -4,7 +4,7 @@
 // the digest the run bound. The token is read from standard input only, never from the arguments or the environment. The
 // command is the one form the skills home of scripts/real/circle-home.ts admits: the installed script by its full path and a
 // quoted here-document whose only line is Circle's secret placeholder.
-//   node <skill directory>/tools/fetch-run.ts --hub %HUB_URL% --run <run id> --out <directory> <<'EOF'
+//   node '<skill directory>/tools/fetch-run.ts' --hub %HUB_URL% --run '<run id>' --out '<directory>' <<'EOF'
 //   %HUB_TOKEN%
 //   EOF
 import { realpathSync } from 'node:fs';

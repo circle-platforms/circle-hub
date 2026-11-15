@@ -1,6 +1,6 @@
 // 只读装配单条或批量子代理任务说明写入 `--task-file`（或 `--batch` 批量写盘，不折叠逐字超长行并披露行号），stdout 只输出极短派发提示给 `task` 工具：
-//   node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note '<补充说明>'] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
-//   node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --batch <批量清单JSON或核对目录> --task-dir <任务目录> [--out-dir <目标输出目录>] [--scope <范围文件>] [--note '<补充说明>']
+//   node '<技能目录>/tools/task-brief.ts' --role '<用例重组|脚本编写|保真核对|失败分析>' --case '<用例或范围>' --brief '<简报或输入路径>' --out '<目标文件路径>' --task-file '<任务文件路径>' [--scope '<范围文件>'] [--note '<补充说明>'] [--round '<轮次>'] [--run '<运行目录>'] [--item '<条目JSON>'] [--brief-json '<结构简报JSON>'] [--prior-plans '<路径...>'] [--prior-returns '<目录...>'] [--prior-answers '<路径...>'] [--prior-notes '<路径...>']
+//   node '<技能目录>/tools/task-brief.ts' --role '<用例重组|脚本编写|保真核对|失败分析>' --batch '<批量清单JSON或核对目录>' --task-dir '<任务目录>' [--out-dir '<目标输出目录>'] [--scope '<范围文件>'] [--note '<补充说明>']
 import { realpathSync } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -50,7 +50,7 @@ const OPTIONS: Record<string, boolean> = {
   'prior-notes': false,
 };
 const USAGE =
-  "node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note '<补充说明>'] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>] | --batch <批量清单或核对目录> --task-dir <核对任务目录>";
+  "node '<技能目录>/tools/task-brief.ts' --role '<用例重组|脚本编写|保真核对|失败分析>' --case '<用例或范围>' --brief '<简报或输入路径>' --out '<目标文件路径>' --task-file '<任务文件路径>' [--scope '<范围文件>'] [--note '<补充说明>'] [--round '<轮次>'] [--run '<运行目录>'] [--item '<条目JSON>'] [--brief-json '<结构简报JSON>'] [--prior-plans '<路径...>'] [--prior-returns '<目录...>'] [--prior-answers '<路径...>'] [--prior-notes '<路径...>'] | --batch '<批量清单或核对目录>' --task-dir '<核对任务目录>'";
 const DEFAULT_SCOPE = 'scope.md';
 const MAX_SCOPE_BYTES = 16_384;
 /** Threshold above which a raw verbatim line is disclosed at the top of `--task-file` without wrapping. */

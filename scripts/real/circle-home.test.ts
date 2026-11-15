@@ -550,7 +550,7 @@ function extractSkillCommands(docPath: string, text: string): ParsedSkillCommand
     for (let i = 0; i < lines.length;) {
       const line = lines[i];
       if (line === '' || line.startsWith('#')) { i += 1; continue; }
-      assert.ok(line.startsWith('node <技能目录>/tools/'), `${docPath}: unparseable command line in sh block: ${line}`);
+      assert.ok(line.startsWith("node '<技能目录>/tools/"), `${docPath}: unparseable command line in sh block: ${line}`);
       if (line.includes('<<')) {
         assert.match(line, / <<'EOF'$/, `${docPath}: malformed heredoc start on line: ${line}`);
         assert.equal(lines[i + 1], '%HUB_TOKEN%', `${docPath}: missing %HUB_TOKEN% heredoc line after: ${line}`);
@@ -564,21 +564,28 @@ function extractSkillCommands(docPath: string, text: string): ParsedSkillCommand
       }
     }
   }
-  // Explicit "label: [node <技能目录>/]tools/..." command declarations in ```text summaries.
-  const heredocNote = " <<'EOF'（接两行 %HUB_TOKEN% 与 EOF，切勿在 <<'EOF' 前换行）";
-  for (const line of text.split('\n')) {
-    const labelled = /^[^:\n]+: ((?:node <技能目录>\/)?tools\/\S+\.ts(?: [^\n]*)?)$/.exec(line);
+  // Explicit "label: node '<技能目录>/tools/...' " command declarations in ```text summaries.
+  const allLines = text.split('\n');
+  for (let i = 0; i < allLines.length; i += 1) {
+    const line = allLines[i];
+    const labelled = /^[^:\n`]+: (node '<技能目录>\/tools\/[^'\s]+\.ts'(?: [^\n]*)?)$/.exec(line);
     if (!labelled) continue;
     let cmd = labelled[1], hasHeredoc = false;
-    if (cmd.endsWith(heredocNote)) { cmd = cmd.slice(0, -heredocNote.length); hasHeredoc = true; }
+    if (cmd.includes('<<')) {
+      assert.match(cmd, / <<'EOF'$/, `${docPath}: malformed heredoc start on labelled command: ${line}`);
+      assert.equal(allLines[i + 1], '%HUB_TOKEN%', `${docPath}: missing %HUB_TOKEN% heredoc line after: ${line}`);
+      assert.equal(allLines[i + 2], 'EOF', `${docPath}: missing EOF closing line after: ${line}`);
+      cmd = cmd.slice(0, -" <<'EOF'".length);
+      hasHeredoc = true;
+      i += 2;
+    }
     assert.ok(!cmd.includes('<<') && !cmd.includes('（'), `${docPath}: unparseable labelled command: ${line}`);
-    if (cmd.startsWith('tools/')) cmd = `node <技能目录>/${cmd}`;
     out.push({ source: docPath, template: cmd, hasHeredoc });
   }
-  // Inline backticked `node <技能目录>...` invocations (excluding the exact prose meta-syntax illustration).
-  for (const match of text.matchAll(/`(node <技能目录>[^`]*)`/g)) {
+  // Inline backticked `node '<技能目录>...` invocations (excluding the exact prose meta-syntax illustration).
+  for (const match of text.matchAll(/`(node '<技能目录>[^`]*)`/g)) {
     const cmd = match[1];
-    if (cmd === 'node <技能目录>/tools/<脚本>.ts --选项 值') continue;
+    if (cmd === "node '<技能目录>/tools/<脚本>.ts' --选项 值") continue;
     assert.ok(!cmd.includes('<<') && !cmd.includes('\n'), `${docPath}: unparseable inline command: ${cmd}`);
     out.push({ source: docPath, template: cmd, hasHeredoc: false });
   }
@@ -679,9 +686,8 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
         const parsed = docs.flatMap((docPath) => extractSkillCommands(`${pack.name}/${docPath}`, readFileSync(join(pack.dir, docPath), 'utf8')));
         assert.ok(parsed.length >= pack.expectedScripts.length, `${pack.name}: extracted commands from ${docs.join(', ')}`);
 
-        const quotedSkill = skill.includes(' ') ? `'${skill}` : skill;
         const values: Record<string, string> = {
-          技能目录: quotedSkill,
+          技能目录: skill,
           脚本编写编号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
           用例重组编号: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb',
           脚本合并编号: 'run_01cccccccccccccccccccccccc',
@@ -726,11 +732,7 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
         const seenScripts = new Set<string>();
         for (const usage of parsed) {
           for (const concrete of expandCommandVariants(usage.source, usage.template, values)) {
-            let command = concrete.replaceAll('%HUB_URL%', hubUrl);
-            if (skill.includes(' ')) {
-              // When the installed home path contains spaces (e.g. Application Support), the unified quoting rule single-quotes the full script path.
-              command = command.replace(/^node '([^']+\.ts)/, "node '$1'");
-            }
+            const command = concrete.replaceAll('%HUB_URL%', hubUrl);
             const scriptMatch = /^node (?:'([^']+)'|(\S+))/.exec(command);
             const scriptPath = scriptMatch?.[1] ?? scriptMatch?.[2] ?? '';
             assert.ok(existsSync(scriptPath), `${label} ${usage.source}: installed script exists: ${command}`);

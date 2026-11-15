@@ -5,7 +5,7 @@
 // across repairs and nothing in it is ever overwritten or renamed: a brief and its verdict carry the first eight digits of the
 // brief's digest in their names, so a changed plan gets a new brief file, only that case is audited again, and the verdict of an
 // earlier plan is never merged (in run 19 the model kept five brief directories and tracked the changed digests by hand).
-//   node <skill directory>/tools/fidelity-brief.ts --run <directory>/run.json --plans <plan directory> --out <brief directory>
+//   node '<skill directory>/tools/fidelity-brief.ts' --run '<directory>/run.json' --plans '<plan directory>' --out '<brief directory>'
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';

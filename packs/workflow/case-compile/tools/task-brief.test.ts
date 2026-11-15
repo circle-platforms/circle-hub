@@ -53,7 +53,7 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
     assert.ok(writerBrief.includes(scopeVerbatim));
     assert.ok(writerBrief.includes('使用者原话，由主会话记录'));
     assert.ok(writerBrief.includes(`技能目录：${packDir}`));
-    assert.ok(writerBrief.includes(`node ${packDir}/tools/check-plan.ts --file`));
+    assert.ok(writerBrief.includes(`node '${packDir}/tools/check-plan.ts' --file`));
     assert.ok(!writerBrief.includes('<技能目录>'));
     assert.ok(writerBrief.includes('按测试环境改写、前置与清理'));
     assert.ok(writerBrief.includes('本轮补充：先查前置配置'));
@@ -256,7 +256,7 @@ test('staged task-brief CLI resolves installed skill dir from import.meta.url an
     assert.ok(taskContent.includes(scope));
     assert.ok(taskContent.includes(`技能目录：${packDir}`));
     assert.ok(!taskContent.includes('<技能目录>'));
-    assert.ok(taskContent.includes('node ' + packDir + '/tools/check-plan.ts --file <verdict相对路径> --brief <brief相对路径>'));
+    assert.ok(taskContent.includes(`node '${packDir}/tools/check-plan.ts' --file '<verdict相对路径>' --brief '<brief相对路径>'`));
 
     // Invalid option format exits non-zero with formatted stderr.
     const errChunks: string[] = [];

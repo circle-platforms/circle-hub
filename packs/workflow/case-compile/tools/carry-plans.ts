@@ -32,7 +32,7 @@ const OPTIONS: Record<string, boolean> = {
 };
 
 const USAGE =
-  'node <技能目录>/tools/carry-plans.ts --source <上一轮脚本编写目录> --target <新脚本编写目录> --plans <自动化用例目录> [--source-plans <上一轮自动化用例目录>] [--source-briefs <上一轮核对目录> --briefs <核对目录>] [--rework <逗号分隔autoid>] [--exclude <逗号分隔autoid>]';
+  "node '<技能目录>/tools/carry-plans.ts' --source '<上一轮脚本编写目录>' --target '<新脚本编写目录>' --plans '<自动化用例目录>' [--source-plans '<上一轮自动化用例目录>'] [--source-briefs '<上一轮核对目录>' --briefs '<核对目录>'] [--rework '<逗号分隔autoid>'] [--exclude '<逗号分隔autoid>']";
 
 const SHARED_SLOTS = ['subject', 'contract', 'inventory', 'profile'] as const;
 

@@ -114,9 +114,9 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         `以下 ${fidelityBlocks.length} 份自动化用例尚未完成场景保真审计，未发往 Hub（不占修复次数；Hub 的核对结论仍为准）：\n`
         + `${detail}。\n`
         + '请依次执行下面 3 步后再重跑 submit-plans.ts：\n'
-        + '1) node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>\n'
+        + "1) node '<技能目录>/tools/fidelity-brief.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --out '<核对目录>'\n"
         + '2) 用新开的子代理逐份读取 to_audit 中的 .brief.json，按文件内 rules 写出同名 .verdict.json\n'
-        + '3) node <技能目录>/tools/fidelity-apply.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录>（确认 ready=true）',
+        + "3) node '<技能目录>/tools/fidelity-apply.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --briefs '<核对目录>'（确认 ready=true）",
       );
     }
     if (left.length) process.stdout.write(`另有 ${left.length} 份自动化用例不属于本次脚本编写，未做脚本合并\n`);

@@ -30,8 +30,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "bed892ba7db03bbaa2b3ea6e02c74454b0cdc0eec6952a33e85144edb26c65c3",
-      "size": 11102
+      "sha256": "75f24ea1245efdb699d763de4d40549b2e6fef7bbf92c98aa3eeb37bd60b57a6",
+      "size": 11207
     },
     {
       "path": "checks.json",
@@ -180,18 +180,18 @@
     },
     {
       "path": "tools/check-record.ts",
-      "sha256": "781b7ae28f16da46f469d105ce4c5e55f56bc491ac27877f3a55213f22c162aa",
-      "size": 9516
+      "sha256": "247ba8d9be7d62295bcf70e38d22c12e2026e4797a04ca9ed3270f22808fc6eb",
+      "size": 9528
     },
     {
       "path": "tools/download-run.ts",
-      "sha256": "06184e77f55f53385de4542e6a5cda204794d562ea7fd63f8701ec8d2acd42fe",
-      "size": 2630
+      "sha256": "654ed9cc9fb7bea2c96f4f4cdd2d448ab63db034eb89bb3662cd319c5e00930f",
+      "size": 2636
     },
     {
       "path": "tools/submit-records.ts",
-      "sha256": "e22f544717acebc49fba216644bde084c11bb2c68e76d75d4edd3b96514d4131",
-      "size": 10904
+      "sha256": "05e7c4f348aee9668bac960823f61e3ea573c037877afc89fcef5e1d13514f2f",
+      "size": 10912
     },
     {
       "path": "workflow.json",
