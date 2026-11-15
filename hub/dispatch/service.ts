@@ -154,6 +154,7 @@ export class DispatchService {
   #closing: Promise<void> | null = null;
   #captures = new Set<Promise<string>>();
   #clients = new Set<WeakRef<RpcClient>>();
+  #clientSignals=new WeakMap<RpcClient,AbortSignal>();
   #shutdown = new AbortController();
   #recoveryWorkers = new Map<string,{controller:AbortController;done:Promise<void>}>();
   #recoveryScan:Promise<void>|null=null;
@@ -162,6 +163,7 @@ export class DispatchService {
   #activeJobs=new Set<string>();
   #pulses=new Set<Heartbeat>();
   #operations=new Set<Promise<unknown>>();
+  #observationSignals=new Map<string,AbortSignal>();
   constructor(options: DispatchOptions) {
     this.redactor=options.redactor??new Redactor();
     this.options = options; this.now = options.now ?? (() => new Date());
@@ -276,11 +278,12 @@ export class DispatchService {
     }
   }
   private async recoverJob(job:string,workerSignal:AbortSignal):Promise<void>{
-    const signal=AbortSignal.any([workerSignal,this.#shutdown.signal]);
+    const lostObservation=new AbortController();
+    const signal=AbortSignal.any([workerSignal,this.#shutdown.signal,lostObservation.signal]);
     let cached:{intent:string;binding:JobBinding;d:ExecutorDefinition;client:RpcClient;lease:RemoteLease;confirmed:LeaseClock|null;heartbeatAt:number|null;heartbeatRejected:boolean}|undefined;
     let delay=1000;
     while(!signal.aborted){
-      const unlock=await this.options.records.store.tryHold('dispatch.observation:'+job);
+      const unlock=await this.options.records.store.tryHold('dispatch.observation:'+job,error=>lostObservation.abort(error));
       if(!unlock){await recoveryWait(delay,signal,this.options.sleep);continue;}
       let binding:JobBinding|undefined;
       try{
@@ -296,7 +299,7 @@ export class DispatchService {
         if(!intent){
           const gate=await this.journal.append(binding,'gate','validate','completed',{allow_submit:false},[],'dispatch.gate:'+job);
           if(!gate.created&&gate.body.detail.allow_submit===true){await this.recoveryUnknown(binding,'原提交准入已通过，但没有完整意图，缺少可核对的原请求身份');return;}
-          await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,public_reason:'服务重启后确认尚未写入派发意图，本次没有提交',next_action:'可以重新发起上机验证，须使用新一次核验和预订'},[], 'dispatch.recovery.no_intent:'+job);
+          await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,recovery:true,public_reason:'服务重启后确认尚未写入派发意图，本次没有提交',next_action:'可以重新发起上机验证，须使用新一次核验和预订'},[], 'dispatch.recovery.no_intent:'+job);
           return;
         }
         const detail=intent.body.detail,lease=detail.remote_lease;
@@ -323,6 +326,7 @@ export class DispatchService {
         const response=await this.retryRead(binding,client,'query',context,Infinity);
         const decision=recoveryQuery(binding,intent,d,response.value);
         if(decision.missing.length){await this.recoveryUnknown(binding,decision.missing.join('；'),[response.source]);return;}
+        if(signal.aborted)throw signal.reason;
         if(!decision.notExecuted&&!cached.heartbeatRejected&&(cached.heartbeatAt===null||performance.now()-cached.heartbeatAt>=((cached.confirmed?.ttl??cached.lease.ttl)/3))){
             cached.heartbeatAt=performance.now();
             if(!client.hasTool('heartbeat')){cached.heartbeatRejected=true;await this.journal.append(binding,'heartbeat','lease','error',{op:'extend' satisfies LeaseOp,lease_interrupted:true,missing_fact:'原预订续约工具不可用；仍继续读取原任务，不重新申请'});}
@@ -371,7 +375,11 @@ export class DispatchService {
         catch{const reservation=(await this.journal.events(job)).find(event=>event.body.detail.phase==='reservation');if(reservation)await this.recoveryUnavailable(reservation,'原固定执行器原件或必需读取证据不可用，无法安全接回');}
         else throw error;
         return;
-      }finally{await unlock();}
+      }finally{
+        const original=binding??cached?.binding;
+        if(lostObservation.signal.aborted&&!this.#shutdown.signal.aborted&&original)await this.recoveryUnknown(original,'原作业观察锁连接已中断，本次接回停止；需重新取得观察锁后只读核对');
+        await unlock();
+      }
       await recoveryWait(delay,signal,this.options.sleep);
     }
   }
@@ -784,8 +792,10 @@ export class DispatchService {
     const binding: JobBinding = { ...provisional, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if(d.calls.submit.write)binding.target_key=digestOfValue(bind(d.calls.submit.write.target_key,this.context(binding)));
     delete binding.run; // Restricted response captures deliberately clear input; never leave a second run binding behind.
-    const unlockObservation=await this.options.records.store.tryHold('dispatch.observation:'+binding.job);
+    const observation=new AbortController();
+    const unlockObservation=await this.options.records.store.tryHold('dispatch.observation:'+binding.job,error=>observation.abort(error));
     if(!unlockObservation)throw new Error('同一作业的观察仍在进行，尚未预留或提交');
+    this.#observationSignals.set(binding.job,observation.signal);
     try{
     await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
     try { onReserved?.(binding.job); } catch { /* A terminal sink never controls an effect already authorized by the command. */ }
@@ -800,6 +810,7 @@ export class DispatchService {
     };
     try {
       await session.connect();
+      this.assertObservation(binding.job);
       remote = await this.acquire(binding, d, session, this.context(binding));
       pulse = this.heartbeat(binding,d,session,remote);stop=pulse.stop;
       const context: Record<string, unknown> = { ...this.context(binding), lease_id: remote.id, lease_token: remote.token, payload_base64: Buffer.from(source?.bytes??[]).toString('base64') };
@@ -875,6 +886,7 @@ export class DispatchService {
       const ignore = () => {}; process.on('SIGINT', ignore); process.on('SIGTERM', ignore); process.on('SIGHUP',ignore);
       let answer: Exchange;
       try {
+        this.assertObservation(binding.job);
         flags.submitInvoked=true;
         try{answer=await session.call('submit',context,Math.max(1,Date.parse(notAfter)-this.now().getTime()));}
         catch(error){
@@ -888,7 +900,7 @@ export class DispatchService {
           if(!retryBoundary.ok||retryBoundary.checked!==9){const failure=retryBoundary.ok?incompleteEffectBoundary(retryBoundary):retryBoundary;await this.journal.append(binding,'retry_refused','dispatch','completed',{missing_fact:refusalText(failure,true),next_action:failure.fix},[]);throw error;}
           await this.journal.append(binding,'resend','dispatch','completed',{outcome:'issued',request_id:context.request_id,intent_key:key,possibly_duplicated:rule.mark==='possible_duplicate',retry_once:true});
           if(!pulse.held()||this.now().getTime()>=retryDeadline)throw error;
-          try{answer=await session.call('submit',context,Math.max(1,retryDeadline-this.now().getTime()));}
+          try{this.assertObservation(binding.job);answer=await session.call('submit',context,Math.max(1,retryDeadline-this.now().getTime()));}
           catch(retryError){
             await this.journal.append(binding,'resend_failed','dispatch','unknown',{retry_locally_unsent:retryError instanceof SubmissionNotSentError||retryError instanceof InvocationDefinitionError,missing_fact:'第一次投递的执行事实尚未对账；第二次本地失败不能证明第一次未发出',next_action:'自动核对原请求记录；没有请求接口时交管理员按原投递事实处置'});
             throw error; // Only the first invocation's failure can classify whether the original effect was sent.
@@ -936,7 +948,7 @@ export class DispatchService {
       }
       return await this.status(by, binding.job);
     } finally { await stop(); }
-    }finally{await unlockObservation();}
+    }finally{this.#observationSignals.delete(binding.job);await unlockObservation();}
   }
   /** The scheduler administrator authorizes orchestration, never the runner's environment use. */
   private async environmentUseFailure(userId:string,executor:string,tx?:Transaction):Promise<BoundaryFailure|null> {
@@ -1084,7 +1096,7 @@ export class DispatchService {
     const context = {...this.context(binding),request_id:intent.body.detail.request_id,not_after:intent.body.detail.not_after,lease_id:lease.id,lease_token:lease.token};
     const deadline = Date.parse(String(intent.body.detail.not_after));
     await this.journal.append(binding,'receipt_pending','read','completed',{missing_fact:'提交回执未取得，须取得原请求记录',next_action:'到请求截止时自动只读核对；进程退出后用 job resume 继续，不重发提交'});
-    const wait = deadline - this.now().getTime(); if (wait > 0) await this.sleep(wait);
+    const wait = deadline - this.now().getTime(); if (wait > 0) await this.waitClient(client,wait);
     const r = d.reconciliation!;
     let response: Exchange;
     for(;;) {
@@ -1102,7 +1114,7 @@ export class DispatchService {
         await this.unknown(binding,'目标仍报告处理中且超出登记窗口；需原操作者核对目标处理进程',[response.source],{next_action:`请管理员 ${binding.acting_by ?? binding.initiated_by} 核对目标处理进程，恢复后运行 circle-hub job resume ${binding.job}；不得重交`});
         return this.status(by,binding.job);
       }
-      await this.sleep(d.poll_ms);
+      await this.waitClient(client,d.poll_ms);
     }
     const value = response.value; const found = at(value,r.found);
     const reported = mapped(r.map,at(value,r.state));
@@ -1341,12 +1353,17 @@ export class DispatchService {
     try { return `src:${(await this.saveText(binding, source, lines.join('\n'), 'device-return.txt')).body.sha256}`; }
     catch (error) { try { this.options.adminLog?.({ traceId: null, run: binding.input?.run ?? binding.run ?? null, what: 'device return ' + binding.job, detail: error instanceof Error ? error.message : String(error) }); } catch { /* logging never stalls the job */ } return undefined; }
   }
+  private assertObservation(job:string):void{
+    if(this.#shutdown.signal.aborted||this.#observationSignals.get(job)?.aborted)throw new Error('原作业观察已停止，未开始新的提交；已发送的请求仍须按原身份只读核对');
+  }
   private session(binding: JobBinding, d: ExecutorDefinition, secret: string, recovery=false, signal:AbortSignal=this.#shutdown.signal): RpcClient {
+    const observation=this.#observationSignals.get(binding.job);
+    if(observation)signal=AbortSignal.any([signal,observation]);
     const client=new RpcClient(d,secret,binding.user+'/'+binding.job,(bytes,status,operation,complete=true,metadata)=>{
       const captured=captureResponse({records:this.options.records,journal:this.journal,binding,bytes,status,operation,complete,metadata});
       const tracked=captured.finally(()=>this.#captures.delete(tracked));this.#captures.add(tracked);return tracked;
     },this.now,this.redactor,{recovery,signal});
-    this.#clients.add(new WeakRef(client));return client;
+    this.#clientSignals.set(client,signal);this.#clients.add(new WeakRef(client));return client;
   }
   private async read(binding: JobBinding, client: RpcClient, role: CallRole, context: Record<string, unknown>, readBack = false,timeoutMs?:number): Promise<Exchange> {
     const result = await client.call(role, context,timeoutMs);
@@ -1354,15 +1371,18 @@ export class DispatchService {
     await this.journal.append(binding, role, op?'lease':readBack ? 'read_back' : 'read', 'completed', { ...(op?{op,remote_lease:{id:context.lease_id,token:context.lease_token}}:{}), started_at: result.started_at, ended_at: result.received_at }, [result.source]);
     return result;
   }
+  private waitClient(client:RpcClient,ms:number):Promise<void>{
+    return recoveryWait(ms,this.#clientSignals.get(client)??this.#shutdown.signal,this.options.sleep);
+  }
   private async retryRead(binding: JobBinding, client: RpcClient, role: CallRole, context: Record<string, unknown>, deadline: number,remainingMs?:()=>number): Promise<Exchange> {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try { if(remainingMs&&remainingMs()<=0)throw new Error('只读窗口已用尽');return await this.read(binding,client,role,context,false,remainingMs?Math.max(1,Math.min(client.definition.calls[role]?.timeout_ms??30000,remainingMs())):undefined); }
       catch (error) {
-        if(this.#shutdown.signal.aborted)throw error;
+        if(this.#shutdown.signal.aborted||this.#clientSignals.get(client)?.aborted)throw error;
         const retry=canRetryRead(error,client.definition,context);
         await this.journal.append(binding, `${role}.retry`, 'read', 'error', { attempt, missing_fact: '本次只读应答不可用，不等于未执行', next_action: retry && attempt < 3 ? '自动重读原作业，绝不重交' : `circle-hub job resume ${binding.job}` });
         if (!retry || attempt === 3 || this.now().getTime() >= deadline || remainingMs&&remainingMs()<=0) throw new Error('原作业只读查询待恢复');
-        await this.sleep(remainingMs?Math.max(0,Math.min(client.definition.poll_ms,remainingMs())):client.definition.poll_ms);
+        await this.waitClient(client,remainingMs?Math.max(0,Math.min(client.definition.poll_ms,remainingMs())):client.definition.poll_ms);
       }
     }
     throw new Error('原作业只读查询待恢复');
@@ -1534,7 +1554,7 @@ export class DispatchService {
         let reply: Exchange | undefined;
         for(let attempt=1;attempt<=3;attempt++) {
           try{reply=await client.precheckRead(index,context);break;}
-          catch(error){const retry=canRetryRead(error,d,context);await this.journal.append(binding,`precheck.${index+1}.retry`,'read','error',{attempt,next_action:retry && attempt<3?'自动重读该来源，未提交':'修复读取声明、权限或存储后重跑预检，未提交'});if(!retry)break;if(attempt<3)await this.sleep(d.poll_ms);}
+          catch(error){const retry=canRetryRead(error,d,context);await this.journal.append(binding,`precheck.${index+1}.retry`,'read','error',{attempt,next_action:retry && attempt<3?'自动重读该来源，未提交':'修复读取声明、权限或存储后重跑预检，未提交'});if(!retry)break;if(attempt<3)await this.waitClient(client,d.poll_ms);}
         }
         if(!reply)throw new Error('只读来源连续三次读取失败');
         ok = await this.assessConditions(binding,check.conditions,reply,context,`precheck.${index+1}`);
@@ -1615,7 +1635,7 @@ export class DispatchService {
         await this.unknown(binding, '最长运行窗口已过且没有可信终态；下一步管理员对账'); return this.observedStatus(by,binding.job);
       }
       if(options?.recovery)return this.observedStatus(by,binding.job);
-      await this.sleep(d.poll_ms);
+      await this.waitClient(client,d.poll_ms);
     }
     const reportStart=performance.now(),reportDeadline=this.now().getTime()+REPORT_READ_WINDOW_MS;
     const remaining=()=>REPORT_READ_WINDOW_MS-(performance.now()-reportStart);
@@ -1630,7 +1650,7 @@ export class DispatchService {
       if(attempt===REPORT_READ_ATTEMPTS||remaining()<=0)break;
       const delay=Math.min(reportReadDelay(d.poll_ms,attempt),Math.max(0,remaining()));
       await this.journal.append(binding,'report_wait','read','completed',{attempt,delay_ms:delay,missing_fact:'原请求报告尚未完整生成',next_action:'自动有界重取原请求状态与报告，绝不重发提交'},[response.source]);
-      await this.sleep(delay);
+      await this.waitClient(client,delay);
       if(remaining()<=0)break;
       try{
         const status=await this.retryRead(binding,client,'status',context,reportDeadline,remaining),mapping=mapped(d.status.map,at(status.value,d.status.pointer));
@@ -1930,6 +1950,7 @@ export class DispatchService {
     const ignore = () => {}; process.on('SIGINT', ignore); process.on('SIGTERM', ignore); process.on('SIGHUP', ignore);
     let answer: Exchange;
     try {
+      this.assertObservation(binding.job);
       flags.submitInvoked = true;
       answer = await session.call('submit', context, Math.max(1, Date.parse(notAfter) - this.now().getTime()));
     } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); process.off('SIGHUP', ignore); }
