@@ -1,7 +1,28 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {test} from 'node:test';
+import {test as nodeTest} from 'node:test';
+import {delimiter, resolve} from 'node:path';
+
+function selectPython(): {executable:string;version:string} | undefined {
+  const candidates = [process.env.CIRCLE_HUB_TEST_PYTHON, ...(process.env.PATH ?? '').split(delimiter).map(directory => resolve(directory || '.', 'python3'))];
+  for (const executable of new Set(candidates)) {
+    if (!executable) continue;
+    const version = spawnSync(executable, ['-I', '-c', 'import sys; print(".".join(map(str,sys.version_info[:3]))); sys.exit(0 if sys.version_info >= (3,11) else 1)'], {encoding:'utf8',timeout:5000});
+    if (version.status === 0) return {executable,version:version.stdout.trim()};
+  }
+  return undefined;
+}
+const interpreter = selectPython();
+const missingPython = 'Requires Python >=3.11 (stdlib tomllib): no usable CIRCLE_HUB_TEST_PYTHON or python3 on PATH; skipped, not passed';
+let reportedInterpreter=false;
+const test = (name:string, body:()=>void) => nodeTest(name,{skip:interpreter ? false : missingPython},context=>{
+  if (!reportedInterpreter && interpreter) {
+    context.diagnostic(`Python ${interpreter.version} via ${interpreter.executable===process.env.CIRCLE_HUB_TEST_PYTHON?'CIRCLE_HUB_TEST_PYTHON':'PATH'}`);
+    reportedInterpreter=true;
+  }
+  body();
+});
 
 const file = fileURLToPath(new URL('./probe.py', import.meta.url));
 const driver = String.raw`
@@ -9,6 +30,13 @@ import ast,http.server,importlib.util,ipaddress,json,os,socket,ssl,subprocess,sy
 from pathlib import Path
 p=json.load(sys.stdin)
 spec=importlib.util.spec_from_file_location('synthetic_probe',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+if p.get('parse_only'):
+    with tempfile.TemporaryDirectory(prefix='synthetic-probe-config-') as tmp:
+        config=Path(tmp)/'synthetic.toml';config.write_text(p['config'])
+        # No socket/client can be created by the parser-only cases.
+        socket.socket=lambda *args,**kwargs: (_ for _ in ()).throw(AssertionError('parser attempted a socket'))
+        print(json.dumps({'listen':m._listen(config)}))
+    sys.exit(0)
 with tempfile.TemporaryDirectory(prefix='synthetic-mcp-probe-') as tmp:
     root=Path(tmp);calls=[];followed=[];servers=[];threads=[]
     class Quiet(http.server.ThreadingHTTPServer):
@@ -60,7 +88,7 @@ with tempfile.TemporaryDirectory(prefix='synthetic-mcp-probe-') as tmp:
         assert created.returncode==0
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);context.load_cert_chain(str(cert),str(key));server.socket=context.wrap_socket(server.socket,server_side=True)
     serve(server)
-    host=p.get('host','::' if p.get('ipv6') else '0.0.0.0')
+    host=p.get('host','::' if p.get('ipv6') else str(ipaddress.ip_address(0)))
     config=root/'gateway.toml'
     text='[listen]\nhost="'+host+'"\nport='+str(server.server_port)+'\n'
     if p.get('tls'):text+='tls_cert="SYNTHETIC_DO_NOT_OPEN_CERT"\ntls_key="SYNTHETIC_DO_NOT_OPEN_KEY"\n'
@@ -72,12 +100,12 @@ with tempfile.TemporaryDirectory(prefix='synthetic-mcp-probe-') as tmp:
             def __init__(self,*args,**kwargs):raise AssertionError('invalid config attempted a connection')
         m.http.client.HTTPConnection=NoNetwork;m.http.client.HTTPSConnection=NoNetwork
     stub_calls=[]
-    if p.get('literal_stub'):
+    if p.get('literal_stub') or p.get('declared_stub'):
         class StubResponse:
             status=401
         class StubConnection:
             def __init__(self,host,port,timeout,**kwargs):
-                assert host==str(ipaddress.ip_address(p['host'])) and port==server.server_port
+                assert host==(p['host'] if p.get('declared_stub') else str(ipaddress.ip_address(p['host']))) and port==server.server_port
                 stub_calls.append({'host':host,'port':port})
             def request(self,method,path,body=None,headers=None):
                 assert method=='POST' and path=='/mcp'
@@ -95,7 +123,8 @@ with tempfile.TemporaryDirectory(prefix='synthetic-mcp-probe-') as tmp:
     print(json.dumps({'result':result,'calls':calls,'followed':followed,'stub_calls':stub_calls}))
 `;
 function check(options: Record<string, unknown> = {}) {
-  const child=spawnSync('python3',['-B','-c',driver,file],{input:JSON.stringify(options),encoding:'utf8',env:{PATH:process.env.PATH??'',PYTHONDONTWRITEBYTECODE:'1'},maxBuffer:1024*1024});
+  if (!interpreter) throw new Error(missingPython);
+  const child=spawnSync(interpreter.executable,['-B','-c',driver,file],{input:JSON.stringify(options),encoding:'utf8',env:{PATH:process.env.PATH??'',PYTHONDONTWRITEBYTECODE:'1'},maxBuffer:1024*1024});
   assert.equal(child.status,0,child.stderr||String(child.error));
   const result=JSON.parse(child.stdout);
   assert.deepEqual(Object.keys(result.result).sort(),['outcome','status']);
@@ -127,7 +156,7 @@ test('redirects are neither followed nor mistaken for MCP liveness',()=>{
 test('404 HTML wrong request identity dual outcomes oversize replies and 503 do not confirm MCP',()=>{
   for(const mode of ['missing','html','wrong-id','dual','oversize','unhealthy'])assert.equal(check({mode}).result.status,'error',mode);
 });
-test('wildcard IPv4 IPv6 and localhost derive only numeric loopback targets',()=>{
+test('wildcard IPv4 IPv6 use loopback and explicit localhost remains usable',()=>{
   assert.equal(check({host:'127.0.0.1'}).result.status,'ok');assert.equal(check({host:'localhost'}).result.status,'ok');
   assert.equal(check({ipv6:true}).result.status,'ok');
 });
@@ -140,15 +169,15 @@ test('explicit literal listener IPv4 and IPv6 reach exactly the configured addre
     assert.deepEqual(result.calls,[],'the configured non-loopback address never uses a real connection');
   }
 });
-test('arbitrary hostnames URLs proxy syntax and credential-bearing addresses are rejected',()=>{
-  for(const host of ['example.invalid','http://192.0.2.7:8910/mcp','user@192.0.2.7','192.0.2.7:8910'])
+test('URLs proxy syntax and credential-bearing listener addresses are rejected',()=>{
+  for(const host of ['http://192.0.2.7:8910/mcp','user@192.0.2.7','192.0.2.7:8910'])
     assert.deepEqual(check({host,refuse_network:true}).result,{status:'error',outcome:'listen_config_unavailable'});
 });
 test('TLS can answer locally without opening any configured CA private key or credential path',()=>{
   assert.deepEqual(check({tls:true}).result,{status:'ok',outcome:'authentication_required'});
 });
-test('unreadable duplicate escaped missing listen fields and incomplete TLS config fail closed',()=>{
-  const configs=['[listen]\nhost="127.0.0.1"', '[listen]\nhost="127.0.0.1"\nport=PORT\nport=PORT', '[listen]\nhost="local\\host"\nport=PORT', '[listen]\nhost="127.0.0.1"\nport=PORT\ntls_cert="only"', '[listen]\nhost="127.0.0.1"\nport=0'];
+test('unreadable duplicate malformed TOML and incomplete TLS config fail closed',()=>{
+  const configs=['[listen]\nhost="127.0.0.1"\nport=PORT\nport=PORT', '[listen]\nhost="local\\host"\nport=PORT', '[listen]\nhost="127.0.0.1"\nport=PORT\ntls_cert="only"', '[listen]\nhost="127.0.0.1"\nport=-1'];
   for(const config of configs)assert.equal(check({config,refuse_network:true}).result.status,'error');
   assert.equal(check({missing_config:true,refuse_network:true}).result.status,'error');
 });
@@ -156,4 +185,26 @@ test('timeouts and connection refusal return bounded non-sensitive failures',()=
   assert.deepEqual(check({mode:'timeout',timeout:.03}).result,{status:'error',outcome:'timeout'});
   assert.equal(check({mode:'refused'}).result.status,'error');
   assert.deepEqual(check({timeout:0,refuse_network:true}).result,{status:'error',outcome:'invalid_timeout'});
+});
+
+
+function parseListener(config: string) {
+  if (!interpreter) throw new Error(missingPython);
+  const child=spawnSync(interpreter.executable,['-B','-c',driver,file],{input:JSON.stringify({parse_only:true,config}),encoding:'utf8',env:{PATH:process.env.PATH??'',PYTHONDONTWRITEBYTECODE:'1'},maxBuffer:1024*1024});
+  assert.equal(child.status,0,child.stderr||String(child.error));
+  return JSON.parse(child.stdout).listen;
+}
+
+test('listen omission and independently absent or empty keys use the gateway defaults without any socket',()=>{
+  for(const config of ['', '[hub]\nsynthetic=true', '[listen]', '[listen]\nhost=""\nport=0', '[listen]\nport=""'])
+    assert.deepEqual(parseListener(config),['127.0.0.1',8910,false]);
+  assert.deepEqual(parseListener('[listen]\nhost="synthetic-gateway.invalid"'),['synthetic-gateway.invalid',8910,false]);
+  assert.deepEqual(parseListener('[listen]\nport="8912"'),['127.0.0.1',8912,false]);
+});
+
+test('native TOML quoted ports and declared hostnames preserve gateway string and integer semantics',()=>{
+  assert.deepEqual(parseListener('[listen]\nhost="synthetic-gateway.invalid"\nport="8912"'),['synthetic-gateway.invalid',8912,false]);
+  assert.deepEqual(parseListener("[listen]\nhost='synthetic-gateway.invalid'\nport='8913'"),['synthetic-gateway.invalid',8913,false]);
+  const result=check({host:'synthetic-gateway.invalid',declared_stub:true,config:'[listen]\nhost="synthetic-gateway.invalid"\nport="PORT"'});
+  assert.deepEqual(result.result,{status:'ok',outcome:'authentication_required'});assert.equal(result.stub_calls.length,1);assert.deepEqual(result.calls,[],'no actual hostname is contacted');
 });

@@ -80,6 +80,8 @@ def build_server(gateway):
             assert gateway.call(None,spec['name'],{})=={'legacy_tool':spec['name'],'arguments':{}}
     return Server()
 package.service.build_server=build_server
+# This unfiltered source/fixture table includes all original tools; authenticated tools/list is scope-filtered.
+# Compare the same caller's before/after list in deployment; admin-scoped tools need not be visible there.
 package.service.TOOL_SPECS=[{'name':'case_submit','scope':'jumphost:run','read_only':False,'input_schema':{'type':'object'}}]
 package.service.TOOL_SPECS += [{'name':'legacy_read_'+str(i),'scope':'jumphost:run','read_only':True,'input_schema':{'type':'object'}} for i in range(12)]
 listed=[item['name'] for item in package.service.TOOL_SPECS]
