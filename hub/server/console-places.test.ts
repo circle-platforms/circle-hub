@@ -181,7 +181,7 @@ describe('tasks', () => {
     assert.match(detail.body, /data-task-tab="requirements"/);
     assert.doesNotMatch(detail.body, /data-timeline|<aside class="ch-inspector"/, 'the first tab draws no process and the page has no side pane');
     const process = await get(`/console/runs/${run}?tab=process`, session);
-    for (const text of ['执行过程', '工具调用', 'Hub 校验', '提交结果', '启动任务', '提交与回执', '调用日志']) assert.ok(process.body.includes(text), text);
+    for (const text of ['执行过程', '工具调用', 'Hub 校验', '提交结果', '启动任务', '核对', '调用日志']) assert.ok(process.body.includes(text), text);
     assert.match(process.body, /<svg class="ch-chart" data-timeline/, 'bars are SVG attributes');
     assert.ok(process.body.indexOf('data-task-outcome') < process.body.indexOf('data-timeline'), 'the result stays above every tab');
     assert.match(process.body, /<a href="\/console\/runs\/[^"]+\?tab=process" aria-current="page">过程/);
@@ -401,7 +401,7 @@ describe('operations and commands', () => {
     const circle = await get('/console/team?circle='+token.id,admin);
     assert.ok(circle.body.includes(`circle-hub token revoke ${token.id}`));
     assert.ok(connections.body.includes(`circle-hub resource disable ${resource.id}`) || connections.body.includes(`circle-hub resource enable ${resource.id}`));
-    assert.ok((await get('/console/connections?tab=environments', admin)).body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
+    assert.ok((await get('/console/connections?tab=environments', admin)).body.includes('这个 Hub 进程未接入在运行环境上执行'), 'no runtime environments without the dispatch port');
     const pack = await get('/console/workflows/review', admin);
     managementForm(pack.body,'pack-retire',{pack:'review@1.0.0'});
     assert.ok(pack.body.includes('要求项') && pack.body.includes('检查项'));

@@ -105,7 +105,7 @@ export const commands = {
    * Bookings stay with the holder; in-progress runs finish; new use is blocked once Codex wires the guards.
    */
   executorUnassignConsequence:
-    '撤回后立即挡住新的预订、续期、在运行环境上执行、问设备和观察；正在进行的执行会跑完。预订仍留在持有人名下，持有人只能释放。',
+    '撤回后立即挡住新的预订、续期、在测试环境上执行、问设备和观察；正在进行的执行会跑完。预订仍留在持有人名下，持有人只能释放。',
   /**
    * Boss 04:30 — force-release a booking that remains after assignment revoke.
    * When `heldKeys` is known, the dialog offers those keys as a single choice (no blank「租约键」placeholder).

@@ -53,7 +53,7 @@ test('result page keeps the production record and counts after accepted model co
   // Issue 230: the page says what 生产结果 is (not a result from the production environment) and what its link to the task page is.
   assert.match(result.body,/开始任务时由规则直接算出的结果，是工作流的产物，与生产环境无关/);
   assert.match(result.body,/>查看任务完整记录（以任务页的记录为准）</);assert.doesNotMatch(result.body,/权威视图/);
-  assert.ok(result.body.includes(stored.latest!.record));assert.match(result.body,/后续受理的模型评论/);
+  assert.ok(result.body.includes(stored.latest!.record));assert.match(result.body,/后续已核对的模型评论/);
   assert.ok(!result.body.includes('模型评论独立标记'));
   // The item results and the commentary are the 条目 tab of the task page (decision 151).
   const run=await send(`/console/runs/${id}?tab=items`,cookie);
@@ -213,6 +213,6 @@ test('a missing production record requires a reread before suggesting a new run 
     assert.match(response.body,/刷新本页再看/);assert.match(response.body,/刷新后仍缺/);assert.ok(response.body.includes(stored.record.started_at));
     assert.ok(response.body.indexOf('刷新本页再看')<response.body.indexOf('同样的输入重新开始一个新任务'));
     assert.match(response.body,/同样的输入重新开始一个新任务/);assert.match(response.body,/client_key/);
-    assert.match(response.body,/已有后续受理的模型评论/);assert.ok(response.body.includes(commentary));assert.doesNotMatch(response.body,/还没有校验结果/);
+    assert.match(response.body,/已有后续已核对的模型评论/);assert.ok(response.body.includes(commentary));assert.doesNotMatch(response.body,/还没有校验结果/);
   }
 });
