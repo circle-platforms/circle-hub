@@ -133,8 +133,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "3eefeb6d966bccc11cd3f0e96fb33594bd019201c3f510acf4615799b9745b5c",
-      "size": 70518
+      "sha256": "d2d857f2ca21107f20df9ca2e71c222a59a65b6078f3dc12d7bdb4faac081d0d",
+      "size": 70800
     },
     {
       "path": "functions/bed.ts",
