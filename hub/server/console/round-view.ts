@@ -1,35 +1,42 @@
 /**
- * Read-only console projection of one 脑图编译 round (Boss 22:25 first slice; 09:07 no pack names).
- * Clusters by subject src + product/version/build and structural edges (predecessor / input refs);
- * conclusions use hub/server/text.ts itemConclusion. No new tables.
+ * Read-only console projection of related tasks that share one subject source and build.
+ * Clusters by subject src + product/version/build and structural edges (predecessor /
+ * input_defaults / parameters / rec: point-lookup); conclusions use hub/server/text.ts.
+ * No new tables. Read caps mirror search.ts (disclose「部分」at the bound).
  */
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import { RunId } from '../../../contracts/src/common.ts';
 import type { ItemProjection, RunRecordView, SourceBinding } from '../../../contracts/src/run.ts';
 import type { ItemResult, ValidationResult } from '../../../contracts/src/validation.ts';
 import type { ExportedJob, ExportedSuccessor, RunListing } from '../../ports.ts';
-import { itemConclusion } from '../text.ts';
-import { kpi, box } from './ui.ts';
+import { itemConclusionParts } from '../text.ts';
+import { box, callout, kpi } from './ui.ts';
 import { count } from './numbers.ts';
 import { time } from './format.ts';
-import { html, link, page, table, type Html } from './html.ts';
+import { html, link, page, pre, table, type Html } from './html.ts';
 import { NEUTRAL, neutralPage, type PageContext, type PageResult } from './context.ts';
 import { RUN_ID, SHA256, param } from './params.ts';
 import { roundDevicePath, roundsPath, runPath } from './routes.ts';
 
-const LINEAGE_CAP = 40;
+/** Max run-index rows scanned for reverse edges (same bound idea as search.ts RUNS_SCANNED). */
+export const ROUND_RUNS_SCANNED = 300;
 const LIST_PAGE = 100;
+const LINEAGE_STEPS = 1_600;
+const HISTORY = { history: { limit: 1 } as const, requests: 'waiting' as const };
 
-export const ROUND_EMPTY_ANCHOR = '请从任务页打开本轮，或在地址里写上运行编号。';
-export const ROUND_EMPTY_CASES = '这一轮还没有可读的原始用例。';
-export const ROUND_PARTIAL_RUNS = '这一轮里有部分运行当前账号读不到，表里只列可见的。';
-export const ROUND_UNLINKED = '这条运行归不进任何一轮：输入里的结果引用没法唯一反查到别的运行。';
-export const ROUND_NO_CONCLUSION = '这条原始用例还没有 Hub 核对结论。';
-export const ROUND_HUB_MISSING_FAILURE = 'Hub 没有';
-export const ROUND_HUB_MISSING_DELIVERY = 'Hub 没有';
-export const ROUND_NO_DEVICE = '还没有设备输出';
+export const ROUND_PAGE_TITLE = '相关任务';
+export const ROUND_EMPTY_CASES = '这些相关任务里还没有可读的原始用例。';
+export const ROUND_PARTIAL_RUNS = '无权限：有相关任务当前账户无权查看，未列入表中。请联系这些任务的执行人或管理员分享。';
+export const ROUND_PARTIAL_SCAN = '部分：相关任务的反向扫描已到上限，未列入的任务可能还在。下一步：从更靠近目标的任务页进入，或请管理员缩小可见任务范围。';
+export const ROUND_UNLINKED = '状态未知：找不到与这个任务衔接的前一步任务（输入里引用的结果在可见任务里没有唯一对应）。下一步：执行人从上一步任务的页面进入本页，或请管理员核对。';
+export const ROUND_NO_CONCLUSION = '状态未知；原因缺资料（还没有可读的核对结果）；下一步由模型提交后重新交给 Hub 检查';
+export const ROUND_NO_DEVICE = '尚未上机验证';
+export const ROUND_DEVICE_PENDING = '设备输出还没有返回';
+export const ROUND_JOBS_FORBIDDEN = '无权限：当前账户不能读取这些任务的上机作业。请联系执行人或管理员。';
 export const ROUND_DEVICE_UNREADABLE = '设备输出不可读';
 export const ROUND_DEVICE_TITLE = '设备输出';
+export const ROUND_DURATION_UNKNOWN = '未知';
+export const ROUND_HUB_NOTE = '失败分析的原因和交付结果在 Circle 客户端生成，Hub 不保存。';
 
 const REC_DIGEST = /^rec:([0-9a-f]{64})$/;
 
@@ -48,7 +55,14 @@ export function subjectReference(sources: readonly SourceBinding[]): string | nu
   return subject?.reference ?? null;
 }
 
-/** Same mindmap bytes + product line + build (Boss 09:07); pack id is never consulted. */
+export function subjectLabel(sources: readonly SourceBinding[]): string {
+  const subject = sources.find((row) => row.role === 'subject' && row.reference.startsWith('src:'));
+  if (subject === undefined) return '未记录';
+  if (typeof subject.label === 'string' && subject.label.length > 0) return subject.label;
+  return '已绑定来源（摘要折叠）';
+}
+
+/** Same subject bytes + product line + build; pack id is never consulted. */
 export function sameRoundKeys(
   anchor: Pick<RunRecordView, 'product' | 'version' | 'build' | 'sources'>,
   other: Pick<RunRecordView, 'product' | 'version' | 'build' | 'sources'>,
@@ -75,32 +89,22 @@ export function outboundRunRefs(run: Pick<RunRecordView, 'predecessor' | 'input_
   return [...ids];
 }
 
+/** Display id/title from pack projection strings only (no fields.autoid / case_id / title). */
 export function caseIdentity(item: ItemProjection): { id: string; title: string; label: string } {
-  const autoid = item.fields.autoid ?? item.fields.case_id;
-  const id = typeof autoid === 'string' || typeof autoid === 'number' ? String(autoid) : item.label;
-  const titled = item.fields.title;
-  const title = typeof titled === 'string' && titled.length > 0
-    ? titled
-    : item.fields.case_id !== undefined && item.fields.title === undefined
-      ? '标题未知'
-      : item.label;
-  return { id, title, label: item.label };
+  const title = typeof item.summary === 'string' && item.summary.length > 0 ? item.summary : item.label;
+  return { id: item.label, title, label: item.label };
 }
 
 export function itemsOfResult(result: ValidationResult): ItemResult[] {
   return PARTITION.flatMap((partition) => result.partitions[partition]);
 }
 
-export function judgmentOfConclusion(text: string): '正确' | '错误' | null {
-  if (text.includes('判断错误')) return '错误';
-  if (text.includes('判断正确')) return '正确';
-  return null;
-}
-
 export interface RoundCaseRow {
   id: string;
   title: string;
   conclusion: string;
+  status: '已确认' | '未确认' | '未知' | null;
+  judgment: '正确' | '错误' | null;
   deviceAttempts: number;
   deviceRun: string | null;
   deviceSha: string | null;
@@ -108,7 +112,10 @@ export interface RoundCaseRow {
 
 export interface RoundTotals {
   cases: number;
+  /** 已确认 + 判断正确 */
   correct: number;
+  /** 未确认（模型结论） */
+  unconfirmed: number;
   wrong: number;
   unknown: number;
   batches: number;
@@ -135,28 +142,32 @@ export function buildRoundRows(input: {
         const other = value.original ? caseIdentity(value.original).id : key;
         return other === identity.id || value.item.label === identity.id || value.item.item === projection.id;
       })?.[1];
-    const conclusion = matched ? itemConclusion(matched.item, matched.original ?? projection) : ROUND_NO_CONCLUSION;
+    const parts = matched
+      ? itemConclusionParts(matched.item, matched.original ?? projection)
+      : { text: ROUND_NO_CONCLUSION, status: '未知' as const, judgment: null };
     const attempts = input.jobs.filter((job) => job.rows?.some((row) => row.item === projection.id || row.item === identity.id) || job.items.includes(projection.id) || job.items.includes(identity.id));
-    const latest = [...attempts].reverse().find((job) => typeof job.device_return === 'string' && job.device_return.startsWith('src:'))
-      ?? [...attempts].reverse().find((job) => typeof job.result === 'string' && job.result.startsWith('src:'));
-    const ref = latest?.device_return ?? latest?.result ?? null;
+    const latest = [...attempts].reverse().find((job) => typeof job.device_return === 'string' && job.device_return.startsWith('src:'));
+    const ref = latest?.device_return ?? null;
     const sha = ref && /^src:([0-9a-f]{64})$/.test(ref) ? ref.slice(4) : null;
     rows.push({
       id: identity.id,
       title: identity.title,
-      conclusion,
+      conclusion: parts.text,
+      status: parts.status,
+      judgment: parts.judgment,
       deviceAttempts: attempts.length,
       deviceRun: latest?.verification_run ?? null,
       deviceSha: sha,
     });
   }
   let correct = 0;
+  let unconfirmed = 0;
   let wrong = 0;
   let unknown = 0;
   for (const row of rows) {
-    const judgment = judgmentOfConclusion(row.conclusion);
-    if (judgment === '正确') correct += 1;
-    else if (judgment === '错误') wrong += 1;
+    if (row.judgment === '错误') wrong += 1;
+    else if (row.judgment === '正确' && row.status === '已确认') correct += 1;
+    else if (row.judgment === '正确' && row.status === '未确认') unconfirmed += 1;
     else unknown += 1;
   }
   const batchKeys = new Set(input.jobs.filter((job) => job.ended === 'done' && job.rows !== null).map((job) => job.job));
@@ -165,6 +176,7 @@ export function buildRoundRows(input: {
     totals: {
       cases: rows.length,
       correct,
+      unconfirmed,
       wrong,
       unknown,
       batches: batchKeys.size,
@@ -181,27 +193,29 @@ type RunReaderDetail = {
 };
 
 type RunReader = {
-  getRun(user: PageContext['principal'], run: string): Promise<RunReaderDetail | null>;
+  getRun(user: PageContext['principal'], run: string, options?: typeof HISTORY): Promise<RunReaderDetail | null>;
   exportSuccessors?(user: PageContext['principal'], run: string): Promise<{ run: string; successors: ExportedSuccessor[] } | null>;
   exportJobs?(user: PageContext['principal'], run: string): Promise<{ run: string; jobs: ExportedJob[] } | null>;
   listRuns?(user: PageContext['principal'], query?: { limit?: number; cursor?: string | null; requests?: boolean }): Promise<RunListing>;
+  /** Point-lookup: validation_result digest → owning run id (or null). */
+  runOfResult?(user: PageContext['principal'], digest: string): Promise<string | null>;
 };
 
 export type RoundTree = {
   anchor: RunRecordView;
   runs: RunRecordView[];
+  details: Map<string, RunReaderDetail>;
   skipped: number;
-  /** True when a `rec:` on the anchor could not be mapped to exactly one same-key run. */
+  /** True when the anchor's own rec: could not be mapped to exactly one same-key run and no peer joined. */
   unlinked: boolean;
+  /** True when the reverse index scan hit ROUND_RUNS_SCANNED. */
+  partial: boolean;
+  /** getRun calls made while building the tree (for scale tests). */
+  getRunCount: number;
 };
 
-function indexResultDigests(detail: RunReaderDetail, owners: Map<string, Set<string>>): void {
-  for (const record of [detail.latest?.record, detail.production?.record]) {
-    if (typeof record !== 'string' || !/^[0-9a-f]{64}$/.test(record)) continue;
-    const set = owners.get(record) ?? new Set<string>();
-    set.add(detail.run.run);
-    owners.set(record, set);
-  }
+function pickResult(detail: RunReaderDetail): ValidationResult | null {
+  return detail.latest?.result ?? detail.production?.result ?? null;
 }
 
 export async function collectRoundTree(
@@ -209,146 +223,182 @@ export async function collectRoundTree(
   user: PageContext['principal'],
   anchorId: string,
 ): Promise<RoundTree | null> {
-  const anchorDetail = await runs.getRun(user, anchorId);
+  let getRunCount = 0;
+  const load = async (id: string): Promise<RunReaderDetail | null> => {
+    getRunCount += 1;
+    return runs.getRun(user, id, HISTORY);
+  };
+
+  const anchorDetail = await load(anchorId);
   if (anchorDetail === null) return null;
   const anchor = anchorDetail.run;
   if (subjectReference(anchor.sources) === null) {
-    return { anchor, runs: [anchor], skipped: 0, unlinked: false };
+    return {
+      anchor,
+      runs: [anchor],
+      details: new Map([[anchor.run, anchorDetail]]),
+      skipped: 0,
+      unlinked: false,
+      partial: false,
+      getRunCount,
+    };
   }
+
   const byId = new Map<string, RunRecordView>([[anchor.run, anchor]]);
+  const details = new Map<string, RunReaderDetail>([[anchor.run, anchorDetail]]);
   const queue = [anchor.run];
   let skipped = 0;
   let steps = 0;
-  let unlinked = false;
-  const digestOwners = new Map<string, Set<string>>();
-  indexResultDigests(anchorDetail, digestOwners);
+  let partial = false;
 
-  const admit = async (id: string): Promise<void> => {
-    if (byId.has(id) || !RunId.safeParse(id).success) return;
-    const detail = await runs.getRun(user, id);
+  const admit = async (id: string): Promise<boolean> => {
+    if (byId.has(id) || !RunId.safeParse(id).success) return false;
+    const detail = await load(id);
     if (detail === null) {
       skipped += 1;
-      return;
+      return false;
     }
-    if (!sameRoundKeys(anchor, detail.run)) return;
-    indexResultDigests(detail, digestOwners);
+    if (!sameRoundKeys(anchor, detail.run)) return false;
     byId.set(detail.run.run, detail.run);
+    details.set(detail.run.run, detail);
     queue.push(detail.run.run);
+    return true;
   };
 
-  while (queue.length && steps < LINEAGE_CAP * LINEAGE_CAP) {
-    steps += 1;
-    const id = queue.shift()!;
+  const expandOutbound = async (id: string): Promise<void> => {
     const current = byId.get(id);
-    if (current === undefined) continue;
+    if (current === undefined) return;
     for (const ref of outboundRunRefs(current)) await admit(ref);
     const listed = runs.exportSuccessors ? await runs.exportSuccessors(user, id) : null;
     for (const successor of listed?.successors ?? []) await admit(successor.run);
+  };
+
+  while (queue.length && steps < LINEAGE_STEPS) {
+    steps += 1;
+    await expandOutbound(queue.shift()!);
   }
 
-  // Reverse input refs + rec: owners among visible same-key runs.
-  const sameKey: RunRecordView[] = [];
-  if (runs.listRuns) {
-    let cursor: string | null | undefined = null;
-    let pages = 0;
-    while (pages < LINEAGE_CAP) {
-      pages += 1;
-      const listing: RunListing = await runs.listRuns(user, { limit: LIST_PAGE, cursor, requests: false });
-      for (const header of listing.items) {
-        const detail = await runs.getRun(user, header.run);
-        if (detail === null) {
-          if (!byId.has(header.run)) skipped += 1;
-          continue;
-        }
-        if (!sameRoundKeys(anchor, detail.run)) continue;
-        indexResultDigests(detail, digestOwners);
-        sameKey.push(detail.run);
-        if (byId.has(header.run)) continue;
-        const refs = outboundRunRefs(detail.run);
-        if (!refs.some((ref) => byId.has(ref))) continue;
-        byId.set(detail.run.run, detail.run);
-        queue.push(detail.run.run);
-        for (const ref of refs) await admit(ref);
-      }
-      if (listing.next === undefined || listing.next === null || listing.next === cursor) break;
-      cursor = listing.next;
-    }
-  }
-
-  // Resolve rec: edges: exactly one same-key owner → edge; zero or many → do not guess.
-  const resolveRecEdges = async (run: RunRecordView): Promise<void> => {
-    const named = outboundRunRefs(run);
+  // Forward rec: only from members already in the component; owner via point-lookup (not a full same-key scan).
+  const resolveForwardRec = async (run: RunRecordView): Promise<void> => {
+    if (!runs.runOfResult) return;
     for (const digest of recDigests(run.sources)) {
-      const owners = [...(digestOwners.get(digest) ?? [])].filter((id) => id !== run.run);
-      if (owners.length === 1) {
-        await admit(owners[0]!);
-        continue;
-      }
-      // Only when this run did not already name a RunId (no input_defaults / parameters).
-      if (named.length === 0) unlinked = true;
+      const owner = await runs.runOfResult(user, digest);
+      if (owner === null || owner === run.run) continue;
+      await admit(owner);
     }
   };
 
-  for (const run of [...byId.values(), ...sameKey]) await resolveRecEdges(run);
-
-  // Grow from any newly admitted nodes via ordinary outbound edges.
-  while (queue.length && steps < LINEAGE_CAP * LINEAGE_CAP) {
+  for (const run of [...byId.values()]) await resolveForwardRec(run);
+  while (queue.length && steps < LINEAGE_STEPS) {
     steps += 1;
     const id = queue.shift()!;
-    const current = byId.get(id);
-    if (current === undefined) continue;
-    for (const ref of outboundRunRefs(current)) await admit(ref);
+    await expandOutbound(id);
+    await resolveForwardRec(byId.get(id)!);
   }
 
-  // Reverse once more after rec: admissions.
-  for (const run of sameKey) {
-    if (byId.has(run.run)) continue;
-    const refs = outboundRunRefs(run);
-    if (!refs.some((ref) => byId.has(ref))) continue;
-    byId.set(run.run, run);
-    for (const ref of refs) await admit(ref);
+  // Reverse edges: capped listRuns index scan; use listing headers (no getRun) until an edge hits the component.
+  if (runs.listRuns) {
+    let cursor: string | null | undefined = null;
+    let scanned = 0;
+    scan: while (scanned < ROUND_RUNS_SCANNED) {
+      const listing: RunListing = await runs.listRuns(user, { limit: LIST_PAGE, cursor, requests: false });
+      for (const header of listing.items) {
+        scanned += 1;
+        if (scanned > ROUND_RUNS_SCANNED) {
+          partial = true;
+          break scan;
+        }
+        if (byId.has(header.run) || !sameRoundKeys(anchor, header)) continue;
+        const refs = outboundRunRefs(header);
+        let joins = refs.some((ref) => byId.has(ref));
+        if (!joins && runs.runOfResult) {
+          for (const digest of recDigests(header.sources)) {
+            const owner = await runs.runOfResult(user, digest);
+            if (owner !== null && byId.has(owner)) {
+              joins = true;
+              break;
+            }
+          }
+        }
+        if (!joins) continue;
+        if (await admit(header.run)) {
+          while (queue.length && steps < LINEAGE_STEPS) {
+            steps += 1;
+            const id = queue.shift()!;
+            await expandOutbound(id);
+            await resolveForwardRec(byId.get(id)!);
+          }
+        }
+      }
+      if (listing.next === undefined || listing.next === null || listing.next === cursor) break;
+      cursor = listing.next;
+      if (cursor !== null && scanned >= ROUND_RUNS_SCANNED) {
+        partial = true;
+        break;
+      }
+    }
+    if (cursor !== null && cursor !== undefined && scanned >= ROUND_RUNS_SCANNED) partial = true;
   }
 
   const ordered = [...byId.values()].sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at));
-  // Anchor joins a multi-run round only when structural edges connect peers; lone + failed rec: → unlinked.
-  if (ordered.length === 1 && unlinked) {
-    return { anchor, runs: ordered, skipped, unlinked: true };
+
+  // Unlinked only describes the anchor's own unresolved rec: when it stayed alone.
+  let unlinked = false;
+  if (ordered.length === 1 && runs.runOfResult) {
+    const named = outboundRunRefs(anchor);
+    const digests = recDigests(anchor.sources);
+    if (named.length === 0 && digests.length > 0) {
+      const owners = new Set<string>();
+      for (const digest of digests) {
+        const owner = await runs.runOfResult(user, digest);
+        if (owner !== null && owner !== anchor.run) owners.add(owner);
+      }
+      if (owners.size !== 1) unlinked = true;
+    }
   }
-  if (ordered.length > 1) unlinked = false;
-  return { anchor, runs: ordered, skipped, unlinked };
+
+  return { anchor, runs: ordered, details, skipped, unlinked, partial, getRunCount };
 }
 
-async function loadJobs(runs: RunReader, user: PageContext['principal'], tree: readonly RunRecordView[]): Promise<ExportedJob[]> {
-  if (!runs.exportJobs) return [];
+type JobsLoad = { jobs: ExportedJob[]; forbidden: boolean };
+
+async function loadJobs(runs: RunReader, user: PageContext['principal'], tree: readonly RunRecordView[]): Promise<JobsLoad> {
+  if (!runs.exportJobs) return { jobs: [], forbidden: false };
   const out: ExportedJob[] = [];
+  let forbidden = false;
   for (const run of tree) {
     const listed = await runs.exportJobs(user, run.run);
-    if (listed) out.push(...listed.jobs);
+    if (listed === null) forbidden = true;
+    else out.push(...listed.jobs);
   }
-  return out;
-}
-
-function pickResult(detail: { latest: { result: ValidationResult } | null; production: { result: ValidationResult } | null }): ValidationResult | null {
-  return detail.latest?.result ?? detail.production?.result ?? null;
+  return { jobs: out, forbidden };
 }
 
 export async function roundPage(ctx: PageContext): Promise<PageResult> {
   const runId = param(ctx, 'run');
-  if (runId === undefined) {
-    return {
-      status: 200,
-      body: page(ctx.chrome('一轮编译', { active: 'tasks', hint: '按任务的前驱链、脑图来源和构建聚成一轮；结论句与工具文字同一出处。' }), html`<p class="ch-meta">${ROUND_EMPTY_ANCHOR}</p><p>${link('/console/runs', '打开任务列表')}</p>`),
-    };
-  }
-  if (!RUN_ID.test(runId)) return neutralPage(ctx);
-  const tree = await collectRoundTree(ctx.deps.runs, ctx.principal, runId);
+  if (runId === undefined || !RUN_ID.test(runId)) return neutralPage(ctx);
+
+  const reader: RunReader = {
+    getRun: (user, run, options) => ctx.deps.runs.getRun(user, run, options),
+    exportSuccessors: ctx.deps.runs.exportSuccessors?.bind(ctx.deps.runs),
+    exportJobs: ctx.deps.runs.exportJobs?.bind(ctx.deps.runs),
+    listRuns: ctx.deps.runs.listRuns.bind(ctx.deps.runs),
+    runOfResult: async (_user, digest) => {
+      const stored = await ctx.deps.records.store.get(digest);
+      if (stored === null || stored.kind !== 'validation_result') return null;
+      const run = (stored.body as { run?: unknown }).run;
+      // Visibility is enforced when admit() calls getRun on this id.
+      return typeof run === 'string' && RunId.safeParse(run).success ? run : null;
+    },
+  };
+
+  const tree = await collectRoundTree(reader, ctx.principal, runId);
   if (tree === null) return neutralPage(ctx);
 
   const conclusionsByItem = new Map<string, { item: ItemResult; original: ItemProjection | undefined }>();
   let projections: ItemProjection[] = [];
-  let latestActivity: string | null = null;
   for (const run of tree.runs) {
-    const detail = await ctx.deps.runs.getRun(ctx.principal, run.run);
+    const detail = tree.details.get(run.run) ?? await ctx.deps.runs.getRun(ctx.principal, run.run, HISTORY);
     if (detail === null) continue;
     if (detail.run.items.length) projections = detail.run.items;
     const result = pickResult(detail);
@@ -358,29 +408,26 @@ export async function roundPage(ctx: PageContext): Promise<PageResult> {
         conclusionsByItem.set(item.item, { item, original: originals.get(item.item) });
       }
     }
-    const stamp = detail.latest ? detail.run.started_at : detail.run.started_at;
-    if (latestActivity === null || Date.parse(stamp) >= Date.parse(latestActivity)) latestActivity = stamp;
   }
 
-  const jobs = await loadJobs(ctx.deps.runs, ctx.principal, tree.runs);
+  const { jobs, forbidden: jobsForbidden } = await loadJobs(reader, ctx.principal, tree.runs);
   const { rows, totals } = buildRoundRows({ projections, conclusionsByItem, jobs });
   totals.startedAt = tree.runs[0]?.started_at ?? null;
-  totals.endedAt = latestActivity;
+  totals.endedAt = null;
 
-  const duration = totals.startedAt && totals.endedAt
-    ? durationText(Date.parse(totals.startedAt), Date.parse(totals.endedAt))
-    : '暂无';
-
-  const head = html`${box({ title: '本轮摘要', hint: '只读投影；不新建轮次记录。失败分析原因、交付结案和交付目录标为 Hub 没有。' }, html`
+  const head = html`${box({ title: '摘要', hint: ROUND_HUB_NOTE }, html`
 ${kpi('一共', count(totals.cases))}
-${kpi('正确', count(totals.correct))}
+${kpi('已确认正确', count(totals.correct))}
+${kpi('未确认', count(totals.unconfirmed))}
 ${kpi('错误', count(totals.wrong))}
 ${kpi('未知', count(totals.unknown))}
 ${kpi('上机验证批次数', count(totals.batches))}
-${kpi('用时', duration)}
+${kpi('用时', ROUND_DURATION_UNKNOWN)}
 `)}
-${tree.skipped > 0 ? html`<p class="ch-meta">${ROUND_PARTIAL_RUNS}</p>` : ''}
-${tree.unlinked ? html`<p class="ch-meta">${ROUND_UNLINKED}</p>` : ''}
+${tree.skipped > 0 ? callout('warn', ROUND_PARTIAL_RUNS) : ''}
+${tree.partial ? callout('info', ROUND_PARTIAL_SCAN) : ''}
+${tree.unlinked ? callout('unknown', ROUND_UNLINKED) : ''}
+${jobsForbidden ? callout('warn', ROUND_JOBS_FORBIDDEN) : ''}
 ${definitionsBlock(tree)}
 `;
 
@@ -391,21 +438,23 @@ ${definitionsBlock(tree)}
     count(row.deviceAttempts),
     row.deviceRun && row.deviceSha
       ? link(roundDevicePath(), '打开设备输出', { run: row.deviceRun, sha256: row.deviceSha })
-      : ROUND_NO_DEVICE,
-    ROUND_HUB_MISSING_FAILURE,
-    ROUND_HUB_MISSING_DELIVERY,
+      : jobsForbidden
+        ? ROUND_JOBS_FORBIDDEN
+        : row.deviceAttempts > 0
+          ? ROUND_DEVICE_PENDING
+          : ROUND_NO_DEVICE,
   ]);
 
   return {
     status: 200,
     body: page(
-      ctx.chrome('一轮编译', {
+      ctx.chrome(ROUND_PAGE_TITLE, {
         active: 'tasks',
-        sub: html`${link(runPath(tree.anchor.run), '锚点任务')}`,
-        hint: '每条原始用例一行；结论句与工具返回给模型的句子同一成句函数。',
+        sub: html`${link(runPath(tree.anchor.run), '当前打开的任务')}`,
+        hint: '把同一份来源在同一个构建上的任务串在一起看；每条原始用例一行，结论与模型在 Circle 里看到的一致。',
       }),
       html`${head}${table(
-        ['原始用例编号', '标题', '结论', '上机验证次数', '设备输出', '失败分析原因与下一步', '交付'],
+        ['原始用例 ID', '标题', '结论', '上机验证次数', '设备输出'],
         tableRows,
         ROUND_EMPTY_CASES,
       )}`,
@@ -414,32 +463,28 @@ ${definitionsBlock(tree)}
 }
 
 function definitionsBlock(tree: { anchor: RunRecordView; runs: RunRecordView[] }): Html {
-  const subject = subjectReference(tree.anchor.sources) ?? '未记录';
-  return html`<p class="ch-meta">产品 ${tree.anchor.product ?? '未指定'} · 版本 ${tree.anchor.version ?? '未指定'} · 构建 ${tree.anchor.build ?? '未指定'} · 脑图 ${subject} · 本轮可见任务 ${count(tree.runs.length)} · 开始 ${tree.runs[0] ? time(tree.runs[0].started_at) : '未知'}</p>`;
+  return html`<p class="ch-meta">产品 ${tree.anchor.product ?? '未记录'} · 版本 ${tree.anchor.version ?? '未记录'} · 构建 ${tree.anchor.build ?? '未记录'} · 来源 ${subjectLabel(tree.anchor.sources)} · 可见任务 ${count(tree.runs.length)} · 开始 ${tree.runs[0] ? time(tree.runs[0].started_at) : '未知'}</p>`;
 }
 
-function durationText(from: number, to: number): string {
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return '暂无';
-  const minutes = Math.round((to - from) / 60_000);
-  if (minutes < 60) return `${minutes} 分钟`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest === 0 ? `${hours} 小时` : `${hours} 小时 ${rest} 分钟`;
-}
-
-/** Device output bytes through the same artifacts read as run-export (no new auth path). */
+/** Device output: only when exportJobs for the runner/admin names this src: as device_return. */
 export async function roundDevicePage(ctx: PageContext): Promise<PageResult> {
   const runId = param(ctx, 'run');
   const sha = param(ctx, 'sha256');
   if (runId === undefined || sha === undefined || !RUN_ID.test(runId) || !SHA256.test(sha)) return neutralPage(ctx);
-  const visible = await ctx.deps.runs.getRun(ctx.principal, runId);
-  if (visible === null) return neutralPage(ctx);
-  const source = await ctx.deps.records.artifacts.sourceForRun(ctx.principal, sha, runId)
-    ?? await ctx.deps.records.artifacts.source(ctx.principal, sha);
+  const jobs = ctx.deps.runs.exportJobs ? await ctx.deps.runs.exportJobs(ctx.principal, runId) : null;
+  if (jobs === null) {
+    return {
+      status: 200,
+      body: page(ctx.chrome(ROUND_DEVICE_TITLE, { active: 'tasks', sub: link(roundsPath(), '返回相关任务', { run: runId }) }), html`<p>${ROUND_JOBS_FORBIDDEN}</p>`),
+    };
+  }
+  const allowed = jobs.jobs.some((job) => job.device_return === `src:${sha}`);
+  if (!allowed) return neutralPage(ctx);
+  const source = await ctx.deps.records.artifacts.sourceForRun(ctx.principal, sha, runId);
   if (source === null || source.bytes === null) {
     return {
       status: 200,
-      body: page(ctx.chrome(ROUND_DEVICE_TITLE, { active: 'tasks', sub: link(roundsPath(), '返回本轮', { run: runId }) }), html`<p>${ROUND_DEVICE_UNREADABLE}</p><p class="ch-meta">${NEUTRAL}</p>`),
+      body: page(ctx.chrome(ROUND_DEVICE_TITLE, { active: 'tasks', sub: link(roundsPath(), '返回相关任务', { run: runId }) }), html`<p>${ROUND_DEVICE_UNREADABLE}</p><p class="ch-meta">${NEUTRAL}</p>`),
     };
   }
   const text = Buffer.from(source.bytes).toString('utf8');
@@ -447,8 +492,8 @@ export async function roundDevicePage(ctx: PageContext): Promise<PageResult> {
   return {
     status: 200,
     body: page(
-      ctx.chrome(ROUND_DEVICE_TITLE, { active: 'tasks', sub: html`${link(roundsPath(), '返回本轮', { run: runId })} · ${link(runPath(runId), '任务')}` }),
-      html`<pre class="ch-code">${preview}</pre>`,
+      ctx.chrome(ROUND_DEVICE_TITLE, { active: 'tasks', sub: html`${link(roundsPath(), '返回相关任务', { run: runId })} · ${link(runPath(runId), '任务')}` }),
+      pre(preview),
     ),
   };
 }

@@ -302,7 +302,7 @@ describe('tool shapes: zod and the published schema agree', () => {
     assert.deepEqual(TOOLS.map(({ name, input }) => ({ name, inputSchema: z.toJSONSchema(input, { target: 'draft-2020-12', io: 'input', unrepresentable: 'throw' }) })), published.map(({ name, inputSchema }) => ({ name, inputSchema })));
     assert.equal(hash(JSON.stringify(TOOLS.map(({ name, title, description }) => ({ name, title, description })))), '42686402812824e439d197015cf7be5fe5b3a44faa2e5641ea8c3fa3763b8534');
     assert.equal(hash(SERVER_INSTRUCTIONS), '4ea85478bba489029ce4625f71695309ecae6fcb2751a9793011cf70dca7fc90');
-    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), '4dec4afe493f23b14409a534ef56b8860186ca7d08af69c3751df5ed38636a7f');
+    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), 'd8626a469aa3d15ddb3aa12012df7db1f36563c9a164e78725c557bd8a5f8b68');
   });
   test('a protocol error never needs invented run, lock or digest values (D05 R[3], T03 R[3])', () => {
     const submit = TOOLS.find((t) => t.name === 'submit_result');

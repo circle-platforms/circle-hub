@@ -691,8 +691,15 @@ function awaitingExcel(item: ItemResult): boolean {
   return /自动化用例 Excel|工作簿/.test(texts);
 }
 
-/** One original-case conclusion sentence for models and the console (Boss 22:25: single wording source). */
-export function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
+/** Structured status and judgment for one original-case conclusion (shared by tool text and console counts). */
+export type ItemConclusionParts = {
+  text: string;
+  status: '已确认' | '未确认' | '未知';
+  judgment: '正确' | '错误' | null;
+};
+
+/** One original-case conclusion: structured parts plus the sentence models and the console share. */
+export function itemConclusionParts(item: ItemResult, original: ItemProjection | undefined): ItemConclusionParts {
   const pending = item.requirements.some(requirement => requirement.status === 'pending' || requirement.unsatisfied_reason === 'independence_unknown');
   const wrong = item.requirements.filter(requirement => requirement.status === 'unsatisfied' && requirement.unsatisfied_reason === 'outcome_mismatch');
   const claims = item.requirements.flatMap(requirement => requirement.claims);
@@ -701,8 +708,8 @@ export function itemConclusion(item: ItemResult, original: ItemProjection | unde
   const packDetermined = item.requirements.some(requirement => requirement.claims.some(packMarkedDeterminedError));
   const determined = wrong.length > 0 || packDetermined || item.requirements.some(requirementDeterminedError);
   const unknown = !determined && (partial || pending || item.requirements.length === 0 || claims.some(claim => claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || userVerdict(claim.statement.verdict) === null) || item.requirements.some(requirement => requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete')));
-  const status = determined ? '已确认' : unknown ? '未知' : model ? '未确认' : '已确认';
-  const judgment = determined ? '错误' : unknown ? null : '正确';
+  const status: ItemConclusionParts['status'] = determined ? '已确认' : unknown ? '未知' : model ? '未确认' : '已确认';
+  const judgment: ItemConclusionParts['judgment'] = determined ? '错误' : unknown ? null : '正确';
   const excel = unknown && !determined && awaitingExcel(item);
   const problems = item.requirements.filter(requirement => requirement.status !== 'satisfied' || requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete') || requirement.claims.some(packMarkedDeterminedError));
   const layers = problems.flatMap(requirement => requirement.layers.filter(layer => layer.terminal !== 'pass' && layer.terminal !== 'judgment'));
@@ -752,7 +759,12 @@ export function itemConclusion(item: ItemResult, original: ItemProjection | unde
   if (quotes.length) parts.push(`证据${quotes.join('；')}`);
   if (item.replaced_criteria?.length) parts.push(...item.replaced_criteria.map(change => `原始用例的要求由${change.old}改为${change.new}`));
   parts.push(`决定者${[...new Set(claims.map(claim => USER_DECIDER[claim.warrant.producer]))].join('、') || '程序'}`);
-  return parts.join('；');
+  return { text: parts.join('；'), status, judgment };
+}
+
+/** Sentence form of {@link itemConclusionParts} (tool replies and page cells). */
+export function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
+  return itemConclusionParts(item, original).text;
 }
 
 function resultConclusions(result: ValidationResult, originals: readonly ItemProjection[] = []): string[] {

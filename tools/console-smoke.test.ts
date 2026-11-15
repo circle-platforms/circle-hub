@@ -33,6 +33,7 @@ const NON_STANDALONE_GET_ROUTES: Readonly<Record<string, string>> = {
   faviconPath: 'checked in unauthenticated probes',
   // Parameterized detail, query-required, or interactive setup/OAuth flows.
   runPath: 'requires runId parameter',
+  roundsPath: 'requires run query parameter (related-tasks page)',
   roundDevicePath: 'requires run and sha256 query parameters',
   resultPath: 'requires runId parameter',
   workflowPath: 'requires pack id parameter',
@@ -271,6 +272,8 @@ test('route coverage covers every ROUTES key in console-routes.ts and every rout
     ...MEMBER_BLOCKED_ADMIN_PATHS,
     ...MEMBER_COMMON_GET_ROUTES.map((r) => new URL(r.path, 'http://127.0.0.1').pathname),
     routeConstructors.rebuildPath(),
+    // Query-required: covered via NON_STANDALONE_GET_ROUTES, not probed without ?run=.
+    routeConstructors.roundsPath(),
   ]);
 
   for (const key of topLevelKeys) {
