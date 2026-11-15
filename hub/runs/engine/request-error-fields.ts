@@ -4,9 +4,10 @@ import type { RequestBody } from '../../requests/api.ts';
 import type { StoredRecord } from '../../records/api.ts';
 
 type RequestEvidence = Pick<StoredRecord<RequestBody>, 'digest' | 'body'>;
+type RequestErrorFields = Pick<ProtocolError, 'missing' | 'request_id' | 'audience' | 'due' | 'next_action' | 'items'>;
 
 /** Copy persisted values, including a deadline fixed by request deduplication, without parsing display text. */
-export function requestErrorFields(request: RequestEvidence) {
+export function requestErrorFields(request: RequestEvidence): RequestErrorFields {
   const { missing, audience, due, next_action, item } = request.body;
   return { missing, request_id: `rec:${request.digest}`, audience, due, next_action,
     ...(item === undefined ? {} : { items: [item] }) };
