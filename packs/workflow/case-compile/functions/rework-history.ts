@@ -3,7 +3,7 @@
 // Strictly isolates a single original case and never generates model conclusions or similarity matches.
 import { failureLine, LEADING_PROMPT, type RowAudit } from './delivery.ts';
 import { isAcceptance, type Acceptance } from './generated/vocabulary.ts';
-import { isRecord, wrapProseLine } from './text.ts';
+import { CallFailure, isRecord, wrapProseLine } from './text.ts';
 
 /** Gateway tail truncation limit in bytes/chars on retained session transcripts (compile-excel-server). */
 export const SESSION_RETAINED_CHARS = 12_000;
@@ -410,12 +410,10 @@ function resolvePlanDataObject(
   data: Record<string, unknown>;
 } {
   if (!isRecord(raw)) {
-    throw new Error(`参数无效：${sourceLabel} 不是合法的单条用例计划 JSON 对象（期望 { item, handling, slots: { plan: [{ data: { steps|blocks } }] } } 或单条 data 对象）`);
+    throw new CallFailure("invalid_parameters", `${sourceLabel} 不是合法的单条用例计划 JSON 对象（期望 { item, handling, slots: { plan: [{ data: { steps|blocks } }] } } 或单条 data 对象）`, "提供单条计划对象，写成 {item,handling,slots:{plan:[{data:{steps或blocks}}]}} 或单条 data 对象");
   }
   if (Array.isArray(raw.items)) {
-    throw new Error(
-      `参数无效：${sourceLabel} 是整批 submission.json（含 items 数组），--prior-plans 需要单条用例的计划 JSON（如 plans/01.json）或 plans/ 目录，请勿直接传入整批 submission.json`,
-    );
+    throw new CallFailure("invalid_parameters", `${sourceLabel} 是整批 submission.json（含 items 数组），--prior-plans 需要单条用例的计划 JSON（如 plans/01.json）或 plans/ 目录，请勿直接传入整批 submission.json`, "把 --prior-plans 指向 plans/<序号>.json 或 plans/ 目录，不传包含 items 数组的整批提交");
   }
   const planRun =
     typeof raw.plan_run === 'string' && raw.plan_run.trim()
@@ -429,7 +427,7 @@ function resolvePlanDataObject(
   if (isRecord(raw.slots) && Array.isArray(raw.slots.plan) && raw.slots.plan.length > 0 && isRecord(raw.slots.plan[0])) {
     const stmt = raw.slots.plan[0];
     if (!isRecord(stmt.data) || (!Array.isArray(stmt.data.steps) && !Array.isArray(stmt.data.blocks) && handling !== 'skipped')) {
-      throw new Error(`参数无效：${sourceLabel} 的 slots.plan[0].data 缺少 steps 或 blocks 数组`);
+      throw new CallFailure("invalid_parameters", `${sourceLabel} 的 slots.plan[0].data 缺少 steps 或 blocks 数组`, "为这条计划补齐 slots.plan[0].data.steps 或 blocks 数组，再读取上一轮计划");
     }
     return {
       item,
@@ -466,9 +464,7 @@ function resolvePlanDataObject(
       data: raw,
     };
   }
-  throw new Error(
-    `参数无效：${sourceLabel} 不是合法的单条用例计划 JSON（期望含 slots.plan[0].data.steps/blocks 的 plans/<序号>.json 或计划目录）`,
-  );
+  throw new CallFailure("invalid_parameters", `${sourceLabel} 不是合法的单条用例计划 JSON（期望含 slots.plan[0].data.steps/blocks 的 plans/<序号>.json 或计划目录）`, "提供含 slots.plan[0].data.steps 或 blocks 的单条计划文件，或指向该计划所在目录");
 }
 
 function blockCommandText(block: Record<string, unknown>): string {
@@ -492,9 +488,7 @@ export function parsePriorPlanSnapshot(
 ): PriorPlanSnapshot {
   const { item, planRun, handling, text, data } = resolvePlanDataObject(raw, sourceLabel);
   if (item && caseIds.size > 0 && !caseIds.has(item)) {
-    throw new Error(
-      `参数无效：${sourceLabel} 属于原始用例 ${item}，与当前任务目标（${[...caseIds][0]}）不一致。禁止混入其他用例计划`,
-    );
+    throw new CallFailure("invalid_parameters", `${sourceLabel} 属于原始用例 ${item}，与当前任务目标（${[...caseIds][0]}）不一致。禁止混入其他用例计划`, "选择当前用例 item 对应的单条计划文件，不混入其他用例的历史");
   }
 
   const replacementsCount = Array.isArray(data.replacements) ? data.replacements.length : 0;
@@ -1095,9 +1089,7 @@ export function extractCaseDeviceEvidence(params: {
   if (params.priorPlan && (params.priorPlan.steps.length > 0 || params.priorPlan.blocks.length > 0)) {
     const jobPlanRun = typeof matchedJob.plan_run === 'string' ? matchedJob.plan_run.trim() : '';
     if (params.priorPlan.planRun && jobPlanRun && params.priorPlan.planRun !== jobPlanRun) {
-      throw new Error(
-        `参数无效：传入的上一轮计划与设备返还不属于同一次运行（plan_run 不一致：${params.priorPlan.planRun} != ${jobPlanRun}），拒绝生成失配简报`,
-      );
+      throw new CallFailure("invalid_parameters", `传入的上一轮计划与设备返还不属于同一次运行（plan_run 不一致：${params.priorPlan.planRun} != ${jobPlanRun}），拒绝生成失配简报`, "成对选择同一 plan_run 的上一轮计划和设备返还后重新生成简报");
     }
     const planCmdsNorm = [
       ...params.priorPlan.steps.map((s) => normWs(s.commandText)),
@@ -1107,23 +1099,17 @@ export function extractCaseDeviceEvidence(params: {
 
     for (const sr of syntaxRejected) {
       if (!commandMatchesPlanSet(sr.command, planCmdsNorm, planCmdsUnq, true)) {
-        throw new Error(
-          `参数无效：传入的上一轮计划（--prior-plans）与设备返还（--prior-returns）不属于同一次运行（syntax_rejected 命令“${sr.command}”不在该计划步骤中），拒绝生成简报`,
-        );
+        throw new CallFailure("invalid_parameters", `传入的上一轮计划（--prior-plans）与设备返还（--prior-returns）不属于同一次运行（syntax_rejected 命令“${sr.command}”不在该计划步骤中），拒绝生成简报`, "按 syntax_rejected 所属运行重新选择 --prior-plans 和 --prior-returns，保留原始命令和计划");
       }
     }
     for (const er of executionRefused) {
       if (!commandMatchesPlanSet(er.command, planCmdsNorm, planCmdsUnq, er.echo_cut === true)) {
-        throw new Error(
-          `参数无效：传入的上一轮计划（--prior-plans）与设备返还（--prior-returns）不属于同一次运行（execution_refused 命令“${er.command}”不在该计划步骤中），拒绝生成简报`,
-        );
+        throw new CallFailure("invalid_parameters", `传入的上一轮计划（--prior-plans）与设备返还（--prior-returns）不属于同一次运行（execution_refused 命令“${er.command}”不在该计划步骤中），拒绝生成简报`, "按 execution_refused 所属运行重新选择 --prior-plans 和 --prior-returns，保留原始命令和计划");
       }
     }
     for (const lc of extractExecutedLogCommands(logText)) {
       if (!commandMatchesPlanSet(lc, planCmdsNorm, planCmdsUnq, false)) {
-        throw new Error(
-          `参数无效：传入的上一轮计划（--prior-plans）与设备返还（--prior-returns）不属于同一次运行（log.txt 执行命令“${lc}”不在该计划步骤中），拒绝生成简报`,
-        );
+        throw new CallFailure("invalid_parameters", `传入的上一轮计划（--prior-plans）与设备返还（--prior-returns）不属于同一次运行（log.txt 执行命令“${lc}”不在该计划步骤中），拒绝生成简报`, "核对 log.txt 所属运行，成对提供该次执行的原始计划与设备返还");
       }
     }
     if (planCmdsNorm.length > 0 && hasSavedSessions) {
@@ -1150,9 +1136,7 @@ export function extractCaseDeviceEvidence(params: {
             }
           }
           if (otherPromptedCmds.length > 0) {
-            throw new Error(
-              `参数无效：传入的上一轮计划（--prior-plans）与设备返还（--prior-returns）不属于同一次运行（未截断设备会话未命中任何计划命令，却执行了“${otherPromptedCmds[0]}”等其他命令），拒绝生成简报`,
-            );
+            throw new CallFailure("invalid_parameters", `传入的上一轮计划（--prior-plans）与设备返还（--prior-returns）不属于同一次运行（未截断设备会话未命中任何计划命令，却执行了“${otherPromptedCmds[0]}”等其他命令），拒绝生成简报`, "核对设备会话所属运行，提供与上一轮计划对应的未截断返还，不改写原始命令");
           }
         }
       }
