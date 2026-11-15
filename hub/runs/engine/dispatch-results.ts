@@ -37,6 +37,8 @@ async function readProjection(ctx:EngineContext,admin:Admin,job:RunJob):Promise<
  * engine applies, so a client tool reads the outcome by structure instead of re-reading the device return's prose. Nothing is
  * judged here; the administrative proof record of a job stays out.
  */
+/** Relay checked row fields without changing their nature or inferring missing fields. */
+export function exportedJobRow(row:z.infer<typeof Row>):NonNullable<ExportedJob['rows']>[number]{return structuredClone(row);}
 export async function exportedJobs(ctx:EngineContext,run:string):Promise<ExportedJob[]>{
   if(!ctx.deps.dispatch)return [];
   const admin=await activeAdmin(ctx);
@@ -44,7 +46,7 @@ export async function exportedJobs(ctx:EngineContext,run:string):Promise<Exporte
   const out:ExportedJob[]=[];
   for(const job of await ctx.deps.dispatch.jobs(admin,run)){
     const report=await readProjection(ctx,admin,job);
-    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,outcome:job.status.outcome,frozen:job.status.frozen,result:job.status.result??null,device_return:job.status.device_return??null,rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
+    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,outcome:job.status.outcome,frozen:job.status.frozen,result:job.status.result??null,device_return:job.status.device_return??null,rows:report?report.rows.map(exportedJobRow):null});
   }
   return out;
 }
