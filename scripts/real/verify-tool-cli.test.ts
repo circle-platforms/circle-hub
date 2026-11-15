@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseToolCliDeclaration } from './guard-lib.ts';
 import { test } from 'node:test';
-import { verifyCliInvocations, verifyCliManifest } from './verify-tool-cli.ts';
+import { CASE_COMPILE_CLI_HELPERS, verifyCliInvocations, verifyCliManifest } from './verify-tool-cli.ts';
 
 function fixture(stdin: string[], source: string) {
   const dir = mkdtempSync(join(tmpdir(), 'verify-tool-cli-')); mkdirSync(join(dir, 'tools'));
@@ -39,4 +41,33 @@ test('zero-input declarations remain executable and tampered symlink entries fai
     const saved = readFileSync(join(f.dir, 'tools/probe.ts')); rmSync(join(f.dir, 'tools/probe.ts')); writeFileSync(join(f.dir, 'outside.ts'), saved); symlinkSync(join(f.dir, 'outside.ts'), join(f.dir, 'tools/probe.ts'));
     assert.throws(() => verifyCliManifest(f.dir, new Set()), /symlinks/);
   } finally { f.close(); }
+});
+
+test('a published TypeScript file without CLI metadata is unknown until explicitly inventoried as a helper', () => {
+  const f = fixture([], 'export const arbitrary = 1;');
+  try {
+    const manifest = JSON.parse(readFileSync(join(f.dir, 'pack.json'), 'utf8'));
+    manifest.files = manifest.files.filter((entry: { path: string }) => !entry.path.endsWith('.cli.json'));
+    writeFileSync(join(f.dir, 'pack.json'), JSON.stringify(manifest));
+    assert.throws(() => verifyCliManifest(f.dir, new Set()), /missing executable\/helper declaration: tools\/probe.ts/);
+    assert.equal(verifyCliManifest(f.dir, new Set(['tools/probe.ts'])).size, 0);
+  } finally { f.close(); }
+});
+
+
+test('the release tool inventory has explicit CLI metadata or a reviewed helper classification', () => {
+  const pack = fileURLToPath(new URL('../../packs/workflow/case-compile/', import.meta.url));
+  const manifest = JSON.parse(readFileSync(join(pack, 'pack.json'), 'utf8')) as { files: { path: string }[] };
+  const tools = manifest.files.map(entry => entry.path).filter(path => path.startsWith('tools/') && path.endsWith('.ts') && !path.endsWith('.test.ts'));
+  assert.equal(CASE_COMPILE_CLI_HELPERS.size, 4);
+  for (const helper of CASE_COMPILE_CLI_HELPERS) assert.ok(tools.includes(helper), helper);
+  for (const tool of tools) {
+    const declaration = join(pack, `${tool.slice(0, -3)}.cli.json`);
+    if (CASE_COMPILE_CLI_HELPERS.has(tool)) {
+      assert.ok(!existsSync(declaration), `reviewed helper must not also be declared executable: ${tool}`);
+    } else {
+      assert.ok(existsSync(declaration), `missing explicit CLI declaration: ${tool}`);
+      assert.ok(parseToolCliDeclaration(JSON.parse(readFileSync(declaration, 'utf8'))).options !== null, tool);
+    }
+  }
 });
