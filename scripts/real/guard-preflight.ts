@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { discoverTools, environment, quote, writeCommand, type DiscoveredTool, type GuardEnvironment } from './guard-lib.ts';
+import { extractTaughtCommands, instantiateTaughtCommand } from './taught-commands.ts';
 
 export type Verdict = 'allow' | 'deny' | 'ask' | 'error';
 /** How a case counts toward the exit code: checked allow/deny vs declaration-only listing. */
@@ -127,126 +128,6 @@ export function invokeInstalledHook(
   };
 }
 
-// Placeholders must satisfy guard `run_[a-z0-9]+` but must not be protected-prefix+26-char
-// internal IDs (address-id-check); only APPROVED_PUBLIC_RUN_ID / run_0{26} are auto-allowed there.
-const SYNTHETIC: Record<string, string> = {
-  脚本编写编号: 'run_syntheticplan',
-  用例重组编号: 'run_syntheticrecomp',
-  脚本合并编号: 'run_syntheticverify',
-  合并或上机编号: 'run_syntheticverify',
-  脚本编写目录: 'case-compile-run',
-  上一轮脚本编写目录: 'prev-case-compile-run',
-  新脚本编写目录: 'case-compile-run',
-  上一轮自动化用例目录: 'prev-plans',
-  上一轮核对目录: 'prev-fidelity',
-  逗号分隔autoid: 'orbit-case-0001',
-  autoid: 'orbit-case-0001',
-  前缀: '0',
-  '8位摘要': 'aaaaaaaa',
-  运行目录: 'case-compile-run',
-  核对目录: 'fidelity',
-  核对任务目录: 'fidelity-tasks',
-  核对文件: 'fidelity/0.brief.json',
-  自动化用例目录: 'plans',
-  重组后的用例目录: 'records',
-  下载运行目录: 'recompose-run',
-  新目录: 'run-out',
-  导出文件: 'export.json',
-  规整文件: 'normalized.json',
-  '说明.json': 'notes.json',
-  'scope.md': 'scope.md',
-  用例或范围: 'case-01',
-  简报或输入路径: 'briefs/0.md',
-  目标路径: 'plans/0.json',
-  目标文件路径: 'plans/0.json',
-  任务文件路径: 'tasks/0.md',
-  补充: '合成补充说明',
-  补充说明: '合成补充说明',
-  轮次: '2',
-  条目JSON: 'items/0.json',
-  '路径...': 'plans/r1/0.json',
-  '目录...': 'returns/r1',
-  范围文件: 'scope.md',
-  结构简报JSON: 'briefs/0.json',
-  计划或判断JSON: 'plans/0.json',
-  计划JSON相对路径: 'plans/0.json',
-  目标计划相对路径: 'plans/0.json',
-  verdict相对路径: 'fidelity/0.verdict.json',
-  brief相对路径: 'fidelity/0.brief.json',
-  模型: 'synthetic-model',
-  秒数: '30',
-  会话号: 'sess-synthetic',
-  '原件 SHA-256': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-  'Hub MCP 地址': '%HUB_URL%',
-  令牌文件: 'token.txt',
-  值: 'synthetic',
-};
-
-function splitAlternativesOutsideAngles(text: string): string[] {
-  const parts: string[] = [];
-  let start = 0;
-  let depth = 0;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '<') depth++;
-    else if (ch === '>') depth = Math.max(0, depth - 1);
-    else if (ch === '|' && depth === 0) {
-      parts.push(text.slice(start, i));
-      start = i + 1;
-    }
-  }
-  parts.push(text.slice(start));
-  return parts;
-}
-
-function expandTemplate(template: string, skillDir: string): string[] {
-  // Quote the full script path in one step so homes under "Application Support" stay a single token.
-  const withSkill = template.replace(/node <技能目录>\/(\S+\.ts)/g, (_whole, rel: string) => `node ${quote(join(skillDir, rel))}`);
-  const groups: Array<{ start: number; end: number; branches: string[] }> = [];
-  for (const match of withSkill.matchAll(/\[([^\[\]]+)\]/g)) {
-    groups.push({ start: match.index!, end: match.index! + match[0].length, branches: splitAlternativesOutsideAngles(match[1]!) });
-  }
-  const renderBrackets = (chosen: Map<number, string>): string => {
-    let cursor = 0;
-    let result = '';
-    for (let idx = 0; idx < groups.length; idx++) {
-      result += withSkill.slice(cursor, groups[idx]!.start);
-      result += chosen.get(idx) ?? '';
-      cursor = groups[idx]!.end;
-    }
-    result += withSkill.slice(cursor);
-    return result.replace(/ +/g, ' ').trim();
-  };
-  const bracketForms = new Set<string>([renderBrackets(new Map())]);
-  for (let idx = 0; idx < groups.length; idx++) {
-    for (const branch of groups[idx]!.branches) bracketForms.add(renderBrackets(new Map([[idx, branch]])));
-  }
-  if (groups.length > 1) {
-    bracketForms.add(renderBrackets(new Map(groups.map((group, idx) => [idx, group.branches[0]!]!))));
-  }
-
-  const concretes: string[] = [];
-  for (const form of bracketForms) {
-    // Choice placeholders first (`<a|b>`), then any remaining `<…>` including names with spaces (`<原件 SHA-256>`).
-    const choices = [...form.matchAll(/<([^<>|]+\|[^<>]+)>/g)];
-    const choiceForms =
-      choices.length === 1
-        ? choices[0]![1]!.split('|').map((opt) => form.slice(0, choices[0]!.index) + opt + form.slice(choices[0]!.index! + choices[0]![0]!.length))
-        : [form];
-    for (const choiceForm of choiceForms) {
-      const substituted = choiceForm.replace(/<([^<>]+)>/g, (whole, name: string) => {
-        const trimmed = name.trim();
-        if (Object.hasOwn(SYNTHETIC, trimmed)) return SYNTHETIC[trimmed]!;
-        if (trimmed === 'HUB_URL' || whole === '%HUB_URL%') return '%HUB_URL%';
-        // Keep the whole <…> (spaces included) as one token; sanitize to a workdir-relative path.
-        return `out/${trimmed.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 40) || 'value'}`;
-      });
-      concretes.push(substituted);
-    }
-  }
-  return concretes;
-}
-
 function finalizeNodeCommand(command: string): string {
   const m = /^(node)\s+(?:'([^']+\.ts)'|(\S+\.ts))(.*)$/s.exec(command);
   if (!m) return command;
@@ -254,74 +135,13 @@ function finalizeNodeCommand(command: string): string {
   return `${m[1]} ${quote(script)}${m[4] ?? ''}`;
 }
 
-interface DocCommand {
-  source: string;
-  template: string;
-  heredocLines: string[] | null;
-}
-
-/** Extracts taught execute examples from skill and agent markdown under an installed skill. */
-export function extractDocCommands(docPath: string, text: string): DocCommand[] {
-  const out: DocCommand[] = [];
-  for (const match of text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)) {
-    const lines = match[1]!.split('\n');
-    for (let i = 0; i < lines.length; ) {
-      const line = lines[i]!;
-      if (line === '' || line.startsWith('#')) {
-        i += 1;
-        continue;
-      }
-      if (!line.startsWith('node <技能目录>/') && !/^node\s/.test(line)) {
-        i += 1;
-        continue;
-      }
-      if (line.includes('<<')) {
-        if (!/ <<'EOF'$/.test(line)) {
-          i += 1;
-          continue;
-        }
-        const body: string[] = [];
-        let j = i + 1;
-        while (j < lines.length && lines[j] !== 'EOF') {
-          body.push(lines[j]!);
-          j += 1;
-        }
-        if (lines[j] !== 'EOF') {
-          i += 1;
-          continue;
-        }
-        out.push({ source: docPath, template: line.slice(0, -" <<'EOF'".length), heredocLines: body });
-        i = j + 1;
-      } else {
-        out.push({ source: docPath, template: line, heredocLines: null });
-        i += 1;
-      }
-    }
-  }
-  const heredocNote = " <<'EOF'（接两行 %HUB_TOKEN% 与 EOF，切勿在 <<'EOF' 前换行）";
-  for (const line of text.split('\n')) {
-    const labelled = /^[^:\n]+: ((?:node <技能目录>\/)?tools\/\S+\.ts(?: [^\n]*)?)$/.exec(line);
-    if (labelled) {
-      let cmd = labelled[1]!;
-      let heredocLines: string[] | null = null;
-      if (cmd.endsWith(heredocNote)) {
-        cmd = cmd.slice(0, -heredocNote.length);
-        heredocLines = ['%HUB_TOKEN%'];
-      }
-      if (cmd.includes('<<') || cmd.includes('（')) continue;
-      if (cmd.startsWith('tools/')) cmd = `node <技能目录>/${cmd}`;
-      out.push({ source: docPath, template: cmd, heredocLines });
-    }
-    for (const match of line.matchAll(/`(node <技能目录>[^`]+)`/g)) {
-      const cmd = match[1]!;
-      if (cmd === 'node <技能目录>/tools/<脚本>.ts --选项 值') continue;
-      // Bare script path in prose is not a runnable example.
-      if (/^node <技能目录>\/\S+\.ts$/.test(cmd)) continue;
-      if (cmd.includes('<<') || cmd.includes('\n')) continue;
-      out.push({ source: docPath, template: cmd, heredocLines: null });
-    }
-  }
-  return out;
+/** @deprecated Prefer extractTaughtCommands from taught-commands.ts; kept as a thin alias for callers. */
+export function extractDocCommands(docPath: string, text: string): Array<{ source: string; template: string; heredocLines: string[] | null }> {
+  return extractTaughtCommands(text, docPath).map((entry) => ({
+    source: entry.source,
+    template: entry.raw,
+    heredocLines: entry.heredocLines,
+  }));
 }
 
 function listSkillDocFiles(skillDir: string): string[] {
@@ -332,6 +152,12 @@ function listSkillDocFiles(skillDir: string): string[] {
   if (existsSync(agents) && statSync(agents).isDirectory()) {
     for (const name of readdirSync(agents)) {
       if (name.endsWith('.md')) out.push(join(agents, name));
+    }
+  }
+  const tools = join(skillDir, 'tools');
+  if (existsSync(tools) && statSync(tools).isDirectory()) {
+    for (const name of readdirSync(tools)) {
+      if (name.endsWith('.md')) out.push(join(tools, name));
     }
   }
   return out;
@@ -393,15 +219,12 @@ function docAllowCommands(env: GuardEnvironment): Array<{ name: string; command:
     for (const docFile of listSkillDocFiles(skillDir)) {
       const rel = `${skill}/${docFile.slice(skillDir.length + 1)}`;
       const text = readFileSync(docFile, 'utf8');
-      for (const usage of extractDocCommands(rel, text)) {
-        for (const concrete of expandTemplate(usage.template, skillDir)) {
-          let command = finalizeNodeCommand(
+      for (const taught of extractTaughtCommands(text, rel)) {
+        for (const concrete of instantiateTaughtCommand(taught, { skillDir, skillName: skill })) {
+          const command = finalizeNodeCommand(
             concrete.replaceAll('%HUB_URL%', env.urlPlaceholder).replaceAll('%JEV_MODEL%', 'synthetic-model'),
           );
-          if (usage.heredocLines && !command.includes("<<'EOF'")) {
-            command += ` <<'EOF'\n${usage.heredocLines.join('\n')}\nEOF`;
-          }
-          out.push({ name: `文档 ${rel}: ${usage.template.slice(0, 80)}`, command });
+          out.push({ name: `文档 ${rel}: ${taught.raw.slice(0, 80)}`, command });
         }
       }
     }
