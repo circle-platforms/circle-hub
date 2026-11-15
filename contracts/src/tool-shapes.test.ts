@@ -296,13 +296,14 @@ describe('tool shapes: zod and the published schema agree', () => {
     const input = { ...submission, items: [{ ...submission.items[0], future_item: true }] };
     assert.equal(TOOLS.find(t => t.name === 'submit_result')!.input.safeParse(input).success, false);
   });
-  test('the C7 input and model-text baseline includes the authorized E4 descriptions', () => {
+  test('the C7 baseline includes authorized E4 descriptions and run30 T1/T6 refusal presentation', () => {
     const hash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
     assert.equal(hash(JSON.stringify(published.map(({ name, inputSchema }) => ({ name, inputSchema })))), 'b59d781d05f8189d77c29cc26f2c8aadde039c97b8af83a85b856c5464aa24fc');
     assert.deepEqual(TOOLS.map(({ name, input }) => ({ name, inputSchema: z.toJSONSchema(input, { target: 'draft-2020-12', io: 'input', unrepresentable: 'throw' }) })), published.map(({ name, inputSchema }) => ({ name, inputSchema })));
     assert.equal(hash(JSON.stringify(TOOLS.map(({ name, title, description }) => ({ name, title, description })))), '42686402812824e439d197015cf7be5fe5b3a44faa2e5641ea8c3fa3763b8534');
     assert.equal(hash(SERVER_INSTRUCTIONS), '4ea85478bba489029ce4625f71695309ecae6fcb2751a9793011cf70dca7fc90');
-    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), 'dd159d4b3882a332f0eb18b6708fbed1750c7e33974b21eb64e3faa5a07115e0');
+    // Owner T7 (2026-11-16): run30 #13 keeps declared refusal evidence; #25 deduplicates replies and #29 names readable choices.
+    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), 'b4ac016b98914388fd20fed552b3320a0cc90a3ffb422313ada581f6b0ed07ca');
   });
   test('a protocol error never needs invented run, lock or digest values (D05 R[3], T03 R[3])', () => {
     const submit = TOOLS.find((t) => t.name === 'submit_result');
