@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- 编写任务完整接收结构化前置与当前卡片决定；缺口说明使用可读位置和具体恢复动作，避免旧摘要误报与静默截断。模板准备命令使用显式参数/标准输入声明。
+
 - 在生产基线上整合 run30 工作流修复，保留有来源的前置与逆清理、守卫刷新恢复和已发布包版本不可变规则。
 
 - Advance local `case-compile` (`3.20.3` -> `3.20.4`), `recompose` (`1.2.6` -> `1.2.7`), and shared `recompose-authority` / `recompose-adjudication` (`1.1.10` -> `1.1.11`):

@@ -52,6 +52,8 @@
 
 ## 历史
 
+- 2026-11-16：T1b 在未发布候选 case-compile 3.21.0 / recompose 1.2.8 上补齐任务材料：由 sources.states 已提取的前置逐项进入任务文件，解释由结构化条目生成；材料与范围不再被历史预算截断。scope.md 仅按明确全局或完整用例标题加使用者决定标记桥接；每次派发重算，记录实际来源路径，不改已封批文件或留住已撤销的卡片记录。原始时间戳与未声明的归因标签保留，不引入别名或关键词归因。template-gap 候选升至 1.2.24，prepare-claims 增加四文件参数、零 stdin 的 tool-cli@2 声明及命令原文引号。未发布、未部署。
+
 - 2026-11-16：`hub-next-7` 在生产 `hub-next-6@06779266aa` 上整合 run30；候选 `case-compile@3.21.0`，独立子包 `recompose@1.2.8`、`recompose-authority` / `recompose-adjudication@1.1.12`，知识贡献候选 `1.3.22`。保留生产的有来源前置、逆清理和保真豁免；清理声明同时接收既有 order/clears 与只读 probe。守卫刷新保留备份/恢复且先核旧安装回执，旧 Home 可显式给已审查 --baseline；统一原样教法解析，不自动补引号或 EOF。已发布包版本及其字节不变；此批未发布、未部署。
 
 - 2026-11-15：将 `case-compile` 推进至 `3.20.4`、`recompose` 推进至 `1.2.7`、`recompose-authority` / `recompose-adjudication` 推进至 `1.1.11`（合入 `e0a96efd59` `authoring-brief` 抽 `sources.states` 缺失前置，未改动 Hub 或技能包合约格式与版本号）：（1）对照 `InfoTest_Engine/main`（`ac898b68`、`compile-worker.md:44-45,70`、`scenario_fidelity.py`）补齐用例重组、脚本编写、场景保真与失败分析规矩：明确 `recomposition.adapted` 与原始步骤不是步骤白名单，保留不改写被测对象/动作/约束及“前置不存在”反向测试的前提下，强制补充 `sources.states`（`missing_prerequisite`）及锁定手册正文/配置示例的运行前置与配对 `cleanup:true` 逆操作；为平面 `steps[]` 新增可选 `precondition_source: { reference, text }`（`slots.schema.json`、`functions/slots.ts`）并经 `functions/subject.ts` 接入 `quote@1` 核对，由 `functions/fidelity.ts` 生成 `mechanical.exemptions`（`added_precondition`）且继续隔离编写自述；（2）失败分析同错再现即证伪上轮假设须换机制，设备报错点名缺失项且锁定手册/示例支持未试假设时必须改写重测、严禁以“缺资料”或“剩一次机会”阻拦，仅当所有锁定资料均无任何未试假设依据时才归为“缺资料”；（3）扩展 `runtime-contract@2` `cleanup.order` / `clears` 披露（禁止将 `write memory` 等命中运行器自动清理的命令标为 `cleanup:true`）与观测缺口汇总披露。同步刷新共享 `recompose-evidence.ts`、四份工作簿合成样例与包清单；未发布或部署。

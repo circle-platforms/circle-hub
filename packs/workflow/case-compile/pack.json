@@ -38,8 +38,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "c7d0cc56a122d282d8b9118cfc15bec2f78e3bc53a414a726caed747a1d1634d",
-      "size": 17390
+      "sha256": "055dfb038a563d83b06042748ca01045da529fa2c3239b36489e6a70601ab7b3",
+      "size": 17704
     },
     {
       "path": "agents/compile-attributor.md",
@@ -133,8 +133,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "6e5379e2a7bba380720d53cc6412be17e34a05cd271d1d208c3a25da5c13dfbd",
-      "size": 70809
+      "sha256": "552ab7f86e4c5045363a88352c4810f0347b883e40c96683d8df65f2da1ee7b8",
+      "size": 80663
     },
     {
       "path": "functions/bed.ts",
@@ -158,8 +158,8 @@
     },
     {
       "path": "functions/block-restore.ts",
-      "sha256": "e73f02d7cd52129af82fdf864864214dd460f4655d572e887715eb8b204cae96",
-      "size": 4806
+      "sha256": "d33ac4345d6a1561855ed3f67a1d271aca13ee91ee156761830fc6adfed87530",
+      "size": 4863
     },
     {
       "path": "functions/block-review-identity.ts",
@@ -218,8 +218,8 @@
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "4826fb45168aa0c74696f9d65dc025808048dab9340e7a4933fafafaf52bb32f",
-      "size": 27157
+      "sha256": "72b3b4a410b5a5d06732028cfc4a5b12fb31d7913ee382913747d72d11dccb22",
+      "size": 27244
     },
     {
       "path": "functions/delivery.ts",
@@ -393,8 +393,8 @@
     },
     {
       "path": "functions/scope.ts",
-      "sha256": "3462bca2ad8319471c1c76f504de0243f46bf44224a8db804ab63eb1df456a6a",
-      "size": 1034
+      "sha256": "17f0487a1bc114432c32a173ca4ac2c3d5f923c735228cdc2068cd6940136fb7",
+      "size": 2670
     },
     {
       "path": "functions/slots.ts",
@@ -413,8 +413,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "5b0f15f07aedcc264ef3022bed7e1da18b84aaf179d438d04f641dbbdfc53f14",
-      "size": 36324
+      "sha256": "f29b492d8367b0a92329a082bb84e89820b20aadf07e1abe0a4826e52964adb6",
+      "size": 35977
     },
     {
       "path": "functions/subject.ts",
@@ -428,8 +428,8 @@
     },
     {
       "path": "functions/typed-authority.ts",
-      "sha256": "4ed12f2d5991810d87f987c62308653923c11b57fb45eae3f8e45e2a56cbe895",
-      "size": 15071
+      "sha256": "6e048aba389401431db3f45890a558dbd0b0be722e8884df8300235eef185c14",
+      "size": 18010
     },
     {
       "path": "functions/typed-contract.ts",
@@ -818,8 +818,8 @@
     },
     {
       "path": "tools/authoring-brief.ts",
-      "sha256": "b61e9be6dc691d1678d5fdc991908dde3dee9cc6ad1039c47a2fb91bef37ac9a",
-      "size": 17264
+      "sha256": "d871926d43dafc13525f6367ed098a6dd0f24a2edc94ffd899f66bde7172e54d",
+      "size": 18595
     },
     {
       "path": "tools/carry-plans.cli.json",
@@ -993,8 +993,8 @@
     },
     {
       "path": "tools/task-brief.ts",
-      "sha256": "c6f660e76687fc8600c3a84bf86f2cec3da569062afa84ca3dd4a43934a0fd2f",
-      "size": 51691
+      "sha256": "d10c843b3225b62956805f34ec43cd239aed9cbaec5f92cbd7e95a86f4f10c2f",
+      "size": 52519
     },
     {
       "path": "tools/workspace-path.ts",
