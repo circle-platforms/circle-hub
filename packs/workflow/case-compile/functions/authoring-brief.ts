@@ -316,6 +316,10 @@ export const PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON =
   'Hub 当前尚未提供按 autoid 查询历次上机验证与 apv_cmds 的只读接口。';
 export const PREREQ_SCAN_REASON =
   '重组记录与产品目录均未声明跨章节前置（如默认开关、监听前提、全局依赖对象）；编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
+/** Disclosed when the recompose record is present but `sources.states` is missing or not a list. */
+export const PREREQ_STATES_UNREADABLE_REASON =
+  '读不到重组记录的 sources.states（预期是数组）；不能据此断定没有前置。请核对重组回执形状后再开编写。';
+export const RECOMPOSE_STATES_ORIGIN = 'record.sources.states' as const;
 
 export type CompileBriefMode = 'initial' | 'rework_gate' | 'rework_device' | 'fidelity_fix';
 
@@ -402,8 +406,14 @@ export interface CompileBriefV1 {
       };
     };
     prerequisites: {
-      status: 'extracted' | 'partial_recompose_only' | 'none_declared_or_found_in_recompose';
-      from_recompose_states: Array<{ atom: string; reason: string; prerequisites: string[] }>;
+      status: 'extracted' | 'partial_recompose_only' | 'none_declared_or_found_in_recompose' | 'recompose_states_unreadable';
+      from_recompose_states: Array<{
+        atom: string;
+        reason: string;
+        prerequisites: string[];
+        state: string;
+        origin: typeof RECOMPOSE_STATES_ORIGIN;
+      }>;
       from_product_catalog: string[];
       ancestor_command_hints: string[];
       manual_scan_required: boolean;
@@ -683,26 +693,48 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
       text: typeof slot.text === 'string' ? slot.text : '',
     }));
 
-  // Extract prerequisites & user rulings declared on recomposition states (no ungrounded fabrication).
-  const statesSource =
-    isRecord(record.adjudication) && Array.isArray(record.adjudication.states)
-      ? record.adjudication.states
-      : Array.isArray(record.states)
-        ? record.states
-        : [];
-  const fromRecomposeStates: Array<{ atom: string; reason: string; prerequisites: string[] }> = [];
+  // Prerequisites and user rulings live on record.sources.states (recompose-record@1). Do not read
+  // adjudication.states / record.states: those paths are not on real records and used to yield a false "none".
+  const sources = isRecord(record.sources) ? record.sources : null;
+  const statesReadable = sources !== null && Array.isArray(sources.states);
+  const statesSource = statesReadable ? sources!.states : [];
+  const fromRecomposeStates: Array<{
+    atom: string;
+    reason: string;
+    prerequisites: string[];
+    state: string;
+    origin: typeof RECOMPOSE_STATES_ORIGIN;
+  }> = [];
   const userRulings: Array<{ source: string; target: string; ruling: string }> = [];
   for (const st of statesSource.filter(isRecord)) {
     const atom = typeof st.atom === 'string' ? st.atom : '';
     const reason = typeof st.reason === 'string' ? st.reason : '';
+    const state = typeof st.state === 'string' ? st.state : '';
     const prereqs = Array.isArray(st.prerequisites) ? st.prerequisites.filter((p): p is string => typeof p === 'string' && p.length > 0) : [];
-    if (st.state === 'missing_prerequisite' || prereqs.length > 0) {
-      fromRecomposeStates.push({ atom, reason, prerequisites: prereqs });
+    if (state === 'missing_prerequisite' || prereqs.length > 0) {
+      fromRecomposeStates.push({ atom, reason, prerequisites: prereqs, state, origin: RECOMPOSE_STATES_ORIGIN });
     }
-    if (st.state === 'settled' && reason.startsWith('使用者决定：')) {
-      userRulings.push({ source: 'recompose_state', target: atom, ruling: reason });
+    if (state === 'settled' && reason.startsWith('使用者决定：')) {
+      userRulings.push({ source: RECOMPOSE_STATES_ORIGIN, target: atom, ruling: reason });
     }
   }
+  const prerequisitesBlock: CompileBriefV1['materials']['prerequisites'] = !statesReadable
+    ? {
+        status: 'recompose_states_unreadable',
+        from_recompose_states: [],
+        from_product_catalog: [],
+        ancestor_command_hints: [],
+        manual_scan_required: true,
+        scan_reason: PREREQ_STATES_UNREADABLE_REASON,
+      }
+    : {
+        status: fromRecomposeStates.length > 0 ? 'partial_recompose_only' : 'none_declared_or_found_in_recompose',
+        from_recompose_states: fromRecomposeStates,
+        from_product_catalog: [],
+        ancestor_command_hints: [],
+        manual_scan_required: true,
+        scan_reason: PREREQ_SCAN_REASON,
+      };
 
   const allGateRefusals = priorRounds.flatMap((r) => r.gateRefusals);
   const allAcceptedNotices = priorRounds.flatMap((r) => r.acceptedNotices ?? []);
@@ -782,14 +814,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
           search_note: '简报只收录重组直接点到的节点；未收录章节须用 grep 检索上述本地文件。',
         },
       },
-      prerequisites: {
-        status: fromRecomposeStates.length > 0 ? 'partial_recompose_only' : 'none_declared_or_found_in_recompose',
-        from_recompose_states: fromRecomposeStates,
-        from_product_catalog: [],
-        ancestor_command_hints: [],
-        manual_scan_required: true,
-        scan_reason: PREREQ_SCAN_REASON,
-      },
+      prerequisites: prerequisitesBlock,
       bed_facts: {
         bed_name: bedName,
         facts_status: input.bedFacts ? 'extracted_from_frozen_manifest' : 'manifest_unavailable',
@@ -978,8 +1003,14 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
   } else {
     const hasRecomp = Array.isArray(prereqs.from_recompose_states) && prereqs.from_recompose_states.length > 0;
     const hasCatalog = Array.isArray(prereqs.from_product_catalog) && prereqs.from_product_catalog.length > 0;
-    if (!hasRecomp && !hasCatalog && (prereqs.status !== 'none_declared_or_found_in_recompose' || prereqs.manual_scan_required !== true)) {
-      problems.push('前置为空时 prerequisites.status 必须为 none_declared_or_found_in_recompose 且 manual_scan_required === true');
+    if (!hasRecomp && !hasCatalog) {
+      if (prereqs.status === 'recompose_states_unreadable') {
+        if (prereqs.manual_scan_required !== true || typeof prereqs.scan_reason !== 'string' || !prereqs.scan_reason.includes('sources.states')) {
+          problems.push('读不到 sources.states 时 prerequisites.status 必须为 recompose_states_unreadable，且 scan_reason 须写明该路径');
+        }
+      } else if (prereqs.status !== 'none_declared_or_found_in_recompose' || prereqs.manual_scan_required !== true) {
+        problems.push('前置为空时 prerequisites.status 必须为 none_declared_or_found_in_recompose 且 manual_scan_required === true');
+      }
     }
   }
 
@@ -1052,7 +1083,10 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
   out.push('## 前置条件与历史可用性（诚实披露）');
   out.push(`- 前置检查状态（${materials.prerequisites.status}）：${materials.prerequisites.scan_reason}`);
   for (const pre of materials.prerequisites.from_recompose_states) {
-    out.push(`  · 重组状态 ${pre.atom}：${pre.reason}${pre.prerequisites.length ? `（${pre.prerequisites.join('、')}）` : ''}`);
+    const origin = pre.origin ?? RECOMPOSE_STATES_ORIGIN;
+    const stateLabel = pre.state ? `，状态 ${pre.state}` : '';
+    out.push(`  · 出处 ${origin}${stateLabel}，原子 ${pre.atom}：${pre.reason}`);
+    for (const line of pre.prerequisites) out.push(`    - ${line}`);
   }
   out.push(
     `- 同用例历史上机记录（prior_device_history.status=${priorHistory.status}）：${priorHistory.unavailable_reason ?? priorHistory.disclaimer}`,
