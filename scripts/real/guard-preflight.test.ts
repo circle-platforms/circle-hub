@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { main as refreshMain, refreshGuards, writeHome, type Endpoint } from './circle-home.ts';
-import { main as preflightMain, runPreflight } from './guard-preflight.ts';
+import { isDeclarationLimitedCommand, main as preflightMain, runPreflight } from './guard-preflight.ts';
+import { environment, quote } from './guard-lib.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const ENDPOINT: Endpoint = {
@@ -41,6 +42,9 @@ function installSkills(home: string): void {
 
   const jevSrc = join(REPO_ROOT, 'packs/workflow/knowledge-contribution/tools/jev');
   cpSync(jevSrc, join(home, 'skills/jev'), { recursive: true });
+
+  const opSrc = join(REPO_ROOT, 'packs/workflow/knowledge-contribution/tools/operation-capture');
+  cpSync(opSrc, join(home, 'skills/operation-capture'), { recursive: true });
 }
 
 function makeHome(dir: string, profile: 'skills' | 'ops', homeName: string): string {
@@ -58,9 +62,32 @@ test('preflight passes on a fresh ops home whose path has spaces and Chinese', (
     assert.equal(report.ok, true, report.mismatches.map((m) => `${m.name} want=${m.want} got=${m.got} ${m.reason ?? ''}`).join('\n'));
     assert.ok(report.allowCount > 10, `expected many allow cases, got ${report.allowCount}`);
     assert.equal(report.denyCount, 8);
+    // operation-capture SKILL teaches enable/recover/disable; declaration only lists list/read/status/verify/flush/submit.
+    assert.equal(report.mismatches.length, 0);
+    assert.equal(report.declarationLimits.length, 3, report.declarationLimits.map((d) => d.name).join('\n'));
+    assert.ok(report.declarationLimits.every((d) => /enable|recover|disable/.test(d.name)));
     const lines: string[] = [];
     assert.equal(preflightMain(['--home', home], (line) => lines.push(line)), 0);
-    assert.match(lines.join('\n'), /全部相符/);
+    assert.match(lines.join('\n'), /核对相符|全部相符/);
+    assert.match(lines.join('\n'), /声明限制 3/);
+    // Spaced placeholder <原件 SHA-256> must become one synthetic token (not a redirect / extra arg).
+    assert.ok(!report.results.some((r) => r.kind === 'check' && !r.ok && /原件 SHA-256|SHA-256/.test(r.name)));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('declaration limit uses the scripts[].subcommands list, not keywords', () => {
+  const dir = scratch('decl');
+  try {
+    const home = makeHome(dir, 'ops', 'home');
+    const env = environment(home, join(home, 'work'), 'ops-allow.declaration.json');
+    const script = quote(join(home, 'skills', 'operation-capture', 'operation.ts'));
+    assert.equal(isDeclarationLimitedCommand(env, `node ${script} enable --session s`), true);
+    assert.equal(isDeclarationLimitedCommand(env, `node ${script} recover --session s`), true);
+    assert.equal(isDeclarationLimitedCommand(env, `node ${script} disable --session s`), true);
+    assert.equal(isDeclarationLimitedCommand(env, `node ${script} read --session s --sha a`), false);
+    assert.equal(isDeclarationLimitedCommand(env, `node ${script} list --session s`), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

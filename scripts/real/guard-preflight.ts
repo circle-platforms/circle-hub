@@ -7,9 +7,12 @@ import { basename, join, resolve } from 'node:path';
 import { discoverTools, environment, quote, writeCommand, type DiscoveredTool, type GuardEnvironment } from './guard-lib.ts';
 
 export type Verdict = 'allow' | 'deny' | 'ask';
+/** How a case counts toward the exit code: checked allow/deny vs declaration-only listing. */
+export type CaseKind = 'check' | 'declaration-limit';
 
 export interface CaseResult {
   name: string;
+  kind: CaseKind;
   want: Verdict;
   got: Verdict;
   ok: boolean;
@@ -23,6 +26,7 @@ export interface PreflightReport {
   profile: 'skills' | 'ops';
   results: CaseResult[];
   mismatches: CaseResult[];
+  declarationLimits: CaseResult[];
   allowCount: number;
   denyCount: number;
   ok: boolean;
@@ -155,6 +159,10 @@ const SYNTHETIC: Record<string, string> = {
   brief相对路径: 'fidelity/0.brief.json',
   模型: 'synthetic-model',
   秒数: '30',
+  会话号: 'sess-synthetic',
+  '原件 SHA-256': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  'Hub MCP 地址': '%HUB_URL%',
+  令牌文件: 'token.txt',
   值: 'synthetic',
 };
 
@@ -203,16 +211,19 @@ function expandTemplate(template: string, skillDir: string): string[] {
 
   const concretes: string[] = [];
   for (const form of bracketForms) {
-    const choices = [...form.matchAll(/<([^<>'\s]+\|[^<>'\s]+)>/g)];
+    // Choice placeholders first (`<a|b>`), then any remaining `<…>` including names with spaces (`<原件 SHA-256>`).
+    const choices = [...form.matchAll(/<([^<>|]+\|[^<>]+)>/g)];
     const choiceForms =
       choices.length === 1
         ? choices[0]![1]!.split('|').map((opt) => form.slice(0, choices[0]!.index) + opt + form.slice(choices[0]!.index! + choices[0]![0]!.length))
         : [form];
     for (const choiceForm of choiceForms) {
-      const substituted = choiceForm.replace(/<([^<>'\s]+)>/g, (whole, name: string) => {
-        if (Object.hasOwn(SYNTHETIC, name)) return SYNTHETIC[name]!;
-        if (name === 'HUB_URL' || whole === '%HUB_URL%') return '%HUB_URL%';
-        return `out/${name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 40) || 'value'}`;
+      const substituted = choiceForm.replace(/<([^<>]+)>/g, (whole, name: string) => {
+        const trimmed = name.trim();
+        if (Object.hasOwn(SYNTHETIC, trimmed)) return SYNTHETIC[trimmed]!;
+        if (trimmed === 'HUB_URL' || whole === '%HUB_URL%') return '%HUB_URL%';
+        // Keep the whole <…> (spaces included) as one token; sanitize to a workdir-relative path.
+        return `out/${trimmed.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 40) || 'value'}`;
       });
       concretes.push(substituted);
     }
@@ -384,8 +395,44 @@ function docAllowCommands(env: GuardEnvironment): Array<{ name: string; command:
 
 export interface HookCase {
   name: string;
+  kind: CaseKind;
   want: Verdict;
   call: { tool_name: string; tool_input: Record<string, unknown>; paths?: string[] };
+}
+
+/** Parses `node <script> [subcommand] …` after finalize; subcommand is the first bare word after the script. */
+export function parseExecuteHead(command: string): { script: string; subcommand: string | null } | null {
+  const m = /^(?:node)\s+(?:'([^']+\.ts)'|(\S+\.ts))(?:\s+(.*))?$/s.exec(command);
+  if (!m) return null;
+  const script = m[1] ?? m[2]!;
+  const rest = (m[3] ?? '').trim();
+  if (!rest) return { script, subcommand: null };
+  const first = rest.split(/\s+/)[0]!;
+  if (first.startsWith('-') || first.startsWith('<') || first.startsWith("'") || first.includes('/')) return { script, subcommand: null };
+  return { script, subcommand: first };
+}
+
+/**
+ * Returns the declaration's subcommand allow-list for a script when the declaration names that script
+ * with an explicit subcommands array; otherwise null (no structural restriction from the declaration).
+ */
+export function declarationSubcommandsFor(env: GuardEnvironment, scriptFile: string): string[] | null {
+  const scripts = env.declaration.scripts ?? [];
+  for (const entry of scripts) {
+    if (!entry.subcommands || entry.subcommands.length === 0) continue;
+    const declared = join(env.skills, entry.path);
+    if (scriptFile === declared || scriptFile.endsWith(`/${entry.path}`)) return entry.subcommands;
+  }
+  return null;
+}
+
+/** True when the taught execute command's subcommand is outside the declaration's explicit list for that script. */
+export function isDeclarationLimitedCommand(env: GuardEnvironment, command: string): boolean {
+  const head = parseExecuteHead(command);
+  if (!head?.subcommand) return false;
+  const allowed = declarationSubcommandsFor(env, head.script);
+  if (!allowed) return false;
+  return !allowed.includes(head.subcommand);
 }
 
 /** Fixed cases that every skills/ops guard must deny. */
@@ -397,47 +444,36 @@ export function fixedDenyCases(guard: InstalledGuard): HookCase[] {
     : existsSync(join(home, 'skills', 'recompose', 'tools', 'download-run.ts'))
       ? quote(join(home, 'skills', 'recompose', 'tools', 'download-run.ts'))
       : quote(join(home, 'skills', 'missing', 'tools', 'probe.ts'));
+  const deny = (name: string, call: HookCase['call']): HookCase => ({ name, kind: 'check', want: 'deny', call });
   return [
-    { name: '必拒：复制文件', want: 'deny', call: { tool_name: 'execute', tool_input: { command: 'cp plans/1.json plans/2.json' } } },
-    { name: '必拒：管道', want: 'deny', call: { tool_name: 'execute', tool_input: { command: 'ls | head' } } },
-    { name: '必拒：外联', want: 'deny', call: { tool_name: 'execute', tool_input: { command: 'curl http://192.0.2.9/' } } },
-    {
-      name: '必拒：令牌写成明文',
-      want: 'deny',
-      call: {
-        tool_name: 'execute',
-        tool_input: {
-          command: `node ${script} --hub %HUB_URL% --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out run-out <<'EOF'\nsometoken\nEOF`,
-        },
+    deny('必拒：复制文件', { tool_name: 'execute', tool_input: { command: 'cp plans/1.json plans/2.json' } }),
+    deny('必拒：管道', { tool_name: 'execute', tool_input: { command: 'ls | head' } }),
+    deny('必拒：外联', { tool_name: 'execute', tool_input: { command: 'curl http://192.0.2.9/' } }),
+    deny('必拒：令牌写成明文', {
+      tool_name: 'execute',
+      tool_input: {
+        command: `node ${script} --hub %HUB_URL% --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out run-out <<'EOF'\nsometoken\nEOF`,
       },
-    },
-    { name: '必拒：读凭据文件', want: 'deny', call: { tool_name: 'read_file', tool_input: { file_path: join(home, 'secrets.json') } } },
-    { name: '必拒：读守卫代码', want: 'deny', call: { tool_name: 'read_file', tool_input: { file_path: join(home, 'hooks', 'guard-lib.ts') } } },
-    {
-      name: '必拒：往工作目录外写',
-      want: 'deny',
-      call: { tool_name: 'write_file', tool_input: { file_path: join(home, 'settings.json'), content: '{}' } },
-    },
-    {
-      name: '必拒：释放预订',
-      want: 'deny',
-      call: {
-        tool_name: 'hub_start_run',
-        tool_input: { pack: 'test-bed@1.0.0', parameters: { action: 'release' } },
-      },
-    },
+    }),
+    deny('必拒：读凭据文件', { tool_name: 'read_file', tool_input: { file_path: join(home, 'secrets.json') } }),
+    deny('必拒：读守卫代码', { tool_name: 'read_file', tool_input: { file_path: join(home, 'hooks', 'guard-lib.ts') } }),
+    deny('必拒：往工作目录外写', { tool_name: 'write_file', tool_input: { file_path: join(home, 'settings.json'), content: '{}' } }),
+    deny('必拒：释放预订', { tool_name: 'hub_start_run', tool_input: { pack: 'test-bed@1.0.0', parameters: { action: 'release' } } }),
   ];
 }
 
-function buildAllowCases(env: GuardEnvironment): HookCase[] {
+function buildCases(env: GuardEnvironment): HookCase[] {
   const seen = new Set<string>();
   const out: HookCase[] = [];
   for (const item of [...standardAllowCommands(env), ...docAllowCommands(env)]) {
     if (seen.has(item.command)) continue;
     seen.add(item.command);
+    const limited = isDeclarationLimitedCommand(env, item.command);
     out.push({
       name: item.name,
-      want: 'allow',
+      kind: limited ? 'declaration-limit' : 'check',
+      // Declaration-limited taught commands are expected to be denied by the installed guard.
+      want: limited ? 'deny' : 'allow',
       call: { tool_name: 'execute', tool_input: { command: item.command } },
     });
   }
@@ -448,21 +484,35 @@ function buildAllowCases(env: GuardEnvironment): HookCase[] {
 export function runPreflight(homeRaw: string): PreflightReport {
   const guard = resolveInstalledGuard(homeRaw);
   const env = environment(guard.home, guard.workdir, guard.declarationName);
-  const cases = [...buildAllowCases(env), ...fixedDenyCases(guard)];
+  const cases = [...buildCases(env), ...fixedDenyCases(guard)];
   const results: CaseResult[] = [];
   for (const item of cases) {
     const invoked = invokeInstalledHook(guard, item.call);
     const got = invoked.verdict;
+    if (item.kind === 'declaration-limit') {
+      // Listed for humans; never fails the exit code. Prefer recording the hook's deny reason.
+      results.push({
+        name: item.name,
+        kind: 'declaration-limit',
+        want: item.want,
+        got,
+        ok: true,
+        reason: (invoked.reason ?? invoked.raw).split('\n')[0]?.slice(0, 160),
+      });
+      continue;
+    }
     const ok = got === item.want;
     results.push({
       name: item.name,
+      kind: 'check',
       want: item.want,
       got,
       ok,
       reason: ok ? undefined : (invoked.reason ?? invoked.raw).split('\n')[0]?.slice(0, 160),
     });
   }
-  const mismatches = results.filter((r) => !r.ok);
+  const mismatches = results.filter((r) => r.kind === 'check' && !r.ok);
+  const declarationLimits = results.filter((r) => r.kind === 'declaration-limit');
   return {
     home: guard.home,
     workdir: guard.workdir,
@@ -470,8 +520,9 @@ export function runPreflight(homeRaw: string): PreflightReport {
     profile: guard.profile,
     results,
     mismatches,
-    allowCount: cases.filter((c) => c.want === 'allow').length,
-    denyCount: cases.filter((c) => c.want === 'deny').length,
+    declarationLimits,
+    allowCount: cases.filter((c) => c.kind === 'check' && c.want === 'allow').length,
+    denyCount: cases.filter((c) => c.kind === 'check' && c.want === 'deny').length,
     ok: mismatches.length === 0,
   };
 }
@@ -480,16 +531,23 @@ export function formatPreflightReport(report: PreflightReport): string[] {
   const lines = [
     `核对主目录：${report.home}`,
     `配置：${report.profile}；钩子：${basename(report.entry)}；工作目录：${report.workdir}`,
-    `用例：放行 ${report.allowCount}、必拒 ${report.denyCount}；不符 ${report.mismatches.length}`,
+    `用例：放行 ${report.allowCount}、必拒 ${report.denyCount}；不符 ${report.mismatches.length}；声明限制 ${report.declarationLimits.length}`,
   ];
   if (report.ok) {
-    lines.push('结果：全部相符');
+    lines.push(report.declarationLimits.length ? '结果：核对相符（另有声明限制，见下）' : '结果：全部相符');
   } else {
     lines.push('结果：有不符（装着的守卫与装着的技能或必拒用例不一致）');
     for (const miss of report.mismatches.slice(0, 40)) {
       lines.push(`- 不符 want=${miss.want} got=${miss.got} | ${miss.name}${miss.reason ? ` | ${miss.reason}` : ''}`);
     }
-    if (report.mismatches.length > 40) lines.push(`- …另有 ${report.mismatches.length - 40} 条`);
+    if (report.mismatches.length > 40) lines.push(`- …另有 ${report.mismatches.length - 40} 条不符`);
+  }
+  if (report.declarationLimits.length) {
+    lines.push('声明限制（技能教了、声明明确不放行；不计入退出码）：');
+    for (const item of report.declarationLimits.slice(0, 40)) {
+      lines.push(`- 声明限制 got=${item.got} | ${item.name}${item.reason ? ` | ${item.reason}` : ''}`);
+    }
+    if (report.declarationLimits.length > 40) lines.push(`- …另有 ${report.declarationLimits.length - 40} 条声明限制`);
   }
   return lines;
 }
