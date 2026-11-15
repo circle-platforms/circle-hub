@@ -39,6 +39,7 @@ export interface TaskBriefInput {
   priorRounds?: readonly PriorRoundRecord[];
   streak?: StreakAnalysis;
   unrecordedAttribution?: PriorAttributionItem | null;
+  /** History prose budget; explicit materials and scope are never silently sliced. */
   maxChars?: number;
 }
 

@@ -27,10 +27,10 @@ function makeBrief(extra: string[] = []) {
   assert.ok(brief);
   return brief;
 }
-function task(brief: ReturnType<typeof makeBrief>) {
+function task(brief: ReturnType<typeof makeBrief>, maxChars?: number) {
   return renderTaskBrief({ role: resolveSubagentRole('plan')!, caseRef: brief.identity.autoid,
     briefPath: 'briefs/00.md', outPath: 'plans/00.json', skillDir: 'skills/case-compile',
-    scopeText: '只处理本条合成用例', round: 1, compileBrief: brief });
+    scopeText: '只处理本条合成用例', round: 1, compileBrief: brief, ...(maxChars === undefined ? {} : {maxChars}) });
 }
 
 test('T1b #36 reads the authored sources.states path and never substitutes adjudication.states', () => {
@@ -48,10 +48,13 @@ test('T1b #36 named writer task contains every prerequisite and truthful partial
 });
 test('T1b #36 complete prerequisite bytes survive the task history budget', () => {
   const last = '最后一条合成前置必须保留';
-  const output = task(makeBrief([...Array.from({ length: 30 }, (_, i) => `前置${i}：${'合成事实'.repeat(300)}`), last]));
+  const output = task(makeBrief([...Array.from({ length: 30 }, (_, i) => `前置${i}：${'合成事实'.repeat(300)}`), last]), 2048);
   assert.ok(output.includes(last));
   assert.ok(output.includes('本轮测试范围'));
   assert.ok(output.includes("--file 'plans/00.json'"));
+  assert.ok(output.length > 2048);
+  assert.ok(output.endsWith('\n'));
+  assert.ok(!output.includes('\\n（任务文件'));
 });
 test('T1b #36 an older explanatory sentence cannot override the extracted prerequisite list', () => {
   const brief = makeBrief();
