@@ -42,6 +42,17 @@ test('header, row selection and key-value rows use their declared structure', ()
   }).value, '00123');
 });
 
+test('six declared filename segments select an exact key suffix and retain the observed identifier', () => {
+  const lines = ['Kother.example.+008+00009+ksk+synthetic+2048.key',
+    'Kzone.example.+008+00123+ksk+synthetic+2048.private',
+    'Kzone.example.+008+00123+ksk+synthetic+2048.key',
+    'Kzone.example.+008+00456+zsk+synthetic+2048.key'];
+  const conditions = ['where 1=Kzone.example.', 'where 4=ksk', 'where 6=2048.key'];
+  assert.equal(select(lines.join('\n'), conditions, {columns: 6, column: 3}).value, '00123');
+  const duplicate = select([...lines, 'Kzone.example.+008+00789+ksk+synthetic+2048.key'].join('\n'), conditions, {columns: 6, column: 3});
+  assert.match(duplicate.error, /选中2行/);
+});
+
 test('zero, multiple, malformed-width and missing-column outcomes say why and carry the original output', () => {
   for (const [output, conditions, options, reason] of [
     ['sample+public+00123', ['where 1=absent'], {}, '选中0行'],
