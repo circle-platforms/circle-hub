@@ -4,6 +4,8 @@ import {
   buildRoundRows,
   caseIdentity,
   collectRoundTree,
+  loadJobs,
+  mergeMemberItems,
   outboundRunRefs,
   recDigests,
   roundDevicePage,
@@ -419,7 +421,90 @@ test('collectRoundTree counts same-key runs without an edge as sameKeyUnlinked',
   assert.ok(tree);
   assert.equal(tree!.runs.length, 1);
   assert.ok(tree!.sameKeyUnlinked >= 1);
-  assert.match(ROUND_SAME_KEY_UNLINKED, /没有衔接边/);
+  assert.match(ROUND_SAME_KEY_UNLINKED, /没有前后步骤关系/);
+});
+
+test('sameKeyUnlinked ignores a newer run that later joins through a middle member', async () => {
+  // Enter at R; reverse scan sees V before P is known; V later joins via P. Must not count V as unlinked.
+  const recompose = runView({ run: RUN_RECOMPOSE, started_at: '2026-11-14T02:00:00.000Z' });
+  const plan = runView({ run: RUN_PLAN, started_at: '2026-11-14T03:00:00.000Z', predecessor: RUN_RECOMPOSE });
+  const merge = runView({ run: RUN_MERGE, started_at: '2026-11-14T04:00:00.000Z', predecessor: RUN_PLAN });
+  const catalog = new Map([
+    [RUN_RECOMPOSE, { run: recompose, latest: null, production: null }],
+    [RUN_PLAN, { run: plan, latest: null, production: null }],
+    [RUN_MERGE, { run: merge, latest: null, production: null }],
+  ]);
+  const tree = await collectRoundTree({
+    getRun: async (_u: unknown, id: string) => catalog.get(id) ?? null,
+    // Newest first: merge before plan. R lists no successors so P is not admitted until its scan row.
+    listRuns: async () => ({ items: [merge, plan, recompose], next: null }),
+    exportSuccessors: async (_u: unknown, run: string) => ({
+      run,
+      successors: run === RUN_PLAN
+        ? [{ run: RUN_MERGE, pack: merge.pack, started_at: merge.started_at, predecessor: RUN_PLAN, parameters: {}, sources: [] }]
+        : [],
+    }),
+  } as never, principal as never, RUN_RECOMPOSE);
+  assert.ok(tree);
+  assert.deepEqual(tree!.runs.map((row) => row.run), [RUN_RECOMPOSE, RUN_PLAN, RUN_MERGE]);
+  assert.equal(tree!.sameKeyUnlinked, 0);
+});
+
+test('mergeMemberItems keeps first projection id and last accepted conclusion', () => {
+  const early = itemResult('doc:1', '早', 'pending', { model: true });
+  const late = itemResult('doc:1', '晚', 'satisfied');
+  const { projections, conclusionsByItem } = mergeMemberItems([
+    { items: [planProjection('doc:1', '合成甲', 1, 1, '1001')], result: asValidation(early) },
+    { items: [planProjection('doc:1', '合成甲', 2, 1, '1001')], result: asValidation(late) },
+  ]);
+  assert.equal(projections.length, 1);
+  assert.equal(conclusionsByItem.get('doc:1')?.item.label, '晚');
+  const { rows, totals } = buildRoundRows({
+    projections,
+    conclusionsByItem,
+    jobs: [],
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(totals.correct, 1);
+  assert.equal(totals.unknown, 0);
+});
+
+test('loadJobs keeps one copy when the same job is listed under plan and merge runs', async () => {
+  const job: ExportedJob = {
+    job: 'job_shared',
+    verification_run: RUN_MERGE,
+    plan_run: RUN_PLAN,
+    items: ['doc:1'],
+    sha256: sha,
+    ended: 'done',
+    outcome: 'effective',
+    frozen: false,
+    result: null,
+    device_return: null,
+    rows: [{ item: 'doc:1', dynamic_terminal: 'pass' }],
+  };
+  const loaded = await loadJobs(
+    {
+      getRun: async () => null,
+      exportJobs: async (_u: unknown, run: string) => {
+        if (run === RUN_PLAN || run === RUN_MERGE) return { run, jobs: [job] };
+        return { run, jobs: [] };
+      },
+    } as never,
+    principal as never,
+    [
+      runView({ run: RUN_PLAN, started_at: '2026-11-14T03:00:00.000Z' }),
+      runView({ run: RUN_MERGE, started_at: '2026-11-14T04:00:00.000Z' }),
+    ],
+  );
+  assert.equal(loaded.jobs.length, 1);
+  const { rows, totals } = buildRoundRows({
+    projections: [planProjection('doc:1', '合成', 1, 1, '1001')],
+    conclusionsByItem: new Map(),
+    jobs: loaded.jobs,
+  });
+  assert.equal(rows[0]!.deviceAttempts, 1);
+  assert.equal(totals.batches, 1);
 });
 
 test('device job output is not a run source: sourceForRun alone would miss it', async () => {

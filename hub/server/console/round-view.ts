@@ -28,20 +28,22 @@ const HISTORY = { history: { limit: 1 } as const, requests: 'waiting' as const }
 
 export const ROUND_PAGE_TITLE = '相关任务';
 export const ROUND_EMPTY_CASES = '这些相关任务里还没有可读的原始用例。';
-export const ROUND_PARTIAL_RUNS = '无权限：有相关任务当前账户无权查看，未列入表中。请联系这些任务的执行人或管理员分享。';
-export const ROUND_PARTIAL_SCAN = '部分：只查了最新的 300 个可见任务，更早的相关任务可能没列出。下一步：从这一组里最新的任务页进入。';
-export const ROUND_SUCCESSORS_OPAQUE = '部分：当前账户不能读取后继任务列表，表中可能缺少更晚的相关任务。下一步：请执行人或管理员打开本页，或为其分享权限。';
-export const ROUND_NO_SUBJECT = '状态未知：这个任务没有绑定同一份来源，无法与其它任务归到一组。下一步：从带有来源绑定的任务页进入。';
-export const ROUND_SAME_KEY_UNLINKED = '部分：同一来源同一构建下还有可见任务，但与当前打开的任务没有衔接边，未列入本表。';
-export const ROUND_UNLINKED = '状态未知：找不到与这个任务衔接的前一步任务（输入里引用的结果在可见任务里没有唯一对应）。下一步：执行人从上一步任务的页面进入本页，或请管理员核对。';
+export const ROUND_PARTIAL_RUNS = '无权限：有相关任务当前账户无权查看，未列入相关任务中。请联系这些任务的执行人或管理员分享。';
+export const ROUND_PARTIAL_SCAN = '部分：只查了最新的 300 个可见任务，更早的相关任务可能没列出。下一步：从这些相关任务里最新的任务页进入。';
+export const ROUND_SUCCESSORS_OPAQUE = '部分：当前账户不能读取后继任务列表，表中可能缺少更晚的相关任务。下一步：请该任务的执行人或管理员打开本页，或请管理员分享权限。';
+export const ROUND_NO_SUBJECT = '不适用：这个任务没有绑定同一份来源，无法归入相关任务。下一步：从带有来源绑定的任务页进入。';
+export const ROUND_SAME_KEY_UNLINKED = '部分：同一来源同一构建下还有可见任务，但与当前打开的任务没有前后步骤关系，未列入相关任务。下一步：从更晚的相关任务页进入，或请执行人核对这些任务是否应连在一起。';
+export const ROUND_UNLINKED = '状态未知：找不到与这个任务相连的前一步任务（输入里引用的结果在可见任务里没有唯一对应）。下一步：执行人从上一步任务的页面进入本页，或请管理员核对。';
 export const ROUND_NO_CONCLUSION = '状态未知；原因缺资料（还没有可读的核对结果）；下一步由模型提交后重新交给 Hub 检查';
 export const ROUND_NO_DEVICE = '尚未上机验证';
 export const ROUND_DEVICE_PENDING = '设备输出还没有返回';
-export const ROUND_JOBS_FORBIDDEN = '无权限：当前账户不能读取这些任务的上机作业。请联系执行人或管理员。';
+export const ROUND_JOBS_FORBIDDEN = '无权限：当前账户不能读取这些任务的上机验证。请联系执行人或管理员。';
 export const ROUND_DEVICE_UNREADABLE = '设备输出不可读';
 export const ROUND_DEVICE_TITLE = '设备输出';
 export const ROUND_HUB_NOTE = '失败分析的原因和交付结果在 Circle 客户端生成，Hub 不保存。';
-export const ROUND_CASES_MORE = '部分：原始用例超过一页，下面只列本页。下一步：打开「后一页」。';
+/** Shown only when a later page exists (`nextAfter`); not used for scan caps. */
+export const ROUND_CASES_MORE = '原始用例较多，下面只列本页。下一步：打开「后一页」。';
+export const ROUND_CASES_PAGE_END = '原始用例较多，下面是最后一页。下一步：打开「回到第一页」，或从当前页继续阅读。';
 
 const REC_DIGEST = /^rec:([0-9a-f]{64})$/;
 
@@ -271,7 +273,8 @@ export async function collectRoundTree(
   let steps = 0;
   let partial = false;
   let successorsOpaque = false;
-  let sameKeyUnlinked = 0;
+  /** Same-key headers seen without an edge at scan time; recount after the final member set is known. */
+  const sameKeyUnjoined = new Set<string>();
 
   const admit = async (id: string): Promise<boolean> => {
     if (byId.has(id) || !RunId.safeParse(id).success) return false;
@@ -348,7 +351,7 @@ export async function collectRoundTree(
           }
         }
         if (!joins) {
-          sameKeyUnlinked += 1;
+          sameKeyUnjoined.add(header.run);
           continue;
         }
         if (await admit(header.run)) {
@@ -370,6 +373,7 @@ export async function collectRoundTree(
     if (cursor !== null && cursor !== undefined && scanned >= ROUND_RUNS_SCANNED) partial = true;
   }
 
+  const sameKeyUnlinked = [...sameKeyUnjoined].filter((id) => !byId.has(id)).length;
   const ordered = [...byId.values()].sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at));
 
   // Unlinked only describes the anchor's own unresolved rec: when it stayed alone.
@@ -392,18 +396,53 @@ export async function collectRoundTree(
 
 type JobsLoad = { jobs: ExportedJob[]; forbidden: boolean };
 
-async function loadJobs(runs: RunReader, user: PageContext['principal'], tree: readonly RunRecordView[]): Promise<JobsLoad> {
+export async function loadJobs(runs: RunReader, user: PageContext['principal'], tree: readonly RunRecordView[]): Promise<JobsLoad> {
   if (!runs.exportJobs) return { jobs: [], forbidden: false };
   const out: ExportedJob[] = [];
+  const seenJob = new Set<string>();
   let forbidden = false;
   const reservations = runs.exportJobReservations ? await runs.exportJobReservations(user) : null;
   const options = reservations !== null && reservations !== undefined ? { reservations } : undefined;
   for (const run of tree) {
     const listed = await runs.exportJobs(user, run.run, options);
-    if (listed === null) forbidden = true;
-    else out.push(...listed.jobs);
+    if (listed === null) {
+      forbidden = true;
+      continue;
+    }
+    // One reservation is indexed under both verification_run and plan_run; keep each job once.
+    for (const job of listed.jobs) {
+      if (seenJob.has(job.job)) continue;
+      seenJob.add(job.job);
+      out.push(job);
+    }
   }
   return { jobs: out, forbidden };
+}
+
+/**
+ * Oldest-first member runs: union projections by item.id; later accepted conclusions overwrite earlier ones
+ * for the same id (so an 上机验证 after 脚本编写 replaces the earlier「等待」conclusion).
+ */
+export function mergeMemberItems(
+  members: ReadonlyArray<{ items: readonly ItemProjection[]; result: ValidationResult | null }>,
+): {
+  projections: ItemProjection[];
+  conclusionsByItem: Map<string, { item: ItemResult; original: ItemProjection | undefined }>;
+} {
+  const projectionsById = new Map<string, ItemProjection>();
+  const conclusionsByItem = new Map<string, { item: ItemResult; original: ItemProjection | undefined }>();
+  for (const member of members) {
+    for (const item of member.items) {
+      if (!projectionsById.has(item.id)) projectionsById.set(item.id, item);
+    }
+    if (member.result?.acceptance === 'accepted') {
+      const originals = new Map(member.items.map((item) => [item.id, item]));
+      for (const item of itemsOfResult(member.result)) {
+        conclusionsByItem.set(item.item, { item, original: originals.get(item.item) });
+      }
+    }
+  }
+  return { projections: [...projectionsById.values()], conclusionsByItem };
 }
 
 export async function roundPage(ctx: PageContext): Promise<PageResult> {
@@ -428,26 +467,13 @@ export async function roundPage(ctx: PageContext): Promise<PageResult> {
   const tree = await collectRoundTree(reader, ctx.principal, runId);
   if (tree === null) return neutralPage(ctx);
 
-  const conclusionsByItem = new Map<string, { item: ItemResult; original: ItemProjection | undefined }>();
-  // Union of items across member runs (by projection.id), not「最后一个有条目的运行」.
-  const projectionsById = new Map<string, ItemProjection>();
+  const members: Array<{ items: ItemProjection[]; result: ValidationResult | null }> = [];
   for (const run of tree.runs) {
     const detail = tree.details.get(run.run) ?? await ctx.deps.runs.getRun(ctx.principal, run.run, HISTORY);
     if (detail === null) continue;
-    for (const item of detail.run.items) {
-      if (!projectionsById.has(item.id)) projectionsById.set(item.id, item);
-    }
-    const result = pickResult(detail);
-    if (result?.acceptance === 'accepted') {
-      const originals = new Map(detail.run.items.map((item) => [item.id, item]));
-      for (const item of itemsOfResult(result)) {
-        if (!conclusionsByItem.has(item.item)) {
-          conclusionsByItem.set(item.item, { item, original: originals.get(item.item) });
-        }
-      }
-    }
+    members.push({ items: detail.run.items, result: pickResult(detail) });
   }
-  const projections = [...projectionsById.values()];
+  const { projections, conclusionsByItem } = mergeMemberItems(members);
 
   const { jobs, forbidden: jobsForbidden } = await loadJobs(reader, ctx.principal, tree.runs);
   const { rows: allRows, totals } = buildRoundRows({ projections, conclusionsByItem, jobs });
@@ -462,7 +488,7 @@ export async function roundPage(ctx: PageContext): Promise<PageResult> {
   }
   const pageRows = allRows.slice(start, start + ROUND_CASES_PAGE);
   const nextAfter = start + ROUND_CASES_PAGE < allRows.length ? pageRows[pageRows.length - 1]?.id : undefined;
-  const casesPartial = allRows.length > ROUND_CASES_PAGE;
+  const hasMorePages = allRows.length > ROUND_CASES_PAGE;
 
   const head = html`${box({ title: '摘要' }, html`
 <p class="ch-meta">${ROUND_HUB_NOTE}</p>
@@ -471,7 +497,7 @@ ${kpi('已确认正确', count(totals.correct))}
 ${kpi('未确认', count(totals.unconfirmed))}
 ${kpi('错误', count(totals.wrong))}
 ${kpi('未知', count(totals.unknown))}
-${kpi('上机验证批次数', count(totals.batches))}
+${kpi('完成的上机验证', count(totals.batches))}
 `)}
 ${tree.skipped > 0 ? callout('warn', ROUND_PARTIAL_RUNS) : ''}
 ${tree.partial ? callout('info', ROUND_PARTIAL_SCAN) : ''}
@@ -480,7 +506,7 @@ ${tree.noSubject ? callout('unknown', ROUND_NO_SUBJECT) : ''}
 ${tree.sameKeyUnlinked > 0 ? callout('info', ROUND_SAME_KEY_UNLINKED) : ''}
 ${tree.unlinked ? callout('unknown', ROUND_UNLINKED) : ''}
 ${jobsForbidden ? callout('warn', ROUND_JOBS_FORBIDDEN) : ''}
-${casesPartial ? callout('info', ROUND_CASES_MORE) : ''}
+${nextAfter !== undefined ? callout('info', ROUND_CASES_MORE) : hasMorePages && start > 0 ? callout('info', ROUND_CASES_PAGE_END) : ''}
 ${definitionsBlock(tree)}
 `;
 
@@ -510,10 +536,10 @@ ${definitionsBlock(tree)}
       ctx.chrome(ROUND_PAGE_TITLE, {
         active: 'tasks',
         sub: html`${link(runPath(tree.anchor.run), '当前打开的任务')}`,
-        hint: '把同一份来源在同一个构建上、有衔接边的任务串在一起看；每条原始用例一行，结论与模型在 Circle 里看到的一致。',
+        hint: '把同一份来源在同一个构建上、有前后步骤关系的相关任务串在一起看；每条原始用例一行，结论与模型在 Circle 里看到的一致。',
       }),
       html`${head}${table(
-        ['原始用例', '说明', '结论', '上机验证次数', '设备输出'],
+        ['原始用例', '说明', '结论', '本条上机验证次数', '设备输出'],
         tableRows,
         ROUND_EMPTY_CASES,
       )}${pager}`,

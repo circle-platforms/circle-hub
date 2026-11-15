@@ -1,4 +1,4 @@
-// Related-tasks console page: clustering, permissions, device output (Boss 12:15).
+// Related-tasks console page: subject-bound entry, outsider gate, device output 404.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { DOCUMENTS } from '../fixtures/agile/index.ts';
@@ -7,10 +7,7 @@ import { openBed, type Bed } from './support/hub.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
 import type { McpClient } from './support/mcp.ts';
 import { startReview } from './support/review.ts';
-import {
-  ROUND_NO_SUBJECT,
-  ROUND_PAGE_TITLE,
-} from '../../hub/server/console/round-view.ts';
+import { ROUND_PAGE_TITLE } from '../../hub/server/console/round-view.ts';
 
 let postgres: TemporaryPostgres;
 let bed: Bed;
@@ -33,7 +30,7 @@ after(async () => {
 });
 
 describe('console related-tasks page', () => {
-  it('clusters from a subject-bound run, hides the entry without subject, and gates device output', async () => {
+  it('opens for a subject-bound run, links from the task page, and gates outsiders and device digests', async () => {
     const run = await startReview(client, {
       product: bed.product.names[1],
       version: bed.site.LINE,
@@ -48,30 +45,21 @@ describe('console related-tasks page', () => {
     assert.equal(page.status, 200);
     assert.match(page.body, new RegExp(`<title>${ROUND_PAGE_TITLE}`));
     assert.doesNotMatch(page.body, /src:[0-9a-f]{64}/);
-    // Table headers are label/summary, not guessed ID/title.
-    assert.match(page.body, /原始用例/);
-    assert.match(page.body, /说明/);
-    assert.doesNotMatch(page.body, /用时/);
-    assert.match(page.body, /已确认正确|未确认|错误|未知/);
+    assert.match(page.body, /<th scope="col">原始用例<\/th>/);
+    assert.match(page.body, /<th scope="col">说明<\/th>/);
+    assert.match(page.body, /<th scope="col"[^>]*>本条上机验证次数<\/th>/);
+    assert.match(page.body, /完成的上机验证/);
+    assert.doesNotMatch(page.body, /用时|上机作业|衔接边/);
 
     const task = await admin.get(`/console/runs/${run.run}?tab=record`);
     assert.equal(task.status, 200);
     assert.match(task.body, /查看相关任务/);
 
-    // A console user who is not the runner: page is either neutral (run not visible) or discloses the jobs/successors gate.
+    // Outsider without the run: neutral 404 (same visibility as getRun).
     const asOutsider = await outsider.get(`/console/rounds?run=${run.run}`);
-    assert.ok(asOutsider.status === 200 || asOutsider.status === 404, `outsider status ${asOutsider.status}`);
-    if (asOutsider.status === 200) {
-      assert.match(asOutsider.body, new RegExp(ROUND_PAGE_TITLE));
-      assert.match(asOutsider.body, /上机验证|无权限|尚未上机验证|设备输出|不能读取后继/);
-    }
+    assert.equal(asOutsider.status, 404);
 
-    // Device page without a matching job device_return stays neutral (404).
     const deviceMissing = await admin.get(`/console/rounds/device?run=${run.run}&sha256=${'a'.repeat(64)}`);
     assert.equal(deviceMissing.status, 404);
-
-    // A synthetic booking-shaped run without subject: page discloses no-subject instead of inventing a cluster.
-    // startReview always binds subject; assert the constant is the disclosed wording when noSubject is set in unit tests.
-    assert.match(ROUND_NO_SUBJECT, /没有绑定同一份来源/);
   });
 });
