@@ -627,7 +627,7 @@ def main():
             raise InstallFailure('arguments', 'bundle_required')
         elif args.operation == 'preflight':
             state = installer.preflight(args.bundle, args.unit)
-            answer = {'ok': True, 'stage': 'preflight_only_stop_for_review', 'version': state['facts']['version'], 'jobs': 0, 'leased': False, 'component_sha256': state['plan']['component_sha256'], **observation_details(state['facts'])}
+            answer = {'ok': True, 'stage': 'preflight_only_stop_for_review', 'version': state['facts']['version'], 'jobs': 0, 'leased': False, 'component_sha256': state['plan']['component_sha256'], 'online_probe': state['online_probe'], **observation_details(state['facts'])}
         else:
             with interrupt_signals(): answer = installer.install(args.bundle, args.unit)
     except InstallFailure as error:
