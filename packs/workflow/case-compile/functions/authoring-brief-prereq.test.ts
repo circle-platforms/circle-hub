@@ -125,3 +125,96 @@ test('buildCompileBrief discloses when sources.states is missing instead of clai
   assert.match(brief!.materials.prerequisites.scan_reason, /读不到|sources\.states/);
   assert.doesNotMatch(JSON.stringify(brief!.materials.prerequisites), /旧路径前置/);
 });
+
+/** Shape of a settled user ruling once written into the recompose record (recompose/SKILL + submit-records). */
+test('buildCompileBrief lists user rulings from record.sources.states settled「使用者决定：」', () => {
+  const ruling = '使用者决定：合成决定——保留原步骤，本条先不编';
+  const item = {
+    id: 'synth-doc:case-3',
+    fields: {
+      autoid: '990000000000000403',
+      title: '合成用例：使用者决定读位',
+      expected_nodes: [],
+      recomposition: {
+        receipt: `rec:${'e'.repeat(64)}`,
+        record: {
+          schema: 'recompose-record@1',
+          case: { id: 'synth-case-3', title: '合成用例：使用者决定读位' },
+          atoms: [{ id: 'a1', kind: 'intent', text: 'synthetic intent', quote_ref: `src:${'c'.repeat(64)}/n/1` }],
+          expectation_slots: [],
+          ledgers: { adapted: [], original: [], concretizations: [] },
+          unknowns: [],
+          status: 'complete',
+          sources: {
+            candidates: [],
+            governing: [],
+            states: [
+              {
+                atom: 'a1',
+                state: 'settled',
+                reason: ruling,
+                prerequisites: null,
+                adjudicated_by: null,
+                exit: { owner: '程序', next: '按决定继续或排除' },
+              },
+            ],
+          },
+          // Decoy: pack never writes this; must not be read for rulings.
+          adjudication: {
+            states: [{ atom: 'a1', state: 'settled', reason: '使用者决定：旧路径诱饵，不得出现在任务书' }],
+          },
+        },
+      },
+    },
+  };
+  const brief = buildCompileBrief({
+    item,
+    index: '18',
+    knowledge: emptyKnowledge(),
+    policy: null,
+    round: 1,
+    mode: 'initial',
+  });
+  assert.ok(brief);
+  assert.equal(brief!.task.user_rulings.length, 1);
+  assert.equal(brief!.task.user_rulings[0]!.source, 'record.sources.states');
+  assert.equal(brief!.task.user_rulings[0]!.target, 'a1');
+  assert.equal(brief!.task.user_rulings[0]!.ruling, ruling);
+  // Decoy on the non-schema path must not leak into the brief payload.
+  assert.doesNotMatch(JSON.stringify(brief!.task.user_rulings), /旧路径诱饵/);
+});
+
+test('buildCompileBrief does not take user rulings from record.adjudication.states', () => {
+  const item = {
+    id: 'synth-doc:case-4',
+    fields: {
+      autoid: '990000000000000404',
+      title: '合成用例：无 sources 裁定诱饵',
+      recomposition: {
+        receipt: `rec:${'f'.repeat(64)}`,
+        record: {
+          schema: 'recompose-record@1',
+          case: { id: 'synth-case-4', title: '合成用例：无 sources 裁定诱饵' },
+          atoms: [],
+          expectation_slots: [],
+          ledgers: { adapted: [] },
+          unknowns: [],
+          adjudication: {
+            states: [{ atom: 'a9', state: 'settled', reason: '使用者决定：仅写在 adjudication，不应进任务书' }],
+          },
+        },
+      },
+    },
+  };
+  const brief = buildCompileBrief({
+    item,
+    index: '19',
+    knowledge: emptyKnowledge(),
+    policy: null,
+    round: 1,
+    mode: 'initial',
+  });
+  assert.ok(brief);
+  assert.equal(brief!.task.user_rulings.length, 0);
+  assert.doesNotMatch(JSON.stringify(brief!.task.user_rulings), /仅写在 adjudication/);
+});

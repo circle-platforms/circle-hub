@@ -693,8 +693,11 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
       text: typeof slot.text === 'string' ? slot.text : '',
     }));
 
-  // Prerequisites and user rulings live on record.sources.states (recompose-record@1). Do not read
-  // adjudication.states / record.states: those paths are not on real records and used to yield a false "none".
+  // Prerequisites and user rulings live on record.sources.states (recompose-record@1):
+  // submit-records writes that array; recompose/SKILL says a settled ruling's reason starts with
+  // 「使用者决定：」; recompose-adjudication only validates separate decision review items and sets
+  // sources.states[].adjudicated_by to a rec: digest — it never writes record.adjudication.states
+  // (that key is absent from recompose-record@1 and from all plan*-run items in work-ops-run29).
   const sources = isRecord(record.sources) ? record.sources : null;
   const statesReadable = sources !== null && Array.isArray(sources.states);
   const statesSource = statesReadable ? sources!.states : [];
