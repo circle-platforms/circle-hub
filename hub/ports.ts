@@ -308,8 +308,12 @@ export interface RunsService {
    * Uses the same reusable-result selection as start_run. Only the runner and administrators; null when absent or forbidden. */
   exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; run_reference: string; accepted_result_reference: string | null; result: ValidationResult | null; submission: unknown | null } | null>;
   /** Decision 160 (relay): the jobs the run was dispatched in, each item's verdict from the checked result projection and the
-   * references of what the target returned; same readers as exportRun. */
-  exportJobs?(user: Principal, run: string): Promise<{ run: string; jobs: ExportedJob[] } | null>;
+   * references of what the target returned; same readers as exportRun. Pass `reservations` from exportJobReservations when a
+   * page will call this for many runs, so jobs() does not re-read the whole reservation map each time. */
+  exportJobs?(user: Principal, run: string, options?: { reservations?: import('./dispatch/api.ts').RunReservations }): Promise<{ run: string; jobs: ExportedJob[] } | null>;
+  /** One snapshot of every dispatch reservation for a page that will call exportJobs many times. Admin only; null otherwise
+   * or when the dispatch port has no reservations(). The snapshot stays server-side. */
+  exportJobReservations?(user: Principal): Promise<import('./dispatch/api.ts').RunReservations | null>;
   /** The runs started with `run` as predecessor that the reader may export, as the run lineage a client tool walks (decision 162). */
   exportSuccessors?(user: Principal, run: string): Promise<{ run: string; successors: ExportedSuccessor[] } | null>;
   /** Own runs for a user, every run for an admin, newest first. */

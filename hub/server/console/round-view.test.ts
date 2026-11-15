@@ -6,21 +6,29 @@ import {
   collectRoundTree,
   outboundRunRefs,
   recDigests,
+  roundDevicePage,
   sameRoundKeys,
   subjectReference,
+  ROUND_DEVICE_UNREADABLE,
+  ROUND_JOBS_FORBIDDEN,
   ROUND_NO_CONCLUSION,
+  ROUND_NO_SUBJECT,
   ROUND_RUNS_SCANNED,
+  ROUND_SAME_KEY_UNLINKED,
+  ROUND_SUCCESSORS_OPAQUE,
   ROUND_UNLINKED,
 } from './round-view.ts';
 import { itemConclusion, itemConclusionParts } from '../text.ts';
 import type { ItemProjection, RunRecordView, SourceBinding } from '../../../contracts/src/run.ts';
 import type { ItemResult, ValidationResult } from '../../../contracts/src/validation.ts';
 import type { ExportedJob } from '../../ports.ts';
+import type { PageContext } from './context.ts';
 
 const sha = 'a'.repeat(64);
 const src = `src:${sha}`;
 const shaOther = 'b'.repeat(64);
 const srcOther = `src:${shaOther}`;
+const shaDevice = '1'.repeat(64);
 const RUN_BOOKING = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
 const RUN_RECOMPOSE = 'run_01cccccccccccccccccccccccc';
 const RUN_PLAN = 'run_01dddddddddddddddddddddddd';
@@ -33,6 +41,22 @@ const DIGEST_R2 = 'd'.repeat(64);
 const DIGEST_AMBIG_A = 'e'.repeat(64);
 
 const principal = { id: 'usr_01aaaaaaaaaaaaaaaaaaaaaaaa', name: 'synthetic', role: 'member' as const } as const;
+
+/** Recompose-shaped: label is the case id, no summary (title lives in fields elsewhere). */
+function recomposeProjection(id: string, autoid: string): ItemProjection {
+  return { id, label: autoid, location: src, fields: { title: `合成标题-${autoid}` } };
+}
+
+/** Plan/merge-shaped: label is the title, summary is step counts (autoid in fields). */
+function planProjection(id: string, title: string, steps: number, expects: number, autoid: string): ItemProjection {
+  return {
+    id,
+    label: title,
+    summary: `${steps} 步；${expects} 个期望结果`,
+    location: src,
+    fields: { autoid },
+  };
+}
 
 function projection(id: string, label: string, summary?: string): ItemProjection {
   return {
@@ -127,14 +151,35 @@ test('outboundRunRefs collects predecessor, input_defaults and RunId parameters'
   assert.deepEqual(recDigests([{ role: 'expected', reference: `rec:${DIGEST_R}`, slot: 'slot-input' }, ...subject()]), [DIGEST_R]);
 });
 
+test('caseIdentity keeps pack label/summary; dedupes by projection.id not label', () => {
+  const recompose = recomposeProjection('n/aaa', '990000000000000001');
+  const planA = planProjection('n/aaa', '合成标题相同', 3, 2, '990000000000000001');
+  const planB = planProjection('n/bbb', '合成标题相同', 4, 1, '990000000000000002');
+  assert.equal(caseIdentity(recompose).id, 'n/aaa');
+  assert.equal(caseIdentity(recompose).label, '990000000000000001');
+  assert.equal(caseIdentity(recompose).summary, '');
+  assert.equal(caseIdentity(planA).label, '合成标题相同');
+  assert.match(caseIdentity(planA).summary, /3 步/);
+  // Same title on two plan items must stay two rows when ids differ.
+  const { rows, totals } = buildRoundRows({
+    projections: [planA, planB],
+    conclusionsByItem: new Map(),
+    jobs: [],
+  });
+  assert.equal(rows.length, 2);
+  assert.equal(totals.cases, 2);
+  assert.equal(rows[0]!.label, '合成标题相同');
+  assert.equal(rows[1]!.label, '合成标题相同');
+});
+
 test('buildRoundRows uses itemConclusionParts for wording and structured counts', () => {
-  const one = projection('item-1', '1001', '合成标题甲');
-  const two = projection('item-2', '1002', '合成标题乙');
-  const three = projection('item-3', '1003', '标题含判断错误字样');
-  const four = projection('item-4', '1004', '合成未知');
-  const satisfied = itemResult('item-1', '1001', 'satisfied');
-  const wrong = itemResult('item-2', '1002', 'unsatisfied');
-  const modelOk = itemResult('item-3', '1003', 'satisfied', { model: true, titleInStatement: '含判断错误字样的主张仍正确' });
+  const one = planProjection('item-1', '合成标题甲', 2, 1, '1001');
+  const two = planProjection('item-2', '合成标题乙', 2, 1, '1002');
+  const three = planProjection('item-3', '标题含判断错误字样', 1, 1, '1003');
+  const four = recomposeProjection('item-4', '1004');
+  const satisfied = itemResult('item-1', '合成标题甲', 'satisfied');
+  const wrong = itemResult('item-2', '合成标题乙', 'unsatisfied');
+  const modelOk = itemResult('item-3', '标题含判断错误字样', 'satisfied', { model: true, titleInStatement: '含判断错误字样的主张仍正确' });
   const pending = itemResult('item-4', '1004', 'pending', { titleInStatement: '还含判断正确字样但状态未知' });
   const partsOne = itemConclusionParts(satisfied, one);
   const partsTwo = itemConclusionParts(wrong, two);
@@ -149,8 +194,8 @@ test('buildRoundRows uses itemConclusionParts for wording and structured counts'
   assert.equal(partsFour.status, '未知');
   assert.match(partsThree.text, /判断正确/);
   assert.match(partsThree.text, /判断错误/); // title/statement noise must not drive the count
-  assert.equal(caseIdentity(one).title, '合成标题甲');
-  assert.equal(caseIdentity(one).id, '1001');
+  assert.equal(caseIdentity(one).id, 'item-1');
+  assert.equal(caseIdentity(one).label, '合成标题甲');
 
   const jobs: ExportedJob[] = [{
     job: 'job_1',
@@ -323,4 +368,173 @@ test('rec-only reverse: zero or many owners leaves the anchor unlinked', async (
   assert.ok(missing);
   assert.equal(missing!.unlinked, true);
   assert.equal(missing!.runs.length, 1);
+});
+
+test('collectRoundTree discloses when exportSuccessors is opaque and when subject is missing', async () => {
+  const recompose = runView({ run: RUN_RECOMPOSE, started_at: '2026-11-14T02:00:00.000Z' });
+  const merge = runView({
+    run: RUN_MERGE,
+    started_at: '2026-11-14T04:00:00.000Z',
+    predecessor: RUN_RECOMPOSE,
+  });
+  const catalog = new Map([
+    [RUN_RECOMPOSE, { run: recompose, latest: null, production: null }],
+    [RUN_MERGE, { run: merge, latest: null, production: null }],
+  ]);
+  const opaque = await collectRoundTree({
+    getRun: async (_u: unknown, id: string) => catalog.get(id) ?? null,
+    listRuns: async () => ({ items: [...catalog.values()].map((row) => row.run), next: null }),
+    exportSuccessors: async () => null,
+  } as never, principal as never, RUN_RECOMPOSE);
+  assert.ok(opaque);
+  assert.equal(opaque!.successorsOpaque, true);
+  assert.match(ROUND_SUCCESSORS_OPAQUE, /不能读取后继/);
+
+  const bare = runView({
+    run: RUN_BOOKING,
+    started_at: '2026-11-14T01:00:00.000Z',
+    sources: [{ role: 'hint' as const, reference: src, slot: 'hint' }],
+  });
+  const alone = await collectRoundTree({
+    getRun: async () => ({ run: bare, latest: null, production: null }),
+  } as never, principal as never, RUN_BOOKING);
+  assert.ok(alone);
+  assert.equal(alone!.noSubject, true);
+  assert.deepEqual(alone!.runs.map((row) => row.run), [RUN_BOOKING]);
+  assert.match(ROUND_NO_SUBJECT, /没有绑定同一份来源/);
+});
+
+test('collectRoundTree counts same-key runs without an edge as sameKeyUnlinked', async () => {
+  const a = runView({ run: RUN_RECOMPOSE, started_at: '2026-11-14T02:00:00.000Z' });
+  const b = runView({ run: RUN_R2, started_at: '2026-11-15T02:00:00.000Z' });
+  const tree = await collectRoundTree({
+    getRun: async (_u: unknown, id: string) => id === RUN_RECOMPOSE
+      ? { run: a, latest: null, production: null }
+      : id === RUN_R2
+        ? { run: b, latest: null, production: null }
+        : null,
+    listRuns: async () => ({ items: [b, a], next: null }),
+    exportSuccessors: async () => ({ run: RUN_RECOMPOSE, successors: [] }),
+  } as never, principal as never, RUN_RECOMPOSE);
+  assert.ok(tree);
+  assert.equal(tree!.runs.length, 1);
+  assert.ok(tree!.sameKeyUnlinked >= 1);
+  assert.match(ROUND_SAME_KEY_UNLINKED, /没有衔接边/);
+});
+
+test('device job output is not a run source: sourceForRun alone would miss it', async () => {
+  // Documents the G.1 shape: device_return digest is absent from run sources/item locations.
+  const deviceSha = shaDevice;
+  const runSources: SourceBinding[] = subject();
+  assert.equal(runSources.some((row) => row.reference === `src:${deviceSha}`), false);
+  const job: ExportedJob = {
+    job: 'job_device',
+    verification_run: RUN_MERGE,
+    plan_run: RUN_PLAN,
+    items: ['item-1'],
+    sha256: sha,
+    ended: 'done',
+    outcome: 'effective',
+    frozen: false,
+    result: null,
+    device_return: `src:${deviceSha}`,
+    rows: [{ item: 'item-1', dynamic_terminal: 'pass' }],
+  };
+  assert.equal(job.device_return, `src:${deviceSha}`);
+  // Round rows still surface the link when jobs name device_return.
+  const { rows } = buildRoundRows({
+    projections: [planProjection('item-1', '合成设备行', 1, 1, '1001')],
+    conclusionsByItem: new Map(),
+    jobs: [job],
+  });
+  assert.equal(rows[0]!.deviceSha, deviceSha);
+  assert.equal(rows[0]!.deviceRun, RUN_MERGE);
+});
+
+function devicePageContext(opts: {
+  run: string;
+  sha: string;
+  exportJobs: ExportedJob[] | null;
+  sourceForRun: { bytes: Buffer } | null;
+  source: { bytes: Buffer } | null;
+}): PageContext {
+  return {
+    principal,
+    admin: false,
+    url: new URL(`https://192.0.2.1/console/rounds/device?run=${opts.run}&sha256=${opts.sha}`),
+    chrome: (title: string) => ({
+      title,
+      active: 'tasks' as const,
+      user: { name: 'synthetic', role: '成员', admin: false },
+    }),
+    userName: async () => 'synthetic',
+    deps: {
+      runs: {
+        exportJobs: async () => (opts.exportJobs === null ? null : { run: opts.run, jobs: opts.exportJobs }),
+      },
+      records: {
+        artifacts: {
+          sourceForRun: async () => opts.sourceForRun,
+          source: async () => opts.source,
+        },
+      },
+    },
+  } as unknown as PageContext;
+}
+
+test('roundDevicePage reads job device_return via artifacts.source when sourceForRun is null', async () => {
+  const bytes = Buffer.from('合成设备输出正文\n');
+  const job: ExportedJob = {
+    job: 'job_device',
+    verification_run: RUN_MERGE,
+    plan_run: RUN_PLAN,
+    items: ['item-1'],
+    sha256: sha,
+    ended: 'done',
+    outcome: 'effective',
+    frozen: false,
+    result: null,
+    device_return: `src:${shaDevice}`,
+    rows: null,
+  };
+  // Red before the fallback: sourceForRun null without source → unreadable.
+  const before = await roundDevicePage(devicePageContext({
+    run: RUN_MERGE,
+    sha: shaDevice,
+    exportJobs: [job],
+    sourceForRun: null,
+    source: null,
+  }));
+  assert.equal(before.status, 200);
+  assert.match(before.body.text, new RegExp(ROUND_DEVICE_UNREADABLE));
+
+  const ok = await roundDevicePage(devicePageContext({
+    run: RUN_MERGE,
+    sha: shaDevice,
+    exportJobs: [job],
+    sourceForRun: null,
+    source: { bytes },
+  }));
+  assert.equal(ok.status, 200);
+  assert.match(ok.body.text, /合成设备输出正文/);
+  assert.doesNotMatch(ok.body.text, new RegExp(ROUND_DEVICE_UNREADABLE));
+
+  const forbidden = await roundDevicePage(devicePageContext({
+    run: RUN_MERGE,
+    sha: shaDevice,
+    exportJobs: null,
+    sourceForRun: null,
+    source: { bytes },
+  }));
+  assert.equal(forbidden.status, 200);
+  assert.match(forbidden.body.text, new RegExp(ROUND_JOBS_FORBIDDEN));
+
+  const foreign = await roundDevicePage(devicePageContext({
+    run: RUN_MERGE,
+    sha: '2'.repeat(64),
+    exportJobs: [job],
+    sourceForRun: null,
+    source: { bytes },
+  }));
+  assert.equal(foreign.status, 404);
 });

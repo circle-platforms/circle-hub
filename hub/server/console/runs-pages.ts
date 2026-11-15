@@ -318,7 +318,9 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     [axisUiLabel('trigger'), uiLabelOf('trigger', run.trigger)],
     ['配置者', run.configurer === undefined ? '未记录' : await ctx.userName(run.configurer)],
     ['前驱运行', run.predecessor === undefined ? '无' : link(`/console/runs/${run.predecessor}`, '查看前驱任务')],
-    ['相关任务', link(roundsPath(), '查看相关任务', { run: run.run })],
+    ...(run.sources.some((row) => row.role === 'subject' && row.reference.startsWith('src:'))
+      ? [['相关任务', link(roundsPath(), '查看相关任务', { run: run.run })] as const]
+      : []),
     ['会话', run.session ?? '未记录'],
     ['开始时间', run.started_at],
     ['提交期限', run.submission_due ?? '这次任务未记录提交期限。请从此任务创建新的修订后继续。'],

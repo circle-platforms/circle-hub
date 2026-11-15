@@ -37,12 +37,18 @@ async function readProjection(ctx:EngineContext,admin:Admin,job:RunJob):Promise<
  * engine applies, so a client tool reads the outcome by structure instead of re-reading the device return's prose. Nothing is
  * judged here; the administrative proof record of a job stays out.
  */
-export async function exportedJobs(ctx:EngineContext,run:string):Promise<ExportedJob[]>{
+export async function exportedJobs(ctx:EngineContext,run:string,reservations?:import('../../dispatch/api.ts').RunReservations):Promise<ExportedJob[]>{
   if(!ctx.deps.dispatch)return [];
   const admin=await activeAdmin(ctx);
   if(!admin)return [];
   const out:ExportedJob[]=[];
-  for(const job of await ctx.deps.dispatch.jobs(admin,run)){
+  // When the caller already read every reservation once, pass that snapshot so jobs() does not re-read the whole map.
+  const listed=reservations!==undefined
+    ? await ctx.deps.dispatch.jobs(admin,run,reservations)
+    : ctx.deps.dispatch.reservations
+      ? await ctx.deps.dispatch.jobs(admin,run,await ctx.deps.dispatch.reservations())
+      : await ctx.deps.dispatch.jobs(admin,run);
+  for(const job of listed){
     const report=await readProjection(ctx,admin,job);
     out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,outcome:job.status.outcome,frozen:job.status.frozen,result:job.status.result??null,device_return:job.status.device_return??null,rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
   }

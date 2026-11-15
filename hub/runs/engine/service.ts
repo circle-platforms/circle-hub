@@ -166,17 +166,26 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
         return { run: detail.run, run_reference: recReference(stored.digest), accepted_result_reference: readable ? recReference(selected.digest) : null, result, submission };
       }));
     },
-    exportJobs(user, run) {
+    exportJobs(user, run, options) {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
-        const detail = await getRun(current, user, run);
-        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
-        return { run, jobs: await exportedJobs(current, run) };
+        // Gate with runHeader only (runner/host/pack_space); a full getRun was re-reading every result and submission.
+        const header = await runHeader(current, user, run);
+        if (!header || (user.role !== 'admin' && header.runner !== user.id)) return null;
+        return { run, jobs: await exportedJobs(current, run, options?.reservations) };
+      }));
+    },
+    exportJobReservations(user) {
+      return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
+        if (!current.deps.dispatch?.reservations) return null;
+        // Snapshot stays server-side for pages that fan out exportJobs; not sent as an HTTP body.
+        void user;
+        return current.deps.dispatch.reservations();
       }));
     },
     exportSuccessors(user, run) {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
-        const detail = await getRun(current, user, run);
-        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
+        const header = await runHeader(current, user, run);
+        if (!header || (user.role !== 'admin' && header.runner !== user.id)) return null;
         const visible = (await successorsOf(current.deps.records.store, run)).map((stored) => stored.body).filter((r) => user.role === 'admin' || r.runner === user.id);
         return { run, successors: visible.map((r) => ({ run: r.run, pack: r.pack, started_at: r.started_at, predecessor: r.predecessor ?? null, parameters: r.parameters, sources: (r.sources ?? []).map((source) => ({ slot: source.slot ?? null, reference: source.reference })) })) };
       }));

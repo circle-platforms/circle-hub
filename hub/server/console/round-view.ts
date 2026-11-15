@@ -20,6 +20,8 @@ import { roundDevicePath, roundsPath, runPath } from './routes.ts';
 
 /** Max run-index rows scanned for reverse edges (same bound idea as search.ts RUNS_SCANNED). */
 export const ROUND_RUNS_SCANNED = 300;
+/** Max case rows rendered per page request; more are reached with ?cases_after=. */
+export const ROUND_CASES_PAGE = 100;
 const LIST_PAGE = 100;
 const LINEAGE_STEPS = 1_600;
 const HISTORY = { history: { limit: 1 } as const, requests: 'waiting' as const };
@@ -27,7 +29,10 @@ const HISTORY = { history: { limit: 1 } as const, requests: 'waiting' as const }
 export const ROUND_PAGE_TITLE = '相关任务';
 export const ROUND_EMPTY_CASES = '这些相关任务里还没有可读的原始用例。';
 export const ROUND_PARTIAL_RUNS = '无权限：有相关任务当前账户无权查看，未列入表中。请联系这些任务的执行人或管理员分享。';
-export const ROUND_PARTIAL_SCAN = '部分：相关任务的反向扫描已到上限，未列入的任务可能还在。下一步：从更靠近目标的任务页进入，或请管理员缩小可见任务范围。';
+export const ROUND_PARTIAL_SCAN = '部分：只查了最新的 300 个可见任务，更早的相关任务可能没列出。下一步：从这一组里最新的任务页进入。';
+export const ROUND_SUCCESSORS_OPAQUE = '部分：当前账户不能读取后继任务列表，表中可能缺少更晚的相关任务。下一步：请执行人或管理员打开本页，或为其分享权限。';
+export const ROUND_NO_SUBJECT = '状态未知：这个任务没有绑定同一份来源，无法与其它任务归到一组。下一步：从带有来源绑定的任务页进入。';
+export const ROUND_SAME_KEY_UNLINKED = '部分：同一来源同一构建下还有可见任务，但与当前打开的任务没有衔接边，未列入本表。';
 export const ROUND_UNLINKED = '状态未知：找不到与这个任务衔接的前一步任务（输入里引用的结果在可见任务里没有唯一对应）。下一步：执行人从上一步任务的页面进入本页，或请管理员核对。';
 export const ROUND_NO_CONCLUSION = '状态未知；原因缺资料（还没有可读的核对结果）；下一步由模型提交后重新交给 Hub 检查';
 export const ROUND_NO_DEVICE = '尚未上机验证';
@@ -35,8 +40,8 @@ export const ROUND_DEVICE_PENDING = '设备输出还没有返回';
 export const ROUND_JOBS_FORBIDDEN = '无权限：当前账户不能读取这些任务的上机作业。请联系执行人或管理员。';
 export const ROUND_DEVICE_UNREADABLE = '设备输出不可读';
 export const ROUND_DEVICE_TITLE = '设备输出';
-export const ROUND_DURATION_UNKNOWN = '未知';
 export const ROUND_HUB_NOTE = '失败分析的原因和交付结果在 Circle 客户端生成，Hub 不保存。';
+export const ROUND_CASES_MORE = '部分：原始用例超过一页，下面只列本页。下一步：打开「后一页」。';
 
 const REC_DIGEST = /^rec:([0-9a-f]{64})$/;
 
@@ -59,7 +64,7 @@ export function subjectLabel(sources: readonly SourceBinding[]): string {
   const subject = sources.find((row) => row.role === 'subject' && row.reference.startsWith('src:'));
   if (subject === undefined) return '未记录';
   if (typeof subject.label === 'string' && subject.label.length > 0) return subject.label;
-  return '已绑定来源（摘要折叠）';
+  return '已绑定来源';
 }
 
 /** Same subject bytes + product line + build; pack id is never consulted. */
@@ -89,10 +94,16 @@ export function outboundRunRefs(run: Pick<RunRecordView, 'predecessor' | 'input_
   return [...ids];
 }
 
-/** Display id/title from pack projection strings only (no fields.autoid / case_id / title). */
-export function caseIdentity(item: ItemProjection): { id: string; title: string; label: string } {
-  const title = typeof item.summary === 'string' && item.summary.length > 0 ? item.summary : item.label;
-  return { id: item.label, title, label: item.label };
+/**
+ * Projection display without guessing pack-specific fields (autoid / title live in fields.* and differ by workflow).
+ * Dedup and pairing use projection.id; the table shows label and summary as the pack wrote them.
+ */
+export function caseIdentity(item: ItemProjection): { id: string; label: string; summary: string } {
+  return {
+    id: item.id,
+    label: item.label,
+    summary: typeof item.summary === 'string' ? item.summary : '',
+  };
 }
 
 export function itemsOfResult(result: ValidationResult): ItemResult[] {
@@ -101,7 +112,8 @@ export function itemsOfResult(result: ValidationResult): ItemResult[] {
 
 export interface RoundCaseRow {
   id: string;
-  title: string;
+  label: string;
+  summary: string;
   conclusion: string;
   status: '已确认' | '未确认' | '未知' | null;
   judgment: '正确' | '错误' | null;
@@ -138,20 +150,18 @@ export function buildRoundRows(input: {
     if (seen.has(identity.id)) continue;
     seen.add(identity.id);
     const matched = input.conclusionsByItem.get(projection.id)
-      ?? [...input.conclusionsByItem.entries()].find(([key, value]) => {
-        const other = value.original ? caseIdentity(value.original).id : key;
-        return other === identity.id || value.item.label === identity.id || value.item.item === projection.id;
-      })?.[1];
+      ?? [...input.conclusionsByItem.entries()].find(([, value]) => value.item.item === projection.id)?.[1];
     const parts = matched
       ? itemConclusionParts(matched.item, matched.original ?? projection)
       : { text: ROUND_NO_CONCLUSION, status: '未知' as const, judgment: null };
-    const attempts = input.jobs.filter((job) => job.rows?.some((row) => row.item === projection.id || row.item === identity.id) || job.items.includes(projection.id) || job.items.includes(identity.id));
+    const attempts = input.jobs.filter((job) => job.rows?.some((row) => row.item === projection.id) || job.items.includes(projection.id));
     const latest = [...attempts].reverse().find((job) => typeof job.device_return === 'string' && job.device_return.startsWith('src:'));
     const ref = latest?.device_return ?? null;
     const sha = ref && /^src:([0-9a-f]{64})$/.test(ref) ? ref.slice(4) : null;
     rows.push({
       id: identity.id,
-      title: identity.title,
+      label: identity.label,
+      summary: identity.summary,
       conclusion: parts.text,
       status: parts.status,
       judgment: parts.judgment,
@@ -195,7 +205,8 @@ type RunReaderDetail = {
 type RunReader = {
   getRun(user: PageContext['principal'], run: string, options?: typeof HISTORY): Promise<RunReaderDetail | null>;
   exportSuccessors?(user: PageContext['principal'], run: string): Promise<{ run: string; successors: ExportedSuccessor[] } | null>;
-  exportJobs?(user: PageContext['principal'], run: string): Promise<{ run: string; jobs: ExportedJob[] } | null>;
+  exportJobs?(user: PageContext['principal'], run: string, options?: { reservations?: import('../../dispatch/api.ts').RunReservations }): Promise<{ run: string; jobs: ExportedJob[] } | null>;
+  exportJobReservations?(user: PageContext['principal']): Promise<import('../../dispatch/api.ts').RunReservations | null>;
   listRuns?(user: PageContext['principal'], query?: { limit?: number; cursor?: string | null; requests?: boolean }): Promise<RunListing>;
   /** Point-lookup: validation_result digest → owning run id (or null). */
   runOfResult?(user: PageContext['principal'], digest: string): Promise<string | null>;
@@ -210,6 +221,12 @@ export type RoundTree = {
   unlinked: boolean;
   /** True when the reverse index scan hit ROUND_RUNS_SCANNED. */
   partial: boolean;
+  /** True when exportSuccessors returned null for at least one member (reader is not executor/admin). */
+  successorsOpaque: boolean;
+  /** True when the anchor has no subject src: (cluster of one, disclosed). */
+  noSubject: boolean;
+  /** Count of same-key visible runs seen in the scan that did not join for lack of an edge. */
+  sameKeyUnlinked: number;
   /** getRun calls made while building the tree (for scale tests). */
   getRunCount: number;
 };
@@ -240,6 +257,9 @@ export async function collectRoundTree(
       skipped: 0,
       unlinked: false,
       partial: false,
+      successorsOpaque: false,
+      noSubject: true,
+      sameKeyUnlinked: 0,
       getRunCount,
     };
   }
@@ -250,6 +270,8 @@ export async function collectRoundTree(
   let skipped = 0;
   let steps = 0;
   let partial = false;
+  let successorsOpaque = false;
+  let sameKeyUnlinked = 0;
 
   const admit = async (id: string): Promise<boolean> => {
     if (byId.has(id) || !RunId.safeParse(id).success) return false;
@@ -269,8 +291,13 @@ export async function collectRoundTree(
     const current = byId.get(id);
     if (current === undefined) return;
     for (const ref of outboundRunRefs(current)) await admit(ref);
-    const listed = runs.exportSuccessors ? await runs.exportSuccessors(user, id) : null;
-    for (const successor of listed?.successors ?? []) await admit(successor.run);
+    if (!runs.exportSuccessors) return;
+    const listed = await runs.exportSuccessors(user, id);
+    if (listed === null) {
+      successorsOpaque = true;
+      return;
+    }
+    for (const successor of listed.successors) await admit(successor.run);
   };
 
   while (queue.length && steps < LINEAGE_STEPS) {
@@ -320,7 +347,10 @@ export async function collectRoundTree(
             }
           }
         }
-        if (!joins) continue;
+        if (!joins) {
+          sameKeyUnlinked += 1;
+          continue;
+        }
         if (await admit(header.run)) {
           while (queue.length && steps < LINEAGE_STEPS) {
             steps += 1;
@@ -357,7 +387,7 @@ export async function collectRoundTree(
     }
   }
 
-  return { anchor, runs: ordered, details, skipped, unlinked, partial, getRunCount };
+  return { anchor, runs: ordered, details, skipped, unlinked, partial, successorsOpaque, noSubject: false, sameKeyUnlinked, getRunCount };
 }
 
 type JobsLoad = { jobs: ExportedJob[]; forbidden: boolean };
@@ -366,8 +396,10 @@ async function loadJobs(runs: RunReader, user: PageContext['principal'], tree: r
   if (!runs.exportJobs) return { jobs: [], forbidden: false };
   const out: ExportedJob[] = [];
   let forbidden = false;
+  const reservations = runs.exportJobReservations ? await runs.exportJobReservations(user) : null;
+  const options = reservations !== null && reservations !== undefined ? { reservations } : undefined;
   for (const run of tree) {
-    const listed = await runs.exportJobs(user, run.run);
+    const listed = await runs.exportJobs(user, run.run, options);
     if (listed === null) forbidden = true;
     else out.push(...listed.jobs);
   }
@@ -382,6 +414,7 @@ export async function roundPage(ctx: PageContext): Promise<PageResult> {
     getRun: (user, run, options) => ctx.deps.runs.getRun(user, run, options),
     exportSuccessors: ctx.deps.runs.exportSuccessors?.bind(ctx.deps.runs),
     exportJobs: ctx.deps.runs.exportJobs?.bind(ctx.deps.runs),
+    exportJobReservations: ctx.deps.runs.exportJobReservations?.bind(ctx.deps.runs),
     listRuns: ctx.deps.runs.listRuns.bind(ctx.deps.runs),
     runOfResult: async (_user, digest) => {
       const stored = await ctx.deps.records.store.get(digest);
@@ -396,44 +429,64 @@ export async function roundPage(ctx: PageContext): Promise<PageResult> {
   if (tree === null) return neutralPage(ctx);
 
   const conclusionsByItem = new Map<string, { item: ItemResult; original: ItemProjection | undefined }>();
-  let projections: ItemProjection[] = [];
+  // Union of items across member runs (by projection.id), not「最后一个有条目的运行」.
+  const projectionsById = new Map<string, ItemProjection>();
   for (const run of tree.runs) {
     const detail = tree.details.get(run.run) ?? await ctx.deps.runs.getRun(ctx.principal, run.run, HISTORY);
     if (detail === null) continue;
-    if (detail.run.items.length) projections = detail.run.items;
+    for (const item of detail.run.items) {
+      if (!projectionsById.has(item.id)) projectionsById.set(item.id, item);
+    }
     const result = pickResult(detail);
     if (result?.acceptance === 'accepted') {
       const originals = new Map(detail.run.items.map((item) => [item.id, item]));
       for (const item of itemsOfResult(result)) {
-        conclusionsByItem.set(item.item, { item, original: originals.get(item.item) });
+        if (!conclusionsByItem.has(item.item)) {
+          conclusionsByItem.set(item.item, { item, original: originals.get(item.item) });
+        }
       }
     }
   }
+  const projections = [...projectionsById.values()];
 
   const { jobs, forbidden: jobsForbidden } = await loadJobs(reader, ctx.principal, tree.runs);
-  const { rows, totals } = buildRoundRows({ projections, conclusionsByItem, jobs });
+  const { rows: allRows, totals } = buildRoundRows({ projections, conclusionsByItem, jobs });
   totals.startedAt = tree.runs[0]?.started_at ?? null;
   totals.endedAt = null;
 
-  const head = html`${box({ title: '摘要', hint: ROUND_HUB_NOTE }, html`
+  const after = param(ctx, 'cases_after');
+  let start = 0;
+  if (after !== undefined && after.length > 0) {
+    const idx = allRows.findIndex((row) => row.id === after);
+    start = idx >= 0 ? idx + 1 : 0;
+  }
+  const pageRows = allRows.slice(start, start + ROUND_CASES_PAGE);
+  const nextAfter = start + ROUND_CASES_PAGE < allRows.length ? pageRows[pageRows.length - 1]?.id : undefined;
+  const casesPartial = allRows.length > ROUND_CASES_PAGE;
+
+  const head = html`${box({ title: '摘要' }, html`
+<p class="ch-meta">${ROUND_HUB_NOTE}</p>
 ${kpi('一共', count(totals.cases))}
 ${kpi('已确认正确', count(totals.correct))}
 ${kpi('未确认', count(totals.unconfirmed))}
 ${kpi('错误', count(totals.wrong))}
 ${kpi('未知', count(totals.unknown))}
 ${kpi('上机验证批次数', count(totals.batches))}
-${kpi('用时', ROUND_DURATION_UNKNOWN)}
 `)}
 ${tree.skipped > 0 ? callout('warn', ROUND_PARTIAL_RUNS) : ''}
 ${tree.partial ? callout('info', ROUND_PARTIAL_SCAN) : ''}
+${tree.successorsOpaque ? callout('warn', ROUND_SUCCESSORS_OPAQUE) : ''}
+${tree.noSubject ? callout('unknown', ROUND_NO_SUBJECT) : ''}
+${tree.sameKeyUnlinked > 0 ? callout('info', ROUND_SAME_KEY_UNLINKED) : ''}
 ${tree.unlinked ? callout('unknown', ROUND_UNLINKED) : ''}
 ${jobsForbidden ? callout('warn', ROUND_JOBS_FORBIDDEN) : ''}
+${casesPartial ? callout('info', ROUND_CASES_MORE) : ''}
 ${definitionsBlock(tree)}
 `;
 
-  const tableRows = rows.map((row) => [
-    row.id,
-    row.title,
+  const tableRows = pageRows.map((row) => [
+    row.label,
+    row.summary,
     row.conclusion,
     count(row.deviceAttempts),
     row.deviceRun && row.deviceSha
@@ -445,19 +498,25 @@ ${definitionsBlock(tree)}
           : ROUND_NO_DEVICE,
   ]);
 
+  const pager = nextAfter !== undefined
+    ? html`<p>${link(roundsPath(), '后一页', { run: tree.anchor.run, cases_after: nextAfter })}</p>`
+    : start > 0
+      ? html`<p>${link(roundsPath(), '回到第一页', { run: tree.anchor.run })}</p>`
+      : '';
+
   return {
     status: 200,
     body: page(
       ctx.chrome(ROUND_PAGE_TITLE, {
         active: 'tasks',
         sub: html`${link(runPath(tree.anchor.run), '当前打开的任务')}`,
-        hint: '把同一份来源在同一个构建上的任务串在一起看；每条原始用例一行，结论与模型在 Circle 里看到的一致。',
+        hint: '把同一份来源在同一个构建上、有衔接边的任务串在一起看；每条原始用例一行，结论与模型在 Circle 里看到的一致。',
       }),
       html`${head}${table(
-        ['原始用例 ID', '标题', '结论', '上机验证次数', '设备输出'],
+        ['原始用例', '说明', '结论', '上机验证次数', '设备输出'],
         tableRows,
         ROUND_EMPTY_CASES,
-      )}`,
+      )}${pager}`,
     ),
   };
 }
@@ -480,7 +539,10 @@ export async function roundDevicePage(ctx: PageContext): Promise<PageResult> {
   }
   const allowed = jobs.jobs.some((job) => job.device_return === `src:${sha}`);
   if (!allowed) return neutralPage(ctx);
-  const source = await ctx.deps.records.artifacts.sourceForRun(ctx.principal, sha, runId);
+  // Device returns are job outputs, not run sources (artifacts.sourceForRun only sees snapshot.sources / item locations).
+  // Gate already matched device_return via exportJobs; read bytes the same way run-export's jobOutput does.
+  const source = await ctx.deps.records.artifacts.sourceForRun(ctx.principal, sha, runId)
+    ?? await ctx.deps.records.artifacts.source(ctx.principal, sha);
   if (source === null || source.bytes === null) {
     return {
       status: 200,
