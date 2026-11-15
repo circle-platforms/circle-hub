@@ -51,7 +51,7 @@ test('timeout, disconnect, rejection, inconsistent receipt and unknown states fr
   }
 });
 
-test('an accepted job resumes status reads after restart without a new submission', { timeout: 30000 }, async t => {
+test('an accepted job without frozen request-journal facts remains unknown after restart without retransmission', { timeout: 30000 }, async t => {
   let child: ChildProcess | undefined; let killed = false;
   const c = await setup({ alter: (name, value) => {
     if (name === 'inspect_blob') {
@@ -69,8 +69,10 @@ test('an accepted job resumes status reads after restart without a new submissio
   // for the lock to be free rather than for an amount of time.
   await observationLockFree(c, job);
   const state = await c.service.resume(c.admin, job);
-  assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
+  assert.equal(state.outcome, 'unknown'); assert.equal(state.frozen, true);
+  assert.ok((await c.service.journal.events(job)).some(event=>event.body.detail.phase==='unknown'&&String(event.body.detail.missing_fact).includes('原意图缺少')));
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
+  assert.equal(c.calls.includes('read_blob'),false,'missing frozen facts must not fall back to the old status-only recovery');
 });
 
 test('transient status and result read failures retry only reads and do not turn an accepted submission into unknown', async t => {
