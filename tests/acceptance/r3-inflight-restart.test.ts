@@ -19,6 +19,7 @@ async function journal(t:TestContext,options:Parameters<typeof setupJournal>[0]=
 type Notice={type:string;stage?:string;job?:string;source?:string;sha256?:string;inputs?:string[];response?:string};
 async function child(t:TestContext,c:Context,mode:'dispatch'|'recover',checkpoint?:string){
   const processChild=spawn(process.execPath,[fileURLToPath(new URL('../../hub/dispatch/testing/recovery-worker.ts',import.meta.url))],{stdio:['pipe','pipe','pipe','ipc'],env:{PATH:process.env.PATH}});
+  assert.ok(processChild.stdin&&processChild.stdout&&processChild.stderr);
   const notices:Notice[]=[],events=new EventEmitter();let output='',errors='';
   processChild.stdout.on('data',value=>{output+=value;});processChild.stderr.on('data',value=>{errors+=value;});
   processChild.on('message',message=>{notices.push(message as Notice);events.emit('notice');});
