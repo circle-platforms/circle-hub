@@ -107,19 +107,23 @@ test('the client skill and the closing procedure carry the reference rules on pa
     '要跑很久的设备命令，在那一步给足读取时间，秒数不超过测试环境上限',
   ]) {
     assert.ok(writer.includes(phrase), phrase);
-    assert.ok(renderedBrief.includes(phrase), phrase);
+    assert.ok(writerRole.body.includes(phrase), phrase);
+    assert.ok(closing.includes(phrase), phrase);
   }
+  assert.ok(renderedBrief.includes('compile-writer'));
+  assert.ok(renderedBrief.includes("--file 'plans/1.json'"));
+  assert.ok(!renderedBrief.includes(writerRole.body), 'named role rules are installed once, while task inputs carry the current identity');
   assert.ok(!skill.includes('纯描述判断') && !writer.includes('纯描述判断'), 'the runner has no judgement by description: a sentence in text is searched for word by word');
   for (const phrase of [
     '设备输出包含执行器规则声明的执行失败原话时',
-    '问题在这条自动化用例自己的命令顺序',
+    '不单凭它判定原因属于模型或设备',
     '先确认上次修改已进本次自动化用例 Excel；已经改了而同一句设备输出又出现，就换解释',
     '重新编写要保住原始用例的范围和每一项期望',
     'submit-plans 会跳过本次排除的原始用例，不用复制或改写文件',
     '说明设备名字和哪些清理没做，残留没核清之前不上机验证下一份自动化用例 Excel',
     '原始用例要的取值被手册排除时，写原始用例的问题，不写设备的问题',
-    '只有设备的问题有对应原句和设备输出，或原始用例与手册不一致，才可提前写结论',
-    '原始用例与手册不一致且使用者尚未决定的，先排除',
+    '报告存在不意味着未知条目必须提前停止编写',
+    'parameters.exclude 排除尚未决定的原始用例',
     'author_conflict 仅在原始用例与手册不一致时填写',
     '{"author":"原始用例原句","manual":"手册原话","reference":"<下载文件中的手册引用>"}',
     '不论编写几轮、是否上机，均可等待作者或使用者决定，不再为它上机',
