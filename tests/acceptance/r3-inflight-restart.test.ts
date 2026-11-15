@@ -80,14 +80,14 @@ test('R3-2 certified not_started recovery permits exactly one new ready attempt 
   original.state='not_started';original.touched=false;delete original.key;
   const worker=await recover(t,c,job);
   assert.equal((await completed(c,job)).outcome,'proven_not_executed');
-  assert.equal(sends(c),1,'automatic recovery itself submits neither the old request nor a new request');
+  const recoveredSends=sends(c);assert.equal(recoveredSends,1,'automatic recovery itself submits neither the old request nor a new request');
   await worker.close();
   let starts=0;const dispatch=c.service.dispatchAccepted.bind(c.service);
   c.service.dispatchAccepted=(...args)=>{starts++;return dispatch(...args);};
   const acquired=c.calls.filter(name=>name==='open_slot').length;
   const notes=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
   await eventual(async()=>sends(c),count=>count===2);
-  assert.equal(starts,1,'one ready caller resubmission schedules the existing unified retriable path once');
+  const retrySends=sends(c);assert.equal(starts,1,'one ready caller resubmission schedules the existing unified retriable path once');
   const requests=c.endpoint.calls.filter(call=>call.params.name==='send_blob').map(call=>(call.params.arguments as Record<string,unknown>).request);
   assert.equal(requests.length,2);assert.equal(requests[0],originalRequest);assert.notEqual(requests[1],originalRequest);
   assert.equal(syntheticLedger.size,2);assert.equal(syntheticLedger.get(String(requests[1]))?.state,'started','new attempt is not forced into the first request fixture outcome');
@@ -100,6 +100,7 @@ test('R3-2 certified not_started recovery permits exactly one new ready attempt 
   assert.ok(reread.some(note=>note.job===newAttempt.job));assert.equal(starts,1);
   assert.equal(sends(c),2,'subsequent caller resubmission reads progress instead of adding another submit');
   assert.equal(c.calls.filter(name=>name==='open_slot').length,acquired+1);
+  t.diagnostic(JSON.stringify({scenario:'R3-2',recovery_submits:recoveredSends,after_ready_submits:retrySends,after_reread_submits:sends(c),distinct_requests:new Set(requests).size,request_changed:requests[0]!==requests[1],previous_note:notes.find(note=>note.job===job)!.text,new_attempt_note:newAttempt.text,automatic_starts:starts}));
 });
 
 test('R3-3 original started request with lost reply is recovered automatically, never manually resumed',{timeout:60000},async t=>{
