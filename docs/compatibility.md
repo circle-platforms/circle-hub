@@ -52,6 +52,8 @@
 
 ## 历史
 
+- 2026-11-16：`plumb` 技能包推进至 `1.0.1`，只改请求示例并新增示例测试；`plumb-client` 模块代码、`tools/plumb.ts` 与 `SKILL.md` 不变，`1.0.0` 已发布的字节不动。`examples/match-single-cmd.json` 把候选命令放进顶层 `command`（`match` 类任务的请求只在 `state` 文字里写候选命令时，Plumb 网关以 HTTP 400 拒绝，要求候选命令在 `document` 或 `state.command`）；`examples/sequence-fidelity.json` 补 `step_n: 2`，与 `state` 里的 `[当前作者步骤 2]` 一致（网关用 `step_n` 写场景保真任务的指令，缺省按 1）。新增 `examples.test.ts`，按网关的请求形状规则核对 `examples/` 下每个示例。未发布候选 `case-compile@3.21.1` 的 `embeds` 同步为 `plumb@1.0.1`，内嵌的模块镜像字节与宿主版本不变；此批未发布、未部署。
+
 - 2026-11-16：T6 在 `hub-next-7` 整合 T5 守卫裁定、Hub 答复去重/按状态维护/同租约版本复用/可读名字提示和会话重放工具。守卫以 Circle 1.18 `PreToolUse` 协议返回，保留静态双引号与工作目录文件删除裁定；命名文档提示和结构化选项共用核验可读名单及覆盖范围。`case-compile@3.21.1`、`plumb@1.0.0` 和其余 T2 包清单不变；未发布、未部署。
 
 - 2026-11-16：新增本机 `replay-circle.ts capture|inspect|run|compare` 和私有 `circle-replay-source@1` 回放格式；首版仅适配明确指定且摘要匹配的 Circle 1.17.0 Harness，不连接真实模型、Hub 或业务系统。可选测试变量 `CIRCLE_HUB_REPLAY_CIRCLE_APP` 指定已安装应用，缺失时集成测试明确跳过；真实材料只保存在 Git 外。

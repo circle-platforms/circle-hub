@@ -1,4 +1,5 @@
 {
   "task": "single_cmd_judge",
+  "command": "ip address 192.0.2.10/24",
   "state": "[已执行的步骤]\n1. configure terminal -> interface eth0\n[当前步骤]\n步骤意图: 配置接口 IPv4 地址为 192.0.2.10/24\n候选命令: ip address 192.0.2.10/24\n命令说明: interface 模式下设置接口主 IPv4 地址与前缀"
 }
