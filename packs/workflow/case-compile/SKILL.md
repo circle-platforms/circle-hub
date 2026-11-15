@@ -7,7 +7,7 @@ description: 把原始用例写成自动化用例，交给 Hub 核对，生成�
 
 原始用例先做用例重组，再做脚本编写、脚本合并、上机验证和失败分析。模型写自动化用例，Hub 核对并重算，不生成内容、不调用模型。
 
-接到使用者范围说明时，主代理须先在工作目录写入 `scope.md`（首行标明 `# 使用者原话，由主会话记录`，正文逐字抄录范围原话，后续变更也逐字追加，不改写或缩减；若一开始只点做部分用例，从首次 `recompose` 起即传同一 `parameters.scope`，`scope.md` 与 `parameters.scope.words` 用同一原话且首次开运行时定死）；若单条用例范围不同，可用 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只向子代理传入全局原文与本案分节；未写 `scope.md` 不得派发任何子代理。各阶段派发子代理前，**统一且只用** `task-brief.ts` 把完整任务说明写入 `--task-file <任务文件路径>`，再把标准输出那段极短派发提示原样传给 `task`（`subagent_type="general-purpose"`）的 `description` 参数，不把完整任务说明重打进对话、不删改或手写简报：
+接到使用者范围说明时，主代理须先在工作目录写入 `scope.md`（首行标明 `# 使用者原话，由主会话记录`，正文逐字抄录范围原话，后续变更也逐字追加，不改写或缩减；若一开始只点做部分用例，从首次 `recompose` 起即传同一 `parameters.scope`，`scope.md` 与 `parameters.scope.words` 用同一原话且首次开运行时定死）；若单条用例范围不同，可用 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只向子代理传入全局原文与本案分节；未写 `scope.md` 不得派发任何子代理。各阶段派发子代理前，**统一且只用** `task-brief.ts` 把完整任务说明写入 `--task-file <任务文件路径>`，再把标准输出那段极短派发提示原样传给 `task`（`subagent_type` 按该提示传入对应的 `case-compile:compile-*`）的 `description` 参数，不把完整任务说明重打进对话、不删改或手写简报：
 
 ```sh
 node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标路径> --task-file <任务文件路径> [--scope scope.md] [--note '<补充>'] [--round <轮次> --run <运行目录> --item <条目JSON> --prior-plans <路径...> --prior-returns <目录...> --prior-answers <路径...> --prior-notes <路径...>|--brief-json <结构简报JSON>]
@@ -27,7 +27,7 @@ node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保�
 
 先把资料整份下载到工作目录，再读每条原始用例及对应文件。手册和命令树在本地读和搜，引用照抄，不逐条、逐页读 Hub。每条原始用例对应的 `items/<序号>.json` 与 `briefs/<序号>.md` 列有命令、参数约束、配置恢复方法、同级命令写法与待填自动化用例。派发子代理前先 `ls` 核对真实文件名（总数 `<10` 条时为 `0.md`、`0.json` 而非 `00.md`），确认 `download-run` / 核对目录或返回文件落盘后再调 `task-brief.ts` 与 `task`；未写完 `plans/*.json` 禁跑 `fidelity-plumb.ts` / `fidelity-brief.ts` 或派发下游。
 
-一条原始用例一个子代理，同时派出：装了 `case-writers` 扩展用 `write_case_plans`；否则每条跑 `tools/task-brief.ts --role '脚本编写' --task-file <文件>` 写盘并将短提示原样传参，**在同一条消息里以前台方式并列多个 `task` 调用（`subagent_type="general-purpose"`，严禁用 `background`）**，不合并用例，**每批最多 6 个**，失败或超时的条目单独重派、不整批重来。单条编写、清理分工（存盘等自动清理禁入 `cleanup:true`）、`adapted` 不是步骤白名单（白名单外的前置须补 `sources.states` 来源或手册/示例前置，附 `precondition_source` 引文与配对逆清理，不改“前置不存在”测试）与语法由 `task-brief.ts` 注入；受限结构在 `<技能目录>/slots.schema.json`，示例 `<技能目录>/examples/submit-result.json`，分块 `<技能目录>/tables/blocks-format.json`；只在答案会改变做法、资料里又查不到时问使用者，设备的问题还是原始用例的问题，需要使用者决定，能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
+一条原始用例一个子代理，同时派出：装了 `case-writers` 扩展用 `write_case_plans`；否则每条跑 `tools/task-brief.ts --role '脚本编写' --task-file <文件>` 写盘并将短提示原样传参，**在同一条消息里以前台方式并列多个 `task` 调用（`subagent_type="case-compile:compile-writer"`，严禁用 `background`）**，不合并用例，**每批最多 6 个**，失败或超时的条目单独重派、不整批重来。单条编写、清理分工（存盘等自动清理禁入 `cleanup:true`）、`adapted` 不是步骤白名单（白名单外的前置须补 `sources.states` 来源或手册/示例前置，附 `precondition_source` 引文与配对逆清理，不改“前置不存在”测试）与语法由 `task-brief.ts` 注入；受限结构在 `<技能目录>/slots.schema.json`，示例 `<技能目录>/examples/submit-result.json`，分块 `<技能目录>/tables/blocks-format.json`；只在答案会改变做法、资料里又查不到时问使用者，设备的问题还是原始用例的问题，需要使用者决定，能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 
 每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，缺资料的原始用例先排除、其余继续。只读自检单个计划或目录跑 `tools/check-plan.ts`。
 

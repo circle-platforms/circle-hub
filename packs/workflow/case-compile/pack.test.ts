@@ -23,7 +23,7 @@ test('version 2.0 manifest lists exactly the published files and excludes develo
   assert.ok(files.includes('functions/subagent-roles.ts'));
   assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(files.includes('tools/task-brief.ts'));
-  assert.ok(files.includes('tools/install-agents.ts'));
+  assert.ok(!files.includes('tools/install-agents.ts'));
   assert.ok(files.includes('tools/workspace-path.ts'));
   for (const agent of ['compile-recomposer.md', 'compile-writer.md', 'compile-fidelity.md', 'compile-attributor.md']) {
     assert.ok(files.includes(`agents/${agent}`), agent);
@@ -90,7 +90,7 @@ test('the client skill and the closing procedure carry the reference rules on pa
     caseRef: 'case-1',
     briefPath: 'briefs/1.md',
     outPath: 'plans/1.json',
-    skillDir: '<技能目录>',
+    skillDir: '/synthetic/skills/case-compile',
     scopeText: '全部用例',
   });
   for (const phrase of [
@@ -144,11 +144,12 @@ test('the recompose skill raises an author step the manual excludes to the user 
   ]) assert.ok(recompose.includes(phrase), phrase);
 });
 
-test('the client skill dispatches general-purpose subagents via task-brief and scope.md while role specs keep writer rules', () => {
+test('the client skill dispatches case-compile:compile-* subagents via task-brief and scope.md while role specs keep writer rules', () => {
   const skill = read('SKILL.md'), writer = read('agents/compile-writer.md');
   assert.ok(skill.includes('scope.md'));
   assert.ok(skill.includes('task-brief.ts'));
-  assert.ok(skill.includes('general-purpose'));
+  assert.ok(skill.includes('case-compile:compile-writer'));
+  assert.ok(!skill.includes('general-purpose'));
   assert.ok(skill.includes('装进当前主目录的 `skills` 目录'));
   assert.ok(skill.includes('前台方式并列多个 `task`'));
   assert.ok(skill.includes('严禁用 `background`'));
@@ -187,6 +188,7 @@ test('bundled subagent definitions match single-source role specs and exclude mo
     assert.deepEqual(meta.get('tools')?.split(',').map((v) => v.trim()), expected[role.agentName], role.agentName);
     assert.ok(!role.tools.includes('question') && !role.tools.includes('task'), role.agentName);
     assert.ok(match[2].includes('本子代理只承担'), role.agentName);
+    assert.ok(!raw.includes('<技能目录>'), `${role.agentName}: bundled agent must not contain <技能目录>`);
   }
 });
 test('the preserved undeclared example still seeds the queried record, asserts mechanically and cleans up in reverse', () => {
@@ -321,8 +323,9 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
   assert.ok(attributor.includes('严禁调用'), 'attributor must ban execute even if exposed');
   assert.ok(!writer.includes('严禁调用 execute'), 'writer must keep check-plan.ts execute permission');
   assert.ok(!fidelityAgent.includes('严禁调用 execute'), 'fidelity must keep check-plan.ts execute permission');
-  assert.ok(writer.includes('node <技能目录>/tools/check-plan.ts --file'));
-  assert.ok(fidelityAgent.includes('node <技能目录>/tools/check-plan.ts --file'));
+  assert.ok(writer.includes('check-plan.ts --file'));
+  assert.ok(fidelityAgent.includes('check-plan.ts --file'));
+  assert.ok(!writer.includes('<技能目录>') && !fidelityAgent.includes('<技能目录>'));
 
   // fidelity.md aligned with task-brief.ts (removes outdated manual multi-file prompt)
   assert.ok(!fidelityDoc.includes('核对这些自动化用例是否改掉原始用例的场景：<文件路径，逐个列出>'));

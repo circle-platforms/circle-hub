@@ -12,6 +12,19 @@ import { wrapProseLine } from './text.ts';
 
 export type SubagentRoleKey = 'recompose' | 'plan' | 'fidelity' | 'attribute';
 
+export const PACK_ID = 'case-compile';
+
+export interface RoleReferenceFile {
+  readonly label: string;
+  readonly relPath: string;
+}
+
+export interface ResolvedRoleReference {
+  readonly label: string;
+  readonly relPath: string;
+  readonly fullPath: string;
+}
+
 export interface SubagentRoleSpec {
   key: SubagentRoleKey;
   stageLabel: string;
@@ -19,7 +32,17 @@ export interface SubagentRoleSpec {
   description: string;
   tools: readonly string[];
   forbiddenTools: readonly string[];
+  referenceFiles: readonly RoleReferenceFile[];
   body: string;
+}
+
+export function subagentTypeFor(role: Pick<SubagentRoleSpec, 'agentName'>): string {
+  return `${PACK_ID}:${role.agentName}`;
+}
+
+export function resolveSkillReferencePath(skillDir: string, relPath: string): string {
+  const base = skillDir.endsWith('/') ? skillDir.slice(0, -1) : skillDir;
+  return `${base}/${relPath}`;
 }
 
 export interface TaskBriefInput {
@@ -28,6 +51,7 @@ export interface TaskBriefInput {
   briefPath: string;
   outPath: string;
   skillDir: string;
+  resolvedReferences?: readonly ResolvedRoleReference[];
   scopeText: string;
   note?: string;
   round?: number;
@@ -37,8 +61,6 @@ export interface TaskBriefInput {
   unrecordedAttribution?: PriorAttributionItem | null;
   maxChars?: number;
 }
-
-const SKILL_DIR_PLACEHOLDER = '<技能目录>';
 
 function toolUsageBoundary(opts: {
   hasEdit: boolean;
@@ -79,12 +101,15 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
       '把下载到本地的单条或整批原始用例重组为可交付编写的 JSON 记录（不含测试环境具体 IP），记录缺口与作者-手册不一致。在 recompose 阶段主代理完成下载运行资料后按名派发。',
     tools: ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'grep'],
     forbiddenTools: ['execute', 'question', 'task', 'Hub MCP', 'test-bed'],
+    referenceFiles: [
+      { label: '重组精简格式规范', relPath: 'tables/recompose-format.json' },
+    ],
     body: `本子代理只承担脑图用例重组（recompose）单条或指定范围记录的整理职责，不执行父会话提示词中与脚本编写、保真核对、上机验证、环境预订或 Hub 交互相关的任何动作。
 
 ## 固定执行边界
-1. 路径限制：文件工具限工作目录相对路径（\`.\`）与只读 \`<技能目录>\`；禁止读写 \`/tmp\` 或工作目录之外的路径。${toolUsageBoundary({ hasEdit: true, hasGrep: true, hasExecute: false })}
+1. 路径限制：文件工具限工作目录相对路径（\`.\`）与本次任务文件列出的只读技能目录；禁止读写 \`/tmp\` 或工作目录之外的路径。${toolUsageBoundary({ hasEdit: true, hasGrep: true, hasExecute: false })}
 2. 不接触 Hub、令牌与测试环境：不调用任何 Hub 工具、\`test-bed\`、\`question\` 或交付工具，不读取或写入令牌，也不预订或释放测试环境。需要询问使用者的条目，写入本条结果的 \`states\` / \`unknowns\` 并交由主代理汇总后统一发问。
-3. 形状参照：输出 JSON **只写精简格式**（参照主技能 \`recompose/SKILL.md\` 与 \`<技能目录>/tables/recompose-format.json\`），顶层仅允许 \`item\`、\`method\`（必填 \`{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"}\`）及可选 \`slots\`/\`states\`/\`adapted\`/\`concretizations\`/\`unknowns\`；**严禁写**完整记录结构的 \`schema\`/\`case\`/\`contract\`/\`atoms\`/\`expectation_slots\`/\`coverage\`/\`ledgers\`/\`handling\`（\`submit-records.ts\` 会自动补齐外层结构），严格写到任务指定的路径。
+3. 形状参照：输出 JSON **只写精简格式**（参照主技能 \`recompose/SKILL.md\` 与本次任务文件「技能目录与参考文件路径」给出的 \`tables/recompose-format.json\` 路径），顶层仅允许 \`item\`、\`method\`（必填 \`{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"}\`）及可选 \`slots\`/\`states\`/\`adapted\`/\`concretizations\`/\`unknowns\`；**严禁写**完整记录结构的 \`schema\`/\`case\`/\`contract\`/\`atoms\`/\`expectation_slots\`/\`coverage\`/\`ledgers\`/\`handling\`（\`submit-records.ts\` 会自动补齐外层结构），严格写到任务指定的路径。
 
 ## 内容铁律
 1. 原文步骤与期望不重写、不删减、不替换作者的被测对象、被测动作或边界条件，也不凭空增设无来源的新测试目标；等价改写或补全须写明 \`equivalence_reason\` 与 \`equivalence_refs\`。
@@ -103,17 +128,24 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
       '读取一条原始用例的下载资料与编写简报，在工作目录写出唯一对应的自动化用例 JSON 并用 check-plan.ts 本地自检。在 case-compile 脚本编写或返工阶段由主代理或 case-writers 按条派发。',
     tools: ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'grep', 'execute'],
     forbiddenTools: ['question', 'task', 'Hub MCP', 'test-bed', '未列出的其它命令', 'node -e'],
+    referenceFiles: [
+      { label: '计划 slots 结构 schema', relPath: 'slots.schema.json' },
+      { label: '提交示例', relPath: 'examples/submit-result.json' },
+      { label: '分块结构规范', relPath: 'tables/blocks-format.json' },
+      { label: '返工与报告口径', relPath: 'tools/delivery.md' },
+      { label: '计划本地自检工具', relPath: 'tools/check-plan.ts' },
+    ],
     body: `本子代理只承担单条自动化用例（plan JSON）的编写与本地只读校验职责，不执行父会话提示词中用例重组、场景保真核对、提交 Hub、生成自动化用例 Excel、环境预订/释放或询问使用者的任何动作。
 
 ## 固定本地执行规则
-1. 路径边界：文件工具仅限工作目录相对路径（\`.\`，禁止 \`/tmp\` 或工作目录之外路径）及只读 \`<技能目录>\`。只写任务书指定的目标 \`.json\` 一份文件。
-2. 形状与参考文件位置：\`slots.schema.json\` 与 \`examples/submit-result.json\` 均位于 \`<技能目录>\` 根目录（不在 \`tables/\` 下）；分块结构规范位于 \`<技能目录>/tables/blocks-format.json\`；返工与报告口径参考 \`<技能目录>/tools/delivery.md\`。
+1. 路径边界：文件工具仅限工作目录相对路径（\`.\`，禁止 \`/tmp\` 或工作目录之外路径）及本次任务文件列出的只读技能目录。只写任务书指定的目标 \`.json\` 一份文件。
+2. 形状与参考文件位置：\`slots.schema.json\` 与 \`examples/submit-result.json\` 均位于技能根目录（不在 \`tables/\` 下）；分块结构规范位于 \`tables/blocks-format.json\`；返工与报告口径参考 \`tools/delivery.md\`；上述文件的真实路径见本次任务文件「技能目录与参考文件路径」一节。
 3. ${toolUsageBoundary({
       hasEdit: true,
       hasGrep: true,
       hasExecute: true,
       executeRule:
-        '`execute` 唯一允许形式：单行 `node <技能目录>/tools/check-plan.ts --file <计划JSON相对路径>`（空格隔开选项与值，禁止 `=`）；严禁通过 `execute` 运行 `ls`/`cat`/`wc`/`grep`/`find`/`mkdir`/`cp`/`mv`/`rm`/`python3`/`node -e` 或 `task-brief.ts`。',
+        '`execute` 唯一允许形式：按本次任务文件「技能目录与参考文件路径」给出的 `check-plan.ts --file <计划JSON相对路径>` 单行 `node` 自检命令执行（选项与值空格隔开，禁止 `=`）；严禁通过 `execute` 运行 `ls`/`cat`/`wc`/`grep`/`find`/`mkdir`/`cp`/`mv`/`rm`/`python3`/`node -e` 或 `task-brief.ts`。',
     })}
 4. 不碰令牌、不调 Hub、不调 \`test-bed\`；子代理不问使用者：定不了的问题或资料缺口按规则写进计划的 \`unmet\`/\`missing\`，在最终回复写给主代理的报告。
 
@@ -164,7 +196,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}；receipt/case_id 取 fields.recomposition；quote 逐字等于对应原始期望；无对应判断记未知不省略；新增声明引文用 Hub 已确定声明且 quote.text 逐字复制
 \`\`\`
 
-写完（或返工改完）后，若 briefs/<序号>.md 含 plumb_candidates（status=未确认、decided_by=模型）仅作检索起步且须以锁定命令树与手册参数为准；必须运行 \`node <技能目录>/tools/check-plan.ts --file <目标计划相对路径>\`，确认 \`ok: true\` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项；主会话随后走 cmd-verify-plumb.ts 与 fidelity-plumb.ts 复核）。`,
+写完（或返工改完）后，若 briefs/<序号>.md 含 plumb_candidates（status=未确认、decided_by=模型）仅作检索起步且须以锁定命令树与手册参数为准；必须运行本次任务文件「技能目录与参考文件路径」给出的 \`check-plan.ts --file <目标计划相对路径>\` 命令，确认 \`ok: true\` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项；主会话随后走 cmd-verify-plumb.ts 与 fidelity-plumb.ts 复核）。`,
   },
   {
     key: 'fidelity',
@@ -174,6 +206,9 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
       '场景保真独立审计子代理。只读 fidelity-brief.ts 产出的 .brief.json，严格按文件内置 rules 独立判断是否改掉原始用例场景，并把结果写回同名 .verdict.json。',
     tools: ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'execute'],
     forbiddenTools: ['grep', 'question', 'task', 'Hub MCP', 'test-bed', '未列出的其它命令', 'node -e'],
+    referenceFiles: [
+      { label: '保真判断本地自检工具', relPath: 'tools/check-plan.ts' },
+    ],
     body: `本子代理只承担场景保真独立审计职责，严格隔离于脚本编写思路、设备输出、运行报告与外部手册上下文，不执行父会话提示词中与编写、提交、Excel 生成或上机验证相关的任何动作。
 
 ## 固定执行规则与信息隔离
@@ -185,7 +220,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
       hasGrep: false,
       hasExecute: true,
       executeRule:
-        '`execute` 唯一允许形式：写入后可运行 `node <技能目录>/tools/check-plan.ts --file <verdict相对路径> --brief <brief相对路径>` 验证 JSON 语法、字段结构与摘要一致；严禁通过 `execute` 运行 `ls`/`wc`/`grep`/`cp`/`node -e` 或 `task-brief.ts`。',
+        '`execute` 唯一允许形式：写入后按本次任务文件「技能目录与参考文件路径」给出的 `check-plan.ts --file <verdict相对路径> --brief <brief相对路径>` 命令验证 JSON 语法、字段结构与摘要一致；严禁通过 `execute` 运行 `ls`/`wc`/`grep`/`cp`/`node -e` 或 `task-brief.ts`。',
     })}
 5. 不读取或写入令牌、不预订或释放测试环境、不询问使用者、不调 Hub。完成后仅回复写入的 \`.verdict.json\` 相对路径列表，不展开无关说明。`,
   },
@@ -197,13 +232,16 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
       '失败分析专用子代理。读取单条用例最后一次设备输出、执行拒绝信息与同构建手册，按固定排错层序给出标为未确认的失败分析结论与修复方向。',
     tools: ['read_file', 'write_file', 'ls', 'glob', 'grep'],
     forbiddenTools: ['execute', 'question', 'task', 'Hub MCP', 'test-bed'],
+    referenceFiles: [
+      { label: '返工与交付排错说明', relPath: 'tools/delivery.md' },
+    ],
     body: `本子代理只承担上机失败原因定位与返工方向建议职责，不修改任何计划文件、不读取或写入令牌、不调 Hub、不预订或释放测试环境预订、不向使用者提问。
 
 ## 固定执行规则
-1. 所有文件读取与结果写入均使用工作目录相对路径（\`.\`，禁 \`/tmp\`）与只读 \`<技能目录>\`。${toolUsageBoundary({ hasEdit: false, hasGrep: true, hasExecute: false })}
+1. 所有文件读取与结果写入均使用工作目录相对路径（\`.\`，禁 \`/tmp\`）与本次任务文件列出的只读技能目录。${toolUsageBoundary({ hasEdit: false, hasGrep: true, hasExecute: false })}
 2. 禁止抄写旧值或编造设备输出：引用的设备报错、命令或手册条款必须逐字复制自本次下载的返回文件与锁定 \`knowledge/\`，并附来源路径或引用。读取单条失败证据时，必须同时检查返还目录下的 \`index.json\`（\`execution_refused\`、\`syntax_rejected\`）、逐条设备会话原始文本（如 \`apv_*.txt\` 等终端交互记录）以及框架日志 \`log.txt\`（\`log.txt\` 只记下发命令与框架层超时/异常，部分 CLI 拒绝只出现在会话记录与 \`index.json\`，且超长会话开头可能被截断，须三者互校）。
 
-## 强制分析层序（对照 \`<技能目录>/tools/delivery.md\` 与主技能第 5 节）
+## 强制分析层序（对照本次任务文件列出的 \`tools/delivery.md\` 与主技能第 5 节）
 1. 先查 \`syntax_rejected\`（设备用脱字符 \`^\` 指出命令中的词）：此时命令尚未执行，优先核对该命令在当前设备提示符下同构建 \`knowledge/\` 中的完整语法或参数，先修命令写法/下发方法；此时严禁给出 \`defect_candidate\` 或 \`author_conflict\`。
 2. 再查 \`execution_refused\`、会话终端记录与执行器规则标明的命令失败原话：属于本条自动化用例自己的命令顺序、前置未生效或取值问题（例如先查前置创建命令是否同样失败）。
 3. 再核对运行构建一致性（\`run.json\` 锁定构建与实际设备返回版本）、配置是否真正生效、同构建手册跨章前置与配置示例（含本端与对端对称配对配置），以及多个原始用例的共同症状。再次失败时须确认上次修改已进入本次 Excel；已改而同一句设备输出仍出现，即证伪上一轮假设并必须更换不同机制/命令形式。当设备报错明确点出所缺对象、参数或条件，且同构建锁定手册正文或配置示例存在尚未试过的可行假设时：尚有轮次时，下一轮返工必须优先测试该假设，不得借“缺资料”或“剩一次机会”拦住不试；轮次已用完时不建议再开轮，把该假设与试法写进 remedy 交使用者决定。只有在锁定手册正文、示例、命令树与环境声明均没有任何来源支持任何未试假设时，才可归为“缺资料”。
@@ -226,6 +264,7 @@ const ROLE_ALIAS_MAP: ReadonlyMap<string, SubagentRoleSpec> = new Map(
     [spec.key, spec],
     [spec.stageLabel, spec],
     [spec.agentName, spec],
+    [subagentTypeFor(spec), spec],
   ]),
 );
 
@@ -233,7 +272,7 @@ export function resolveSubagentRole(roleArg: string): SubagentRoleSpec | null {
   return ROLE_ALIAS_MAP.get(roleArg.trim()) ?? null;
 }
 
-/** Renders a bundled `agents/<name>.md` subagent definition file (no `model` key). */
+/** Renders a bundled `agents/<name>.md` subagent definition file (no `model` or `<技能目录>` placeholder). */
 export function renderAgentDefinition(role: SubagentRoleSpec): string {
   return [
     '---',
@@ -246,12 +285,9 @@ export function renderAgentDefinition(role: SubagentRoleSpec): string {
   ].join('\n');
 }
 
-export const CIRCLE_GENERAL_PURPOSE_NOTICE =
-  '说明：这个子代理的系统提示里有一段关于「生成代理配置、输出 JSON」的内容，是 Circle 1.17.0 的已知缺陷，与本任务无关。本任务只做下面写的事，输出只按本任务说明。';
-
 /**
- * Renders a self-contained `description` string for Circle's built-in `general-purpose`
- * subagent (`task` tool), substituting the installed `<技能目录>` path and embedding
+ * Renders a self-contained task brief for a Circle pack subagent (`case-compile:compile-*`),
+ * embedding verified reference file paths inside the installed skill directory and
  * the verbatim user scope recorded by the main session.
  */
 export function renderTaskBrief(input: TaskBriefInput): string {
@@ -285,28 +321,46 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或机械规则/失败分析历史，禁止无历史重派。请补充 --prior-plans、--prior-returns 或 --prior-answers 后重调`);
   }
 
-  const resolvedBody = role.body.split(SKILL_DIR_PLACEHOLDER).join(skillDir);
+  const resolvedReferences =
+    input.resolvedReferences ??
+    role.referenceFiles.map((ref) => ({
+      label: ref.label,
+      relPath: ref.relPath,
+      fullPath: resolveSkillReferencePath(skillDir, ref.relPath),
+    }));
+  const checkPlanRef = resolvedReferences.find((ref) => ref.relPath === 'tools/check-plan.ts');
   const scopeBlock = scopeText.replace(/\r\n/g, '\n').replace(/\n+$/, '');
   const trimmedNote = note?.trim() ? note.trim() : '无';
+  const subagentType = subagentTypeFor(role);
 
   const modeSummary = compileBrief
     ? `（模式：${BRIEF_MODE_LABELS[compileBrief.task.mode] ?? compileBrief.task.mode}（\`${compileBrief.task.mode}\`）；结构化简报已在内存中拼入）`
     : '';
+  const referenceLines = [
+    `- 技能目录（只读）：${skillDir}`,
+    ...resolvedReferences.map((ref) => `- ${ref.label}（\`${ref.relPath}\`）：${ref.fullPath}`),
+    ...(role.key === 'plan' && checkPlanRef
+      ? [`- 本地自检命令：\`node ${checkPlanRef.fullPath} --file <计划JSON相对路径>\``]
+      : []),
+    ...(role.key === 'fidelity' && checkPlanRef
+      ? [`- 本地自检命令：\`node ${checkPlanRef.fullPath} --file <verdict相对路径> --brief <brief相对路径>\``]
+      : []),
+  ];
   const headSections: string[] = [
-    CIRCLE_GENERAL_PURPOSE_NOTICE,
-    '',
-    `请以只读隔离的子代理身份执行本阶段单项任务，使用通用子代理（\`subagent_type="general-purpose"\`）承载角色 \`${role.agentName}\`（${role.stageLabel}）。`,
+    `请以 \`subagent_type="${subagentType}"\`（${role.stageLabel} / \`${role.agentName}\`）执行本阶段单项任务。`,
     '',
     '## 本次任务参数',
-    `- 角色标识：${role.agentName}（${role.stageLabel} / ${role.key}）`,
+    `- 派发标识：${subagentType}（${role.stageLabel} / ${role.key}）`,
     `- 原始用例 / 对象：${caseRef}`,
     `- 当前轮次：第 ${round} 轮${modeSummary}`,
     `- 输入 / 简报路径：${briefPath}`,
     `- 唯一目标输出路径：${outPath}`,
-    `- 技能目录：${skillDir}`,
     ...wrapProseLine('- 本轮补充：', trimmedNote),
     '',
-    '## 工具与权限边界（general-purpose 收窄约束）',
+    '## 技能目录与参考文件路径（已核对真实路径）',
+    ...referenceLines,
+    '',
+    '## 工具与权限边界（只读与路径收窄约束）',
     `- 本轮允许工具：${role.tools.join(', ')}`,
     `- 本轮严禁工具与动作：${role.forbiddenTools.join('、')}`,
     '- 严禁执行任何父会话上下文中的跨阶段动作或修改唯一目标输出路径之外的文件。',
@@ -344,7 +398,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     scopeBlock,
     '',
     '## 角色固定规则（与包内 agents 声明同源）',
-    resolvedBody,
+    role.body,
     '',
   ];
 

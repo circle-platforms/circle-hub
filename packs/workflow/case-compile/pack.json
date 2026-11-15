@@ -43,28 +43,28 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "8a859811a3a87a5c809c004d1656d60c7df11ddb2c065dbb9061e27da64dd48c",
-      "size": 17259
+      "sha256": "1449409efa6852519de653c72e71120a88153a36609196c4d28873c16aebb123",
+      "size": 17306
     },
     {
       "path": "agents/compile-attributor.md",
-      "sha256": "d083b6539996c34dcc0350f6951cafe4e3fb5ea436280c9125ea6618c2d7617a",
-      "size": 4712
+      "sha256": "8e27c02f51938eb1b08b48cb1bfe5653febd8846aad5b28d2b041a744291f473",
+      "size": 4746
     },
     {
       "path": "agents/compile-fidelity.md",
-      "sha256": "d1dc461a375470bab4267f48080589e670b9e7bae8bc3631041749d064573493",
-      "size": 2911
+      "sha256": "32f80391ed768f6e437d27c39c117984b636d20f4e854c93ba2995b60d2d4cb1",
+      "size": 2951
     },
     {
       "path": "agents/compile-recomposer.md",
-      "sha256": "c006bf9675781d8b2de2a52c519b73c5e0af0e98c00010244a098ee35b28e6c9",
-      "size": 4749
+      "sha256": "64e0c4d481cdfeff4b242e23a9870de6d9e6b8e7846f4e52707f52adac7a9ad5",
+      "size": 4829
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "7303dde5a5b5761da0e0282f105fe5150e5dc9b41f66b7c82be6b0bbd96c0eb4",
-      "size": 13784
+      "sha256": "bb4edfeb2435b689fac2b5c9ce69585e37fb659a15e972bca8b8a92e50e1dac2",
+      "size": 13977
     },
     {
       "path": "checks.json",
@@ -438,8 +438,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "b7891147a23db179d2fca42f61c12af90ee19b9ae4bbf2bdd424d245bb66ff11",
-      "size": 35782
+      "sha256": "7aa4b7b2353b78530243764caccd74e1564eae2e7b25ba97f6d22679198f464f",
+      "size": 38049
     },
     {
       "path": "functions/subject.ts",
@@ -922,11 +922,6 @@
       "size": 13438
     },
     {
-      "path": "tools/install-agents.ts",
-      "sha256": "0c4b45574c5e95c4a1aa281710fc5807a55e1ef2924d93041e10b2943735e734",
-      "size": 7199
-    },
-    {
       "path": "tools/normalize-mindmap.ts",
       "sha256": "6ec8581f5e7db610a18bcd82cbdddcb3f4f3a163d3b52285e3b9e0321ed19ce9",
       "size": 2917
@@ -948,8 +943,8 @@
     },
     {
       "path": "tools/task-brief.ts",
-      "sha256": "efad2f25a537214a6be58dd08d7752d18cae8856d29a43b27f4bc4c29dc966dc",
-      "size": 45278
+      "sha256": "83ca08a34ea41f531cbf3efec4c1d8dba612375c5608d1dba73adb5d75d9dd0c",
+      "size": 46109
     },
     {
       "path": "tools/workspace-path.ts",
