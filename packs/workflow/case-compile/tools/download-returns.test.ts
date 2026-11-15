@@ -152,9 +152,8 @@ test('a command the device refused to execute is listed for its row with the ses
   assert.deepEqual(unlisted.jobs[0].rows[0].syntax_rejected, []);
   assert.match(unlisted.pass_review.unread[0], /也未列出被设备拒绝执行的命令$/);
 
-  // Synthetic reproduction of the batch-2 device return structure: Warning lines are ignored, while an "Error: ..." +
-  // "Failed to synchronize ..." CLI refusal without the generic contract marker ("Failed to execute the command") is
-  // captured into index.json execution_refused while log.txt stays word-for-word identical to the saved artifact.
+  // Only a literal failure line explicitly published by this contract makes these replies execution refusals.
+  // Generic Error/Failed words and warning lines do not supply an undeclared failure rule.
   const batch2Session = text([
     'seat(config)#widget peer r1 192.0.2.71',
     'Warning: For security consideration, please set a challenge code.',
@@ -171,7 +170,11 @@ test('a command the device refused to execute is listed for its row with the ses
     'Failed to synchronize configuration to 192.0.2.71.',
     'seat(config)#',
   ].join('\n'));
-  const b2Hub = await hub(jobs(batch2Session), [deviceReturn, log, batch2Session, held, contract, profile, inventory], [], plan);
+  const batch2Doc = structuredClone(doc);
+  batch2Doc.exec_failure_markers = { source: 'synthetic/domain-rules.json', sha256: 'a'.repeat(64), lines: ['Failed to synchronize configuration to 192.0.2.71.'] };
+  const batch2Contract = text(JSON.stringify(signTypedRuntime(batch2Doc)));
+  const batch2Plan = planRunFixture({ run: PLAN, autoids: ['990000000000000301', '990000000000000302'], exclude: [], contract: batch2Contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+  const b2Hub = await hub(jobs(batch2Session), [deviceReturn, log, batch2Session, held, batch2Contract, profile, inventory], [], batch2Plan);
   t.after(b2Hub.close);
   const b2Out = join(await mkdtemp(join(tmpdir(), 'cc-returns-b2-')), 'returns');
   const b2Done = await run(b2Hub.url, b2Out);
@@ -202,6 +205,21 @@ test('a command the device refused to execute is listed for its row with the ses
   assert.deepEqual(b2Index.jobs[0].rows[0].syntax_rejected, []);
   assert.equal(JSON.parse(b2Done.stdout).execution_refused, 2);
   assert.deepEqual(await readFile(join(b2Out, 'c'.repeat(12), 'cases', '990000000000000301', 'log.txt')), log);
+  const unrelated = await hub(jobs(batch2Session), [deviceReturn, log, batch2Session, held, contract, profile, inventory], [], plan); t.after(unrelated.close);
+  const unrelatedOut = join(await mkdtemp(join(tmpdir(), 'cc-returns-unrelated-marker-')), 'returns');
+  const unrelatedDone = await run(unrelated.url, unrelatedOut); assert.equal(unrelatedDone.code, 0, unrelatedDone.stderr);
+  const unrelatedIndex = JSON.parse(await readFile(join(unrelatedOut, 'index.json'), 'utf8'));
+  assert.deepEqual(unrelatedIndex.jobs[0].rows[0].execution_refused, [], 'the same generic Error/Failed text does not match an unrelated declared marker');
+  const noMarkerContract = text(JSON.stringify(signTypedRuntime(CONTRACT_DOC)));
+  const noMarkerPlan = planRunFixture({ run: PLAN, autoids: ['990000000000000301', '990000000000000302'], exclude: [], contract: noMarkerContract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+  const undeclared = await hub(jobs(batch2Session), [deviceReturn, log, batch2Session, held, noMarkerContract, profile, inventory], [], noMarkerPlan); t.after(undeclared.close);
+  const undeclaredOut = join(await mkdtemp(join(tmpdir(), 'cc-returns-no-marker-')), 'returns');
+  const undeclaredDone = await run(undeclared.url, undeclaredOut); assert.equal(undeclaredDone.code, 0, undeclaredDone.stderr);
+  const undeclaredIndex = JSON.parse(await readFile(join(undeclaredOut, 'index.json'), 'utf8'));
+  assert.equal('execution_refused' in undeclaredIndex.jobs[0].rows[0], false, 'missing rules stay undeclared rather than becoming an empty verified execution result');
+  assert.deepEqual(undeclaredIndex.jobs[0].rows[0].execution_refused ?? [], []);
+  assert.equal(undeclaredIndex.pass_review.markers, null);
+  assert.equal(JSON.parse(undeclaredDone.stdout).execution_refused, 0);
 });
 
 test('bytes that do not match their digest, a run never dispatched and a directory already in use write nothing', async (t) => {
@@ -241,16 +259,16 @@ test('--wait gives up at its limit, and sooner when the run shows no job at all,
   const never = await hub(running, []); t.after(never.close);
   const late = clock(), slow = await run(never.url, join(dir, 'a'), ['--wait', '50'], late);
   assert.equal(slow.code, 1);
-  assert.match(slow.stderr, /等了 50 秒，上机验证还没有结束；设备输出尚未保存，请用同一命令继续等待/);
+  assert.match(slow.stderr, /等了 50 秒，上机验证还没有结束，设备输出尚未保存。用同一命令继续等待/);
   assert.deepEqual(late.pauses, [POLL_MS, POLL_MS, 10_000], 'the last pause ends at the limit');
   const none = await hub(undispatched, []); t.after(none.close);
   const idle = clock(), absent = await run(none.url, join(dir, 'b'), ['--wait', '3600'], idle);
   assert.equal(absent.code, 1);
-  assert.match(absent.stderr, /尚未开始上机验证。请原样再做一次脚本合并，查看 Hub 的上机验证说明/);
+  assert.match(absent.stderr, /尚未开始上机验证，设备输出尚未保存。原样再做一次脚本合并，查看 Hub 的上机验证说明/);
   assert.equal(idle.pauses.reduce((sum, ms) => sum + ms, 0), UNDISPATCHED_MS);
   await assert.rejects(readFile(join(dir, 'a', 'index.json')));
-  for (const value of ['0', 'abc', '86401', '-5']) assert.match((await run(never.url, join(dir, 'c'), ['--wait', value], clock())).stderr, /--wait 写最多等多少秒/, value);
-  assert.match((await run(never.url, join(dir, 'c'), ['--poll', '1'], clock())).stderr, /参数写法/);
+  for (const value of ['0', 'abc', '86401', '-5']) assert.match((await run(never.url, join(dir, 'c'), ['--wait', value], clock())).stderr, /--wait 不在允许范围内。填写 1 到 86400 的整数秒数后重试/, value);
+  assert.match((await run(never.url, join(dir, 'c'), ['--poll', '1'], clock())).stderr, /参数无效：未知选项 --poll。只允许 --hub/);
   // Without --wait a run that was never dispatched is refused at once, as before.
   assert.match((await run(none.url, join(dir, 'd'))).stderr, /尚未开始上机验证/);
 });

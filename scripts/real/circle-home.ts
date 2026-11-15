@@ -1,3 +1,4 @@
+import { CALL_ERROR_CATEGORY, labelOf } from '../../contracts/generated/vocabulary.ts';
 // Sets up a dedicated Circle data folder for a real review run: a model endpoint taken from the owner's environment file or
 // read from the owner's Circle configuration (circleEndpoint), the Hub as an ordinary MCP server, the environment file's name
 // as a protected file, and a hook that lets only the Hub's tools run. The environment file and the owner's Circle folder are
@@ -13,7 +14,8 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pick, readEnvFile, type EnvEntry } from './lib/env-file.ts';
 import { formatPreflightReport, resolveInstalledGuard, runPreflight } from './guard-preflight.ts';
-import { environment, renderAllowed, type GuardDeclaration } from './guard-lib.ts';
+import { recordInstallation, maintainInstallation, assertInstallationBaseline, type GuardBundle } from './guard-installation.ts';
+import { environment, renderAllowed, discoverTools, type GuardDeclaration } from './guard-lib.ts';
 
 export type Profile = 'review' | 'skills' | 'ops';
 
@@ -156,6 +158,7 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
   const isOps = profile === 'ops';
   return {
     version: 1,
+    errorLabels: Object.fromEntries(CALL_ERROR_CATEGORY.map(code => [code, labelOf('call_error_category', code)])) as Record<(typeof CALL_ERROR_CATEGORY)[number], string>,
     about:
       'Data for the Circle home before_tool guard (powered by ./guard-lib.ts). Choices live here; local skill tool options are read from each tool source and skill docs under the single-quote grammar.',
     allowReply: isOps ? 'silent' : 'explicit',
@@ -215,6 +218,7 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
             name: 'sleep',
             args: ['int'],
             max: 600,
+            stdin: [],
             note: '短等待，最多 600 秒；等上机结果不要 sleep，用 download-returns.ts 加 --wait 作后台命令（execute 的 background: true）',
           },
         ]
@@ -234,34 +238,15 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
       {
         path: 'operation-capture/operation.ts',
         subcommands: ['list', 'read', 'status', 'verify', 'flush', 'submit'],
+        subcommandStdin: {
+          list: [],
+          read: [],
+          status: [],
+          verify: [],
+          flush: [],
+          submit: [],
+        },
       },
-    ],
-    optionTypes: {
-      hub: 'hub',
-      wait: 'int',
-      round: 'int',
-      limit: 'int',
-      'timeout-ms': 'int',
-      model: 'text',
-      role: 'text',
-      case: 'text',
-      note: 'text',
-      name: 'text',
-      product: 'text',
-      build: 'text',
-      root: 'text',
-      under: 'text',
-      send: 'text',
-      skip: 'text',
-      'base-url': 'text',
-      sha: 'text',
-      session: 'text',
-    },
-    placeholderTypes: [
-      { match: '^%HUB_URL%$|Hub', type: 'hub' },
-      { match: '秒数|seconds', type: 'int' },
-      { match: '编号|run id|run-id', type: 'run' },
-      { match: '.', type: 'path' },
     ],
     shellAlternatives: {
       cat: 'read_file',
@@ -273,13 +258,6 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
       find: 'glob',
       grep: 'grep',
       rg: 'grep',
-      echo: 'write_file',
-      tee: 'write_file',
-      touch: 'write_file',
-      mkdir: 'write_file',
-      cp: 'write_file',
-      mv: 'write_file',
-      sed: 'edit_file',
     },
     rules: isOps ? [BOOKING_STAYS_RULE, SUBAGENT_ASKS_NOBODY_RULE] : [BOOKING_STAYS_RULE],
   };
@@ -330,6 +308,60 @@ if (process.argv.includes('--schemas')) {
 `;
 }
 
+/** Generated files owned by the guard installer; excludes credentials and mutable derived rules. */
+export function guardBundle(home: string, profile: 'skills' | 'ops'): GuardBundle {
+  const decl = profile === 'ops' ? 'ops-allow.declaration.json' : 'guard.declaration.json';
+  const gen = profile === 'ops' ? 'ops-allow-gen.mjs' : 'guard-gen.mjs';
+  const entry = profile === 'ops' ? 'ops-allow.mjs' : 'skills-only.mjs';
+  const argument = `'${join(resolve(home), 'hooks', entry).replaceAll("'", `'\\''`)}'`;
+  return {
+    'hooks.json': `${JSON.stringify({ version: 1, hooks: { before_tool: [{ name: `${profile} tools guard`, command: `node ${argument}`, timeout_ms: 600000 }] } }, null, 2)}\n`,
+    [`hooks/${entry}`]: renderGuardEntry(decl),
+    'hooks/guard-lib.ts': readFileSync(new URL('./guard-lib.ts', import.meta.url), 'utf8'),
+    [`hooks/${decl}`]: `${JSON.stringify(profileDeclaration(profile), null, 2)}\n`,
+    [`hooks/${gen}`]: renderGuardGen(decl, gen),
+  };
+}
+
+/** Guard maintenance deliberately bypasses endpoint and credential loading. */
+export function guardMain(argv: string[], out: (line: string) => void): number {
+  try {
+    const [mode, ...rest] = argv;
+    if (mode !== 'verify' && mode !== 'update') throw new Error('guard 子命令只能是 verify 或 update');
+    const values = new Map<string, string>();
+    for (let i = 0; i < rest.length; i += 2) {
+      if (!['--home', '--profile', '--workdir', '--baseline'].includes(rest[i]) || !rest[i + 1] || values.has(rest[i])) throw new Error('guard 参数无效或重复');
+      values.set(rest[i], rest[i + 1]);
+    }
+    const home = values.get('--home');
+    const profile = values.get('--profile');
+    const workdir = values.get('--workdir');
+    if (!home || !workdir || (profile !== 'skills' && profile !== 'ops')) throw new Error('需要 --home、--workdir 和 --profile skills|ops');
+    const decl = profile === 'ops' ? 'ops-allow.declaration.json' : 'guard.declaration.json';
+    const env = environment(home, workdir, decl);
+    if (env.declarationError || !env.work) throw new Error('守卫声明或工作目录无效');
+    const nextEnv = { ...env, declaration: profileDeclaration(profile) };
+    let undeclared = 0;
+    for (const tool of discoverTools(nextEnv)) {
+      const missing = tool.subcommands?.length
+        ? tool.subcommands.some(sub => !Object.hasOwn(tool.subcommandStdin ?? {}, sub))
+        : tool.stdinLines === null;
+      if (missing && existsSync(tool.file.replace(/\.ts$/, '.cli.json'))) throw new Error(`工具的标准输入声明无效或不完整：${tool.id}`);
+      if (missing) undeclared += 1;
+    }
+    const gen = profile === 'ops' ? 'ops-allow-gen.mjs' : 'guard-gen.mjs';
+    // Generate against the new declaration, while retaining the current trusted settings and work folder.
+    maintainInstallation(resolve(home), profile, guardBundle(home, profile), renderAllowed(nextEnv, `node hooks/${gen}`), mode, values.get('--baseline'));
+    out(mode === 'verify' ? '守卫、规则全文与本地技能字节快照一致；此校验不证明发布包摘要已核验' : '守卫已更新并记录本地技能字节快照；此记录不证明发布包摘要已核验，请重新加载会话 Hook 配置');
+    if (undeclared) out(`${undeclared} 个工具未声明标准输入；其标准输入协议仍未知，带 here-doc 调用将被拒绝，请补齐声明后使用标准输入`);
+    return 0;
+  } catch (error) {
+    const missing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+    out(missing ? '校验失败：缺少安装文件或回执；旧 Home 需要集成者提供已审查的原版本回执 --baseline' : `校验失败：${(error as Error).message}`);
+    return 1;
+  }
+}
+
 /** Write via a sibling temp file then rename, so a crash mid-write does not leave a truncated target (G3). */
 function writePrivate(path: string, content: string): void {
   const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
@@ -363,14 +395,7 @@ function guardedHookNames(profile: 'skills' | 'ops'): { hookName: string; declNa
 
 /** Static guard file bodies (entry, library, declaration, gen). ALLOWED.md is rendered after these land on disk. */
 export function planGuardFiles(profile: 'skills' | 'ops'): Array<{ relative: string; content: string }> {
-  const { hookName, declName, genName } = guardedHookNames(profile);
-  const guardLibSource = readFileSync(new URL('./guard-lib.ts', import.meta.url), 'utf8');
-  return [
-    { relative: `hooks/${hookName}`, content: renderGuardEntry(declName) },
-    { relative: 'hooks/guard-lib.ts', content: guardLibSource },
-    { relative: `hooks/${declName}`, content: `${JSON.stringify(profileDeclaration(profile), null, 2)}\n` },
-    { relative: `hooks/${genName}`, content: renderGuardGen(declName, genName) },
-  ];
+  return Object.entries(guardBundle('', profile)).filter(([relative]) => relative !== 'hooks.json').map(([relative, content]) => ({ relative, content }));
 }
 
 /** Writes only the unified guard files under hooks/ (entry, guard-lib, declaration, gen, ALLOWED.md). Leaves settings/credentials/secrets/skills/hooks.json untouched. */
@@ -393,18 +418,9 @@ export function writeGuardFiles(homeRaw: string, workdirRaw: string, profile: 's
 
 /** Builds the exact guard file set that writeGuardFiles would install, without touching the real home. */
 export function materializeGuardFiles(home: string, workdir: string, profile: 'skills' | 'ops'): Array<{ relative: string; content: string }> {
-  const tmp = mkdtempSync(join(tmpdir(), 'circle-guard-refresh-'));
-  try {
-    writeFileSync(join(tmp, 'settings.json'), readFileSync(join(home, 'settings.json')));
-    mkdirSync(join(tmp, 'hooks'), { recursive: true, mode: 0o700 });
-    const skills = join(home, 'skills');
-    if (existsSync(skills)) symlinkSync(skills, join(tmp, 'skills'));
-    writeGuardFiles(tmp, workdir, profile);
-    const relative = [...planGuardFiles(profile).map((f) => f.relative), 'hooks/ALLOWED.md'];
-    return relative.map((name) => ({ relative: name, content: readFileSync(join(tmp, name), 'utf8') }));
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
+  const {declName, genName} = guardedHookNames(profile);
+  const env = environment(home, workdir, declName);
+  return [...planGuardFiles(profile), {relative: 'hooks/ALLOWED.md', content: renderAllowed({...env, declaration: profileDeclaration(profile)}, `node hooks/${genName}`)}];
 }
 
 export interface RefreshGuardsResult {
@@ -420,7 +436,7 @@ export interface RefreshGuardsResult {
 }
 
 /** Dry-run (default) or apply a guards-only refresh for an existing skills/ops home. */
-export function refreshGuards(homeRaw: string, options: { apply?: boolean; out?: (line: string) => void } = {}): RefreshGuardsResult {
+export function refreshGuards(homeRaw: string, options: { apply?: boolean; baseline?: string; out?: (line: string) => void } = {}): RefreshGuardsResult {
   const apply = options.apply === true;
   const installed = resolveInstalledGuard(homeRaw);
   const { home, workdir, profile } = installed;
@@ -465,6 +481,9 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; out?:
     return { home, profile, workdir, apply: true, changes, preflightOk: false, restored: false, lines };
   }
 
+  const bundle = {...guardBundle(home, profile), 'hooks.json': readFileSync(join(home, 'hooks.json'), 'utf8')};
+  assertInstallationBaseline(home, profile, bundle, options.baseline);
+
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backup = join(home, `hooks.bak.${stamp}`);
   emit(`步骤：备份 hooks/ → ${basename(backup)}`);
@@ -493,6 +512,7 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; out?:
       emit('核对未过：已从备份恢复 hooks/，主目录其余文件未动。');
       return { home, profile, workdir, apply: true, changes, backup, preflightOk: false, restored: true, lines };
     }
+    recordInstallation(home, profile, bundle);
     clearMarker();
     emit('核对通过：守卫已更新。');
     return { home, profile, workdir, apply: true, changes, backup, preflightOk: true, restored: false, lines };
@@ -567,6 +587,8 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
   }
 
   const guardFiles = writeGuardFiles(home, workdir, profile);
+  recordInstallation(home, profile, guardBundle(home, profile));
+  guardFiles.push('hooks/guard-installation.json');
   return {
     files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', ...guardFiles],
     workdir,
@@ -603,9 +625,10 @@ export function parseArgs(argv: string[]): Options & { envFile: string; provider
   };
 }
 
-export function parseRefreshGuardsArgs(argv: string[]): { home: string; apply: boolean } {
+export function parseRefreshGuardsArgs(argv: string[]): { home: string; apply: boolean; baseline?: string } {
   let home: string | undefined;
   let apply = false;
+  let baseline: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i];
     if (key === '--apply') {
@@ -615,19 +638,21 @@ export function parseRefreshGuardsArgs(argv: string[]): { home: string; apply: b
     const value = argv[i + 1];
     if (!key?.startsWith('--') || value === undefined) throw new Error(`参数不对：${key ?? ''}`);
     if (key === '--home') home = value;
+    else if (key === '--baseline') baseline = value;
     else throw new Error(`参数不对：${key}`);
     i += 1;
   }
   if (!home) throw new Error('缺少 --home');
-  return { home, apply };
+  return { home, apply, ...(baseline ? {baseline} : {}) };
 }
 
 export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string) => void): number {
+  if (argv[0] === 'guard') return guardMain(argv.slice(1), out);
   try {
     if (argv[0] === 'refresh-guards') {
       const options = parseRefreshGuardsArgs(argv.slice(1));
       // Stream each step as it happens so an interrupt still shows where it stopped (G3).
-      const result = refreshGuards(options.home, { apply: options.apply, out });
+      const result = refreshGuards(options.home, { apply: options.apply, baseline: options.baseline, out });
       if (result.apply && result.preflightOk === false) return 1;
       return 0;
     }
@@ -652,6 +677,7 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
       if (options.jevModel === undefined) out('所有者下一步：/variables JEV_MODEL');
       const genScript = options.profile === 'ops' ? 'hooks/ops-allow-gen.mjs' : 'hooks/guard-gen.mjs';
       out(`技能装进 skills/ 后分别核对：local-tools verify --digest、pack-files.ts --verify-install、node ${genScript}`);
+      out('再运行 circle-home.ts guard update / verify（显式传 --home、--workdir 和 --profile）；这两个入口不读取凭据。更新前停止会话，更新后重新加载 Hook 配置。');
     }
     return 0;
   } catch (error) {

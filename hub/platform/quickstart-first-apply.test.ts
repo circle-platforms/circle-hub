@@ -12,7 +12,7 @@ const EXAMPLE = fileURLToPath(new URL('../../docs/examples/quickstart-deployment
 test('materializeQuickstartApply replaces admin and uses an absolute pack directory', async () => {
   const sample = JSON.parse(await readFile(EXAMPLE, 'utf8'));
   assert.equal(sample.workflowAssignments[0].user, 'admin');
-  const packDir = '/var/lib/circle-hub/current/packs/workflow/test-bed';
+  const packDir = join(tmpdir(), 'synthetic-quickstart', 'packs', 'workflow', 'test-bed');
   const ready = materializeQuickstartApply(sample, 'synthetic-installer-admin', packDir);
   assert.deepEqual(ready.workflowAssignments, [{ pack: 'test-bed', user: 'synthetic-installer-admin' }]);
   assert.equal(ready.packs[0].directory, packDir);

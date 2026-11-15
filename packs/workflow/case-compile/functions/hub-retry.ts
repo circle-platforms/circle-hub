@@ -1,14 +1,17 @@
 // Local tool retry wrappers for Hub HTTP calls without modifying the embedded run-tools skill module.
-import { lstat, mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   HubReplyError,
   knowledgeFiles,
   sha256,
-  writeNew,
   type RunKnowledge,
 } from './generated/skills/run-tools/hub-client/index.ts';
-import { isRecord } from './text.ts';
+import { isRecord, failCall, CallFailure, formatCallError, callFailureData } from './text.ts';
+import { localSourceCache } from './source-cache.ts';
+import { assertEmptySourceOutput, sourceMaterialNames, type SourceMaterial } from './source-materials.ts';
+export { sourceFileName } from './source-materials.ts';
 
 export const MAX_BYTES = 16 * 1024 * 1024;
 export const KNOWLEDGE_MAX_BYTES = 256 * 1024 * 1024;
@@ -36,6 +39,8 @@ export interface RetryControl {
   fetch?: FetchLike;
   maxWaitMs?: number;
   timeoutMs?: number;
+  /** Explicit cache location after a fresh run read; false disables local reuse. */
+  sourceCacheDirectory?: string | false;
 }
 
 export const DEFAULT_TIMING: RetryTiming = {
@@ -57,14 +62,16 @@ export class TransientHubReplyError extends HubReplyError {
 }
 
 /** Transient Hub outage or rate-limit rejection that exceeded the configured wait ceiling. */
-export class RetryExhaustedError extends Error {
+export class RetryExhaustedError extends CallFailure {
   readonly status?: number;
   readonly code?: string;
   readonly waitedMs: number;
   readonly attempts: number;
 
-  constructor(message: string, details: { status?: number; code?: string; waitedMs: number; attempts: number; cause?: unknown }) {
-    super(message, details.cause !== undefined ? { cause: details.cause } : undefined);
+  constructor(failure: CallFailure, details: { status?: number; code?: string; waitedMs: number; attempts: number; cause?: unknown }) {
+    super(failure.category, failure.fact, failure.next_action);
+    this.message = formatCallError(failure);
+    if (details.cause !== undefined) Object.defineProperty(this, 'cause', { value: details.cause });
     this.name = 'RetryExhaustedError';
     this.status = details.status;
     this.code = details.code;
@@ -73,8 +80,11 @@ export class RetryExhaustedError extends Error {
   }
 }
 
-function errorWithCode(message: string, code?: string, cause?: unknown): Error {
-  return Object.assign(new Error(message, cause !== undefined ? { cause } : undefined), code ? { code } : {});
+function errorWithCode(fact: string, next: string, code?: string, cause?: unknown): Error {
+  const failure = new CallFailure('temporarily_unavailable', fact, next);
+  failure.message = formatCallError(failure);
+  if (cause !== undefined) Object.defineProperty(failure, 'cause', { value: cause });
+  return Object.assign(failure, code ? { code } : {});
 }
 
 function formatSecondsValue(ms: number): string {
@@ -200,11 +210,11 @@ function readExhaustedMessage(
   attempts: number,
   maxWaitMs: number,
   decision: Extract<WaitDecision, { retry: false }>,
-): string {
+): CallFailure {
   if (decision.reason === 'exceeds_budget') {
-    return `暂时不可用：${factSummary}，已等待 ${formatSecondsValue(decision.elapsedMs)} 秒并尝试 ${attempts} 次，Hub 要求等待 ${formatSecondsValue(decision.requestedMs)} 秒超过最多等待 ${formatSecondsValue(maxWaitMs)} 秒上限。请等待 Hub 恢复后用同一命令重试`;
+    return new CallFailure('temporarily_unavailable', `${factSummary}，已等待 ${formatSecondsValue(decision.elapsedMs)} 秒并尝试 ${attempts} 次，Hub 要求等待 ${formatSecondsValue(decision.requestedMs)} 秒超过最多等待 ${formatSecondsValue(maxWaitMs)} 秒上限`, '请等待 Hub 恢复后用同一命令重试');
   }
-  return `暂时不可用：${factSummary}，已等待 ${formatSecondsValue(decision.elapsedMs)} 秒并尝试 ${attempts} 次仍未恢复。请等待 Hub 恢复或确认网络可达后用同一命令重试`;
+  return new CallFailure('temporarily_unavailable', `${factSummary}，已等待 ${formatSecondsValue(decision.elapsedMs)} 秒并尝试 ${attempts} 次仍未恢复`, '请等待 Hub 恢复或确认网络可达后用同一命令重试');
 }
 
 /** Single GET attempt without retry; throws `TransientHubReplyError` on 503 with parsed `Retry-After`. */
@@ -228,13 +238,13 @@ export async function fetchBytesOnce(
     connected = true;
   } catch (error) {
     if (error instanceof Error && error.name === 'TimeoutError') {
-      throw errorWithCode(`暂时不可用：Hub ${formatSecondsValue(timeoutMs)} 秒内没有答复。请稍后用同一命令重试`, 'ETIMEDOUT', error);
+      throw errorWithCode(`Hub ${formatSecondsValue(timeoutMs)} 秒内没有答复`, '请稍后用同一命令重试', 'ETIMEDOUT', error);
     }
     if (isConnectionRefused(error)) {
-      throw errorWithCode('暂时不可用：Hub 不可达（ECONNREFUSED）。请确认 --hub 地址与网络连接后用同一命令重试', 'ECONNREFUSED', error);
+      throw errorWithCode('Hub 不可达（ECONNREFUSED）', '请确认 --hub 地址与网络连接后用同一命令重试', 'ECONNREFUSED', error);
     }
     const reason = networkReasonText(error);
-    throw errorWithCode(`暂时不可用：Hub 不可达（${reason}）。请核对 --hub 地址与网络可达后用同一命令重试`, extractErrorCode(error), error);
+    throw errorWithCode(`未取得 Hub 答复（${reason}）`, '请核对 --hub 地址与网络可达后用同一命令重试', extractErrorCode(error), error);
   }
 
   if (reply.status === 503) {
@@ -250,10 +260,10 @@ export async function fetchBytesOnce(
     bytes = new Uint8Array(await reply.arrayBuffer());
   } catch (error) {
     if (error instanceof Error && error.name === 'TimeoutError') {
-      throw errorWithCode(`暂时不可用：Hub ${formatSecondsValue(timeoutMs)} 秒内没有传完答复。请稍后用同一命令重试`, 'ETIMEDOUT', error);
+      throw errorWithCode(`Hub ${formatSecondsValue(timeoutMs)} 秒内没有传完答复`, '请稍后用同一命令重试', 'ETIMEDOUT', error);
     }
     const reason = networkReasonText(error);
-    throw errorWithCode(`暂时不可用：${connected ? '读取 Hub 答复时连接中断' : 'Hub 不可达'}（${reason}）。请稍后用同一命令重试`, extractErrorCode(error), error);
+    throw errorWithCode(`未完整取得 Hub 答复（${reason}）`, '请稍后用同一命令重试', extractErrorCode(error), error);
   }
 
   if (!reply.ok) {
@@ -261,7 +271,7 @@ export async function fetchBytesOnce(
     throw new HubReplyError(reply.status, `Hub 答复 ${reply.status}：${snippet}`);
   }
   if (bytes.length > limit) {
-    throw new Error(options?.oversizeMessage ?? `Hub 答复超过 ${Math.floor(limit / (1024 * 1024))} MiB 上限`);
+    failCall('invalid_parameters', options?.oversizeMessage ?? `Hub 答复超过 ${Math.floor(limit / (1024 * 1024))} MiB 上限`, '按本次读取限额缩小来源，或由维护者核对声明后重试');
   }
   const digest = /^sha-256=:([A-Za-z0-9+/=]+):$/.exec(reply.headers.get('content-digest') ?? '');
   return { bytes, digest: digest ? Buffer.from(digest[1], 'base64').toString('hex') : null };
@@ -275,13 +285,21 @@ export async function getOnce(
   return (await fetchBytesOnce(url, bearer, MAX_BYTES, options)).bytes;
 }
 
+/** Metadata reads are never cached; each download still authenticates its current run. */
+export function downloadRetryControl(_out: string, control?: RetryControl): RetryControl {
+  return { ...control, sourceCacheDirectory: control?.sourceCacheDirectory ?? join(tmpdir(), `circle-hub-source-cache-${process.getuid!()}`) };
+}
+
 /** Retries read-only Hub GETs on HTTP 503 or ECONNREFUSED using Retry-After or 2/4/8s backoff up to 60s total. */
 export async function fetchBytesRetrying(
   url: string,
   bearer: string,
   limit: number,
   control?: RetryControl & { oversizeMessage?: string },
-): Promise<{ bytes: Uint8Array; digest: string | null }> {
+): Promise<{ bytes: Uint8Array; digest: string | null; cached?: true }> {
+  const cache = localSourceCache(url, bearer, limit, control?.sourceCacheDirectory);
+  const hit = await cache?.load();
+  if (hit) return { bytes: hit, digest: null, cached: true };
   const timing = control?.timing ?? DEFAULT_TIMING;
   const maxWaitMs = control?.maxWaitMs ?? READ_RETRY_BUDGET_MS;
   const startedAt = timing.now();
@@ -291,12 +309,16 @@ export async function fetchBytesRetrying(
   while (true) {
     attempts++;
     try {
-      return await fetchBytesOnce(url, bearer, limit, {
+      const result = await fetchBytesOnce(url, bearer, limit, {
         fetch: control?.fetch,
         timeoutMs: control?.timeoutMs ?? READ_TIMEOUT_MS,
         timing,
         oversizeMessage: control?.oversizeMessage,
       });
+      if (cache && sha256(result.bytes) !== cache.digest) failCall('invalid_parameters', '来源字节与运行绑定摘要不一致', '重新获取与声明摘要一致的原件，核对运行绑定后重试');
+      if (cache && result.digest !== null && result.digest !== sha256(result.bytes)) failCall('invalid_parameters', '来源响应的摘要头与字节不一致', '恢复摘要头与来源字节一致的原件后重试');
+      await cache?.save(result.bytes);
+      return result;
     } catch (error) {
       const transient = error instanceof TransientHubReplyError;
       const refused = isConnectionRefused(error);
@@ -335,64 +357,55 @@ export async function downloadRunRetrying(
   out: string,
   control?: RetryControl,
 ): Promise<{ run: string; out: string; items: number; sources: number; withheld: string[]; knowledge: RunKnowledge | null; files: Record<string, string> }> {
+  await assertEmptySourceOutput(out);
   const raw = await getRetrying(`${origin}/run-export/${run}/run`, bearer, control);
   let exported: unknown;
   try {
     exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw));
   } catch {
-    throw new Error('Hub 的运行导出不是完整的 UTF-8 JSON');
+    failCall('invalid_parameters', 'Hub 的运行导出不是完整的 UTF-8 JSON', '重新下载完整运行导出，核对编码与协议版本后重试');
   }
-  if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run)) throw new Error('Hub 的运行导出不合式');
+  if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run)) failCall('invalid_parameters', 'Hub 的运行导出不合式', '按 run-export@1 核对运行导出与协议版本后重新下载');
   const record = exported.run;
-  if (record.run !== run) throw new Error(`Hub 导出的运行不是 --run 指定的 ${run}，什么都没有写入；核对运行号后重取`);
+  if (record.run !== run) failCall('invalid_parameters', 'Hub 导出的运行不是 --run 指定的运行，什么都没有写入', '核对本次运行号和导出身份后重新下载');
   const items = Array.isArray(record.items) ? record.items : [];
   const bindings = Array.isArray(record.sources) ? record.sources.filter(isRecord) : [];
   const outputs: Array<{ name: string; bytes: Uint8Array }> = [{ name: 'run.json', bytes: json(record) }];
   const width = String(Math.max(items.length - 1, 0)).length;
   items.forEach((item, index) => outputs.push({ name: join('items', `${String(index).padStart(width, '0')}.json`), bytes: json(item) }));
 
-  const fetched = new Map<string, 'file' | 'withheld'>();
+  const readControl = downloadRetryControl(out, control);
+  const fetched = new Map<string, Uint8Array | 'withheld'>();
+  const names = sourceMaterialNames(bindings);
+  const manifest: SourceMaterial[] = [];
   const withheld: string[] = [];
-  for (const binding of bindings) {
-    const sha = SOURCE_REFERENCE.exec(String(binding.reference))?.[1];
-    if (sha === undefined || fetched.has(sha)) continue;
-    let bytes: Uint8Array;
-    try {
-      bytes = await getRetrying(`${origin}/run-export/${run}/sources/${sha}`, bearer, control);
-    } catch (error) {
-      if (error instanceof HubReplyError && error.status === 403) {
-        fetched.set(sha, 'withheld');
-        withheld.push(sha);
-        continue;
+  for (const [index, binding] of bindings.entries()) {
+    const digest = SOURCE_REFERENCE.exec(String(binding.reference))?.[1];
+    if (typeof binding.reference !== 'string') failCall('invalid_parameters', '来源清单缺少可核验的引用身份', '重新下载正确运行记录，按原声明绑定来源后重试');
+    if (!digest) { manifest.push({ slot: typeof binding.slot === 'string' ? binding.slot : null, role: typeof binding.role === 'string' ? binding.role : null, reference: binding.reference, label: typeof binding.label === 'string' ? binding.label : null, media_type: typeof binding.media_type === 'string' ? binding.media_type : null, file: null, sha256: null }); continue; }
+    if (!fetched.has(digest)) {
+      try {
+        const bytes = await getRetrying(`${origin}/run-export/${run}/sources/${digest}`, bearer, readControl);
+        if (sha256(bytes) !== digest) failCall('invalid_parameters', '来源字节与运行绑定摘要不一致', '重新获取与声明摘要一致的原件后重试');
+        fetched.set(digest, bytes);
+      } catch (error) {
+        if (!(error instanceof HubReplyError && error.status === 403)) throw error;
+        fetched.set(digest, 'withheld'); withheld.push(digest);
       }
-      throw error;
     }
-    if (sha256(bytes) !== sha) throw new Error(`原件 ${sha.slice(0, 12)} 的字节与运行绑定的摘要不符，什么都没有写入`);
-    fetched.set(sha, 'file');
-    outputs.push({ name: join('sources', sha), bytes });
+    const bytes = fetched.get(digest)!;
+    const file = bytes === 'withheld' ? null : names[index];
+    if (file && !outputs.some(output => output.name === file)) outputs.push({ name: file, bytes: bytes as Uint8Array });
+    manifest.push({ slot: typeof binding.slot === 'string' ? binding.slot : null, role: typeof binding.role === 'string' ? binding.role : null, reference: String(binding.reference), label: typeof binding.label === 'string' ? binding.label : null, media_type: typeof binding.media_type === 'string' ? binding.media_type : null, file, sha256: digest, ...(bytes === 'withheld' ? { withheld: '你的读取层级不给这份原件的字节' } : {}) });
   }
-  outputs.push({
-    name: 'sources.json',
-    bytes: json(bindings.map((binding) => {
-      const sha = SOURCE_REFERENCE.exec(String(binding.reference))?.[1];
-      const state = sha === undefined ? undefined : fetched.get(sha);
-      return {
-        slot: binding.slot ?? null,
-        role: binding.role ?? null,
-        reference: binding.reference,
-        label: binding.label ?? null,
-        media_type: binding.media_type ?? null,
-        file: state === 'file' ? `sources/${sha}` : null,
-        ...(state === 'withheld' ? { withheld: '你的读取层级不给这份原件的字节' } : {}),
-      };
-    })),
-  });
+  outputs.push({ name: 'sources.json', bytes: json(manifest) });
 
   let knowledge: RunKnowledge | null = null;
   try {
     const batch = await fetchBytesRetrying(`${origin}/run-export/${run}/knowledge`, bearer, KNOWLEDGE_MAX_BYTES, control);
-    if (batch.digest === null || sha256(batch.bytes) !== batch.digest) throw new Error('知识根的字节与 Hub 给的摘要不符，什么都没有写入');
-    const made = knowledgeFiles(batch.bytes, run);
+    if (batch.digest === null || sha256(batch.bytes) !== batch.digest) failCall('invalid_parameters', '知识根的字节与 Hub 给的摘要不符，什么都没有写入', '按绑定摘要恢复知识根原件，核对完整性后重新下载');
+    let made: ReturnType<typeof knowledgeFiles>;
+    try { made = knowledgeFiles(batch.bytes, run); } catch (error) { failCall('invalid_parameters', error instanceof Error ? error.message : '知识根批量资料格式不完整', '按锁定运行与知识根声明恢复完整批量资料后重试'); }
     outputs.push(...made.outputs);
     knowledge = made.knowledge;
   } catch (error) {
@@ -400,7 +413,7 @@ export async function downloadRunRetrying(
   }
 
   const present = await readdir(out).catch(() => []);
-  if (present.length) throw new Error(`--out 目录 ${out} 里已有文件（${present.slice(0, 3).join('、')}），不覆盖；另选一个新目录重取`);
+  if (present.length) failCall('occupied', '输出目录在下载期间出现已有文件，不覆盖', '另选新的空目录下载', { path: out });
   await mkdir(join(out, 'items'), { recursive: true, mode: 0o700 });
   await mkdir(join(out, 'sources'), { recursive: true, mode: 0o700 });
   if (knowledge) await mkdir(join(out, 'knowledge'), { recursive: true, mode: 0o700 });
@@ -409,7 +422,7 @@ export async function downloadRunRetrying(
   try {
     for (const { name, bytes } of outputs) {
       const path = join(out, name);
-      await writeNew(path, bytes);
+      await writeFile(path, bytes, { flag: 'wx', mode: 0o600 });
       written.push(path);
       files[name] = sha256(bytes);
     }
@@ -421,7 +434,7 @@ export async function downloadRunRetrying(
     run,
     out,
     items: items.length,
-    sources: [...fetched.values()].filter((state) => state === 'file').length,
+    sources: [...fetched.values()].filter(value => value !== 'withheld').length,
     withheld,
     knowledge,
     files,
@@ -433,11 +446,11 @@ function submitExhaustedMessage(
   attempts: number,
   maxWaitMs: number,
   decision: Extract<WaitDecision, { retry: false }>,
-): string {
+): CallFailure {
   if (decision.reason === 'exceeds_budget') {
-    return `暂时不可用：${factSummary}（这次提交没有执行），已等待 ${formatSecondsValue(decision.elapsedMs)} 秒并尝试 ${attempts} 次，Hub 要求等待 ${formatSecondsValue(decision.requestedMs)} 秒超过最多等待 ${formatSecondsValue(maxWaitMs)} 秒上限。请等待 Hub 恢复后原样重交`;
+    return new CallFailure('temporarily_unavailable', `${factSummary}（这次提交没有执行），已等待 ${formatSecondsValue(decision.elapsedMs)} 秒并尝试 ${attempts} 次，Hub 要求等待 ${formatSecondsValue(decision.requestedMs)} 秒超过最多等待 ${formatSecondsValue(maxWaitMs)} 秒上限`, '请等待 Hub 恢复后原样重交');
   }
-  return `暂时不可用：${factSummary}（这次提交没有执行），已等待 ${formatSecondsValue(decision.elapsedMs)} 秒并尝试 ${attempts} 次仍未恢复。请待 Hub 恢复后原样重交`;
+  return new CallFailure('temporarily_unavailable', `${factSummary}（这次提交没有执行），已等待 ${formatSecondsValue(decision.elapsedMs)} 秒并尝试 ${attempts} 次仍未恢复`, '请待 Hub 恢复后原样重交');
 }
 
 /**
@@ -483,21 +496,21 @@ export async function submitResultRetrying(
     } catch (error) {
       if (error instanceof Error && error.name === 'TimeoutError') {
         throw errorWithCode(
-          `暂时不可用：Hub ${formatSecondsValue(timeoutMs)} 秒内没有答复，核验可能还在进行，没有自动重发。请先查回原调用读运行记录确认是否已受理再决定是否重交`,
+          `Hub ${formatSecondsValue(timeoutMs)} 秒内没有答复，核验可能还在进行，没有自动重发`, '请先查回原调用读运行记录确认是否已受理再决定是否重交',
           'ETIMEDOUT',
           error,
         );
       }
       if (isConnectionRefused(error)) {
         throw errorWithCode(
-          '暂时不可用：Hub 不可达（ECONNREFUSED），连接被拒且提交未确认，没有自动重发。请先查回原调用或确认 Hub 恢复后再决定是否重交',
+          'Hub 不可达（ECONNREFUSED），连接被拒且提交未确认，没有自动重发', '请先查回原调用或确认 Hub 恢复后再决定是否重交',
           'ECONNREFUSED',
           error,
         );
       }
       const reason = networkReasonText(error);
       throw errorWithCode(
-        `暂时不可用：连接中途断开（${reason}），这次提交结果不明，没有自动重发。请先查回原调用确认是否已受理再决定是否重交`,
+        `未完整取得提交答复（${reason}），这次提交结果不明，没有自动重发`, '请先查回原调用确认是否已受理再决定是否重交',
         extractErrorCode(error),
         error,
       );
@@ -524,16 +537,10 @@ export async function submitResultRetrying(
       const snippet = sanitizeSnippet(body);
       const summary = snippet ? `Hub 答复 ${reply.status}：${snippet}` : `Hub 答复 ${reply.status}`;
       if (reply.status === 503) {
-        throw new HubReplyError(
-          503,
-          `暂时不可用：${summary}，未能确认这次调用是否执行，没有自动重发。请先查回原调用确认是否已受理再决定是否重交`,
-        );
+        failCall('temporarily_unavailable', `${summary}，未能确认这次调用是否执行，没有自动重发`, '请先查回原调用确认是否已受理再决定是否重交');
       }
       if (reply.status >= 500 || reply.status === 408 || reply.status === 429) {
-        throw new HubReplyError(
-          reply.status,
-          `暂时不可用：${summary}，提交结果不明，没有自动重发。请先查回原调用确认是否已受理再决定是否重交`,
-        );
+        failCall('temporarily_unavailable', `${summary}，提交结果不明，没有自动重发`, '请先查回原调用确认是否已受理再决定是否重交');
       }
       throw new HubReplyError(reply.status, summary);
     }
@@ -542,15 +549,15 @@ export async function submitResultRetrying(
     try {
       answer = JSON.parse(body);
     } catch {
-      throw new Error('暂时不可用：Hub 的答复不是完整的 JSON，提交结果不明，没有自动重发。请先查回原调用确认是否已受理再决定是否重交');
+      failCall('temporarily_unavailable', 'Hub 的答复不是完整的 JSON，提交结果不明，没有自动重发', '请先查回原调用确认是否已受理再决定是否重交');
     }
     if (isRecord(answer) && isRecord(answer.error)) {
-      throw new Error(`Hub 拒绝了这次调用：${String(answer.error.message).slice(0, 500)}`);
+      failCall('temporarily_unavailable', `Hub 以 JSON-RPC code ${typeof answer.error.code === 'number' ? answer.error.code : '未声明'} 拒绝本次调用`, '请核对原调用的结构化 RPC 错误和运行记录；没有明确未执行证明时先查回原调用，不自动重发');
     }
     const result = isRecord(answer) && isRecord(answer.result) ? answer.result : null;
     const content = Array.isArray(result?.content) ? result.content : [];
     const text = content.flatMap((part) => (isRecord(part) && typeof part.text === 'string' ? [part.text] : [])).join('\n');
-    if (result === null || !text) throw new Error('Hub 的答复没有文字内容');
+    if (result === null || !text) failCall('temporarily_unavailable', 'Hub 的答复没有文字内容，提交结果未确认', '请先查回原调用的运行记录确认结果，不自动重交');
     return { text, failed: result.isError === true };
   }
 }
@@ -574,17 +581,13 @@ export async function requireBearerToken(readToken: () => Promise<string> = read
   const bearer = await readToken();
   const placeholder = /^%([A-Z][A-Z0-9_]*)%$/.exec(bearer);
   if (placeholder) {
-    throw new Error(
-      `无权限：Circle 里没有存密钥 ${placeholder[1]}（标准输入收到的是原样的占位符），什么都没有发出。请所有者/管理员用 /secrets ${placeholder[1]} 存入 Hub 令牌后，再重跑本命令`,
-    );
+    failCall('permission_denied', `Circle 里没有存密钥 ${placeholder[1]}（标准输入收到的是原样的占位符），什么都没有发出`, `请所有者/管理员用 /secrets ${placeholder[1]} 存入 Hub 令牌后，再重跑本命令`);
   }
   if (!/^[\x21-\x7e]{8,4096}$/.test(bearer)) {
     const detail = bearer.length
       ? '标准输入收到的令牌包含空白、换行或长度不在 8..4096 可见 ASCII 范围内'
       : "标准输入为空，常见原因是 node 命令行与 <<'EOF' 之间多打了换行或漏了 <<'EOF'";
-    throw new Error(
-      `参数无效：标准输入里没有令牌（${detail}）。请把 node 命令行与 <<'EOF' 写在同一行（空格隔开，切勿在 <<'EOF' 前换行），下一行只写 %HUB_TOKEN%，再一行只写 EOF`,
-    );
+    failCall('invalid_parameters', `标准输入里没有令牌（${detail}）`, `请把 node 命令行与 <<'EOF' 写在同一行（空格隔开，切勿在 <<'EOF' 前换行），下一行只写 %HUB_TOKEN%，再一行只写 EOF`);
   }
   return bearer;
 }
@@ -596,22 +599,22 @@ export interface SubmittedItemFilesOptions {
   validateItem: (value: unknown, fileName: string) => { [key: string]: unknown };
 }
 
+/** Adds the caller-declared option to a native filesystem refusal without losing its cause. */
+function submittedReadFailure(error: unknown, flag: string, path: string, kind: string): never {
+  const failure = callFailureData(error);
+  if (failure.category === null) throw error;
+  const typed = new CallFailure(failure.category, `--${flag} 指定的${kind}无法读取：${failure.fact}`, `核对 --${flag} 的${kind}；${failure.next_action}`, { path, legal_form: `--${flag} <${kind}>` });
+  typed.cause = error;
+  throw typed;
+}
+
 /** Reads a single regular file up to 16 MiB for a CLI `--<flag>` path without "re-export raw bytes" advice. */
 export async function readSubmittedFileBytes(filePath: string, flag: string): Promise<Buffer> {
-  let bytes: Buffer;
-  try {
-    const stat = await lstat(filePath);
-    if (stat.isSymbolicLink() || !stat.isFile()) {
-      throw new Error(`--${flag} 指定的路径 ${filePath} 不是普通文件。请确认路径并重试`);
-    }
-    bytes = await readFile(filePath);
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith(`--${flag} `)) throw error;
-    throw new Error(`读不到 --${flag} 文件 ${filePath}。请确认文件路径正确且可读后重试`);
-  }
-  if (bytes.length > MAX_BYTES) {
-    throw new Error(`--${flag} 文件 ${filePath} 超过 16 MiB 上限。请精简文件内容后重试`);
-  }
+  const info = await lstat(filePath).catch(error => submittedReadFailure(error, flag, filePath, '普通文件'));
+  if (info.isSymbolicLink() || !info.isFile()) failCall('invalid_parameters', `--${flag} 指定的路径不是普通文件`, `请为 --${flag} 提供工作目录内的普通文件后重试`, { path: filePath });
+  if (info.size > MAX_BYTES) failCall('invalid_parameters', `--${flag} 文件超过 16 MiB 上限`, '请拆分或精简该文件后重试', { path: filePath });
+  const bytes = await readFile(filePath).catch(error => submittedReadFailure(error, flag, filePath, '普通文件'));
+  if (bytes.length > MAX_BYTES) failCall('invalid_parameters', `--${flag} 文件超过 16 MiB 上限`, '请拆分或精简该文件后重试', { path: filePath });
   return bytes;
 }
 
@@ -626,21 +629,13 @@ export function parseSubmittedJson(
   try {
     text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
-    throw new Error(`--${flag} 目录下的 ${fileName} 不是有效的 UTF-8 JSON 文本。请检查编码并用 UTF-8 重写该文件后${repairHint}`);
+    failCall('invalid_parameters', `--${flag} 目录下的 ${fileName} 不是有效的 UTF-8 JSON 文本`, `请检查编码并用 UTF-8 重写该文件后${repairHint}`, { path: fileName });
   }
   try {
     return JSON.parse(text);
   } catch (error) {
     const message = error instanceof Error ? error.message : '无法解析';
-    const at = /position (\d+)/.exec(message);
-    const position = at ? Number(at[1]) : null;
-    const around =
-      position === null
-        ? ''
-        : `；出错位置第 ${position} 个字符，附近原文：${JSON.stringify(text.slice(Math.max(0, position - 60), position + 20))}`;
-    throw new Error(
-      `--${flag} 目录下的 ${fileName} 不是合法的 UTF-8 JSON（${message}）${around}。常见原因是括号、引号或逗号格式错误，请修改该文件后${repairHint}`,
-    );
+    failCall('invalid_parameters', `--${flag} 目录下的 ${fileName} 不是合法的 UTF-8 JSON（${message}）`, `请按 JSON 格式修改该文件后${repairHint}`, { path: fileName });
   }
 }
 
@@ -652,34 +647,21 @@ export async function readSubmittedItemFiles(
   directory: string,
   options: SubmittedItemFilesOptions,
 ): Promise<Array<{ [key: string]: unknown }>> {
-  let names: string[];
-  try {
-    names = (await readdir(directory)).filter((name) => name.endsWith('.json')).sort();
-  } catch {
-    throw new Error(`读不到 --${options.flag} 目录 ${directory}。请确认目录存在并有读取权限后重试`);
-  }
-  if (!names.length) {
-    throw new Error(`--${options.flag} 目录 ${directory} 里没有 .json 文件。请先写入${options.itemKind} JSON 文件再${options.repairHint}`);
-  }
+  const names = (await readdir(directory).catch(error => submittedReadFailure(error, options.flag, directory, '普通目录'))).filter(name => name.endsWith('.json')).sort();
+  if (!names.length) failCall('not_found', `--${options.flag} 目录里没有 .json 文件`, `请先写入${options.itemKind} JSON 文件再${options.repairHint}`, { path: directory });
   const items: Array<{ [key: string]: unknown }> = [];
   const seen = new Map<string, string>();
   for (const name of names) {
-    const bytes = await readSubmittedFileBytes(join(directory, name), options.flag).catch((error) => {
-      throw new Error(
-        error instanceof Error && error.message.includes('超过 16 MiB 上限')
-          ? `--${options.flag} 目录下的 ${name} 超过 16 MiB 上限。请拆分或精简该文件后${options.repairHint}`
-          : `--${options.flag} 目录下的 ${name} 不是普通可读文件。请确认该文件可读后${options.repairHint}`,
-      );
-    });
+    const bytes = await readSubmittedFileBytes(join(directory, name), options.flag);
     const parsed = parseSubmittedJson(options.flag, name, bytes, options.repairHint);
     const validated = options.validateItem(parsed, name);
     const itemId = validated.item;
     if (typeof itemId !== 'string' || !itemId) {
-      throw new Error(`--${options.flag} 目录下的 ${name} 缺少非空字符串字段 "item"。请补齐后${options.repairHint}`);
+      failCall('invalid_parameters', `--${options.flag} 目录下的 ${name} 缺少非空字符串字段 "item"`, `请补齐后${options.repairHint}`, { path: name });
     }
     const earlier = seen.get(itemId);
     if (earlier !== undefined) {
-      throw new Error(`${earlier} 和 ${name} 是同一个条目 ${itemId}；每个条目只留一个文件`);
+      failCall('occupied', `${earlier} 和 ${name} 是同一个条目`, '每个条目只留一个文件后重试', { path: name });
     }
     seen.set(itemId, name);
     items.push(validated);

@@ -1,6 +1,6 @@
 import {blockMeta,blockPointer} from './blocks.ts';
 import {cellInput} from './cell-selection.ts';
-import {isRecord} from './text.ts';
+import {CallFailure,isRecord} from './text.ts';
 import {isCommandTemplate} from './cell-commands.ts';
 import {blockGraphGaps} from './block-checks.ts';
 import {blockRuntimeGaps,assertionTarget,assertionCells,runtimeBlocks} from './block-runtime.ts';
@@ -78,7 +78,7 @@ export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile
  // Flat callers keep their existing boundary; a block carrier must be lowered even when its steps is empty.
  if(slots.blocks?.length){
   const parsed=readSlots(slots);
-  if(!parsed.ok)throw new Error('类型化地址检查需要完整结构计划：'+parsed.problems.map(problem=>problem.pointer+' '+problem.message).join('；'));
+  if(!parsed.ok)throw new CallFailure("invalid_parameters", '类型化地址检查需要完整结构计划：'+parsed.problems.map(problem=>problem.pointer+' '+problem.message).join('；'), "按返回的问题位置修正完整 blocks 结构计划，再执行类型化地址核对");
   slots=parsed.slots;
  }
  const resolved=planCommands(contract,profile,slots,catalog);

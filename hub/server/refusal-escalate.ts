@@ -15,6 +15,13 @@ import {
 export { isPackScopedCode } from './error-reasons.ts';
 
 export const ESCALATION_WINDOW_MS = 60 * 60 * 1000;
+/** Versioned component deciding the repeated-call recommendation, independent of the error claim warrant. */
+export const REFUSAL_ESCALATION_WARRANT = 'refusal-escalate@1';
+/** Declared producer identity only; refusal prose does not establish escalation. */
+export function isEscalatedError(error: ProtocolError): boolean {
+  return error.recommendation_warrant === REFUSAL_ESCALATION_WARRANT;
+}
+
 
 /**
  * Codes that never escalate (Boss 12:45 / 18:09):
@@ -91,7 +98,6 @@ export interface EscalationParts {
 export function countsTowardEscalation(code: string | null | undefined): boolean {
   if (typeof code !== 'string' || code.length === 0) return false;
   if (SKIP_CODES.has(code)) return false;
-  if (/cancel/i.test(code) || /internal/i.test(code)) return false;
   // Only the five call-error categories escalate; unavailable / conclusion / unmapped do not.
   const presentation = errorPresentationOf(code);
   if (presentation.kind === 'unavailable') return false;
@@ -123,11 +129,6 @@ function stringPlaceholder(schema: Record<string, unknown>): string {
     if (schema.pattern.includes('run_')) return 'run_01h2x3y4z5a6b7c8d9e0f1g2h3';
     if (/\[0-9a-f\]\{64\}/.test(schema.pattern)) return 'a'.repeat(64);
   }
-  const desc = typeof schema.description === 'string' ? schema.description : '';
-  if (/pack|工作流|任务包/i.test(desc) || schema.title === 'pack') return '<工作流编号>';
-  if (/kind/i.test(desc)) return 'workflow';
-  if (/reference|引用/i.test(desc)) return '<引用>';
-  if (/cursor|游标/i.test(desc)) return '<游标>';
   return '<取值>';
 }
 
@@ -262,16 +263,17 @@ export function categoryCloseOf(category: CallErrorCategory | null, retryAfterSe
   if (category === null) return null;
   switch (category) {
     case '参数无效':
-      return '照原样重试不会成功。请照上面的完整写法改；改后仍被拒绝，就停止重试，把这条错误原样报告给使用者';
+      return '照原样重试不会成功。请按上面的输入格式示例核对并替换占位值；改后仍被拒绝，就停止重试，把这条错误原样报告给使用者';
     case '无权限':
-      return '这不是写法问题，重试没有用。请停止重试，告诉使用者联系管理员分配；当前账户可用的工作流和技能用 list_task_packs 查看';
+      return '请按这次拒绝给出的具体授权出口处理；未给出对象和授权方式时，请维护者补齐，停止重复同一请求';
     case '不存在':
-      return '请先用列表工具核对名称；列表里没有，就停止重试并报告使用者';
+      return '请用本次返回的可读名称和列表覆盖范围核对对象；仍未找到时停止重试并报告使用者';
     case '已被占用':
-      return '请等待持有者释放，或改订空闲的测试环境；不要重复预订同一个';
+      return '请核对这次返回的具体冲突对象和处置方式；缺少时请维护者补齐，不凭类别改订其他对象';
     case '暂时不可用': {
-      const n = typeof retryAfterSeconds === 'number' && retryAfterSeconds > 0 ? retryAfterSeconds : 60;
-      return `请等待 ${n} 秒后原样重试一次；仍不可用，就停止重试并报告使用者`;
+      return typeof retryAfterSeconds === 'number' && retryAfterSeconds > 0
+        ? `请等待 ${retryAfterSeconds} 秒后原样重试一次；仍不可用，就停止重试并报告使用者`
+        : '本次未给出重试时刻；请按已披露故障核对，缺少具体下一步时请维护者补齐';
     }
   }
 }
@@ -290,9 +292,9 @@ export function buildEscalation(options: {
     return { occurrence, tier, countLabel, exampleJson: null, categoryClose: null, fixSuffix: null };
   }
   const sentences: string[] = [countLabel];
-  if (exampleJson !== null) sentences.push(`完整的正确写法：${exampleJson}`);
+  if (exampleJson !== null) sentences.push(`经输入格式核验的示例（需替换占位值）：${exampleJson}`);
   let categoryClose: string | null = null;
-  // Without an example, the 参数无效 close ("请照上面的完整写法改") must not be appended (Boss 17:58 F3).
+  // Without an example, the 参数无效 close ("请按上面的输入格式示例核对并替换占位值") must not be appended (Boss 17:58 F3).
   if (tier >= 3 && !(options.category === '参数无效' && exampleJson === null)) {
     categoryClose = categoryCloseOf(options.category ?? null, options.retryAfterSeconds);
     if (categoryClose !== null) sentences.push(categoryClose);
@@ -318,16 +320,7 @@ function asSentence(text: string): string {
   return /[。！？]$/.test(trimmed) ? trimmed : `${trimmed}。`;
 }
 
-export function factOfCallError(message: string, category: CallErrorCategory): string {
-  const trimmed = message.trim();
-  const prefix = `${category}：`;
-  if (trimmed.startsWith(prefix)) return trimmed.slice(prefix.length).trim();
-  for (const word of ['参数无效', '无权限', '不存在', '已被占用', '暂时不可用'] as const) {
-    const other = `${word}：`;
-    if (trimmed.startsWith(other)) return trimmed.slice(other.length).trim();
-  }
-  return trimmed;
-}
+export function factOfCallError(message: string, _category: CallErrorCategory): string { return message; }
 
 export function formatCategoryCallError(options: {
   category: CallErrorCategory;
@@ -338,22 +331,18 @@ export function formatCategoryCallError(options: {
   const next = asSentence(
     typeof options.fix === 'string' && options.fix.trim().length > 0
       ? options.fix
-      : '由使用者核对输入资料',
+      : '缺少本次拒绝的具体下一步，请维护者补齐后按原请求核对',
   );
   return `${options.category}：${fact}${next}`;
 }
 
-export function fixHasEscalation(fix: string | null | undefined): boolean {
-  return typeof fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(fix);
-}
 
 export function withEscalatedFix(error: ProtocolError, parts: EscalationParts): ProtocolError {
-  if (parts.fixSuffix === null) return error;
-  const base = typeof error.fix === 'string' && error.fix.length > 0 ? error.fix : '由使用者核对输入资料';
-  if (fixHasEscalation(base)) return error;
+  if (parts.fixSuffix === null || isEscalatedError(error)) return error;
+  const base = typeof error.fix === 'string' && error.fix.length > 0 ? error.fix : '缺少本次拒绝的具体下一步，请维护者补齐后按原请求核对';
   // Independent sentences: base already ends with 。 or we add one, then escalation sentences.
   const head = /[。！？]$/.test(base.trim()) ? base.trim() : `${base.trim()}。`;
-  return { ...error, fix: `${head}${parts.fixSuffix}。` };
+  return { ...error, recommendation_warrant: REFUSAL_ESCALATION_WARRANT, fix: `${head}${parts.fixSuffix}。` };
 }
 
 export async function occurrenceOf(options: {

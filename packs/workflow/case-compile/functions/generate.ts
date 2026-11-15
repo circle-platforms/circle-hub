@@ -7,6 +7,7 @@ import { typedAuthorityGaps, authorityRecovery } from './typed-authority.ts';
 // Client deterministic generator, also called solely for byte recomputation by the Hub verifier. Node built-ins only.
 import { createHash } from 'node:crypto';
 import { canonicalJson } from './canonical-json.ts';
+import { CallFailure } from './text.ts';
 import FORMAT from '../tables/workbook-format.json' with { type: 'json' };
 import { readSlots, type PlanSlots } from './slots.ts';
 import { allowedCall, type RuntimeProfile } from './profile.ts';
@@ -18,7 +19,7 @@ import { volumeOrder } from './channels.ts';
 export const GENERATOR = FORMAT.generator;
 export interface GenerationFields {source_atoms?:unknown;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown;expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; autoid: string; title: string; path?: string[]; priority?: string | null; steps: Array<{ text: string }> }
 export interface GenerationInput { slots: PlanSlots; fields: GenerationFields; contract: RuntimeContract; profile: RuntimeProfile; plan_run: string; build: string; generator?: string }
-export class GenerationError extends Error { readonly rule: string; readonly pointer: string; constructor(pointer: string, message: string, rule = 'generation') { super(`${pointer}：${message}`); this.name = 'GenerationError'; this.pointer = pointer; this.rule = rule; } }
+export class GenerationError extends CallFailure { readonly rule: string; readonly pointer: string; constructor(pointer: string, message: string, rule = 'generation') { super('invalid_parameters', `${pointer}：${message}`, rule === 'xstring_escape' ? `按 ${pointer} 核对原文字符；使用不含 _xNNNN_ 转义外观序列的原文，无法保持原意时交来源维护者核对` : `按 ${pointer} 所列生成约束修正对应输入；来源资料不满足时请来源维护者补齐，重新核对后再生成`, { path: pointer }); this.name = 'GenerationError'; this.pointer = pointer; this.rule = rule; } }
 const reject = (at: string, message: string): never => { throw new GenerationError(at, message); };
 export function gOptions(object: string, method: string, contract: RuntimeContract, profile: RuntimeProfile): GOptions {
   const entry = runtimeMethod(contract, object, method); const allowed = allowedCall(profile, object, method);
@@ -73,6 +74,15 @@ export function generateWorkbookSet(given: GenerationInput[], options: { merged?
   if (rows.length > FORMAT.max_rows) reject('/rows', `工作簿 ${rows.length} 行，超过本包上限 ${FORMAT.max_rows} 行；把脑图拆成几份分别上传、各开一次运行，或填 autoid 一次编一条`);
   try {
     const template = readTemplate(profile.workbook);
+    // The local ZIP32 STORE output grammar; validate template members before the shared writer consumes them.
+    if (template.members.length < 1 || template.members.length > 65535) reject('/profile/workbook/template', '运行器模板的 ZIP 成员数不在 1..65535 范围内');
+    const memberNames = new Set<string>();
+    for (const member of template.members) {
+      const segments = member.name.split('/');
+      if (memberNames.has(member.name) || member.name.includes('\\') || member.name.includes('\0') || segments.some(segment => segment === '' || segment === '.' || segment === '..')) reject('/profile/workbook/template', `运行器模板的 ZIP 成员名不是唯一的相对路径：${JSON.stringify(member.name)}`);
+      if (Buffer.byteLength(member.name, 'utf8') > 65535 || member.bytes.length > 0xffffffff) reject('/profile/workbook/template', '运行器模板的 ZIP 成员名或字节超过 ZIP32 STORE 上限');
+      memberNames.add(member.name);
+    }
     if (template.identity[1] !== contract.runtimeVersion || template.identity[2] !== contract.pinned.identity) reject('/profile/workbook/template', '运行器模板的运行时或合约身份与本运行的合约不符；换成这份合约配套的模板');
     const column = (number: number) => String.fromCharCode(64 + number);
     return fillTemplate(template, { [column(FORMAT.identity_generator_column)]: GENERATOR, [column(FORMAT.identity_recipe_column)]: digest }, rows, escape);

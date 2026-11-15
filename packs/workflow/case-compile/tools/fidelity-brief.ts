@@ -1,3 +1,6 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
+import { CallFailure } from '../functions/text.ts';
+import { planStateOf } from '../functions/plan-state.ts';
 // The scenario-fidelity briefs of a plan directory (functions/fidelity.ts), for the audit a fresh session makes before the plans
 // are submitted (tools/fidelity.md). Length placeholders are expanded first, exactly as tools/submit-plans.ts does before
 // sending, so a brief is computed from the bytes the Hub will receive and its digest is the one the Hub recomputes. Offline: it
@@ -7,13 +10,12 @@
 // earlier plan is never merged (in run 19 the model kept five brief directories and tracked the changed digests by hand).
 //   node <skill directory>/tools/fidelity-brief.ts --run <directory>/run.json --plans <plan directory> --out <brief directory>
 import { realpathSync } from 'node:fs';
-import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fidelityBrief, type FidelityBrief } from '../functions/fidelity.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { formatCallError, isRecord } from '../functions/text.ts';
-import { argumentsOf, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { parseCliOptions, isRecord } from '../functions/text.ts';
 import { expandPlanFiles, parsedPlanFile } from './submit-plans.ts';
 
 export interface PlanCase { file: string; base: string; item: string; value: Record<string, unknown>; brief: FidelityBrief }
@@ -24,7 +26,7 @@ export const verdictFile = (directory: string, base: string, sha256: string): st
 /** Every case file of a plan directory that has authored actions, with the brief of its plan as it stands now (placeholders expanded). */
 export async function planCases(runPath: string, plans: string): Promise<{ cases: PlanCase[]; skipped: Array<{ file: string; reason: string }> }> {
   const run = parsedPlanFile('run.json', await readFile(runPath));
-  if (!isRecord(run) || !Array.isArray(run.items)) throw new Error('--run 请使用脚本编写时下载的原始用例文件');
+  if (!isRecord(run) || !Array.isArray(run.items)) throw new CallFailure('invalid_parameters', '--run 请使用脚本编写时下载的原始用例文件', "请核对 --run 的冻结运行和 --plans 中的当前计划，再重新生成保真简报");
   const items = new Map(run.items.filter(isRecord).filter((i) => typeof i.id === 'string').map((i) => [i.id as string, i]));
   await expandPlanFiles(plans);
   const cases: PlanCase[] = [], skipped: Array<{ file: string; reason: string }> = [];
@@ -33,6 +35,8 @@ export async function planCases(runPath: string, plans: string): Promise<{ cases
     if (!isRecord(value) || typeof value.item !== 'string') { skipped.push({ file, reason: '不是用例自动化用例文件（没有 item）' }); continue; }
     const item = items.get(value.item);
     if (!item) { skipped.push({ file, reason: `不属于本次脚本编写的原始用例` }); continue; }
+    const eligibility = planStateOf(value, undefined, run);
+    if (!eligibility.process) { skipped.push({ file, reason: eligibility.reason! }); continue; }
     const data = planDataOf(value);
     const { fidelity: _judged, ...plan } = isRecord(data) ? data : {};
     const fields = isRecord(item.fields) ? item.fields : {};
@@ -46,19 +50,21 @@ const readText = async (path: string): Promise<string | null> => { try { return 
 
 export async function main(argv: string[]): Promise<number> {
   try {
-    const args = argumentsOf(argv, ['run', 'plans', 'out']);
+    const parsedArgs = parseCliOptions(argv, { run: true, plans: true, out: true }, 'node <技能目录>/tools/fidelity-brief.ts --run <run> --plans <plans> --out <out>');
+    // Required options are checked by parseCliOptions.
+    const args = { run: parsedArgs.run!, plans: parsedArgs.plans!, out: parsedArgs.out! };
     const { cases, skipped } = await planCases(args.run, args.plans);
     await mkdir(args.out, { recursive: true, mode: 0o700 });
     const briefs: Array<Record<string, unknown>> = [], toAudit: string[] = [];
     for (const { file, base, item, brief } of cases) {
       const at = briefFile(args.out, base, brief.brief_sha256), verdict = verdictFile(args.out, base, brief.brief_sha256);
-      if ((await readText(at)) === null) await writeNew(at, Buffer.from(JSON.stringify(brief, null, 2) + '\n'));
+      if ((await readText(at)) === null) await writeFile(at, Buffer.from(JSON.stringify(brief, null, 2) + '\n'), { flag: 'wx', mode: 0o600 });
       const audited = (await readText(verdict)) !== null;
       if (!audited) toAudit.push(resolve(at));
       briefs.push({ file, item, brief: resolve(at), verdict: resolve(verdict), brief_sha256: brief.brief_sha256, author_steps: brief.author_steps.length, state: audited ? '未确认' : '未知' });
     }
     process.stdout.write(JSON.stringify({ briefs, to_audit: toAudit, skipped }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

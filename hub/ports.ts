@@ -193,7 +193,7 @@ export type ExternalRead =
 /** What a reader of the system is told of an object held for review (D05 R[3]): that it exists, and when that was read. */
 
 /** A caller-input problem of a read, with the claim fields its answer carries (D05 R[8]): grounds, qualifier, the missing fact. */
-export type InputError = { code?:ProtocolCode; message: string; fix: string } & Pick<ProtocolError, 'grounds' | 'warrant' | 'provenance' | 'collected_at' | 'coverage' | 'missing' | 'hypotheses'>;
+export type InputError = { code?:ProtocolCode; message: string; fix: string } & Pick<ProtocolError, 'grounds' | 'warrant' | 'provenance' | 'collected_at' | 'coverage' | 'missing' | 'hypotheses' | 'options' | 'options_coverage'>;
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
@@ -281,7 +281,14 @@ export interface ExportedJob {
   /** The result projection and the word-for-word device return, as references; null when the job has none (yet). */
   result: string | null; device_return: string | null;
   /** Null until the result projection is the dispatch service's own and covers every item of the job exactly once. */
-  rows: Array<{ item: string; dynamic_terminal: import('../contracts/generated/vocabulary.ts').DynamicTerminal; evidence?: { log?: string; sessions?: Record<string, string> } }> | null;
+  rows: Array<{
+    item: string; dynamic_terminal: import('../contracts/generated/vocabulary.ts').DynamicTerminal;
+    qualifier?: { nature: import('../contracts/generated/vocabulary.ts').Nature; marks: import('../contracts/generated/vocabulary.ts').QualifierMark[] };
+    accepted_as_fact?: false; missing_facts?: string[]; missing_fact?: string; next_action?: string;
+    code?: string; judgment_premises?: import('../contracts/src/claim.ts').Claim[];
+    report_check?: { condition: string; pointer: string; declared_pointer: string; resolved: boolean; present: boolean; actual_sha256: string; result_definition_sha256: string; mapped_terminal?: import('../contracts/generated/vocabulary.ts').DynamicTerminal; missing_fact?: string; next_action?: string };
+    evidence?: { log?: string; sessions?: Record<string, string> };
+  }> | null;
 }
 
 export interface RunsService {

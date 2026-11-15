@@ -18,6 +18,7 @@ import { callErrorFact, callErrorNext } from './call-error-category.ts';
 import { SOURCE_UNKNOWN_CODES, callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
 import { fixByRole, proseByRole, type CallerRole } from './fix-by-role.ts';
 import { ENVIRONMENT_ASSIGNMENT_PREVIEW, packListHead } from './pack-words.ts';
+import { isEscalatedError } from './refusal-escalate.ts';
 import { toolLocalMinute } from '../telemetry/api.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
@@ -229,31 +230,6 @@ function callErrorLine(category: string, message: string, fix: string | undefine
   return `${category}：${fact}${next}${rounds}`;
 }
 
-/** Strip pack-owned「等待…补事实并重产」so Hub does not amplify the wrong next actor (Boss 00:33 / 06:48). */
-function factWithoutOwnerWait(message: string): string {
-  return message.replace(/；等待[^；\n]*在重新提交之前补事实并重产/g, '').trim();
-}
-
-/** Gap is on the submitted record declaration (recompose), not a missing uploaded run-input file. */
-function isSubmissionRecordGap(error: Pick<ProtocolError, 'requirement' | 'path'>): boolean {
-  if (error.requirement === 'record') return true;
-  return typeof error.path === 'string' && /(?:^|\/)(?:slots\/)?record(?:\/|$)/.test(error.path);
-}
-
-/** Keep upload_file wording only when the gap is a real run-input file (Boss 06:48). */
-function nextStepForSubmitGap(error: ProtocolError, fix: string | undefined): string {
-  if (isSubmissionRecordGap(error)) return '由模型改正重组记录后重交';
-  if (typeof fix === 'string' && /upload_file/.test(fix) && !isSubmissionRecordGap(error)) {
-    return fix.trim();
-  }
-  if (typeof fix === 'string' && fix.trim().length > 0) {
-    // Drop recovery's runner/upload_file clause when Hub already chose the model next step above.
-    const cleaned = fix.replace(/；?缺失事实：.*$/u, '').replace(/运行者用 upload_file[^；]*/u, '').trim();
-    if (cleaned.length > 0 && !/产品包作者|upload_file|运行者用/.test(cleaned)) return cleaned;
-  }
-  return '由模型改正重组记录后重交';
-}
-
 /**
  * Pack-marked program-determined error (not missing input). Field name reserved until agy lands:
  * claim.statement.data.determination === 'error' (Boss 06:48 b).
@@ -282,15 +258,14 @@ function conclusionErrorLine(error: ProtocolError, message: string, fix: string 
       '决定者程序',
     ].filter((part) => part !== null).join('；');
   }
-  const status = unknownError(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误'];
-  const next = isSubmissionRecordGap(error)
-    ? nextStepForSubmitGap(error, fix)
-    : (fix && fix.trim().length > 0 ? fix.trim() : '由使用者核对输入资料');
+  // A call error without a declared category is not evidence of a business refutation.
+  const status = unknownError(error) ? ['状态未知', isReason(error.code) ? `原因${labelOf('reason', error.code)}` : '原因缺资料'] : [];
+  const next = fix && fix.trim().length > 0 ? fix.trim() : '缺少来源声明的修正指引，需补齐这次调用的下一步处理资料';
   return [
-    factWithoutOwnerWait(message), ...status,
+    message, ...status,
     `下一步${next.replace(/^下一步/, '')}`,
     withRounds && error.rounds_left !== undefined ? `还可以重交 ${error.rounds_left} 次` : null,
-    '决定者程序',
+    unknownError(error) ? '决定者程序' : null,
   ].filter((part) => part !== null).join('；');
 }
 
@@ -312,8 +287,8 @@ function submitErrorBlocks(
     if (error.item !== undefined && represented.has(error.item)) continue;
     const original = context.items?.find((item) => item.id === error.item);
     const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
-    const message = missingRecord ? '核对结果的读取资料尚未取回' : factWithoutOwnerWait(error.message);
-    const escalated = typeof error.fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(error.fix);
+    const message = missingRecord ? '核对结果的读取资料尚未取回' : error.message;
+    const escalated = isEscalatedError(error);
     const fix = missingRecord
       ? proseByRole(role, 'missing_result_record')
       : escalated
@@ -337,8 +312,8 @@ function submitErrorBlocks(
           ? fix
           : D3_FACT_REWRITE.has(error.code)
             ? callErrorNext(error.code, role, fix, error.message, account, error.path)
-            : (isSubmissionRecordGap(error) ? nextStepForSubmitGap(error, fix) : fix))
-        : (isSubmissionRecordGap(error) ? nextStepForSubmitGap(error, fix) : (fix ?? '由使用者核对输入资料'));
+            : fix)
+        : (fix ?? '缺少来源声明的下一步处理资料');
     group.rows.push({
       error,
       fact: labelled,
@@ -375,13 +350,12 @@ function submitErrorBlocks(
           lines.push(`- ${factOnly}${mark}`);
         }
       }
-      const next = unique[0]?.row.category !== null
-        ? (unique[0].row.fix && unique[0].row.fix.trim().length > 0 ? unique[0].row.fix.trim() : '由使用者核对输入资料')
-        : (unique[0]?.row.fix ?? '由模型改正重组记录后重交');
-      lines.push(asSentence(next.startsWith('下一步') ? next : `下一步${next}`));
+      const nextSteps = [...new Set(group.rows.map(row => row.fix?.trim()).filter((fix): fix is string => Boolean(fix)))];
+      if (nextSteps.length === 0) nextSteps.push('缺少来源声明的下一步处理资料');
+      for (const next of nextSteps) lines.push(asSentence(next.startsWith('下一步') ? next : `下一步${next}`));
       if (roundsLeft !== undefined) lines.push(asSentence(`还可以重交 ${roundsLeft} 次`));
-      // Call-error-only blocks stay without「决定者程序」; any conclusion-style row keeps it once per case.
-      if (unique.some(({ row }) => row.category === null)) lines.push('决定者程序。');
+      const conclusions = group.rows.filter(row => row.category === null);
+      if (conclusions.length > 0 && conclusions.every(row => unknownError(row.error))) lines.push('决定者程序。');
       continue;
     }
 
@@ -409,7 +383,7 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
   const lead = allUnknown ? '资料尚未取得。' : null;
   const lines = v.errors.map((error) => {
     // Preserve D5 escalation already merged into structured fix (do not let fixByRole drop it).
-    const escalated = typeof error.fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(error.fix);
+    const escalated = isEscalatedError(error);
     const fix = escalated ? error.fix : fixByRole(error.code, role, error.fix, account);
     const presentation = errorPresentationOf(error.code);
     if (presentation.kind === 'unavailable') {
@@ -682,12 +656,7 @@ function conclusionStatements(texts: readonly string[]): string[] {
 
 function awaitingExcel(item: ItemResult): boolean {
   if (item.requirements.some((requirement) => requirement.requirement === 'workbook_verified' && requirement.status !== 'satisfied')) return true;
-  const texts = item.requirements.flatMap((requirement) => [
-    messageOf(requirement) ?? '',
-    ...requirement.claims.map((claim) => claim.statement.text),
-    ...requirement.claims.map((claim) => (typeof claim.statement.data?.missing === 'string' ? claim.statement.data.missing : '')),
-  ]).join('\n');
-  return /自动化用例 Excel|工作簿/.test(texts);
+  return false;
 }
 
 function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
@@ -699,7 +668,7 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
   const packDetermined = item.requirements.some(requirement => requirement.claims.some(packMarkedDeterminedError));
   const determined = wrong.length > 0 || packDetermined || item.requirements.some(requirementDeterminedError);
   const unknown = !determined && (partial || pending || item.requirements.length === 0 || claims.some(claim => claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || userVerdict(claim.statement.verdict) === null) || item.requirements.some(requirement => requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete')));
-  const status = determined ? '已确认' : unknown ? '未知' : model ? '未确认' : '已确认';
+  const status = determined ? (model ? '未确认' : '已确认') : unknown ? '未知' : model ? '未确认' : '已确认';
   const judgment = determined ? '错误' : unknown ? null : '正确';
   const excel = unknown && !determined && awaitingExcel(item);
   const problems = item.requirements.filter(requirement => requirement.status !== 'satisfied' || requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete') || requirement.claims.some(packMarkedDeterminedError));
@@ -707,10 +676,10 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
   const recordGap = problems.some((requirement) => requirement.requirement === 'record');
   // Prefer concrete missing/refute facts for record (and similar) gaps; Excel/in-flight keep their fixed statements.
   const gapFacts = excel ? [] : [...new Set(problems.flatMap((requirement) => {
-    const fromLayers = requirement.layers.flatMap((layer) => typeof layer.missing === 'string' ? [factWithoutOwnerWait(layer.missing)] : []);
+    const fromLayers = requirement.layers.flatMap((layer) => typeof layer.missing === 'string' ? [layer.missing] : []);
     const fromClaims = requirement.claims
       .filter((claim) => claim.statement.verdict === 'unknown' || claim.statement.verdict === 'refute' || packMarkedDeterminedError(claim))
-      .map((claim) => factWithoutOwnerWait(claim.statement.text));
+      .map((claim) => claim.statement.text);
     return [...fromLayers, ...fromClaims];
   }).filter((text) => text.length > 0))];
   // In progress: waiting on the next step / device output — keep 状态未知, do not force a reason word (Boss 20:53).
@@ -730,14 +699,14 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
         : unknown
           ? (gapFacts.length > 0 ? gapFacts.join('；') : '还没有确认结论')
           : conclusionStatements(claims.map(claim => claim.statement.text)).join('；') || '已按要求核对';
-  const parts = [`${caseName(original, item.label)}：${statement}`, `状态${status}`];
+  const parts = [`${caseName(original, item.label)}${original ? '：' : '，'}${statement}`, `状态${status}`];
   if (judgment !== null) parts.push(`判断${judgment}`);
   if (excel) {
     parts.push('下一步由模型生成并上传自动化用例 Excel 后重新交给 Hub 检查');
   } else if (inFlight) {
     parts.push('下一步由模型在上机验证结束后读取设备输出');
   } else if (determined) {
-    parts.push(`原因${[...new Set(layers.map(userReason))].join('、') || '编写模型的问题'}`);
+    parts.push(`原因${[...new Set(layers.map(userReason))].join('、') || '还没查清'}`);
     parts.push(recordGap ? '下一步由模型改正重组记录后重交' : '下一步由模型改正');
   } else if (unknown) {
     parts.push(`原因${partial ? '缺资料' : [...new Set(layers.map(userReason))].join('、') || '还没查清'}`);

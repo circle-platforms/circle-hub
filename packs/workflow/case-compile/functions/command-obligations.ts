@@ -30,15 +30,19 @@ function runnerCleanupAction(cleanup:RunnerCleanup|undefined,object:string,line:
 export const definitionKey=(identity:Pick<CommandIdentity,'tree_root'|'path'|'signature'>)=>JSON.stringify([identity.tree_root,identity.path,identity.signature]);
 export interface Operation {line:string;pointer:string;object:string;cleanup:boolean;input_register?:string}
 export interface UndoneConfiguration {object:string;configured:number;inverse:number;until?:number;literals:string[];direction_known:boolean}
-function definitions(raw:unknown):CommandDefinition[]{
- if(!isRecord(raw)||typeof raw.root!=='string')return [];
+export type CatalogCommandDefinition=CommandDefinition&{reference:string};
+function definitions(raw:unknown):CatalogCommandDefinition[]{
+ if(!isRecord(raw)||typeof raw.root!=='string'||!/^[a-f0-9]{64}$/.test(raw.root))return [];
  return (Array.isArray(raw.authority_entries)?raw.authority_entries:Array.isArray(raw.entries)?raw.entries:[]).flatMap(entry=>{
   if(!isRecord(entry)||!Array.isArray(entry.words)||entry.words.some(word=>typeof word!=='string')||!Array.isArray(entry.signatures)||typeof entry.reference!=='string')return [];
   const path='/commands/'+entry.words.map(encodeURIComponent).join('/'),ref='tree:'+raw.root+path;
-  if(entry.reference!==ref&&!(entry.reference.slice(0,ref.length+1)===ref+'@'&&entry.reference.slice(ref.length+1).length===64))return [];
-  return [{path,words:entry.words,signatures:entry.signatures} as CommandDefinition];
+  const [target,revision,...rest]=entry.reference.split('@');
+  if(target!==ref||rest.length||revision!==undefined&&!/^[a-f0-9]{64}$/.test(revision))return [];
+  return [{path,words:entry.words,signatures:entry.signatures,reference:entry.reference} as CatalogCommandDefinition];
  });
 }
+/** Frozen catalog declarations shared by obligation checks and disclosure-only precheck. */
+export { definitions as commandDefinitions };
 /**
  * The typed addresses of the author's own commands (decision 115, the reference implementation's author provenance of addresses):
  * every address parameter of each case-text command line the locked tree resolves, compared by address. An address the

@@ -166,3 +166,12 @@ test('fidelityBrief populates added_precondition exemptions from sources.states,
   assert.ok(briefUnsourced.mechanical.note.includes('mechanical.exemptions 为空'));
   assert.equal(JSON.stringify(briefUnsourced).includes('擅自添加但自称前置'), false);
 });
+
+test('fidelity CLI missing arguments are declared parameter failures', async () => {
+  for (const entry of [brief, apply]) {
+    const reply = await quiet(() => entry([]));
+    assert.equal(reply.code, 1);
+    assert.match(reply.stderr, /^参数无效：/);
+    assert.match(reply.stderr, /请/);
+  }
+});

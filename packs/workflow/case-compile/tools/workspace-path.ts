@@ -1,3 +1,4 @@
+import { CallFailure } from '../functions/text.ts';
 // Shared working-directory containment and symlink-escape checks for pack CLI tools.
 import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -40,18 +41,18 @@ export function resolveInsideCwd(
 ): ResolvedCwdPath {
   const suggestion = hint ? `（${hint}）` : '';
   if (!targetArg || /[\0\r\n]/.test(targetArg)) {
-    throw new Error(`参数无效：${label} 路径不能为空或包含控制字符。请改写相对工作目录路径后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：${label} 路径不能为空或包含控制字符。请改写相对工作目录路径后重试`, "请改用工作目录内的真实相对路径，并保留用户文件后重试");
   }
   const lexical = isAbsolute(targetArg) ? resolve(targetArg) : resolve(cwd.canonical, targetArg);
   if (!isInsideCwdLexical(lexical, cwd)) {
-    throw new Error(`参数无效：${label} 路径 ${targetArg} 超出当前工作目录。请改写工作目录下的相对路径${suggestion}`);
+    throw new CallFailure('invalid_parameters', `参数无效：${label} 路径 ${targetArg} 超出当前工作目录。请改写工作目录下的相对路径${suggestion}`, "请改用工作目录内的真实相对路径，并保留用户文件后重试");
   }
   let probe = lexical;
   const tail: string[] = [];
   while (!existsSync(probe)) {
     try {
       if (lstatSync(probe).isSymbolicLink()) {
-        throw new Error(`参数无效：${label} 路径中存在悬空符号链接 ${basename(probe)}。请改用工作目录内的真实路径后重试`);
+        throw new CallFailure('invalid_parameters', `参数无效：${label} 路径中存在悬空符号链接 ${basename(probe)}。请改用工作目录内的真实路径后重试`, "请改用工作目录内的真实相对路径，并保留用户文件后重试");
       }
     } catch (error) {
       if ((error as { code?: unknown })?.code !== 'ENOENT') throw error;
@@ -63,7 +64,7 @@ export function resolveInsideCwd(
   }
   const canonical = join(realpathSync(probe), ...tail);
   if (!isInsideRoot(canonical, cwd.canonical)) {
-    throw new Error(`参数无效：${label} 路径 ${targetArg} 解析后超出当前工作目录。请改用工作目录内的真实路径后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：${label} 路径 ${targetArg} 解析后超出当前工作目录。请改用工作目录内的真实路径后重试`, "请改用工作目录内的真实相对路径，并保留用户文件后重试");
   }
   return {
     lexical,
@@ -88,19 +89,19 @@ function resolveExistingEntryInsideCwd(
   } catch (error) {
     if ((error as { code?: unknown })?.code === 'ENOENT') {
       const next = missingHint ?? `请确认 ${entryArg} 已在当前工作目录存在后重试`;
-      throw new Error(`不存在：找不到 ${label} ${kindLabel} ${entryArg}。${next}`);
+      throw new CallFailure('not_found', `不存在：找不到 ${label} ${kindLabel} ${entryArg}。${next}`, "请改用工作目录内的真实相对路径，并保留用户文件后重试");
     }
     throw error;
   }
   if (st.isSymbolicLink()) {
-    throw new Error(`参数无效：${label} ${kindLabel} ${entryArg} 不能是符号链接。请改用工作目录内的真实${kindLabel}后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：${label} ${kindLabel} ${entryArg} 不能是符号链接。请改用工作目录内的真实${kindLabel}后重试`, "请改用工作目录内的真实相对路径，并保留用户文件后重试");
   }
   if (kind === 'file' ? !st.isFile() : !st.isDirectory()) {
-    throw new Error(`参数无效：${label} ${entryArg} 不是${expectedType}。请改用工作目录内的${expectedType}后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：${label} ${entryArg} 不是${expectedType}。请改用工作目录内的${expectedType}后重试`, "请改用工作目录内的真实相对路径，并保留用户文件后重试");
   }
   const canonical = realpathSync(resolved.lexical);
   if (!isInsideRoot(canonical, cwd.canonical)) {
-    throw new Error(`参数无效：${label} 路径 ${entryArg} 解析后超出当前工作目录。请改用工作目录内的真实路径后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：${label} 路径 ${entryArg} 解析后超出当前工作目录。请改用工作目录内的真实路径后重试`, "请改用工作目录内的真实相对路径，并保留用户文件后重试");
   }
   return {
     lexical: resolved.lexical,

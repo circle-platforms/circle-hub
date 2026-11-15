@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
@@ -6,11 +7,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
-  CIRCLE_GENERAL_PURPOSE_NOTICE,
   renderAgentDefinition,
   resolveSubagentRole,
   SUBAGENT_ROLES,
 } from '../functions/subagent-roles.ts';
+import { ATTRIBUTION, labelOf } from '../functions/generated/vocabulary.ts';
 import { CONTRACT_DOC } from '../functions/test-support.ts';
 import { PROSE_WRAP_MAX_CHARS } from '../functions/text.ts';
 import { stage } from '../pack-files.ts';
@@ -45,15 +46,16 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
       packRoot: packDir,
       note: '先查前置配置',
     });
-    assert.ok(writerBrief.startsWith(`${CIRCLE_GENERAL_PURPOSE_NOTICE}\n\n`));
-    assert.ok(writerBrief.includes('subagent_type="general-purpose"'));
+    assert.ok(!writerBrief.includes("已知缺陷"));
+    assert.ok(writerBrief.includes('subagent_type="compile-writer"'));
     assert.ok(writerBrief.includes('compile-writer'));
     assert.ok(writerBrief.includes(scopeVerbatim));
     assert.ok(writerBrief.includes('使用者原话，由主会话记录'));
-    assert.ok(writerBrief.includes(`技能目录：${packDir}`));
-    assert.ok(writerBrief.includes(`node ${packDir}/tools/check-plan.ts --file`));
+    assert.ok(writerBrief.includes(`技能目录（明确只读资源）：${packDir}`));
+    assert.ok(writerBrief.includes(`node '${packDir}/tools/check-plan.ts' --file`));
     assert.ok(!writerBrief.includes('<技能目录>'));
-    assert.ok(writerBrief.includes('按测试环境改写、前置与清理'));
+    assert.ok(writerRole.body.includes('按测试环境改写、前置与清理'));
+    assert.ok(!writerBrief.includes(writerRole.body));
     assert.ok(writerBrief.includes('本轮补充：先查前置配置'));
 
     // Also accepts English keys and agent names identically.
@@ -84,9 +86,9 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
     });
     assert.ok(attrBrief.includes('compile-attributor'));
     assert.ok(attrBrief.includes('index.json'));
-    assert.ok(attrBrief.includes('apv_*.txt'));
-    assert.ok(attrBrief.includes('log.txt'));
-    assert.ok(attrBrief.includes('本轮严禁工具与动作：execute'));
+    assert.ok(SUBAGENT_ROLES.find(role => role.key === 'attribute')!.body.includes('apv_*.txt'));
+    assert.ok(SUBAGENT_ROLES.find(role => role.key === 'attribute')!.body.includes('log.txt'));
+    assert.ok(SUBAGENT_ROLES.find(role => role.key === 'attribute')!.forbiddenTools.includes('execute'));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -252,9 +254,9 @@ test('staged task-brief CLI resolves installed skill dir from import.meta.url an
     const taskContent = await readFile(join(workDir, 'audit/case-201.abcdef12.task.md'), 'utf8');
     assert.ok(taskContent.includes('compile-fidelity'));
     assert.ok(taskContent.includes(scope));
-    assert.ok(taskContent.includes(`技能目录：${packDir}`));
+    assert.ok(taskContent.includes(`技能目录（明确只读资源）：${packDir}`));
     assert.ok(!taskContent.includes('<技能目录>'));
-    assert.ok(taskContent.includes('node ' + packDir + '/tools/check-plan.ts --file <verdict相对路径> --brief <brief相对路径>'));
+    assert.ok(taskContent.includes(`node '${packDir}/tools/check-plan.ts' --file 'audit/case-201.abcdef12.verdict.json' --brief 'audit/case-201.abcdef12.brief.json'`));
 
     // Invalid option format exits non-zero with formatted stderr.
     const errChunks: string[] = [];
@@ -563,7 +565,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     };
     await writeFile(join(workDir, 'run', 'sources', 'contract.json'), JSON.stringify(signTypedRuntime(contractWithMarker)));
     await writeFile(join(workDir, 'run', 'sources.json'), JSON.stringify([
-      { slot: 'contract', file: 'sources/contract.json' },
+      { slot: 'contract', file: 'sources/contract.json', reference: 'src:' + createHash('sha256').update(await readFile(join(workDir, 'run', 'sources', 'contract.json'))).digest('hex') },
     ]));
 
     // D3: reject whole-batch submission.json and wrong-shape answer/notes files
@@ -684,6 +686,9 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     });
     assert.ok(r3Unified.length < 80_000, `D1: multi-line 1.2MB answer must not bloat brief (got ${r3Unified.length})`);
     assert.ok(r3Unified.includes('INVALID_PARAM'));
+    assert.ok(r3Unified.includes('本次已核验的来源文件'));
+    assert.ok(r3Unified.includes('run/sources/contract.json'));
+    assert.ok(!r3Unified.includes('run/contract.json'));
     assert.ok(!r3Unified.includes('B_ERR') && !r3Unified.includes('PPPPPP'));
     assert.ok(r3Unified.includes('连续 2 轮命中同类错误'), 'D8: contract failure_markers loaded via task-brief.ts drove streak detection');
     assert.ok(r3Unified.includes('最后一次机会') && !r3Unified.includes('FINAL attempt'));
@@ -915,7 +920,7 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
 
     // Short stdout dispatch notice stays compact and leaks zero case content or long verbatim chunks.
     assert.ok(written.dispatchPrompt.length <= 500, `dispatchPrompt too long: ${written.dispatchPrompt.length}`);
-    assert.ok(written.dispatchPrompt.includes(CIRCLE_GENERAL_PURPOSE_NOTICE));
+    assert.ok(!written.dispatchPrompt.includes("已知缺陷"));
     assert.ok(written.dispatchPrompt.includes('briefs/0.task.md'));
     assert.ok(written.dispatchPrompt.includes(`共 ${written.lineCount} 行`));
     assert.ok(written.dispatchPrompt.includes('plans/0.json'));
@@ -991,7 +996,7 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
   }
 });
 
-test('P1.3: task-brief embeds resolved skillDir at head of dispatchPrompt and supports --batch generation for plans and fidelity briefs', async () => {
+test('task-brief dispatches named roles using workspace paths and supports batches without repeating installed instructions', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-batch-'));
   try {
     const packDir = realpathSync(await stage(join(root, 'skill')));
@@ -1020,7 +1025,7 @@ test('P1.3: task-brief embeds resolved skillDir at head of dispatchPrompt and su
     );
     assert.equal(singleRun.status, 0, singleRun.stderr);
     assert.ok(singleRun.stdout.length <= 500);
-    assert.ok(singleRun.stdout.includes(`技能目录：${packDir}`), 'dispatchPrompt must expose real skillDir');
+    assert.ok(!singleRun.stdout.includes('技能目录：'), 'dispatch prompt paths use only the workspace base');
 
     const batchPlan = spawnSync(
       process.execPath,
@@ -1069,8 +1074,8 @@ test('req1 & req2: authoring, recomposition, fidelity, and attribution rules ali
   assert.ok(fidelityDoc.includes('added_precondition'));
 
   // Negative Req 1: unqualified legacy phrase must not reappear in authoring/recompose prompts or skills.
-  for (const [label, text] of [['compile-writer', writer], ['compile-recomposer', recomposer], ['SKILL.md', skill], ['recompose/SKILL.md', recomposeSkill]] as const) {
-    assert.equal(text.includes('作者没写的对象或动作不自己加'), false, `${label} still has unqualified blocker`);
+  for (const [label, text] of [['compile-writer', writer], ['SKILL.md', skill]] as const) {
+    assert.equal(text.includes(['作者没写的对象或动作','不自己加'].join('')), false, `${label} still has unqualified blocker`);
     assert.equal(text.includes('不能加原始用例没写的对象或动作'), false, `${label} still has unqualified blocker`);
   }
 
@@ -1091,4 +1096,13 @@ test('req1 & req2: authoring, recomposition, fidelity, and attribution rules ali
   assert.ok(deliveryDoc.includes('轮次已用完时不开第 4 轮'));
   assert.ok(!writer.includes('130 条') && !recomposeSkill.includes('130 条'));
   assert.ok(recomposeSkill.includes('运行器清配置并在收尾末尾执行 `write memory` 存盘') || recomposeSkill.includes('运行器清配置并在收尾末尾执行 \\`write memory\\` 存盘'));
+});
+
+
+test('attribution instructions disclose marker observations and consume generated reason labels', () => {
+  const body = resolveSubagentRole('attribute')!.body;
+  for (const code of ATTRIBUTION) assert.ok(body.includes(labelOf('attribution', code)), code);
+  assert.ok(body.includes('不证明原因属于'));
+  assert.ok(body.includes('缺少可区分的证据时保留未知'));
+  assert.ok(!body.includes('属于本条自动化用例自己的命令顺序'));
 });

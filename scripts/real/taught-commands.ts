@@ -2,8 +2,6 @@
 // Used by guard-preflight and (when merged) circle-guard regression tests — one grammar for
 // both unquoted legacy docs (`node <技能目录>/tools/…`) and single-quoted docs
 // (`node '<技能目录>/tools/…'`).
-import { join } from 'node:path';
-import { quote } from './guard-lib.ts';
 
 export type TaughtKind = 'shell' | 'text' | 'inline';
 
@@ -42,6 +40,10 @@ export const TAUGHT_PLACEHOLDERS: Record<string, string> = {
   新目录: 'out dir',
   导出文件: 'inputs/mindmap raw.km',
   规整文件: 'inputs/mindmap norm.json',
+  '提案.json': 'inputs/proposals 说明.json',
+  产品: 'synthetic-product',
+  操作者给定构建: 'Synthetic Build',
+  整合模型身份: 'synthetic model',
   '说明.json': 'delivery dir/notes 说明.json',
   'scope.md': 'scope.md',
   用例或范围: 'case_1',
@@ -74,8 +76,7 @@ export const TAUGHT_PLACEHOLDERS: Record<string, string> = {
 
 const META_QUOTED = "node '<技能目录>/tools/<脚本>.ts' --选项 值";
 const META_BARE = 'node <技能目录>/tools/<脚本>.ts --选项 值';
-/** Prose note glued to <<'EOF' in ```text``` summaries (legacy docs); not a runnable delimiter. */
-const HEREDOC_PROSE_NOTE = /[ \t]*<<'EOF'（[^）]*）\s*$/;
+const META_QUOTED_VALUE = "node '<技能目录>/tools/<脚本>.ts' --选项 '值'";
 
 function splitAlternativesOutsideAngles(text: string): string[] {
   const parts: string[] = [];
@@ -98,7 +99,7 @@ function splitAlternativesOutsideAngles(text: string): string[] {
  * Structurally extracts taught `node` CLI commands from markdown:
  * fenced `sh`/`bash`/`shell` (including same-line `<<'EOF'`), `text` fences with optional
  * `label: ` prefix, and inline backticked `node …` spans.
- * Soft on malformed heredocs (skips) so preflight can run against imperfect installed docs.
+ * Malformed heredocs remain literal input so the installed guard can reject them.
  */
 export function extractTaughtCommands(markdown: string, sourceLabel: string): TaughtCommand[] {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
@@ -109,14 +110,6 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
     firstLine: string,
     startIndex: number,
   ): { command: string; heredocLines: string[] | null; nextIndex: number } | null => {
-    // Legacy text-summary form: `… <<'EOF'（接两行 %HUB_TOKEN% 与 EOF…）` — treat as token heredoc.
-    if (HEREDOC_PROSE_NOTE.test(firstLine)) {
-      return {
-        command: firstLine.replace(HEREDOC_PROSE_NOTE, ''),
-        heredocLines: ['%HUB_TOKEN%'],
-        nextIndex: startIndex,
-      };
-    }
     if (!/<<'EOF'\s*$/.test(firstLine)) {
       return { command: firstLine, heredocLines: null, nextIndex: startIndex };
     }
@@ -127,12 +120,13 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
       body.push(lines[j]!);
       j += 1;
     }
-    if (lines[j] !== 'EOF') return null;
+    if (lines[j] !== 'EOF') return { command: firstLine, heredocLines: null, nextIndex: startIndex };
     return { command: head, heredocLines: body, nextIndex: j };
   };
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]!;
+    const source = `${sourceLabel}:${i + 1}`;
     if (fence === '') {
       const open = /^```([^\s`]*)/.exec(line);
       if (open) {
@@ -144,9 +138,9 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
         const span = m[1]!.trim();
         if (!span.startsWith('node ')) continue;
         if (span === 'node -e') continue;
-        const isMetaTemplate = span === META_QUOTED || span === META_BARE;
+        const isMetaTemplate = span === META_QUOTED || span === META_BARE || span === META_QUOTED_VALUE;
         out.push({
-          source: `${sourceLabel}:${i + 1}`,
+          source,
           kind: 'inline',
           raw: span,
           isMetaTemplate,
@@ -170,7 +164,7 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
       if (!read) continue;
       i = read.nextIndex;
       out.push({
-        source: `${sourceLabel}:${i + 1}`,
+        source,
         kind: 'shell',
         raw: read.command,
         heredocLines: read.heredocLines,
@@ -184,7 +178,7 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
       if (!read) continue;
       i = read.nextIndex;
       out.push({
-        source: `${sourceLabel}:${i + 1}`,
+        source,
         kind: 'text',
         raw: read.command,
         heredocLines: read.heredocLines,
@@ -194,27 +188,19 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
   return out;
 }
 
-/** Binds `<技能目录>` for both single-quoted and bare legacy forms; always quotes the absolute script path. */
+/** Substitute the authored path placeholder without adding quoting or changing the spelling. */
 export function bindSkillDirectory(command: string, skillDir: string): string {
-  let out = command.replace(/node '<技能目录>\/([^']+)'/g, (_m, rel: string) => `node ${quote(join(skillDir, rel))}`);
-  out = out.replace(/node <技能目录>\/(\S+\.ts)/g, (_m, rel: string) => `node ${quote(join(skillDir, rel))}`);
-  return out;
+  return command.split('<技能目录>').join(skillDir);
 }
 
 function resolvePlaceholderValue(name: string, extra: Record<string, string>): string | null {
-  const trimmed = name.trim();
-  if (Object.hasOwn(extra, trimmed)) return extra[trimmed]!;
-  if (Object.hasOwn(TAUGHT_PLACEHOLDERS, trimmed)) return TAUGHT_PLACEHOLDERS[trimmed]!;
-  if (trimmed === 'HUB_URL') return '%HUB_URL%';
+  if (Object.hasOwn(extra, name)) return extra[name]!;
+  if (Object.hasOwn(TAUGHT_PLACEHOLDERS, name)) return TAUGHT_PLACEHOLDERS[name]!;
+  if (name === 'HUB_URL') return '%HUB_URL%';
   return null;
 }
 
-function bareToken(value: string): string {
-  // Legacy docs omit quotes and often concatenate placeholders (`<dir>/<name>.json`).
-  // Keep a single plain ASCII token so `/` and `.` joiners stay outside quotes.
-  if (/^[A-Za-z0-9_./%-]+$/.test(value)) return value;
-  return value.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'value';
-}
+function bareToken(value: string): string { return value; }
 
 /** Expands `[optional]` / `<a|b>` / `<占位符>` after the skill directory is already bound. */
 export function expandTaughtPlaceholders(
@@ -238,7 +224,7 @@ export function expandTaughtPlaceholders(
       cursor = groups[idx]!.end;
     }
     result += command.slice(cursor);
-    return result.replace(/ +/g, ' ').trim();
+    return result.trim();
   };
   const bracketForms = new Set<string>([renderBrackets(new Map())]);
   for (let idx = 0; idx < groups.length; idx++) {
@@ -258,25 +244,25 @@ export function expandTaughtPlaceholders(
             .map((opt) => form.slice(0, choices[0]!.index) + opt + form.slice(choices[0]!.index! + choices[0]![0]!.length))
         : [form];
     for (const choiceForm of choiceForms) {
-      // Quoted placeholders first (`'<目标路径>'`) keep spaces/Chinese; bare `<目标路径>` stay one token.
+      // Preserve the authored quoting when substituting declared fixture values.
       const substituted = choiceForm
         .replace(/'<([^'<>]+)>'/g, (_whole, name: string) => {
           const value = resolvePlaceholderValue(name, extraPlaceholders);
           return value !== null
             ? `'${value}'`
-            : `'out/${name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 40) || 'value'}'`;
+            : `'<${name}>'`;
         })
-        // Comma-joined bare placeholders (`--runs <a>,<b>`) must become one quoted token.
+        // Preserve comma-joined placeholders without adding shell quotes.
         .replace(/<([^<>]+)>,<([^<>]+)>/g, (_whole, left: string, right: string) => {
-          const a = resolvePlaceholderValue(left, extraPlaceholders) ?? `out/${left.trim().replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 40) || 'value'}`;
-          const b = resolvePlaceholderValue(right, extraPlaceholders) ?? `out/${right.trim().replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 40) || 'value'}`;
-          return quote(`${a},${b}`);
+          const a = resolvePlaceholderValue(left, extraPlaceholders) ?? `<${left}>`;
+          const b = resolvePlaceholderValue(right, extraPlaceholders) ?? `<${right}>`;
+          return `${a},${b}`;
         })
         .replace(/<([^<>]+)>/g, (whole, name: string) => {
           if (whole === '%HUB_URL%') return '%HUB_URL%';
           const value = resolvePlaceholderValue(name, extraPlaceholders);
           if (value !== null) return bareToken(value);
-          return bareToken(`out/${name.trim().replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 40) || 'value'}`);
+          return whole;
         });
       concretes.push(substituted);
     }
@@ -296,20 +282,13 @@ export interface InstantiateOptions {
  */
 export function instantiateTaughtCommand(entry: TaughtCommand, options: InstantiateOptions): string[] {
   let command = entry.raw;
-  if (entry.isMetaTemplate) {
-    const recompose = (options.skillName ?? '').includes('recompose');
-    command = recompose
-      ? "node '<技能目录>/tools/check-record.ts' --file '<重组后的用例目录>'"
-      : "node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>'";
-  }
+  if (entry.isMetaTemplate) return [];
 
   command = bindSkillDirectory(command, options.skillDir);
   if (command.includes('<技能目录>')) {
     // Unbound skill dir (e.g. prose that only mentions the placeholder) — not a runnable example.
     return [];
   }
-  // Bare `node '<…>.ts'` / `node …ts` with no args is a prose mention, not an execute example.
-  if (/^node (?:'[^']+\.ts'|\S+\.ts)$/.test(command.trim())) return [];
 
   return expandTaughtPlaceholders(command, options.placeholders ?? {}).map((concrete) => {
     if (entry.heredocLines && !concrete.includes("<<'EOF'")) {

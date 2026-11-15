@@ -1,3 +1,5 @@
+import { ATTRIBUTION, labelOf } from './generated/vocabulary.ts';
+import { CallFailure } from './text.ts';
 // Single-source declarations for case-compile subagent roles.
 // Both `agents/*.md` and `tools/task-brief.ts` render strictly from these definitions.
 import type { CompileBriefV1 } from './authoring-brief.ts';
@@ -20,6 +22,7 @@ export interface SubagentRoleSpec {
   tools: readonly string[];
   forbiddenTools: readonly string[];
   body: string;
+  localCheck?: { script: string; withBrief: boolean };
 }
 
 export interface TaskBriefInput {
@@ -97,6 +100,7 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
   },
   {
     key: 'plan',
+    localCheck: { script: 'check-plan.ts', withBrief: false },
     stageLabel: '脚本编写',
     agentName: 'compile-writer',
     description:
@@ -113,7 +117,7 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
       hasGrep: true,
       hasExecute: true,
       executeRule:
-        '`execute` 唯一允许形式：单行 `node <技能目录>/tools/check-plan.ts --file <计划JSON相对路径>`（空格隔开选项与值，禁止 `=`）；严禁通过 `execute` 运行 `ls`/`cat`/`wc`/`grep`/`find`/`mkdir`/`cp`/`mv`/`rm`/`python3`/`node -e` 或 `task-brief.ts`。',
+        '`execute` 唯一允许形式：单行 `node \'<技能目录>/tools/check-plan.ts\' --file \'<计划JSON相对路径>\'`（空格隔开选项与值，禁止 `=`/`"`/`\\`，路径或值含空格、中文或 `<`/`>` 统一用 `\'…\'`）；严禁通过 `execute` 运行 `ls`/`cat`/`wc`/`grep`/`find`/`mkdir`/`cp`/`mv`/`rm`/`python3`/`node -e` 或 `task-brief.ts`。',
     })}
 4. 不碰令牌、不调 Hub、不调 \`test-bed\`；子代理不问使用者：定不了的问题或资料缺口按规则写进计划的 \`unmet\`/\`missing\`，在最终回复写给主代理的报告。
 
@@ -164,10 +168,11 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}；receipt/case_id 取 fields.recomposition；quote 逐字等于对应原始期望；无对应判断记未知不省略；新增声明引文用 Hub 已确定声明且 quote.text 逐字复制
 \`\`\`
 
-写完（或返工改完）后，必须运行 \`node <技能目录>/tools/check-plan.ts --file <目标计划相对路径>\`，确认 \`ok: true\` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项）。`,
+写完（或返工改完）后，必须运行 \`node '<技能目录>/tools/check-plan.ts' --file '<目标计划相对路径>'\`，确认 \`ok: true\` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项）。`,
   },
   {
     key: 'fidelity',
+    localCheck: { script: 'check-plan.ts', withBrief: true },
     stageLabel: '保真核对',
     agentName: 'compile-fidelity',
     description:
@@ -185,7 +190,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
       hasGrep: false,
       hasExecute: true,
       executeRule:
-        '`execute` 唯一允许形式：写入后可运行 `node <技能目录>/tools/check-plan.ts --file <verdict相对路径> --brief <brief相对路径>` 验证 JSON 语法、字段结构与摘要一致；严禁通过 `execute` 运行 `ls`/`wc`/`grep`/`cp`/`node -e` 或 `task-brief.ts`。',
+        '`execute` 唯一允许形式：写入后可运行 `node \'<技能目录>/tools/check-plan.ts\' --file \'<verdict相对路径>\' --brief \'<brief相对路径>\'` 验证 JSON 语法、字段结构与摘要一致；严禁通过 `execute` 运行 `ls`/`wc`/`grep`/`cp`/`node -e` 或 `task-brief.ts`。',
     })}
 5. 不读取或写入令牌、不预订或释放测试环境、不询问使用者、不调 Hub。完成后仅回复写入的 \`.verdict.json\` 相对路径列表，不展开无关说明。`,
   },
@@ -205,12 +210,12 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 
 ## 强制分析层序（对照 \`<技能目录>/tools/delivery.md\` 与主技能第 5 节）
 1. 先查 \`syntax_rejected\`（设备用脱字符 \`^\` 指出命令中的词）：此时命令尚未执行，优先核对该命令在当前设备提示符下同构建 \`knowledge/\` 中的完整语法或参数，先修命令写法/下发方法；此时严禁给出 \`defect_candidate\` 或 \`author_conflict\`。
-2. 再查 \`execution_refused\`、会话终端记录与执行器规则标明的命令失败原话：属于本条自动化用例自己的命令顺序、前置未生效或取值问题（例如先查前置创建命令是否同样失败）。
+2. 再查 \`execution_refused\`、会话终端记录与执行器规则标明的命令失败原话：这些记录只说明声明的拒绝或失败条件命中，不证明原因属于命令顺序、前置、取值、设备或其他一方。逐项核对命令、前置与同构建规则；缺少可区分的证据时保留未知，写明缺什么、下一步由谁补。
 3. 再核对运行构建一致性（\`run.json\` 锁定构建与实际设备返回版本）、配置是否真正生效、同构建手册跨章前置与配置示例（含本端与对端对称配对配置），以及多个原始用例的共同症状。再次失败时须确认上次修改已进入本次 Excel；已改而同一句设备输出仍出现，即证伪上一轮假设并必须更换不同机制/命令形式。当设备报错明确点出所缺对象、参数或条件，且同构建锁定手册正文或配置示例存在尚未试过的可行假设时：尚有轮次时，下一轮返工必须优先测试该假设，不得借“缺资料”或“剩一次机会”拦住不试；轮次已用完时不建议再开轮，把该假设与试法写进 remedy 交使用者决定。只有在锁定手册正文、示例、命令树与环境声明均没有任何来源支持任何未试假设时，才可归为“缺资料”。
-4. 最后才考虑设备问题：仅当原始期望已忠实实现、手册与示例前置全有、观察对象与方法正确且命令未被语法拒绝，且不存在未试过的手册/示例假设时，才可建议 \`defect_candidate\` 候选；拿不准就标为状态未知、原因“还没查清”，建议在被测命令前加只读观察。
+4. 最后才考虑设备问题：仅当原始期望已忠实实现、手册与示例前置全有、观察对象与方法正确且命令未被语法拒绝，且不存在未试过的手册/示例假设时，才可建议 \`defect_candidate\` 候选；拿不准就标为状态未知、原因“${labelOf('attribution', 'unattributed')}”，建议在被测命令前加只读观察。
 
 ## 强制输出约束
-每条失败分析结论必须显式标注 \`"confidence": "hypothesis"\`（模型假设、状态未确认），写明排查层序、按 tools/delivery.md 写出结论判断（只用正确/错误或未知）与标准原因（六类：缺资料、原始用例的问题、编写模型的问题、临时故障、设备的问题、还没查清）和处置建议、修复方向与逐字设备证据摘录，交主代理或编写者独立核对；凡有手册正文或示例支持的未试假设，必须在 \`remedy\` / \`fix_direction\` 给出具体待试改法（尚有轮次时供下一轮先试；轮次用完时作为下一步交使用者决定），不得以“缺资料”或“剩一次机会”为由省略该假设（“缺资料”仅限没有任何来源支持任何假设）；任何失败分析结论在改写重跑并经新一次上机证实前均不得当作已确认事实。`,
+每条失败分析结论必须显式标注 \`"confidence": "hypothesis"\`（模型假设、状态未确认），写明排查层序、按 tools/delivery.md 写出结论判断（只用正确/错误或未知）与标准原因（本包生成词表 attribution 的中文标签：${ATTRIBUTION.map(code => labelOf('attribution', code)).join('、')}）和处置建议、修复方向与逐字设备证据摘录，交主代理或编写者独立核对；凡有手册正文或示例支持的未试假设，必须在 \`remedy\` / \`fix_direction\` 给出具体待试改法（尚有轮次时供下一轮先试；轮次用完时作为下一步交使用者决定），不得以“缺资料”或“剩一次机会”为由省略该假设（“缺资料”仅限没有任何来源支持任何假设）；任何失败分析结论在改写重跑并经新一次上机证实前均不得当作已确认事实。`,
   },
 ];
 
@@ -246,12 +251,8 @@ export function renderAgentDefinition(role: SubagentRoleSpec): string {
   ].join('\n');
 }
 
-export const CIRCLE_GENERAL_PURPOSE_NOTICE =
-  '说明：这个子代理的系统提示里有一段关于「生成代理配置、输出 JSON」的内容，是 Circle 1.17.0 的已知缺陷，与本任务无关。本任务只做下面写的事，输出只按本任务说明。';
-
 /**
- * Renders a self-contained `description` string for Circle's built-in `general-purpose`
- * subagent (`task` tool), substituting the installed `<技能目录>` path and embedding
+ * Renders the per-task inputs for the installed named subagent, embedding
  * the verbatim user scope recorded by the main session.
  */
 export function renderTaskBrief(input: TaskBriefInput): string {
@@ -279,13 +280,14 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   const unrecordedAttribution = input.unrecordedAttribution ?? unrecordedFromBrief;
 
   if (role.key === 'fidelity' && (compileBrief || priorRounds.length > 0 || streak || unrecordedAttribution)) {
-    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出、机械规则或失败分析历史。请去掉 --prior-* 与 --brief-json 参数后重调');
+    throw new CallFailure('invalid_parameters', '参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出、机械规则或失败分析历史。请去掉 --prior-* 与 --brief-json 参数后重调', "请核对角色输入、盲审隔离与当前轮次历史，再重新生成任务文件");
   }
   if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && priorRounds.length === 0 && !unrecordedAttribution) {
-    throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或机械规则/失败分析历史，禁止无历史重派。请补充 --prior-plans、--prior-returns 或 --prior-answers 后重调`);
+    throw new CallFailure('invalid_parameters', `参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或机械规则/失败分析历史，禁止无历史重派。请补充 --prior-plans、--prior-returns 或 --prior-answers 后重调`, "请核对角色输入、盲审隔离与当前轮次历史，再重新生成任务文件");
   }
 
-  const resolvedBody = role.body.split(SKILL_DIR_PLACEHOLDER).join(skillDir);
+  const quote = (value: string) => { if (/[\r\n']/.test(value)) throw new CallFailure('invalid_parameters', '参数无效：自检路径含换行或单引号，不能生成守卫允许的命令', "请核对角色输入、盲审隔离与当前轮次历史，再重新生成任务文件"); return `'${value}'`; };
+  const check = role.localCheck ? `node ${quote(skillDir + '/tools/' + role.localCheck.script)} --file ${quote(outPath)}${role.localCheck.withBrief ? ' --brief ' + quote(briefPath) : ''}` : null;
   const scopeBlock = scopeText.replace(/\r\n/g, '\n').replace(/\n+$/, '');
   const trimmedNote = note?.trim() ? note.trim() : '无';
 
@@ -293,9 +295,8 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     ? `（模式：${BRIEF_MODE_LABELS[compileBrief.task.mode] ?? compileBrief.task.mode}（\`${compileBrief.task.mode}\`）；结构化简报已在内存中拼入）`
     : '';
   const headSections: string[] = [
-    CIRCLE_GENERAL_PURPOSE_NOTICE,
     '',
-    `请以只读隔离的子代理身份执行本阶段单项任务，使用通用子代理（\`subagent_type="general-purpose"\`）承载角色 \`${role.agentName}\`（${role.stageLabel}）。`,
+    `请按命名角色的权限边界执行本阶段单项任务，使用按名子代理（\`subagent_type="${role.agentName}"\`）（${role.stageLabel}）。`,
     '',
     '## 本次任务参数',
     `- 角色标识：${role.agentName}（${role.stageLabel} / ${role.key}）`,
@@ -303,10 +304,10 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     `- 当前轮次：第 ${round} 轮${modeSummary}`,
     `- 输入 / 简报路径：${briefPath}`,
     `- 唯一目标输出路径：${outPath}`,
-    `- 技能目录：${skillDir}`,
+    `- 技能目录（明确只读资源）：${skillDir}`,
     ...wrapProseLine('- 本轮补充：', trimmedNote),
     '',
-    '## 工具与权限边界（general-purpose 收窄约束）',
+    '## 已安装角色的工具与权限边界',
     `- 本轮允许工具：${role.tools.join(', ')}`,
     `- 本轮严禁工具与动作：${role.forbiddenTools.join('、')}`,
     '- 严禁执行任何父会话上下文中的跨阶段动作或修改唯一目标输出路径之外的文件。',
@@ -343,8 +344,9 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     '（以下为主会话逐字抄录的使用者范围原文；执行中必须严格遵守，不得自行缩小、改写或删减原始期望；若原文与手册冲突或存在未决项，按角色规则写入目标字段或交主代理汇总，不得擅自决定或向使用者发问。）',
     scopeBlock,
     '',
-    '## 角色固定规则（与包内 agents 声明同源）',
-    resolvedBody,
+    '## 本次执行',
+    `固定职责和工具范围来自已安装的 ${role.agentName} 系统定义；本文件仅提供本次参数。`,
+    ...(check ? ['写入后执行自检：', `\`${check}\``] : []),
     '',
   ];
 

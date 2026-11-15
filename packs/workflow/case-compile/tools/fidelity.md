@@ -5,21 +5,21 @@
 1. 把原始用例和自动化用例交给工具，写出给独立模型读取的文件。同一个目录一直沿用。工具先展开定长文字并写回自动化用例；只有新写或改过的自动化用例需要重新判断。
 
 ```sh
-node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>
+node '<技能目录>/tools/fidelity-brief.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --out '<核对目录>'
 ```
 
-2. 用 `task-brief.ts` 为 `to_audit` 中每份 `.brief.json` 生成独立盲审任务文件（或一次批量生成整目录；工具会自动隔离编写简报、历史轮次与设备日志），再将生成的短派发提示交给前台并行 `task`（`subagent_type="general-purpose"`，严禁用 `background`，每批最多 6 个）：
+2. 用 `task-brief.ts` 为 `to_audit` 中每份 `.brief.json` 生成独立盲审任务文件（或一次批量生成整目录；工具会自动隔离编写简报、历史轮次与设备日志），再将生成的短派发提示交给前台并行 `task`（`subagent_type="compile-fidelity"`，严禁用 `background`，每批最多 6 个）：
 
 ```sh
-node <技能目录>/tools/task-brief.ts --role '保真核对' --batch <核对目录> --task-dir <核对任务目录>
+node '<技能目录>/tools/task-brief.ts' --role '保真核对' --batch '<核对目录>' --task-dir '<核对任务目录>'
 ```
 
-（单条重审可用 `node <技能目录>/tools/task-brief.ts --role '保真核对' --case <autoid> --brief <核对目录>/<前缀>.<8位摘要>.brief.json --out <核对目录>/<前缀>.<8位摘要>.verdict.json --task-file <任务文件路径>`；不得附带编写理由、设备输出、手册或期望结论。）
+（单条重审可用 `node '<技能目录>/tools/task-brief.ts' --role '保真核对' --case '<autoid>' --brief '<核对目录>/<前缀>.<8位摘要>.brief.json' --out '<核对目录>/<前缀>.<8位摘要>.verdict.json' --task-file '<任务文件路径>'`；不得附带编写理由、设备输出、手册或期望结论。）
 
 3. 让工具把判断写回自动化用例。工具会确认判断的仍是当前自动化用例，写好后才做脚本合并。
 
 ```sh
-node <技能目录>/tools/fidelity-apply.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录>
+node '<技能目录>/tools/fidelity-apply.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --briefs '<核对目录>'
 ```
 
 缺判断、文件已过期时回到第 1 步；格式不对就让独立模型按文件里的规则重写。模型认为场景改了、没实现，或说没改却没列出对应步骤时，按理由改自动化用例，再重新核对。不改独立模型的结果，也不靠修改任务说明换结论。

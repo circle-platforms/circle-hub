@@ -139,8 +139,25 @@ test('the runner exports the jobs of its run, with verdicts only from the dispat
   const job = (): RunJob => ({ job: id, record: 'b'.repeat(64), verification_run: run.run, plan_run: run.run, verification_item: item, items: [item], sha256: workbook, status: { job: id, phase: 'complete', outcome: 'effective', frozen: false, events: 3, result, device_return: deviceReturn }, ended: 'done', boundary_refused: false });
   const service = createRunsService({ parsers: createTestParserRegistry(), records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external, dispatch: { jobs: async () => [job()], reconcile: async () => job().status } });
   const exported = await service.exportJobs!(h.alice, run.run);
-  assert.deepEqual(exported, { run: run.run, jobs: [{ job: id, verification_run: run.run, plan_run: run.run, items: [item], sha256: workbook, ended: 'done', outcome: 'effective', frozen: false, result, device_return: deviceReturn, rows: [{ item, dynamic_terminal: 'fail', evidence: { log } }] }] });
+  assert.deepEqual(exported, { run: run.run, jobs: [{ job: id, verification_run: run.run, plan_run: run.run, items: [item], sha256: workbook, ended: 'done', outcome: 'effective', frozen: false, result, device_return: deviceReturn, rows }] });
   assert.ok(!('record' in exported!.jobs[0]), 'the administrative proof stays out');
   for (const stranger of [forged, otherWorkbook]) { result = `src:${stranger.body.sha256}`; assert.equal((await service.exportJobs!(h.alice, run.run))!.jobs[0].rows, null); }
   assert.equal(await service.exportJobs!({ id: 'u_01aaaaaaaaaaaaaaaaaaaaaaaa', name: '合成路人', role: 'user' }, run.run), null);
+});
+
+test('a runner never receives an administrator-only result projection through job export', {skip}, async()=>{
+  const map=await h.upload(h.alice,toyMap(standardDocument()));
+  const run=(await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call())).run!;
+  const id='c'.repeat(64),sha256='d'.repeat(64),item=run.items[0].id;
+  const row={item,dynamic_terminal:'no_verdict',accepted_as_fact:false,qualifier:{nature:'unknown',marks:['target_reported']},missing_facts:['synthetic restricted premise'],missing_fact:'synthetic restricted detail',next_action:'synthetic administrator action'};
+  const artifact=await h.kit.artifacts.ingest({bytes:canonicalBytes({job:id,sha256,rows:[row]}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+  const job:RunJob={job:id,verification_run:run.run,verification_item:item,plan_run:run.run,items:[item],sha256,status:{job:id,phase:'complete',outcome:'effective',frozen:false,events:3,result:`src:${artifact.body.sha256}`},ended:'done',boundary_refused:false};
+  assert.equal(await h.kit.artifacts.source(h.alice,artifact.body.sha256,{consumer:'function'}),null,'the caller cannot read the row source directly');
+  const service=createRunsService({parsers:createTestParserRegistry(),records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external,dispatch:{jobs:async()=>[job],reconcile:async()=>job.status}});
+  const exported=await service.exportJobs!(h.alice,run.run);
+  assert.ok(exported);assert.equal(exported.jobs[0].rows,null,'export must not use the engine administrator as its reader');
+  assert.ok(!JSON.stringify(exported).includes('synthetic restricted detail'));
+  const admin=(await h.kit.principals.list()).find(p=>p.role==='admin'&&!p.disabled)!;
+  const privileged=await service.exportJobs!(admin,run.run);assert.deepEqual(privileged!.jobs[0].rows,[row],'administrators retain their own read access');
+  assert.equal((await service.exportJobs!(h.alice,run.run))!.jobs[0].rows,null,'an administrator read cannot seed a later caller export');
 });

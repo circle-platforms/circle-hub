@@ -2,7 +2,7 @@
 // answer that very brief, and the reference engine's three outcomes go back to authoring.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fidelityBrief, fidelityProblems, literalLengths, type FidelityBrief } from './fidelity.ts';
+import { fidelityBrief, fidelityProblems, fidelityJudgmentProblems, embedFidelity, literalLengths, type FidelityBrief } from './fidelity.ts';
 import { checkScenarioFidelity } from './checks.ts';
 import { goodData, subjectOf } from './test-support.ts';
 
@@ -92,4 +92,13 @@ test('the brief carries the auditor\'s fixed rules and the measured length of ev
   const keys = literalLengths([{ z: 'z'.repeat(40), a: 'y'.repeat(40) }]).map((row) => row.literal[0]);
   assert.deepEqual(keys, literalLengths([{ a: 'y'.repeat(40), z: 'z'.repeat(40) }]).map((row) => row.literal[0]));
   assert.deepEqual(literalLengths(['plain words only', 'x'.repeat(31)]), []);
+});
+
+test('pure verdict and embedded envelope share validation while identity is written by the tool', () => {
+  const brief=fidelityBrief('doc-1:c-1',RECORD,plan())!;
+  const full=verdict(brief,[['a2','preserved',[1]],['a3','preserved',[2]]]);
+  const {brief_sha256: _digest,...pure}=full;
+  assert.deepEqual(fidelityJudgmentProblems(brief,pure),fidelityProblems(brief,full));
+  assert.deepEqual(embedFidelity(brief,pure),full);
+  assert.ok(fidelityJudgmentProblems(brief,full).problems.some(p=>p.code==='fidelity_shape'));
 });

@@ -1,3 +1,6 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
+import { readSourceManifest } from '../functions/source-materials.ts';
+import { CallFailure } from '../functions/text.ts';
 // 只读装配单条或批量子代理任务说明写入 `--task-file`（或 `--batch` 批量写盘，不折叠逐字超长行并披露行号），stdout 只输出极短派发提示给 `task` 工具：
 //   node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note '<补充说明>'] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
 //   node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --batch <批量清单JSON或核对目录> --task-dir <任务目录> [--out-dir <目标输出目录>] [--scope <范围文件>] [--note '<补充说明>']
@@ -12,8 +15,8 @@ import {
 } from '../functions/authoring-brief.ts';
 import { buildCaseIdSet, type PriorAttributionItem } from '../functions/rework-history.ts';
 import { detectCaseHeadingMarkers, escapeRegExp } from '../functions/scope.ts';
-import { CIRCLE_GENERAL_PURPOSE_NOTICE, renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
-import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
+import { isRecord, parseCliOptions } from '../functions/text.ts';
 import {
   buildSingleCaseStructuredBrief,
   loadRunStructuredContext,
@@ -99,13 +102,13 @@ function parseRoundNumber(raw: number | string | undefined): number {
   if (raw === undefined) return 1;
   if (typeof raw === 'number') {
     if (!Number.isInteger(raw) || raw < 1) {
-      throw new Error(`参数无效：--round 必须是正整数（收到 ${raw}）`);
+      throw new CallFailure('invalid_parameters', `参数无效：--round 必须是正整数（收到 ${raw}）`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     return raw;
   }
   const trimmed = raw.trim();
   if (!/^[1-9][0-9]{0,2}$/.test(trimmed)) {
-    throw new Error(`参数无效：--round 必须是正整数（收到 ${raw}）`);
+    throw new CallFailure('invalid_parameters', `参数无效：--round 必须是正整数（收到 ${raw}）`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   return Number(trimmed);
 }
@@ -203,21 +206,17 @@ export function extractCaseScopeText(
 
   if (!hasMeaningfulScopeText(kept)) {
     const label = options.scopeRelative ?? DEFAULT_SCOPE;
-    throw new Error(
-      `参数无效：范围文件 ${label} 按用例分节后，未找到当前用例 ${caseRef} 所属章节或全局正文（命中单用例分节 ${keptCaseSections} 个）`,
-    );
+    throw new CallFailure('invalid_parameters', `参数无效：范围文件 ${label} 按用例分节后，未找到当前用例 ${caseRef} 所属章节或全局正文（命中单用例分节 ${keptCaseSections} 个）`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   return kept.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
 function readVerifiedScopeText(scopeBytes: Buffer, scopeRelative: string): string {
   if (scopeBytes.byteLength > MAX_SCOPE_BYTES) {
-    throw new Error(
-      `参数无效：范围文件 ${scopeRelative} 超过 ${MAX_SCOPE_BYTES} 字节上限（实际 ${scopeBytes.byteLength} 字节）。请精简为使用者原话后重试`,
-    );
+    throw new CallFailure('invalid_parameters', `参数无效：范围文件 ${scopeRelative} 超过 ${MAX_SCOPE_BYTES} 字节上限（实际 ${scopeBytes.byteLength} 字节）。请精简为使用者原话后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   if (scopeBytes.includes(0)) {
-    throw new Error(`参数无效：范围文件 ${scopeRelative} 包含空字节，不是有效 UTF-8 文本。请改写纯文本范围文件后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：范围文件 ${scopeRelative} 包含空字节，不是有效 UTF-8 文本。请改写纯文本范围文件后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   const text = scopeBytes.toString('utf8');
   const meaningful = text
@@ -226,9 +225,7 @@ function readVerifiedScopeText(scopeBytes: Buffer, scopeRelative: string): strin
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !/^#{1,6}(?:\s|$)/.test(line));
   if (!meaningful.length) {
-    throw new Error(
-      `参数无效：范围文件 ${scopeRelative} 为空或只有标题，缺少使用者原话。请先逐字写入使用者的范围原话后再派发`,
-    );
+    throw new CallFailure('invalid_parameters', `参数无效：范围文件 ${scopeRelative} 为空或只有标题，缺少使用者原话。请先逐字写入使用者的范围原话后再派发`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   return text;
 }
@@ -236,7 +233,7 @@ function readVerifiedScopeText(scopeBytes: Buffer, scopeRelative: string): strin
 function resolveRelativeTarget(cwdRoot: ReturnType<typeof resolveCwdRoots>, value: string, flag: string, hint: string): string {
   const resolved = resolveInsideCwd(cwdRoot, value, flag, hint);
   if (resolved.relative === '.') {
-    throw new Error(`参数无效：${flag} 必须指向工作目录下的具体文件或子路径（${hint}）。请修改参数后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：${flag} 必须指向工作目录下的具体文件或子路径（${hint}）。请修改参数后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   return resolved.relative;
 }
@@ -266,20 +263,16 @@ async function assertExistingBriefPath(
       const listing = entries.length
         ? entries.slice(0, 10).join('、') + (entries.length > 10 ? ` 等 ${entries.length} 项` : '')
         : '目录为空';
-      throw new Error(
-        `不存在：找不到 --brief ${kindLabel} ${briefRelative}（目录 ${parentRel} 下实际有：${listing}）。请先等待前置下载或生成完成，并用 ls 核对真实文件名（如总数不足 10 条时为 0.md 而非 00.md）后再调用 task-brief`,
-      );
+      throw new CallFailure('not_found', `不存在：找不到 --brief ${kindLabel} ${briefRelative}（目录 ${parentRel} 下实际有：${listing}）。请先等待前置下载或生成完成，并用 ls 核对真实文件名（如总数不足 10 条时为 0.md 而非 00.md）后再调用 task-brief`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
-    throw new Error(
-      `不存在：找不到 --brief ${kindLabel} ${briefRelative}（所在目录 ${parentRel} 尚未生成）。请先完成前置 download-run / fidelity-brief / download-returns 步骤并确认文件落盘后再派发`,
-    );
+    throw new CallFailure('not_found', `不存在：找不到 --brief ${kindLabel} ${briefRelative}（所在目录 ${parentRel} 尚未生成）。请先完成前置 download-run / fidelity-brief / download-returns 步骤并确认文件落盘后再派发`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   if (stat.isSymbolicLink()) {
-    throw new Error(`参数无效：--brief 路径 ${briefRelative} 不能是符号链接`);
+    throw new CallFailure('invalid_parameters', `参数无效：--brief 路径 ${briefRelative} 不能是符号链接`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   if (stat.isDirectory()) {
     if (roleKey !== 'attribute') {
-      throw new Error(`参数无效：--brief 路径 ${briefRelative} 是目录，必须指向具体文件（如 briefs/0.md）。请核对文件路径后重试`);
+      throw new CallFailure('invalid_parameters', `参数无效：--brief 路径 ${briefRelative} 是目录，必须指向具体文件（如 briefs/0.md）。请核对文件路径后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     resolveExistingDirInsideCwd(cwd, briefRelative, '--brief');
     return;
@@ -295,15 +288,13 @@ async function assertValidOutPath(
   const resolved = resolveInsideCwd(cwd, outRelative, '--out');
   const existing = await lstat(resolved.canonical).catch(() => null);
   if (existing?.isSymbolicLink()) {
-    throw new Error(`参数无效：--out 路径 ${outRelative} 不能是符号链接`);
+    throw new CallFailure('invalid_parameters', `参数无效：--out 路径 ${outRelative} 不能是符号链接`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   if (existing?.isDirectory()) {
-    throw new Error(`参数无效：--out 指向了已存在的目录 ${outRelative}，必须写具体输出文件路径（如 plans/0.json）。请补充文件名后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：--out 指向了已存在的目录 ${outRelative}，必须写具体输出文件路径（如 plans/0.json）。请补充文件名后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   if ((role.key === 'recompose' || role.key === 'plan' || role.key === 'fidelity') && !outRelative.endsWith('.json')) {
-    throw new Error(
-      `参数无效：${role.stageLabel} 的 --out 必须是 .json 文件路径（当前收到 ${outRelative}，如 plans/0.json），不要只写目录名`,
-    );
+    throw new CallFailure('invalid_parameters', `参数无效：${role.stageLabel} 的 --out 必须是 .json 文件路径（当前收到 ${outRelative}，如 plans/0.json），不要只写目录名`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
 }
 
@@ -319,7 +310,7 @@ async function maybeReadSiblingItem(
     const item = parsedPlanFile(resolved.relative, await readFile(resolved.canonical));
     const itemIds = buildCaseIdSet('', item);
     if (itemIds.size > 0 && ![...baseIds].some((id) => itemIds.has(id))) {
-      throw new Error(`参数无效：--item ${resolved.relative} 不属于目标用例 ${caseRef}`);
+      throw new CallFailure('invalid_parameters', `参数无效：--item ${resolved.relative} 不属于目标用例 ${caseRef}`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     return { item, caseIds: buildCaseIdSet(caseRef, item) };
   }
@@ -353,18 +344,16 @@ async function loadValidatedCompileBrief(
   const resolved = resolveExistingFileInsideCwd(cwd, briefJsonArg, '--brief-json');
   const raw = parsedPlanFile(resolved.relative, await readFile(resolved.canonical));
   if (!isRecord(raw) || raw.schema !== COMPILE_BRIEF_SCHEMA) {
-    throw new Error(`参数无效：${resolved.relative} 不是 ${COMPILE_BRIEF_SCHEMA} 结构化简报`);
+    throw new CallFailure('invalid_parameters', `参数无效：${resolved.relative} 不是 ${COMPILE_BRIEF_SCHEMA} 结构化简报`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   const checked = validateCompileBrief(raw, expectedItem);
   if (!checked.ok) {
-    throw new Error(`参数无效：结构化简报 ${resolved.relative} 校验未通过：${checked.problems.join('；')}`);
+    throw new CallFailure('invalid_parameters', `参数无效：结构化简报 ${resolved.relative} 校验未通过：${checked.problems.join('；')}`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   const brief = raw as unknown as CompileBriefV1;
   const briefIds = [brief.identity.item_id, brief.identity.autoid].filter((v) => v.length > 0);
   if (caseIds.size > 0 && briefIds.length > 0 && !briefIds.some((id) => caseIds.has(id))) {
-    throw new Error(
-      `参数无效：结构化简报 ${resolved.relative} 属于用例 ${briefIds[0]}，与 --case 不一致`,
-    );
+    throw new CallFailure('invalid_parameters', `参数无效：结构化简报 ${resolved.relative} 属于用例 ${briefIds[0]}，与 --case 不一致`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   return brief;
 }
@@ -395,7 +384,7 @@ async function resolveOptionalRunContext(
     const resolved = resolveExistingDirInsideCwd(cwd, options.runDir, '--run');
     const ctx = await loadRunStructuredContext(resolved.canonical);
     if (!ctx) {
-      throw new Error(`不存在：--run 目录 ${resolved.relative} 中缺少 knowledge/nodes.jsonl，无法加载结构化简报上下文`);
+      throw new CallFailure('not_found', `不存在：--run 目录 ${resolved.relative} 中缺少 knowledge/nodes.jsonl，无法加载结构化简报上下文`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     return ctx;
   }
@@ -442,16 +431,14 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
 }> {
   const role = resolveSubagentRole(options.role);
   if (!role) {
-    throw new Error(
-      `参数无效：未知子代理角色 ${options.role}。可用角色为 用例重组（recompose）、脚本编写（plan）、保真核对（fidelity）、失败分析（attribute）`,
-    );
+    throw new CallFailure('invalid_parameters', `参数无效：未知子代理角色 ${options.role}。可用角色为 用例重组（recompose）、脚本编写（plan）、保真核对（fidelity）、失败分析（attribute）`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   const caseRef = options.caseRef.trim();
   if (!caseRef || /[\0\r\n]/.test(options.caseRef)) {
-    throw new Error('参数无效：--case 必须为非空单行用例或范围标识。请核对后重试');
+    throw new CallFailure('invalid_parameters', '参数无效：--case 必须为非空单行用例或范围标识。请核对后重试', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   if (options.note !== undefined && /[\0]/.test(options.note)) {
-    throw new Error('参数无效：--note 不能包含空字节。请修改补充说明后重试');
+    throw new CallFailure('invalid_parameters', '参数无效：--note 不能包含空字节。请修改补充说明后重试', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
 
   const hasExplicitPriorArgs =
@@ -460,7 +447,7 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     || options.priorAnswers !== undefined
     || options.priorNotes !== undefined;
   if (role.key === 'fidelity' && (options.briefJsonPath !== undefined || options.runDir !== undefined || hasExplicitPriorArgs)) {
-    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入 --brief-json、--run 或 --prior-* 历史参数');
+    throw new CallFailure('invalid_parameters', '参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入 --brief-json、--run 或 --prior-* 历史参数', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
 
   let round = parseRoundNumber(options.round);
@@ -491,20 +478,13 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
   let compileBrief: CompileBriefV1 | undefined;
   const briefJsonTarget = options.briefJsonPath ?? (role.key !== 'fidelity' && briefPath.endsWith('.json') ? briefPath : undefined);
   if (briefJsonTarget) {
-    try {
-      const candidateResolved = resolveExistingFileInsideCwd(cwd, briefJsonTarget, '--brief-json');
-      const peek = parsedPlanFile(candidateResolved.relative, await readFile(candidateResolved.canonical));
-      if (options.briefJsonPath !== undefined || (isRecord(peek) && peek.schema === COMPILE_BRIEF_SCHEMA)) {
-        compileBrief = await loadValidatedCompileBrief(cwd, briefJsonTarget, caseIds, siblingItem);
-        if (compileBrief.identity.item_id) caseIds.add(compileBrief.identity.item_id);
-        if (compileBrief.identity.autoid) caseIds.add(compileBrief.identity.autoid);
-        if (options.round === undefined) round = compileBrief.identity.round;
-      }
-    } catch (error) {
-      if (options.briefJsonPath !== undefined) throw error;
-      if (error instanceof Error && (error.message.includes('compile-brief@1') || error.message.includes('brief_sha256') || error.message.includes('与 --case 不一致'))) {
-        throw error;
-      }
+    const candidateResolved = resolveExistingFileInsideCwd(cwd, briefJsonTarget, '--brief-json');
+    const peek = parsedPlanFile(candidateResolved.relative, await readFile(candidateResolved.canonical));
+    if (options.briefJsonPath !== undefined || (isRecord(peek) && peek.schema === COMPILE_BRIEF_SCHEMA)) {
+      compileBrief = await loadValidatedCompileBrief(cwd, briefJsonTarget, caseIds, siblingItem);
+      if (compileBrief.identity.item_id) caseIds.add(compileBrief.identity.item_id);
+      if (compileBrief.identity.autoid) caseIds.add(compileBrief.identity.autoid);
+      if (options.round === undefined) round = compileBrief.identity.round;
     }
   }
 
@@ -524,7 +504,7 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
 
   if (hasExplicitPriorArgs) {
     if (options.round === undefined) {
-      throw new Error('参数无效：传入 --prior-plans/--prior-returns/--prior-answers/--prior-notes 时必须同时指定 --round <2|3|...>');
+      throw new CallFailure('invalid_parameters', '参数无效：传入 --prior-plans/--prior-returns/--prior-answers/--prior-notes 时必须同时指定 --round <2|3|...>', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     const markers = compileBrief?.materials.bed_facts.execution_failure_markers ?? runCtx?.failureMarkers;
     const loaded = await loadCasePriorRounds({
@@ -543,9 +523,7 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
   }
 
   if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && (!priorRounds || priorRounds.length === 0) && !unrecordedAttribution) {
-    throw new Error(
-      `参数无效：第 ${round} 轮 ${role.stageLabel} 必须提供上一轮计划、设备返还或机械规则/失败分析历史（--brief-json 或 --prior-plans/--prior-returns/--prior-answers/--prior-notes），禁止无历史重派`,
-    );
+    throw new CallFailure('invalid_parameters', `参数无效：第 ${round} 轮 ${role.stageLabel} 必须提供上一轮计划、设备返还或机械规则/失败分析历史（--brief-json 或 --prior-plans/--prior-returns/--prior-answers/--prior-notes），禁止无历史重派`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
 
   if (!compileBrief && runCtx && siblingItem !== undefined && (role.key === 'plan' || role.key === 'attribute')) {
@@ -577,7 +555,7 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     scopeRelative: scopeResolved.relative,
   });
 
-  const brief = renderTaskBrief({
+  let brief = renderTaskBrief({
     role,
     caseRef,
     briefPath,
@@ -590,6 +568,14 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     ...(priorRounds && streak ? { priorRounds, streak } : {}),
     ...(unrecordedAttribution ? { unrecordedAttribution } : {}),
   });
+  if (options.runDir !== undefined) {
+    const sourceDir = resolveExistingDirInsideCwd(cwd, options.runDir, '--run');
+    const manifestStat = await lstat(join(sourceDir.canonical, 'sources.json')).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
+    if (manifestStat) {
+      const materials = await readSourceManifest(sourceDir.canonical);
+      brief += '\n\n## 本次已核验的来源文件\n' + materials.map(material => JSON.stringify({ slot: material.slot, reference: material.reference, path: material.file === null ? null : join(sourceDir.relative, material.file), sha256: material.sha256, ...(material.withheld ? { missing: material.withheld } : {}) })).join('\n');
+    } else brief += '\n\n## 来源文件清单缺口\nsources.json 不存在；不能据来源槽名猜测本地文件名。主代理需补齐本次下载的来源清单。';
+  }
   return {
     brief,
     cwd,
@@ -606,7 +592,7 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
 /**
  * Validates the subagent role, workspace-contained paths, verbatim (and case-filtered) `scope.md`,
  * in-memory `compile-brief@1` context (when run data exists for plan/attribute roles),
- * and any round 2+ single-case prior history, then renders a complete `general-purpose` prompt.
+ * and any round 2+ single-case prior history, then renders transient task input for the installed named role.
  */
 export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<string> {
   return (await buildTaskBriefWithMeta(options)).brief;
@@ -619,17 +605,17 @@ async function assertValidTaskFilePath(
 ): Promise<{ relative: string; canonical: string }> {
   const resolved = resolveInsideCwd(cwd, taskFileArg, '--task-file', '如 briefs/0.task.md');
   if (resolved.relative === '.') {
-    throw new Error('参数无效：--task-file 必须指向工作目录下的具体 .md 文件（如 briefs/0.task.md）。请修改参数后重试');
+    throw new CallFailure('invalid_parameters', '参数无效：--task-file 必须指向工作目录下的具体 .md 文件（如 briefs/0.task.md）。请修改参数后重试', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   // Refuse symlinks along the lexical path inside cwd before checking canonical collision.
   let probePath = resolved.lexical;
   while (probePath !== cwd.canonical && probePath !== cwd.lexical) {
     const st = await lstat(probePath).catch(() => null);
     if (st?.isSymbolicLink()) {
-      throw new Error(`参数无效：--task-file 路径包含符号链接 ${probePath.slice(probePath.lastIndexOf('/') + 1)}`);
+      throw new CallFailure('invalid_parameters', `参数无效：--task-file 路径包含符号链接 ${probePath.slice(probePath.lastIndexOf('/') + 1)}`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     if (probePath === resolved.lexical && st?.isDirectory()) {
-      throw new Error(`参数无效：--task-file 指向了已存在的目录 ${resolved.relative}，必须写具体 .md 文件路径`);
+      throw new CallFailure('invalid_parameters', `参数无效：--task-file 指向了已存在的目录 ${resolved.relative}，必须写具体 .md 文件路径`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     const parent = dirname(probePath);
     if (parent === probePath) break;
@@ -637,7 +623,7 @@ async function assertValidTaskFilePath(
   }
   const rel = resolved.relative;
   if (!rel.endsWith('.md')) {
-    throw new Error(`参数无效：--task-file 必须是 .md 文件路径（当前收到 ${rel}，如 briefs/0.task.md）`);
+    throw new CallFailure('invalid_parameters', `参数无效：--task-file 必须是 .md 文件路径（当前收到 ${rel}，如 briefs/0.task.md）`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   const normalizedProtected = new Set(
     protectedPaths
@@ -645,7 +631,7 @@ async function assertValidTaskFilePath(
       .map((p) => resolveInsideCwd(cwd, p, '--task-file').relative),
   );
   if (normalizedProtected.has(rel)) {
-    throw new Error(`参数无效：--task-file 路径 ${rel} 不能与输入、范围或目标输出文件相同`);
+    throw new CallFailure('invalid_parameters', `参数无效：--task-file 路径 ${rel} 不能与输入、范围或目标输出文件相同`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   return resolved;
 }
@@ -709,10 +695,7 @@ export function renderTaskDispatchPrompt(params: {
     ? `；含 ${params.longLineCount} 行超 ${VERBATIM_LINE_DISCLOSURE_THRESHOLD} 字符逐字行，见文件开头行号提示`
     : '';
   return [
-    CIRCLE_GENERAL_PURPOSE_NOTICE,
-    '',
-    `请以 \`subagent_type="general-purpose"\`（角色 \`${params.roleAgentName}\`）执行 \`${params.caseRef}\` 第 ${params.round} 轮${params.roleStageLabel}。`,
-    ...(params.skillDir ? [`- 技能目录：${params.skillDir}`] : []),
+    `请以 \`subagent_type="${params.roleAgentName}"\`（角色 \`${params.roleAgentName}\`）执行 \`${params.caseRef}\` 第 ${params.round} 轮${params.roleStageLabel}。`,
     `- 任务文件：${params.taskFile}（共 ${params.lineCount} 行${longHint}）`,
     `- 目标输出：${params.outPath}`,
     `用 \`read_file\` 完整读完 \`${params.taskFile}\` 后按要求只写 \`${params.outPath}\`，完工简复路径。`,
@@ -772,7 +755,7 @@ function optionalTaskField(entry: Record<string, unknown>, key: string): string 
   const val = entry[key];
   if (val === undefined) return undefined;
   if (typeof val !== 'string' || !val.trim()) {
-    throw new Error(`参数无效：批量任务项字段 ${key} 必须是非空字符串。请修改批量清单后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：批量任务项字段 ${key} 必须是非空字符串。请修改批量清单后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   return val;
 }
@@ -784,17 +767,17 @@ async function resolveBatchItems(
 ): Promise<WriteTaskBriefOptions[]> {
   const role = resolveSubagentRole(args.role!);
   if (!role) {
-    throw new Error(`参数无效：未知子代理角色 ${args.role}。可用：用例重组、脚本编写、保真核对、失败分析`);
+    throw new CallFailure('invalid_parameters', `参数无效：未知子代理角色 ${args.role}。可用：用例重组、脚本编写、保真核对、失败分析`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   const batchTarget = resolveInsideCwd(cwd, args.batch!, '--batch');
   const st = await lstat(batchTarget.lexical).catch((err: NodeJS.ErrnoException) => {
     if (err.code === 'ENOENT') {
-      throw new Error(`不存在：找不到 --batch 路径 ${args.batch}。请核对路径并确认文件或目录已生成后重试`);
+      throw new CallFailure('not_found', `不存在：找不到 --batch 路径 ${args.batch}。请核对路径并确认文件或目录已生成后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     throw err;
   });
   if (st.isSymbolicLink()) {
-    throw new Error(`参数无效：--batch 路径 ${args.batch} 不能是符号链接。请改用工作目录内的真实路径后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：--batch 路径 ${args.batch} 不能是符号链接。请改用工作目录内的真实路径后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
 
   const baseDefaults = {
@@ -808,27 +791,27 @@ async function resolveBatchItems(
 
   if (st.isDirectory()) {
     if (role.key !== 'fidelity') {
-      throw new Error('参数无效：目录形式的 --batch 目前仅支持保真核对（--role 保真核对，扫描 *.brief.json）；脚本编写/重组请传入批量任务清单 JSON');
+      throw new CallFailure('invalid_parameters', '参数无效：目录形式的 --batch 目前仅支持保真核对（--role 保真核对，扫描 *.brief.json）；脚本编写/重组请传入批量任务清单 JSON', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     if (!args['task-dir']) {
-      throw new Error('参数无效：使用目录形式的 --batch 时必须同时指定 --task-dir <核对任务目录>');
+      throw new CallFailure('invalid_parameters', '参数无效：使用目录形式的 --batch 时必须同时指定 --task-dir <核对任务目录>', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     if (args.run !== undefined || args['brief-json'] !== undefined || args['prior-plans'] !== undefined || args['prior-returns'] !== undefined || args['prior-answers'] !== undefined || args['prior-notes'] !== undefined) {
-      throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入 --brief-json、--run 或 --prior-* 历史参数');
+      throw new CallFailure('invalid_parameters', '参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入 --brief-json、--run 或 --prior-* 历史参数', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     const batchDir = resolveExistingDirInsideCwd(cwd, args.batch!, '--batch');
     const taskDir = resolveInsideCwd(cwd, args['task-dir'], '--task-dir');
     const outDir = args['out-dir'] ? resolveInsideCwd(cwd, args['out-dir'], '--out-dir') : batchDir;
     const files = (await readdir(batchDir.canonical)).filter((n) => n.endsWith('.brief.json')).sort();
     if (!files.length) {
-      throw new Error(`不存在：--batch 目录 ${batchDir.relative} 下没有 .brief.json 文件。请先运行 fidelity-brief.ts 生成核对目录后再试`);
+      throw new CallFailure('not_found', `不存在：--batch 目录 ${batchDir.relative} 下没有 .brief.json 文件。请先运行 fidelity-brief.ts 生成核对目录后再试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     const jobs: WriteTaskBriefOptions[] = [];
     for (const fileName of files) {
       const briefFile = resolveExistingFileInsideCwd(cwd, join(batchDir.relative, fileName), '--batch');
       const parsed = parsedPlanFile(fileName, await readFile(briefFile.canonical));
       if (!isRecord(parsed)) {
-        throw new Error(`参数无效：${briefFile.relative} 不是合法的 JSON 对象。请检查并重新生成该 .brief.json 后重试`);
+        throw new CallFailure('invalid_parameters', `参数无效：${briefFile.relative} 不是合法的 JSON 对象。请检查并重新生成该 .brief.json 后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
       }
       const stem = fileName.slice(0, -'.brief.json'.length);
       const caseStem = stem.replace(/\.[0-9a-f]{8}$/, '');
@@ -851,7 +834,7 @@ async function resolveBatchItems(
   }
 
   if (!st.isFile()) {
-    throw new Error(`参数无效：--batch ${args.batch} 必须是普通 JSON 文件或保真核对目录。请核对 --batch 路径后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：--batch ${args.batch} 必须是普通 JSON 文件或保真核对目录。请核对 --batch 路径后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   const batchFile = resolveExistingFileInsideCwd(cwd, args.batch!, '--batch');
   const parsed = parsedPlanFile(basename(batchFile.canonical), await readFile(batchFile.canonical));
@@ -863,14 +846,14 @@ async function resolveBatchItems(
     rawTasks = parsed.tasks;
     if (isRecord(parsed.defaults)) fileDefaults = parsed.defaults;
   } else {
-    throw new Error(`参数无效：--batch 清单 ${batchFile.relative} 必须是任务数组或含 tasks 数组的对象。请修改清单格式后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：--batch 清单 ${batchFile.relative} 必须是任务数组或含 tasks 数组的对象。请修改清单格式后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   if (!rawTasks.length) {
-    throw new Error(`参数无效：--batch 清单 ${batchFile.relative} 为空。请至少填入一项任务后重试`);
+    throw new CallFailure('invalid_parameters', `参数无效：--batch 清单 ${batchFile.relative} 为空。请至少填入一项任务后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
   return rawTasks.map((entry, idx) => {
     if (!isRecord(entry)) {
-      throw new Error(`参数无效：--batch 第 ${idx + 1} 项必须是对象。请修改批量清单后重试`);
+      throw new CallFailure('invalid_parameters', `参数无效：--batch 第 ${idx + 1} 项必须是对象。请修改批量清单后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     const merged: Record<string, unknown> = { ...fileDefaults, ...entry };
     const caseRef = optionalTaskField(merged, 'case');
@@ -878,7 +861,7 @@ async function resolveBatchItems(
     const outPath = optionalTaskField(merged, 'out');
     const taskFilePath = optionalTaskField(merged, 'task_file');
     if (!caseRef || !briefPath || !outPath || !taskFilePath) {
-      throw new Error(`参数无效：--batch 第 ${idx + 1} 项必须包含 case、brief、out、task_file 字段。请补齐必填字段后重试`);
+      throw new CallFailure('invalid_parameters', `参数无效：--batch 第 ${idx + 1} 项必须包含 case、brief、out、task_file 字段。请补齐必填字段后重试`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     const roundRaw = merged.round;
     const round =
@@ -922,7 +905,7 @@ const HELP_TEXT = [
   '注意事项：',
   '  1. 所有路径参数须在当前工作目录下，且不能为符号链接；--task-file 须为工作目录下不冲突的 .md 路径。',
   '  2. --brief 与 --scope 等输入文件必须已落盘；调用前先用 ls 核对实际文件名（总数 <10 条时通常为 0.md 而非 00.md）。',
-  '  3. 完整任务说明写入 --task-file（超 1800 字符逐字行不折行并在文件开头提示行号）；stdout 只输出极短派发提示（含真实技能目录）。',
+  '  3. 完整任务说明写入 --task-file（超 1800 字符逐字行不折行并在文件开头提示行号）；stdout 只输出极短派发提示（路径相对工作目录）。',
   '  4. 第 2 轮及以后返工（脚本编写 / 失败分析）须配合 --round <n> 与 --brief-json 或 --prior-* 历史参数。',
   "  5. 含中文或空格的参数值（如 --role、--note）用单引号括起，如 --role '脚本编写'；或使用英文标识 recompose|plan|fidelity|attribute。",
 ].join('\n');
@@ -936,7 +919,7 @@ export async function main(argv: string[]): Promise<number> {
     const args = parseCliOptions(argv, OPTIONS, USAGE);
     if (args.batch !== undefined) {
       if (args.case !== undefined || args.brief !== undefined || args.out !== undefined || args['task-file'] !== undefined) {
-        throw new Error('参数无效：--batch 模式不能同时传入单条参数 --case/--brief/--out/--task-file');
+        throw new CallFailure('invalid_parameters', '参数无效：--batch 模式不能同时传入单条参数 --case/--brief/--out/--task-file', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
       }
       const cwd = resolveCwdRoots();
       const jobSpecs = await resolveBatchItems(args, cwd, DEFAULT_PACK_ROOT);
@@ -945,7 +928,7 @@ export async function main(argv: string[]): Promise<number> {
       for (const spec of jobSpecs) {
         const staged = await stageTaskBrief(spec);
         if (seenTaskFiles.has(staged.canonical)) {
-          throw new Error(`参数无效：批量任务中存在重复的目标任务文件 ${staged.result.taskFile}`);
+          throw new CallFailure('invalid_parameters', `参数无效：批量任务中存在重复的目标任务文件 ${staged.result.taskFile}`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
         }
         seenTaskFiles.add(staged.canonical);
         stagedList.push(staged);
@@ -979,11 +962,11 @@ export async function main(argv: string[]): Promise<number> {
     }
 
     if (args['task-dir'] !== undefined || args['out-dir'] !== undefined) {
-      throw new Error('参数无效：--task-dir 与 --out-dir 只能配合 --batch 使用');
+      throw new CallFailure('invalid_parameters', '参数无效：--task-dir 与 --out-dir 只能配合 --batch 使用', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
     const missingSingle = (['case', 'brief', 'out', 'task-file'] as const).filter((k) => !args[k]);
     if (missingSingle.length) {
-      throw new Error(`参数无效：缺少 ${missingSingle.map((k) => '--' + k).join('、')}。用法：${USAGE}`);
+      throw new CallFailure('invalid_parameters', `参数无效：缺少 ${missingSingle.map((k) => '--' + k).join('、')}。用法：${USAGE}`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
     }
 
     const written = await writeTaskBrief({
@@ -1006,7 +989,7 @@ export async function main(argv: string[]): Promise<number> {
     process.stdout.write(`${written.dispatchPrompt}\n`);
     return 0;
   } catch (error) {
-    process.stderr.write(formatCallError(error) + '\n');
+    process.stderr.write(formatClientCallError(error) + '\n');
     return 1;
   }
 }

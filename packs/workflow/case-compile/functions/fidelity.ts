@@ -219,37 +219,55 @@ export interface FidelityRow { n: string; verdict: FidelityVerdict; step_indices
  * verdicts, one row for every authored action and none for anything else, step indices taken from the brief. Then, as the
  * reference engine does, changed and unrealized actions and preserved ones that cite no step go back to authoring.
  */
+/** The only constructor of a digest-bound envelope; callers may validate it without persisting it. */
+export function embedFidelity(brief: FidelityBrief, judgment: Record<string, unknown>): Record<string, unknown> {
+  return { brief_sha256: brief.brief_sha256, steps: judgment.steps, disclosure: judgment.disclosure };
+}
+/** Auditor output has no identity fields: the application binds it to the checked brief. */
+export function fidelityJudgmentProblems(brief: FidelityBrief | null, judgment: unknown): { problems: FidelityProblem[]; rows: FidelityRow[] } {
+  if (!isRecord(judgment) || Object.keys(judgment).some(key => key !== 'steps' && key !== 'disclosure')) {
+    return { problems: [{ code: 'fidelity_shape', pointer: '/', message: '判断文件只写 steps、disclosure；brief_sha256 由 fidelity-apply 写入信封，不由模型填写' }], rows: [] };
+  }
+  return validateFidelityRows(brief, judgment, '');
+}
+
 export function fidelityProblems(brief: FidelityBrief, fidelity: unknown): { problems: FidelityProblem[]; rows: FidelityRow[] } {
   const at = '/data/fidelity';
   const shape = (pointer: string, message: string) => ({ problems: [{ code: 'fidelity_shape' as const, pointer, message }], rows: [] });
   if (fidelity === undefined) return { problems: [{ code: 'fidelity_missing', pointer: at, message: '缺场景保真审计：照 <技能目录>/tools/fidelity.md，用 fidelity-brief 算出这份计划的简报，交给一个新开的子代理按简报里的规则逐条判断，再用 fidelity-apply 把结果并进计划后交卷' }], rows: [] };
   if (!isRecord(fidelity) || Object.keys(fidelity).some((k) => !['brief_sha256', 'steps', 'disclosure'].includes(k))) return shape(at, 'data.fidelity 恰好写 brief_sha256、steps、disclosure 三项');
   if (fidelity.brief_sha256 !== brief.brief_sha256) return { problems: [{ code: 'fidelity_stale', pointer: `${at}/brief_sha256`, message: `这份审计判断针对的不是这份计划的简报（应为 ${brief.brief_sha256.slice(0, 12)}…）：计划改过就重跑 fidelity-brief、重新审计、再用 fidelity-apply 并进计划` }], rows: [] };
+  return validateFidelityRows(brief, fidelity, at);
+}
+
+/** One shape validator for standalone judgments and digest-bound plan envelopes. */
+function validateFidelityRows(brief: FidelityBrief | null, fidelity: Record<string, unknown>, at: string): { problems: FidelityProblem[]; rows: FidelityRow[] } {
+  const shape = (pointer: string, message: string) => ({ problems: [{ code: 'fidelity_shape' as const, pointer, message }], rows: [] });
   if (typeof fidelity.disclosure !== 'string' || !fidelity.disclosure.trim() || fidelity.disclosure.length > LIMITS.disclosure) return shape(`${at}/disclosure`, `disclosure 是给用户看的一段中文说明，1 到 ${LIMITS.disclosure} 字`);
   if (!Array.isArray(fidelity.steps) || !fidelity.steps.length || fidelity.steps.length > LIMITS.steps) return shape(`${at}/steps`, `steps 是 1 到 ${LIMITS.steps} 行判断，每条作者步骤一行`);
-  const expected = brief.author_steps.map((s) => s.n), indices = new Set(brief.blocks.map((b) => b.index));
+  const expected = brief?.author_steps.map((s) => s.n), indices = brief ? new Set(brief.blocks.map((b) => b.index)) : null;
   const rows: FidelityRow[] = [], seen = new Set<string>();
   for (const [k, raw] of fidelity.steps.entries()) {
     const p = `${at}/steps/${k}`;
     if (!isRecord(raw) || Object.keys(raw).sort().join() !== 'n,rationale,step_indices,verdict') return shape(p, '每行恰好写 n、verdict、step_indices、rationale');
-    if (typeof raw.n !== 'string' || !expected.includes(raw.n)) return shape(`${p}/n`, `n 抄简报 author_steps 里的作者步骤号（${expected.join('、')}）`);
+    if (typeof raw.n !== 'string' || !raw.n.trim() || expected !== undefined && !expected.includes(raw.n)) return shape(`${p}/n`, `n 抄简报 author_steps 里的作者步骤号（${expected?.join('、') ?? '非空原始步骤号'}）`);
     if (seen.has(raw.n)) return shape(`${p}/n`, `作者步骤 ${raw.n} 判了两次；每条只判一次`);
     if (!(FIDELITY_VERDICTS as readonly unknown[]).includes(raw.verdict)) return shape(`${p}/verdict`, `verdict 只能是 ${FIDELITY_VERDICTS.join('、')}`);
-    if (!Array.isArray(raw.step_indices) || raw.step_indices.length > LIMITS.indices || raw.step_indices.some((i) => typeof i !== 'number' || !Number.isSafeInteger(i) || !indices.has(i))) return shape(`${p}/step_indices`, '只写简报 blocks 里的 index');
+    if (!Array.isArray(raw.step_indices) || raw.step_indices.length > LIMITS.indices || raw.step_indices.some((i) => typeof i !== 'number' || !Number.isSafeInteger(i) || i < 0 || indices !== null && !indices.has(i))) return shape(`${p}/step_indices`, '只写简报 blocks 里的 index');
     if (typeof raw.rationale !== 'string' || !raw.rationale.trim() || raw.rationale.length > LIMITS.rationale) return shape(`${p}/rationale`, `rationale 写判断依据，只依据简报里的作者原文和计划步骤，1 到 ${LIMITS.rationale} 字`);
     seen.add(raw.n);
     rows.push({ n: raw.n, verdict: raw.verdict as FidelityVerdict, step_indices: [...new Set(raw.step_indices as number[])].sort((a, b) => a - b), rationale: raw.rationale.trim() });
   }
-  const undecided = expected.filter((n) => !seen.has(n));
+  const undecided = expected?.filter((n) => !seen.has(n)) ?? [];
   if (undecided.length) return shape(`${at}/steps`, `作者步骤 ${undecided.join('、')} 没有判断；每条作者步骤恰好一行`);
   const problems: FidelityProblem[] = [];
   for (const row of rows) {
     const p = `${at}/steps/${fidelity.steps.findIndex((s) => isRecord(s) && s.n === row.n)}`;
-    const step = brief.author_steps.find((s) => s.n === row.n)!;
-    const adapted = step.author_text !== undefined ? '这一步有适配记录：适配不证明作者原文自相矛盾，也不说明计划不用修；对照作者原文、适配和依据，保住作者明写的约束，适配带进来的取值不是作者的约束。' : '';
-    if (row.verdict === 'changed') problems.push({ code: 'scenario_changed', pointer: p, message: cut(`审计判作者步骤 ${row.n} 的场景被改了：复核它引用的证据，保住作者写的约束，改计划，或报告已证实的障碍。${adapted}审计理由：${row.rationale}`, LIMITS.changed) });
-    else if (row.verdict === 'unrealized') problems.push({ code: 'author_step_unrealized', pointer: p, message: cut(`没有计划步骤实现作者步骤 ${row.n}：补上实现它的步骤，或报告它实现不了的原因。审计理由：${row.rationale}`, LIMITS.unrealized) });
-    else if (!row.step_indices.length) problems.push({ code: 'author_step_unbound', pointer: `${p}/step_indices`, message: `审计判作者步骤 ${row.n} 保住了，却没有指出计划里哪几步实现它；判保住的每条步骤都要写 step_indices` });
+    const step = brief?.author_steps.find((s) => s.n === row.n);
+    const adapted = step?.author_text !== undefined ? '这一步有适配记录：适配不证明作者原文自相矛盾，也不说明计划不用修；对照作者原文、适配和依据，保住作者明写的约束，适配带进来的取值不是作者的约束。' : '';
+    if (brief && row.verdict === 'changed') problems.push({ code: 'scenario_changed', pointer: p, message: cut(`审计判作者步骤 ${row.n} 的场景被改了：复核它引用的证据，保住作者写的约束，改计划，或报告已证实的障碍。${adapted}审计理由：${row.rationale}`, LIMITS.changed) });
+    else if (brief && row.verdict === 'unrealized') problems.push({ code: 'author_step_unrealized', pointer: p, message: cut(`没有计划步骤实现作者步骤 ${row.n}：补上实现它的步骤，或报告它实现不了的原因。审计理由：${row.rationale}`, LIMITS.unrealized) });
+    else if (row.verdict === 'preserved' && !row.step_indices.length) problems.push({ code: 'author_step_unbound', pointer: `${p}/step_indices`, message: `审计判作者步骤 ${row.n} 保住了，却没有指出计划里哪几步实现它；判保住的每条步骤都要写 step_indices` });
   }
   return { problems, rows };
 }

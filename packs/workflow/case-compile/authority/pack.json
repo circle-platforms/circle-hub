@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose-authority",
-  "version": "1.1.11",
+  "version": "1.1.12",
   "kind": "workflow",
   "title": "recompose-authority",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -18,13 +18,18 @@
     },
     {
       "path": "functions/canonical-json.ts",
-      "sha256": "1205f7e664f147172a57cb55e31f4f38f85f935f47a8bfdd0e62b5fa8d913d16",
-      "size": 958
+      "sha256": "7b6ed816a84b9cc987dec0523309eb7348e0d172c78e33f6cfa9bcfee07d9e9c",
+      "size": 1489
     },
     {
       "path": "functions/check.ts",
       "sha256": "f534ec93bf87726d92645b4dd8426d35fe864e98611286608fdff2da460f3f66",
       "size": 993
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "18b5252ec45fec48185200bacb1b5b3ab15623b9071fddf824bc4fa05784876d",
+      "size": 1117
     },
     {
       "path": "functions/project.ts",
@@ -38,8 +43,8 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "0f576bbc25d77a7df840b4078f42e4785a101bfa659b298184ec7f4c32067e20",
-      "size": 4547
+      "sha256": "b1a90f99d338a893fd6f87aeb26e42d7f2cd7e125fd7ba4346f2cc5d029a9a2e",
+      "size": 4566
     },
     {
       "path": "functions/schema.ts",
@@ -48,8 +53,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "038fe15d557ec2ab1274f2e346395cdcde9ceecccf2d52f0a35590246df2099b",
-      "size": 11782
+      "sha256": "c7c4e32979ef2a49b4ef61e23af955afa2ade08a05b6072fcb5cafa354cf6b4c",
+      "size": 11656
     },
     {
       "path": "requirements.json",

@@ -332,6 +332,8 @@ test('validateCompileBrief rejects tampered SHA, mutated atoms, missing hypothes
     try {
       assert.equal(await checkBriefMain(['--file', 'missing-brief.json']), 1);
       assert.match(errText, /^不存在：/);
+      assert.match(errText, /missing-brief\.json/);
+      assert.match(errText, /核对当前工作目录/);
     } finally {
       process.stderr.write = origErr;
     }

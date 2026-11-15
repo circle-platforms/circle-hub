@@ -64,7 +64,7 @@ const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/$
 const job = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, verdicts: string[]) => ({ job: id.repeat(64), verification_run: run, plan_run: plan, items, sha256: sha256(workbook), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}`, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(log)}` } } : {}) })) });
 
 /** A synthetic Hub: the verification runs in `order` (default: every one, in insertion order) stand in the lineage booking → plan run → verification run, each started after the one before. */
-async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = [], gap: Gap = 'recorded', knowledge: 'served' | 'absent' | 'tampered' | 'other-root' = 'served', recomposeRecord: Record<string, unknown> = recomposed) {
+async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = [], gap: Gap = 'recorded', knowledge: 'served' | 'absent' | 'tampered' | 'other-root' = 'served', recomposeRecord: Record<string, unknown> = recomposed, sourceBehavior?: {sha:string; mode:'absent'|'tampered'}) {
   const all: Record<string, unknown[]> = { [WHOLE]: [job('a', WHOLE, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0], CASES[2]], finalWorkbook, finalVerdicts)], ...extraJobs };
   const runsInOrder = order ?? Object.keys(all);
   const jobs = Object.fromEntries(runsInOrder.map((run) => [run, all[run]]));
@@ -98,8 +98,9 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
   const successors: Record<string, unknown[]> = {};
   for (const record of Object.values(records)) if (typeof record.predecessor === 'string') (successors[record.predecessor] ??= []).push({ run: record.run, pack: record.pack, started_at: record.started_at, predecessor: record.predecessor, parameters: record.parameters, sources: (record.sources as Array<{ slot: string; reference: string }>).map((s) => ({ slot: s.slot, reference: s.reference })) });
   const originals = new Map([contract, profile, inventory, log, ...extraOriginals].map((bytes) => [sha256(bytes), bytes]));
+  const requests: string[]=[];
   const server = createServer((request, response) => {
-    const url = request.url ?? '';
+    const url = request.url ?? ''; requests.push(url);
     if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end(); return; }
     const jobsOf = /^\/run-export\/(run_\w+)\/jobs$/.exec(url); if (jobsOf && jobs[jobsOf[1]]) { response.end(JSON.stringify({ schema: 'run-jobs@1', run: jobsOf[1], jobs: jobs[jobsOf[1]] })); return; }
     const next = /^\/run-export\/(run_\w+)\/successors$/.exec(url); if (next) { response.end(JSON.stringify({ schema: 'run-successors@1', run: next[1], successors: successors[next[1]] ?? [] })); return; }
@@ -114,12 +115,12 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
       response.end(knowledge === 'tampered' ? Buffer.concat([body, Buffer.from(' ')]) : body); return;
     }
     const alone = /^\/run-export\/(run_\w+)\/run$/.exec(url); if (alone && records[alone[1]]) { response.end(JSON.stringify({ schema: 'run-export@1', run: records[alone[1]] })); return; }
-    const source = /^\/run-export\/run_\w+\/sources\/([0-9a-f]{64})$/.exec(url); if (source && originals.has(source[1])) { response.end(originals.get(source[1])); return; }
+    const source = /^\/run-export\/run_\w+\/sources\/([0-9a-f]{64})$/.exec(url); if (source && sourceBehavior?.sha===source[1]) { response.statusCode=sourceBehavior.mode==='absent'?404:200; response.end(sourceBehavior.mode==='absent'?'没有\n':'different synthetic bytes'); return; } if (source && originals.has(source[1])) { response.end(originals.get(source[1])); return; }
     response.statusCode = 404; response.end('没有\n');
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as { port: number };
-  return { url: `http://127.0.0.1:${port}/mcp`, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+  return { url: `http://127.0.0.1:${port}/mcp`, requests, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
 }
 async function outputOf(run: () => Promise<number>) {
   const out: string[] = [], err: string[] = [];
@@ -132,7 +133,7 @@ async function notes(cases: Record<string, unknown>) { const dir = await mkdtemp
 // CASES[1] failed once and closes as a defect candidate quoting its author's expectation and the device verbatim.
 const CANDIDATE = { repro: '合成复现：照第 1 步配置后读第 3 步输出', expected: '合成期望', actual: '第 3 步断言没有命中' };
 const NOTES = { [CASES[1]]: { judged: '合成判断：计划写错', remedy: '合成修法：改计划后重跑', evidence: '第 3 步断言没有命中', defect_candidate: CANDIDATE }, [CASES[3]]: { judged: '合成判断：缺事实', remedy: '合成取舍：等补证' } };
-const run = (h: { url: string }, notesPath: string, out: string, runs = `${WHOLE},${FINAL}`, retry?: Parameters<typeof main>[3], extraArgs: string[] = []) => outputOf(() => main(['--hub', h.url, '--runs', runs, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', out, '--name', '合成批', ...extraArgs], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z'), retry));
+const run = (h: { url: string }, notesPath: string, out: string, runs = `${WHOLE},${FINAL}`, retry?: Parameters<typeof main>[3], extraArgs: string[] = []) => outputOf(() => main(['--hub', h.url, '--runs', runs, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', out, '--name', '合成批', ...extraArgs], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z'), {sourceCacheDirectory:false,...retry}));
 
 test('the pass volume is the dispatched final workbook, the unsuccessful volume holds the failed plan, and every case is accounted for', async (t) => {
   const h = await hub(); t.after(h.close); const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
@@ -159,28 +160,38 @@ test('the pass volume is the dispatched final workbook, the unsuccessful volume 
   assert.match(long, /合成日志：第 3 步断言没有命中/);
 });
 
-test('a last dispatch with mixed verdicts, a regenerated workbook that differs and notes that miss a case are refused, writing nothing', async (t) => {
+test('mixed verdicts and absent case notes remain local while workbook identity and extra notes still reject the batch', async (t) => {
   const mixed = await hub(['pass', 'fail']); t.after(mixed.close);
-  const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
-  assert.match((await run(mixed, await notes(NOTES), out)).stderr, /尚无一起做上机验证且全部正确的自动化用例 Excel。原始用例 990000000000000101 最近一次上机验证正确/);
+  const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
+  const mixedOut = join(dir, 'mixed');
+  const partial = await run(mixed, await notes(NOTES), mixedOut);
+  assert.equal(partial.code, 0, partial.stderr);
+  const mixedSummary = JSON.parse(await readFile(join(mixedOut, 'delivery.json'), 'utf8'));
+  assert.equal(mixedSummary.pass_volume, null);
+  assert.ok(mixedSummary.cases[0].pending.length);
+  assert.equal(mixedSummary.cases[0].dispatches.at(-1).terminal, 'pass');
   const only = await hub(undefined, undefined, {}, {}, [WHOLE]); t.after(only.close);
+  const onlyOut = join(dir, 'only'); assert.equal((await run(only, await notes(NOTES), onlyOut, WHOLE)).code, 0);
   const both = await hub(); t.after(both.close);
-  assert.match((await run(only, await notes(NOTES), out, WHOLE)).stderr, /原始用例 990000000000000101、990000000000000103 最近一次上机验证正确/, 'the whole volume alone is not a pass volume');
+  const missingOut = join(dir, 'missing'); const missing = await run(both, await notes({ [CASES[1]]: NOTES[CASES[1]] }), missingOut);
+  assert.equal(missing.code, 0, missing.stderr); assert.equal(JSON.parse(await readFile(join(missingOut, 'delivery.json'), 'utf8')).cases[3].model_claims.absent, true);
+  const bad = join(dir, 'bad');
   const other = await hub(['pass', 'pass'], Buffer.from('另一份工作簿')); t.after(other.close);
-  assert.match((await run(other, await notes(NOTES), out)).stderr, /重新生成的自动化用例 Excel 与上机验证使用的文件不一致/);
-  assert.match((await run(both, await notes({ [CASES[1]]: NOTES[CASES[1]] }), out)).stderr, /说明要恰好覆盖没有交付的用例：缺 990000000000000104/);
-  assert.match((await run(both, await notes({ ...NOTES, [CASES[0]]: NOTES[CASES[1]] }), out)).stderr, /多了 990000000000000101（交付的用例不写说明）/);
-  await assert.rejects(readdir(out), 'nothing was written');
+  const wrongWorkbook = await run(other, await notes(NOTES), bad); assert.equal(wrongWorkbook.code, 1); assert.match(wrongWorkbook.stderr, /上机验证工作簿摘要与其脚本编写结果不一致/);
+  const extra = await run(both, await notes({ ...NOTES, [CASES[0]]: NOTES[CASES[1]] }), bad);
+  assert.equal(extra.code, 1); assert.match(extra.stderr, /多了 990000000000000101（交付的用例不写说明）/);
+  await assert.rejects(readdir(bad), 'invalid batch inputs write nothing');
 });
 
-test('a recent pass outside the pass volume refuses the delivery, as does a pass with no pass volume; an all-fail last dispatch delivers nothing', () => {
+test('a recent pass outside a verified volume leaves case-local pending eligibility and an all-fail dispatch has no pass volume', () => {
   const d = (run: string, items: string[], verdicts: string[]) => ({ run, job: 'j-' + run, plan_run: PLAN1, sha256: 'c'.repeat(64), items, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k] })) });
   // Run 15's shape: the passes ran together, one was rerun alone and passed; the volume that ships must hold every recent pass.
-  assert.throws(() => assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass']), d(FINAL, [CASES[0]], ['pass'])]), /原始用例 990000000000000103 最近一次上机验证正确，但不在最近一份全部正确的自动化用例 Excel 里/);
+  const partial = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass']), d(FINAL, [CASES[0]], ['pass'])]);
+  assert.deepEqual(partial.pass?.items, [CASES[0]]); assert.ok(partial.cases[2].pending?.length); assert.equal(partial.cases[2].history.at(-1)?.terminal, 'pass');
   const together = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass']), d(FINAL, [CASES[0], CASES[2]], ['pass', 'pass'])]);
   assert.deepEqual(together.totals, { cases: 3, delivered: 2, failed: 1, unsettled: 0, unrun: 0 });
   assert.match(timeline(together.cases[1], false), /^第 1 次上机验证判断错误。$/);
-  assert.throws(() => assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass'])]), /尚无一起做上机验证且全部正确的自动化用例 Excel。原始用例 990000000000000101、990000000000000103 最近一次上机验证正确/);
+  const unverified = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass'])]); assert.equal(unverified.pass, null); assert.equal(unverified.cases.filter(c => c.pending?.length).length, 2);
   const none = assemble(CASES.slice(0, 2), [d(WHOLE, CASES.slice(0, 2), ['fail', 'no_verdict'])]);
   assert.equal(none.pass, null); assert.deepEqual(none.totals, { cases: 2, delivered: 0, failed: 1, unsettled: 1, unrun: 0 });
   assert.deepEqual(none.unsuccessful?.items, CASES.slice(0, 2));
@@ -218,7 +229,7 @@ test('a merged workbook names every plan run and refuses cases of another contra
   assert.throws(() => generateWorkbookSet([a, other], { merged: true }), /共用同一合约、配置/);
 });
 
-test('after the final verification, a rerun of other cases that passes nothing leaves the pass volume; a failure of one of its cases or a pass outside it is refused', async (t) => {
+test('later verification updates whole-volume eligibility and preserves other reported passes as pending', async (t) => {
   const [AFTER, PLAN5] = ['run_01kkkkkkkkkkkkkkkkkkkkkkkk', 'run_01mmmmmmmmmmmmmmmmmmmmmmmm'];
   const plan5 = planRun(PLAN5, [CASES[1]], [CASES[0], CASES[2], CASES[3]]);
   const h = await hub(undefined, undefined, { [AFTER]: [job('e', AFTER, PLAN5, [CASES[1]], plan5.workbook, ['fail'])] }, { [PLAN5]: plan5 });
@@ -234,7 +245,7 @@ test('after the final verification, a rerun of other cases that passes nothing l
   const plan6 = planRun(PLAN6, [CASES[0], CASES[1]], [CASES[2], CASES[3]]);
   const dispatches = [WHOLE, FINAL].map((r, k) => ({ run: r, job: String(k).repeat(64), plan_run: [PLAN1, PLAN2][k], sha256: '0'.repeat(64), items: k ? [CASES[0], CASES[2]] : CASES.slice(0, 3), rows: (k ? [CASES[0], CASES[2]] : CASES.slice(0, 3)).map((item, i) => ({ item, dynamic_terminal: k || i !== 1 ? 'pass' : 'fail' })) }));
   const rerun = { run: 'run_01pppppppppppppppppppppppp', job: '7'.repeat(64), plan_run: PLAN6, sha256: sha256(plan6.workbook), items: [CASES[0], CASES[1]], rows: [{ item: CASES[0], dynamic_terminal: 'fail' }, { item: CASES[1], dynamic_terminal: 'fail' }] };
-  assert.throws(() => assemble(CASES, [...dispatches, rerun]), /尚无一起做上机验证且全部正确的自动化用例 Excel。原始用例 990000000000000103 最近一次上机验证正确/);
+  const failedAgain = assemble(CASES, [...dispatches, rerun]); assert.equal(failedAgain.pass, null); assert.equal(failedAgain.cases[0].status, 'failed'); assert.ok(failedAgain.cases[2].pending?.length);
   // A later try that reruns the pass volume, passes it again and fails only the case it added leaves the pass volume standing.
   const retry = { ...rerun, run: 'run_01qqqqqqqqqqqqqqqqqqqqqqqq', items: [CASES[0], CASES[2], CASES[1]], rows: [{ item: CASES[0], dynamic_terminal: 'pass' }, { item: CASES[2], dynamic_terminal: 'pass' }, { item: CASES[1], dynamic_terminal: 'fail' }] };
   const settled = assemble(CASES, [...dispatches, retry]);
@@ -243,7 +254,7 @@ test('after the final verification, a rerun of other cases that passes nothing l
   assert.equal(settled.unsuccessful?.sources[CASES[1]].run, retry.run);
   // A later volume that passed whole while recent passes stay outside it is not a delivery: they go to the bed together first.
   const extra = { ...retry, run: 'run_01rrrrrrrrrrrrrrrrrrrrrrrr', items: [CASES[1]], rows: [{ item: CASES[1], dynamic_terminal: 'pass' }] };
-  assert.throws(() => assemble(CASES, [...dispatches, retry, extra]), /原始用例 990000000000000101、990000000000000103 最近一次上机验证正确，但不在最近一份全部正确的自动化用例 Excel 里/);
+  const last = assemble(CASES, [...dispatches, retry, extra]); assert.equal(last.pass?.run, extra.run); assert.deepEqual(last.cases.filter(c => c.pending?.length).map(c => c.autoid), [CASES[0], CASES[2]]);
 });
 
 test('the verification runs the model left out are found in the Hub lineage, and the reply holds only counts and paths', async (t) => {
@@ -255,7 +266,13 @@ test('the verification runs the model left out are found in the Hub lineage, and
   const printed = JSON.parse(result.stdout);
   assert.deepEqual(printed.runs, [WHOLE, FINAL]);
   assert.deepEqual(printed.added_runs, [WHOLE]);
-  assert.equal(printed.reply, [`交付目录 ${out}`, '原始用例 990000000000000101 合成用例 101，自动化用例 Excel 已完成上机验证，状态已确认，判断正确。决定者程序。', '原始用例 990000000000000102 合成用例 102，模型判断原始用例的期望与设备输出不一致，状态未确认，判断错误。原因还没查清，下一步使用者核对原始用例、手册和设备输出后决定是否修改原始用例。决定者模型。', '原始用例 990000000000000103 合成用例 103，自动化用例 Excel 已完成上机验证，状态已确认，判断正确。决定者程序。', '原始用例 990000000000000104 合成意图 4，缺少脚本编写所需的资料，状态未知。原因缺资料，下一步合成取舍：等补证。决定者程序。', ...['case.xlsx', 'unsuccessful_cases.xlsx', 'delivery_report.md', 'unsuccessful_cases.md', 'delivery.json'].map((name) => `- ${join(out, name)}`)].join('\n'));
+  const replyLines = printed.reply.split('\n');
+  assert.equal(replyLines.length, 10);
+  assert.equal(replyLines[0], `交付目录 ${out}`);
+  for (const index of [1, 3]) assert.match(replyLines[index], /状态未确认，判断正确（目标自报，未排除本地操作）/);
+  assert.match(replyLines[2], /模型判断.*状态未确认.*原因还没查清/);
+  assert.match(replyLines[4], /原因缺资料.*由usr_synthetic发请求，期限 2026-11-09T00:00:00.000Z/);
+  assert.deepEqual(replyLines.slice(5), ['case.xlsx', 'unsuccessful_cases.xlsx', 'delivery_report.md', 'unsuccessful_cases.md', 'delivery.json'].map(name => `- ${join(out,name)}`));
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.added_runs, [WHOLE]);
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /第 1 次上机验证判断错误/);
@@ -279,11 +296,17 @@ test("a case not delivered that went to the bed is explained with the device's o
   const h = await hub(); t.after(() => h.close());
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
   const missing = await run(h, await notes({ ...NOTES, [CASES[1]]: { judged: '合成判断', remedy: '合成修法' } }), join(dir, 'a'));
-  assert.equal(missing.code, 1);
-  assert.match(missing.stderr, /用例 990000000000000102 已做上机验证，但说明缺少设备输出/);
+  assert.equal(missing.code, 0, missing.stderr);
+  const missingSummary = JSON.parse(await readFile(join(dir,'a','delivery.json'),'utf8'));
+  assert.ok(missingSummary.cases[1].pending.some((fact:string) => fact.includes('说明缺少设备输出')));
+  assert.equal(missingSummary.cases[1].closing,undefined);
+  assert.equal(missingSummary.cases[0].status,'delivered');
   const invented = await run(h, await notes({ ...NOTES, [CASES[1]]: { judged: '合成判断', remedy: '合成修法', evidence: '设备说一切正常' } }), join(dir, 'b'));
-  assert.equal(invented.code, 1);
-  assert.match(invented.stderr, /用例 990000000000000102 的设备输出不是最近一次上机验证的原话/);
+  assert.equal(invented.code, 0, invented.stderr);
+  const inventedSummary = JSON.parse(await readFile(join(dir,'b','delivery.json'),'utf8'));
+  assert.ok(inventedSummary.cases[1].pending.some((fact:string) => fact.includes('不是最近一次上机验证的原话')));
+  assert.equal(inventedSummary.cases[1].closing,undefined);
+  assert.match(await readFile(join(dir,'b','delivery_report.md'),'utf8'), /模型提出的设备输出.*逐字核对未通过/);
   const out = join(dir, 'c');
   const ok = await run(h, await notes(NOTES), out);
   assert.equal(ok.code, 0, ok.stderr);
@@ -301,23 +324,29 @@ test('a rework whose plan run names the previous verification run as predecessor
   assert.deepEqual(printed.added_runs, [WHOLE]);
 });
 
-test('a failed case goes back to authoring until three authored versions failed; only a verbatim defect candidate closes it earlier', async (t) => {
+test('recorded distinct failed versions have bounded conclusions and invalid defect evidence stays case-local', async (t) => {
   // InfoTest's closing rules: max_rounds 3 per case, a free-text environment or product judgement is not a terminal credential.
   const [R2, R3, AGAIN, PLAN7, PLAN8] = ['run_01ssssssssssssssssssssssss', 'run_01tttttttttttttttttttttttt', 'run_01vvvvvvvvvvvvvvvvvvvvvvvv', 'run_01wwwwwwwwwwwwwwwwwwwwwwww', 'run_01xxxxxxxxxxxxxxxxxxxxxxxx'];
   const judgedOnly = { ...NOTES, [CASES[1]]: { judged: '合成判断：环境缺前置', remedy: '合成取舍：本轮不返工', evidence: '第 3 步断言没有命中' } };
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
   const once = await hub(); t.after(once.close);
   const early = await run(once, await notes(judgedOnly), join(dir, 'a'));
-  assert.equal(early.code, 1);
-  assert.match(early.stderr, /用例 990000000000000102 上机验证有错误，已重写自动化用例 1 次，最多重交 3 次，同一份自动化用例重新验证不算重写/);
+  assert.equal(early.code, 0, early.stderr);
+  const earlySummary=JSON.parse(await readFile(join(dir,'a','delivery.json'),'utf8'));
+  assert.equal(earlySummary.cases[1].closing,undefined);
+  assert.ok(earlySummary.cases[1].pending.some((fact:string)=>fact.includes('已记录 1 份不同内容')));
+  assert.equal(earlySummary.cases[1].dispatches[0].dynamic_terminal,'fail');
   const unquoted = await run(once, await notes({ ...NOTES, [CASES[1]]: { ...NOTES[CASES[1]], defect_candidate: { ...CANDIDATE, expected: '作者没写过的期望', actual: '设备说一切正常' } } }), join(dir, 'b'));
-  assert.equal(unquoted.code, 1);
-  assert.match(unquoted.stderr, /用例 990000000000000102 判断设备的问题时，期望不是原始用例的原句；设备输出不是最近一次上机验证的原话/);
+  assert.equal(unquoted.code, 0,unquoted.stderr);
+  const unquotedSummary=JSON.parse(await readFile(join(dir,'b','delivery.json'),'utf8'));
+  assert.equal(unquotedSummary.cases[1].closing,undefined);
+  assert.ok(unquotedSummary.cases[1].pending.some((fact:string)=>fact.includes('期望不是原始用例的原句；设备输出不是最近一次上机验证的原话')));
   assert.match((await run(once, await notes({ ...NOTES, [CASES[1]]: { ...NOTES[CASES[1]], defect_candidate: { repro: '合成复现' } } }), join(dir, 'c'))).stderr, /判断设备的问题时，请只写复现步骤、原始用例期望原句和设备输出三项/);
 
   // A rerun of the same plan is not another authored round.
   const rerun = await hub(undefined, undefined, { [AGAIN]: [job('g', AGAIN, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])] }, {}, [WHOLE, AGAIN, FINAL]); t.after(rerun.close);
-  assert.match((await run(rerun, await notes(judgedOnly), join(dir, 'd'), `${WHOLE},${AGAIN},${FINAL}`)).stderr, /已重写自动化用例 1 次，最多重交 3 次/);
+  assert.equal((await run(rerun, await notes(judgedOnly), join(dir, 'd'), `${WHOLE},${AGAIN},${FINAL}`)).code,0);
+  assert.ok(JSON.parse(await readFile(join(dir,'d','delivery.json'),'utf8')).cases[1].pending.some((fact:string)=>fact.includes('已记录 1 份不同内容')));
 
   // Three distinct plans of it failed: it closes as the model not finding a solution, and its judgement is reported as its own account.
   const plan7 = planRun(PLAN7, CASES.slice(0, 3), [CASES[3]], '2'), plan8 = planRun(PLAN8, CASES.slice(0, 3), [CASES[3]], '3');
@@ -327,12 +356,12 @@ test('a failed case goes back to authoring until three authored versions failed;
   assert.equal(closed.code, 0, closed.stderr);
   assert.deepEqual(JSON.parse(closed.stdout).added_runs, [WHOLE, R2, R3]);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
-  assert.deepEqual({ closing: summary.cases[1].closing, label: summary.cases[1].closing_label, rounds: summary.cases[1].rounds }, { closing: 'authoring_failure', label: '模型未找到解决方案', rounds: 3 });
+  assert.deepEqual({ closing: summary.cases[1].closing, label: summary.cases[1].closing_label, rounds: summary.cases[1].rounds }, { closing: 'authoring_failure', label: '所记录的核验尚未通过', rounds: 3 });
   assert.deepEqual(summary.closings, { authoring_failure: 1, device_defect: 0, missing_fact: 1, author_conflict: 0 });
-  assert.match(JSON.parse(closed.stdout).reply, /自动化用例尚未编写正确，已重写自动化用例 3 次，状态已确认，判断错误。原因编写模型的问题/);
+  assert.match(JSON.parse(closed.stdout).reply, /所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，状态未确认，判断错误。原因还没查清/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000102 合成用例 102，自动化用例尚未编写正确，已重写自动化用例 3 次，状态已确认，判断错误/);
-  assert.match(report, /原因编写模型的问题，下一步合成取舍：本轮不返工。决定者程序。/);
+  assert.match(report, /原始用例 990000000000000102 合成用例 102，设备原判错误，状态未确认（目标自报，未排除本地操作）。所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，状态未确认，判断错误/);
+  assert.match(report, /原因还没查清，下一步尚缺具名出口材料.*模型建议单列为未确认。决定者程序。/);
   assert.match(report, /模型说明，状态未确认。合成判断：环境缺前置/);
 
   // A verbatim defect candidate closes it after one round and is shown as a candidate for arbitration.
@@ -340,7 +369,7 @@ test('a failed case goes back to authoring until three authored versions failed;
   assert.equal((await run(once, await notes(NOTES), candidateOut)).code, 0);
   const candidateReport = await readFile(join(candidateOut, 'unsuccessful_cases.md'), 'utf8');
   assert.match(candidateReport, /模型判断原始用例的期望与设备输出不一致，状态未确认，判断错误。原因还没查清/);
-  assert.match(candidateReport, /复现步骤 合成复现：照第 1 步配置后读第 3 步输出\n\n原始用例原句\n```\n合成期望\n```\n\n设备输出\n```\n第 3 步断言没有命中\n```/);
+  assert.match(candidateReport, /模型提出的复现步骤（未确认） 合成复现：照第 1 步配置后读第 3 步输出\n\n原始用例原句，已逐字核对\n```\n合成期望\n```\n\n设备输出，已逐字核对\n```\n第 3 步断言没有命中\n```/);
 });
 
 test('a pass whose device words carry an execution-failure line its assertions do not read is no verdict, as the reference engine reviews passes', async (t) => {
@@ -363,9 +392,9 @@ test('a pass whose device words carry an execution-failure line its assertions d
     [FINAL3]: [jobOf('n', FINAL3, PLAN8, [CASES[0], CASES[2]], plan8.workbook, rows([CASES[0], CASES[2]], ['pass', 'pass'], [clean, refused]))],
   }, { [PLAN7]: plan7, [PLAN8]: plan8 }, [WHOLE2, FINAL3], false, [marked, clean, refused, read]); t.after(refusedFinal.close);
   const refusedRun = await run(refusedFinal, notesPath, join(dir, 'a'), `${WHOLE2},${FINAL3}`);
-  assert.equal(refusedRun.code, 1);
-  assert.match(refusedRun.stderr, /尚无一起做上机验证且全部正确的自动化用例 Excel。原始用例 990000000000000101 最近一次上机验证正确/);
-  assert.match(refusedRun.stderr, /核对设备输出后，以下原始用例状态未知，执行失败原话没有被自动化用例检查：原始用例 990000000000000103 合成用例 103 的设备输出里有一行“Failed to run the synthetic command”/, 'the refusal names the case and the unread line');
+  assert.equal(refusedRun.code, 0, refusedRun.stderr);
+  const pendingSummary = JSON.parse(await readFile(join(dir, 'a', 'delivery.json'), 'utf8')); assert.equal(pendingSummary.pass_volume, null); assert.equal(pendingSummary.cases[2].dispatches.at(-1).terminal, 'no_verdict'); assert.ok(pendingSummary.cases[2].pending.length);
+  assert.match(await readFile(join(dir, 'a', 'delivery_report.md'), 'utf8'), /Failed to run the synthetic command/);
   // The same line inside the text an assertion of the case reads is exempt; a refused pass in an earlier dispatch is reported.
   const earlier = await hub(undefined, undefined, {
     [WHOLE2]: [jobOf('m', WHOLE2, PLAN7, CASES.slice(0, 3), plan7.workbook, rows(CASES.slice(0, 3), ['pass', 'fail', 'pass'], [clean, clean, refused]))],
@@ -381,7 +410,7 @@ test('a pass whose device words carry an execution-failure line its assertions d
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /核对设备输出后，1 条原始用例有执行失败原话却未被自动化用例检查，状态未知/);
 });
 
-test('a pass the review dropped goes back to authoring like a failure, counts as a round and closes at three, as the reference engine redispatches a broken-errored case', async (t) => {
+test('an audited device pass remains unknown after three recorded distinct versions', async (t) => {
   // InfoTest compile_engine/nodes.py author_redispatch_disposition: failed, contradicted and broken-errored share one round cap.
   const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
   doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
@@ -400,8 +429,12 @@ test('a pass the review dropped goes back to authoring like a failure, counts as
   // One authored version whose pass was dropped, then the pass volume without it: refused, with the line and what to change.
   const once = await hub(undefined, undefined, { [D1]: [jobOf('p', D1, P1, whole, p1.workbook, rows(whole, all, dropped))], [LAST]: last }, { [P1]: p1, [P4]: p4 }, [D1, LAST], false, [marked, clean, refused]); t.after(once.close);
   const early = await run(once, await notes(note), join(dir, 'a'), `${D1},${LAST}`);
-  assert.equal(early.code, 1);
-  assert.match(early.stderr, /用例 990000000000000103 最近一次上机验证状态未知，设备输出有执行失败原话“Failed to run the synthetic command”，自动化用例没有检查这一行。下一步由编写模型检查这行设备输出，或改用不会执行失败的观察，改好自动化用例再一起做上机验证。已重写自动化用例 1 次，最多重交 3 次/);
+  assert.equal(early.code, 0,early.stderr);
+  const earlySummary=JSON.parse(await readFile(join(dir,'a','delivery.json'),'utf8'));
+  assert.equal(earlySummary.cases[2].closing,undefined);
+  assert.ok(earlySummary.cases[2].pending.some((fact:string)=>fact.includes('已核验 1 份不同自动化用例')));
+  assert.equal(earlySummary.cases[2].dispatches[0].dynamic_terminal,'pass');
+  assert.match(JSON.parse(early.stdout).reply,/设备原判正确.*交付资格状态未知/);
 
   // Three authored versions, one failed and two with a dropped pass: it closes as the model not finding a solution.
   const failedFirst = rows(whole, ['pass', 'pass', 'fail'], dropped);
@@ -412,10 +445,10 @@ test('a pass the review dropped goes back to authoring like a failure, counts as
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.cases.map((c: { status: string }) => c.status), ['delivered', 'delivered', 'unsettled', 'unrun']);
   assert.deepEqual({ closing: summary.cases[2].closing, rounds: summary.cases[2].rounds, terminals: summary.cases[2].dispatches.map((d: { terminal: string }) => d.terminal) }, { closing: 'authoring_failure', rounds: 3, terminals: ['fail', 'no_verdict', 'no_verdict'] });
-  assert.match(JSON.parse(closed.stdout).reply, /自动化用例尚未编写正确，已重写自动化用例 3 次，状态已确认，判断错误。原因编写模型的问题/);
+  assert.match(JSON.parse(closed.stdout).reply, /所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，状态未知。原因还没查清/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000103 合成用例 103，自动化用例尚未编写正确，已重写自动化用例 3 次，状态已确认，判断错误/);
-  assert.match(report, /第 3 次上机验证状态未知，设备输出有执行失败原话“Failed to run the synthetic command”，自动化用例没有检查这一行/);
+  assert.match(report, /原始用例 990000000000000103 合成用例 103，设备原判正确，状态未确认（目标自报，未排除本地操作）。所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，状态未知/);
+  assert.match(report, /第 3 次上机验证设备原判正确（目标自报，未确认）；交付复核状态未知，设备输出有执行失败原话“Failed to run the synthetic command”，自动化用例没有检查这一行/);
 });
 
 test('a case never dispatched closes only on a fact the Hub recorded missing for its own plan; a written claim sends it back to authoring', async (t) => {
@@ -425,7 +458,7 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.equal(summary.cases[3].status, 'unrun');
   assert.equal(summary.cases[3].closing, 'missing_fact');
-  assert.deepEqual(summary.cases[3].missing, { kind: 'data_gap', plan_run: GAP, requirement: 'contract_methods', missing: GAP_WORDS });
+  assert.deepEqual(summary.cases[3].missing, { kind: 'data_gap', plan_run: GAP, requirement: 'contract_methods', missing: GAP_WORDS, attributions:['data_gap'], gaps:[{missing:GAP_WORDS,reason:'missing_input',exit:{action:'request',audience:{user:'usr_synthetic'},due:'2026-11-09T00:00:00.000Z',request_kind:'clarification'}}], exit:{action:'request',audience:{user:'usr_synthetic'},due:'2026-11-09T00:00:00.000Z',request_kind:'clarification'} });
   assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 1, missing_fact: 1, author_conflict: 0 });
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /原始用例 990000000000000104 合成意图 4，缺少脚本编写所需的资料，状态未知。原因缺资料/);
@@ -441,10 +474,9 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
     const g = await hub(undefined, undefined, {}, {}, undefined, false, [], gap); t.after(g.close);
     const refusedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
     const refused = await run(g, await notes(NOTES), refusedOut);
-    assert.equal(refused.code, 1, gap);
-    assert.match(refused.stderr, new RegExp(`^不存在：用例 ${CASES[3]}尚未上机验证`), gap);
-    assert.ok(!refused.stderr.startsWith('已被占用：'), `${gap}: unrun refusal must never use 已被占用: ${refused.stderr}`);
-    await assert.rejects(readdir(refusedOut), `${gap}: nothing was written`);
+    assert.equal(refused.code, 0, refused.stderr);
+    const caseRow = JSON.parse(await readFile(join(refusedOut, 'delivery.json'), 'utf8')).cases[3];
+    assert.equal(caseRow.closing, undefined, gap); assert.ok(caseRow.pending.length, gap);
   }
 });
 
@@ -453,10 +485,11 @@ test('a plan audited again without a change is not another authored round; a cha
   const first = planRun(PLAN1, CASES.slice(0, 3), [CASES[3]]), audited = structuredClone(first);
   ((audited.submission.items[1].slots.plan[0] as unknown as { data: Record<string, unknown> }).data).fidelity = { brief_sha256: 'a'.repeat(64), steps: [], disclosure: '合成：重新审计' };
   assert.equal(planDigest(inputs(audited), CASES[1]), planDigest(inputs(first), CASES[1]));
+  assert.equal(planDigest(inputs(first), 'not-authored'),null,'a missing authored plan cannot become another counted round from its run ID');
   assert.notEqual(planDigest(inputs(planRun(PLAN1, CASES.slice(0, 3), [CASES[3]], '2')), CASES[1]), planDigest(inputs(first), CASES[1]));
 });
 
-test('a case whose plan the Hub refused until the repair rounds were spent closes as the model not finding a solution, without a dispatch', async (t) => {
+test('a plan repair budget records bounded unverified observations without inventing device failure', async (t) => {
   const h = await hub(undefined, undefined, {}, {}, undefined, false, [], 'exhausted'); t.after(h.close);
   const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
   const done = await run(h, await notes(NOTES), out);
@@ -464,17 +497,19 @@ test('a case whose plan the Hub refused until the repair rounds were spent close
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual([summary.cases[3].status, summary.cases[3].closing, summary.cases[3].missing.kind, summary.cases[3].missing.plan_run], ['unrun', 'authoring_failure', 'repair_exhausted', GAP]);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000104 合成意图 4，自动化用例尚未编写正确，状态已确认，判断错误。原因编写模型的问题/);
+  assert.match(report, /原始用例 990000000000000104 合成意图 4，所记录的自动化用例核验尚未通过（结论仅限这些尝试），状态未知。原因生产者错误/);
   assert.ok(report.includes(`证据，Hub 核对结果原话。${SPENT_WORDS}`));
 });
 
-test('a notes file that is not valid JSON is named with the place and the text around it, before anything is read from the Hub', async (t) => {
+test('an invalid notes file is identified without echoing its content before any Hub read', async (t) => {
   const h = await hub(); t.after(h.close);
   const dir = await mkdtemp(join(tmpdir(), 'cc-notes-')), broken = join(dir, 'notes.json');
   await writeFile(broken, '{"cases":{"990000000000000102":{"judged":"合成判断：设备回 "拒绝"","remedy":"合成修法"}}}');
   const refused = await run(h, broken, join(dir, 'out'));
   assert.equal(refused.code, 1);
-  assert.match(refused.stderr, /说明文件 notes\.json 不是合法的 JSON（.+）；出错位置第 \d+ 个字符，附近原文：".*拒绝.*"。常见原因是括号或引号没有成对；改好这个文件再做脚本合并/);
+  assert.match(refused.stderr, /参数无效：说明文件 notes\.json 不是合法的 JSON/);
+  assert.match(refused.stderr, /位置：说明文件 notes\.json/);
+  assert.doesNotMatch(refused.stderr, /设备回|附近原文/);
   assert.doesNotMatch(refused.stderr, /重新导出该运行对应输入的原始字节/);
 });
 
@@ -493,11 +528,11 @@ test("an author's step against the manual closes a failed case at its first roun
   assert.deepEqual([summary.cases[1].closing_label, summary.cases[1].rounds, summary.cases[1].conflict], ['作者步骤与手册冲突（待作者或用户裁定）', 1, CONFLICT]);
   assert.deepEqual([summary.cases[3].rounds ?? null, summary.cases[3].conflict], [null, { ...CONFLICT, author: '合成动作' }]);
   assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 0, missing_fact: 0, author_conflict: 2 });
-  assert.match(JSON.parse(written.stdout).reply, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因原始用例的问题/);
+  assert.match(JSON.parse(written.stdout).reply, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因还没查清/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因原始用例的问题/);
-  assert.match(report, /下一步使用者核对原始用例、手册和设备输出后决定是否修改原始用例。决定者模型。/);
-  assert.match(report, /原始用例 990000000000000104 合成意图 4，模型判断原始用例与手册冲突，状态未确认，判断错误。原因原始用例的问题/);
+  assert.match(report, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因还没查清/);
+  assert.match(report, /下一步使用者核对原始用例、手册和设备输出后裁定，未取得具名请求出口。决定者模型。/);
+  assert.match(report, /原始用例 990000000000000104 合成意图 4，模型判断原始用例与手册冲突，状态未确认，判断错误。原因还没查清/);
   assert.match(report, /未做上机验证，这条原始用例未完成脚本编写。/);
   const quoted = (author: string) => `**证据，原始用例原句**，已按照规则核对原文。\n${fenced(author)}\n\n**证据，手册原话**，构建 ${plan1.record.build}，已按照规则核对原文。\n${fenced(CONFLICT.manual)}`;
   assert.ok(report.includes(quoted('合成步骤')) && report.includes(quoted('合成动作')), 'both sentences and the statement are shown as the tool checked them');
@@ -505,7 +540,7 @@ test("an author's step against the manual closes a failed case at its first roun
   assert.doesNotMatch(report, /模型未找到解决方案/, 'the model is not blamed for a conflict the author or the user has to rule on');
 });
 
-test('an author conflict whose quotes do not stand, or whose root the Hub cannot give, refuses the delivery and writes nothing', async (t) => {
+test('invalid conflict quotes or unavailable citations remain case-local while wrong root and digest reject the batch', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
   const note = (conflict: unknown) => notes({ ...NOTES, [CASES[1]]: { judged: '合成判断', remedy: '合成取舍', evidence: '第 3 步断言没有命中', author_conflict: conflict } });
   const served = await hub(); t.after(served.close);
@@ -517,9 +552,10 @@ test('an author conflict whose quotes do not stand, or whose root the Hub cannot
   ];
   for (const [name, conflict, expected] of refusals) {
     const out = join(dir, name), refused = await run(served, await note(conflict), out);
-    assert.equal(refused.code, 1, name);
-    assert.match(refused.stderr, expected, name);
-    await assert.rejects(readdir(out), `${name}: nothing was written`);
+    assert.equal(refused.code, 0, refused.stderr);
+    const caseRow = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8')).cases[1];
+    assert.equal(caseRow.closing, undefined, name); assert.match(caseRow.pending.join('；'), expected, name);
+    assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /模型提出的手册原话.*未取得完整的逐字核对依据/);
   }
   // A root the Hub cannot give, or gives wrong, is said as that: the claim is not called false for it.
   const broken: Array<['absent' | 'tampered' | 'other-root', RegExp]> = [
@@ -530,9 +566,11 @@ test('an author conflict whose quotes do not stand, or whose root the Hub cannot
   for (const [mode, expected] of broken) {
     const h = await hub(undefined, undefined, {}, {}, undefined, false, [], 'recorded', mode); t.after(h.close);
     const out = join(dir, mode), refused = await run(h, await note(CONFLICT), out);
-    assert.equal(refused.code, 1, mode);
-    assert.match(refused.stderr, expected, mode);
-    await assert.rejects(readdir(out), `${mode}: nothing was written`);
+    if (mode === 'absent') {
+      assert.equal(refused.code, 0, refused.stderr); const row = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8')).cases[1]; assert.equal(row.closing, undefined); assert.match(row.pending.join('；'), expected);
+    } else {
+      assert.equal(refused.code, 1, mode); assert.match(refused.stderr, expected, mode); await assert.rejects(readdir(out), `${mode}: nothing was written`);
+    }
   }
   // Nothing is cited, nothing is read: a delivery without the claim never asks the Hub for the root (the stub would answer 404).
   const unread = await hub(undefined, undefined, {}, {}, undefined, false, [], 'recorded', 'absent'); t.after(unread.close);
@@ -568,7 +606,10 @@ test('assemble-delivery retries 503 Retry-After and ECONNREFUSED on reads and st
   });
   assert.equal(failed.code, 1);
   assert.deepEqual(pauses2, [2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000, 8_000, 6_000]);
-  assert.match(failed.stderr, /^暂时不可用：Hub 不可达（ECONNREFUSED），已等待 60 秒并尝试 10 次仍未恢复。请.*。$/m);
+  assert.match(failed.stderr, /^暂时不可用：/);
+  assert.match(failed.stderr, /ECONNREFUSED/);
+  assert.match(failed.stderr, /已等待 60 秒并尝试 10 次/);
+  assert.match(failed.stderr, /请等待 Hub 恢复或确认网络可达后用同一命令重试/);
   await assert.rejects(readdir(out2), 'nothing written when retry budget exhausted');
 });
 
@@ -721,9 +762,9 @@ test('assemble-delivery refuses one scoped run paired with an unscoped run, and 
   t.after(unclosed.close);
   const outUnclosed = join(await mkdtemp(join(tmpdir(), 'cc-scope-unclosed-')), 'out');
   const blocked = await run(unclosed, await notes({ [CASES[1]]: NOTES[CASES[1]] }), outUnclosed, WHOLE);
-  assert.equal(blocked.code, 1);
-  assert.match(blocked.stderr, new RegExp(`^不存在：用例 ${CASES[1]}尚未上机验证`));
-  await assert.rejects(readdir(outUnclosed));
+  assert.equal(blocked.code, 0, blocked.stderr);
+  const pendingCase = JSON.parse(await readFile(join(outUnclosed, 'delivery.json'), 'utf8')).cases.find((c: { autoid: string }) => c.autoid === CASES[1]);
+  assert.ok(pendingCase.pending.length); assert.equal(pendingCase.closing, undefined);
 
   // Dispatch containing an item outside the anchored scope is also refused.
   const narrowScope = { words: '只交付 101', cases: [CASES[0]] };
@@ -789,4 +830,79 @@ test('assemble-delivery retains out_of_scope disclosure when both --recompose an
   assert.match(report, /未纳入本次范围的原始用例（2 条/);
   assert.match(report, new RegExp(`${CASES[2]} 合成意图 3|${CASES[2]} 合成标题 3`));
   assert.match(report, new RegExp(`${CASES[3]} 合成意图 4|${CASES[3]} 合成标题 4`));
+});
+
+
+test('a missing pass-review original leaves local unknown eligibility while a mismatching digest refuses the batch',async(t)=>{
+  const declared=structuredClone(CONTRACT_DOC) as Record<string,unknown>;
+  declared.exec_failure_markers={source:'synthetic-rule.json',sha256:'a'.repeat(64),lines:['Synthetic declared failure']};
+  const marked=Buffer.from(JSON.stringify(signTypedRuntime(declared)));
+  const plan=planRun(PLAN1,CASES.slice(0,3),[CASES[3]],undefined,marked);
+  const output=Buffer.from('synthetic unique device-output original');
+  const sourceSha=sha256(output);
+  const checkedJob={...job('a',WHOLE,PLAN1,CASES.slice(0,3),plan.workbook,['pass','pass','pass']),rows:CASES.slice(0,3).map(item=>({item,dynamic_terminal:'pass',qualifier:{nature:'judgment',marks:['target_reported']},accepted_as_fact:false,evidence:{log:`src:${sourceSha}`}}))};
+  const dir=await mkdtemp(join(tmpdir(),'cc-missing-original-'));
+  for(const mode of ['absent','tampered'] as const){
+    const h=await hub(undefined,undefined,{[WHOLE]:[checkedJob]},{[PLAN1]:plan},[WHOLE],false,[marked,output],'recorded','served',recomposed,{sha:sourceSha,mode});t.after(h.close);
+    const out=join(dir,mode);const result=await run(h,await notes({}),out,WHOLE);
+    if(mode==='tampered'){
+      assert.equal(result.code,1);assert.match(result.stderr,/字节与摘要不一致/);assert.deepEqual(await readdir(out).catch(()=>[]),[]);
+    }else{
+      assert.equal(result.code,0,result.stderr);
+      const summary=JSON.parse(await readFile(join(out,'delivery.json'),'utf8'));
+      assert.equal(summary.pass_volume,null);
+      assert.ok(summary.cases.slice(0,3).every((c:{status:string;pending:string[];dispatches:Array<{dynamic_terminal:string;accepted_as_fact:boolean}>})=>c.status==='unsettled'&&c.pending.length&&c.dispatches[0].dynamic_terminal==='pass'&&c.dispatches[0].accepted_as_fact===false));
+      assert.deepEqual(summary.artifacts.slice().sort(),(await readdir(out)).sort());
+      const report=await readFile(join(out,'delivery_report.md'),'utf8');assert.doesNotMatch(report.split('交付物：')[1],/(^|、)case\.xlsx/);
+    }
+  }
+});
+
+
+test('assembly opts into immutable source caching while fresh run and job metadata is read again',async(t)=>{
+  const h=await hub();t.after(h.close);
+  const root=await mkdtemp(join(tmpdir(),'cc-assembly-cache-'));
+  const cache=join(root,'cache');const noteFile=await notes(NOTES);
+  assert.equal((await run(h,noteFile,join(root,'first'),undefined,{sourceCacheDirectory:cache})).code,0);
+  const first=h.requests.splice(0);
+  assert.ok(first.some(path=>path.includes('/sources/')));
+  assert.equal((await run(h,noteFile,join(root,'second'),undefined,{sourceCacheDirectory:cache})).code,0);
+  const second=h.requests;
+  assert.deepEqual(second.filter(path=>!path.includes('/sources/')),first.filter(path=>!path.includes('/sources/')),'run/job/successor responses are always fresh');
+  assert.equal(second.filter(path=>path.includes('/sources/')).length,0,'only previously digest-verified source bytes are reused');
+  for(const path of first.filter(path=>path.includes('/sources/'))){
+    const runPath=path.split('/sources/')[0];
+    assert.ok(first.findIndex(candidate=>candidate===runPath||candidate===runPath+'/run'||candidate===runPath+'/jobs')<first.indexOf(path),'a source hit follows fresh metadata for its run');
+  }
+});
+
+
+test('an excluded preceding item cannot shift the latest failed recipe to another case',async(t)=>{
+  const plan=planRun(PLAN1,CASES.slice(0,3),[CASES[0],CASES[3]]);
+  const h=await hub(undefined,undefined,{[WHOLE]:[job('a',WHOLE,PLAN1,[CASES[1],CASES[2]],plan.workbook,['fail','pass'])]},{[PLAN1]:plan});t.after(h.close);
+  const out=join(await mkdtemp(join(tmpdir(),'cc-excluded-preceding-')),'out');
+  const result=await run(h,await notes(NOTES),out);
+  assert.equal(result.code,0,result.stderr);
+  const recipes=satisfiedRecipes({run:plan.record,result:plan.result,submission:plan.submission,contract,profile,inventory});
+  assert.deepEqual(recipes.map(recipe=>recipe.fields.autoid),[CASES[1],CASES[2]]);
+  assert.deepEqual(await readFile(join(out,'unsuccessful_cases.xlsx')),Buffer.from(generateWorkbookSet(recipes.filter(recipe=>recipe.fields.autoid===CASES[1]),{merged:true})));
+  const summary=JSON.parse(await readFile(join(out,'delivery.json'),'utf8'));
+  assert.deepEqual(summary.unsuccessful_volume.items.map((item:{autoid:string})=>item.autoid),[CASES[1]]);
+});
+
+test('each dispatched item list must match the actual generated workbook',async(t)=>{
+  const h=await hub(undefined,undefined,{[FINAL]:[job('b',FINAL,PLAN2,[CASES[0]],plan2.workbook,['pass'])]});t.after(h.close);
+  const out=join(await mkdtemp(join(tmpdir(),'cc-workbook-binding-')),'out');
+  const result=await run(h,await notes(NOTES),out);
+  assert.equal(result.code,1,'a partial job item list must not ship the larger workbook');assert.match(result.stderr,/用例清单.*实际工作簿/);
+  assert.deepEqual(await readdir(out).catch(()=>[]),[]);
+});
+
+test('every dispatched workbook digest must match its original plan even outside the final pass volume',async(t)=>{
+  const earlier=job('a',WHOLE,PLAN1,CASES.slice(0,3),Buffer.from('different synthetic workbook'),['pass','fail','pass']);
+  const h=await hub(undefined,undefined,{[WHOLE]:[earlier]});t.after(h.close);
+  const out=join(await mkdtemp(join(tmpdir(),'cc-workbook-binding-')),'out');
+  const result=await run(h,await notes(NOTES),out);
+  assert.equal(result.code,1,'an earlier dispatch digest mismatch must not become case-local pending');assert.match(result.stderr,/工作簿摘要.*脚本编写结果/);
+  assert.deepEqual(await readdir(out).catch(()=>[]),[]);
 });

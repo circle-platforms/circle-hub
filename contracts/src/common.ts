@@ -118,6 +118,7 @@ export const ProtocolError = z.strictObject({
   code: z.string().min(1),
   message: z.string(),
   fix: z.string().optional(),
+  recommendation_warrant: z.string().min(1).optional().describe('the versioned component deciding this recommendation, independent of the error claim warrant'),
   path: JsonPointer.optional().describe('JSON Pointer into the call arguments; for submit_result, into the submission'),
   item: ItemId.optional(),
   requirement: z.string().optional(),

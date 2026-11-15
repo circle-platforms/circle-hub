@@ -1,0 +1,39 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "run",
+      "type": "path",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "parts",
+      "type": "path",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "model",
+      "type": "text",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "out",
+      "type": "path",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    }
+  ],
+  "forms": []
+}

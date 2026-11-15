@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 // Merges the auditors' verdicts into the case files of a plan directory, as data.fidelity (tools/fidelity.md). A verdict is merged
 // only when the brief it answered is still the brief of the plan as it stands, and only when it decides every authored action
 // once from the closed set (functions/fidelity.ts); the digest is written by this tool, never typed. In run 19 the model merged
@@ -7,9 +8,8 @@ import { realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fidelityProblems } from '../functions/fidelity.ts';
-import { formatCallError, isRecord } from '../functions/text.ts';
-import { argumentsOf } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { fidelityJudgmentProblems, embedFidelity } from '../functions/fidelity.ts';
+import { parseCliOptions, isRecord } from '../functions/text.ts';
 import { briefFile, planCases, verdictFile } from './fidelity-brief.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 
@@ -22,7 +22,9 @@ function planData(value: Record<string, unknown>): Record<string, unknown> | nul
 
 export async function main(argv: string[]): Promise<number> {
   try {
-    const args = argumentsOf(argv, ['run', 'plans', 'briefs']);
+    const parsedArgs = parseCliOptions(argv, { run: true, plans: true, briefs: true }, 'node <技能目录>/tools/fidelity-apply.ts --run <run> --plans <plans> --briefs <briefs>');
+    // Required options are checked by parseCliOptions.
+    const args = { run: parsedArgs.run!, plans: parsedArgs.plans!, briefs: parsedArgs.briefs! };
     const { cases, skipped } = await planCases(args.run, args.plans);
     const merged: Array<Record<string, unknown>> = [], attention: Array<{ file: string; state: string; message: string }> = [];
     for (const { file, base, value, brief } of cases) {
@@ -35,14 +37,12 @@ export async function main(argv: string[]): Promise<number> {
       try { bytes = await readFile(verdictPath); } catch { note('未知', '原因缺资料。尚未取得自动化用例的核对结果；下一步交给独立模型核对'); continue; }
       let verdict: unknown;
       try { verdict = parsedPlanFile(verdictName, bytes); } catch (error) { note('未知', error instanceof Error ? error.message : '不是合法的 JSON'); continue; }
-      if (!isRecord(verdict) || Object.keys(verdict).some((key) => key !== 'steps' && key !== 'disclosure')) { note('未知', '原因编写模型的问题。核对结果的内容不完整；下一步由独立模型按执行器规则重新写出核对结果'); continue; }
-      const fidelity = { brief_sha256: brief.brief_sha256, steps: verdict.steps, disclosure: verdict.disclosure };
-      const judged = fidelityProblems(brief, fidelity);
+      const judged = fidelityJudgmentProblems(brief, verdict);
       const malformed = judged.problems.filter((p) => p.code === 'fidelity_shape');
       if (malformed.length) { note('未知', `${malformed.map((p) => p.message).join('；')}；下一步由独立模型按执行器规则重新写出核对结果`); continue; }
       const data = planData(value);
       if (!data) { note('未知', '原因编写模型的问题。文件里缺少自动化用例；下一步由编写模型补齐自动化用例再合并核对结果'); continue; }
-      data.fidelity = fidelity;
+      data.fidelity = embedFidelity(brief, verdict as Record<string, unknown>);
       await writeFile(join(args.plans, file), JSON.stringify(value, null, 2) + '\n');
       const count = (verdictName: string) => judged.rows.filter((row) => row.verdict === verdictName).length;
       merged.push({ file, preserved: count('preserved'), changed: count('changed'), unrealized: count('unrealized') });
@@ -51,6 +51,6 @@ export async function main(argv: string[]): Promise<number> {
     }
     process.stdout.write(JSON.stringify({ ready: attention.length === 0, merged, attention, skipped }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

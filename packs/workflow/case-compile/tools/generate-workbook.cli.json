@@ -1,0 +1,104 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "run",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>/run.json",
+      "type": "path"
+    },
+    {
+      "name": "result",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>/result.json",
+      "type": "path"
+    },
+    {
+      "name": "submission",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>/submission.json",
+      "type": "path"
+    },
+    {
+      "name": "contract",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>/contract.json",
+      "type": "path"
+    },
+    {
+      "name": "profile",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>/profile.json",
+      "type": "path"
+    },
+    {
+      "name": "inventory",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>/inventory.json",
+      "type": "path"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>/case.xlsx",
+      "type": "path"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<新目录>/run.json",
+          "optional": false
+        },
+        {
+          "name": "result",
+          "placeholder": "<新目录>/result.json",
+          "optional": false
+        },
+        {
+          "name": "submission",
+          "placeholder": "<新目录>/submission.json",
+          "optional": false
+        },
+        {
+          "name": "contract",
+          "placeholder": "<新目录>/contract.json",
+          "optional": true
+        },
+        {
+          "name": "profile",
+          "placeholder": "<新目录>/profile.json",
+          "optional": true
+        },
+        {
+          "name": "inventory",
+          "placeholder": "<新目录>/inventory.json",
+          "optional": true
+        },
+        {
+          "name": "out",
+          "placeholder": "<新目录>/case.xlsx",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}

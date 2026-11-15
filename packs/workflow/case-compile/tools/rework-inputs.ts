@@ -15,7 +15,7 @@ import {
   type PriorRoundRecord,
   type StreakAnalysis,
 } from '../functions/rework-history.ts';
-import { isRecord } from '../functions/text.ts';
+import { CallFailure, isRecord } from '../functions/text.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 import {
   isInsideRoot,
@@ -35,23 +35,21 @@ export function parseCommaRoundList(
   if (raw === undefined) return [];
   const trimmed = raw.trim();
   if (!trimmed) {
-    throw new Error(`参数无效：${flagName} 不能为空；如需省略某一轮请用 - 占位或省略该选项`);
+    throw new CallFailure("invalid_parameters", `${flagName} 不能为空；如需省略某一轮请用 - 占位或省略该选项`, "提供该选项的历史路径；省略单轮时用 - 占位，不传历史时省略整个选项");
   }
   const tokens = raw.split(',').map((part) => {
     const t = part.trim();
     return !t || SKIP_SLOT.has(t.toLowerCase()) ? null : t;
   });
   if (tokens.every((t) => t === null)) {
-    throw new Error(`参数无效：${flagName} 不能全部为空或占位符`);
+    throw new CallFailure("invalid_parameters", `${flagName} 不能全部为空或占位符`, "至少提供一轮历史路径；所有轮次均无历史时省略整个选项");
   }
   if (priorRoundCount !== null && priorRoundCount > 0) {
     if (tokens.length === priorRoundCount) return tokens;
     if (tokens.length === 1) {
       return [...new Array<null>(priorRoundCount - 1).fill(null), tokens[0]];
     }
-    throw new Error(
-      `参数无效：${flagName} 传入了 ${tokens.length} 项，与前序轮次数 ${priorRoundCount} 不一致（只传 1 项默认指上一轮，传多项须按第 1..${priorRoundCount} 轮顺序对齐，空缺轮次用 - 占位）`,
-    );
+    throw new CallFailure("invalid_parameters", `${flagName} 传入了 ${tokens.length} 项，与前序轮次数 ${priorRoundCount} 不一致（只传 1 项默认指上一轮，传多项须按第 1..${priorRoundCount} 轮顺序对齐，空缺轮次用 - 占位）`, "按第 1 到上一轮顺序提供相同数量的逗号分隔路径，缺失轮次写 -；仅供上一轮时只给一个路径");
   }
   return tokens;
 }
@@ -65,7 +63,7 @@ async function resolveCasePlanFromTarget(
   const checked = resolveInsideCwd(cwd, targetArg, flagLabel);
   const dirTry = await lstat(checked.lexical).catch(() => null);
   if (dirTry?.isSymbolicLink()) {
-    throw new Error(`参数无效：${flagLabel} 路径 ${targetArg} 不能是符号链接`);
+    throw new CallFailure("invalid_parameters", `${flagLabel} 路径 ${targetArg} 不能是符号链接`, "把上一轮计划路径指向工作目录内的普通文件或目录，不使用符号链接");
   }
   if (dirTry?.isDirectory()) {
     const dir = resolveExistingDirInsideCwd(cwd, targetArg, flagLabel);
@@ -81,7 +79,7 @@ async function resolveCasePlanFromTarget(
         };
       }
     }
-    throw new Error(`不存在：在上一轮计划目录 ${dir.relative} 中未找到用例 ${[...caseIds][0]} 的单条计划文件`);
+    throw new CallFailure("not_found", `在上一轮计划目录 ${dir.relative} 中未找到用例 ${[...caseIds][0]} 的单条计划文件`, "把 --prior-plans 指向含当前用例单条计划的目录或该计划文件，勿传整批 submission.json");
   }
   const fileResolved = resolveExistingFileInsideCwd(cwd, targetArg, flagLabel);
   const parsed = parsedPlanFile(fileResolved.relative, await readFile(fileResolved.canonical));
@@ -102,7 +100,7 @@ async function readSafeFileUnderRoot(
   const candidateRel = join(rootRelative, relPath);
   const resolved = resolveExistingFileInsideCwd(cwd, candidateRel, label);
   if (!isInsideRoot(resolved.canonical, rootCanonical)) {
-    throw new Error(`参数无效：${label} 文件 ${relPath} 解析后超出所属目录范围`);
+    throw new CallFailure("invalid_parameters", `${label} 文件 ${relPath} 解析后超出所属目录范围`, "把返还文件移回所属返还目录，并在索引中使用目录内的相对路径");
   }
   return {
     path: resolved.relative,
@@ -126,11 +124,11 @@ async function loadDeviceEvidenceFromDir(
     '返还目录中缺少 index.json',
   );
   if (!isInsideRoot(indexResolved.canonical, returnsDir.canonical)) {
-    throw new Error('参数无效：index.json 解析后超出返还目录');
+    throw new CallFailure("invalid_parameters", 'index.json 解析后超出返还目录', "使用返还目录自身的 index.json，不能以路径跳转读取其他目录");
   }
   const returnsIndex = parsedPlanFile(indexResolved.relative, await readFile(indexResolved.canonical));
   if (!isRecord(returnsIndex) || returnsIndex.schema !== 'device-returns@1' || !Array.isArray(returnsIndex.jobs)) {
-    throw new Error(`参数无效：${indexResolved.relative} 不是合法的 device-returns@1 索引文件`);
+    throw new CallFailure("invalid_parameters", `${indexResolved.relative} 不是合法的 device-returns@1 索引文件`, "使用原始 device-returns@1 索引，保留 schema 和 jobs 数组后重试");
   }
 
   // Locate matching job row first so only THIS single case's session/log files are read from disk.
@@ -151,9 +149,7 @@ async function loadDeviceEvidenceFromDir(
     }
   }
   if (!matchedRow) {
-    throw new Error(
-      `参数无效：返还目录 ${returnsDir.relative} 的 index.json 中不含当前用例 ${[...caseIds][0]}（请检查 --prior-returns 是否传错运行或目录）`,
-    );
+    throw new CallFailure("invalid_parameters", `返还目录 ${returnsDir.relative} 的 index.json 中不含当前用例 ${[...caseIds][0]}（请检查 --prior-returns 是否传错运行或目录）`, "把 --prior-returns 指向当前用例对应运行的返还目录，核对索引 rows.item 或 rows.autoid");
   }
 
   let logText: string | null = null;
@@ -229,15 +225,13 @@ function assertAnswerPayloadShape(text: string, label: string): void {
       parsed = JSON.parse(trimmed);
     } catch {
       if (label.endsWith('.json')) {
-        throw new Error(`参数无效：--prior-answers 文件 ${label} 不是合法 JSON`);
+        throw new CallFailure("invalid_parameters", `--prior-answers 文件 ${label} 不是合法 JSON`, "把 --prior-answers 指向该轮完整 JSON 答复，勿使用截断文件");
       }
       parsed = null;
     }
     if (parsed !== null) {
       if (!isRecord(parsed) || isWrongRecord(parsed)) {
-        throw new Error(
-          `参数无效：--prior-answers 文件 ${label} 不是合法的 submit_result/answer 响应（禁止传入 submission.json、index.json 或 notes.json）`,
-        );
+        throw new CallFailure("invalid_parameters", `--prior-answers 文件 ${label} 不是合法的 submit_result/answer 响应（禁止传入 submission.json、index.json 或 notes.json）`, "提供该轮 submit_result 或 answer 的响应文件，不传提交计划、设备索引或归因记录");
       }
       return;
     }
@@ -249,19 +243,17 @@ function assertAnswerPayloadShape(text: string, label: string): void {
     try {
       const parsed: unknown = JSON.parse(line);
       if (isRecord(parsed) && isWrongRecord(parsed)) {
-        throw new Error(
-          `参数无效：--prior-answers 文件 ${label} 内嵌的 JSON 不是合法的 submit_result/answer 响应`,
-        );
+        throw new CallFailure("invalid_parameters", `--prior-answers 文件 ${label} 内嵌的 JSON 不是合法的 submit_result/answer 响应`, "提供含真实 submit_result 或 answer 响应的答复文件，不混入其他类型的 JSON");
       }
     } catch (e) {
-      if (e instanceof Error && e.message.startsWith('参数无效：')) throw e;
+      if (e instanceof CallFailure) throw e;
     }
   }
 }
 
 function assertAttributionPayloadShape(raw: unknown, label: string): void {
   if (!isRecord(raw) || (Array.isArray(raw.items) && !isRecord(raw.cases)) || raw.schema === 'device-returns@1') {
-    throw new Error(`参数无效：--prior-notes 文件 ${label} 不是合法的 notes.json 或归因记录`);
+    throw new CallFailure("invalid_parameters", `--prior-notes 文件 ${label} 不是合法的 notes.json 或归因记录`, "把 --prior-notes 指向 notes.json 或该轮具名归因记录，不传计划或设备索引");
   }
   const hasNotesCases = isRecord(raw.cases);
   const hasAttrFields =
@@ -272,7 +264,7 @@ function assertAttributionPayloadShape(raw: unknown, label: string): void {
     || typeof raw.fix_direction === 'string'
     || typeof raw.next_step === 'string';
   if (!hasNotesCases && !hasAttrFields) {
-    throw new Error(`参数无效：--prior-notes 文件 ${label} 缺少 cases 或归因字段（judged/remedy）`);
+    throw new CallFailure("invalid_parameters", `--prior-notes 文件 ${label} 缺少 cases 或归因字段（judged/remedy）`, "在 notes.json 提供 cases 对象，或在单条归因记录提供 judged、remedy 等声明字段");
   }
 }
 
@@ -285,7 +277,7 @@ async function loadHubAnswerNoticesFromTarget(
   const checked = resolveInsideCwd(cwd, answerArg, '--prior-answers');
   const dirTry = await lstat(checked.lexical).catch(() => null);
   if (dirTry?.isSymbolicLink()) {
-    throw new Error(`参数无效：--prior-answers 路径 ${answerArg} 不能是符号链接`);
+    throw new CallFailure("invalid_parameters", `--prior-answers 路径 ${answerArg} 不能是符号链接`, "把 --prior-answers 指向工作目录内的普通文件或目录，不使用符号链接");
   }
   const pushUnique = (target: GateRefusalItem[], items: readonly GateRefusalItem[]) => {
     for (const item of items) {
@@ -324,7 +316,7 @@ async function loadAttributionFromTarget(
   const checked = resolveInsideCwd(cwd, noteArg, '--prior-notes');
   const dirTry = await lstat(checked.lexical).catch(() => null);
   if (dirTry?.isSymbolicLink()) {
-    throw new Error(`参数无效：--prior-notes 路径 ${noteArg} 不能是符号链接`);
+    throw new CallFailure("invalid_parameters", `--prior-notes 路径 ${noteArg} 不能是符号链接`, "把 --prior-notes 指向工作目录内的普通文件或目录，不使用符号链接");
   }
   if (dirTry?.isDirectory()) {
     const dir = resolveExistingDirInsideCwd(cwd, noteArg, '--prior-notes');
@@ -367,7 +359,7 @@ export async function loadCasePriorRounds(params: {
   ];
   const anySupplied = rawLists.some((l) => l.length > 0);
   if (round === 1 && anySupplied) {
-    throw new Error('参数无效：第 1 轮不应传入上一轮历史（--prior-*）；如需生成第 2 轮及以上返工任务说明请显式传入 --round 2');
+    throw new CallFailure("invalid_parameters", '第 1 轮不应传入上一轮历史（--prior-*）；如需生成第 2 轮及以上返工任务说明请显式传入 --round 2', "第 1 轮省略 --prior-*；需要返工历史时明确 --round 2 或更大轮次");
   }
 
   const maxLen = Math.max(0, ...rawLists.map((l) => l.length));

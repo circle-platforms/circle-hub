@@ -21,8 +21,9 @@ export interface PinnedIdentity { identity: string; bytes: string | null }
  * module-wide and are not a teardown a case may copy. `pinned` says whether the original contract's source_hashes record
  * the same digest for the source; when it does not, the digest is the Hub-side declaration only.
  */
+export interface CommandDomainProbe { command: string; reference: string; read_only: true }
 export interface RunnerCleanupOrder { rule_match: 'first_hit'; tail: string[]; before: Array<[string, string]> }
-export interface RunnerCleanupRule { prefixes: string[]; clears?: string[]; line: number | null }
+export interface RunnerCleanupRule { prefixes: string[]; clears?: string[]; line: number | null; probe?: CommandDomainProbe }
 export interface RunnerCleanup { source: string; sha256: string; objects: string[]; order?: RunnerCleanupOrder; rules: RunnerCleanupRule[]; pinned: boolean }
 /**
  * Device commands the runner is never asked to send (a runtime-contract@2 addition, decision 114). The reference
@@ -195,6 +196,7 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   if (value.cleanup !== undefined) {
     const c = value.cleanup;
     const rules = isRecord(c) && Array.isArray(c.rules) ? c.rules : [];
+    const probe = (p: unknown): boolean => p === undefined || isRecord(p) && Object.keys(p).every(key => ['command', 'reference', 'read_only'].includes(key)) && typeof p.command === 'string' && p.command.length > 0 && p.command.length <= 2000 && !/[\u0000-\u0008\u000a-\u001f\u007f]/.test(p.command) && typeof p.reference === 'string' && /^tree:[a-f0-9]{64}\/commands(?:\/[^@\s/]+)+(?:@[a-f0-9]{64})?$/.test(p.reference) && p.read_only === true;
     const prefix = (p: unknown): p is string => typeof p === 'string' && /\S/.test(p) && p.length <= 200 && !/[\r\n]/.test(p);
     const validOrder = (o: unknown): o is RunnerCleanupOrder => isRecord(o)
       && Object.keys(o).every((key) => key === 'rule_match' || key === 'tail' || key === 'before')
@@ -202,15 +204,16 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
       && Array.isArray(o.tail) && o.tail.length <= 16 && o.tail.every(prefix) && new Set(o.tail).size === o.tail.length
       && Array.isArray(o.before) && o.before.length <= 32 && o.before.every((pair) => Array.isArray(pair) && pair.length === 2 && prefix(pair[0]) && prefix(pair[1]) && pair[0] !== pair[1]);
     const validRule = (r: unknown): boolean => isRecord(r)
-      && Object.keys(r).every((key) => key === 'prefixes' || key === 'clears' || key === 'line')
+      && Object.keys(r).every((key) => key === 'prefixes' || key === 'clears' || key === 'line' || key === 'probe')
       && Array.isArray(r.prefixes) && r.prefixes.length > 0 && r.prefixes.length <= 16 && r.prefixes.every(prefix)
       && (r.clears === undefined || (Array.isArray(r.clears) && r.clears.length > 0 && r.clears.length <= 16 && r.clears.every(prefix)))
+      && probe(r.probe)
       && (r.line === undefined || (Number.isSafeInteger(r.line) && (r.line as number) >= 1));
     if (value.schema !== 'runtime-contract@2' || !isRecord(c) || Object.keys(c).some((key) => !['source', 'sha256', 'objects', 'order', 'rules'].includes(key)) || !nonempty(c.source) || typeof c.sha256 !== 'string' || !SHA.test(c.sha256)
       || !Array.isArray(c.objects) || c.objects.length === 0 || c.objects.length > 16 || c.objects.some((o) => !nonempty(o)) || new Set(c.objects).size !== c.objects.length
       || (c.order !== undefined && !validOrder(c.order))
       || rules.length === 0 || rules.length > 512 || !rules.every(validRule)) {
-      issue('/cleanup', '运行器清理声明只能是 runtime-contract@2 里的 source、sha256、objects（1–16 个对象）、可选 order（rule_match/tail/before）和 rules（1–512 条，每条 1–16 个单行前缀，可带 clears 和源码行号）');
+      issue('/cleanup', '运行器清理声明只能是 runtime-contract@2 里的 source、sha256、objects（1–16 个对象）、可选 order（rule_match/tail/before）和 rules（1–512 条，每条 1–16 个单行前缀，可带 clears、源码行号和显式只读 probe）');
     } else {
       for (const [k, o] of (c.objects as string[]).entries()) if (!objects.has(o)) issue(`/cleanup/objects/${k}`, '清理声明的对象不在合约对象列表里');
       const recorded = isRecord(value.source_hashes) ? value.source_hashes[c.source as string] : undefined;
@@ -222,11 +225,12 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
         objects: [...c.objects as string[]],
         ...(order ? { order } : {}),
         rules: rules.map((r) => {
-          const row = r as { prefixes: string[]; clears?: string[]; line?: unknown };
+          const row = r as { prefixes: string[]; clears?: string[]; line?: unknown; probe?: CommandDomainProbe };
           return {
             prefixes: [...row.prefixes],
             ...(row.clears !== undefined ? { clears: [...row.clears] } : {}),
             line: typeof row.line === 'number' ? row.line : null,
+            ...(row.probe === undefined ? {} : {probe: structuredClone(row.probe)}),
           };
         }),
         pinned: recorded === c.sha256,

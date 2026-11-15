@@ -7,6 +7,8 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, circleEndpoint, endpointFrom, main, parseArgs, writeHome, type Endpoint } from './circle-home.ts';
 import { parseEnvText } from './lib/env-file.ts';
+import { extractTaughtCommands, instantiateTaughtCommand } from './taught-commands.ts';
+import { parseCommand } from './guard-lib.ts';
 
 // Invented content: section names follow the owner's file layout, every value is made up.
 const ENV = [
@@ -275,11 +277,17 @@ function skillsFixture() {
   const dir = scratch(), home = join(dir, 'home');
   const written = writeHome({ home, profile: 'skills', hubUrl: 'https://hub.example.invalid/mcp' }, endpointFrom(entries, 'qwen'), 'synthetic-token');
   const root = join(home, 'skills', 'x'); mkdirSync(join(root, 'tools'), { recursive: true });
-  writeFileSync(join(root, 'SKILL.md'), '# Synthetic skill\n'); const script = join(root, 'tools', 't.ts'); writeFileSync(script, '// synthetic\n');
+  writeFileSync(join(root, 'SKILL.md'), '# Synthetic skill\n');
+  const script = join(root, 'tools', 't.ts'); writeFileSync(script, '// synthetic\n');
+  writeFileSync(join(root, 'tools', 't.cli.json'), JSON.stringify({ schema: 'tool-cli@2', stdin: [], options: [...['a','b'].map(name=>({name,type:'path',required:false,kind:'string',multiple:false,placeholder:null})), {name:'send',type:'text',required:false,kind:'boolean',multiple:false,placeholder:null}] }));
+  const token1 = join(root, 'tools', 't-token.ts'); writeFileSync(token1, '// synthetic token1\n');
+  writeFileSync(join(root, 'tools', 't-token.cli.json'), JSON.stringify({ schema: 'tool-cli@2', stdin: ['%HUB_TOKEN%'], options: ['a','b'].map(name=>({name,type:'path',required:false,kind:'string',multiple:false,placeholder:null})) }));
+  const token2 = join(root, 'tools', 't-send.ts'); writeFileSync(token2, '// synthetic token2\n');
+  writeFileSync(join(root, 'tools', 't-send.cli.json'), JSON.stringify({ schema: 'tool-cli@2', stdin: ['%JEV_API_KEY%', '%HUB_TOKEN%'], options: [{name:'send',type:'text',required:false,kind:'boolean',multiple:false,placeholder:null}] }));
   const hook = join(home, written.files.find(f => f.startsWith('hooks/'))!);
   const input = (tool_name = 'execute', tool_input: Record<string, unknown> = { command: `node ${script} --a b` }, paths: unknown = []) => ({ event: 'before_tool', cwd: written.workdir, tool_name, tool_input, paths });
   const raw = (stdin: string) => { const child = spawnSync(process.execPath, [hook], { input: stdin, encoding: 'utf8', timeout: 5000 }); assert.equal(child.status, 0, child.stderr); return JSON.parse(child.stdout) as { decision: string; reason: string }; };
-  return { dir, home, root, script, workdir: written.workdir, hook, input, decide: (value: unknown) => raw(JSON.stringify(value)), raw, close: () => rmSync(dir, { recursive: true, force: true }) };
+  return { dir, home, root, script, token1, token2, workdir: written.workdir, hook, input, decide: (value: unknown) => raw(JSON.stringify(value)), raw, close: () => rmSync(dir, { recursive: true, force: true }) };
 }
 test('skills guard allows six Hub tools todos and installed skill but denies write tools and malformed input', () => {
   const f = skillsFixture();
@@ -307,11 +315,11 @@ test('readonly file tools require every path inside the configured workspace', a
 test('execute permits only a Node TypeScript script below skills and the declared argument grammar', () => {
   const f = skillsFixture();
   try {
-    for (const command of [`node ${f.script} --a b`, `node '${f.script}' --a 'a value' --b two`, `node ${f.script} --send <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`, `node ${f.script} <<'END'\n%HUB_TOKEN%\nEND\n`]) assert.equal(f.decide(f.input('execute', { command, background: true, timeout: 10 })).decision, 'allow', command);
+    for (const command of [`node ${f.script} --a b`, `node '${f.script}' --a 'a value' --b two`, `node ${f.token2} --send <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`, `node ${f.token1} <<'END'\n%HUB_TOKEN%\nEND\n`]) assert.equal(f.decide(f.input('execute', { command, background: true, timeout: 10 })).decision, 'allow', command);
     for (const suffix of ['; echo bad', '&& echo bad', '| cat', '`echo bad`', '$(echo bad)', '> out', '2>out', '\necho bad']) {
       const result = f.decide(f.input('execute', { command: `node ${f.script} ${suffix}` })); assert.equal(result.decision, 'deny', suffix); assert.match(result.reason, /这个目录只放行技能目录里的脚本/);
     }
-    for (const command of [`node -e 'x'`, `node --input-type=module ${f.script}`, `node '${f.script}' --a 'a value' --b=two`, `node ${f.script} <<EOF\n%HUB_TOKEN%\nEOF`, `node ${f.script} <<'EOF'\nnot-a-placeholder\nEOF`, `node ${f.script} <<'EOF'\n%HUB_TOKEN% extra\nEOF`, `node ${f.script} <<'EOF'\n%HUB_TOKEN%\nEOF\necho bad`, `node ${join(f.home, 'outside.ts')}`, `node ${f.root}/tools/../tools/t.ts`, `node tools/t.ts`, `node ${f.script}.mjs`, `node ${f.script} "double quoted"`, `node ${f.script} 'unclosed`, `node ${f.script} 'one'two`]) assert.equal(f.decide(f.input('execute', { command })).decision, 'deny', command);
+    for (const command of [`node -e 'x'`, `node --input-type=module ${f.script}`, `node '${f.script}' --a 'a value' --b=two`, `node ${f.token1} <<EOF\n%HUB_TOKEN%\nEOF`, `node ${f.token1} <<'EOF'\nnot-a-placeholder\nEOF`, `node ${f.token1} <<'EOF'\n%HUB_TOKEN% extra\nEOF`, `node ${f.token1} <<'EOF'\n%HUB_TOKEN%\nEOF\necho bad`, `node ${join(f.home, 'outside.ts')}`, `node ${f.root}/tools/../tools/t.ts`, `node tools/t.ts`, `node ${f.script}.mjs`, `node ${f.script} "double quoted"`, `node ${f.script} 'unclosed`, `node ${f.script} 'one'two`]) assert.equal(f.decide(f.input('execute', { command })).decision, 'deny', command);
   } finally { f.close(); }
 });
 test('canonical script containment rejects symlinks to scripts outside skills', async () => {
@@ -331,7 +339,7 @@ test('an unloaded Jev style skill still asks for send and receives the identical
   try {
     const copy = join(f.root, 'received.json');
     skillHooks(f, [{ source: `import{writeFileSync}from'node:fs';let raw='';for await(const x of process.stdin)raw+=x;writeFileSync(${JSON.stringify(copy)},raw);const i=JSON.parse(raw);console.log(JSON.stringify({decision:i.tool_input.command.includes('--send')?'ask':'allow',reason:'合成外发需要确认'}));` }]);
-    const input = f.input('execute', { command: `node ${f.script} --send <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF` });
+    const input = f.input('execute', { command: `node ${f.token2} --send <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF` });
     assert.equal(f.decide(input).decision, 'ask'); assert.equal(readFileSync(copy, 'utf8'), JSON.stringify(input));
     assert.equal(f.decide(f.input()).decision, 'allow');
   } finally { f.close(); }
@@ -378,7 +386,7 @@ test('tool and path filters follow Circle before_tool matching', () => {
 test('deeply nested installed scripts retain their skill hook and neutral hook JSON permits execution', () => {
   const f = skillsFixture();
   try {
-    const nested = join(f.root, 'deep', 'nested', 'tools'); mkdirSync(nested, { recursive: true }); const script = join(nested, 't.ts'); writeFileSync(script, '// synthetic');
+    const nested = join(f.root, 'deep', 'nested', 'tools'); mkdirSync(nested, { recursive: true }); const script = join(nested, 't.ts'); writeFileSync(script, '// synthetic'); writeFileSync(join(nested,'t.cli.json'), JSON.stringify({schema:'tool-cli@2',stdin:[],options:[]}));
     skillHooks(f, [{ source: 'console.log(JSON.stringify({decision:"ask",reason:"合成确认"}));' }]);
     assert.equal(f.decide(f.input('execute', { command: `node ${script}` })).decision, 'ask');
     skillHooks(f, [{ source: 'console.log("{}");' }]); assert.equal(f.decide(f.input()).decision, 'allow');
@@ -417,10 +425,10 @@ test('glob patterns cannot escape the workspace independently of their reported 
   }finally{f.close();}
 });
 
-test('padded delegated decisions retain their deny and ask strength while empty output still denies',()=>{
+test('undeclared padded delegated decision values fail closed instead of being normalized',()=>{
   const f=skillsFixture();
   try{
-    for(const [word,decision]of [['deny ','deny'],['ask\n','ask'],[' ask','ask'],['allow ','allow']]){
+    for(const [word,decision]of [['deny ','deny'],['ask\n','deny'],[' ask','deny'],['allow ','deny']]){
       skillHooks(f,[{source:`console.log(JSON.stringify({decision:${JSON.stringify(word)},reason:'合成带空白决定'}));`}]);assert.equal(f.decide(f.input()).decision,decision);
     }
     skillHooks(f,[{source:'process.stdout.write("   ");'}]);assert.equal(f.decide(f.input()).decision,'deny');
@@ -430,8 +438,8 @@ test('padded delegated decisions retain their deny and ask strength while empty 
 test('here document separators use shell spaces and tabs rather than JavaScript whitespace',()=>{
   const f=skillsFixture();
   try{
-    for(const separator of ['\u00a0','\v','\f','\r','\u3000','\u2028','\ufeff'])assert.equal(f.decide(f.input('execute',{command:`node ${f.script} --a b${separator}<<'EOF'\n%HUB_TOKEN%\nEOF`})).decision,'deny',JSON.stringify(separator));
-    for(const separator of [' ','\t'])assert.equal(f.decide(f.input('execute',{command:`node ${f.script} --a b${separator}<<'EOF'\n%HUB_TOKEN%\nEOF`})).decision,'allow');
+    for(const separator of ['\u00a0','\v','\f','\r','\u3000','\u2028','\ufeff'])assert.equal(f.decide(f.input('execute',{command:`node ${f.token1} --a b${separator}<<'EOF'\n%HUB_TOKEN%\nEOF`})).decision,'deny',JSON.stringify(separator));
+    for(const separator of [' ','\t'])assert.equal(f.decide(f.input('execute',{command:`node ${f.token1} --a b${separator}<<'EOF'\n%HUB_TOKEN%\nEOF`})).decision,'allow');
   }finally{f.close();}
 });
 
@@ -528,108 +536,6 @@ test('model calls cannot create links or rename directories through direct tools
   }finally{f.close();}
 });
 
-type ParsedSkillCommand = { source: string; template: string; hasHeredoc: boolean };
-
-function splitAlternativesOutsideAngles(text: string): string[] {
-  const parts: string[] = [];
-  let depth = 0, start = 0;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '<') depth++;
-    else if (text[i] === '>' && depth > 0) depth--;
-    else if (text[i] === '|' && depth === 0) { parts.push(text.slice(start, i)); start = i + 1; }
-  }
-  parts.push(text.slice(start));
-  return parts;
-}
-
-function extractSkillCommands(docPath: string, text: string): ParsedSkillCommand[] {
-  const out: ParsedSkillCommand[] = [];
-  // Every ```sh block line must be blank, a # comment, or a strict node <技能目录>/tools/*.ts command (with optional 3-line <<'EOF'/%HUB_TOKEN%/EOF heredoc).
-  for (const match of text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)) {
-    const lines = match[1].split('\n');
-    for (let i = 0; i < lines.length;) {
-      const line = lines[i];
-      if (line === '' || line.startsWith('#')) { i += 1; continue; }
-      assert.ok(line.startsWith('node <技能目录>/tools/'), `${docPath}: unparseable command line in sh block: ${line}`);
-      if (line.includes('<<')) {
-        assert.match(line, / <<'EOF'$/, `${docPath}: malformed heredoc start on line: ${line}`);
-        assert.equal(lines[i + 1], '%HUB_TOKEN%', `${docPath}: missing %HUB_TOKEN% heredoc line after: ${line}`);
-        assert.equal(lines[i + 2], 'EOF', `${docPath}: missing EOF closing line after: ${line}`);
-        out.push({ source: docPath, template: line.slice(0, -" <<'EOF'".length), hasHeredoc: true });
-        i += 3;
-      } else {
-        assert.ok(!line.includes('%HUB_URL%') && !line.includes('%HUB_TOKEN%'), `${docPath}: Hub command missing <<'EOF': ${line}`);
-        out.push({ source: docPath, template: line, hasHeredoc: false });
-        i += 1;
-      }
-    }
-  }
-  // Explicit "label: [node <技能目录>/]tools/..." command declarations in ```text summaries.
-  const heredocNote = " <<'EOF'（接两行 %HUB_TOKEN% 与 EOF，切勿在 <<'EOF' 前换行）";
-  for (const line of text.split('\n')) {
-    const labelled = /^[^:\n]+: ((?:node <技能目录>\/)?tools\/\S+\.ts(?: [^\n]*)?)$/.exec(line);
-    if (!labelled) continue;
-    let cmd = labelled[1], hasHeredoc = false;
-    if (cmd.endsWith(heredocNote)) { cmd = cmd.slice(0, -heredocNote.length); hasHeredoc = true; }
-    assert.ok(!cmd.includes('<<') && !cmd.includes('（'), `${docPath}: unparseable labelled command: ${line}`);
-    if (cmd.startsWith('tools/')) cmd = `node <技能目录>/${cmd}`;
-    out.push({ source: docPath, template: cmd, hasHeredoc });
-  }
-  // Inline backticked `node <技能目录>...` invocations (excluding the exact prose meta-syntax illustration).
-  for (const match of text.matchAll(/`(node <技能目录>[^`]*)`/g)) {
-    const cmd = match[1];
-    if (cmd === 'node <技能目录>/tools/<脚本>.ts --选项 值') continue;
-    assert.ok(!cmd.includes('<<') && !cmd.includes('\n'), `${docPath}: unparseable inline command: ${cmd}`);
-    out.push({ source: docPath, template: cmd, hasHeredoc: false });
-  }
-  return out;
-}
-
-function expandCommandVariants(source: string, template: string, values: Record<string, string>): string[] {
-  const groups: Array<{ start: number; end: number; branches: string[] }> = [];
-  for (const match of template.matchAll(/\[([^\[\]]+)\]/g)) {
-    groups.push({ start: match.index, end: match.index + match[0].length, branches: splitAlternativesOutsideAngles(match[1]) });
-  }
-  const renderBrackets = (chosen: Map<number, string>): string => {
-    let cursor = 0, result = '';
-    for (let idx = 0; idx < groups.length; idx++) {
-      result += template.slice(cursor, groups[idx].start);
-      result += chosen.get(idx) ?? '';
-      cursor = groups[idx].end;
-    }
-    result += template.slice(cursor);
-    const collapsed = result.replace(/ +/g, ' ').trim();
-    assert.ok(!/[\[\]]/.test(collapsed), `${source}: unmatched brackets in expanded command: ${collapsed}`);
-    return collapsed;
-  };
-  const bracketForms = new Set<string>([renderBrackets(new Map())]);
-  for (let idx = 0; idx < groups.length; idx++) {
-    for (const branch of groups[idx].branches) bracketForms.add(renderBrackets(new Map([[idx, branch]])));
-  }
-  if (groups.length > 1) {
-    bracketForms.add(renderBrackets(new Map(groups.map((group, idx) => [idx, group.branches[0]]))));
-  }
-
-  const concretes: string[] = [];
-  for (const form of bracketForms) {
-    const choices = [...form.matchAll(/<([^<>'\s]+\|[^<>'\s]+)>/g)];
-    assert.ok(choices.length <= 1, `${source}: expected at most one choice placeholder per command: ${form}`);
-    const choiceForms = choices.length === 1
-      ? choices[0][1].split('|').map((opt) => form.slice(0, choices[0].index) + opt + form.slice(choices[0].index + choices[0][0].length))
-      : [form];
-    for (const choiceForm of choiceForms) {
-      // Circle substitutes variables before hooks run and hands secrets over as their %NAME% placeholders.
-      const substituted = choiceForm.replace(/<([^<>'\s]+)>/g, (whole, name: string) => {
-        assert.ok(Object.hasOwn(values, name), `${source}: placeholder ${whole} has no synthetic value`);
-        return values[name];
-      });
-      assert.ok(!/[<>]/.test(substituted), `${source}: unreplaced angle bracket in command: ${substituted}`);
-      concretes.push(substituted);
-    }
-  }
-  return concretes;
-}
-
 test('the case-compile, recompose and jev skill commands, filled in as Circle hands them to hooks, pass both skills and ops unified home guards', () => {
   const dir = scratch();
   try {
@@ -676,12 +582,10 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
           writeFileSync(join(skill, rel), readFileSync(join(pack.dir, rel)));
         }
         const docs = staged.map((f) => f.path).filter((p) => p === 'SKILL.md' || (p.startsWith('tools/') && p.endsWith('.md')));
-        const parsed = docs.flatMap((docPath) => extractSkillCommands(`${pack.name}/${docPath}`, readFileSync(join(pack.dir, docPath), 'utf8')));
+        const parsed = docs.flatMap((docPath) => extractTaughtCommands(readFileSync(join(pack.dir, docPath), 'utf8'), `${pack.name}/${docPath}`));
         assert.ok(parsed.length >= pack.expectedScripts.length, `${pack.name}: extracted commands from ${docs.join(', ')}`);
 
-        const quotedSkill = skill.includes(' ') ? `'${skill}` : skill;
         const values: Record<string, string> = {
-          技能目录: quotedSkill,
           脚本编写编号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
           用例重组编号: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb',
           脚本合并编号: 'run_01cccccccccccccccccccccccc',
@@ -725,17 +629,12 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
         };
         const seenScripts = new Set<string>();
         for (const usage of parsed) {
-          for (const concrete of expandCommandVariants(usage.source, usage.template, values)) {
+          for (const concrete of instantiateTaughtCommand(usage, { skillDir: skill, skillName: pack.name, placeholders: values })) {
             let command = concrete.replaceAll('%HUB_URL%', hubUrl);
-            if (skill.includes(' ')) {
-              // When the installed home path contains spaces (e.g. Application Support), the unified quoting rule single-quotes the full script path.
-              command = command.replace(/^node '([^']+\.ts)/, "node '$1'");
-            }
-            const scriptMatch = /^node (?:'([^']+)'|(\S+))/.exec(command);
-            const scriptPath = scriptMatch?.[1] ?? scriptMatch?.[2] ?? '';
+            const scriptPath = parseCommand(command).words[1] ?? '';
             assert.ok(existsSync(scriptPath), `${label} ${usage.source}: installed script exists: ${command}`);
             seenScripts.add(scriptPath.split('/').pop()!);
-            const supplied = usage.hasHeredoc ? `${command} <<'EOF'\n%HUB_TOKEN%\nEOF` : command;
+            const supplied = command;
             const decision = decide(supplied);
             expectAllowed(decision, `${label} ${usage.source}: ${supplied}\n${decision.reason ?? ''}`);
           }
@@ -749,7 +648,7 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
       const jevDir = fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/tools/jev/', import.meta.url));
       const jevSkill = join(home, 'skills', 'jev');
       mkdirSync(join(jevSkill, 'lib'), { recursive: true });
-      for (const rel of ['SKILL.md', 'hooks.json', 'jev.ts', 'lib/api.ts', 'lib/validate.ts', 'lib/placement.ts']) {
+      for (const rel of ['SKILL.md', 'hooks.json', 'jev.ts', 'jev.cli.json', 'lib/api.ts', 'lib/validate.ts', 'lib/placement.ts']) {
         const src = join(jevDir, rel);
         if (existsSync(src)) writeFileSync(join(jevSkill, rel), readFileSync(src));
       }
@@ -782,6 +681,31 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
       assert.equal(decide(`node ${quotedTaskBrief} --role 脚本编写 --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`).decision, 'deny');
       // Internal helper module under tools/ cannot be executed directly.
       assert.equal(decide(`node ${ccSkill.includes(' ') ? `'${ccSkill}/tools/authoring-brief.ts'` : `${ccSkill}/tools/authoring-brief.ts`}`).decision, 'deny');
+
+      // Four-consumer consistency: every CLI .cli.json in case-compile & recompose agrees with ALLOWED.md table rows.
+      const allowedRows = new Map<string, string>();
+      for (const row of allowedMd.split('\n')) {
+        const m = /^\| ([^|]+?) \| (.+) \|$/.exec(row);
+        if (m) allowedRows.set(m[1], m[2]);
+      }
+      for (const pack of packs) {
+        const skillDir = join(home, 'skills', pack.name);
+        const manifest = JSON.parse(readFileSync(join(pack.dir, 'pack.json'), 'utf8')) as { files: Array<{ path: string }> };
+        for (const { path: rel } of manifest.files) {
+          if (!rel.startsWith('tools/') || !rel.endsWith('.cli.json')) continue;
+          const decl = JSON.parse(readFileSync(join(skillDir, rel), 'utf8')) as { stdin: string[] };
+          const toolName = rel.replace(/\.cli\.json$/, '.ts');
+          const toolId = `${pack.name}/${toolName}`;
+          const cell = allowedRows.get(toolId);
+          assert.ok(cell, `${label}: ALLOWED.md missing table row for ${toolId}`);
+          if (decl.stdin.length > 0) {
+            assert.ok(cell.includes("<<'EOF'"), `${label}: ${toolId} ALLOWED.md missing <<'EOF'`);
+            for (const ph of decl.stdin) assert.ok(cell.includes(ph), `${label}: ${toolId} ALLOWED.md missing ${ph}`);
+          } else {
+            assert.ok(!cell.includes("<<'EOF'"), `${label}: ${toolId} ALLOWED.md should not include <<'EOF'`);
+          }
+        }
+      }
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

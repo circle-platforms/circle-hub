@@ -6,7 +6,7 @@
 // A domain name is filled with labels of at most 63 characters (RFC 1035 §2.3.4) so that the whole is exactly N characters; a name
 // is filled without dots. The fixed parts are kept verbatim and the same placeholder always gives the same literal, so a case that
 // names its domain in a command and in an expectation names the same one. Nothing here decides what a case means.
-import { isRecord } from './text.ts';
+import { CallFailure, isRecord } from './text.ts';
 
 export const MAX_LABEL = 63;
 const MAX_LENGTH = 4096;
@@ -33,23 +33,23 @@ function fillerLabels(total: number): string[] {
 }
 
 function expandOne(placeholder: string, kind: string, length: number, prefix: string, suffix: string): Expansion {
-  if (length > MAX_LENGTH) throw new Error(`占位 ${placeholder} 的长度超过 ${MAX_LENGTH}`);
-  if (!FIXED.test(prefix + suffix) || QUOTES.test(prefix + suffix)) throw new Error(`占位 ${placeholder} 的固定部分只能是不含空白和引号的可见 ASCII 字符`);
+  if (length > MAX_LENGTH) throw new CallFailure("invalid_parameters", `占位 ${placeholder} 的长度超过 ${MAX_LENGTH}`, "把长度占位值 N 写在 1 到 4096 之间，或使用原始资料明确给出的完整字面量");
+  if (!FIXED.test(prefix + suffix) || QUOTES.test(prefix + suffix)) throw new CallFailure("invalid_parameters", `占位 ${placeholder} 的固定部分只能是不含空白和引号的可见 ASCII 字符`, "长度占位的固定前后缀仅使用不含空白、引号和反斜杠的可见 ASCII 字符");
   if (kind === 'name') {
     const fill = length - prefix.length - suffix.length;
-    if (fill < 1) throw new Error(`占位 ${placeholder} 的固定部分已有 ${prefix.length + suffix.length} 字符，补不出 ${length} 字符`);
+    if (fill < 1) throw new CallFailure("invalid_parameters", `占位 ${placeholder} 的固定部分已有 ${prefix.length + suffix.length} 字符，补不出 ${length} 字符`, "缩短固定前后缀，使声明长度至少还能容纳 1 个填充字符");
     const literal = prefix + 'a'.repeat(fill) + suffix;
     return { placeholder, literal, length: literal.length, labels: null };
   }
   const head = prefix && !prefix.endsWith('.') ? prefix + '.' : prefix;
   const tail = suffix && !suffix.startsWith('.') ? '.' + suffix : suffix;
   const fill = length - head.length - tail.length;
-  if (fill < 1) throw new Error(`占位 ${placeholder} 的固定部分已有 ${head.length + tail.length} 字符，补不出 ${length} 字符的域名`);
+  if (fill < 1) throw new CallFailure("invalid_parameters", `占位 ${placeholder} 的固定部分已有 ${head.length + tail.length} 字符，补不出 ${length} 字符的域名`, "缩短固定域名前后缀，把补充点号也计入总长度，并至少留下 1 个填充字符");
   const literal = head + fillerLabels(fill).join('.') + tail;
   const labels = literal.split('.').map((label) => label.length);
-  if (labels.some((n) => n === 0)) throw new Error(`占位 ${placeholder} 的固定部分有空的一段（连续的点或首尾的点）`);
-  if (labels.some((n) => n > MAX_LABEL)) throw new Error(`占位 ${placeholder} 的固定部分有一段超过 ${MAX_LABEL} 字符；要一段超长时写 {{name:N}}`);
-  if (literal.length !== length) throw new Error(`占位 ${placeholder} 展开后是 ${literal.length} 字符，不是 ${length}`);
+  if (labels.some((n) => n === 0)) throw new CallFailure("invalid_parameters", `占位 ${placeholder} 的固定部分有空的一段（连续的点或首尾的点）`, "移除固定域名前后缀中的连续点和会形成空段的首尾点后重试");
+  if (labels.some((n) => n > MAX_LABEL)) throw new CallFailure("invalid_parameters", `占位 ${placeholder} 的固定部分有一段超过 ${MAX_LABEL} 字符；要一段超长时写 {{name:N}}`, "缩短固定域名每段至 63 字符以内；需要超长单段的用例明确使用 {{name:N}}");
+  if (literal.length !== length) throw new CallFailure("temporarily_unavailable", `占位 ${placeholder} 展开后是 ${literal.length} 字符，不是 ${length}`, "停止使用本次展开结果；请维护者核对长度占位生成器，再用相同占位重新生成");
   return { placeholder, literal, length, labels };
 }
 
@@ -62,7 +62,7 @@ export function expandText(text: string): { text: string; expansions: Expansion[
     expansions.push(expansion);
     return expansion.literal;
   });
-  if (LEFTOVER.test(out)) throw new Error(`长度占位写法不对：${JSON.stringify(text.slice(0, 120))}；写 ${PLACEHOLDER_FORMS}`);
+  if (LEFTOVER.test(out)) throw new CallFailure("invalid_parameters", `长度占位写法不对：${JSON.stringify(text.slice(0, 120))}；写 ${PLACEHOLDER_FORMS}`, "使用 {{domain:253}}、{{domain:253|前缀|后缀}} 或 {{name:64}} 这种完整占位写法");
   return { text: out, expansions };
 }
 

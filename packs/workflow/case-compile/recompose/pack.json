@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "kind": "workflow",
   "title": "recompose",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -30,8 +30,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "9050833aab247a69e3ab4480db6429647aa7ca207b6595699b3a47e57d19f198",
-      "size": 10637
+      "sha256": "1f3c7340b892be68a76cfc1c80eee46fce454f7db68683d1289639e66602d086",
+      "size": 10801
     },
     {
       "path": "checks.json",
@@ -40,8 +40,13 @@
     },
     {
       "path": "functions/canonical-json.ts",
-      "sha256": "1205f7e664f147172a57cb55e31f4f38f85f935f47a8bfdd0e62b5fa8d913d16",
-      "size": 958
+      "sha256": "7b6ed816a84b9cc987dec0523309eb7348e0d172c78e33f6cfa9bcfee07d9e9c",
+      "size": 1489
+    },
+    {
+      "path": "functions/client-cli.ts",
+      "sha256": "8edf9ceed67141245a7b91f7f209a13511e7c6fa98c9865ae4317ed4e33b1672",
+      "size": 2492
     },
     {
       "path": "functions/generated/skills/command-tools/command-check/command-policy.ts",
@@ -74,9 +79,14 @@
       "size": 18728
     },
     {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "18b5252ec45fec48185200bacb1b5b3ab15623b9071fddf824bc4fa05784876d",
+      "size": 1117
+    },
+    {
       "path": "functions/hub-retry.ts",
-      "sha256": "37575fa3562dfd94dbb2ff2cc124f70175366840592b54f88cd20810cc136349",
-      "size": 29322
+      "sha256": "d2c728679ac8d5be02b10df053bf562ec3a08adff7b2f65110d72773fd0ab28c",
+      "size": 32661
     },
     {
       "path": "functions/project.ts",
@@ -90,8 +100,8 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "0f576bbc25d77a7df840b4078f42e4785a101bfa659b298184ec7f4c32067e20",
-      "size": 4547
+      "sha256": "b1a90f99d338a893fd6f87aeb26e42d7f2cd7e125fd7ba4346f2cc5d029a9a2e",
+      "size": 4566
     },
     {
       "path": "functions/schema.ts",
@@ -104,14 +114,24 @@
       "size": 1742
     },
     {
+      "path": "functions/source-cache.ts",
+      "sha256": "779ebc7957170bf77cbcb3e424f6d47115d7a803c56319219ed80273104dbeee",
+      "size": 4807
+    },
+    {
+      "path": "functions/source-materials.ts",
+      "sha256": "28db7f139565290d6e623fb5fe196c0b89b48ba830fe618ef962c58bab18d17f",
+      "size": 7382
+    },
+    {
       "path": "functions/subject.ts",
       "sha256": "7ec23bf8d26202e1cd92181a249d8b43739eadaf6fd29f10f54a152217d1e2e6",
       "size": 2039
     },
     {
       "path": "functions/text.ts",
-      "sha256": "038fe15d557ec2ab1274f2e346395cdcde9ceecccf2d52f0a35590246df2099b",
-      "size": 11782
+      "sha256": "c7c4e32979ef2a49b4ef61e23af955afa2ade08a05b6072fcb5cafa354cf6b4c",
+      "size": 11656
     },
     {
       "path": "requirements.json",
@@ -179,19 +199,34 @@
       "size": 18407
     },
     {
+      "path": "tools/check-record.cli.json",
+      "sha256": "e1e3b915056b7332c7f0a6f69e9bed03f192459aab7888439ab9e4b8638ea4af",
+      "size": 1065
+    },
+    {
       "path": "tools/check-record.ts",
-      "sha256": "781b7ae28f16da46f469d105ce4c5e55f56bc491ac27877f3a55213f22c162aa",
-      "size": 9516
+      "sha256": "9b07f77909c8b03906e5e9731e18409c881fcefab83c6644de3310e80653b8d7",
+      "size": 10493
+    },
+    {
+      "path": "tools/download-run.cli.json",
+      "sha256": "d9f95d1a2740a249ce9fdb7da9c5fa39cc745a99b6ab407a27a4b7bfa92a73e4",
+      "size": 1410
     },
     {
       "path": "tools/download-run.ts",
-      "sha256": "06184e77f55f53385de4542e6a5cda204794d562ea7fd63f8701ec8d2acd42fe",
-      "size": 2630
+      "sha256": "ffc7570d68246366ea80ae2ce5102fd43e00dc7fc8c3026964d7ed82df79a401",
+      "size": 3229
+    },
+    {
+      "path": "tools/submit-records.cli.json",
+      "sha256": "d5b7ccb36cd94148a3d308910863c2b2ab71ab232933f022b944f1989913ddae",
+      "size": 1840
     },
     {
       "path": "tools/submit-records.ts",
-      "sha256": "e22f544717acebc49fba216644bde084c11bb2c68e76d75d4edd3b96514d4131",
-      "size": 10904
+      "sha256": "dffc98959074155257a7c127523ec906997a6db030c2e36fe2e6c82fd0b949f1",
+      "size": 12866
     },
     {
       "path": "workflow.json",

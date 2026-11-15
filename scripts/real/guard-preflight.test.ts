@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { main as refreshMain, refreshGuards, writeHome, type Endpoint } from './circle-home.ts';
-import { isDeclarationLimitedCommand, main as preflightMain, runPreflight } from './guard-preflight.ts';
+import { classifyDecision, resolveInstalledGuard, isDeclarationLimitedCommand, main as preflightMain, runPreflight } from './guard-preflight.ts';
+import { recordInstallation } from './guard-installation.ts';
+import { guardBundle } from './circle-home.ts';
 import { environment, quote } from './guard-lib.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -187,27 +189,22 @@ test('declaration-limited command that the hook allows is a mismatch', () => {
   }
 });
 
-test('preflight fails when the installed guard still looks for the old stdin helper name', () => {
+test('preflight detects a stale installed stdin declaration', () => {
   const dir = scratch('stale');
   try {
     const home = makeHome(dir, 'ops', 'home');
-    const libPath = join(home, 'hooks', 'guard-lib.ts');
-    const lib = readFileSync(libPath, 'utf8');
-    // Simulate the round-30 accident: installed discovery only recognizes the retired helper name.
-    assert.match(lib, /tokenFromStdin\|readTokenFromStdin/);
-    writeFileSync(libPath, lib.replaceAll('tokenFromStdin|readTokenFromStdin', 'tokenFromStdin'));
+    const declaration = join(home, 'skills/case-compile/tools/submit-plans.cli.json');
+    const prior = JSON.parse(readFileSync(declaration, 'utf8'));
+    assert.ok(prior.stdin.length > 0);
+    prior.stdin = [];
+    writeFileSync(declaration, JSON.stringify(prior));
     const report = runPreflight(home);
     assert.equal(report.ok, false);
-    assert.ok(
-      report.mismatches.some((m) => m.want === 'allow' && m.got === 'deny'),
-      `expected allow→deny mismatches, got: ${report.mismatches.map((m) => m.name).join('; ') || '(none)'}`,
-    );
+    assert.ok(report.mismatches.some(m => m.want === 'allow' && m.got === 'deny'));
     const lines: string[] = [];
-    assert.equal(preflightMain(['--home', home], (line) => lines.push(line)), 1);
+    assert.equal(preflightMain(['--home', home], line => lines.push(line)), 1);
     assert.match(lines.join('\n'), /不符/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('refresh-guards dry-run changes nothing; --apply updates guards and keeps settings', () => {
@@ -220,6 +217,7 @@ test('refresh-guards dry-run changes nothing; --apply updates guards and keeps s
     const libBefore = readFileSync(join(home, 'hooks', 'guard-lib.ts'), 'utf8');
 
     writeFileSync(join(home, 'hooks', 'guard-lib.ts'), `${libBefore}\n// stale marker\n`);
+    recordInstallation(home, 'skills', {...guardBundle(home, 'skills'), 'hooks/guard-lib.ts': readFileSync(join(home, 'hooks/guard-lib.ts'), 'utf8')});
 
     const dry = refreshGuards(home, { apply: false });
     assert.equal(dry.apply, false);
@@ -248,6 +246,7 @@ test('refresh-guards --apply restores the backup when post-install preflight fai
     const libPath = join(home, 'hooks', 'guard-lib.ts');
     const markedLib = `${readFileSync(libPath, 'utf8')}\n// before-apply\n`;
     writeFileSync(libPath, markedLib);
+    recordInstallation(home, 'ops', {...guardBundle(home, 'ops'), 'hooks/guard-lib.ts': markedLib});
 
     // A taught command with a pipe must be denied; preflight therefore fails after any guard rewrite.
     const badSkill = join(home, 'skills', 'bad-pipe');
@@ -297,4 +296,36 @@ test('refresh-guards --apply refuses when a prior apply left hooks.apply-in-prog
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('preflight accepts only exact installed hook decisions or the empty no-op object', () => {
+  assert.equal(classifyDecision({}), 'allow');
+  for (const decision of ['allow', 'deny', 'ask'] as const) assert.equal(classifyDecision({ decision }), decision);
+  for (const parsed of [null, undefined, { decision: ' allow ' }, { decision: 'unexpected' }]) assert.equal(classifyDecision(parsed), 'error');
+});
+
+test('preflight never executes an entry outside the selected Home hooks directory', () => {
+  const home = mkdtempSync(join(tmpdir(), 'guard-preflight-'));
+  try {
+    mkdirSync(join(home, 'hooks')); writeFileSync(join(home, 'settings.json'), JSON.stringify({ trusted_folders: [home] }));
+    const entry = join(home, 'skills-only.mjs'); writeFileSync(entry, '{}');
+    writeFileSync(join(home, 'hooks.json'), JSON.stringify({ hooks: { before_tool: [{ command: `node '${entry}'` }] } }));
+    assert.throws(() => resolveInstalledGuard(home), /hooks 内/);
+    const safe = join(home, 'hooks/skills-only.mjs'); symlinkSync(entry, safe);
+    writeFileSync(join(home, 'hooks.json'), JSON.stringify({ hooks: { before_tool: [{ command: `node '${safe}'` }] } }));
+    assert.throws(() => resolveInstalledGuard(home), /普通文件/);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test('refresh apply refuses an unreviewed local guard edit without changing it', () => {
+  const dir = scratch('unreviewed');
+  try {
+    const home = makeHome(dir, 'skills', 'home');
+    const file = join(home, 'hooks/guard-lib.ts');
+    const changed = readFileSync(file, 'utf8') + '\n// operator edit\n';
+    writeFileSync(file, changed);
+    assert.throws(() => refreshGuards(home, {apply:true}), /未覆盖/);
+    assert.equal(readFileSync(file,'utf8'),changed);
+    assert.equal(existsSync(join(home,'hooks.apply-in-progress')),false);
+  } finally {rmSync(dir,{recursive:true,force:true});}
 });

@@ -15,7 +15,7 @@ const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
   const manifest = await computeManifest();
   assert.equal(PackManifest.safeParse(manifest).success, true);
-  assert.equal(manifest.version, '3.20.4');
+  assert.equal(manifest.version, '3.21.0');
   assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`);
   assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles();
@@ -107,19 +107,23 @@ test('the client skill and the closing procedure carry the reference rules on pa
     '要跑很久的设备命令，在那一步给足读取时间，秒数不超过测试环境上限',
   ]) {
     assert.ok(writer.includes(phrase), phrase);
-    assert.ok(renderedBrief.includes(phrase), phrase);
+    assert.ok(writerRole.body.includes(phrase), phrase);
+    assert.ok(closing.includes(phrase), phrase);
   }
+  assert.ok(renderedBrief.includes('compile-writer'));
+  assert.ok(renderedBrief.includes("--file 'plans/1.json'"));
+  assert.ok(!renderedBrief.includes(writerRole.body), 'named role rules are installed once, while task inputs carry the current identity');
   assert.ok(!skill.includes('纯描述判断') && !writer.includes('纯描述判断'), 'the runner has no judgement by description: a sentence in text is searched for word by word');
   for (const phrase of [
     '设备输出包含执行器规则声明的执行失败原话时',
-    '问题在这条自动化用例自己的命令顺序',
+    '不单凭它判定原因属于模型或设备',
     '先确认上次修改已进本次自动化用例 Excel；已经改了而同一句设备输出又出现，就换解释',
     '重新编写要保住原始用例的范围和每一项期望',
     'submit-plans 会跳过本次排除的原始用例，不用复制或改写文件',
     '说明设备名字和哪些清理没做，残留没核清之前不上机验证下一份自动化用例 Excel',
     '原始用例要的取值被手册排除时，写原始用例的问题，不写设备的问题',
-    '只有设备的问题有对应原句和设备输出，或原始用例与手册不一致，才可提前写结论',
-    '原始用例与手册不一致且使用者尚未决定的，先排除',
+    '报告存在不意味着未知条目必须提前停止编写',
+    'parameters.exclude 排除尚未决定的原始用例',
     'author_conflict 仅在原始用例与手册不一致时填写',
     '{"author":"原始用例原句","manual":"手册原话","reference":"<下载文件中的手册引用>"}',
     '不论编写几轮、是否上机，均可等待作者或使用者决定，不再为它上机',
@@ -144,17 +148,20 @@ test('the recompose skill raises an author step the manual excludes to the user 
   ]) assert.ok(recompose.includes(phrase), phrase);
 });
 
-test('the client skill dispatches general-purpose subagents via task-brief and scope.md while role specs keep writer rules', () => {
+test('the client skill dispatches installed named subagents via task-brief and scope.md while role specs keep writer rules', () => {
   const skill = read('SKILL.md'), writer = read('agents/compile-writer.md');
   assert.ok(skill.includes('scope.md'));
   assert.ok(skill.includes('task-brief.ts'));
-  assert.ok(skill.includes('general-purpose'));
+  assert.ok(skill.includes('subagent_type="compile-writer"'));
+  assert.ok(skill.includes('角色名'));
+  assert.ok(!skill.includes('general-purpose'));
+  assert.ok(skill.includes('再启动新 Circle 会话'));
   assert.ok(skill.includes('装进当前主目录的 `skills` 目录'));
   assert.ok(skill.includes('前台方式并列多个 `task`'));
   assert.ok(skill.includes('严禁用 `background`'));
   assert.ok(skill.includes('每批最多 6 个'));
   assert.ok(skill.includes('单独重派'));
-  assert.ok(!skill.includes('install-agents.ts'));
+  assert.ok(skill.includes('install-agents.ts'));
   assert.ok(!skill.includes('.circle/agents'));
   for (const phrase of ['按测试环境改写、前置与清理', '不得选用承载监听或触发通路的接口', '恢复原地址', '要查询的记录先在步骤前部创建', '应答状态码、应答条数', '按改动逆序排列', '查询类步骤不需要清理']) assert.ok(writer.includes(phrase), phrase);
   const plan = json('requirements.json').requirements.find((r: any) => r.key === 'plan');
@@ -269,7 +276,8 @@ test('H1/H4/Effort-AB: SKILL.md, recompose/SKILL.md, delivery.md and compile-rec
   }
   assert.match(skill, /切勿在 <<'EOF' 前换行|同一行/);
   assert.match(skill, /不要用终端工具直连|严禁.*终端工具.*直连/);
-  assert.match(delivery, /不要用终端工具直连|严禁.*终端工具.*直连/);
+  assert.match(delivery, /tools\/download-returns\.ts/);
+  assert.doesNotMatch(delivery, /(?:^|\n)(?:ssh|telnet|nc)\s/m, 'delivery must consume downloaded returns instead of teaching direct terminal connections');
   assert.match(skill, /第 3 轮.*严禁第 4 轮|最多.*3 轮.*严禁第 4 轮/);
   assert.match(skill, /0\.md.*00\.md|ls.*核对/);
   assert.match(skill, /"action":\s*"release"/);
@@ -321,12 +329,12 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
   assert.ok(attributor.includes('严禁调用'), 'attributor must ban execute even if exposed');
   assert.ok(!writer.includes('严禁调用 execute'), 'writer must keep check-plan.ts execute permission');
   assert.ok(!fidelityAgent.includes('严禁调用 execute'), 'fidelity must keep check-plan.ts execute permission');
-  assert.ok(writer.includes('node <技能目录>/tools/check-plan.ts --file'));
-  assert.ok(fidelityAgent.includes('node <技能目录>/tools/check-plan.ts --file'));
+  assert.ok(writer.includes("node '<技能目录>/tools/check-plan.ts' --file '<计划JSON相对路径>'"));
+  assert.ok(fidelityAgent.includes("node '<技能目录>/tools/check-plan.ts' --file '<verdict相对路径>' --brief '<brief相对路径>'"));
 
   // fidelity.md aligned with task-brief.ts (removes outdated manual multi-file prompt)
   assert.ok(!fidelityDoc.includes('核对这些自动化用例是否改掉原始用例的场景：<文件路径，逐个列出>'));
-  assert.ok(fidelityDoc.includes("task-brief.ts --role '保真核对'"));
+  assert.ok(fidelityDoc.includes("task-brief.ts' --role '保真核对'"));
 
   // P2: recomposer & recompose/SKILL.md teach executable CLI rules + RFC test IP + positive & negative examples
   assert.ok(!recomposer.includes('保持命令树可解析原值'));

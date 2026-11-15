@@ -1,0 +1,54 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "file",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<重组后的用例目录>",
+      "type": "path"
+    },
+    {
+      "name": "run",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<下载运行目录>",
+      "type": "path"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "file",
+          "placeholder": "<重组后的用例目录>",
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": "<下载运行目录>",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "file",
+          "placeholder": "<重组记录JSON或目录>",
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": "<下载运行目录>",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

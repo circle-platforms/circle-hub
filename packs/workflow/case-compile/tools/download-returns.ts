@@ -1,9 +1,9 @@
 import { realpathSync } from 'node:fs';
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { executionRefusals, failureLine, parseRunJobs, syntaxRejections, type ExecutionRefusal, type RowAudit, type SyntaxRejection } from '../functions/delivery.ts';
-import { hubOrigin, HubReplyError, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { HubReplyError, RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import {
   getOnce,
   getRetrying,
@@ -16,7 +16,8 @@ import {
   TransientHubReplyError,
   type RetryControl,
 } from '../functions/hub-retry.ts';
-import { formatCallError } from '../functions/text.ts';
+import { CallFailure, failCall, parseCliOptions } from '../functions/text.ts';
+import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
 import { fetchRunInputs } from './fetch-run.ts';
 import { passReviewInputs } from './generate-workbook.ts';
 
@@ -24,17 +25,6 @@ const SOURCE = /^src:([0-9a-f]{64})$/;
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/;
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 const OPTIONS: Record<string, boolean> = { hub: true, run: true, out: true, wait: false };
-function options(argv: string[]): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i += 2) {
-    const key = argv[i]?.startsWith('--') ? argv[i].slice(2) : '';
-    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) throw new Error('参数写法：--hub --run --out 必填，--wait <秒数> 可选，每个只写一次');
-    values[key] = argv[i + 1];
-  }
-  const missing = Object.entries(OPTIONS).filter(([key, required]) => required && !values[key]).map(([key]) => '--' + key);
-  if (missing.length) throw new Error(`缺少参数：${missing.join('、')}`);
-  return values;
-}
 /** The longest wait (a background command of the client may run a day), how often the job list is read, and how long a run
  * that shows no job may be waited for: a submission the Hub did not dispatch never gets one, and its answer says why. */
 export const WAIT_MAX_SECONDS = 86_400, POLL_MS = 20_000, UNDISPATCHED_MS = 300_000;
@@ -43,18 +33,19 @@ const REAL_TIME: Timing = { now: () => Date.now(), pause: (ms) => new Promise((d
 
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, timing: Timing = REAL_TIME, retry?: Omit<RetryControl, 'timing'>): Promise<number> {
   try {
-    const args = options(argv);
-    if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次上机验证的编号');
+    const args = parseCliOptions(argv, OPTIONS, 'download-returns.ts --hub <MCP地址> --run <运行编号> --out <新的空目录> [--wait <秒数>]') as Record<string, string>;
+    if (!RUN_ID.test(args.run)) failCall('invalid_parameters', '--run 不是声明格式的运行编号', '使用本次上机验证的编号后重试');
     const wait = args.wait === undefined ? 0 : Number(args.wait);
-    if (args.wait !== undefined && !(/^[1-9][0-9]{0,4}$/.test(args.wait) && wait <= WAIT_MAX_SECONDS)) throw new Error(`--wait 写最多等多少秒（1 到 ${WAIT_MAX_SECONDS} 的整数）`);
-    const taken = await readdir(args.out).catch(() => [] as string[]);
-    if (taken.length) throw new Error(`--out 目录 ${args.out} 里已有文件（${taken.slice(0, 3).join('、')}），不覆盖；另选一个新目录`);
-    const origin = hubOrigin(args.hub), bearer = await requireBearerToken(readToken);
+    if (args.wait !== undefined && !(/^[1-9][0-9]{0,4}$/.test(args.wait) && wait <= WAIT_MAX_SECONDS)) failCall('invalid_parameters', '--wait 不在允许范围内', `填写 1 到 ${WAIT_MAX_SECONDS} 的整数秒数后重试`);
+    const origin = parseHubOrigin(args.hub);
+    const taken = await readdir(args.out).catch((error) => { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [] as string[]; throw error; });
+    if (taken.length) failCall('occupied', '输出目录里已有文件', '另选新的空目录下载，不覆盖已有资料', { path: args.out, legal_form: '--out <新的空目录>' });
+    const bearer = await requireBearerToken(readToken);
     const readRetry: RetryControl = { ...retry, timing };
     const jobsUrl = `${origin}/run-export/${args.run}/jobs`;
     const started = timing.now(), deadline = started + wait * 1000;
     const initialBudget = wait ? Math.min(retry?.maxWaitMs ?? READ_RETRY_BUDGET_MS, wait * 1000) : retry?.maxWaitMs;
-    const parsed = (bytes: Uint8Array) => { const answer = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); return { answer, own: parseRunJobs(answer, args.run).filter((job) => job.verification_run === args.run) }; };
+    const parsed = (bytes: Uint8Array) => { let answer: unknown; try { answer = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { failCall('temporarily_unavailable', '上机作业列表不是完整的 UTF-8 JSON', '请维护者恢复符合声明协议的完整作业列表，再按同一请求读取'); } return { answer, own: parseRunJobs(answer, args.run).filter((job) => job.verification_run === args.run) }; };
     let { answer: listed, own: jobs } = parsed(await getRetrying(jobsUrl, bearer, { ...readRetry, ...(initialBudget !== undefined ? { maxWaitMs: initialBudget } : {}) }));
     if (wait) {
       let pendingRetryAfterMs: number | null = null;
@@ -64,20 +55,20 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       process.stderr.write(`等待上机验证结束，最多 ${wait} 秒；结束后保存设备输出\n`);
       while (!jobs.length || jobs.some((job) => job.ended === null)) {
         const now = timing.now();
-        if (!jobs.length && now - started >= Math.min(UNDISPATCHED_MS, wait * 1000)) throw new Error(`尚未开始上机验证。请原样再做一次脚本合并，查看 Hub 的上机验证说明；设备输出尚未保存`);
+        if (!jobs.length && now - started >= Math.min(UNDISPATCHED_MS, wait * 1000)) failCall('temporarily_unavailable', '尚未开始上机验证，设备输出尚未保存', '原样再做一次脚本合并，查看 Hub 的上机验证说明');
         if (now >= deadline) {
           if (lastPollFailure) {
             throw new RetryExhaustedError(
-              `暂时不可用：${lastPollFailure.reason}，已等待 ${Math.round((now - started) / 1000)} 秒并尝试 ${pollAttempts} 次仍未恢复。请待 Hub 恢复后用同一命令继续等待`,
+              new CallFailure('temporarily_unavailable', `${lastPollFailure.reason}，已等待 ${Math.round((now - started) / 1000)} 秒并尝试 ${pollAttempts} 次仍未恢复`, '请待 Hub 恢复后用同一命令继续等待'),
               { status: lastPollFailure.status, code: lastPollFailure.code, waitedMs: now - started, attempts: pollAttempts },
             );
           }
-          throw new Error(`等了 ${wait} 秒，上机验证还没有结束；设备输出尚未保存，请用同一命令继续等待`);
+          failCall('temporarily_unavailable', `等了 ${wait} 秒，上机验证还没有结束，设备输出尚未保存`, '用同一命令继续等待');
         }
         const remainingWait = deadline - now;
         if (pendingRetryAfterMs !== null && pendingRetryAfterMs > remainingWait) {
           throw new RetryExhaustedError(
-            `暂时不可用：${lastPollFailure?.reason ?? 'Hub 答复 503'}，已等待 ${Math.round((now - started) / 1000)} 秒并尝试 ${pollAttempts} 次，Hub 要求等待 ${Math.ceil(pendingRetryAfterMs / 1000)} 秒超过剩余等待时间。请待 Hub 恢复后用同一命令继续等待`,
+            new CallFailure('temporarily_unavailable', `${lastPollFailure?.reason ?? 'Hub 答复 503'}，已等待 ${Math.round((now - started) / 1000)} 秒并尝试 ${pollAttempts} 次，Hub 要求等待 ${Math.ceil(pendingRetryAfterMs / 1000)} 秒超过剩余等待时间`, '请待 Hub 恢复后用同一命令继续等待'),
             { status: 503, waitedMs: now - started, attempts: pollAttempts },
           );
         }
@@ -111,13 +102,13 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
           } else if (error instanceof HubReplyError) {
             lastPollFailure = { reason: error.message, status: error.status };
           } else {
-            lastPollFailure = { reason: error instanceof Error ? error.message.replace(/^暂时不可用：/, '').replace(/。[^。]*$/, '') : '读取上机验证状态失败' };
+            lastPollFailure = { reason: error instanceof CallFailure ? error.fact : '读取上机验证状态失败' };
           }
         }
         if (bytes) ({ answer: listed, own: jobs } = parsed(bytes));
       }
     }
-    if (!jobs.length) throw new Error(`尚未开始上机验证；--run 请使用已开始上机验证的编号`);
+    if (!jobs.length) failCall('temporarily_unavailable', '尚未开始上机验证', '--run 使用已开始上机验证的编号后重试');
     const outputs: Array<{ name: string; bytes: Uint8Array }> = [{ name: 'jobs.json', bytes: json(listed) }];
     const withheld: string[] = [];
     // One source read, checked against its digest; a piece the Hub's read rules hold back is named, not fatal.
@@ -127,7 +118,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       let bytes: Uint8Array;
       try { bytes = await getRetrying(`${origin}/run-export/${args.run}/sources/${sha}`, bearer, readRetry); }
       catch (error) { if (error instanceof HubReplyError && error.status === 403) { withheld.push(`${name}，没有读取这份设备输出的权限`); return null; } throw error; }
-      if (sha256(bytes) !== sha) throw new Error(`${name} 与 Hub 保存的设备输出不一致，设备输出尚未保存`);
+      if (sha256(bytes) !== sha) failCall('invalid_parameters', `${name} 与 Hub 保存的设备输出摘要不一致，设备输出尚未保存`, '重新读取并核对该设备输出原件后重试');
       outputs.push({ name, bytes });
       return name;
     };
@@ -155,7 +146,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       if (typeof review === 'string') passReview.unread.push(`缺少执行器规则或自动化用例，尚未核对设备输出，也未列出被设备拒绝执行的命令`);
       else if (review?.markers.length) passReview.markers = Math.max(passReview.markers ?? 0, review.markers.length);
       for (const row of job.rows ?? []) {
-        if (!/^[0-9A-Za-z_-]{1,64}$/.test(row.item)) throw new Error(`原始用例的编号不能作为设备输出的目录名`);
+        if (!/^[0-9A-Za-z_-]{1,64}$/.test(row.item)) failCall('invalid_parameters', '原始用例的编号不能作为设备输出的目录名', '核对原始用例编号格式并重新导出后重试');
         const log = await piece(row.evidence?.log, join(folder, 'cases', row.item, 'log.txt'));
         let dropped: RowAudit | null = null;
         if (row.dynamic_terminal === 'pass' && review && typeof review !== 'string' && review.markers.length) {
@@ -193,9 +184,9 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     }
     outputs.push({ name: 'index.json', bytes: json({ schema: 'device-returns@1', run: args.run, jobs: index, withheld, pass_review: passReview }) });
     for (const { name } of outputs) await mkdir(join(args.out, name, '..'), { recursive: true, mode: 0o700 });
-    for (const { name, bytes } of outputs) await writeNew(join(args.out, name), bytes);
+    for (const { name, bytes } of outputs) await writeFile(join(args.out, name), bytes, { flag: 'wx', mode: 0o600 });
     process.stdout.write(JSON.stringify({ run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, pass_review: passReview }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

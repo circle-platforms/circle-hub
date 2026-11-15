@@ -17,7 +17,6 @@ const TRACE = 'a'.repeat(32);
 
 const ADMIN_PROTOCOL_CODES = [
   'SOURCE_UNAVAILABLE',
-  'SOURCE_NOT_PERMITTED',
   'IDENTITY_UNMAPPED',
   'LEASE_UNAVAILABLE',
   'SOURCE_RETRYABLE',
@@ -52,15 +51,13 @@ test('registered helpers refuse unknown command names', () => {
   assertCommandsRegistered(circleHubFromMetadata('records'));
 });
 
-test('SOURCE_NOT_PERMITTED member keeps assignment ask; admin gets pack.assign from registry', () => {
-  const memberFix = '请管理员把它分配给你；用 list_task_packs 看你能用的任务包';
-  assert.equal(fixByRole('SOURCE_NOT_PERMITTED', 'user', memberFix), memberFix);
-  const admin = fixByRole('SOURCE_NOT_PERMITTED', 'admin', memberFix)!;
-  assert.doesNotMatch(admin, /请管理员/);
-  assert.match(admin, /circle-hub pack assign /);
-  assert.match(admin, /控制台「团队」页/);
-  assert.doesNotMatch(admin, /分享读取权限|用法见该命令登记/);
-  assertCommandsRegistered(admin);
+test('SOURCE_NOT_PERMITTED preserves the exact producer action for every role until object context is known', () => {
+  for (const memberFix of ['请管理员把它分配给你；用 list_task_packs 看你能用的任务包', '请主人分享这份原件', '请管理员核对命名文档输入']) {
+    assert.equal(fixByRole('SOURCE_NOT_PERMITTED', 'user', memberFix), memberFix);
+    assert.equal(fixByRole('SOURCE_NOT_PERMITTED', 'admin', memberFix), memberFix);
+  }
+  const unknown='请管理员 pack 分享读取权限；这段内容不能决定授权对象';
+  assert.equal(fixByRole('synthetic.unknown', 'admin', unknown), unknown);
 });
 
 test('LEASE_UNAVAILABLE member keeps contract; admin gets lease.release from registry', () => {
@@ -115,7 +112,8 @@ test('toolText and structured-style fix stay role-split for SOURCE_NOT_PERMITTED
   const adminText = toolText('start_run', adminAnswer, { caller: { role: 'admin' } });
   assert.doesNotMatch(adminText, /请管理员|状态|判断|决定者/);
   assert.match(adminText, /^无权限：/);
-  assert.match(adminText, /circle-hub pack assign /);
+  assert.match(adminText, /控制台「团队」页/);
+  assert.doesNotMatch(adminText, /pack assign .*recompose/);
   assert.equal(adminAnswer.errors[0].fix, adminFix);
   assertCommandsRegistered(adminText);
   assertCommandsRegistered(adminFix);
@@ -130,18 +128,16 @@ test('toolText role-split for LEASE_UNAVAILABLE', () => {
     trace: TRACE,
   });
   const memberText = toolText('start_run', answer, { caller: { role: 'user' } });
-  assert.match(memberText, /^已被占用：测试环境「合成环境」正由当前账户的另一次运行占用/);
-  assert.match(memberText, /请等待释放后重试，或改订其他测试环境。$/);
-  assert.doesNotMatch(memberText, /状态|判断|决定者|租约键|主人/);
+  assert.ok(memberText.includes(message));
+  assert.doesNotMatch(memberText, /^已被占用：|合成环境」正由当前账户/);
   const adminFix = fixByRole('LEASE_UNAVAILABLE', 'admin', memberFix)!;
   const adminText = toolText('start_run', StartRunOutput.parse({
     call_result: 'error',
     errors: [{ code: 'LEASE_UNAVAILABLE', message, fix: adminFix }],
     trace: TRACE,
   }), { caller: { role: 'admin' } });
-  assert.doesNotMatch(adminText, /请管理员|状态|判断|决定者|不补造到期时刻/);
-  assert.match(adminText, /^已被占用：测试环境「合成环境」/);
-  assert.match(adminText, /circle-hub lease release bed\/合成环境\/client0 --reason <理由>/);
+  assert.ok(adminText.includes(message));
+  assert.doesNotMatch(adminText, /lease release bed\/合成环境/);
   assertCommandsRegistered(adminText);
 });
 
