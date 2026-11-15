@@ -399,7 +399,9 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         if (!recipes.has(planRun)) recipes.set(planRun, recipesOf(plan));
         const k = (plan.run.items as unknown[]).findIndex((item) => autoidOf(item) === autoid);
         if (k < 0) failCall('invalid_parameters', `原始用例 ${autoid} ${originals[autoid]?.title ?? '标题未知'} 的自动化用例不在脚本编写结果里，却在上机验证中出现`, '请核对运行、范围、产物身份和原始输入，修正后重试');
-        return recipes.get(planRun)![k];
+        const matching = recipes.get(planRun)!.filter(recipe => String(recipe.fields.autoid) === autoid);
+        if (matching.length !== 1) failCall('invalid_parameters', `原始用例 ${autoid} 的最近一次自动化用例缺少唯一可生成的内容`, '请核对原脚本编写结果中的排除、跳过和自动化用例绑定，再重新核验');
+        return matching[0];
       });
       const bytes = generateWorkbookSet(selected, { merged: true });
       unsuccessfulLast = volumeOrder(selected).moved;
