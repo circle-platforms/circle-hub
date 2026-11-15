@@ -82,9 +82,11 @@ export interface RunDescription {
   /** Keys of run-level requirements (cross-item claims): they never appear in an item result (V05 R[4]). */
   runLevel: string[];
   checks: CheckDescription[];
-  /** Submissions made to this run before the one validated now (CHOICE-10: each one is a repair round). */
+  /** Legacy hand-calculated count of distinct other submissions eligible for artifact repair. */
   roundsUsed: number;
   chargedRounds?:Record<string,number>;
+  /** Owner run30 #4 / T7: explicit independent history; exclude the current body and count each other body once per requirement. */
+  repairHistory?: { current: string; earlier: Array<{ submission: string; requirements: string[] }> };
   /** The author an independent judgment must be independent of: the predecessor run's accepted submission; null when unknown. */
   author: Party | null;
 }
@@ -283,6 +285,9 @@ function incomplete(r: RequirementDescription, reason: Reason, extra: Partial<Ex
 }
 
 function usedFor(run:RunDescription,r:RequirementDescription):number{
+  if (run.repairHistory) return new Set(run.repairHistory.earlier
+    .filter(attempt => attempt.submission !== run.repairHistory!.current && attempt.requirements.includes(r.key))
+    .map(attempt => attempt.submission)).size;
   return run.chargedRounds?.[r.key]??(r.checks.some(id=>run.checks.some(c=>c.id===id&&c.judges==='artifact_under_verification'))?run.roundsUsed:0);
 }
 
