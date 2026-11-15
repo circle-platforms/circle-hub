@@ -7,7 +7,7 @@ import type {Redactor} from '../connectors/api.ts';
 import type { ExecutorDefinition, CallRole } from './definition.ts';
 import { rpcResponse, toolContent, containsRpcReply } from './observations.ts';
 import { bind } from './definition.ts';
-export interface ResponseMetadata { received_sha256: string; redacted: boolean; started_at: string; ended_at: string; stream_cut_at_response?: boolean; request_bytes_written?: number; }
+export interface ResponseMetadata { rpc_id?: number; rpc_method?: string; received_sha256: string; redacted: boolean; started_at: string; ended_at: string; stream_cut_at_response?: boolean; request_bytes_written?: number; }
 export type SaveResponse = (bytes: Uint8Array, status: number, operation: string, complete?: boolean, metadata?: ResponseMetadata) => Promise<string>;
 export type Exchange<T = unknown> = { value: T; source: string; received_at: string; started_at: string; tool_error?: boolean };
 export const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -211,7 +211,7 @@ export class RpcClient {
     const bytes = new TextEncoder().encode(safe);
     const received_at = this.#now().toISOString();
     let source:string;
-    try {source = await this.#save(bytes, received.status, operation, received.complete && validEncoding, { received_sha256: sha256Hex(received.bytes), redacted: safe !== received.bytes.toString('utf8'), started_at, ended_at: received_at, stream_cut_at_response: received.stream_cut_at_response,request_bytes_written:received.request_bytes_written });}
+    try {source = await this.#save(bytes, received.status, operation, received.complete && validEncoding, { rpc_id: id, rpc_method: method, received_sha256: sha256Hex(received.bytes), redacted: safe !== received.bytes.toString('utf8'), started_at, ended_at: received_at, stream_cut_at_response: received.stream_cut_at_response,request_bytes_written:received.request_bytes_written });}
     catch {throw new ResponseStorageError();}
     if(operation==='submit' && !received.complete && received.status===0 && received.request_bytes_written===0)throw new SubmissionNotSentError(source);
     if (!received.complete || !validEncoding) throw new IncompleteReplyError();
