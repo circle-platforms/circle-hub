@@ -73,6 +73,7 @@ export type PackPath = z.infer<typeof PackPath>;
 /** Installed capabilities are dependencies, never per-user assignments. */
 
 export const SkillParser = z.strictObject({
+  /** Part of the published v1 skill.json parser shape; retained optional so published packs still parse at startup. No code reads it now. */
   migration_test:z.string().min(1).max(300).optional(),
   parser: Versioned.refine(value=>{const version=value.slice(value.lastIndexOf('@')+1);return Number.isSafeInteger(Number(version))&&String(Number(version))===version;},'parser version has one canonical integer spelling'),
   media_types: z.array(z.string().min(1).max(200)).min(1).max(32),

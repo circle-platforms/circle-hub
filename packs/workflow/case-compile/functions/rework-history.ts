@@ -3,7 +3,7 @@
 // Strictly isolates a single original case and never generates model conclusions or similarity matches.
 import { failureLine, LEADING_PROMPT, type RowAudit } from './delivery.ts';
 import { isAcceptance, type Acceptance } from './generated/vocabulary.ts';
-import { isRecord } from './text.ts';
+import { isRecord, wrapProseLine } from './text.ts';
 
 /** Gateway tail truncation limit in bytes/chars on retained session transcripts (compile-excel-server). */
 export const SESSION_RETAINED_CHARS = 12_000;
@@ -2282,8 +2282,8 @@ function renderAttributionLines(attr: PriorAttributionItem, heading: string): st
   if (attr.layer || attr.disposition) {
     lines.push(`- 排查层级 / 处置：${[attr.layer, attr.disposition].filter(Boolean).join(' / ')}`);
   }
-  if (attr.judged) lines.push(`- 失败分析结论（未确认）：${attr.judged}`);
-  if (attr.remedy) lines.push(`- 建议下一步：${attr.remedy}`);
+  if (attr.judged) lines.push(...wrapProseLine('- 失败分析结论（未确认）：', attr.judged));
+  if (attr.remedy) lines.push(...wrapProseLine('- 建议下一步：', attr.remedy));
   if (attr.evidenceQuotes.length > 0) {
     for (const q of attr.evidenceQuotes) lines.push(`- 引用证据原句：${q}`);
   }

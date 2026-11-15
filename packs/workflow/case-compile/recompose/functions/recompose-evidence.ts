@@ -4,7 +4,7 @@ import { canonicalJson } from './canonical-json.ts';
 import T from '../tables/recompose-format.json' with { type: 'json' };
 export const object = (value: any): boolean => isRecord(value);
 export function acceptsPack(reference: string, pack: string): boolean {
-    const versions = pack === T.packs.stage ? ['1.1.3', '1.2.0', '1.2.1', '1.2.2', '1.2.3', '1.2.4', '1.2.5'] : ['1.1.3', '1.1.4', '1.1.5', '1.1.6', '1.1.7', '1.1.8', '1.1.9'];
+    const versions = pack === T.packs.stage ? ['1.1.3', '1.2.0', '1.2.1', '1.2.2', '1.2.3', '1.2.4', '1.2.5', '1.2.6'] : ['1.1.3', '1.1.4', '1.1.5', '1.1.6', '1.1.7', '1.1.8', '1.1.9', '1.1.10'];
     return versions.some(version => reference === pack + '@' + version);
 }
 export function envelope(bound: any, kind: string): any | null { return object(bound) && bound.external === null && bound.meta?.kind === kind && typeof bound.meta.record === 'string' && bound.meta.pointer === undefined && bound.model?.kind === kind && object(bound.model.body) ? { body: bound.model.body, reference: 'rec:' + bound.meta.record } : null; }

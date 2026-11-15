@@ -1,3 +1,7 @@
+# recompose 1.2.6
+
+本地修正 1.2.6（2026-11-14）：随合约协议生成拆分与格式技能包仅镜像自身声明子集，将内嵌 `mindmap-format` `case-structure` 版本由 `1.0.25` 对齐为 `1.0.26`，同步共享 `functions/text.ts`、`functions/hub-retry.ts`、`functions/recompose-evidence.ts`（接受 recompose `1.2.6` 与 authority/adjudicate `1.1.10`），修复 `download-run.ts` H1 读令牌误报与 `submit-records.ts` H3/H4，新增只读离线预检工具 `tools/check-record.ts`（检出 UTF-8/JSON 错误、完整 `recompose-record@1` 误用、缺 `item`/`method`、同 `item` 重复及可选 `--run` 覆盖校验），并更新 `recompose/SKILL.md` 在 `submit-records.ts` 前先运行 `check-record.ts`、同行 `<<'EOF'` 与单一简写形状。未发布或部署。
+
 # recompose 1.2.5
 
 本地修正 1.2.5（2026-11-14）：将内嵌 `mindmap-format` `case-structure` 版本由 `1.0.24` 对齐为 `1.0.25`（内嵌模块字节不变），并同步 `testing/gen-recompose.ts` 生成的共享 `functions/text.ts` 与 `functions/recompose-evidence.ts`（接受 recompose `1.2.5` 与 authority/adjudicate `1.1.9`）；`SKILL.md` 另按用词把关补清开始重组运行前须传入 `full_set`（整份重组）。能力与核对规则相对 1.2.4 不变；未发布或部署。

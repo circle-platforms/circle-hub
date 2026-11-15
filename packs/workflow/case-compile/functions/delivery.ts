@@ -400,6 +400,7 @@ export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<s
  */
 export function closeUnrun(cases: CaseOutcome[], facts: Record<string, MissingFact>, notes?: Notes, ground?: ConflictGround): { cases: CaseOutcome[]; problems: string[] } {
   const problems: string[] = [];
+  const unresolved: string[] = [];
   const closed = cases.map((outcome) => {
     if (outcome.status !== 'unrun') return outcome;
     const fact = facts[outcome.autoid];
@@ -410,9 +411,21 @@ export function closeUnrun(cases: CaseOutcome[], facts: Record<string, MissingFa
       if (wrong.length) { problems.push(...wrong); return outcome; }
       return { ...outcome, closing: 'author_conflict' as const, conflict };
     }
-    problems.push(`用例 ${outcome.autoid} 尚未上机验证，Hub 也未确认缺资料或重交次数用完。说明里的判断尚未确认：测试环境缺资料或前置条件的说明尚未确认，请按原始用例继续脚本编写和脚本合并，再把自动化用例 Excel 一起做上机验证；根据设备输出做失败分析，最多重交 ${MAX_ROUNDS} 次。只有 Hub 确认缺资料或最多重交的次数用完，或模型提出原始用例与手册冲突且原句已核对，才能在上机验证前结束脚本编写；原始用例是否修改由使用者决定`);
+    unresolved.push(outcome.autoid);
     return outcome;
   });
+  if (unresolved.length > 0) {
+    const maxList = 10;
+    const shown = unresolved.slice(0, maxList).join('、');
+    const suffix = unresolved.length > maxList
+      ? ` 等共 ${unresolved.length} 条用例`
+      : unresolved.length > 1
+        ? `（共 ${unresolved.length} 条）`
+        : '';
+    problems.push(
+      `不存在：用例 ${shown}${suffix}尚未上机验证，也未查到 Hub 确认缺资料、重交次数用完或原句核对后的原始用例与手册不一致说明。请先按原始用例继续脚本编写与脚本合并，在最多 ${MAX_ROUNDS} 次重交内完成上机验证或补齐确认依据后再组交付`,
+    );
+  }
   return { cases: closed, problems };
 }
 const MISSING_SHOWN = 240;
@@ -420,11 +433,11 @@ const MISSING_SHOWN = 240;
 export function closingLine(outcome: CaseOutcome): string | null {
   if (outcome.closing === 'authoring_failure' && outcome.missing?.kind === 'repair_exhausted') {
     const said = outcome.missing.missing.length > MISSING_SHOWN ? `${outcome.missing.missing.slice(0, MISSING_SHOWN)}…` : outcome.missing.missing;
-    return `${CLOSING.authoring_failure}：它的计划在计划运行 ${outcome.missing.plan_run} 交给 Hub，修正轮次用完也没有受理${said ? `（Hub 原话：${said}）` : ''}，没有上机；按 InfoTest 的收口规则，编写每次都被提交规则拒绝、拒满轮次的，记为模型未找到解决方案。下面“怎么判断的”是模型自述，不是定下结论的依据。`;
+    return `${CLOSING.authoring_failure}：它的计划在脚本编写运行 ${outcome.missing.plan_run} 交给 Hub，修正轮次用完也没有被脚本合并接受${said ? `（Hub 原话：${said}）` : ''}，没有上机；按结办规则，编写每次都被提交规则拒绝、拒满轮次的，记为模型未找到解决方案。下面“怎么判断的”是模型自述，不是定下结论的依据。`;
   }
   if (outcome.closing === 'authoring_failure') {
     const dropped = outcome.history.filter((h) => h.audit).length;
-    return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过${dropped ? `（其中 ${dropped} 次上机运行器报通过，通过复核改记无判定，照 InfoTest 算没通过）` : ''}，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是定下结论的依据。`;
+    return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过${dropped ? `（其中 ${dropped} 次上机运行器报通过，通过复核改记无判定，按规则算没通过）` : ''}，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是定下结论的依据。`;
   }
   if (outcome.closing === 'device_defect') return `${CLOSING.device_defect}：作者期望原文和设备原话已逐字核对，只形成待仲裁的缺陷候选，不是已确认的产品缺陷。`;
   if (outcome.closing === 'author_conflict') {
@@ -444,6 +457,9 @@ export function timeline(outcome: CaseOutcome, excluded: boolean): string {
   return outcome.history.map((h) => `第 ${h.ordinal} 次上机验证${h.audit ? `状态未知，设备输出有执行失败原话“${h.audit.line}”，自动化用例没有检查这一行` : `判断${terminalLabel(h.terminal)}`}`).join('；') + '。';
 }
 
+export interface OutOfScopeCase { autoid: string; title: string }
+export interface ScopeSummary { words: string; cases: string[]; outOfScope: OutOfScopeCase[]; totalCases: number }
+
 export interface ReportInput {
   name: string; generatedAt: string; build: string | null;
   assembly: Assembly; notes: Notes; originals: Record<string, Original>; excluded: string[];
@@ -453,6 +469,7 @@ export interface ReportInput {
   /** The pass review: how many markers the contracts declared (null: none declared), passes read, turned into no verdict, and passes with no device words saved. */
   passAudit?: { markers: number | null; read: number; downgraded: number; wordless: number };
   placedLast?: { pass: MovedCase[]; unsuccessful: MovedCase[] };
+  scope?: ScopeSummary;
 }
 const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || '标题未知';
 export function closingCounts(cases: CaseOutcome[]): string {
@@ -472,6 +489,7 @@ export function caseConclusion(input: ReportInput, outcome: CaseOutcome): string
 function head(input: ReportInput): string[] {
   const { pass, unsuccessful } = input.assembly;
   const lines = [
+    ...(input.scope ? [`本次范围：${input.scope.words}（共 ${input.scope.totalCases} 条原始用例，纳入本次范围 ${input.assembly.totals.cases} 条，另有 ${input.scope.outOfScope.length} 条未纳入本次范围）。`] : []),
     pass && input.files.pass ? `自动化用例 Excel case.xlsx 中的 ${pass.items.length} 条原始用例已一起完成上机验证，判断正确。` : '尚无核对正确的自动化用例 Excel。',
     unsuccessful && input.files.unsuccessful ? `自动化用例 Excel unsuccessful_cases.xlsx 包含 ${unsuccessful.items.length} 条仍有错误或未知的原始用例，使用各自最近一次上机验证的自动化用例，尚未一起做上机验证。` : '没有其他自动化用例 Excel。',
   ];
@@ -503,6 +521,12 @@ const DELIVERABLES = '自动化用例 Excel：`case.xlsx`、`unsuccessful_cases.
 export function deliveryReport(input: ReportInput): string {
   const lines = [`# 交付报告 — ${input.name}`, `> 生成 ${input.generatedAt}`, '', ...head(input)];
   for (const outcome of input.assembly.cases) lines.push('', ...(outcome.status === 'delivered' ? [caseConclusion(input, outcome)] : section(input, outcome)));
+  if (input.scope && input.scope.outOfScope.length > 0) {
+    lines.push('', `## 未纳入本次范围的原始用例（${input.scope.outOfScope.length} 条）`, '', '以下原始用例在开运行时未纳入本次范围，本次未做脚本编写与上机验证。', '');
+    for (const omitted of input.scope.outOfScope) {
+      lines.push(`- 原始用例 ${omitted.autoid} ${omitted.title || '标题未知'}`);
+    }
+  }
   lines.push('', '---', DELIVERABLES);
   return lines.join('\n') + '\n';
 }

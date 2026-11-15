@@ -23,6 +23,51 @@ export function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, Math.max(1, max - 1))}…`;
 }
 
+/** Max length per wrapped explanatory prose line (safely below Circle `read_file` 2,000-char line cap). */
+export const PROSE_WRAP_MAX_CHARS = 1_600;
+
+/**
+ * Wraps an explanatory Markdown prose bullet (`prefix + body`) so no emitted line exceeds `maxChars`.
+ * Never apply to verbatim content blocks (device output, scope quotes, author/manual quotes, fenced blocks).
+ */
+export function wrapProseLine(prefix: string, body: string, maxChars: number = PROSE_WRAP_MAX_CHARS): string[] {
+  const width = Math.max(40, Math.floor(maxChars));
+  const normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  if (!normalized.includes('\n') && prefix.length + normalized.length <= width) {
+    return [`${prefix}${normalized}`];
+  }
+  const paragraphs = normalized.split('\n');
+  const out: string[] = [];
+  for (let pIndex = 0; pIndex < paragraphs.length; pIndex++) {
+    let curPrefix = pIndex === 0 ? prefix : '  ';
+    let rest = paragraphs[pIndex]!;
+    if (rest.length === 0) {
+      out.push(pIndex === 0 ? prefix : '');
+      continue;
+    }
+    while (curPrefix.length + rest.length > width) {
+      const budget = Math.max(1, width - curPrefix.length);
+      let cut = Math.min(budget, rest.length);
+      if (cut < rest.length && cut > 1) {
+        const prev = rest.charCodeAt(cut - 1);
+        if (prev >= 0xd800 && prev <= 0xdbff) cut--;
+      }
+      const spaceIdx = rest.slice(0, cut).search(/[ \t][^ \t]*$/);
+      let trimmedSpace = false;
+      if (spaceIdx >= Math.floor(cut * 0.6) && spaceIdx > 0) {
+        cut = spaceIdx;
+        trimmedSpace = true;
+      }
+      out.push(`${curPrefix}${rest.slice(0, cut)}`);
+      rest = trimmedSpace ? rest.slice(cut).replace(/^[ \t]+/, '') : rest.slice(cut);
+      curPrefix = '  ';
+      if (rest.length === 0) break;
+    }
+    if (rest.length > 0) out.push(`${curPrefix}${rest}`);
+  }
+  return out;
+}
+
 export function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }

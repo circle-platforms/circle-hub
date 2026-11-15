@@ -145,3 +145,69 @@ test('submit-records main retries GET /run and explicit non-execution 503 on sub
     assert.match(err2.join(''), /^暂时不可用：.*没有自动重发。请先查回原调用.*。$/m, mode);
   }
 });
+
+test('H1/H3/H4: submit-records checks empty stdin, names --records and offending filename (never --plans or re-export), and enforces single lite shape', async (t) => {
+  const runCapture = async (argv: string[], token: string) => {
+    const out: string[] = [], err: string[] = [];
+    const stdout = process.stdout.write.bind(process.stdout), stderr = process.stderr.write.bind(process.stderr);
+    process.stdout.write = ((chunk: string | Uint8Array) => { out.push(String(chunk)); return true; }) as typeof process.stdout.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { err.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    try { return { code: await main(argv, async () => token), out: out.join(''), err: err.join('') }; } finally { process.stdout.write = stdout; process.stderr.write = stderr; }
+  };
+
+  // H4: method missing error names method & shows lite JSON shape while keeping existing substring
+  assert.throws(
+    () => recordFor(item(), {}, 'scripted'),
+    (error: Error) => /缺少用例重组的方法/.test(error.message) && /\bmethod\b/.test(error.message) && /declared/.test(error.message),
+  );
+  // H4: rejects unknown/bogus method kind
+  assert.throws(
+    () => recordFor(item(), { method: { kind: 'bogus', text: 'x', sources: [], basis: 'y' } }, 'scripted'),
+    /method\.kind/,
+  );
+  // H4: rejects full recompose-record@1 schema & handling wrapper
+  assert.throws(
+    () => recordFor(item(), { schema: 'recompose-record@1', case: { case_id: 'ORBIT-1' }, contract: { method } }, 'scripted'),
+    /精简格式.*recompose-record@1/,
+  );
+  assert.throws(
+    () => recordFor(item(), { method, handling: 'handled' }, 'scripted'),
+    /精简格式.*handling/,
+  );
+
+  // H3 & H1 CLI paths
+  const dirBadJson = await mkdtemp(join(tmpdir(), 'cc-rec-bad-'));
+  await writeFile(join(dirBadJson, '11.json'), '{"item":"n/case","method":');
+  const badJsonRes = await runCapture(['--hub', 'http://127.0.0.1:1/mcp', '--run', 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', '--model', 'scripted', '--records', dirBadJson], 'synthetic-token-1234');
+  assert.equal(badJsonRes.code, 1);
+  assert.match(badJsonRes.err, /^参数无效：/);
+  assert.match(badJsonRes.err, /--records/);
+  assert.match(badJsonRes.err, /11\.json/);
+  assert.doesNotMatch(badJsonRes.err, /--plans/);
+  assert.doesNotMatch(badJsonRes.err, /重新导出该运行对应输入的原始字节/);
+
+  const missingDir = join(tmpdir(), 'cc-rec-missing-nonexistent-dir');
+  const missingDirRes = await runCapture(['--hub', 'http://127.0.0.1:1/mcp', '--run', 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', '--model', 'scripted', '--records', missingDir], 'synthetic-token-1234');
+  assert.equal(missingDirRes.code, 1);
+  assert.match(missingDirRes.err, /--records/);
+  assert.doesNotMatch(missingDirRes.err, /--plans/);
+
+  const dirFullSchema = await mkdtemp(join(tmpdir(), 'cc-rec-full-'));
+  await writeFile(join(dirFullSchema, '00.json'), JSON.stringify({ item: 'n/case', schema: 'recompose-record@1', contract: { method } }));
+  const fullRes = await runCapture(['--hub', 'http://127.0.0.1:1/mcp', '--run', 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', '--model', 'scripted', '--records', dirFullSchema], 'synthetic-token-1234');
+  assert.equal(fullRes.code, 1);
+  assert.match(fullRes.err, /00\.json.*精简格式/);
+
+  const dirHandling = await mkdtemp(join(tmpdir(), 'cc-rec-wrap-'));
+  await writeFile(join(dirHandling, '00.json'), JSON.stringify({ item: 'n/case', method, handling: 'handled' }));
+  const handlingRes = await runCapture(['--hub', 'http://127.0.0.1:1/mcp', '--run', 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', '--model', 'scripted', '--records', dirHandling], 'synthetic-token-1234');
+  assert.equal(handlingRes.code, 1);
+  assert.match(handlingRes.err, /00\.json.*精简格式.*handling/);
+
+  const dirValid = await mkdtemp(join(tmpdir(), 'cc-rec-empty-tok-'));
+  await writeFile(join(dirValid, '00.json'), JSON.stringify({ item: 'n/case', method }));
+  const noTokRes = await runCapture(['--hub', 'http://127.0.0.1:1/mcp', '--run', 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', '--model', 'scripted', '--records', dirValid], '');
+  assert.equal(noTokRes.code, 1);
+  assert.match(noTokRes.err, /^参数无效：标准输入里没有令牌/);
+  assert.match(noTokRes.err, /切勿在 <<'EOF' 前换行/);
+});
