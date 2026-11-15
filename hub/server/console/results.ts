@@ -48,7 +48,7 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
   const authority = html`<p>${link(`/console/runs/${runId}`, '查看任务完整记录（以任务页的记录为准）')}</p>`;
   if (detail.production === null) return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: html`${link(`/console/runs/${runId}`, '任务')} · 运行 ${technicalCode(runId)}`, hint: PRODUCTION_RESULT_HINT }), html`${sharedRunNotice(ctx,detail.run)}${ruleWithdrawalNotice(detail)}${authority}${missingProductionResult(detail)}`) };
   const commentary=detail.latest!==null&&detail.latest.record!==detail.production.record
-    ? html`<p class="notice">另有后续受理的模型评论，结果记录 ${technicalCode(detail.latest.record)}；任务页在“模型评论（判断）”中单列，不替代本页生产结果。</p>`:'';
+    ? html`<p class="notice">另有后续已核对的模型评论，结果记录 ${technicalCode(detail.latest.record)}；任务页在“模型评论（判断）”中单列，不替代本页生产结果。</p>`:'';
   const result = detail.production.result;
   const items = PARTITION.flatMap((partition) => result.partitions[partition].map(item=>({partition,item})));
   const filtered = terminal === undefined ? items : items.filter(({item}) => item.requirements.some((r) => r.layers.some((l) => l.terminal === terminal)));

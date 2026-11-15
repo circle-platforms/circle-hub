@@ -53,7 +53,7 @@ export function publication(ctx: PageContext, kind: PackKind = publishingKind(ct
 }
 
 /** What the two delivery rules mean, from the model's definition of done (V06) in plain words (issue 229). */
-export const DONE_RULE_NOTE='记账型：每个条目都有了结果就交付，不要求每项都满足；结果只显示已交付和各分区的数量，不显示“通过”。门禁型：同一任务、同一产物的全部必需的要求项都满足才交付。';
+export const DONE_RULE_NOTE='记账型：每个条目都有了结果就交付，不要求每项都正确；结果只显示已交付和各分区的数量，不显示“通过”。门禁型：同一任务、同一产物的全部必需的要求项都正确才交付。';
 /** Who may produce the result of a requirement (W02): the formal names stay, this says what they stand for. */
 export const ACCEPTED_PRODUCER_NOTE='这项要求认哪一类结论：事实是规则算出的；判断是模型给出的；独立判断是另一个模型给出的，不是起草者自己，是否独立按工作流的规定核对。';
 export const doneRuleHead=():Html=>tooltip(axisUiLabel('done_rule'),DONE_RULE_NOTE);

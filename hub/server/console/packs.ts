@@ -149,7 +149,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
       '没有要求项', 'pack-requirements'), { flush: true });
   } else if (tab === 'checks') {
     content = loaded === null ? unreadable : box(null, table(
-      ['检查项', tooltip(axisUiLabel('check_tier'), '阻断项未通过时结果不可用；提示项仅作标记'), axisUiLabel('source_role'), '用于要求项'],
+      ['检查项', tooltip(axisUiLabel('check_tier'), '阻断项为错误时结果不可用；提示项仅作标记'), axisUiLabel('source_role'), '用于要求项'],
       loaded.checks.map((c) => [html`<b>${c.title ?? '检查项'}</b>`, c.tier === undefined ? '未声明' : chip(uiLabelOf('check_tier', c.tier), c.tier === 'blocking' ? 'fail' : 'plain'), uiLabelOf('source_role', c.judges), loaded?.requirements.filter((r) => r.checks.includes(c.id)).map((r) => r.name).join('、') || '无']),
       '没有检查项'), { flush: true });
   } else if (tab === 'versions') {

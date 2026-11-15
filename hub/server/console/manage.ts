@@ -669,7 +669,7 @@ export function stageForms(stage: StagedPack, csrf: string): Html {
 }
 
 function checkLines(run: CommandRun): Html {
-  const state = run.code === 0 ? html`<p class="ok">发布校验已通过（退出码 0）</p>` : run.code === 2 ? errorLine('参数不正确，未执行（退出码 2）') : errorLine(html`未通过发布校验（退出码 ${run.code}）`);
+  const state = run.code === 0 ? html`<p class="ok">发布校验正确（退出码 0）</p>` : run.code === 2 ? errorLine('参数不正确，未执行（退出码 2）') : errorLine(html`发布校验有错误（退出码 ${run.code}）`);
   return html`${state}${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}${run.stderr.length > 0 ? html`<pre class="error"><code>${run.stderr.join('\n')}</code></pre>` : ''}`;
 }
 
@@ -691,8 +691,8 @@ export function stageResultPage(ctx: PageContext, result: StageResult): PageResu
     : result.published !== null
       ? callout('info', html`相同内容已发布为 ${technicalCode(`${result.published.pack}@${result.published.version}`)}，无需再次发布；未暂存。`)
       : run.code === 0
-        ? callout('warn', '发布校验已通过，但暂存未能保存；请重新上传。')
-        : callout('warn', '未通过发布校验，未暂存；按上面每条问题的处理修改后重新上传。');
+        ? callout('warn', '发布校验正确，但暂存未能保存；请重新上传。')
+        : callout('warn', '发布校验有错误，未暂存；按上面每条问题的处理修改后重新上传。');
   const status = run.code === 0 ? 200 : run.code === 2 ? 400 : 409;
   return {
     status,

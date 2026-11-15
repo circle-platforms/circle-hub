@@ -78,7 +78,7 @@ const KEEP_CONFIG_NOTE =
   '勾选后，程序会在重置前导出当前配置（账户与令牌的散列、团队、分配、业务系统、执行器等，不含任何凭据明文），重置后再自动写回。库的结构已经和本版本对不上、导不出来时，只能选「归档并初始化」或带着定义文件恢复。';
 
 const PAGE_HINT = '数据与本版本不兼容时的重建入口；平常重置也在设置页。';
-const ASYNC_NOTE = '预检通过后会打开确认页；真正执行走后台重建，不会在网页请求里同步停服。';
+const ASYNC_NOTE = '预检正确后会打开确认页；真正执行走后台重建，不会在网页请求里同步停服。';
 
 function scopeHelp(): Html {
   return html`<ul class="ch-meta">${RESET_SCOPES.map((row) => html`<li><b>${row.label}</b>：${row.clears}${row.keeps}</li>`)}</ul>`;
@@ -168,7 +168,7 @@ function planPanel(context: RebuildConsoleContext): Html {
   const blocked = plan.blocked;
   const counts = plan.counts.map((row) => html`<li>${RESET_SCOPE_LABEL[row.scope]}：保留 ${row.retained}，清除 ${row.cleared === null ? '待定' : row.cleared}</li>`);
   return html`<section class="ch-section"><h2 class="ch-section-label">预检结果</h2>
-${blocked.length ? callout('warn', html`<span>当前不能执行：${blocked.map((row) => row.reason).join('；')}</span>`) : callout('info', html`<span>预检通过，可以确认执行。</span>`)}
+${blocked.length ? callout('warn', html`<span>当前不能执行：${blocked.map((row) => row.reason).join('；')}</span>`) : callout('info', html`<span>预检正确，可以确认执行。</span>`)}
 <ul class="ch-meta">${counts}</ul>
 </section>`;
 }

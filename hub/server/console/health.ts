@@ -512,7 +512,7 @@ async function collectAlerts(ctx: PageContext, sources: HealthPageSources | unde
         hits.push({
           id: 'A1',
           text: `租约 ${entry.key} 自 ${when(entry.since)} 被持有且没有到期时间（持有人 ${who}）`,
-          next: '核对占用运行是否仍需要；结束后释放租约。本地释放不能代替远端停作业。',
+          next: '核对占用运行是否仍需要；结束后释放租约。本地释放不能代替远端停止上机验证。',
         });
       }
     } catch { /* lease unread → no A1 row */ }

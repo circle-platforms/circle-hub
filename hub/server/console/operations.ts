@@ -111,7 +111,7 @@ function packPage(ctx: PageContext, staging: PackStaging): Html {
   const kinds = ([['workflow', '完成有验收要求的任务'], ['skill', '提供通用做法'], ...(ctx.admin ? [['system', '接入业务系统'], ['product', '提供产品知识来源']] as const : [])] as const);
   return html`<section class="ch-section" aria-label="选择发布用途"><p>${packPurpose(kind)}</p>${segments('发布用途', kinds.map(([value, text]) => ({ href: href(operationsPackPath(), { kind: value }), label: text, current: value === kind })))}<p class="ch-meta">选择的是发布入口；上传内容的类型仍由 pack.json 声明并按原规则校验。</p></section>${steps(['上传', '发布校验', '发布', '完成'], 0)}
 <section class="ch-section" data-columns="2">
-${card({ title: `上传${label}`, hint: '上传人需为维护人；先检查结构、样例和来源，通过后暂存 30 分钟，确认发布时重新检查，相同内容不重复发布。' }, html`${form}`)}
+${card({ title: `上传${label}`, hint: '上传人需为维护人；先检查结构、样例和来源，检查正确后暂存 30 分钟，确认发布时重新检查，相同内容不重复发布。' }, html`${form}`)}
 ${card({ title: '在运行 Hub 的服务器上发布',hint:'维护人在运行 Hub 的服务器上先检查再发布，检查与记录和控制台相同。' }, html`<pre class="ch-quote"><code>${'circle-hub pack publish <文件夹> --dry-run\ncircle-hub pack publish <文件夹>'}</code></pre><p>${link(packHome(kind).path,'查看已发布版本')}</p>`)}
 </section>${waiting}`;
 }
@@ -138,7 +138,7 @@ ${ctx.deps.knowledge?.spaces ? card({title:'按公共空间读取原文导入',h
 const TITLES: Readonly<Record<Operation, { title: string; hint: string; active: 'team' | 'settings' | 'connections' | 'workflows' | 'knowledge' }>> = {
   member: { title: '添加成员', hint: '创建密码账户，初始密码仅显示一次且首次登录须修改；客户端连接绑定该成员账户', active: 'team' },
   system: { title: '接入业务系统', hint: 'Hub 以只读方式访问业务系统；凭据加密保存，页面与模型只可见名称', active: 'connections' },
-  pack: { title: `发布${uiLabelOf('pack_kind','workflow')}`, hint: '上传发布内容，发布校验通过后确认发布，成为新版本', active: 'workflows' },
+  pack: { title: `发布${uiLabelOf('pack_kind','workflow')}`, hint: '上传发布内容，发布校验正确后确认发布，成为新版本', active: 'workflows' },
   knowledge: { title: '导入公共知识', hint: '从所选产品已配置的知识来源导入公共知识，每条附来源；导入完成后成为该版本线的当前版本', active: 'knowledge' },
 };
 
@@ -147,7 +147,7 @@ export async function operationsPage(ctx: PageContext, operation: string | undef
   if (!ctx.admin) return neutralPage(ctx);
   if (operation === undefined) {
     const cards = OPERATIONS.map((name) => card({ title: link(`${operationsPath()}/${name}`, TITLES[name].title), hint:TITLES[name].hint }, html``));
-    return { status: 200, body: page(ctx.chrome('管理操作', { active: 'settings', hint: '从这里进入加人、接入业务系统、发布任务包和导入知识；团队分配、安装技能、登记测试环境等在对应页面用表单完成，经同一命令通道写入。' }), html`<section class="ch-section" data-columns="2">${cards}</section>`) };
+    return { status: 200, body: page(ctx.chrome('管理操作', { active: 'settings', hint: '从这里进入加人、接入业务系统、发布工作流和导入知识；团队分配、安装技能、登记测试环境等在对应页面用表单完成，经同一命令通道写入。' }), html`<section class="ch-section" data-columns="2">${cards}</section>`) };
   }
   if (!isOperation(operation)) return neutralPage(ctx);
   const body = operation === 'member' ? memberPage(ctx) : operation === 'system' ? await systemPage(ctx) : operation === 'pack' ? packPage(ctx, staging) : await knowledgePage(ctx, jobs);
