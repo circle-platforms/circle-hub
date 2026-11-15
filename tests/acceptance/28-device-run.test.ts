@@ -267,7 +267,17 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const directory = await mkdtemp(join(staged, 'whole-mindmap-'));
     const fetching = promisify(execFile)(process.execPath, [join(staged, 'case-compile/tools/fetch-run.ts'), '--hub', bed.hub.mcpUrl, '--run', planRun, '--out', directory], { encoding: 'utf8' });
     fetching.child.stdin!.end(bed.reviewer.token); await fetching;
-    const argv = ['run', 'result', 'submission', 'contract', 'profile', 'inventory'].flatMap(name => [`--${name}`, join(directory, `${name}.json`)]);
+    const sources = JSON.parse(await readFile(join(directory, 'sources.json'), 'utf8')) as Array<{ slot: string; file: string; reference: string }>;
+    for (const [slot, value] of [['contract', CONTRACT_DOC], ['profile', PROFILE_DOC], ['inventory', MANIFEST_DOC]] as const) {
+      const matches = sources.filter(source => source.slot === slot);
+      assert.equal(matches.length, 1, `one frozen source pointer for ${slot}`);
+      assert.ok(matches[0].file.startsWith('sources/'), 'the downloaded manifest supplies the filename');
+      const downloaded = await readFile(join(directory, matches[0].file));
+      assert.deepEqual(downloaded, bytes(value), `${slot} keeps its exact authored source bytes`);
+      assert.equal(matches[0].reference, `src:${sha256Hex(downloaded)}`);
+    }
+    // Owner T7 / run30 #9: the generator resolves verified source pointers, without legacy filename overrides.
+    const argv = ['run', 'result', 'submission'].flatMap(name => [`--${name}`, join(directory, `${name}.json`)]);
     const output = join(directory, 'case.xlsx');
     const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
     const payload = await readFile(output); assert.equal(receipt.sha256, sha256Hex(payload));
