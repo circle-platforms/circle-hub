@@ -42,7 +42,7 @@ import { bindInputs } from './inputs.ts';
 import { foreignArtifacts, packIdOf } from './lineage.ts';
 import { bindExpected, projectItems } from './projection.ts';
 import { canSeeRun, canViewRun, identityOf, runOfRecord, sourceReader } from './readers.ts';
-import { suggestNames, type NameCandidate } from './pack-names.ts';
+import { suggestNames, type NameCandidate } from './names.ts';
 import { reuseOffers } from './reuse.ts';
 import { issuesOf, packSchema, schemaProblems, slotSchemaOf } from './slots.ts';
 import {actionsOf,keyOwner,putAction,putRun,resultFor,runByClientKey,runById,runRecordDigest} from './store.ts';
@@ -473,12 +473,12 @@ async function nameHint(ctx: EngineContext, user: Principal, asked: string, spac
   try {
     candidates = (await ctx.deps.workflows.summaries(user))
       .filter((summary) => summary.kind === 'workflow' && (summary.space ?? 'team') === (space ?? 'team'))
-      .map((summary) => ({ pack: summary.pack, id: summary.id }));
+      .map((summary) => ({ shown: summary.pack, key: summary.id }));
   } catch {
     return '';
   }
-  const { nearest, listed, total } = suggestNames(asked, candidates);
-  if (nearest !== null) return `当前账户可用的名称里最接近的是 ${nearest.pack}`;
+  const { nearest, listed, total } = suggestNames(asked.includes('@') ? asked.slice(0, asked.indexOf('@')) : asked, candidates);
+  if (nearest !== null) return `当前账户可用的名称里最接近的是 ${nearest.shown}`;
   return listed.length === 0 ? '' : `当前账户可用的工作流：${listed.join('、')}${total > listed.length ? ` 等 ${total} 个` : ''}`;
 }
 
