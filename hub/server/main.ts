@@ -114,6 +114,29 @@ export function reportFailure(io: CliIo, error: unknown): number {
   return 1;
 }
 
+/** Close starts the admission gate synchronously; all pools outlive maintenance and dispatch shutdown. */
+export async function shutdownServing(
+  app: Pick<HubApp, 'close'>,
+  stopMaintenance: () => Promise<void>,
+  closeDispatch: () => Promise<void>,
+  closePools: () => Promise<void>,
+): Promise<void> {
+  // Install a rejection handler immediately while maintenance may still be finishing.
+  let draining: Promise<{error?: unknown}>;
+  try { draining = app.close().then(() => ({}), error => ({error})); }
+  catch (error) { draining = Promise.resolve({error}); }
+  let stopped: {error?: unknown} = {};
+  try { await stopMaintenance(); } catch (error) { stopped = {error}; }
+  try {
+    const drained = await draining;
+    if ('error' in stopped) throw stopped.error;
+    if ('error' in drained) throw drained.error;
+  } finally {
+    try { await closeDispatch(); }
+    finally { await closePools(); }
+  }
+}
+
 function defaultStop(): Promise<unknown> {
   return new Promise((resolve) => {
     const done = (signal: string) => {
@@ -285,22 +308,17 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     void health.start({ release: running.release, dataDir: config.dataDir, pool: () => records.poolStats?.(), sandbox: sandboxStats, consoleStreams: () => running.consoleStreams() });
     const signal = await (options.stopSignal ?? defaultStop)();
     io.stdout(`收到${typeof signal === 'string' ? ` ${signal}` : '停止请求'}，正在停止：等进行中的请求结束`);
-    // A maintenance pass in progress stops at its next run; the next start goes on from there.
-    await maintenance?.stopMaintenance({ abort: true }).catch((error: unknown) => operatorLog(`停止运行维护时出错：${describeError(error)}`));
-    try {
-      await running.close();
-    } finally {
-      // Assembly cleanup must not skip the caller-owned connections when it fails.
-      stopAll();
-      try { await closeAssembly?.(); }
-      finally {
+    await shutdownServing(running,
+      async () => { await maintenance?.stopMaintenance({ abort: true }).catch((error: unknown) => operatorLog(`停止运行维护时出错：${describeError(error)}`)); },
+      async () => { stopAll(); await closeAssembly?.(); },
+      async () => {
         await health.stop();
         await healthDatabase.end().catch(() => {});
         await observationDatabase.end().catch(() => {});
         await telemetry?.close();
         await records.close();
-      }
-    }
+      },
+    );
   } finally {
     process.off('unhandledRejection', onRejection);
   }
