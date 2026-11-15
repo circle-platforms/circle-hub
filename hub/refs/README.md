@@ -546,7 +546,7 @@ KityMinder 与 XLSX 实现已分别迁到独立的 `packs/skill/mindmap-format` 
 
 工作包依赖、运行 `skills` 锁及结果锁使用包清单摘要。`forReference` 按当前已安装的团队通用技能包（或授权个人通用技能包）在沙箱内解析内容寻址原件并复核；`forRun` 只使用该运行记录上冻结的 `skills` 摘要（不再读写事后迁移绑定或 `refs.legacy-parser`、`runs.skills` 兼容声明）。未安装或运行未锁定所需解析器时直接返回明确缺失事实及安装或重开运行指引。单元测试显式注入测试解析器，不构成生产自动安装。
 
-`packs/skill/*/skill.json` 与 `contracts/src/pack.ts` 中历史保留的 `migration_test` 字段以及 `packs/skill/*/README.md` 中的旧 `bind-legacy` 说明已一并清除，技能包版本同步更新。
+`packs/skill/*/skill.json` 中的 `migration_test` 字段以及 `packs/skill/*/README.md` 中的旧 `bind-legacy` 说明已在新版包中清除并同步更新包版本；`contracts/src/pack.ts`（`SkillParser`）保留可选的 `migration_test` 作为已发布 v1 形状的一部分（Hub 启动重读已发布包版本时需要），运行时没有任何代码读取该字段。
 
 Team verification uses `ResolveContext.teamParsersOnly`: the current team parser set is used without personal run locks or personal-namespace fallback. Missing team capability returns `TEAM_PARSER_REQUIRED`. Personal reference reads keep their current grant and frozen-skill checks.
 

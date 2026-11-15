@@ -9,6 +9,7 @@ import {
   ProjectionOutput,
   REQUIRED_FILES,
   RequirementsFile,
+  SkillDeclaration,
   SlotClaim,
   SlotsFile,
   WorkflowFile,
@@ -193,4 +194,21 @@ test('a knowledge facets or index input may declare that unknown entries are dis
   }
   assert.ok(!WorkflowInput.safeParse({ ...base, accepts: ['knowledge:facets'], unknown_entries: 'accept' }).success, 'one value is defined');
   assert.ok(WorkflowInput.safeParse({ ...base, accepts: ['knowledge:facets'] }).success, 'absent keeps the refusal of every truncated last page');
+});
+
+test('SkillDeclaration accepts both published v1 parsers with optional migration_test and current declarations without it', () => {
+  const parser = {
+    parser: 'html@1',
+    media_types: ['text/html'],
+    limits: { maxBytes: 1024, maxDepth: 64, maxNodes: 1000 },
+    function: { module: 'functions/parse.ts', export: 'default' },
+  };
+  assert.ok(SkillDeclaration.safeParse({ schema: 'skill@1', parsers: [parser] }).success);
+  assert.ok(
+    SkillDeclaration.safeParse({
+      schema: 'skill@1',
+      parsers: [{ ...parser, migration_test: 'html-format migration equivalence across repository documents' }],
+    }).success,
+  );
+  assert.ok(!SkillDeclaration.safeParse({ schema: 'skill@1', parsers: [{ ...parser, unexpected_key: 'x' }] }).success);
 });
