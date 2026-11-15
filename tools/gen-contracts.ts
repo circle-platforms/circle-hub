@@ -82,9 +82,9 @@ export class WriteError extends Error {
 export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const GENERATED_DIR = 'contracts/generated';
 /** Runtime vocabulary snapshots shipped inside sandboxed packs. Only these model axes belong to each target. */
-interface PackVocabularyTarget { axes: readonly string[]; labels?: boolean; resourceTags?: boolean }
+interface PackVocabularyTarget { axes: readonly string[]; labels?: boolean; resourceTags?: boolean; uiLabels?: boolean }
 export const PACK_VOCABULARY_TARGETS: Readonly<Record<string, PackVocabularyTarget>> = {
-  'packs/workflow/case-compile/functions/generated/vocabulary.ts': {axes:['expectation_basis','qualifier_mark','dynamic_terminal','acceptance','item_handling'],labels:true},
+  'packs/workflow/case-compile/functions/generated/vocabulary.ts': {axes:['expectation_basis','qualifier_mark','dynamic_terminal','acceptance','item_handling','attribution','exit_action','producer_kind'],labels:true,uiLabels:true},
   'packs/workflow/quality-board/functions/generated/vocabulary.ts': { axes: ['knowledge_count','declaration_status','judgment_status'], labels: true, resourceTags: true },
   'packs/product/famx/functions/generated/vocabulary.ts': { axes: ['applicability_field','declaration_status','judgment_status','type_declaration_status','command_parse_status','reason','release_status'], labels: true, resourceTags: true },
   'packs/workflow/case-review/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
@@ -161,7 +161,7 @@ export function packVocabularyFiles(root: string = REPO_ROOT): Record<string, st
       out.push(`export type ${type} = (typeof ${constant})[number];\n`);
       if (!target.labels && name === 'change_kind') out.push(`export const ${constant}_LABEL: Readonly<Record<${type}, string>> = ${JSON.stringify(Object.fromEntries(axis.values.map(v => [v.code, v.label])))};\n`);
       if (target.labels) {
-        out.push(`export const ${constant}_LABEL = { ${axis.values.map(v => `${q(v.code)}: ${q(v.label)}`).join(', ')} } as const satisfies Record<${type}, string>;\n`);
+        out.push(`export const ${constant}_LABEL = { ${axis.values.map(v => `${q(v.code)}: ${q(target.uiLabels ? (v.ui ?? v.label) : v.label)}`).join(', ')} } as const satisfies Record<${type}, string>;\n`);
         out.push(`export function is${type}(value: unknown): value is ${type} { return typeof value === 'string' && (${constant} as readonly string[]).includes(value); }\n`);
       }
     }

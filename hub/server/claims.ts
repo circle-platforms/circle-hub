@@ -1,3 +1,4 @@
+import { ATTRIBUTION, PRODUCER_KIND } from '../../contracts/generated/vocabulary.ts';
 // Console fields keep their contract labels; reader-facing conclusions use the display mappings below.
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, labelOf, uiLabelOf, type Attribution, type DynamicTerminal, type ExitAction, type Layer, type ProducerKind, type Reason, type StaticTerminal, type Verdict } from '../../contracts/generated/vocabulary.ts';
@@ -167,12 +168,9 @@ export function requirementText(r: RequirementResult, labels: Labels = MODEL_LAB
   return `${r.requirement}：${[...declared, ...others].join('；')}；${statusText(r, labels)}`;
 }
 
-export const USER_REASON = {
-  data_gap: '缺资料', author_input: '原始用例的问题', producer_error: '编写模型的问题',
-  transient: '临时故障', target_side: '设备的问题', unattributed: '还没查清',
-} as const satisfies Record<Attribution, string>;
+export const USER_REASON = Object.fromEntries(ATTRIBUTION.map(code => [code, uiLabelOf('attribution', code)])) as Record<Attribution, string>;
 
-export const USER_DECIDER = { function: '程序', model: '模型', human: '使用者' } as const satisfies Record<ProducerKind, string>;
+export const USER_DECIDER = Object.fromEntries(PRODUCER_KIND.map(code => [code, uiLabelOf('producer_kind', code)])) as Record<ProducerKind, string>;
 
 export const USER_VERDICT = { support: '正确', refute: '错误', unknown: null, abstain: null } as const satisfies Record<Verdict, string | null>;
 

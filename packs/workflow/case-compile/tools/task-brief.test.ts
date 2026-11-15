@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
-  CIRCLE_GENERAL_PURPOSE_NOTICE,
   renderAgentDefinition,
   resolveSubagentRole,
   SUBAGENT_ROLES,
@@ -45,8 +44,8 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
       packRoot: packDir,
       note: '先查前置配置',
     });
-    assert.ok(writerBrief.startsWith(`${CIRCLE_GENERAL_PURPOSE_NOTICE}\n\n`));
-    assert.ok(writerBrief.includes('subagent_type="general-purpose"'));
+    assert.ok(!writerBrief.includes("已知缺陷"));
+    assert.ok(writerBrief.includes('subagent_type="compile-writer"'));
     assert.ok(writerBrief.includes('compile-writer'));
     assert.ok(writerBrief.includes(scopeVerbatim));
     assert.ok(writerBrief.includes('使用者原话，由主会话记录'));
@@ -915,7 +914,7 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
 
     // Short stdout dispatch notice stays compact and leaks zero case content or long verbatim chunks.
     assert.ok(written.dispatchPrompt.length <= 500, `dispatchPrompt too long: ${written.dispatchPrompt.length}`);
-    assert.ok(written.dispatchPrompt.includes(CIRCLE_GENERAL_PURPOSE_NOTICE));
+    assert.ok(!written.dispatchPrompt.includes("已知缺陷"));
     assert.ok(written.dispatchPrompt.includes('briefs/0.task.md'));
     assert.ok(written.dispatchPrompt.includes(`共 ${written.lineCount} 行`));
     assert.ok(written.dispatchPrompt.includes('plans/0.json'));
@@ -1020,7 +1019,7 @@ test('P1.3: task-brief embeds resolved skillDir at head of dispatchPrompt and su
     );
     assert.equal(singleRun.status, 0, singleRun.stderr);
     assert.ok(singleRun.stdout.length <= 500);
-    assert.ok(singleRun.stdout.includes(`技能目录：${packDir}`), 'dispatchPrompt must expose real skillDir');
+    assert.ok(!singleRun.stdout.includes('技能目录：'), 'dispatch prompt paths use only the workspace base');
 
     const batchPlan = spawnSync(
       process.execPath,

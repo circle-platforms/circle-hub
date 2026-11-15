@@ -1,3 +1,4 @@
+import { planStateOf } from '../functions/plan-state.ts';
 // 只读检查自动化用例 JSON、自动化用例目录或场景保真判断（.verdict.json）的语法、长度占位与结构，不用令牌，不写入磁盘：
 //   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>]
 import { realpathSync } from 'node:fs';
@@ -8,6 +9,7 @@ import {
   BRIEF_SCHEMA,
   FIDELITY_VERDICTS,
   fidelityProblems,
+  fidelityJudgmentProblems,
   type FidelityBrief,
   type FidelityRow,
 } from '../functions/fidelity.ts';
@@ -73,7 +75,7 @@ function checkPlanObject(file: string, parsed: unknown): PlanCheckResult {
     return { ok: false, file, item, handling: rawHandling, kind: null, expansions: [], counts: null, problems };
   }
   const handling: ItemHandling = rawHandling;
-  if (handling === 'skipped') {
+  if (!planStateOf(parsed).process) {
     if (typeof parsed.reason !== 'string' || !parsed.reason.trim()) {
       problems.push({ pointer: '/reason', message: 'handling 为 skipped 时必须写明非空的 reason' });
     }
@@ -172,16 +174,13 @@ function checkStandaloneVerdict(verdict: unknown): { problems: CheckProblem[]; r
     return { problems: [{ code: 'fidelity_shape', pointer: '', message: '判断文件顶层必须是 JSON 对象' }], rows };
   }
   for (const key of Object.keys(verdict)) {
-    if (!['brief_sha256', 'steps', 'disclosure'].includes(key)) {
+    if (!['steps', 'disclosure'].includes(key)) {
       problems.push({
         code: 'fidelity_shape',
         pointer: `/${key}`,
-        message: '多余字段；.verdict.json 恰好写 brief_sha256、steps、disclosure 三项',
+        message: '多余字段；.verdict.json 恰好写 steps、disclosure 两项',
       });
     }
-  }
-  if (typeof verdict.brief_sha256 !== 'string' || !verdict.brief_sha256.trim()) {
-    problems.push({ code: 'fidelity_shape', pointer: '/brief_sha256', message: '缺少非空的 brief_sha256' });
   }
   if (typeof verdict.disclosure !== 'string' || !verdict.disclosure.trim()) {
     problems.push({ code: 'fidelity_shape', pointer: '/disclosure', message: 'disclosure 必须是非空中文说明' });
@@ -405,7 +404,7 @@ export async function main(argv: string[]): Promise<number> {
         if (!isBriefObject(briefObj)) {
           throw new Error(`--brief 指定的 ${args.brief} 不是有效的场景保真核对简报。请使用 fidelity-brief.ts 生成的 .brief.json 文件`);
         }
-        const checked = fidelityProblems(briefObj, parsed);
+        const checked = fidelityJudgmentProblems(briefObj, parsed);
         const ok = checked.problems.length === 0;
         process.stdout.write(
           JSON.stringify({

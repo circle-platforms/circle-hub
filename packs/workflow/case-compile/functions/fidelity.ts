@@ -127,6 +127,18 @@ export interface FidelityRow { n: string; verdict: FidelityVerdict; step_indices
  * verdicts, one row for every authored action and none for anything else, step indices taken from the brief. Then, as the
  * reference engine does, changed and unrealized actions and preserved ones that cite no step go back to authoring.
  */
+/** The only constructor of a digest-bound envelope; callers may validate it without persisting it. */
+export function embedFidelity(brief: FidelityBrief, judgment: Record<string, unknown>): Record<string, unknown> {
+  return { brief_sha256: brief.brief_sha256, steps: judgment.steps, disclosure: judgment.disclosure };
+}
+/** Auditor output has no identity fields: the application binds it to the checked brief. */
+export function fidelityJudgmentProblems(brief: FidelityBrief, judgment: unknown): { problems: FidelityProblem[]; rows: FidelityRow[] } {
+  if (!isRecord(judgment) || Object.keys(judgment).some(key => key !== 'steps' && key !== 'disclosure')) {
+    return { problems: [{ code: 'fidelity_shape', pointer: '/', message: '判断文件只写 steps、disclosure；brief_sha256 由 fidelity-apply 写入信封，不由模型填写' }], rows: [] };
+  }
+  return fidelityProblems(brief, embedFidelity(brief, judgment));
+}
+
 export function fidelityProblems(brief: FidelityBrief, fidelity: unknown): { problems: FidelityProblem[]; rows: FidelityRow[] } {
   const at = '/data/fidelity';
   const shape = (pointer: string, message: string) => ({ problems: [{ code: 'fidelity_shape' as const, pointer, message }], rows: [] });

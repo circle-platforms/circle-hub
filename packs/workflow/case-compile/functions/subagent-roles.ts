@@ -113,7 +113,7 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
       hasGrep: true,
       hasExecute: true,
       executeRule:
-        '`execute` 唯一允许形式：单行 `node <技能目录>/tools/check-plan.ts --file <计划JSON相对路径>`（空格隔开选项与值，禁止 `=`）；严禁通过 `execute` 运行 `ls`/`cat`/`wc`/`grep`/`find`/`mkdir`/`cp`/`mv`/`rm`/`python3`/`node -e` 或 `task-brief.ts`。',
+        '`execute` 唯一允许形式：单行 `node \'<技能目录>/tools/check-plan.ts\' --file \'<计划JSON相对路径>\'`（空格隔开选项与值，禁止 `=`/`"`/`\\`，路径或值含空格、中文或 `<`/`>` 统一用 `\'…\'`）；严禁通过 `execute` 运行 `ls`/`cat`/`wc`/`grep`/`find`/`mkdir`/`cp`/`mv`/`rm`/`python3`/`node -e` 或 `task-brief.ts`。',
     })}
 4. 不碰令牌、不调 Hub、不调 \`test-bed\`；子代理不问使用者：定不了的问题或资料缺口按规则写进计划的 \`unmet\`/\`missing\`，在最终回复写给主代理的报告。
 
@@ -159,7 +159,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}；receipt/case_id 取 fields.recomposition；quote 逐字等于对应原始期望；无对应判断记未知不省略；新增声明引文用 Hub 已确定声明且 quote.text 逐字复制
 \`\`\`
 
-写完（或返工改完）后，必须运行 \`node <技能目录>/tools/check-plan.ts --file <目标计划相对路径>\`，确认 \`ok: true\` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项）。`,
+写完（或返工改完）后，必须运行 \`node '<技能目录>/tools/check-plan.ts' --file '<目标计划相对路径>'\`，确认 \`ok: true\` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项）。`,
   },
   {
     key: 'fidelity',
@@ -180,7 +180,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
       hasGrep: false,
       hasExecute: true,
       executeRule:
-        '`execute` 唯一允许形式：写入后可运行 `node <技能目录>/tools/check-plan.ts --file <verdict相对路径> --brief <brief相对路径>` 验证 JSON 语法、字段结构与摘要一致；严禁通过 `execute` 运行 `ls`/`wc`/`grep`/`cp`/`node -e` 或 `task-brief.ts`。',
+        '`execute` 唯一允许形式：写入后可运行 `node \'<技能目录>/tools/check-plan.ts\' --file \'<verdict相对路径>\' --brief \'<brief相对路径>\'` 验证 JSON 语法、字段结构与摘要一致；严禁通过 `execute` 运行 `ls`/`wc`/`grep`/`cp`/`node -e` 或 `task-brief.ts`。',
     })}
 5. 不读取或写入令牌、不预订或释放测试环境、不询问使用者、不调 Hub。完成后仅回复写入的 \`.verdict.json\` 相对路径列表，不展开无关说明。`,
   },
@@ -241,9 +241,6 @@ export function renderAgentDefinition(role: SubagentRoleSpec): string {
   ].join('\n');
 }
 
-export const CIRCLE_GENERAL_PURPOSE_NOTICE =
-  '说明：这个子代理的系统提示里有一段关于「生成代理配置、输出 JSON」的内容，是 Circle 1.17.0 的已知缺陷，与本任务无关。本任务只做下面写的事，输出只按本任务说明。';
-
 /**
  * Renders a self-contained `description` string for Circle's built-in `general-purpose`
  * subagent (`task` tool), substituting the installed `<技能目录>` path and embedding
@@ -288,9 +285,8 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     ? `（模式：${BRIEF_MODE_LABELS[compileBrief.task.mode] ?? compileBrief.task.mode}（\`${compileBrief.task.mode}\`）；结构化简报已在内存中拼入）`
     : '';
   const headSections: string[] = [
-    CIRCLE_GENERAL_PURPOSE_NOTICE,
     '',
-    `请以只读隔离的子代理身份执行本阶段单项任务，使用通用子代理（\`subagent_type="general-purpose"\`）承载角色 \`${role.agentName}\`（${role.stageLabel}）。`,
+    `请以只读隔离的子代理身份执行本阶段单项任务，使用按名子代理（\`subagent_type="${role.agentName}"\`）（${role.stageLabel}）。`,
     '',
     '## 本次任务参数',
     `- 角色标识：${role.agentName}（${role.stageLabel} / ${role.key}）`,

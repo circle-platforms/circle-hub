@@ -117,7 +117,7 @@ async function setupWorkspace() {
   const b1Path = briefFile(sourceBriefs, '00', p1.brief.brief_sha256);
   const v1Path = verdictFile(sourceBriefs, '00', p1.brief.brief_sha256);
   await writeFile(b1Path, JSON.stringify(p1.brief, null, 2) + '\n');
-  await writeFile(v1Path, JSON.stringify({ ...VERDICT_A, brief_sha256: p1.brief.brief_sha256 }, null, 2) + '\n');
+  await writeFile(v1Path, JSON.stringify(VERDICT_A, null, 2) + '\n');
 
   // c2: to be reworked via --rework
   const p2 = makePlanWithFidelity('doc:c2', RECORD_A);

@@ -13,7 +13,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { formatCallError, isRecord } from '../functions/text.ts';
 import { argumentsOf, hubOrigin, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { getRetrying, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
+import { getRetrying, sourceFileName, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
 
 const SLOTS = ['contract', 'profile', 'inventory'] as const;
 export interface RunInputs { run: Record<string, unknown>; result: Record<string, unknown>; submission: Record<string, unknown>; originals: Record<typeof SLOTS[number], Uint8Array>; run_reference?: string; accepted_result_reference?: string | null }
@@ -53,7 +53,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       { name: 'run.json', bytes: Buffer.from(JSON.stringify(fetched.run)) },
       { name: 'result.json', bytes: Buffer.from(JSON.stringify(fetched.result)) },
       { name: 'submission.json', bytes: Buffer.from(JSON.stringify(fetched.submission)) },
-      ...SLOTS.map((slot) => ({ name: `${slot}.json`, bytes: fetched.originals[slot] })),
+      ...SLOTS.map((slot) => ({ name: sourceFileName(slot, 'application/json'), bytes: fetched.originals[slot] })),
       ...(refDoc ? [{ name: 'references.json', bytes: Buffer.from(JSON.stringify(refDoc, null, 2) + '\n') }] : []),
     ];
     await mkdir(args.out, { recursive: true, mode: 0o700 });

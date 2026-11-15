@@ -250,7 +250,6 @@ test('verdict mode checks .verdict.json standalone and against --brief for fidel
     await writeFile(briefPath, JSON.stringify(brief, null, 2));
 
     const validVerdict = {
-      brief_sha256: brief!.brief_sha256,
       disclosure: '已保真核对。',
       steps: [
         { n: '1', verdict: 'preserved', step_indices: [1], rationale: '第 1 步覆盖配置动作' },

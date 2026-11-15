@@ -1,6 +1,6 @@
 // Local tool retry wrappers for Hub HTTP calls without modifying the embedded run-tools skill module.
 import { lstat, mkdir, readdir, readFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   HubReplyError,
   knowledgeFiles,
@@ -275,6 +275,40 @@ export async function getOnce(
   return (await fetchBytesOnce(url, bearer, MAX_BYTES, options)).bytes;
 }
 
+/** Only immutable source bytes are cached; callers still fetch current run/job metadata. */
+async function sourceCache(url: string, bearer: string, limit: number) {
+  const parsed = new URL(url);
+  const match = /^\/run-export\/run_[a-z0-9]{26}\/sources\/([a-f0-9]{64})$/.exec(parsed.pathname);
+  if (!match || parsed.search) return null;
+  const root = resolve('.hub-cache');
+  const directory = join(root, sha256(Buffer.from(parsed.origin + '\0' + bearer)));
+  const file = join(directory, match[1]);
+  const safe = async (path: string) => { const info = await lstat(path).catch(() => null); return info && info.isDirectory() && !info.isSymbolicLink(); };
+  const load = async () => {
+    if (!await safe(root) || !await safe(directory)) return null;
+    const info = await lstat(file).catch(() => null);
+    if (!info?.isFile() || info.isSymbolicLink() || info.size > limit) return null;
+    const bytes = await readFile(file);
+    return sha256(bytes) === match[1] ? { bytes, digest: match[1] } : null;
+  };
+  const save = async (bytes: Uint8Array) => {
+    if (sha256(bytes) !== match[1]) return;
+    try {
+      await mkdir(root, { mode: 0o700 });
+    } catch { if (!await safe(root)) return; }
+    try { await mkdir(directory, { mode: 0o700 }); } catch { if (!await safe(directory)) return; }
+    try { await writeNew(file, bytes); } catch { /* A corrupt or occupied cache entry is never trusted or overwritten. */ }
+  };
+  return { load, save };
+}
+
+/** A display filename derived from the declared slot and media type; identity remains the digest. */
+export function sourceFileName(slot: string, mediaType: unknown, ordinal = 0): string {
+  if (!/^[a-z][a-z0-9_-]*$/.test(slot)) throw new Error('来源槽名不能作为安全文件名；请核对工作流声明');
+  const extension = mediaType === 'application/json' ? '.json' : mediaType === 'text/plain' ? '.txt' : mediaType === 'text/markdown' ? '.md' : mediaType === 'application/xml' || mediaType === 'text/xml' ? '.xml' : '';
+  return `${slot}${ordinal ? '-' + ordinal : ''}${extension}`;
+}
+
 /** Retries read-only Hub GETs on HTTP 503 or ECONNREFUSED using Retry-After or 2/4/8s backoff up to 60s total. */
 export async function fetchBytesRetrying(
   url: string,
@@ -282,6 +316,9 @@ export async function fetchBytesRetrying(
   limit: number,
   control?: RetryControl & { oversizeMessage?: string },
 ): Promise<{ bytes: Uint8Array; digest: string | null }> {
+  const cache = await sourceCache(url, bearer, limit);
+  const hit = await cache?.load();
+  if (hit) return hit;
   const timing = control?.timing ?? DEFAULT_TIMING;
   const maxWaitMs = control?.maxWaitMs ?? READ_RETRY_BUDGET_MS;
   const startedAt = timing.now();
@@ -291,12 +328,14 @@ export async function fetchBytesRetrying(
   while (true) {
     attempts++;
     try {
-      return await fetchBytesOnce(url, bearer, limit, {
+      const result = await fetchBytesOnce(url, bearer, limit, {
         fetch: control?.fetch,
         timeoutMs: control?.timeoutMs ?? READ_TIMEOUT_MS,
         timing,
         oversizeMessage: control?.oversizeMessage,
       });
+      await cache?.save(result.bytes);
+      return result;
     } catch (error) {
       const transient = error instanceof TransientHubReplyError;
       const refused = isConnectionRefused(error);
@@ -352,6 +391,8 @@ export async function downloadRunRetrying(
   items.forEach((item, index) => outputs.push({ name: join('items', `${String(index).padStart(width, '0')}.json`), bytes: json(item) }));
 
   const fetched = new Map<string, 'file' | 'withheld'>();
+  const sourceNames = new Map<string, string>();
+  const slotCounts = new Map<string, number>();
   const withheld: string[] = [];
   for (const binding of bindings) {
     const sha = SOURCE_REFERENCE.exec(String(binding.reference))?.[1];
@@ -369,7 +410,11 @@ export async function downloadRunRetrying(
     }
     if (sha256(bytes) !== sha) throw new Error(`原件 ${sha.slice(0, 12)} 的字节与运行绑定的摘要不符，什么都没有写入`);
     fetched.set(sha, 'file');
-    outputs.push({ name: join('sources', sha), bytes });
+    const slot = typeof binding.slot === 'string' ? binding.slot : 'source';
+    const ordinal = slotCounts.get(slot) ?? 0; slotCounts.set(slot, ordinal + 1);
+    const name = join('sources', sourceFileName(slot, binding.media_type, ordinal));
+    sourceNames.set(sha, name);
+    outputs.push({ name, bytes });
   }
   outputs.push({
     name: 'sources.json',
@@ -382,7 +427,7 @@ export async function downloadRunRetrying(
         reference: binding.reference,
         label: binding.label ?? null,
         media_type: binding.media_type ?? null,
-        file: state === 'file' ? `sources/${sha}` : null,
+        file: state === 'file' ? sourceNames.get(sha!) : null,
         ...(state === 'withheld' ? { withheld: '你的读取层级不给这份原件的字节' } : {}),
       };
     })),

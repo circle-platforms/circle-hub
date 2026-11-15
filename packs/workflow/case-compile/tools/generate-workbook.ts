@@ -1,3 +1,4 @@
+import { planStateOf } from '../functions/plan-state.ts';
 import {blockReviewSources} from '../functions/block-review-identity.ts';
 import {selectedExpectedNodes} from '../functions/expected-nodes.ts';
 // Offline recipe verification and artifact generation. Every source is read from the explicitly named local file.
@@ -37,7 +38,7 @@ export function satisfiedRecipes(input: { run: unknown; result: unknown; submiss
   const coverage = record(result.coverage, '缺少核对覆盖范围'); if (coverage.complete !== true || coverage.total !== run.items.length || coverage.examined !== run.items.length) throw new Error('尚未完整核对全部原始用例');
   return run.items.map((value) => {
   const item = record(value, '原始用例不完整'); const submittedRows = (submission.items as unknown[]).filter((row) => isRecord(row) && row.item === item.id); if (submittedRows.length !== 1) throw new Error(`自动化用例没有唯一对应原始用例 ${isRecord(item.fields) ? [item.fields.autoid, item.fields.title].filter(Boolean).join(" ") : "编号和标题未知"}`); const submitted = record(submittedRows[0], '自动化用例不完整');
-  if (submitted.handling !== 'handled') throw new Error('自动化用例尚未核对正确');
+  if (!planStateOf(submitted).process || submitted.handling !== 'handled') throw new Error('自动化用例尚未核对正确');
   const partitions = record(result.partitions, '缺少原始用例的结论'); const rows = Object.values(partitions).flatMap((v) => Array.isArray(v) ? v : []);
   const matching = rows.filter((v) => isRecord(v) && v.item === item.id); if (matching.length !== 1) throw new Error('原始用例的结论缺少或重复');
   const itemResult = record(matching[0], '结果原始用例不完整');

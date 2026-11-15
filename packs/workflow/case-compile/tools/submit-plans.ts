@@ -1,3 +1,4 @@
+import { planStateOf } from '../functions/plan-state.ts';
 import { realpathSync } from 'node:fs';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -68,7 +69,7 @@ export function localFidelityBlocks(
 ): Array<{ item: string; label: string; problem: FidelityProblem }> {
   const blocks: Array<{ item: string; label: string; problem: FidelityProblem }> = [];
   for (const record of items) {
-    if (record.handling === 'skipped') continue;
+    if (!planStateOf(record).process) continue;
     const id = String(record.item);
     const info = held.get(id);
     if (!info) continue;

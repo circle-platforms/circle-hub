@@ -9519,11 +9519,13 @@
       "values": [
         {
           "code": "data_gap",
-          "label": "数据缺口"
+          "label": "数据缺口",
+          "ui": "缺资料"
         },
         {
           "code": "author_input",
-          "label": "作者输入"
+          "label": "作者输入",
+          "ui": "原始用例的问题"
         },
         {
           "code": "producer_error",
@@ -9531,7 +9533,8 @@
         },
         {
           "code": "transient",
-          "label": "瞬态"
+          "label": "瞬态",
+          "ui": "临时故障"
         },
         {
           "code": "target_side",
@@ -9539,7 +9542,8 @@
         },
         {
           "code": "unattributed",
-          "label": "待归因"
+          "label": "待归因",
+          "ui": "还没查清"
         }
       ]
     },
@@ -10387,7 +10391,8 @@
       "values": [
         {
           "code": "function",
-          "label": "函数"
+          "label": "函数",
+          "ui": "程序"
         },
         {
           "code": "model",
@@ -10395,7 +10400,8 @@
         },
         {
           "code": "human",
-          "label": "人"
+          "label": "人",
+          "ui": "使用者"
         }
       ],
       "ui": "生产者类型"

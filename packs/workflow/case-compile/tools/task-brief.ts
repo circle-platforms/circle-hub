@@ -12,7 +12,7 @@ import {
 } from '../functions/authoring-brief.ts';
 import { buildCaseIdSet, type PriorAttributionItem } from '../functions/rework-history.ts';
 import { detectCaseHeadingMarkers, escapeRegExp } from '../functions/scope.ts';
-import { CIRCLE_GENERAL_PURPOSE_NOTICE, renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
+import { renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
 import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
 import {
   buildSingleCaseStructuredBrief,
@@ -709,10 +709,8 @@ export function renderTaskDispatchPrompt(params: {
     ? `；含 ${params.longLineCount} 行超 ${VERBATIM_LINE_DISCLOSURE_THRESHOLD} 字符逐字行，见文件开头行号提示`
     : '';
   return [
-    CIRCLE_GENERAL_PURPOSE_NOTICE,
     '',
-    `请以 \`subagent_type="general-purpose"\`（角色 \`${params.roleAgentName}\`）执行 \`${params.caseRef}\` 第 ${params.round} 轮${params.roleStageLabel}。`,
-    ...(params.skillDir ? [`- 技能目录：${params.skillDir}`] : []),
+    `请以 \`subagent_type="${params.roleAgentName}"\`（角色 \`${params.roleAgentName}\`）执行 \`${params.caseRef}\` 第 ${params.round} 轮${params.roleStageLabel}。`,
     `- 任务文件：${params.taskFile}（共 ${params.lineCount} 行${longHint}）`,
     `- 目标输出：${params.outPath}`,
     `用 \`read_file\` 完整读完 \`${params.taskFile}\` 后按要求只写 \`${params.outPath}\`，完工简复路径。`,
@@ -922,7 +920,7 @@ const HELP_TEXT = [
   '注意事项：',
   '  1. 所有路径参数须在当前工作目录下，且不能为符号链接；--task-file 须为工作目录下不冲突的 .md 路径。',
   '  2. --brief 与 --scope 等输入文件必须已落盘；调用前先用 ls 核对实际文件名（总数 <10 条时通常为 0.md 而非 00.md）。',
-  '  3. 完整任务说明写入 --task-file（超 1800 字符逐字行不折行并在文件开头提示行号）；stdout 只输出极短派发提示（含真实技能目录）。',
+  '  3. 完整任务说明写入 --task-file（超 1800 字符逐字行不折行并在文件开头提示行号）；stdout 只输出极短派发提示（路径相对工作目录）。',
   '  4. 第 2 轮及以后返工（脚本编写 / 失败分析）须配合 --round <n> 与 --brief-json 或 --prior-* 历史参数。',
   "  5. 含中文或空格的参数值（如 --role、--note）用单引号括起，如 --role '脚本编写'；或使用英文标识 recompose|plan|fidelity|attribute。",
 ].join('\n');

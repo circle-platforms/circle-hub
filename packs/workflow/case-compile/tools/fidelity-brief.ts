@@ -1,3 +1,4 @@
+import { planStateOf } from '../functions/plan-state.ts';
 // The scenario-fidelity briefs of a plan directory (functions/fidelity.ts), for the audit a fresh session makes before the plans
 // are submitted (tools/fidelity.md). Length placeholders are expanded first, exactly as tools/submit-plans.ts does before
 // sending, so a brief is computed from the bytes the Hub will receive and its digest is the one the Hub recomputes. Offline: it
@@ -33,6 +34,8 @@ export async function planCases(runPath: string, plans: string): Promise<{ cases
     if (!isRecord(value) || typeof value.item !== 'string') { skipped.push({ file, reason: '不是用例自动化用例文件（没有 item）' }); continue; }
     const item = items.get(value.item);
     if (!item) { skipped.push({ file, reason: `不属于本次脚本编写的原始用例` }); continue; }
+    const eligibility = planStateOf(value);
+    if (!eligibility.process) { skipped.push({ file, reason: eligibility.reason! }); continue; }
     const data = planDataOf(value);
     const { fidelity: _judged, ...plan } = isRecord(data) ? data : {};
     const fields = isRecord(item.fields) ? item.fields : {};

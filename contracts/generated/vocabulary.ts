@@ -20,7 +20,7 @@ export const AXES = {
   dynamic_terminal: { label: '动态层终态', ui: '沙箱复验结果', owner: 'V03', values: [{ code: 'pass', label: '通过' }, { code: 'fail', label: '失败', ui: '未通过' }, { code: 'no_verdict', label: '无判定', ui: '无结论' }, { code: 'not_run', label: '未运行' }, { code: 'incomplete', label: '未完成', ui: '检查未完成' }] },
   requirement_status: { label: '要求满足状态', ui: '要求项状态', owner: 'V03', values: [{ code: 'satisfied', label: '满足' }, { code: 'unsatisfied', label: '未满足' }, { code: 'pending', label: '未决' }] },
   unsatisfied_reason: { label: '未满足原因', owner: 'V03', values: [{ code: 'no_producer', label: '无生产者', ui: '无产出方' }, { code: 'abandoned', label: '已放弃' }, { code: 'outcome_mismatch', label: '终态不符合期望', ui: '结果不符合期望' }, { code: 'independence_unknown', label: '独立性未知' }] },
-  attribution: { label: '原因归类', owner: 'V04', values: [{ code: 'data_gap', label: '数据缺口' }, { code: 'author_input', label: '作者输入' }, { code: 'producer_error', label: '生产者错误' }, { code: 'transient', label: '瞬态' }, { code: 'target_side', label: '目标侧' }, { code: 'unattributed', label: '待归因' }] },
+  attribution: { label: '原因归类', owner: 'V04', values: [{ code: 'data_gap', label: '数据缺口', ui: '缺资料' }, { code: 'author_input', label: '作者输入', ui: '原始用例的问题' }, { code: 'producer_error', label: '生产者错误' }, { code: 'transient', label: '瞬态', ui: '临时故障' }, { code: 'target_side', label: '目标侧' }, { code: 'unattributed', label: '待归因', ui: '还没查清' }] },
   partition: { label: '分区', ui: '结果分类', owner: 'V05', values: [{ code: 'delivered', label: '已交付' }, { code: 'rejected', label: '已拒收' }, { code: 'quarantined', label: '已隔离', ui: '派发结果未确认' }, { code: 'incomplete', label: '未完成' }] },
   task_result: { label: '任务结果', owner: 'V05', values: [{ code: 'passed', label: '已通过' }, { code: 'delivered_pending', label: '已交付（含未决项）' }, { code: 'delivered_unsatisfied', label: '已交付（含未满足项）' }, { code: 'rejected', label: '已拒收' }, { code: 'incomplete', label: '未完成' }, { code: 'held', label: '派发结果未确认' }, { code: 'awaiting', label: '等待提交中' }, { code: 'abandoned', label: '已放弃' }] },
   environment_state: { label: '自动化测试环境状态', owner: 'D07', values: [{ code: 'available', label: '可用' }, { code: 'in_use', label: '使用中' }, { code: 'frozen', label: '已冻结' }, { code: 'deactivated', label: '已停用' }, { code: 'unknown', label: '未知' }] },
@@ -55,7 +55,7 @@ export const AXES = {
   read_tier: { label: '读取档位', owner: 'B02', values: [{ code: 'model_readable', label: '模型可读' }, { code: 'function_bytes_only', label: '只许函数按引用读字节' }, { code: 'retain_only', label: '只保留' }] },
   home: { label: '家', owner: 'C01', values: [{ code: 'knowledge', label: '知识' }, { code: 'policy', label: '政策' }, { code: 'method', label: '方法' }, { code: 'resource', label: '资源' }] },
   ownership: { label: '归属', owner: 'C02', values: [{ code: 'generic', label: '通用' }, { code: 'product', label: '产品专用' }, { code: 'system_adapter', label: '系统适配器' }, { code: 'workflow', label: '工作流专用' }] },
-  producer_kind: { label: '生产者种类', ui: '生产者类型', owner: 'C08', values: [{ code: 'function', label: '函数' }, { code: 'model', label: '模型' }, { code: 'human', label: '人' }] },
+  producer_kind: { label: '生产者种类', ui: '生产者类型', owner: 'C08', values: [{ code: 'function', label: '函数', ui: '程序' }, { code: 'model', label: '模型' }, { code: 'human', label: '人', ui: '使用者' }] },
   determinism: { label: '确定性类', owner: 'C08', values: [{ code: 'deterministic', label: '确定性' }, { code: 'nondeterministic', label: '非确定性' }] },
   error_handling: { label: '错误处理', owner: 'W02', values: [{ code: 'repair', label: '修复' }, { code: 'reject', label: '进已拒收' }, { code: 'request', label: '发请求' }, { code: 'unknown', label: '记未知' }] },
   check_tier: { label: '检查档位', ui: '检查级别', owner: 'C05', values: [{ code: 'blocking', label: '阻断', ui: '阻断项' }, { code: 'advisory', label: '提示', ui: '提示项' }] },
@@ -298,7 +298,7 @@ export function isUnsatisfiedReason(value: unknown): value is UnsatisfiedReason 
 export const ATTRIBUTION = ['data_gap', 'author_input', 'producer_error', 'transient', 'target_side', 'unattributed'] as const;
 export type Attribution = (typeof ATTRIBUTION)[number];
 export const ATTRIBUTION_LABEL = { 'data_gap': '数据缺口', 'author_input': '作者输入', 'producer_error': '生产者错误', 'transient': '瞬态', 'target_side': '目标侧', 'unattributed': '待归因' } as const satisfies { readonly [K in Attribution]: string };
-export const ATTRIBUTION_UI = { 'data_gap': '数据缺口', 'author_input': '作者输入', 'producer_error': '生产者错误', 'transient': '瞬态', 'target_side': '目标侧', 'unattributed': '待归因' } as const satisfies { readonly [K in Attribution]: string };
+export const ATTRIBUTION_UI = { 'data_gap': '缺资料', 'author_input': '原始用例的问题', 'producer_error': '生产者错误', 'transient': '临时故障', 'target_side': '目标侧', 'unattributed': '还没查清' } as const satisfies { readonly [K in Attribution]: string };
 export const AttributionSchema = z.enum(ATTRIBUTION);
 export function isAttribution(value: unknown): value is Attribution {
   return (ATTRIBUTION as readonly unknown[]).includes(value);
@@ -648,7 +648,7 @@ export function isOwnership(value: unknown): value is Ownership {
 export const PRODUCER_KIND = ['function', 'model', 'human'] as const;
 export type ProducerKind = (typeof PRODUCER_KIND)[number];
 export const PRODUCER_KIND_LABEL = { 'function': '函数', 'model': '模型', 'human': '人' } as const satisfies { readonly [K in ProducerKind]: string };
-export const PRODUCER_KIND_UI = { 'function': '函数', 'model': '模型', 'human': '人' } as const satisfies { readonly [K in ProducerKind]: string };
+export const PRODUCER_KIND_UI = { 'function': '程序', 'model': '模型', 'human': '使用者' } as const satisfies { readonly [K in ProducerKind]: string };
 export const ProducerKindSchema = z.enum(PRODUCER_KIND);
 export function isProducerKind(value: unknown): value is ProducerKind {
   return (PRODUCER_KIND as readonly unknown[]).includes(value);

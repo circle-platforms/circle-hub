@@ -1,3 +1,4 @@
+import { planStateOf } from '../functions/plan-state.ts';
 // Safely carries unchanged case-compile plan files and valid fidelity artifacts from a superseded plan run
 // to a newly opened plan run under five fail-closed gates and post-write byte-for-byte SHA-256 verification.
 import { createHash } from 'node:crypto';
@@ -6,7 +7,7 @@ import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { canonicalJson } from '../functions/canonical-json.ts';
-import { fidelityBrief, fidelityProblems } from '../functions/fidelity.ts';
+import { fidelityBrief, fidelityProblems, fidelityJudgmentProblems } from '../functions/fidelity.ts';
 import { RUN_ID } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { planDataOf } from '../functions/subject.ts';
 import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
@@ -242,7 +243,7 @@ async function verifySourceBriefPair(
     return null;
   }
   if (canonicalJson(parsedBrief) !== canonicalJson(brief)) return null;
-  if (fidelityProblems(brief, parsedVerdict).problems.length > 0) return null;
+  if (fidelityJudgmentProblems(brief, parsedVerdict).problems.length > 0) return null;
   return {
     briefBytes: Buffer.from(briefBytes),
     verdictBytes: Buffer.from(verdictBytes),

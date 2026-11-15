@@ -7,7 +7,7 @@ import { realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fidelityProblems } from '../functions/fidelity.ts';
+import { fidelityJudgmentProblems, embedFidelity } from '../functions/fidelity.ts';
 import { formatCallError, isRecord } from '../functions/text.ts';
 import { argumentsOf } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { briefFile, planCases, verdictFile } from './fidelity-brief.ts';
@@ -35,14 +35,12 @@ export async function main(argv: string[]): Promise<number> {
       try { bytes = await readFile(verdictPath); } catch { note('未知', '原因缺资料。尚未取得自动化用例的核对结果；下一步交给独立模型核对'); continue; }
       let verdict: unknown;
       try { verdict = parsedPlanFile(verdictName, bytes); } catch (error) { note('未知', error instanceof Error ? error.message : '不是合法的 JSON'); continue; }
-      if (!isRecord(verdict) || Object.keys(verdict).some((key) => key !== 'steps' && key !== 'disclosure')) { note('未知', '原因编写模型的问题。核对结果的内容不完整；下一步由独立模型按执行器规则重新写出核对结果'); continue; }
-      const fidelity = { brief_sha256: brief.brief_sha256, steps: verdict.steps, disclosure: verdict.disclosure };
-      const judged = fidelityProblems(brief, fidelity);
+      const judged = fidelityJudgmentProblems(brief, verdict);
       const malformed = judged.problems.filter((p) => p.code === 'fidelity_shape');
       if (malformed.length) { note('未知', `${malformed.map((p) => p.message).join('；')}；下一步由独立模型按执行器规则重新写出核对结果`); continue; }
       const data = planData(value);
       if (!data) { note('未知', '原因编写模型的问题。文件里缺少自动化用例；下一步由编写模型补齐自动化用例再合并核对结果'); continue; }
-      data.fidelity = fidelity;
+      data.fidelity = embedFidelity(brief, verdict as Record<string, unknown>);
       await writeFile(join(args.plans, file), JSON.stringify(value, null, 2) + '\n');
       const count = (verdictName: string) => judged.rows.filter((row) => row.verdict === verdictName).length;
       merged.push({ file, preserved: count('preserved'), changed: count('changed'), unrealized: count('unrealized') });

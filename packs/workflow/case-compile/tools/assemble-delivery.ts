@@ -1,3 +1,4 @@
+import { isAttribution } from '../functions/generated/vocabulary.ts';
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -114,8 +115,10 @@ export function missingFactOf(exported: unknown, run: string, id: string): Missi
     if (!isRecord(entry) || entry.item !== id || !Array.isArray(entry.requirements)) continue;
     for (const requirement of entry.requirements) {
       if (!isRecord(requirement) || typeof requirement.requirement !== 'string' || requirement.requirement === 'workbook_verified' || requirement.status === 'satisfied' || !Array.isArray(requirement.layers)) continue;
-      const layer = requirement.layers.find((l) => isRecord(l) && l.attribution === 'data_gap' && isRecord(l.exit) && l.exit.action === 'request');
-      if (isRecord(layer)) return { kind: 'data_gap', plan_run: run, requirement: requirement.requirement, missing: typeof layer.missing === 'string' ? layer.missing.trim() : '' };
+      const layers = requirement.layers.filter(isRecord);
+      const gaps = layers.flatMap(layer => [layer, ...(Array.isArray(layer.gaps) ? layer.gaps.filter(isRecord) : [])]);
+      const dataGaps = gaps.filter(gap => (gap.attribution === 'data_gap' || gap.reason === 'missing_input') && typeof gap.missing === 'string' && isRecord(gap.exit) && gap.exit.action === 'request');
+      if (dataGaps.length) return { kind: 'data_gap', plan_run: run, requirement: requirement.requirement, missing: dataGaps.map(gap => gap.missing).join('；'), gaps: dataGaps.map(gap => ({ missing: gap.missing as string, reason: typeof gap.reason === 'string' ? gap.reason : undefined, exit: gap.exit })), exit: dataGaps[0].exit, attributions: [...new Set(['data_gap' as const, ...layers.flatMap(layer => isAttribution(layer.attribution) ? [layer.attribution] : [])])] };
     }
     // "The repair rounds were used up" is the run's own counter, not the reason alone: the Hub marks a requirement that has no
     // repair rounds of its own (the plan slot) repair_exhausted the first time an item is handed in as skipped, so in run 20 a
@@ -451,9 +454,11 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       }
     }
     const settled = closeUnrun(closed.cases, facts, notes, conflictGround);
-    const unproven = [...evidenceProblems(notes, deviceTexts), ...closed.problems, ...settled.problems];
-    if (unproven.length) throw new Error(unproven.join('；'));
-    assembly.cases = settled.cases;
+    assembly.cases = settled.cases.map(outcome => {
+      const note = notes.cases[outcome.autoid];
+      const problems = note && !note.absent ? evidenceProblems({ ...notes, cases: { [outcome.autoid]: note } }, { [outcome.autoid]: deviceTexts[outcome.autoid] ?? [] }) : [];
+      return problems.length ? { ...outcome, closing: undefined, pending: [...(outcome.pending ?? []), ...problems] } : outcome;
+    });
     const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run)!.run;
     const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast }, ...(scopeSummary ? { scope: scopeSummary } : {}) };
     outputs.push({ name: 'delivery_report.md', bytes: Buffer.from(deliveryReport(input)) }, { name: 'unsuccessful_cases.md', bytes: Buffer.from(unsuccessfulReport(input)) });
@@ -471,7 +476,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       pass_volume: assembly.pass ? { file: 'case.xlsx', sha256: assembly.pass.sha256, run: assembly.pass.run, job: assembly.pass.job, plan_run: assembly.pass.plan_run, items: assembly.pass.items, ...(passLast.length ? { moved_tail: passLast } : {}) } : null,
       unsuccessful_volume: assembly.unsuccessful ? { file: 'unsuccessful_cases.xlsx', sha256: unsuccessfulFile!.sha256, items: assembly.unsuccessful.items.map((autoid) => ({ autoid, plan_run: assembly.unsuccessful!.sources[autoid].plan_run, run: assembly.unsuccessful!.sources[autoid].run })), dispatched: false, ...(unsuccessfulLast.length ? { moved_tail: unsuccessfulLast } : {}) } : null,
       closings: Object.fromEntries((Object.keys(CLOSING) as Array<keyof typeof CLOSING>).map((closing) => [closing, assembly.cases.filter((c) => c.closing === closing).length])),
-      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}) })) })),
+      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.pending?.length ? { pending: c.pending, reenter: true } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}), ...(h.qualifier ? { qualifier: h.qualifier, accepted_as_fact: h.accepted_as_fact ?? false } : {}), ...(h.missing_facts ? { missing_facts: h.missing_facts } : {}), ...(h.missing_fact ? { missing_fact: h.missing_fact } : {}), ...(h.next_action ? { next_action: h.next_action } : {}) })) })),
     };
     outputs.push({ name: 'delivery.json', bytes: json(summary) });
 

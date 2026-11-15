@@ -2,7 +2,7 @@
 //   node <技能目录>/tools/install-agents.ts [--out <子代理目录>]
 import { createHash } from 'node:crypto';
 import { constants, realpathSync } from 'node:fs';
-import { lstat, mkdir, open, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, writeFile, rm } from 'node:fs/promises';
 import { basename, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
@@ -83,7 +83,8 @@ async function loadVerifiedAgents(packReal: string): Promise<{ pack: string; ver
     if (bytes.byteLength !== entry.size || sha256Hex(bytes) !== entry.sha256) {
       throw new Error(`参数无效：${entry.path} 与 pack.json 声明的摘要或字节数不一致，已中止写入。请重新安装技能包后再运行`);
     }
-    agents.push({ name: basename(entry.path), bytes, sha256: entry.sha256, size: entry.size });
+    const rendered = Buffer.from(bytes.toString('utf8').split('<技能目录>').join(packReal));
+    agents.push({ name: basename(entry.path), bytes: rendered, sha256: sha256Hex(rendered), size: rendered.byteLength });
   }
   return { pack: manifest.id, version: manifest.version, agents };
 }
@@ -122,6 +123,22 @@ export async function installAgents(options?: {
     throw new Error('无权限：目标子代理目录解析后超出当前工作目录。请改用工作目录内的真实目录后重试');
   }
 
+  const receiptFile = join(targetReal, '.case-compile.agents.json');
+  const receiptStat = await lstat(receiptFile).catch(() => null);
+  if (receiptStat && (!receiptStat.isFile() || receiptStat.isSymbolicLink())) throw new Error('已被占用：子代理安装回执不是普通文件，请运行者检查');
+  const prior = receiptStat ? JSON.parse(await readFile(receiptFile, 'utf8')) : null;
+  if (prior !== null && (!isRecord(prior) || prior.pack !== pack || !isRecord(prior.files))) throw new Error('参数无效：子代理安装回执格式或所属包不符');
+  const owned: Record<string, unknown> = prior?.files ?? {};
+  // Inspect all existing and stale files before the first write, preserving user edits.
+  const wanted = new Map(agents.map(agent => [agent.name, agent.sha256]));
+  for (const name of new Set([...wanted.keys(), ...Object.keys(owned)])) {
+    if (!AGENT_PATH_RE.test('agents/' + name)) throw new Error('参数无效：安装回执中的定义文件名不合法');
+    const path = join(targetReal, name), info = await lstat(path).catch(() => null);
+    if (!info) continue;
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error('已被占用：子代理定义不是普通文件');
+    const digest = sha256Hex(await readFile(path));
+    if (digest !== wanted.get(name) && digest !== owned[name]) throw new Error('已被占用：子代理定义已由用户修改或不属于本包，未覆盖');
+  }
   const installed: string[] = [];
   const updated: string[] = [];
   const unchanged: string[] = [];
@@ -148,6 +165,9 @@ export async function installAgents(options?: {
     await writeVerifiedRegularFile(targetReal, agent.name, agent.bytes, true);
     updated.push(agent.name);
   }
+
+  for (const name of Object.keys(owned)) if (!wanted.has(name)) await rm(join(targetReal, name), { force: true });
+  await writeFile(receiptFile, JSON.stringify({ pack, version, files: Object.fromEntries(wanted) }) + '\n', { mode: 0o600 });
 
   return {
     pack,
