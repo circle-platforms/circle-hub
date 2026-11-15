@@ -417,13 +417,13 @@ ${run.criterion_changes?.length?section('判据变更声明',table(['声明 / �
         await submissionContent(ctx, s.record, run.run, { full, href: whole, received: s.received_at }),
       ]);
     }
-    const submissions = table(['脚本合并记录', '收到时间', axisUiLabel('acceptance'), '错误', '校验结果', '脚本合并内容（未经平台验证）'], submissionRows, '没有脚本合并记录');
+    const submissions = table(['核对记录', '收到时间', axisUiLabel('acceptance'), '错误', '校验结果', '核对内容（未经平台验证）'], submissionRows, '没有核对记录');
     const paging = detail.history === undefined ? html`` : html`<p class="ch-meta">本页列出 ${detail.submissions.length} 次提交，每页最多 ${detail.history.limit} 次，较早的在上${detail.history.pinned === undefined ? '' : '；第一行是当前结果对应的提交'}；撤回提示按本页列出的结果、当前结果和生产结果判断。${detail.history.next === null ? '' : html` ${link(base, '查看更早的提交', { tab: 'process', older: detail.history.next })}`}${before === null ? '' : html` ${link(base, '回到最近的提交', { tab: 'process' })}`}</p>`;
     const calls = await ctx.deps.records.callLog.query(ctx.principal, { runId: run.run, limit: 200, newestFirst: false, cursor:param(ctx,'call_cursor')??null });
     // The first page of the call log is the waterfall's too; a later page is not.
     const process = await taskWaterfall(ctx, detail, param(ctx, 'call_cursor') === undefined ? calls.items : undefined);
     body = html`${process}
-${section('脚本合并核对', html`${paging}${submissions}`)}
+${section('核对', html`${paging}${submissions}`)}
 ${section('调用日志',html`${callTable(calls.items, ctx.admin, await names(ctx, calls.items))}<p>分页：本页 ${calls.items.length} 条${typeof calls.next==='string'?html`；${link(base,'下一页',{tab:'process',call_cursor:calls.next})}`:''}</p>`)}`;
   } else if (tab === 'sources') {
     const sourcePanels=[];for(const source of run.sources)sourcePanels.push(await sourceBlock(ctx,source.reference));
