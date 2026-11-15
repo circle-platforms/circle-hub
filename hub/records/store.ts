@@ -524,25 +524,52 @@ export class PgRecordStore implements RecordStore {
   async position(digest:string,tx?:Transaction):Promise<number|null>{const rows=await this.#db.query<{seq:string}>('SELECT seq FROM records WHERE digest=$1',[digest],tx);if(!rows.rows.length)return null;const value=Number(rows.rows[0].seq);if(!Number.isSafeInteger(value))throw new LimitError('追加序号超过安全整数范围');return value;}
   async watermark(tx?:Transaction):Promise<number>{const rows=await this.#db.query<{seq:string}>('SELECT coalesce(max(seq),0)::text AS seq FROM records',[],tx);const value=Number(rows.rows[0].seq);if(!Number.isSafeInteger(value))throw new LimitError('追加序号超过安全整数范围');return value;}
 
-  /** Holds a session advisory lock until the returned function runs. Null means another live connection already holds it. */
-  async tryHold(key: string): Promise<(() => Promise<void>) | null> {
+  /** Session loss notifies the holder synchronously; it must stop local work, not claim a remote effect stopped. */
+  async tryHold(key: string, onLost?: (error: Error) => void): Promise<(() => Promise<void>) | null> {
     if (typeof key !== 'string' || !key.isWellFormed() || !key.length || key.includes('\0') || Buffer.byteLength(key, 'utf8') > 1000) throw new RecordsError('观察锁需要有效的非空键，至多 1000 UTF-8 字节且不含 NUL');
     if (!this.#observationPool) throw new RecordsError('观察锁专用连接池尚未装配');
     const client = await this.#observationPool.connect();
     const name = `dispatch.observation:${key}`;
+    let released = false, held = false;
+    let failure: Error | undefined;
+    let releasePromise: Promise<void> | undefined;
+    const dispose = (error?: Error) => {
+      if (released) return;
+      released = true;
+      // Failed clients are destroyed, but can still emit a late socket error.
+      if (!error) client.removeListener('error', lost);
+      client.release(error);
+    };
+    const lost = (error: Error) => {
+      if (failure) return;
+      failure = error instanceof Error ? error : new RecordsError('观察锁连接已失效');
+      if (held) {
+        try { onLost?.(failure); }
+        catch (notificationError) { failure = new AggregateError([failure, notificationError], '观察锁失效通知失败'); }
+      }
+      dispose(failure);
+    };
+    client.on('error', lost);
     try {
       const result = await client.query<{ locked: boolean }>('SELECT pg_try_advisory_lock($1, hashtext($2)) AS locked', [OBSERVATION_LOCK_SPACE, name]);
-      if (result.rows[0]?.locked === false) { client.release(); return null; }
+      if (failure) throw failure;
+      if (result.rows[0]?.locked === false) { dispose(); return null; }
       if (result.rows[0]?.locked !== true) throw new RecordsError('观察锁结果未知，不能按已被持有处理');
-    } catch (error) { client.release(error instanceof Error ? error : new Error('观察锁读取失败')); throw error; }
-    let done = false;
+      held = true;
+    } catch (error) { dispose(failure ?? (error instanceof Error ? error : new RecordsError('观察锁读取失败'))); throw failure ?? error; }
     return async () => {
-      if (done) return;
-      done = true;
-      let failure: Error | undefined;
-      try { await client.query('SELECT pg_advisory_unlock($1, hashtext($2))', [OBSERVATION_LOCK_SPACE, name]); }
-      catch (error) { failure = error instanceof Error ? error : new Error('观察锁释放失败'); throw error; }
-      finally { client.release(failure); }
+      if (failure) throw failure;
+      await (releasePromise ??= (async () => {
+        try {
+          await client.query('SELECT pg_advisory_unlock($1, hashtext($2))', [OBSERVATION_LOCK_SPACE, name]);
+          if (failure) throw failure;
+          held = false;
+          dispose();
+        } catch (error) {
+          lost(error instanceof Error ? error : new RecordsError('观察锁释放失败'));
+          throw failure;
+        }
+      })());
     };
   }
 
