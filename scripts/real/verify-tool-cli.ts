@@ -22,6 +22,14 @@ export interface CliProbe {
 }
 export interface CliVerification { declarations: number; invocations: number; processes: number }
 
+// Reviewed release inventory: these files expose local APIs, not command-line entry points.
+export const CASE_COMPILE_CLI_HELPERS: ReadonlySet<string> = new Set([
+  'tools/authoring-brief.ts',
+  'tools/workspace-path.ts',
+  'tools/case-writers/extension.ts',
+  'tools/rework-inputs.ts',
+]);
+
 function fileBytes(root: string, rel: string): Buffer {
   assert.ok(rel && !isAbsolute(rel) && !rel.includes('\\') && rel.split('/').every(part => part && part !== '.' && part !== '..'), 'manifest path must be relative and canonical');
   let current = root;
