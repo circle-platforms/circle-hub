@@ -2,7 +2,7 @@
 // `tools/download-run.ts` calls `writeBriefs`, and `tools/task-brief.ts` calls `loadRunStructuredContext` / `buildSingleCaseStructuredBrief`.
 // It reads local files only, decides nothing, and never overwrites an existing brief file.
 import { realpathSync } from 'node:fs';
-import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   authoringBrief,
@@ -22,8 +22,7 @@ import { parseManifest } from '../functions/manifest.ts';
 import { parseProfile } from '../functions/profile.ts';
 import { buildCaseIdSet, type PriorAttributionItem, type PriorRoundRecord } from '../functions/rework-history.ts';
 import { parseRuntimeContract } from '../functions/runtime-contract.ts';
-import { isRecord } from '../functions/text.ts';
-import { writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { CallFailure, isRecord } from '../functions/text.ts';
 import { loadCasePriorRounds } from './rework-inputs.ts';
 import {
   isInsideRoot,
@@ -32,7 +31,7 @@ import {
   resolveInsideCwd,
 } from './workspace-path.ts';
 
-const parsed = (name: string, text: string): unknown => { try { return JSON.parse(text); } catch { throw new Error(`${name} 不是完整的 JSON`); } };
+const parsed = (name: string, text: string): unknown => { try { return JSON.parse(text); } catch { throw new CallFailure("invalid_parameters", `${name} 不是完整的 JSON`, "重新下载该运行对应的完整 JSON 原件，再按原文件名生成简报"); } };
 
 /** The command forms and the parameter a manual row states, when the entry's data carries them whole. */
 const parameterOf = (data: unknown): { parameter?: { commands: string[]; name: string } } => {
@@ -44,12 +43,12 @@ const parameterOf = (data: unknown): { parameter?: { commands: string[]; name: s
 /** The knowledge root a run download wrote: every node by canonical path, and the line each node's block starts at in the text files. Null when the run brought no root. */
 export async function readKnowledge(directory: string): Promise<BriefKnowledge | null> {
   let raw: string;
-  try { raw = await readFile(join(directory, 'knowledge', 'nodes.jsonl'), 'utf8'); } catch { return null; }
+  try { raw = await readFile(join(directory, 'knowledge', 'nodes.jsonl'), 'utf8'); } catch (error) { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null; throw error; }
   const [head, ...rows] = raw.split('\n').filter((line) => line.length > 0).map((line) => parsed('knowledge/nodes.jsonl', line));
-  if (!isRecord(head) || head.schema !== 'run-knowledge@1' || typeof head.root !== 'string') throw new Error('knowledge/nodes.jsonl 不是运行下载写的手册和命令树');
+  if (!isRecord(head) || head.schema !== 'run-knowledge@1' || typeof head.root !== 'string') throw new CallFailure("invalid_parameters", 'knowledge/nodes.jsonl 不是运行下载写的手册和命令树', "重新下载该运行的知识根，保留 run-knowledge@1 首行及锁定 root");
   const nodes = new Map<string, BriefNode>();
   for (const row of rows) {
-    if (!isRecord(row) || typeof row.path !== 'string' || !Array.isArray(row.children) || !Array.isArray(row.entries)) throw new Error('knowledge/nodes.jsonl 里有不合式的节点');
+    if (!isRecord(row) || typeof row.path !== 'string' || !Array.isArray(row.children) || !Array.isArray(row.entries)) throw new CallFailure("invalid_parameters", 'knowledge/nodes.jsonl 里有不合式的节点', "重新下载完整知识根；每个节点须有 path、children 数组和 entries 数组");
     nodes.set(canonicalPath(row.path), {
       path: row.path,
       children: row.children.filter(isRecord).map((child) => ({ name: String(child.name), path: String(child.path) })),
@@ -94,7 +93,7 @@ export async function writeBriefs(directory: string): Promise<BriefReport> {
     if (!brief) { report.without_record++; continue; }
     if (present.has(`${index}.md`)) { report.kept++; continue; }
     await mkdir(join(directory, 'briefs'), { recursive: true, mode: 0o700 });
-    await writeNew(join(directory, 'briefs', `${index}.md`), Buffer.from(brief.text));
+    await writeFile(join(directory, 'briefs', `${index}.md`), Buffer.from(brief.text), { flag: 'wx', mode: 0o600 });
     report.briefs++;
   }
   return report;
@@ -273,16 +272,16 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
   const directory = runResolved.canonical;
   const ctx = await loadRunStructuredContext(directory);
   if (!ctx) {
-    throw new Error('不存在：运行目录中没有 knowledge/nodes.jsonl，无法生成结构化编写简报');
+    throw new CallFailure("not_found", '运行目录中没有 knowledge/nodes.jsonl，无法生成结构化编写简报', "先下载该运行的知识根到 knowledge/nodes.jsonl，再生成结构化简报");
   }
 
   const round = options.round ?? 1;
   if (!Number.isInteger(round) || round < 1) {
-    throw new Error(`参数无效：--round 必须为正整数（收到 ${round}）`);
+    throw new CallFailure("invalid_parameters", `--round 必须为正整数（收到 ${round}）`, "把 --round 改为大于等于 1 的整数；第 1 轮不传上一轮历史");
   }
   const mode: CompileBriefMode = options.mode ?? (round > 1 ? 'rework_device' : 'initial');
   if (!VALID_MODES.has(mode)) {
-    throw new Error(`参数无效：--mode 必须是 initial|rework_gate|rework_device|fidelity_fix`);
+    throw new CallFailure("invalid_parameters", `--mode 必须是 initial|rework_gate|rework_device|fidelity_fix`, "把 --mode 明确写为 initial、rework_gate、rework_device 或 fidelity_fix 之一");
   }
 
   const outRel = options.briefOut ? resolveInsideCwd(cwd, options.briefOut, '--brief-out').relative : join(runResolved.relative, 'briefs');
@@ -353,8 +352,8 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
       continue;
     }
 
-    await writeNew(join(outDir, jsonName), Buffer.from(JSON.stringify(compiled, null, 2) + '\n'));
-    await writeNew(join(outDir, mdName), Buffer.from(renderCompileBriefMd(compiled)));
+    await writeFile(join(outDir, jsonName), Buffer.from(JSON.stringify(compiled, null, 2) + '\n'), { flag: 'wx', mode: 0o600 });
+    await writeFile(join(outDir, mdName), Buffer.from(renderCompileBriefMd(compiled)), { flag: 'wx', mode: 0o600 });
     report.json_files.push(join(outDir, jsonName));
     report.md_files.push(join(outDir, mdName));
   }
