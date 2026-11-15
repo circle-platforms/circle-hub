@@ -144,8 +144,9 @@ test('a macOS dry run plans init with HTTPS, key, tls and a bundle deploy with t
   assert.match(out, /tls init/);
   assert.match(out, /deploy --bundle \/srv\/synthetic-hub\/runtime\/bundles\/circle-hub-0\.3\.0-darwin-arm64-<commit> --node \/srv\/synthetic-hub\/runtime\/bundles\/circle-hub-0\.3\.0-darwin-arm64-<commit>\/node\/bin\/node/);
   assert.match(out, /https:\/\/127\.0\.0\.1:7443\/console\//);
-  assert.match(out, /部署定义样例：\/srv\/synthetic-hub\/current\/docs\/examples\/quickstart-deployment\.json/);
-  assert.match(out, /下一步：circle-hub apply "\/srv\/synthetic-hub\/current\/docs\/examples\/quickstart-deployment\.json"/);
+  // Dry-run never creates an administrator, so the first-install apply tip stays off (file may also be absent).
+  assert.doesNotMatch(out, /部署定义样例：/);
+  assert.doesNotMatch(out, /下一步：circle-hub apply/);
   assert.doesNotMatch(out, /useradd|apparmor_parser/, 'no Linux step on macOS');
 });
 
@@ -159,19 +160,30 @@ test('a Linux dry run plans the service account, lingering, the sandbox tools, t
   assert.match(out, /CIRCLE_HUB_ALLOWED_HOSTS=192\.0\.2\.20,hub\.example/);
   assert.match(out, /--https-port 7443 --https-host 192\.0\.2\.20/);
   assert.match(out, /https:\/\/192\.0\.2\.20:7443\/console\//);
-  assert.match(out, /部署定义样例：\/var\/lib\/circle-hub\/current\/docs\/examples\/quickstart-deployment\.json/);
-  assert.match(out, /下一步：circle-hub apply "\/var\/lib\/circle-hub\/current\/docs\/examples\/quickstart-deployment\.json"/);
+  assert.doesNotMatch(out, /部署定义样例：/);
+  assert.doesNotMatch(out, /下一步：circle-hub apply/);
 });
 
-test('the release bundle already carries the quickstart deployment definition via git archive of the commit', async () => {
+test('git archive of the commit includes the quickstart deployment definition the installer may print', async () => {
   // tools/build-bundle.ts archives the whole commit into app/; deploy copies app/ to <data>/current/. No separate copy step.
+  const root = fileURLToPath(new URL('../..', import.meta.url));
   const example = fileURLToPath(new URL('../../docs/examples/quickstart-deployment.json', import.meta.url));
   assert.equal(JSON.parse(await readFile(example, 'utf8')).schema, 'deployment@2');
-  const listed = spawnSync('git', ['-C', fileURLToPath(new URL('../..', import.meta.url)), 'ls-files', '--', 'docs/examples/quickstart-deployment.json'], { encoding: 'utf8' });
+  const listed = spawnSync('git', ['-C', root, 'ls-files', '--', 'docs/examples/quickstart-deployment.json'], { encoding: 'utf8' });
   assert.equal(listed.status, 0, listed.stderr);
   assert.equal(listed.stdout.trim(), 'docs/examples/quickstart-deployment.json');
+  const archived = spawnSync('git', ['-C', root, 'archive', '--format=tar', 'HEAD', '--', 'docs/examples/quickstart-deployment.json'], { encoding: 'buffer', maxBuffer: 2 * 1024 * 1024 });
+  assert.equal(archived.status, 0, String(archived.stderr ?? ''));
+  const names = spawnSync('tar', ['-tf', '-'], { input: archived.stdout, encoding: 'utf8' });
+  assert.equal(names.status, 0, names.stderr);
+  assert.match(names.stdout, /(^|\/)docs\/examples\/quickstart-deployment\.json$/m);
   const source = await readFile(SCRIPT, 'utf8');
   assert.match(source, /QUICKSTART_DEFINITION="\$\{DATA\}\/current\/docs\/examples\/quickstart-deployment\.json"/);
+  // First install only, and only when the release carries the file; next-step names the live admin for the fixed sample user.
+  assert.match(source, /HUB_INSTALL_ADMIN_CREATED\}" = 1 \] && as_hub test -f "\$\{QUICKSTART_DEFINITION\}"/);
+  assert.match(source, /本次管理员是 \$\{HUB_INSTALL_ADMIN_NAME\}/);
+  // macOS PATH tip precedes the apply tip so the printed command is usable.
+  assert.ok(source.indexOf('把 ${WRAPPER_DIR} 加进 PATH') < source.indexOf('下一步：circle-hub apply'), 'PATH tip before apply tip');
 });
 
 test('other systems, other architectures and contradictory options are refused before anything happens', () => {

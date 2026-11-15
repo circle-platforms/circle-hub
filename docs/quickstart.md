@@ -6,7 +6,7 @@ nav_order: 2
 
 本指南按当前版本的真实命令，在本地或临时实验目录从零启动一个 Circle Hub：安装并建好管理员 → 用一份部署定义 `apply` → 连接 Circle → 跑通第一次运行。
 
-> 本文全部命令均针对当前 `circle-hub` 实现在临时合成数据根上实敲验证；文中的最小定义文件与 `docs/examples/quickstart-deployment.json` **同一份字节**（由测试核对）。
+> 本文全部命令均针对当前 `circle-hub` 实现在临时合成数据根上实敲验证（含附节的 `pack assign` 形式）；文中的最小定义文件与 `docs/examples/quickstart-deployment.json` **同一份字节**（由测试核对）。英文精简版见 [Quickstart](quickstart.en.md)；有出入以本页为准。
 >
 > - 支持平台：**macOS 与 Linux（arm64 / x64）**，Node 24；不支持 Windows。
 > - 只使用合成测试数据、回环地址 `127.0.0.1` 与文档示例网段 `192.0.2.0/24`；绝不在文档、测试或命令行参数中写入真实账号、密钥值或真实业务地址。
@@ -41,7 +41,7 @@ mkdir -p "$CIRCLE_HUB_DATA_DIR"
 
 ## 第二步：写一份部署定义并 `apply`
 
-服务已在跑、首位管理员已建好之后，用**一份部署定义**代替逐条 `pack grant-publish` / `pack publish` / `pack assign` / `doc put`：
+首位管理员已建好、数据库可用之后（不必先 `serve`），用**一份部署定义**代替逐条 `pack grant-publish` / `pack publish` / `pack assign` / `doc put`：
 
 1. 检入的最小定义文件（合成名字，可直接用）：仓库内 [`docs/examples/quickstart-deployment.json`](examples/quickstart-deployment.json)。相对该文件的 `directory` 指向仓库里的 `packs/workflow/test-bed`；`schema` 必须是 `deployment@2`（见 `contracts/src/deployment.ts`）。
 2. 在仓库根目录执行：
@@ -182,7 +182,7 @@ chmod -R u+w /tmp/ch-quickstart/d && rm -rf /tmp/ch-quickstart
 ./bin/circle-hub pack grant-publish admin
 ./bin/circle-hub pack publish packs/workflow/test-bed --stage --dry-run
 ./bin/circle-hub pack publish packs/workflow/test-bed --stage
-./bin/circle-hub pack assign test-bed --user=admin
+./bin/circle-hub pack assign admin test-bed
 # 或：./bin/circle-hub pack assign test-bed --team=<团队ID>
 ./bin/circle-hub doc put bed-topology packs/workflow/test-bed/examples/bed-topology.json
 ./bin/circle-hub doc list
