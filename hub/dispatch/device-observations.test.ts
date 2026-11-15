@@ -39,7 +39,7 @@ test('a device no executor seat points at, or of another inventory, is named as 
   t.after(() => c.close());
   const result = await c.service.observeDevices(c.owner, 'run_synthetic', [{ inventory: 'c'.repeat(64), device: '/devices/0', label: 'bed/other' }, { inventory, device: '/devices/9', label: 'bed/absent' }]);
   assert.deepEqual(result.observed, []);
-  assert.match(result.missing ?? '', /bed\/other：没有绑定同一份清单、指向这台设备的执行器版本探针；bed\/absent：/);
+  assert.match(result.missing ?? '', /bed\/other、bed\/absent 共 2 台不接收命令，未读取构建版本/);
   assert.equal(c.endpoint.calls.filter((e) => e.params.name === 'inspect_seat').length, 0);
 });
 

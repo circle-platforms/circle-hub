@@ -4,7 +4,7 @@
 import type { DynamicTerminal, Nature, StaticTerminal } from '../../../contracts/generated/vocabulary.ts';
 import { html, href, icon, type Html, type ICONS } from './html.ts';
 
-import {time,fullTime} from './format.ts';
+import {time,fullTime,localMinute} from './format.ts';
 import {count} from './numbers.ts';
 import {figure} from './components.ts';
 import {tooltip,panel, badge, facts, commandLink as sharedCommandLink,commandModal as sharedCommandModal} from './presentation.ts';
@@ -116,7 +116,7 @@ export function duration(ms: number): string {
 
 /** A compact display time whose full instant remains available in its tooltip and datetime. */
 export const when=time;
-export {fullTime};
+export {fullTime, localMinute};
 
 /** The time of day only, for axes and today's lists. */
 export function clock(iso: string | number): string {

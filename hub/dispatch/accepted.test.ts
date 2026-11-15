@@ -124,7 +124,7 @@ test('a dispatch refused at the effect boundary before any reservation says that
   // The answer that tries again first says what the refused job came to (issue 142), then reports the new one.
   const [earlier, retried] = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.equal(earlier.job, note.job); assert.match(earlier.text, /未发出.*本运行没有覆盖测试环境/); assert.match(earlier.text, /这次重交 Hub 已再试/);
-  assert.ok(retried.job && retried.job !== note.job, JSON.stringify(retried)); assert.match(retried.text, /已再次按任务包的效果行开始上机验证/);
+  assert.ok(retried.job && retried.job !== note.job, JSON.stringify(retried)); assert.match(retried.text, /已再次按工作流的规定自动开始上机验证/);
   await settled(c);
   assert.equal(c.calls.filter((call) => call === 'send_blob').length, 1);
   const [after] = (await acceptedDispatch(c.kit, c.service, c.run, true)).filter((row) => row.job === retried.job);
@@ -136,7 +136,9 @@ test('the accepted answer reports the reserved job, then a repeat reads its prog
   const c = await setup(); t.after(() => c.close());
   assert.deepEqual(await acceptedDispatch(c.kit, c.service, c.run, false), []);
   const reserved = await acceptedDispatch(c.kit, c.service, c.run, true);
-  assert.equal(reserved.length, 1, JSON.stringify(reserved)); assert.ok(reserved[0].job); assert.match(reserved[0].text, /已按任务包的效果行开始上机验证/);
+  assert.equal(reserved.length, 1, JSON.stringify(reserved)); assert.ok(reserved[0].job); assert.match(reserved[0].text, /已按工作流的规定自动开始上机验证/);
+  assert.match(reserved[0].text, /下一步由模型稍后把这次脚本合并原样再交一次，读取进展/);
+  assert.doesNotMatch(reserved[0].text, /任务包|状态未知|原因还没查清/);
   const [job] = await settled(c);
   const progress = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.equal(progress.length, 1); assert.equal(progress[0].job, job.job);
@@ -172,8 +174,8 @@ test('a repeat reads the attempt still running instead of starting another, and 
   const c = await setup(); t.after(() => c.close());
   let release: (value: Attempted) => void = () => {}; let started = 0;
   c.service.dispatchAccepted = () => { started++; return new Promise<Attempted>((resolve) => { release = resolve; }); };
-  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^Hub 正在做上机验证前核对/);
-  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^Hub 正在做上机验证前核对/);
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^Hub 正在做上机验证前的核对/);
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^Hub 正在做上机验证前的核对/);
   assert.equal(started, 1, 'a repeat does not start a second attempt');
   release({ started: false, executor: c.executor.id, reason: '合成：这份产物已经由作业 x 派发过，作业已结束；同一份字节只派发一次' });
   await new Promise((resolve) => setImmediate(resolve));
@@ -185,7 +187,7 @@ test('a refusal the runner can remove is answered once, and the repeat after it 
   const c = await setup(); t.after(() => c.close());
   let started = 0;
   c.service.dispatchAccepted = async () => { started++; await new Promise((resolve) => setTimeout(resolve, 30)); return { started: false, reason: '合成：自动化测试环境正被作业占用' }; };
-  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^Hub 正在做上机验证前核对/);
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^Hub 正在做上机验证前的核对/);
   await new Promise((resolve) => setTimeout(resolve, 80));
   assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^上机验证没有发出：上机前的放行条件尚未满足/);
   assert.equal(started, 1);
@@ -222,7 +224,7 @@ for (const [mode, reason] of [['busy', /目标拒绝了提交之前的调用（�
     assert.equal(again.length, 2, JSON.stringify(again));
     assert.equal(again[0].job, first.job);
     assert.match(again[0].text, /未发出/); assert.match(again[0].text, reason); assert.match(again[0].text, /这次重交 Hub 已再试/);
-    assert.ok(again[1].job && again[1].job !== first.job, 'a new job'); assert.match(again[1].text, /已再次按任务包的效果行开始上机验证/);
+    assert.ok(again[1].job && again[1].job !== first.job, 'a new job'); assert.match(again[1].text, /已再次按工作流的规定自动开始上机验证/);
     for (const note of again) assert.doesNotMatch(note.text, /circle-hub|job resume|job dispose|192\.0\.2\./, 'no administrator command and nothing of the target');
     await ended(c, 2);
     assert.ok(c.calls.length > reached, 'the repeat reached the target again');

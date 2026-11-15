@@ -88,6 +88,7 @@ describe('createTestHub', () => {
     assert.ok(run.sources.some((s) => s.role === 'subject' && s.external?.startsWith(`agile:mindmap:${AGILE_DOCUMENT}`)));
     assert.equal(stubs.agile.logins, 1, 'one login with the stored digest');
     const startText = started.content[0].text ?? '';
+    // start_run pending projection lines keep 「，」; conclusions use 「：」(决定 20:32)
     assert.ok(run.items.every(item => startText.includes(`原始用例 ${item.label}，1 个期望结果；状态未知`)));
     assert.ok(run.items.every(item => item.summary === '1 个期望结果'));
     assert.match(String(started.structuredContent.record), /^rec:[0-9a-f]{64}$/);
@@ -156,8 +157,8 @@ describe('createTestHub', () => {
     const result = started.structuredContent.result as { reference: string; counts: Record<string, number> };
     assert.match(result.reference, /^rec:[0-9a-f]{64}$/, 'the answer carries the result the engine computed');
     const lines = (started.content[0].text ?? '').split('\n');
-    assert.match(lines.find(line => line.startsWith('原始用例 用例一，')) ?? '', /状态已确认；判断正确/);
-    assert.match(lines.find(line => line.startsWith('原始用例 用例二，')) ?? '', /状态已确认；判断错误；原因原始用例的问题；下一步/);
+    assert.match(lines.find(line => line.startsWith('原始用例 用例一：')) ?? '', /状态已确认；判断正确/);
+    assert.match(lines.find(line => line.startsWith('原始用例 用例二：')) ?? '', /状态已确认；判断错误；原因原始用例的问题；下一步/);
     assert.doesNotMatch(lines.join('\n'), /分区：|要求项（|问题与未知|r1:c2|rec:/);
     const read = await client.call('get_nodes', { reference: result.reference });
     assert.equal(read.isError, false, read.content[0].text);
@@ -166,7 +167,7 @@ describe('createTestHub', () => {
     assert.equal(originalCases.length, 2);
     assert.deepEqual(originalCases.flatMap(item => item.requirements.filter(requirement => requirement.requirement === 'titles').map(requirement => requirement.status)).sort(), ['satisfied', 'unsatisfied']);
     assert.ok(originalCases.some(item => item.item === 'r1:c2'), 'the item is in the stored result');
-    assert.match(read.content[0].text ?? '', /^原始用例 用例二，.*状态已确认；判断错误/m);
+    assert.match(read.content[0].text ?? '', /^原始用例 用例二：.*状态已确认；判断错误/m);
     await client.close();
   });
 

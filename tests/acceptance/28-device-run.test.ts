@@ -144,7 +144,7 @@ async function verify(p: Awaited<ReturnType<typeof plan>>, index = 0, changed = 
 // The job the Hub dispatched for an accepted verification run. It runs on after the answer, so it is read, as the runner's
 // repeated submission reads it, until the journal records its end (never inferred from the name of the last phase).
 async function settled(v: { run: string; result: z.infer<typeof SubmitResultOutput> | null }): Promise<JobStatus> {
-  const note = v.result?.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(v.result?.dispatch)); assert.match(note.text, /已按任务包的效果行开始上机验证/);
+  const note = v.result?.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(v.result?.dispatch)); assert.match(note.text, /已按工作流的规定自动开始上机验证/);
   let read: unknown;
   for (let i = 0; i < 600; i++) {
     const job = (await readRunJobs(bed.hub.records, dispatch(), bed.hub.admin.principal, v.run)).find(row => row.job === note.job); read = job;
