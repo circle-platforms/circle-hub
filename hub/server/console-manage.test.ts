@@ -394,7 +394,7 @@ test('发布工作流 checks the upload with the dry run first, then publishes t
   const check = calls.at(-1)!;
   assert.deepEqual([check.argv[0], check.argv[1], check.argv[3], check.argv[4]], ['pack', 'publish', '--stage', '--dry-run'], 'the check is the dry run of publish');
   assert.ok(actsAs(check.input, 'usr_admin'), 'as the signed-in administrator');
-  assert.match(answer.body, /发布校验已通过/);
+  assert.match(answer.body, /发布校验正确/);
   assert.match(answer.body, /还没有已发布的版本，没有可比较的当前版本/, 'the comparison with the version in use is on the page');
   assert.match(answer.body, /action="\/console\/admin\/do\/pack-publish"/);
   assert.match(answer.body, /等待发布中/);
@@ -422,7 +422,7 @@ test('a failing check offers no 发布 step and keeps nothing; content already p
   const cookie = `circle_hub_session=${session}`;
   const failing = await stage(cookie, { ...PACK, id: 'failing-pack' });
   assert.equal(failing.answer.status, 409);
-  assert.match(failing.answer.body, /未通过发布校验/);
+  assert.match(failing.answer.body, /发布校验有错误/);
   assert.match(failing.answer.body, /publish\.unsampled/);
   assert.doesNotMatch(failing.answer.body, /pack-publish/, 'no 发布 form');
   await assert.rejects(access(failing.dir), 'nothing is kept');

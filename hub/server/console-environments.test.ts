@@ -132,20 +132,20 @@ describe('runtime environments', () => {
     assert.match(rowOf(page, '合成运行环境己'), /暂不可用/);
     assert.match(rowOf(page, '合成运行环境甲'), new RegExp(`/console/runs/${RUN}`), 'the latest dispatch leads to its task');
     assert.match(rowOf(page, '合成运行环境乙'), /使用中/);
-    assert.match(rowOf(page, '合成运行环境乙'), new RegExp(`作业 ${job(2).slice(0, 12)}（效果结局：已发出）`));
+    assert.match(rowOf(page, '合成运行环境乙'), new RegExp(`执行 ${job(2).slice(0, 12)}（效果结局：已发出）`));
     assert.match(rowOf(page, '合成运行环境乙'), /未上报/, 'a session that reported no version');
-    assert.match(rowOf(page, '合成运行环境乙'), /尚无派发/);
+    assert.match(rowOf(page, '合成运行环境乙'), /尚无执行/);
     assert.match(rowOf(page, '合成运行环境丙'), /已冻结/);
-    assert.match(rowOf(page, '合成运行环境丙'), /派发结果未确认，等待处置中/);
+    assert.match(rowOf(page, '合成运行环境丙'), /结果未确认，等待处置中/);
     assert.equal(rowOf(page, '合成运行环境丙').match(/>未知</g)?.length, 2, 'a version and a latest dispatch not read are unknown, not none');
-    assert.doesNotMatch(rowOf(page, '合成运行环境丙'), /未上报|尚无派发/);
+    assert.doesNotMatch(rowOf(page, '合成运行环境丙'), /未上报|尚无执行/);
     assert.doesNotMatch(rowOf(page, '合成运行环境丙'), /<button|ch-btn|<form/);
     const frozen=(await send('/console/connections?environment='+id(3),{headers:{cookie:await signIn(server.admin.token)}})).body;
-    assert.match(frozen,/处置派发结果/);
+    assert.match(frozen,/处置执行结果/);
     assert.match(frozen, new RegExp(`circle-hub job status ${job(3)}`), 'the disposition starts from the job status on the command line');
     assert.match(frozen, new RegExp(`href="/console/runs/${RUN}">查看任务`), 'and its task is one link away');
     assert.match(rowOf(page, '合成运行环境丁'), /已冻结/);
-    assert.match(rowOf(page, '合成运行环境丁'), new RegExp(`作业 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`));
+    assert.match(rowOf(page, '合成运行环境丁'), new RegExp(`执行 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`));
     const held=(await send('/console/connections?environment='+id(4),{headers:{cookie:await signIn(server.admin.token)}})).body;
     assert.match(held,/确认已恢复/);
     assert.match(held, new RegExp(`circle-hub bed hold clear ${id(4)}`), 'the dialog gives the command for the administrator');
@@ -174,7 +174,7 @@ describe('runtime environments', () => {
     assert.match(rowOf(page, '合成运行环境甲'), /gateway 2\.4\.1/);
     assert.match(rowOf(page, '合成运行环境甲'), /3 次.+中位 120 毫秒/);
     assert.match(rowOf(page, '合成运行环境己'), /暂不可用/);
-    assert.match(rowOf(page, '合成运行环境丁'), new RegExp(`作业 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`));
+    assert.match(rowOf(page, '合成运行环境丁'), new RegExp(`执行 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`));
     assert.match(rowOf(page, '合成运行环境庚'), /占用该运行环境的作业暂不可读/);
     const memberPage = await send('/console/connections?tab=environments', { headers: { cookie: await signIn((await member()).token) } });
     assert.equal(memberPage.status, 200);
@@ -235,7 +235,7 @@ describe('runtime environments', () => {
     // The dispatch step is part of the execution process, the 过程 tab of the task page (decision 151).
     const page = (await send(`/console/runs/${run}?tab=process`, { headers: { cookie: await signIn(server.admin.token) } })).body;
     assert.match(page, /运行环境 合成运行环境丙（当前已冻结） · 运行环境已冻结，不可重发/);
-    assert.match(page, /运行环境 合成运行环境乙（当前使用中） · 等待派发结果中，不可重发/);
+    assert.match(page, /运行环境 合成运行环境乙（当前使用中） · 等待执行结果中，不可重发/);
     assert.equal(page.split('以表格查看')[1].match(/运行环境 合成运行环境/g)?.length, 2, 'a job whose reservation names no environment names none');
   });
 });
