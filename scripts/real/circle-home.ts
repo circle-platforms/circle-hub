@@ -8,7 +8,7 @@
 // Refresh only the installed guard files of an existing skills/ops home (default dry-run; --apply writes after backup + preflight):
 //   node scripts/real/circle-home.ts refresh-guards --home <dir> [--apply]
 import { createHash } from 'node:crypto';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pick, readEnvFile, type EnvEntry } from './lib/env-file.ts';
@@ -330,9 +330,25 @@ if (process.argv.includes('--schemas')) {
 `;
 }
 
+/** Write via a sibling temp file then rename, so a crash mid-write does not leave a truncated target (G3). */
 function writePrivate(path: string, content: string): void {
-  writeFileSync(path, content, { mode: 0o600 });
-  chmodSync(path, 0o600);
+  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, content, { mode: 0o600 });
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, path);
+}
+
+/** Restore hooks/ by staging the backup beside it, then renaming into place (no empty hooks/ window) (G3). */
+function restoreHooksFromBackup(home: string, backup: string): void {
+  const live = join(home, 'hooks');
+  const staging = join(home, `hooks.restore.${process.pid}`);
+  const outgoing = join(home, `hooks.outgoing.${process.pid}`);
+  rmSync(staging, { recursive: true, force: true });
+  rmSync(outgoing, { recursive: true, force: true });
+  cpSync(backup, staging, { recursive: true });
+  if (existsSync(live)) renameSync(live, outgoing);
+  renameSync(staging, live);
+  rmSync(outgoing, { recursive: true, force: true });
 }
 
 function sha256Text(text: string): string {
@@ -404,7 +420,7 @@ export interface RefreshGuardsResult {
 }
 
 /** Dry-run (default) or apply a guards-only refresh for an existing skills/ops home. */
-export function refreshGuards(homeRaw: string, options: { apply?: boolean } = {}): RefreshGuardsResult {
+export function refreshGuards(homeRaw: string, options: { apply?: boolean; out?: (line: string) => void } = {}): RefreshGuardsResult {
   const apply = options.apply === true;
   const installed = resolveInstalledGuard(homeRaw);
   const { home, workdir, profile } = installed;
@@ -418,43 +434,55 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean } = {}
     return { relative: file.relative, status: (sha256Text(current) === sha256Text(file.content) ? 'same' : 'change') as 'same' | 'change' };
   });
 
-  const lines: string[] = [
-    `只更新守卫：${home}（${profile}）`,
-    `工作目录：${workdir}`,
-    `入口保持：hooks/${hookName}（不改 hooks.json / settings / credentials / secrets / skills）`,
-  ];
+  const lines: string[] = [];
+  const emit = (line: string) => {
+    lines.push(line);
+    options.out?.(line);
+  };
+  emit(`只更新守卫：${home}（${profile}）`);
+  emit(`工作目录：${workdir}`);
+  emit(`入口保持：hooks/${hookName}（不改 hooks.json / settings / credentials / secrets / skills）`);
   for (const change of changes) {
-    lines.push(`- ${change.status === 'same' ? '不变' : change.status === 'add' ? '新增' : '将改'} ${change.relative}`);
+    emit(`- ${change.status === 'same' ? '不变' : change.status === 'add' ? '新增' : '将改'} ${change.relative}`);
   }
 
   if (!apply) {
-    lines.push('演练结束：未改任何文件。真改请加 --apply（会先备份 hooks/，装完自动核对，不过则恢复）。');
+    emit('演练结束：未改任何文件。真改请加 --apply（会先备份 hooks/，装完自动核对，不过则恢复）。');
     return { home, profile, workdir, apply: false, changes, lines };
   }
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backup = join(home, `hooks.bak.${stamp}`);
+  emit(`步骤：备份 hooks/ → ${basename(backup)}`);
   cpSync(join(home, 'hooks'), backup, { recursive: true });
-  lines.push(`已备份 hooks/ → ${basename(backup)}`);
+  emit(`已备份 hooks/ → ${basename(backup)}`);
 
   try {
+    emit('步骤：写入守卫文件（逐文件先写临时再改名）');
     writeGuardFiles(home, workdir, profile);
+    emit('步骤：核对装着的守卫');
     const report = runPreflight(home);
-    for (const line of formatPreflightReport(report)) lines.push(line);
+    for (const line of formatPreflightReport(report)) emit(line);
     if (!report.ok) {
-      rmSync(join(home, 'hooks'), { recursive: true, force: true });
-      cpSync(backup, join(home, 'hooks'), { recursive: true });
-      lines.push('核对未过：已从备份恢复 hooks/，主目录其余文件未动。');
+      emit('步骤：核对未过，从备份恢复 hooks/');
+      restoreHooksFromBackup(home, backup);
+      emit('核对未过：已从备份恢复 hooks/，主目录其余文件未动。');
       return { home, profile, workdir, apply: true, changes, backup, preflightOk: false, restored: true, lines };
     }
-    lines.push('核对通过：守卫已更新。');
+    emit('核对通过：守卫已更新。');
     return { home, profile, workdir, apply: true, changes, backup, preflightOk: true, restored: false, lines };
   } catch (error) {
+    emit(`步骤：失败，尝试从备份恢复 hooks/（${(error as Error).message}）`);
     if (existsSync(backup)) {
-      rmSync(join(home, 'hooks'), { recursive: true, force: true });
-      cpSync(backup, join(home, 'hooks'), { recursive: true });
+      try {
+        restoreHooksFromBackup(home, backup);
+        emit(`失败并已从备份恢复：${(error as Error).message}`);
+      } catch (restoreError) {
+        emit(`失败且恢复也出错：${(error as Error).message}；恢复错误：${(restoreError as Error).message}；备份在 ${basename(backup)}`);
+      }
+    } else {
+      emit(`失败且没有可用备份：${(error as Error).message}`);
     }
-    lines.push(`失败并已尝试恢复：${(error as Error).message}`);
     return { home, profile, workdir, apply: true, changes, backup, preflightOk: false, restored: true, lines };
   }
 }
@@ -572,8 +600,8 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
   try {
     if (argv[0] === 'refresh-guards') {
       const options = parseRefreshGuardsArgs(argv.slice(1));
-      const result = refreshGuards(options.home, { apply: options.apply });
-      for (const line of result.lines) out(line);
+      // Stream each step as it happens so an interrupt still shows where it stopped (G3).
+      const result = refreshGuards(options.home, { apply: options.apply, out });
       if (result.apply && result.preflightOk === false) return 1;
       return 0;
     }

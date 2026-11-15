@@ -69,9 +69,13 @@ test('preflight passes on a fresh ops home whose path has spaces and Chinese', (
     const lines: string[] = [];
     assert.equal(preflightMain(['--home', home], (line) => lines.push(line)), 0);
     assert.match(lines.join('\n'), /核对相符|全部相符/);
-    assert.match(lines.join('\n'), /声明限制 3/);
-    // Spaced placeholder <原件 SHA-256> must become one synthetic token (not a redirect / extra arg).
-    assert.ok(!report.results.some((r) => r.kind === 'check' && !r.ok && /原件 SHA-256|SHA-256/.test(r.name)));
+    assert.match(lines.join('\n'), /声明里未放行且已拒绝 3|声明限制 3/);
+    // Spaced placeholder <原件 SHA-256> must become one synthetic allow case that still passes.
+    const shaCase = report.results.find((r) => /原件 SHA-256|SHA-256/.test(r.name));
+    assert.ok(shaCase, 'expected a taught command that uses the spaced SHA-256 placeholder');
+    assert.equal(shaCase.kind, 'check');
+    assert.equal(shaCase.want, 'allow');
+    assert.equal(shaCase.ok, true, shaCase.reason ?? shaCase.name);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -88,6 +92,53 @@ test('declaration limit uses the scripts[].subcommands list, not keywords', () =
     assert.equal(isDeclarationLimitedCommand(env, `node ${script} disable --session s`), true);
     assert.equal(isDeclarationLimitedCommand(env, `node ${script} read --session s --sha a`), false);
     assert.equal(isDeclarationLimitedCommand(env, `node ${script} list --session s`), false);
+    // A subcommand that is neither in the declaration nor a known keyword still counts as limited.
+    assert.equal(isDeclarationLimitedCommand(env, `node ${script} zzz-not-a-keyword --session s`), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('hook crash, empty output and non-JSON count as error mismatches, not allow', () => {
+  const dir = scratch('hook-error');
+  try {
+    const home = makeHome(dir, 'ops', 'home');
+    const entry = join(home, 'hooks', 'ops-allow.mjs');
+    writeFileSync(entry, 'throw new Error("synthetic hook crash");\n');
+    const crash = runPreflight(home);
+    assert.equal(crash.ok, false);
+    assert.ok(
+      crash.mismatches.some((m) => m.got === 'error'),
+      `expected error mismatches after crash, got: ${crash.mismatches.map((m) => `${m.name}:${m.got}`).join('; ') || '(none)'}`,
+    );
+
+    writeFileSync(entry, 'process.stdout.write("");\n');
+    const empty = runPreflight(home);
+    assert.equal(empty.ok, false);
+    assert.ok(empty.mismatches.some((m) => m.got === 'error' && /没有输出/.test(m.reason ?? '')));
+
+    writeFileSync(entry, 'process.stdout.write("not-json");\n');
+    const badJson = runPreflight(home);
+    assert.equal(badJson.ok, false);
+    assert.ok(badJson.mismatches.some((m) => m.got === 'error' && /不是 JSON/.test(m.reason ?? '')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('declaration-limited command that the hook allows is a mismatch', () => {
+  const dir = scratch('decl-allow');
+  try {
+    const home = makeHome(dir, 'ops', 'home');
+    // Force every execute to allow so declaration-limited taught commands fail the preflight (G2).
+    writeFileSync(join(home, 'hooks', 'ops-allow.mjs'), 'process.stdout.write(JSON.stringify({decision:"allow"}));\n');
+    const report = runPreflight(home);
+    assert.equal(report.ok, false);
+    assert.ok(
+      report.mismatches.some((m) => m.kind === 'declaration-limit' && m.want === 'deny' && m.got === 'allow'),
+      `expected declaration-limit allow mismatches, got: ${report.mismatches.map((m) => `${m.kind}:${m.name}:${m.got}`).join('; ') || '(none)'}`,
+    );
+    assert.equal(report.declarationLimits.length, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
