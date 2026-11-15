@@ -1070,7 +1070,7 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
   return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;
 }
 
-/** Lead sentence for submit_result: only the producer-supplied step_name (trimmed), else the neutral form (C56; answers-cursor.md 11-15 07:00). */
+/** Lead sentence for submit_result: only the producer-supplied step_name (trimmed), else the neutral form (CHANGELOG Unreleased: submit_result lead / step_name). */
 function submitLead(v: Pick<SubmitOut, 'acceptance' | 'step_name'>): string {
   const name = typeof v.step_name === 'string' ? v.step_name.trim() : '';
   const labeled = name.length > 0 ? name : null;
