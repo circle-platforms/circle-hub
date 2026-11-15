@@ -1,0 +1,23 @@
+// Network is never an effect of a replay guard. Child processes and filesystem writes are denied by Node permissions.
+import net from 'node:net';
+import tls from 'node:tls';
+import http from 'node:http';
+import https from 'node:https';
+import dgram from 'node:dgram';
+import { syncBuiltinESMExports } from 'node:module';
+const denied = () => { process.stderr.write('REPLAY_NETWORK_BLOCKED\n'); throw new Error('Replay network access is disabled'); };
+net.Socket.prototype.connect = denied;
+net.connect = denied;
+net.createConnection = denied;
+net.createServer = denied;
+tls.connect = denied;
+tls.createServer = denied;
+http.request = denied;
+http.get = denied;
+http.createServer = denied;
+https.request = denied;
+https.get = denied;
+https.createServer = denied;
+dgram.createSocket = denied;
+globalThis.fetch = denied;
+syncBuiltinESMExports();

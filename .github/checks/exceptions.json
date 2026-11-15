@@ -686,6 +686,20 @@
     "removeWhen": "Owner decision"
   },
   {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/session-replay.md",
+    "what": "unlisted",
+    "reason": "Temporary keep: design page of the local session replay tool under scripts/real/replay, not yet integrated",
+    "removeWhen": "Integrator decision on the replay tool's task pages"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/session-replay-implementation.md",
+    "what": "unlisted",
+    "reason": "Temporary keep: implementation record of the local session replay tool under scripts/real/replay, not yet integrated",
+    "removeWhen": "Integrator decision on the replay tool's task pages"
+  },
+  {
     "check": "no-compat-paths",
     "path": "contracts/src/contributions.ts",
     "what": "word:legacy",

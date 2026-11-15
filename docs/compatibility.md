@@ -52,6 +52,8 @@
 
 ## 历史
 
+- 2026-11-16：新增本机 `replay-circle.ts capture|inspect|run|compare` 和私有 `circle-replay-source@1` 回放格式；首版仅适配明确指定且摘要匹配的 Circle 1.17.0 Harness，不连接真实模型、Hub 或业务系统。可选测试变量 `CIRCLE_HUB_REPLAY_CIRCLE_APP` 指定已安装应用，缺失时集成测试明确跳过；真实材料只保存在 Git 外。
+
 - 2026-11-15：将 `case-compile` 推进至 `3.20.4`、`recompose` 推进至 `1.2.7`、`recompose-authority` / `recompose-adjudication` 推进至 `1.1.11`（合入 `e0a96efd59` `authoring-brief` 抽 `sources.states` 缺失前置，未改动 Hub 或技能包合约格式与版本号）：（1）对照 `InfoTest_Engine/main`（`ac898b68`、`compile-worker.md:44-45,70`、`scenario_fidelity.py`）补齐用例重组、脚本编写、场景保真与失败分析规矩：明确 `recomposition.adapted` 与原始步骤不是步骤白名单，保留不改写被测对象/动作/约束及“前置不存在”反向测试的前提下，强制补充 `sources.states`（`missing_prerequisite`）及锁定手册正文/配置示例的运行前置与配对 `cleanup:true` 逆操作；为平面 `steps[]` 新增可选 `precondition_source: { reference, text }`（`slots.schema.json`、`functions/slots.ts`）并经 `functions/subject.ts` 接入 `quote@1` 核对，由 `functions/fidelity.ts` 生成 `mechanical.exemptions`（`added_precondition`）且继续隔离编写自述；（2）失败分析同错再现即证伪上轮假设须换机制，设备报错点名缺失项且锁定手册/示例支持未试假设时必须改写重测、严禁以“缺资料”或“剩一次机会”阻拦，仅当所有锁定资料均无任何未试假设依据时才归为“缺资料”；（3）扩展 `runtime-contract@2` `cleanup.order` / `clears` 披露（禁止将 `write memory` 等命中运行器自动清理的命令标为 `cleanup:true`）与观测缺口汇总披露。同步刷新共享 `recompose-evidence.ts`、四份工作簿合成样例与包清单；未发布或部署。
 
 - 2026-11-15：`submit_result` 核对答复的第一行改为：有可选输出字段 `step_name` 时用「<步骤名>已核对。」/「<步骤名>有错误。」（渲染时去掉首尾空白），否则用中性句「核对已完成。」/「核对有错误。」（C56）。产生步骤名的包侧与运行时还没合进来之前，首行一律是中性句；带步骤名的验收断言等生产者合入后再补。未发布或部署。
