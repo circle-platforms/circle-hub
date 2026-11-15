@@ -46,8 +46,7 @@ def main():
         arguments = args.pytest_args[1:] if args.pytest_args[:1] == ['--'] else args.pytest_args
         return run(args.framework_root, args.contract, args.xlsx, arguments)
     from cell_gateway import serve
-    serve(args.gateway_root, args.config, args.contract)
-    return 0
+    return serve(args.gateway_root, args.config, args.contract)
 
 
 if __name__ == '__main__':

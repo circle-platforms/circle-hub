@@ -98,10 +98,26 @@ def serve(gateway_root, config_path, contract_path):
     framework = importlib.import_module('gateway.framework')
     gates = importlib.import_module('gateway.gates')
     service = importlib.import_module('gateway.service')
-    original = tools.load_gateway(Path(config_path))
+    config = importlib.import_module('gateway.config')
+    state = importlib.import_module('gateway.state')
+    try:
+        original = tools.load_gateway(Path(config_path))
+    except config.ConfigError as error:
+        print('配置错误：%s' % error, file=sys.stderr)
+        return 2
+    except state.JournalError as error:
+        print('请求日志错误：%s' % error, file=sys.stderr)
+        return 2
+    original.flush_request_audit()
     private = private_gateway(original, framework, gates, contract_path)
     server = service_namespace(service)['build_server'](Gateway(original, private))
+    cfg = original.cfg
+    scheme = 'https' if cfg.tls_cert else 'http'
+    print('cexg 监听 %s://%s:%s/mcp' % (scheme, cfg.host, cfg.port), file=sys.stderr)
     try:
         server.serve_forever()
+    except KeyboardInterrupt:
+        pass
     finally:
         server.server_close()
+    return 0

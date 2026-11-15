@@ -279,11 +279,12 @@ class Gateway:
         framework.launch_run(self.cfg,args['task'],'synthetic','case','synthetic-build',7)
         return {'ok':True,**stage}
     def call(self,caller,name,args):
+        self.cfg.audit.append({'tool':name,'args':args})
         if name=='case_status': return {'task_id':args['task_id'],'state':'done'}
         return self.handlers[name](caller,args)
 `);
     const service = join(f.root, 'fake_service.py');
-    writeFileSync(service, `TOOL_SPECS=[{'name':'case_submit','scope':'run','description':'synthetic','input_schema':{'type':'object'}}]
+    writeFileSync(service, `TOOL_SPECS=[{'name':'case_submit','scope':'jumphost:run','read_only':False,'description':'synthetic','input_schema':{'type':'object'}}]
 def handle_rpc(gateway,caller,message):
     if message['method']=='tools/list': return [item['name'] for item in TOOL_SPECS]
     return gateway.call(caller,message['name'],message['arguments'])
@@ -296,14 +297,18 @@ from cell_gateway import service_namespace
 from types import SimpleNamespace
 from pathlib import Path
 p=json.load(sys.stdin);module=load_module('synthetic_gateway',p['fake'])
-cfg=SimpleNamespace(apv_src=Path(p['framework']),staging_parent=Path(p['root']),trace=[],commands=[],output='sample+private+00888\\nsample+public+00123')
+cfg=SimpleNamespace(apv_src=Path(p['framework']),staging_parent=Path(p['root']),trace=[],commands=[],audit=[],output='sample+private+00888\\nsample+public+00123')
 base=module.Gateway(cfg);private=private_gateway(base,module.framework,module.gates,p['contract']);router=Gateway(base,private)
-service=load_module('synthetic_service',p['service']);rpc=service_namespace(service)['handle_rpc']
+service=load_module('synthetic_service',p['service']);namespace=service_namespace(service);rpc=namespace['handle_rpc']
 new=rpc(router,None,{'method':'tools/call','name':'case_submit_cell','arguments':{'task':'new','data':{**p['data'],'pin':p['pin']}}})
 old=router.call(None,'case_submit',{'task':'old','data':{'pin':'old-pin'}})
 poll=router.call(None,'case_status',{'task_id':'new'})
+def unknown(target):
+    try: target.call(None,'synthetic-missing',{'same':'arguments'})
+    except Exception as error: return {'type':type(error).__name__,'args':error.args}
+old_unknown=unknown(base);wrapped_unknown=unknown(router)
 directory=Path(new['staging_dir'])
-print(json.dumps({'new_entry':(directory/'test_xlsx.py').read_text(),'new_rule':json.loads((directory/'excel_contract.json').read_text())['contract_sha256'],'config':json.loads((directory/'cell-runtime.json').read_text()),'old_entry':(Path(old['staging_dir'])/'test_xlsx.py').read_text(),'old_pin':module.PINNED_CONTRACT_SHA256,'poll':poll,'trace':cfg.trace,'same_state':private.state is base.state,'commands':cfg.commands,'selected':cfg.result['registers']['picked'],'tools':rpc(router,None,{'method':'tools/list'}),'old_tools':service.handle_rpc(router,None,{'method':'tools/list'})}))
+print(json.dumps({'new_entry':(directory/'test_xlsx.py').read_text(),'new_rule':json.loads((directory/'excel_contract.json').read_text())['contract_sha256'],'config':json.loads((directory/'cell-runtime.json').read_text()),'old_entry':(Path(old['staging_dir'])/'test_xlsx.py').read_text(),'old_pin':module.PINNED_CONTRACT_SHA256,'poll':poll,'trace':cfg.trace,'same_state':private.state is base.state,'commands':cfg.commands,'selected':cfg.result['registers']['picked'],'tools':rpc(router,None,{'method':'tools/list'}),'old_tools':service.handle_rpc(router,None,{'method':'tools/list'}),'new_specs':namespace['TOOL_SPECS'],'old_specs':service.TOOL_SPECS,'old_unknown':old_unknown,'wrapped_unknown':wrapped_unknown,'audit':cfg.audit}))
 `, { fake, service, data, framework: f.framework, root: f.root, contract: f.exported, pin: f.document.contract_sha256 });
     assert.equal(result.new_entry, readFileSync(join(COMPONENT, 'test_xlsx.py'), 'utf8'));
     assert.equal(result.new_rule, f.document.contract_sha256);
@@ -317,5 +322,12 @@ print(json.dumps({'new_entry':(directory/'test_xlsx.py').read_text(),'new_rule':
     assert.equal(result.selected, '00123');
     assert.deepEqual(result.tools, ['case_submit', 'case_submit_cell']);
     assert.deepEqual(result.old_tools, ['case_submit']);
+    assert.deepEqual(result.new_specs.slice(0,result.old_specs.length),result.old_specs);
+    assert.equal(result.new_specs[1].scope,result.old_specs[0].scope);
+    assert.equal(result.new_specs[1].read_only,result.old_specs[0].read_only);
+    assert.deepEqual(result.new_specs[1].input_schema,result.old_specs[0].input_schema);
+    assert.deepEqual(result.wrapped_unknown,result.old_unknown);
+    assert.deepEqual(result.audit.map((row: {tool:string})=>row.tool),['case_submit','case_submit','case_status','synthetic-missing','synthetic-missing']);
+    assert.deepEqual(result.audit[3],result.audit[4]);
   } finally { f.close(); }
 });

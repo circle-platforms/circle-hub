@@ -59,3 +59,9 @@ python3 entry.py serve --gateway-root <原网关源码目录> --config <原网�
 新工具先沿原任务流程保存原字节 Excel，再在本任务目录放自己的逐行入口、规则和路径说明；不动框架目录中的共用文件。原启动函数仍接管床锁、任务存活锁、状态及结果文件。新工具单独把工作簿标记核对绑定到新规则，原工具的标记值不变。
 
 本地只用合成框架、网关和设备测试，不导入真实参考模块，不读取真实配置或 home，不请求设备。合成测试不是部署、原框架运行或设备效果的证明。
+
+## 0.4.7 startup alignment
+
+The private service now follows the original gateway startup order: configuration/journal error handling (exit 2), pending request-audit flush, server construction, the original listening notice, serving, KeyboardInterrupt handling, and final server close. The entry propagates the service exit status. Original tools and unknown names still delegate to the original gateway; only case_submit_cell selects the private staging and contract.
+
+The synthetic lifecycle tests construct in-memory gateway modules and no listener. They cover audit ordering/rows, config and journal errors, normal/TLS notices, interrupt cleanup, audit failure, and the real entry main guard. These checks do not load the actual gateway, framework, configuration or devices and do not establish deployment or in-flight switching safety. Install/rollback drafts are reviewed separately and are not executed by these tests.
