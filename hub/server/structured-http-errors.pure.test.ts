@@ -198,3 +198,19 @@ test('exact SDK invalid-params code proves a refused call only with a source wit
   assert.deepEqual(sdkCallErrorData(sdkError.code, true), httpCallErrorData('CALL_INTERNAL_UNAVAILABLE'));
   assert.deepEqual(sdkCallErrorData(-32603, false), httpCallErrorData('CALL_INTERNAL_UNAVAILABLE'));
 });
+
+test('the locked SDK malformed RPC envelope is a confirmed pre-handler parse refusal', async () => {
+  let entered = 0;
+  const guardedDeps = { ...deps(), workflows: { summaries: async () => { entered++; return []; } } } as unknown as ServerDeps;
+  const x = exchange('POST', '/mcp', '{}', {
+    'content-type':'application/json',accept:'application/json, text/event-stream',
+  });
+  await handleMcp(x.request,x.response,{deps:guardedDeps,serverVersion:'synthetic',log() {},budget:new BodyBudget(1024)},1024);
+  const reply=await x.read(), error=reply.json().error;
+  assert.equal(entered,0);
+  assert.equal(reply.status,400);
+  assert.equal(error.code,-32700,'retain the locked SDK numeric parse-error code');
+  assert.equal(HttpCallErrorData.parse(error.data).code,'CALL_REQUEST_INVALID');
+  assert.equal(error.data.call_error_category,'invalid_parameters');
+  assert.equal(error.data.call_not_executed,true);
+});
