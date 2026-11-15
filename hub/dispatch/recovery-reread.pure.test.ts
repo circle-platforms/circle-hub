@@ -18,15 +18,15 @@ function fixture(outcome:EffectOutcome='proven_not_executed', recovery=true, wit
   const binding={job:JOB,executor:'exe_'+'0'.repeat(26),input:{run:RUN,plan_run:RUN,item:'synthetic-case',items:['synthetic-case'],sha256:'b'.repeat(64)}};
   const history=[event({phase:'reservation',binding}),event({phase:'intent',request_id:'synthetic-request'}),event({phase:'complete',done:true,outcome,submit_invoked:false,...(recovery?{recovery:true}:{})})];
   const status:JobStatus={job:JOB,phase:'complete',outcome,frozen:false,events:history.length,not_sent:outcome==='not_dispatched'};
-  let sends=0, historyAvailable=true;
+  let sends=0, historyAvailable=true, historyReads=0;
   const records={
     store:{find:async()=>({items:withJob?[history[0]]:[],next:null}),findMany:async()=>history},
     principals:{list:async()=>[admin]},objects:{get:async()=>null},
   } as unknown as RecordsKit;
-  const service={options:{records},journal:{histories:async()=>historyAvailable?new Map([[JOB,history]]):new Map()},
+  const service={options:{records},journal:{histories:async()=>{historyReads++;return historyAvailable?new Map([[JOB,history]]):new Map();}},
     status:async()=>status,dispatchAccepted:async()=>{sends++;return {started:false,reason:'synthetic dispatch port invoked'};},
   } as unknown as DispatchService;
-  return {records,service,history,get sends(){return sends;},missingHistory(){historyAvailable=false;}};
+  return {records,service,history,status,get historyReads(){return historyReads;},get sends(){return sends;},missingHistory(){historyAvailable=false;}};
 }
 
 test('cache replay of a recovery-proven unexecuted request never starts another dispatch worker',async()=>{
@@ -75,4 +75,17 @@ test('missing current journal evidence refuses retry instead of guessing the ori
   const f=fixture();f.missingHistory();
   await assert.rejects(accepted.acceptedDispatch(f.records,f.service,RUN,true,0),/恢复事实尚未核对完整/);
   assert.equal(f.sends,0);
+});
+
+
+test('active non-retryable and not-ready progress reads do not require a racing journal retry snapshot',async()=>{
+  for(const kind of ['active','finished','not-ready']) {
+    const f=fixture(kind==='active'?'issued':kind==='finished'?'effective':'proven_not_executed');
+    if(kind==='active') {f.history.pop();f.status.events=f.history.length;f.status.phase='running';}
+    f.history.push(event({phase:'heartbeat'}));
+    const notes=await accepted.acceptedDispatch(f.records,f.service,RUN,kind!=='not-ready',0);
+    assert.ok(notes.length>0);
+    assert.equal(f.historyReads,0,kind);
+    assert.equal(f.sends,0,kind);
+  }
 });
