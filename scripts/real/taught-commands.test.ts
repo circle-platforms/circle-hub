@@ -17,3 +17,9 @@ test('unknown placeholders and malformed heredoc prose are never converted into 
   assert.ok(taught);
   assert.equal(instantiateTaughtCommand(taught, { skillDir: '/synthetic' })[0], "node '/synthetic/tools/x.ts' --file a <<'EOF'（接两行）");
 });
+test('an authored zero-argument CLI command remains a preflight case', async () => {
+  const { extractTaughtCommands, instantiateTaughtCommand } = await import('./taught-commands.ts');
+  const [entry] = extractTaughtCommands("```sh\nnode '<技能目录>/tools/install-agents.ts'\n```", 'synthetic.md');
+  assert.ok(entry);
+  assert.deepEqual(instantiateTaughtCommand(entry, { skillDir: '/synthetic space' }), ["node '/synthetic space/tools/install-agents.ts'"]);
+});
