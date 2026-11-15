@@ -5,7 +5,7 @@
 //   node packs/workflow/case-compile/pack-files.ts --check   exits 1 when pack.json is stale
 //   node packs/workflow/case-compile/pack-files.ts --stage <empty directory>   copies the pack there, ready to publish
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, writeFile, lstat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -72,6 +72,31 @@ export async function stage(target: string): Promise<string> {
   return target;
 }
 
+/** Compare an installed tree with this reviewed publisher manifest, without importing installed code. */
+export async function verifyInstall(target: string): Promise<{ files: number; sha256: string }> {
+  const root = await lstat(target);
+  if (!root.isDirectory() || root.isSymbolicLink()) throw new Error('安装目录必须是普通目录');
+  const expected = await computeManifest();
+  const text = manifestText(expected);
+  const manifestInfo = await lstat(join(target, 'pack.json'));
+  if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || await readFile(join(target, 'pack.json'), 'utf8') !== text) throw new Error('安装清单与已审查版本不一致');
+  const wanted = new Set(['pack.json', ...expected.files.map(entry => entry.path)]);
+  const walkInstalled = async (folder: string): Promise<void> => {
+    for (const entry of await readdir(join(target, folder), { withFileTypes: true })) {
+      const relative = folder ? `${folder}/${entry.name}` : entry.name;
+      if (entry.isSymbolicLink()) throw new Error('安装目录包含符号链接');
+      if (entry.isDirectory()) await walkInstalled(relative);
+      else if (!entry.isFile() || !wanted.has(relative)) throw new Error('安装目录包含未声明文件');
+    }
+  };
+  await walkInstalled('');
+  for (const entry of expected.files) {
+    const bytes = await readFile(join(target, entry.path));
+    if (bytes.byteLength !== entry.size || createHash('sha256').update(bytes).digest('hex') !== entry.sha256) throw new Error('安装文件与发布摘要不符：' + entry.path);
+  }
+  return { files: expected.files.length, sha256: createHash('sha256').update(text).digest('hex') };
+}
+
 async function main(): Promise<void> {
   const arg = process.argv[2];
   if (arg === '--write') {
@@ -90,13 +115,18 @@ async function main(): Promise<void> {
     console.log('pack.json is fresh');
     return;
   }
+  if (arg === '--verify-install') {
+    if (!process.argv[3]) throw new Error('--verify-install 需要安装目录');
+    console.log(JSON.stringify(await verifyInstall(process.argv[3])));
+    return;
+  }
   if (arg === '--stage') {
     const target = process.argv[3];
     if (target === undefined) throw new Error('--stage needs an empty directory');
     console.log(await stage(target));
     return;
   }
-  throw new Error('usage: pack-files.ts --write | --check | --stage <directory>');
+  throw new Error('usage: pack-files.ts --write | --check | --stage <directory> | --verify-install <directory>');
 }
 
 if (process.argv[1] !== undefined && process.argv[1].endsWith('pack-files.ts')) await main();
