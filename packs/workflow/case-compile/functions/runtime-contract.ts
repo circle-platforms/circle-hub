@@ -194,7 +194,7 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   if (value.cleanup !== undefined) {
     const c = value.cleanup;
     const rules = isRecord(c) && Array.isArray(c.rules) ? c.rules : [];
-    const probe = (p: unknown): boolean => p === undefined || isRecord(p) && Object.keys(p).every(key => ['command', 'reference', 'read_only'].includes(key)) && typeof p.command === 'string' && p.command.length > 0 && p.command.length <= 2000 && !/[\r\n\u0000]/.test(p.command) && typeof p.reference === 'string' && /^tree:[a-f0-9]{64}\/commands(?:\/[^@\s/]+)+(?:@[a-f0-9]{64})?$/.test(p.reference) && p.read_only === true;
+    const probe = (p: unknown): boolean => p === undefined || isRecord(p) && Object.keys(p).every(key => ['command', 'reference', 'read_only'].includes(key)) && typeof p.command === 'string' && p.command.length > 0 && p.command.length <= 2000 && !/[\u0000-\u0008\u000a-\u001f\u007f]/.test(p.command) && typeof p.reference === 'string' && /^tree:[a-f0-9]{64}\/commands(?:\/[^@\s/]+)+(?:@[a-f0-9]{64})?$/.test(p.reference) && p.read_only === true;
     const prefix = (p: unknown): p is string => typeof p === 'string' && /\S/.test(p) && p.length <= 200 && !/[\r\n]/.test(p);
     if (value.schema !== 'runtime-contract@2' || !isRecord(c) || Object.keys(c).some((key) => !['source', 'sha256', 'objects', 'rules'].includes(key)) || !nonempty(c.source) || typeof c.sha256 !== 'string' || !SHA.test(c.sha256)
       || !Array.isArray(c.objects) || c.objects.length === 0 || c.objects.length > 16 || c.objects.some((o) => !nonempty(o)) || new Set(c.objects).size !== c.objects.length

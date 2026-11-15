@@ -34,6 +34,7 @@ export interface CommandDomainReport {
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const gap = (pointer: string, missing: string, next_action: string): DisclosureGap => ({ pointer, missing, next_action });
 const LIMITS = [
+  '本地预检不证明计划已由 Hub 受理；所需派发权限仍由既有运输和资源政策核对',
   '本报告只披露命令域映射和读取证据，不判断设备是否干净，不清理、不挂起、不授权或阻止派发',
   '只读属性来自版本化声明与调用方运输边界，未在此认证目标行为；原有资源政策独立生效',
   '观察的本地摘要核对不证明所附引用已由 Hub 存储，也不认证目标的只读运输前提',
@@ -65,35 +66,38 @@ export function commandDomainPrecheck(input: PrecheckInputs): CommandDomainRepor
     const identity = identityOf(commandIdentity(grammar, operation.line));
     const row: PrecheckRow = { object: operation.object, operation: { pointer: operation.pointer, line: operation.line, identity }, rule: null, query: null, gaps: [] };
     report.rows.push(row);
-    if (!identity || identity.tree_root !== input.root) { row.gaps.push(gap(operation.pointer, '没有与冻结根绑定的完整且唯一类型化命令身份', '使用冻结命令树完整解析，不按命令文字猜测域')); continue; }
+    if (!identity) { row.gaps.push(gap(operation.pointer, '没有与冻结根绑定的完整且唯一类型化命令身份', '使用冻结命令树完整解析，不按命令文字猜测域')); continue; }
     if (policy?.read_only.some(path => within(identity.path, path))) continue;
     const matched = runnerRule(cleanup, operation.object, operation.line);
     if (!cleanup || !matched) { row.gaps.push(gap(operation.pointer, '没有覆盖该命令的已声明清理域', '由执行器规则发布者核对权威生成源并发布域映射')); continue; }
     const rule = cleanup.rules[matched.rule];
     row.rule = { index: matched.rule, source: cleanup.source, sha256: cleanup.sha256, line: rule.line, pinned: cleanup.pinned };
     if (!rule.probe) { row.gaps.push(gap(`/cleanup/rules/${matched.rule}/probe`, '该域没有显式只读探测映射', '由规则发布者在权威声明中给出冻结命令引用和完整命令，不从前缀造 show 命令')); continue; }
-    row.query = queryFor(rule.probe, input.root, operation.object, grammar, input.catalog, policy, contract.contract.digest, cleanup.source, cleanup.sha256, matched.rule, row.gaps);
+    row.query = queryFor(rule.probe, operation.object, grammar, input.catalog, policy, contract.contract.digest, cleanup.source, cleanup.sha256, matched.rule, row.gaps);
   }
   return report;
 }
-function queryFor(probe: CommandDomainProbe, root: string, object: string, grammar: ReturnType<typeof compileGrammar>, catalog: Record<string, unknown>, policy: ReturnType<typeof readCommandPolicy>, contract: string, source: string, sha256: string, rule: number, gaps: DisclosureGap[]): ReadOnlyQuery | null {
+function queryFor(probe: CommandDomainProbe, object: string, grammar: ReturnType<typeof compileGrammar>, catalog: Record<string, unknown>, policy: ReturnType<typeof readCommandPolicy>, contract: string, source: string, sha256: string, rule: number, gaps: DisclosureGap[]): ReadOnlyQuery | null {
   const identity = identityOf(commandIdentity(grammar, probe.command));
   const entries = Array.isArray(catalog.authority_entries) ? catalog.authority_entries : Array.isArray(catalog.entries) ? catalog.entries : [];
   const declared = entries.filter(isRecord).find(entry => entry.reference === probe.reference && Array.isArray(entry.words) && '/commands/' + entry.words.map(encodeURIComponent).join('/') === identity?.path);
-  if (!identity || identity.tree_root !== root || !declared || !policy?.read_only.some(path => within(identity.path, path))) {
+  if (!identity || !declared || !policy?.read_only.some(path => within(identity.path, path))) {
     gaps.push(gap(`/cleanup/rules/${rule}/probe`, '探测命令引用、完整参数或只读策略未被同一冻结命令树核对', '补齐合法的完整查询及其只读声明；不执行当前探测')); return null;
   }
   return { object, command: probe.command, reference: probe.reference, identity, mapping: { contract_sha256: contract, pointer: `/cleanup/rules/${rule}/probe`, cleanup_source: source, cleanup_sha256: sha256 } };
 }
 /** Returns observations as evidence only. Reader failures never become cleanliness verdicts or dispatch decisions. */
-export async function collectCommandDomainObservations(report: CommandDomainReport, reader: ReadOnlyProbeReader): Promise<CommandDomainReport> {
-  const output = structuredClone(report), observed = new Map<string, Promise<ProbeObservation>>();
+export async function collectCommandDomainObservations(input: PrecheckInputs, reader: ReadOnlyProbeReader): Promise<CommandDomainReport> {
+  // Rebuild from frozen inputs at the collection boundary; a serialized/edited report is not execution authority.
+  const output = commandDomainPrecheck(structuredClone(input)), observed = new Map<string, Promise<ProbeObservation>>();
   for (const row of output.rows) {
     const query = row.query; if (!query) continue;
     const key = JSON.stringify([query.object, query.identity]);
     try {
       let request = observed.get(key); if (!request) { request = Promise.resolve().then(() => reader.read(structuredClone(query))); observed.set(key, request); }
-      const result = await request, actual = digest(result.bytes);
+      const result = await request;
+      if (!result || !(result.bytes instanceof Uint8Array) || typeof result.complete !== 'boolean') { row.gaps.push(gap(query.mapping.pointer, '读取回执的字节或完整性字段未符合声明', '由运输维护者修复结构化回执，再重新采证')); continue; }
+      const actual = digest(result.bytes);
       if (result.sha256 !== actual || result.reference !== 'src:' + actual) { row.gaps.push(gap(query.mapping.pointer, '读取字节与观察引用或摘要不符', '恢复可对应的原件；不把当前字节作为已核验证据')); continue; }
       row.observation = { reference: result.reference, sha256: actual, bytes: result.bytes.byteLength, complete: result.complete };
       if (!result.complete) row.gaps.push(gap(query.mapping.pointer, '探测输出不完整', '由运输维护者核对分页和提示符完整性后重新采证'));
