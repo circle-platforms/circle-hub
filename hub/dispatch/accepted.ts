@@ -1,3 +1,5 @@
+import { currentDispatch } from './recovery.ts';
+import type { Event } from './journal.ts';
 import { isAdmin } from '../records/api.ts';
 // Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row is dispatched by the Hub, and
 // the jobs bound to the run are reported to the runner, so repeating the same submission reads their progress.
@@ -41,8 +43,8 @@ async function callerAdmin(records: Pick<RecordsKit, 'principals'>, service: Dis
   if (!current || current.disabled || !await service.options.runs.getRun(current, run)) throw new Error('调用者或运行不可用');
   return isAdmin(current);
 }
-async function jobNote(service: DispatchService, job: RunJob, admin: string, retried: boolean, administrative: boolean): Promise<DispatchNote> {
-  const note = runnerNote(job, admin, retried, administrative);
+async function jobNote(service: DispatchService, job: RunJob, admin: string, retried: boolean, administrative: boolean, recoveryClosed = false): Promise<DispatchNote> {
+  const note = runnerNote(job, admin, retried, administrative, recoveryClosed);
   const report = await reportMissingFacts(service.options.records, job, administrative);
   const facts = [...note.missing_facts ?? [], ...report.missing_facts].slice(0, 16);
   return { ...note, run:job.verification_run, ...(administrative&&job.executor?{executor:job.executor}:{}), ...(report.no_verdict !== undefined ? { no_verdict: report.no_verdict } : {}), missing_facts: facts, ...(report.no_verdict ? {text:clip(note.text+'；'+report.missing_facts.map(fact=>fact.fact).join('；'))} : {}) };
@@ -73,10 +75,16 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   if (!admin) return ready ? [{ run, text: 'Hub 没有在职管理员负责作业未知结果的处置，没有自动上机验证；等管理员开通账号' }] : [];
   const open = attemptsOf(service);
   const jobs = await readRunJobs(records, service, admin, run, { unbound: true });
+  const histories = jobs.length ? await service.journal.histories(jobs.map(job => job.job)) : new Map<string, Event[]>();
+  const recoveryClosed = new Set(jobs.filter(job => {
+    const history = histories.get(job.job);
+    if (!history || history.length !== job.status.events) throw new Error('当前作业的恢复事实尚未核对完整，未重新派发；请稍后只读核对原作业');
+    return recoveredWithoutExecution(history);
+  }).map(job => job.job));
   // Every job of the run ended without an effect that could repeat (see `retriable`): a repeat of the ready submission
   // tries again, as the reference compile skill resubmits a workbook its gateway refused. Any other job is only read.
-  const retry = ready && jobs.length > 0 && jobs.every(retriable);
-  if (jobs.length && !retry) { open.delete(run); return capped(await Promise.all(jobs.map(job => jobNote(service, job, admin.id, false, administrative))),run); }
+  const retry = ready && jobs.length > 0 && jobs.every(job => retriable(job) && !recoveryClosed.has(job.job));
+  if (jobs.length && !retry) { open.delete(run); return capped(await Promise.all(jobs.map(job => jobNote(service, job, admin.id, false, administrative, recoveryClosed.has(job.job)))),run); }
   if (!ready) return [];
   // What the earlier jobs came to is told beside the new attempt: the runner learns why the last one ended before it reads
   // that the Hub tried again. Keep our in-process Attempt map so a late refusal after the wait still reaches the next repeat.
@@ -122,6 +130,14 @@ export async function runInFlight(records: Pick<RecordsKit, 'store' | 'principal
 
 const NO_MORE = '这次上机验证不会再做上机验证：能在自动化用例、自动化用例 Excel 或预订上改的，改好后重新开始上机验证；其余等管理员处理';
 const RETRY = '原样重交，Hub 会再试一次';
+const RECOVERY_RESTART = '本次上机验证没有执行；原样重交只读本次结局。要再上机，请明确发起新的核验并重新预订，不重发原请求';
+
+/** Only a current-intent recovery conclusion closes automatic retry; never infer it from prose or an older round. */
+export function recoveredWithoutExecution(events: readonly Event[]): boolean {
+  const complete = currentDispatch(events).tail.findLast(event => event.body.detail.phase === 'complete')?.body.detail;
+  return complete?.recovery === true && complete.done === true && (complete.outcome === 'proven_not_executed' || complete.outcome === 'target_rejected' || complete.outcome === 'not_dispatched' && complete.submit_invoked === false);
+}
+
 
 /**
  * A job after which a repeat of the same ready submission dispatches again (issue 142): it ended, no administrator has
@@ -182,7 +198,7 @@ function invocationCategory(status: Pick<JobStatus,'error_code'|'call_error_cate
 }
 
 /** The runner's note on one job of the run; `retried` when the answer that carries it dispatches again after it. */
-export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false, administrative = false): DispatchNote {
+export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false, administrative = false, recoveryClosed = false): DispatchNote {
   const { status } = job;
   const diagnostics = statusDiagnostics(job, administrative);
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '上机验证结果未知' : '进行中';
@@ -199,7 +215,7 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
   if (administrative) parts.push(...details(status));
   else if (diagnostics.missing_facts.length) parts.push(diagnostics.missing_facts.map(fact => fact.fact).join('；'));
   const next = administrative ? diagnostics.next_action : job.ended==='unknown'||status.frozen||status.outcome==='unknown' ? nextStep(job, '') : diagnostics.missing_facts.length && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? diagnostics.missing_facts.map(fact=>fact.next_action).join('；') : nextStep(job, '');
-  const action = retried ? '这次重交 Hub 已再试，见后面的条目'+(!administrative && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? `；${next}` : '') : next;
+  const action = recoveryClosed ? RECOVERY_RESTART : retried ? '这次重交 Hub 已再试，见后面的条目'+(!administrative && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? `；${next}` : '') : next;
   const category = job.ended==='done'&&status.outcome==='not_dispatched'&&!status.frozen ? invocationCategory(status) : null;
-  return { job: job.job, ...(status.result ? { result: status.result } : {}), ...diagnostics, text: clip(category?formatCallError(category,parts.join('；'),action):[...parts,`下一步：${action}`].join('；')) };
+  return { job: job.job, ...(status.result ? { result: status.result } : {}), ...diagnostics, ...(recoveryClosed ? {next_action: RECOVERY_RESTART} : {}), text: clip(category?formatCallError(category,parts.join('；'),action):[...parts,`下一步：${action}`].join('；')) };
 }
