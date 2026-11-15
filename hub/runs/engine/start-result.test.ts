@@ -135,7 +135,7 @@ describe('start_run answers carry the production result and the evidence gaps', 
   });
 
   test('a start naming the first product name of a pack bound to several lines, as the server\'s example does, is taken', { skip }, async () => {
-    const summary = (await h.workflows.summaries(h.alice)).find((p) => p.id === 'toy-review')!;
+    const summary = (await h.workflows.summaries(h.alice, { includeAdminDefault: false })).find((p) => p.id === 'toy-review')!;
     const required = summary.inputs.filter((input) => input.required);
     assert.deepEqual(required.map((input) => input.slot), ['map']);
     const started = await h.service.startRun(h.alice, { pack: summary.pack, product: 'Meadow', inputs: { map: { reference: map } } }, h.call('sess-result'));

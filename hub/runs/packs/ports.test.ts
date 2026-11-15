@@ -140,11 +140,11 @@ test('summaries: the packs a user may use, with the names of the bound product l
   await bed.registry.assign(bed.admin, bed.bob.id, 'demo-review');
   const store = createWorkflowStore(bed.registry);
 
-  const inactive = await store.summaries(bed.bob);
+  const inactive = await store.summaries(bed.bob, { includeAdminDefault: false });
   assert.deepEqual(inactive.map((s) => s.products), [[]], 'no active product line binds yet');
   await bed.registry.activate(bed.admin, 'widget');
   await bed.registry.activate(bed.admin, 'sprocket');
-  const [summary] = await store.summaries(bed.bob);
+  const [summary] = await store.summaries(bed.bob, { includeAdminDefault: false });
   assert.ok(PackSummary.safeParse(summary).success, JSON.stringify(PackSummary.safeParse(summary).error?.issues));
   assert.equal(summary.pack, 'demo-review@1.0.0');
   assert.match(summary.digest, /^[0-9a-f]{64}$/, 'every listed pack carries its digest');
@@ -153,11 +153,11 @@ test('summaries: the packs a user may use, with the names of the bound product l
   assert.deepEqual(summary.inputs, [{ slot: 'target', role: 'subject', description: '被判的文档', accepts: ['application/json'], required: true, many: false }]);
   assert.deepEqual(summary.parameters, [{ name: 'strict', description: '严格模式', required: false, schema: { type: 'boolean' } }], 'each parameter is listed with its name, description and value schema');
   assert.deepEqual(summary.requirements.map((r) => [r.key, r.repair_rounds, r.accepted_producer]), [['titles', 2, 'fact'], ['findings', 0, 'judgment'], ['level', 0, 'judgment']]);
-  assert.deepEqual(await store.summaries(bed.carol), []);
-  assert.deepEqual(await store.summaries(ghost), []);
+  assert.deepEqual(await store.summaries(bed.carol, { includeAdminDefault: false }), []);
+  assert.deepEqual(await store.summaries(ghost, { includeAdminDefault: false }), []);
 
   await bed.publish(bed.alice, editJson<Json>(workflowPack({ version: '2.0.0' }), 'workflow.json', (w) => void (w.product = { id: 'sprocket', catalogs: [] })));
-  const [bound] = await store.summaries(bed.bob);
+  const [bound] = await store.summaries(bed.bob, { includeAdminDefault: false });
   assert.equal(bound.version, '2.0.0');
   assert.deepEqual(bound.products, ['Sprocket'], 'a workflow with product.id binds that line only');
 });
@@ -169,11 +169,11 @@ test('summaries read each publish decision once: a further version costs its row
     await bed.registry.assign(bed.admin, bed.bob.id, id);
   }
   const store = createWorkflowStore(bed.registry);
-  await store.summaries(bed.bob);
-  const before = await usageOf(() => store.summaries(bed.bob));
+  await store.summaries(bed.bob, { includeAdminDefault: false });
+  const before = await usageOf(() => store.summaries(bed.bob, { includeAdminDefault: false }));
   const versions = ['1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4'];
   for (const version of versions) await bed.publish(bed.alice, workflowPack({ id: 'other-review', version }));
-  const after = await usageOf(() => store.summaries(bed.bob));
+  const after = await usageOf(() => store.summaries(bed.bob, { includeAdminDefault: false }));
   assert.equal(after['db.rows'], (before['db.rows'] ?? 0) + versions.length, 'on a real deployment every decision was read again for each pack listed');
   assert.equal(after['db.queries'], before['db.queries']);
 });
@@ -186,8 +186,8 @@ test('summaries: a further pack adds the same statements whatever skills are ins
     await bed.registry.assign(bed.admin, bed.bob.id, id);
   };
   const statements = async (): Promise<number> => {
-    await store.summaries(bed.bob);
-    return (await usageOf(() => store.summaries(bed.bob)))['db.queries'] ?? 0;
+    await store.summaries(bed.bob, { includeAdminDefault: false });
+    return (await usageOf(() => store.summaries(bed.bob, { includeAdminDefault: false })))['db.queries'] ?? 0;
   };
   await add('first-review');
   const one = await statements();
@@ -205,7 +205,7 @@ test('summaries: a pack that ships tools/ lists its local tools with the digest-
   const { version } = await bed.publish(bed.alice, withFiles(workflowPack(), { 'tools/fetch-run.ts': tools, 'functions/keep.ts': 'export const keep = 1;\n' }));
   await bed.registry.assign(bed.admin, bed.bob.id, 'demo-review');
   const store = createWorkflowStore(bed.registry);
-  const [summary] = await store.summaries(bed.bob);
+  const [summary] = await store.summaries(bed.bob, { includeAdminDefault: false });
   assert.ok(PackSummary.safeParse(summary).success, JSON.stringify(PackSummary.safeParse(summary).error?.issues));
   assert.equal(summary.digest, version.digest);
   assert.equal(summary.local_tools?.count, 1);

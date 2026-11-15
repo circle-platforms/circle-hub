@@ -42,7 +42,7 @@ test('stored legacy runs support reading, listing and idempotent reuse, and a mi
  const original=await h.kit.store.get<RunRecord>(stored.digest);
  assert.deepEqual(original!.body,body);
  assert.equal(original!.body.requirements[0].rules,undefined);
- const missing=createRunsService({now:()=>new Date('2026-10-22T08:00:00.000Z'),records:h.kit,workflows:{forUser:async()=>null,byDigest:async()=>null,summaries:async()=>[]},packs:h.packs,knowledge:h.knowledge,external:h.external});
+ const missing=createRunsService({now:()=>new Date('2026-10-22T08:00:00.000Z'),records:h.kit,workflows:{forUser:async()=>null,byDigest:async()=>null,summaries: async (_user: unknown, _options: { includeAdminDefault: boolean }) =>[]},packs:h.packs,knowledge:h.knowledge,external:h.external});
  await assert.rejects(missing.getRun(h.alice,body.run),error=>error instanceof RecordsError && error.code==='SOURCE_READ_FAILED' && Boolean(error.fix));
  const refused=await missing.startRun(h.alice,input,h.call('synthetic-history'));
  assert.equal(refused.call_result,'error');assert.equal(refused.errors[0].code,'SOURCE_READ_FAILED');assert.equal(refused.errors[0].fix,'请管理员从备份恢复该运行锁定的任务包原件，再重新读取或复用运行');

@@ -132,7 +132,7 @@ test('a runnable skill is available by its installed digest without per-user ass
   assert.equal((await store.forUser(bed.bob,'shared-reading'))?.pack.digest,first.version.digest);
   await bed.publish(bed.alice,{...description,version:'1.0.1'});
   assert.equal(await store.forUser(bed.bob,'shared-reading@1.0.1'),null);
-  assert.equal((await store.summaries(bed.bob)).find(p=>p.id==='shared-reading')?.version,'1.0.0');
+  assert.equal((await store.summaries(bed.bob, { includeAdminDefault: false })).find(p=>p.id==='shared-reading')?.version,'1.0.0');
 });
 
 test('sandbox transport preserves the original format vectors and enforces declared limits',async()=>{

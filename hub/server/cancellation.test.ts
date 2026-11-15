@@ -19,7 +19,7 @@ function emptyCapabilities() {
 
 test('an already cancelled pack read never starts its provider', async () => {
   let reads = 0;
-  const deps = { workflows: { summaries: async () => { reads++; return []; } } } as unknown as ServerDeps;
+  const deps = { workflows: { summaries: async (_user: unknown, _options: { includeAdminDefault: boolean }) => { reads++; return []; } } } as unknown as ServerDeps;
   await assert.rejects(callTool(deps, call(AbortSignal.abort()), 'list_task_packs', {}), cancelled);
   assert.equal(reads, 0);
 });
@@ -28,7 +28,7 @@ test('cancellation during a pending pack read prevents the next context read', a
   const controller = new AbortController();
   const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<[]>();
   let contexts = 0, capabilities = 0;
-  const deps = { memberCapabilities: async () => { capabilities++; return emptyCapabilities(); }, workflows: { summaries: () => { started.resolve(); return finish.promise; } }, runs: { packContext: async () => { contexts++; return null; } } } as unknown as ServerDeps;
+  const deps = { memberCapabilities: async () => { capabilities++; return emptyCapabilities(); }, workflows: { summaries: (_user: unknown, _options: { includeAdminDefault: boolean }) => { started.resolve(); return finish.promise; } }, runs: { packContext: async () => { contexts++; return null; } } } as unknown as ServerDeps;
   const result = callTool(deps, call(controller.signal), 'list_task_packs', {});
   const rejected = assert.rejects(result, cancelled);
   await started.promise;
@@ -57,7 +57,7 @@ test('socket disconnect cancels a pending read before its next stage and still r
   const deps = {
     records: { principals: { authenticate: async () => principal }, callLog: { append: async (line: { callResult: string }) => { logs.push(line); } } },
     memberCapabilities: async () => emptyCapabilities(),
-    workflows: { summaries: () => { started.resolve(); return finish.promise; } },
+    workflows: { summaries: (_user: unknown, _options: { includeAdminDefault: boolean }) => { started.resolve(); return finish.promise; } },
     runs: { packContext: async () => { contexts++; return null; } },
   } as unknown as ServerDeps;
   const server = createServer((req, res) => {
@@ -99,7 +99,7 @@ test('cancellation notifications reach only the same authenticated token and cli
     const deps = {
       records: { principals: { authenticate: async () => principal }, callLog: { append: async () => {} } },
       memberCapabilities: async () => emptyCapabilities(),
-      workflows: { summaries: () => { started.resolve(); return finish.promise; } },
+      workflows: { summaries: (_user: unknown, _options: { includeAdminDefault: boolean }) => { started.resolve(); return finish.promise; } },
       runs: { packContext: async () => { contexts++; return null; } },
     } as unknown as ServerDeps;
     const server = createServer((req, res) => { void handleMcp(req, res, { deps, serverVersion: 'synthetic', budget: new BodyBudget(8192), log: () => {} }, 8192).catch(() => res.destroy()); });

@@ -346,9 +346,9 @@ describe('close', () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));
     const original = other.fakes.workflows.summaries.bind(other.fakes.workflows);
-    other.fakes.workflows.summaries = async (user) => {
+    other.fakes.workflows.summaries = async (user, options) => {
       await gate;
-      return original(user);
+      return original(user, options);
     };
     const pending = client.call('list_task_packs', {});
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -370,10 +370,10 @@ describe('close', () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));
     let finished = false;
-    workflows.summaries = async (user) => {
+    workflows.summaries = async (user, options) => {
       await gate;
       finished = true;
-      return original(user);
+      return original(user, options);
     };
     try {
       const trace = 'c0ffee00c0ffee00c0ffee00c0ffee01';

@@ -679,7 +679,11 @@ class Registry implements PackRegistry {
   }
 
   async canUse(userId: string, packId: string): Promise<boolean> {
-    if(await this.#kindOf(packId)==='skill'){const user=await this.#records.principals.get(userId);return !!user&&!user.disabled&&(await this.installedSkills()).some(p=>p.info.id===packId);}
+    const user=await this.#records.principals.get(userId);
+    if(!user||user.disabled)return false;
+    const kind=await this.#kindOf(packId);
+    if(kind==='skill')return (await this.installedSkills()).some(p=>p.info.id===packId);
+    if(kind==='workflow'&&user.role==='admin')return (await this.latestVersion(packId))?.kind==='workflow';
     return this.#records.authorizations.canUse(userId, packId);
   }
 

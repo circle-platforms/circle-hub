@@ -32,7 +32,7 @@ type SubmitOut = z.infer<typeof SubmitResultOutput>;
 /** Frozen source details available to the display layer. */
 export interface TextContext {
   /** list_task_packs: the exact filters and absolute offset needed to continue the same list. */
-  packList?: { offset: number; kind?: string; packId?: string; contextUnread?: boolean };
+  packList?: { offset: number; kind?: string; packId?: string; contextUnread?: boolean; adminDefaultPacks?: readonly string[] };
   /** The server takes get_nodes {reference, cursor} and passes the cursor back here: only then are page cursors offered. */
   paging?: boolean;
   /** get_nodes with a reference: the page cursor the caller gave (made by pageCursor for an earlier page). */
@@ -510,8 +510,10 @@ function listText(v: ListOut, context: TextContext): string {
     lines.push(`测试环境 ${observation.label}，${observation.build === null ? '构建未知' : `构建 ${observation.build}`}；读取时间 ${localMinute(observation.observed_at)}`);
   }
   if (context.packList?.contextUnread) lines.push(proseByRole(role, 'context_unread'));
+  const adminDefaults=new Set(context.packList?.adminDefaultPacks??[]);
   for (const pack of v.packs) {
     lines.push(`${pack.title}，${pack.description}`);
+    if(adminDefaults.size>0&&pack.kind==='workflow'&&(pack.space===undefined||pack.space==='team'))lines.push(adminDefaults.has(pack.pack)?'管理员默认可用（未分配给当前账户）':'已分配');
     if (pack.products.length) lines.push(`产品 ${pack.products.join('、')}`);
     lines.push(...pack.inputs.map(input => `${input.description}，${required(input.required)}`));
     lines.push(...pack.parameters.map(parameter => `${parameter.description}，${required(parameter.required)}`));
