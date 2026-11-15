@@ -1042,7 +1042,7 @@ test('recompose refusal: one next actor, verbatim（×N）, determined-error bra
     cross_item: [],
   });
   const text = toolText('submit_result', submitAnswer(refused), { items: list });
-  assert.match(text, /^脚本合并有错误。$/m);
+  assert.match(text, /^核对有错误。$/m);
   assert.match(text, /^原始用例 253651793153361064 标题未知：$/m);
   assert.match(text, /^- 改写后的命令没有锁定目录的完整语法身份（×5）$/m);
   assert.equal(linesOf(text).filter((line) => line.includes('改写后的命令没有锁定目录的完整语法身份')).length, 1);
