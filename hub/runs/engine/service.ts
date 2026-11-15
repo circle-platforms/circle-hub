@@ -170,7 +170,7 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
         const detail = await getRun(current, user, run);
         if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
-        return { run, jobs: await exportedJobs(current, run) };
+        return { run, jobs: await exportedJobs(current, run, user) };
       }));
     },
     exportSuccessors(user, run) {
