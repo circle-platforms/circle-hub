@@ -3,7 +3,7 @@ import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {test} from 'node:test';
 import {ExecutorDefinition} from './definition.ts';
-import {RpcClient,IncompleteReplyError,InvocationDefinitionError,ResponseStorageError} from './transport.ts';
+import {RpcClient,IncompleteReplyError,InvocationDefinitionError,ResponseStorageError,RpcReplyError,type ResponseMetadata} from './transport.ts';
 import {definition} from './testing/definition.ts';
 import {startEndpoint} from './testing/server.ts';
 
@@ -125,4 +125,16 @@ test('drain includes declaredRead save failures and excludes a normal submit sti
   readCommit.resolve();assert.ok(await read instanceof ResponseStorageError);await draining;assert.equal(drained,true);
   const submit=client.call('submit',{request_id:'synthetic-request',dispatch_sequence:1,sequence_scope:'synthetic-scope',payload_base64:'eA==',sha256:'a'.repeat(64),items:[],lease_id:'synthetic-lease'});await submitSaved.promise;
   await client.drainReads();submitCommit.resolve();await submit;
+});
+
+
+test('saved metadata records expected local RPC identity before validating a conflicting response id',{timeout:10000},async t=>{
+  const saved=Promise.withResolvers<void>(),commit=Promise.withResolvers<void>();
+  const endpoint=await startEndpoint(reads,(_name,_args,res,id)=>{res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({jsonrpc:'2.0',id:(id ?? 0)+1000,result:{structuredContent:{ok:true},content:[]}}));});t.after(()=>endpoint.close());
+  const metadata: Array<{operation:string;value:ResponseMetadata|undefined}>=[];
+  const client=new RpcClient(recoveryDefinition(endpoint.endpoint),'synthetic-secret','synthetic-job',async(_bytes,_status,operation,_complete,value)=>{metadata.push({operation,value});if(operation==='result'){saved.resolve();await commit.promise;}return source;},undefined,undefined,{recovery:true});await client.connect();
+  let settled=false;const result=client.call('result',{remote_id:'synthetic-remote'}).then(()=>{settled=true;return null;},error=>{settled=true;return error;});
+  await saved.promise;assert.equal(settled,false,'response verification cannot precede committed capture');
+  assert.deepEqual(metadata.map(row=>[row.operation,row.value?.rpc_id,row.value?.rpc_method]),[['initialize',1,'initialize'],['notifications/initialized',2,'notifications/initialized'],['tools/list',3,'tools/list'],['result',4,'tools/call']]);
+  commit.resolve();assert.ok(await result instanceof RpcReplyError);await client.drainReads();
 });
