@@ -72,6 +72,7 @@ export const TAUGHT_PLACEHOLDERS: Record<string, string> = {
 
 const META_QUOTED = "node '<技能目录>/tools/<脚本>.ts' --选项 值";
 const META_BARE = 'node <技能目录>/tools/<脚本>.ts --选项 值';
+const META_QUOTED_VALUE = "node '<技能目录>/tools/<脚本>.ts' --选项 '值'";
 
 function splitAlternativesOutsideAngles(text: string): string[] {
   const parts: string[] = [];
@@ -133,7 +134,7 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
         const span = m[1]!.trim();
         if (!span.startsWith('node ')) continue;
         if (span === 'node -e') continue;
-        const isMetaTemplate = span === META_QUOTED || span === META_BARE;
+        const isMetaTemplate = span === META_QUOTED || span === META_BARE || span === META_QUOTED_VALUE;
         out.push({
           source,
           kind: 'inline',
