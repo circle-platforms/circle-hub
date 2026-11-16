@@ -218,7 +218,7 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   return live;
  };
  // An explicit clear inside the case cannot precede a still-live paired inverse, even if the product
- // classifies that clear as read-only for configuration obligations. Match only declared clear literals.
+ // classifies that clear as read-only for configuration obligations. Match declared clears by complete grammar identity.
  const pairedLive:typeof main=[];
  for(const operation of parsed){
   let undone=-1;
@@ -229,7 +229,9 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
    if(!pair.ambiguous&&pair.identities.length===1)pairedLive.push(operation);
   }
   for(const live of pairedLive){
-   if(live.object!==operation.object||!runnerRule(runner,live.object,live.line)?.clears?.includes(operation.line))continue;
+   if(live.object!==operation.object)continue;
+   const clears=runnerRule(runner,live.object,live.line)?.clears??[];
+   if(!clears.some(line=>{const identity=parseOperation(line);return identity!==null&&resolvedKey(identity)===resolvedKey(operation.identity!);}))continue;
    const inverse=alternativeInverses(live.identity!,undefined).identities[0]!;
    note(operation.pointer,`清除“${operation.line}”之前必须先执行同设备的产品声明逆操作“${resolvedLine(inverse)}”；第 ${ordinal(live.pointer)+1} 步“${live.line}”仍未撤销`,'refute',{cleanup_for:live.pointer,inverse,before:operation.pointer,missing_count:1});
   }

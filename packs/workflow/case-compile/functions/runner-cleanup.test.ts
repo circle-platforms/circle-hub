@@ -161,7 +161,9 @@ test('an explicit runner clear cannot run before the declared paired inverse',()
   const contract=value.subject.contract as Doc;contract.effects.effect_0.command_scope.push('/commands/clear');contract.contract_sha256=runtimeDigest(contract);
   return value;
  };
- const wrong=build(['demo switch on','clear demo all',cleanup('demo switch off')]);
- assert.ok(checkContractShape(wrong).some(row=>row.verdict==='refute'&&row.statement.includes('先执行')));
+ for(const clear of ['clear demo all','clear   demo all']){
+  const wrong=build(['demo switch on',clear,cleanup('demo switch off')]);
+  assert.ok(checkContractShape(wrong).some(row=>row.verdict==='refute'&&row.statement.includes('先执行')),clear);
+ }
  const correct=build(['demo switch on','demo switch off','clear demo all']);assert.ok(checkContractShape(correct).every(row=>row.verdict==='support'),JSON.stringify(checkContractShape(correct)));
 });

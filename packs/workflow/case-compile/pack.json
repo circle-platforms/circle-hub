@@ -233,8 +233,8 @@
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "81edbe21126ea59354c7ad626e64cec84aa872e367986b4736a09c86dbc41934",
-      "size": 28702
+      "sha256": "b0ff87caa208d6863bf97c793033b190f19f6996d7a769d64ef4ffd81b82c442",
+      "size": 28867
     },
     {
       "path": "functions/delivery.ts",
