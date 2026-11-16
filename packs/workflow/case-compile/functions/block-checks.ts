@@ -9,6 +9,28 @@ import {runtimeMethod,type RuntimeContract} from './runtime-contract.ts';
 import {bindArguments} from './binding.ts';
 import {readCommandPolicy,within} from './generated/skills/command-tools/command-check/command-policy.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
+const MAX_LISTED=32;
+const quoted=(value:unknown):string=>JSON.stringify(value)??String(value);
+/** The ids a responder may name: every block whose call returns device text, in plan order. */
+export const observationIds=(slots:PlanSlots):string[]=>slots.steps.flatMap(step=>step.output&&step.id!==undefined?[step.id]:[]);
+/**
+ * A responder row names the observation block it answers by that block's id (a saved name or a device is not one). A refusal says
+ * the value written, lists this plan's observation ids (a closed set the plan itself defines) and, when the value is the saved name
+ * of exactly one observation block, that block's id. It never rewrites the plan.
+ */
+export function responderOutputGaps(slots:PlanSlots,seats:readonly string[]=[]):AuthorityGap[]{
+ const meta=blockMeta(slots),rows=slots.block_context?.responders;if(!meta||!Array.isArray(rows))return [];
+ const ids=observationIds(slots),listed=ids.length?ids.slice(0,MAX_LISTED).join('、')+(ids.length>MAX_LISTED?`…（共 ${ids.length} 个，完整集合见结构化结果）`:''):'没有观察块';
+ const kindOf=(id:string):string=>String(slots.blocks.find(block=>block.id===id)?.kind);
+ return rows.flatMap((row:any,index:number)=>{
+  const value=row?.output;if(typeof value==='string'&&ids.includes(value))return [];
+  const saved=typeof value==='string'?meta.registers.get(value):undefined,expected=saved&&!saved.cell&&ids.includes(saved.block)?saved.block:undefined;
+  const named=typeof value==='string'&&meta.steps.has(value)?value:undefined;
+  const why=expected!==undefined?`；它是观察块 ${expected} 的保存名，应填块 id ${expected}`:saved?.cell?`；它是块 ${saved.block}（${kindOf(saved.block)}）保存的单格，不是观察块`:named!==undefined?`；它是块 ${named}（${kindOf(named)}）的 id，但该块不产生设备原文，不是观察块`:'';
+  const ref=row?.kind==='device'&&seats.length&&!seats.includes(row.ref)?`；另外 kind=device 的 ref 要填冻结设备座位（${seats.join('、')}），这一条的 ref 是 ${quoted(row.ref)}`:'';
+  return [{document:'blocks',pointer:`/block_context/responders/${index}/output`,verdict:'refute' as const,requested_output:value,allowed_output_ids:ids,...(expected!==undefined?{expected_output:expected}:{}),message:`应答者 output 写的是 ${quoted(value)}，它不是本条任何观察块的 id；output 要填产生设备原文的观察块的 id，不是保存名或设备名；本条的观察块 id：${listed}${why}${ref}；不自动改写计划`}];
+ });
+}
 export function blockGraphGaps(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog:unknown,identities:ReadonlyMap<string,Pick<CommandIdentity,'path'>>,services?:unknown):AuthorityGap[]{
  const meta=blockMeta(slots);if(!meta)return [];
  const gaps:AuthorityGap[]=[],note=(pointer:string,message:string,refute=false)=>gaps.push({document:'blocks',pointer,message,verdict:refute?'refute':'unknown'});
@@ -37,7 +59,10 @@ export function blockGraphGaps(contract:RuntimeContract,profile:RuntimeProfile,s
   const allowed=profile.allowed.find(call=>call.object===step.object&&call.method===step.method);
   if(!Object.values(allowed?.parameters??{}).includes('host_shell'))continue;
   const matches=context.responders.filter((value:any)=>value.output===step.id);
-  if(matches.length!==1){note(step.origin??'/blocks','缺主机观察的唯一应答者声明；下一步：模型明确 device / fixture / bed_service，未定写 undetermined 及出口');continue;}
+  if(matches.length!==1){
+   const others=matches.length?`；第 ${context.responders.flatMap((value:any,at:number)=>value.output===step.id?[at+1]:[]).join('、')} 条都写了它，只能留一条`:context.responders.length?`；现有应答者的 output 是 ${context.responders.map((value:any)=>quoted(value.output)).join('、')}，没有一条等于这个块的 id`:'';
+   note(step.origin??'/blocks',`观察块 ${step.id}（${step.object}.${step.method}）是主机命令的观察，block_context.responders 里要有且只有一条 output 等于 ${quoted(step.id)} 的应答者声明，现在有 ${matches.length} 条${others}；下一步：补上这一条，kind 写 device / fixture / bed_service，未定写 undetermined 及出口`);continue;
+  }
   const row=matches[0],at='/block_context/responders/'+context.responders.indexOf(row);
   if(!TABLE.responder_kinds.includes(row.kind))note(at,'应答者类型不在包声明闭集中',true);
   else if(row.kind==='undetermined')note(at,(row.missing??'应答者未定')+'；下一步：'+(row.next_action??'模型核对来源和请求链后补明确应答者'));
@@ -45,6 +70,6 @@ export function blockGraphGaps(contract:RuntimeContract,profile:RuntimeProfile,s
   else if(row.kind==='bed_service'){if(!Array.isArray(services))note(at,'缺冻结自动化测试环境服务清单；下一步：补绑定 inventory 后重新核验');else if(!services.some(service=>isRecord(service)&&service.host===row.ref))note(at,'床服务应答者没有冻结服务声明',true);}
  }
  for(const [index,expect]of slots.expects.entries())if(!observations.some(row=>row.step.id===expect.output))note(expect.origin??'/expects/'+index,'断言必须明确指向产生原文的观察，等待和配置不是输出',true);
- for(const [index,row]of context.responders.entries())if(!observations.some(value=>value.step.id===row.output))note('/block_context/responders/'+index,'应答者必须对应实际观察输出',true);
+ gaps.push(...responderOutputGaps(slots,[...new Set(profile.seats.map(seat=>seat.device))]));
  return gaps;
 }
