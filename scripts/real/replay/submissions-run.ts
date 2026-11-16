@@ -208,7 +208,9 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
   if (config.bundle === null) {
     for (const task of limited) {
       const binding = bindings.get(task.run);
-      outcomes.push(unbound.has(task.run)
+      outcomes.push(task.submission === null
+        ? refuse(task, 'no_submission', '这条核对结果不是对某次提交的核对（导出里没有它对应的提交）：它是运行自己产生的结果，不经 submit_result，本回放不覆盖')
+        : unbound.has(task.run)
         ? refuse(task, unbound.get(task.run)!.code, unbound.get(task.run)!.message)
         : make(task, { status: 'not_replayable', reason: { code: 'no_bundle', message: '没有给 Hub 数据包（--bundle）：验证要读知识树、来源原件、记录和任务包，这些在 Hub 的数据库里，导出里没有；清单见 needs-export.md' }, ...(binding === undefined ? {} : { rebound: binding }) }));
     }
