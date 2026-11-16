@@ -21,7 +21,7 @@ product/build/version: start_run 顶层，与后续 case-compile 相同
 parameters.scope: {"words":"<范围原话>","cases":["<autoid>",...]}（可选；与 scope.md/case-compile 同原话，完整脑图仍下载作上下文；不传则选整份带 autoid、未声明不自动化的原始用例）
 本地原始用例: items/<序号>.json 中 fields.atoms
 本地来源: sources.json、sources/<摘要>（含完整脑图）；手册和命令树: knowledge/
-引用照抄下载文件中“· 引用”行的 tree:…，不自行拼接；该行是标注，其下才是原文，同节点条目先后不是手册先后
+引用照抄下载文件中“· 引用”行的 tree:…，不自行拼接；该行是标注，其下才是原文，带“源 … 行 …”的按原文行号排，没有的先后不是手册先后
 ```
 
 ```sh

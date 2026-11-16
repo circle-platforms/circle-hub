@@ -58,13 +58,13 @@
     },
     {
       "path": "agents/compile-recomposer.md",
-      "sha256": "fc8a79fc289afcaf35ca870c4260d500ee13d38f06abfe8ee280172e3204af79",
-      "size": 4983
+      "sha256": "b4204732b7a3728145fd35d3bbb09a00c0b786deee79aae1d15ae5c87e5b8364",
+      "size": 5034
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "57e13755019a0cef072a911691edea7638c2ab55c4330e1572c326f36218c7ec",
-      "size": 16629
+      "sha256": "4e4e9c392c37698563a44a07b916fcbdccbdc13eb90df17a8a27d45304f8ea3c",
+      "size": 16812
     },
     {
       "path": "checks.json",
@@ -138,8 +138,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "8b2ebfbf26d05579a072d15fe2a9a5ab2a6e64804a3613adc5f603dd45cf311c",
-      "size": 83786
+      "sha256": "15d909574a7bfe2078aa74c0a0af3a1f09b9ac6457c856d2cd58364b457cab37",
+      "size": 83956
     },
     {
       "path": "functions/bed.ts",
@@ -378,8 +378,8 @@
     },
     {
       "path": "functions/knowledge-text.ts",
-      "sha256": "5440c2560d3a77a239bc23da7132b8baf232c2e87afb7ac6936ee8b8daaccdef",
-      "size": 6664
+      "sha256": "9e79532c33e0d7a90c8623c3e8bfc7287e70983dc7eb3ad0323586a6fd8c0928",
+      "size": 9133
     },
     {
       "path": "functions/length-literals.ts",
@@ -493,8 +493,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "79d71c5e2e54f29ba0687b4d91ebf2c48583fe2a1c406af37f7aefddf11e4ce4",
-      "size": 41913
+      "sha256": "d573527c4fe89d6ff26624d47e14dd936a485117e95728bc7013d221252037bc",
+      "size": 42151
     },
     {
       "path": "functions/subject.ts",
@@ -898,8 +898,8 @@
     },
     {
       "path": "tools/authoring-brief.ts",
-      "sha256": "b7e56778f5226e9a358720a7417052fe071a77edfc5903c619c5a3cbbf79cdbb",
-      "size": 21764
+      "sha256": "1b9ad9138ebff9b110cfffbee7b671ffd84e978bdf7712ae7c9730c20c71a3f9",
+      "size": 21918
     },
     {
       "path": "tools/carry-plans.cli.json",

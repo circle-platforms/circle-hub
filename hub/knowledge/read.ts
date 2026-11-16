@@ -132,6 +132,12 @@ interface EntryAt {
 /** Children of an expanded node read in one query. */
 const CHILD_BATCH = 64;
 
+/** A node view of the batch export: every entry that the composition holds source fragments for carries them (see subtreeNodes). */
+function withFragments(view: NodeViews[number], rows: ReadonlyMap<string, ReadRow> | null): NodeViews[number] {
+  if (rows === null) return view;
+  return { ...view, entries: view.entries.map((entry) => { const fragments = rows.get(entry.entry)?.fragments; return fragments !== undefined && fragments.length > 0 ? Object.assign({}, entry, { fragments: [...fragments] }) : entry; }) };
+}
+
 export class TreeReading {
   readonly #context: KnowledgeContext;
   readonly #products = new Lru<string, { products: Set<string>; at: number }>(64,Number.POSITIVE_INFINITY,true);
@@ -460,7 +466,11 @@ export class TreeReading {
    * leaves, with the node views a subtree read (getNodes) gives for the same root and composition: the same permission
    * check before anything is read, the same composition choice, the same entries in the same order. No page limit, no
    * cursor, and nothing of the layers that change after the root (back-references, contributions, feeding): those are read
-   * on their own. Null where getNodes answers null (absent and forbidden alike, D05 R[3]) and for an empty scope.
+   * on their own. Null where getNodes answers null (absent and forbidden alike, D05 R[3]) and for an empty scope. One thing
+   * more than getNodes gives: each entry carries its `fragments`, the source fragments the composition lists for it in the
+   * order the producers gave them (what a reference read gives as `grounds`). The tree records no document order (a node's
+   * entries are sorted for reading, K01 R[1]); the fragments are where an entry stands in its source, so a client that
+   * keeps the batch can put the entries of a node back in the order of their source.
    */
   async subtreeNodes(query: { root: string; paths?: readonly string[]; composition?: string | null }, reader: Principal): Promise<AsyncGenerator<NodeViews[number]> | null> {
     const root = query.root;
@@ -493,7 +503,7 @@ export class TreeReading {
       if (seen.has(path)) return;
       seen.add(path);
       const rows = chosen === null ? null : await chosen.rowsAt(path);
-      yield reading.#nodeView(root, segments, digest, node, rows, await reading.#entriesAt(rows, node.entries), chosen);
+      yield withFragments(reading.#nodeView(root, segments, digest, node, rows, await reading.#entriesAt(rows, node.entries), chosen), rows);
       for (let at = 0; at < node.children.length; at += CHILD_BATCH) {
         const slice = node.children.slice(at, at + CHILD_BATCH);
         const batch = await reading.#context.store.nodes(slice.map((child) => child.digest)).catch(() => null);

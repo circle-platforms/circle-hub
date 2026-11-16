@@ -27,7 +27,7 @@ const TOKEN = 'synthetic-token-1234';
 const ROOT = createHash('sha256').update('synthetic root of the knowledge text test').digest('hex');
 const digest = (text: string): string => createHash('sha256').update(text).digest('hex');
 
-interface SyntheticEntry { kind: 'behaviour' | 'definition'; statement: string; applicability?: string }
+interface SyntheticEntry { kind: 'behaviour' | 'definition'; statement: string; applicability?: string; fragments?: string[] }
 interface SyntheticNode { path: string; children: string[]; entries: SyntheticEntry[] }
 
 /** One paragraph of a manual: long, mixed Chinese and ASCII, full-width punctuation and a bold markup run inside quotation marks. */
@@ -47,6 +47,18 @@ const EXAMPLE = [
   'sdns dnssec zonesig www.example.com',
 ];
 
+// The same block as the Hub exports it: sorted by statement, which is not the manual's order, but each entry says the lines it stands on in
+// its source (the chapter file the manual is cited by): the manual gives the lines of EXAMPLE in the order EXAMPLE has them.
+const SOURCE = 'ab'.repeat(32), OTHER_SOURCE = 'cd'.repeat(32);
+const LINES = ['l/10', 'l/11', 'l/12', 'l/13-14', 'l/15'];
+const SEQUENCE = [...EXAMPLE].sort().map((statement): SyntheticEntry => ({ kind: 'behaviour', statement, fragments: [`src:${SOURCE}/text@1/${LINES[EXAMPLE.indexOf(statement)]}`] }));
+// A node whose entries come from two source files, one of them without a line range of a text source: left in the Hub's order.
+const MIXED = [
+  { kind: 'behaviour' as const, statement: 'mixed b second in the export', fragments: [`src:${SOURCE}/text@1/l/5`] },
+  { kind: 'behaviour' as const, statement: 'mixed c third in the export', fragments: [`src:${SOURCE}/xml@1/x/catalog/command[1]`] },
+  { kind: 'behaviour' as const, statement: 'mixed a first in the source', fragments: [`src:${OTHER_SOURCE}/text@1/l/1`] },
+];
+
 const NODES: SyntheticNode[] = [
   { path: '/', children: ['commands', 'manual'], entries: [] },
   { path: '/commands', children: ['widget'], entries: [] },
@@ -55,8 +67,10 @@ const NODES: SyntheticNode[] = [
     { kind: 'definition', statement: 'widget health interval <seconds:int 1..60> [<mode:string>]', applicability: '合成条件：构建 Fixture_Build_A 起' },
   ] },
   { path: '/manual', children: ['guide'], entries: [] },
-  { path: '/manual/guide', children: ['example', 'overview'], entries: [] },
+  { path: '/manual/guide', children: ['example', 'mixed', 'overview', 'sequence'], entries: [] },
   { path: '/manual/guide/example', children: [], entries: EXAMPLE.map((statement) => ({ kind: 'behaviour' as const, statement })) },
+  { path: '/manual/guide/mixed', children: [], entries: MIXED },
+  { path: '/manual/guide/sequence', children: [], entries: SEQUENCE },
   { path: '/manual/guide/overview', children: [], entries: [
     { kind: 'behaviour', statement: PARAGRAPH },
     { kind: 'behaviour', statement: '* 动态DNS ACL规则\n\n系统会在功能开启后生成动态规则（通过“ddos dns on”启用）。\n\n* 第二段\n\n    缩进的代码行 --option "value"' },
@@ -75,7 +89,7 @@ function exportBytes(): Buffer {
     level: node.children.length ? 'branch' : 'leaf',
     digest: digest(node.path),
     children: node.children.map((name) => ({ name, path: `${node.path === '/' ? '' : node.path}/${name}`, digest: digest(name) })),
-    entries: node.entries.map((entry) => ({ entry: referenceOf(node.path, entry).split('@')[1], kind: entry.kind, statement: entry.statement, reference: referenceOf(node.path, entry), ...(entry.applicability === undefined ? {} : { applicability: entry.applicability }), data: { form: 'text' } })),
+    entries: node.entries.map((entry) => ({ entry: referenceOf(node.path, entry).split('@')[1], kind: entry.kind, statement: entry.statement, reference: referenceOf(node.path, entry), ...(entry.applicability === undefined ? {} : { applicability: entry.applicability }), ...(entry.fragments === undefined ? {} : { fragments: entry.fragments }), data: { form: 'text' } })),
   }));
   const head = { schema: 'run-knowledge@1', run: RUN, root: ROOT, composition: null, nodes: NODES.length, entries: NODES.reduce((n, node) => n + node.entries.length, 0) };
   return Buffer.from([JSON.stringify(head), ...lines].join('\n') + '\n');
@@ -137,6 +151,16 @@ async function hubAccepts(reference: string, quote: string): Promise<boolean> {
   return refs === true;
 }
 
+/** The lines of one node's block in a text file: from its `# <path>` line to the blank line before the next one. */
+function blockOf(lines: string[], path: string): string[] {
+  const start = lines.indexOf(`# ${path}`);
+  assert.ok(start >= 0, `${path} is in the files`);
+  let end = lines.findIndex((line, at) => at > start && line.startsWith('# /'));
+  if (end < 0) end = lines.length;
+  while (end > start + 1 && lines[end - 1] === '') end--;
+  return lines.slice(start, end);
+}
+
 /** The text files a model reads (nodes.jsonl and index.json are data files, not read as text). */
 const textOf = (files: Map<string, string>): string => [...files].filter(([name]) => name.endsWith('.txt')).map(([, text]) => text).join('');
 
@@ -180,6 +204,25 @@ for (const tool of ['case-compile', 'recompose'] as const) describe(`what a mode
     assert.deepEqual(between, [], 'no other text is mixed into the block');
   });
 
+  test('entries that say the lines they stand on come back in the order of those lines, with the lines on their heading', async () => {
+    assert.deepEqual(SEQUENCE.map((entry) => entry.statement), [...EXAMPLE].sort(), 'the export lists them as the Hub sorts them');
+    const block = blockOf(textOf(await downloaded(tool)).split('\n'), '/manual/guide/sequence');
+    const firsts = EXAMPLE.map((statement) => block.findIndex((line) => line === statement.split('\n')[0]));
+    assert.ok(firsts.every((at) => at > 0), 'every statement is there on lines of its own');
+    assert.deepEqual([...firsts].sort((a, b) => a - b), firsts, 'in the order of the manual, not the Hub\'s');
+    const expected = ['行 10', '行 11', '行 12', '行 13-14', '行 15'];
+    firsts.forEach((at, i) => {
+      assert.ok(block[at - 1].startsWith('· 引用 tree:') && block[at - 1].includes(`  源 ${SOURCE.slice(0, 12)} ${expected[i]}`), `heading of ${i}: ${block[at - 1].slice(-60)}`);
+      assert.ok(!block[at].includes('源 ') && !block[at].startsWith('· 引用'), 'and the statement under it is untouched');
+    });
+  });
+
+  test('a node whose entries do not all have a line range of one text source, or come from two files, is not reordered by guesswork', async () => {
+    const block = blockOf(textOf(await downloaded(tool)).split('\n'), '/manual/guide/mixed');
+    const texts = block.filter((line) => line.startsWith('mixed '));
+    assert.deepEqual(texts, MIXED.map((entry) => entry.statement), 'the Hub\'s order stays');
+  });
+
   test('the reference of an entry is on a line of its own that is not part of the text, and each entry has one', async () => {
     const lines = textOf(await downloaded(tool)).split('\n');
     for (const node of NODES) for (const entry of node.entries) {
@@ -196,9 +239,9 @@ for (const tool of ['case-compile', 'recompose'] as const) describe(`what a mode
     const briefNodes: BriefNode[] = NODES.map((node) => ({
       path: node.path,
       children: node.children.map((name) => ({ name, path: `${node.path === '/' ? '' : node.path}/${name}` })),
-      entries: node.entries.map((entry) => ({ kind: entry.kind, statement: entry.statement, reference: referenceOf(node.path, entry), ...(entry.applicability === undefined ? {} : { applicability: entry.applicability }) })),
+      entries: node.entries.map((entry) => ({ kind: entry.kind, statement: entry.statement, reference: referenceOf(node.path, entry), ...(entry.applicability === undefined ? {} : { applicability: entry.applicability }), ...(entry.fragments === undefined ? {} : { fragments: entry.fragments }) })),
     }));
-    for (const node of briefNodes.filter((candidate) => candidate.path.startsWith('/manual/guide/example') || candidate.path.startsWith('/commands/widget') || candidate.path === '/manual/guide/overview')) {
+    for (const node of briefNodes.filter((candidate) => ['/manual/guide/example', '/manual/guide/sequence', '/manual/guide/mixed', '/manual/guide/overview'].includes(candidate.path) || candidate.path.startsWith('/commands/widget'))) {
       const file = files.get(`${node.path.split('/')[1]}.txt`)!;
       assert.ok(file.includes(nodeBlock(node).join('\n') + '\n'), `the brief's block of ${node.path} is not the downloaded one`);
     }
@@ -227,7 +270,7 @@ describe('the words that explain the files to a model', () => {
     const cited = referenceOf(example.path, example.entries[0]);
     const item = { id: 'doc-1:c-1', fields: { title: '合成用例', recomposition: { record: { atoms: [], ledgers: { adapted: [{ atom: 'a1', commands: [], equivalence_refs: [cited] }] } } } } };
     const brief = authoringBrief(item, '00', { root: ROOT, nodes, lines: new Map() }, null)!;
-    assert.ok(brief.text.includes('· 引用 tree:…') && brief.text.includes('那是标注，不是原文') && brief.text.includes('不是手册里的先后'), 'the brief head says what the heading line is and that the order is not the manual\'s');
+    assert.ok(brief.text.includes('· 引用 tree:…') && brief.text.includes('那是标注，不是原文') && brief.text.includes('按这个原文行号排列') && brief.text.includes('不是手册里的先后'), 'the brief head says what the heading line is, what the source lines on it are for, and when the order is not the manual\'s');
     assert.ok(brief.text.includes(nodeBlock(nodes.get(canonicalPath(example.path))!).join('\n')), 'and quotes the node as the file has it');
   });
 });

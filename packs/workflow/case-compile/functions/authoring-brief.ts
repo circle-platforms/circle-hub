@@ -42,7 +42,7 @@ import { isRecord, wrapProseLine, CallFailure } from './text.ts';
 import { SCOPE_RULINGS_ORIGIN } from './scope.ts';
 
 /** `parameter` is on a manual table row that states one parameter of a command: the command forms the manual spells and the parameter's name (the product's producer records both from the row's place in the manual). */
-export interface BriefNode { path: string; children: Array<{ name: string; path: string }>; entries: Array<{ kind?: string; statement: string; reference: string; applicability?: string; parameter?: { commands: string[]; name: string } }> }
+export interface BriefNode { path: string; children: Array<{ name: string; path: string }>; entries: Array<{ kind?: string; statement: string; reference: string; applicability?: string; fragments?: string[]; parameter?: { commands: string[]; name: string } }> }
 export interface BriefPolicy { inverse_rules: Array<{ source_prefix: string; inverse_prefix: string; leading_parameters?: number }>; inverse_alternatives: string[][]; read_only: string[] }
 export interface BriefParameter { name: string; statement: string; reference: string }
 /** The locked root as the run download wrote it: its nodes by canonical path, where each node's block starts in the text files, and the manual's parameter rows by the words of the command they state. */
@@ -260,7 +260,7 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
   const out: string[] = [
     `# 编写简报 ${index}：${typeof fields.title === 'string' ? fields.title : ''}`,
     '',
-    `下载运行时由程序从 items/${index}.json、run.json 和 knowledge/ 摘出，只有事实，没有判断，也不是计划：这条用例的重组记录点到的命令在锁定命令树里的条目、手册对这些命令各参数的说明、产品声明的逆操作、只读前缀下同样的词走到的命令、同级命令的语法行，记录点到的其它节点在 knowledge/ 里的位置，最后是这条用例的计划文件外壳。写这条用例先读这一份，这里没有的再到 knowledge/ 里搜。每个条目前有一行“· 引用 tree:…”，那是标注，不是原文，引用照抄它；它下面到下一个“· 引用”行或“# ”行之前才是原文，一字不差（含全角标点和 ** 标记），引文只从这些行里连续复制，不带标注，不自加省略号。同一节点里的条目按 Hub 的排列（类别、原文）列出，不是手册里的先后。`,
+    `下载运行时由程序从 items/${index}.json、run.json 和 knowledge/ 摘出，只有事实，没有判断，也不是计划：这条用例的重组记录点到的命令在锁定命令树里的条目、手册对这些命令各参数的说明、产品声明的逆操作、只读前缀下同样的词走到的命令、同级命令的语法行，记录点到的其它节点在 knowledge/ 里的位置，最后是这条用例的计划文件外壳。写这条用例先读这一份，这里没有的再到 knowledge/ 里搜。每个条目前有一行“· 引用 tree:…”，那是标注，不是原文，引用照抄它；它下面到下一个“· 引用”行或“# ”行之前才是原文，一字不差（含全角标点和 ** 标记），引文只从这些行里连续复制，不带标注，不自加省略号。标注行末尾有“源 <文件号> 行 <起>-<止>”时，同一节点的条目就按这个原文行号排列，行号挨着就是原文挨着；没有“源”的条目按 Hub 的排列（类别、原文）列出，不是手册里的先后。`,
     '',
     `条目 ${String(item.id ?? '')}；锁定根 ${knowledge.root}。`,
     '',
