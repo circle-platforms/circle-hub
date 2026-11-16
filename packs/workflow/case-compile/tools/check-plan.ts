@@ -1,3 +1,7 @@
+import {blockPointer} from '../functions/blocks.ts';
+import {cleanupOperations} from '../functions/typed-authority.ts';
+import {commandObligations} from '../functions/command-obligations.ts';
+import {planCommands} from '../functions/plan-commands.ts';
 import {callBoundaryGaps} from '../functions/call-boundaries.ts';
 import {parseRuntimeContract} from '../functions/runtime-contract.ts';
 import {parseProfile} from '../functions/profile.ts';
@@ -5,11 +9,11 @@ import {parseManifest} from '../functions/manifest.ts';
 import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
-// 只读检查自动化用例 JSON、自动化用例目录或场景保真判断（.verdict.json）的语法、长度占位与结构，不用令牌，不写入磁盘：
+// Read-only plan/verdict checks; frozen run membership and declared cleanup use the same functions as Hub.
 //   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <冻结运行JSON>]
 import { realpathSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BRIEF_SCHEMA,
@@ -37,6 +41,7 @@ export interface CheckProblem {
 }
 
 export interface PlanCheckResult {
+  cleanup_checked?:boolean;
   structure_ok?:boolean;
   authority_checked?:boolean;
   disclosure?:string;
@@ -61,7 +66,7 @@ function parseOptions(argv: string[]): { file: string; brief?: string;run?:strin
   return {file:values.file!,...(values.brief!==undefined?{brief:values.brief}:{}),...(values.run!==undefined?{run:values.run}:{})};
 }
 
-export function checkPlanObject(file: string, parsed: unknown, run?:unknown): PlanCheckResult {
+export function checkPlanObject(file: string, parsed: unknown, run?:unknown,catalog?:unknown): PlanCheckResult {
   const problems: CheckProblem[] = [];
   if (!isRecord(parsed)) {
     return {
@@ -155,7 +160,7 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown): Pl
 
   const s = checked.slots;
   const structureOk=problems.length===0;
-  let authorityChecked=false;
+  let authorityChecked=false,cleanupChecked=false;
   if(run===undefined)problems.push({code:'missing_frozen_run',pointer:'/run',message:'缺冻结权限输入；用 --run <本次运行下载的run.json> 重检。结构通过不等于允许调用'});
   if(run!==undefined){
     const groups=isRecord(run)&&Array.isArray(run.groups)?run.groups:[];
@@ -167,7 +172,19 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown): Pl
       const contract=parseRuntimeContract(group.contract),manifest=parseManifest(group.manifest);
       const profile=contract.ok&&manifest.ok?parseProfile(group.profile,contract.contract,manifest.beds):null;
       if(!contract.ok||!manifest.ok||!profile?.ok)problems.push({pointer:'/run/groups',message:'冻结合约、清单或运行环境配置无效；重新下载本次运行完整 run.json，不手写冻结输入'});
-      else{authorityChecked=true;problems.push(...callBoundaryGaps(contract.contract,profile.profile,s).map(gap=>({...gap,code:'case-compile.method_forbidden'})));}
+      else{
+        authorityChecked=true;problems.push(...callBoundaryGaps(contract.contract,profile.profile,s).map(gap=>({...gap,code:'case-compile.method_forbidden'})));
+        if(contract.contract.cleanup){
+          if(!isRecord(run)||!isRecord(catalog)||catalog.root!==run.root||run.command_policy===undefined)problems.push({pointer:'/run/knowledge',message:'缺本次冻结根的命令树和产品逆操作声明；保留下载目录 knowledge/nodes.jsonl 与 run.json 一起重检，不能把运行器清除当作已执行逆操作'});
+          else{
+            const frozenCatalog={...catalog,policy:run.command_policy};
+            const resolved=planCommands(contract.contract,profile.profile,s,frozenCatalog);
+            const gaps=[...resolved.problems,...commandObligations(cleanupOperations(contract.contract,profile.profile,s,resolved.answers),s,frozenCatalog,[],contract.contract.cleanup)];
+            cleanupChecked=!gaps.some(gap=>gap.verdict==='unknown');
+            problems.push(...gaps.map(gap=>({...gap,pointer:blockPointer(s,gap.pointer),...(gap.verdict==='refute'?{code:'case-compile.method_forbidden'}:{})})));
+          }
+        }
+      }
     }
   }
   const kind = s.blocks.length > 0 ? 'blocks' : 'flat';
@@ -182,9 +199,10 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown): Pl
     handling,
     kind,
     expansions: describeExpansions(file, expanded.expansions),
+    cleanup_checked:cleanupChecked,
     structure_ok:structureOk,
     authority_checked:authorityChecked,
-    disclosure:authorityChecked?'已核对结构、冻结共同方法集合和设备应答者座位；其他 Hub 检查仍以提交回执为准':'只核对结构；未核对冻结权限，提供 --run <本次运行下载的run.json> 后核对共同方法集合和设备应答者座位',
+    disclosure:authorityChecked?`已核对结构、冻结共同方法集合和设备应答者座位${cleanupChecked?'、产品逆操作与运行器清理边界':''}；其他 Hub 检查仍以提交回执为准`:'只核对结构；未核对冻结权限，提供 --run <本次运行下载的run.json> 后核对共同方法集合和设备应答者座位',
     counts: {
       blocks: s.blocks.length,
       steps: s.steps.length,
@@ -194,6 +212,16 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown): Pl
     },
     problems,
   };
+}
+
+/** Read only the standard download beside the explicitly supplied frozen run; never infer catalog authority from prose. */
+async function downloadedCatalog(runPath:string,run:unknown):Promise<unknown>{
+ if(!isRecord(run)||typeof run.root!=='string')return undefined;
+ let bytes:string;try{bytes=await readFile(join(dirname(runPath),'knowledge','nodes.jsonl'),'utf8');}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw error;}
+ const [head,...nodes]=bytes.split('\n').filter(Boolean).map(line=>JSON.parse(line) as unknown);
+ if(!isRecord(head)||head.schema!=='run-knowledge@1'||head.run!==run.run||head.root!==run.root||head.nodes!==nodes.length)throw new CallFailure('invalid_parameters','命令树下载与冻结运行或节点计数不一致','重新下载本次运行完整 knowledge/nodes.jsonl，不拼接其他运行的命令树');
+ const entries=nodes.flatMap(node=>isRecord(node)&&Array.isArray(node.entries)?node.entries.filter(isRecord).flatMap(entry=>entry.kind==='definition'&&isRecord(entry.data)&&Array.isArray(entry.data.words)&&Array.isArray(entry.data.signatures)&&typeof entry.reference==='string'?[{words:entry.data.words,signatures:entry.data.signatures,reference:entry.reference}]:[]):[]);
+ return {root:run.root,complete:false,entries};
 }
 
 function isBriefObject(value: unknown): value is FidelityBrief {
@@ -235,6 +263,7 @@ export async function main(argv: string[]): Promise<number> {
     const args = parseOptions(argv);
     const targetInfo = await stat(args.file);
     const run=args.run!==undefined?parsedPlanFile(basename(args.run),await readFile(args.run)):undefined;
+    const catalog=args.run!==undefined?await downloadedCatalog(args.run,run):undefined;
 
     if (targetInfo.isDirectory()) {
       if (args.brief !== undefined) {
@@ -266,7 +295,7 @@ export async function main(argv: string[]): Promise<number> {
           });
           continue;
         }
-        const res = checkPlanObject(name, parsed, run);
+        const res = checkPlanObject(name, parsed, run, catalog);
         if (res.item) {
           const earlier = seenItems.get(res.item);
           if (earlier !== undefined) {
@@ -401,7 +430,7 @@ export async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
-    const res = checkPlanObject(name, parsed, run);
+    const res = checkPlanObject(name, parsed, run, catalog);
     process.stdout.write(JSON.stringify({ mode: 'plan', ...res }) + '\n');
     if (!res.ok) {
       writeProblemStderr(

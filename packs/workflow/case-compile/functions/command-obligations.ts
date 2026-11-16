@@ -217,10 +217,27 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   if(collect)undoneConfigurations!.push(...removed.map(row=>row.proof));
   return live;
  };
+ // An explicit clear inside the case cannot precede a still-live paired inverse, even if the product
+ // classifies that clear as read-only for configuration obligations. Match only declared clear literals.
+ const pairedLive:typeof main=[];
+ for(const operation of parsed){
+  let undone=-1;
+  for(let k=pairedLive.length-1;k>=0;k--)if(inverseProblem(pairedLive[k],{...operation,restore:undefined})===null){undone=k;break;}
+  if(undone>=0)pairedLive.splice(undone,1);
+  else if(modifies(operation.identity!)){
+   const pair=alternativeInverses(operation.identity!,undefined);
+   if(!pair.ambiguous&&pair.identities.length===1)pairedLive.push(operation);
+  }
+  for(const live of pairedLive){
+   if(live.object!==operation.object||!runnerRule(runner,live.object,live.line)?.clears?.includes(operation.line))continue;
+   const inverse=alternativeInverses(live.identity!,undefined).identities[0]!;
+   note(operation.pointer,`清除“${operation.line}”之前必须先执行同设备的产品声明逆操作“${resolvedLine(inverse)}”；第 ${ordinal(live.pointer)+1} 步“${live.line}”仍未撤销`,'refute',{cleanup_for:live.pointer,inverse,before:operation.pointer,missing_count:1});
+  }
+ }
  const configured=replay(main).reverse();
  if(undoneConfigurations)replay(parsed,true);
  // Reverse order binds within one device: a device does not undo another's state, so the order between devices is free
- // (the reference implementation's teardown check is not order-sensitive at all). One the runner's own cleanup covers (every
+ // (the reference implementation's teardown check is not order-sensitive at all). One the runner's own cleanup covers without a declared paired inverse (every
  // sent line against the runner's prefix rules, first hit) needs none, and its explicit inverse is accepted wherever it
  // stands on that device, the runner tearing down whatever is left anyway; the case then undid it itself. Each other live
  // configuration, latest first, takes the device's next remaining cleanup step, which must be its declared inverse.
@@ -230,7 +247,9 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   const taken=new Set<number>(),ordered:typeof mine=[],runnerOwned:RunnerCovered[]=[];
   for(const operation of mine){
    const rule=runnerRule(runner,operation.object,operation.line);
-   if(!rule){ordered.push(operation);continue;}
+   // A broad runner clear is not proof that a declared inverse state transition happened first.
+   const alternatives=alternativeInverses(operation.identity!,undefined);
+   if(!rule||alternatives.ambiguous||alternatives.identities.length){ordered.push(operation);continue;}
    const k=own.findIndex((step,index)=>!taken.has(index)&&inverseProblem(operation,step)===null);
    if(k>=0)taken.add(k);else runnerOwned.push({pointer:operation.pointer,object:operation.object,line:operation.line,...rule});
   }

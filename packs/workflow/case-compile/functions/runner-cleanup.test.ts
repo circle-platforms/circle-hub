@@ -1,6 +1,6 @@
 // The runner's own cleanup (decision 112): the runner clears every listed object at each case boundary and at the end of a
 // workbook, from the prefix rules of its clear source tested against each sent line, first hit. A live configuration command
-// such a rule covers needs no inverse in the case; any other still does, and an explicit inverse is still accepted.
+// such a rule covers needs no prefix inverse in the case; declared paired states still need their inverse before clearing.
 // Synthetic commands, objects and digests only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -131,4 +131,37 @@ test('optional clears and order are validated, disclosed when present, and refus
   assert.equal(unknownRow?.verdict, 'unknown', JSON.stringify(unknownRow));
   assert.match(unknownRow!.statement, /其中 1 条配置命令由运行器自己的清理收尾/);
   assert.equal((unknownRow as { data?: { runner_cleanup?: { covered: unknown[] } } }).data?.runner_cleanup?.covered.length, 1);
+});
+
+test('runner-wide clearing does not discharge a declared sibling or enum inverse',async()=>{
+ for(const command of ['demo switch on','demo feature on']){
+  const value=declared(fixture([command]),[{prefixes:['demo'],clears:['clear demo all']}]);
+  const rows=checkContractShape(value);assert.ok(rows.some(row=>row.verdict==='refute'&&row.statement.includes('off')),JSON.stringify(rows));
+  const {checkPlanObject}=await import('../tools/check-plan.ts');
+  const run={groups:[{kind:'case-compile',contract:value.subject.contract,profile:value.subject.profile,manifest:value.subject.manifest}],items:[{id:'synthetic-item'}],root:(value.subject.command_catalog as any).root,command_policy:(value.subject.command_catalog as any).policy};
+  const plan={item:'synthetic-item',handling:'handled',slots:{plan:[{data:value.subject.data}]}};
+  const local=checkPlanObject('synthetic.json',plan,run,value.subject.command_catalog);
+  assert.equal(local.ok,false);assert.ok(local.problems.some(problem=>problem.message.includes('off')));
+ }
+});
+
+test('declared inverse before runner cleanup is required on the same device, including a different product spelling',()=>{
+ for(const [on,off]of [['demo switch on','demo switch off'],['demo feature on','demo feature off'],['demo relay enable','demo relay disable']]){
+  const good=declared(fixture([on,cleanup(off)]),[{prefixes:['demo'],clears:['clear demo all']}]);assert.ok(checkContractShape(good).every(row=>row.verdict==='support'),JSON.stringify(checkContractShape(good)));
+  const wrongDevice=declared(fixture([on,cleanup(off)]),[{prefixes:['demo'],clears:['clear demo all']}]);(wrongDevice.subject.data as any).steps[1].object='widget-host';assert.ok(checkContractShape(wrongDevice).some(row=>row.verdict!=='support'));
+ }
+ const cancelled=declared(fixture(['demo switch on','demo switch off']),[{prefixes:['demo'],clears:['clear demo all']}]);assert.ok(checkContractShape(cancelled).every(row=>row.verdict==='support'));
+});
+
+test('an explicit runner clear cannot run before the declared paired inverse',()=>{
+ const build=(lines:Array<string|{line:string;cleanup:true}>)=>{
+  const value=declared(fixture(lines),[{prefixes:['demo'],clears:['clear demo all']}]),catalog=value.subject.command_catalog as any;
+  catalog.entries.push({words:['clear','demo','all'],reference:'tree:'+catalog.root+'/commands/clear/demo/all',signatures:[{id:'1',reference:'src:'+'b'.repeat(64)+'/xml@1/x/clear/arguments',params:[]}]});
+  catalog.policy.read_only.push('/commands/clear');
+  const contract=value.subject.contract as Doc;contract.effects.effect_0.command_scope.push('/commands/clear');contract.contract_sha256=runtimeDigest(contract);
+  return value;
+ };
+ const wrong=build(['demo switch on','clear demo all',cleanup('demo switch off')]);
+ assert.ok(checkContractShape(wrong).some(row=>row.verdict==='refute'&&row.statement.includes('先执行')));
+ const correct=build(['demo switch on','demo switch off','clear demo all']);assert.ok(checkContractShape(correct).every(row=>row.verdict==='support'),JSON.stringify(checkContractShape(correct)));
 });

@@ -280,7 +280,7 @@ test('authoringBrief and writeBriefs disclose contract.cleanup rules and ban wri
   const withPolicy = authoringBrief(saveItem, '00', knowledge, policyOf(POLICY), 'bed-a', parsed.contract.cleanup)!;
   assert.match(withPolicy.text, /执行器自动清理（lib\/demo\/clear\.py@eeeeeeeeeeee）：对清配对象 widget-seat，自第 2 条用例开始前及整本关闭连接时/);
   assert.match(withPolicy.text, /以下动作放收尾末尾：demo save/);
-  assert.match(withPolicy.text, /另受运行器自动清理涵盖（清配对象 widget-seat 命中规则 1（lib\/demo\/clear\.py 第 120 行），前缀“demo save”，触发清理命令 “demo save”，收尾阶段末尾执行），在清配对象上可省略 cleanup:true，禁止把运行器收尾清理或保存命令写入 cleanup:true/);
+  assert.match(withPolicy.text, /另受运行器自动清理涵盖（清配对象 widget-seat 命中规则 1（lib\/demo\/clear\.py 第 120 行），前缀“demo save”，触发清理命令 “demo save”，收尾阶段末尾执行），非已声明互逆取值时，在清配对象上可省略 cleanup:true，禁止把运行器收尾清理或保存命令写入 cleanup:true/);
   const noRulePolicy = { schema: 'command-policy@1' as const, read_only: [], inverse_rules: [], inverse_alternatives: [] };
   const withoutInverse = authoringBrief(saveItem, '00', knowledge, policyOf(noRulePolicy), 'bed-a', parsed.contract.cleanup)!;
   assert.match(withoutInverse.text, /执行器收尾（无需手写 cleanup:true）：清配对象 widget-seat 命中规则 1（lib\/demo\/clear\.py 第 120 行），前缀“demo save”，触发清理命令 “demo save”，收尾阶段末尾执行；禁止写入 cleanup:true（需在用例过程内执行时只写进 main）/);
@@ -289,4 +289,16 @@ test('authoringBrief and writeBriefs disclose contract.cleanup rules and ban wri
   const written = await readFile(join(directory, 'briefs', '00.md'), 'utf8');
   assert.match(written, /执行器自动清理（lib\/demo\/clear\.py@eeeeeeeeeeee）/);
   assert.match(written, /禁止把运行器收尾清理或保存命令写入 cleanup:true/);
+});
+
+test('both writer brief formats retain declared paired inverses despite automatic runner clearing',async()=>{
+ const directory=await downloaded([ITEM]),knowledge=(await readKnowledge(directory))!,policy=policyOf(POLICY)!;
+ const {buildCompileBrief}=await import('../functions/authoring-brief.ts');
+ const runner={source:'fixture/clear',sha256:'e'.repeat(64),objects:['widget-seat'],pinned:false,rules:[{prefixes:['widget'],clears:['clear widget all'],line:7}]};
+ const text=authoringBrief(ITEM,'00',knowledge,policy,'bed-a',runner)!.text;
+ assert.ok(text.includes('仍须先在 cleanup:true 执行同设备逆操作，再交运行器清除'));
+ const brief=buildCompileBrief({item:ITEM,index:'00',knowledge,policy,runnerCleanup:runner})!;
+ const detail=brief.materials.commands_and_manual.named_commands.find(command=>command.path==='/commands/widget/on')!.inverse;
+ assert.equal(detail.kind,'paired_sibling');assert.match(detail.detail,/仍须先在 cleanup:true 执行同设备逆操作，再交运行器清除/);assert.doesNotMatch(detail.detail,/可省略 cleanup:true/);
+ assert.ok(detail.node_block.join('\n').includes('widget off'));
 });

@@ -724,3 +724,5 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 
 T9 local candidate (2026-11-16): case-compile 3.21.3 discloses frozen call boundaries and profile problems, requires frozen run input for plan checks, supplies complete fidelity exemption evidence, and refuses stale prompt verdict reuse. Start input failures include visible predecessor input identities without changing binding semantics. Unpublished and undeployed.
+
+T9 supplement 7: declared paired state inverses remain mandatory before runner clearing; explicit clear actions cannot precede them. Offline plan checks read the matching standard knowledge download and fail on missing cleanup evidence. Writer prompts and both brief formats retain this ordering and request same-build manual quotations.

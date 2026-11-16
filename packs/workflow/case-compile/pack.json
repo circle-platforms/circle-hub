@@ -63,8 +63,8 @@
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "04aa36397e6c1500a69e08c89946dd9a16451f330006ccbbbf3345dd3cd7f8b7",
-      "size": 14060
+      "sha256": "6bd2b6dead060a38564b2b210ae2da7c3d3447fbff8a88197257df466c3e95b4",
+      "size": 14712
     },
     {
       "path": "checks.json",
@@ -138,8 +138,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "a1d03561f741c365f4b80a43ae1b53439cf26a68068932311ffa7118b25f342c",
-      "size": 82659
+      "sha256": "77904c631cf1618f514111b2a44bd42f344012bdebfc2510d49f9fb587639102",
+      "size": 83137
     },
     {
       "path": "functions/bed.ts",
@@ -233,8 +233,8 @@
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "72b3b4a410b5a5d06732028cfc4a5b12fb31d7913ee382913747d72d11dccb22",
-      "size": 27244
+      "sha256": "81edbe21126ea59354c7ad626e64cec84aa872e367986b4736a09c86dbc41934",
+      "size": 28702
     },
     {
       "path": "functions/delivery.ts",
@@ -468,8 +468,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "14f1943a9cb0f3f2925621b7e0d4d0b51986f3db6cd3f203c6434bdc360c8d00",
-      "size": 39166
+      "sha256": "0aee4688788995de230f2718b13f3d2949d91e3c43b8094eae35e5fbd14e2a02",
+      "size": 39828
     },
     {
       "path": "functions/subject.ts",
@@ -483,8 +483,8 @@
     },
     {
       "path": "functions/typed-authority.ts",
-      "sha256": "ad9e391fdaff5b08af73b1394a08bddffa56749d4f051031317f6894a14c946c",
-      "size": 18186
+      "sha256": "75916092aaf710cd6c327e962c6f1b483d5f824fbe931d0b42c9946b1de1f6eb",
+      "size": 18197
     },
     {
       "path": "functions/typed-contract.ts",
@@ -913,8 +913,8 @@
     },
     {
       "path": "tools/check-plan.ts",
-      "sha256": "f8d26ef7700862d8c0b111b31a2f2e7b9722195f60208a387e4910a05c9ab795",
-      "size": 17031
+      "sha256": "997d91af2bdc227de1f9b22578520b94ce4326fbb242e8af0677e290b752a28b",
+      "size": 19814
     },
     {
       "path": "tools/cmd-select-plumb.cli.json",
