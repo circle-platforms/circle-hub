@@ -35,6 +35,10 @@ async function paged(w: World, root: string, paths: string[], reader: Principal)
   return [...out.values()];
 }
 const byPath = (nodes: Node[]) => [...nodes].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+// The batch read is the export path and also carries each entry's source fragments (the grounds a reference read gives the same
+// reader; export-fragments.test.ts checks that); the paged read does not. Everything else must be equal node by node.
+const withoutFragments = (nodes: Node[]) => nodes.map((node) => ({ ...node, entries: node.entries.map(({ fragments: _fragments, ...entry }: any) => entry) }));
+const everyEntryHasFragments = (nodes: Node[]) => nodes.every((node) => node.entries.every((entry: any) => Array.isArray(entry.fragments) && entry.fragments.length > 0 && entry.fragments.every((f: unknown) => typeof f === 'string')));
 
 test('the batch read of a root equals the paged read node by node, for the whole root and for one subtree', async (t) => {
   const pg = await startPostgres(); t.after(() => pg.stop());
@@ -51,11 +55,12 @@ test('the batch read of a root equals the paged read node by node, for the whole
   assert.equal(whole[0].path, '/', 'pre-order from the root');
   assert.equal(new Set(whole.map((node) => node.path)).size, whole.length, 'each node once');
   assert.ok(whole.some((node) => node.entries.length > 0), 'the entries come with their nodes');
-  assert.deepEqual(byPath(whole), byPath(pages));
+  assert.ok(everyEntryHasFragments(whole), 'every batch entry carries its source fragments');
+  assert.deepEqual(byPath(withoutFragments(whole)), byPath(pages));
 
   const top = whole.find((node) => node.children.length > 0 && node.path !== '/')!.path;
   const part = await w.knowledge.subtree!({ root, paths: [top] }, w.user);
-  assert.deepEqual(byPath(part!), byPath((await paged(w, root, [top], w.user))!));
+  assert.deepEqual(byPath(withoutFragments(part!)), byPath((await paged(w, root, [top], w.user))!));
   assert.ok(part!.every((node) => node.path === top || node.path.startsWith(top + '/')));
   // Overlapping paths give each node once; a path the root does not hold gives nothing.
   assert.equal((await w.knowledge.subtree!({ root, paths: [top, top, '/'] }, w.user))!.length, whole.length);
