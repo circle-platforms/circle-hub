@@ -197,6 +197,11 @@
       "size": 8176
     },
     {
+      "path": "functions/catalog-selection.ts",
+      "sha256": "7b6fe92d07f7fdc82f8dd5f4791aa6b026478f542c99590367276d5bdd5abc20",
+      "size": 6607
+    },
+    {
       "path": "functions/cell-commands.ts",
       "sha256": "54e6f5889dab2acc6b5db1427a3868ffd7121d193ef308deda693cff2aaaad37",
       "size": 3996
@@ -278,8 +283,8 @@
     },
     {
       "path": "functions/generated/skills/command-tools/command-check/command-policy.ts",
-      "sha256": "139f2ebeece30624fc2c49a9442b3f6a5b52029dbba0dae3033abaa2eb5a9a12",
-      "size": 9166
+      "sha256": "b7b6536765335065c5930c434a512b43d84d21171a22e619c25630c96a4f60ca",
+      "size": 11716
     },
     {
       "path": "functions/generated/skills/command-tools/command-check/grammar.ts",
@@ -383,8 +388,8 @@
     },
     {
       "path": "functions/plan-boundary.ts",
-      "sha256": "9310c52832342927c866d91e2ee8cf7b205afdca27ae6f38a008b4a4b201a0c2",
-      "size": 8327
+      "sha256": "740d6ccc1b7b5fdb30aab3bfa151735ad6ae0169a62508f8d4c753abc76a5ffa",
+      "size": 10305
     },
     {
       "path": "functions/plan-commands.ts",
@@ -928,8 +933,8 @@
     },
     {
       "path": "tools/check-plan.ts",
-      "sha256": "5e40d17882423d85d1e1dd77b116c2f8aca073ae4834b491f0d09266ac6705f7",
-      "size": 21101
+      "sha256": "152962800dcccda7d3d29e7e78ea91de576f88d99639bbd3cba0d10c0fa3b6ba",
+      "size": 20825
     },
     {
       "path": "tools/cmd-select-plumb.cli.json",

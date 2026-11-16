@@ -433,8 +433,9 @@ test('CLI checks declared inverse before runner clear using only the matching do
   const withExpect=(data:any)=>({...data,expects:[{text:QUOTE.text,quote:{...QUOTE},after:1}]});
   const plan={item:'synthetic-item',handling:'handled',slots:{plan:[{text:'合成计划',data:withExpect(value.subject.data)}]}};
   const file=join(dir,'plan.json'),runFile=join(dir,'run.json');await writeFile(file,JSON.stringify(plan));await writeFile(runFile,JSON.stringify(run));
-  await mkdir(join(dir,'knowledge'));const nodes=catalog.entries.map((entry:any)=>({path:'/commands/'+entry.words.join('/'),entries:[{kind:'definition',reference:entry.reference,data:{words:entry.words,signatures:entry.signatures}}]}));
-  const nodesFile=join(dir,'knowledge','nodes.jsonl'),head={schema:'run-knowledge@1',run:runId,root:catalog.root,nodes:nodes.length};
+  const {treeLines}=await import('../testing/locked-tree.ts');
+  await mkdir(join(dir,'knowledge'));const [head,...nodes]=treeLines(catalog,runId);
+  const nodesFile=join(dir,'knowledge','nodes.jsonl');
   await writeFile(nodesFile,[head,...nodes].map(row=>JSON.stringify(row)).join('\n')+'\n');
   const missing=await runCli(['--file',file,'--run',runFile]);assert.equal(missing.code,1,missing.stderr);const report=JSON.parse(missing.stdout);assert.equal(report.cleanup_checked,true);assert.ok(report.problems.some((p:any)=>p.code==='case-compile.method_forbidden'&&p.message.includes('demo switch off')));
   const cleaned=fixture(['demo switch on',cleanup('demo switch off')]);plan.slots.plan[0].data=withExpect(cleaned.subject.data);await writeFile(file,JSON.stringify(plan));const good=await runCli(['--file',file,'--run',runFile]);assert.equal(good.code,0,good.stderr);assert.equal(JSON.parse(good.stdout).cleanup_checked,true);

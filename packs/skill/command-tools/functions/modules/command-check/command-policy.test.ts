@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { caseProfile, commandCounts, readCommandPolicy, volumeConflicts, volumeOrder, type CommandPolicy, type ParsedCommand } from './command-policy.ts';
+import { alternativeLines, caseProfile, commandCounts, inverseLines, readCommandPolicy, volumeConflicts, volumeOrder, type CommandPolicy, type ParsedCommand } from './command-policy.ts';
 
 const base = { schema: 'command-policy@1', read_only: ['/commands/show'], inverse_rules: [] };
 const declared = {
@@ -102,4 +102,56 @@ test('a volume holds a forbidden combination when both sides are in it, in two c
   assert.deepEqual(volumeConflicts([{ id: 'a1', profile: profile(command('/commands/demo/mirror/boot/off')) }, { id: 'b2', profile: profile(reload) }]), [], 'the boot sync switched off is not side A');
   const many = volumeConflicts([{ id: 'a1', profile: profile(boot) }, { id: 'a2', profile: profile(boot) }, { id: 'b1', profile: profile(reload) }, { id: 'b2', profile: profile(command('/commands/demo/mirror/push', [0])) }]);
   assert.deepEqual(many.map((row) => [row.side_a, row.side_b]), [[['a1', 'a2'], ['b1', 'b2']]]);
+});
+
+const pairs = readCommandPolicy({
+  schema: 'command-policy@1', read_only: ['/commands/show'],
+  inverse_rules: [{ source_prefix: '/commands/no', inverse_prefix: '/commands' }, { source_prefix: '/commands', inverse_prefix: '/commands/no' }],
+  inverse_alternatives: [['on', 'off'], ['enable', 'disable']],
+}) as CommandPolicy;
+
+test('a declared pair of alternative values asks for the partner\'s path, cut after the swapped word', () => {
+  assert.deepEqual(alternativeLines(pairs, ['demo switch on']), ['demo switch off']);
+  assert.deepEqual(alternativeLines(pairs, ['demo switch off']), ['demo switch on']);
+  assert.deepEqual(alternativeLines(pairs, ['demo relay enable 5 "two words"']), ['demo relay disable'], 'what follows the swapped word is not part of the path');
+  assert.deepEqual(alternativeLines(pairs, ['demo mode on level']), ['demo mode off'], 'an enum argument is asked for too: the same path, so it adds nothing to a walk');
+  assert.deepEqual(alternativeLines(pairs, ['demo switch on 1', 'demo switch on 2', 'demo relay enable']).sort(), ['demo relay disable', 'demo switch off'], 'one line for one path');
+  assert.deepEqual(alternativeLines(pairs, ['a on b off']).sort(), ['a off', 'a on b on'], 'each member of a pair in a line is swapped alone');
+});
+
+test('a partner the plan already walks to, a quoted word and a line the tokenizer refuses ask for nothing', () => {
+  assert.deepEqual(alternativeLines(pairs, ['demo switch on', 'demo switch off']), [], 'the plan sends both');
+  assert.deepEqual(alternativeLines(pairs, ['demo switch on', 'demo switch off 5']), [], 'the plan walks to the partner already');
+  assert.deepEqual(alternativeLines(pairs, ['demo switch on', 'demo switch "off"']), ['demo switch off'], 'a quoted word ends a walk, so it does not walk to the partner');
+  assert.deepEqual(alternativeLines(pairs, ['demo "x" on', 'demo "on"', 'demo \'on\'']), [], 'the walk stops at a quoted word');
+  assert.deepEqual(alternativeLines(pairs, ['demo switch "unterminated on']), []);
+  assert.deepEqual(alternativeLines(pairs, ['demo switch']), []);
+  assert.deepEqual(alternativeLines(null, ['demo switch on']), []);
+  const none = readCommandPolicy({ schema: 'command-policy@1', read_only: [], inverse_rules: [] }) as CommandPolicy;
+  assert.deepEqual(alternativeLines(none, ['demo switch on']), [], 'a policy without pairs asks for nothing');
+  // A pair member that is not one bare word cannot be the last word of a path.
+  const odd = readCommandPolicy({ schema: 'command-policy@1', read_only: [], inverse_rules: [], inverse_alternatives: [['up', 'down now']] }) as CommandPolicy;
+  assert.deepEqual(alternativeLines(odd, ['demo link up']), []);
+  assert.deepEqual(alternativeLines(odd, ['demo link down']), []);
+  // Lines past the selection's own limit are refused as they stand.
+  assert.deepEqual(alternativeLines(pairs, Array.from({ length: 129 }, (_, index) => `s${index} on`)), []);
+});
+
+test('the lines of declared pairs come first and are never dropped, the lines of the prefix rules are all of them or none', () => {
+  assert.deepEqual(inverseLines(pairs, ['demo switch on', 'demo pool add one 10']), ['demo switch off', 'no demo switch on', 'no demo pool add one 10']);
+  assert.deepEqual(inverseLines(pairs, ['demo switch on', 'no demo switch on']), ['demo switch off', 'no demo switch off'], 'a rule line the plan sends is not asked twice');
+  assert.deepEqual(inverseLines(null, ['demo switch on']), []);
+  // 63 lines of the plan, 1 line of a pair and 63 rule lines are 127: all of them.
+  const plan = Array.from({ length: 62 }, (_, index) => `demo pool add n${index} ${index}`);
+  const fits = inverseLines(pairs, [...plan, 'demo switch on']);
+  assert.equal(fits.length, 1 + 63);
+  assert.equal(fits[0], 'demo switch off', 'the pair line comes first');
+  // One line more and the rule lines are 129 with the plan: they go, the pair line stays.
+  const over = inverseLines(pairs, [...plan, 'demo pool add last 1', 'demo switch on']);
+  assert.deepEqual(over, ['demo switch off']);
+  // 128 lines of pairs: asked for in full, so the selection is over its limit and the Hub refuses it, instead of reading a catalog
+  // in which every switch is judged to need no cleanup. Past 128 lines the plan alone is over, and nothing more is asked.
+  const switches = Array.from({ length: 128 }, (_, index) => `s${index} on`);
+  assert.deepEqual(inverseLines(pairs, switches), switches.map((line) => line.replace(' on', ' off')));
+  assert.deepEqual(inverseLines(pairs, [...switches, 's128 on']), []);
 });

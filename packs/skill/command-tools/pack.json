@@ -13,8 +13,8 @@
     },
     {
       "path": "functions/modules/command-check/command-policy.ts",
-      "sha256": "139f2ebeece30624fc2c49a9442b3f6a5b52029dbba0dae3033abaa2eb5a9a12",
-      "size": 9166
+      "sha256": "b7b6536765335065c5930c434a512b43d84d21171a22e619c25630c96a4f60ca",
+      "size": 11716
     },
     {
       "path": "functions/modules/command-check/grammar.ts",

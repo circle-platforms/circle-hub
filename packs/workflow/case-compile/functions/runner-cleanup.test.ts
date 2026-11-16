@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { checkCommandsKnown, checkContractShape } from './checks.ts';
 import { parseRuntimeContract, runtimeDigest, stripAdditions } from './runtime-contract.ts';
 import { fixture, cleanup } from '../testing/inverse-alternatives.ts';
+import { lockedTreeOf, type FlatCatalog } from '../testing/locked-tree.ts';
 
 const SOURCE = 'fixture/runner-cleanup-rules', SHA = 'c'.repeat(64);
 type Value = ReturnType<typeof fixture>;
@@ -141,7 +142,7 @@ test('runner-wide clearing does not discharge a declared sibling or enum inverse
   const {frozenRun}=await import('../testing/frozen-run.ts');
   const run=frozenRun({groups:[{kind:'case-compile',contract:value.subject.contract,profile:value.subject.profile,manifest:value.subject.manifest}],items:[{id:'synthetic-item'}],root:(value.subject.command_catalog as any).root,command_policy:(value.subject.command_catalog as any).policy});
   const plan={item:'synthetic-item',handling:'handled',slots:{plan:[{text:'合成计划',data:value.subject.data}]}};
-  const local=checkPlanObject('synthetic.json',plan,run,value.subject.command_catalog);
+  const local=checkPlanObject('synthetic.json',plan,run,lockedTreeOf(value.subject.command_catalog as FlatCatalog));
   assert.equal(local.ok,false);assert.ok(local.problems.some(problem=>problem.message.includes('off')));
  }
 });
