@@ -1073,9 +1073,9 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
   }
   // a job that did not go out and carries the Hub's own facts says them (reason and named next step, from the
   // structure) instead of the generic "原因还没查清；下一步由使用者继续读取设备输出".
-  if (notRun && note.missing_facts !== undefined && note.missing_facts.length > 0) {
-    const fact = note.missing_facts.map((row) => row.fact).join('；');
-    const next = note.missing_facts.map((row) => row.next_action).join('；');
+  if (notRun) {
+    const fact = note.missing_facts?.length ? note.missing_facts.map((row) => row.fact).join('；') : '未取得可读取的未派发原因';
+    const next = note.missing_facts?.length ? note.missing_facts.map((row) => row.next_action).join('；') : note.next_action ?? '由使用者联系测试环境管理员核对未派发记录并补齐原因';
     return `上机验证${labelOf('effect_outcome', note.outcome!)}：${fact}。下一步：${next}；未取得用例在设备上的判断，状态未知；决定者程序仅披露派发记录`;
   }
   return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;

@@ -1169,3 +1169,11 @@ test('a job that was not sent says the Hub reason and the named next step, never
   assert.match(text, /上机验证未发出：该床尚未恢复，不能派发/);
   assert.match(text, /下一步：由bed-admin按声明的清理方法处理后重开/);
 });
+
+test('an unissued job without readable facts reports the missing cause rather than asking for device output', () => {
+  const value = { ...submitAnswer(resultOf(items(1))), dispatch: [{ outcome: 'not_dispatched' as const, not_sent: true, result: `src:${H('2')}`, missing_facts: [], next_action: '由测试环境管理员补齐未派发原因', text: '这次尚未取得具名原因' }] };
+  const text = toolText('submit_result', value);
+  assert.doesNotMatch(text, /设备输出已取回|读取设备输出/);
+  assert.match(text, /未取得.*原因/);
+  assert.match(text, /由测试环境管理员补齐未派发原因/);
+});
