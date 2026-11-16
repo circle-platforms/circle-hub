@@ -913,8 +913,8 @@
     },
     {
       "path": "tools/check-plan.ts",
-      "sha256": "997d91af2bdc227de1f9b22578520b94ce4326fbb242e8af0677e290b752a28b",
-      "size": 19814
+      "sha256": "5c73161b524a8028616f2108617278a303703d6b8e8280cebf8c5b4a71949a98",
+      "size": 19809
     },
     {
       "path": "tools/cmd-select-plumb.cli.json",

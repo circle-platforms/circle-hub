@@ -382,7 +382,7 @@ test('check-plan accepts valid precondition_source on flat steps and rejects mal
     const validRes = await runCli(['--file', validPath]);
     assert.equal(validRes.code, 1, validRes.stdout + validRes.stderr);
     assert.equal(JSON.parse(validRes.stdout).structure_ok,true);
-    assert.deepEqual(JSON.parse(validRes.stdout).problems.map((p:any)=>p.code),['missing_frozen_run']);
+    assert.deepEqual(JSON.parse(validRes.stdout).problems.map((p:any)=>p.code),['missing_input']);
 
     const invalidPath = join(dir, 'invalid.json');
     const badJson = JSON.parse(await readFile(validPath, 'utf8'));

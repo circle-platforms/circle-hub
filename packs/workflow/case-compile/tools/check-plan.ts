@@ -161,7 +161,7 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
   const s = checked.slots;
   const structureOk=problems.length===0;
   let authorityChecked=false,cleanupChecked=false;
-  if(run===undefined)problems.push({code:'missing_frozen_run',pointer:'/run',message:'缺冻结权限输入；用 --run <本次运行下载的run.json> 重检。结构通过不等于允许调用'});
+  if(run===undefined)problems.push({code:'missing_input',pointer:'/run',message:'缺冻结权限输入；用 --run <本次运行下载的run.json> 重检。结构通过不等于允许调用'});
   if(run!==undefined){
     const groups=isRecord(run)&&Array.isArray(run.groups)?run.groups:[];
     const groupsForPack=groups.filter(group=>isRecord(group)&&group.kind==='case-compile');
