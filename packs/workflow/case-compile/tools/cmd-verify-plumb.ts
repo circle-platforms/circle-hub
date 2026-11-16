@@ -9,6 +9,7 @@ import {
   lookupCommandDefinition,
   truncateCmdVerifyState,
 } from '../functions/cmd-recall.ts';
+import { disclose, nameLongLiterals, type CommandLiteral } from '../functions/command-literals.ts';
 import { expandValue } from '../functions/length-literals.ts';
 import { parseManifest } from '../functions/manifest.ts';
 import { confirmationSteps, deviceCommandLines } from '../functions/plan-commands.ts';
@@ -39,6 +40,10 @@ import { loadRunStructuredContext, readKnowledge } from './authoring-brief.ts';
 
 const USAGE =
   'node <技能目录>/tools/cmd-verify-plumb.ts (--file <plan.json> | --plans <plansDir>) (--run <runDir> | --knowledge <knowledgeDir>) [--item <item.json>] [--context-mode <state|node>] [--base-url <url>] [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--out <report.json>] [--key-stdin]';
+
+/** What the report says when a question carried a named literal: the transformation applied to what the model was shown. */
+const LITERAL_DISCLOSURE = (questions: number): string =>
+  `长字面量换名：${questions} 道题的题面里，命令中 32 个字符以上的字面量（按空白分词，引号不算）写成了名字加工具量出的字符数，如 «L1（200个字符；各段63、63、63、8）»，字符数由工具量出，不由模型估计；自动化用例里的原文没有改，每步换了什么见该步的 literal_substitutions（名字、字符数、字节数、出现次数、原文 SHA-256 前 12 位）。`;
 
 const OPTIONS: Record<string, boolean> = {
   file: false,
@@ -79,8 +84,13 @@ interface ExtractedCommandUnit {
   unitIndex: number;
   pointer: string;
   task: 'single_cmd_judge' | 'steplist_judge';
+  /** The command lines as the plan wrote them (the report and the manual lookup use these). */
   lines: string[];
   commandText: string;
+  /** The same lines as the question carries them: each long literal is a name with the count the program measured. */
+  questionLines: string[];
+  /** The long literals named in this question (none unless a command it carries has one). */
+  literals: CommandLiteral[];
   definition: string;
   state?: string;
   node?: PlumbMindmapNode;
@@ -253,7 +263,7 @@ function extractUnitsForPlan(params: {
   const fields = params.itemRecord && isRecord(params.itemRecord.fields) ? params.itemRecord.fields : {};
   const caseTitle = typeof fields.title === 'string' ? fields.title : '';
   const itemId = String(params.planObj.item ?? '');
-  const executedSoFar: string[] = [];
+  const executedSoFar: string[][] = [];
   const units: ExtractedCommandUnit[] = [];
   const overBudgetList: string[] = [];
 
@@ -270,6 +280,16 @@ function extractUnitsForPlan(params: {
       const pointer = step.origin ?? `/steps/${stepIdx}`;
       const commandText = lines.join('\n');
 
+      // A model cannot count a 200-character host, so a long literal is a name with the program's count in the question: in the
+      // command, in the candidate and in the earlier commands the state lists (a node question lists none). The plan, the manual
+      // lookup and the report keep the lines as written.
+      const earlierSteps = params.contextMode === 'node' ? [] : executedSoFar;
+      const named = nameLongLiterals([...earlierSteps.flat(), ...lines]);
+      let at = 0;
+      const executedForQuestion = earlierSteps.map((earlier) => named.texts.slice(at, (at += earlier.length)));
+      const questionLines = named.texts.slice(at);
+      const questionCommandText = questionLines.join('\n');
+
       if (params.contextMode === 'node') {
         const node = buildPlumbNode(params.itemRecord ?? {}, stepIntent, params.productLine);
         units.push({
@@ -278,6 +298,8 @@ function extractUnitsForPlan(params: {
           task,
           lines,
           commandText,
+          questionLines,
+          literals: disclose(named.literals, questionCommandText),
           definition,
           node,
           stepIntent,
@@ -288,13 +310,13 @@ function extractUnitsForPlan(params: {
           '[当前步骤]',
           `步骤位置: ${pointer}${step.cleanup ? ' (cleanup)' : ''}`,
           `步骤意图: ${stepIntent}`,
-          `候选命令: ${lines.length === 1 ? lines[0] : `\n${lines.map((l, i) => `${i + 1}. ${l}`).join('\n')}`}`,
+          `候选命令: ${questionLines.length === 1 ? questionLines[0] : `\n${questionLines.map((l, i) => `${i + 1}. ${l}`).join('\n')}`}`,
         ].join('\n');
         const rendered = truncateCmdVerifyState({
           caseTitle,
-          executedSteps: executedSoFar,
+          executedSteps: executedForQuestion.map((earlier) => earlier.join(' ; ')),
           currentStepSection,
-          overheadText: `${commandText}\n${definition}`,
+          overheadText: `${questionCommandText}\n${definition}`,
         });
         if (rendered.overBudget) {
           overBudgetList.push(`${params.file}:${pointer}(${rendered.estTokensAfter} tokens)`);
@@ -305,13 +327,15 @@ function extractUnitsForPlan(params: {
           task,
           lines,
           commandText,
+          questionLines,
+          literals: disclose(named.literals, rendered.state),
           definition,
           state: rendered.state,
           stepIntent,
           cleanup: step.cleanup === true,
         });
       }
-      executedSoFar.push(lines.join(' ; '));
+      executedSoFar.push(lines);
     }
   }
 
@@ -434,7 +458,7 @@ export async function runCmdVerifyPlumb(
         const qid = `${caseIdx}:${unit.unitIndex}`;
         const q: PlumbBatchQuestion = {
           task: unit.task,
-          ...(unit.task === 'single_cmd_judge' ? { command: unit.lines[0] } : { commands: unit.lines }),
+          ...(unit.task === 'single_cmd_judge' ? { command: unit.questionLines[0] } : { commands: unit.questionLines }),
           ...(unit.definition ? { definition: unit.definition } : {}),
           ...(contextMode === 'node' ? { node: unit.node } : { state: unit.state }),
         };
@@ -515,6 +539,7 @@ export async function runCmdVerifyPlumb(
           task: unit.task,
           command: unit.commandText,
           definition_attached: unit.definition.length > 0,
+          ...(unit.literals.length > 0 ? { literal_substitutions: unit.literals } : {}),
           verdict,
           blocked,
           review_required: reviewRequired,
@@ -536,6 +561,7 @@ export async function runCmdVerifyPlumb(
       };
     });
 
+    const namedQuestions = results.reduce((n, c) => n + c.steps.filter((st) => st.literal_substitutions !== undefined).length, 0);
     const report = {
       schema: 'plumb-cmd-verify-report@1',
       status: '未确认' as const,
@@ -547,6 +573,7 @@ export async function runCmdVerifyPlumb(
       skipped,
       blocked_count: blockedItems.length,
       review_required_count: reviewRequiredCount,
+      ...(namedQuestions > 0 ? { disclosure: LITERAL_DISCLOSURE(namedQuestions) } : {}),
       results,
     };
     const serialized = JSON.stringify(report, null, 2) + '\n';

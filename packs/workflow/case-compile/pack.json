@@ -237,6 +237,11 @@
       "size": 10457
     },
     {
+      "path": "functions/command-literals.ts",
+      "sha256": "9a78ffa660c6b90e9c8f5568443ecb159b6a61587fe4366ee5b33abd6948fcf8",
+      "size": 5425
+    },
+    {
       "path": "functions/command-obligations.ts",
       "sha256": "b0ff87caa208d6863bf97c793033b190f19f6996d7a769d64ef4ffd81b82c442",
       "size": 28867
@@ -953,8 +958,8 @@
     },
     {
       "path": "tools/cmd-verify-plumb.ts",
-      "sha256": "022f636df74abac0f66821a46d1fa332a1eee9748d6dc92c9c09125971110fb3",
-      "size": 21952
+      "sha256": "a55da9e1315f21acfc6ebc0e3e9f1bcd1ecdd8d4b3a8dfa7cefa83ec13991943",
+      "size": 24343
     },
     {
       "path": "tools/command-domain-precheck.cli.json",
