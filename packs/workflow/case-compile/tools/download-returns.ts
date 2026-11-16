@@ -178,14 +178,18 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
           if (bytes) for (const refusal of executionRefusals(new TextDecoder().decode(bytes), markers)) failed.push({ session: name, ...refusal });
         }
         unexecuted += failed.length;
-        rows.push({ item: row.item, verdict, ...(dropped ? { runner_verdict: row.dynamic_terminal, pass_review: dropped } : {}), log, sessions, ...(Object.keys(sessions).length ? { syntax_rejected: rejected, ...(markers?.length ? { execution_refused: failed } : {}) } : {}) });
+        rows.push({ item: row.item, verdict, ...(row.report_check ? { report_check: row.report_check } : {}), ...(dropped ? { runner_verdict: row.dynamic_terminal, pass_review: dropped } : {}), log, sessions, ...(Object.keys(sessions).length ? { syntax_rejected: rejected, ...(markers?.length ? { execution_refused: failed } : {}) } : {}) });
       }
-      index.push({ job: job.job, plan_run: job.plan_run, workbook_sha256: job.sha256, ended: job.ended, device_return: deviceReturn, rows });
+      index.push({ outcome: job.outcome, missing_facts: job.missing_facts ?? [], ...(job.member_missing_facts ? { member_missing_facts: job.member_missing_facts } : {}), next_action: job.next_action ?? null, job: job.job, plan_run: job.plan_run, workbook_sha256: job.sha256, ended: job.ended, device_return: deviceReturn, rows });
     }
     outputs.push({ name: 'index.json', bytes: json({ schema: 'device-returns@1', run: args.run, jobs: index, withheld, pass_review: passReview }) });
     for (const { name } of outputs) await mkdir(join(args.out, name, '..'), { recursive: true, mode: 0o700 });
     for (const { name, bytes } of outputs) await writeFile(join(args.out, name), bytes, { flag: 'wx', mode: 0o600 });
-    process.stdout.write(JSON.stringify({ run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, pass_review: passReview }) + '\n');
+    const outcomes: Record<string, number> = {};
+    for (const job of jobs) outcomes[job.outcome] = (outcomes[job.outcome] ?? 0) + 1;
+    const unsent = jobs.filter(job => job.outcome === 'not_dispatched');
+    const missing = unsent.flatMap(job => job.missing_facts ?? []);
+    process.stdout.write(JSON.stringify({ outcomes, missing_facts: missing, ...(unsent.length ? { message: `有 ${unsent.length} 个上机验证作业未发到设备，不算一次上机验证；请先按 missing_facts 的原因与下一步处理，不用重交读取进展` } : {}), run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, pass_review: passReview }) + '\n');
     return 0;
   } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }

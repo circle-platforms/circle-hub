@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- T8: retain unissued job causes across caller text, member diagnostics, run-jobs exports and case-compile downloads. Candidate case-compile 3.21.2 separates latest authored content from actual device history and preserves reported verdicts beside Hub no-verdict. Missing named conclusions or failed quotations return specific repair forms with a nonzero status; reports use roles and local minutes. Plumb 1.0.1 examples include command/step_n. Nothing is published or deployed.
+
 - 修正 `plumb` 技能包的请求示例并升至 `1.0.1`：`match-single-cmd.json` 把候选命令放进顶层 `command`（只写在 `state` 文字里时，Plumb 网关以 HTTP 400 拒绝），`sequence-fidelity.json` 补 `step_n: 2` 与 `[当前作者步骤 2]` 一致；新增 `examples.test.ts`，按网关的请求形状规则核对每个示例。未发布候选 `case-compile@3.21.1` 的 `embeds` 同步为 `plumb@1.0.1`，内嵌模块字节不变；`plumb@1.0.0` 已发布的字节不动。
 
 - 编写任务完整接收结构化前置与当前卡片决定；缺口说明使用可读位置和具体恢复动作，避免旧摘要误报与静默截断。模板准备命令使用显式参数/标准输入声明。

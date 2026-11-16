@@ -5,7 +5,8 @@ import { createServer } from 'node:http';
 import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { test, after } from 'node:test';
+const priorTZ=process.env.TZ;process.env.TZ='Asia/Tokyo';after(()=>{if(priorTZ===undefined)delete process.env.TZ;else process.env.TZ=priorTZ;});
 import { generateWorkbookSet } from '../functions/generate.ts';
 import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
@@ -151,8 +152,8 @@ test('the pass volume is the dispatched final workbook, the unsuccessful volume 
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /^# 交付报告 — 合成批\n> 生成 2026-11-08 /);
   assert.match(report, /自动化用例 Excel case\.xlsx 中的 2 条原始用例已一起完成上机验证，判断正确。/);
-  assert.match(report, /第 1 次上机验证判断错误。/);
-  assert.match(report, /原始用例 990000000000000102 合成用例 102，模型判断原始用例的期望与设备输出不一致，状态未确认，判断错误。原因还没查清，下一步使用者核对/);
+  assert.match(report, /第 1 次上机验证的判断：错误（设备自报，状态未确认）。/);
+  assert.match(report, /原始用例 990000000000000102 合成用例 102，模型判断原始用例的期望与设备输出不一致，状态未确认，判断错误。原因还没查清，下一步由使用者核对/);
   assert.match(report, /未做上机验证，这条原始用例未完成脚本编写。/);
   assert.match(report, /## 原始用例 990000000000000104 合成意图 4/, 'a case never compiled takes its title from the recomposition');
   const long = await readFile(join(out, 'unsuccessful_cases.md'), 'utf8');
@@ -165,7 +166,8 @@ test('mixed verdicts and absent case notes remain local while workbook identity 
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
   const mixedOut = join(dir, 'mixed');
   const partial = await run(mixed, await notes(NOTES), mixedOut);
-  assert.equal(partial.code, 0, partial.stderr);
+  assert.equal(partial.code, 1, partial.stderr);
+  assert.ok(JSON.parse(partial.stdout).hints.some((hint:{autoid:string})=>hint.autoid===CASES[2]));
   const mixedSummary = JSON.parse(await readFile(join(mixedOut, 'delivery.json'), 'utf8'));
   assert.equal(mixedSummary.pass_volume, null);
   assert.ok(mixedSummary.cases[0].pending.length);
@@ -190,7 +192,7 @@ test('a recent pass outside a verified volume leaves case-local pending eligibil
   assert.deepEqual(partial.pass?.items, [CASES[0]]); assert.ok(partial.cases[2].pending?.length); assert.equal(partial.cases[2].history.at(-1)?.terminal, 'pass');
   const together = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass']), d(FINAL, [CASES[0], CASES[2]], ['pass', 'pass'])]);
   assert.deepEqual(together.totals, { cases: 3, delivered: 2, failed: 1, unsettled: 0, unrun: 0 });
-  assert.match(timeline(together.cases[1], false), /^第 1 次上机验证判断错误。$/);
+  assert.match(timeline(together.cases[1], false), /^第 1 次上机验证的判断：错误（设备自报，状态未确认）。$/);
   const unverified = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass'])]); assert.equal(unverified.pass, null); assert.equal(unverified.cases.filter(c => c.pending?.length).length, 2);
   const none = assemble(CASES.slice(0, 2), [d(WHOLE, CASES.slice(0, 2), ['fail', 'no_verdict'])]);
   assert.equal(none.pass, null); assert.deepEqual(none.totals, { cases: 2, delivered: 0, failed: 1, unsettled: 1, unrun: 0 });
@@ -217,7 +219,7 @@ test('cases that last failed in different dispatches go into the unsuccessful vo
   const recipe = (inputs: ReturnType<typeof planRun>, plan: string, autoid: string) => satisfiedRecipes({ run: inputs.record, result: inputs.result, submission: inputs.submission, contract, profile, inventory }).find((r) => r.fields.autoid === autoid && r.plan_run === plan)!;
   assert.deepEqual(await readFile(join(out, 'unsuccessful_cases.xlsx')), Buffer.from(generateWorkbookSet([recipe(plan1, PLAN1, CASES[1]), recipe(plan3, PLAN3, CASES[2])], { merged: true })));
   assert.deepEqual(await readFile(join(out, 'case.xlsx')), Buffer.from(plan4.workbook));
-  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /使用各自最近一次上机验证的自动化用例，尚未一起做上机验证。/);
+  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /使用各自最后一次写好的自动化用例；对应写法是否上过机见逐条记录，尚未一起做上机验证。/);
 });
 
 test('a merged workbook names every plan run and refuses cases of another contract; the default stays one plan run', () => {
@@ -271,11 +273,11 @@ test('the verification runs the model left out are found in the Hub lineage, and
   assert.equal(replyLines[0], `交付目录 ${out}`);
   for (const index of [1, 3]) assert.match(replyLines[index], /状态未确认，判断正确（目标自报，未排除本地操作）/);
   assert.match(replyLines[2], /模型判断.*状态未确认.*原因还没查清/);
-  assert.match(replyLines[4], /原因缺资料.*由usr_synthetic发请求，期限 2026-11-09T00:00:00.000Z/);
+  assert.match(replyLines[4], /原因缺资料.*由使用者发请求，期限 2026-11-09 09:00/);
   assert.deepEqual(replyLines.slice(5), ['case.xlsx', 'unsuccessful_cases.xlsx', 'delivery_report.md', 'unsuccessful_cases.md', 'delivery.json'].map(name => `- ${join(out,name)}`));
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.added_runs, [WHOLE]);
-  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /第 1 次上机验证判断错误/);
+  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /第 1 次上机验证的判断：错误（设备自报，状态未确认）/);
 });
 
 test('a verification run whose job ended before anything went to the bed is no run of the cases, and the lineage skips it', async (t) => {
@@ -296,13 +298,14 @@ test("a case not delivered that went to the bed is explained with the device's o
   const h = await hub(); t.after(() => h.close());
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
   const missing = await run(h, await notes({ ...NOTES, [CASES[1]]: { judged: '合成判断', remedy: '合成修法' } }), join(dir, 'a'));
-  assert.equal(missing.code, 0, missing.stderr);
+  assert.equal(missing.code, 1, missing.stderr);
+  assert.match(JSON.parse(missing.stdout).hints[0].next_action,/一个文件/);
   const missingSummary = JSON.parse(await readFile(join(dir,'a','delivery.json'),'utf8'));
   assert.ok(missingSummary.cases[1].pending.some((fact:string) => fact.includes('说明缺少设备输出')));
   assert.equal(missingSummary.cases[1].closing,undefined);
   assert.equal(missingSummary.cases[0].status,'delivered');
   const invented = await run(h, await notes({ ...NOTES, [CASES[1]]: { judged: '合成判断', remedy: '合成修法', evidence: '设备说一切正常' } }), join(dir, 'b'));
-  assert.equal(invented.code, 0, invented.stderr);
+  assert.equal(invented.code, 1, invented.stderr);
   const inventedSummary = JSON.parse(await readFile(join(dir,'b','delivery.json'),'utf8'));
   assert.ok(inventedSummary.cases[1].pending.some((fact:string) => fact.includes('不是最近一次上机验证的原话')));
   assert.equal(inventedSummary.cases[1].closing,undefined);
@@ -337,7 +340,8 @@ test('recorded distinct failed versions have bounded conclusions and invalid def
   assert.ok(earlySummary.cases[1].pending.some((fact:string)=>fact.includes('已记录 1 份不同内容')));
   assert.equal(earlySummary.cases[1].dispatches[0].dynamic_terminal,'fail');
   const unquoted = await run(once, await notes({ ...NOTES, [CASES[1]]: { ...NOTES[CASES[1]], defect_candidate: { ...CANDIDATE, expected: '作者没写过的期望', actual: '设备说一切正常' } } }), join(dir, 'b'));
-  assert.equal(unquoted.code, 0,unquoted.stderr);
+  assert.equal(unquoted.code, 1,unquoted.stderr);
+  assert.equal(JSON.parse(unquoted.stdout).hints[0].autoid, CASES[1]);
   const unquotedSummary=JSON.parse(await readFile(join(dir,'b','delivery.json'),'utf8'));
   assert.equal(unquotedSummary.cases[1].closing,undefined);
   assert.ok(unquotedSummary.cases[1].pending.some((fact:string)=>fact.includes('期望不是原始用例的原句；设备输出不是最近一次上机验证的原话')));
@@ -360,7 +364,7 @@ test('recorded distinct failed versions have bounded conclusions and invalid def
   assert.deepEqual(summary.closings, { authoring_failure: 1, device_defect: 0, missing_fact: 1, author_conflict: 0 });
   assert.match(JSON.parse(closed.stdout).reply, /所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，状态未确认，判断错误。原因还没查清/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000102 合成用例 102，设备原判错误，状态未确认（目标自报，未排除本地操作）。所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，状态未确认，判断错误/);
+  assert.match(report, /原始用例 990000000000000102 合成用例 102，上机验证的判断：错误（设备自报，状态未确认）。所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，状态未确认，判断错误/);
   assert.match(report, /原因还没查清，下一步尚缺具名出口材料.*模型建议单列为未确认。决定者程序。/);
   assert.match(report, /模型说明，状态未确认。合成判断：环境缺前置/);
 
@@ -392,7 +396,8 @@ test('a pass whose device words carry an execution-failure line its assertions d
     [FINAL3]: [jobOf('n', FINAL3, PLAN8, [CASES[0], CASES[2]], plan8.workbook, rows([CASES[0], CASES[2]], ['pass', 'pass'], [clean, refused]))],
   }, { [PLAN7]: plan7, [PLAN8]: plan8 }, [WHOLE2, FINAL3], false, [marked, clean, refused, read]); t.after(refusedFinal.close);
   const refusedRun = await run(refusedFinal, notesPath, join(dir, 'a'), `${WHOLE2},${FINAL3}`);
-  assert.equal(refusedRun.code, 0, refusedRun.stderr);
+  assert.equal(refusedRun.code, 1, refusedRun.stderr);
+  assert.ok(JSON.parse(refusedRun.stdout).hints.some((hint:{autoid:string})=>hint.autoid===CASES[2]));
   const pendingSummary = JSON.parse(await readFile(join(dir, 'a', 'delivery.json'), 'utf8')); assert.equal(pendingSummary.pass_volume, null); assert.equal(pendingSummary.cases[2].dispatches.at(-1).terminal, 'no_verdict'); assert.ok(pendingSummary.cases[2].pending.length);
   assert.match(await readFile(join(dir, 'a', 'delivery_report.md'), 'utf8'), /Failed to run the synthetic command/);
   // The same line inside the text an assertion of the case reads is exempt; a refused pass in an earlier dispatch is reported.
@@ -434,7 +439,7 @@ test('an audited device pass remains unknown after three recorded distinct versi
   assert.equal(earlySummary.cases[2].closing,undefined);
   assert.ok(earlySummary.cases[2].pending.some((fact:string)=>fact.includes('已核验 1 份不同自动化用例')));
   assert.equal(earlySummary.cases[2].dispatches[0].dynamic_terminal,'pass');
-  assert.match(JSON.parse(early.stdout).reply,/设备原判正确.*交付资格状态未知/);
+  assert.match(JSON.parse(early.stdout).reply,/上机验证的判断：正确（设备自报，状态未确认）.*交付资格状态未知/);
 
   // Three authored versions, one failed and two with a dropped pass: it closes as the model not finding a solution.
   const failedFirst = rows(whole, ['pass', 'pass', 'fail'], dropped);
@@ -447,8 +452,8 @@ test('an audited device pass remains unknown after three recorded distinct versi
   assert.deepEqual({ closing: summary.cases[2].closing, rounds: summary.cases[2].rounds, terminals: summary.cases[2].dispatches.map((d: { terminal: string }) => d.terminal) }, { closing: 'authoring_failure', rounds: 3, terminals: ['fail', 'no_verdict', 'no_verdict'] });
   assert.match(JSON.parse(closed.stdout).reply, /所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，状态未知。原因还没查清/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000103 合成用例 103，设备原判正确，状态未确认（目标自报，未排除本地操作）。所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，状态未知/);
-  assert.match(report, /第 3 次上机验证设备原判正确（目标自报，未确认）；交付复核状态未知，设备输出有执行失败原话“Failed to run the synthetic command”，自动化用例没有检查这一行/);
+  assert.match(report, /原始用例 990000000000000103 合成用例 103，上机验证的判断：正确（设备自报，状态未确认）；Hub 尚未取得可采用的逐条结论。所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，状态未知/);
+  assert.match(report, /第 3 次上机验证的判断：正确（设备自报，状态未确认）；Hub 尚未取得可采用的逐条结论；交付复核状态未知，设备输出有执行失败原话“Failed to run the synthetic command”，自动化用例没有检查这一行/);
 });
 
 test('a case never dispatched closes only on a fact the Hub recorded missing for its own plan; a written claim sends it back to authoring', async (t) => {
@@ -462,7 +467,7 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
   assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 1, missing_fact: 1, author_conflict: 0 });
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /原始用例 990000000000000104 合成意图 4，缺少脚本编写所需的资料，状态未知。原因缺资料/);
-  assert.ok(report.includes(`证据，Hub 核对结果原话。${GAP_WORDS}`));
+  assert.ok(report.includes(`Hub 核对结果摘要（内部引用保留在机器资料）。${GAP_WORDS}`));
   // A later plan run that holds the case but was never answered does not hide the record of the earlier one.
   const shadowed = await hub(undefined, undefined, {}, {}, undefined, false, [], 'shadowed'); t.after(shadowed.close);
   const shadowedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
@@ -474,7 +479,8 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
     const g = await hub(undefined, undefined, {}, {}, undefined, false, [], gap); t.after(g.close);
     const refusedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
     const refused = await run(g, await notes(NOTES), refusedOut);
-    assert.equal(refused.code, 0, refused.stderr);
+    assert.equal(refused.code, 1, refused.stderr);
+    assert.equal(JSON.parse(refused.stdout).hints[0].autoid, CASES[3]);
     const caseRow = JSON.parse(await readFile(join(refusedOut, 'delivery.json'), 'utf8')).cases[3];
     assert.equal(caseRow.closing, undefined, gap); assert.ok(caseRow.pending.length, gap);
   }
@@ -498,7 +504,7 @@ test('a plan repair budget records bounded unverified observations without inven
   assert.deepEqual([summary.cases[3].status, summary.cases[3].closing, summary.cases[3].missing.kind, summary.cases[3].missing.plan_run], ['unrun', 'authoring_failure', 'repair_exhausted', GAP]);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /原始用例 990000000000000104 合成意图 4，所记录的自动化用例核验尚未通过（结论仅限这些尝试），状态未知。原因生产者错误/);
-  assert.ok(report.includes(`证据，Hub 核对结果原话。${SPENT_WORDS}`));
+  assert.ok(report.includes(`Hub 核对结果摘要（内部引用保留在机器资料）。${SPENT_WORDS}`));
 });
 
 test('an invalid notes file is identified without echoing its content before any Hub read', async (t) => {
@@ -531,7 +537,7 @@ test("an author's step against the manual closes a failed case at its first roun
   assert.match(JSON.parse(written.stdout).reply, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因还没查清/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因还没查清/);
-  assert.match(report, /下一步使用者核对原始用例、手册和设备输出后裁定，未取得具名请求出口。决定者模型。/);
+  assert.match(report, /下一步由使用者核对原始用例、手册和设备输出后裁定。决定者模型。/);
   assert.match(report, /原始用例 990000000000000104 合成意图 4，模型判断原始用例与手册冲突，状态未确认，判断错误。原因还没查清/);
   assert.match(report, /未做上机验证，这条原始用例未完成脚本编写。/);
   const quoted = (author: string) => `**证据，原始用例原句**，已按照规则核对原文。\n${fenced(author)}\n\n**证据，手册原话**，构建 ${plan1.record.build}，已按照规则核对原文。\n${fenced(CONFLICT.manual)}`;
@@ -552,7 +558,8 @@ test('invalid conflict quotes or unavailable citations remain case-local while w
   ];
   for (const [name, conflict, expected] of refusals) {
     const out = join(dir, name), refused = await run(served, await note(conflict), out);
-    assert.equal(refused.code, 0, refused.stderr);
+    assert.equal(refused.code, 1, refused.stderr);
+    assert.equal(JSON.parse(refused.stdout).hints[0].autoid, CASES[1]);
     const caseRow = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8')).cases[1];
     assert.equal(caseRow.closing, undefined, name); assert.match(caseRow.pending.join('；'), expected, name);
     assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /模型提出的手册原话.*未取得完整的逐字核对依据/);
@@ -567,7 +574,8 @@ test('invalid conflict quotes or unavailable citations remain case-local while w
     const h = await hub(undefined, undefined, {}, {}, undefined, false, [], 'recorded', mode); t.after(h.close);
     const out = join(dir, mode), refused = await run(h, await note(CONFLICT), out);
     if (mode === 'absent') {
-      assert.equal(refused.code, 0, refused.stderr); const row = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8')).cases[1]; assert.equal(row.closing, undefined); assert.match(row.pending.join('；'), expected);
+      assert.equal(refused.code, 1, refused.stderr);
+    assert.equal(JSON.parse(refused.stdout).hints[0].autoid, CASES[1]); const row = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8')).cases[1]; assert.equal(row.closing, undefined); assert.match(row.pending.join('；'), expected);
     } else {
       assert.equal(refused.code, 1, mode); assert.match(refused.stderr, expected, mode); await assert.rejects(readdir(out), `${mode}: nothing was written`);
     }
@@ -762,7 +770,8 @@ test('assemble-delivery refuses one scoped run paired with an unscoped run, and 
   t.after(unclosed.close);
   const outUnclosed = join(await mkdtemp(join(tmpdir(), 'cc-scope-unclosed-')), 'out');
   const blocked = await run(unclosed, await notes({ [CASES[1]]: NOTES[CASES[1]] }), outUnclosed, WHOLE);
-  assert.equal(blocked.code, 0, blocked.stderr);
+  assert.equal(blocked.code, 1, blocked.stderr);
+  assert.equal(JSON.parse(blocked.stdout).hints[0].autoid, CASES[1]);
   const pendingCase = JSON.parse(await readFile(join(outUnclosed, 'delivery.json'), 'utf8')).cases.find((c: { autoid: string }) => c.autoid === CASES[1]);
   assert.ok(pendingCase.pending.length); assert.equal(pendingCase.closing, undefined);
 
@@ -905,4 +914,94 @@ test('every dispatched workbook digest must match its original plan even outside
   const result=await run(h,await notes(NOTES),out);
   assert.equal(result.code,1,'an earlier dispatch digest mismatch must not become case-local pending');assert.match(result.stderr,/工作簿摘要.*脚本编写结果/);
   assert.deepEqual(await readdir(out).catch(()=>[]),[]);
+});
+
+test('a verification run the model names that never reached the bed is skipped like a discovered one, and its reason is disclosed', async (t) => {
+  // Run 31: the last verification run was refused before anything was sent (not_dispatched, three times). The model named it in
+  // --runs, as the teaching says ("至少提供最后一次上机验证对应的编号"), and the tool refused the whole delivery without a reason.
+  const STUCK = 'run_01ssssssssssssssssssssssss';
+  const reason = '该床尚未恢复，不能派发。来源探针 synthetic-probe';
+  const next = '由bed-admin按 interactive: 同步节点配置态的清理需人工确认后执行 处理后重开';
+  const notSent = { job: 'c'.repeat(64), verification_run: STUCK, plan_run: PLAN2, items: [CASES[0], CASES[2]], sha256: sha256(plan2.workbook), ended: 'done', outcome: 'not_dispatched', frozen: false, result: null, device_return: null, rows: null, missing_facts: [{ fact: reason, next_action: next }], next_action: next };
+  const h = await hub(undefined, undefined, { [STUCK]: [notSent] }, {}, [WHOLE, STUCK, FINAL]);
+  t.after(() => h.close());
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'delivery');
+  const result = await run(h, await notes(NOTES), out, `${WHOLE},${FINAL},${STUCK}`);
+  assert.equal(result.code, 0, result.stderr);
+  const printed = JSON.parse(result.stdout);
+  assert.deepEqual(printed.runs, [WHOLE, FINAL], 'a run that never reached the bed is not a run of the cases');
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.equal(summary.unsent_runs[0].run, STUCK);
+  assert.equal(summary.unsent_runs[0].missing_facts[0].fact, reason);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.match(report, /没有发到设备/);
+  assert.match(report, /由bed-admin/);
+});
+
+test('run31 unsuccessful volume uses the last authored plan even when its verification never reached the bed', async t => {
+  const STUCK = 'run_01ssssssssssssssssssssssss', PLAN3 = 'run_01tttttttttttttttttttttttt';
+  const plan3 = planRun(PLAN3, [CASES[1]], [CASES[0], CASES[2], CASES[3]], '99');
+  const unsent = { job: 'f'.repeat(64), verification_run: STUCK, plan_run: PLAN3, items: [CASES[1]], sha256: sha256(plan3.workbook), ended: 'done', outcome: 'not_dispatched', frozen: false, result: null, device_return: null, rows: null, missing_facts: [{ fact: '合成测试环境配置尚未恢复', next_action: '由测试环境管理员恢复后重开' }] };
+  const h = await hub(undefined, undefined, { [STUCK]: [unsent] }, { [PLAN3]: plan3 }, [WHOLE, FINAL, STUCK]); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-run31-')), 'delivery');
+  const result = await run(h, await notes(NOTES), out, `${FINAL},${STUCK}`);
+  assert.equal(result.code, 0, result.stderr);
+  const expected = generateWorkbookSet(satisfiedRecipes({ run: plan3.record, result: plan3.result, submission: plan3.submission, contract, profile, inventory }), { merged: true });
+  assert.deepEqual(await readFile(join(out, 'unsuccessful_cases.xlsx')), Buffer.from(expected));
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.equal(summary.unsuccessful_volume.items[0].plan_run, PLAN3);
+  assert.equal(summary.cases.find((c: {autoid:string}) => c.autoid === CASES[1]).dispatches.length, 1, 'the unissued writing does not create an observed device attempt');
+  const other = join(await mkdtemp(join(tmpdir(), 'cc-run31-')), 'delivery');
+  const discovered = await run(h, await notes(NOTES), other, FINAL);
+  assert.equal(discovered.code, 0, discovered.stderr);
+  assert.deepEqual(JSON.parse(await readFile(join(other, 'delivery.json'), 'utf8')).unsent_runs, summary.unsent_runs);
+});
+
+test('run31 unrecognized unrun cases return a named repair form and a nonzero status without inventing a round', async t => {
+  const h = await hub(undefined, undefined, {}, {}, undefined, false, [], 'none'); t.after(h.close);
+  const data = structuredClone(NOTES) as Record<string, Record<string, unknown>>; data[CASES[3]].round = 1;
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-run31-')), 'delivery');
+  const result = await run(h, await notes(data), out);
+  assert.equal(result.code, 1);
+  const stdout = JSON.parse(result.stdout);
+  const hint = stdout.hints.find((h: {autoid:string}) => h.autoid === CASES[3]);
+  assert.ok(hint.missing); assert.match(hint.next_action, /Hub.*具名|author_conflict/); assert.match(hint.legal_form, /author_conflict/);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.equal(summary.cases.find((c: {autoid:string}) => c.autoid === CASES[3]).model_claims.round, undefined);
+});
+
+test('run31 an observed case excludes stale workbook gaps but preserves the device mapped failure and Hub no-verdict', async t => {
+  const modified = structuredClone(plan2);
+  const row = (modified.result.partitions.delivered as Array<{item:string;requirements:Array<Record<string,unknown>>}>)[1];
+  Object.assign(row.requirements.find(r => r.requirement === 'workbook_verified')!, { status: 'pending', layers: [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap', missing: '合成早期工作簿尚未生成', exit: { action: 'request', request_kind: 'clarification', audience: { user: 'usr_synthetic' }, due: '2026-11-09T00:00:00.000Z' } }] });
+  const second = job('b', FINAL, PLAN2, [CASES[0], CASES[2]], plan2.workbook, ['pass', 'no_verdict']);
+  Object.assign(second.rows[1], { report_check: { mapped_terminal: 'fail' }, missing_facts: ['closed'], missing_fact: '动态完整性前提 closed 未满足', next_action: '请管理员补齐前提 closed', evidence: { log: `src:${sha256(log)}` } });
+  const h = await hub(undefined, undefined, { [FINAL]: [second] }, { [PLAN2]: modified }); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-run31-')), 'delivery');
+  const result = await run(h, await notes({ ...NOTES, [CASES[2]]: { judged: '合成设备自报错误，Hub 尚未采用', remedy: '由测试环境管理员核对前提', evidence: '第 3 步断言没有命中' } }), out, FINAL);
+  assert.equal(result.code, 0, result.stderr || result.stdout);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  const section = report.split(`## 原始用例 ${CASES[2]}`)[1].split('\n##')[0];
+  assert.doesNotMatch(section, /合成早期工作簿尚未生成|\bclosed\b|usr_synthetic/);
+  assert.match(section, /上机验证的判断：错误（设备自报，状态未确认）/);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  const observed = summary.cases.find((c:{autoid:string})=>c.autoid===CASES[2]).dispatches.at(-1);
+  assert.equal(observed.terminal, 'no_verdict');
+  assert.equal(observed.report_check.mapped_terminal, 'fail');
+  assert.equal(observed.missing_fact, '动态完整性前提 closed 未满足');
+});
+
+test('run31 a compilation with only unissued jobs discloses the known reason without fabricating device attempts', async t => {
+  const STUCK = 'run_01ssssssssssssssssssssssss';
+  const pending = { job: 'f'.repeat(64), verification_run: STUCK, plan_run: PLAN1, items: CASES.slice(0,3), sha256: sha256(plan1.workbook), ended: 'done', outcome: 'not_dispatched', frozen: false, result: null, device_return: null, rows: null, missing_facts: [{ fact: '合成测试环境配置尚未恢复', next_action: '由测试环境管理员恢复后重开' }] };
+  const h=await hub(undefined,undefined,{[STUCK]:[pending]},{},[STUCK]);t.after(h.close);
+  const out=join(await mkdtemp(join(tmpdir(),'cc-run31-')),'delivery');
+  const result=await run(h,await notes(Object.fromEntries(CASES.map(id=>[id,{judged:'合成说明：没有上机',remedy:'由测试环境管理员恢复后重开'}]))),out,STUCK);
+  assert.equal(result.code,0,result.stderr||result.stdout);
+  const summary=JSON.parse(await readFile(join(out,'delivery.json'),'utf8'));
+  assert.equal(summary.dispatches.length,0);assert.equal(summary.unsent_runs.length,1);
+  assert.ok(summary.cases.every((c:{dispatches:unknown[]})=>c.dispatches.length===0));
+  const report=await readFile(join(out,'delivery_report.md'),'utf8');
+  assert.match(report,/合成测试环境配置尚未恢复/);assert.match(report,/由测试环境管理员恢复后重开/);
+  assert.doesNotMatch(report,/已按照规则核对设备输出|执行器规则没有说明/);
 });

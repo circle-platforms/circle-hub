@@ -4,7 +4,7 @@
 // the trade-off), a longer report for whoever picks those cases up, and a machine summary. Every status and count here comes
 // from the jobs' verdicts as the Hub relays them (decision 160), and a failed case closes by the reference engine's rules
 // (closeFailed). Model-supplied defect candidates and author conflicts carry quotations checked verbatim.
-import { isRecord, failCall } from './text.ts';
+import { isRecord, failCall, localMinute } from './text.ts';
 import { movedText, type MovedCase } from './channels.ts';
 import { quoteMatches } from './quote.ts';
 import { labelOf, isAttribution, isExitAction, type Attribution } from './generated/vocabulary.ts';
@@ -14,8 +14,21 @@ export type Status = keyof typeof STATUS;
 
 /** Why a reported pass is not taken as one: the device output it came with and the line in it (see failureLine). */
 export interface RowAudit { where: string; line: string }
-export interface JobRow { reported_terminal?: string; qualifier?: { nature: string; marks: string[] }; accepted_as_fact?: boolean; missing_facts?: string[]; missing_fact?: string; next_action?: string; item: string; dynamic_terminal: string; evidence?: { log?: string; sessions?: Record<string, string> }; audit?: RowAudit }
-export interface ExportedJob { job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean; result: string | null; device_return: string | null; rows: JobRow[] | null }
+export interface JobRow { report_check?: { mapped_terminal?: string; [key: string]: unknown }; reported_terminal?: string; qualifier?: { nature: string; marks: string[] }; accepted_as_fact?: boolean; missing_facts?: string[]; missing_fact?: string; next_action?: string; item: string; dynamic_terminal: string; evidence?: { log?: string; sessions?: Record<string, string> }; audit?: RowAudit }
+export interface ExportedJob { job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean; result: string | null; device_return: string | null; rows: JobRow[] | null;
+  /** the Hub's own reason and named next step of a job that did not go out, as run-jobs@1 would carry them. */
+  missing_facts?: Array<{ fact: string; next_action: string }>; member_missing_facts?: Array<{ fact: string; next_action: string }>; next_action?: string }
+/** a verification run none of whose jobs went to the bed (every job ended before anything was sent) is not a run of the cases. */
+export function neverReachedBed(run: string, jobs: readonly ExportedJob[]): boolean {
+  const own = jobs.filter((job) => job.verification_run === run);
+  return own.length > 0 && own.every((job) => job.ended === 'done' && job.outcome === 'not_dispatched');
+}
+/** what the report says about a verification run that never reached the bed: which job, which cases, why, and who acts. */
+export interface Unsent { run: string; job: string; plan_run: string; sha256: string; items: string[]; missing_facts: Array<{ fact: string; next_action: string }>; next_action?: string }
+export function unsentOf(run: string, jobs: readonly ExportedJob[]): Unsent {
+  const last = jobs.filter((job) => job.verification_run === run).at(-1)!;
+  return { run, job: last.job, plan_run: last.plan_run, sha256: last.sha256, items: [...last.items], missing_facts: last.member_missing_facts ?? last.missing_facts ?? [], ...(last.next_action ? { next_action: last.next_action } : {}) };
+}
 /** One dispatch that settled: the run it verified, the plan run it was generated from, the workbook digest and each item's verdict. */
 export interface Dispatch { run: string; job: string; plan_run: string; sha256: string; items: string[]; rows: JobRow[] }
 /** A product-defect candidate (InfoTest fail_attribution.py defect_candidate): how to reproduce it, the author's expected text and the device's actual words. */
@@ -59,7 +72,7 @@ export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   return { run, job: job.job, plan_run: job.plan_run, sha256: job.sha256, items: [...job.items], rows };
 }
 
-export interface CaseOutcome { autoid: string; status: Status; history: Array<{ qualifier?: JobRow['qualifier']; accepted_as_fact?: boolean; missing_facts?: string[]; missing_fact?: string; next_action?: string; ordinal: number; run: string; job: string; terminal: string; reported_terminal?: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; rounds?: number; pending?: string[]; evidence_unverified?: true; basis?: CaseBasis; closing?: Closing; missing?: MissingFact; conflict?: AuthorConflict }
+export interface CaseOutcome { autoid: string; status: Status; history: Array<{ report_check?: JobRow['report_check']; qualifier?: JobRow['qualifier']; accepted_as_fact?: boolean; missing_facts?: string[]; missing_fact?: string; next_action?: string; ordinal: number; run: string; job: string; terminal: string; reported_terminal?: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; rounds?: number; pending?: string[]; evidence_unverified?: true; basis?: CaseBasis; closing?: Closing; missing?: MissingFact; conflict?: AuthorConflict }
 /**
  * What the Hub recorded for a case's own plan in `plan_run`: `requirement` left pending on a data gap with a request (a missing
  * fact), or left without an accepted plan after the repair rounds were used up (repair_exhausted).
@@ -93,7 +106,7 @@ export interface Assembly {
   /** The last dispatch, when every item of it passed: its workbook is the pass volume. */
   pass: Dispatch | null;
   /** The cases of the unsuccessful volume in document order, each with the dispatch of its latest verdict (its plan goes in). */
-  unsuccessful: { items: string[]; sources: Record<string, Dispatch> } | null;
+  unsuccessful: { items: string[]; sources: Record<string, { plan_run: string; run: string | null }> } | null;
   totals: Record<Status, number> & { cases: number };
 }
 
@@ -106,7 +119,6 @@ export interface Assembly {
  */
 export function assemble(population: string[], dispatches: Dispatch[]): Assembly {
   if (!population.length || new Set(population).size !== population.length) failCall('invalid_parameters', '原始用例清单为空或用例 ID 重复', '请提供同一文档范围内、互不重复的上机验证记录');
-  if (!dispatches.length) failCall('invalid_parameters', '尚未上机验证；--runs 请至少选择一次自动化用例 Excel 的上机验证', '请提供同一文档范围内、互不重复的上机验证记录');
   if (new Set(dispatches.map((d) => d.run)).size !== dispatches.length) failCall('invalid_parameters', '--runs 中重复选择了同一次上机验证', '请提供同一文档范围内、互不重复的上机验证记录');
   for (const d of dispatches) for (const item of d.items) if (!population.includes(item)) failCall('invalid_parameters', `上机验证包含不在这份原始用例清单里的原始用例 ${item}`, '请提供同一文档范围内、互不重复的上机验证记录');
   const passedWhole = (d: Dispatch) => d.rows.length > 0 && d.rows.every((r) => r.dynamic_terminal === 'pass');
@@ -115,16 +127,16 @@ export function assemble(population: string[], dispatches: Dispatch[]): Assembly
   const pass = at < 0 ? null : dispatches[at];
   const delivered = new Set(pass?.items ?? []);
   const cases: CaseOutcome[] = population.map((autoid) => {
-    const history = dispatches.flatMap((d, k) => d.rows.filter((r) => r.item === autoid).map((r) => ({ ordinal: k + 1, run: d.run, job: d.job, terminal: r.dynamic_terminal, ...(r.reported_terminal ? { reported_terminal: r.reported_terminal } : {}), ...(r.qualifier ? { qualifier: r.qualifier } : {}), ...(r.accepted_as_fact === undefined ? {} : { accepted_as_fact: r.accepted_as_fact }), ...(r.missing_facts ? { missing_facts: r.missing_facts } : {}), ...(r.missing_fact ? { missing_fact: r.missing_fact } : {}), ...(r.next_action ? { next_action: r.next_action } : {}), ...(r.evidence?.log ? { log: r.evidence.log } : {}), ...(r.evidence?.sessions ? { sessions: r.evidence.sessions } : {}), ...(r.audit ? { audit: r.audit } : {}) })));
+    const history = dispatches.flatMap((d, k) => d.rows.filter((r) => r.item === autoid).map((r) => ({ ordinal: k + 1, run: d.run, job: d.job, terminal: r.dynamic_terminal, ...(r.report_check ? { report_check: structuredClone(r.report_check) } : {}), ...(r.reported_terminal ? { reported_terminal: r.reported_terminal } : {}), ...(r.qualifier ? { qualifier: r.qualifier } : {}), ...(r.accepted_as_fact === undefined ? {} : { accepted_as_fact: r.accepted_as_fact }), ...(r.missing_facts ? { missing_facts: r.missing_facts } : {}), ...(r.missing_fact ? { missing_fact: r.missing_fact } : {}), ...(r.next_action ? { next_action: r.next_action } : {}), ...(r.evidence?.log ? { log: r.evidence.log } : {}), ...(r.evidence?.sessions ? { sessions: r.evidence.sessions } : {}), ...(r.audit ? { audit: r.audit } : {}) })));
     if (delivered.has(autoid)) return { autoid, status: 'delivered' as const, history };
     const latest = history.at(-1);
     if (!latest) return { autoid, status: 'unrun' as const, history };
-    return { autoid, status: latest.terminal === 'fail' ? 'failed' as const : 'unsettled' as const, history, ...(latest.terminal === 'pass' ? { pending: ['最近一次正确的观察不在已验证整卷中，交付资格尚未核验；保留该观察，下一步把这些用例合成整卷并验证'] } : latest.missing_fact ? { pending: [latest.missing_fact] } : {}) };
+    return { autoid, status: latest.terminal === 'fail' ? 'failed' as const : 'unsettled' as const, history, ...(latest.terminal === 'pass' ? { pending: ['最近一次正确的观察不在已验证整卷中，交付资格尚未核验；保留该观察，下一步把这些用例合成整卷并验证'] } : latest.missing_facts?.length ? { pending: ['设备输出的完整性前提尚未核验'] } : latest.missing_fact ? { pending: [latest.missing_fact] } : {}) };
   });
   const unpassed = cases.filter((c) => c.status === 'failed' || c.status === 'unsettled').map((c) => c.autoid);
   let unsuccessful: Assembly['unsuccessful'] = null;
   if (unpassed.length) {
-    const sources: Record<string, Dispatch> = {};
+    const sources: Record<string, { plan_run: string; run: string | null }> = {};
     for (const item of unpassed) sources[item] = dispatches.find((d) => d.run === cases.find((c) => c.autoid === item)!.history.at(-1)!.run)!;
     unsuccessful = { items: unpassed, sources };
   }
@@ -243,7 +255,7 @@ export function executionRefusals(session: string, markers: readonly string[]): 
 export function readNotes(value: unknown, undelivered: string[]): Notes {
   if (!isRecord(value) || !isRecord(value.cases) || Object.keys(value).some((key) => key !== 'cases' && key !== 'batch' && key !== 'round')) failCall('invalid_parameters', '说明文件请按原始用例分别写结论、下一步和设备输出，格式见交付工具说明', '请按交付说明提供模型说明文件并保留原句');
   const parseRound = (v: unknown, where: string): number => {
-    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) failCall('invalid_parameters', `${where} 的轮次（round）须是大于等于 1 的整数`, '请按交付说明提供模型说明文件并保留原句');
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) failCall('invalid_parameters', `${where} 的轮次（round）须是大于等于 1 的整数`, '请按交付说明提供模型说明文件；没有到过设备的条目不写 round，有上机记录时填写对应的正整数轮次');
     return v;
   };
   const text = (v: unknown, where: string): string => {
@@ -429,7 +441,7 @@ export function closeUnrun(cases: CaseOutcome[], facts: Record<string, MissingFa
       const wrong = authorConflictProblems(outcome.autoid, conflict, ground, []);
       return wrong.length ? { ...outcome, pending: wrong } : { ...outcome, closing: 'author_conflict', conflict };
     }
-    return { ...outcome, pending: ['没有取得可核验的计划结论或具名缺失事实出口，原因还没查清；下一步补齐该条的运行记录与出口后重评，仍可继续编写'] };
+    return { ...outcome, pending: ['没有取得可核验的计划结论或具名缺失事实出口'] };
   });
   return { cases: closed, problems: [] };
 }
@@ -439,7 +451,7 @@ const MISSING_SHOWN = 240;
 export function closingLine(outcome: CaseOutcome): string | null {
   if (outcome.closing === 'authoring_failure' && outcome.missing?.kind === 'repair_exhausted') {
     const said = outcome.missing.missing.length > MISSING_SHOWN ? `${outcome.missing.missing.slice(0, MISSING_SHOWN)}…` : outcome.missing.missing;
-    return `${CLOSING.authoring_failure}：它的计划在脚本编写运行 ${outcome.missing.plan_run} 交给 Hub，修正轮次用完也没有被脚本合并接受${said ? `（Hub 原话：${said}）` : ''}，没有上机；结论仅限本运行记录的内容和核验次数，不能据此确认原因在编写模型。下面“怎么判断的”是模型自述，不是定下结论的依据。`;
+    return `${CLOSING.authoring_failure}：它的计划已交给 Hub，修正轮次用完也没有被脚本合并接受${said ? `（Hub 原话：${said}）` : ''}，没有上机；结论仅限本运行记录的内容和核验次数，不能据此确认原因在编写模型。下面“怎么判断的”是模型自述，不是定下结论的依据。`;
   }
   if (outcome.closing === 'authoring_failure') {
     const dropped = outcome.history.filter((h) => h.audit).length;
@@ -452,15 +464,19 @@ export function closingLine(outcome: CaseOutcome): string | null {
   }
   if (outcome.closing === 'missing_fact' && outcome.missing) {
     const said = outcome.missing.missing.length > MISSING_SHOWN ? `${outcome.missing.missing.slice(0, MISSING_SHOWN)}…` : outcome.missing.missing;
-    return `${CLOSING.missing_fact}：它的计划在计划运行 ${outcome.missing.plan_run} 交给 Hub，Hub 判它缺少事实并点名了补证请求${said ? `（Hub 原话：${said}）` : ''}；补齐前不生成工作簿、不上机。下面“怎么判断的”是模型自述。`;
+    return `${CLOSING.missing_fact}：它的计划已交给 Hub，Hub 判它缺少事实并点名了补证请求${said ? `（Hub 原话：${said}）` : ''}；补齐前不生成工作簿、不上机。下面“怎么判断的”是模型自述。`;
   }
   return null;
 }
 
 export const terminalLabel = (terminal: string): string => terminal === 'pass' ? '正确' : terminal === 'fail' ? '错误' : '未知';
+function observation(h: CaseOutcome['history'][number]): string {
+  const terminal = h.report_check?.mapped_terminal ?? h.reported_terminal ?? h.terminal;
+  return `上机验证的判断：${terminalLabel(terminal)}（设备自报，状态未确认）${h.terminal === 'no_verdict' ? '；Hub 尚未取得可采用的逐条结论' : ''}`;
+}
 export function timeline(outcome: CaseOutcome, excluded: boolean): string {
   if (!outcome.history.length) return excluded ? '未做上机验证，这条原始用例未完成脚本编写。' : '未做上机验证。';
-  return outcome.history.map((h) => `第 ${h.ordinal} 次上机验证${h.audit ? `设备原判${terminalLabel(h.reported_terminal ?? h.terminal)}（目标自报，未确认）；交付复核状态未知，设备输出有执行失败原话“${h.audit.line}”，自动化用例没有检查这一行` : `判断${terminalLabel(h.terminal)}`}`).join('；') + '。';
+  return outcome.history.map(h => `第 ${h.ordinal} 次${observation(h)}${h.audit ? `；交付复核状态未知，设备输出有执行失败原话“${h.audit.line}”，自动化用例没有检查这一行` : ''}`).join('；') + '。';
 }
 
 export interface OutOfScopeCase { autoid: string; title: string }
@@ -477,6 +493,8 @@ export interface ReportInput {
   passAudit?: { markers: number | null; read: number; downgraded: number; wordless: number };
   placedLast?: { pass: MovedCase[]; unsuccessful: MovedCase[] };
   scope?: ScopeSummary;
+  /** verification runs that never reached the bed. */
+  unsent?: Unsent[];
 }
 const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || '标题未知';
 export function closingCounts(cases: CaseOutcome[]): string {
@@ -493,8 +511,8 @@ function recordedNext(outcome: CaseOutcome): string[] {
   const texts = exits.flatMap(exit => {
     if (!isRecord(exit) || !isExitAction(exit.action) || typeof exit.due !== 'string' || !Number.isFinite(Date.parse(exit.due)) || !isRecord(exit.audience)) return [];
     if (exit.action === 'request' ? typeof exit.request_kind !== 'string' || !exit.request_kind.trim() || exit.audience.hub === true : exit.audience.hub !== true || exit.request_kind !== undefined) return [];
-    const who = exit.audience.hub === true ? 'Hub' : typeof exit.audience.user === 'string' && exit.audience.user.trim() ? exit.audience.user : isRecord(exit.audience.external) && typeof exit.audience.external.identity === 'string' && typeof exit.audience.external.mapping === 'string' ? `${exit.audience.external.identity}（${exit.audience.external.mapping}）` : null;
-    return who ? [`由${who}${labelOf('exit_action', exit.action)}，期限 ${exit.due}`] : [];
+    const who = exit.audience.hub === true ? 'Hub' : typeof exit.audience.user === 'string' && exit.audience.user.trim() ? exit.request_kind === 'disposition' ? '测试环境管理员' : '使用者' : isRecord(exit.audience.external) && typeof exit.audience.external.identity === 'string' && typeof exit.audience.external.mapping === 'string' ? '指定的外部负责人' : null;
+    return who ? [`由${who}${labelOf('exit_action', exit.action)}，期限 ${localMinute(new Date(exit.due))}`] : [];
   });
   return [...new Set(texts)];
 }
@@ -502,15 +520,18 @@ export function caseConclusion(input: ReportInput, outcome: CaseOutcome): string
   const named = `原始用例 ${outcome.autoid} ${title(input, outcome.autoid)}`;
   const exits = recordedNext(outcome);
   const observed = outcome.history.at(-1);
-  const sourceMissing = [...new Set([...(outcome.basis?.gaps ?? []).flatMap(gap => gap.missing ? [gap.missing] : []), ...(observed?.missing_facts ?? []), ...(observed?.missing_fact ? [observed.missing_fact] : [])])];
-  const observation = observed ? `设备原判${terminalLabel(observed.reported_terminal ?? observed.terminal)}，状态未确认（目标自报，未排除本地操作）。` : '';
-  if (outcome.pending?.length) return `${named}，${observation}交付资格状态未知，原因${reasonOf(outcome)}，缺少：${[...sourceMissing, ...outcome.pending].join('；')}。下一步${exits.length ? exits.join('；') : '尚缺具名出口材料，补齐原运行的请求记录和所列材料后重评'}；可重入，不表示必须停止编写。决定者程序只整理已记录证据。`;
+  const unsentFacts = (input.unsent ?? []).filter(u => u.items.includes(outcome.autoid)).flatMap(u => u.missing_facts);
+  if (!outcome.closing && !outcome.history.length && unsentFacts.length) return `${named}，没有发到设备，状态未知。原因：${[...new Set(unsentFacts.map(f => publicWords(f.fact)))].join('；')}。下一步：${[...new Set(unsentFacts.map(f => publicWords(f.next_action)))].join('；')}。决定者程序只披露 Hub 的未派发记录。`;
+
+  const sourceMissing = [...new Set([...(outcome.basis?.gaps ?? []).flatMap(gap => gap.missing ? [gap.missing] : []), ...(observed?.missing_facts?.length ? ['设备输出的完整性前提尚未核验'] : observed?.missing_fact ? [observed.missing_fact] : [])])];
+  const observedWords = observed ? `${observation(observed)}。` : '';
+  if (outcome.pending?.length) return `${named}，${observedWords}交付资格状态未知，原因${reasonOf(outcome)}，缺少：${[...new Set([...sourceMissing, ...outcome.pending])].map(publicWords).join('；')}。下一步${exits.length ? exits.join('；') : observed?.missing_facts?.length ? '由测试环境管理员补齐设备输出完整性所需事实后重评' : (observed?.next_action ? publicWords(observed.next_action) : undefined) ?? '由模型将本条计划交给 Hub 取得具名缺失事实；若作者步骤与手册冲突，补齐两段逐字引文交使用者裁定'}；可重入，不表示必须停止编写。决定者程序只整理已记录证据。`;
   if (outcome.status === 'delivered') return `${named}，自动化用例 Excel 已完成上机验证，状态未确认，判断正确（目标自报，未排除本地操作）。决定者程序仅解析回执，不升级观察性质。`;
   const model = outcome.closing === 'author_conflict' || outcome.closing === 'device_defect';
   const status = model || (outcome.closing === 'authoring_failure' && observed?.terminal === 'fail') ? '未确认' : outcome.closing === 'missing_fact' || outcome.status === 'unsettled' || outcome.status === 'unrun' ? '未知' : '未确认';
   const conclusion = outcome.closing === 'author_conflict' ? '模型判断原始用例与手册冲突' : outcome.closing === 'device_defect' ? '模型判断原始用例的期望与设备输出不一致' : outcome.closing === 'authoring_failure' ? `所记录的自动化用例核验尚未通过（结论仅限这些尝试）${outcome.rounds === undefined ? '' : `，已核验 ${outcome.rounds} 份不同自动化用例`}` : outcome.closing === 'missing_fact' ? '缺少脚本编写所需的资料' : outcome.status === 'failed' ? '上机验证发现错误' : '上机验证尚无结论';
-  const next = exits.length ? exits.join('；') : observed?.next_action ?? (model ? '使用者核对原始用例、手册和设备输出后裁定，未取得具名请求出口' : '尚缺具名出口材料，核对原运行的请求记录后重评；模型建议单列为未确认');
-  return `${named}，${outcome.closing === 'authoring_failure' ? observation : ''}${conclusion}，状态${status}${status === '未知' ? '' : '，判断错误'}。原因${reasonOf(outcome)}${sourceMissing.length ? `，缺少：${sourceMissing.join('；')}` : ''}，下一步${next}。决定者${model ? '模型' : '程序'}。`;
+  const next = exits.length ? exits.join('；') : observed?.missing_facts?.length ? '由测试环境管理员补齐设备输出完整性所需事实后重评' : (observed?.next_action ? publicWords(observed.next_action) : undefined) ?? (model ? !outcome.history.length ? '由作者或使用者根据已核对的原始用例与手册原句裁定' : '由使用者核对原始用例、手册和设备输出后裁定' : '尚缺具名出口材料，核对原运行的请求记录后重评；模型建议单列为未确认');
+  return `${named}，${outcome.closing === 'authoring_failure' ? observedWords : ''}${conclusion}，状态${status}${status === '未知' ? '' : '，判断错误'}。原因${reasonOf(outcome)}${sourceMissing.length ? `，缺少：${sourceMissing.map(publicWords).join('；')}` : ''}，下一步${next}。决定者${model ? '模型' : '程序'}。`;
 }
 
 function head(input: ReportInput): string[] {
@@ -518,17 +539,20 @@ function head(input: ReportInput): string[] {
   const lines = [
     ...(input.scope ? [`本次范围：${input.scope.words}（共 ${input.scope.totalCases} 条原始用例，纳入本次范围 ${input.assembly.totals.cases} 条，另有 ${input.scope.outOfScope.length} 条未纳入本次范围）。`] : []),
     pass && input.files.pass ? `自动化用例 Excel case.xlsx 中的 ${pass.items.length} 条原始用例已一起完成上机验证，判断正确。` : '尚无核对正确的自动化用例 Excel。',
-    unsuccessful && input.files.unsuccessful ? `自动化用例 Excel unsuccessful_cases.xlsx 包含 ${unsuccessful.items.length} 条仍有错误或未知的原始用例，使用各自最近一次上机验证的自动化用例，尚未一起做上机验证。` : '没有其他自动化用例 Excel。',
+    unsuccessful && input.files.unsuccessful ? `自动化用例 Excel unsuccessful_cases.xlsx 包含 ${unsuccessful.items.length} 条仍有错误或未知的原始用例，使用各自最后一次写好的自动化用例；对应写法是否上过机见逐条记录，尚未一起做上机验证。` : '没有其他自动化用例 Excel。',
   ];
   if (input.build) lines.push(`构建 ${input.build}。`);
+  // a verification run that never reached the bed is told once at the head, with the Hub's own reason and named next step.
+  for (const u of input.unsent ?? []) lines.push(`另有一次上机验证没有发到设备，不算一次上机验证（涉及 ${u.items.length} 条原始用例）：${u.missing_facts.length ? u.missing_facts.map((m) => publicWords(m.fact)).join('；') : '原因缺少可读取的记录'}。下一步：${u.missing_facts.length ? u.missing_facts.map((m) => publicWords(m.next_action)).join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`);
   for (const moved of [input.placedLast?.pass, input.placedLast?.unsuccessful]) if (moved?.length) lines.push(movedText(moved, new Map(moved.map((row) => [row.autoid, input.originals[row.autoid]?.title ?? ''] as const))));
   const audit = input.passAudit;
-  if (audit?.markers === null) lines.push('状态未知。原因缺资料，执行器规则没有说明哪些设备输出表示执行失败；下一步由使用者补齐执行器规则，再核对设备输出。决定者程序。');
+  if (audit?.markers === null && input.assembly.cases.some(c => c.history.length)) lines.push('状态未知。原因缺资料，执行器规则没有说明哪些设备输出表示执行失败；下一步由使用者补齐执行器规则，再核对设备输出。决定者程序。');
   else if (audit?.downgraded || audit?.wordless) lines.push(`核对设备输出后，${audit.downgraded} 条原始用例有执行失败原话却未被自动化用例检查，状态未知；${audit.wordless} 条缺少设备输出，状态未知。下一步由编写模型补齐检查或由使用者补齐设备输出。决定者程序。`);
   return lines;
 }
 function section(input: ReportInput, outcome: CaseOutcome): string[] {
   const note = input.notes.cases[outcome.autoid];
+  const judged = reportableProse(note.judged) ? note.judged : '模型说明含内部引用，尚未形成供使用者阅读的说明';
   const fence = (text: string) => ['```', text.replace(/```/g, '`​``'), '```'];
   const candidate = note.defect_candidate;
   const conflict = outcome.conflict ?? note.author_conflict;
@@ -536,14 +560,34 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
     `## 原始用例 ${outcome.autoid} ${title(input, outcome.autoid)}`,
     caseConclusion(input, outcome),
     '', timeline(outcome, input.excluded.includes(outcome.autoid)),
-    ...(note.judged ? ['', note.absent ? '尚未提供模型说明。' : `模型说明，状态未确认。${note.judged}`] : []),
-    ...(outcome.missing?.missing ? ['', `证据，Hub 核对结果原话。${outcome.missing.missing}`] : []),
-    ...(note.evidence ? ['', outcome.evidence_unverified ? '**模型提出的设备输出**，逐字核对未通过，不能作核验依据。' : '**证据，设备输出**，已按照规则核对设备输出。', ...fence(note.evidence)] : []),
+    ...(input.assembly.unsuccessful?.sources[outcome.autoid] ? ['', input.assembly.unsuccessful.sources[outcome.autoid].run === outcome.history.at(-1)?.run ? `本卷这条写法已在第 ${outcome.history.at(-1)?.ordinal} 次上机验证中执行。` : '本卷采用最后一次写好的自动化用例；这份写法尚未发到设备，上面的记录来自较早一次实际到设备的上机验证。'] : []),
+    ...(input.unsent ?? []).filter((u) => outcome.history.length > 0 && u.items.includes(outcome.autoid)).flatMap((u) => ['', `另有一次上机验证没有发到设备，不算一次上机验证：${u.missing_facts.length ? u.missing_facts.map((m) => publicWords(m.fact)).join('；') : '原因缺少可读取的记录'}。下一步：${u.missing_facts.length ? u.missing_facts.map((m) => publicWords(m.next_action)).join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`]),
+    ...(note.judged ? ['', note.absent ? '尚未提供模型说明。' : `模型说明，状态未确认。${judged}`] : []),
+    ...(outcome.missing?.missing ? ['', `Hub 核对结果摘要（内部引用保留在机器资料）。${publicWords(outcome.missing.missing)}`] : []),
+    ...(note.evidence && !outcome.history.length ? ['', '**模型给出的依据（没有设备输出，未核对）**。出处保留在机器资料中。'] : note.evidence ? ['', outcome.evidence_unverified ? '**模型提出的设备输出**，逐字核对未通过，不能作核验依据。' : '**证据，设备输出**，已按照规则核对设备输出。', ...fence(note.evidence)] : []),
     ...(note.attribution ? ['', `模型自报原因，未确认：${labelOf('attribution', note.attribution)}。`] : []),
     ...(candidate ? ['', `模型提出的复现步骤（未确认） ${candidate.repro}`, '', outcome.closing === 'device_defect' ? '原始用例原句，已逐字核对' : '模型提出的原始用例原句，核对未通过', ...fence(candidate.expected), '', outcome.closing === 'device_defect' ? '设备输出，已逐字核对' : '模型提出的设备输出，核对未通过', ...fence(candidate.actual)] : []),
     ...(conflict ? ['', outcome.closing === 'author_conflict' ? '**证据，原始用例原句**，已按照规则核对原文。' : '**模型提出的原始用例原句**，未取得完整的逐字核对依据。', ...fence(conflict.author), '', outcome.closing === 'author_conflict' ? `**证据，手册原话**，构建 ${input.build ?? '未知'}，已按照规则核对原文。` : `**模型提出的手册原话**，构建 ${input.build ?? '未知'}，未取得完整的逐字核对依据。`, ...fence(conflict.manual)] : []),
   ];
 }
+/** Only protocol identity syntax is checked here; model prose never decides a case status. */
+const publicWords = (text: string): string => text.replace(/(?:run|usr|exe)_[a-z0-9]{26}\b|(?:src|rec):[a-f0-9]{64}|tree:[a-f0-9]{64}(?:\/[^\s，；。]+)?/gu, '（对应记录见机器资料）');
+export const reportableProse = (text: string): boolean => !/(?:run|usr|exe)_[a-z0-9]{26}\b|(?:src|rec):[a-f0-9]{64}|tree:[a-f0-9]{64}/u.test(text);
+
+export function closingHints(cases: CaseOutcome[], notes: Notes, unsent: readonly Unsent[] = []): Array<{ autoid: string; missing: string; next_action: string; legal_form: string }> {
+  return cases.flatMap(outcome => {
+    const note = notes.cases[outcome.autoid];
+    const hints: Array<{ autoid: string; missing: string; next_action: string; legal_form: string }> = [];
+    if (outcome.status === 'unrun' && !outcome.closing && !unsent.some(u => u.items.includes(outcome.autoid) && u.missing_facts.length)) hints.push({ autoid: outcome.autoid, missing: '本条没有可核验的计划结论或 Hub 具名缺失事实，也没有通过逐字核对的作者冲突', next_action: '先将本条计划交 Hub 取得具名请求；若原始用例与手册冲突，按示例填写 author_conflict 后重跑', legal_form: JSON.stringify({ cases: { [outcome.autoid]: { judged: '供使用者阅读的说明', remedy: '由谁补什么', author_conflict: { author: '<本条原始用例连续原句>', manual: '<同构建手册连续原句>', reference: '<锁定手册引用>' } } } }) });
+    if (!outcome.history.length && note?.round !== undefined) hints.push({ autoid: outcome.autoid, missing: '本条没有到过设备，不能声明上机轮次', next_action: '删除本条的 round；保留作者冲突或先向 Hub 提交本条计划取得具名出口', legal_form: JSON.stringify({ judged: '未上机，说明已核对的事实', remedy: '由谁补什么' }) });
+    if (note?.author_conflict && outcome.closing !== 'author_conflict' && !outcome.missing) hints.push({ autoid: outcome.autoid, missing: '作者冲突声明未取得完整的逐字核对依据', next_action: '按 pending 指出的问题改正原始用例引文、手册原句和锁定引用后重跑', legal_form: JSON.stringify({ author_conflict: { author: '<本条原始用例连续原句>', manual: '<锁定手册连续原句>', reference: '<锁定手册引用>' } }) });
+    if (note?.defect_candidate && outcome.closing !== 'device_defect' && !outcome.missing) hints.push({ autoid: outcome.autoid, missing: '设备缺陷候选未取得完整的逐字核对依据', next_action: '按 pending 改正作者期望和设备原话；候选只保留未确认状态', legal_form: JSON.stringify({ defect_candidate: { repro: '<复现步骤>', expected: '<作者期望原句>', actual: '<同一个设备文件内的连续原句>' } }) });
+    if (outcome.evidence_unverified) hints.push({ autoid: outcome.autoid, missing: '设备引文未通过逐字核对', next_action: '只选最近一次到过设备的一个文件，连续复制一段原句，不拼接不同文件', legal_form: JSON.stringify({ evidence: '<同一个设备文件内连续的一段原句>' }) });
+    if (note && (!reportableProse(note.judged) || !reportableProse(note.remedy))) hints.push({ autoid: outcome.autoid, missing: '使用者说明含内部引用', next_action: 'judged/remedy 改写为人能阅读的解释；运行号、来源引用和文件路径留在机器资料中', legal_form: JSON.stringify({ judged: '说明现象、判断及其限制', remedy: '说明由谁补齐什么' }) });
+    return hints;
+  });
+}
+
 export const REPORT_FILES = { report: 'delivery_report.md', unsuccessful: 'unsuccessful_cases.md', summary: 'delivery.json' } as const;
 
 export function deliveryReport(input: ReportInput): string {
@@ -573,10 +617,10 @@ export function unsuccessfulReport(input: ReportInput): string {
     }
     const log = input.logs[outcome.autoid];
     if (log) {
-      if (log.text === null) lines.push('', `**设备输出**。状态未知，原因缺资料，${log.withheld ?? '没有取得设备输出'}；下一步由使用者补齐设备输出。`);
+      if (log.text === null) lines.push('', `**第 ${outcome.history.at(-1)?.ordinal ?? '未知'} 次上机验证的设备输出**。状态未知，原因缺资料，${log.withheld ?? '没有取得设备输出'}；下一步由使用者补齐设备输出。`);
       else {
         const tail = log.text.length > LOG_TAIL ? log.text.slice(-LOG_TAIL) : log.text;
-        lines.push('', `**设备输出**${log.text.length > LOG_TAIL ? `，末尾 ${LOG_TAIL} 字` : ''}`, '```', tail.replace(/```/g, '`​``'), '```');
+        lines.push('', `**第 ${outcome.history.at(-1)?.ordinal ?? '未知'} 次上机验证的设备输出**${log.text.length > LOG_TAIL ? `，末尾 ${LOG_TAIL} 字` : ''}`, '```', tail.replace(/```/g, '`​``'), '```');
       }
     }
   }

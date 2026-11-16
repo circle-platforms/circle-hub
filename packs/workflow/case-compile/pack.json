@@ -43,8 +43,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "e4b68d57e5ddac4a8b2ac920e7e523f0c5e755425a66ab56206bdef4b132395f",
-      "size": 16732
+      "sha256": "8547c07ff4a9e1110c214fe9fd34d3f0aea72996f82722eac2403a112f8bfa38",
+      "size": 17036
     },
     {
       "path": "agents/compile-attributor.md",
@@ -233,8 +233,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "e8059b83c4349a50f998d89ec5dc8a19fa28a635752af29d543ccf1dc70c3d2d",
-      "size": 56178
+      "sha256": "04bb41677837fffca3738847eda228a11ba635de3798f22f11f7a75e822d2b4b",
+      "size": 64536
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -473,8 +473,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "0eeb6a01b68b78276499b9f96c6f7f22c6b06f9f6589c02aa9800a2d5b5ff129",
-      "size": 11653
+      "sha256": "45a2427382d235abdef1c3826616ab29d11402f5fdda22e77a7cbee093928f6d",
+      "size": 11746
     },
     {
       "path": "functions/typed-authority.ts",
@@ -863,8 +863,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "d62b9aedbac719a766c3c86ca80154392d11e1fbc9c7a023d86d144ccf4d2c7b",
-      "size": 48921
+      "sha256": "ec508625da4746cdfdf09abfdf0fe379b0311c42aa556bd7e7f3e25fd6e4b05b",
+      "size": 52396
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -943,8 +943,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "3bb9adf337c795c3c3a35ac6b694960cf5e4fe139e8d7cc54559f584b1876f1a",
-      "size": 14972
+      "sha256": "290e52b05e65d507224e1061e8aab18bcf6f1ac503d97ae80a3d25756fe67744",
+      "size": 17033
     },
     {
       "path": "tools/download-returns.cli.json",
@@ -953,8 +953,8 @@
     },
     {
       "path": "tools/download-returns.ts",
-      "sha256": "14dd2fa2cf2aa228b8dec4b77a0f1e46a50970c368204b39982a4805b9c3a7a2",
-      "size": 15071
+      "sha256": "607df0b9b14fa988f9d67ca3e4407d1864bc3b9198632b3b9a7e9bad09d2c84c",
+      "size": 15843
     },
     {
       "path": "tools/download-run.cli.json",

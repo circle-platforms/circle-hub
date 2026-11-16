@@ -314,3 +314,19 @@ test('download-returns retries 503 Retry-After and ECONNREFUSED on reads, honors
   assert.match(r3.stderr, /^暂时不可用：Hub 答复 503：Hub 繁忙，已等待 12 秒并尝试 4 次仍未恢复。请.*。$/m);
   await assert.rejects(readFile(join(out3, 'index.json')));
 });
+
+test('run31 not-dispatched downloads expose the outcome, reason and next action without claiming a device result', async t => {
+  const answer = jobs();
+  Object.assign(answer.jobs[0], { outcome: 'not_dispatched', rows: null, device_return: null, missing_facts: [{ fact: '合成环境配置未恢复', next_action: '由测试环境管理员恢复后重开' }], next_action: '由测试环境管理员恢复后重开' });
+  const h = await hub(answer, []); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const result = await run(h.url, out);
+  assert.equal(result.code, 0, result.stderr);
+  const index = JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+  assert.equal(index.jobs[0].outcome, 'not_dispatched');
+  assert.deepEqual(index.jobs[0].missing_facts, [{ fact: '合成环境配置未恢复', next_action: '由测试环境管理员恢复后重开' }]);
+  const summary = JSON.parse(result.stdout);
+  assert.deepEqual(summary.outcomes, { not_dispatched: 1 });
+  assert.match(summary.message, /未发到设备.*不算/);
+  assert.equal(summary.missing_facts[0].next_action, '由测试环境管理员恢复后重开');
+});

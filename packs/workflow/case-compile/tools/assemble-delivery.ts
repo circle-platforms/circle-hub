@@ -3,10 +3,10 @@ import { realpathSync } from 'node:fs';
 import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isRecord, failCall, CallFailure } from '../functions/text.ts';
+import { isRecord, failCall, CallFailure, localMinute } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
+import { closingHints, neverReachedBed, unsentOf, type Unsent, assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { HubReplyError, RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchBytesRetrying, getRetrying, downloadRetryControl, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
@@ -36,7 +36,6 @@ function hubDocument(bytes: Uint8Array): unknown {
   try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
   catch { failCall('temporarily_unavailable', 'Hub 元数据不是完整的 UTF-8 JSON，尚未据此生成结论', '请维护者恢复原运行完整的元数据后重试'); }
 }
-function localTime(date: Date): string { const p = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}`; }
 const autoidOf = (item: unknown): string | null => isRecord(item) && isRecord(item.fields) && typeof item.fields.autoid === 'string' ? item.fields.autoid : null;
 function excludedOf(run: Record<string, unknown>): string[] { const p = run.parameters; return isRecord(p) && Array.isArray(p.exclude) ? p.exclude.filter((v): v is string => typeof v === 'string') : []; }
 interface FrozenScope { words: string; cases: string[] }
@@ -206,7 +205,13 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const plans = new Map<string, RunInputs>();
     const planOf = async (run: string) => { if (!plans.has(run)) plans.set(run, await fetchRunInputs(origin, bearer, run, sourceRetry)); return plans.get(run)!; };
     const given = new Map<string, Dispatch>();
-    for (const run of runs) given.set(run, settledDispatch(run, await jobsOf(run)));
+    const unsent: Unsent[] = [];
+    for (const run of runs) {
+      const jobs = await jobsOf(run);
+      // the same rule as the lineage walk below: a run none of whose jobs went to the bed is no run of the cases; it is disclosed, not refused.
+      if (neverReachedBed(run, jobs)) { unsent.push(unsentOf(run, jobs)); continue; }
+      given.set(run, settledDispatch(run, jobs));
+    }
 
     // The runs named are where the walk starts, not the whole list: every verification run of the same compilation (plan runs
     // under the same booking bound to the same recomposition, or the same document without one) is read from the Hub's lineage,
@@ -218,12 +223,12 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       return exported.run;
     };
     const ours = (run: Record<string, unknown> | null, key: string) => !!run && typeof run.pack === 'string' && run.pack.split('@')[0] === 'case-compile' && lineageKey(run) === key;
-    for (const d of given.values()) { const key = lineageKey((await planOf(d.plan_run)).run as Record<string, unknown>); if (key) keys.add(key); }
+    for (const d of [...given.values(), ...unsent]) { const key = lineageKey((await planOf(d.plan_run)).run as Record<string, unknown>); if (key) keys.add(key); }
     if (keys.size !== 1) failCall('invalid_parameters', '--runs 中的自动化用例不是来自同一份重组后的用例或原始用例，请只选择这份原始用例的上机验证', '请核对运行、范围、产物身份和原始输入，修正后重试');
     const [key] = keys;
     // Up: a rework's plan run may name the booking or the verification run before it as predecessor (run 12 did the first, run 14
     // the second), so the walk climbs while the predecessor is a run of this compilation and starts below the first one that is not.
-    for (const d of given.values()) {
+    for (const d of [...given.values(), ...unsent]) {
       let current = (await planOf(d.plan_run)).run as Record<string, unknown>;
       for (let hops = 0; typeof current.predecessor === 'string' && hops < 200; hops++) {
         const up = await runOf(current.predecessor);
@@ -241,22 +246,23 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         queue.push(next.run);
       }
     }
-    for (const run of given.keys()) if (!started.has(run)) { const exported = hubDocument(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry)); started.set(run, isRecord(exported) && isRecord(exported.run) && typeof exported.run.started_at === 'string' ? exported.run.started_at : ''); }
+    for (const run of [...given.keys(), ...unsent.map(u => u.run)]) if (!started.has(run)) { const exported = hubDocument(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry)); started.set(run, isRecord(exported) && isRecord(exported.run) && typeof exported.run.started_at === 'string' ? exported.run.started_at : ''); }
     const dispatches: Dispatch[] = [], added: string[] = [];
     for (const run of [...started.keys()].sort((a, b) => (started.get(a)! < started.get(b)! ? -1 : started.get(a)! > started.get(b)! ? 1 : a < b ? -1 : 1))) {
       if (given.has(run)) { dispatches.push(given.get(run)!); continue; }
       const jobs = await jobsOf(run);
       // Verified but never sent to the bed: no job, or only jobs that ended before anything went out (not_dispatched, as when a
       // pre-dispatch check failed); like the reference engine, a dispatch that never reached the bed is not a run of the cases.
-      if (!jobs.some((job) => job.verification_run === run && !(job.ended === 'done' && job.outcome === 'not_dispatched'))) continue;
+      if (neverReachedBed(run, jobs)) { if (!unsent.some((u) => u.run === run)) unsent.push(unsentOf(run, jobs)); continue; }
+      if (!jobs.some((job) => job.verification_run === run)) continue;
       dispatches.push(settledDispatch(run, jobs)); added.push(run);
     }
-    for (const d of dispatches) await planOf(d.plan_run);
+    for (const d of [...dispatches, ...unsent]) await planOf(d.plan_run);
 
     // Every verification run and its plan run must carry the exact same frozen Hub parameters.scope; midway scope changes
     // require a fresh start_run rather than merging runs from different scopes.
     const scopedRuns: Array<{ run: string; scope: FrozenScope | null; key: string }> = [];
-    for (const d of dispatches) {
+    for (const d of [...dispatches, ...unsent]) {
       const planScope = frozenScopeOf(plans.get(d.plan_run)!.run, d.plan_run);
       scopedRuns.push({ run: d.plan_run, scope: planScope, key: canonicalScopeKey(planScope) });
       const verifRecord = await runOf(d.run);
@@ -300,7 +306,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       }
     }
     const excluded = [...new Set([...plans.values()].flatMap((p) => excludedOf(p.run)))];
-    for (const d of dispatches) for (const item of (plans.get(d.plan_run)!.run.items as unknown[]) ?? []) {
+    for (const d of [...dispatches, ...unsent]) for (const item of (plans.get(d.plan_run)!.run.items as unknown[]) ?? []) {
       const autoid = autoidOf(item); if (!autoid || !isRecord(item)) continue;
       const original = planOriginal(item); if (original) originals[autoid] = original;
       if (!args.recompose && !population.includes(autoid)) population.push(autoid);
@@ -327,7 +333,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         failCall('invalid_parameters', `Hub 运行记录中的 parameters.scope 包含不在本次文档原始用例里的编号：${missingFromDoc.join('、')}。请核对运行参数与文档后重试`, '请核对运行、范围、产物身份和原始输入，修正后重试');
       }
       const allowed = new Set(activeScope.cases);
-      for (const d of dispatches) {
+      for (const d of [...dispatches, ...unsent]) {
         const extra = d.items.filter((autoid) => !allowed.has(autoid));
         if (extra.length) {
           failCall('invalid_parameters', `上机验证 ${d.run} 包含未纳入本次 parameters.scope 的原始用例 ${extra.join('、')}。请核对运行范围并重新用 start_run 编写与上机后重试`, '请核对运行、范围、产物身份和原始输入，修正后重试');
@@ -347,7 +353,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const recipesOf = (plan: RunInputs) => satisfiedRecipes(inputsOf(plan));
     // A dispatch's scope is the generated workbook's scope; rows cannot silently name only part of that file.
     const workbookBindings = new Map<string, { sha256: string; autoids: string[] }>();
-    for (const dispatch of dispatches) {
+    for (const dispatch of [...dispatches, ...unsent]) {
       let binding = workbookBindings.get(dispatch.plan_run);
       if (!binding) {
         const recipes = recipesOf(plans.get(dispatch.plan_run)!);
@@ -393,6 +399,39 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const assembly = assemble(inScope, dispatches);
     const undelivered = assembly.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
     const notes = readNotes(notesValue, undelivered);
+    const unissuedPlans = assembly.cases.filter(c => c.status === 'unrun' && unsent.some(u => u.items.includes(c.autoid)));
+    if (unissuedPlans.length) {
+      const volume = assembly.unsuccessful ?? { items: [], sources: {} };
+      for (const outcome of unissuedPlans) {
+        const source = unsent.filter(u => u.items.includes(outcome.autoid)).at(-1)!;
+        if (!volume.items.includes(outcome.autoid)) volume.items.push(outcome.autoid);
+        volume.sources[outcome.autoid] = { plan_run: source.plan_run, run: source.run };
+      }
+      volume.items.sort((a,b) => inScope.indexOf(a) - inScope.indexOf(b));
+      assembly.unsuccessful = volume;
+    }
+
+    // The unsuccessful volume carries the last accepted authored content, even if its verification never reached the bed.
+    if (assembly.unsuccessful) {
+      const latest = [...planRuns.keys()].sort((a,b) => (planRuns.get(a)! > planRuns.get(b)! ? -1 : planRuns.get(a)! < planRuns.get(b)! ? 1 : a > b ? -1 : 1));
+      const selected = new Set<string>();
+      for (const run of latest) {
+        let plan: RunInputs;
+        try { plan = await planOf(run); }
+        catch (error) { if (error instanceof HubReplyError && (error.status === 409 || error.status === 404)) continue; throw error; }
+        const ids = (plan.run.items as unknown[]).map(autoidOf);
+        if (!assembly.unsuccessful.items.some(id => !selected.has(id) && ids.includes(id))) continue;
+        if (canonicalScopeKey(frozenScopeOf(plan.run, run)) !== canonicalScopeKey(activeScope)) failCall('invalid_parameters', '最近受理的写法与本次冻结范围不一致，不能混入未成功卷', '请选择同一冻结范围的编译运行，范围变化后重新编写和核验，不用本地参数缩小范围');
+        for (const autoid of assembly.unsuccessful.items) {
+          if (selected.has(autoid) || !ids.includes(autoid)) continue;
+          const source = [...dispatches, ...unsent].filter(d => d.plan_run === run && d.items.includes(autoid)).at(-1);
+          assembly.unsuccessful.sources[autoid] = { plan_run: run, run: source?.run ?? null };
+          selected.add(autoid);
+        }
+        if (selected.size === assembly.unsuccessful.items.length) break;
+      }
+    }
+
 
     const outputs: Array<{ name: string; bytes: Uint8Array }> = [];
     let passFile: { sha256: string } | null = null, unsuccessfulFile: { sha256: string } | null = null;
@@ -405,7 +444,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       outputs.push({ name: 'case.xlsx', bytes }); passFile = { sha256: assembly.pass.sha256 };
     }
     if (assembly.unsuccessful) {
-      // Each case goes in as it last went to the bed: its recipe from the plan run of its latest dispatch, merged in document order.
+      // Each case uses its last accepted authored content; actual device observations stay in history separately.
       const { items, sources } = assembly.unsuccessful;
       const recipes = new Map<string, ReturnType<typeof recipesOf>>();
       const selected = items.map((autoid) => {
@@ -449,7 +488,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const authored = Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, original.lines.flatMap((line) => line.expected)]));
     const conflictGround: ConflictGround = {
       authored: Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, [original.title, ...original.lines.flatMap((line) => [line.text, ...line.expected])].filter((text) => text.length > 0)])),
-      ...(await citedStatements(origin, bearer, new Set(Object.values(notes.cases).flatMap((note) => (note.author_conflict ? [note.author_conflict.reference] : []))), dispatches.map((d) => d.plan_run), (run) => plans.get(run)?.run.root, sourceRetry)),
+      ...(await citedStatements(origin, bearer, new Set(Object.values(notes.cases).flatMap((note) => (note.author_conflict ? [note.author_conflict.reference] : []))), [...dispatches, ...unsent].map((d) => d.plan_run), (run) => plans.get(run)?.run.root, sourceRetry)),
     };
     const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts, conflictGround);
     // The reference engine's exits for a case it could not compile: only what its own checks recorded certifies one. A case never
@@ -476,14 +515,22 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         }
       }
     }
-    const settled = closeUnrun(closed.cases.map(outcome => ({ ...outcome, ...(bases.has(outcome.autoid) ? { basis: bases.get(outcome.autoid) } : {}) })), facts, notes, conflictGround);
+    // the plan run's own pending workbook step says nothing about a case that went to the bed: its workbook was verified and dispatched.
+    const basisFor = (outcome: { autoid: string; history: unknown[] }) => {
+      const found = bases.get(outcome.autoid); if (!found) return undefined;
+      if (!outcome.history.length) return found;
+      const gaps = found.gaps.filter((gap) => gap.requirement !== 'workbook_verified');
+      return gaps.length ? { ...found, gaps, attributions: [...new Set(gaps.flatMap((gap) => gap.attribution ? [gap.attribution] : []))] } : undefined;
+    };
+    const settled = closeUnrun(closed.cases.map(outcome => ({ ...outcome, ...(basisFor(outcome) ? { basis: basisFor(outcome) } : {}) })), facts, notes, conflictGround);
     assembly.cases = settled.cases.map(outcome => {
       const note = notes.cases[outcome.autoid];
       const problems = evidenceProblems({ ...notes, cases: note ? { [outcome.autoid]: note } : {} }, { [outcome.autoid]: deviceTexts[outcome.autoid] ?? [] });
       return problems.length ? { ...outcome, closing: undefined, evidence_unverified: true as const, pending: [...(outcome.pending ?? []), ...problems] } : outcome;
     });
-    const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run)!.run;
-    const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast }, ...(scopeSummary ? { scope: scopeSummary } : {}) };
+    const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1) ?? unsent.at(-1)!).plan_run)!.run;
+    const hints = closingHints(assembly.cases, notes, unsent);
+    const input: ReportInput = { unsent, name: args.name ?? basename(resolve(args.out)), generatedAt: localMinute(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast }, ...(scopeSummary ? { scope: scopeSummary } : {}) };
     input.artifacts = [...outputs.map(output => output.name), ...Object.values(REPORT_FILES)];
     outputs.push({ name: REPORT_FILES.report, bytes: Buffer.from(deliveryReport(input)) }, { name: REPORT_FILES.unsuccessful, bytes: Buffer.from(unsuccessfulReport(input)) });
     const summary = {
@@ -496,12 +543,15 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       } : {}),
       dispatches: dispatches.map((d) => ({ run: d.run, job: d.job, plan_run: d.plan_run, sha256: d.sha256, items: d.items })),
       added_runs: added,
+      unsent_runs: unsent,
       pass_audit: { markers: markerCount, read, downgraded: [...hits.entries()].map(([key, hit]) => { const [run, item] = key.split('\u0000'); return { run, item, where: hit.where, line: hit.line }; }), wordless },
       pass_volume: assembly.pass ? { file: 'case.xlsx', sha256: assembly.pass.sha256, run: assembly.pass.run, job: assembly.pass.job, plan_run: assembly.pass.plan_run, items: assembly.pass.items, ...(passLast.length ? { moved_tail: passLast } : {}) } : null,
       unsuccessful_volume: assembly.unsuccessful ? { file: 'unsuccessful_cases.xlsx', sha256: unsuccessfulFile!.sha256, items: assembly.unsuccessful.items.map((autoid) => ({ autoid, plan_run: assembly.unsuccessful!.sources[autoid].plan_run, run: assembly.unsuccessful!.sources[autoid].run })), dispatched: false, ...(unsuccessfulLast.length ? { moved_tail: unsuccessfulLast } : {}) } : null,
+      hints,
+      incomplete: hints.length > 0,
       closings: Object.fromEntries((Object.keys(CLOSING) as Array<keyof typeof CLOSING>).map((closing) => [closing, assembly.cases.filter((c) => c.closing === closing).length])),
       artifacts: input.artifacts,
-      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.basis ? { basis: c.basis } : {}), ...(notes.cases[c.autoid] ? { model_claims: notes.cases[c.autoid] } : {}), ...(c.pending?.length ? { pending: c.pending, reenter: true } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, dynamic_terminal: h.reported_terminal ?? h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}), ...(h.qualifier ? { qualifier: h.qualifier } : {}), ...(h.accepted_as_fact === undefined ? {} : { accepted_as_fact: h.accepted_as_fact }), ...(h.missing_facts ? { missing_facts: h.missing_facts } : {}), ...(h.missing_fact ? { missing_fact: h.missing_fact } : {}), ...(h.next_action ? { next_action: h.next_action } : {}) })) })),
+      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.basis ? { basis: c.basis } : {}), ...(notes.cases[c.autoid] ? { model_claims: { ...notes.cases[c.autoid], ...(!c.history.length ? { round: undefined } : {}) } } : {}), ...(c.pending?.length ? { pending: c.pending, reenter: true } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, ...(h.report_check ? { report_check: h.report_check } : {}), dynamic_terminal: h.reported_terminal ?? h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}), ...(h.qualifier ? { qualifier: h.qualifier } : {}), ...(h.accepted_as_fact === undefined ? {} : { accepted_as_fact: h.accepted_as_fact }), ...(h.missing_facts ? { missing_facts: h.missing_facts } : {}), ...(h.missing_fact ? { missing_fact: h.missing_fact } : {}), ...(h.next_action ? { next_action: h.next_action } : {}) })) })),
     };
     outputs.push({ name: REPORT_FILES.summary, bytes: json(summary) });
 
@@ -518,9 +568,10 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       files,
       runs: dispatches.map((d) => d.run),
       added_runs: added,
+      hints,
       reply: replyText(out, assembly.totals, Object.keys(files), assembly.cases, input),
     }) + '\n');
-    return 0;
+    return hints.length ? 1 : 0;
   } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

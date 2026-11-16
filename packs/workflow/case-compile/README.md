@@ -1,6 +1,6 @@
 # case-compile 3.21.2
 
-本地候选 3.21.2（2026-11-16，T8）：整合 Plumb 1.0.1 的 command/step_n 示例与机读校验；修复第 31 轮暴露的未派发原因、交付结论与报告披露。本候选未发布、未部署。
+本地候选 3.21.2（2026-11-16，T8，未发布、未部署）：保留已发布 3.21.1 字节，不回写运行中的安装。整合 Plumb 1.0.1 示例和嵌入版本。未派发的运行不冒充设备验证，显式传入、自动发现、整批未派发采用同一分类，报告和机器资料列出 Hub 原因与下一步。未成功卷使用 Hub 最近受理的最后写法，实际到设备的记录另列；保留设备报告映射与 Hub 无判定的区别。报告用角色、本地分钟和可读事实；运行身份、原时间戳及完整观察保留机器资料。没有具名结论、作者冲突或设备引文未通过时逐条给合法示例并非零退出，仍保存其余条目及未知报告。未上机条目不造轮次，也不把说明来源称为核对过的设备输出。设备引文限一个文件中连续的一段；原始用例与手册冲突仍须结构化 author_conflict 与逐字核对，缺资料先交 Hub 取得具名事实再排除。
 
 本地整合候选 3.21.1（2026-11-16）：在 `hub-next-7`（T1/T1b）上合并 Plumb 方案与 Circle 1.18 适配（T4，含 B2/B7 裁定），仅推进 `case-compile` 至 `3.21.1`（`plumb@1.0.0`、`recompose@1.2.8`、`recompose-authority` / `recompose-adjudication@1.1.12`、`template-gap@1.2.24`、`knowledge-contribution@1.3.22` 版本不变）：（1）保留 T1/T1b 全部规则及 `hub-next-6@06779266aa` run30 的有来源前置、配对逆清理、`added_precondition` 豁免、结构化披露与 `tool-cli@2` 守卫；（2）接入 `plumb@1.0.0` 客户端侧命令选型/核验与 `sequence` 场景保真审定及 Bug #17/#18 修复，并补齐 `plumb.ts` 与 3 个 Plumb 工具的 `.cli.json` 声明；（3）按 B2 裁定删除 Circle 1.17.0 `general-purpose` 已知缺陷兼容提醒，按 B7 裁定改用 Circle 1.18 自动登记的 `case-compile:compile-*` 命名代理名、删除 `tools/install-agents.{ts,test.ts,cli.json}` 及定义正文里的 `<技能目录>` 占位符（`task-brief.ts` 保留实际路径注入），并在 `scripts/real/*` 保留 `mcpServers`、`PreToolUse` `hookSpecificOutput`、`mcp__<key>__*`、`/large_tool_results/`、`agent_id` 及 `circle-home --plumb-key-stdin`；`plumb/SKILL.md` 为含空格目录加单引号以兼容真实部署路径。刷新工作簿格式表、四份合成样例与包清单；本包及同批候选均未发布、未部署。
 

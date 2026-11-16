@@ -87,7 +87,7 @@ test('a case never sent to the bed closes on the claim too, after the Hub’s ow
   assert.match(stale.cases[0].pending![0], /^用例 c3 判断原始用例的问题时，手册引文不是所选手册的原话；逐字复制/);
   // No claim: aggregated single refusal with category '不存在' (never '已被占用') and capped case list.
   const none = closeUnrun([unrun], {}, { cases: { c3: note() } }, GROUND);
-  assert.match(none.cases[0].pending![0], /没有取得可核验的计划结论或具名缺失事实出口.*仍可继续编写/);
+  assert.match(none.cases[0].pending![0], /^没有取得可核验的计划结论或具名缺失事实出口$/);
   assert.equal(closeUnrun([unrun], {}).cases[0].pending!.length, 1, 'the callers that pass no notes keep working');
   const manyUnrun = Array.from({ length: 13 }, (_, i) => failed(`c${i + 1}`, 'unrun'));
   const aggregated = closeUnrun(manyUnrun, {});
@@ -124,7 +124,7 @@ test('the report names the closing and what was and was not checked, in plain wo
   assert.equal(closingLine({ ...failed('c1'), closing: 'authoring_failure', rounds: 3 })!.startsWith('所记录的核验尚未通过：已核验 3 份不同内容'), true, 'recorded failures do not claim a model cause');
   const exhaustedLine = closingLine({ autoid: 'c4', rounds: 0, status: 'unrun', closing: 'authoring_failure', missing: { kind: 'repair_exhausted', plan_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', requirement: 'plan', missing: '合成拒绝原话' }, history: [] })!;
   assert.doesNotMatch(exhaustedLine, /InfoTest|收口|受理|计划运行/);
-  assert.match(exhaustedLine, /脚本编写运行.*也没有被脚本合并接受.*不能据此确认原因在编写模型/);
+  assert.match(exhaustedLine, /计划已交给 Hub.*也没有被脚本合并接受.*不能据此确认原因在编写模型/);
   const auditedLine = closingLine({ ...failed('c5'), rounds: 2, closing: 'authoring_failure', history: [{ ordinal: 1, run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', job: 'job_1', terminal: 'pass', audit: { where: 'stdout', line: 'ERROR: bad' } }] })!;
   assert.doesNotMatch(auditedLine, /InfoTest/);
   assert.equal(closingCounts([at(1), { ...failed('c2'), rounds: 3, closing: 'authoring_failure' }, { ...failed('c3', 'unrun'), closing: 'author_conflict', conflict: CONFLICT }]), '原始用例 c1，原因还没查清。原始用例 c2，原因还没查清。原始用例 c3，原因还没查清。');

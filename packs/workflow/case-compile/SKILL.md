@@ -35,7 +35,7 @@ node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成�
 
 一条原始用例一个子代理：装了 `case-writers` 用 `write_case_plans`，否则 `task-brief.ts --role '脚本编写'` 写盘并原样传提示，**同条消息以前台方式并列多个 `task`（`subagent_type="case-compile:compile-writer"`，严禁用 `background`）**，不合并、**每批最多 6 个**，失败项单独重派。清理分工（存盘禁入 `cleanup:true`）、`adapted` 不是步骤白名单（补 `sources.states` 或手册/示例前置，附 `precondition_source` 与配对清理，不改“前置不存在”测试）与语法由包内定义与 `task-brief.ts` 注入；受限结构/示例/分块在 `<技能目录>/slots.schema.json`、`examples/submit-result.json`、`tables/blocks-format.json`。只在答案会改变做法、资料里又查不到时问使用者（设备的问题还是原始用例的问题，需要使用者决定），能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 
-每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，缺资料的原始用例先排除、其余继续。只读自检单个计划或目录跑 `tools/check-plan.ts`。
+每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，先把这条现有计划交给 Hub 核对，取得对本条具名的缺失事实和请求后，下一个脚本编写运行才排除它、其余继续；没有这条 Hub 记录，不把模型笔记称为“Hub 点名”。作者步骤与手册冲突时按 tools/delivery.md 写结构化 author_conflict，并保留逐字引文交作者或使用者裁定。只读自检单个计划或目录跑 `tools/check-plan.ts`。
 
 ### 主会话参数与本地工具命令
 

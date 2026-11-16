@@ -34,7 +34,7 @@ test('all structural gaps, attributions and named exits survive even alongside a
   const text=caseConclusion(input,outcome);
   assert.match(text,/原因缺资料、生产者错误/);
   assert.match(text,/first missing；second missing/);
-  assert.match(text,/由Hub重评，期限 2026-11-16T00:00:00.000Z；由usr_11111111111111111111111111发请求，期限 2026-11-17T00:00:00.000Z/);
+  assert.match(text,/由Hub重评，期限 2026-11-16 09:00；由使用者发请求，期限 2026-11-17 09:00/);
   assert.equal(caseBasisOf({...exported,result:{...exported.result,partitions:{pending:[...exported.result.partitions.pending,...exported.result.partitions.pending]}}},run,'a'),null);
 });
 
@@ -54,7 +54,7 @@ test('an audited device pass preserves its original observation and remains unkn
   assert.equal(closed.history[0].reported_terminal,'pass');
   assert.equal(closed.history[0].accepted_as_fact,false);
   const input={originals:{a:{title:'synthetic'}}} as unknown as ReportInput;
-  assert.match(caseConclusion(input,closed),/设备原判正确.*状态未知/);
+  assert.match(caseConclusion(input,closed),/上机验证的判断：正确（设备自报，状态未确认）.*状态未知/);
   assert.doesNotMatch(caseConclusion(input,closed),/判断错误|状态已确认|原因编写模型/);
 });
 
@@ -63,7 +63,7 @@ test('missing or inconsistent named exits remain disclosed rather than acquiring
   const outcome:CaseOutcome={autoid:'a',status:'unrun',history:[],pending:['need evidence'],basis:{plan_run:'synthetic',attributions:[],gaps:[{requirement:'plan',missing:'synthetic fact',exit:{action:'request',audience:{hub:true},due:'2026-11-16T00:00:00.000Z'}}]}};
   const input={originals:{a:{title:'synthetic'}}} as unknown as ReportInput;
   const text=caseConclusion(input,outcome);
-  assert.match(text,/尚缺具名出口材料/);assert.doesNotMatch(text,/由Hub发请求/);
+  assert.match(text,/由模型将本条计划交给 Hub 取得具名缺失事实/);assert.doesNotMatch(text,/由Hub发请求/);
   assert.deepEqual(outcome.basis!.gaps[0].exit,{action:'request',audience:{hub:true},due:'2026-11-16T00:00:00.000Z'},'raw repair evidence is retained');
 });
 
