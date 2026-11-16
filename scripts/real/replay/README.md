@@ -70,3 +70,40 @@ npx tsc --noEmit
 ```
 
 不指定应用时，已安装 Harness 集成测试明确跳过；它们不是 CI 中已通过的证明。指定应用的测试只运行合成数据库和无副作用替身，覆盖主/子会话、投影裁剪、Hook、后台通知、守卫比较（基线核验、逐调用判断、等长前缀、沙盒之外的读取、Hook 之前被拒绝的调用）与隔离。这些测试文件不在默认的 `npm run test:unit` 里，用上面的命令直接运行。业务材料与本机绝对路径不得进入 Git。
+
+## 提交回放（Hub 对已记录提交的核对）
+
+这一组脚本不回放 Circle 会话，而是把 Hub 已经记录的每一次提交，用 Hub 自己的代码重新核对一遍，与当时存下的核对结果逐字段比较。验证逻辑一行也没有重写：回放建出 `assembleHub` 的真实装配，调用运行服务的 `submitResult`（`submit_result` 工具调用的就是它）；这里写的只是「Hub 当时处于什么状态」和「用什么调用」。
+
+两种模式：
+
+- `faithful`：每条核对用当时存下它的发布版本的代码树和运行启动时锁定的任务包回放，要求逐条相同。它证明回放本身可信。
+- `candidate <提交>`：每条核对用这个提交的 Hub 代码和任务包回放：运行改绑到该提交里同名的任务包，每条分「相同」「不同」，不同的逐字段列出。
+
+```sh
+node scripts/real/replay/replay-submissions.ts run --mode faithful|candidate --export <导出目录> --bundle <数据包> --out <新目录> [--repo <代码树>] [--commit <提交>] [--windows <发布窗口文件>] [--run <运行号>]... [--seq <位置>]... [--limit <条数>]
+node scripts/real/replay/replay-submissions.ts report --mode <模式> --export <导出目录> [--bundle <数据包>] --out <新目录> <part.json>...
+node scripts/real/replay/replay-submissions.ts packs --export <导出目录> [--repo <代码树>]
+node scripts/real/replay/replay-submissions.ts verify-bundle --bundle <数据包>
+node scripts/real/replay/export-bundle.ts --pg-host <套接字目录或回环地址> --pg-port <端口> --pg-user <账户> --pg-database <库名> --objects <数据根>/objects --out <新目录> (--index <导出目录>/index.tsv | --run <运行号>...) [--cutoff <位置>] [--dry-run]
+```
+
+所有位置显式传入，输出目录必须是新目录，导出目录和数据包只读。`run` 要用 `node --import scripts/real/replay/submissions-net-guard.mjs` 启动：进程只准连回环地址，任何要连别处的代码路径（派发、读业务系统）在这里失败，不会真的出去。退出码：0 全部相同；1 有不同；4 一条也没能回放（缺 Hub 数据，既不是通过也不是失败）。
+
+**输入一：记录导出**（`index.tsv` 加每个运行一个目录，`<位置>-run.json`、`-submission.json`、`-validation_result.json`、`-result_summary.json`）。每个文件读之前按 index 核对大小和 SHA-256；核对结果按提交的参数摘要配对到提交。
+
+**输入二：Hub 数据包**（`replay-bundle@1`）。验证读的知识树、来源原件、记录和任务包都在 Hub 的数据库里，不在导出里。`export-bundle.ts` 在 Hub 所在主机上只读地写出它：`records`（按追加位置）及其 `record_index`、`record_keys`，`objects` 及字节，以及 `users`（不含口令摘要）、`pointers` 等几张小表；`tokens`、被扣留的原件字节、个人空间字节、调用日志等不导出，清单和理由写在 `manifest.json` 的 `withheld`。个人空间的记录只以标记形式在包里（内容留在 Hub），载入时数出来。`--dry-run` 只数不写。它只依赖 node 和 `pg`，不引用本仓库的 Hub 代码。
+
+**回放的方法**。数据包按位置载入一个草稿库：载到被回放那条核对结果之前的每一条记录，之后的一条不载，所以回放读不到当时的答案；每条记录的摘要重算核对，每个对象按 SHA-256 核对。每条核对在草稿库的复制（`CREATE DATABASE ... TEMPLATE`）里回放，用当时 `validate` 动作记下的会话和模型，以运行者的身份调用。回放读不到的记录和对象（`store.get`、`objects.get` 返回空）记在每条结果的 `misses` 里，用来看数据包缺什么。
+
+**归一**只有两项，输出里逐项列出并给出个数：`trace`（调用追踪号，每次随机）和 `exit.due`（未知的下一步期限，调用时刻加 24 小时）。候选模式再加 `locks.pack`、`locks.pack_digest`（运行改绑到候选任务包，这两项就是绑定本身）。其余字段，错误里的每个字（code、path、item、requirement、message、fix）、分区、覆盖、跨条目、轮次、锁定，逐字比较。
+
+**不能回放**的每一条都有名字：`no_bundle`、`no_submission`（运行自己产生的结果，不经 `submit_result`）、`not_in_bundle`、`no_call_facts`（数据包里没有存下这条结果的 `validate` 动作）、`bundle_damaged`、`no_principal`、`served_from_record`（回放时 Hub 把当时已存的结果答了回来，没有重新核对）、`pack_not_in_commit`、`candidate_pack_refused`、`replay_error`。
+
+开发验证：
+
+```sh
+node --test 'scripts/real/replay/submissions-*.test.ts'
+```
+
+这些测试用合成的 Hub（`createTestHub`）、合成的任务包和一个临时 PostgreSQL，端到端走一遍：导出数据包、写记录导出、回放、改一条记录看到「不同」、损坏数据包被拒、候选任务包改绑。它们不在默认的 `npm run test:unit` 里。
