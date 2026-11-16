@@ -24,7 +24,7 @@ case-compile 的独立工作阶段。共享规则来自父目录 tables 和 func
 
 ## 本地自检与 Hub 检查（check-record，第 33 轮）
 
-第 33 轮的缺陷：模型把 `method.sources` 写成原句文字，`check-record.ts --file records --run recompose-run` 报 `ok`，Hub 对三条记录共 10 处给出「缺可解析且本轮可读的声明片段」。原因是 `check-record.ts` 只跑形状检查（`assertValidRecomposeShape`）和覆盖检查，从不运行 Hub 对重组记录跑的检查函数；`SKILL.md` 的示例又把 `sources` 写成「原句或手册引用」，没有说明它们必须是引用。第二次提交只改了这 10 个值（原句文字改为原句的 `src:…` 引用），其余字节相同，Hub 全部接受。
+第 33 轮的缺陷：模型把 `method.sources` 写成原句文字，`check-record.ts --file records --run recompose-run` 报 `ok`，Hub 对三条记录共 10 处给出「缺可解析且本轮可读的声明片段」。原因是 `check-record.ts` 只跑形状检查（`assertValidRecomposeShape`）和覆盖检查，从不运行 Hub 对重组记录跑的检查函数；`SKILL.md` 的示例和 `submit-records.ts` 的形状提示又都把 `sources` 写成「原句或手册引用」，没有说明它们必须是引用（现统一写成 `<引用>`，并在 `SKILL.md` 补一行说明从哪里取）。第二次提交只改了这 10 个值（原句文字改为原句的 `src:…` 引用），其余字节相同，Hub 全部接受。
 
 现在带 `--run` 的 `check-record.ts` 用 `functions/local-checks.ts` 在冻结的下载上按 Hub 的方式核对，本地没有第二份规则：
 

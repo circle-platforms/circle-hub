@@ -235,8 +235,8 @@
     },
     {
       "path": "tools/submit-records.ts",
-      "sha256": "55631340efca901ca3a6bb05a5f875a1c9b362736d4d809361cd8af5a126ca0a",
-      "size": 13114
+      "sha256": "875eba006fbd0da77b551532e6f683e2c8330723aa988afb292ad9bb77035868",
+      "size": 13099
     },
     {
       "path": "workflow.json",

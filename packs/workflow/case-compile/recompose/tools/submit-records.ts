@@ -46,7 +46,7 @@ const FULL_SCHEMA_KEYS = new Set([
 ]);
 const RECOMPOSE_METHOD_KINDS: readonly string[] = RECOMPOSE_FORMAT.method_kinds;
 const LITE_SHAPE_HINT =
-  '{"item":"<下载文件中的 id>","method":{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<原句或手册引用>"],"basis":"为什么这样验证"}}（可选字段仅 slots/states/adapted/concretizations/unknowns），严禁写完整 schema 字段或 "handling"';
+  '{"item":"<下载文件中的 id>","method":{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"}}（可选字段仅 slots/states/adapted/concretizations/unknowns），严禁写完整 schema 字段或 "handling"';
 
 /** Enforces the single lite record format on both model files and direct `recordFor` callers. */
 export function assertValidRecomposeShape(value: unknown, contextLabel: string, requireItem: boolean): Row {
