@@ -7,7 +7,7 @@ description: 把原始用例编成自动化用例，经 Hub 核对、生成 Exce
 
 依次为用例重组、脚本编写、脚本合并、上机验证、失败分析。模型编写，Hub 只核对重算，不生成内容或调用模型。
 
-主代理先在工作目录写 `scope.md`：首行 `# 使用者原话，由主会话记录`，正文逐字抄录范围，变更逐字追加，不改写或缩减。首次只做部分用例时，从首次 `recompose` 起传同一 `parameters.scope`，`scope.md` 与 `parameters.scope.words` 同原话，首次开运行时定死。单条范围可按 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只传全局原文与本案分节；未写范围不得派发。各阶段只用 `task-brief.ts` 经 `--task-file` 写任务，标准输出的短派发提示原样传给 `task.description`，`subagent_type` 用输出的 `case-compile:compile-*`；不重打、删改或手写简报。
+主代理先在工作目录写 `scope.md`：首行 `# 使用者原话，由主会话记录`，正文逐字抄录范围，变更逐字追加，不改写或缩减。首次只做部分用例时，从首次 `recompose` 起传同一 `parameters.scope`，`scope.md` 与 `parameters.scope.words` 同原话，首次开运行时定死。单条范围可按 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只传全局原文与本案分节；未写范围不得派发。各阶段只用 `task-brief.ts` 经 `--task-file` 写任务，标准输出的短派发提示原样传给 `task.description`，`subagent_type` 用输出的 `case-compile:compile-*`。
 
 任务参数：`--role` 取用例重组、脚本编写、保真核对或失败分析；`--case` 为用例或范围，`--brief` 为输入，`--out` 为目标，`--task-file` 为任务文件。可选 `--scope`、`--note`；返工加 `--round`、`--run`、`--item`、`--prior-plans`、`--prior-returns`、`--prior-answers`、`--prior-notes`，或 `--brief-json`。路径和值均单引号引用。
 
@@ -35,7 +35,7 @@ node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成�
 
 一条原始用例一个子代理：装了 `case-writers` 用 `write_case_plans`，否则 `task-brief.ts --role '脚本编写'` 写盘并原样传提示，**同条消息以前台方式并列多个 `task`（`subagent_type="case-compile:compile-writer"`，严禁用 `background`）**，不合并、**每批最多 6 个**，失败项单独重派。清理分工（存盘禁入 `cleanup:true`）、`adapted` 不是步骤白名单（补 `sources.states` 或手册/示例前置，附 `precondition_source` 与配对清理，不改“前置不存在”测试）与语法由包内定义与 `task-brief.ts` 注入；受限结构/示例/分块在 `<技能目录>/slots.schema.json`、`examples/submit-result.json`、`tables/blocks-format.json`。只在答案会改变做法、资料里又查不到时问使用者（设备的问题还是原始用例的问题，需要使用者决定），能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 
-每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，先把这条现有计划交给 Hub 核对，取得对本条具名的缺失事实和请求后，下一个脚本编写运行才排除它、其余继续；没有这条 Hub 记录，不把模型笔记称为“Hub 点名”。作者步骤与手册冲突时按 tools/delivery.md 写结构化 author_conflict，并保留逐字引文交作者或使用者裁定。计划自检跑 `tools/check-plan.ts --file <计划> --run <运行目录/run.json>`。
+每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。作者没写字面的期望，模型写检查点：模型判断，状态未确认，不做复核，上机验证裁定。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，先把这条现有计划交给 Hub 核对，取得对本条具名的缺失事实和请求后，下一个脚本编写运行才排除它、其余继续；没有这条 Hub 记录，不把模型笔记称为“Hub 点名”。作者步骤与手册冲突时按 tools/delivery.md 写结构化 author_conflict，并保留逐字引文交作者或使用者裁定。计划自检跑 `tools/check-plan.ts --file <计划> --run <运行目录/run.json>`。
 
 ### 主会话参数与本地工具命令
 
@@ -76,7 +76,7 @@ start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predec
 
 ## 3. 脚本合并
 
-写完后依次跑命令核验、Plumb 场景保真审计再一次提交给 Hub（缺审、过期或格式错在本地拦截，不占修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后重跑审计；不要把 Hub 已接收当全部正确；仅缺自动化用例 Excel 时继续生成，其余检查须全对。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）；核对步骤、期望原句、命令树、环境地址、场景保住及 Excel 一致。
+写完后依次跑命令核验、Plumb 场景保真审计再提交给 Hub（缺审、过期或格式错在本地拦截，不占修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后重跑审计；不要把 Hub 已接收当全部正确。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）；核对步骤、期望原句、命令树、环境地址、场景保住及 Excel 一致。
 
 ```sh
 node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>' [--brief '<核对文件>']

@@ -78,7 +78,7 @@
     {
       "slot": "criteria_review",
       "role": "expected",
-      "description": "类型化判据复核的已受理 Hub 结果，仅真实 record meta 有效",
+      "description": "可选。类型化判据复核的已受理 Hub 结果，仅真实 record meta 有效；不绑定时，模型自写的类型化判据按模型判断处理（状态未确认），由上机验证裁定",
       "accepts": [
         "application/json"
       ],
@@ -91,7 +91,7 @@
     {
       "slot": "criteria_review_run",
       "role": "expected",
-      "description": "该复核的完整 Hub 运行快照 rec:，核实际前驱与声明运行",
+      "description": "可选，与 criteria_review 同绑或都不绑。该复核的完整 Hub 运行快照 rec:，核实际前驱与声明运行",
       "accepts": [
         "application/json"
       ],

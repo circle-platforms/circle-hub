@@ -329,13 +329,13 @@ use the frozen bed interfaces and declared capability, not keyword inference or 
 
 恢复到捕获值要求 CAPTURE 在所关联配置之前、同一设备、清理段逆序且完整使用该寄存器。它只能经合约明确声明的 guarded restore 方法：运行器必须在发送前核验插值后完整命令的锁根语法、效果范围与参数角色。普通 cmd_config 的 `{}` 不能当作已知命令放行。现有运行器不具备该守卫时计划保留 unknown，并给执行器维护者补能力、重新发布合约/profile 的出口；不在核心增加设备语义，不默默打开真实执行器。
 
-R03：每个新断言绑定期望身份、逐字 quote 与显式类型（字面/次数/捕获关系）。否定结果用 `not_found`，不另立判据；其它描述性期望不能直接当检查文字，需要模型提出类型化判据及理由，再以独立复核的 Hub 记录接入；上传的自述 review JSON 无效。复核阶段放在本目录的独立阶段声明中，复用现有只读前驱和账号独立核验；主包同时核绑定的复核运行快照与结果，防止拿无关前驱伪造独立性。既有 W10 期望来源角色规则不变。
+R03：每个新断言绑定期望身份、逐字 quote 与显式类型（字面/次数/捕获关系）。否定结果用 `not_found`，不另立判据；其它描述性期望不能直接当检查文字，需要模型提出类型化判据及理由；2026-11-16 起不要求独立复核（见“Model-written checkpoints”一节），绑定了复核的仍按本段核实；上传的自述 review JSON 无效。复核阶段放在本目录的独立阶段声明中，复用现有只读前驱和账号独立核验；主包同时核绑定的复核运行快照与结果，防止拿无关前驱伪造独立性。既有 W10 期望来源角色规则不变。
 
 W06：本用例全部期望节点有稳定引用身份；每条都映射到断言或显式 unmet（缺事实和下一步），遗漏是未履约，不能只核模型挑中的节点。unmet 不当作满足或可派发。W07：前置、因果边、交互应答者由模型显式声明（无此类前置也要明确空表），代码只核来源、引用图与顺序；缺声明 unknown，矛盾 refute，不通过搜索正文猜前置或应答者。
 
 新运行器能力默认关闭，checkpoint_two_argument、寄存器 H/I、捕获恢复与 found_times 必须来自完整合约的结构字段及本轮 profile 允许组合。工作簿生成和独立回读都核 E/F/G/H/I、输出指向和寄存器定义使用关系；身份配方绑定原始块计划、全部作者期望及最终展开。旧计划不被强行套进新的块语言，不因此承诺它已有块级表达能力。
 
-字面声明的结构依据：新块读取作者期望节点 data.assertion 中的 op/literal/count；原文没有这组明确声明时，`not_found` 按否定结果检查，其它算子保留 unknown，要求模型提出带引文的类型化判据并经独立复核，不通过词语判断“是不是描述性”。旧 flat 语言继续按其已发布的字面 text 规则，不宣称它已经具备块语言的判据能力。
+字面声明的结构依据：新块读取作者期望节点 data.assertion 中的 op/literal/count；原文没有这组明确声明时，`not_found` 按否定结果检查，其它算子保留 unknown，要求模型提出带引文的类型化判据（2026-11-16 起不要求独立复核），不通过词语判断“是不是描述性”。旧 flat 语言继续按其已发布的字面 text 规则，不宣称它已经具备块语言的判据能力。
 
 复核阶段发布目录是本目录的 review/，id=case-compile-criterion-review；先用其 api.ts stage/publish 并分配给独立复核账号。作者提交判据后共享该运行的只读视图，复核者以原声明运行为 predecessor 绑定原提交和 evidence；主包绑定该复核的真实 run 快照与 validation 结果，核实际前驱相等及账号独立标记。此阶段不会修改旧 W10 或核心角色规则。
 
@@ -1181,6 +1181,12 @@ The extension gets the task tool from `model_call` middleware because Circle has
 ## Authored negative outcomes
 
 The owner's 2026-11-12 morning decision requires a query after deletion and a block-form `not_found` check for an authored absence or lack of residue, without a new criterion or criterion review. SKILL.md, the closing procedure and each authoring brief now state that instruction. The block check follows the explicit operator for literals and earlier captures, never words in the author's sentence. Dynamic values use `CAPTURE` and then `EXPECT_FROM/not_found` in the same case, with a declared literal-negation method; old device output is not copied. Source quotations, expectation coverage, authored literal declarations and the separate scenario-fidelity check remain required. The integrator updates the package version and generated manifests after merging.
+
+## Model-written checkpoints
+
+The owner's 2026-11-16 decision, 「模型直接写检查点（比如期望应答里有 RRSIG），不做复核 这么改」, follows InfoTest: where the author's expectation node carries no literal declaration, the model writes the checkpoint itself and nothing is reviewed independently. A flat plan states it as `basis: "model_judgment"` with a `rationale` (unchanged). A block plan states it as a typed criterion in `criteria[]`, referenced by the assertion's `criterion`, whose `quote` is the author's expectation word for word. The block check accepts the criterion when it equals its assertion (kind, operator, literal or count, quote, locked root) and the literal is a single-line value, the same rules a flat `model_judgment` expectation meets, and a blank `rationale` is refused as in flat plans. It records the criterion under `model_criteria` with `reviewed: false`, `status: 未确认` and `decided_by: 模型`; the support outcome keeps `judgment_sources: ["/plan/0"]`, so the Hub claim stays a judgment that the model's choices condition, and its statement says that the criterion is the model's judgment, unreviewed, decided by the device run. Whether a literal exists is read from the frozen node's `declaration`; nothing classifies the author's sentence.
+
+A review bound through `criteria_review` and `criteria_review_run` is verified exactly as before and then listed under `typed_criteria`. A bound review that does not verify is not set aside in favour of the model's judgment: the next step names both ways out, completing the pair or binding none. The delivery tool reads `model_criteria` and `model_expectations` from the plan run's recorded expected_grounded check and says, in the closing reply and `delivery_report.md` (and as `model_checkpoints` in `delivery.json`), that the checkpoint is the model's judgment, status 未确认, decided by the device run; it never calls it reviewed. The independent review stage in `review/` stays published and unchanged.
 
 ## Generating without a closed executor action
 

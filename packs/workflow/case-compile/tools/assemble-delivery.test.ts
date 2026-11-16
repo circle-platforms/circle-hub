@@ -1046,3 +1046,27 @@ test('CLI reads case-bound card decisions without changing frozen scope and leav
  const report=await readFile(join(out,'delivery_report.md'),'utf8');assert.match(report,/下一步等作者裁定原始用例。/);assert.ok(report.includes(ruling));assert.match(report,/下一步由使用者核对原始用例、手册和设备输出后裁定/);
  await rm(join(dir,'scope.md'));const plainOut=join(dir,'without-card'),plain=await cli(plainOut);assert.equal(plain.code,0,plain.stderr);assert.doesNotMatch(await readFile(join(plainOut,'delivery_report.md'),'utf8'),/下一步等作者裁定原始用例/);
 });
+
+test('a delivered case whose plan stands on a checkpoint the model wrote itself says so in the reply, the report and the machine summary', async (t) => {
+  // The Hub recorded the expectation check of CASES[0] as the model's own judgment: a typed criterion no review stood behind.
+  const marked = { ...plan2, result: structuredClone(plan2.result) as typeof plan2.result };
+  const entry = (marked.result.partitions.delivered as Array<{ item: string; requirements: Array<{ requirement: string; claims: unknown[] }> }>).find((row) => row.item === `case-${CASES[0]}`)!;
+  const grounded = entry.requirements.find((row) => row.requirement === 'expected_grounded')!;
+  const checkpoint = { criterion: 'c_sig', expectation: 'rec-expectation', assertion: 'a_sig', basis: 'model_judgment', kind: 'literal', operator: 'abs_found', literal: 'SYNTH-SIG', quote: { reference: `src:${'a'.repeat(64)}/kityminder@1/n/expected`, text: '合成应答带有签名记录' }, rationale: '合成理由：选应答里的签名记录名', reviewed: false, status: '未确认', decided_by: '模型', conditional_on_judgment: true };
+  grounded.claims = [{ statement: { verdict: 'support', data: { typed_criteria: [], model_criteria: [checkpoint] } } }];
+  const h = await hub(undefined, undefined, {}, { [PLAN2]: marked }); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
+  const { code, stdout, stderr } = await run(h, await notes(NOTES), out);
+  assert.equal(code, 0, stderr);
+  const reply = String(JSON.parse(stdout).reply).split('\n');
+  const own = reply.find((line) => line.includes(`原始用例 ${CASES[0]} `))!, other = reply.find((line) => line.includes(`原始用例 ${CASES[2]} `))!;
+  for (const word of ['1 条期望没有字面', '检查点由模型自写', '模型判断', '状态未确认', '没有独立复核', '上机验证的设备输出裁定']) assert.ok(own.includes(word), word + ' / ' + own);
+  assert.ok(!other.includes('模型自写'), other);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.match(report, /模型自写的检查点：模型判断，状态未确认，没有独立复核，由上机验证的设备输出裁定/);
+  assert.ok(report.includes('- 期望「合成应答带有签名记录」：检查点「SYNTH-SIG」。模型的理由：合成理由：选应答里的签名记录名'), report);
+  assert.equal(report.split('模型自写的检查点').length - 1, 1, 'only the case that stands on one lists it');
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.deepEqual(summary.cases[0].model_checkpoints, [{ expectation: '合成应答带有签名记录', literal: 'SYNTH-SIG', rationale: '合成理由：选应答里的签名记录名' }]);
+  assert.equal(summary.cases[2].model_checkpoints, undefined);
+});
