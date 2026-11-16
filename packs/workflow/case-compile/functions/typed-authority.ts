@@ -18,7 +18,7 @@ import {identityOf,identityKey,valueProblem,type Authority,type ValueType} from 
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 import {addressKey} from './manifest.ts';
-export interface AuthorityGap { document: string; pointer: string; message: string; verdict?:Verdict;obligation?:Record<string,unknown>;requested?:CallBoundaryGap['requested'];allowed_calls?:CallBoundaryGap['allowed_calls'];allowed_seats?:string[];step_pointer?:string }
+export interface AuthorityGap { document: string; pointer: string; message: string; verdict?:Verdict;obligation?:Record<string,unknown>;requested?:CallBoundaryGap['requested'];allowed_calls?:CallBoundaryGap['allowed_calls'];allowed_seats?:string[];step_pointer?:string;requested_output?:string;allowed_output_ids?:string[];expected_output?:string }
 export function replacedIdentity(identity:CommandIdentity,slots:PlanSlots):CommandIdentity {
  const out=structuredClone(identity);for(const p of out.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const original=p.parsed.value.value;const replacement=slots.replacements.find(r=>addressKey(r.case)===addressKey(original));if(replacement){p.parsed.value.value=replacement.bed;p.raw=replacement.bed;}}return out;
 }
@@ -140,16 +140,24 @@ export function humanGapLocation(document: string, pointer: string): string {
    if (parts[3] === 'keywords') return `第 ${block} 块调用步骤的命名参数`;
    return `第 ${block} 块的调用步骤`;
   }
+  // The block-relative field path is part of the location: a selection refusal names the one field to change.
+  const field = `（/${parts.slice(2).join('/')}）`;
   if (parts[2] === 'select') {
    const row = parts[3] === 'where' ? oneBased(parts[4]) : null;
-   return row !== null ? `第 ${block} 块的第 ${row} 条选行条件` : `第 ${block} 块的选行条件`;
+   return row !== null ? `第 ${block} 块的第 ${row} 条选行条件${field}` : `第 ${block} 块的选行条件${field}`;
   }
-  if (parts[2] === 'table') return `第 ${block} 块的表格设置`;
+  if (parts[2] === 'table') return `第 ${block} 块的表格设置${field}`;
   if (parts[2] === 'assertions') {
    const assertion = oneBased(parts[3]);
    return assertion !== null ? `第 ${block} 块的第 ${assertion} 条断言` : `第 ${block} 块的断言`;
   }
-  return `第 ${block} 块`;
+  return parts.length > 2 ? `第 ${block} 块${field}` : `第 ${block} 块`;
+ }
+ if (parts[0] === 'block_context') {
+  const label: Readonly<Record<string, string>> = { preconditions: '前置声明', causal_links: '因果声明', responders: '应答者声明' };
+  const index = oneBased(parts[2]);
+  if (label[parts[1]] === undefined) return doc;
+  return index === null ? `${label[parts[1]]}（${pointer}）` : `${label[parts[1]]}第 ${index} 条（${pointer}）`;
  }
  if (parts[0] === 'steps') {
   const step = oneBased(parts[1]);

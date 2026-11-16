@@ -101,7 +101,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
       const selection=Array.isArray(caps?.cell_methods)&&caps.cell_methods.some((row:any)=>row.object===object&&row.method===method);
       const restore=Array.isArray(caps?.restore_methods)&&caps.restore_methods.some((row:any)=>row.object===object&&row.method===method);
       const cellBound=!!variable&&(selection||cellRegisters.has(variable));
-      if (!assertion) for (const problem of bindArguments(entry, { object, method, ...decoded,...(variable?{input_register:variable,...(restore?{restore_for:0}:cellBound?{cell_input:true}:{})}:{}) }, at).problems) issue('signature', problem.pointer, problem.message);
+      if (!assertion) for (const problem of bindArguments(entry, { object, method, ...decoded,...(variable?{input_register:variable,...(restore?{restore_for:0}:cellBound?{cell_input:true}:{}),...(selection?{block_kind:'SELECT_CELL'}:{})}:{}) }, at).problems) issue('signature', problem.pointer, problem.message);
       if(blockMeta(plan)){
         if(assertion){
           if(h&&!registers.has(h))issue('register',at,'检查点期望寄存器未先捕获');

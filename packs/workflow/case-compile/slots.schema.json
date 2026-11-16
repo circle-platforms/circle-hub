@@ -1330,11 +1330,13 @@
                   "properties": {
                     "output": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "The id of the observation block this row explains: a blocks[].id of a block that returns device text (OBSERVE_ASSERT, OBSERVE_ONLY, CAPTURE, EXPECT_FROM, or a STEP that declares output). It is never a register name (the register of a CAPTURE or STEP is only the name its text is saved under), never the name of a selected cell and never a device name."
                     },
                     "kind": {
                       "type": "string",
                       "minLength": 1,
+                      "description": "Who answers: device (a frozen environment seat), fixture (an earlier step block of this plan), bed_service (a service declared in the frozen environment inventory) or undetermined (not known yet; also write missing and next_action).",
                       "enum": [
                         "device",
                         "fixture",
@@ -1344,7 +1346,8 @@
                     },
                     "ref": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Identifies the answerer, by kind. device: one frozen runtime-profile device identity, exactly one of profile.seats[].device (not an executor object name and not a block id). fixture: the id of an earlier step block of this plan that provides the answer. bed_service: the host of a service of the frozen environment inventory (services[].host). undetermined: any non-empty text."
                     },
                     "quote": {
                       "type": "object",
@@ -1362,15 +1365,18 @@
                       "required": [
                         "reference",
                         "text"
-                      ]
+                      ],
+                      "description": "Verbatim source text that grounds the answerer; copy reference and text from the source."
                     },
                     "missing": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Only for kind=undetermined: the fact that is missing."
                     },
                     "next_action": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Only for kind=undetermined: the next step that would settle it."
                     }
                   },
                   "required": [
@@ -1379,7 +1385,8 @@
                     "ref",
                     "quote"
                   ]
-                }
+                },
+                "description": "Who answers the request a host-command observation sends. One row per host observation block; every row's output must be the id of an observation block of this plan."
               }
             },
             "required": [

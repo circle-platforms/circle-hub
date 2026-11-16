@@ -36,7 +36,7 @@ tools: read_file, write_file, edit_file, ls, glob, grep, execute
 普通参数是单行文字，无首尾空白，不带未展开占位或等号前缀（按原文恢复配置用执行器规定占位除外）。定长名字在创建/使用/查询/清理共用 `{{name:N|前缀|后缀}}` 或 `{{domain:N}}`，由 `check-plan.ts`/`submit-plans.ts` 展开写回，不手打长串。等待秒数为执行器上限内正整数。主机 shell 不能冒充设备命令；每一步都须对应执行器允许的静态参数与效果。禁止手写 `data.fidelity`（留空由保真核对填充）。
 
 ```text
-每条文件: {item,handling,slots}；plan.data.bucket=<测试环境>
+每条文件: {item,handling,slots}；slots.plan 恰好一条 {text,quotes?,data}，text 必填（一句话说明这份计划），计划本体写在 data 里；plan.data.bucket=<测试环境>
 地址替换: replacements=[{case,bed},...]，一一对应，只用于类型确认的地址位置
 顺序步骤: blocks=[]；steps=[{object,method,args,keywords,description,author_step_refs?,precondition_source?},...]；expects 至少一项；手册/示例新增且未列于 sources.states 的前置与逆清理写 precondition_source:{reference,text}；可选 author_step_refs:["1"] 指向对应作者步骤编号（blocks 模式同，用于 fidelity-plumb 绑定）
 设备 method: contract.output_methods 给该设备声明的方法；args 为文字；keywords 为文字或安全非负整数
@@ -53,7 +53,7 @@ command_scope 与逐条 commands 同时存在时取交集；不以 command_ident
 ```text
 组合步骤: blocks 非空，steps/expects=[]；每块唯一 id
 取一格: 先查 contract.json 的 runtime.block_model.cell_inputs 与 cell_methods（及对应 object/method 可用条目）；未声明按缺资料写明执行器规则没有声明，不自造写法；已声明时 SELECT_CELL 的 from 指原输出保存名，table 写 format/separator/columns/header，column 为列号，select 写 row 或多列 where，register 另存；STEP/CONFIG 的 input_register 指单格名，首参数用 {}；数据行按声明字面分隔符与列数识别，取不到/零行/多行停止并带设备原话
-每条判断: 绑定 output、原始 expectation 引用和 quote；block_context.preconditions/causal_links/responders 写全（无写空表），主机观察写明谁应答；obligations 覆盖全部原始期望（判断 id 或 unmet+missing/next_action）
+每条判断: 绑定 output、原始 expectation 引用和 quote；block_context.preconditions/causal_links/responders 写全（无写空表），主机观察写明谁应答：responders[].output 填观察块 id（blocks[].id，产生设备原文的那一块，不是 register 保存名，也不是设备名），ref 按 kind 填：device 填冻结 profile.seats[].device 之一（不是执行器对象名，也不是块 id），fixture 填本条前面某个步骤块的 id，bed_service 填冻结清单里服务的 host，undetermined 写 missing 与 next_action；obligations 覆盖全部原始期望（判断 id 或 unmet+missing/next_action）
 否定结果: 常量用 OBSERVE_ASSERT/op=not_found，literal 写不应出现记录；动态值先 CAPTURE 再 EXPECT_FROM/op=not_found，expected_from 指捕获（需声明字面否定方法）；quote 保留原始期望，不填 criterion、不发起 criteria_review
 RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置块；仅用声明的 guarded restore；缺恢复能力记未知（不用普通命令加 {} 冒充，上面允许的 input_register 回填除外）；OBSERVE_DIST/MEMBER/EXIT 暂未提供，不自造正则或成功标记
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}；receipt/case_id 取 fields.recomposition；quote 逐字等于对应原始期望；无对应判断记未知不省略；新增声明引文用 Hub 已确定声明且 quote.text 逐字复制

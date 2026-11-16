@@ -30,7 +30,8 @@ test('device responder refusal names its observation and full frozen seats',asyn
  const gap=typedAuthorityGaps(f.contract,f.profile,parsed.slots,undefined,f.catalog).find(g=>(g as any).requested?.responder==='invented-device') as any;
  assert.ok(gap);assert.equal(gap.pointer,'/block_context/responders/0');assert.equal(gap.step_pointer,'/blocks/0/call');assert.deepEqual(gap.allowed_seats,f.profile.seats.map(s=>s.device));assert.match(gap.message,/client.shell/);assert.match(gap.message,/invented-device/);
  const {checkPlanObject}=await import('../tools/check-plan.ts');
- const local=checkPlanObject('synthetic.json',{item:'synthetic-item',handling:'handled',slots:{plan:[{data}]}},{groups:[{kind:'case-compile',contract:f.contractDoc,profile:f.profileDoc,manifest:f.inventory}],items:[{id:'synthetic-item'}]});
+ const {frozenRun}=await import('../testing/frozen-run.ts');
+ const local=checkPlanObject('synthetic.json',{item:'synthetic-item',handling:'handled',slots:{plan:[{text:'合成计划',data}]}},frozenRun({groups:[{kind:'case-compile',contract:f.contractDoc,profile:f.profileDoc,manifest:f.inventory}],items:[{id:'synthetic-item'}]}));
  const problem=local.problems.find(p=>(p.requested as any)?.responder==='invented-device');assert.deepEqual(problem,{...gap,code:'case-compile.method_forbidden'});
 });
 
