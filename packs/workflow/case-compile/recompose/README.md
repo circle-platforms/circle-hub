@@ -21,3 +21,25 @@
 本地版本 1.2.0（2026-11-12）：原始用例与手册冲突交使用者决定，说明及本地工具采用统一措辞，内嵌 command-tools 1.1.0。读取已存重组结果时明确接受 1.1.3 和 1.2.0。本次只提交本地，不发布。
 
 case-compile 的独立工作阶段。共享规则来自父目录 tables 和 functions，由 testing/gen-recompose.ts 生成副本；运行发布时单独 stage，不把父目录 README、api.ts 或测试文件带入包。
+
+## 本地自检与 Hub 检查（check-record，第 33 轮）
+
+第 33 轮的缺陷：模型把 `method.sources` 写成原句文字，`check-record.ts --file records --run recompose-run` 报 `ok`，Hub 对三条记录共 10 处给出「缺可解析且本轮可读的声明片段」。原因是 `check-record.ts` 只跑形状检查（`assertValidRecomposeShape`）和覆盖检查，从不运行 Hub 对重组记录跑的检查函数；`SKILL.md` 的示例和 `submit-records.ts` 的形状提示又都把 `sources` 写成「原句或手册引用」，没有说明它们必须是引用（现统一写成 `<引用>`，并在 `SKILL.md` 补一行说明从哪里取）。第二次提交只改了这 10 个值（原句文字改为原句的 `src:…` 引用），其余字节相同，Hub 全部接受。
+
+现在带 `--run` 的 `check-record.ts` 用 `functions/local-checks.ts` 在冻结的下载上按 Hub 的方式核对，本地没有第二份规则：
+
+- `checks.json` 里的函数检查（`record`、`full_set`）调用的就是 Hub 调用的函数（`functions/recompose-check.ts`、`functions/subject.ts`、`functions/seal.ts`）；每条记录的输入由冻结的 `run.json`（条目、运行上下文、分组）、`knowledge/nodes.jsonl`（锁定命令树，按条目选出命令目录，规则、上限和措辞与 `hub/knowledge/catalog-selection.ts` 相同）和 `submit-records.ts` 的 `itemSubmission`（与提交给 Hub 的字节相同）拼成。`checks.json` 声明了而本地没有接线的函数，和核心解释器 `quote@1`，在结果的 `hub_checks.not_run` 里写明原因，不当作通过。
+- Hub 在任何检查之前先按 `slots.schema.json` 核对槽位记录的 `data` 形状，不合则整条记录拒收（`SUBMISSION_SCHEMA_VIOLATION`）；`functions/record-shape.ts` 读同一份模式，指出不合处的位置、找到的值和允许的取值（位置与 Hub 相同，措辞比 Hub 的「收到的是未知类型」多说出实际的值）。
+- 不带 `--run` 只核对形状，`hub_checks.ran` 为 `false`，退出码仍是 0（`scripts/real` 的探针按这个契约调用）。
+
+以前本地没有运行、现在运行的 Hub 侧检查：`record`（`recompose-check.ts` 的全部规则：原文逐字、覆盖、方法与来源、改写命令的命令树核对、可读引用等）、`full_set`（`seal.ts`，整批与冻结条目一一对应）、槽位 `data` 形状。仍然只在 Hub 里运行的：`quote@1`（引文是否逐字出现在所引片段里；本工具交给 Hub 的引文只取自下载里冻结的原句，`record` 检查另核对记录里的原句逐字等于它们）、引用解析与权限（`exact.ts`）、重试轮次和终态计算。
+
+核对「本地结果等于 Hub 结果」的测试：`tools/check-record-hub.test.ts`（真实运行引擎、注册表、沙箱和临时 PostgreSQL，九组共 18 条记录，逐条比较本地问题与 Hub 的错误）；`functions/local-checks.test.ts`（本地照 Hub 代码重做的几处，每处与 Hub 自己的函数在同一数据上对照：命令目录选择及上限、检查输出的处理、运行上下文）；`functions/recompose-check.test.ts`（拒绝措辞）。
+
+已知限制：
+
+- 下载里没有产品声明的命令目录是否「完整」（`catalog_complete`），本地按完整核对（`hub_checks.assumed` 写明）；若锁定根没有声明完整，Hub 会另外指出缺口，本地不会。需要的话由 Hub 的运行导出把目录声明写进 `knowledge/index.json`。
+- 命令目录条目只取 `kind=definition` 且 `data.words`/`data.signatures` 是数组的；Hub 另用 `catalog-entry@1` 校验每个条目并按声明的产出者过滤，下载里没有产出者。
+- 证据行 `evidence` 的文字由条目自己的原句拼回节点原文（只在存在性和授权取值的字面比较里用到）；Hub 读的是脑图节点原文。运行上下文不含租约和观察。
+- `recompose-check.ts` 里有六处 `bad('', …)`（第 271、303、330、411、413、444 行）给出没有码的反驳，Hub 会把整份输出换成一条 `check_error` 未知（「输出无效：第 N 项是反驳却没有码」）。对 `submit-records.ts` 生成的记录，第 271、303、330、444 行被 Hub 先做的槽位形状检查挡在前面，第 411、413 行只在绑定了产品授权的冲突里到达；本地 `hubOutcomes` 与 Hub 一致，未改这些调用，是否给它们登记代码由包作者决定。
+- 共享的 `functions/text.ts` 在 `authority`、`adjudicate`、`recompose` 三个子包里的生成副本落后于 `case-compile` 的版本（缺 `reportStatement`、`localMinute`），本次没有重新生成。

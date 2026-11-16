@@ -46,7 +46,7 @@ const FULL_SCHEMA_KEYS = new Set([
 ]);
 const RECOMPOSE_METHOD_KINDS: readonly string[] = RECOMPOSE_FORMAT.method_kinds;
 const LITE_SHAPE_HINT =
-  '{"item":"<下载文件中的 id>","method":{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<原句或手册引用>"],"basis":"为什么这样验证"}}（可选字段仅 slots/states/adapted/concretizations/unknowns），严禁写完整 schema 字段或 "handling"';
+  '{"item":"<下载文件中的 id>","method":{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"}}（可选字段仅 slots/states/adapted/concretizations/unknowns），严禁写完整 schema 字段或 "handling"';
 
 /** Enforces the single lite record format on both model files and direct `recordFor` callers. */
 export function assertValidRecomposeShape(value: unknown, contextLabel: string, requireItem: boolean): Row {
@@ -133,6 +133,12 @@ export function recordFor(item: Row, file: Row, model: string): Row {
   };
 }
 
+/** What one case's file becomes in the submission: the entry the Hub receives and check-record checks (one builder for both). */
+export function itemSubmission(item: Row, file: Row, model: string): Row {
+  const data = recordFor(item, file, model);
+  return { item: item.id, handling: 'handled', slots: { record: [{ text: '模型的重组判断', quotes: data.atoms.map((a: Row) => ({ reference: a.quote_ref, text: a.text })), data }] } };
+}
+
 /** The whole submission: one record per case file, and every frozen item accounted for. */
 export function submissionFor(run: Row, files: Row[], model: string): Row {
   const items = list(run.items), byId = new Map(items.map((item) => [item.id, item]));
@@ -143,8 +149,7 @@ export function submissionFor(run: Row, files: Row[], model: string): Row {
     items: files.map((file) => {
       const item = byId.get(file.item);
       if (item === undefined) throw new CallFailure("invalid_parameters", `自动化用例文件不属于本次用例重组的原始用例`, "只提交本次下载运行 items 中的原始用例，其他运行另行重组");
-      const data = recordFor(item, file, model);
-      return { item: item.id, handling: 'handled', slots: { record: [{ text: '模型的重组判断', quotes: data.atoms.map((a: Row) => ({ reference: a.quote_ref, text: a.text })), data }] } };
+      return itemSubmission(item, file, model);
     }),
   };
 }

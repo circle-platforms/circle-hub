@@ -43,7 +43,7 @@ EOF
 ```json
 {
   "item": "<下载文件中的 id>",
-  "method": {"kind":"declared","text":"怎么验证","sources":["<原句或手册引用>"],"basis":"为什么这样验证"},
+  "method": {"kind":"declared","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"},
   "slots": [{"atom":"a4","knowledge_location":"has_verification_knowledge","evidence":[],"proposal":null}],
   "states": [{"atom":"a2","state":"missing_prerequisite","reason":"缺什么","prerequisites":["要先做什么"]}],
   "adapted": [{"atom":"a2","action":"structural_completion","text":"改写后的步骤","commands":["完整命令行"],"equivalence_reason":"为什么保持原意","equivalence_refs":["<手册或命令树引用>"]}],
@@ -58,6 +58,7 @@ knowledge_location: has_verification_knowledge=能判断期望；recomposable_fr
 states.state: underdetermined=写法不清；missing_prerequisite=缺前置，写 prerequisites；settled=已有决定
 adapted.action: parameter_change=改参数；equivalent_form=等价写法；structural_completion=补全结构
 adapted.commands: 完整命令行，由对应构建的命令树解析
+引用: method.sources、slots.evidence、adapted.equivalence_refs 每项都是引用，不是原句文字；本用例原句取 items/<序号>.json 里 fields.atoms[].reference，手册和命令树取 knowledge/ 里“引用”行的 tree:…
 ```
 
 ## 原始用例与手册不一致
@@ -81,15 +82,15 @@ unknowns: missing 写原始用例与手册不一致；next_action 写作者或�
 ## 交给脚本编写
 
 ```sh
-# 提交前先离线自检 UTF-8/JSON 语法、单一精简格式与 item 唯一/完整性（支持单文件或目录，不接触 Hub）
-node '<技能目录>/tools/check-record.ts' --file '<重组后的用例目录>' [--run '<下载运行目录>']
+# 提交前先离线自检：UTF-8/JSON 语法、单一精简格式、item 唯一/完整性，并用冻结的运行和命令树跑 Hub 对重组记录的检查（支持单文件或目录，不接触 Hub）
+node '<技能目录>/tools/check-record.ts' --file '<重组后的用例目录>' --run '<下载运行目录>'
 # 注意：命令行与 <<'EOF' 必须在同一行（空格隔开，切勿在 <<'EOF' 前换行）
 node '<技能目录>/tools/submit-records.ts' --hub %HUB_URL% --run '<用例重组编号>' --model '<模型>' --records '<重组后的用例目录>' <<'EOF'
 %HUB_TOKEN%
 EOF
 ```
 
-提交前先跑 `check-record.ts`（`ok=true`）离线检出编码/语法错误、完整 schema 字段误用、缺 `item`/`method` 或同 `item` 重复；再由 `submit-records.ts` 从标准输入取令牌，补齐能按规则确定的内容，把本次范围内的重组后的用例一次交给 Hub（未设 `scope` 时即为整份）。每条已投影的原始用例都要有文件；按答复指出的错误改后重交，全部核对正确才完成。
+提交前先跑 `check-record.ts`，必带 `--run`，`ok=true` 才提交：它离线检出编码/语法错误、完整 schema 字段误用、缺 `item`/`method` 或同 `item` 重复，并用同一份冻结的运行和命令树把 Hub 对重组记录的检查（`record`、`full_set`）跑一遍，Hub 会拒绝的问题（引用写成原句文字、取值不在声明范围内、改写后的命令不合命令树等）这里同样报出，按报出的位置和值改完再提交；不带 `--run` 时结果里 `hub_checks.ran` 为 `false`，只核对了形状，不能当作 Hub 会接受；再由 `submit-records.ts` 从标准输入取令牌，补齐能按规则确定的内容，把本次范围内的重组后的用例一次交给 Hub（未设 `scope` 时即为整份）。每条已投影的原始用例都要有文件；按答复指出的错误改后重交，全部核对正确才完成。
 
 ```text
 脚本编写与脚本合并: inputs.recomposition_run={"reference":"<run_reference>"}（取下载目录 references.json 或导出顶层的 run_reference）
