@@ -243,8 +243,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "233734b2db83163b2da8d10e910236e15146f354ad9c590e7523dc382177b142",
-      "size": 70052
+      "sha256": "75928a394eb1494dfa109e6d7478cf5efecf51aca6f95809f83512e5f7c6ca4b",
+      "size": 78648
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -453,8 +453,8 @@
     },
     {
       "path": "functions/rework-history.ts",
-      "sha256": "f39f34328594d694b566bd158a390f3ef6e5460d40c6e1caf98400fd2d2212a2",
-      "size": 109238
+      "sha256": "1ed705160da067d3e8febd21ab246c7f9a90ef44fafccaac09d2647319a91360",
+      "size": 110154
     },
     {
       "path": "functions/runtime-contract.ts",
@@ -893,8 +893,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "bac76fb17cf38dfcdda75419dd5fd7e738ba59a2e931819867afa775e342a95d",
-      "size": 55084
+      "sha256": "95543527bfb4c8e9c2ef1901eec5c698dcca5df8a833a46946199b82bd919c48",
+      "size": 56567
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -973,8 +973,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "90623848996db998922c74754d1c8ae7238bdb8514d5ce1bcc2451df6de05fe1",
-      "size": 18450
+      "sha256": "280555e92c3973fd0dd2733838e199e1d1e8984e5a6f1bafbc4664cc8549abac",
+      "size": 19591
     },
     {
       "path": "tools/download-returns.cli.json",
@@ -983,8 +983,8 @@
     },
     {
       "path": "tools/download-returns.ts",
-      "sha256": "607df0b9b14fa988f9d67ca3e4407d1864bc3b9198632b3b9a7e9bad09d2c84c",
-      "size": 15843
+      "sha256": "4fad8e12e9450d94a849df0505a5bf389d3cc929ae637d53b69c70b32fc699f2",
+      "size": 17799
     },
     {
       "path": "tools/download-run.cli.json",

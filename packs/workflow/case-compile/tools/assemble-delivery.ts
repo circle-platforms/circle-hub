@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { isRecord, failCall, CallFailure, localMinute } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { closingHints, modelCheckpointsOf, neverReachedBed, unsentOf, type Unsent, assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ModelCheckpoint, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
+import { closingHints, modelCheckpointsOf, neverReachedBed, unsentOf, type Unsent, assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, trailingUnreached, unexecutedAfter, unsuccessfulReport, type CaseOutcome, type ModelCheckpoint, type ConflictGround, type Dispatch, type JobRow, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { HubReplyError, RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchBytesRetrying, getRetrying, downloadRetryControl, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
@@ -398,17 +398,29 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       missing_fact: '缺少已声明执行失败规则所需的完整设备输出，交付资格尚未核验；请从原作业补齐原件后重评',
     } : row) }));
     dispatches.splice(0, dispatches.length, ...audited);
+    // A run that stopped in a case (functions/delivery.ts unexecutedRows): the cases after the one whose log ends in the runner's
+    // exception never began, and the Hub's no verdict for them is no device observation. They are marked here, so that the assembly
+    // keeps them out of the case's attempts; the log of the case that ended the run is read only when cases stand after it.
+    const reached = (row: JobRow) => Boolean(row.evidence?.log) || Object.keys(row.evidence?.sessions ?? {}).length > 0;
+    for (const [k, d] of dispatches.entries()) {
+      const tail = trailingUnreached(d.items, d.rows.map((row) => ({ item: row.item, reached: reached(row) })));
+      if (!tail) continue;
+      const reference = d.rows.find((row) => row.item === tail.last)?.evidence?.log;
+      const found = unexecutedAfter(tail, reference ? await textOf(d.run, reference) : null, (item) => originals[item]?.title);
+      if (found.size) dispatches[k] = { ...d, rows: d.rows.map((row) => found.has(row.item) ? { ...row, dynamic_terminal: 'not_run', not_executed: found.get(row.item)! } : row) };
+    }
     // When no dispatch counts as a whole-volume pass, the pass review may be why: the refusal then names the passes it turned
     // into no verdict and the line that did it (in run 20 the tool only listed the passes that stood, and the model had to find
     // the missing one and its line by itself).
     const assembly = assemble(inScope, dispatches);
     const undelivered = assembly.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
     const notes = readNotes(notesValue, undelivered);
-    const unissuedPlans = assembly.cases.filter(c => c.status === 'unrun' && unsent.some(u => u.items.includes(c.autoid)));
+    const unissuedPlans = assembly.cases.filter(c => c.status === 'unrun' && (unsent.some(u => u.items.includes(c.autoid)) || c.not_executed?.length));
     if (unissuedPlans.length) {
       const volume = assembly.unsuccessful ?? { items: [], sources: {} };
       for (const outcome of unissuedPlans) {
-        const source = unsent.filter(u => u.items.includes(outcome.autoid)).at(-1)!;
+        // the dispatch that held the case without reaching it, or else the one that never went out
+        const source = outcome.not_executed?.at(-1) ?? unsent.filter(u => u.items.includes(outcome.autoid)).at(-1)!;
         if (!volume.items.includes(outcome.autoid)) volume.items.push(outcome.autoid);
         volume.sources[outcome.autoid] = { plan_run: source.plan_run, run: source.run };
       }
@@ -520,10 +532,11 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         }
       }
     }
-    // the plan run's own pending workbook step says nothing about a case that went to the bed: its workbook was verified and dispatched.
-    const basisFor = (outcome: { autoid: string; history: unknown[] }) => {
+    // the plan run's own pending workbook step says nothing about a case that went to the bed: its workbook was verified and dispatched,
+    // whether or not the run reached the case.
+    const basisFor = (outcome: { autoid: string; history: unknown[]; not_executed?: unknown[] }) => {
       const found = bases.get(outcome.autoid); if (!found) return undefined;
-      if (!outcome.history.length) return found;
+      if (!outcome.history.length && !outcome.not_executed?.length) return found;
       const gaps = found.gaps.filter((gap) => gap.requirement !== 'workbook_verified');
       return gaps.length ? { ...found, gaps, attributions: [...new Set(gaps.flatMap((gap) => gap.attribution ? [gap.attribution] : []))] } : undefined;
     };
@@ -579,7 +592,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       incomplete: hints.length > 0,
       closings: Object.fromEntries((Object.keys(CLOSING) as Array<keyof typeof CLOSING>).map((closing) => [closing, assembly.cases.filter((c) => c.closing === closing).length])),
       artifacts: input.artifacts,
-      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.basis ? { basis: c.basis } : {}), ...(notes.cases[c.autoid] ? { model_claims: { ...notes.cases[c.autoid], ...(!c.history.length ? { round: undefined } : {}) } } : {}), ...(c.pending?.length ? { pending: c.pending, reenter: true } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), ...(userRulings[c.autoid]?.length?{user_rulings:userRulings[c.autoid]}:{}),...(checkpoints[c.autoid]?.length?{model_checkpoints:checkpoints[c.autoid]}:{}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, ...(h.report_check ? { report_check: h.report_check } : {}), dynamic_terminal: h.reported_terminal ?? h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}), ...(h.qualifier ? { qualifier: h.qualifier } : {}), ...(h.accepted_as_fact === undefined ? {} : { accepted_as_fact: h.accepted_as_fact }), ...(h.missing_facts ? { missing_facts: h.missing_facts } : {}), ...(h.missing_fact ? { missing_fact: h.missing_fact } : {}), ...(h.next_action ? { next_action: h.next_action } : {}) })) })),
+      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.basis ? { basis: c.basis } : {}), ...(notes.cases[c.autoid] ? { model_claims: { ...notes.cases[c.autoid], ...(!c.history.length ? { round: undefined } : {}) } } : {}), ...(c.pending?.length ? { pending: c.pending, reenter: true } : {}), ...(c.not_executed?.length ? { not_executed: c.not_executed } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), ...(userRulings[c.autoid]?.length?{user_rulings:userRulings[c.autoid]}:{}),...(checkpoints[c.autoid]?.length?{model_checkpoints:checkpoints[c.autoid]}:{}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, ...(h.report_check ? { report_check: h.report_check } : {}), dynamic_terminal: h.reported_terminal ?? h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}), ...(h.qualifier ? { qualifier: h.qualifier } : {}), ...(h.accepted_as_fact === undefined ? {} : { accepted_as_fact: h.accepted_as_fact }), ...(h.missing_facts ? { missing_facts: h.missing_facts } : {}), ...(h.missing_fact ? { missing_fact: h.missing_fact } : {}), ...(h.next_action ? { next_action: h.next_action } : {}) })) })),
     };
     outputs.push({ name: REPORT_FILES.summary, bytes: json(summary) });
 

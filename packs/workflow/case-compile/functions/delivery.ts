@@ -14,7 +14,12 @@ export type Status = keyof typeof STATUS;
 
 /** Why a reported pass is not taken as one: the device output it came with and the line in it (see failureLine). */
 export interface RowAudit { where: string; line: string }
-export interface JobRow { report_check?: { mapped_terminal?: string; [key: string]: unknown }; reported_terminal?: string; qualifier?: { nature: string; marks: string[] }; accepted_as_fact?: boolean; missing_facts?: string[]; missing_fact?: string; next_action?: string; item: string; dynamic_terminal: string; evidence?: { log?: string; sessions?: Record<string, string> }; audit?: RowAudit }
+/**
+ * A case of a dispatched workbook that the run never reached: `by` is the case before it, in the same workbook, whose step
+ * raised an exception that ended the whole run (see unexecutedRows). It is no device verdict and no attempt of the case.
+ */
+export interface NotExecuted { by: { item: string; step: number | null }; reason: string; next_action: string }
+export interface JobRow { report_check?: { mapped_terminal?: string; [key: string]: unknown }; reported_terminal?: string; qualifier?: { nature: string; marks: string[] }; accepted_as_fact?: boolean; missing_facts?: string[]; missing_fact?: string; next_action?: string; item: string; dynamic_terminal: string; evidence?: { log?: string; sessions?: Record<string, string> }; audit?: RowAudit; not_executed?: NotExecuted }
 export interface ExportedJob { job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean; result: string | null; device_return: string | null; rows: JobRow[] | null;
   /** the Hub's own reason and named next step of a job that did not go out, as run-jobs@1 would carry them. */
   missing_facts?: Array<{ fact: string; next_action: string }>; member_missing_facts?: Array<{ fact: string; next_action: string }>; next_action?: string }
@@ -74,7 +79,11 @@ export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   return { run, job: job.job, plan_run: job.plan_run, sha256: job.sha256, items: [...job.items], rows };
 }
 
-export interface CaseOutcome { autoid: string; status: Status; history: Array<{ report_check?: JobRow['report_check']; qualifier?: JobRow['qualifier']; accepted_as_fact?: boolean; missing_facts?: string[]; missing_fact?: string; next_action?: string; ordinal: number; run: string; job: string; terminal: string; reported_terminal?: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; rounds?: number; pending?: string[]; evidence_unverified?: true; basis?: CaseBasis; closing?: Closing; missing?: MissingFact; conflict?: AuthorConflict }
+/**
+ * `history` holds the device observations of a case, one per dispatch that ran it: every count of device attempts reads it.
+ * `not_executed` holds the dispatches that held the case but never reached it; they are no observation and no attempt.
+ */
+export interface CaseOutcome { autoid: string; status: Status; history: Array<{ report_check?: JobRow['report_check']; qualifier?: JobRow['qualifier']; accepted_as_fact?: boolean; missing_facts?: string[]; missing_fact?: string; next_action?: string; ordinal: number; run: string; job: string; terminal: string; reported_terminal?: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; not_executed?: Array<NotExecuted & { ordinal: number; run: string; job: string; plan_run: string }>; rounds?: number; pending?: string[]; evidence_unverified?: true; basis?: CaseBasis; closing?: Closing; missing?: MissingFact; conflict?: AuthorConflict }
 /**
  * What the Hub recorded for a case's own plan in `plan_run`: `requirement` left pending on a data gap with a request (a missing
  * fact), or left without an accepted plan after the repair rounds were used up (repair_exhausted).
@@ -124,16 +133,23 @@ export function assemble(population: string[], dispatches: Dispatch[]): Assembly
   if (new Set(dispatches.map((d) => d.run)).size !== dispatches.length) failCall('invalid_parameters', '--runs 中重复选择了同一次上机验证', '请提供同一文档范围内、互不重复的上机验证记录');
   for (const d of dispatches) for (const item of d.items) if (!population.includes(item)) failCall('invalid_parameters', `上机验证包含不在这份原始用例清单里的原始用例 ${item}`, '请提供同一文档范围内、互不重复的上机验证记录');
   const passedWhole = (d: Dispatch) => d.rows.length > 0 && d.rows.every((r) => r.dynamic_terminal === 'pass');
-  const holds = (k: number) => dispatches.slice(k + 1).every((later) => later.rows.every((r) => !dispatches[k].items.includes(r.item) || r.dynamic_terminal === 'pass'));
+  // A dispatch that never reached a case says nothing against an earlier pass of it.
+  const holds = (k: number) => dispatches.slice(k + 1).every((later) => later.rows.every((r) => r.not_executed !== undefined || !dispatches[k].items.includes(r.item) || r.dynamic_terminal === 'pass'));
   const at = dispatches.findLastIndex((d, k) => passedWhole(d) && holds(k));
   const pass = at < 0 ? null : dispatches[at];
   const delivered = new Set(pass?.items ?? []);
   const cases: CaseOutcome[] = population.map((autoid) => {
-    const history = dispatches.flatMap((d, k) => d.rows.filter((r) => r.item === autoid).map((r) => ({ ordinal: k + 1, run: d.run, job: d.job, terminal: r.dynamic_terminal, ...(r.report_check ? { report_check: structuredClone(r.report_check) } : {}), ...(r.reported_terminal ? { reported_terminal: r.reported_terminal } : {}), ...(r.qualifier ? { qualifier: r.qualifier } : {}), ...(r.accepted_as_fact === undefined ? {} : { accepted_as_fact: r.accepted_as_fact }), ...(r.missing_facts ? { missing_facts: r.missing_facts } : {}), ...(r.missing_fact ? { missing_fact: r.missing_fact } : {}), ...(r.next_action ? { next_action: r.next_action } : {}), ...(r.evidence?.log ? { log: r.evidence.log } : {}), ...(r.evidence?.sessions ? { sessions: r.evidence.sessions } : {}), ...(r.audit ? { audit: r.audit } : {}) })));
-    if (delivered.has(autoid)) return { autoid, status: 'delivered' as const, history };
+    // A row the run did not reach is no observation of the case: it stays out of `history`, which every count of attempts reads.
+    const skipped: NonNullable<CaseOutcome['not_executed']> = [];
+    const history = dispatches.flatMap((d, k) => d.rows.filter((r) => r.item === autoid).flatMap((r) => {
+      if (r.not_executed) { skipped.push({ ordinal: k + 1, run: d.run, job: d.job, plan_run: d.plan_run, ...structuredClone(r.not_executed) }); return []; }
+      return [{ ordinal: k + 1, run: d.run, job: d.job, terminal: r.dynamic_terminal, ...(r.report_check ? { report_check: structuredClone(r.report_check) } : {}), ...(r.reported_terminal ? { reported_terminal: r.reported_terminal } : {}), ...(r.qualifier ? { qualifier: r.qualifier } : {}), ...(r.accepted_as_fact === undefined ? {} : { accepted_as_fact: r.accepted_as_fact }), ...(r.missing_facts ? { missing_facts: r.missing_facts } : {}), ...(r.missing_fact ? { missing_fact: r.missing_fact } : {}), ...(r.next_action ? { next_action: r.next_action } : {}), ...(r.evidence?.log ? { log: r.evidence.log } : {}), ...(r.evidence?.sessions ? { sessions: r.evidence.sessions } : {}), ...(r.audit ? { audit: r.audit } : {}) }];
+    }));
+    const unexecuted = skipped.length ? { not_executed: skipped } : {};
+    if (delivered.has(autoid)) return { autoid, status: 'delivered' as const, history, ...unexecuted };
     const latest = history.at(-1);
-    if (!latest) return { autoid, status: 'unrun' as const, history };
-    return { autoid, status: latest.terminal === 'fail' ? 'failed' as const : 'unsettled' as const, history, ...(latest.terminal === 'pass' ? { pending: ['最近一次正确的观察不在已验证整卷中，交付资格尚未核验；保留该观察，下一步把这些用例合成整卷并验证'] } : latest.missing_facts?.length ? { pending: ['设备输出的完整性前提尚未核验'] } : latest.missing_fact ? { pending: [latest.missing_fact] } : {}) };
+    if (!latest) return { autoid, status: 'unrun' as const, history, ...unexecuted };
+    return { autoid, status: latest.terminal === 'fail' ? 'failed' as const : 'unsettled' as const, history, ...unexecuted, ...(latest.terminal === 'pass' ? { pending: ['最近一次正确的观察不在已验证整卷中，交付资格尚未核验；保留该观察，下一步把这些用例合成整卷并验证'] } : latest.missing_facts?.length ? { pending: ['设备输出的完整性前提尚未核验'] } : latest.missing_fact ? { pending: [latest.missing_fact] } : {}) };
   });
   const unpassed = cases.filter((c) => c.status === 'failed' || c.status === 'unsettled').map((c) => c.autoid);
   let unsuccessful: Assembly['unsuccessful'] = null;
@@ -169,6 +185,73 @@ export function auditPasses(dispatches: readonly Dispatch[], hits: ReadonlyMap<s
   return dispatches.map((d) => ({ ...d, rows: d.rows.map((r) => { const hit = r.dynamic_terminal === 'pass' ? hits.get(auditKey(d.run, r.item)) : undefined; return hit ? { ...r, reported_terminal: r.dynamic_terminal, dynamic_terminal: 'no_verdict', audit: hit } : r; }) }));
 }
 export const auditKey = (run: string, item: string): string => `${run}\u0000${item}`;
+
+/**
+ * A run that stopped in one case. InfoTest's runner (knowledge/framework/mirror/lib/test_xlsx.py) runs every case of a workbook
+ * in ONE pytest test and puts no guard around a step, so an exception raised in a step ends the whole test: the cases after it
+ * never begin (parser_case_id, which opens a case's result row and its log, is not reached) and the gateway has neither a result
+ * row nor a log nor a session for them. InfoTest meets the same thing in its batch runs (tools/device/structural_gate.py: "the
+ * whole pytest file crashes — every case after this one is skipped") and calls those cases "crashed/not reached", a cascade and
+ * not failures (tools/device/batch_tools.py dev_run_batch_digest); its engine records them as broken, with no fail signature and no
+ * deep attribution, a recompose burns no round, and the report counts them apart as "N cases not run (reason)" (docs/engine/
+ * 03_pipeline.md, S_BROKEN; compile_engine/facts.py rounds_used counts authored versions, not runs). The Hub, which only reads the
+ * gateway's `complete`, answers every case of such a job with the same no verdict, "the report is not complete, resume later",
+ * which is no advice for a case that will never have a report. The rule below is read from the rows and the log by structure alone.
+ */
+const LOG_STAMP = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+/;
+/** pytest's report of an exception marks the source line that raised with `>` and the exception text with `E` (conftest.py hands report.longreprtext to check_point.close(), which writes it into the log of the case that was running). */
+const FAILING_SOURCE = /^>\s{3,}\S/, EXCEPTION_TEXT = /^E\s{3,}\S/;
+/** The runner's own line before each step that has a description: `#######   step9: <description>`; the number is the workbook's column C. */
+const STEP_LINE = /^#{2,}\s+step(\d+):/;
+export interface RunnerAbort { step: number | null }
+/**
+ * Whether the log of a case carries pytest's report of an exception the runner did not catch, and the number of the last step line
+ * the log printed before it (a row without a description prints none, so the step is that of the last row that had one). A case
+ * that failed a check point closes with the same FAIL banner but carries no such report: the run went on.
+ */
+export function runnerAbort(log: string): RunnerAbort | null {
+  const lines = log.replace(/\r/g, '').split('\n').map((line) => line.replace(LOG_STAMP, ''));
+  const exception = lines.findIndex((line) => EXCEPTION_TEXT.test(line));
+  if (exception < 0) return null;
+  const source = lines.findLastIndex((line, index) => index < exception && FAILING_SOURCE.test(line));
+  if (source < 0) return null;
+  for (let index = source - 1; index >= 0; index--) { const step = STEP_LINE.exec(lines[index]); if (step) return { step: Number(step[1]) }; }
+  return { step: null };
+}
+/** A dispatched row as the run's reach is read: whether the Hub holds a log or a session of it, and the log's words when they are at hand. */
+export interface ReachRow { item: string; reached: boolean; log?: string | null }
+export const NOT_EXECUTED_NEXT = '修正前一条后重新上机；本次不算本条的一次上机';
+/** The program-decided reason of a case the run did not reach: the case before it and the step that ended the run. */
+export function notExecutedReason(by: NotExecuted['by'], title: string | undefined): string {
+  return `同一份自动化用例 Excel 中排在前面的原始用例 ${by.item} ${title || '标题未知'} ${by.step === null ? '' : `在第 ${by.step} 步`}出现异常，运行器中止了整本，本条没有在设备上执行`;
+}
+/**
+ * The case the run reached last and the cases after it, in the workbook's order (the order the dispatch was submitted in, which
+ * the gateway echoed back), when there are any: the cases that stand after every log and session the Hub holds.
+ */
+export function trailingUnreached(items: readonly string[], rows: readonly ReachRow[]): { last: string; later: string[] } | null {
+  const ordered = items.flatMap((item) => rows.filter((row) => row.item === item));
+  const last = ordered.findLastIndex((row) => row.reached);
+  return last < 0 || last === ordered.length - 1 ? null : { last: ordered[last].item, later: ordered.slice(last + 1).map((row) => row.item) };
+}
+/** The cases after `tail.last` are not executed when its log, whose words are `log`, ends in the exception. */
+export function unexecutedAfter(tail: { last: string; later: readonly string[] }, log: string | null, titleOf: (item: string) => string | undefined = () => undefined): Map<string, NotExecuted> {
+  const found = new Map<string, NotExecuted>();
+  const abort = log === null ? null : runnerAbort(log);
+  if (!abort) return found;
+  const by = { item: tail.last, step: abort.step }, reason = notExecutedReason(by, titleOf(tail.last));
+  for (const item of tail.later) found.set(item, { by: { ...by }, reason, next_action: NOT_EXECUTED_NEXT });
+  return found;
+}
+/**
+ * The cases of one dispatch that the run did not reach: those after the last case it reached, when that case's log ends in the
+ * exception that stopped the run. Nothing is said when the run reached every case, when the last case it reached shows no
+ * exception (the run may be unfinished, killed or collected in part: that is no proof), or when a later case has any log or session.
+ */
+export function unexecutedRows(items: readonly string[], rows: readonly ReachRow[], titleOf?: (item: string) => string | undefined): Map<string, NotExecuted> {
+  const tail = trailingUnreached(items, rows);
+  return tail === null ? new Map() : unexecutedAfter(tail, rows.find((row) => row.item === tail.last)?.log ?? null, titleOf);
+}
 
 /** A command the device refused to parse, as one of its sessions shows it (see syntaxRejections). */
 export interface SyntaxRejection { command: string; token?: string; prompt?: string }
@@ -443,6 +526,9 @@ export function closeUnrun(cases: CaseOutcome[], facts: Record<string, MissingFa
       const wrong = authorConflictProblems(outcome.autoid, conflict, ground, []);
       return wrong.length ? { ...outcome, pending: wrong } : { ...outcome, closing: 'author_conflict', conflict };
     }
+    // A case a dispatch held but the run did not reach has its named exit already: the case before it, then going up again.
+    const unexecuted = outcome.not_executed?.at(-1);
+    if (unexecuted) return { ...outcome, pending: [`${unexecuted.reason}；${unexecuted.next_action}`] };
     return { ...outcome, pending: ['没有取得可核验的计划结论或具名缺失事实出口'] };
   });
   return { cases: closed, problems: [] };
@@ -479,8 +565,13 @@ function observation(h: CaseOutcome['history'][number]): string {
   return `上机验证的判断：${terminalLabel(terminal)}（设备自报，状态未确认）${h.terminal === 'no_verdict' ? '；Hub 尚未取得可采用的逐条结论' : ''}`;
 }
 export function timeline(outcome: CaseOutcome, excluded: boolean): string {
-  if (!outcome.history.length) return excluded ? '未做上机验证，这条原始用例未完成脚本编写。' : '未做上机验证。';
-  return outcome.history.map(h => `第 ${h.ordinal} 次${observation(h)}${h.audit ? `；交付复核状态未知，设备输出有执行失败原话“${h.audit.line}”，自动化用例没有检查这一行` : ''}`).join('；') + '。';
+  // The dispatches that held the case without reaching it are listed in their place, as what they are: not an observation.
+  const events = [
+    ...outcome.history.map(h => ({ ordinal: h.ordinal, text: `第 ${h.ordinal} 次${observation(h)}${h.audit ? `；交付复核状态未知，设备输出有执行失败原话“${h.audit.line}”，自动化用例没有检查这一行` : ''}` })),
+    ...(outcome.not_executed ?? []).map(n => ({ ordinal: n.ordinal, text: `第 ${n.ordinal} 次未执行：${publicWords(n.reason)}` })),
+  ].sort((a, b) => a.ordinal - b.ordinal);
+  if (!events.length) return excluded ? '未做上机验证，这条原始用例未完成脚本编写。' : '未做上机验证。';
+  return events.map(event => event.text).join('；') + '。';
 }
 
 export interface OutOfScopeCase { autoid: string; title: string }
@@ -573,6 +664,9 @@ function caseConclusionOf(input: ReportInput, outcome: CaseOutcome): string {
   const observed = outcome.history.at(-1);
   const unsentFacts = (input.unsent ?? []).filter(u => u.items.includes(outcome.autoid)).flatMap(u => reportFacts(u));
   if (!outcome.closing && !outcome.history.length && unsentFacts.length) return `${named}，没有发到设备，状态未知。原因：${[...new Set(unsentFacts.map(f => publicWords(f.fact)))].join('；')}。下一步：${[...new Set(unsentFacts.map(f => publicWords(f.next_action)))].join('；')}。决定者程序只披露 Hub 的未派发记录。`;
+  // The run stopped in a case before it: the case did not run, and the reason and the next step are the program's own.
+  const unexecuted = outcome.not_executed?.at(-1);
+  if (!outcome.closing && !outcome.history.length && unexecuted) return `${named}，没有在设备上执行，状态未知。原因：${publicWords(unexecuted.reason)}。下一步：${publicWords(unexecuted.next_action)}。决定者程序只整理设备输出里已记录的运行器异常。`;
 
   const sourceMissing = [...new Set([...(outcome.basis?.gaps ?? []).flatMap(gap => gap.missing ? [gap.missing] : []), ...(observed?.missing_facts?.length ? ['设备输出的完整性前提尚未核验'] : observed?.missing_fact ? [observed.missing_fact] : [])])];
   const observedWords = observed ? `${observation(observed)}。` : '';
@@ -607,6 +701,7 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
   const fence = (text: string) => ['```', text.replace(/```/g, '`​``'), '```'];
   const source = input.assembly.unsuccessful?.sources[outcome.autoid];
   const executed = source?.run ? outcome.history.find(h => h.run === source.run) : undefined;
+  const unexecuted = source?.run ? outcome.not_executed?.find(n => n.run === source.run) : undefined;
   const candidate = note.defect_candidate;
   const conflict = outcome.conflict ?? note.author_conflict;
   const rulings=outcome.closing==='author_conflict'?input.userRulings?.[outcome.autoid]??[]:[];
@@ -616,7 +711,7 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
     ...checkpointLines(input, outcome),
     '', timeline(outcome, input.excluded.includes(outcome.autoid)),
     ...rulings.flatMap(row=>['','**使用者已记录的决定（卡片原文）**',...(reportableProse(row.ruling)?fence(row.ruling):['决定原文含内部引用，完整内容见机器资料'])]),
-    ...(input.assembly.unsuccessful?.sources[outcome.autoid] ? ['', executed ? `本卷这条写法已在第 ${executed.ordinal} 次上机验证中执行。` : '本卷采用最后一次写好的自动化用例；这份写法尚未发到设备，上面的记录来自较早一次实际到设备的上机验证。'] : []),
+    ...(input.assembly.unsuccessful?.sources[outcome.autoid] ? ['', executed ? `本卷这条写法已在第 ${executed.ordinal} 次上机验证中执行。` : unexecuted ? `本卷采用的这份写法在第 ${unexecuted.ordinal} 次上机验证中没有在设备上执行${outcome.history.length ? '；上面的记录来自较早一次实际到设备的上机验证' : '，还没有设备输出'}。` : '本卷采用最后一次写好的自动化用例；这份写法尚未发到设备，上面的记录来自较早一次实际到设备的上机验证。'] : []),
     ...(input.unsent ?? []).filter((u) => outcome.history.length > 0 && u.items.includes(outcome.autoid)).flatMap((u) => ['', `另有一次上机验证没有发到设备，不算一次上机验证：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.fact)))].join('；') : '原因缺少可读取的记录'}。下一步：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.next_action)))].join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`]),
     ...(note.judged ? ['', note.absent ? '尚未提供模型说明。' : `模型说明，状态未确认。${judged}`] : []),
     ...(outcome.missing?.missing ? ['', `Hub 核对结果摘要（内部引用保留在机器资料）。${publicWords(outcome.missing.missing)}`] : []),
@@ -634,7 +729,7 @@ export function closingHints(cases: CaseOutcome[], notes: Notes, unsent: readonl
   return cases.flatMap(outcome => {
     const note = notes.cases[outcome.autoid];
     const hints: Array<{ autoid: string; missing: string; next_action: string; legal_form: string }> = [];
-    if (outcome.status === 'unrun' && !outcome.closing && !unsent.some(u => u.items.includes(outcome.autoid) && reportFacts(u).length)) hints.push({ autoid: outcome.autoid, missing: '本条没有可核验的计划结论或 Hub 具名缺失事实，也没有通过逐字核对的作者冲突', next_action: '先将本条计划交 Hub 取得具名请求；若原始用例与手册冲突，按示例填写 author_conflict 后重跑', legal_form: JSON.stringify({ cases: { [outcome.autoid]: { judged: '供使用者阅读的说明', remedy: '由谁补什么', author_conflict: { author: '<本条原始用例连续原句>', manual: '<同构建手册连续原句>', reference: '<锁定手册引用>' } } } }) });
+    if (outcome.status === 'unrun' && !outcome.closing && !outcome.not_executed?.length && !unsent.some(u => u.items.includes(outcome.autoid) && reportFacts(u).length)) hints.push({ autoid: outcome.autoid, missing: '本条没有可核验的计划结论或 Hub 具名缺失事实，也没有通过逐字核对的作者冲突', next_action: '先将本条计划交 Hub 取得具名请求；若原始用例与手册冲突，按示例填写 author_conflict 后重跑', legal_form: JSON.stringify({ cases: { [outcome.autoid]: { judged: '供使用者阅读的说明', remedy: '由谁补什么', author_conflict: { author: '<本条原始用例连续原句>', manual: '<同构建手册连续原句>', reference: '<锁定手册引用>' } } } }) });
     if (!outcome.history.length && note?.round !== undefined) hints.push({ autoid: outcome.autoid, missing: '本条没有到过设备，不能声明上机轮次', next_action: '删除本条的 round；保留作者冲突或先向 Hub 提交本条计划取得具名出口', legal_form: JSON.stringify({ judged: '未上机，说明已核对的事实', remedy: '由谁补什么' }) });
     if (note?.author_conflict && outcome.closing !== 'author_conflict' && !outcome.missing) hints.push({ autoid: outcome.autoid, missing: '作者冲突声明未取得完整的逐字核对依据', next_action: '按 pending 指出的问题改正原始用例引文、手册原句和锁定引用后重跑', legal_form: JSON.stringify({ author_conflict: { author: '<本条原始用例连续原句>', manual: '<锁定手册连续原句>', reference: '<锁定手册引用>' } }) });
     if (note?.defect_candidate && outcome.closing !== 'device_defect' && !outcome.missing) hints.push({ autoid: outcome.autoid, missing: '设备缺陷候选未取得完整的逐字核对依据', next_action: '按 pending 改正作者期望和设备原话；候选只保留未确认状态', legal_form: JSON.stringify({ defect_candidate: { repro: '<复现步骤>', expected: '<作者期望原句>', actual: '<同一个设备文件内的连续原句>' } }) });

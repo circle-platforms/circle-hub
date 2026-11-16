@@ -979,3 +979,23 @@ test('N3 & N4: accepted missing_input splits from gate refusals, strips internal
 });
 
 type PriorRoundRecordLike = Parameters<typeof analyzeRoundHistory>[0]['rounds'][number];
+
+test('a round whose dispatch did not reach the case is no device error: it makes no signature and no streak, and the brief says why', () => {
+  const ids = buildCaseIdSet(CASE_ID);
+  const reason = '同一份自动化用例 Excel 中排在前面的原始用例 990000000000000300 合成用例 300 在第 9 步出现异常，运行器中止了整本，本条没有在设备上执行';
+  const next_action = '修正前一条后重新上机；本次不算本条的一次上机';
+  const returnsIndex = { schema: 'device-returns@1', run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', jobs: [{ job: 'j'.repeat(64), verification_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', rows: [{ item: CASE_ID, verdict: 'not_run', not_executed: { reason, next_action, aborted_by: { item: '990000000000000300', step: 9 } }, log: null, sessions: {} }] }] };
+  const ev = extractCaseDeviceEvidence({ round: 1, returnsIndex, caseIds: ids, sessionTexts: new Map(), logText: null, logPath: null })!;
+  assert.deepEqual(ev.errorSignatures, [], 'no device_verdict:not_run for a case the device never saw');
+  assert.deepEqual(ev.notExecuted, { reason, next_action });
+  const rounds = [{ round: 1, deviceEvidence: ev, gateRefusals: [], acceptedNotices: [], attribution: null, errorSignatures: [...ev.errorSignatures] }];
+  const streak = analyzeRoundHistory({ currentRound: 2, rounds });
+  assert.equal(streak.consecutiveSameError, 0);
+  const md = renderPriorRoundsMarkdown({ caseRef: CASE_ID, currentRound: 2, rounds, streak });
+  assert.ok(md.includes('本轮没有在设备上执行，不算一次上机') && md.includes(reason) && md.includes(next_action), md);
+  assert.ok(!md.includes('device_verdict'));
+  // a row that ran is read as before
+  const ran = { ...returnsIndex, jobs: [{ ...returnsIndex.jobs[0], rows: [{ item: CASE_ID, verdict: 'fail', log: null, sessions: {} }] }] };
+  const failed = extractCaseDeviceEvidence({ round: 1, returnsIndex: ran, caseIds: ids, sessionTexts: new Map(), logText: null, logPath: null })!;
+  assert.deepEqual([failed.errorSignatures, failed.notExecuted], [['device_verdict:fail'], undefined]);
+});
