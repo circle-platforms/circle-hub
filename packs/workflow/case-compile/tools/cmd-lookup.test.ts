@@ -1,11 +1,13 @@
 // tools/cmd-lookup.ts: the command line around functions/cmd-lookup.ts, on a synthetic download (testing/lookup-fixture.ts).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { contractFixture, hostLiterals, writeContractDownload, type DownloadOptions } from '../testing/contract-lookup-fixture.ts';
 import { lookupFixture, writeLookupDownload } from '../testing/lookup-fixture.ts';
 import { main } from './cmd-lookup.ts';
 
@@ -20,6 +22,11 @@ async function run(argv: string[], cwd: string): Promise<{ code: number; stdout:
 async function download(options: { withText?: boolean } = {}): Promise<{ dir: string; run: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'cmd-lookup-'));
   await writeLookupDownload(join(dir, 'plan-run'), fixture, options);
+  return { dir, run: 'plan-run/run.json' };
+}
+async function contractDownload(options: DownloadOptions = {}): Promise<{ dir: string; run: string }> {
+  const dir = await mkdtemp(join(tmpdir(), 'cmd-lookup-contract-'));
+  await writeContractDownload(join(dir, 'plan-run'), contractFixture(), options);
   return { dir, run: 'plan-run/run.json' };
 }
 async function snapshot(dir: string): Promise<string[]> {
@@ -105,8 +112,10 @@ test('calls it cannot answer are refused with a closed category, one fact and on
       assert.equal(result.stderr.trim().split('\n').length, 1);
     };
     await refused([], /缺少必填参数 --run/);
-    await refused(['--run', runFile], /--param 或 --heads/);
+    await refused(['--run', runFile], /--param、--heads、--method、--methods 或 --block/);
     await refused(['--run', runFile, '--param', 'a', '--heads', 'b'], /只能写一个/);
+    await refused(['--run', runFile, '--method', 'a.b', '--block', 'CONFIG'], /只能写一个/);
+    await refused(['--run', runFile, '--methods', 'a', '--param', 'b'], /只能写一个/);
     await refused(['--run', runFile, '--param=orbit'], /不能用 = 连接/);
     await refused(['--run', runFile, '--guess', 'orbit'], /未知选项 --guess/);
     await refused(['--run', 'plan-run/nothing.json', '--param', 'orbit'], /^不存在：/);
@@ -134,5 +143,108 @@ test('run as a program it answers on stdout with exit 0 and reads only what is u
     const bad = spawnSync(process.execPath, [TOOL, '--run', runFile], { cwd: dir, encoding: 'utf8', env: { NODE_NO_WARNINGS: '1' }, timeout: 30_000 });
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /^参数无效：/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('--method and --methods answer from the sources of the download, write nothing, and need no knowledge folder', async () => {
+  const { dir, run: runFile } = await contractDownload();
+  try {
+    const before = await snapshot(dir);
+    const method = await run(['--run', runFile, '--method', 'widget-host.shell'], dir);
+    assert.equal(method.code, 0, method.stderr);
+    assert.equal(method.stderr, '');
+    assert.equal(method.stdout.split('\n')[0], '# 方法 widget-host.shell：合约启用，本次配置已开放，可以写进计划。');
+    const sources = JSON.parse(await readFile(join(dir, 'plan-run', 'sources.json'), 'utf8')) as Array<{ slot: string; sha256: string; file: string }>;
+    const contract = sources.find((row) => row.slot === 'contract')!;
+    assert.equal(contract.file, 'sources/contract.json');
+    assert.ok(method.stdout.includes(`（src:${contract.sha256}/json@1/p/entries/`), 'the reference of the file as the download manifest gives it');
+    for (const literal of hostLiterals().slice(0, 40)) assert.ok(method.stdout.split('\n').includes(literal));
+    const methods = await run(['--run', runFile, '--methods', 'widget-seat'], dir);
+    assert.equal(methods.code, 0, methods.stderr);
+    assert.match(methods.stdout, /^# 对象 widget-seat：类型 WidgetSeat，合约状态 enabled。\n/);
+    assert.ok(methods.stdout.endsWith('\n') && !methods.stdout.endsWith('\n\n'));
+    assert.deepEqual(await snapshot(dir), before);
+    assert.deepEqual(await run(['--run', runFile, '--method', 'widget-host.shell'], dir), method);
+    assert.deepEqual(await run(['--run', runFile, '--methods', 'widget-seat'], dir), methods);
+    const miss = await run(['--run', runFile, '--method', 'widget-seat.conf'], dir);
+    assert.equal(miss.code, 0);
+    assert.match(miss.stdout, /^# 对象 widget-seat 没有方法 conf。/m);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('--method of an old download without the source manifest reads the root-level files and cites them without a reference', async () => {
+  const { dir, run: runFile } = await contractDownload({ withoutManifest: true });
+  try {
+    const result = await run(['--run', runFile, '--method', 'widget-seat.configure'], dir);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /^# 引用：合约条目 contract\.json 的 \/entries\/\d+；开放项 profile\.json 的 \/allowed\/\d+；座位 profile\.json 的 \/seats\/0；设备 inventory\.json 的 \/beds\/0\/devices\/\d+。$/m);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('--block answers from the frozen slot schema of run.json, the table of the pack and the pack\'s own sample of the kind', async () => {
+  const { dir, run: runFile } = await contractDownload();
+  try {
+    const before = await snapshot(dir);
+    const config = await run(['--run', runFile, '--block', 'CONFIG'], dir);
+    assert.equal(config.code, 0, config.stderr);
+    assert.match(config.stdout, /^# 块种类 CONFIG：本次运行冻结的计划结构（run\.json 的 slots\.schema，摘要 [0-9a-f]{12}）里有它；分块表（tables\/blocks-format\.json）标为启用。\n/);
+    assert.match(config.stdout, /^# 示例（包里的合成样例 samples\/positive\/typed-block-CONFIG\.json 的第 1 块，共 \d+ 块；/m);
+    const sample = JSON.parse(await readFile(new URL('../samples/positive/typed-block-CONFIG.json', import.meta.url), 'utf8')) as { subject: { data: { blocks: Array<{ kind: string }> } } };
+    const block = sample.subject.data.blocks.find((row) => row.kind === 'CONFIG')!;
+    assert.ok(config.stdout.split('\n').includes(JSON.stringify(block)), 'the one line of the sample block');
+    const dist = await run(['--run', runFile, '--block', 'OBSERVE_DIST'], dir);
+    assert.match(dist.stdout, /标为未启用。/);
+    assert.match(dist.stdout, /^# 包里没有这个块种类的示例。$/m);
+    assert.deepEqual(await snapshot(dir), before);
+    assert.deepEqual(await run(['--run', runFile, '--block', 'CONFIG'], dir), config);
+    const miss = await run(['--run', runFile, '--block', 'CAPT'], dir);
+    assert.equal(miss.code, 0);
+    assert.match(miss.stdout, /^# 以 CAPT 开头的块种类：CAPTURE、CAPTURE_COMPARE。$/m);
+    const member = await run(['--run', runFile, '--block', 'block_context'], dir);
+    assert.equal(member.code, 0, member.stderr);
+    assert.match(member.stdout, /^# 计划成员 block_context：本次运行冻结的计划结构（run\.json 的 slots\.schema，摘要 [0-9a-f]{12}）里有它；是计划 data 的可选成员。\n/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('the sources and the slot schema it cannot read are refused with a closed category, one fact and one next step', async () => {
+  const refusedIn = async (options: DownloadOptions, argv: string[], pattern: RegExp, after?: (dir: string) => Promise<void>) => {
+    const { dir, run: runFile } = await contractDownload(options);
+    try {
+      if (after) await after(dir);
+      const result = await run(['--run', runFile, ...argv], dir);
+      assert.equal(result.code, 1, result.stdout);
+      assert.equal(result.stdout, '');
+      assert.match(result.stderr, pattern, result.stderr);
+      assert.ok(/^(参数无效|无权限|不存在|已被占用|暂时不可用)：/.test(result.stderr), result.stderr);
+      assert.equal(result.stderr.trim().split('\n').length, 1);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  };
+  await refusedIn({ tamper: 'contract' }, ['--method', 'widget-seat.configure'], /^参数无效：来源文件与清单摘要不一致/);
+  await refusedIn({ tamper: 'profile' }, ['--methods', 'widget-seat'], /^参数无效：来源文件与清单摘要不一致/);
+  await refusedIn({}, ['--method', 'widget-seat.configure'], /^不存在：.*sources\/contract\.json/, (dir) => rm(join(dir, 'plan-run', 'sources', 'contract.json')));
+  await refusedIn({ withoutSlots: true }, ['--block', 'CONFIG'], /^参数无效：run\.json 里没有冻结的 slots\.schema/);
+  await refusedIn({}, ['--method', 'nothing'], /^参数无效：--method 的值要写成 <对象>\.<方法>/);
+  await refusedIn({}, ['--methods', 'widget-seat.configure'], /^参数无效：--methods 的值是一个对象名/);
+  await refusedIn({}, ['--block', 'CAP TURE'], /^参数无效：--block 的值是一个块种类名/);
+  // A source whose bytes match its manifest but are no contract of the Hub's: refused with the reader's first problem.
+  await refusedIn({}, ['--method', 'widget-seat.configure'], /^参数无效：.*冻结合约/, async (dir) => {
+    const bytes = Buffer.from(JSON.stringify({ not: 'a contract' }));
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    await writeFile(join(dir, 'plan-run', 'sources', 'contract.json'), bytes);
+    const manifest = JSON.parse(await readFile(join(dir, 'plan-run', 'sources.json'), 'utf8')) as Array<{ slot: string; sha256: string; reference: string }>;
+    for (const row of manifest) if (row.slot === 'contract') { row.sha256 = digest; row.reference = `src:${digest}`; }
+    await writeFile(join(dir, 'plan-run', 'sources.json'), JSON.stringify(manifest));
+  });
+});
+
+test('run as a program the new forms answer on stdout with exit 0', async () => {
+  const { dir, run: runFile } = await contractDownload();
+  try {
+    for (const argv of [['--method', 'widget-clock.pause'], ['--methods', 'widget-clock'], ['--block', 'SLEEP']]) {
+      const result = spawnSync(process.execPath, [TOOL, '--run', runFile, ...argv], { cwd: dir, encoding: 'utf8', env: { NODE_NO_WARNINGS: '1' }, timeout: 30_000 });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stderr, '');
+      assert.match(result.stdout, /^# (方法|对象|块种类) /);
+    }
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

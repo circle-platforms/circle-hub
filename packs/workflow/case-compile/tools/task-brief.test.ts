@@ -1141,6 +1141,9 @@ test('the writer is taught the command lookup: its task file prints the command 
     assert.ok(withRun.includes(`命令查询工具（\`tools/cmd-lookup.ts\`）：${packDir}/tools/cmd-lookup.ts`));
     assert.ok(withRun.includes('--heads \'<命令词前缀>\''));
     assert.ok(withRun.includes('不在 knowledge/commands.txt、manual.txt 里逐段 grep 或分页读'));
+    // The task file also tells the three forms that answer from the executor rules and the block format, each as the swap of --param.
+    for (const form of ["`--method '<对象>.<方法>'` 查某个方法能不能用及怎么写", "`--methods '<对象>'` 列某对象的方法", "`--block '<块种类>'` 查块种类的必填、可选字段和示例"]) assert.ok(withRun.includes(form), form);
+    assert.ok(withRun.includes('不在 contract.json、profile.json、slots.schema.json、tables/blocks-format.json 里逐段读'));
     assert.ok(withRun.indexOf(lookup) < withRun.indexOf('写入后执行自检'), 'the lookup is told before the check');
     assert.ok(withRun.includes(`node '${packDir}/tools/check-plan.ts' --file`), 'the check is still told');
 
@@ -1150,9 +1153,10 @@ test('the writer is taught the command lookup: its task file prints the command 
 
     // The role text names the tool in its one allowed form of execute and in its rule on reading the knowledge.
     const writer = renderAgentDefinition(SUBAGENT_ROLES.find((role) => role.key === 'plan')!);
-    assert.ok(writer.includes('`check-plan.ts --file` 自检，和 `cmd-lookup.ts` 查命令写法（`--param` 或 `--heads`）'));
+    assert.ok(writer.includes('`check-plan.ts --file` 自检，和 `cmd-lookup.ts` 查询（`--param`/`--heads` 查命令写法，`--method`/`--methods`/`--block` 查执行器规则与块字段）'));
     assert.ok(writer.includes("先跑任务文件给出的 `cmd-lookup.ts --param '<命令词>'`，一次给全"));
-    assert.ok(writer.includes('不在 `knowledge/commands.txt`、`manual.txt` 里逐段 grep 或分页读'));
+    assert.ok(writer.includes("查某个对象.方法能不能用及怎么写（启用与否和原因、签名、G/H/I 写法、类型化权限与允许的程序和字面命令、效果预算、取格、座位）用 `--method '<对象>.<方法>'`，列某对象的方法用 `--methods '<对象>'`，查块种类的必填、可选字段和示例用 `--block '<块种类>'`"));
+    assert.ok(writer.includes('不在 `knowledge/commands.txt`、`manual.txt`、`contract.json`、`profile.json`、`slots.schema.json`、`tables/blocks-format.json` 里逐段 grep 或分页读'));
 
     for (const role of SUBAGENT_ROLES.filter((candidate) => candidate.key !== 'plan')) {
       assert.ok(!renderAgentDefinition(role).includes('cmd-lookup'), `${role.agentName} role text`);

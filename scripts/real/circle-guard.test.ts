@@ -604,13 +604,18 @@ test('cmd-lookup is a declared tool: the command the writer task file prints pas
       h.assertAllowed(h.exec(printed[0]!.slice(1, -1).replace("'<命令词，可带参数>'", "'orbit beacon add'")), `${profile}: the printed lookup command`);
       h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --param 'orbit beacon add "b1" fast 3'`), `${profile}: a command with quoted arguments inside one single-quoted word`);
       h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --heads 'orbit beacon'`), `${profile}: heads`);
+      h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --method 'routera.cmd'`), `${profile}: method`);
+      h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --methods 'APV_0'`), `${profile}: methods`);
+      h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --block 'CAPTURE_COMPARE'`), `${profile}: block`);
+      h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --method=routera.cmd`), /不认“=”/);
+      h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --block 'CONFIG' <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明不读标准输入/);
       h.assertRefused3(h.exec(`node ${lookup} --param 'orbit beacon add'`), /缺少必填选项 --run/);
       h.assertRefused3(h.exec(`node ${lookup} --run ../outside/run.json --param 'orbit beacon add'`), /不在工作目录/);
       h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --param=orbit`), /不认“=”/);
       h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --guess orbit`), /没有 --guess 选项/);
       h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --param 'orbit' <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明不读标准输入/);
       h.assertRefused3(h.exec(`node tools/cmd-lookup.ts --run plan-run/run.json --param 'orbit'`), /脚本路径/);
-      assert.match(h.allowedText(), /^\| case-compile\/tools\/cmd-lookup\.ts \| `node '<技能目录>\/tools\/cmd-lookup\.ts' --run '<下载目录>\/run\.json' \[--param '<命令词，可带参数>'\] \[--heads '<命令词前缀>'\]` \|$/m);
+      assert.match(h.allowedText(), /^\| case-compile\/tools\/cmd-lookup\.ts \| `node '<技能目录>\/tools\/cmd-lookup\.ts' --run '<下载目录>\/run\.json' \[--param '<命令词，可带参数>'\] \[--heads '<命令词前缀>'\] \[--method '<对象>\.<方法>'\] \[--methods '<对象>'\] \[--block '<块种类>'\]` \|$/m);
     } finally {
       h.close();
     }
