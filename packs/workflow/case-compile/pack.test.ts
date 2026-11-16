@@ -78,6 +78,15 @@ const SKILL_BUDGET = 9630;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
   const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成执行器规则或发布的执行器规则核对', '不证明在真实设备上跑得通', '自动重交', '最多重交 2 次', '第二次 start_run', 'parameters.plan_run', 'inputs.plan_result', 'predecessor']) assert.ok(skill.includes(phrase), phrase);
 });
+test('the writer is told to write one Chinese line per block, and the skill says the command tree decides what Plumb only advises', () => {
+  const skill = read('SKILL.md'), writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
+  const rule = '每个块写一行中文 description，说明这一块做什么（不是抄作者步骤）';
+  assert.ok(role.body.includes(rule) && writer.includes(rule), 'role text and the bundled agent file say it, identically');
+  assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`);
+  for (const phrase of ['命令核验以命令树为准', '命令树核对不过的必改', '只标需人工复核，不阻断']) assert.ok(skill.includes(phrase), phrase);
+  const block = json('slots.schema.json').item.plan.data.properties.blocks.items.anyOf[0].properties.description;
+  assert.equal(block.type, 'string'); assert.match(block.description, /不是抄作者步骤/);
+});
 test('the client skill says when the user is asked and that a subagent never asks', () => {
   const skill = read('SKILL.md');
   for (const phrase of ['只在答案会改变做法、资料里又查不到时问使用者', '设备的问题还是原始用例的问题，需要使用者决定', '能查清的自己查并在报告说明', '子代理不问使用者：定不了的写进给主代理的报告']) assert.ok(skill.includes(phrase), phrase);

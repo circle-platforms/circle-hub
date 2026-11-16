@@ -12,6 +12,8 @@ export const blockMeta=(slots:PlanSlots)=>normalized.get(slots);
 export function withoutModelIdentities(slots:PlanSlots):PlanSlots{const {command_identities:_ignored,...copy}=slots;const meta=normalized.get(slots);if(meta)normalized.set(copy,meta);return copy;}
 export const sourcePlan=(slots:PlanSlots):unknown=>normalized.get(slots)?.raw??slots;
 export const isNormalized=(value:unknown):value is PlanSlots=>typeof value==='object'&&value!==null&&normalized.has(value);
+/** The line a writer gives a block or a flat step for column D of its row: one line of text without edge space or a formula prefix. */
+export const badDescription=(value:unknown):boolean=>typeof value!=='string'||!value.trim()||value!==value.trim()||/[\r\n]/.test(value)||value.startsWith('=');
 export function identifier(value:unknown):value is string{
  if(typeof value!=='string'||!value.length||value.length>TABLE.limits.register_chars)return false;
  return [...value].every((c,index)=>c==='_'||c>='A'&&c<='Z'||c>='a'&&c<='z'||index>0&&c>='0'&&c<='9');
@@ -55,6 +57,8 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
  for(const [index,block]of blocks.entries()){
   const at='/blocks/'+index,id=block.id;
   if(!identifier(id)||ids.has(id)){issue(at+'/id','块 id 不合式或重复');continue;}ids.add(id);
+  // The line goes to column D of the block's call row. A comparison of two captures has no call row: its line is accepted and stays in the plan.
+  if(block.description!==undefined&&badDescription(block.description))issue(at+'/description','description 是这一块的一句单行描述，写进工作簿 D 列');
   const declaration=TABLE.kinds.find(row=>row.kind===block.kind)!;
   if(!declaration.enabled){meta.deferred.push({pointer:at,missing:'missing'in declaration?String(declaration.missing):'缺该块运行器能力',next_action:'next_action'in declaration?String(declaration.next_action):'维护者补声明后重开运行'});continue;}
   if(block.kind==='CAPTURE_COMPARE'){
@@ -73,10 +77,10 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
    if(!captured||captured.cell)issue(at+'/from','取一格必须引用本条前面保存的完整设备输出');
    if(block.call.args.length||Object.keys(block.call.keywords).length)issue(at+'/call','取一格的参数由已声明的表格和选择条件生成，call只写对象和方法');
    for(const problem of cellSelectionShapeProblems({table:block.table,column:block.column,select:block.select}))issue(at+problem.path,problem.message,problem.fix);
-   const step:PlanStep={...block.call,...cellArguments({table:block.table,column:block.column,select:block.select}),id,origin:at+'/call',block_kind:block.kind,description:'按声明的行列结构取一格',input_register:block.from,cell_input:true,save_as:block.register,...(Array.isArray(block.author_step_refs)?{author_step_refs:block.author_step_refs}:{})};
+   const step:PlanStep={...block.call,...cellArguments({table:block.table,column:block.column,select:block.select}),id,origin:at+'/call',block_kind:block.kind,description:typeof block.description==='string'?block.description:'按声明的行列结构取一格',input_register:block.from,cell_input:true,save_as:block.register,...(Array.isArray(block.author_step_refs)?{author_step_refs:block.author_step_refs}:{})};
    steps.push(step);meta.steps.set(id,steps.length);capture(block.register,id,steps.length,at+'/register',step.object,true);continue;
   }
-  const call=block.call as PlanStep,step:PlanStep={...call,args:[...call.args],keywords:{...call.keywords},id,origin:at+'/call',block_kind:block.kind,...(block.cleanup===true||block.kind==='RESTORE_FROM'?{cleanup:true}:{}),...(Array.isArray(block.author_step_refs)?{author_step_refs:block.author_step_refs}:{})};
+  const call=block.call as PlanStep,step:PlanStep={...call,args:[...call.args],keywords:{...call.keywords},id,origin:at+'/call',block_kind:block.kind,...(typeof block.description==='string'?{description:block.description}:{}),...(block.cleanup===true||block.kind==='RESTORE_FROM'?{cleanup:true}:{}),...(Array.isArray(block.author_step_refs)?{author_step_refs:block.author_step_refs}:{})};
   const output=block.kind==='OBSERVE_ASSERT'||block.kind==='OBSERVE_ONLY'||block.kind==='CAPTURE'||block.kind==='EXPECT_FROM'||block.kind==='STEP'&&block.output!==undefined;
   if(output){step.output=true;if(block.kind==='STEP'&&block.output!==id)issue(at+'/output','STEP 的 output 必须是本块 id');}
   steps.push(step);meta.steps.set(id,steps.length);

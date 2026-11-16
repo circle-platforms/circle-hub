@@ -15,7 +15,8 @@
         "call",
         "cleanup",
         "input_register",
-        "author_step_refs"
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -32,7 +33,8 @@
         "kind",
         "call",
         "assertions",
-        "author_step_refs"
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -47,7 +49,8 @@
         "id",
         "kind",
         "call",
-        "author_step_refs"
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -64,7 +67,8 @@
         "kind",
         "call",
         "register",
-        "author_step_refs"
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -89,7 +93,8 @@
         "table",
         "column",
         "select",
-        "author_step_refs"
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -115,7 +120,8 @@
         "quote",
         "expectation",
         "criterion",
-        "author_step_refs"
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -141,7 +147,8 @@
         "quote",
         "expectation",
         "criterion",
-        "author_step_refs"
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -156,7 +163,8 @@
         "id",
         "kind",
         "call",
-        "author_step_refs"
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -175,7 +183,8 @@
         "register",
         "cleanup",
         "input_register",
-        "author_step_refs"
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -194,7 +203,8 @@
         "call",
         "register",
         "for",
-        "author_step_refs"
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -208,7 +218,8 @@
       "fields": [
         "id",
         "kind",
-        "payload"
+        "payload",
+        "description"
       ],
       "missing": "缺已发布的分布区间、守恒派生规则及运行器能力",
       "next_action": "工作包与执行器维护者补结构声明、来源及合成正反例，升版发布后重开运行；不从回显猜结论"
@@ -224,7 +235,8 @@
       "fields": [
         "id",
         "kind",
-        "payload"
+        "payload",
+        "description"
       ],
       "missing": "缺已发布的成员关系派生规则及运行器能力",
       "next_action": "工作包与执行器维护者补结构声明、来源及合成正反例，升版发布后重开运行；不从回显猜结论"
@@ -240,7 +252,8 @@
       "fields": [
         "id",
         "kind",
-        "payload"
+        "payload",
+        "description"
       ],
       "missing": "缺受认证的退出状态观察通道",
       "next_action": "工作包与执行器维护者补结构声明、来源及合成正反例，升版发布后重开运行；不从回显猜结论"
@@ -439,6 +452,11 @@
         "maxLength": 64
       },
       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
     },
     "table": {
       "type": "object",

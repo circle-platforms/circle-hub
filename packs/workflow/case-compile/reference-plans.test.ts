@@ -12,6 +12,7 @@ import {lockedTreeOf,type FlatCatalog} from './testing/locked-tree.ts';
 import {cellFixture,cellPlan,fixture,plan as blockPlan,call as blockCall,assertion,quote as blockQuote,EXPECTED_REF,BLOCK_ROOT} from './testing/blocks.ts';
 import {frozenTexts,offlineChecks,offlineProblems,offlineReadback,offlineValidation,offlineWorkbook} from './testing/offline-hub.ts';
 import {unique} from './testing/hub-answer.ts';
+import {coreModel} from './testing/workbook-model.ts';
 import {CONTRACT_DOC,PROFILE_DOC,MANIFEST_DOC,COMMAND_CATALOG,COMMAND_IDENTITIES,QUOTE,AUTOID,goodData} from './functions/test-support.ts';
 import {problemsOf} from './functions/plan-boundary.ts';
 import {modelCheckpointsOf} from './functions/delivery.ts';
@@ -102,6 +103,21 @@ test('a block reference plan with a cell selection and a cell input goes through
  assert.equal(select.i,'source_text');assert.equal(select.h,'selected');
  const used=rows.find(row=>row.i==='selected'&&row.method!=='table_cell')!;
  assert.deepEqual(used.args,['demo set {}'],'the selected cell is formatted into the first positional argument only');
+});
+
+test('a block reference plan whose blocks carry descriptions passes every gate of the chain and the descriptions reach column D',()=>{
+ const f=cellFixture(),data=cellPlan(),words=data.blocks.map((_block,index)=>`第 ${index+1} 块：合成说明，不是作者步骤原文`);
+ data.blocks.forEach((block,index)=>{block.description=words[index];});
+ const result=chain(blockSubject(f),data,[blockQuote()]);
+ assert.equal(result.local.ok,true,JSON.stringify(result.local.problems));
+ assert.deepEqual(result.problems,[],JSON.stringify(result.problems));
+ assert.equal(result.validation.result.partitions.delivered[0].requirements.every((row:{requirement:string;status:string})=>row.requirement==='workbook_verified'||row.status==='satisfied'),true);
+ const built=result.workbook(),model=coreModel(built.bytes),read=offlineReadback(built.bytes,built.recipes);assert.ok(read.ok,JSON.stringify(read));if(!read.ok)return;
+ const d=(row:number)=>model.sheets[0]!.rows.find(entry=>entry.number===row)?.cells.find(cell=>cell.reference==='D'+row)?.text??'';
+ const calls=read.executions.filter(execution=>!execution.assertion).map(execution=>d(execution.row));
+ assert.equal(calls.length,data.blocks.length);
+ assert.ok(calls[0]!.endsWith('\n'+words[0]!),'the first row carries the path, then the description');
+ assert.deepEqual(calls.slice(1),words.slice(1),'every other call row carries its block description');
 });
 
 // ---- the gate a descriptive expectation meets in a block plan

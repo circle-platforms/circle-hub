@@ -1,4 +1,8 @@
 // Post-write authored command verifier using Plumb single_cmd_judge / steplist_judge (@1800) with fail-closed gates.
+// Plumb's judgment is unconfirmed and advises; the program decides what it can. InfoTest judges commands by program only (the
+// build's command tree decides whether a command exists and whether its parameters are right) and writes one line per block
+// (desc) that says what the block does. So the intent a command is asked about is the step's own description line, and a
+// command that Plumb rejects but the Hub's own command-tree check accepts is reviewed by a person, not blocked.
 import { realpathSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -9,6 +13,7 @@ import {
   lookupCommandDefinition,
   truncateCmdVerifyState,
 } from '../functions/cmd-recall.ts';
+import { commandTreeAnswer, commandTreeCheck, judgeStep, type PlumbCall, type TreeAnswer } from '../functions/command-tree-verdict.ts';
 import { expandValue } from '../functions/length-literals.ts';
 import { parseManifest } from '../functions/manifest.ts';
 import { confirmationSteps, deviceCommandLines } from '../functions/plan-commands.ts';
@@ -36,9 +41,19 @@ import {
   type PlumbMindmapNode,
 } from '../functions/generated/skills/plumb/plumb-client/index.ts';
 import { loadRunStructuredContext, readKnowledge } from './authoring-brief.ts';
+import { downloadedTree } from './check-plan.ts';
+import type { LockedTree } from '../functions/catalog-selection.ts';
 
 const USAGE =
   'node <技能目录>/tools/cmd-verify-plumb.ts (--file <plan.json> | --plans <plansDir>) (--run <runDir> | --knowledge <knowledgeDir>) [--item <item.json>] [--context-mode <state|node>] [--base-url <url>] [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--out <report.json>] [--key-stdin]';
+/** What the tool does with Plumb's answer; printed by --help, after the usage line. */
+const RULES = [
+  'Plumb 的判断是未确认的模型判断，只作参考；命令对不对由命令树核对说了算（Hub 的 commands_catalog 检查，同 check-plan.ts，在 --run 目录的 run.json 与 knowledge/nodes.jsonl 上本地重算）。',
+  '- 命令树核对通过而 Plumb 拒绝：标需人工复核（review_required），带 Plumb 的概率，不阻断，退出码 0；加 --strict-review 才阻断。',
+  '- 命令树核对不通过：阻断（退出码 1），不论 Plumb 怎么说；先照 check-plan.ts 的同名问题改命令。',
+  '- 命令树核对没有运行或没有结论（没有 --run 的冻结运行与命令树，或这一步缺事实）：只有 Plumb 的判断，它拒绝就阻断，并在这一步写明命令树核对为什么没有结论。',
+  '- 步骤意图取这一步（块或顺序步骤）自己写的 description；没写就用用例标题，并在这一步的 disclosure 里说明，不借脑图里同位置的步骤，也不用作者步骤的摘要。',
+].join('\n');
 
 const OPTIONS: Record<string, boolean> = {
   file: false,
@@ -84,7 +99,9 @@ interface ExtractedCommandUnit {
   definition: string;
   state?: string;
   node?: PlumbMindmapNode;
-  stepIntent: string;
+  intent: StepIntent;
+  /** What the command-tree check of the Hub says of this command, from the run's frozen inputs. */
+  tree: TreeAnswer;
   cleanup: boolean;
 }
 
@@ -174,27 +191,33 @@ function stepCommandGroups(
   return step.args.filter((a): a is string => typeof a === 'string' && a.trim().length > 0);
 }
 
-function stepIntentLabel(item: Record<string, unknown> | undefined, step: PlanStep, stepIdx: number): string {
-  const fields = item && isRecord(item.fields) ? item.fields : {};
-  const rawSteps = Array.isArray(fields.steps) ? fields.steps : [];
-  const refs = step.author_step_refs ?? [];
-  const referencedTexts: string[] = [];
-  for (const r of refs) {
-    const num = Number(r);
-    if (Number.isInteger(num) && num >= 1 && num <= rawSteps.length) {
-      const rs = rawSteps[num - 1];
-      if (isRecord(rs) && typeof rs.text === 'string' && rs.text.trim()) {
-        referencedTexts.push(`${num}. ${rs.text.trim()}`);
-      }
-    }
-  }
-  if (referencedTexts.length > 0) return referencedTexts.join('；');
-  if (typeof step.description === 'string' && step.description.trim()) return step.description.trim();
-  const positional = rawSteps[stepIdx];
-  if (isRecord(positional) && typeof positional.text === 'string' && positional.text.trim()) {
-    return positional.text.trim();
-  }
-  return typeof fields.title === 'string' && fields.title.trim() ? fields.title.trim() : `步骤 ${stepIdx + 1}`;
+/** Where the intent line of a step comes from; a closed set, written into the report. */
+type IntentSource = 'description' | 'case_title' | 'step_number';
+
+interface StepIntent {
+  text: string;
+  source: IntentSource;
+  /** Said in the report when the line is not the one the writer wrote for the step; absent when it is. */
+  disclosure?: string;
+}
+
+/**
+ * The intent line of one step: what the step is for, which is what Plumb is asked the command to serve. It is the step's own
+ * one-line description, as InfoTest's compile model writes one per block (desc) and the flat steps always had; a block and a flat
+ * step are treated alike. A step without one gets the case title, and the report says so. The mind-map step at the same
+ * position is not borrowed (a block plan has no such position: the n-th block says nothing about which mind-map step it serves,
+ * and in round 34 that wrong line made Plumb reject commands the Hub accepted), and neither are the texts of the author steps a
+ * step names in author_step_refs (a summary of what the author wrote is not what this step does: it raised the rejects of the
+ * same plans from 2 to 13).
+ */
+function stepIntentOf(fields: Record<string, unknown>, step: PlanStep, stepIdx: number): StepIntent {
+  const own = typeof step.description === 'string' ? step.description.trim() : '';
+  if (own) return { text: own, source: 'description' };
+  const title = typeof fields.title === 'string' ? fields.title.trim() : '';
+  const none = '这一步没有写 description';
+  return title
+    ? { text: title, source: 'case_title', disclosure: `${none}，步骤意图用的是用例标题；不按位置借脑图里的步骤，也不用作者步骤的摘要` }
+    : { text: `步骤 ${stepIdx + 1}`, source: 'step_number', disclosure: `${none}，用例也没有标题，步骤意图只写了步骤序号；不按位置借脑图里的步骤，也不用作者步骤的摘要` };
 }
 
 function lookupMultiDefinition(knowledge: BriefKnowledge, lines: readonly string[]): string {
@@ -219,6 +242,11 @@ function extractUnitsForPlan(params: {
   itemRecord?: Record<string, unknown>;
   contextMode: 'state' | 'node';
   productLine: string;
+  /** The frozen run (run.json) and its locked command tree, when the run directory holds them. */
+  frozenRun: Record<string, unknown> | null;
+  commandTree: LockedTree | undefined;
+  /** Why the run's tree could not be read, when it exists but is unusable. */
+  treeProblem?: string;
 }): VerifiedCasePlan {
   const expanded = expandValue(params.planObj).value;
   if (!isRecord(expanded) || !isRecord(expanded.slots) || !Array.isArray(expanded.slots.plan) || expanded.slots.plan.length === 0) {
@@ -253,6 +281,8 @@ function extractUnitsForPlan(params: {
   const fields = params.itemRecord && isRecord(params.itemRecord.fields) ? params.itemRecord.fields : {};
   const caseTitle = typeof fields.title === 'string' ? fields.title : '';
   const itemId = String(params.planObj.item ?? '');
+  // The command-tree check of the Hub on this plan, once: the same function check-plan runs, on the frozen run and its tree.
+  const treeCheck = commandTreeCheck({ run: params.frozenRun, item: itemId, slots: expanded.slots, ...(params.commandTree !== undefined ? { catalog: params.commandTree } : {}), ...(params.treeProblem !== undefined ? { catalogProblem: params.treeProblem } : {}) });
   const executedSoFar: string[] = [];
   const units: ExtractedCommandUnit[] = [];
   const overBudgetList: string[] = [];
@@ -266,12 +296,13 @@ function extractUnitsForPlan(params: {
       if (lines.length === 0) continue;
       const task: 'single_cmd_judge' | 'steplist_judge' = lines.length === 1 ? 'single_cmd_judge' : 'steplist_judge';
       const definition = lookupMultiDefinition(params.knowledge, lines);
-      const stepIntent = stepIntentLabel(params.itemRecord, step, stepIdx);
+      const intent = stepIntentOf(fields, step, stepIdx);
       const pointer = step.origin ?? `/steps/${stepIdx}`;
       const commandText = lines.join('\n');
+      const tree = commandTreeAnswer(treeCheck, pointer);
 
       if (params.contextMode === 'node') {
-        const node = buildPlumbNode(params.itemRecord ?? {}, stepIntent, params.productLine);
+        const node = buildPlumbNode(params.itemRecord ?? {}, intent.text, params.productLine);
         units.push({
           unitIndex: units.length,
           pointer,
@@ -280,14 +311,15 @@ function extractUnitsForPlan(params: {
           commandText,
           definition,
           node,
-          stepIntent,
+          intent,
+          tree,
           cleanup: step.cleanup === true,
         });
       } else {
         const currentStepSection = [
           '[当前步骤]',
           `步骤位置: ${pointer}${step.cleanup ? ' (cleanup)' : ''}`,
-          `步骤意图: ${stepIntent}`,
+          `步骤意图: ${intent.text}`,
           `候选命令: ${lines.length === 1 ? lines[0] : `\n${lines.map((l, i) => `${i + 1}. ${l}`).join('\n')}`}`,
         ].join('\n');
         const rendered = truncateCmdVerifyState({
@@ -307,7 +339,8 @@ function extractUnitsForPlan(params: {
           commandText,
           definition,
           state: rendered.state,
-          stepIntent,
+          intent,
+          tree,
           cleanup: step.cleanup === true,
         });
       }
@@ -332,7 +365,7 @@ export async function runCmdVerifyPlumb(
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
     const parsed = parseFlagMap(argv, { booleanFlags: BOOL_FLAGS, valueFlags: VALUE_FLAGS, usage: USAGE });
-    if (parsed.help) return { code: 0, stdout: `${USAGE}\n`, stderr: '' };
+    if (parsed.help) return { code: 0, stdout: `${USAGE}\n${RULES}\n`, stderr: '' };
 
     const strOpt = (flag: string): string | undefined => {
       const val = parsed.flags.get(flag);
@@ -367,15 +400,27 @@ export async function runCmdVerifyPlumb(
 
     let rawPolicy: BriefPolicy | null = ctx?.policy ?? null;
     let rawPolicyObj: unknown = null;
+    // The frozen run and its locked tree, which the command-tree check of the Hub needs; absent they leave that check not run.
+    let frozenRun: Record<string, unknown> | null = null;
+    let commandTree: LockedTree | undefined;
+    let treeProblem: string | undefined;
     if (runDir) {
       try {
         const runObj = await readJsonSafe(join(runDir, 'run.json'));
+        if (isRecord(runObj)) frozenRun = runObj;
         if (isRecord(runObj) && runObj.command_policy !== undefined) {
           rawPolicyObj = runObj.command_policy;
           rawPolicy = rawPolicy ?? policyOf(runObj.command_policy);
         }
       } catch {
         // Standalone tests may omit run.json when using --knowledge.
+      }
+      if (frozenRun) {
+        try {
+          commandTree = await downloadedTree(join(runDir, 'run.json'), frozenRun);
+        } catch (error) {
+          treeProblem = `这次运行下载的命令树读不出来：${error instanceof Error ? error.message : String(error)}`;
+        }
       }
     }
     void rawPolicy;
@@ -421,6 +466,9 @@ export async function runCmdVerifyPlumb(
           itemRecord,
           contextMode,
           productLine,
+          frozenRun,
+          commandTree,
+          ...(treeProblem !== undefined ? { treeProblem } : {}),
         }),
       );
     }
@@ -474,6 +522,8 @@ export async function runCmdVerifyPlumb(
     }
 
     const blockedItems: string[] = [];
+    // Why steps are blocked, to tell the writer what to do about each kind.
+    const causes = { tree: 0, plumb: 0, strict: 0 };
     let reviewRequiredCount = 0;
     const results = activeCases.map((c, caseIdx) => {
       const steps = c.units.map((unit) => {
@@ -483,42 +533,47 @@ export async function runCmdVerifyPlumb(
         const lowerChoice = norm.choice.trim().toLowerCase();
         const isMismatch = norm.match === 0 || lowerChoice === 'no' || lowerChoice === '否';
 
-        let verdict: 'pass' | 'review' | 'reject';
-        let blocked = false;
-        let reviewRequired = false;
-        let note: string | null = null;
-
-        if (action === 'reject') {
-          verdict = 'reject';
-          blocked = true;
-          note = 'Plumb match 落入 reject 区';
-        } else if (action === 'review') {
-          verdict = 'review';
-          reviewRequired = true;
-          reviewRequiredCount += 1;
-          blocked = strictReview;
-          note = '[需人工复核：Plumb match 落入 review 区]';
-        } else if (isMismatch) {
-          verdict = 'reject';
-          blocked = true;
-          note = 'Plumb match 判断命令不匹配';
-        } else {
-          verdict = 'pass';
+        // What Plumb said of the command, unconfirmed; then the command tree's word, which decides where it can.
+        const yes = norm.probabilities?.yes ?? norm.probabilities?.['是'];
+        const said = typeof yes === 'number' ? { yes } : {};
+        const plumb: PlumbCall =
+          action === 'reject'
+            ? { call: 'reject', note: 'Plumb match 落入 reject 区', ...said }
+            : action === 'review'
+              ? { call: 'review', note: '[需人工复核：Plumb match 落入 review 区]', ...said }
+              : isMismatch
+                ? { call: 'reject', note: 'Plumb match 判断命令不匹配', ...said }
+                : { call: 'pass', note: null, ...said };
+        const judged = judgeStep(plumb, unit.tree, strictReview);
+        if (judged.review_required) reviewRequiredCount += 1;
+        if (judged.blocked) {
+          const cause = unit.tree.status === 'refused' ? 'tree' : judged.verdict === 'review' ? 'strict' : 'plumb';
+          causes[cause] += 1;
+          const where = `${basename(c.file)}:${unit.pointer}`;
+          blockedItems.push(
+            cause === 'tree'
+              ? `${where} 命令树核对未通过（${unit.lines[0]}；${unit.tree.problems?.[0]?.message ?? '没有说明'}）`
+              : cause === 'strict'
+                ? `${where} (${unit.lines[0]} -> 需人工复核，--strict-review)`
+                : `${where} (${unit.lines[0]} -> reject，命令树核对没有结论)`,
+          );
         }
-
-        if (blocked) {
-          blockedItems.push(`${basename(c.file)}:${unit.pointer} (${unit.lines[0]} -> ${verdict})`);
-        }
+        const disclosure = [unit.intent.disclosure, judged.disclosure].filter((part): part is string => part !== undefined).join('；');
 
         return {
           pointer: unit.pointer,
           task: unit.task,
           command: unit.commandText,
+          intent: unit.intent.text,
+          intent_source: unit.intent.source,
           definition_attached: unit.definition.length > 0,
-          verdict,
-          blocked,
-          review_required: reviewRequired,
-          ...(note ? { note } : {}),
+          plumb_verdict: plumb.call,
+          tree_check: unit.tree,
+          verdict: judged.verdict,
+          blocked: judged.blocked,
+          review_required: judged.review_required,
+          ...(judged.note ? { note: judged.note } : {}),
+          ...(disclosure ? { disclosure } : {}),
           answer: norm.choice,
           match: norm.match ?? null,
           confidence: norm.confidence,
@@ -554,13 +609,18 @@ export async function runCmdVerifyPlumb(
       await writePrivateFile(outPath, serialized);
     }
     if (blockedItems.length > 0) {
+      const next = [
+        causes.tree > 0 ? '命令树核对未通过的命令按所列问题修正（check-plan.ts 的 commands_catalog 报同样的问题）' : '',
+        causes.plumb > 0 ? '只有 Plumb 判断的命令要么修正，要么带上 --run 的冻结运行目录（run.json 与 knowledge/nodes.jsonl）让命令树核对能跑：命令树核对通过的命令，Plumb 拒绝也只标需人工复核' : '',
+        causes.strict > 0 ? '--strict-review 把需人工复核也当阻断，去掉它则由人复核这些步骤' : '',
+      ].filter(Boolean);
       return {
         code: 1,
         stdout: serialized,
         stderr: formatPlumbCallError(
           '参数无效',
           `Plumb 命令核验未通过（阻断 ${blockedItems.length} 处）：${blockedItems.join('；')}`,
-          '请修正错误命令或参数后重跑 cmd-verify-plumb.ts',
+          `请${next.join('；')}，再重跑 cmd-verify-plumb.ts`,
         ) + '\n',
       };
     }

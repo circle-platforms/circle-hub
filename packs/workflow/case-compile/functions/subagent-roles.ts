@@ -196,7 +196,7 @@ command_scope 与逐条 commands 同时存在时取交集；不以 command_ident
 需要一输出核多期望、跨步保存文字或按原文恢复时按 \`tables/blocks-format.json\` 用 \`blocks\`，不与顺序 \`steps/expects\` 混用；同值比较须双向字面包含，差异比较用全值字面方法不用正则。
 
 \`\`\`text
-组合步骤: blocks 非空，steps/expects=[]；每块唯一 id
+组合步骤: blocks 非空，steps/expects=[]；每块唯一 id；每个块写一行中文 description，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列，保真核对看不到它
 取一格: 先查 contract.json 的 runtime.block_model.cell_inputs 与 cell_methods（及对应 object/method 可用条目）；未声明按缺资料写明执行器规则没有声明，不自造写法；已声明时 SELECT_CELL 的 from 指原输出保存名，table 写 format/separator/columns/header，column 为列号，select 写 row 或多列 where，register 另存；STEP/CONFIG 的 input_register 指单格名，首参数用 {}；数据行按声明字面分隔符与列数识别，取不到/零行/多行停止并带设备原话
 每条判断: 绑定 output、原始 expectation 引用和 quote；block_context.preconditions/causal_links/responders 写全（无写空表），主机观察写明谁应答：responders[].output 填观察块 id（blocks[].id，产生设备原文的那一块，不是 register 保存名，也不是设备名），ref 按 kind 填：device 填冻结 profile.seats[].device 之一（不是执行器对象名，也不是块 id），fixture 填本条前面某个步骤块的 id，bed_service 填冻结清单里服务的 host，undetermined 写 missing 与 next_action；obligations 覆盖全部原始期望（判断 id 或 unmet+missing/next_action）
 描述性期望: 作者没在期望节点写字面（items/<序号>.json 的 expected_nodes 里该节点没有 declaration）时，由模型自己写检查点（如应答含某个记录名），不做复核、不发起 criteria_review：断言写 literal（设备输出里可逐字找到的单行原文，不写“输出含……”之类描述句）和 quote（逐字取该期望原句），criterion 指向 criteria 里一条 {id,expectation,quote,kind,operator,literal 或 count 或 relation,rationale 写为何选它,scope_root 取简报的锁定根}，quote、算子、字面与断言逐项相同；这是模型判断，状态未确认，由上机验证的设备输出裁定

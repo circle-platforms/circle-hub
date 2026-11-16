@@ -68,9 +68,10 @@ export function problemsOf(outcome:Outcome):BoundaryProblem[]{
  * `catalog` is the locked command tree downloaded beside the run (optional: without it the checks report what they cannot judge).
  * A check receives the part of it the Hub gives that check: what the check's own catalog_select function asks for, read by the
  * Hub's walk of the tree (catalog-selection.ts), never the whole tree. Like the Hub, an item whose slot record has a structure
- * problem gets no check at all.
+ * problem gets no check at all. `checks` names the checks to run, by their id in checks.json; the others are left out of the
+ * answer altogether (a caller that wants one verdict of the Hub, such as the command tree's, asks for that check alone).
  */
-export function planBoundary(input:{run:Record<string,unknown>;item:string;slots:unknown;catalog?:LockedTree}):BoundaryResult{
+export function planBoundary(input:{run:Record<string,unknown>;item:string;slots:unknown;catalog?:LockedTree;checks?:readonly string[]}):BoundaryResult{
  const coverage:HubCheckCoverage[]=[],problems:BoundaryProblem[]=[],seen=new Set<string>();
  const add=(row:BoundaryProblem):void=>{const key=canonical(row);if(!seen.has(key)){seen.add(key);problems.push(row);}};
  const frozen=isRecord(input.run.slots)?input.run.slots.schema:undefined;
@@ -86,6 +87,7 @@ export function planBoundary(input:{run:Record<string,unknown>;item:string;slots
   return 'entries' in selected?{entries:selected.entries,complete:tree.complete}:{entries:[],complete:false,missing:selected.missing};
  };
  for(const check of CHECKS.checks){
+  if(input.checks!==undefined&&!input.checks.includes(check.id))continue;
   const why=notRunReason(check),requirements=requirementsOf(check.id);
   if(why!==null){coverage.push({check:check.id,requirements,ran:false,why});continue;}
   if(structure.length){coverage.push({check:check.id,requirements,ran:false,why:'条目的槽位记录有结构问题时 Hub 不跑任何检查；先改结构'});continue;}

@@ -1,6 +1,6 @@
 import SLOT_TABLE from '../slots.schema.json' with {type:'json'};
 import {schema} from './schema.ts';
-import {readBlockSlots,isNormalized} from './blocks.ts';
+import {readBlockSlots,isNormalized,badDescription} from './blocks.ts';
 import {isExpectationBasis,type ExpectationBasis} from './generated/vocabulary.ts';
 // Restricted authored plan slots. This module verifies structure and never generates an execution artifact.
 import { isRecord } from './text.ts';
@@ -30,7 +30,7 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
     if (!isRecord(raw)) { issue(at, '步骤不是对象'); continue; }
     keys(raw, ['object', 'method', 'args', 'keywords','cleanup','description','precondition_source','author_step_refs'], at);
     if(raw.cleanup!==undefined&&typeof raw.cleanup!=='boolean')issue(at+'/cleanup','cleanup 必须是显式布尔声明');
-    if(raw.description!==undefined&&(typeof raw.description!=='string'||!raw.description.trim()||raw.description!==raw.description.trim()||/[\r\n]/.test(raw.description)||raw.description.startsWith('=')))issue(at+'/description','description 是这一步的一句单行描述，写进工作簿 D 列');
+    if(raw.description!==undefined&&badDescription(raw.description))issue(at+'/description','description 是这一步的一句单行描述，写进工作簿 D 列');
     let preconditionSource: { reference: string; text: string } | undefined;
     if (raw.precondition_source !== undefined) {
       if (!isRecord(raw.precondition_source) || typeof raw.precondition_source.reference !== 'string' || !raw.precondition_source.reference || typeof raw.precondition_source.text !== 'string' || !raw.precondition_source.text) {
