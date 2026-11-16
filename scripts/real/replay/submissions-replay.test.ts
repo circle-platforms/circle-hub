@@ -266,6 +266,12 @@ describe('the candidate replay', { skip }, () => {
     assert.ok(changed.comparison!.diffs.every((d) => !d.path.startsWith('/locks/pack')), 'the pack binding is not reported as a difference');
   });
 
+  test('with the recorded packs only the Hub code is the candidate\'s: a stricter pack in the tree changes nothing', async () => {
+    const report = await runReplay({ mode: 'candidate', packs: 'recorded', recorded: await readRecordedExport(exportDir), bundle: await openBundle(bundleDir), repo: candidateRepo, commit: 'candidate', postgres });
+    assert.deepEqual(report.outcomes.map((o) => o.status), report.outcomes.map(() => 'same'));
+    assert.ok(report.outcomes.every((o) => o.rebound === undefined));
+  });
+
   test('a candidate tree without the pack of a run says so for that run', async () => {
     const empty = join(scratch, 'candidate-empty');
     await mkdir(join(empty, 'packs'), { recursive: true });

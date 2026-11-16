@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { main as exportMain } from './export-bundle.ts';
+import { osIsolationAvailable, osIsolationFailure, isolationFailureText } from '../../../hub/rules/api.ts';
 import { openBundle } from './submissions-bundle.ts';
 import { preflight } from './submissions-preflight.ts';
 import { matchPacks } from './submissions-packs.ts';
@@ -39,11 +40,15 @@ async function run(argv: string[]): Promise<number> {
     args: argv,
     options: {
       mode: { type: 'string' }, export: { type: 'string' }, bundle: { type: 'string' }, out: { type: 'string' }, repo: { type: 'string' }, commit: { type: 'string' },
-      windows: { type: 'string' }, run: { type: 'string', multiple: true }, seq: { type: 'string', multiple: true }, limit: { type: 'string' }, 'max-record-bytes': { type: 'string' },
+      windows: { type: 'string' }, packs: { type: 'string' }, run: { type: 'string', multiple: true }, seq: { type: 'string', multiple: true }, limit: { type: 'string' }, 'max-record-bytes': { type: 'string' },
     },
   });
   if (values.mode !== 'faithful' && values.mode !== 'candidate') fail('--mode faithful|candidate');
   if (values.export === undefined || values.out === undefined) fail('--export <dir> 和 --out <dir> 必给');
+  if (values.packs !== undefined && values.packs !== 'commit' && values.packs !== 'recorded') fail('--packs commit|recorded');
+  // A replay never reaches beyond loopback and runs pack functions under the Hub's own sandbox, or it does not run.
+  if ((globalThis as { __replayNetworkGuard?: boolean }).__replayNetworkGuard !== true) fail('回放要用网络守卫启动：node --import scripts/real/replay/submissions-net-guard.mjs scripts/real/replay/replay-submissions.ts run …');
+  if (!(await osIsolationAvailable())) fail(`包内函数的沙箱在这里不能用，回放不跑：${isolationFailureText(osIsolationFailure())}`);
   const repo = values.repo ?? TREE;
   const commit = values.commit ?? execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   const windows = values.windows === undefined ? undefined : (JSON.parse(await readFile(values.windows, 'utf8')) as Window[]);
@@ -52,6 +57,7 @@ async function run(argv: string[]): Promise<number> {
   const bundle = await openOptionalBundle(values.bundle);
   const report = await runReplay({
     mode: values.mode as Mode,
+    ...(values.packs === undefined ? {} : { packs: values.packs as 'commit' | 'recorded' }),
     recorded,
     bundle,
     repo,

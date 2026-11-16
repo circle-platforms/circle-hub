@@ -31,6 +31,7 @@ describe('the report', () => {
     assert.deepEqual(summary.totals, { validations: 3, same: 1, changed: 1, not_replayable: 1, skipped: 4 });
     assert.deepEqual(summary.not_replayable_by_reason, { no_bundle: 1 });
     assert.deepEqual(summary.commits, ['a'.repeat(40), 'b'.repeat(40)]);
+    assert.deepEqual(summary.by_binding, { same_pack: { same: 1, changed: 1, not_replayable: 1 }, rebound: {} });
     assert.deepEqual(summary.normalizations.map((n) => [n.id, n.recorded, n.replayed]), [['trace', 2, 2], ['exit.due', 0, 0]]);
     assert.deepEqual(summary.lines.map((l) => [l.seq, l.status, l.fields]), [[1, 'same', []], [2, 'changed', ['errors']], [3, 'not_replayable', []]]);
   });
@@ -44,6 +45,13 @@ describe('the report', () => {
     assert.match(text, /### 位置 2：run_x/);
     assert.match(text, /\/errors\/0\/message〔code=a\.b item=i requirement=r〕：记录 "旧" → 回放 "新"/);
     assert.match(text, /重算相同/);
+  });
+
+  test('a candidate report keeps the runs that kept their pack apart from the ones that were bound to another version', () => {
+    const bound = part('c'.repeat(40), [outcome(5, 'same', { comparison: same, rebound: { from: 'demo@1.0.0', to: 'demo@1.0.1' } }), outcome(6, 'changed', { comparison: changed, rebound: { from: 'demo@1.0.0', to: 'demo@1.0.1' } }), outcome(7, 'same', { comparison: same })]);
+    const summary = summarize([bound], { ...meta, mode: 'candidate' });
+    assert.deepEqual(summary.by_binding, { same_pack: { same: 1 }, rebound: { same: 1, changed: 1 } });
+    assert.match(renderDetails(summary, [bound]), /任务包没变.*相同 1，不同 0，不能回放 0\n- 改绑到候选的同名任务包.*相同 1，不同 1，不能回放 0/);
   });
 
   test('a report in which nothing could be replayed says so instead of passing', () => {

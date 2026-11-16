@@ -36,6 +36,8 @@ export interface Summary {
   commits: string[];
   totals: { validations: number; same: number; changed: number; not_replayable: number; skipped: number };
   not_replayable_by_reason: Record<string, number>;
+  /** Candidate: the validations whose run kept its pack (the commit's pack is the recorded one) and those that were bound to another version. */
+  by_binding: { same_pack: Record<string, number>; rebound: Record<string, number> };
   normalizations: AppliedNormalization[];
   packs: Array<{ commit: string; pack: string; digest: string; status: string; found?: string | null }>;
   lines: SummaryLine[];
@@ -50,6 +52,7 @@ export function summarize(parts: readonly RunReport[], meta: ReportMeta): Summar
   const lines: SummaryLine[] = [];
   const reasons: Record<string, number> = {};
   const totals = { validations: 0, same: 0, changed: 0, not_replayable: 0, skipped: 0 };
+  const binding = { same_pack: {} as Record<string, number>, rebound: {} as Record<string, number> };
   const normalizations = new Map<string, AppliedNormalization>();
   const packs: Summary['packs'] = [];
   const notes: string[] = [];
@@ -60,6 +63,8 @@ export function summarize(parts: readonly RunReport[], meta: ReportMeta): Summar
     for (const outcome of part.outcomes) {
       totals.validations += 1;
       totals[outcome.status] += 1;
+      const group = outcome.rebound === undefined ? binding.same_pack : binding.rebound;
+      group[outcome.status] = (group[outcome.status] ?? 0) + 1;
       if (outcome.status === 'not_replayable') reasons[outcome.reason?.code ?? 'unknown'] = (reasons[outcome.reason?.code ?? 'unknown'] ?? 0) + 1;
       for (const applied of outcome.comparison?.normalizations ?? []) {
         const known = normalizations.get(applied.id);
@@ -79,7 +84,7 @@ export function summarize(parts: readonly RunReport[], meta: ReportMeta): Summar
     }
   }
   lines.sort((a, b) => a.seq - b.seq);
-  return { schema: SUMMARY_SCHEMA, meta, commits: [...new Set(parts.map((p) => p.commit))], totals, not_replayable_by_reason: reasons, normalizations: [...normalizations.values()], packs, lines, notes };
+  return { schema: SUMMARY_SCHEMA, meta, commits: [...new Set(parts.map((p) => p.commit))], totals, not_replayable_by_reason: reasons, by_binding: binding, normalizations: [...normalizations.values()], packs, lines, notes };
 }
 
 const REASON_TEXT: Record<string, string> = {
@@ -110,6 +115,10 @@ export function renderDetails(summary: Summary, parts: readonly RunReport[]): st
   out.push(`共 ${t.validations} 条核对结果参与回放：相同 ${t.same}，不同 ${t.changed}，不能回放 ${t.not_replayable}；另有 ${t.skipped} 条不属于这棵树（别的发布版本的树负责）或未选中。`);
   if (t.validations > 0 && t.not_replayable === t.validations) out.push('', '**没有一条被真正回放**：缺少 Hub 数据，见下面「不能回放」。这不是通过，也不是失败。');
   else if (t.changed === 0 && t.same > 0) out.push('', `可回放的 ${t.same} 条全部相同。`);
+  if (summary.meta.mode === 'candidate') {
+    const row = (name: string, group: Record<string, number>): string => `- ${name}：相同 ${group.same ?? 0}，不同 ${group.changed ?? 0}，不能回放 ${group.not_replayable ?? 0}`;
+    out.push('', '候选模式按运行有没有改绑任务包分开看：', row('任务包没变（候选里的包摘要和运行启动时一样，只有 Hub 代码是候选的，要全部相同）', summary.by_binding.same_pack), row('改绑到候选的同名任务包（包变了，不同是预期要逐条看的）', summary.by_binding.rebound));
+  }
   if (summary.packs.length > 0) {
     out.push('', '## 任务包摘要：这棵树能否重算出运行启动时的包', '', '| 提交 | 任务包 | 记录的摘要 | 结果 |', '|---|---|---|---|');
     for (const pack of summary.packs) out.push(`| ${pack.commit.slice(0, 10)} | ${pack.pack} | ${pack.digest.slice(0, 16)}… | ${pack.status === 'same' ? '重算相同' : pack.status === 'absent' ? '树里没有这个版本' : `不同（树里是 ${String(pack.found).slice(0, 16)}…）`} |`);

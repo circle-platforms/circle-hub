@@ -9,6 +9,8 @@ import https from 'node:https';
 import dgram from 'node:dgram';
 import { syncBuiltinESMExports } from 'node:module';
 
+// The replay program checks this before it starts: a replay that did not load the guard refuses to run.
+globalThis.__replayNetworkGuard = true;
 const refused = [];
 const loopback = (host) => host === undefined || host === null || host === '' || host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '::ffff:127.0.0.1';
 

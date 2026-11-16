@@ -58,6 +58,11 @@ export interface ValidationOutcome {
 
 export interface RunConfig {
   mode: Mode;
+  /**
+   * Candidate only. `commit` (the default): every run is bound to the commit's pack of the same id, so a changed pack is what is
+   * tried. `recorded`: the runs keep the packs they were started with and only the Hub code is the commit's.
+   */
+  packs?: 'commit' | 'recorded';
   recorded: RecordedExport;
   /** Without a bundle nothing can be replayed: every validation is reported as such. */
   bundle: Bundle | null;
@@ -143,6 +148,12 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
     if (foreign || !chosen) skipped += 1;
     else selected.push(task);
   }
+  // Submissions stored and never validated have no result to replay; they are named once, with the tree of their release.
+  for (const entry of config.recorded.unvalidated) {
+    const window = config.mode === 'faithful' && config.windows !== undefined ? windowOf(config.windows, entry.at) : null;
+    const ours = config.mode === 'candidate' || config.windows === undefined || (window !== null && (window.commit.startsWith(config.commit) || config.commit.startsWith(window.commit)));
+    if (ours && (config.only?.runs === undefined || config.only.runs.includes(entry.run))) notes.push(`提交 ${entry.file}（${entry.at}）没有对应的核对结果：存了，没有核验；回放不覆盖`);
+  }
   const limited = config.only?.limit === undefined ? selected : selected.slice(0, config.only.limit);
   skipped += selected.length - limited.length;
   const releaseOf = (task: ValidationTask): string | null => (config.windows === undefined ? null : windowOf(config.windows, task.at)?.commit ?? null);
@@ -167,11 +178,12 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
   }
 
   // A candidate binds each run to the tree's pack of the same id.
-  const directories = config.mode === 'candidate' ? await findPackDirectories(config.repo) : [];
+  const binds = config.mode === 'candidate' && config.packs !== 'recorded';
+  const directories = binds ? await findPackDirectories(config.repo) : [];
   const rebind = new Map<string, { pack: string; pack_digest: string }>();
   const bindings = new Map<string, { from: string; to: string }>();
   const unbound = new Map<string, { code: string; message: string }>();
-  if (config.mode === 'candidate') {
+  if (binds) {
     const identities = new Map<string, Awaited<ReturnType<typeof packIdentity>>>();
     for (const [run, f] of facts) {
       const id = f.pack.split('@')[0];
@@ -209,7 +221,7 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
   let refusedPacks = new Map<string, string>();
   try {
     if (replayable.length > 0) {
-      const needPublishing = config.mode === 'candidate' && rebind.size > 0;
+      const needPublishing = binds && rebind.size > 0;
       session = await ReplaySession.open({
         bundle: config.bundle,
         ...(config.limits === undefined ? {} : { limits: config.limits }),
