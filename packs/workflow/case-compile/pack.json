@@ -63,8 +63,8 @@
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "6bd2b6dead060a38564b2b210ae2da7c3d3447fbff8a88197257df466c3e95b4",
-      "size": 14712
+      "sha256": "2a0b51a7788653ddca2fb25e869669501c5601ae5e980ab3ee28de6bf3d581eb",
+      "size": 15225
     },
     {
       "path": "checks.json",
@@ -148,13 +148,13 @@
     },
     {
       "path": "functions/binding.ts",
-      "sha256": "906dde0d4aae3f20e88e530abcc5b53aca6b6fc9d412f4dfca8733aa5b4d9533",
-      "size": 6336
+      "sha256": "a5070aec2aeaa5beba5ba77ad9fa15764e8d85e1eb19df3f2a6e14dd61e7822f",
+      "size": 6622
     },
     {
       "path": "functions/block-checks.ts",
-      "sha256": "8364ded0b61f52be67e9ef6ce5ddfbfba1e7dcf79a4be063dfc6f35a7614c5bd",
-      "size": 5773
+      "sha256": "97357ca587669535816ae5682ce6ce46769e99a9258318731525096b78c55fd2",
+      "size": 8754
     },
     {
       "path": "functions/block-expected.ts",
@@ -178,8 +178,8 @@
     },
     {
       "path": "functions/blocks.ts",
-      "sha256": "3616f539911549be7d3032434f50926489b6b42bb472f3bafab800ca5d175128",
-      "size": 11711
+      "sha256": "f9d9ce9cc64123c6086e7e4c0ccda20236429f9d6cbfb71449f45baaa7b7e7e7",
+      "size": 10935
     },
     {
       "path": "functions/call-boundaries.ts",
@@ -203,8 +203,8 @@
     },
     {
       "path": "functions/cell-selection.ts",
-      "sha256": "0b0ae8621c9b3a4b13515a4a02126d634c60540692f6ba65637e8bef0be76c6d",
-      "size": 1578
+      "sha256": "d9334f272a29ca66eaa5ae7a744eab6bc47ecf5fdc663c5b1c7866e05a489d9a",
+      "size": 9814
     },
     {
       "path": "functions/channels.ts",
@@ -213,8 +213,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "171645bc9a161ee3524066772461f55238a79376be3c3e98e8478ce0ed2af59c",
-      "size": 39033
+      "sha256": "cd0eaba7616ca60c59a2496ac6c11d5a71eef54ba1f08919632da3fe542aa8f8",
+      "size": 39045
     },
     {
       "path": "functions/client-cli.ts",
@@ -377,6 +377,11 @@
       "size": 16402
     },
     {
+      "path": "functions/plan-boundary.ts",
+      "sha256": "e285982601093ebea57f8830255a8af4338f6fc227559799fdcd877c9a3a99a1",
+      "size": 8217
+    },
+    {
       "path": "functions/plan-commands.ts",
       "sha256": "a2d32bb14d4730d85b494ae4325fe110fc51bf1ca5a3ecb522ec25de961ebcc9",
       "size": 15943
@@ -452,9 +457,14 @@
       "size": 2670
     },
     {
+      "path": "functions/slot-record.ts",
+      "sha256": "f6ce2a40ad45097882ca2cf8e7ddc2fe269758f6d7e03c503e9fe11c580275c7",
+      "size": 11632
+    },
+    {
       "path": "functions/slots.ts",
-      "sha256": "eefe4610c421d606530e1e7b5e7bba8a43962b19ab2dc895fe6c78eadc5d7016",
-      "size": 9249
+      "sha256": "4159891844c1687440ff7b68e929e613875fc1cf24197d69f305fc67eee3c6c4",
+      "size": 9263
     },
     {
       "path": "functions/source-cache.ts",
@@ -468,8 +478,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "0aee4688788995de230f2718b13f3d2949d91e3c43b8094eae35e5fbd14e2a02",
-      "size": 39828
+      "sha256": "0347565e296427fcc22b762d882f477f6e4120e65a42a1dc9eaca34bd6d552f4",
+      "size": 40341
     },
     {
       "path": "functions/subject.ts",
@@ -483,8 +493,8 @@
     },
     {
       "path": "functions/typed-authority.ts",
-      "sha256": "75916092aaf710cd6c327e962c6f1b483d5f824fbe931d0b42c9946b1de1f6eb",
-      "size": 18197
+      "sha256": "364b43447d54e9cbbaf2fcc7c4141647f0697e6cf373c568555b89a58895140d",
+      "size": 18902
     },
     {
       "path": "functions/typed-contract.ts",
@@ -493,8 +503,8 @@
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "54798eed9a186c96d29f8344b54e6f0aa13533986467900efba1495bc01edc58",
-      "size": 26330
+      "sha256": "1e3d218b12483fef07001ad4d0a51cb31b35f31e7d428025aa32fcc82b3678f9",
+      "size": 26375
     },
     {
       "path": "policies/dispatch.json",
@@ -768,18 +778,18 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "15e11dc5c59f2b821c44307e0c4d66d9f593cb1f5e887375263262f8f600419a",
-      "size": 62264
+      "sha256": "112ac6409bcd3c9fa62c87133b46fddac006d1c7cd076c41e20058e1ab4f66c6",
+      "size": 63874
     },
     {
       "path": "tables/block-plan.schema.json",
-      "sha256": "41a74738c9d503ee8213a1feee1a3a7cf728c9ee1c13834be1691081b41f97a1",
-      "size": 47222
+      "sha256": "8505ee04330d4755c645970838638ab823fc85be98d955181e5b9337f3664d06",
+      "size": 48790
     },
     {
       "path": "tables/blocks-format.json",
-      "sha256": "004d1c0e09b025ebb2c5b7bc7d2158bdc6f43dbb5cb03232fb689974c45a23d0",
-      "size": 17736
+      "sha256": "88bd21125df4b16ed47287cff56374554bbecfe74c3fa1465ff7d937af250599",
+      "size": 19290
     },
     {
       "path": "tables/codes.json",
@@ -913,8 +923,8 @@
     },
     {
       "path": "tools/check-plan.ts",
-      "sha256": "5c73161b524a8028616f2108617278a303703d6b8e8280cebf8c5b4a71949a98",
-      "size": 19809
+      "sha256": "65a63d87da2457c4aeb840d9dde876babc5f004c36d301a61b47f4fc354afd1c",
+      "size": 21007
     },
     {
       "path": "tools/cmd-select-plumb.cli.json",

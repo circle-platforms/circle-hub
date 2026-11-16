@@ -25,28 +25,36 @@ export function renderShape(node:unknown):string{
 }
 const leaf=(node:Node):boolean=>!isRecord(node.properties)&&node.type!=='object'&&node.type!=='array';
 
+const ANNOTATION=new Set(['$schema','title','description']);
+/** The alternatives of one node: leaf alternatives are tried as a list; object alternatives are told apart by the constant their kind declares. */
+function alternatives(branches:Node[],value:unknown,at:string,out:SlotRecordProblem[],lead:(text:string)=>string,wrong:(expected:string)=>void):void{
+ if(branches.every(leaf)){if(!branches.some(branch=>{const probe:SlotRecordProblem[]=[];walk(branch,value,at,probe,lead);return probe.length===0;}))wrong(renderShape({anyOf:branches}));return;}
+ const discriminated=isRecord(value)?branches.find(branch=>isRecord(branch.properties)&&isRecord(branch.properties.kind)&&Object.hasOwn(branch.properties.kind,'const')&&branch.properties.kind.const===value.kind):undefined;
+ if(discriminated){walk(discriminated,value,at,out,lead);return;}
+ if(isRecord(value)&&value.kind!==undefined){
+  const kinds=branches.flatMap(branch=>isRecord(branch.properties)&&isRecord(branch.properties.kind)&&Object.hasOwn(branch.properties.kind,'const')?[shown(branch.properties.kind.const)]:[]);
+  if(kinds.length){out.push({pointer:`${at}/kind`,message:lead(`${at}/kind 要的是${kinds.join(' | ')}，收到的是${shown(value.kind)}`)});return;}
+ }
+ let best:SlotRecordProblem[]|null=null;
+ for(const branch of branches){const probe:SlotRecordProblem[]=[];walk(branch,value,at,probe,lead);if(probe.length===0)return;if(best===null||probe.length<best.length)best=probe;}
+ out.push(...(best??[{pointer:at,message:lead(`${at} 不符合任何一种允许的形状，收到的是${received(value)}`)}]));
+}
+
 /** One value against one node; every problem is reported at its own pointer, in the Hub's wording where the Hub has one. */
 function walk(node:unknown,value:unknown,at:string,out:SlotRecordProblem[],lead:(text:string)=>string):void{
  if(!isRecord(node))return;
  for(const key of Object.keys(node))if(!KNOWN.has(key)){out.push({pointer:at,message:`${at} 的模式用了本地读不懂的关键字 ${key}；重新下载本次运行的完整 run.json，核对不了的部分以 Hub 回执为准`});return;}
  const wrong=(expected:string):void=>{out.push({pointer:at,message:lead(`${at} 要的是${expected}，收到的是${received(value)}`)});};
  if(Array.isArray(node.anyOf)){
-  const branches=node.anyOf.filter(isRecord);
-  if(branches.every(leaf)){if(!branches.some(branch=>{const probe:SlotRecordProblem[]=[];walk(branch,value,at,probe,lead);return probe.length===0;}))wrong(renderShape(node));return;}
-  // Object alternatives are told apart by the constant each declares for its kind; without one the closest alternative answers.
-  const discriminated=isRecord(value)?branches.find(branch=>isRecord(branch.properties)&&isRecord(branch.properties.kind)&&Object.hasOwn(branch.properties.kind,'const')&&branch.properties.kind.const===value.kind):undefined;
-  if(discriminated){walk(discriminated,value,at,out,lead);return;}
-  if(isRecord(value)&&value.kind!==undefined){
-   const kinds=branches.flatMap(branch=>isRecord(branch.properties)&&isRecord(branch.properties.kind)&&Object.hasOwn(branch.properties.kind,'const')?[shown(branch.properties.kind.const)]:[]);
-   if(kinds.length){out.push({pointer:`${at}/kind`,message:lead(`${at}/kind 要的是${kinds.join(' | ')}，收到的是${shown(value.kind)}`)});return;}
-  }
-  let best:SlotRecordProblem[]|null=null;
-  for(const branch of branches){const probe:SlotRecordProblem[]=[];walk(branch,value,at,probe,lead);if(probe.length===0)return;if(best===null||probe.length<best.length)best=probe;}
-  out.push(...(best??[{pointer:at,message:lead(`${at} 不符合任何一种允许的形状，收到的是${received(value)}`)}]));return;
+  alternatives(node.anyOf.filter(isRecord),value,at,out,lead,wrong);
+  // The other keywords of the node apply as well, as in the claim schema of a requirement that asks for evidence.
+  const {anyOf:_alternatives,...rest}=node;
+  if(Object.keys(rest).some(key=>!ANNOTATION.has(key)))walk(rest,value,at,out,lead);
+  return;
  }
  if(Object.hasOwn(node,'const')){if(value!==node.const)wrong(shown(node.const));return;}
  if(Array.isArray(node.enum)){if(!node.enum.includes(value))wrong(renderShape(node));return;}
- const type=node.type;
+ const type=node.type??(isRecord(node.properties)||Array.isArray(node.required)?'object':node.items!==undefined||node.minItems!==undefined||node.maxItems!==undefined?'array':node.minLength!==undefined||node.maxLength!==undefined||node.pattern!==undefined?'string':node.minimum!==undefined||node.maximum!==undefined?'number':undefined);
  if(type==='object'){
   if(!isRecord(value)){wrong('对象');return;}
   const properties=isRecord(node.properties)?node.properties:{};
@@ -69,7 +77,7 @@ function walk(node:unknown,value:unknown,at:string,out:SlotRecordProblem[],lead:
   const length=[...value].length;
   if(typeof node.minLength==='number'&&length<node.minLength)out.push({pointer:at,message:lead(`${at} 要的是至少 ${node.minLength} 个字符的字符串，收到的是 ${length} 个字符`)});
   if(typeof node.maxLength==='number'&&length>node.maxLength)out.push({pointer:at,message:lead(`${at} 要的是至多 ${node.maxLength} 个字符的字符串，收到的是 ${length} 个字符`)});
-  if(typeof node.pattern==='string'){let ok=false;try{ok=new RegExp(node.pattern,'u').test(value);}catch{ok=true;}if(!ok)out.push({pointer:at,message:lead(`${at} 的值 ${shown(value.length>200?value.slice(0,200)+'…':value)} 不是声明的写法${typeof node.description==='string'?`：${node.description}`:''}`)});}
+  if(typeof node.pattern==='string'){let ok=false;try{ok=new RegExp(node.pattern,'u').test(value);}catch{out.push({pointer:at,message:`${at} 的模式用了本地读不懂的正则；核对不了的部分以 Hub 回执为准`});ok=true;}if(!ok)out.push({pointer:at,message:lead(`${at} 的值 ${shown(value.length>200?value.slice(0,200)+'…':value)} 不是声明的写法${typeof node.description==='string'?`：${node.description}`:''}`)});}
   return;
  }
  if(type==='integer'||type==='number'){

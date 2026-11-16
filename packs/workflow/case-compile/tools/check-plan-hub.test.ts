@@ -7,6 +7,7 @@ import {checkPlanObject} from './check-plan.ts';
 import {frozenRun} from '../testing/frozen-run.ts';
 import {cellFixture,cellPlan,fixture,plan as blockPlan,call as blockCall,assertion,quote as blockQuote} from '../testing/blocks.ts';
 import {CONTRACT_DOC,PROFILE_DOC,MANIFEST_DOC,COMMAND_CATALOG,QUOTE,goodData} from '../functions/test-support.ts';
+import {SUBAGENT_ROLES} from '../functions/subagent-roles.ts';
 
 const LEASES={now:'2026-10-23T02:00:00.000Z',entries:[]};
 const flatRun=()=>frozenRun({groups:[{kind:'case-compile',contract:CONTRACT_DOC,profile:PROFILE_DOC,manifest:MANIFEST_DOC,leases:LEASES}],items:[{id:'doc:case-1',label:'合成用例',location:QUOTE.reference,fields:{}}],root:(COMMAND_CATALOG as {root:string}).root,command_policy:(COMMAND_CATALOG as {policy:unknown}).policy});
@@ -22,7 +23,7 @@ test('a plan the Hub accepts passes, and says which Hub checks ran and which did
  assert.match(result.disclosure!,/expected_quotes/);assert.match(result.disclosure!,/scenario_fidelity/);
 });
 
-test('a claim without its text is refused here as the Hub refuses it (run 33, submission 142237, item 0)',()=>{
+test('a claim without its text is refused here as the Hub refuses it (run 33)',()=>{
  const value=flatPlan();delete (value.slots.plan[0] as Record<string,unknown>).text;
  const result=check(value);
  assert.equal(result.ok,false);assert.equal(result.structure_ok,false);
@@ -83,4 +84,9 @@ test('a responder output that is a saved name is refused here with the observati
  const result=check(blockItem(data),blockRun(f as ReturnType<typeof cellFixture>),f.catalog);
  const own=result.problems.find(row=>row.pointer==='/block_context/responders/0/output')!;assert.ok(own,JSON.stringify(result.problems));
  assert.ok(own.message.includes('"keys_raw"')&&own.message.includes('应填块 id b_show')&&own.message.includes('b_dig'),own.message);
+});
+
+test('the writer is told that the claim of a plan carries a text, the field run 33 left out',()=>{
+ const writer=SUBAGENT_ROLES.find(role=>role.key==='plan')!;
+ assert.match(writer.body,/slots\.plan 恰好一条 \{text,quotes\?,data\}，text 必填/);
 });

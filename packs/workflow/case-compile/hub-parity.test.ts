@@ -86,7 +86,7 @@ async function parity(variants:typeof STRUCTURE){
  return {run,frozen,catalog,items,answer};
 }
 describe('check-plan against the real Hub',{skip},()=>{
- it('names the same structure problems for the same slot records',async()=>{
+ it('names the same structure problems for the same slot records',{timeout:180_000},async()=>{
   const result=await parity(STRUCTURE);
   for(const [index,[label]] of STRUCTURE.entries()){
    const item=result.run.items[index].id,local=checkPlanObject('plan.json',result.items[index],result.frozen,result.catalog),hubSide=hubProblems(result.answer,item,index);
@@ -100,7 +100,7 @@ describe('check-plan against the real Hub',{skip},()=>{
   // The very fixture of run 33: the Hub refuses a claim without its text and the local check no longer says ok.
   assert.equal(checkPlanObject('plan.json',result.items[1],result.frozen,result.catalog).ok,false);
  });
- it('names the same problems of the Hub checks for the same plans, and passes the plan the Hub passes',async()=>{
+ it('names the same problems of the Hub checks for the same plans, and passes the plan the Hub passes',{timeout:180_000},async()=>{
   const result=await parity(CHECKED);
   for(const [index,[label]] of CHECKED.entries()){
    const item=result.run.items[index].id,local=checkPlanObject('plan.json',result.items[index],result.frozen,result.catalog),hubSide=hubProblems(result.answer,item,index);
@@ -112,7 +112,7 @@ describe('check-plan against the real Hub',{skip},()=>{
   const over=checkPlanObject('plan.json',result.items[1],result.frozen,result.catalog);assert.equal(over.ok,false);assert.ok(over.problems.some(problem=>problem.message==='效果 effect_0 的计划调用 11 次超过声明预算 10 次'));
   assert.equal(checkPlanObject('plan.json',result.items[0],result.frozen,result.catalog).ok,true,'the plan the Hub passes is passed here');
  });
- it('lists every check the Hub runs on a plan and says why the ones it cannot run were not',async()=>{
+ it('lists every check the Hub runs on a plan and says why the ones it cannot run were not',{timeout:180_000},async()=>{
   const result=await parity(CHECKED),local=checkPlanObject('plan.json',result.items[0],result.frozen,result.catalog);
   assert.deepEqual(local.hub_checks!.map(row=>row.check),CHECKS.checks.map(row=>row.id),'one row per declared check, in declaration order');
   const ran=local.hub_checks!.filter(row=>row.ran).map(row=>row.check),notRun=local.hub_checks!.filter(row=>!row.ran);

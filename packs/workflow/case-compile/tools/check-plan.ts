@@ -33,6 +33,9 @@ export interface CheckProblem {
   requested?:import('../functions/call-boundaries.ts').CallBoundaryGap['requested'];
   allowed_calls?:import('../functions/call-boundaries.ts').CallBoundaryGap['allowed_calls'];
   allowed_seats?:string[];
+  requested_output?:string;
+  allowed_output_ids?:string[];
+  expected_output?:string;
   step_pointer?:string;
   pointer: string;
   message: string;

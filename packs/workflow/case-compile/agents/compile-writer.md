@@ -36,7 +36,7 @@ tools: read_file, write_file, edit_file, ls, glob, grep, execute
 普通参数是单行文字，无首尾空白，不带未展开占位或等号前缀（按原文恢复配置用执行器规定占位除外）。定长名字在创建/使用/查询/清理共用 `{{name:N|前缀|后缀}}` 或 `{{domain:N}}`，由 `check-plan.ts`/`submit-plans.ts` 展开写回，不手打长串。等待秒数为执行器上限内正整数。主机 shell 不能冒充设备命令；每一步都须对应执行器允许的静态参数与效果。禁止手写 `data.fidelity`（留空由保真核对填充）。
 
 ```text
-每条文件: {item,handling,slots}；plan.data.bucket=<测试环境>
+每条文件: {item,handling,slots}；slots.plan 恰好一条 {text,quotes?,data}，text 必填（一句话说明这份计划），计划本体写在 data 里；plan.data.bucket=<测试环境>
 地址替换: replacements=[{case,bed},...]，一一对应，只用于类型确认的地址位置
 顺序步骤: blocks=[]；steps=[{object,method,args,keywords,description,author_step_refs?,precondition_source?},...]；expects 至少一项；手册/示例新增且未列于 sources.states 的前置与逆清理写 precondition_source:{reference,text}；可选 author_step_refs:["1"] 指向对应作者步骤编号（blocks 模式同，用于 fidelity-plumb 绑定）
 设备 method: contract.output_methods 给该设备声明的方法；args 为文字；keywords 为文字或安全非负整数

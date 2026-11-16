@@ -61,3 +61,18 @@ test('the claim shell and the data are reported together, where the Hub names th
  const workflow=slotWorkflow(),hub=slotProblems(workflow,[{id:'i1'} as never],{run:'run_x',model:'m',items:[{item:'i1',handling:'handled',slots:value}]} as never);
  assert.deepEqual(hub.map(problem=>problem.path).sort(),['/items/0/slots/plan/0/text'],'the Hub stops at the claim shell');
 });
+
+// A requirement that asks for evidence adds alternatives next to the claim's own fields (the Hub's claim schema for such a pack);
+// both apply, and an alternative that only names required fields is read as an object.
+const evidence={type:'object',properties:{plan:{type:'array',minItems:1,items:{type:'object',additionalProperties:false,required:['text'],properties:{text:{type:'string',minLength:1},grounds:{type:'array',items:{type:'string'}},quotes:{type:'array',items:{type:'string'}}},anyOf:[{required:['grounds'],properties:{grounds:{minItems:1}}},{required:['quotes'],properties:{quotes:{minItems:1}}}]}}}};
+test('alternatives apply together with the claim fields they sit beside',()=>{
+ assert.deepEqual(slotRecordProblems(evidence,{plan:[{text:'x',quotes:['q']}]}),[]);
+ assert.deepEqual(slotRecordProblems(evidence,{plan:[{text:'x',grounds:['g']}]}),[]);
+ const none=slotRecordProblems(evidence,{plan:[{text:'x'}]});assert.ok(none.length>=1,'neither grounds nor quotes');
+ assert.deepEqual(slotRecordProblems(evidence,{plan:[{text:'x',quotes:['q'],extra:1}]}).map(row=>row.pointer),['/slots/plan/0/extra'],'the claim\'s own fields are still judged');
+ assert.deepEqual(slotRecordProblems(evidence,{plan:[{quotes:['q']}]}).map(row=>row.pointer),['/slots/plan/0/text']);
+});
+test('a pattern the reader cannot evaluate is reported instead of passing the value',()=>{
+ const schema={type:'object',properties:{plan:{type:'array',items:{type:'object',properties:{text:{type:'string',pattern:'('}}}}}};
+ assert.ok(slotRecordProblems(schema,{plan:[{text:'x'}]}).some(row=>row.message.includes('读不懂的正则')));
+});

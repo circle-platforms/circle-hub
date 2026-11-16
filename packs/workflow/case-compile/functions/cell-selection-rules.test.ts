@@ -37,7 +37,7 @@ test(`separator ${label} is refused at its own field with its value and the G ru
 });
 
 test('a separator is judged by the cell rules alone, whatever the ordinary value policy says about its neighbours',()=>{
- for(const legal of [':','|',',','=','+','::','->','{{','}}','a b','é','x=y','1a','_']){
+ for(const legal of [':','|','=','+','::','->','{{','}}','a b','é','x=y','1a','_']){
   const input=separator(legal),gaps=gapsOf(input);assert.deepEqual(gaps,[],legal);
   const outcomes=checkContractShape(input.subject(input.slots));assert.ok(outcomes.every(row=>row.verdict==='support'),legal+JSON.stringify(outcomes));
   const read=readWorkbook(coreModel(generateWorkbook(input)),input);assert.ok(read.ok,legal+JSON.stringify(read));
