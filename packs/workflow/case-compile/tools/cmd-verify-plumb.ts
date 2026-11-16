@@ -9,6 +9,7 @@ import {
   lookupCommandDefinition,
   truncateCmdVerifyState,
 } from '../functions/cmd-recall.ts';
+import { authorStepsOf, type AuthorStep } from '../functions/fidelity.ts';
 import { expandValue } from '../functions/length-literals.ts';
 import { parseManifest } from '../functions/manifest.ts';
 import { confirmationSteps, deviceCommandLines } from '../functions/plan-commands.ts';
@@ -84,7 +85,7 @@ interface ExtractedCommandUnit {
   definition: string;
   state?: string;
   node?: PlumbMindmapNode;
-  stepIntent: string;
+  intent: StepIntent;
   cleanup: boolean;
 }
 
@@ -174,27 +175,68 @@ function stepCommandGroups(
   return step.args.filter((a): a is string => typeof a === 'string' && a.trim().length > 0);
 }
 
-function stepIntentLabel(item: Record<string, unknown> | undefined, step: PlanStep, stepIdx: number): string {
-  const fields = item && isRecord(item.fields) ? item.fields : {};
-  const rawSteps = Array.isArray(fields.steps) ? fields.steps : [];
-  const refs = step.author_step_refs ?? [];
-  const referencedTexts: string[] = [];
-  for (const r of refs) {
-    const num = Number(r);
-    if (Number.isInteger(num) && num >= 1 && num <= rawSteps.length) {
-      const rs = rawSteps[num - 1];
-      if (isRecord(rs) && typeof rs.text === 'string' && rs.text.trim()) {
-        referencedTexts.push(`${num}. ${rs.text.trim()}`);
-      }
+/** Where the intent line of a step comes from; a closed set, written into the report. */
+type IntentSource = 'author_steps' | 'description' | 'mindmap_position' | 'case_title' | 'step_number';
+
+interface StepIntent {
+  text: string;
+  source: IntentSource;
+  /** One sentence for the reader of the report: where the text came from and what was passed over. */
+  disclosure: string;
+}
+
+const oneLine = (text: string): string => text.replace(/\s+/gu, ' ').trim();
+
+/**
+ * The intent line of one step: what the case author meant the step to do, which is what Plumb is asked the command to serve.
+ * A step names the author steps it realizes in author_step_refs, the ids of the action atoms of the frozen recomposition record
+ * (the author steps of the fidelity brief); its intent is their text, the adapted text where the recomposition adapted the atom,
+ * in the order of the references. A reference that is no author step of this case contributes nothing. A sequential step
+ * without such a reference keeps its own description, then the mind-map step at the same position, then the case title. A
+ * block plan has no such position (the n-th block says nothing about which mind-map step it serves), so a block without one
+ * gets the case title, and the disclosure says so.
+ */
+function stepIntentOf(params: {
+  fields: Record<string, unknown>;
+  authorSteps: readonly AuthorStep[];
+  blockPlan: boolean;
+  step: PlanStep;
+  stepIdx: number;
+}): StepIntent {
+  const { fields, authorSteps, blockPlan, step, stepIdx } = params;
+  const authored = new Map(authorSteps.map((author) => [author.n, { text: oneLine(author.text), adapted: author.author_text !== undefined && author.author_text !== author.text }] as const));
+  const used: string[] = [];
+  const passedOver: string[] = [];
+  for (const ref of new Set(step.author_step_refs ?? [])) (authored.get(ref)?.text ? used : passedOver).push(ref);
+  const known = authorSteps.length ? `本用例的作者步骤编号：${authorSteps.map((author) => author.n).join('、')}` : '本用例没有可对照的作者步骤';
+  const skipped = passedOver.length ? `author_step_refs 里的 ${passedOver.join('、')} 不是本用例的作者步骤编号（${known}）` : '';
+  if (used.length > 0) {
+    return {
+      text: used.map((ref) => authored.get(ref)!.text).join('；'),
+      source: 'author_steps',
+      disclosure: `步骤意图取自作者步骤 ${used.map((ref) => (authored.get(ref)!.adapted ? `${ref}（取适配后的写法）` : ref)).join('、')}${skipped ? `；${skipped}，没有采用` : ''}`,
+    };
+  }
+  const why = skipped || '这一步没有写 author_step_refs';
+  if (!blockPlan) {
+    if (typeof step.description === 'string' && step.description.trim()) {
+      return { text: step.description.trim(), source: 'description', disclosure: `步骤意图取自这一步写的描述（description）：${why}` };
+    }
+    const rawSteps = Array.isArray(fields.steps) ? fields.steps : [];
+    const positional = rawSteps[stepIdx];
+    if (isRecord(positional) && typeof positional.text === 'string' && positional.text.trim()) {
+      return {
+        text: positional.text.trim(),
+        source: 'mindmap_position',
+        disclosure: `步骤意图取自脑图里同一序号的步骤：${why}；按序号对应只是近似，不能保证它就是这一步实现的那一步`,
+      };
     }
   }
-  if (referencedTexts.length > 0) return referencedTexts.join('；');
-  if (typeof step.description === 'string' && step.description.trim()) return step.description.trim();
-  const positional = rawSteps[stepIdx];
-  if (isRecord(positional) && typeof positional.text === 'string' && positional.text.trim()) {
-    return positional.text.trim();
-  }
-  return typeof fields.title === 'string' && fields.title.trim() ? fields.title.trim() : `步骤 ${stepIdx + 1}`;
+  const title = typeof fields.title === 'string' ? fields.title.trim() : '';
+  const none = blockPlan ? '块计划不按位置借用脑图步骤' : '脑图里也没有同一序号的步骤';
+  return title
+    ? { text: title, source: 'case_title', disclosure: `步骤意图取自用例标题：${why}；${none}` }
+    : { text: `步骤 ${stepIdx + 1}`, source: 'step_number', disclosure: `没有可用的文字，步骤意图只写了步骤序号：${why}；${none}；用例也没有标题` };
 }
 
 function lookupMultiDefinition(knowledge: BriefKnowledge, lines: readonly string[]): string {
@@ -252,6 +294,9 @@ function extractUnitsForPlan(params: {
 
   const fields = params.itemRecord && isRecord(params.itemRecord.fields) ? params.itemRecord.fields : {};
   const caseTitle = typeof fields.title === 'string' ? fields.title : '';
+  // The frozen recomposition record of the plan run item: the same author steps the fidelity brief lists (tools/fidelity-brief.ts).
+  const authorSteps = authorStepsOf(isRecord(fields.recomposition) ? fields.recomposition.record : undefined);
+  const blockPlan = checked.slots.blocks.length > 0;
   const itemId = String(params.planObj.item ?? '');
   const executedSoFar: string[] = [];
   const units: ExtractedCommandUnit[] = [];
@@ -266,12 +311,12 @@ function extractUnitsForPlan(params: {
       if (lines.length === 0) continue;
       const task: 'single_cmd_judge' | 'steplist_judge' = lines.length === 1 ? 'single_cmd_judge' : 'steplist_judge';
       const definition = lookupMultiDefinition(params.knowledge, lines);
-      const stepIntent = stepIntentLabel(params.itemRecord, step, stepIdx);
+      const intent = stepIntentOf({ fields, authorSteps, blockPlan, step, stepIdx });
       const pointer = step.origin ?? `/steps/${stepIdx}`;
       const commandText = lines.join('\n');
 
       if (params.contextMode === 'node') {
-        const node = buildPlumbNode(params.itemRecord ?? {}, stepIntent, params.productLine);
+        const node = buildPlumbNode(params.itemRecord ?? {}, intent.text, params.productLine);
         units.push({
           unitIndex: units.length,
           pointer,
@@ -280,14 +325,14 @@ function extractUnitsForPlan(params: {
           commandText,
           definition,
           node,
-          stepIntent,
+          intent,
           cleanup: step.cleanup === true,
         });
       } else {
         const currentStepSection = [
           '[当前步骤]',
           `步骤位置: ${pointer}${step.cleanup ? ' (cleanup)' : ''}`,
-          `步骤意图: ${stepIntent}`,
+          `步骤意图: ${intent.text}`,
           `候选命令: ${lines.length === 1 ? lines[0] : `\n${lines.map((l, i) => `${i + 1}. ${l}`).join('\n')}`}`,
         ].join('\n');
         const rendered = truncateCmdVerifyState({
@@ -307,7 +352,7 @@ function extractUnitsForPlan(params: {
           commandText,
           definition,
           state: rendered.state,
-          stepIntent,
+          intent,
           cleanup: step.cleanup === true,
         });
       }
@@ -319,7 +364,7 @@ function extractUnitsForPlan(params: {
     throw plumbFailure(
       '参数无效',
       `以下命令上下文超过 Plumb @1800 token 上限，拒绝截断并停用：${overBudgetList.join('；')}`,
-      '请拆短单步命令列表或精简当前步骤描述',
+      '请拆短单步命令列表、精简当前步骤描述，或少引用几条作者步骤（author_step_refs）',
     );
   }
 
@@ -514,6 +559,9 @@ export async function runCmdVerifyPlumb(
           pointer: unit.pointer,
           task: unit.task,
           command: unit.commandText,
+          intent: unit.intent.text,
+          intent_source: unit.intent.source,
+          disclosure: unit.intent.disclosure,
           definition_attached: unit.definition.length > 0,
           verdict,
           blocked,

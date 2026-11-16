@@ -268,8 +268,8 @@
     },
     {
       "path": "functions/fidelity.ts",
-      "sha256": "c33bb53cc54d10233ee647be3d22edc9e328d77b5769cd14761f9119b6e9b4ce",
-      "size": 31532
+      "sha256": "04cd78ae66efee8666c0b382b7707f5a2e946de5085b7eaf30a273e6f100c235",
+      "size": 32299
     },
     {
       "path": "functions/flat-expected.ts",
@@ -953,8 +953,8 @@
     },
     {
       "path": "tools/cmd-verify-plumb.ts",
-      "sha256": "022f636df74abac0f66821a46d1fa332a1eee9748d6dc92c9c09125971110fb3",
-      "size": 21952
+      "sha256": "a334c913add47a2761ae96c19d7a23dca78d71603cea66737154758971e9fd8e",
+      "size": 25267
     },
     {
       "path": "tools/command-domain-precheck.cli.json",

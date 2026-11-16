@@ -165,17 +165,18 @@ function evidence(raw: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
- * The brief of one case, or null when its recomposition record holds no authored action (nothing to audit). `record` is the
- * frozen recompose-record@1 the plan item carries; `plan` the plan data as submitted, of which `fidelity` is not part.
+ * The author steps of a frozen recompose-record@1: its action atoms in record order, none for a record without any. n is the atom
+ * id, the closed set author_step_refs draw from. text is what the case says that step does: the author's words, or the adapted
+ * text where the recomposition adapted the atom (author_text then keeps the author's own words). The one place that decides
+ * this, for the brief below and for every tool that has to say what a step of a plan realizes.
  */
-export function fidelityBrief(item: string, record: unknown, plan: unknown): FidelityBrief | null {
-  if (!isRecord(record) || !Array.isArray(record.atoms)) return null;
+export function authorStepsOf(record: unknown): AuthorStep[] {
+  if (!isRecord(record) || !Array.isArray(record.atoms)) return [];
   const ledgers = isRecord(record.ledgers) ? record.ledgers : {};
   const originals = Array.isArray(ledgers.original) ? ledgers.original.filter(isRecord) : [];
   const adapted = Array.isArray(ledgers.adapted) ? ledgers.adapted.filter(isRecord) : [];
-  const atoms = record.atoms.filter(isRecord);
   const steps: AuthorStep[] = [];
-  for (const atom of atoms) {
+  for (const atom of record.atoms.filter(isRecord)) {
     if (atom.kind !== 'action' || typeof atom.id !== 'string') continue;
     const original = text(originals.find((o) => o.atom === atom.id)?.text) || text(atom.text);
     const adaptation = adapted.find((a) => a.atom === atom.id);
@@ -184,7 +185,19 @@ export function fidelityBrief(item: string, record: unknown, plan: unknown): Fid
     const basis = cut(text(adaptation.equivalence_reason), LIMITS.basis);
     steps.push({ n: atom.id, text: cut(text(adaptation.text) || original, LIMITS.text), author_text: cut(original, LIMITS.text), ...(commands.length ? { adapted_commands: commands } : {}), ...(basis ? { basis } : {}) });
   }
+  return steps;
+}
+
+/**
+ * The brief of one case, or null when its recomposition record holds no authored action (nothing to audit). `record` is the
+ * frozen recompose-record@1 the plan item carries; `plan` the plan data as submitted, of which `fidelity` is not part.
+ */
+export function fidelityBrief(item: string, record: unknown, plan: unknown): FidelityBrief | null {
+  if (!isRecord(record) || !Array.isArray(record.atoms)) return null;
+  const steps = authorStepsOf(record);
   if (!steps.length) return null;
+  const ledgers = isRecord(record.ledgers) ? record.ledgers : {};
+  const atoms = record.atoms.filter(isRecord);
   const contract = isRecord(record.contract) ? record.contract : {};
   const intent = isRecord(contract.intent) ? text(contract.intent.text) : '';
   const data = isRecord(plan) ? plan : {};
