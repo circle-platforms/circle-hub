@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "plumb",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "kind": "skill",
   "title": "Plumb 判断客户端",
   "description": "客户端侧 Plumb 推理网关与状态客户端，仅提供受 TLS 与主机锁定约束的只读/判别工具及内嵌客户端模块，不代 Hub 调用模型。",

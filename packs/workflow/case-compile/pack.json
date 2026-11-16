@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.21.3",
+  "version": "3.21.4",
   "kind": "workflow",
   "dependencies": [
     {
@@ -34,7 +34,7 @@
     },
     {
       "pack": "plumb",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "module": "plumb-client"
     }
   ],
@@ -603,7 +603,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "2d805a7857e82ed355654599c5f4ee9c53ca3d72fbfaed6bab34f0bf640fc89e",
+      "sha256": "80b2f6b5a18fd014df619cf532b42aebd39e9a33ccbfa4fe480ad0a707fb89b2",
       "size": 202654
     },
     {
@@ -648,7 +648,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "5b7766236c342aa561cebea30be03d74d7e8dbf0ace175c44b8196a8014bdd18",
+      "sha256": "5331c2643e0388b974ad69f60c708f523f56881ba9b29a4656f4a1f15f11b61c",
       "size": 202658
     },
     {
@@ -733,7 +733,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "107680f78df6c49e65dcbcfac09dcca62cd5b91b96f0ceb18f3650d710fbba7e",
+      "sha256": "ac1ffaea7fa00dbdfa38ee5c98c260e4bceb655780e6fa287e6beb3aae0b0cb4",
       "size": 202608
     },
     {
@@ -778,7 +778,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "0810de483c40671218d80b5bb36bd668c3839616e13595203c93e869c642d42f",
+      "sha256": "f34f436d35b527c5ac34dd6aaad53ef0b3f5ce4e56edfe4ea992d5fbfa69e4e5",
       "size": 202612
     },
     {
@@ -873,7 +873,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "24e9463fcb21252567af0af3e891e8e185049fd581b3895739b3238962366978",
+      "sha256": "99934a58ff147a59f5a6d73796c14ff5534dafe98bac5a393d0458e6e650da6e",
       "size": 406
     },
     {
