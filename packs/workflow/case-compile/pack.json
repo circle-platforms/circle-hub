@@ -63,8 +63,8 @@
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "2a0b51a7788653ddca2fb25e869669501c5601ae5e980ab3ee28de6bf3d581eb",
-      "size": 15225
+      "sha256": "edfe584f6f9d7e703cf4bb4f47c6724f71296819d9a328364db462a07f454b6c",
+      "size": 15317
     },
     {
       "path": "checks.json",
@@ -253,8 +253,8 @@
     },
     {
       "path": "functions/fidelity-bind.ts",
-      "sha256": "3b263864500a6ea3a00d8e82ccfdc526ab258c465cb24311ed7983b0ff60c361",
-      "size": 8759
+      "sha256": "c331bcfdc1c8abd9544123f94d4a57525bd437875701a186c9c38164ded505b3",
+      "size": 8989
     },
     {
       "path": "functions/fidelity-render.ts",
@@ -263,8 +263,8 @@
     },
     {
       "path": "functions/fidelity.ts",
-      "sha256": "51e16a0bc065941e42b07b6959d6b49c3362d7701121e7454e882136eb210410",
-      "size": 30514
+      "sha256": "c33bb53cc54d10233ee647be3d22edc9e328d77b5769cd14761f9119b6e9b4ce",
+      "size": 31532
     },
     {
       "path": "functions/flat-expected.ts",
@@ -483,8 +483,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "0347565e296427fcc22b762d882f477f6e4120e65a42a1dc9eaca34bd6d552f4",
-      "size": 40341
+      "sha256": "a6ac74d45fa26b08884c45add5c72451f5e688f098d95fe28bee9f0b1931c1c9",
+      "size": 40433
     },
     {
       "path": "functions/subject.ts",
@@ -783,18 +783,18 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "112ac6409bcd3c9fa62c87133b46fddac006d1c7cd076c41e20058e1ab4f66c6",
-      "size": 63874
+      "sha256": "85e9ce9dbb40d5edeeacf424be02635fc59c44615cef11cd6d10445540a04522",
+      "size": 65734
     },
     {
       "path": "tables/block-plan.schema.json",
-      "sha256": "8505ee04330d4755c645970838638ab823fc85be98d955181e5b9337f3664d06",
-      "size": 48790
+      "sha256": "e69f5573d813910301c392138568d386bbc7006d2117b14ccc75db056e8b052c",
+      "size": 50650
     },
     {
       "path": "tables/blocks-format.json",
-      "sha256": "88bd21125df4b16ed47287cff56374554bbecfe74c3fa1465ff7d937af250599",
-      "size": 19290
+      "sha256": "95fdbfe182cebf8461ea7a03ae69fab818d420754213247698b6f93773e94474",
+      "size": 19476
     },
     {
       "path": "tables/codes.json",
@@ -1013,8 +1013,8 @@
     },
     {
       "path": "tools/fidelity-brief.ts",
-      "sha256": "916de245789dd7fadcc7b2ac904dc15d7ac7983d78140a561dbcfb3ec3b064b5",
-      "size": 5994
+      "sha256": "7edb878665b4022b7bca16a03eb8c70e5211e409e2034af422af8240f38c10d6",
+      "size": 6709
     },
     {
       "path": "tools/fidelity-plumb.cli.json",

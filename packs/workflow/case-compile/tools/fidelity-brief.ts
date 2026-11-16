@@ -13,7 +13,7 @@ import { realpathSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fidelityBrief, type FidelityBrief } from '../functions/fidelity.ts';
+import { fidelityBrief, unknownAuthorStepRefs, type FidelityBrief } from '../functions/fidelity.ts';
 import { planDataOf } from '../functions/subject.ts';
 import { parseCliOptions, isRecord } from '../functions/text.ts';
 import { expandPlanFiles, parsedPlanFile } from './submit-plans.ts';
@@ -30,6 +30,7 @@ export async function planCases(runPath: string, plans: string): Promise<{ cases
   const items = new Map(run.items.filter(isRecord).filter((i) => typeof i.id === 'string').map((i) => [i.id as string, i]));
   await expandPlanFiles(plans);
   const cases: PlanCase[] = [], skipped: Array<{ file: string; reason: string }> = [];
+  const refused: string[] = [];
   for (const file of (await readdir(plans)).filter((name) => name.endsWith('.json')).sort()) {
     const value = parsedPlanFile(file, await readFile(join(plans, file)));
     if (!isRecord(value) || typeof value.item !== 'string') { skipped.push({ file, reason: '不是用例自动化用例文件（没有 item）' }); continue; }
@@ -42,8 +43,11 @@ export async function planCases(runPath: string, plans: string): Promise<{ cases
     const fields = isRecord(item.fields) ? item.fields : {};
     const brief = fidelityBrief(value.item, isRecord(fields.recomposition) ? fields.recomposition.record : undefined, plan);
     if (!brief) { skipped.push({ file, reason: '缺少用例重组时的原始用例步骤，尚未核对自动化用例' }); continue; }
+    const unknownRefs = unknownAuthorStepRefs(brief, plan);
+    if (unknownRefs.length) refused.push(`${file}（${value.item}）：${unknownRefs.map((r) => `${r.pointer} 写的是 "${r.value}"`).join('；')}；本条作者步骤编号：${brief.author_steps.map((step) => step.n).join('、')}`);
     cases.push({ file, base: file.replace(/\.json$/, ''), item: value.item, value, brief });
   }
+  if (refused.length) throw new CallFailure('invalid_parameters', `author_step_refs 要写本条作者步骤的编号（重组记录里作者步骤的 id），这些不是：${refused.join('。')}`, '把每个 author_step_refs 改成它实现的那条作者步骤的编号（如 "a2"）后重跑；说不清对应哪条作者步骤的块不写 author_step_refs');
   return { cases, skipped };
 }
 const readText = async (path: string): Promise<string | null> => { try { return await readFile(path, 'utf8'); } catch { return null; } };

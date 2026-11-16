@@ -120,7 +120,7 @@ export function mapPlumbSequenceToFidelityRow(params: {
   }
 
   if (verdict === 'preserved' && stepIndices.length === 0) {
-    throw new CallFailure('invalid_parameters',`作者步骤 ${authorStep.n} 缺确定的计划步骤对应，不能把缺对应依据判成未实现`,'在计划中补 author_step_refs 或完整 adapted_commands 对应后重跑');
+    throw new CallFailure('invalid_parameters',`${brief.item} 的作者步骤 ${authorStep.n} 缺确定的计划步骤对应（没有块的 author_step_refs 含 "${authorStep.n}"，也没有与它的 adapted_commands 整行相同的命令），不能把缺对应依据判成未实现；本条作者步骤编号：${brief.author_steps.map((step) => step.n).join('、')}`,`在实现这条作者步骤的块上写 author_step_refs:["${authorStep.n}"] 后重跑`);
   }
 
   if (partitioned.exemptSummaryLines.length > 0 && verdict === 'preserved') {

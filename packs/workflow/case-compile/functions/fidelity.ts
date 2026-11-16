@@ -211,6 +211,27 @@ export function fidelityBrief(item: string, record: unknown, plan: unknown): Fid
   return { ...body, brief_sha256: sha(body) };
 }
 
+/**
+ * author_step_refs values of a plan that are not author step ids of this case. The ids are a closed set, the action atoms
+ * of the frozen recomposition record (the n of each brief author step, e.g. "a2"); pointers are relative to the plan data.
+ */
+export function unknownAuthorStepRefs(brief: FidelityBrief, plan: unknown): Array<{ pointer: string; value: string }> {
+  const known = new Set(brief.author_steps.map((step) => step.n));
+  const data = isRecord(plan) ? plan : {};
+  const out: Array<{ pointer: string; value: string }> = [];
+  for (const field of ['blocks', 'steps'] as const) {
+    const list = data[field];
+    if (!Array.isArray(list)) continue;
+    list.forEach((entry, k) => {
+      if (!isRecord(entry) || !Array.isArray(entry.author_step_refs)) return;
+      entry.author_step_refs.forEach((value, j) => {
+        if (typeof value !== 'string' || !known.has(value)) out.push({ pointer: `/${field}/${k}/author_step_refs/${j}`, value: String(value) });
+      });
+    });
+  }
+  return out;
+}
+
 export type FidelityCode = 'fidelity_missing' | 'fidelity_stale' | 'fidelity_shape' | 'scenario_changed' | 'author_step_unrealized' | 'author_step_unbound';
 export interface FidelityProblem { code: FidelityCode; pointer: string; message: string }
 export interface ModelDisclosure {
