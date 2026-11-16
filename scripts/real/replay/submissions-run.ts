@@ -267,6 +267,10 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
         outcomes.push(make(task, { status: 'not_replayable', reason: { code: 'served_from_record', message: '回放时 Hub 把当时已存的同一份提交的结果原样答了回来，没有重新核对；这条核对原是强制重验（维护轮）产生的，本回放不能强制重验' }, notes: outcome.notes, misses: outcome.misses, ms: outcome.ms }));
         continue;
       }
+      if (outcome.result === undefined && task.ordinal >= 2) {
+        outcomes.push(make(task, { status: 'not_replayable', reason: { code: 'recheck_not_reproduced', message: '这条核对原是同一份提交之后的强制重验（维护轮，第 ' + task.ordinal + ' 次），回放调用提交函数时 Hub 没有再产生核对结果；本回放不能强制重验' }, ...(outcome.answer === undefined ? {} : { answer: outcome.answer }), notes: outcome.notes, misses: outcome.misses, ms: outcome.ms }));
+        continue;
+      }
       const comparison = compareResults(recordedValidation, outcome.result ?? null, { rebound: binding !== undefined });
       outcomes.push(make(task, {
         status: comparison.same ? 'same' : 'changed',
