@@ -30,8 +30,9 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   const set = volumeOrder(Array.isArray(recipes) ? recipes : [recipes]).ordered; if (!set.length) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '没有可核对的自动化用例' }] };
   const plans: PlanSlots[] = [];
   for (const recipe of set) { const slots = readSlots(recipe.slots); if (!slots.ok) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '自动化用例不完整' }] }; plans.push(slots.slots); }
-  if (new Set(plans.map((plan) => !!blockMeta(plan))).size !== 1) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '同一份自动化用例 Excel 中的自动化用例必须使用同一种写法' }] };
-  const recipe = set[0]; const plan = plans[0]; const profile = recipe.profile; const book = profile.workbook;
+  // Block plans and flat plans may share one workbook: the runner reads every row alike (H and I are simply empty on a flat row), and the
+  // generator writes each case with its own plan. The contract, profile, build and generator are the set's (generateWorkbookSet), the rows are each case's.
+  const recipe = set[0]; const profile = recipe.profile; const book = profile.workbook;
   let template: WorkbookTemplate;
   try { template = readTemplate(book); } catch (error) { if (error instanceof TemplateError) return { ok: false, problems: [{ rule: 'template', pointer: '/profile/workbook/template', message: error.message }] }; throw error; }
   const headerRow = template.headerRow;
@@ -74,6 +75,12 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   const ranges = model.definedNames.filter((value) => value.name === book.range_name);
   if (ranges.length !== 1 || ranges[0].scope !== null || ranges[0].reference !== reference) issue('range', '/definedNames', '范围名必须是工作簿级，唯一且正好指向九列表头');
   const expectedLast = headerRow + 2 + plans.reduce((sum, value) => sum + value.steps.length + value.expects.length + 1, 0);
+  // Where each case's rows begin, from the plans alone: below the description row, each case's steps and expectations and a blank row. A row is
+  // read with the plan of the case it falls in, so each case keeps the rules of its own form (a flat row has empty H and I, a block row may
+  // carry registers); rows above the first case or below the last (which the closing and description checks refuse when they hold anything)
+  // are read with the nearest case's plan.
+  const starts: number[] = []; { let at = headerRow + 2; for (const value of plans) { starts.push(at); at += value.steps.length + value.expects.length + 1; } }
+  const planAt = (number: number): PlanSlots => { let k = 0; while (k + 1 < starts.length && number >= starts[k + 1]) k++; return plans[k]; };
   if (sheet.lastRow !== template.lastRow || [...values].some(([number, cells]) => number > expectedLast && cells.some(Boolean))) issue('closing', '/sheets/0', '收尾行之后不能再有内容，模板的行数不能变');
   if (JSON.stringify(grid(expectedLast)) !== JSON.stringify(book.closing_row)) issue('closing', '/sheets/0', '收尾行与配置不符');
   const description = headerRow + 1;
@@ -89,9 +96,9 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
     const init = cells[2] === '1';
     if (cells[0] !== '' && !init) {registers = new Set(initRegisters);cellRegisters=new Set(initCells);}
     if (!cells.slice(4).some(Boolean)) continue;
-    const at = `/sheets/0/rows/${number - 1}`; const [object, method, g, h, variable] = cells.slice(4);
+    const at = `/sheets/0/rows/${number - 1}`; const [object, method, g, h, variable] = cells.slice(4); const block = !!blockMeta(planAt(number));
     const entry = runtimeMethod(recipe.contract, object, method); const allowed = allowedCall(profile, object, method);
-    if (!object || !method || !entry || !allowed || !blockMeta(plan)&&(!g||h||variable)) { issue('execution', at, 'E/F/G 必须是启用且角色配置完整的调用，H/I 必须为空'); continue; }
+    if (!object || !method || !entry || !allowed || !block&&(!g||h||variable)) { issue('execution', at, 'E/F/G 必须是启用且角色配置完整的调用，H/I 必须为空'); continue; }
     const seat = profile.seats.find((v) => v.object === object); if (seat && seat.ordinal >= profile.device_count) issue('seat', at, '座位序号不小于预检设备数');
     const assertion = Object.values(allowed.parameters).some((role) => role === 'literal_assertion');
     const wait = Object.values(allowed.parameters).length > 0 && Object.values(allowed.parameters).every((role) => role === 'wait');
@@ -102,7 +109,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
       const restore=Array.isArray(caps?.restore_methods)&&caps.restore_methods.some((row:any)=>row.object===object&&row.method===method);
       const cellBound=!!variable&&(selection||cellRegisters.has(variable));
       if (!assertion) for (const problem of bindArguments(entry, { object, method, ...decoded,...(variable?{input_register:variable,...(restore?{restore_for:0}:cellBound?{cell_input:true}:{}),...(selection?{block_kind:'SELECT_CELL'}:{})}:{}) }, at).problems) issue('signature', problem.pointer, problem.message);
-      if(blockMeta(plan)){
+      if(block){
         if(assertion){
           if(h&&!registers.has(h))issue('register',at,'检查点期望寄存器未先捕获');
           const countMethod=Array.isArray(caps?.operators)&&caps.operators.some((row:any)=>row.op==='found_times'&&row.object===object&&row.method===method);
@@ -119,11 +126,10 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
           if(h){if(!identifier(h)||registers.has(h)||!Array.isArray(caps?.output_methods)||!caps.output_methods.some((row:any)=>row.object===object&&row.method===method&&row.output===(selection?'cell_text':'raw_text')))issue('register',at,'H 保存名必须在本条唯一，且方法声明完整原文或单格返回');else{registers.add(h);if(selection){cellRegisters.add(h);if(init)initCells.add(h);}if(init)initRegisters.add(h);}}
         }
       }
-      const execution = { row: number, object, method, ...decoded, assertion,...(blockMeta(plan)?{h,i:variable}:{}) }; executions.push(execution); executionByRow.set(number, execution);
+      const execution = { row: number, object, method, ...decoded, assertion,...(block?{h,i:variable}:{}) }; executions.push(execution); executionByRow.set(number, execution);
     } catch (error) { issue('G', at, error instanceof Error ? error.message : 'G 无法按运行器规则读取'); }
   }
   const cases = [...values].filter(([number, cells]) => number > headerRow && number < expectedLast && cells[0] !== '');
-  const starts: number[] = []; { let at = headerRow + 2; for (const value of plans) { starts.push(at); at += value.steps.length + value.expects.length + 1; } }
   if (cases.length !== set.length || cases.some(([number, cells], k) => number !== starts[k] || cells[0] !== set[k].fields.autoid || !new RegExp(book.autoid_pattern, 'u').test(cells[0]) || !cells[4]) || new Set(set.map((value) => value.fields.autoid)).size !== set.length) issue('autoid', '/sheets/0', set.length === 1 ? '必须只有一个原始用例 ID，与原始用例一致，第一步执行内容不能为空' : '每条自动化用例的原始用例 ID 必须依次填写且互不重复，第一步执行内容不能为空，用例之间不能夹入其他原始用例 ID');
   let row = headerRow + 2;
   for (const [k, recipe] of set.entries()) { const plan = plans[k]; let statement = FORMAT.statement_type;
