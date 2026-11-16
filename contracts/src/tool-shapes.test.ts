@@ -303,7 +303,7 @@ describe('tool shapes: zod and the published schema agree', () => {
     assert.equal(hash(JSON.stringify(TOOLS.map(({ name, title, description }) => ({ name, title, description })))), '42686402812824e439d197015cf7be5fe5b3a44faa2e5641ea8c3fa3763b8534');
     assert.equal(hash(SERVER_INSTRUCTIONS), '4ea85478bba489029ce4625f71695309ecae6fcb2751a9793011cf70dca7fc90');
     // Owner T7/T8 (2026-11-16): run31 preserves unsent reasons; run30 #13 keeps declared refusal evidence; #25 deduplicates replies and #29 names readable choices.
-    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), 'a448d893ff7907524c2c7581228caea87dc9c929f40879a84438031e6e8bcf6b');
+    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), 'ca70e94c5ea2f6f1a1ab863dc5543aa3a35eb38e15ec51763e971b7c85530cfb');
   });
   test('a protocol error never needs invented run, lock or digest values (D05 R[3], T03 R[3])', () => {
     const submit = TOOLS.find((t) => t.name === 'submit_result');

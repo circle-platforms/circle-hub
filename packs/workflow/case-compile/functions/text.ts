@@ -99,8 +99,15 @@ export interface Outcome {
 }
 
 /** The two markers every conclusion of this pack carries (task page A.5): never "可以运行". */
-export function markers(synthetic: boolean, _identity?: { runtimeVersion: string; digest: string }): string {
-  return `（${synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}；不证明在真实设备上跑得通）`;
+export function markers(synthetic: boolean, identity?: { runtimeVersion: string; digest: string }): string {
+  const basis = synthetic ? '按合成合约核对' : '按发布的运行器合约核对';
+  const who = identity ? `；运行时 ${identity.runtimeVersion}；身份 ${(identity as { pinned?: { identity: string } }).pinned?.identity.slice(0, 12) ?? identity.digest.slice(0, 12)}` : '';
+  return `（${basis}${who}；不证明在真实设备上跑得通）`;
+}
+
+/** Parse only this module's complete provenance-tail grammar for display, never the meaning of a fact. */
+export function reportStatement(text: string): string {
+  return text.replace(/（(按合成合约核对|按发布的运行器合约核对)；运行时 [^；\r\n]+；身份 [a-f0-9]{12}；不证明在真实设备上跑得通）/gu, '（$1；不证明在真实设备上跑得通）');
 }
 
 /** Local operator time, to the minute; raw timestamps stay in machine records. */

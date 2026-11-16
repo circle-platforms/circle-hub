@@ -34,7 +34,7 @@ test('all structural gaps, attributions and named exits survive even alongside a
   const text=caseConclusion(input,outcome);
   assert.match(text,/原因缺资料、生产者错误/);
   assert.match(text,/first missing；second missing/);
-  assert.match(text,/由Hub重评，期限 2026-11-16 09:00；由使用者发请求，期限 2026-11-17 09:00/);
+  assert.match(text,/由Hub重评，期限 2026-11-16 09:00；由使用者处理具名请求，期限 2026-11-17 09:00/);
   assert.equal(caseBasisOf({...exported,result:{...exported.result,partitions:{pending:[...exported.result.partitions.pending,...exported.result.partitions.pending]}}},run,'a'),null);
 });
 

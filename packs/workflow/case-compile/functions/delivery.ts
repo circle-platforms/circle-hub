@@ -4,7 +4,7 @@
 // the trade-off), a longer report for whoever picks those cases up, and a machine summary. Every status and count here comes
 // from the jobs' verdicts as the Hub relays them (decision 160), and a failed case closes by the reference engine's rules
 // (closeFailed). Model-supplied defect candidates and author conflicts carry quotations checked verbatim.
-import { isRecord, failCall, localMinute } from './text.ts';
+import { isRecord, failCall, localMinute, reportStatement } from './text.ts';
 import { movedText, type MovedCase } from './channels.ts';
 import { quoteMatches } from './quote.ts';
 import { labelOf, isAttribution, isExitAction, type Attribution } from './generated/vocabulary.ts';
@@ -450,8 +450,9 @@ const MISSING_SHOWN = 240;
 /** The closing of a case as one line: what it is and the fact it rests on. */
 export function closingLine(outcome: CaseOutcome): string | null {
   if (outcome.closing === 'authoring_failure' && outcome.missing?.kind === 'repair_exhausted') {
-    const said = outcome.missing.missing.length > MISSING_SHOWN ? `${outcome.missing.missing.slice(0, MISSING_SHOWN)}…` : outcome.missing.missing;
-    return `${CLOSING.authoring_failure}：它的计划已交给 Hub，修正轮次用完也没有被脚本合并接受${said ? `（Hub 原话：${said}）` : ''}，没有上机；结论仅限本运行记录的内容和核验次数，不能据此确认原因在编写模型。下面“怎么判断的”是模型自述，不是定下结论的依据。`;
+    const readable = publicWords(outcome.missing.missing);
+    const said = readable.length > MISSING_SHOWN ? `${readable.slice(0, MISSING_SHOWN)}…` : readable;
+    return `${CLOSING.authoring_failure}：它的计划已交给 Hub，修正轮次用完也没有被脚本合并接受${said ? `（Hub 核对结果摘要：${said}）` : ''}，没有上机；结论仅限本运行记录的内容和核验次数，不能据此确认原因在编写模型。下面“怎么判断的”是模型自述，不是定下结论的依据。`;
   }
   if (outcome.closing === 'authoring_failure') {
     const dropped = outcome.history.filter((h) => h.audit).length;
@@ -463,8 +464,9 @@ export function closingLine(outcome: CaseOutcome): string | null {
     return `${CLOSING.author_conflict}：模型判断作者的步骤要的取值或写法，在产品自己的手册说明里被排除了。作者原句和手册原句已逐字核对（见下），工具只核了这两段原文确实存在，没有核它们是否真的对不上，也没有判谁对：是按手册改作者的步骤，还是作者就要照原样测，由作者或用户裁定。${ran}，裁定前不再为它上机，也不为凑满 ${MAX_ROUNDS} 轮再跑一卷。下面“怎么判断的”是模型自述，不是裁定。`;
   }
   if (outcome.closing === 'missing_fact' && outcome.missing) {
-    const said = outcome.missing.missing.length > MISSING_SHOWN ? `${outcome.missing.missing.slice(0, MISSING_SHOWN)}…` : outcome.missing.missing;
-    return `${CLOSING.missing_fact}：它的计划已交给 Hub，Hub 判它缺少事实并点名了补证请求${said ? `（Hub 原话：${said}）` : ''}；补齐前不生成工作簿、不上机。下面“怎么判断的”是模型自述。`;
+    const readable = publicWords(outcome.missing.missing);
+    const said = readable.length > MISSING_SHOWN ? `${readable.slice(0, MISSING_SHOWN)}…` : readable;
+    return `${CLOSING.missing_fact}：它的计划已交给 Hub，Hub 判它缺少事实并点名了补证请求${said ? `（Hub 核对结果摘要：${said}）` : ''}；补齐前不生成工作簿、不上机。下面“怎么判断的”是模型自述。`;
   }
   return null;
 }
@@ -512,7 +514,7 @@ function recordedNext(outcome: CaseOutcome): string[] {
     if (!isRecord(exit) || !isExitAction(exit.action) || typeof exit.due !== 'string' || !Number.isFinite(Date.parse(exit.due)) || !isRecord(exit.audience)) return [];
     if (exit.action === 'request' ? typeof exit.request_kind !== 'string' || !exit.request_kind.trim() || exit.audience.hub === true : exit.audience.hub !== true || exit.request_kind !== undefined) return [];
     const who = exit.audience.hub === true ? 'Hub' : typeof exit.audience.user === 'string' && exit.audience.user.trim() ? exit.request_kind === 'disposition' ? '测试环境管理员' : '使用者' : isRecord(exit.audience.external) && typeof exit.audience.external.identity === 'string' && typeof exit.audience.external.mapping === 'string' ? '指定的外部负责人' : null;
-    return who ? [`由${who}${labelOf('exit_action', exit.action)}，期限 ${localMinute(new Date(exit.due))}`] : [];
+    return who ? [`由${who}${exit.action === 'request' ? '处理具名请求' : labelOf('exit_action', exit.action)}，期限 ${localMinute(new Date(exit.due))}`] : [];
   });
   return [...new Set(texts)];
 }
@@ -543,7 +545,7 @@ function head(input: ReportInput): string[] {
   ];
   if (input.build) lines.push(`构建 ${input.build}。`);
   // a verification run that never reached the bed is told once at the head, with the Hub's own reason and named next step.
-  for (const u of input.unsent ?? []) lines.push(`另有一次上机验证没有发到设备，不算一次上机验证（涉及 ${u.items.length} 条原始用例）：${u.missing_facts.length ? u.missing_facts.map((m) => publicWords(m.fact)).join('；') : '原因缺少可读取的记录'}。下一步：${u.missing_facts.length ? u.missing_facts.map((m) => publicWords(m.next_action)).join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`);
+  for (const u of input.unsent ?? []) lines.push(`另有一次上机验证没有发到设备，不算一次上机验证（涉及 ${u.items.length} 条原始用例）：${u.missing_facts.length ? [...new Set(u.missing_facts.map((m) => publicWords(m.fact)))].join('；') : '原因缺少可读取的记录'}。下一步：${u.missing_facts.length ? [...new Set(u.missing_facts.map((m) => publicWords(m.next_action)))].join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`);
   for (const moved of [input.placedLast?.pass, input.placedLast?.unsuccessful]) if (moved?.length) lines.push(movedText(moved, new Map(moved.map((row) => [row.autoid, input.originals[row.autoid]?.title ?? ''] as const))));
   const audit = input.passAudit;
   if (audit?.markers === null && input.assembly.cases.some(c => c.history.length)) lines.push('状态未知。原因缺资料，执行器规则没有说明哪些设备输出表示执行失败；下一步由使用者补齐执行器规则，再核对设备输出。决定者程序。');
@@ -552,7 +554,7 @@ function head(input: ReportInput): string[] {
 }
 function section(input: ReportInput, outcome: CaseOutcome): string[] {
   const note = input.notes.cases[outcome.autoid];
-  const judged = reportableProse(note.judged) ? note.judged : '模型说明含内部引用，尚未形成供使用者阅读的说明';
+  const judged = reportableProse(note.judged) ? reportStatement(note.judged) : '模型说明含内部引用，尚未形成供使用者阅读的说明';
   const fence = (text: string) => ['```', text.replace(/```/g, '`​``'), '```'];
   const candidate = note.defect_candidate;
   const conflict = outcome.conflict ?? note.author_conflict;
@@ -561,7 +563,7 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
     caseConclusion(input, outcome),
     '', timeline(outcome, input.excluded.includes(outcome.autoid)),
     ...(input.assembly.unsuccessful?.sources[outcome.autoid] ? ['', input.assembly.unsuccessful.sources[outcome.autoid].run === outcome.history.at(-1)?.run ? `本卷这条写法已在第 ${outcome.history.at(-1)?.ordinal} 次上机验证中执行。` : '本卷采用最后一次写好的自动化用例；这份写法尚未发到设备，上面的记录来自较早一次实际到设备的上机验证。'] : []),
-    ...(input.unsent ?? []).filter((u) => outcome.history.length > 0 && u.items.includes(outcome.autoid)).flatMap((u) => ['', `另有一次上机验证没有发到设备，不算一次上机验证：${u.missing_facts.length ? u.missing_facts.map((m) => publicWords(m.fact)).join('；') : '原因缺少可读取的记录'}。下一步：${u.missing_facts.length ? u.missing_facts.map((m) => publicWords(m.next_action)).join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`]),
+    ...(input.unsent ?? []).filter((u) => outcome.history.length > 0 && u.items.includes(outcome.autoid)).flatMap((u) => ['', `另有一次上机验证没有发到设备，不算一次上机验证：${u.missing_facts.length ? [...new Set(u.missing_facts.map((m) => publicWords(m.fact)))].join('；') : '原因缺少可读取的记录'}。下一步：${u.missing_facts.length ? [...new Set(u.missing_facts.map((m) => publicWords(m.next_action)))].join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`]),
     ...(note.judged ? ['', note.absent ? '尚未提供模型说明。' : `模型说明，状态未确认。${judged}`] : []),
     ...(outcome.missing?.missing ? ['', `Hub 核对结果摘要（内部引用保留在机器资料）。${publicWords(outcome.missing.missing)}`] : []),
     ...(note.evidence && !outcome.history.length ? ['', '**模型给出的依据（没有设备输出，未核对）**。出处保留在机器资料中。'] : note.evidence ? ['', outcome.evidence_unverified ? '**模型提出的设备输出**，逐字核对未通过，不能作核验依据。' : '**证据，设备输出**，已按照规则核对设备输出。', ...fence(note.evidence)] : []),
@@ -571,7 +573,7 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
   ];
 }
 /** Only protocol identity syntax is checked here; model prose never decides a case status. */
-const publicWords = (text: string): string => text.replace(/(?:run|usr|exe)_[a-z0-9]{26}\b|(?:src|rec):[a-f0-9]{64}|tree:[a-f0-9]{64}(?:\/[^\s，；。]+)?/gu, '（对应记录见机器资料）');
+const publicWords = (text: string): string => reportStatement(text).replace(/(?:run|usr|exe)_[a-z0-9]{26}\b|(?:src|rec):[a-f0-9]{64}|tree:[a-f0-9]{64}(?:\/[^\s，；。]+)?/gu, '（对应记录见机器资料）');
 export const reportableProse = (text: string): boolean => !/(?:run|usr|exe)_[a-z0-9]{26}\b|(?:src|rec):[a-f0-9]{64}|tree:[a-f0-9]{64}/u.test(text);
 
 export function closingHints(cases: CaseOutcome[], notes: Notes, unsent: readonly Unsent[] = []): Array<{ autoid: string; missing: string; next_action: string; legal_form: string }> {

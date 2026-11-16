@@ -1177,3 +1177,14 @@ test('an unissued job without readable facts reports the missing cause rather th
   assert.match(text, /未取得.*原因/);
   assert.match(text, /由测试环境管理员补齐未派发原因/);
 });
+
+test('unissued jobs retain independent facts while saying their identical next action once', () => {
+  const next = '由测试环境管理员处理两个缺口后重开';
+  const facts = [{ fact: '合成缺口甲', next_action: next }, { fact: '合成缺口乙', next_action: next }];
+  const original = structuredClone(facts);
+  const note = { outcome: 'not_dispatched' as const, not_sent: true, missing_facts: facts, text: '尚未派发的作业' };
+  const text = toolText('submit_result', { ...submitAnswer(resultOf(items(1))), dispatch: [note] });
+  assert.match(text, /合成缺口甲/); assert.match(text, /合成缺口乙/);
+  assert.equal(text.split(next).length - 1, 1);
+  assert.deepEqual(note.missing_facts, original, 'presentation never removes the original structured facts');
+});

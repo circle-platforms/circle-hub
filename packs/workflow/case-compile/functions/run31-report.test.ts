@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { assemble, caseConclusion, deliveryReport, unsuccessfulReport, type CaseOutcome, type Dispatch, type ReportInput } from './delivery.ts';
-import { markers } from './text.ts';
+import { markers, reportStatement } from './text.ts';
 
 const before = process.env.TZ;
 process.env.TZ = 'Asia/Tokyo';
@@ -23,12 +23,13 @@ test('run31 keeps the mapped device judgment apart from the Hub no-verdict', () 
 });
 test('run31 shows recorded request roles and local minutes while preserving the raw exit', () => {
   const exit = { action: 'request', request_kind: 'disposition', audience: { user: 'usr_' + '1'.repeat(26) }, due: '2026-11-16T00:00:00.000Z' };
+  const originalExit = structuredClone(exit);
   const outcome: CaseOutcome = { autoid: 'a', status: 'unrun', history: [], pending: ['合成缺口'], basis: { plan_run: 'p', attributions: ['data_gap'], gaps: [{ requirement: 'plan', missing: '合成缺口', exit }] } };
   const text = caseConclusion(inputOf(outcome), outcome);
-  assert.match(text, /由测试环境管理员发请求，期限 2026-11-16 09:00/);
+  assert.match(text, /由测试环境管理员处理具名请求，期限 2026-11-16 09:00/);
   assert.equal(text.split('合成缺口').length - 1, 1);
   assert.doesNotMatch(text, /usr_|T00:00|\.000Z/);
-  assert.deepEqual(outcome.basis!.gaps[0].exit, exit);
+  assert.deepEqual(outcome.basis!.gaps[0].exit, originalExit);
 });
 test('run31 never labels model evidence of an unrun case as checked device output', () => {
   const outcome: CaseOutcome = { autoid: 'a', status: 'unrun', history: [], pending: ['没有取得具名结论'] };
@@ -37,8 +38,16 @@ test('run31 never labels model evidence of an unrun case as checked device outpu
   assert.match(report, /模型给出的依据（没有设备输出，未核对）/);
   assert.doesNotMatch(report, /已按照规则核对设备输出/);
 });
-test('run31 user prose omits runtime identifiers and hashes', () => {
-  assert.equal(markers(false, { runtimeVersion: 'synthetic.runtime', digest: 'a'.repeat(64) }), '（按发布的运行器合约核对；不证明在真实设备上跑得通）');
+test('run31 reports omit technical provenance while upstream statements and source identities remain complete', () => {
+  const raw = `合成已核对的事实${markers(false, { runtimeVersion: 'synthetic.runtime', digest: 'a'.repeat(64) })}`;
+  assert.match(raw, /运行时 synthetic.runtime；身份 aaaaaaaaaaaa/);
+  const outcome: CaseOutcome = { autoid: 'a', status: 'unrun', history: [], pending: [raw], basis: { plan_run: 'p', attributions: [], gaps: [{ requirement: 'plan', missing: raw }] } };
+  const text = caseConclusion(inputOf(outcome), outcome);
+  assert.doesNotMatch(text, /synthetic\.runtime|aaaaaaaaaaaa/);
+  assert.match(text, /按发布的运行器合约核对；不证明在真实设备上跑得通/);
+  assert.equal(outcome.basis!.gaps[0].missing, raw);
+  const other = '用户说明有运行时 synthetic.runtime 与身份 aaaaaaaaaaaa，未提供完整的本包尾注';
+  assert.equal(reportStatement(other), other, 'unrecognized prose is never classified or rewritten');
 });
 test('run31 does not print internal references from model prose as a user explanation', () => {
   const outcome: CaseOutcome = { autoid: 'a', status: 'unrun', history: [], pending: ['没有取得具名结论'] };
@@ -55,7 +64,7 @@ test('run31 identifies which actual device attempt a log belongs to without expo
 
 test('run31 an undeclared request kind retains its raw value without becoming a disposition', () => {
   const outcome: CaseOutcome = { autoid: 'a', status: 'unrun', history: [], pending: ['合成缺口'], basis: { plan_run: 'p', attributions: [], gaps: [{ requirement: 'plan', exit: { action: 'request', request_kind: 'UNDECLARED', audience: { user: 'usr_'+'1'.repeat(26) }, due: '2026-11-16T00:00:00.000Z' } }] } };
-  assert.match(caseConclusion(inputOf(outcome), outcome), /由使用者发请求/);
-  assert.doesNotMatch(caseConclusion(inputOf(outcome), outcome), /由测试环境管理员发请求/);
+  assert.match(caseConclusion(inputOf(outcome), outcome), /由使用者处理具名请求/);
+  assert.doesNotMatch(caseConclusion(inputOf(outcome), outcome), /由测试环境管理员处理具名请求/);
   assert.equal((outcome.basis!.gaps[0].exit as {request_kind:string}).request_kind, 'UNDECLARED');
 });

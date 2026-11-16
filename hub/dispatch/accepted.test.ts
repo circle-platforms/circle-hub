@@ -238,7 +238,10 @@ for (const [mode, reason] of [['busy', /目标拒绝了提交之前的调用（�
     const text = toolText('submit_result', { call_result: 'ok', acceptance: 'accepted', errors: [], dispatch: read, trace: 'a'.repeat(32) } as never);
     const shared = mode === 'busy' ? '原样重交原提交' : '补齐这项条件后重新核验';
     assert.equal(text.split(shared).length - 1, 1, 'the shared next step is read once across both job notes');
-    assert.equal(text.split('\n').filter((line) => line.includes('上机验证已结束') && line.endsWith('（×2）')).length, 1, 'with how many jobs it is');
+    assert.match(text, reason, 'the caller still receives the actual safe reason');
+    const repeated = text.split('\n').filter(line => line.endsWith('（×2）'));
+    assert.equal(repeated.length, 1, 'the same two jobs are still rendered once with their multiplicity');
+    assert.match(repeated[0], mode === 'busy' ? /上机验证未发出/ : /上机验证已结束/);
   });
 }
 

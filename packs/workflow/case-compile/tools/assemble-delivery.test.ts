@@ -273,7 +273,7 @@ test('the verification runs the model left out are found in the Hub lineage, and
   assert.equal(replyLines[0], `交付目录 ${out}`);
   for (const index of [1, 3]) assert.match(replyLines[index], /状态未确认，判断正确（目标自报，未排除本地操作）/);
   assert.match(replyLines[2], /模型判断.*状态未确认.*原因还没查清/);
-  assert.match(replyLines[4], /原因缺资料.*由使用者发请求，期限 2026-11-09 09:00/);
+  assert.match(replyLines[4], /原因缺资料.*由使用者处理具名请求，期限 2026-11-09 09:00/);
   assert.deepEqual(replyLines.slice(5), ['case.xlsx', 'unsuccessful_cases.xlsx', 'delivery_report.md', 'unsuccessful_cases.md', 'delivery.json'].map(name => `- ${join(out,name)}`));
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.added_runs, [WHOLE]);
