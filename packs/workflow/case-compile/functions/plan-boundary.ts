@@ -9,6 +9,7 @@ import * as subjectModule from './subject.ts';
 import {slotRecordProblems} from './slot-record.ts';
 import {selectedCatalog,type LockedTree,type SelectedCatalog} from './catalog-selection.ts';
 import {isRecord,type Outcome} from './text.ts';
+import {listed,refusalText,shownValue} from './refusal-form.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 
 /** Modules a check or its subject builder is read from, as checks.json names them. */
@@ -41,6 +42,33 @@ export function notRunReason(check:typeof CHECKS.checks[number]):string|null{
 }
 const stripData=(pointer:string):string=>pointer==='/data'?'':pointer.startsWith('/data/')?pointer.slice('/data'.length):pointer;
 const canonical=(value:unknown):string=>JSON.stringify(value,(_key,inner)=>isRecord(inner)?Object.fromEntries(Object.entries(inner).sort(([a],[b])=>a<b?-1:a>b?1:0)):inner);
+
+/**
+ * The refusal when the frozen run a plan check was given cannot judge the plan: it is no run at all, it has no single case-compile
+ * group (it is the run of another pack), or the plan's item is none of its items. The text names the item the plan has, the
+ * closed set of the run's item ids and the next step; a plan whose item is the case number (autoid) of a run item is told which
+ * item that is, because the number is what a writer reads first in the original case (round 36: the writer wrote the number and
+ * read a 3.5 MB run.json to find out why).
+ */
+export function frozenRunProblem(run:unknown,item:string|null):BoundaryProblem{
+ if(!isRecord(run))return {pointer:'/run',message:refusalText({what:'--run 读到的不是冻结运行',place:'--run',seen:'顶层不是 JSON 对象',next:'--run 指向本次计划运行下载的冻结运行，不是计划、判断或别的 JSON；重新下载，不手写'})};
+ const groups=Array.isArray(run.groups)?run.groups.filter(isRecord):[],cases=groups.filter(group=>group.kind==='case-compile');
+ const named=`运行 ${String(run.run)}（工作流 ${String(run.pack)}）`;
+ if(cases.length!==1)return {pointer:'/run',message:refusalText({
+  what:'冻结运行里的 case-compile 组不是恰好一个',place:'--run',
+  seen:`${named}有 ${cases.length} 个 case-compile 组，它的组是 ${groups.length?listed(groups.map(group=>String(group.kind))):'没有'}`,
+  allowed:['恰好 1 个 kind 为 case-compile 的组'],
+  next:'--run 指向本次脚本编写（plan）运行下载的冻结运行，不是用例重组或别的运行的；换成脚本编写运行下载的再检',
+ })};
+ const rows=Array.isArray(run.items)?run.items.filter(isRecord):[],ids=rows.map(row=>String(row.id));
+ const numbered=item===null?undefined:rows.find(row=>isRecord(row.fields)&&row.fields.autoid===item);
+ return {pointer:'/item',message:refusalText({
+  what:'计划的 item 不是冻结运行里的条目',place:'/item',seen:shownValue(item??undefined),
+  allowed:ids.map(shownValue),
+  also:[`${named}共有 ${ids.length} 个条目，id 在 run.json 的 items[].id，也是条目文件 items/<序号>.json 里的 id`],
+  next:numbered!==undefined?`把 /item 改成 ${shownValue(numbered.id)}：计划里写的 ${shownValue(item)} 是它的用例号（fields.autoid），item 要写条目 id`:ids.length?'把 /item 改成允许的条目 id 之一':'这份冻结运行里没有条目；重新下载本次计划运行的冻结运行',
+ })};
+}
 
 /** The context the Hub gives checks (runContextOf): only the facts of the frozen run, never anything of the submission. */
 export function frozenContext(run:Record<string,unknown>):Record<string,unknown>{

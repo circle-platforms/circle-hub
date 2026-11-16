@@ -47,8 +47,9 @@ function slotsOf(s: CheckSubject): { slots: PlanSlots; errors: null } | { slots:
   return read.ok ? { slots: read.slots, errors: null } : { slots: null, errors: read.problems.map((v) => refute(s, v.pointer.includes('/quote') ? 'expect_without_source' : 'slots_invalid', `槽位 ${v.pointer}：${v.message}；${v.fix??'按 slots.schema.json 的形状修正'}`, `/data${v.pointer}`)) };
 }
 function typedPrerequisites(s: CheckSubject, slots: PlanSlots, covered?: RunnerCovered[]): Outcome[] | null {
-  const gaps0=[...(s.projection_unknowns??[]),...(s.recomposition_requested&&!s.recomposition?[s.recomposition_problem?`重组记录不可受理：${s.recomposition_problem}；改正绑定后开新的计划运行`:'缺可受理的重组记录：绑定的重组运行与结果没有通过核对；recomposition_run 绑重组运行记录，recomposition_result 绑重组运行号，开新的计划运行']:[]),...recompositionGaps(slots,s.recomposition).filter(i=>i.verdict==='unknown').map(i=>i.message)];
-  const invalidRecomposition=recompositionGaps(slots,s.recomposition).filter(i=>i.verdict==='refute');
+  const recomposition=recompositionGaps(slots,s.recomposition,{item:s.item});
+  const gaps0=[...(s.projection_unknowns??[]),...(s.recomposition_requested&&!s.recomposition?[s.recomposition_problem?`重组记录不可受理：${s.recomposition_problem}；改正绑定后开新的计划运行`:'缺可受理的重组记录：绑定的重组运行与结果没有通过核对；recomposition_run 绑重组运行记录，recomposition_result 绑重组运行号，开新的计划运行']:[]),...recomposition.filter(i=>i.verdict==='unknown').map(i=>i.message)];
+  const invalidRecomposition=recomposition.filter(i=>i.verdict==='refute');
   if(invalidRecomposition.length)return [refute(s,'slots_invalid',invalidRecomposition.map(i=>i.message).join('；'),'/data/recomposition')];
   if(gaps0.length)return [{verdict:'unknown',reason:'missing_input',missing:gaps0.join('；'),statement:gaps0.join('；'),grounds:[],tier:'blocking',item:s.item}];
   // Model identity proposals belong to commands_known, not shared contract prerequisites.

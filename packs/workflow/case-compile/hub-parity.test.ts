@@ -53,6 +53,9 @@ const CHECKED:Array<[string,(claim:Claim,data:ReturnType<typeof goodData>)=>void
  ['a command the locked tree does not have',(_,data)=>{data.steps[0].args=['widget unknown command 5'];}],
 ];
 
+/** Structure variants whose local text continues the Hub's words instead of repeating them: the Hub's words come first, byte for byte. */
+const EXTENDED=new Set(['a claim with a field it does not have']);
+
 async function parity(variants:typeof STRUCTURE){
  const started=await hub.service.startRunDetailed(hub.alice,start() as never,call());assert.equal(started.answer.call_result,'ok',JSON.stringify(started.answer.errors));
  const run=started.answer.run!,exported=await hub.service.exportRun!(hub.alice,run.run);assert.ok(exported);
@@ -71,7 +74,9 @@ describe('check-plan against the real Hub',{skip},()=>{
    const localStructure=local.problems.filter(problem=>problem.code==='SUBMISSION_SCHEMA_VIOLATION').map(({code,pointer,message})=>({code,pointer,message}));
    // Pointer and code always agree; the text agrees where the Hub's own words are specific (a missing or mistyped value, an unknown field).
    assert.deepEqual(localStructure.map(row=>[row.code,row.pointer]).sort(),hubSide.structure.map(row=>[row.code,row.pointer]).sort(),label);
-   if(index<=4)assert.deepEqual(unique(localStructure),unique(hubSide.structure),label);
+   if(index<=4&&!EXTENDED.has(label))assert.deepEqual(unique(localStructure),unique(hubSide.structure),label);
+   // A node that refuses a field says what it has and where the field belongs after the Hub's words (functions/unknown-field-refusals.test.ts).
+   if(EXTENDED.has(label))for(const row of localStructure)assert.ok(hubSide.structure.some(hub=>hub.code===row.code&&hub.pointer===row.pointer&&row.message.startsWith(hub.message)),`${label}: the Hub's words lead: ${row.message}`);
    assert.equal(local.ok,hubSide.structure.length===0&&local.problems.length===0,label);
    if(hubSide.structure.length)assert.equal(local.ok,false,`${label}: the Hub refuses it, so the local check does not pass it`);
   }

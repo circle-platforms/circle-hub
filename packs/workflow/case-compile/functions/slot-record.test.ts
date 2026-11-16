@@ -9,10 +9,10 @@ import {goodData,QUOTE} from './test-support.ts';
 
 type Slots=Record<string,unknown>;
 const claim=(mutate:(value:Record<string,any>)=>void=()=>{}):Record<string,any>=>{const value:Record<string,any>={text:'合成计划槽位',quotes:[{...QUOTE}],data:goodData()};mutate(value);return value;};
-const FIXTURES:Array<{label:string;slots:()=>Slots;words:'same'|'pointer'}>=[
+const FIXTURES:Array<{label:string;slots:()=>Slots;words:'same'|'lead'|'pointer'}>=[
  {label:'an accepted record',slots:()=>({plan:[claim()]}),words:'same'},
  {label:'a claim without its text',slots:()=>({plan:[claim(value=>{delete value.text;})]}),words:'same'},
- {label:'a field the claim does not have',slots:()=>({plan:[{...claim(),extra:1}]}),words:'same'},
+ {label:'a field the claim does not have',slots:()=>({plan:[{...claim(),extra:1}]}),words:'lead'},
  {label:'a text that is a number',slots:()=>({plan:[claim(value=>{value.text=7;})]}),words:'same'},
  {label:'a quotation without its text',slots:()=>({plan:[claim(value=>{value.quotes=[{reference:QUOTE.reference}];})]}),words:'same'},
  {label:'a data field that is missing',slots:()=>({plan:[claim(value=>{delete value.data.bucket;})]}),words:'same'},
@@ -36,6 +36,8 @@ test('the offline slot-record rule names what the Hub core names, at the same po
   const hubRows=hub.map(problem=>({pointer:(problem.path??'').replace('/items/0',''),message:String(problem.message).replaceAll('/items/0','')})),local=slotRecordProblems(schema,value);
   assert.deepEqual(local.map(row=>row.pointer).sort(),hubRows.map(row=>row.pointer).sort(),label);
   if(words==='same')assert.deepEqual(local.map(row=>[row.pointer,row.message]).sort(),hubRows.map(row=>[row.pointer,row.message]).sort(),label);
+  // A node that refuses a field adds what it has and where the field belongs after the Hub's words (unknown-field-refusals.test.ts).
+  if(words==='lead')for(const row of local){const hubRow=hubRows.find(candidate=>candidate.pointer===row.pointer);assert.ok(hubRow&&row.message.startsWith(hubRow.message),label+': '+row.message);}
  }
 });
 
