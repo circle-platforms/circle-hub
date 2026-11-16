@@ -1151,3 +1151,21 @@ test('recompose refusal preserves producer facts and guidance with verbatim grou
   assert.match(determined, /改写后的命令没有锁定目录的完整语法身份；状态已确认；判断错误；原因生产者错误；下一步由模型改正重组记录后重交/);
   assert.doesNotMatch(determined, /状态未知；原因缺资料/);
 });
+
+test('a job that was not sent says the Hub reason and the named next step, never "设备输出已取回"', () => {
+  // Run 31: the pre-dispatch check conclusion (`result`) of a job the bed gate refused was read as the device's return.
+  const base = submitAnswer(resultOf(items(1)));
+  const reason = '该床尚未恢复，不能派发。来源探针 synthetic-probe';
+  const step = '由bed-admin按声明的清理方法处理后重开；确认当前状态是干净的才清除占用';
+  const text = toolText('submit_result', {
+    ...base,
+    dispatch: [{
+      job: H('1'), executor: 'synthetic-executor', result: `src:${H('2')}`, outcome: 'not_dispatched', not_sent: true, frozen: false,
+      missing_facts: [{ fact: reason, next_action: step }],
+      text: `作业 ${H('1')}：已结束（阶段 release）；未发出；上机验证前核对的结论 src:合成（逐台设备的版本和接口核对，不是用例在设备上的结果：用例还没有发到设备）；原因：${reason}`,
+    }],
+  }, { items: items(1), caller: { role: 'admin' } });
+  assert.doesNotMatch(text, /设备输出已取回/);
+  assert.match(text, /上机验证未发出：该床尚未恢复，不能派发/);
+  assert.match(text, /下一步：由bed-admin按声明的清理方法处理后重开/);
+});

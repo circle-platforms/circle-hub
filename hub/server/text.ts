@@ -1018,7 +1018,10 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
     const devices = typeof count === 'number' && Number.isInteger(count) && count >= 0 ? `共 ${count} 台设备` : '设备数量尚未核对';
     return `脚本合并正确（已确认）；本次没有上机验证，因为这次运行没有带着测试环境的预订；测试环境：${note.booking.target}（${devices}）；下一步：先预订整个测试环境，再从脚本编写重开并核验合并。`;
   }
-  if (note.result !== undefined) {
+  // a job that was not sent, was refused by the target or is proven not executed has no device return; its
+  // `result` reference is only the pre-dispatch check conclusion, so it is never "设备输出已取回".
+  const notRun = note.outcome === 'not_dispatched' || note.outcome === 'target_rejected' || note.outcome === 'proven_not_executed';
+  if (note.result !== undefined && !notRun) {
     return '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。';
   }
 
@@ -1067,6 +1070,13 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
     return diagnosed
       ? `${body}；状态已确认；判断错误；决定者程序`
       : `${body}；状态已确认；判断错误；原因还没查清；决定者程序`;
+  }
+  // a job that did not go out and carries the Hub's own facts says them (reason and named next step, from the
+  // structure) instead of the generic "原因还没查清；下一步由使用者继续读取设备输出".
+  if (notRun && note.missing_facts !== undefined && note.missing_facts.length > 0) {
+    const fact = note.missing_facts.map((row) => row.fact).join('；');
+    const next = note.missing_facts.map((row) => row.next_action).join('；');
+    return `上机验证${labelOf('effect_outcome', note.outcome!)}：${fact}。下一步：${next}；未取得用例在设备上的判断，状态未知；决定者程序仅披露派发记录`;
   }
   return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;
 }

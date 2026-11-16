@@ -117,6 +117,10 @@ export async function clearBedHold(this: BedContext, by: Principal, executor: st
     return { cleared: true, job: open.job, bed: open.bed };
   }
 
+/** Member-readable residue facts exclude device echoes and credential or account identities. */
+function unrestoredMember(ids: readonly string[]): { fact: string; next_action: string } {
+  return { fact: `测试环境上一次上机验证留下的配置还没有恢复，这次没有发出（来源探针 ${[...new Set(ids)].join('、')}）`, next_action: '由测试环境管理员按已声明的清理流程处理并确认恢复后，原样重交原提交' };
+}
 export async function gateBed(this: BedContext, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<void> {
     const spec = d.bed_state;
     if (!spec) return;
@@ -174,7 +178,7 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
         if (compared.outcome === 'unrestored') {
           await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, compared.differences);
           const lines = compared.differences.flatMap(diff => diff.diff_lines ?? []).slice(0, 5).join('；');
-          throw new PrecheckFactError(withNote([unrestoredFact(compared.differences), lines].filter(Boolean).join('；'), compared.ignored), unrestoredHoldNext(spec.items, compared.differences.map(diff => diff.item), binding.executor));
+          throw new PrecheckFactError(withNote([unrestoredFact(compared.differences), lines].filter(Boolean).join('；'), compared.ignored), unrestoredHoldNext(spec.items, compared.differences.map(diff => diff.item), binding.executor), unrestoredMember(compared.differences.map(diff => diff.item)));
         }
         await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: bedNameOrExecutor, state: 'clear', pre: hold.pre, ...(compared.ignored.length ? { ignored_probes: compared.ignored, note: ignoredHoldProbes(compared.ignored) } : {}) });
       } else {
@@ -208,7 +212,7 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
         }
         if (outstanding.length) {
           await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, outstanding);
-          throw new PrecheckFactError(withNote(unrestoredFact(outstanding), ignored), unrestoredHoldNext(spec.items, outstanding.map(diff => diff.item), binding.executor));
+          throw new PrecheckFactError(withNote(unrestoredFact(outstanding), ignored), unrestoredHoldNext(spec.items, outstanding.map(diff => diff.item), binding.executor), unrestoredMember(outstanding.map(diff => diff.item)));
         }
         await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: bedNameOrExecutor, state: 'clear', pre: hold.pre, ...(ignored.length ? { ignored_probes: ignored, note: ignoredHoldProbes(ignored) } : {}) });
       }
@@ -255,7 +259,8 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
       if (captureDiffs.length) {
         throw new PrecheckFactError(
           residueCaptureFact(captureDiffs),
-          residueCaptureNext(spec.items, captureDiffs, binding.executor)
+          residueCaptureNext(spec.items, captureDiffs, binding.executor),
+          unrestoredMember(captureDiffs.map(diff => diff.item))
         );
       }
       return;
@@ -276,10 +281,10 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
       if (judged.automatic && judged.cleanup) {
         await this.journal.append(binding, 'bed_cleanup', 'dispatch', 'completed', { executed: false, authorization: 'required', actions: judged.cleanup });
         const steps = judged.cleanup.map(action => `座位 ${action.seat} 的 ${action.command}（粒度 ${action.granularity}）`).join('、');
-        throw new PrecheckFactError(`床面残留可自动清理。来源探针 ${probes}`, `下一步经派发和授权执行清理：${steps}。Hub 不执行这些命令`);
+        throw new PrecheckFactError(`床面残留可自动清理。来源探针 ${probes}`, `下一步经派发和授权执行清理：${steps}。Hub 不执行这些命令`, unrestoredMember(judged.residues.map(residue => residue.probe)));
       }
       const exit = judged.exits.map(item => `由${item.owner}对${item.object}${item.action}，期限 ${item.deadline}`).join('；');
-      throw new PrecheckFactError(`床面残留不可自动清理。来源探针 ${probes}`, exit || '下一步：为该残留类补上出口后再派发');
+      throw new PrecheckFactError(`床面残留不可自动清理。来源探针 ${probes}`, exit || '下一步：为该残留类补上出口后再派发', unrestoredMember(judged.residues.map(residue => residue.probe)));
     }
     const diffs = againstBaseline(spec.items, bed, reads);
     if (diffs === null) {
@@ -287,7 +292,7 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
       throw new PrecheckFactError(missingProbeFact(spec.items.map(item => item.id)), unknownSteps(spec.items, spec.items.map(item => item.id)));
     }
     await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, diffs);
-    if (diffs.length) throw new PrecheckFactError(residueFact(diffs), cleanupSteps(spec.items, diffs.map(diff => diff.item)));
+    if (diffs.length) throw new PrecheckFactError(residueFact(diffs), cleanupSteps(spec.items, diffs.map(diff => diff.item)), unrestoredMember(diffs.map(diff => diff.item)));
   }
 
 export async function effectivelyComplete(this: BedContext, job: string): Promise<boolean> {

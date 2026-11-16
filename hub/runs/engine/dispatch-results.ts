@@ -7,7 +7,7 @@ import { Claim } from '../../../contracts/src/claim.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult, LayerResult } from '../../../contracts/src/validation.ts';
 import type { Principal } from '../../records/api.ts';
-import type { RunJob } from '../../dispatch/api.ts';
+import { statusDiagnostics, type RunJob } from '../../dispatch/api.ts';
 import { parseReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import type { ExportedJob } from '../../ports.ts';
@@ -45,7 +45,10 @@ export async function exportedJobs(ctx:EngineContext,run:string,reader:Principal
   const out:ExportedJob[]=[];
   for(const job of await ctx.deps.dispatch.jobs(reader,run)){
     const report=await readProjection(ctx,reader,job);
-    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,outcome:job.status.outcome,frozen:job.status.frozen,result:job.status.result??null,device_return:job.status.device_return??null,rows:report?report.rows.map(exportedJobRow):null});
+    // a job that did not go out has no rows; say why and who acts, as the submit_result note does.
+    const notRun=job.status.outcome==='not_dispatched'||job.status.outcome==='target_rejected'||job.status.outcome==='proven_not_executed';
+    const why=notRun?statusDiagnostics(job,reader.role==='admin').missing_facts:[];
+    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,outcome:job.status.outcome,frozen:job.status.frozen,result:job.status.result??null,device_return:job.status.device_return??null,rows:report?report.rows.map(exportedJobRow):null,...(why.length?{missing_facts:why,next_action:why.map(f=>f.next_action).join('；')}:{}),...(notRun&&job.status.member_missing_facts?.length?{member_missing_facts:job.status.member_missing_facts.map(f=>({...f}))}:{})});
   }
   return out;
 }

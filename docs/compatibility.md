@@ -52,6 +52,8 @@
 
 ## 历史
 
+- 2026-11-16：T8 候选 `case-compile@3.21.2` 与 `plumb@1.0.1`（含嵌入版本）修复第 31 轮的原因与交付披露。`run-jobs@1` 追加可选 `missing_facts`、`next_action`、`member_missing_facts`，原 outcome、来源引用与判定性质不变；严读旧结构的客户端须同步可选字段。未派发结果引用不再冒充设备输出；交付区分最后写法与实际执行历史，保留设备自报映射及 Hub 无判定，未取得具名结论或引文不合规时给逐条修复提示并非零退出。报告显示角色与本地分钟，原身份/时间/引文保留机器资料。此候选未发布、未部署。
+
 - 2026-11-16：`plumb` 技能包推进至 `1.0.1`，只改请求示例并新增示例测试；`plumb-client` 模块代码、`tools/plumb.ts` 与 `SKILL.md` 不变，`1.0.0` 已发布的字节不动。`examples/match-single-cmd.json` 把候选命令放进顶层 `command`（`match` 类任务的请求只在 `state` 文字里写候选命令时，Plumb 网关以 HTTP 400 拒绝，要求候选命令在 `document` 或 `state.command`）；`examples/sequence-fidelity.json` 补 `step_n: 2`，与 `state` 里的 `[当前作者步骤 2]` 一致（网关用 `step_n` 写场景保真任务的指令，缺省按 1）。新增 `examples.test.ts`，按网关的请求形状规则核对 `examples/` 下每个示例。未发布候选 `case-compile@3.21.1` 的 `embeds` 同步为 `plumb@1.0.1`，内嵌的模块镜像字节与宿主版本不变；此批未发布、未部署。
 
 - 2026-11-16：T6 在 `hub-next-7` 整合 T5 守卫裁定、Hub 答复去重/按状态维护/同租约版本复用/可读名字提示和会话重放工具。守卫以 Circle 1.18 `PreToolUse` 协议返回，保留静态双引号与工作目录文件删除裁定；命名文档提示和结构化选项共用核验可读名单及覆盖范围。`case-compile@3.21.1`、`plumb@1.0.0` 和其余 T2 包清单不变；未发布、未部署。

@@ -161,3 +161,17 @@ test('a runner never receives an administrator-only result projection through jo
   const privileged=await service.exportJobs!(admin,run.run);assert.deepEqual(privileged!.jobs[0].rows,[row],'administrators retain their own read access');
   assert.equal((await service.exportJobs!(h.alice,run.run))!.jobs[0].rows,null,'an administrator read cannot seed a later caller export');
 });
+
+test('the jobs export of a job that did not go out carries the Hub reason and the named next step, in the reader form', {skip}, async()=>{
+  const map=await h.upload(h.alice,toyMap(standardDocument()));
+  const run=(await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call())).run!;
+  const id='a'.repeat(64),sha256='b'.repeat(64),item=run.items[0].id;
+  const reason='该床尚未恢复，不能派发。来源探针 synthetic-probe',step='由bed-admin按声明的清理方法处理后重开';
+  const job:RunJob={job:id,verification_run:run.run,verification_item:item,plan_run:run.run,items:[item],sha256,status:{job:id,phase:'complete',outcome:'not_dispatched',frozen:false,events:3,not_sent:true,reason,missing_fact:reason,next_action:step,member_missing_facts:[{fact:'测试环境上一次上机验证留下的配置还没有清理',next_action:'联系环境管理员处理后原样重交'}]},ended:'done',boundary_refused:false};
+  const service=createRunsService({parsers:createTestParserRegistry(),records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external,dispatch:{jobs:async()=>[job],reconcile:async()=>job.status}});
+  const runner=(await service.exportJobs!(h.alice,run.run))!.jobs[0];
+  assert.deepEqual(runner.missing_facts,[{fact:'测试环境上一次上机验证留下的配置还没有清理',next_action:'联系环境管理员处理后原样重交'}],'the runner gets the member-safe reason');
+  const admin=(await h.kit.principals.list()).find(p=>p.role==='admin'&&!p.disabled)!;
+  const privileged=(await service.exportJobs!(admin,run.run))!.jobs[0];
+  assert.equal(privileged.missing_facts![0].fact,reason);assert.equal(privileged.missing_facts![0].next_action,step);
+});

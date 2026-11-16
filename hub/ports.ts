@@ -278,6 +278,9 @@ export interface RunStatistics {
 export interface ExportedSuccessor { run: string; pack: string; started_at: string; predecessor: string | null; parameters: Record<string, unknown>; sources: Array<{ slot: string | null; reference: string }> }
 export interface ExportedJob {
   job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean;
+  /** for a job that did not go out (not sent, refused by the target, proven not executed): the Hub's own reason and named next step, in the reader's form (an administrator's, or the member-safe one). */
+  missing_facts?: Array<{ fact: string; next_action: string }>; next_action?: string;
+  member_missing_facts?: Array<{ fact: string; next_action: string }>;
   /** The result projection and the word-for-word device return, as references; null when the job has none (yet). */
   result: string | null; device_return: string | null;
   /** Null until the result projection is the dispatch service's own and covers every item of the job exactly once. */

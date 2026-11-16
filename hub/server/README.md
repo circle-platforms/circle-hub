@@ -1365,3 +1365,5 @@ reported as zero usage. Errors from a present capacity service still propagate r
 ## Reset orchestration ownership (2026-11-13)
 
 The owner's 18:40 decision moves reset orchestration into `hub/server/reset`. The server classifies current records, checks references, invokes migrations and protected export/apply, controls the dedicated worker and restores the original database after a failed operation. The CLI and console use these same operations. Platform provides only verified native backup, database archival and empty-database creation; no platform module reads Hub records or configuration shapes. Protocol schema identities use their declared contract constants, including `KNOWLEDGE_CONTRIBUTION_SCHEMA`. No dependency exception is added for reset.
+
+T8：submit_result 的未派发/目标拒绝/已证明未执行注记按 outcome 保留具名原因与下一步；带预检 result 引用不再显示为设备输出已取回，不由未执行推断用例判断错误。
