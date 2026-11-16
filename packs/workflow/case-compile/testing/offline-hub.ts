@@ -1,19 +1,21 @@
 // The Hub's plan validation, run offline over one frozen run: the pack's own check functions on the input the Hub builds for them
 // (functions/plan-boundary.ts), the quotation check of quote@1 against texts the caller supplies, and the validation@1 record the
-// generator tool reads. Nothing here needs a database, a sandbox or the network; the Hub's run engine (requirement statuses over
-// several rounds, accounts, records) is not reproduced, only what one accepted submission of plans looks like to the generator.
-// Used by tests of this pack and by offline reference-plan checks; it never stands in for a Hub acceptance.
+// generator tool reads. The command catalog of a check is what the check's own catalog_select function asks for, read from the locked
+// tree of the run by functions/catalog-selection.ts, the very walk the local plan check (tools/check-plan.ts, planBoundary) makes of
+// the same tree, so the two read one selection. Nothing here needs a database, a sandbox or the network; the Hub's run engine
+// (requirement statuses over several rounds, accounts, records) is not reproduced, only what one accepted submission of plans looks
+// like to the generator. Used by tests of this pack and by offline reference-plan checks; it never stands in for a Hub acceptance.
 import CHECKS from '../checks.json' with {type:'json'};
 import REQUIREMENTS from '../requirements.json' with {type:'json'};
 import * as checkModule from '../functions/checks.ts';
 import * as subjectModule from '../functions/subject.ts';
 import {canonicalJson} from '../functions/canonical-json.ts';
 import {checkInput} from '../functions/plan-boundary.ts';
+import {selectedCatalog,type LockedTree,type SelectedCatalog} from '../functions/catalog-selection.ts';
 import {GENERATOR,generateWorkbookSet,type GenerationInput} from '../functions/generate.ts';
 import {sha256} from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import {quoteMatches} from '../functions/quote.ts';
-import {commandTokens} from '../functions/generated/skills/command-tools/command-check/grammar.ts';
-import {createCatalogView} from '../../../../hub/rules/api.ts';
+import type {ItemHandling} from '../functions/generated/vocabulary.ts';
 import {isRecord,type Outcome} from '../functions/text.ts';
 import {readWorkbook} from '../functions/workbook.ts';
 import {satisfiedRecipes} from '../tools/generate-workbook.ts';
@@ -21,12 +23,10 @@ import {coreModel} from './workbook-model.ts';
 
 const MODULES:Record<string,Record<string,unknown>>={'functions/checks.ts':checkModule,'functions/subject.ts':subjectModule};
 
-export interface OfflineCatalogEntry {words:string[];signatures:unknown[];reference:string}
-export interface OfflineCatalog {root:string;complete:boolean;entries:OfflineCatalogEntry[]}
 /** What the quotation check reads: the text a reference points at, or undefined when the caller has none. */
 export type TextOf=(reference:string)=>string|undefined;
 export interface OfflineCheck {check:string;requirements:string[];ran:boolean;why?:string;outcomes:Outcome[]}
-export interface OfflineSubmissionItem {item:string;handling:'handled'|'skipped';slots?:unknown;reason?:string}
+export interface OfflineSubmissionItem {item:string;handling:ItemHandling;slots?:unknown;reason?:string}
 
 /**
  * The texts a frozen run itself holds for references: the author's expectation nodes and atoms, and the declared assertion of an
@@ -46,41 +46,40 @@ export function frozenTexts(run:Record<string,unknown>):Map<string,string>{
 }
 
 const requirementsOf=(check:string):string[]=>REQUIREMENTS.requirements.filter(row=>(row.checks as string[]).includes(check)).map(row=>row.key);
+type Declared=typeof CHECKS.checks[number];
+/** The function a check names to choose what it reads of the catalog (catalog_select), as the local plan check reads it. */
+const selectionOf=(check:Declared):((input:unknown)=>unknown)|undefined=>{
+ const select=(check as {catalog_select?:{module:string;export:string}}).catalog_select;
+ return select===undefined?undefined:MODULES[select.module]?.[select.export] as ((input:unknown)=>unknown)|undefined;
+};
 
 /**
- * The entries the Hub hands a check: the definitions at the nodes along the token path of each selected line (catalog-selection.ts),
- * from the pack's own selection of lines (selectCommandCatalog), in the order of the catalog view the Hub builds from them.
- * A node holds the definitions whose words are exactly its path.
+ * Every check of checks.json that judges one plan, on the input the Hub builds for it; workbook checks wait for a workbook.
+ * `tree` is the locked tree of the run (testing/locked-tree.ts builds one from a catalog; a run download holds it as
+ * knowledge/nodes.jsonl). A check that reads a catalog receives what its own selection function asks for, walked with the Hub's
+ * rules and limits (functions/catalog-selection.ts), never the whole tree; the local plan check is given the same tree and walks it
+ * the same way.
  */
-export function selectedEntries(entries:OfflineCatalogEntry[],lines:string[],complete=true):OfflineCatalogEntry[]{
- const byPath=new Map<string,OfflineCatalogEntry[]>();
- for(const entry of entries)byPath.set(JSON.stringify(entry.words),[...(byPath.get(JSON.stringify(entry.words))??[]),entry]);
- const chosen=new Map<string,OfflineCatalogEntry>();
- for(const line of new Set(lines)){
-  const tokens=commandTokens(line);if(!tokens)continue;
-  const words:string[]=[];
-  for(const token of tokens){
-   if(token.quoted)break;
-   words.push(token.value);
-   for(const entry of byPath.get(JSON.stringify(words))??[])chosen.set(entry.reference,entry);
-  }
- }
- return createCatalogView([...chosen.values()],{complete,caseSensitive:false}).entries() as OfflineCatalogEntry[];
-}
-
-/** Every check of checks.json that judges one plan, on the input the Hub builds for it; workbook checks wait for a workbook. */
-export function offlineChecks(run:Record<string,unknown>,item:string,slots:unknown,catalog:OfflineCatalog|undefined,textOf?:TextOf):OfflineCheck[]{
+export function offlineChecks(run:Record<string,unknown>,item:string,slots:unknown,tree:LockedTree|undefined,textOf?:TextOf):OfflineCheck[]{
  const row=(Array.isArray(run.items)?run.items:[]).find(value=>isRecord(value)&&value.id===item);
  if(!isRecord(row))throw new Error(`the frozen run has no item ${item}`);
- // The Hub reads the catalog through the check's selection; the pack's own function names the lines, the entries follow their paths.
- const selection=catalog===undefined?undefined:(subjectModule.selectCommandCatalog(checkInput(run,row,slots)) as {lines:string[]});
- const raw=checkInput(run,row,slots,catalog===undefined||selection===undefined?undefined:{...catalog,entries:selectedEntries(catalog.entries,selection.lines,catalog.complete)});
+ const bare=checkInput(run,row,slots);
+ // One selection serves every check that names the same catalog and function, as in the engine (selectionKey of evaluate.ts).
+ const selections=new Map<string,SelectedCatalog>();
+ const inputOf=(check:Declared):Record<string,unknown>=>{
+  const select=selectionOf(check);
+  if(tree===undefined||!('catalog' in check)||select===undefined)return bare;
+  const key=JSON.stringify([(check as {catalog?:string}).catalog,(check as {catalog_select?:unknown}).catalog_select]);
+  let selected=selections.get(key);
+  if(selected===undefined){selected=selectedCatalog(tree,select(bare));selections.set(key,selected);}
+  return checkInput(run,row,slots,'entries' in selected?{entries:selected.entries,complete:tree.complete}:{entries:[],complete:false,missing:selected.missing});
+ };
  const rows:OfflineCheck[]=[];
  for(const check of CHECKS.checks){
   const requirements=requirementsOf(check.id);
   const subject=(check as {subject?:{module:string;export:string}}).subject,fn=(check as {function?:{module:string;export?:string}}).function;
   if('interpreter' in check&&check.interpreter==='quote@1'){
-   const built=(MODULES[subject!.module][subject!.export] as (value:unknown)=>unknown)(raw) as {quotes?:Array<{reference?:string;text?:string}>;blocked?:unknown;missing?:string};
+   const built=(MODULES[subject!.module][subject!.export] as (value:unknown)=>unknown)(inputOf(check)) as {quotes?:Array<{reference?:string;text?:string}>;blocked?:unknown;missing?:string};
    if(textOf===undefined||!Array.isArray(built.quotes)){rows.push({check:check.id,requirements,ran:false,why:textOf===undefined?'no source texts supplied':'the subject holds no readable quotes',outcomes:[]});continue;}
    rows.push({check:check.id,requirements,ran:true,outcomes:built.quotes.map((quote,index):Outcome=>{
     const text=typeof quote.reference==='string'?textOf(quote.reference):undefined;
@@ -90,7 +89,7 @@ export function offlineChecks(run:Record<string,unknown>,item:string,slots:unkno
    continue;
   }
   if(fn===undefined||subject===undefined||subject.export==='workbookSubject'){rows.push({check:check.id,requirements,ran:false,why:'judges the uploaded workbook',outcomes:[]});continue;}
-  const built=(MODULES[subject.module][subject.export] as (value:unknown)=>unknown)(raw);
+  const built=(MODULES[subject.module][subject.export] as (value:unknown)=>unknown)(inputOf(check));
   const outcomes=(MODULES[fn.module][fn.export??'default'] as (value:unknown)=>Outcome[])({check:check.id,subject:built,context:{run:run.run,requirement:requirements[0],pack:'case-compile',sets:{}},sources:{},unread_sources:[]});
   rows.push({check:check.id,requirements,ran:true,outcomes});
  }
@@ -118,9 +117,9 @@ function requirementRows(rows:OfflineCheck[]){
  * The submission and the accepted validation@1 of the handled items, as the generator tool reads them. An item the submission
  * skips needs no checks. The result is `accepted` only the way the Hub accepts a submission: it holds the problems it found.
  */
-export function offlineValidation(run:Record<string,unknown>,items:OfflineSubmissionItem[],catalog:OfflineCatalog|undefined,textOf?:TextOf){
+export function offlineValidation(run:Record<string,unknown>,items:OfflineSubmissionItem[],tree:LockedTree|undefined,textOf?:TextOf){
  const submission={run:run.run,model:'offline-reference',items:items.map(value=>value.handling==='skipped'?{item:value.item,handling:'skipped',reason:value.reason??'skipped offline',slots:{plan:[]}}:{item:value.item,handling:'handled',slots:value.slots})};
- const checked=items.filter(value=>value.handling==='handled').map(value=>({item:value.item,rows:offlineChecks(run,value.item,value.slots,catalog,textOf)}));
+ const checked=items.filter(value=>value.handling==='handled').map(value=>({item:value.item,rows:offlineChecks(run,value.item,value.slots,tree,textOf)}));
  const errors:unknown[]=[];
  for(const [index,value] of items.entries()){
   if(value.handling==='skipped')continue;
@@ -133,8 +132,8 @@ export function offlineValidation(run:Record<string,unknown>,items:OfflineSubmis
 
 export interface OfflineDocuments {contract:Uint8Array;profile:Uint8Array;inventory:Uint8Array}
 /** The workbook the generator tool would write for the handled items: the same recipes (tools/generate-workbook.ts) and the same writer. */
-export function offlineWorkbook(run:Record<string,unknown>,items:OfflineSubmissionItem[],catalog:OfflineCatalog|undefined,documents:OfflineDocuments,textOf?:TextOf):{bytes:Uint8Array;recipes:GenerationInput[];problems:Outcome[];submission:unknown;result:unknown}{
- const made=offlineValidation(run,items,catalog,textOf);
+export function offlineWorkbook(run:Record<string,unknown>,items:OfflineSubmissionItem[],tree:LockedTree|undefined,documents:OfflineDocuments,textOf?:TextOf):{bytes:Uint8Array;recipes:GenerationInput[];problems:Outcome[];submission:unknown;result:unknown}{
+ const made=offlineValidation(run,items,tree,textOf);
  const problems=made.checked.flatMap(value=>offlineProblems(value.rows));
  const recipes=satisfiedRecipes({run,result:made.result,submission:made.submission,...documents});
  return {bytes:generateWorkbookSet(recipes),recipes,problems,submission:made.submission,result:made.result};
