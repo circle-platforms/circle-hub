@@ -534,11 +534,11 @@ test("an author's step against the manual closes a failed case at its first roun
   assert.deepEqual([summary.cases[1].closing_label, summary.cases[1].rounds, summary.cases[1].conflict], ['作者步骤与手册冲突（待作者或用户裁定）', 1, CONFLICT]);
   assert.deepEqual([summary.cases[3].rounds ?? null, summary.cases[3].conflict], [null, { ...CONFLICT, author: '合成动作' }]);
   assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 0, missing_fact: 0, author_conflict: 2 });
-  assert.match(JSON.parse(written.stdout).reply, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因还没查清/);
+  assert.match(JSON.parse(written.stdout).reply, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因原始用例的问题/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因还没查清/);
+  assert.match(report, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因原始用例的问题/);
   assert.match(report, /下一步由使用者核对原始用例、手册和设备输出后裁定。决定者模型。/);
-  assert.match(report, /原始用例 990000000000000104 合成意图 4，模型判断原始用例与手册冲突，状态未确认，判断错误。原因还没查清/);
+  assert.match(report, /原始用例 990000000000000104 合成意图 4，模型判断原始用例与手册冲突，状态未确认，判断错误。原因原始用例的问题/);
   assert.match(report, /未做上机验证，这条原始用例未完成脚本编写。/);
   const quoted = (author: string) => `**证据，原始用例原句**，已按照规则核对原文。\n${fenced(author)}\n\n**证据，手册原话**，构建 ${plan1.record.build}，已按照规则核对原文。\n${fenced(CONFLICT.manual)}`;
   assert.ok(report.includes(quoted('合成步骤')) && report.includes(quoted('合成动作')), 'both sentences and the statement are shown as the tool checked them');
@@ -1032,4 +1032,17 @@ test('run31 unissued history has the same chronological order whether earlier ru
   assert.deepEqual(discovered,explicit);
   assert.deepEqual(await read(`${STUCK},${STUCK},${NEWER}`), explicit, 'a run is still one run when named twice');
   assert.deepEqual(discovered.map((r:{run:string})=>r.run),[STUCK,NEWER]);
+});
+
+test('CLI reads case-bound card decisions without changing frozen scope and leaves absent decisions unchanged',async(t)=>{
+ const {spawn}=await import('node:child_process');const {fileURLToPath}=await import('node:url');const {rm}=await import('node:fs/promises');
+ const h=await hub(undefined,undefined,{}, {},undefined,false,[],'none');t.after(h.close);
+ const dir=await mkdtemp(join(tmpdir(),'delivery-card-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const notesPath=await notes({[CASES[1]]:{judged:'合成冲突',remedy:'合成下一步',evidence:'第 3 步断言没有命中',author_conflict:CONFLICT},[CASES[3]]:{judged:'合成冲突',remedy:'合成下一步',author_conflict:{...CONFLICT,author:'合成动作'}}});
+ const ruling='使用者决定：保留原始用例，暂不编写';await writeFile(join(dir,'scope.md'),`# 使用者原话，由主会话记录\n## 用例 ${CASES[3]}\n${ruling}\n`);
+ const cli=(out:string)=>new Promise<{code:number|null;stdout:string;stderr:string}>((done,reject)=>{const child=spawn(process.execPath,[fileURLToPath(new URL('./assemble-delivery.ts',import.meta.url)),'--hub',h.url,'--runs',`${WHOLE},${FINAL}`,'--recompose',RECOMPOSE,'--notes',notesPath,'--out',out],{cwd:dir});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',code=>done({code,stdout,stderr}));child.stdin.end(TOKEN+'\n');});
+ const out=join(dir,'with-card'),result=await cli(out);assert.equal(result.code,0,result.stderr);
+ const summary=JSON.parse(await readFile(join(out,'delivery.json'),'utf8'));assert.equal(summary.cases.length,4);assert.deepEqual(summary.cases.find((c:any)=>c.autoid===CASES[3]).user_rulings,[{source:'scope.md',target:CASES[3],ruling}]);assert.equal(summary.cases.find((c:any)=>c.autoid===CASES[1]).user_rulings,undefined);
+ const report=await readFile(join(out,'delivery_report.md'),'utf8');assert.match(report,/下一步等作者裁定原始用例。/);assert.ok(report.includes(ruling));assert.match(report,/下一步由使用者核对原始用例、手册和设备输出后裁定/);
+ await rm(join(dir,'scope.md'));const plainOut=join(dir,'without-card'),plain=await cli(plainOut);assert.equal(plain.code,0,plain.stderr);assert.doesNotMatch(await readFile(join(plainOut,'delivery_report.md'),'utf8'),/下一步等作者裁定原始用例/);
 });

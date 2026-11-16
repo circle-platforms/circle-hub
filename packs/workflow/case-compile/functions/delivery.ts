@@ -497,6 +497,8 @@ export interface ReportInput {
   passAudit?: { markers: number | null; read: number; downgraded: number; wordless: number };
   placedLast?: { pass: MovedCase[]; unsuccessful: MovedCase[] };
   scope?: ScopeSummary;
+  /** Verbatim scoped user decisions from the working card; never used to infer a new closing or scope. */
+  userRulings?:Record<string,Array<{source:string;target:string;ruling:string}>>;
   /** verification runs that never reached the bed. */
   unsent?: Unsent[];
 }
@@ -505,6 +507,7 @@ export function closingCounts(cases: CaseOutcome[]): string {
   return cases.filter((outcome) => outcome.closing).map((outcome) => `原始用例 ${outcome.autoid}，原因${reasonOf(outcome)}。`).join('');
 }
 const reasonOf = (outcome: CaseOutcome): string => {
+  if(outcome.closing==='author_conflict')return labelOf('attribution','author_input');
   const codes: unknown[] = [...(outcome.basis?.attributions ?? []), ...(outcome.missing?.attributions ?? [])];
   if (!codes.length) codes.push('unattributed');
   return [...new Set(codes)].filter(isAttribution).map(code => labelOf('attribution', code)).join('、');
@@ -534,7 +537,7 @@ export function caseConclusion(input: ReportInput, outcome: CaseOutcome): string
   const model = outcome.closing === 'author_conflict' || outcome.closing === 'device_defect';
   const status = model || (outcome.closing === 'authoring_failure' && observed?.terminal === 'fail') ? '未确认' : outcome.closing === 'missing_fact' || outcome.status === 'unsettled' || outcome.status === 'unrun' ? '未知' : '未确认';
   const conclusion = outcome.closing === 'author_conflict' ? '模型判断原始用例与手册冲突' : outcome.closing === 'device_defect' ? '模型判断原始用例的期望与设备输出不一致' : outcome.closing === 'authoring_failure' ? `所记录的自动化用例核验尚未通过（结论仅限这些尝试）${outcome.rounds === undefined ? '' : `，已核验 ${outcome.rounds} 份不同自动化用例`}` : outcome.closing === 'missing_fact' ? '缺少脚本编写所需的资料' : outcome.status === 'failed' ? '上机验证发现错误' : '上机验证尚无结论';
-  const next = exits.length ? exits.join('；') : observed?.missing_facts?.length ? '由测试环境管理员补齐设备输出完整性所需事实后重评' : (observed?.next_action ? publicWords(observed.next_action) : undefined) ?? (model ? !outcome.history.length ? '由作者或使用者根据已核对的原始用例与手册原句裁定' : '由使用者核对原始用例、手册和设备输出后裁定' : '尚缺具名出口材料，核对原运行的请求记录后重评；模型建议单列为未确认');
+  const next = outcome.closing==='author_conflict'&&input.userRulings?.[outcome.autoid]?.length ? '等作者裁定原始用例' : exits.length ? exits.join('；') : observed?.missing_facts?.length ? '由测试环境管理员补齐设备输出完整性所需事实后重评' : (observed?.next_action ? publicWords(observed.next_action) : undefined) ?? (model ? !outcome.history.length ? '由作者或使用者根据已核对的原始用例与手册原句裁定' : '由使用者核对原始用例、手册和设备输出后裁定' : '尚缺具名出口材料，核对原运行的请求记录后重评；模型建议单列为未确认');
   return `${named}，${outcome.closing === 'authoring_failure' ? observedWords : ''}${conclusion}，状态${status}${status === '未知' ? '' : '，判断错误'}。原因${reasonOf(outcome)}${sourceMissing.length ? `，缺少：${sourceMissing.map(publicWords).join('；')}` : ''}，下一步${next}。决定者${model ? '模型' : '程序'}。`;
 }
 
@@ -562,10 +565,12 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
   const executed = source?.run ? outcome.history.find(h => h.run === source.run) : undefined;
   const candidate = note.defect_candidate;
   const conflict = outcome.conflict ?? note.author_conflict;
+  const rulings=outcome.closing==='author_conflict'?input.userRulings?.[outcome.autoid]??[]:[];
   return [
     `## 原始用例 ${outcome.autoid} ${title(input, outcome.autoid)}`,
     caseConclusion(input, outcome),
     '', timeline(outcome, input.excluded.includes(outcome.autoid)),
+    ...rulings.flatMap(row=>['','**使用者已记录的决定（卡片原文）**',...(reportableProse(row.ruling)?fence(row.ruling):['决定原文含内部引用，完整内容见机器资料'])]),
     ...(input.assembly.unsuccessful?.sources[outcome.autoid] ? ['', executed ? `本卷这条写法已在第 ${executed.ordinal} 次上机验证中执行。` : '本卷采用最后一次写好的自动化用例；这份写法尚未发到设备，上面的记录来自较早一次实际到设备的上机验证。'] : []),
     ...(input.unsent ?? []).filter((u) => outcome.history.length > 0 && u.items.includes(outcome.autoid)).flatMap((u) => ['', `另有一次上机验证没有发到设备，不算一次上机验证：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.fact)))].join('；') : '原因缺少可读取的记录'}。下一步：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.next_action)))].join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`]),
     ...(note.judged ? ['', note.absent ? '尚未提供模型说明。' : `模型说明，状态未确认。${judged}`] : []),

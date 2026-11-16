@@ -1,6 +1,7 @@
+import {extractScopeUserRulings} from '../functions/scope.ts';
 import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
 import { realpathSync } from 'node:fs';
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord, failCall, CallFailure, localMinute } from '../functions/text.ts';
@@ -533,8 +534,22 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       return problems.length ? { ...outcome, closing: undefined, evidence_unverified: true as const, pending: [...(outcome.pending ?? []), ...problems] } : outcome;
     });
     const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1) ?? unsent.at(-1)!).plan_run)!.run;
+    // The working card supplies verbatim scoped rulings, never a replacement for frozen Hub scope or a prose classifier.
+    const userRulings:NonNullable<ReportInput['userRulings']>={};
+    if(assembly.cases.some(outcome=>outcome.closing==='author_conflict')){
+      const card=await readFile(resolve('scope.md')).catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return null;throw error;});
+      if(card!==null){
+        let words:string;try{words=new TextDecoder('utf-8',{fatal:true}).decode(card);}catch{throw new CallFailure('invalid_parameters','工作卡片 scope.md 不是完整 UTF-8','从原件恢复完整卡片后重试，不从模型说明猜使用者决定');}
+        for(const outcome of assembly.cases.filter(value=>value.closing==='author_conflict')){
+          const ids=new Set([outcome.autoid]);
+          for(const plan of plans.values())for(const item of Array.isArray(plan.run.items)?plan.run.items:[])if(autoidOf(item)===outcome.autoid&&isRecord(item)&&typeof item.id==='string')ids.add(item.id);
+          const rulings=extractScopeUserRulings(words,ids,outcome.autoid);
+          if(rulings.length)userRulings[outcome.autoid]=rulings.map(row=>({source:'scope.md',...row}));
+        }
+      }
+    }
     const hints = closingHints(assembly.cases, notes, unsent);
-    const input: ReportInput = { unsent, name: args.name ?? basename(resolve(args.out)), generatedAt: localMinute(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast }, ...(scopeSummary ? { scope: scopeSummary } : {}) };
+    const input: ReportInput = { ...(Object.keys(userRulings).length?{userRulings}:{}),unsent, name: args.name ?? basename(resolve(args.out)), generatedAt: localMinute(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast }, ...(scopeSummary ? { scope: scopeSummary } : {}) };
     input.artifacts = [...outputs.map(output => output.name), ...Object.values(REPORT_FILES)];
     outputs.push({ name: REPORT_FILES.report, bytes: Buffer.from(deliveryReport(input)) }, { name: REPORT_FILES.unsuccessful, bytes: Buffer.from(unsuccessfulReport(input)) });
     const summary = {
@@ -555,7 +570,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       incomplete: hints.length > 0,
       closings: Object.fromEntries((Object.keys(CLOSING) as Array<keyof typeof CLOSING>).map((closing) => [closing, assembly.cases.filter((c) => c.closing === closing).length])),
       artifacts: input.artifacts,
-      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.basis ? { basis: c.basis } : {}), ...(notes.cases[c.autoid] ? { model_claims: { ...notes.cases[c.autoid], ...(!c.history.length ? { round: undefined } : {}) } } : {}), ...(c.pending?.length ? { pending: c.pending, reenter: true } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, ...(h.report_check ? { report_check: h.report_check } : {}), dynamic_terminal: h.reported_terminal ?? h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}), ...(h.qualifier ? { qualifier: h.qualifier } : {}), ...(h.accepted_as_fact === undefined ? {} : { accepted_as_fact: h.accepted_as_fact }), ...(h.missing_facts ? { missing_facts: h.missing_facts } : {}), ...(h.missing_fact ? { missing_fact: h.missing_fact } : {}), ...(h.next_action ? { next_action: h.next_action } : {}) })) })),
+      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.basis ? { basis: c.basis } : {}), ...(notes.cases[c.autoid] ? { model_claims: { ...notes.cases[c.autoid], ...(!c.history.length ? { round: undefined } : {}) } } : {}), ...(c.pending?.length ? { pending: c.pending, reenter: true } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), ...(userRulings[c.autoid]?.length?{user_rulings:userRulings[c.autoid]}:{}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, ...(h.report_check ? { report_check: h.report_check } : {}), dynamic_terminal: h.reported_terminal ?? h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}), ...(h.qualifier ? { qualifier: h.qualifier } : {}), ...(h.accepted_as_fact === undefined ? {} : { accepted_as_fact: h.accepted_as_fact }), ...(h.missing_facts ? { missing_facts: h.missing_facts } : {}), ...(h.missing_fact ? { missing_fact: h.missing_fact } : {}), ...(h.next_action ? { next_action: h.next_action } : {}) })) })),
     };
     outputs.push({ name: REPORT_FILES.summary, bytes: json(summary) });
 

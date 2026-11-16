@@ -238,8 +238,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "78c8baf1404bc1110ac87e4c8d4ff8cccb4af1e07e5701a9fd0c272a5c6d52dc",
-      "size": 65170
+      "sha256": "a2650949d3ef3e47d64bb0769f9ee488ff2bf9973b67d511e0968466635c0099",
+      "size": 65857
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -868,8 +868,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "07c8e38f5c0825d6fbffae0e3b2f29fc110343ca1818ad8aa28962a1b70dea01",
-      "size": 52681
+      "sha256": "f94caa34d2a69b366c0a1d760ef20c5fe9f466f8a178b9c1b534d96a9c425d9b",
+      "size": 54124
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -948,8 +948,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "290e52b05e65d507224e1061e8aab18bcf6f1ac503d97ae80a3d25756fe67744",
-      "size": 17033
+      "sha256": "441ee85da16ca720511587072e9d6387733273dfd51e86a104a2d9b1f1d56d3b",
+      "size": 17684
     },
     {
       "path": "tools/download-returns.cli.json",
