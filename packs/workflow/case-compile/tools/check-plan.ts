@@ -406,9 +406,9 @@ export async function main(argv: string[]): Promise<number> {
     if (!res.ok) {
       writeProblemStderr(
         'invalid_parameters',
-        `${name} 结构检查未通过`,
+        `${name} 本地核对未通过`,
         res.problems,
-        '请按 stdout 中的 problems 字段对照 slots.schema.json 修改后重检',
+        '先提供正确的 --run 冻结输入，再按 problems 的位置与允许集合修改计划；结构问题对照 slots.schema.json，不改冻结配置绕过',
       );
       return 1;
     }

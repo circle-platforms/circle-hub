@@ -1,3 +1,4 @@
+import {CallFailure} from './text.ts';
 // Deterministic step_indices binding and Option A1 Plumb sequence gate-to-verdict mapping.
 import type { AuthorStep, FidelityBrief, FidelityRow, FidelityVerdict, ModelDisclosure, ModelJudgment } from './fidelity.ts';
 import {
@@ -118,7 +119,7 @@ export function mapPlumbSequenceToFidelityRow(params: {
   }
 
   if (verdict === 'preserved' && stepIndices.length === 0) {
-    throw new Error(`作者步骤 ${authorStep.n} 缺确定的计划步骤对应；在计划中补 author_step_refs 或完整 adapted_commands 对应后重跑，不能把缺对应依据判成未实现`);
+    throw new CallFailure('invalid_parameters',`作者步骤 ${authorStep.n} 缺确定的计划步骤对应，不能把缺对应依据判成未实现`,'在计划中补 author_step_refs 或完整 adapted_commands 对应后重跑');
   }
 
   if (partitioned.exemptSummaryLines.length > 0 && verdict === 'preserved') {

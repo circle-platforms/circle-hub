@@ -404,7 +404,7 @@ test('plan checks disclose missing frozen run and share Hub method refusal with 
   const plan=flatPlan();const file=join(dir,'plan.json'),run=join(dir,'run.json');
   await writeFile(file,JSON.stringify(plan));
   const syntax=await runCli(['--file',file]);
-  const syntaxResult=JSON.parse(syntax.stdout);assert.equal(syntaxResult.ok,false);assert.equal(syntaxResult.structure_ok,true);assert.equal(syntaxResult.authority_checked,false);assert.match(syntaxResult.disclosure,/冻结/);
+  const syntaxResult=JSON.parse(syntax.stdout);assert.equal(syntaxResult.ok,false);assert.equal(syntaxResult.structure_ok,true);assert.equal(syntaxResult.authority_checked,false);assert.match(syntaxResult.disclosure,/冻结/);assert.match(syntax.stderr,/本地核对未通过/);assert.doesNotMatch(syntax.stderr,/结构检查未通过/);
   await writeFile(run,JSON.stringify({run:'run_synthetic',groups:[{kind:'case-compile',contract:CONTRACT_DOC,profile:PROFILE_DOC,manifest:MANIFEST_DOC}],items:[{id:plan.item}]}));
   plan.slots.plan[0].data.steps[0].object='invented-seat';await writeFile(file,JSON.stringify(plan));
   const checked=await runCli(['--file',file,'--run',run]);assert.equal(checked.code,1,checked.stderr);
