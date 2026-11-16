@@ -7,6 +7,7 @@ import REQUIREMENTS from '../requirements.json' with {type:'json'};
 import * as checkModule from './checks.ts';
 import * as subjectModule from './subject.ts';
 import {slotRecordProblems} from './slot-record.ts';
+import {selectedCatalog,type LockedTree,type SelectedCatalog} from './catalog-selection.ts';
 import {isRecord,type Outcome} from './text.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 
@@ -20,6 +21,11 @@ export interface HubCheckCoverage { check:string;requirements:string[];ran:boole
 export interface BoundaryProblem { code?:string;pointer:string;message:string;verdict?:Extract<Verdict,'refute'|'unknown'>;[key:string]:unknown }
 export interface BoundaryResult { structure_ok:boolean;problems:BoundaryProblem[];coverage:HubCheckCoverage[] }
 
+/** The function a check names to choose what it reads of the catalog (catalog_select), when it is one this module has loaded. */
+function selectionOf(check:typeof CHECKS.checks[number]):((input:unknown)=>unknown)|undefined{
+ const select=(check as {catalog_select?:{module:string;export:string}}).catalog_select;
+ return select===undefined?undefined:MODULES[select.module]?.[select.export] as ((input:unknown)=>unknown)|undefined;
+}
 const requirementsOf=(check:string):string[]=>REQUIREMENTS.requirements.filter(row=>(row.checks as string[]).includes(check)).map(row=>row.key);
 /** Why a declared check cannot run in a plan check; null when it can. */
 export function notRunReason(check:typeof CHECKS.checks[number]):string|null{
@@ -30,6 +36,7 @@ export function notRunReason(check:typeof CHECKS.checks[number]):string|null{
  if(fn===undefined||subject===undefined)return '这条检查没有声明包内函数或条目取材函数';
  if(subject.export==='workbookSubject')return '这条检查核对上传的工作簿；计划阶段还没有工作簿';
  if(MODULES[fn.module]?.[fn.export??'default']===undefined||MODULES[subject.module]?.[subject.export]===undefined)return `本地没有载入 ${fn.module}（${fn.export??'default'}）`;
+ if('catalog' in check&&selectionOf(check)===undefined)return '这条检查读命令目录但没有声明目录选择函数；Hub 读整棵目录，本地不重放这种读法';
  return null;
 }
 const stripData=(pointer:string):string=>pointer==='/data'?'':pointer.startsWith('/data/')?pointer.slice('/data'.length):pointer;
@@ -40,13 +47,16 @@ export function frozenContext(run:Record<string,unknown>):Record<string,unknown>
  const names=(Array.isArray(run.target_basis)?run.target_basis:[]).flatMap(claim=>isRecord(claim)&&isRecord(claim.statement)&&isRecord(claim.statement.data)&&claim.statement.data.field==='product'&&Array.isArray(claim.statement.data.names)?claim.statement.data.names:[]);
  return {run:run.run,predecessor:run.predecessor??null,...(run.product_pack_digest?{product_pack_digest:run.product_pack_digest}:{}),...(run.skills!==undefined?{skills:run.skills}:{}),...(run.command_policy?{command_policy:run.command_policy}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),product:run.product??null,names,line:run.version??null,build:run.build??null,root:run.root??null,parameters:run.parameters??{},groups:Array.isArray(run.groups)?run.groups:[]};
 }
-/** The input the Hub builds for the subject builder of one item check (evaluate.ts, builderInput). */
-export function checkInput(run:Record<string,unknown>,item:Record<string,unknown>,slots:unknown,catalog?:unknown):Record<string,unknown>{
- const entries=isRecord(catalog)&&Array.isArray(catalog.entries)?catalog.entries:undefined;
- return {applies:'item',item:{id:item.id,label:item.label,location:item.location,fields:item.fields},slots,evidence:[],context:frozenContext(run),...(entries!==undefined?{catalog:entries,catalog_complete:isRecord(catalog)&&catalog.complete===true}:{})};
+/**
+ * The input the Hub builds for the subject builder of one item check (evaluate.ts, builderInput): the frozen facts of the run and the
+ * item, and for a check that reads a catalog what its selection answered: the entries and whether the catalog is complete, or why
+ * they could not be read (no entries then, and the reason with them).
+ */
+export function checkInput(run:Record<string,unknown>,item:Record<string,unknown>,slots:unknown,catalog?:{entries:unknown[];complete:boolean;missing?:string}):Record<string,unknown>{
+ return {applies:'item',item:{id:item.id,label:item.label,location:item.location,fields:item.fields},slots,evidence:[],context:frozenContext(run),...(catalog!==undefined?{catalog:catalog.entries,catalog_complete:catalog.complete,...(catalog.missing!==undefined?{catalog_missing:catalog.missing}:{})}:{})};
 }
 /** One outcome of a check as plan problems: a gap list becomes one problem per gap (the Hub's data.problems), anything else one problem. */
-function problemsOf(outcome:Outcome):BoundaryProblem[]{
+export function problemsOf(outcome:Outcome):BoundaryProblem[]{
  const code=outcome.code??outcome.reason;
  const gaps=isRecord(outcome.data)&&Array.isArray(outcome.data.problems)?outcome.data.problems.filter(isRecord):[];
  if(gaps.length)return gaps.map(gap=>({...gap,...(code!==undefined?{code}:{}),pointer:String(gap.pointer??''),message:String(gap.message??'')}) as BoundaryProblem);
@@ -56,15 +66,25 @@ function problemsOf(outcome:Outcome):BoundaryProblem[]{
 /**
  * The plan problems of one item with the frozen inputs of its run. `slots` is the item's `slots` object as it would be submitted;
  * `catalog` is the locked command tree downloaded beside the run (optional: without it the checks report what they cannot judge).
- * Like the Hub, an item whose slot record has a structure problem gets no check at all.
+ * A check receives the part of it the Hub gives that check: what the check's own catalog_select function asks for, read by the
+ * Hub's walk of the tree (catalog-selection.ts), never the whole tree. Like the Hub, an item whose slot record has a structure
+ * problem gets no check at all.
  */
-export function planBoundary(input:{run:Record<string,unknown>;item:string;slots:unknown;catalog?:unknown}):BoundaryResult{
+export function planBoundary(input:{run:Record<string,unknown>;item:string;slots:unknown;catalog?:LockedTree}):BoundaryResult{
  const coverage:HubCheckCoverage[]=[],problems:BoundaryProblem[]=[],seen=new Set<string>();
  const add=(row:BoundaryProblem):void=>{const key=canonical(row);if(!seen.has(key)){seen.add(key);problems.push(row);}};
  const frozen=isRecord(input.run.slots)?input.run.slots.schema:undefined;
  const structure=slotRecordProblems(frozen,input.slots);
  for(const row of structure)add({code:'SUBMISSION_SCHEMA_VIOLATION',pointer:row.pointer,message:row.message});
  const item=(Array.isArray(input.run.items)?input.run.items:[]).find(row=>isRecord(row)&&row.id===input.item);
+ // One selection serves every check that names the same catalog and function, as in the engine (selectionKey of evaluate.ts).
+ const selections=new Map<string,SelectedCatalog>();
+ const catalogOf=(check:typeof CHECKS.checks[number],raw:Record<string,unknown>,tree:LockedTree)=>{
+  const key=JSON.stringify([(check as {catalog?:string}).catalog,(check as {catalog_select?:unknown}).catalog_select]);
+  let selected=selections.get(key);
+  if(selected===undefined){selected=selectedCatalog(tree,selectionOf(check)!(raw));selections.set(key,selected);}
+  return 'entries' in selected?{entries:selected.entries,complete:tree.complete}:{entries:[],complete:false,missing:selected.missing};
+ };
  for(const check of CHECKS.checks){
   const why=notRunReason(check),requirements=requirementsOf(check.id);
   if(why!==null){coverage.push({check:check.id,requirements,ran:false,why});continue;}
@@ -73,7 +93,8 @@ export function planBoundary(input:{run:Record<string,unknown>;item:string;slots
   const fn=(check as unknown as {function:{module:string;export?:string}}).function,subject=(check as unknown as {subject:{module:string;export:string}}).subject;
   let outcomes:Outcome[];
   try{
-   const raw=checkInput(input.run,item,input.slots,input.catalog);
+   const bare=checkInput(input.run,item,input.slots);
+   const raw='catalog' in check&&input.catalog!==undefined?checkInput(input.run,item,input.slots,catalogOf(check,bare,input.catalog)):bare;
    const built=(MODULES[subject.module][subject.export] as (value:unknown)=>unknown)(raw);
    outcomes=(MODULES[fn.module][fn.export??'default'] as (value:unknown)=>Outcome[])({check:check.id,subject:built,context:{run:input.run.run,requirement:requirements[0],pack:'case-compile',sets:{}},sources:{},unread_sources:[]});
   }catch(error){

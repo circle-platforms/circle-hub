@@ -10,8 +10,9 @@ import {recognize} from '../../../hub/refs/api.ts';
 import {call,openHub,sha,ROOT,type Hub} from './testing/hub.ts';
 import {CONTRACT_DOC,PROFILE_DOC,MANIFEST_DOC,AUTOID,goodData} from './functions/test-support.ts';
 import {checkPlanObject} from './tools/check-plan.ts';
+import {lockedTreeOf} from './testing/locked-tree.ts';
+import {hubProblems,unique} from './testing/hub-answer.ts';
 import CHECKS from './checks.json' with {type:'json'};
-import REQUIREMENTS from './requirements.json' with {type:'json'};
 
 const skip=(await osIsolationAvailable())?false:'no OS network isolation on this machine (sandbox-exec)';
 let postgres:TemporaryPostgres,hub:Hub;
@@ -52,35 +53,12 @@ const CHECKED:Array<[string,(claim:Claim,data:ReturnType<typeof goodData>)=>void
  ['a command the locked tree does not have',(_,data)=>{data.steps[0].args=['widget unknown command 5'];}],
 ];
 
-/** The pointer of a Hub path inside the item, and the text of a Hub message without the item position. */
-const inItem=(text:string,index:number):string=>text.replaceAll(`/items/${index}`,'');
-const stripData=(pointer:string):string=>pointer==='/data'?'':pointer.startsWith('/data/')?pointer.slice('/data'.length):pointer;
-const canonical=(value:unknown):string=>JSON.stringify(value,(_key,inner)=>inner!==null&&typeof inner==='object'&&!Array.isArray(inner)?Object.fromEntries(Object.entries(inner).sort(([a],[b])=>a<b?-1:1)):inner);
-const unique=(rows:unknown[]):string[]=>[...new Set(rows.map(canonical))].sort();
-// The requirements whose checks all judge the plan itself; the workbook requirement waits for an upload and is not compared.
-const PLAN_STAGE_CHECKS=['contract_shape','bed_addresses','commands_catalog','expected_sources','expected_quotes'];
-const PLAN_REQUIREMENTS=new Set(REQUIREMENTS.requirements.filter(row=>(row.checks as string[]).length>0&&(row.checks as string[]).every(id=>PLAN_STAGE_CHECKS.includes(id))).map(row=>row.key));
-
-/** The problems the Hub's answer holds for one item, in the shape check-plan reports them. */
-function hubProblems(answer:Awaited<ReturnType<Hub['service']['submitResult']>>,item:string,index:number){
- const structure=(answer.errors??[]).filter(error=>error.item===item&&error.code==='SUBMISSION_SCHEMA_VIOLATION').map(error=>({code:error.code,pointer:inItem(error.path??'',index),message:inItem(error.message,index)}));
- const checks:unknown[]=[];
- for(const rows of Object.values(answer.result?.partitions??{}))for(const row of rows)if(row.item===item)for(const requirement of row.requirements)if(PLAN_REQUIREMENTS.has(requirement.requirement))for(const entry of requirement.claims){
-  const statement=entry.statement as {verdict?:string;code?:string;reason?:string;text?:string;data?:{problems?:Array<Record<string,unknown>>}};
-  if(statement.verdict!=='refute'&&statement.verdict!=='unknown'||statement.reason==='awaiting_step')continue;
-  const code=statement.code??statement.reason,gaps=statement.data?.problems??[];
-  if(gaps.length)checks.push(...gaps.map(gap=>({...gap,...(code!==undefined?{code}:{})})));
-  else checks.push({...(code!==undefined?{code}:{}),pointer:stripData(String((entry as {pointer?:string}).pointer??'')),message:statement.text,verdict:statement.verdict});
- }
- return {structure,checks};
-}
-
 async function parity(variants:typeof STRUCTURE){
  const started=await hub.service.startRunDetailed(hub.alice,start() as never,call());assert.equal(started.answer.call_result,'ok',JSON.stringify(started.answer.errors));
  const run=started.answer.run!,exported=await hub.service.exportRun!(hub.alice,run.run);assert.ok(exported);
  const frozen=JSON.parse(JSON.stringify(exported.run)) as Record<string,unknown>;
  const view=await hub.knowledge.catalog(ROOT,'commands@1');assert.ok(view);
- const catalog={root:ROOT,complete:view.complete,entries:view.entries()};
+ const catalog=lockedTreeOf({root:ROOT,complete:view.complete,entries:view.entries()});
  const items=run.items.map((item,index)=>({item:item.id,handling:'handled' as const,slots:{plan:[claim(index,variants[index][1])]}}));
  const answer=await hub.service.submitResult(hub.alice,{run:run.run,model:'synthetic-model',items} as never,call());
  return {run,frozen,catalog,items,answer};

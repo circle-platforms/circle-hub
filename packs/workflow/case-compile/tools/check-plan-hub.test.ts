@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {checkPlanObject} from './check-plan.ts';
 import {frozenRun} from '../testing/frozen-run.ts';
+import {lockedTreeOf,type FlatCatalog} from '../testing/locked-tree.ts';
 import {cellFixture,cellPlan,fixture,plan as blockPlan,call as blockCall,assertion,quote as blockQuote} from '../testing/blocks.ts';
 import {CONTRACT_DOC,PROFILE_DOC,MANIFEST_DOC,COMMAND_CATALOG,QUOTE,goodData} from '../functions/test-support.ts';
 import {SUBAGENT_ROLES} from '../functions/subagent-roles.ts';
@@ -12,7 +13,7 @@ import {SUBAGENT_ROLES} from '../functions/subagent-roles.ts';
 const LEASES={now:'2026-10-23T02:00:00.000Z',entries:[]};
 const flatRun=()=>frozenRun({groups:[{kind:'case-compile',contract:CONTRACT_DOC,profile:PROFILE_DOC,manifest:MANIFEST_DOC,leases:LEASES}],items:[{id:'doc:case-1',label:'合成用例',location:QUOTE.reference,fields:{}}],root:(COMMAND_CATALOG as {root:string}).root,command_policy:(COMMAND_CATALOG as {policy:unknown}).policy});
 const flatPlan=(data=goodData(),claim:Record<string,unknown>={})=>({item:'doc:case-1',handling:'handled',slots:{plan:[{text:'合成计划',quotes:[QUOTE],data,...claim}]}});
-const check=(value:unknown,run:Record<string,unknown>=flatRun(),catalog:unknown=COMMAND_CATALOG)=>checkPlanObject('plan.json',value,run,catalog);
+const check=(value:unknown,run:Record<string,unknown>=flatRun(),catalog:FlatCatalog=COMMAND_CATALOG as FlatCatalog)=>checkPlanObject('plan.json',value,run,lockedTreeOf(catalog));
 
 test('a plan the Hub accepts passes, and says which Hub checks ran and which did not',()=>{
  const result=check(flatPlan());

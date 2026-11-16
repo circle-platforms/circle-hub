@@ -20,11 +20,46 @@ export function inverseLine(policy:CommandPolicy,line:string):string|null {
  const rule=fits[0];if(!rule||fits[1]?.source_prefix===rule.source_prefix)return null;
  return [...wordsOf(rule.inverse_prefix),...tokens.slice(wordsOf(rule.source_prefix).length).map(token=>token.raw)].join(' ');
 }
-/** Every command's line under the rule, read with the plan so a check can tell a cleanup left out from one the locked tree does not have: all of them, or none when they do not fit the selection's limits. */
+/**
+ * What a declared pair of alternative values asks the locked tree for, as the lines the catalog selection reads. The cleanup check
+ * meets a pair in two forms: the value of an enum argument of one signature (the command's own definition holds both values, so
+ * nothing more is needed) and two sibling commands (`x on` and `x off`), where the partner's definition has to be read to know a
+ * cleanup is owed at all. The tree is walked by exact words and the walk stops at the first word it does not find, so the line of
+ * a sibling is the command's line cut after the swapped word: one line per unquoted word that is a member of a pair, that word
+ * replaced by its partner, nothing after it. A path the given lines already walk that far is not asked for twice.
+ */
+export function alternativeLines(policy:CommandPolicy|null,lines:readonly string[]):string[] {
+ const partners=new Map<string,string>();
+ for(const [first,second]of policy?.inverse_alternatives??[]){partners.set(first,second);partners.set(second,first);}
+ // Lines past the selection's own limit are refused as they stand: asking for more changes nothing.
+ if(!partners.size||lines.length>128)return [];
+ // The words each line walks: a quoted word ends the walk, so it is kept as null and equals no word.
+ const walked=lines.flatMap(line=>{const tokens=commandTokens(line);return tokens?[tokens.map(token=>token.quoted?null:token.value)]:[];});
+ const asked=new Set<string>();
+ for(const line of lines){
+  const tokens=commandTokens(line);if(!tokens)continue;
+  for(const [index,token]of tokens.entries()){
+   if(token.quoted)break;
+   const partner=partners.get(token.value),parsed=partner===undefined?null:commandTokens(partner);
+   if(partner===undefined||parsed?.length!==1||parsed[0].quoted||parsed[0].value!==partner)continue;
+   const words=[...tokens.slice(0,index).map(word=>word.value),partner];
+   if(!walked.some(other=>other.length>=words.length&&words.every((word,at)=>other[at]===word)))asked.add(words.join(' '));
+  }
+ }
+ return [...asked];
+}
+/**
+ * The lines the catalog selection reads besides the plan's own, so a check can tell a cleanup left out from a path the locked tree
+ * does not have. The sibling commands of declared pairs come first and are never dropped: a plan that turns a switch on is judged
+ * owing no cleanup when the partner cannot be read, so when they do not fit the selection's limits the selection is over the limit
+ * and the Hub refuses it as too large (the plan is split and checked again). The lines the product's prefix rules make of each
+ * command come after: all of them, or none when they do not fit.
+ */
 export function inverseLines(policy:CommandPolicy|null,lines:readonly string[]):string[] {
  if(!policy)return [];
- const fresh=[...new Set(lines.flatMap(line=>{const inverse=inverseLine(policy,line);return inverse!==null&&!lines.includes(inverse)&&Buffer.byteLength(inverse)<=8192?[inverse]:[];}))];
- return lines.length+fresh.length<=128?fresh:[];
+ const alternatives=alternativeLines(policy,lines);
+ const fresh=[...new Set(lines.flatMap(line=>{const inverse=inverseLine(policy,line);return inverse!==null&&!lines.includes(inverse)&&!alternatives.includes(inverse)&&Buffer.byteLength(inverse)<=8192?[inverse]:[];}))];
+ return [...alternatives,...(lines.length+alternatives.length+fresh.length<=128?fresh:[])];
 }
 const declaredCommands=(list:unknown)=>Array.isArray(list)&&list.length>=1&&list.length<=64&&list.every(row=>isRecord(row)&&Object.keys(row).every(name=>name==='prefix'||name==='with_parameter')&&!!pathSegments(row.prefix)&&(row.with_parameter===undefined||Number.isSafeInteger(row.with_parameter)&&Number(row.with_parameter)>=0&&Number(row.with_parameter)<=255));
 export function readCommandPolicy(value:unknown):CommandPolicy|null {
