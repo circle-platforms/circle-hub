@@ -12,8 +12,15 @@ import { CMD_CANDIDATES_SCHEMA, runCmdSelectPlumb } from './cmd-select-plumb.ts'
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
 const ROOT = 'a'.repeat(64);
 
-let stubMode: 'pass' | 'review' | 'reject' | 'none' | 'service_down' | 'too_large' = 'pass';
+let stubMode: 'pass' | 'review' | 'reject' | 'none' | 'service_down' | 'too_large' | 'gateway_budget' = 'pass';
 const seenRequests: Array<Record<string, unknown>> = [];
+const GATEWAY_MAX_PAIRS = 256;
+
+/** What the gateway charges a choice question on a model with a none threshold: its candidates, less the single none option. */
+function chargedPairs(question: { candidates?: Array<{ name: string }> }): number {
+  const names = (question.candidates ?? []).map((c) => c.name);
+  return names.length >= 2 && names.filter((n) => n === '都不是').length === 1 ? names.length - 1 : names.length;
+}
 
 const server = http.createServer((req, res) => {
   const chunks: Buffer[] = [];
@@ -38,6 +45,19 @@ const server = http.createServer((req, res) => {
       questions?: Record<string, { task?: string; node?: Record<string, unknown>; state?: string; definition?: string; candidates?: Array<{ name: string; text: string }> }>;
     };
     seenRequests.push(body as unknown as Record<string, unknown>);
+    if (stubMode === 'gateway_budget') {
+      // execute_judge: one pair budget for the whole request, spent by its questions in order.
+      let remaining = GATEWAY_MAX_PAIRS;
+      for (const q of Object.values(body.questions ?? {})) {
+        const cost = chargedPairs(q);
+        if (cost > remaining) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { type: 'request_too_large', message: `Compiled judge pairs (${cost}) exceed limit (${remaining})`, retryable: false } }));
+          return;
+        }
+        remaining -= cost;
+      }
+    }
     const answers: Record<string, unknown> = {};
     for (const [qid, q] of Object.entries(body.questions ?? {})) {
       assert.equal(q.task, 'choice');
@@ -139,7 +159,7 @@ function buildBatch(cmdCount = 35): Buffer {
   return Buffer.from([head, ...nodes].map((n) => JSON.stringify(n)).join('\n') + '\n');
 }
 
-async function setupRunDir(cmdCount = 35): Promise<string> {
+async function setupRunDir(cmdCount = 35, stepCount = 1): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'cc-cmd-select-'));
   for (const { name, bytes } of knowledgeFiles(buildBatch(cmdCount), RUN).outputs) {
     await mkdir(dirname(join(dir, name)), { recursive: true });
@@ -158,7 +178,7 @@ async function setupRunDir(cmdCount = 35): Promise<string> {
       autoid: 'C0',
       title: '配置接口与组件',
       path: ['网络配置', '接口管理', '配置接口与组件'],
-      steps: [{ text: '为 widget 设置 ip address 192.0.2.10/24' }],
+      steps: Array.from({ length: stepCount }, (_, i) => ({ text: i === 0 ? '为 widget 设置 ip address 192.0.2.10/24' : `为 widget 设置第 ${i + 1} 项 ip address 192.0.2.${10 + i}/24` })),
     },
   }));
   return dir;
@@ -240,6 +260,28 @@ test('cmd-select-plumb handles review, strict-review, none, reject, and fail-clo
     assert.equal(largeRes.code, 1);
     assert.match(largeRes.stderr, /^参数无效：/);
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('cmd-select-plumb sends no request that the gateway prices above its 256-pair budget when seven steps recall 40 commands each', async () => {
+  const dir = await setupRunDir(60, 7); // each step recalls 40 commands: chunks of 24 and 16, 14 questions and 280 pairs for stage 1
+  try {
+    stubMode = 'gateway_budget';
+    seenRequests.length = 0;
+    const res = await runCmdSelectPlumb(
+      ['--run', dir, '--base-url', baseUrl, '--no-cache', '--key-stdin'],
+      { stdinText: 'plumb_sk_test_key\n' },
+    );
+    assert.equal(res.code, 0, res.stderr);
+    const priced = seenRequests.map((r) => Object.values((r as { questions: Record<string, { candidates?: Array<{ name: string }> }> }).questions).reduce((n, q) => n + chargedPairs(q), 0));
+    assert.ok(priced.length >= 3, 'stage 1 needs two requests, stage 2 one more');
+    assert.ok(priced.every((pairs) => pairs <= GATEWAY_MAX_PAIRS), `requests priced at ${priced.join(', ')} pairs`);
+    const doc = JSON.parse(await readFile(join(dir, 'plumb', 'cmd_candidates', '00.json'), 'utf8'));
+    assert.equal(doc.steps.length, 7);
+    assert.ok(doc.steps.every((step: { recalled_count: number }) => step.recalled_count === 40));
+  } finally {
+    stubMode = 'pass';
     await rm(dir, { recursive: true, force: true });
   }
 });

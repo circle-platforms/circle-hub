@@ -7,6 +7,7 @@ import https from 'node:https';
 import type { TLSSocket } from 'node:tls';
 import { URL } from 'node:url';
 import { PlumbDiskCache, buildCacheKey } from './cache.ts';
+import { PLUMB_GATEWAY_LIMITS, describePlumbRequestLimits, estimateExpandedPairs, planPlumbBatches } from './gateway-limits.ts';
 import {
   appendPrivateLine,
   redactSecret,
@@ -41,11 +42,10 @@ import {
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_WAKE_TIMEOUT_MS = 720_000;
 const DEFAULT_WAKE_POLL_MS = 5_000;
-const DEFAULT_MAX_CONCURRENT = 2;
+const DEFAULT_MAX_CONCURRENT = PLUMB_GATEWAY_LIMITS.maxConcurrentPerKey;
 const DEFAULT_MAX_RPM = 60;
-const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
+const DEFAULT_MAX_BODY_BYTES = PLUMB_GATEWAY_LIMITS.maxBodyBytes;
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
-const MAX_BATCH_QUESTIONS = 32;
 const MAX_CA_FILE_BYTES = 2 * 1024 * 1024;
 const GET_BACKOFF_MS: readonly number[] = [1_000, 2_000, 4_000];
 const MAX_POST_RATE_LIMIT_WAIT_MS = 15_000;
@@ -183,7 +183,7 @@ function categoryForStatus(status: number, code: string): CallErrorCategory {
 
 function nextActionForError(status: number, code: string): string {
   if (status === 401 || status === 403) return '请检查 PLUMB_API_KEY 或权限范围后重试';
-  if (status === 413 || code === 'request_too_large') return '请裁剪前序上下文或拆分批量题目（单批不超过 32 题且不超过 1 MiB）';
+  if (status === 413 || code === 'request_too_large') return `请裁剪前序上下文或拆分批量题目（${describePlumbRequestLimits()}）`;
   if (code === 'version_mismatch') return '请联系管理员调整默认部署模型或传当前在服务模型版本重试';
   if (code === 'backend_down') return '请先执行 plumb wake --wait 等待后端就绪后再试';
   if (status === 429 || code === 'rate_limited') return '请降低并发（<= 2）并等待限流窗口恢复后重试';
@@ -700,7 +700,9 @@ export class PlumbClient {
       try {
         const parsed = JSON.parse(resp.body) as Record<string, unknown>;
         const errObj = typeof parsed.error === 'object' && parsed.error !== null ? (parsed.error as Record<string, unknown>) : parsed;
+        // The gateway names its refusals `error.type` (`request_too_large`, `backend_down`, `rate_limited`...); `code` is kept for older servers.
         if (typeof errObj.code === 'string' && errObj.code) errCode = errObj.code;
+        else if (typeof errObj.type === 'string' && errObj.type) errCode = errObj.type;
         if (typeof errObj.message === 'string' && errObj.message) errMsg = redactSecret(errObj.message, [this.apiKey]);
         if (typeof parsed.request_id === 'string') reqId = parsed.request_id;
         if (retryAfterMs === null && typeof errObj.retry_after === 'number' && Number.isFinite(errObj.retry_after)) {
@@ -833,19 +835,32 @@ export class PlumbClient {
     });
   }
 
-  /** Submits a single or bounded batch (`<= 32` questions) `/v1/judge` call with caching & disclosure verification. */
+  /** Submits a single request, or a batch that fits the gateway's limits (questions, expanded pairs, body bytes), with caching & disclosure verification. */
   async judge<T extends PlumbAnyJudgeResponse = PlumbJudgeResponse>(request: PlumbJudgeRequest): Promise<T> {
     if (request.state !== undefined && request.node !== undefined) {
       throw new Error(formatPlumbCallError('参数无效', '/v1/judge 不能同时传入 state 与 node', '请仅保留其中一种输入形态'));
     }
-    if (request.questions && Object.keys(request.questions).length > MAX_BATCH_QUESTIONS) {
-      throw new Error(
-        formatPlumbCallError(
-          '参数无效',
-          `单次 /v1/judge 题目数 ${Object.keys(request.questions).length} 超过上限 ${MAX_BATCH_QUESTIONS}`,
-          '请改用 judgeBatched 自动分片发送',
-        ),
-      );
+    if (request.questions) {
+      const entries = Object.entries(request.questions);
+      if (entries.length > PLUMB_GATEWAY_LIMITS.maxQuestions) {
+        throw new Error(
+          formatPlumbCallError(
+            '参数无效',
+            `单次 /v1/judge 题目数 ${entries.length} 超过上限 ${PLUMB_GATEWAY_LIMITS.maxQuestions}`,
+            '请改用 judgeBatched 自动分片发送',
+          ),
+        );
+      }
+      const pairs = entries.reduce((sum, [, question]) => sum + estimateExpandedPairs(question, request.task), 0);
+      if (pairs > PLUMB_GATEWAY_LIMITS.maxPairs) {
+        throw new Error(
+          formatPlumbCallError(
+            '参数无效',
+            `单次 /v1/judge 估算展开 ${pairs} 个打分对，超过上限 ${PLUMB_GATEWAY_LIMITS.maxPairs}（同一请求的各题共用这一个预算）`,
+            '请改用 judgeBatched 自动分片发送',
+          ),
+        );
+      }
     }
     const model = (request.model ?? this.defaultModel ?? '').trim();
     const wireRequest: PlumbJudgeRequest = model ? { ...request, model } : { ...request };
@@ -920,7 +935,31 @@ export class PlumbClient {
     }
   }
 
-  /** Splits a multi-question batch into chunks of at most 32 questions while respecting concurrency <= 2. */
+  /** The request body without its questions, as `judge` will send it: the effective model, the task and the shared state. */
+  private requestFrame(params: { model?: string; task?: string; state?: PlumbJudgeRequest['state'] }): Record<string, unknown> {
+    const model = (params.model ?? this.defaultModel ?? '').trim();
+    return {
+      ...(model ? { model } : {}),
+      ...(params.task ? { task: params.task } : {}),
+      ...(params.state !== undefined ? { state: params.state } : {}),
+    };
+  }
+
+  /** True when the request has to be sent in several, because it exceeds a per-request limit of the gateway: use `judgeBatched` then. */
+  exceedsRequestLimits(request: PlumbJudgeRequest): boolean {
+    if (!request.questions) return false;
+    const { questions, ...rest } = request;
+    return planPlumbBatches(Object.entries(questions), {
+      frame: { ...rest, ...this.requestFrame(rest) },
+      fallbackTask: request.task,
+      limits: { maxBodyBytes: this.maxBodyBytes },
+    }).length > 1;
+  }
+
+  /**
+   * Splits a multi-question batch, in order, into the fewest requests that each stay inside the gateway's limits (questions,
+   * pairs the questions expand to together, body bytes; see gateway-limits.ts) while respecting concurrency <= 2.
+   */
   async judgeBatched(params: {
     model?: string;
     task?: string;
@@ -932,11 +971,12 @@ export class PlumbClient {
     if (entries.length === 0) {
       throw new Error(formatPlumbCallError('参数无效', '批量判别题目列表为空', '请至少传入 1 道待判题目'));
     }
-    const batchSize = Math.min(MAX_BATCH_QUESTIONS, Math.max(1, params.batchSize ?? MAX_BATCH_QUESTIONS));
-    const chunks: Array<Array<[string, PlumbBatchQuestion]>> = [];
-    for (let i = 0; i < entries.length; i += batchSize) {
-      chunks.push(entries.slice(i, i + batchSize));
-    }
+    const chunks = planPlumbBatches(entries, {
+      frame: this.requestFrame(params),
+      fallbackTask: params.task,
+      maxQuestions: params.batchSize,
+      limits: { maxBodyBytes: this.maxBodyBytes },
+    });
 
     const perChunkResults = await Promise.all(
       chunks.map(async (chunk) => {

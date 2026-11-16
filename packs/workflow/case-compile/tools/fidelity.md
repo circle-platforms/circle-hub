@@ -4,7 +4,7 @@
 
 ## 默认方式：客户端侧 Plumb 保真核对
 
-1. 运行 `fidelity-plumb.ts` 生成或复用 `.brief.json` 与 `.verdict.json`（工具会自动展开定长文字、按 `added_precondition` 与配对 `cleanup:true` 折叠豁免步骤、按 2400 token 上限裁切前序步骤且不截断命令块，超过 32 题自动分批提交；遇 503/413 不静默放行，`review` 区加标 `[需人工复核：Plumb sequence 落入 review 区]`）：
+1. 运行 `fidelity-plumb.ts` 生成或复用 `.brief.json` 与 `.verdict.json`（工具会自动展开定长文字、按 `added_precondition` 与配对 `cleanup:true` 折叠豁免步骤、按 2400 token 上限裁切前序步骤且不截断命令块，超过网关单次请求上限（32 题、展开后 256 个打分对、1 MiB）自动分批提交；遇 503/413 不静默放行，`review` 区加标 `[需人工复核：Plumb sequence 落入 review 区]`）：
 
 ```sh
 node '<技能目录>/tools/fidelity-plumb.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --briefs '<核对目录>' --base-url %PLUMB_URL% --key-stdin <<'EOF'

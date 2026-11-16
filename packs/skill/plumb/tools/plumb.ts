@@ -62,7 +62,7 @@ const HELP_TEXT = [
   '  status                                    查看模型就绪与部署状态',
   '  wake [--wait] [--timeout-sec <秒>]        唤醒空闲后端并可选等待就绪',
   '  judge (--state-file <路径> | --file <路径>) [--task <任务>] [--candidates-file <路径>]',
-  '                                            调用 /v1/judge（超过 32 题自动分批 <=32）',
+  '                                            调用 /v1/judge（超过网关单次请求上限时自动分批：32 题、256 个打分对、1 MiB）',
   '  ask --file <路径>                         调用 /v1/systemone 结构化判断',
   '  request-key --name <名称> --purpose <用途> 发起新密钥申请（返回 request_id 与 claim_code）',
   '  claim-key --request-id <编号> --claim-code-stdin',
@@ -314,7 +314,7 @@ export async function runPlumbCli(argv: readonly string[], io: CliIo = {}): Prom
           const reqObj = { ...(payload as PlumbJudgeRequest) };
           if (taskOverride) reqObj.task = taskOverride;
           if (modelOverride) reqObj.model = modelOverride;
-          if (reqObj.questions && Object.keys(reqObj.questions).length > 32) {
+          if (reqObj.questions && client.exceedsRequestLimits(reqObj)) {
             result = await client.judgeBatched({
               model: reqObj.model,
               task: reqObj.task,

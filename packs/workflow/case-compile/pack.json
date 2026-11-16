@@ -308,13 +308,18 @@
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/client.ts",
-      "sha256": "f99732e023511a914badf1108736d288a8fb07c2f8ec5d78e16ff8d5912a3ad5",
-      "size": 42740
+      "sha256": "447955030c5ff3be36b6c4f5187f2c6f91b5ae024ebaa24b490619e108032aa3",
+      "size": 44818
+    },
+    {
+      "path": "functions/generated/skills/plumb/plumb-client/gateway-limits.ts",
+      "sha256": "fd2d2ac1add990b969aea2876c8209502445b948e0ee3460a48dfc661026ca0c",
+      "size": 8192
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/index.ts",
-      "sha256": "989f9d37765fa069c297732f098dcb3e2a6151311040ccfeaae72bf0d576b9bb",
-      "size": 178
+      "sha256": "f1693b282afdb4a24a749e3c397003b31a791077345f386b0352dec7602fc911",
+      "size": 215
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/redact.ts",
@@ -1013,8 +1018,8 @@
     },
     {
       "path": "tools/fidelity.md",
-      "sha256": "6e2aab1eb709deb788e900cbdd722a7c3c90243863887a38b04ccde0076187da",
-      "size": 4604
+      "sha256": "3c590a76df2a06335edf21a1b3dfc2ef1521f6777aa3f9a15a36dddb22bc146d",
+      "size": 4670
     },
     {
       "path": "tools/generate-workbook.cli.json",
