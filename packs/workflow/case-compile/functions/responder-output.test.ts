@@ -15,12 +15,12 @@ const host=()=>({object:'client',method:'shell',args:['echo SYNTHETIC_READY'],ke
 function scenario(responders:Array<Record<string,any>>){
  const f=fixture();
  const data=plan([
-  {kind:'CAPTURE',id:'b_show',call:call(),register:'keys_raw'},
+  {kind:'CAPTURE',id:'b_show',call:call(),register:'show_raw'},
   {kind:'CONFIG',id:'b_set',call:call('demo set 5')},
-  {kind:'OBSERVE_ASSERT',id:'b_dig',call:host(),assertions:[assertion('a_sig','b_dig')]},
+  {kind:'OBSERVE_ASSERT',id:'b_probe',call:host(),assertions:[assertion('a_ready','b_probe')]},
   {kind:'CONFIG',id:'b_undo',call:call('no demo set'),cleanup:true},
  ]);
- data.block_context!.causal_links=[{from:'b_set',to:'b_dig',quote:quote()}];
+ data.block_context!.causal_links=[{from:'b_set',to:'b_probe',quote:quote()}];
  data.block_context!.responders=responders;
  return {f,data};
 }
@@ -29,44 +29,44 @@ function gapsOf(data:ReturnType<typeof scenario>['data'],f:ReturnType<typeof fix
  const parsed=readSlots(data);assert.ok(parsed.ok,JSON.stringify(parsed));if(!parsed.ok)return [];
  return typedAuthorityGaps(f.contract,f.profile,parsed.slots,undefined,f.catalog,[],f.manifest_sha256);
 }
-const OBSERVATIONS=['b_show','b_dig'];
+const OBSERVATIONS=['b_show','b_probe'];
 
 test('a responder whose output is a saved name or an invented name is refused with the value, the observation ids and the exact block id when one block owns the name',()=>{
- const {f,data}=scenario([row('dig_out','b_dig'),row('keys_raw','b_show')]);
+ const {f,data}=scenario([row('probe_out','b_probe'),row('show_raw','b_show')]);
  const before=JSON.stringify(data),gaps=gapsOf(data,f),first=gaps.find(gap=>gap.pointer==='/block_context/responders/0/output') as any,second=gaps.find(gap=>gap.pointer==='/block_context/responders/1/output') as any;
  assert.ok(first&&second,JSON.stringify(gaps));
  for(const gap of [first,second]){
   assert.equal(gap.verdict,'refute');assert.deepEqual(gap.allowed_output_ids,OBSERVATIONS);
-  assert.ok(gap.message.includes('b_show')&&gap.message.includes('b_dig'),gap.message);assert.match(gap.message,/观察块/);
+  assert.ok(gap.message.includes('b_show')&&gap.message.includes('b_probe'),gap.message);assert.match(gap.message,/观察块/);
  }
- assert.equal(first.requested_output,'dig_out');assert.ok(first.message.includes('"dig_out"'));assert.equal(first.expected_output,undefined);assert.ok(!first.message.includes('应填块 id'),first.message);
- assert.equal(second.requested_output,'keys_raw');assert.ok(second.message.includes('"keys_raw"'));assert.equal(second.expected_output,'b_show');assert.ok(second.message.includes('应填块 id b_show'),second.message);
+ assert.equal(first.requested_output,'probe_out');assert.ok(first.message.includes('"probe_out"'));assert.equal(first.expected_output,undefined);assert.ok(!first.message.includes('应填块 id'),first.message);
+ assert.equal(second.requested_output,'show_raw');assert.ok(second.message.includes('"show_raw"'));assert.equal(second.expected_output,'b_show');assert.ok(second.message.includes('应填块 id b_show'),second.message);
  assert.equal(JSON.stringify(data),before,'the plan the model wrote is never rewritten');
 });
 
 test('the refusal reads through the human location and the whole answer, and names the missing responder of the host observation',()=>{
- const {f,data}=scenario([row('dig_out','b_dig'),row('keys_raw','b_show')]),gaps=gapsOf(data,f);
+ const {f,data}=scenario([row('probe_out','b_probe'),row('show_raw','b_show')]),gaps=gapsOf(data,f);
  assert.equal(humanGapLocation('blocks','/block_context/responders/1/output'),'应答者声明第 2 条（/block_context/responders/1/output）');
  const text=authorityRecovery(gaps.filter(gap=>gap.verdict==='refute'));assert.ok(text.includes('应答者声明第 2 条'),text);assert.ok(text.includes('应填块 id b_show'),text);
  const missing=gaps.find(gap=>gap.verdict==='unknown'&&gap.pointer==='/blocks/2/call')!;assert.ok(missing,JSON.stringify(gaps));
- assert.ok(missing.message.includes('b_dig'),missing.message);assert.ok(missing.message.includes('dig_out')&&missing.message.includes('keys_raw'),'the rows that exist are shown: '+missing.message);
+ assert.ok(missing.message.includes('b_probe'),missing.message);assert.ok(missing.message.includes('probe_out')&&missing.message.includes('show_raw'),'the rows that exist are shown: '+missing.message);
 });
 
 test('a device responder whose ref is not a frozen seat is told what ref holds, next to the output refusal',()=>{
- const {f,data}=scenario([row('dig_out','b_dig')]),gap=gapsOf(data,f).find(item=>item.pointer==='/block_context/responders/0/output')!;
- assert.ok(gap.message.includes('"b_dig"'),gap.message);assert.ok(gap.message.includes(f.profile.seats[0].device),gap.message);assert.match(gap.message,/ref/);
- const fixture_=scenario([{output:'dig_out',kind:'fixture',ref:'b_show',quote:quote()}]),other=gapsOf(fixture_.data,fixture_.f).find(item=>item.pointer==='/block_context/responders/0/output')!;
+ const {f,data}=scenario([row('probe_out','b_probe')]),gap=gapsOf(data,f).find(item=>item.pointer==='/block_context/responders/0/output')!;
+ assert.ok(gap.message.includes('"b_probe"'),gap.message);assert.ok(gap.message.includes(f.profile.seats[0].device),gap.message);assert.match(gap.message,/ref/);
+ const fixture_=scenario([{output:'probe_out',kind:'fixture',ref:'b_show',quote:quote()}]),other=gapsOf(fixture_.data,fixture_.f).find(item=>item.pointer==='/block_context/responders/0/output')!;
  assert.ok(!other.message.includes('冻结设备座位'),'only a device row is told about seats: '+other.message);
 });
 
 test('an output that is the id of a block which produces no device text, or the saved cell of one, is said to be so',()=>{
- const {f,data}=scenario([row('b_set'),row('b_dig')]),gaps=gapsOf(data,f),gap=gaps.find(item=>item.pointer==='/block_context/responders/0/output')!;
+ const {f,data}=scenario([row('b_set'),row('b_probe')]),gaps=gapsOf(data,f),gap=gaps.find(item=>item.pointer==='/block_context/responders/0/output')!;
  assert.ok(gap.message.includes('b_set')&&gap.message.includes('CONFIG'),gap.message);assert.match(gap.message,/不是观察块/);
  assert.ok(!gaps.some(item=>item.pointer==='/block_context/responders/1/output'),'a row that names its observation block is accepted');
 });
 
 test('correct rows leave no responder finding and the plan passes every check',()=>{
- const {f,data}=scenario([row('b_dig')]);
+ const {f,data}=scenario([row('b_probe')]);
  assert.deepEqual(gapsOf(data,f).filter(gap=>gap.pointer.includes('responders')||gap.message.includes('应答者')),[]);
  assert.ok(checkContractShape(f.subject(data)).every(outcome=>outcome.verdict==='support'));
 });

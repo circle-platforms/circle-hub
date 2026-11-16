@@ -79,11 +79,11 @@ test('the refusal of a one-space separator reaches the writer here with its fiel
 });
 
 test('a responder output that is a saved name is refused here with the observation ids and the block id (item 2)',()=>{
- const f=fixture(),data=blockPlan([{kind:'CAPTURE',id:'b_show',call:blockCall(),register:'keys_raw'},{kind:'OBSERVE_ASSERT',id:'b_dig',call:{object:'client',method:'shell',args:['echo SYNTHETIC_READY'],keywords:{}},assertions:[assertion('a_sig','b_dig')]}]);
- data.block_context!.responders=[{output:'keys_raw',kind:'device',ref:'dut0',quote:blockQuote()},{output:'b_dig',kind:'device',ref:'dut0',quote:blockQuote()}];
+ const f=fixture(),data=blockPlan([{kind:'CAPTURE',id:'b_show',call:blockCall(),register:'show_raw'},{kind:'OBSERVE_ASSERT',id:'b_probe',call:{object:'client',method:'shell',args:['echo SYNTHETIC_READY'],keywords:{}},assertions:[assertion('a_ready','b_probe')]}]);
+ data.block_context!.responders=[{output:'show_raw',kind:'device',ref:'dut0',quote:blockQuote()},{output:'b_probe',kind:'device',ref:'dut0',quote:blockQuote()}];
  const result=check(blockItem(data),blockRun(f as ReturnType<typeof cellFixture>),f.catalog);
  const own=result.problems.find(row=>row.pointer==='/block_context/responders/0/output')!;assert.ok(own,JSON.stringify(result.problems));
- assert.ok(own.message.includes('"keys_raw"')&&own.message.includes('应填块 id b_show')&&own.message.includes('b_dig'),own.message);
+ assert.ok(own.message.includes('"show_raw"')&&own.message.includes('应填块 id b_show')&&own.message.includes('b_probe'),own.message);
 });
 
 test('the writer is told that the claim of a plan carries a text, the field run 33 left out',()=>{
