@@ -190,7 +190,7 @@ async function citedStatements(origin: string, bearer: string, cited: ReadonlySe
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, now: () => Date = () => new Date(), retry?: RetryControl): Promise<number> {
   try {
     const args = options(argv);
-    const runs = args.runs.split(',').map((v) => v.trim()).filter(Boolean);
+    const runs = [...new Set(args.runs.split(',').map((v) => v.trim()).filter(Boolean))];
     if (!runs.length || runs.some((run) => !RUN_ID.test(run)) || (args.recompose !== undefined && !RUN_ID.test(args.recompose))) failCall('invalid_parameters', '--runs 请按上机验证的先后顺序填写编号，以逗号分隔；--recompose 请填写用例重组的编号', '请核对运行、范围、产物身份和原始输入，修正后重试');
     // The notes are model-authored input: a parse failure identifies the file and repair action, as
     // submit-plans does for a case file (in run 20 the shared reader's answer told the model to export the run's input again).
@@ -257,6 +257,10 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       if (!jobs.some((job) => job.verification_run === run)) continue;
       dispatches.push(settledDispatch(run, jobs)); added.push(run);
     }
+    unsent.sort((a,b) => {
+      const left = started.get(a.run) ?? '', right = started.get(b.run) ?? '';
+      return left < right ? -1 : left > right ? 1 : a.run < b.run ? -1 : a.run > b.run ? 1 : 0;
+    });
     for (const d of [...dispatches, ...unsent]) await planOf(d.plan_run);
 
     // Every verification run and its plan run must carry the exact same frozen Hub parameters.scope; midway scope changes
@@ -424,7 +428,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         if (canonicalScopeKey(frozenScopeOf(plan.run, run)) !== canonicalScopeKey(activeScope)) failCall('invalid_parameters', '最近受理的写法与本次冻结范围不一致，不能混入未成功卷', '请选择同一冻结范围的编译运行，范围变化后重新编写和核验，不用本地参数缩小范围');
         for (const autoid of assembly.unsuccessful.items) {
           if (selected.has(autoid) || !ids.includes(autoid)) continue;
-          const source = [...dispatches, ...unsent].filter(d => d.plan_run === run && d.items.includes(autoid)).at(-1);
+          const source = dispatches.filter(d => d.plan_run === run && d.items.includes(autoid)).at(-1) ?? unsent.filter(d => d.plan_run === run && d.items.includes(autoid)).at(-1);
           assembly.unsuccessful.sources[autoid] = { plan_run: run, run: source?.run ?? null };
           selected.add(autoid);
         }

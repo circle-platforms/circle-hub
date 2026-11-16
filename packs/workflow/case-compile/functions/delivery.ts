@@ -24,11 +24,13 @@ export function neverReachedBed(run: string, jobs: readonly ExportedJob[]): bool
   return own.length > 0 && own.every((job) => job.ended === 'done' && job.outcome === 'not_dispatched');
 }
 /** what the report says about a verification run that never reached the bed: which job, which cases, why, and who acts. */
-export interface Unsent { run: string; job: string; plan_run: string; sha256: string; items: string[]; missing_facts: Array<{ fact: string; next_action: string }>; next_action?: string }
+export interface Unsent { run: string; job: string; plan_run: string; sha256: string; items: string[]; missing_facts: Array<{ fact: string; next_action: string }>; member_missing_facts?: Array<{ fact: string; next_action: string }>; next_action?: string }
 export function unsentOf(run: string, jobs: readonly ExportedJob[]): Unsent {
   const last = jobs.filter((job) => job.verification_run === run).at(-1)!;
-  return { run, job: last.job, plan_run: last.plan_run, sha256: last.sha256, items: [...last.items], missing_facts: last.member_missing_facts ?? last.missing_facts ?? [], ...(last.next_action ? { next_action: last.next_action } : {}) };
+  return { run, job: last.job, plan_run: last.plan_run, sha256: last.sha256, items: [...last.items], missing_facts: structuredClone(last.missing_facts ?? []), ...(last.member_missing_facts !== undefined ? { member_missing_facts: structuredClone(last.member_missing_facts) } : {}), ...(last.next_action ? { next_action: last.next_action } : {}) };
 }
+/** User prose selects the recorded member view without replacing the caller's original machine facts. */
+const reportFacts = (u: Unsent) => u.member_missing_facts ?? u.missing_facts;
 /** One dispatch that settled: the run it verified, the plan run it was generated from, the workbook digest and each item's verdict. */
 export interface Dispatch { run: string; job: string; plan_run: string; sha256: string; items: string[]; rows: JobRow[] }
 /** A product-defect candidate (InfoTest fail_attribution.py defect_candidate): how to reproduce it, the author's expected text and the device's actual words. */
@@ -522,7 +524,7 @@ export function caseConclusion(input: ReportInput, outcome: CaseOutcome): string
   const named = `原始用例 ${outcome.autoid} ${title(input, outcome.autoid)}`;
   const exits = recordedNext(outcome);
   const observed = outcome.history.at(-1);
-  const unsentFacts = (input.unsent ?? []).filter(u => u.items.includes(outcome.autoid)).flatMap(u => u.missing_facts);
+  const unsentFacts = (input.unsent ?? []).filter(u => u.items.includes(outcome.autoid)).flatMap(u => reportFacts(u));
   if (!outcome.closing && !outcome.history.length && unsentFacts.length) return `${named}，没有发到设备，状态未知。原因：${[...new Set(unsentFacts.map(f => publicWords(f.fact)))].join('；')}。下一步：${[...new Set(unsentFacts.map(f => publicWords(f.next_action)))].join('；')}。决定者程序只披露 Hub 的未派发记录。`;
 
   const sourceMissing = [...new Set([...(outcome.basis?.gaps ?? []).flatMap(gap => gap.missing ? [gap.missing] : []), ...(observed?.missing_facts?.length ? ['设备输出的完整性前提尚未核验'] : observed?.missing_fact ? [observed.missing_fact] : [])])];
@@ -545,7 +547,7 @@ function head(input: ReportInput): string[] {
   ];
   if (input.build) lines.push(`构建 ${input.build}。`);
   // a verification run that never reached the bed is told once at the head, with the Hub's own reason and named next step.
-  for (const u of input.unsent ?? []) lines.push(`另有一次上机验证没有发到设备，不算一次上机验证（涉及 ${u.items.length} 条原始用例）：${u.missing_facts.length ? [...new Set(u.missing_facts.map((m) => publicWords(m.fact)))].join('；') : '原因缺少可读取的记录'}。下一步：${u.missing_facts.length ? [...new Set(u.missing_facts.map((m) => publicWords(m.next_action)))].join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`);
+  for (const u of input.unsent ?? []) lines.push(`另有一次上机验证没有发到设备，不算一次上机验证（涉及 ${u.items.length} 条原始用例）：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.fact)))].join('；') : '原因缺少可读取的记录'}。下一步：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.next_action)))].join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`);
   for (const moved of [input.placedLast?.pass, input.placedLast?.unsuccessful]) if (moved?.length) lines.push(movedText(moved, new Map(moved.map((row) => [row.autoid, input.originals[row.autoid]?.title ?? ''] as const))));
   const audit = input.passAudit;
   if (audit?.markers === null && input.assembly.cases.some(c => c.history.length)) lines.push('状态未知。原因缺资料，执行器规则没有说明哪些设备输出表示执行失败；下一步由使用者补齐执行器规则，再核对设备输出。决定者程序。');
@@ -556,14 +558,16 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
   const note = input.notes.cases[outcome.autoid];
   const judged = reportableProse(note.judged) ? reportStatement(note.judged) : '模型说明含内部引用，尚未形成供使用者阅读的说明';
   const fence = (text: string) => ['```', text.replace(/```/g, '`​``'), '```'];
+  const source = input.assembly.unsuccessful?.sources[outcome.autoid];
+  const executed = source?.run ? outcome.history.find(h => h.run === source.run) : undefined;
   const candidate = note.defect_candidate;
   const conflict = outcome.conflict ?? note.author_conflict;
   return [
     `## 原始用例 ${outcome.autoid} ${title(input, outcome.autoid)}`,
     caseConclusion(input, outcome),
     '', timeline(outcome, input.excluded.includes(outcome.autoid)),
-    ...(input.assembly.unsuccessful?.sources[outcome.autoid] ? ['', input.assembly.unsuccessful.sources[outcome.autoid].run === outcome.history.at(-1)?.run ? `本卷这条写法已在第 ${outcome.history.at(-1)?.ordinal} 次上机验证中执行。` : '本卷采用最后一次写好的自动化用例；这份写法尚未发到设备，上面的记录来自较早一次实际到设备的上机验证。'] : []),
-    ...(input.unsent ?? []).filter((u) => outcome.history.length > 0 && u.items.includes(outcome.autoid)).flatMap((u) => ['', `另有一次上机验证没有发到设备，不算一次上机验证：${u.missing_facts.length ? [...new Set(u.missing_facts.map((m) => publicWords(m.fact)))].join('；') : '原因缺少可读取的记录'}。下一步：${u.missing_facts.length ? [...new Set(u.missing_facts.map((m) => publicWords(m.next_action)))].join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`]),
+    ...(input.assembly.unsuccessful?.sources[outcome.autoid] ? ['', executed ? `本卷这条写法已在第 ${executed.ordinal} 次上机验证中执行。` : '本卷采用最后一次写好的自动化用例；这份写法尚未发到设备，上面的记录来自较早一次实际到设备的上机验证。'] : []),
+    ...(input.unsent ?? []).filter((u) => outcome.history.length > 0 && u.items.includes(outcome.autoid)).flatMap((u) => ['', `另有一次上机验证没有发到设备，不算一次上机验证：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.fact)))].join('；') : '原因缺少可读取的记录'}。下一步：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.next_action)))].join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`]),
     ...(note.judged ? ['', note.absent ? '尚未提供模型说明。' : `模型说明，状态未确认。${judged}`] : []),
     ...(outcome.missing?.missing ? ['', `Hub 核对结果摘要（内部引用保留在机器资料）。${publicWords(outcome.missing.missing)}`] : []),
     ...(note.evidence && !outcome.history.length ? ['', '**模型给出的依据（没有设备输出，未核对）**。出处保留在机器资料中。'] : note.evidence ? ['', outcome.evidence_unverified ? '**模型提出的设备输出**，逐字核对未通过，不能作核验依据。' : '**证据，设备输出**，已按照规则核对设备输出。', ...fence(note.evidence)] : []),
@@ -580,7 +584,7 @@ export function closingHints(cases: CaseOutcome[], notes: Notes, unsent: readonl
   return cases.flatMap(outcome => {
     const note = notes.cases[outcome.autoid];
     const hints: Array<{ autoid: string; missing: string; next_action: string; legal_form: string }> = [];
-    if (outcome.status === 'unrun' && !outcome.closing && !unsent.some(u => u.items.includes(outcome.autoid) && u.missing_facts.length)) hints.push({ autoid: outcome.autoid, missing: '本条没有可核验的计划结论或 Hub 具名缺失事实，也没有通过逐字核对的作者冲突', next_action: '先将本条计划交 Hub 取得具名请求；若原始用例与手册冲突，按示例填写 author_conflict 后重跑', legal_form: JSON.stringify({ cases: { [outcome.autoid]: { judged: '供使用者阅读的说明', remedy: '由谁补什么', author_conflict: { author: '<本条原始用例连续原句>', manual: '<同构建手册连续原句>', reference: '<锁定手册引用>' } } } }) });
+    if (outcome.status === 'unrun' && !outcome.closing && !unsent.some(u => u.items.includes(outcome.autoid) && reportFacts(u).length)) hints.push({ autoid: outcome.autoid, missing: '本条没有可核验的计划结论或 Hub 具名缺失事实，也没有通过逐字核对的作者冲突', next_action: '先将本条计划交 Hub 取得具名请求；若原始用例与手册冲突，按示例填写 author_conflict 后重跑', legal_form: JSON.stringify({ cases: { [outcome.autoid]: { judged: '供使用者阅读的说明', remedy: '由谁补什么', author_conflict: { author: '<本条原始用例连续原句>', manual: '<同构建手册连续原句>', reference: '<锁定手册引用>' } } } }) });
     if (!outcome.history.length && note?.round !== undefined) hints.push({ autoid: outcome.autoid, missing: '本条没有到过设备，不能声明上机轮次', next_action: '删除本条的 round；保留作者冲突或先向 Hub 提交本条计划取得具名出口', legal_form: JSON.stringify({ judged: '未上机，说明已核对的事实', remedy: '由谁补什么' }) });
     if (note?.author_conflict && outcome.closing !== 'author_conflict' && !outcome.missing) hints.push({ autoid: outcome.autoid, missing: '作者冲突声明未取得完整的逐字核对依据', next_action: '按 pending 指出的问题改正原始用例引文、手册原句和锁定引用后重跑', legal_form: JSON.stringify({ author_conflict: { author: '<本条原始用例连续原句>', manual: '<锁定手册连续原句>', reference: '<锁定手册引用>' } }) });
     if (note?.defect_candidate && outcome.closing !== 'device_defect' && !outcome.missing) hints.push({ autoid: outcome.autoid, missing: '设备缺陷候选未取得完整的逐字核对依据', next_action: '按 pending 改正作者期望和设备原话；候选只保留未确认状态', legal_form: JSON.stringify({ defect_candidate: { repro: '<复现步骤>', expected: '<作者期望原句>', actual: '<同一个设备文件内的连续原句>' } }) });

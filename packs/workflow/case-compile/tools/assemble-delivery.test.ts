@@ -1005,3 +1005,31 @@ test('run31 a compilation with only unissued jobs discloses the known reason wit
   assert.match(report,/合成测试环境配置尚未恢复/);assert.match(report,/由测试环境管理员恢复后重开/);
   assert.doesNotMatch(report,/已按照规则核对设备输出|执行器规则没有说明/);
 });
+
+test('run31 a later actual attempt supersedes an older unissued attempt of the identical writing', async t => {
+  const STUCK='run_01ssssssssssssssssssssssss';
+  const pending={job:'f'.repeat(64),verification_run:STUCK,plan_run:PLAN1,items:CASES.slice(0,3),sha256:sha256(plan1.workbook),ended:'done',outcome:'not_dispatched',frozen:false,result:null,device_return:null,rows:null,missing_facts:[{fact:'合成环境曾未恢复',next_action:'由测试环境管理员恢复后重开'}]};
+  for (const order of [[STUCK,WHOLE,FINAL],[WHOLE,STUCK,FINAL]]) {
+  const h=await hub(undefined,undefined,{[STUCK]:[pending]},{},order);t.after(h.close);
+  const out=join(await mkdtemp(join(tmpdir(),'cc-run31-')),'delivery');
+  const result=await run(h,await notes(NOTES),out,`${STUCK},${FINAL}`);
+  assert.equal(result.code,0,result.stderr||result.stdout);
+  const summary=JSON.parse(await readFile(join(out,'delivery.json'),'utf8'));
+  assert.equal(summary.unsuccessful_volume.items[0].run,WHOLE);
+  const section=(await readFile(join(out,'delivery_report.md'),'utf8')).split(`## 原始用例 ${CASES[1]}`)[1].split('\n##')[0];
+  assert.match(section,/本卷这条写法已在第 1 次上机验证中执行/);
+  assert.doesNotMatch(section,/这份写法尚未发到设备/);
+  }
+});
+
+test('run31 unissued history has the same chronological order whether earlier runs are explicit or discovered', async t => {
+  const STUCK='run_01ssssssssssssssssssssssss',NEWER='run_01uuuuuuuuuuuuuuuuuuuuuuuu',PLAN3='run_01tttttttttttttttttttttttt';
+  const plan3=planRun(PLAN3,[CASES[1]],[CASES[0],CASES[2],CASES[3]],'99');
+  const pending=(run:string,id:string)=>({job:id.repeat(64),verification_run:run,plan_run:PLAN3,items:[CASES[1]],sha256:sha256(plan3.workbook),ended:'done',outcome:'not_dispatched',frozen:false,result:null,device_return:null,rows:null,missing_facts:[{fact:'合成环境尚未恢复',next_action:'由测试环境管理员恢复后重开'}]});
+  const h=await hub(undefined,undefined,{[STUCK]:[pending(STUCK,'f')],[NEWER]:[pending(NEWER,'e')]},{[PLAN3]:plan3},[WHOLE,FINAL,STUCK,NEWER]);t.after(h.close);
+  const read=async(runs:string)=>{const out=join(await mkdtemp(join(tmpdir(),'cc-run31-')),'delivery');const result=await run(h,await notes(NOTES),out,runs);assert.equal(result.code,0,result.stderr||result.stdout);return JSON.parse(await readFile(join(out,'delivery.json'),'utf8')).unsent_runs;};
+  const explicit=await read(`${STUCK},${NEWER}`),discovered=await read(NEWER);
+  assert.deepEqual(discovered,explicit);
+  assert.deepEqual(await read(`${STUCK},${STUCK},${NEWER}`), explicit, 'a run is still one run when named twice');
+  assert.deepEqual(discovered.map((r:{run:string})=>r.run),[STUCK,NEWER]);
+});

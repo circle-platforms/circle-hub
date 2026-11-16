@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { assemble, caseConclusion, deliveryReport, unsuccessfulReport, type CaseOutcome, type Dispatch, type ReportInput } from './delivery.ts';
+import { assemble, unsentOf, caseConclusion, deliveryReport, unsuccessfulReport, type CaseOutcome, type Dispatch, type ReportInput } from './delivery.ts';
 import { markers, reportStatement } from './text.ts';
 
 const before = process.env.TZ;
@@ -67,4 +67,24 @@ test('run31 an undeclared request kind retains its raw value without becoming a 
   assert.match(caseConclusion(inputOf(outcome), outcome), /由使用者处理具名请求/);
   assert.doesNotMatch(caseConclusion(inputOf(outcome), outcome), /由测试环境管理员处理具名请求/);
   assert.equal((outcome.basis!.gaps[0].exit as {request_kind:string}).request_kind, 'UNDECLARED');
+});
+
+test('run31 a writing that appears earlier in the actual history is not described as unissued', () => {
+  const outcome: CaseOutcome={autoid:'a',status:'failed',history:[{ordinal:1,run:'r1',job:'j1',terminal:'fail'},{ordinal:2,run:'r2',job:'j2',terminal:'fail'}]};
+  const input=inputOf(outcome);input.assembly.unsuccessful={items:['a'],sources:{a:{plan_run:'p1',run:'r1'}}};input.files.unsuccessful={sha256:'a'.repeat(64)};
+  const text=deliveryReport(input);
+  assert.match(text,/本卷这条写法已在第 1 次上机验证中执行/);
+  assert.doesNotMatch(text,/这份写法尚未发到设备/);
+});
+
+test('run31 machine data retain the caller facts while reports select the member-safe projection', () => {
+  const run='run_'+'a'.repeat(26),admin=[{fact:'synthetic private diagnostic',next_action:'synthetic private recovery'}],member=[{fact:'合成成员可读配置差异',next_action:'由测试环境管理员处理'}];
+  const original=structuredClone({admin,member});
+  const unissued=unsentOf(run,[{job:'b'.repeat(64),verification_run:run,plan_run:'run_'+'c'.repeat(26),items:['a'],sha256:'d'.repeat(64),ended:'done',outcome:'not_dispatched',frozen:false,result:null,device_return:null,rows:null,missing_facts:admin,member_missing_facts:member}]);
+  assert.deepEqual(unissued.missing_facts,original.admin);
+  assert.deepEqual(unissued.member_missing_facts,original.member);
+  const outcome:CaseOutcome={autoid:'a',status:'unrun',history:[]};const input=inputOf(outcome);input.unsent=[unissued];
+  const text=deliveryReport(input);
+  assert.match(text,/合成成员可读配置差异/);assert.doesNotMatch(text,/synthetic private/);
+  assert.deepEqual(unissued.missing_facts,original.admin,'presentation keeps the original authorized facts intact');
 });
