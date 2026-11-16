@@ -55,7 +55,10 @@ export interface TaskBriefInput {
   caseRef: string;
   caseTitle?: string;
   briefPath: string;
+  /** The run.json of the frozen run: what `check-plan.ts --run` takes. */
   frozenRunPath?:string;
+  /** The run directory, the folder that holds run.json: what `cmd-lookup.ts --run` and `task-brief.ts --run` take. */
+  frozenRunDir?:string;
   outPath: string;
   skillDir: string;
   resolvedReferences?: readonly ResolvedRoleReference[];
@@ -349,7 +352,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     ? `node ${quote(checkScriptPath)} --file ${quote(outPath)}${role.localCheck.withBrief ? ' --brief ' + quote(briefPath) : input.frozenRunPath ? ' --run ' + quote(input.frozenRunPath) : ''}`
     : null;
   const lookupScriptPath = role.localLookup ? (resolvedReferences.find((ref) => ref.relPath === `tools/${role.localLookup!.script}`)?.fullPath ?? resolveSkillReferencePath(skillDir, `tools/${role.localLookup.script}`)) : null;
-  const lookup = lookupScriptPath ? `node ${quote(lookupScriptPath)} --run ${quote(input.frozenRunPath ?? '<下载目录>/run.json')} --param '<命令词，可带参数>'` : null;
+  const lookup = lookupScriptPath ? `node ${quote(lookupScriptPath)} --run ${quote(input.frozenRunDir ?? '<运行目录>')} --param '<命令词，可带参数>'` : null;
   const scopeBlock = scopeText.replace(/\r\n/g, '\n').replace(/\n+$/, '');
   const trimmedNote = note?.trim() ? note.trim() : '无';
   const subagentType = subagentTypeFor(role);

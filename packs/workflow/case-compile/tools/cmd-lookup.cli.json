@@ -7,7 +7,7 @@
       "required": true,
       "kind": "string",
       "multiple": false,
-      "placeholder": "<下载目录>/run.json",
+      "placeholder": "<运行目录>",
       "type": "path"
     },
     {
@@ -57,7 +57,7 @@
       "pairs": [
         {
           "name": "run",
-          "placeholder": "<下载目录>/run.json",
+          "placeholder": "<运行目录>",
           "optional": false
         },
         {
@@ -72,7 +72,7 @@
       "pairs": [
         {
           "name": "run",
-          "placeholder": "<下载目录>/run.json",
+          "placeholder": "<运行目录>",
           "optional": false
         },
         {
@@ -87,7 +87,7 @@
       "pairs": [
         {
           "name": "run",
-          "placeholder": "<下载目录>/run.json",
+          "placeholder": "<运行目录>",
           "optional": false
         },
         {
@@ -102,7 +102,7 @@
       "pairs": [
         {
           "name": "run",
-          "placeholder": "<下载目录>/run.json",
+          "placeholder": "<运行目录>",
           "optional": false
         },
         {
@@ -117,7 +117,7 @@
       "pairs": [
         {
           "name": "run",
-          "placeholder": "<下载目录>/run.json",
+          "placeholder": "<运行目录>",
           "optional": false
         },
         {

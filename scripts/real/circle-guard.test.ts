@@ -598,24 +598,26 @@ test('cmd-lookup is a declared tool: the command the writer task file prints pas
     try {
       const lookup = `'${h.skillPath('case-compile', 'tools/cmd-lookup.ts')}'`;
       // The task file of the writer role prints the lookup command with the frozen run it was given; that exact line must run.
-      const brief = renderTaskBrief({ role: resolveSubagentRole('plan')!, caseRef: 'case-1', briefPath: 'briefs/0.md', outPath: 'plans/0.json', skillDir: h.skillPath('case-compile'), frozenRunPath: join(h.workdir, 'plan-run', 'run.json'), scopeText: '合成范围' });
+      const brief = renderTaskBrief({ role: resolveSubagentRole('plan')!, caseRef: 'case-1', briefPath: 'briefs/0.md', outPath: 'plans/0.json', skillDir: h.skillPath('case-compile'), frozenRunPath: join(h.workdir, 'plan-run', 'run.json'), frozenRunDir: join(h.workdir, 'plan-run'), scopeText: '合成范围' });
       const printed = brief.split('\n').filter((line) => line.startsWith('`node ') && line.includes('cmd-lookup.ts'));
       assert.equal(printed.length, 1, brief);
+      // --run is the run directory, the value task-brief.ts takes, never the run.json file.
+      assert.ok(printed[0]!.includes(` --run '${join(h.workdir, 'plan-run')}' --param `) && !printed[0]!.includes('run.json'), printed[0]);
       h.assertAllowed(h.exec(printed[0]!.slice(1, -1).replace("'<命令词，可带参数>'", "'orbit beacon add'")), `${profile}: the printed lookup command`);
-      h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --param 'orbit beacon add "b1" fast 3'`), `${profile}: a command with quoted arguments inside one single-quoted word`);
-      h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --heads 'orbit beacon'`), `${profile}: heads`);
-      h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --method 'routera.cmd'`), `${profile}: method`);
-      h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --methods 'APV_0'`), `${profile}: methods`);
-      h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --block 'CAPTURE_COMPARE'`), `${profile}: block`);
-      h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --method=routera.cmd`), /不认“=”/);
-      h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --block 'CONFIG' <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明不读标准输入/);
+      h.assertAllowed(h.exec(`node ${lookup} --run plan-run --param 'orbit beacon add "b1" fast 3'`), `${profile}: a command with quoted arguments inside one single-quoted word`);
+      h.assertAllowed(h.exec(`node ${lookup} --run plan-run --heads 'orbit beacon'`), `${profile}: heads`);
+      h.assertAllowed(h.exec(`node ${lookup} --run plan-run --method 'routera.cmd'`), `${profile}: method`);
+      h.assertAllowed(h.exec(`node ${lookup} --run plan-run --methods 'APV_0'`), `${profile}: methods`);
+      h.assertAllowed(h.exec(`node ${lookup} --run plan-run --block 'CAPTURE_COMPARE'`), `${profile}: block`);
+      h.assertRefused3(h.exec(`node ${lookup} --run plan-run --method=routera.cmd`), /不认“=”/);
+      h.assertRefused3(h.exec(`node ${lookup} --run plan-run --block 'CONFIG' <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明不读标准输入/);
       h.assertRefused3(h.exec(`node ${lookup} --param 'orbit beacon add'`), /缺少必填选项 --run/);
-      h.assertRefused3(h.exec(`node ${lookup} --run ../outside/run.json --param 'orbit beacon add'`), /不在工作目录/);
-      h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --param=orbit`), /不认“=”/);
-      h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --guess orbit`), /没有 --guess 选项/);
-      h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --param 'orbit' <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明不读标准输入/);
-      h.assertRefused3(h.exec(`node tools/cmd-lookup.ts --run plan-run/run.json --param 'orbit'`), /脚本路径/);
-      assert.match(h.allowedText(), /^\| case-compile\/tools\/cmd-lookup\.ts \| `node '<技能目录>\/tools\/cmd-lookup\.ts' --run '<下载目录>\/run\.json' \[--param '<命令词，可带参数>'\] \[--heads '<命令词前缀>'\] \[--method '<对象>\.<方法>'\] \[--methods '<对象>'\] \[--block '<块种类>'\]` \|$/m);
+      h.assertRefused3(h.exec(`node ${lookup} --run ../outside --param 'orbit beacon add'`), /不在工作目录/);
+      h.assertRefused3(h.exec(`node ${lookup} --run plan-run --param=orbit`), /不认“=”/);
+      h.assertRefused3(h.exec(`node ${lookup} --run plan-run --guess orbit`), /没有 --guess 选项/);
+      h.assertRefused3(h.exec(`node ${lookup} --run plan-run --param 'orbit' <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明不读标准输入/);
+      h.assertRefused3(h.exec(`node tools/cmd-lookup.ts --run plan-run --param 'orbit'`), /脚本路径/);
+      assert.match(h.allowedText(), /^\| case-compile\/tools\/cmd-lookup\.ts \| `node '<技能目录>\/tools\/cmd-lookup\.ts' --run '<运行目录>' \[--param '<命令词，可带参数>'\] \[--heads '<命令词前缀>'\] \[--method '<对象>\.<方法>'\] \[--methods '<对象>'\] \[--block '<块种类>'\]` \|$/m);
     } finally {
       h.close();
     }

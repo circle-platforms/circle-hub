@@ -43,8 +43,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "825a96ca31be817445c3b708d6a0860309415745f4ac335061e56186430fd3a4",
-      "size": 17147
+      "sha256": "8d76568d90e4733f2ec6f31a4ed061cdf06d9ff7c10e661efe8db45fd1c13e0e",
+      "size": 17138
     },
     {
       "path": "agents/compile-attributor.md",
@@ -508,8 +508,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "9a578df631d86fceb2180690d088ebea4f1d884d745eae5eabbc4013425ee0e0",
-      "size": 44698
+      "sha256": "e0f9ddf5a06bb023b421590252d85bca5256b0dea3dcfb3dee3c681f70ffaf6e",
+      "size": 44906
     },
     {
       "path": "functions/subject.ts",
@@ -958,13 +958,13 @@
     },
     {
       "path": "tools/cmd-lookup.cli.json",
-      "sha256": "42916d3c1c668964991d53b058c3249269d2b9c78c558a47cc687f591910daf9",
-      "size": 2670
+      "sha256": "e5e33a08e218099253bf3445f7a2db1acfcb1e975bcb3b52f6df7216ecf687af",
+      "size": 2616
     },
     {
       "path": "tools/cmd-lookup.ts",
-      "sha256": "74a31acd73f947c5f1c3573a033caf5414bf586cc486f6120746326985408510",
-      "size": 12839
+      "sha256": "ca57988939cddbf814334339f3e2c3b179db771efa5471df3abef7edade0137f",
+      "size": 14093
     },
     {
       "path": "tools/cmd-select-plumb.cli.json",
@@ -1118,8 +1118,8 @@
     },
     {
       "path": "tools/task-brief.ts",
-      "sha256": "536dabb8436a0461aa68f7536e9eacc336e75f3709797ae95968183f42cee12e",
-      "size": 53873
+      "sha256": "48c9240b1b032df71e55768e57cb73f9f19845fda1f532e91eae931b1403dd92",
+      "size": 54112
     },
     {
       "path": "tools/workspace-path.ts",

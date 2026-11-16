@@ -589,10 +589,12 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
   const siblingFields = isRecord(siblingItem) && isRecord(siblingItem.fields) ? siblingItem.fields : {};
   const caseTitle = [compileBrief?.identity.title, siblingFields.title, isRecord(siblingItem) ? siblingItem.label : undefined].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
   const resolvedReferences = await readVerifiedRoleReferences(packReal, role);
+  // The writer's task file prints the run twice: the directory for cmd-lookup.ts (--run, as here) and its run.json for check-plan.ts.
+  const frozenRunDir = options.runDir !== undefined && role.key === 'plan' ? resolveExistingDirInsideCwd(cwd, options.runDir, '--run').canonical : undefined;
   let brief = renderTaskBrief({
     ...(caseTitle === undefined ? {} : { caseTitle }),
     role,
-    ...(options.runDir!==undefined&&role.key==='plan'?{frozenRunPath:join(resolveExistingDirInsideCwd(cwd, options.runDir, '--run').canonical,'run.json')} : {}),
+    ...(frozenRunDir === undefined ? {} : { frozenRunPath: join(frozenRunDir, 'run.json'), frozenRunDir }),
     caseRef,
     briefPath,
     outPath,

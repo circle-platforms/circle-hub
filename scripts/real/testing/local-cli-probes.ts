@@ -139,7 +139,7 @@ async function fixtureInvocations(
   await writeFile(sealRun, JSON.stringify({ run: RUN_ID, items: [] }));
   await writeFile(sealParts, '[]');
 
-  // cmd-lookup reads a download: run.json with knowledge/ beside it, here the synthetic tree and manual of the lookup tests.
+  // cmd-lookup reads a download, named by its run directory (the folder with run.json and knowledge/), here the synthetic tree and manual of the lookup tests.
   await writeLookupDownload(join(work, 'lookup-run'), lookupFixture());
   // The method and block forms read the sources and the frozen slot schema of a download, here the synthetic frozen run of the lookup tests.
   await writeContractDownload(join(work, 'contract-run'), contractFixture());
@@ -169,7 +169,7 @@ async function fixtureInvocations(
     'tools/seal-recompose.ts': { argv: ['--run', sealRun, '--parts', sealParts, '--model', 'synthetic-model', '--out', join(work, 'sealed.json')] },
     'tools/task-brief.ts': { argv: ['--role', '脚本编写', '--case', 'case-101', '--brief', 'writer-brief.md', '--out', 'writer-plan.json', '--task-file', 'writer-task.md'], cwd: work },
     'tools/command-domain-precheck.ts': { argv: ['--input', 'precheck-input.json', '--out', 'precheck-output.json'], cwd: work },
-    'tools/cmd-lookup.ts': { argv: ['--run', 'lookup-run/run.json', '--param', 'orbit beacon add'], cwd: work },
+    'tools/cmd-lookup.ts': { argv: ['--run', 'lookup-run', '--param', 'orbit beacon add'], cwd: work },
   };
 }
 
@@ -179,7 +179,7 @@ export async function buildLocalCliProbes(stagedCaseDir: string, stagedRecompose
   const caseCompile: Record<string, CliProbe[]> = {};
   for (const [tool, spec] of Object.entries(invocations)) caseCompile[tool] = [{ argv: spec.argv, cwd: spec.cwd ?? workRoot, subcommand: null, stdinValues: [], complete: { status: 0 } }];
   // cmd-lookup has five forms that read different parts of a download: one probe each beyond the first.
-  for (const form of [['--method', 'widget-host.shell'], ['--methods', 'widget-seat'], ['--block', 'CAPTURE_COMPARE']]) caseCompile['tools/cmd-lookup.ts']!.push({ argv: ['--run', 'contract-run/run.json', ...form], cwd: invocations['tools/cmd-lookup.ts']!.cwd ?? workRoot, subcommand: null, stdinValues: [], complete: { status: 0 } });
+  for (const form of [['--method', 'widget-host.shell'], ['--methods', 'widget-seat'], ['--block', 'CAPTURE_COMPARE']]) caseCompile['tools/cmd-lookup.ts']!.push({ argv: ['--run', 'contract-run', ...form], cwd: invocations['tools/cmd-lookup.ts']!.cwd ?? workRoot, subcommand: null, stdinValues: [], complete: { status: 0 } });
   const rcWork = join(workRoot, 'rc-local'); await mkdir(rcWork, { recursive: true });
   await writeFile(join(rcWork, 'record.json'), JSON.stringify({ item: 'n/case1', method: { kind: 'declared', text: '合成方法', sources: ['ref'], basis: '合成依据' } }));
   return { caseCompile, recompose: { 'tools/check-record.ts': [{ argv: ['--file', 'record.json'], cwd: rcWork, subcommand: null, stdinValues: [], complete: { status: 0 } }] } };
