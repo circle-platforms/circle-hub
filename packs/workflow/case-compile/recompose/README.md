@@ -1,5 +1,7 @@
 # recompose 1.2.7
 
+本地修正（待升版本号，2026-11-17，未发布）：下载写的文本文件每条一行标注 `· 引用 tree:…`、下面是原文（渲染是 `functions/knowledge-text.ts`，由 case-compile 的 `testing/gen-recompose.ts` 镜像进来，`hub-retry.ts` 随之改用它；内嵌的 `run-tools` 字节不变）；Hub 的批量导出带来源行号时，同一节点的条目按原文行号排，标注行写「源 … 行 …」；`SKILL.md` 与重组角色相应说明（引用取标注行、条目先后不是手册先后）。
+
 本地修正 1.2.7（2026-11-15）：对齐 `InfoTest_Engine` `compile-worker.md:44-45,70` 补充 `recompose/SKILL.md` 用例重组要求（在不替换作者被测对象/动作/约束、也不将“前置不存在”反向测试改配为正向前置的前提下，必须完整抽出手册正文与配置示例要求的命令运行前置写入 `sources.states` `missing_prerequisite`），并同步 `testing/gen-recompose.ts` 生成的共享 `functions/recompose-evidence.ts`（接受 recompose `1.2.7` 与 authority/adjudicate `1.1.11`）；未发布或部署。
 
 # recompose 1.2.6

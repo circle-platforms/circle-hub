@@ -11,7 +11,8 @@ import {
   PRIOR_DEVICE_HISTORY_DISCLAIMER,
   validateCompileBrief,
 } from '../functions/authoring-brief.ts';
-import { knowledgeFiles, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { knowledgeFiles } from '../functions/knowledge-text.ts';
 import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { readKnowledge, writeStructuredBriefs } from './authoring-brief.ts';

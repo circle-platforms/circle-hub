@@ -60,6 +60,7 @@ export async function readKnowledge(directory: string): Promise<BriefKnowledge |
       entries: row.entries.filter(isRecord).filter((entry) => typeof entry.statement === 'string' && typeof entry.reference === 'string').map((entry) => ({
         ...(typeof entry.kind === 'string' ? { kind: entry.kind } : {}), statement: entry.statement as string, reference: entry.reference as string,
         ...(typeof entry.applicability === 'string' && entry.applicability ? { applicability: entry.applicability } : {}),
+        ...(Array.isArray(entry.fragments) ? { fragments: entry.fragments.filter((fragment): fragment is string => typeof fragment === 'string') } : {}),
         ...parameterOf(entry.data),
       })),
     });

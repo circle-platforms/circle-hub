@@ -43,8 +43,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "2b4dd3c70d63e09966056cc4779a3a82df747322acb8dbb409e3ddf0c8810358",
-      "size": 17102
+      "sha256": "f37289531c590594d757ec2d33c2d0999c2d55526e41ce6cc20e32e360aa6232",
+      "size": 17108
     },
     {
       "path": "agents/compile-attributor.md",
@@ -58,13 +58,13 @@
     },
     {
       "path": "agents/compile-recomposer.md",
-      "sha256": "64e0c4d481cdfeff4b242e23a9870de6d9e6b8e7846f4e52707f52adac7a9ad5",
-      "size": 4829
+      "sha256": "b4204732b7a3728145fd35d3bbb09a00c0b786deee79aae1d15ae5c87e5b8364",
+      "size": 5034
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "184a418de8da312ace32066de7ffb9098ecd6fce0b2dcdbafe775e1a5719138d",
-      "size": 16045
+      "sha256": "4e4e9c392c37698563a44a07b916fcbdccbdc13eb90df17a8a27d45304f8ea3c",
+      "size": 16812
     },
     {
       "path": "checks.json",
@@ -138,8 +138,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "c9823a2816b49ca196d8c55a1e103de63c93d6f861739cdd198bd36337e558e8",
-      "size": 83642
+      "sha256": "15d909574a7bfe2078aa74c0a0af3a1f09b9ac6457c856d2cd58364b457cab37",
+      "size": 83956
     },
     {
       "path": "functions/bed.ts",
@@ -373,8 +373,13 @@
     },
     {
       "path": "functions/hub-retry.ts",
-      "sha256": "d2c728679ac8d5be02b10df053bf562ec3a08adff7b2f65110d72773fd0ab28c",
-      "size": 32661
+      "sha256": "7a0f40ce6423a13b3e9b29c17b9fbd03738ed0c4751d44871af80fb941cae2d2",
+      "size": 32697
+    },
+    {
+      "path": "functions/knowledge-text.ts",
+      "sha256": "9e79532c33e0d7a90c8623c3e8bfc7287e70983dc7eb3ad0323586a6fd8c0928",
+      "size": 9133
     },
     {
       "path": "functions/length-literals.ts",
@@ -488,8 +493,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "27bf8f51e90b52c059271243627b70f0b819b84ad7e2f1c745e1f9e09dd4b961",
-      "size": 41161
+      "sha256": "d573527c4fe89d6ff26624d47e14dd936a485117e95728bc7013d221252037bc",
+      "size": 42151
     },
     {
       "path": "functions/subject.ts",
@@ -893,8 +898,8 @@
     },
     {
       "path": "tools/authoring-brief.ts",
-      "sha256": "b7e56778f5226e9a358720a7417052fe071a77edfc5903c619c5a3cbbf79cdbb",
-      "size": 21764
+      "sha256": "1b9ad9138ebff9b110cfffbee7b671ffd84e978bdf7712ae7c9730c20c71a3f9",
+      "size": 21918
     },
     {
       "path": "tools/carry-plans.cli.json",

@@ -136,9 +136,9 @@ test('the knowledge root the run locked comes with the run as files to read and 
   assert.equal(await readFile(join(out, 'knowledge', 'widgets.txt'), 'utf8'), [
     '# /widgets', '  子节点 1 个：health', '',
     '# /widgets/health',
-    '· widget health interval <seconds:int 1..60>', '  Set the health interval', '  seconds: 合成参数说明', `  引用 tree:${ROOT}/widgets/health@${ENTRY}`,
-    '· 合成手册句：间隔缺省为 5 秒。', '  适用 合成条件', `  引用 tree:${ROOT}/widgets/health@${'f'.repeat(64)}`, '', '',
-  ].join('\n'));
+    `· 引用 tree:${ROOT}/widgets/health@${ENTRY}`, 'widget health interval <seconds:int 1..60>', '  Set the health interval', '  seconds: 合成参数说明',
+    `· 引用 tree:${ROOT}/widgets/health@${'f'.repeat(64)}  适用 合成条件`, '合成手册句：间隔缺省为 5 秒。', '', '',
+  ].join('\n'), 'a heading line with the reference and the conditions, then the statement as it is; nothing in front of any of its lines');
   assert.match(await readFile(join(out, 'knowledge', 'root.txt'), 'utf8'), /^# \/\n  子节点 2 个：widgets、手册 一\n/);
   const index = JSON.parse(await readFile(join(out, 'knowledge', 'index.json'), 'utf8'));
   assert.deepEqual([index.run, index.root, index.nodes, index.entries, index.sha256, index.files.map((f: { file: string }) => f.file)], [RUN, ROOT, 4, 3, sha(bytes), report.knowledge.files]);
@@ -164,7 +164,7 @@ test('items that carry a recomposition record get their authoring brief with the
   const brief = await readFile(join(out, 'briefs', '06.md'), 'utf8');
   assert.match(brief, /^# 编写简报 06：合成用例 6\n/);
   assert.ok(brief.includes('## 这条用例的计划文件外壳') && brief.includes('"item": "case-6"'), 'and the envelope of that case’s plan file');
-  assert.ok(brief.includes(`# /widgets/health\n· widget health interval <seconds:int 1..60>\n  Set the health interval\n  seconds: 合成参数说明\n  引用 tree:${ROOT}/widgets/health@${ENTRY}\n`), 'the entry the record references, word for word with its reference');
+  assert.ok(brief.includes(`# /widgets/health\n· 引用 tree:${ROOT}/widgets/health@${ENTRY}\nwidget health interval <seconds:int 1..60>\n  Set the health interval\n  seconds: 合成参数说明\n`), 'the entry the record references, word for word with its reference');
   // A brief that cannot be written does not undo a download that is already on disk.
   const third = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
   const failed = await outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', third], async () => TOKEN, async () => { throw new Error('合成故障'); }));

@@ -9,7 +9,8 @@
 // K05 and D06 R[2] (lock the root, fetch the subtree, verify the references at delivery): GET /run-export/<run>/knowledge answers
 // the product root the run locked as one batch, every node to the leaves as a subtree read shows it to this reader, one JSON
 // line each after a head line. The client keeps it by its digest and reads it locally; in run 21 a model read the same
-// immutable root through 126 paged calls, 97 of them command-tree subtrees.
+// immutable root through 126 paged calls, 97 of them command-tree subtrees. Each entry also carries its source `fragments` (what a
+// reference read gives as `grounds`): the tree records no document order, so that is where a client finds an entry's place in its source.
 import { performance } from 'node:perf_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { RunId } from '../../contracts/src/common.ts';
