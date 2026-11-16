@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
-import { knowledgeFiles } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { knowledgeFiles } from '../functions/knowledge-text.ts';
 import { runCmdVerifyPlumb } from './cmd-verify-plumb.ts';
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';

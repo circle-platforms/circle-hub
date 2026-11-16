@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   HubReplyError,
-  knowledgeFiles,
   sha256,
   type RunKnowledge,
 } from './generated/skills/run-tools/hub-client/index.ts';
+import { knowledgeFiles } from './knowledge-text.ts';
 import { isRecord, failCall, CallFailure, formatCallError, callFailureData } from './text.ts';
 import { localSourceCache } from './source-cache.ts';
 import { assertEmptySourceOutput, sourceMaterialNames, type SourceMaterial } from './source-materials.ts';

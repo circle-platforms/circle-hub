@@ -43,8 +43,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "2b4dd3c70d63e09966056cc4779a3a82df747322acb8dbb409e3ddf0c8810358",
-      "size": 17102
+      "sha256": "f37289531c590594d757ec2d33c2d0999c2d55526e41ce6cc20e32e360aa6232",
+      "size": 17108
     },
     {
       "path": "agents/compile-attributor.md",
@@ -58,13 +58,13 @@
     },
     {
       "path": "agents/compile-recomposer.md",
-      "sha256": "64e0c4d481cdfeff4b242e23a9870de6d9e6b8e7846f4e52707f52adac7a9ad5",
-      "size": 4829
+      "sha256": "fc8a79fc289afcaf35ca870c4260d500ee13d38f06abfe8ee280172e3204af79",
+      "size": 4983
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "184a418de8da312ace32066de7ffb9098ecd6fce0b2dcdbafe775e1a5719138d",
-      "size": 16045
+      "sha256": "57e13755019a0cef072a911691edea7638c2ab55c4330e1572c326f36218c7ec",
+      "size": 16629
     },
     {
       "path": "checks.json",
@@ -138,8 +138,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "c9823a2816b49ca196d8c55a1e103de63c93d6f861739cdd198bd36337e558e8",
-      "size": 83642
+      "sha256": "8b2ebfbf26d05579a072d15fe2a9a5ab2a6e64804a3613adc5f603dd45cf311c",
+      "size": 83786
     },
     {
       "path": "functions/bed.ts",
@@ -373,8 +373,13 @@
     },
     {
       "path": "functions/hub-retry.ts",
-      "sha256": "d2c728679ac8d5be02b10df053bf562ec3a08adff7b2f65110d72773fd0ab28c",
-      "size": 32661
+      "sha256": "7a0f40ce6423a13b3e9b29c17b9fbd03738ed0c4751d44871af80fb941cae2d2",
+      "size": 32697
+    },
+    {
+      "path": "functions/knowledge-text.ts",
+      "sha256": "5440c2560d3a77a239bc23da7132b8baf232c2e87afb7ac6936ee8b8daaccdef",
+      "size": 6664
     },
     {
       "path": "functions/length-literals.ts",
@@ -488,8 +493,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "27bf8f51e90b52c059271243627b70f0b819b84ad7e2f1c745e1f9e09dd4b961",
-      "size": 41161
+      "sha256": "79d71c5e2e54f29ba0687b4d91ebf2c48583fe2a1c406af37f7aefddf11e4ce4",
+      "size": 41913
     },
     {
       "path": "functions/subject.ts",

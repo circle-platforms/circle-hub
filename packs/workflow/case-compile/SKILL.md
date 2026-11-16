@@ -31,7 +31,7 @@ node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成�
 
 ## 2. 脚本编写
 
-先整份下载资料到工作目录再读每条原始用例，本地读搜 `knowledge/` 并照抄引用，不逐页读 Hub。`items/<序号>.json` 与 `briefs/<序号>.md` 列有命令、参数、恢复法与待填计划。派发前先 `ls` 核对实名（`<10` 条为 `0.md` 非 `00.md`），文件落盘后再调 `task-brief.ts`；未写完 `plans/*.json` 禁跑 `fidelity-plumb.ts` / `fidelity-brief.ts` 或下游。
+先整份下载再读原始用例，本地读搜 `knowledge/`（“· 引用”行是标注，下面是原文），不逐页读 Hub。`items/<序号>.json`、`briefs/<序号>.md` 列有命令、参数、恢复法与待填计划。派发前先 `ls` 核对实名（`<10` 条为 `0.md` 非 `00.md`），文件落盘后再调 `task-brief.ts`；未写完 `plans/*.json` 禁跑 `fidelity-plumb.ts` / `fidelity-brief.ts` 或下游。
 
 一条原始用例一个子代理：装了 `case-writers` 用 `write_case_plans`，否则 `task-brief.ts --role '脚本编写'` 写盘并原样传提示，**同条消息以前台方式并列多个 `task`（`subagent_type="case-compile:compile-writer"`，严禁用 `background`）**，不合并、**每批最多 6 个**，失败项单独重派。清理分工（存盘禁入 `cleanup:true`）、`adapted` 不是步骤白名单（补 `sources.states` 或手册/示例前置，附 `precondition_source` 与配对清理，不改“前置不存在”测试）与语法由包内定义与 `task-brief.ts` 注入；受限结构/示例/分块在 `<技能目录>/slots.schema.json`、`examples/submit-result.json`、`tables/blocks-format.json`。只在答案会改变做法、资料里又查不到时问使用者（设备的问题还是原始用例的问题，需要使用者决定），能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 

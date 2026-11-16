@@ -12,7 +12,7 @@ tools: read_file, write_file, edit_file, ls, glob, grep, execute
 4. 不碰令牌、不调 Hub、不调 `test-bed`；子代理不问使用者：定不了的问题或资料缺口按规则写进计划的 `unmet`/`missing`，在最终回复写给主代理的报告。
 
 ## 编写核心守则
-1. 先完整读 `items/<序号>.json`（列有命令、手册对各参数的说明、配置恢复方法、同级命令写法与末尾待填计划）和 `briefs/<序号>.md`，再按需本地搜索 `knowledge/`、`inventory`、`profile`、`contract.json`；不逐条读 Hub，不抄另一条用例的资料或上一次上机输出。
+1. 先完整读 `items/<序号>.json`（列有命令、手册对各参数的说明、配置恢复方法、同级命令写法与末尾待填计划）和 `briefs/<序号>.md`，再按需本地搜索 `knowledge/`、`inventory`、`profile`、`contract.json`；不逐条读 Hub，不抄另一条用例的资料或上一次上机输出。`knowledge/*.txt` 里以 `# /` 开头的行是节点，每个条目前的 `· 引用 tree:…` 行是标注、不是原文，引用照抄它；它下面到下一个标注行或 `# ` 行之前才是原文，一字不差（含全角标点与 `**`）。引文 `quote.text` 只从这些原文行连续复制，可只取一段，不带标注，不自加省略号；读工具把长行截断显示（末尾“…”）时，按行号读全再复制。同一节点的条目按 Hub 的排列（类别、原文）列出，不是手册里的先后，示例命令的顺序不能从行序推断。
 2. 每条原始用例都照原意写，并明确区分**场景保真底线**与**前置步骤补齐职责**：命令须由对应构建命令树完整解析（不接受缩写、前缀、字形或大小写折叠，不从散文捞命令）；原始用例的命令可改参数、不可删命令。**不增设无来源的被测对象或测试目标，不替换作者写的对象、条件或限制**；但 **`adapted` 与原始步骤只是等价动作描述，不是步骤白名单——按测试环境、协议前提和手册依存绑定并补齐运行条件属于编写职责**：
 - 强制补齐有来源的前置步骤：（1）对重组记录 `sources.states` 里列出的每条 `missing_prerequisite`（或非空 `prerequisites`），以及（2）对同构建 `knowledge/` 手册正文与配置示例明确要求使作者命令或触发动作生效的前提（如全局开关、监听前提、本端与对端对称配对配置、依赖对象等，即使重组未列出也须补齐），**必须**在触发动作前补入相应前置步骤；
 - 来源标注与配对逆清理：每条新增前置步骤须在步 `description` 注明来源（`sources.states` 条目或 `knowledge/` 手册条文/示例）；若该前置未在重组 `sources.states` 列出而出自 `knowledge/` 手册或示例，应在扁平步骤写 `precondition_source: { "reference": "<知识引文引用>", "text": "<手册或示例逐字原文>" }`（`blocks` 模式写入 `block_context.preconditions` 附 `established_by` 与 `quote`），由 Hub 原文校验并列入保真核对 `mechanical.exemptions`（`added_precondition`）豁免，同时按下方两类清理边界在末尾写配对 `cleanup: true` 逆操作（命中 `contract.cleanup` 自动清理或存盘 `write memory` 时禁写 `cleanup: true`）；绝不能把非授权的无来源步骤硬塞进计划。

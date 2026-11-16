@@ -26,6 +26,7 @@ import { createHash } from 'node:crypto';
 import type { BedFacts } from './bed.ts';
 import type { RunnerCleanup } from './runtime-contract.ts';
 import { canonicalJson } from './canonical-json.ts';
+import { entryLines, nodeLines } from './knowledge-text.ts';
 import {
   analyzeRoundHistory,
   consecutiveRepeatedGateCodes,
@@ -139,16 +140,9 @@ export function policyOf(value: unknown): BriefPolicy | null {
   return { inverse_rules: rules, inverse_alternatives: pairs, read_only: value.read_only.filter((prefix): prefix is string => typeof prefix === 'string') };
 }
 
-/** A node as the run download writes it into the text files, line for line. */
+/** A node as the run download writes it into the text files (knowledge-text.ts nodeLines, the same function): a heading line per entry, then its statement byte for byte. */
 export function nodeBlock(node: BriefNode): string[] {
-  const out = [`# ${node.path}`];
-  if (node.children.length) out.push(`  子节点 ${node.children.length} 个：${node.children.map((child) => child.name).join('、')}`);
-  for (const entry of node.entries) {
-    out.push(`· ${entry.statement}`);
-    if (entry.applicability) out.push(`  适用 ${entry.applicability}`);
-    out.push(`  引用 ${entry.reference}`);
-  }
-  return out;
+  return nodeLines(node.path, node.children.map((child) => child.name), node.entries);
 }
 const syntaxLine = (node: BriefNode): string | null => (node.entries.find((entry) => entry.kind === 'definition') ?? node.entries[0])?.statement.split('\n', 1)[0] ?? null;
 
@@ -266,7 +260,7 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
   const out: string[] = [
     `# 编写简报 ${index}：${typeof fields.title === 'string' ? fields.title : ''}`,
     '',
-    `下载运行时由程序从 items/${index}.json、run.json 和 knowledge/ 摘出，只有事实，没有判断，也不是计划：这条用例的重组记录点到的命令在锁定命令树里的条目、手册对这些命令各参数的说明、产品声明的逆操作、只读前缀下同样的词走到的命令、同级命令的语法行，记录点到的其它节点在 knowledge/ 里的位置，最后是这条用例的计划文件外壳。写这条用例先读这一份，这里没有的再到 knowledge/ 里搜；引用照抄条目下的“引用”行。`,
+    `下载运行时由程序从 items/${index}.json、run.json 和 knowledge/ 摘出，只有事实，没有判断，也不是计划：这条用例的重组记录点到的命令在锁定命令树里的条目、手册对这些命令各参数的说明、产品声明的逆操作、只读前缀下同样的词走到的命令、同级命令的语法行，记录点到的其它节点在 knowledge/ 里的位置，最后是这条用例的计划文件外壳。写这条用例先读这一份，这里没有的再到 knowledge/ 里搜。每个条目前有一行“· 引用 tree:…”，那是标注，不是原文，引用照抄它；它下面到下一个“· 引用”行或“# ”行之前才是原文，一字不差（含全角标点和 ** 标记），引文只从这些行里连续复制，不带标注，不自加省略号。同一节点里的条目按 Hub 的排列（类别、原文）列出，不是手册里的先后。`,
     '',
     `条目 ${String(item.id ?? '')}；锁定根 ${knowledge.root}。`,
     '',
@@ -290,7 +284,7 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
     const stated = knowledge.parameters?.get(words(path)) ?? [];
     if (stated.length) {
       out.push(`手册对这条命令各参数的说明（${stated.length} 行，原文）：`);
-      for (const row of stated) out.push(`· ${row.statement}`, `  引用 ${row.reference}`);
+      for (const row of stated) out.push(...entryLines(row));
     }
     const runnerHit = runnerCleanupMatch(runnerCleanup, words(path));
     if (policy) {
@@ -1442,7 +1436,7 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
     out.push('', `### ${cmd.words}`, ...cmd.node_block);
     if (cmd.parameters.length > 0) {
       out.push(`手册对这条命令各参数的说明（${cmd.parameters.length} 行，原文）：`);
-      for (const row of cmd.parameters) out.push(`· ${row.statement}`, `  引用 ${row.reference}`);
+      for (const row of cmd.parameters) out.push(...entryLines(row));
     }
     out.push(`逆操作（${cmd.inverse.kind}：${cmd.inverse.detail}）：`, ...cmd.inverse.node_block);
   }

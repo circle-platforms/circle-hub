@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { authoringBrief, canonicalPath, commandPath, inverseOf, nodeBlock, pairedSibling, parameterRows, planEnvelope, policyOf, referencedPaths } from '../functions/authoring-brief.ts';
-import { knowledgeFiles } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { knowledgeFiles } from '../functions/knowledge-text.ts';
 import * as authoringBriefTool from './authoring-brief.ts';
 import { readKnowledge, writeBriefs } from './authoring-brief.ts';
 
@@ -136,18 +136,18 @@ test('a brief holds the commands the record names with their entries word for wo
   const commands = await readFile(join(directory, 'knowledge', 'commands.txt'), 'utf8');
   const block = nodeBlock(knowledge.nodes.get('/commands/widget/name')!).join('\n');
   assert.ok(commands.includes(block + '\n\n') && text.includes('### widget name\n' + block + '\n'));
-  assert.ok(text.includes(`### widget name\n${block}\n逆操作（产品规则 /commands → /commands/no）：\n# /commands/no/widget/name\n· no widget name <arg1:string>\n`));
+  assert.ok(text.includes(`### widget name\n${block}\n逆操作（产品规则 /commands → /commands/no）：\n# /commands/no/widget/name\n· 引用 tree:${ROOT}/commands/no/widget/name@${digest(200)}\nno widget name <arg1:string>\n`));
   assert.ok(text.includes('只读前缀 /commands/show 下同样的词走到的命令：\n（/commands/show/widget 的条目已在上文）\n'), 'the words end one level up, at a command; shown once');
   assert.match(text, /同级命令（\/commands\/widget 下另有 4 个，完整条目在 knowledge\/commands\.txt 第 \d+ 行起）：\n· widget off\n· widget on\n· widget reset\n· widget sync …（下面有 2 个子节点）\n/);
-  assert.ok(text.includes('### widget on\n# /commands/widget/on\n· widget on\n'));
-  assert.ok(text.includes('逆操作（产品声明的互逆取值 on/off：同级的另一条命令）：\n# /commands/widget/off\n· widget off\n'), 'the declared pair comes before the prefix rule');
+  assert.ok(text.includes(`### widget on\n# /commands/widget/on\n· 引用 tree:${ROOT}/commands/widget/on@${digest(200)}\nwidget on\n`));
+  assert.ok(text.includes(`逆操作（产品声明的互逆取值 on/off：同级的另一条命令）：\n# /commands/widget/off\n· 引用 tree:${ROOT}/commands/widget/off@${digest(200)}\nwidget off\n`), 'the declared pair comes before the prefix rule');
   assert.ok(text.includes('逆操作（产品规则 /commands → /commands/no）：\n按这条规则算出的 /commands/no/widget/reset 不在锁定命令树里。\n'));
-  assert.ok(text.includes('逆操作（产品规则 /commands/widget/sync/to → /commands/widget/sync/rollback，逆操作带这条命令的前 1 个参数）：\n# /commands/widget/sync/rollback\n· widget sync rollback <arg1:string>\n'));
-  assert.ok(text.includes('### show widget\n# /commands/show/widget\n· show widget [<arg1:string="">]\n'));
+  assert.ok(text.includes(`逆操作（产品规则 /commands/widget/sync/to → /commands/widget/sync/rollback，逆操作带这条命令的前 1 个参数）：\n# /commands/widget/sync/rollback\n· 引用 tree:${ROOT}/commands/widget/sync/rollback@${digest(200)}\nwidget sync rollback <arg1:string>\n`));
+  assert.ok(text.includes(`### show widget\n# /commands/show/widget\n· 引用 tree:${ROOT}/commands/show/widget@${digest(200)}\nshow widget [<arg1:string="">]\n`));
   assert.ok(text.includes('这条命令在产品声明的只读前缀下。'));
   assert.ok(!text.includes('/commands/widget/off@' + entry) && !text.includes(OTHER_ROOT), 'nothing of another root');
   // Other nodes: a short one is quoted with where it is, a long one only says where it is.
-  assert.match(text, /## 重组记录点到的其它节点（2 个）\n\nknowledge\/manual\.txt 第 \d+ 行起，共 3 行：\n# \/manual\/guide\/two words\n· 合成手册句：部件默认关闭。\n/);
+  assert.match(text, /## 重组记录点到的其它节点（2 个）\n\nknowledge\/manual\.txt 第 \d+ 行起，共 3 行：\n# \/manual\/guide\/two words\n· 引用 tree:a{64}\/manual\/guide\/two words@[0-9a-f]{64}\n合成手册句：部件默认关闭。\n/);
   assert.match(text, /# \/manual\/guide\/whole chapter\n（knowledge\/manual\.txt 第 \d+ 行起，共 3 行，没有抄在这里）\n/);
   assert.ok(text.includes('## 记录点到、锁定根里没有的路径\n- /commands/widget/gone\n\n## 这条用例的计划文件外壳\n'));
   // The line the brief gives is the line of the block in the file.
@@ -169,8 +169,8 @@ test('a brief lists under a command the manual rows that state its parameters, w
   assert.ok(text.includes([
     '### widget sync to', block,
     '手册对这条命令各参数的说明（2 行，原文）：',
-    '· | peer_name | 合成参数说明：特殊字符仅支持“._-”。 |', `  引用 tree:${ROOT}/manual/guide/parameters@${digest(200)}`,
-    '· | mode | 合成参数说明：取值为 full 或 delta。 |', `  引用 tree:${ROOT}/manual/guide/parameters@${digest(201)}`,
+    `· 引用 tree:${ROOT}/manual/guide/parameters@${digest(200)}`, '| peer_name | 合成参数说明：特殊字符仅支持“._-”。 |',
+    `· 引用 tree:${ROOT}/manual/guide/parameters@${digest(201)}`, '| mode | 合成参数说明：取值为 full 或 delta。 |',
     '逆操作（产品规则 /commands/widget/sync/to → /commands/widget/sync/rollback，逆操作带这条命令的前 1 个参数）：',
   ].join('\n') + '\n'), text);
   assert.ok(!text.includes('不是参数行') && !text.includes('不完整数据'), 'only rows that state a parameter of a command the brief lists');
