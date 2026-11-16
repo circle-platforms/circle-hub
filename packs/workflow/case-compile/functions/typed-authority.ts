@@ -140,16 +140,18 @@ export function humanGapLocation(document: string, pointer: string): string {
    if (parts[3] === 'keywords') return `第 ${block} 块调用步骤的命名参数`;
    return `第 ${block} 块的调用步骤`;
   }
+  // The block-relative field path is part of the location: a selection refusal names the one field to change.
+  const field = `（/${parts.slice(2).join('/')}）`;
   if (parts[2] === 'select') {
    const row = parts[3] === 'where' ? oneBased(parts[4]) : null;
-   return row !== null ? `第 ${block} 块的第 ${row} 条选行条件` : `第 ${block} 块的选行条件`;
+   return row !== null ? `第 ${block} 块的第 ${row} 条选行条件${field}` : `第 ${block} 块的选行条件${field}`;
   }
-  if (parts[2] === 'table') return `第 ${block} 块的表格设置`;
+  if (parts[2] === 'table') return `第 ${block} 块的表格设置${field}`;
   if (parts[2] === 'assertions') {
    const assertion = oneBased(parts[3]);
    return assertion !== null ? `第 ${block} 块的第 ${assertion} 条断言` : `第 ${block} 块的断言`;
   }
-  return `第 ${block} 块`;
+  return parts.length > 2 ? `第 ${block} 块${field}` : `第 ${block} 块`;
  }
  if (parts[0] === 'steps') {
   const step = oneBased(parts[1]);

@@ -2,7 +2,7 @@
 import TABLE from '../tables/blocks-format.json' with {type:'json'};
 import SHAPE from '../tables/block-plan.schema.json' with {type:'json'};
 import {schema} from './schema.ts';
-import {cellArguments,cellTemplate,literalFormatParameter} from './cell-selection.ts';
+import {cellArguments,cellSelectionShapeProblems,cellTemplate} from './cell-selection.ts';
 import {isRecord} from './text.ts';
 import type {PlanSlots,PlanStep,PlanExpect,SlotProblem} from './slots.ts';
 export interface RegisterDefinition {name:string;block:string;step:number;object:string;cell?:boolean}
@@ -34,7 +34,7 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
  if(!schema(SHAPE).safeParse(value).success)return {ok:false,problems:[{pointer:'/blocks',message:'块计划不符合包声明的完整形状；按 slots.schema.json 修正，不能与 steps/expects 混写'}]};
  const blocks=value.blocks as Array<Record<string,any>>,steps:PlanStep[]=[],expects:PlanExpect[]=[],problems:SlotProblem[]=[];
  const meta:BlockMeta={raw:value,registers:new Map(),steps:new Map(),deferred:[]},ids=new Set<string>(),assertions=new Set<string>();
- const issue=(pointer:string,message:string)=>problems.push({pointer,message});
+ const issue=(pointer:string,message:string,fix?:string)=>problems.push({pointer,message,...(fix===undefined?{}:{fix})});
  const capture=(name:unknown,id:string,index:number,at:string,object:string,cell=false)=>{
   if(!identifier(name))issue(at,'寄存器必须是区分大小写的 ASCII 标识符，不能以数字开头');
   else if(meta.registers.has(name))issue(at,'寄存器已经捕获，不能覆盖先前原文');
@@ -67,14 +67,9 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
   }
   if(block.kind==='SELECT_CELL'){
    const captured=meta.registers.get(block.from);
-   if(!literalFormatParameter(block.table.separator))issue(at+'/table/separator','取格分隔符含有现有 G 不能表达的格式花括号');
-   for(const [conditionIndex,condition]of (block.select.where??[]).entries())if(!literalFormatParameter(condition.value))issue(at+'/select/where/'+conditionIndex+'/value','取格条件常量含有现有 G 不能表达的格式花括号');
    if(!captured||captured.cell)issue(at+'/from','取一格必须引用本条前面保存的完整设备输出');
    if(block.call.args.length||Object.keys(block.call.keywords).length)issue(at+'/call','取一格的参数由已声明的表格和选择条件生成，call只写对象和方法');
-   if(block.table.format==='key_value'&&(block.table.separator===''||block.table.columns!==2))issue(at+'/table','键值行需要非空字面分隔符和两列');
-   if(block.table.separator===''&&block.table.columns!==1)issue(at+'/table','没有分隔符时只能声明单列');
-   if(typeof block.column==='number'&&block.column>block.table.columns)issue(at+'/column','取值列超出声明列数');
-   for(const [conditionIndex,condition]of (block.select.where??[]).entries())if(condition.column>block.table.columns)issue(at+'/select/where/'+conditionIndex+'/column','选行列超出声明列数');
+   for(const problem of cellSelectionShapeProblems({table:block.table,column:block.column,select:block.select}))issue(at+problem.path,problem.message,problem.fix);
    const step:PlanStep={...block.call,...cellArguments({table:block.table,column:block.column,select:block.select}),id,origin:at+'/call',block_kind:block.kind,description:'按声明的行列结构取一格',input_register:block.from,cell_input:true,save_as:block.register,...(Array.isArray(block.author_step_refs)?{author_step_refs:block.author_step_refs}:{})};
    steps.push(step);meta.steps.set(id,steps.length);capture(block.register,id,steps.length,at+'/register',step.object,true);continue;
   }
