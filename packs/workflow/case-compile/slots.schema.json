@@ -94,6 +94,11 @@
                         "maxLength": 64
                       },
                       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -230,6 +235,11 @@
                         "maxLength": 64
                       },
                       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -301,6 +311,11 @@
                         "maxLength": 64
                       },
                       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -375,6 +390,11 @@
                         "maxLength": 64
                       },
                       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -534,6 +554,11 @@
                         "maxLength": 64
                       },
                       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -611,6 +636,11 @@
                         "maxLength": 64
                       },
                       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -725,6 +755,11 @@
                         "maxLength": 64
                       },
                       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -800,6 +835,11 @@
                         "maxLength": 64
                       },
                       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -886,6 +926,11 @@
                         "maxLength": 64
                       },
                       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -964,6 +1009,11 @@
                         "maxLength": 64
                       },
                       "description": "本块实现的作者步骤编号列表（可选）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -988,6 +1038,11 @@
                     "payload": {
                       "type": "object",
                       "additionalProperties": true
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -1010,6 +1065,11 @@
                     "payload": {
                       "type": "object",
                       "additionalProperties": true
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -1032,6 +1092,11 @@
                     "payload": {
                       "type": "object",
                       "additionalProperties": true
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [

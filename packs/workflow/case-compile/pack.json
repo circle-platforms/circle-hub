@@ -43,8 +43,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "f37289531c590594d757ec2d33c2d0999c2d55526e41ce6cc20e32e360aa6232",
-      "size": 17108
+      "sha256": "574294ff105f9384e7dcced6ec44b82f7694c515e441b9d13aaa6d808286dc05",
+      "size": 17121
     },
     {
       "path": "agents/compile-attributor.md",
@@ -63,8 +63,8 @@
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "4e4e9c392c37698563a44a07b916fcbdccbdc13eb90df17a8a27d45304f8ea3c",
-      "size": 16812
+      "sha256": "39018ffc421ce95f880bf2b0746100099faf003ab0db01e3abe99c0844524edf",
+      "size": 16956
     },
     {
       "path": "checks.json",
@@ -178,8 +178,8 @@
     },
     {
       "path": "functions/blocks.ts",
-      "sha256": "aecc7f7c3e466a8455f9cd2f046d5cabbf4589bfc97c2772b10691e4eec05f35",
-      "size": 11550
+      "sha256": "fbc23af8640415350ae55358dbcf873feafb2a686304a0c9da73d473f3e10b7e",
+      "size": 12290
     },
     {
       "path": "functions/call-boundaries.ts",
@@ -240,6 +240,11 @@
       "path": "functions/command-obligations.ts",
       "sha256": "b0ff87caa208d6863bf97c793033b190f19f6996d7a769d64ef4ffd81b82c442",
       "size": 28867
+    },
+    {
+      "path": "functions/command-tree-verdict.ts",
+      "sha256": "4242e01d60da6cb9b21dedbb91793f3506a9a9663a0b5fdbf23f5690a5a69de4",
+      "size": 7131
     },
     {
       "path": "functions/delivery.ts",
@@ -393,8 +398,8 @@
     },
     {
       "path": "functions/plan-boundary.ts",
-      "sha256": "740d6ccc1b7b5fdb30aab3bfa151735ad6ae0169a62508f8d4c753abc76a5ffa",
-      "size": 10305
+      "sha256": "4aef0593cc0ce7a46f158bd937bc5dbd04398690fb7588bf986515dc5eaeca40",
+      "size": 10620
     },
     {
       "path": "functions/plan-commands.ts",
@@ -478,8 +483,8 @@
     },
     {
       "path": "functions/slots.ts",
-      "sha256": "4159891844c1687440ff7b68e929e613875fc1cf24197d69f305fc67eee3c6c4",
-      "size": 9263
+      "sha256": "00f44174707e31e0964a2b8eb0d98a8edbe8ecec23c074597e8b12526259b60d",
+      "size": 9142
     },
     {
       "path": "functions/source-cache.ts",
@@ -493,8 +498,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "d573527c4fe89d6ff26624d47e14dd936a485117e95728bc7013d221252037bc",
-      "size": 42151
+      "sha256": "5afda91242ce5cbf233b6d439eaa75f04b9d07f223b5f36590d09cfc739d9518",
+      "size": 42295
     },
     {
       "path": "functions/subject.ts",
@@ -793,18 +798,18 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "ac0b1c98da3e89675a920c53a26495b27f80eb4e3ef6c38be92742bd5481d7fd",
-      "size": 67844
+      "sha256": "51a01bb2aa6f01ec86509c1a55913815a6b00c66645f641cd87f9be4bc45334e",
+      "size": 73122
     },
     {
       "path": "tables/block-plan.schema.json",
-      "sha256": "cd1241442c3635ec58e4dbfb32c16bbe9ef8e5f6480765f224ab783dfc13340c",
-      "size": 52736
+      "sha256": "5627a989d605007751d4f3c191763e64ef2b9e8d0d83ee232cc7436aa171bebc",
+      "size": 57624
     },
     {
       "path": "tables/blocks-format.json",
-      "sha256": "6e75d3fc521b458cfd4176402b38a52fa6458ca057decce610f9c2a02d258f04",
-      "size": 21110
+      "sha256": "947aa57be173ba25fd247a3c69357ebad38875a3ed7e1cf4b27cda3164a5572a",
+      "size": 21735
     },
     {
       "path": "tables/codes.json",
@@ -938,8 +943,8 @@
     },
     {
       "path": "tools/check-plan.ts",
-      "sha256": "152962800dcccda7d3d29e7e78ea91de576f88d99639bbd3cba0d10c0fa3b6ba",
-      "size": 20825
+      "sha256": "679a5998e415762e5f381cf1bb9dfc2c970cf2db2f323f223ed430708dcea0e7",
+      "size": 20832
     },
     {
       "path": "tools/cmd-select-plumb.cli.json",
@@ -958,8 +963,8 @@
     },
     {
       "path": "tools/cmd-verify-plumb.ts",
-      "sha256": "022f636df74abac0f66821a46d1fa332a1eee9748d6dc92c9c09125971110fb3",
-      "size": 21952
+      "sha256": "213da2b4c7f3bbac2028694f444e12180934230b296661a4fee54715a6a420eb",
+      "size": 27934
     },
     {
       "path": "tools/command-domain-precheck.cli.json",

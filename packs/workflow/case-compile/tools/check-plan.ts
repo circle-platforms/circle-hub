@@ -208,7 +208,7 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
  * Read only the standard download beside the explicitly supplied frozen run; never infer catalog authority from prose. What comes
  * back is the locked tree of the run, not a catalog: the checks are given the part of it the Hub gives them (functions/plan-boundary.ts).
  */
-async function downloadedTree(runPath:string,run:unknown):Promise<LockedTree|undefined>{
+export async function downloadedTree(runPath:string,run:unknown):Promise<LockedTree|undefined>{
  if(!isRecord(run)||typeof run.root!=='string')return undefined;
  let bytes:string;try{bytes=await readFile(join(dirname(runPath),'knowledge','nodes.jsonl'),'utf8');}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw error;}
  const tree=lockedTree(bytes.split('\n').filter(Boolean).map(line=>JSON.parse(line) as unknown),{run:run.run,root:run.root});

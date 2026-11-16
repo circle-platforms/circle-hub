@@ -76,7 +76,7 @@ start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predec
 
 ## 3. 脚本合并
 
-写完后依次跑命令核验、Plumb 场景保真审计再提交给 Hub（缺审、过期或格式错在本地拦截，不占修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后重跑审计；不要把 Hub 已接收当全部正确。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）；核对步骤、期望原句、命令树、环境地址、场景保住及 Excel 一致。
+写完后依次跑命令核验、Plumb 场景保真审计再提交给 Hub（缺审、过期或格式错在本地拦截，不占修复次数）。命令核验以命令树为准：命令树核对不过的必改；Plumb 拒绝而命令树核对通过的只标需人工复核，不阻断。按说明改错并自动重交，最多重交 2 次；重改计划后重跑审计；不要把 Hub 已接收当全部正确。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）。
 
 ```sh
 node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>' [--brief '<核对文件>']
@@ -102,7 +102,7 @@ EOF
 node '<技能目录>/tools/generate-workbook.ts' --run '<新目录>/run.json' --result '<新目录>/result.json' --submission '<新目录>/submission.json' --out '<新目录>/case.xlsx'
 ```
 
-submit-plans 与 fetch-run 从标准输入取 %HUB_TOKEN%，Plumb 脚本用 --key-stdin 传入 %PLUMB_API_KEY%，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具提示修正，不猜另一种写法。原始文件上传后，Hub 再核对。上机返工后用 `carry-plans.ts` 结转并回第 2 节（`predecessor` 填原 `test-bed` 预订号）新开 `plan_run`，重生成上传并新开 `merge_run`；禁交已进 `merge_run` 的旧运行或当前 `merge_run`。
+submit-plans 与 fetch-run 从标准输入取 %HUB_TOKEN%，Plumb 脚本用 --key-stdin 传入 %PLUMB_API_KEY%，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具提示修正，不猜另一种写法。上机返工后用 `carry-plans.ts` 结转并回第 2 节（`predecessor` 填原 `test-bed` 预订号）新开 `plan_run`，重生成上传并新开 `merge_run`；禁交已进 `merge_run` 的旧运行或当前 `merge_run`。
 
 ```text
 首次只有 workbook_verified 缺文件可继续；其他必需项的结论须为正确（`satisfied`）
