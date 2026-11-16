@@ -94,7 +94,8 @@ test('residue that is not in the frozen baseline blocks dispatch and names the p
   assert.match(state.missing_fact ?? '', /床面残留不属于基线/);
   assert.match(state.missing_fact ?? '', /来源探针 addresses/);
   assert.match(state.next_action ?? '', /由合成管理员按 synthetic-clear-addresses 处理后重开/);
-  assert.match(state.member_missing_facts?.[0]?.fact ?? '', /配置还没有恢复/);
+  assert.doesNotMatch(state.member_missing_facts?.[0]?.fact ?? '', /上一次上机验证留下/);
+  assert.match(state.member_missing_facts?.[0]?.fact ?? '', /配置或残留不符合本次核对依据/);
   assert.match(state.member_missing_facts?.[0]?.next_action ?? '', /测试环境管理员/);
   assert.doesNotMatch(JSON.stringify(state.member_missing_facts), /192\.0\.2|usr_|exe_|第 1 行改变/);
   const pre = (await snaps(c, state.job)).find(detail => detail.when === 'pre');
@@ -140,7 +141,7 @@ test('an unrestored bed keeps the reported pass, attaches the diff, and blocks t
   assert.match(blocked.missing_fact ?? '', /该床尚未恢复/);
   assert.match(blocked.next_action ?? '', /由合成管理员按 synthetic-clear-addresses 处理后重开/);
   // a member-safe reason and the named actor travel with the refusal (no device echo line in it)
-  assert.match(blocked.member_missing_facts?.[0]?.fact ?? '', /上一次上机验证留下的配置还没有恢复.*来源探针 addresses/);
+  assert.match(blocked.member_missing_facts?.[0]?.fact ?? '', /配置或残留不符合本次核对依据.*来源探针 addresses/);
   assert.match(blocked.member_missing_facts?.[0]?.next_action ?? '', /测试环境管理员/);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
   await rotate(c, 'synthetic verified bytes restored');
@@ -229,7 +230,7 @@ test('residue that needs interactive confirmation blocks dispatch and names the 
   assert.match(state.missing_fact ?? '', /不可自动清理/);
   assert.match(state.next_action ?? '', /合成管理员/);
   assert.match(state.next_action ?? '', /重新派发之前/);
-  assert.match(state.member_missing_facts?.[0]?.fact ?? '', /配置还没有恢复/);
+  assert.match(state.member_missing_facts?.[0]?.fact ?? '', /配置或残留不符合本次核对依据/);
   assert.match(state.member_missing_facts?.[0]?.next_action ?? '', /测试环境管理员/);
   assert.doesNotMatch(JSON.stringify(state.member_missing_facts), /192\.0\.2|usr_|exe_|第 1 行改变/);
   assert.equal((await cleanupRows(c, state.job)).length, 0);
@@ -527,7 +528,7 @@ test('raw capture probe with baseline mismatch blocks dispatch, lists diff lines
   assert.match(state.next_action ?? '', /synthetic-cleanup-probe/);
   assert.match(state.next_action ?? '', /circle-hub bed baseline record/);
   assert.match(state.next_action ?? '', /--reason <理由>/);
-  assert.match(state.member_missing_facts?.[0]?.fact ?? '', /配置还没有恢复/);
+  assert.match(state.member_missing_facts?.[0]?.fact ?? '', /配置或残留不符合本次核对依据/);
   assert.match(state.member_missing_facts?.[0]?.next_action ?? '', /测试环境管理员/);
   assert.doesNotMatch(JSON.stringify(state.member_missing_facts), /192\.0\.2|usr_|exe_|第 1 行改变/);
 });

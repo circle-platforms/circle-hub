@@ -119,7 +119,7 @@ export async function clearBedHold(this: BedContext, by: Principal, executor: st
 
 /** Member-readable residue facts exclude device echoes and credential or account identities. */
 function unrestoredMember(ids: readonly string[]): { fact: string; next_action: string } {
-  return { fact: `测试环境上一次上机验证留下的配置还没有恢复，这次没有发出（来源探针 ${[...new Set(ids)].join('、')}）`, next_action: '由测试环境管理员按已声明的清理流程处理并确认恢复后，原样重交原提交' };
+  return { fact: `测试环境的配置或残留不符合本次核对依据，这次没有发出（来源探针 ${[...new Set(ids)].join('、')}）`, next_action: '由测试环境管理员按已声明的清理流程处理并确认恢复后，原样重交原提交' };
 }
 export async function gateBed(this: BedContext, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<void> {
     const spec = d.bed_state;
