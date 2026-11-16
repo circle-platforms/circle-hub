@@ -513,8 +513,8 @@
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "1e3d218b12483fef07001ad4d0a51cb31b35f31e7d428025aa32fcc82b3678f9",
-      "size": 26375
+      "sha256": "7f93260eb2dc0cd0b56ff1fe35f75be18c7dddb9088302a52f5aeb20d8af2773",
+      "size": 27045
     },
     {
       "path": "policies/dispatch.json",
