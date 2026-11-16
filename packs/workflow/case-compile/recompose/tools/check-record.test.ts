@@ -280,3 +280,29 @@ test('the download must carry the locked command tree of the same run, or the ch
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('--run is the run directory: its run.json file, a missing directory and a link are refused, each naming the one-line correct form the other tools give', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'rc-check-run-form-'));
+  try {
+    const frozen = frozenRunFixture();
+    const recDir = join(root, 'records');
+    await mkdir(recDir);
+    await writeFile(join(recDir, '01.json'), JSON.stringify(lite(frozen.items[0])), 'utf8');
+    const runDir = join(root, 'recompose-run');
+    await writeFrozenRun(runDir, frozen);
+    await symlink(runDir, join(root, 'link-run'));
+    const form = "合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。";
+    for (const [value, fact] of [[join(runDir, 'run.json'), /^参数无效：--run 路径 .*run\.json 必须是普通目录/], [join(root, 'nothing'), /^不存在：找不到 --run 运行目录 /], [join(root, 'link-run'), /^参数无效：--run 路径 .*link-run 必须是普通目录/]] as const) {
+      const refused = await runCli(['--file', recDir, '--run', value]);
+      assert.equal(refused.code, 1, value);
+      assert.equal(refused.out, '', value);
+      assert.match(refused.err, fact, value);
+      assert.ok(refused.err.trimEnd().endsWith(form), refused.err);
+      assert.equal(refused.err.trim().split('\n').length, 1, refused.err);
+    }
+    const accepted = await runCli(['--file', recDir, '--run', runDir]);
+    assert.ok(accepted.out.includes('"hub_checks"'), accepted.err);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

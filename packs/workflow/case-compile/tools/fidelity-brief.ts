@@ -4,11 +4,11 @@ import { planStateOf } from '../functions/plan-state.ts';
 // The scenario-fidelity briefs of a plan directory (functions/fidelity.ts), for the audit a fresh session makes before the plans
 // are submitted (tools/fidelity.md). Length placeholders are expanded first, exactly as tools/submit-plans.ts does before
 // sending, so a brief is computed from the bytes the Hub will receive and its digest is the one the Hub recomputes. Offline: it
-// reads the plan run's run.json (tools/download-run.ts) for each case's frozen recomposition record. The brief directory is kept
+// reads the plan run's run.json (tools/download-run.ts) for each case's frozen recomposition record; --run names the run directory. The brief directory is kept
 // across repairs and nothing in it is ever overwritten or renamed: a brief and its verdict carry the first eight digits of the
 // brief's digest in their names, so a changed plan gets a new brief file, only that case is audited again, and the verdict of an
 // earlier plan is never merged (in run 19 the model kept five brief directories and tracked the changed digests by hand).
-//   node <skill directory>/tools/fidelity-brief.ts --run <directory>/run.json --plans <plan directory> --out <brief directory>
+//   node <skill directory>/tools/fidelity-brief.ts --run <run directory> --plans <plan directory> --out <brief directory>
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -17,6 +17,7 @@ import { fidelityBrief, unknownAuthorStepRefs, type FidelityBrief } from '../fun
 import { planDataOf } from '../functions/subject.ts';
 import { parseCliOptions, isRecord } from '../functions/text.ts';
 import { expandPlanFiles, parsedPlanFile } from './submit-plans.ts';
+import { resolveRun } from './workspace-path.ts';
 
 export interface PlanCase { file: string; base: string; item: string; value: Record<string, unknown>; brief: FidelityBrief }
 /** The brief of a case's plan and the verdict that answers it, named by the brief's digest: another plan, another pair of files. */
@@ -24,9 +25,9 @@ export const briefFile = (directory: string, base: string, sha256: string): stri
 export const verdictFile = (directory: string, base: string, sha256: string): string => join(directory, `${base}.${sha256.slice(0, 8)}.verdict.json`);
 
 /** Every case file of a plan directory that has authored actions, with the brief of its plan as it stands now (placeholders expanded). */
-export async function planCases(runPath: string, plans: string): Promise<{ cases: PlanCase[]; skipped: Array<{ file: string; reason: string }> }> {
-  const run = parsedPlanFile('run.json', await readFile(runPath));
-  if (!isRecord(run) || !Array.isArray(run.items)) throw new CallFailure('invalid_parameters', '--run 请使用脚本编写时下载的原始用例文件', "请核对 --run 的冻结运行和 --plans 中的当前计划，再重新生成保真简报");
+export async function planCases(runDirectory: string, plans: string): Promise<{ cases: PlanCase[]; skipped: Array<{ file: string; reason: string }> }> {
+  const run = parsedPlanFile('run.json', await readFile(resolveRun(runDirectory).file.lexical));
+  if (!isRecord(run) || !Array.isArray(run.items)) throw new CallFailure('invalid_parameters', '--run 请使用脚本编写时下载的运行目录（其中的 run.json 要有原始用例）', "请核对 --run 的冻结运行和 --plans 中的当前计划，再重新生成保真简报");
   const items = new Map(run.items.filter(isRecord).filter((i) => typeof i.id === 'string').map((i) => [i.id as string, i]));
   await expandPlanFiles(plans);
   const cases: PlanCase[] = [], skipped: Array<{ file: string; reason: string }> = [];
@@ -54,7 +55,7 @@ const readText = async (path: string): Promise<string | null> => { try { return 
 
 export async function main(argv: string[]): Promise<number> {
   try {
-    const parsedArgs = parseCliOptions(argv, { run: true, plans: true, out: true }, 'node <技能目录>/tools/fidelity-brief.ts --run <run> --plans <plans> --out <out>');
+    const parsedArgs = parseCliOptions(argv, { run: true, plans: true, out: true }, 'node <技能目录>/tools/fidelity-brief.ts --run <运行目录> --plans <plans> --out <out>');
     // Required options are checked by parseCliOptions.
     const args = { run: parsedArgs.run!, plans: parsedArgs.plans!, out: parsedArgs.out! };
     const { cases, skipped } = await planCases(args.run, args.plans);

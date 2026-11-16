@@ -25,8 +25,10 @@ async function fixtureInvocations(
 
   const emptyPlans = join(work, 'empty-plans');
   await mkdir(emptyPlans);
-  const fidRunPath = join(work, 'fid-run.json');
-  await writeFile(fidRunPath, JSON.stringify({ run: RUN_ID, items: [] }));
+  // --run of every tool that reads a run is the run directory, the folder that holds run.json.
+  const fidRunDir = join(work, 'fid-run');
+  await mkdir(fidRunDir);
+  await writeFile(join(fidRunDir, 'run.json'), JSON.stringify({ run: RUN_ID, items: [] }));
 
   const briefRecord = {
     case: { id: 'case-1', title: '合成用例' },
@@ -134,9 +136,10 @@ async function fixtureInvocations(
   // normalize-mindmap & seal-recompose minimal inputs
   const mmIn = join(work, 'mm-in.json');
   await writeFile(mmIn, '{"root":{"data":{"id":"c1"},"children":[]}}');
-  const sealRun = join(work, 'seal-run.json');
+  const sealRunDir = join(work, 'seal-run');
   const sealParts = join(work, 'seal-parts.json');
-  await writeFile(sealRun, JSON.stringify({ run: RUN_ID, items: [] }));
+  await mkdir(sealRunDir);
+  await writeFile(join(sealRunDir, 'run.json'), JSON.stringify({ run: RUN_ID, items: [] }));
   await writeFile(sealParts, '[]');
 
   // cmd-lookup reads a download, named by its run directory (the folder with run.json and knowledge/), here the synthetic tree and manual of the lookup tests.
@@ -152,11 +155,11 @@ async function fixtureInvocations(
     'tools/carry-plans.ts': { argv: ['--source', 'carry-src', '--target', 'carry-dst', '--source-plans', 'carry-src-plans', '--plans', 'carry-dst-plans'], cwd: work },
     'tools/check-brief.ts': { argv: ['--file', '00.round-1.json'], cwd: work },
     'tools/check-plan.ts': { argv: ['--file', skippedPlanPath] },
-    'tools/fidelity-apply.ts': { argv: ['--run', fidRunPath, '--plans', emptyPlans, '--briefs', join(work, 'fid-briefs-empty')] },
-    'tools/fidelity-brief.ts': { argv: ['--run', fidRunPath, '--plans', emptyPlans, '--out', join(work, 'fid-briefs-out')] },
+    'tools/fidelity-apply.ts': { argv: ['--run', fidRunDir, '--plans', emptyPlans, '--briefs', join(work, 'fid-briefs-empty')] },
+    'tools/fidelity-brief.ts': { argv: ['--run', fidRunDir, '--plans', emptyPlans, '--out', join(work, 'fid-briefs-out')] },
     'tools/generate-workbook.ts': {
       argv: [
-        '--run', join(wbDir, 'run.json'),
+        '--run', wbDir,
         '--result', join(wbDir, 'result.json'),
         '--submission', join(wbDir, 'submission.json'),
         '--contract', join(wbDir, 'contract.json'),
@@ -166,7 +169,7 @@ async function fixtureInvocations(
       ],
     },
     'tools/normalize-mindmap.ts': { argv: ['--in', mmIn, '--out', join(work, 'mm-out.json')] },
-    'tools/seal-recompose.ts': { argv: ['--run', sealRun, '--parts', sealParts, '--model', 'synthetic-model', '--out', join(work, 'sealed.json')] },
+    'tools/seal-recompose.ts': { argv: ['--run', sealRunDir, '--parts', sealParts, '--model', 'synthetic-model', '--out', join(work, 'sealed.json')] },
     'tools/task-brief.ts': { argv: ['--role', '脚本编写', '--case', 'case-101', '--brief', 'writer-brief.md', '--out', 'writer-plan.json', '--task-file', 'writer-task.md'], cwd: work },
     'tools/command-domain-precheck.ts': { argv: ['--input', 'precheck-input.json', '--out', 'precheck-output.json'], cwd: work },
     'tools/cmd-lookup.ts': { argv: ['--run', 'lookup-run', '--param', 'orbit beacon add'], cwd: work },

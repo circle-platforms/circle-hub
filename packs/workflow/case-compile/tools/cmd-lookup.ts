@@ -6,7 +6,8 @@
 //   node '<技能目录>/tools/cmd-lookup.ts' --run '<运行目录>' --methods '<对象>'
 //   node '<技能目录>/tools/cmd-lookup.ts' --run '<运行目录>' --block '<块种类>'
 // `--run` is the run directory, the folder download-run.ts wrote that holds run.json, knowledge/ and sources/: the same meaning as
-// `--run` of task-brief.ts, resolved with the same helper and refused in the same words. The run.json file is not accepted beside it.
+// `--run` of task-brief.ts, resolved by the one resolver of --run (tools/workspace-path.ts) and refused in the same words. The run.json file
+// is not accepted beside it.
 // `--param` answers one command with its definition in the tree, the manual's window from its signature line to the next command's,
 // the inverse the product declares and the manual's example lines; `--heads` lists the command heads below a prefix with their syntax
 // lines. A miss names the next words of the node the words reached and the heads with the same words in another order. They read
@@ -29,7 +30,7 @@ import { lookupBlock, lookupMethod, lookupMethods, methodSourceOf, type BlockExa
 import { readSourceBytes, readSourceManifest, type SourceMaterial } from '../functions/source-materials.ts';
 import { CallFailure, isRecord, parseCliOptions } from '../functions/text.ts';
 import BLOCKS from '../tables/blocks-format.json' with { type: 'json' };
-import { resolveCwdRoots, resolveExistingDirInsideCwd, resolveExistingFileInsideCwd, type ResolvedCwd, type ResolvedCwdPath } from './workspace-path.ts';
+import { resolveCwdRoots, resolveRun } from './workspace-path.ts';
 
 const OPTIONS: Record<string, boolean> = { run: true, param: false, heads: false, method: false, methods: false, block: false };
 /** The forms of the tool: exactly one of them is written. */
@@ -37,8 +38,6 @@ const FORMS = ['param', 'heads', 'method', 'methods', 'block'] as const;
 const USAGE = "node '<技能目录>/tools/cmd-lookup.ts' --run '<运行目录>' 加 --param '<命令词>'、--heads '<命令词前缀>'、--method '<对象>.<方法>'、--methods '<对象>' 或 --block '<块种类>' 之一";
 const RETRY = '用 tools/download-run.ts 重新下载本次运行，run.json 与 knowledge/ 留在同一个目录里';
 const RETRY_SOURCES = '用 tools/download-run.ts 重新下载本次运行，run.json、sources.json 与 sources/ 留在同一个目录里';
-/** The one-line correct form a refused --run value is answered with. */
-const RUN_FORM = "--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）";
 
 export interface LookupIo { out?: (text: string) => void; err?: (text: string) => void; cwd?: string }
 
@@ -133,18 +132,6 @@ export async function readBlockSource(directory: string): Promise<BlockSource> {
   return { schema: slots.schema, schemaSha256: typeof slots.sha256 === 'string' ? slots.sha256 : null, table: BLOCKS as unknown as Record<string, unknown>, example: sampleOf };
 }
 
-/**
- * `--run` is the run directory, resolved with the helper task-brief.ts resolves its `--run` with, so a value that is no real directory
- * under the working directory (the run.json file included) is refused in the same words; the refusal also names the correct form.
- */
-function resolveRunDirectory(cwd: ResolvedCwd, value: string): ResolvedCwdPath {
-  try { return resolveExistingDirInsideCwd(cwd, value, '--run'); }
-  catch (error) {
-    if (!(error instanceof CallFailure)) throw error;
-    throw new CallFailure(error.category, error.fact, error.next_action, { ...(error.path === undefined ? {} : { path: error.path }), legal_form: RUN_FORM });
-  }
-}
-
 /** The helpers of the workspace check word their facts with the category word in front; the one-line form takes it only once. */
 function once(error: unknown): unknown {
   if (!(error instanceof CallFailure)) return error;
@@ -161,16 +148,15 @@ export async function main(argv: string[], io: LookupIo = {}): Promise<number> {
     if (given.length === 0) throw new CallFailure('invalid_parameters', '缺少 --param、--heads、--method、--methods 或 --block，必须写一个', `请按 ${USAGE} 重试`);
     if (given.length > 1) throw new CallFailure('invalid_parameters', '--param、--heads、--method、--methods 与 --block 只能写一个', `请按 ${USAGE} 重试`);
     const cwd = resolveCwdRoots(io.cwd);
-    const runDir = resolveRunDirectory(cwd, args.run!);
-    // The run.json of the directory is the regular file it must be, under the working directory, never read through a link.
-    resolveExistingFileInsideCwd(cwd, join(runDir.relative, 'run.json'), '--run 目录里的 run.json', RETRY);
+    // The run directory and the run.json in it, as the one resolver of --run takes them: under the working directory, never a link.
+    const run = resolveRun(args.run!, cwd, RETRY);
     const form = given[0]!;
     if (form === 'param' || form === 'heads') {
-      const source = await readLookupSource(runDir.canonical);
+      const source = await readLookupSource(run.directory.canonical);
       out(form === 'param' ? lookupParam(source, args.param!) : lookupHeads(source, args.heads!));
-    } else if (form === 'block') out(lookupBlock(await readBlockSource(runDir.canonical), args.block!));
+    } else if (form === 'block') out(lookupBlock(await readBlockSource(run.directory.canonical), args.block!));
     else {
-      const source = await readMethodSource(runDir.canonical);
+      const source = await readMethodSource(run.directory.canonical);
       out(form === 'method' ? lookupMethod(source, args.method!) : lookupMethods(source, args.methods!));
     }
     return 0;

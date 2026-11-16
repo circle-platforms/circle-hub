@@ -60,4 +60,4 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}；receipt/case_id 取 fields.recomposition；quote 逐字等于对应原始期望；无对应判断记未知不省略；新增声明引文用 Hub 已确定声明且 quote.text 逐字复制
 ```
 
-写完（或返工改完）后，若 `briefs/<序号>.md` 含 `plumb_candidates`（`status=未确认`、`decided_by=模型`），仅作检索起步且须以锁定命令树与手册参数为准；必须运行本次任务文件给出的 `check-plan.ts --file` 单引号自检命令，确认 `ok: true` 且 `authority_checked: true` 后结束（缺冻结运行时请主代理补本次运行下载的 run.json，不能把结构通过当作权限通过）并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项；主会话随后走 `cmd-verify-plumb.ts` 与 `fidelity-plumb.ts` 复核）。
+写完（或返工改完）后，若 `briefs/<序号>.md` 含 `plumb_candidates`（`status=未确认`、`decided_by=模型`），仅作检索起步且须以锁定命令树与手册参数为准；必须运行本次任务文件给出的 `check-plan.ts --file` 单引号自检命令，确认 `ok: true` 且 `authority_checked: true` 后结束（缺冻结运行时请主代理补本次运行的下载目录，不能把结构通过当作权限通过）并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项；主会话随后走 `cmd-verify-plumb.ts` 与 `fidelity-plumb.ts` 复核）。

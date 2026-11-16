@@ -211,7 +211,7 @@ node <本地技能目录>/tools/download-run.ts --hub %HUB_URL% --run <脚本编
    ```bash
    node <本地技能目录>/tools/fetch-run.ts --hub %HUB_URL% --run <脚本编写编号> --out <工作目录>
    node <本地技能目录>/tools/generate-workbook.ts \
-     --run <工作目录>/run.json \
+     --run <工作目录> \
      --result <工作目录>/result.json \
      --submission <工作目录>/submission.json \
      --contract <工作目录>/contract.json \

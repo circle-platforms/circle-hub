@@ -14,6 +14,7 @@ import {
 import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { knowledgeFiles } from '../functions/knowledge-text.ts';
 import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
+import { CallFailure } from '../functions/text.ts';
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { readKnowledge, writeStructuredBriefs } from './authoring-brief.ts';
 import { checkBriefTarget, main as checkBriefMain } from './check-brief.ts';
@@ -245,6 +246,12 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
         returns: 'returns-mismatch',
       }),
       /不属于同一次运行/,
+    );
+
+    // runDir is the run directory like --run of every tool that reads a run: its run.json file is refused with the one-line correct form.
+    await assert.rejects(
+      writeStructuredBriefs({ runDir: 'run1/run.json', cwd: workDir }),
+      (error: unknown) => error instanceof CallFailure && /^--run run1\/run\.json 不是普通目录/.test(error.fact) && error.legal_form === "--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）",
     );
 
     const r2 = await writeStructuredBriefs({

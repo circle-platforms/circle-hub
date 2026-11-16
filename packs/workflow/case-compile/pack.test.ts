@@ -10,6 +10,7 @@ import { parseRuntimeContract } from './functions/runtime-contract.ts';
 import { parseProfile } from './functions/profile.ts';
 import { parseManifest } from './functions/manifest.ts';
 import { renderAgentDefinition, renderTaskBrief, SUBAGENT_ROLES } from './functions/subagent-roles.ts';
+import { RUN_DIRECTORY_FORM } from './tools/workspace-path.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
@@ -77,6 +78,38 @@ test('the examples use the original synthetic contract, matching profile and fin
 const SKILL_BUDGET = 9630;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
   const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成执行器规则或发布的执行器规则核对', '不证明在真实设备上跑得通', '自动重交', '最多重交 2 次', '第二次 start_run', 'parameters.plan_run', 'inputs.plan_result', 'predecessor']) assert.ok(skill.includes(phrase), phrase);
+});
+// One option name, one meaning: --run is a run id (type run) or the run directory, the folder that holds run.json (type path), never its file.
+test('--run is the run id or the run directory in every declaration, and nothing taught or printed passes the run.json file as --run', () => {
+  const declared = [
+    ...readdirSync(join(PACK_DIR, 'tools')).filter((name) => name.endsWith('.cli.json')).map((name) => `tools/${name}`),
+    ...readdirSync(join(PACK_DIR, 'recompose', 'tools')).filter((name) => name.endsWith('.cli.json')).map((name) => `recompose/tools/${name}`),
+  ];
+  const directories: string[] = [], ids: string[] = [];
+  for (const file of declared) {
+    const declaration = json(file), run = declaration.options.find((option: any) => option.name === 'run');
+    if (run === undefined) continue;
+    if (run.type === 'run') { ids.push(file); continue; }
+    directories.push(file);
+    assert.equal(run.type, 'path', file);
+    const placeholders = [run.placeholder, ...declaration.forms.flatMap((form: any) => form.pairs.filter((pair: any) => pair.name === 'run').map((pair: any) => pair.placeholder))].filter((value) => value !== null);
+    for (const placeholder of placeholders) assert.ok(placeholder === '<运行目录>' || placeholder === '<run directory>', `${file}: ${placeholder}`);
+    assert.equal(run.placeholder, '<运行目录>', file);
+  }
+  assert.deepEqual(directories.sort(), ['recompose/tools/check-record.cli.json', 'tools/check-plan.cli.json', 'tools/cmd-lookup.cli.json', 'tools/cmd-select-plumb.cli.json', 'tools/cmd-verify-plumb.cli.json', 'tools/fidelity-apply.cli.json', 'tools/fidelity-brief.cli.json', 'tools/fidelity-plumb.cli.json', 'tools/generate-workbook.cli.json', 'tools/seal-recompose.cli.json', 'tools/task-brief.cli.json']);
+  assert.deepEqual(ids.sort(), ['recompose/tools/download-run.cli.json', 'recompose/tools/submit-records.cli.json', 'tools/download-returns.cli.json', 'tools/download-run.cli.json', 'tools/fetch-run.cli.json', 'tools/submit-plans.cli.json']);
+  // What a skill, a tool document, an agent definition or a tool's own text teaches or prints: `--run` followed by a run.json.
+  const texts = [
+    'SKILL.md', 'recompose/SKILL.md', ...readdirSync(join(PACK_DIR, 'tools')).filter((name) => name.endsWith('.md')).map((name) => `tools/${name}`),
+    ...readdirSync(join(PACK_DIR, 'agents')).map((name) => `agents/${name}`),
+    ...readdirSync(join(PACK_DIR, 'tools')).filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts')).map((name) => `tools/${name}`),
+    ...readdirSync(join(PACK_DIR, 'recompose', 'tools')).filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts')).map((name) => `recompose/tools/${name}`),
+    'functions/subagent-roles.ts', 'functions/plan-boundary.ts', 'functions/authoring-brief.ts', 'functions/fidelity.ts', 'functions/cmd-lookup.ts',
+    '../../../docs/member-guide.md',
+  ];
+  for (const file of texts) assert.doesNotMatch(read(file), /--run\s+['"]?[<\w./\-\u4e00-\u9fff>]*run\.json/, file);
+  // The recompose pack is published apart and cannot import the resolver; its one-line correct form is the same line.
+  assert.ok(read('recompose/tools/check-record.ts').includes(`"${RUN_DIRECTORY_FORM}"`));
 });
 test('the writer is told to write one Chinese line per block, and the skill says the command tree decides what Plumb only advises', () => {
   const skill = read('SKILL.md'), writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;

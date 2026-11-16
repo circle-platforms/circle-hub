@@ -580,12 +580,12 @@ test('plumb skill and case-compile plumb scripts enforce host-pinning, subcomman
 
       h.assertAllowed(h.exec(`node ${selectPlumb} --run run-dir --base-url %PLUMB_URL% --no-cache --strict-review --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
       h.assertAllowed(h.exec(`node ${verifyPlumb} --plans plans --run run-dir --base-url ${PLUMB_URL} --context-mode node --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
-      h.assertAllowed(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --ca-sha256 ${'a'.repeat(64)} --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+      h.assertAllowed(h.exec(`node ${fidelityPlumb} --run run-dir --plans plans --briefs briefs --base-url %PLUMB_URL% --ca-sha256 ${'a'.repeat(64)} --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
 
-      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url ${ALT_PLUMB_URL} --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /Plumb 的地址/);
-      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin`), /标准输入读令牌/);
-      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin <<'EOF'\n%HUB_TOKEN%\nEOF`), /%PLUMB_API_KEY%/);
-      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin --ca-file ../outside.pem <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /不在工作目录/);
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir --plans plans --briefs briefs --base-url ${ALT_PLUMB_URL} --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /Plumb 的地址/);
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin`), /标准输入读令牌/);
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin <<'EOF'\n%HUB_TOKEN%\nEOF`), /%PLUMB_API_KEY%/);
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin --ca-file ../outside.pem <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /不在工作目录/);
     } finally {
       h.close();
     }
@@ -598,12 +598,17 @@ test('cmd-lookup is a declared tool: the command the writer task file prints pas
     try {
       const lookup = `'${h.skillPath('case-compile', 'tools/cmd-lookup.ts')}'`;
       // The task file of the writer role prints the lookup command with the frozen run it was given; that exact line must run.
-      const brief = renderTaskBrief({ role: resolveSubagentRole('plan')!, caseRef: 'case-1', briefPath: 'briefs/0.md', outPath: 'plans/0.json', skillDir: h.skillPath('case-compile'), frozenRunPath: join(h.workdir, 'plan-run', 'run.json'), frozenRunDir: join(h.workdir, 'plan-run'), scopeText: '合成范围' });
+      const brief = renderTaskBrief({ role: resolveSubagentRole('plan')!, caseRef: 'case-1', briefPath: 'briefs/0.md', outPath: 'plans/0.json', skillDir: h.skillPath('case-compile'), frozenRunDir: join(h.workdir, 'plan-run'), scopeText: '合成范围' });
       const printed = brief.split('\n').filter((line) => line.startsWith('`node ') && line.includes('cmd-lookup.ts'));
       assert.equal(printed.length, 1, brief);
       // --run is the run directory, the value task-brief.ts takes, never the run.json file.
       assert.ok(printed[0]!.includes(` --run '${join(h.workdir, 'plan-run')}' --param `) && !printed[0]!.includes('run.json'), printed[0]);
       h.assertAllowed(h.exec(printed[0]!.slice(1, -1).replace("'<命令词，可带参数>'", "'orbit beacon add'")), `${profile}: the printed lookup command`);
+      // The check below it takes the same run directory, so that one option name means one thing in the task file.
+      const check = brief.split('\n').filter((line) => line.startsWith('`node ') && line.includes('check-plan.ts'));
+      assert.equal(check.length, 1, brief);
+      assert.ok(check[0]!.includes(` --file 'plans/0.json' --run '${join(h.workdir, 'plan-run')}'`) && !check[0]!.includes('run.json'), check[0]);
+      h.assertAllowed(h.exec(check[0]!.slice(1, -1)), `${profile}: the printed check command`);
       h.assertAllowed(h.exec(`node ${lookup} --run plan-run --param 'orbit beacon add "b1" fast 3'`), `${profile}: a command with quoted arguments inside one single-quoted word`);
       h.assertAllowed(h.exec(`node ${lookup} --run plan-run --heads 'orbit beacon'`), `${profile}: heads`);
       h.assertAllowed(h.exec(`node ${lookup} --run plan-run --method 'routera.cmd'`), `${profile}: method`);

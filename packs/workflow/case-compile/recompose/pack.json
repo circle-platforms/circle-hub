@@ -215,13 +215,13 @@
     },
     {
       "path": "tools/check-record.cli.json",
-      "sha256": "e1e3b915056b7332c7f0a6f69e9bed03f192459aab7888439ab9e4b8638ea4af",
-      "size": 1065
+      "sha256": "1b829dd9d3623fffe2100343b843e1ed9ba24c6bd69b587215e418ac1ec769dc",
+      "size": 1047
     },
     {
       "path": "tools/check-record.ts",
-      "sha256": "27f34209d0317d8069d4a54528f34aea01ff6cfb8d6daba97d81784b9c8056b8",
-      "size": 14546
+      "sha256": "93f5774982be52ea4b2efcfaf4d617559e86da173fff79223fcd7ed217210e1a",
+      "size": 14934
     },
     {
       "path": "tools/download-run.cli.json",

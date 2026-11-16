@@ -263,6 +263,23 @@ async function runOn(args: string[], io: { stdinText?: string } = KEY) {
   return runCmdVerifyPlumb([...args, '--base-url', baseUrl, '--no-cache', '--key-stdin'], io);
 }
 
+test('cmd-verify-plumb takes the run directory as --run and refuses its run.json file with the one-line correct form before any call', async () => {
+  const w = await setupWorkspace();
+  try {
+    seenBatches.length = 0;
+    const file = join(w.dir, 'run.json');
+    const refused = await runOn(['--plans', w.plans, '--run', file]);
+    assert.equal(refused.code, 1);
+    assert.equal(refused.stdout, '');
+    assert.ok(refused.stderr.startsWith(`参数无效：--run ${file} 不是普通目录。`), refused.stderr);
+    assert.ok(refused.stderr.trimEnd().endsWith("合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。"), refused.stderr);
+    assert.equal(refused.stderr.trim().split('\n').length, 1);
+    assert.equal(seenBatches.length, 0, 'no question was asked of Plumb');
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
 test('a block plan: the intent of a command is the description of its block, as for a flat step; without one it is the case title and the report says so', async () => {
   const w = await setupWorkspace();
   try {

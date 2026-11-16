@@ -74,7 +74,7 @@ function releasedToolsFixture() {
 test('workbook CLI allows source-manifest mode without three legacy source overrides', async () => {
   const f = releasedToolsFixture();
   try {
-    const result = await f.call(`node '${join(f.tools, 'generate-workbook.ts')}' --run inputs/run.json --result inputs/result.json --submission inputs/submission.json --out delivery.xlsx`);
+    const result = await f.call(`node '${join(f.tools, 'generate-workbook.ts')}' --run inputs --result inputs/result.json --submission inputs/submission.json --out delivery.xlsx`);
     assert.deepEqual(result, {});
   } finally { f.close(); }
 });
@@ -83,7 +83,7 @@ test('all declared local workbook inputs and mindmap input enforce workspace con
   const f = releasedToolsFixture();
   try {
     const workbook = join(f.tools, 'generate-workbook.ts');
-    const baseline = { run: 'inputs/run.json', result: 'inputs/result.json', submission: 'inputs/submission.json', contract: 'inputs/contract.json', profile: 'inputs/profile.json', inventory: 'inputs/inventory.json', out: 'delivery.xlsx' };
+    const baseline = { run: 'inputs', result: 'inputs/result.json', submission: 'inputs/submission.json', contract: 'inputs/contract.json', profile: 'inputs/profile.json', inventory: 'inputs/inventory.json', out: 'delivery.xlsx' };
     for (const option of Object.keys(baseline)) {
       const values = { ...baseline, [option]: join(f.dir, 'outside') };
       const result = await f.call(`node '${workbook}' ${Object.entries(values).map(([key, value]) => `--${key} '${value}'`).join(' ')}`);

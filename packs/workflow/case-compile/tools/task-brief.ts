@@ -37,6 +37,7 @@ import {
   resolveExistingDirInsideCwd,
   resolveExistingFileInsideCwd,
   resolveInsideCwd,
+  resolveRunDirectory,
   type ResolvedCwd,
 } from './workspace-path.ts';
 
@@ -389,7 +390,7 @@ async function resolveOptionalRunContext(
   briefRelative: string,
 ): Promise<RunStructuredContext | null> {
   if (options.runDir !== undefined) {
-    const resolved = resolveExistingDirInsideCwd(cwd, options.runDir, '--run');
+    const resolved = resolveRunDirectory(options.runDir, cwd);
     const ctx = await loadRunStructuredContext(resolved.canonical);
     if (!ctx) {
       throw new CallFailure('not_found', `不存在：--run 目录 ${resolved.relative} 中缺少 knowledge/nodes.jsonl，无法加载结构化简报上下文`, "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
@@ -411,7 +412,7 @@ async function resolveOptionalRunContext(
   }
   for (const relDir of candidateDirs) {
     try {
-      const resolved = resolveExistingDirInsideCwd(cwd, relDir, '--run');
+      const resolved = resolveRunDirectory(relDir, cwd);
       const ctx = await loadRunStructuredContext(resolved.canonical);
       if (ctx) return ctx;
     } catch {
@@ -589,12 +590,12 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
   const siblingFields = isRecord(siblingItem) && isRecord(siblingItem.fields) ? siblingItem.fields : {};
   const caseTitle = [compileBrief?.identity.title, siblingFields.title, isRecord(siblingItem) ? siblingItem.label : undefined].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
   const resolvedReferences = await readVerifiedRoleReferences(packReal, role);
-  // The writer's task file prints the run twice: the directory for cmd-lookup.ts (--run, as here) and its run.json for check-plan.ts.
-  const frozenRunDir = options.runDir !== undefined && role.key === 'plan' ? resolveExistingDirInsideCwd(cwd, options.runDir, '--run').canonical : undefined;
+  // The writer's task file prints the run directory as --run of the lookup and of the check, the value taken here.
+  const frozenRunDir = options.runDir !== undefined && role.key === 'plan' ? resolveRunDirectory(options.runDir, cwd).canonical : undefined;
   let brief = renderTaskBrief({
     ...(caseTitle === undefined ? {} : { caseTitle }),
     role,
-    ...(frozenRunDir === undefined ? {} : { frozenRunPath: join(frozenRunDir, 'run.json'), frozenRunDir }),
+    ...(frozenRunDir === undefined ? {} : { frozenRunDir }),
     caseRef,
     briefPath,
     outPath,
@@ -608,7 +609,7 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     ...(unrecordedAttribution ? { unrecordedAttribution } : {}),
   });
   if (options.runDir !== undefined) {
-    const sourceDir = resolveExistingDirInsideCwd(cwd, options.runDir, '--run');
+    const sourceDir = resolveRunDirectory(options.runDir, cwd);
     const manifestStat = await lstat(join(sourceDir.canonical, 'sources.json')).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
     if (manifestStat) {
       const materials = await readSourceManifest(sourceDir.canonical);

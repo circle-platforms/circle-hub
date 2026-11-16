@@ -118,8 +118,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       throw new CallFailure('invalid_parameters', `以下 ${fidelityBlocks.length} 份自动化用例尚未完成场景保真审计，未发往 Hub（不占修复次数；Hub 的核对结论仍为准）：\n`
         + `${detail}。\n`
         + '请依次完成 Plumb 场景保真核对后再重跑 submit-plans.ts：\n'
-        + '1) node <技能目录>/tools/fidelity-plumb.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录> --base-url <Plumb地址>（写出 <核对目录>/<idx>.verdict.json；未配置 Plumb 时改用 fidelity-brief.ts 生成简报并落盘 .verdict.json）\n'
-        + '2) node <技能目录>/tools/fidelity-apply.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录>（确认 ready=true）',
+        + '1) node <技能目录>/tools/fidelity-plumb.ts --run <脚本编写目录> --plans <自动化用例目录> --briefs <核对目录> --base-url <Plumb地址>（写出 <核对目录>/<idx>.verdict.json；未配置 Plumb 时改用 fidelity-brief.ts 生成简报并落盘 .verdict.json）\n'
+        + '2) node <技能目录>/tools/fidelity-apply.ts --run <脚本编写目录> --plans <自动化用例目录> --briefs <核对目录>（确认 ready=true）',
         "请依据本次错误的位置和说明修正计划或参数，再重试 submit-plans.ts");
     }
     if (left.length) process.stdout.write(`另有 ${left.length} 份自动化用例不属于本次脚本编写，未做脚本合并\n`);

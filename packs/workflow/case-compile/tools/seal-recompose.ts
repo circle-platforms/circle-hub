@@ -3,6 +3,7 @@ import { formatClientCallError } from '../functions/client-cli.ts';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { CallFailure, parseCliOptions } from '../functions/text.ts';
+import { resolveRun } from './workspace-path.ts';
 const object = (v: unknown): v is Record<string, any> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const body = (v: any, kind: string) => object(v) && v.kind === kind && object(v.body) ? v.body : v;
 export function assembleRecompose(runExport: unknown, parts: unknown[], model: string) {
@@ -38,13 +39,14 @@ export function assembleRecompose(runExport: unknown, parts: unknown[], model: s
 }
 if (import.meta.main) {
     try {
-        const opts = parseCliOptions(process.argv.slice(2), { run: true, parts: true, model: true, out: true }, 'seal-recompose.ts --run <运行JSON> --parts <提交数组JSON> --model <模型标识> --out <新文件>');
+        const opts = parseCliOptions(process.argv.slice(2), { run: true, parts: true, model: true, out: true }, 'seal-recompose.ts --run <运行目录> --parts <提交数组JSON> --model <模型标识> --out <新文件>');
         const readJson = (path: string, argument: string): unknown => {
             const bytes = readFileSync(path);
             try { return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)); }
             catch { throw new CallFailure('invalid_parameters', `${argument} 不是完整的 UTF-8 JSON`, '重新导出本次运行对应的完整原始 JSON 文件后重试', { path }); }
         };
-        const run = readJson(opts.run!, '--run'), parts = readJson(opts.parts!, '--parts');
+        // --run is the run directory (download-run.ts's output), the folder that holds run.json; the parts are a file.
+        const run = readJson(resolveRun(opts.run!).file.lexical, '--run'), parts = readJson(opts.parts!, '--parts');
         if (!Array.isArray(parts))
             throw new CallFailure("invalid_parameters", '请使用原始的用例重组结果', "把 --parts 指向保存原始重组提交的 JSON 数组，而非单条计划或运行导出");
         const result = assembleRecompose(run, parts, opts.model!), bytes = JSON.stringify(result.draft, null, 2) + '\n';

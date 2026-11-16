@@ -7,7 +7,7 @@
       "required": true,
       "kind": "string",
       "multiple": false,
-      "placeholder": "<脚本编写目录>/run.json",
+      "placeholder": "<运行目录>",
       "type": "path"
     },
     {
@@ -33,7 +33,7 @@
       "pairs": [
         {
           "name": "run",
-          "placeholder": "<脚本编写目录>/run.json",
+          "placeholder": "<运行目录>",
           "optional": false
         },
         {
@@ -53,7 +53,7 @@
       "pairs": [
         {
           "name": "run",
-          "placeholder": "<脚本编写目录>/run.json",
+          "placeholder": "<运行目录>",
           "optional": false
         },
         {
@@ -73,7 +73,7 @@
       "pairs": [
         {
           "name": "run",
-          "placeholder": "<directory>/run.json",
+          "placeholder": "<run directory>",
           "optional": false
         },
         {

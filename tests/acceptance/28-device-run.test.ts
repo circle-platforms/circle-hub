@@ -117,7 +117,7 @@ async function plan(booked: string, index = 0, repair = false) {
   const directory = await mkdtemp(join(staged, 'client-generator-'));
   const artifacts = { run: bytes(started), result: bytes(accepted!), submission: bytes(sent), contract: bytes(CONTRACT_DOC), profile: bytes(PROFILE_DOC), inventory: bytes(MANIFEST_DOC) };
   const argv: string[] = [];
-  for (const [name, contents] of Object.entries(artifacts)) { const file = join(directory, `${name}.json`); await writeFile(file, contents, { mode: 0o600 }); argv.push(`--${name}`, file); }
+  for (const [name, contents] of Object.entries(artifacts)) { const file = join(directory, `${name}.json`); await writeFile(file, contents, { mode: 0o600 }); argv.push(`--${name}`, name === 'run' ? directory : file); }
   const output = join(directory, 'case.xlsx');
   // Execute the published tools/ entry, not a source-directory shortcut or Hub generation.
   const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
@@ -277,7 +277,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       assert.equal(matches[0].reference, `src:${sha256Hex(downloaded)}`);
     }
     // Owner T7 / run30 #9: the generator resolves verified source pointers, without legacy filename overrides.
-    const argv = ['run', 'result', 'submission'].flatMap(name => [`--${name}`, join(directory, `${name}.json`)]);
+    const argv = ['run', 'result', 'submission'].flatMap(name => [`--${name}`, name === 'run' ? directory : join(directory, `${name}.json`)]);
     const output = join(directory, 'case.xlsx');
     const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
     const payload = await readFile(output); assert.equal(receipt.sha256, sha256Hex(payload));

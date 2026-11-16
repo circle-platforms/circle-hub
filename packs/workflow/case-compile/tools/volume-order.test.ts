@@ -31,7 +31,7 @@ function generate(recipes: GenerationInput[], withManifest = false) {
   const dir = mkdtempSync(join(tmpdir(), 'volume-order-'));
   try {
     const args: string[] = [];
-    for (const [key, value] of Object.entries(planRunFiles(recipes))) { const path = join(dir, `${key}.json`); writeFileSync(path, value instanceof Uint8Array ? value : JSON.stringify(value)); args.push(`--${key}`, path); }
+    for (const [key, value] of Object.entries(planRunFiles(recipes))) { const path = join(dir, `${key}.json`); writeFileSync(path, value instanceof Uint8Array ? value : JSON.stringify(value)); args.push(`--${key}`, key === 'run' ? dir : path); }
     if (withManifest) {
       mkdirSync(join(dir, 'sources'));
       const input = planRunFiles(recipes), manifest: unknown[] = [];

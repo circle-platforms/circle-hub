@@ -55,9 +55,7 @@ export interface TaskBriefInput {
   caseRef: string;
   caseTitle?: string;
   briefPath: string;
-  /** The run.json of the frozen run: what `check-plan.ts --run` takes. */
-  frozenRunPath?:string;
-  /** The run directory, the folder that holds run.json: what `cmd-lookup.ts --run` and `task-brief.ts --run` take. */
+  /** The run directory, the folder that holds run.json: the `--run` of the check, the lookup and task-brief.ts. */
   frozenRunDir?:string;
   outPath: string;
   skillDir: string;
@@ -212,7 +210,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}；receipt/case_id 取 fields.recomposition；quote 逐字等于对应原始期望；无对应判断记未知不省略；新增声明引文用 Hub 已确定声明且 quote.text 逐字复制
 \`\`\`
 
-写完（或返工改完）后，若 \`briefs/<序号>.md\` 含 \`plumb_candidates\`（\`status=未确认\`、\`decided_by=模型\`），仅作检索起步且须以锁定命令树与手册参数为准；必须运行本次任务文件给出的 \`check-plan.ts --file\` 单引号自检命令，确认 \`ok: true\` 且 \`authority_checked: true\` 后结束（缺冻结运行时请主代理补本次运行下载的 run.json，不能把结构通过当作权限通过）并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项；主会话随后走 \`cmd-verify-plumb.ts\` 与 \`fidelity-plumb.ts\` 复核）。`,
+写完（或返工改完）后，若 \`briefs/<序号>.md\` 含 \`plumb_candidates\`（\`status=未确认\`、\`decided_by=模型\`），仅作检索起步且须以锁定命令树与手册参数为准；必须运行本次任务文件给出的 \`check-plan.ts --file\` 单引号自检命令，确认 \`ok: true\` 且 \`authority_checked: true\` 后结束（缺冻结运行时请主代理补本次运行的下载目录，不能把结构通过当作权限通过）并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项；主会话随后走 \`cmd-verify-plumb.ts\` 与 \`fidelity-plumb.ts\` 复核）。`,
   },
   {
     key: 'fidelity',
@@ -349,7 +347,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   const checkPlanRef = resolvedReferences.find((ref) => ref.relPath === 'tools/check-plan.ts');
   const checkScriptPath = checkPlanRef?.fullPath ?? (role.localCheck ? resolveSkillReferencePath(skillDir, `tools/${role.localCheck.script}`) : null);
   const check = role.localCheck && checkScriptPath
-    ? `node ${quote(checkScriptPath)} --file ${quote(outPath)}${role.localCheck.withBrief ? ' --brief ' + quote(briefPath) : input.frozenRunPath ? ' --run ' + quote(input.frozenRunPath) : ''}`
+    ? `node ${quote(checkScriptPath)} --file ${quote(outPath)}${role.localCheck.withBrief ? ' --brief ' + quote(briefPath) : input.frozenRunDir ? ' --run ' + quote(input.frozenRunDir) : ''}`
     : null;
   const lookupScriptPath = role.localLookup ? (resolvedReferences.find((ref) => ref.relPath === `tools/${role.localLookup!.script}`)?.fullPath ?? resolveSkillReferencePath(skillDir, `tools/${role.localLookup.script}`)) : null;
   const lookup = lookupScriptPath ? `node ${quote(lookupScriptPath)} --run ${quote(input.frozenRunDir ?? '<运行目录>')} --param '<命令词，可带参数>'` : null;

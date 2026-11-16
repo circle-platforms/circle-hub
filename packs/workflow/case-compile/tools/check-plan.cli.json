@@ -23,7 +23,7 @@
       "required": false,
       "kind": "string",
       "multiple": false,
-      "placeholder": "<冻结运行JSON>",
+      "placeholder": "<运行目录>",
       "type": "path"
     }
   ],
@@ -43,7 +43,7 @@
         },
         {
           "name": "run",
-          "placeholder": "<冻结运行JSON>",
+          "placeholder": "<运行目录>",
           "optional": true
         }
       ]
@@ -63,7 +63,7 @@
         },
         {
           "name": "run",
-          "placeholder": "<冻结运行JSON>",
+          "placeholder": "<运行目录>",
           "optional": true
         }
       ]
