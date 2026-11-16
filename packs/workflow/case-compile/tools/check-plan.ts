@@ -1,15 +1,12 @@
-import {blockPointer} from '../functions/blocks.ts';
-import {cleanupOperations} from '../functions/typed-authority.ts';
-import {commandObligations} from '../functions/command-obligations.ts';
-import {planCommands} from '../functions/plan-commands.ts';
-import {callBoundaryGaps} from '../functions/call-boundaries.ts';
+import {planBoundary,type HubCheckCoverage} from '../functions/plan-boundary.ts';
 import {parseRuntimeContract} from '../functions/runtime-contract.ts';
 import {parseProfile} from '../functions/profile.ts';
 import {parseManifest} from '../functions/manifest.ts';
 import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
-// Read-only plan/verdict checks; frozen run membership and declared cleanup use the same functions as Hub.
+// Read-only plan/verdict checks. A plan is judged by the Hub's own boundary (functions/plan-boundary.ts): the slot record against
+// the schema the run froze, then every pack check that judges a plan, with the Hub's functions and the run's frozen inputs.
 //   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <冻结运行JSON>]
 import { realpathSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
@@ -22,7 +19,7 @@ import {
 } from '../functions/fidelity.ts';
 import { describeExpansions, expandValue } from '../functions/length-literals.ts';
 import { isItemHandling, ITEM_HANDLING, type ItemHandling } from '../functions/generated/vocabulary.ts';
-import { readSlots } from '../functions/slots.ts';
+import { readSlots, type PlanSlots } from '../functions/slots.ts';
 import { planDataOf } from '../functions/subject.ts';
 import { isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
 import { parsedPlanFile } from './submit-plans.ts';
@@ -32,6 +29,7 @@ const USAGE = 'node <技能目录>/tools/check-plan.ts --file <计划或判断JS
 
 export interface CheckProblem {
   code?: string;
+  verdict?: 'refute' | 'unknown';
   requested?:import('../functions/call-boundaries.ts').CallBoundaryGap['requested'];
   allowed_calls?:import('../functions/call-boundaries.ts').CallBoundaryGap['allowed_calls'];
   allowed_seats?:string[];
@@ -41,6 +39,8 @@ export interface CheckProblem {
 }
 
 export interface PlanCheckResult {
+  /** Every check the Hub runs on a plan submission, whether it ran here and, if not, why. */
+  hub_checks?:HubCheckCoverage[];
   cleanup_checked?:boolean;
   structure_ok?:boolean;
   authority_checked?:boolean;
@@ -142,76 +142,61 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
 
   const planData = planDataOf(expandedRecord);
   const checked = readSlots(planData);
-  if (!checked.ok) {
-    for (const p of checked.problems) {
-      problems.push({ pointer: p.pointer, message: p.message });
+  if (run === undefined) {
+    if (!checked.ok) {
+      for (const p of checked.problems) problems.push({ pointer: p.pointer, message: p.message });
+      return { ok: false, file, item, handling, kind: null, expansions: describeExpansions(file, expanded.expansions), counts: null, problems };
     }
+    problems.push({ code: 'missing_input', pointer: '/run', message: '缺冻结权限输入；用 --run <本次运行下载的run.json> 重检。结构通过不等于允许调用' });
+    return result(checked.slots, { structureOk: true, authorityChecked: false, cleanupChecked: false, coverage: undefined });
+  }
+
+  // With the frozen run the plan goes through the Hub's own boundary. An item whose slot record has a structure problem gets
+  // no check there, as at the Hub; the checks that need an upload or a later audit are listed with the reason they did not run.
+  const groups = isRecord(run) && Array.isArray(run.groups) ? run.groups : [];
+  const groupsForPack = groups.filter(group => isRecord(group) && group.kind === 'case-compile');
+  const group = groupsForPack.length === 1 ? groupsForPack[0] : null;
+  const items = isRecord(run) && Array.isArray(run.items) ? run.items : [];
+  let coverage: HubCheckCoverage[] | undefined, structureOk = checked.ok, authorityChecked = false, cleanupChecked = false;
+  if (!isRecord(run) || !isRecord(group) || !items.some(row => isRecord(row) && row.id === item)) {
+    problems.push({ pointer: '/run', message: '冻结运行缺唯一 case-compile 组或不包含此 item；用本次计划运行下载的 run.json' });
+  } else {
+    const contract = parseRuntimeContract(group.contract), manifest = parseManifest(group.manifest);
+    const profile = contract.ok && manifest.ok ? parseProfile(group.profile, contract.contract, manifest.beds) : null;
+    const frozenValid = contract.ok && manifest.ok && profile?.ok === true;
+    if (!frozenValid) problems.push({ pointer: '/run/groups', message: '冻结合约、清单或运行环境配置无效；重新下载本次运行完整 run.json，不手写冻结输入' });
+    if (frozenValid && !isRecord(catalog)) problems.push({ code: 'missing_input', pointer: '/run/knowledge', message: '缺本次冻结根的命令树；保留下载目录 knowledge/nodes.jsonl 与 run.json 一起重检，没有它命令身份、逆操作和运行器清理都核对不了' });
+    const boundary = planBoundary({ run, item: item!, slots: expandedRecord.slots, catalog });
+    problems.push(...boundary.problems);
+    coverage = boundary.coverage;
+    structureOk = checked.ok && boundary.structure_ok;
+    authorityChecked = frozenValid && coverage.some(row => row.check === 'contract_shape' && row.ran);
+    // The runner's cleanup rule is judged inside the Hub's check (the product's declared inverses need the locked command tree of this run).
+    cleanupChecked = frozenValid && contract.ok && contract.contract.cleanup !== undefined && isRecord(catalog) && catalog.root === run.root && run.command_policy !== undefined && structureOk && authorityChecked;
+  }
+  return result(checked.ok ? checked.slots : null, { structureOk, authorityChecked, cleanupChecked, coverage });
+
+  function result(slots: PlanSlots | null, state: { structureOk: boolean; authorityChecked: boolean; cleanupChecked: boolean; coverage: HubCheckCoverage[] | undefined }): PlanCheckResult {
+    const cleanupSteps = slots === null ? 0 : slots.steps.filter((step) => step.cleanup === true).length + slots.blocks.filter((b) => isRecord(b) && b.kind === 'CLEANUP').length;
+    const notRun = (state.coverage ?? []).filter(row => !row.ran);
     return {
-      ok: false,
+      ok: problems.length === 0,
       file,
       item,
       handling,
-      kind: null,
+      kind: slots === null ? null : slots.blocks.length > 0 ? 'blocks' : 'flat',
       expansions: describeExpansions(file, expanded.expansions),
-      counts: null,
+      ...(state.coverage !== undefined ? { hub_checks: state.coverage } : {}),
+      cleanup_checked: state.cleanupChecked,
+      structure_ok: state.structureOk,
+      authority_checked: state.authorityChecked,
+      disclosure: state.coverage !== undefined
+        ? `已按冻结运行核对：槽位记录结构，以及 Hub 同名检查 ${state.coverage.filter(row => row.ran).map(row => row.check).join('、') || '（本次没有一项能跑）'}，用同一个函数和同一份冻结输入。本地没有跑的 Hub 检查：${notRun.map(row => `${row.check}（${row.why}）`).join('；') || '无'}；这些以提交回执为准`
+        : '只核对结构；未核对冻结权限，提供 --run <本次运行下载的run.json> 后核对 Hub 对计划的全部本地可跑检查',
+      counts: slots === null ? null : { blocks: slots.blocks.length, steps: slots.steps.length, expects: slots.expects.length, cleanup_steps: cleanupSteps, replacements: slots.replacements.length },
       problems,
     };
   }
-
-  const s = checked.slots;
-  const structureOk=problems.length===0;
-  let authorityChecked=false,cleanupChecked=false;
-  if(run===undefined)problems.push({code:'missing_input',pointer:'/run',message:'缺冻结权限输入；用 --run <本次运行下载的run.json> 重检。结构通过不等于允许调用'});
-  if(run!==undefined){
-    const groups=isRecord(run)&&Array.isArray(run.groups)?run.groups:[];
-    const groupsForPack=groups.filter(group=>isRecord(group)&&group.kind==='case-compile');
-    const group=groupsForPack.length===1?groupsForPack[0]:null;
-    const items=isRecord(run)&&Array.isArray(run.items)?run.items:[];
-    if(!group||!items.some(row=>isRecord(row)&&row.id===item))problems.push({pointer:'/run',message:'冻结运行缺唯一 case-compile 组或不包含此 item；用本次计划运行下载的 run.json'});
-    else{
-      const contract=parseRuntimeContract(group.contract),manifest=parseManifest(group.manifest);
-      const profile=contract.ok&&manifest.ok?parseProfile(group.profile,contract.contract,manifest.beds):null;
-      if(!contract.ok||!manifest.ok||!profile?.ok)problems.push({pointer:'/run/groups',message:'冻结合约、清单或运行环境配置无效；重新下载本次运行完整 run.json，不手写冻结输入'});
-      else{
-        authorityChecked=true;problems.push(...callBoundaryGaps(contract.contract,profile.profile,s).map(gap=>({...gap,code:'case-compile.method_forbidden'})));
-        if(contract.contract.cleanup){
-          if(!isRecord(run)||!isRecord(catalog)||catalog.root!==run.root||run.command_policy===undefined)problems.push({pointer:'/run/knowledge',message:'缺本次冻结根的命令树和产品逆操作声明；保留下载目录 knowledge/nodes.jsonl 与 run.json 一起重检，不能把运行器清除当作已执行逆操作'});
-          else{
-            const frozenCatalog={...catalog,policy:run.command_policy};
-            const resolved=planCommands(contract.contract,profile.profile,s,frozenCatalog);
-            const gaps=[...resolved.problems,...commandObligations(cleanupOperations(contract.contract,profile.profile,s,resolved.answers),s,frozenCatalog,[],contract.contract.cleanup)];
-            cleanupChecked=!gaps.some(gap=>gap.verdict==='unknown');
-            problems.push(...gaps.map(gap=>({...gap,pointer:blockPointer(s,gap.pointer),...(gap.verdict==='refute'?{code:'case-compile.method_forbidden'}:{})})));
-          }
-        }
-      }
-    }
-  }
-  const kind = s.blocks.length > 0 ? 'blocks' : 'flat';
-  const cleanupSteps =
-    s.steps.filter((step) => step.cleanup === true).length +
-    s.blocks.filter((b) => isRecord(b) && b.kind === 'CLEANUP').length;
-
-  return {
-    ok: problems.length === 0,
-    file,
-    item,
-    handling,
-    kind,
-    expansions: describeExpansions(file, expanded.expansions),
-    cleanup_checked:cleanupChecked,
-    structure_ok:structureOk,
-    authority_checked:authorityChecked,
-    disclosure:authorityChecked?`已核对结构、冻结共同方法集合和设备应答者座位${cleanupChecked?'、产品逆操作与运行器清理边界':''}；其他 Hub 检查仍以提交回执为准`:'只核对结构；未核对冻结权限，提供 --run <本次运行下载的run.json> 后核对共同方法集合和设备应答者座位',
-    counts: {
-      blocks: s.blocks.length,
-      steps: s.steps.length,
-      expects: s.expects.length,
-      cleanup_steps: cleanupSteps,
-      replacements: s.replacements.length,
-    },
-    problems,
-  };
 }
 
 /** Read only the standard download beside the explicitly supplied frozen run; never infer catalog authority from prose. */

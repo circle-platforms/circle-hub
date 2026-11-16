@@ -138,8 +138,9 @@ test('runner-wide clearing does not discharge a declared sibling or enum inverse
   const value=declared(fixture([command]),[{prefixes:['demo'],clears:['clear demo all']}]);
   const rows=checkContractShape(value);assert.ok(rows.some(row=>row.verdict==='refute'&&row.statement.includes('off')),JSON.stringify(rows));
   const {checkPlanObject}=await import('../tools/check-plan.ts');
-  const run={groups:[{kind:'case-compile',contract:value.subject.contract,profile:value.subject.profile,manifest:value.subject.manifest}],items:[{id:'synthetic-item'}],root:(value.subject.command_catalog as any).root,command_policy:(value.subject.command_catalog as any).policy};
-  const plan={item:'synthetic-item',handling:'handled',slots:{plan:[{data:value.subject.data}]}};
+  const {frozenRun}=await import('../testing/frozen-run.ts');
+  const run=frozenRun({groups:[{kind:'case-compile',contract:value.subject.contract,profile:value.subject.profile,manifest:value.subject.manifest}],items:[{id:'synthetic-item'}],root:(value.subject.command_catalog as any).root,command_policy:(value.subject.command_catalog as any).policy});
+  const plan={item:'synthetic-item',handling:'handled',slots:{plan:[{text:'合成计划',data:value.subject.data}]}};
   const local=checkPlanObject('synthetic.json',plan,run,value.subject.command_catalog);
   assert.equal(local.ok,false);assert.ok(local.problems.some(problem=>problem.message.includes('off')));
  }
