@@ -1,39 +1,20 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { frozenRunFixture, writeFrozenRun, type FrozenRunFixture } from '../../testing/recompose-frozen.ts';
 import { main } from './check-record.ts';
 
-const atom = (id: string, kind: string, text: string, after: string[] = []) => ({
-  id,
-  kind,
-  text,
-  content: text,
-  reference: `src:${'a'.repeat(64)}/kityminder@1/n/${id}`,
-  selector: `n/${id}`,
-  node_id: id,
-  start: 0,
-  end: text.length,
-  labels: [],
-  explicit_labels: [],
-  number_label: null,
-  after,
-});
+const PACK_DIR = fileURLToPath(new URL('../', import.meta.url));
 
-const item = (id = 'n/case1') => ({
-  id,
-  fields: {
-    case_id: 'ORBIT-1',
-    source_ref: 'src:' + 'a'.repeat(64),
-    node: id,
-    atoms: [atom('a1', 'action', '合成动作'), atom('a2', 'expectation', '合成期望', ['a1'])],
-  },
-});
-
-const validLite = (id = 'n/case1') => ({
-  item: id,
-  method: { kind: 'declared', text: '合成方法', sources: ['ref'], basis: '合成依据' },
+/** One lite record of a frozen item: the method cites the item's first original sentence by its reference, as the Hub requires. */
+type Row = { [key: string]: any };
+const lite = (row: Row, method: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
+  item: row.id,
+  method: { kind: 'declared', text: '合成方法', sources: [row.fields.atoms[0].reference], basis: '合成依据', ...method },
+  ...extra,
 });
 
 async function runCli(argv: string[]): Promise<{ code: number; out: string; err: string }> {
@@ -58,40 +39,42 @@ async function runCli(argv: string[]): Promise<{ code: number; out: string; err:
   }
 }
 
-test('check-record supports --help and accepts valid single lite record and directory offline', async () => {
+async function withFrozenRun<T>(run: (dir: { root: string; runDir: string; recDir: string; frozen: FrozenRunFixture }) => Promise<T>): Promise<T> {
+  const root = await mkdtemp(join(tmpdir(), 'rc-check-frozen-'));
+  try {
+    const runDir = join(root, 'run');
+    const recDir = join(root, 'records');
+    await mkdir(recDir);
+    const frozen = await writeFrozenRun(runDir);
+    return await run({ root, runDir, recDir, frozen });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+test('check-record supports --help and accepts valid single lite record and directory against the frozen run', async () => {
   const help = await runCli(['--help']);
   assert.equal(help.code, 0);
   assert.match(help.out, /--file/);
 
-  const root = await mkdtemp(join(tmpdir(), 'rc-check-valid-'));
-  try {
-    const recDir = join(root, 'records');
-    await mkdir(recDir);
-    await writeFile(join(recDir, '01.json'), JSON.stringify(validLite('n/case1')), 'utf8');
-    await writeFile(join(recDir, '02.json'), JSON.stringify(validLite('n/case2')), 'utf8');
-
-    const runDir = join(root, 'run');
-    await mkdir(runDir);
-    await writeFile(
-      join(runDir, 'run.json'),
-      JSON.stringify({ run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', items: [item('n/case1'), item('n/case2')] }),
-      'utf8',
-    );
+  await withFrozenRun(async ({ runDir, recDir, frozen }) => {
+    await writeFile(join(recDir, '01.json'), JSON.stringify(lite(frozen.items[0])), 'utf8');
+    await writeFile(join(recDir, '02.json'), JSON.stringify(lite(frozen.items[1])), 'utf8');
 
     const single = await runCli(['--file', join(recDir, '01.json'), '--run', runDir]);
-    assert.equal(single.code, 0, single.err);
+    assert.equal(single.code, 0, single.err + single.out);
     assert.equal(single.err, '');
     assert.equal(JSON.parse(single.out).ok, true);
 
     const dirRes = await runCli(['--file', recDir, '--run', runDir]);
-    assert.equal(dirRes.code, 0, dirRes.err);
+    assert.equal(dirRes.code, 0, dirRes.err + dirRes.out);
     const parsed = JSON.parse(dirRes.out);
     assert.equal(parsed.ok, true);
     assert.equal(parsed.checked, 2);
     assert.equal(parsed.passed, 2);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+    assert.equal(parsed.hub_checks.ran, true);
+    assert.deepEqual(parsed.hub_checks.checks, ['record', 'full_set']);
+  });
 });
 
 test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing item/method, duplicate item, incomplete run, and symlinks', async () => {
@@ -147,8 +130,9 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
     // 5. Duplicate item across two files in directory -> category '已被占用'
     const dupDir = join(root, 'dup');
     await mkdir(dupDir);
-    await writeFile(join(dupDir, 'a.json'), JSON.stringify(validLite('n/same')), 'utf8');
-    await writeFile(join(dupDir, 'b.json'), JSON.stringify(validLite('n/same')), 'utf8');
+    const same = { item: 'n/same', method: { kind: 'declared', text: '合成方法', sources: ['ref'], basis: '合成依据' } };
+    await writeFile(join(dupDir, 'a.json'), JSON.stringify(same), 'utf8');
+    await writeFile(join(dupDir, 'b.json'), JSON.stringify(same), 'utf8');
     const rDup = await runCli(['--file', dupDir]);
     assert.equal(rDup.code, 1);
     assert.match(rDup.err, /^已被占用：/);
@@ -156,15 +140,10 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
 
     // 6. --run completeness check rejects missing frozen case
     const runDir = join(root, 'run');
-    await mkdir(runDir);
-    await writeFile(
-      join(runDir, 'run.json'),
-      JSON.stringify({ run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', items: [item('n/case1'), item('n/case2')] }),
-      'utf8',
-    );
+    const frozen = await writeFrozenRun(runDir);
     const oneDir = join(root, 'one');
     await mkdir(oneDir);
-    await writeFile(join(oneDir, '01.json'), JSON.stringify(validLite('n/case1')), 'utf8');
+    await writeFile(join(oneDir, '01.json'), JSON.stringify(lite(frozen.items[0])), 'utf8');
     const rMissingCase = await runCli(['--file', oneDir, '--run', runDir]);
     assert.equal(rMissingCase.code, 1);
     assert.match(rMissingCase.out, /还有 1 条原始用例没有重组后的用例/);
@@ -179,6 +158,124 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
     const rLink = await runCli(['--file', linkPath]);
     assert.equal(rLink.code, 1);
     assert.match(rLink.err, /^参数无效：.*符号链接/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// The failure of run 33 (round 33): the model cited the original sentences by their words. check-record said ok, the Hub refused
+// every one of them. The local check now runs the Hub's own `record` check on the frozen run, so the refusal comes before submit.
+test('a method source written as the original sentence is refused locally, once for each value, with the Hub check\'s own words', async () => {
+  await withFrozenRun(async ({ runDir, recDir, frozen }) => {
+    const [first, second] = frozen.items;
+    const words = first.fields.atoms.map((atom: { text: string }) => atom.text);
+    await writeFile(join(recDir, '01.json'), JSON.stringify(lite(first, { sources: words })), 'utf8');
+    await writeFile(join(recDir, '02.json'), JSON.stringify(lite(second)), 'utf8');
+
+    const result = await runCli(['--file', recDir, '--run', runDir]);
+    assert.equal(result.code, 1, result.out);
+    const report = JSON.parse(result.out);
+    assert.equal(report.ok, false);
+    assert.equal(report.failed, 1);
+    assert.deepEqual(report.items.map((entry: { ok: boolean }) => entry.ok), [false, true]);
+    assert.equal(report.problems.length, words.length, JSON.stringify(report.problems));
+    for (const [index, value] of words.entries()) {
+      const problem = report.problems[index];
+      assert.equal(problem.file, '01.json');
+      assert.equal(problem.item, first.id);
+      assert.equal(problem.check, 'record');
+      assert.equal(problem.verdict, 'unknown');
+      assert.equal(problem.code, 'missing_input');
+      assert.ok(problem.message.includes(value), problem.message);
+    }
+    assert.match(result.err, /^参数无效：/);
+  });
+});
+
+test('a record that cites the original sentences by their references, and the locked tree by tree references, passes the same check', async () => {
+  await withFrozenRun(async ({ runDir, recDir, frozen }) => {
+    const [first, second] = frozen.items;
+    await writeFile(join(recDir, '01.json'), JSON.stringify(lite(first, { sources: first.fields.atoms.map((atom: { reference: string }) => atom.reference) })), 'utf8');
+    const tree = `tree:${frozen.root}/commands/widget/health/interval@${'1'.repeat(64)}`;
+    await writeFile(join(recDir, '02.json'), JSON.stringify(lite(second, { sources: [tree] })), 'utf8');
+    const result = await runCli(['--file', recDir, '--run', runDir]);
+    assert.equal(result.code, 0, result.out);
+    assert.equal(JSON.parse(result.out).ok, true);
+  });
+});
+
+test('a field outside the closed set the pack declares is refused before the Hub refuses the whole record, at its place and with what is allowed', async () => {
+  await withFrozenRun(async ({ runDir, recDir, frozen }) => {
+    const [first, second] = frozen.items;
+    await writeFile(join(recDir, '01.json'), JSON.stringify(lite(first, {}, { slots: [{ atom: 'a2', knowledge_location: 'has_knowledge', evidence: [], proposal: null }] })), 'utf8');
+    await writeFile(join(recDir, '02.json'), JSON.stringify(lite(second, { sources: ['不是引用的原句文字'] })), 'utf8');
+    const result = await runCli(['--file', recDir, '--run', runDir]);
+    assert.equal(result.code, 1, result.out);
+    const report = JSON.parse(result.out);
+    const refused = report.problems.filter((problem: Row) => problem.check === 'slots');
+    assert.equal(refused.length, 1, JSON.stringify(report.problems));
+    assert.equal(refused[0].code, 'SUBMISSION_SCHEMA_VIOLATION');
+    assert.equal(refused[0].item, first.id);
+    assert.equal(refused[0].pointer, '/slots/record/0/data/expectation_slots/0/knowledge_location');
+    assert.ok(refused[0].message.includes('slots（记录里的 /expectation_slots/0/knowledge_location）：写的是 "has_knowledge"'), refused[0].message);
+    assert.ok(refused[0].message.includes('"has_verification_knowledge" | "recomposable_from_elsewhere" | "genuinely_missing"'), refused[0].message);
+    // The Hub still checks the other case, and so does the local check; the whole-run check says why it did not run.
+    assert.ok(report.problems.some((problem: Row) => problem.check === 'record' && problem.item === second.id));
+    assert.deepEqual(report.hub_checks.not_run.map((row: Row) => row.check), ['quotes', 'full_set']);
+  });
+});
+
+test('without --run the report says the Hub checks did not run, so a green shape check is not read as the Hub\'s acceptance', async () => {
+  await withFrozenRun(async ({ recDir, frozen }) => {
+    const first = frozen.items[0];
+    await writeFile(join(recDir, '01.json'), JSON.stringify(lite(first, { sources: ['不是引用的原句文字'] })), 'utf8');
+    const result = await runCli(['--file', join(recDir, '01.json')]);
+    assert.equal(result.code, 0, result.out);
+    const report = JSON.parse(result.out);
+    assert.equal(report.ok, true);
+    assert.equal(report.hub_checks.ran, false);
+    assert.match(report.hub_checks.why, /--run/);
+    assert.deepEqual(report.hub_checks.checks, []);
+  });
+});
+
+test('every check of checks.json is run locally or reported as not run, so a new Hub check cannot go unnoticed', async () => {
+  await withFrozenRun(async ({ runDir, recDir, frozen }) => {
+    await writeFile(join(recDir, '01.json'), JSON.stringify(lite(frozen.items[0])), 'utf8');
+    await writeFile(join(recDir, '02.json'), JSON.stringify(lite(frozen.items[1])), 'utf8');
+    const report = JSON.parse((await runCli(['--file', recDir, '--run', runDir])).out);
+    const declared: string[] = JSON.parse(await readFile(join(PACK_DIR, 'checks.json'), 'utf8')).checks.map((check: { id: string }) => check.id);
+    const accounted: string[] = [...report.hub_checks.checks, ...report.hub_checks.not_run.map((row: { check: string }) => row.check)];
+    assert.deepEqual([...accounted].sort(), [...declared].sort());
+    for (const row of report.hub_checks.not_run) assert.ok(typeof row.why === 'string' && row.why.length > 0, JSON.stringify(row));
+  });
+});
+
+test('the download must carry the locked command tree of the same run, or the check refuses instead of guessing', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'rc-check-tree-'));
+  try {
+    const frozen = frozenRunFixture();
+    const recDir = join(root, 'records');
+    await mkdir(recDir);
+    await writeFile(join(recDir, '01.json'), JSON.stringify(lite(frozen.items[0])), 'utf8');
+    await writeFile(join(recDir, '02.json'), JSON.stringify(lite(frozen.items[1])), 'utf8');
+
+    const noTree = join(root, 'no-tree');
+    await mkdir(noTree);
+    await writeFile(join(noTree, 'run.json'), JSON.stringify(frozen.run));
+    const missing = await runCli(['--file', recDir, '--run', noTree]);
+    assert.equal(missing.code, 1);
+    assert.match(missing.err, /^不存在：/);
+    assert.match(missing.err, /knowledge\/nodes\.jsonl/);
+    assert.match(missing.err, /download-run\.ts/);
+
+    const other = join(root, 'other-run');
+    await writeFrozenRun(other, { ...frozen, nodes: frozen.nodes.replace(frozen.run.run, 'run_01bbbbbbbbbbbbbbbbbbbbbbbb') });
+    const wrong = await runCli(['--file', recDir, '--run', other]);
+    assert.equal(wrong.code, 1);
+    assert.match(wrong.err, /^参数无效：/);
+    assert.match(wrong.err, /knowledge\/nodes\.jsonl/);
+    assert.ok(wrong.err.includes(frozen.run.run), wrong.err);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

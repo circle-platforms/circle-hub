@@ -133,6 +133,12 @@ export function recordFor(item: Row, file: Row, model: string): Row {
   };
 }
 
+/** What one case's file becomes in the submission: the entry the Hub receives and check-record checks (one builder for both). */
+export function itemSubmission(item: Row, file: Row, model: string): Row {
+  const data = recordFor(item, file, model);
+  return { item: item.id, handling: 'handled', slots: { record: [{ text: '模型的重组判断', quotes: data.atoms.map((a: Row) => ({ reference: a.quote_ref, text: a.text })), data }] } };
+}
+
 /** The whole submission: one record per case file, and every frozen item accounted for. */
 export function submissionFor(run: Row, files: Row[], model: string): Row {
   const items = list(run.items), byId = new Map(items.map((item) => [item.id, item]));
@@ -143,8 +149,7 @@ export function submissionFor(run: Row, files: Row[], model: string): Row {
     items: files.map((file) => {
       const item = byId.get(file.item);
       if (item === undefined) throw new CallFailure("invalid_parameters", `自动化用例文件不属于本次用例重组的原始用例`, "只提交本次下载运行 items 中的原始用例，其他运行另行重组");
-      const data = recordFor(item, file, model);
-      return { item: item.id, handling: 'handled', slots: { record: [{ text: '模型的重组判断', quotes: data.atoms.map((a: Row) => ({ reference: a.quote_ref, text: a.text })), data }] } };
+      return itemSubmission(item, file, model);
     }),
   };
 }

@@ -59,6 +59,42 @@ test('missing predecessor context and mismatching actual predecessor never synth
 test('all four source states, including settled continuation, require a complete named exit', () => { const f = fixture(); f.record.sources.states[0].exit = null; assert.ok(outcomes(f).some(o => o.code === 'recompose.missing_without_exit')); });
 test('decision 155: a named gap stays in the record for the writer and does not hold the case back', () => { const f = fixture(); f.record.unknowns = [{ missing: '尚未给出前置事实', next_action: '补前置后重交', audience: '编写模型', due: '提交之前' }]; assert.ok(outcomes(f).every(o => o.verdict === 'support')); f.record.unknowns = [{ missing: '只写了缺什么' }] as any; assert.ok(outcomes(f).some(o => o.code === 'recompose.missing_without_exit')); });
 test('unlisted method sources and missing actual declaration fragments cannot acquire authority', () => { const a = fixture(), ref = 'src:' + 'f'.repeat(64); a.record.contract.method.sources = [ref]; a.subject.evidence.push({ reference: ref, resolved: true, text: '存在但未声明' }); assert.ok(outcomes(a).some(o => o.code === 'recompose.candidate_signed')); const b = fixture(); b.subject.evidence = []; assert.ok(outcomes(b).some(o => o.verdict === 'unknown' && o.missing.includes('可读'))); });
+// Round 33: the model cited the original sentences by their words, and the Hub said only that a fragment was missing and that the
+// source maintainers would supply it. The refusal now says where the value is written, what it is, what may stand there and who
+// changes it; one value written in several places is one refusal that names them all.
+test('a reference the record cannot be read by names its place, its value, what may stand there and who changes it', () => {
+    const f = fixture();
+    const [first] = f.record.atoms;
+    f.record.contract.method.sources = ['客户端查询', first.quote_ref, 'src:' + 'f'.repeat(64) + '/json@1/p/none'];
+    f.record.expectation_slots[0].evidence = ['客户端查询'];
+    f.subject.evidence = f.subject.evidence.filter((e: any) => e.reference !== 'src:' + 'f'.repeat(64) + '/json@1/p/none');
+    const rows = outcomes(f).filter(o => o.verdict === 'unknown');
+    assert.equal(rows.length, 2, JSON.stringify(rows));
+    const [words, outside] = rows;
+    for (const row of rows) {
+        assert.equal(row.reason, 'missing_input');
+        assert.equal(row.data.owner, '重组模型');
+        assert.ok(row.missing.includes('fields.atoms[].reference'), row.missing);
+        assert.ok(row.missing.includes('tree:' + f.context.root + '/'), row.missing);
+        assert.ok(row.missing.includes('重新提交'), row.missing);
+        assert.doesNotMatch(row.missing, /来源维护者/);
+        assert.equal(row.statement, row.missing);
+    }
+    assert.ok(words.missing.includes('method.sources 第 1 项、slots（atom=a2）的 evidence 第 1 项 的值「客户端查询」'), words.missing);
+    assert.equal(words.pointer, '/record/contract/method/sources/0');
+    assert.deepEqual(words.data.places, ['/record/contract/method/sources/0', '/record/expectation_slots/0/evidence/0']);
+    assert.ok(outside.missing.includes('method.sources 第 3 项 的值「src:' + 'f'.repeat(64) + '/json@1/p/none」'), outside.missing);
+});
+test('a record that cites its own sentences and the locked tree by reference draws no unreadable-reference refusal', () => {
+    // No product authority is bound (it is optional since decision 155), so no source is judged for signing authority.
+    const f = fixture();
+    (f.subject as any).authority_run = undefined;
+    (f.subject as any).authority_result = undefined;
+    f.record.sources.governing = [];
+    for (const state of f.record.sources.states) state.adjudicated_by = null;
+    f.record.contract.method.sources = [f.record.atoms[0].quote_ref, f.record.atoms[1].quote_ref, 'tree:' + f.context.root + '/commands/widget@' + '1'.repeat(64)];
+    assert.deepEqual(outcomes(f).map(o => o.verdict), ['support'], JSON.stringify(outcomes(f)));
+});
 test('conflict requires two genuinely different closed declarations and current independent scope', () => { const a = fixture('conflict'); a.authority.governing[1].constraints = structuredClone(a.authority.governing[0].constraints); assert.ok(outcomes(a).some(o => o.verdict === 'refute' && o.statement.includes('完全相等'))); const b = fixture('conflict'); b.subject.review_run = { ...b.review.run, meta: null } as any; assert.ok(outcomes(b).some(o => o.verdict === 'unknown' && o.missing.includes('独立裁定'))); });
 test("a user's ruling on an author step against the manual is carried by the fields a record already has, and waiting for one is an underdetermined atom", () => {
   const ruled = fixture();

@@ -358,10 +358,23 @@ export function checkRecomposition(input: any): any[] {
             if (candidateRefs.includes(used) || authority)
                 bad('candidate_signed', '候选或未声明来源被当作方法/期望的签发依据');
         }
-    const usedRefs = [...method?.sources ?? [], ...slots.flatMap((v: any) => v.evidence ?? []), ...govRefs, ...candidateRefs, ...record.ledgers.adapted.flatMap((a: any) => a.equivalence_refs ?? []), ...record.ledgers.concretizations.flatMap((c: any) => [c.value_ref, c.authority].filter(Boolean))];
-    for (const ref of new Set(usedRefs))
-        if (!atoms.some(a => a.reference === ref) && !(typeof ctx.root === 'string' && ref.startsWith('tree:' + ctx.root + '/')) && !(s.evidence ?? []).some((e: any) => e.reference === ref && e.resolved === true && typeof e.text === 'string'))
-            unknown('缺可解析且本轮可读的声明片段 ' + ref, '来源维护者');
+    // Each reference the record leans on, with the place it is written in the model's own file, so a refusal names place and value.
+    const usedAt: Array<{ ref: string; at: string; place: string }> = [];
+    const lean = (refs: any, at: string, place: string) => (Array.isArray(refs) ? refs : []).forEach((ref: any, i: number) => usedAt.push({ ref, at: `${at}/${i}`, place: `${place} 第 ${i + 1} 项` }));
+    lean(method?.sources, '/record/contract/method/sources', 'method.sources');
+    slots.forEach((v: any, i: number) => lean(v.evidence, `/record/expectation_slots/${i}/evidence`, `slots（atom=${v.atom}）的 evidence`));
+    govRefs.forEach((ref: any, i: number) => usedAt.push({ ref, at: `/record/sources/governing/${i}/ref`, place: `sources.governing 第 ${i + 1} 项的 ref` }));
+    candidateRefs.forEach((ref: any, i: number) => usedAt.push({ ref, at: `/record/sources/candidates/${i}/ref`, place: `candidates 第 ${i + 1} 项的 ref` }));
+    record.ledgers.adapted.forEach((a: any, i: number) => lean(a.equivalence_refs, `/record/ledgers/adapted/${i}/equivalence_refs`, `adapted（atom=${a.atom}）的 equivalence_refs`));
+    record.ledgers.concretizations.forEach((c: any, i: number) => { for (const key of ['value_ref', 'authority']) if (c[key]) usedAt.push({ ref: c[key], at: `/record/ledgers/concretizations/${i}/${key}`, place: `concretizations（slot=${c.slot}）的 ${key}` }); });
+    for (const ref of new Set(usedAt.map(u => u.ref)))
+        if (!atoms.some(a => a.reference === ref) && !(typeof ctx.root === 'string' && ref.startsWith('tree:' + ctx.root + '/')) && !(s.evidence ?? []).some((e: any) => e.reference === ref && e.resolved === true && typeof e.text === 'string')) {
+            // What the Hub cannot read this round it cannot tell from a reference the model wrote wrongly, so it stays unknown; the
+            // refusal says where the value is, what it is and what may stand there. Only the recomposition model can change it.
+            const places = usedAt.filter(u => u.ref === ref);
+            const full = `${places.map(u => u.place).join('、')} 的值「${ref}」不是本轮可读的引用；这里只能写本用例原句的引用（原始用例条目 fields.atoms[].reference，形如 src:<摘要>/…）或锁定知识树 tree:${typeof ctx.root === 'string' ? ctx.root : '<锁定根>'}/… 下的引用，原句文字不是引用；把它改成其中一种后重新提交`;
+            out.push(recomposeOut('unknown', full, { reason: 'missing_input', missing: full, pointer: places[0].at, data: { missing_fact: full, next_action: '把这里的值改成原句的引用或锁定知识树的引用后重新提交', owner: '重组模型', due: '重新提交之前', value: ref, places: places.map(u => u.at) } }));
+        }
     const states = record.sources?.states ?? [];
     if (states.length !== ids.length || states.some((v: any) => !ids.includes(v.atom)))
         bad('atom_dropped', '来源状态必须与用例原句全集一一对应');
