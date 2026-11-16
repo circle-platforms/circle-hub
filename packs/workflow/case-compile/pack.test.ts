@@ -10,6 +10,7 @@ import { parseRuntimeContract } from './functions/runtime-contract.ts';
 import { parseProfile } from './functions/profile.ts';
 import { parseManifest } from './functions/manifest.ts';
 import { renderAgentDefinition, renderTaskBrief, SUBAGENT_ROLES } from './functions/subagent-roles.ts';
+import { cellTemplate } from './functions/cell-selection.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
@@ -86,6 +87,23 @@ test('the writer is told to write one Chinese line per block, and the skill says
   for (const phrase of ['命令核验以命令树为准', '命令树核对不过的必改', '只标需人工复核，不阻断']) assert.ok(skill.includes(phrase), phrase);
   const block = json('slots.schema.json').item.plan.data.properties.blocks.items.anyOf[0].properties.description;
   assert.equal(block.type, 'string'); assert.match(block.description, /不是抄作者步骤/);
+});
+test('the writer is taught to pick only the generated segment of a name and to keep the known segments in the command that uses it (round 36)', () => {
+  const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
+  for (const phrase of [
+    '设备生成的往往只是名字的一段（如文件名里的编号），只取这一段，名字里已知的部分写在用它的命令里（写法见「取名字的一段」）',
+    '取名字的一段: 设备生成的往往只是名字的一段，不取整个名字',
+    'select.where 逐列钉死已知的各列',
+    '用它的命令把已知段写在 {} 两边，{} 可以夹在引号和文字之间',
+    '1 到 128 个字符的上限只管取出的这一格，不管拼出的整条命令，名字再长也不因此记为不能写',
+  ]) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
+  // The example the text gives is consistent: six columns at "+", the third is the id, and the template with the known segments
+  // around one "{}" gives back the example name without its suffix.
+  const sample = /如 (K\S+\.key) 里的 \+/.exec(role.body)![1]!, template = /如 demo use ("K\S+\{\}\S+")，/.exec(role.body)![1]!;
+  assert.equal(sample.split('+').length, 6);
+  assert.equal(sample.split('+')[2], '51877');
+  assert.equal(cellTemplate(template), true);
+  assert.equal(template.replace('{}', sample.split('+')[2]!), `"${sample.slice(0, -'.key'.length)}"`);
 });
 test('the client skill says when the user is asked and that a subagent never asks', () => {
   const skill = read('SKILL.md');

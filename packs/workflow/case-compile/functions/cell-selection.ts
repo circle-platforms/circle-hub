@@ -1,5 +1,5 @@
 import TABLE from '../tables/blocks-format.json' with {type:'json'};
-import {pythonTrim} from './generated/skills/runner-workbook/workbook-writer/g-syntax.ts';
+import {encodeG,GSyntaxError,pythonTrim} from './generated/skills/runner-workbook/workbook-writer/g-syntax.ts';
 import type {PlanStep} from './slots.ts';
 
 export interface CellSelection {
@@ -62,6 +62,84 @@ export function cellSelectionPosition(step:PlanStep,pointer:string,at:string):Ce
 }
 const WHERE=/^where ([0-9]+)=([\s\S]*)$/;
 const UNMET='这条期望在 obligations 里写 unmet 并在 missing 写明缺这项取格能力，不自造写法';
+
+// ---- What the runner makes of the G cell of a SELECT_CELL row. InfoTest's runner reads G with a quote and backslash reader
+// (lib/test_xlsx.py `get_parameter` :424-445 over `_split_parameter_parts` :354-389, `_keyword_split` :399-421 and
+// `_unquote_parameter` :392-396), stricter than the embedded G reader that the generator and the workbook reader check their own output
+// with: a quote it leaves open stops the runner's preflight of the whole workbook before any device is touched (every case of the
+// workbook is lost), a whole part in quotes is read as a positional argument, a pair of quotes round a keyword value is cut off,
+// and a backslash before a comma takes the comma into the value. The cell is written by the generator (the embedded encoder) and read
+// back by a port of the runner's reader; a separator or a condition constant that does not come back as declared is refused at its
+// field with the reason instead of reaching the workbook.
+type RunnerRead='unclosed'|'merged'|'positional'|'unquoted';
+/** `_split_parameter_parts`: the parts of a G text, or null when a quote is left open. */
+function runnerParts(text:string):string[]|null{
+ const parts:string[]=[];let current='',quote:string|null=null,escaped=false;
+ for(const char of text){
+  if(escaped){current+=char;escaped=false;continue;}
+  if(char==='\\'){current+=char;escaped=true;continue;}
+  if(quote!==null){current+=char;if(char===quote)quote=null;continue;}
+  if(char==='"'||char==="'"){current+=char;quote=char;continue;}
+  if(char===','){const part=pythonTrim(current);if(part)parts.push(part);current='';continue;}
+  current+=char;
+ }
+ if(quote!==null)return null;
+ const tail=pythonTrim(current);if(tail)parts.push(tail);
+ return parts;
+}
+/** `_keyword_split`: key and value of a part that is a keyword argument, null when it is a positional one. */
+function runnerKeyword(part:string):[string,string]|null{
+ let quote:string|null=null,escaped=false;
+ for(let index=0;index<part.length;index++){
+  const char=part[index]!;
+  if(escaped){escaped=false;continue;}
+  if(char==='\\'){escaped=true;continue;}
+  if(quote!==null){if(char===quote)quote=null;continue;}
+  if(char==='"'||char==="'"){quote=char;continue;}
+  if(char==='='){const key=pythonTrim(part.slice(0,index));return /^[A-Za-z_][\p{L}\p{N}_]*$/u.test(key)?[key,pythonTrim(part.slice(index+1))]:null;}
+ }
+ return null;
+}
+/** `_unquote_parameter`: a value wrapped in one pair of the same quote loses it. */
+const runnerUnquote=(value:string):string=>{const text=pythonTrim(value);return text.length>=2&&(text[0]==='"'||text[0]==="'")&&text[text.length-1]===text[0]?pythonTrim(text.slice(1,-1)):text;};
+/** `get_parameter` for a single-line cell: the positional and the keyword arguments the runner reads, null when a quote is left open. */
+function runnerArguments(text:string):{args:string[];keywords:Record<string,string|number>}|null{
+ const parts=runnerParts(text);if(parts===null)return null;
+ const args:string[]=[],keywords:Record<string,string|number>={};
+ for(const part of parts){
+  const keyword=runnerKeyword(part);
+  if(keyword===null){args.push(runnerUnquote(part));continue;}
+  const value=runnerUnquote(keyword[1]);keywords[keyword[0]]=/^[0-9]+$/.test(value)?Number(value):value;
+ }
+ return {args,keywords};
+}
+/** The other keywords of a SELECT_CELL row as the generator writes them; their own values never disturb the reading of a neighbour. */
+const OTHER_KEYWORDS={column:1,columns:1,format:'delimited',header:0,row:0};
+/**
+ * Why the runner would not read one separator or condition constant back as declared, null when it does. The cell is written by the
+ * generator's own encoder with every keyword in the place the encoder gives it, so a value that touches its neighbour is found where it is.
+ */
+function runnerRead(field:{pin:string}|{separator:string}):{problem:RunnerRead;read?:string}|null{
+ const keywords:Record<string,string|number>={...OTHER_KEYWORDS,separator:'separator' in field?field.separator:'+'},args=['{}',...('pin' in field?[field.pin]:[])];
+ let text:string;
+ // What the encoder cannot write at all (both kinds of quote in a part that needs quotes, a quoted part that ends in a backslash) is
+ // refused by the G stage with the encoder's own rule, as before.
+ try{text=encodeG({args,keywords},{keywordNames:Object.keys(keywords)});}
+ catch(error){if(error instanceof GSyntaxError)return null;throw error;}
+ const read=runnerArguments(text);
+ if(read===null)return {problem:'unclosed'};
+ const neighbours=Object.entries(keywords).filter(([name])=>name!=='separator'||!('separator' in field)).every(([name,value])=>read.keywords[name]===value);
+ if('pin' in field)return read.args.length===2&&read.args[0]==='{}'&&neighbours?(read.args[1]===field.pin?null:{problem:'unquoted',read:read.args[1]}):{problem:'merged'};
+ if(read.keywords.separator===undefined)return {problem:'positional'};
+ if(read.args.length!==1||!neighbours)return {problem:'merged'};
+ return read.keywords.separator===field.separator?null:{problem:'unquoted',read:String(read.keywords.separator)};
+}
+const READ_REASON:Record<RunnerRead,(read?:string)=>string>={
+ unclosed:()=>'含没有配对的引号；运行器读 G 时引号没闭合就拒绝，它在运行前的预检里就停下，整本工作簿都不运行，同一份里别的用例也跑不了',
+ merged:()=>'含反斜杠，会和相邻的参数并在一起；运行器读 G 时反斜杠把后一个字符当作文字，值末尾的反斜杠吞掉分隔下一个参数的逗号，下一个参数被并进这个值',
+ positional:()=>'会被运行器读成位置参数；含逗号的值写进 G 要把整个参数加引号，运行器把加了引号的整段读成位置参数，不是关键字',
+ unquoted:read=>`首尾是一对引号；运行器读值时把外面一对引号去掉，读到的是 ${JSON.stringify(read)}，不是你写的值`,
+};
 /**
  * The one rule a value of a selection position breaks, with what was seen and the next step; null when the runner receives it as written.
  * Whitespace at the end of a keyword value or of a later argument is cut when the runner reads G, so such a value is refused
@@ -74,6 +152,8 @@ export function cellSelectionValueProblem(position:CellSelectionPosition,value:s
   const constant=parsed[2];
   if(!cellSafeText(constant))return `看到条件常量 ${shown(constant)}：${unsafeReason(constant)}；常量要原样写进 G 单元格，不能含换行、控制字符和 Excel 转义写法 _xHHHH_；下一步：去掉这些字符`;
   if(pythonTrim(value as string)!==value)return `看到条件常量 ${shown(constant)}：末尾带空白；运行器读 G 里的位置参数时会去掉首尾空白，实际比较的是 ${JSON.stringify(pythonTrim(constant))}，不是你写的整格文字；下一步：改用不依赖末尾空白的列做条件；没有这样的列时，${UNMET}`;
+  const read=runnerRead({pin:value as string});
+  if(read!==null)return `看到条件常量 ${shown(constant)}：${READ_REASON[read.problem](read.read)}；下一步：改用不含引号和反斜杠的列做条件；没有这样的列时，${UNMET}`;
   return null;
  }
  const name=position.keyword;
@@ -82,6 +162,8 @@ export function cellSelectionValueProblem(position:CellSelectionPosition,value:s
   if(!cellSafeText(value))return `看到分隔符 ${shown(value)}：${unsafeReason(value)}；分隔符要原样写进 G 单元格，不能含换行、控制字符和 Excel 转义写法 _xHHHH_；下一步：改用设备输出里实际出现、不含这些字符的分隔符`;
   if(pythonTrim(value)!==value)return `看到分隔符 ${shown(value)}：首尾带空白；运行器读 G 里的关键字值时会去掉首尾空白，传给取格方法的会是 ${JSON.stringify(pythonTrim(value))}，不是你写的分隔符；下一步：改用设备输出里实际出现、首尾不带空白的分隔符；输出只靠空白分列时当前取格方法表达不了，${UNMET}`;
   if(/^\p{Number}+$/u.test(value))return `看到分隔符 ${shown(value)}：全是数字；运行器会把全数字的关键字值读成整数，取格分隔符必须是文字；下一步：改用含非数字字符的分隔符，或按设备输出的真实写法换一种取格方式`;
+  const read=runnerRead({separator:value});
+  if(read!==null)return `看到分隔符 ${shown(value)}：${READ_REASON[read.problem](read.read)}；下一步：改用设备输出里实际出现、不含引号、反斜杠和逗号的分隔符；输出只靠这些字符分列时当前取格方法表达不了，${UNMET}`;
   return null;
  }
  if(name==='format')return typeof value==='string'&&(TABLE.cell_formats as readonly string[]).includes(value)?null:`看到表格形状 ${shown(value)}；只能是 ${TABLE.cell_formats.join(' 或 ')}`;

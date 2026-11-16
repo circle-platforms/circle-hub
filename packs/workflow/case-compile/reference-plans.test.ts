@@ -105,6 +105,51 @@ test('a block reference plan with a cell selection and a cell input goes through
  assert.deepEqual(used.args,['demo set {}'],'the selected cell is formatted into the first positional argument only');
 });
 
+// ---- the key name of a 200-character host (round 36): the executor picks the generated segment of the name, never the whole name
+// A key file name is `K<host>.+<algorithm>+<id>+<type>+<name>+<size>`; only the id is the device's. The key listing is cut at the
+// name's own `+` into six columns, each known column is pinned by `where`, one column is picked, and the command that uses it
+// carries the known segments around the placeholder. The picked cell is 5 characters; the name the device gets is 229.
+const KEY_LABEL='abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz',KEY_HOST=[KEY_LABEL,KEY_LABEL,KEY_LABEL,'example.com'].join('.');
+const KEY_PINS=[{column:1,value:`K${KEY_HOST}.`},{column:2,value:'005'},{column:4,value:'ksk'},{column:5,value:'RSASHA1'},{column:6,value:'1024.key'}];
+function keyNamePlan(){
+ const data=cellPlan(),select=data.blocks[1];
+ select.table={format:'delimited',separator:'+',columns:6,header:false};select.column=3;select.select={where:structuredClone(KEY_PINS)};
+ data.blocks[2].call.args=[`demo set "K${KEY_HOST}.+005+{}+ksk+RSASHA1+1024"`];
+ return data;
+}
+
+test('a block reference plan picks the generated id of a key name of 200 characters and keeps the known segments in the command that uses it, through every gate',()=>{
+ assert.equal(KEY_HOST.length,200);
+ const f=cellFixture(),result=chain(blockSubject(f),keyNamePlan(),[blockQuote()]);
+ assert.equal(result.local.ok,true,JSON.stringify(result.local.problems));
+ assert.deepEqual(result.problems,[],JSON.stringify(result.problems));
+ const built=result.workbook(),read=offlineReadback(built.bytes,built.recipes);assert.ok(read.ok,JSON.stringify(read));
+ const rows=(read as {executions:Array<{object:string;method:string;args:string[];keywords:Record<string,unknown>;h:string;i:string}>}).executions;
+ const select=rows.find(row=>row.method==='table_cell')!,used=rows.find(row=>row.i==='selected'&&row.method!=='table_cell')!;
+ assert.deepEqual(select.args,['{}',`where 1=K${KEY_HOST}.`,'where 2=005','where 4=ksk','where 5=RSASHA1','where 6=1024.key'],'every known column is pinned by its own condition');
+ assert.deepEqual({...select.keywords},{column:3,columns:6,format:'delimited',header:0,row:0,separator:'+'});
+ assert.equal(used.args.length,1);
+ // what the runner makes of it: the whole picked cell in place of the one placeholder, as the manual writes the name
+ const command=used.args[0]!.replace('{}','51877'),name=/"(K[^"]+)"/.exec(command)![1]!;
+ assert.equal(command,`demo set "K${KEY_HOST}.+005+51877+ksk+RSASHA1+1024"`);
+ assert.equal(name.length,229,'the name is longer than one picked cell may be: the plan never asks for it as a cell');
+});
+
+test('the cell rules still refuse what the runner would cut or break in the pins of that plan, at the pin itself, locally and in the Hub checks alike',()=>{
+ const f=cellFixture();
+ for(const [label,value] of [['a trailing space','1024.key '],['a line break','1024.key\n'],['a control character','1024.\u0001key']] as const){
+  const data=keyNamePlan();(data.blocks[1].select.where as Array<{column:number;value:string}>)[4]!.value=value;
+  const result=chain(blockSubject(f),data,[blockQuote()]);
+  assert.equal(result.local.ok,false,label);
+  assert.ok(result.local.problems.some(problem=>problem.pointer.startsWith('/blocks/1/select/where/4')),label+': '+JSON.stringify(result.local.problems));
+  assert.ok(result.problems.length>0,label+': the Hub checks refuse it too');
+  assert.throws(()=>result.workbook(),/尚未全部核对正确/,label);
+ }
+ const data=keyNamePlan();data.blocks[1].table.separator=' ';
+ const spaced=chain(blockSubject(f),data,[blockQuote()]);
+ assert.equal(spaced.local.ok,false);assert.ok(spaced.local.problems.some(problem=>problem.pointer==='/blocks/1/table/separator'),JSON.stringify(spaced.local.problems));
+});
+
 test('a block reference plan whose blocks carry descriptions passes every gate of the chain and the descriptions reach column D',()=>{
  const f=cellFixture(),data=cellPlan(),words=data.blocks.map((_block,index)=>`第 ${index+1} 块：合成说明，不是作者步骤原文`);
  data.blocks.forEach((block,index)=>{block.description=words[index];});

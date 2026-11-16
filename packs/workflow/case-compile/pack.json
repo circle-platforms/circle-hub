@@ -63,8 +63,8 @@
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "8f7866759d3f2cf292762b44b90a91d6b9009cff76641ad3f36bea6fae30805e",
-      "size": 17359
+      "sha256": "c29069afddee3f55177bed441e761bc1718f80de53887b4642b574177a758c83",
+      "size": 18337
     },
     {
       "path": "checks.json",
@@ -208,8 +208,8 @@
     },
     {
       "path": "functions/cell-selection.ts",
-      "sha256": "d9334f272a29ca66eaa5ae7a744eab6bc47ecf5fdc663c5b1c7866e05a489d9a",
-      "size": 9814
+      "sha256": "b79e5dc906a0f655630fbbda20173f92170eaeef6c41f54942aeb2008de078c1",
+      "size": 16278
     },
     {
       "path": "functions/channels.ts",
@@ -503,8 +503,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "47ea32ddaac3740d883957a1b1d69d36140ce79e21e4669dc492c549a85a41eb",
-      "size": 43761
+      "sha256": "abbf272d1c50e4f4c477a667dacdd63f79625ab3de2916351146b16451392cde",
+      "size": 44739
     },
     {
       "path": "functions/subject.ts",
@@ -803,18 +803,18 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "51a01bb2aa6f01ec86509c1a55913815a6b00c66645f641cd87f9be4bc45334e",
-      "size": 73122
+      "sha256": "51a426fc3e22484a547abfd83ec6c6872dfb4296f4b108eff2c3a93f7b2542a7",
+      "size": 74478
     },
     {
       "path": "tables/block-plan.schema.json",
-      "sha256": "5627a989d605007751d4f3c191763e64ef2b9e8d0d83ee232cc7436aa171bebc",
-      "size": 57624
+      "sha256": "de010dde9079100f56e9be2c8951843bad755bddc12d02ea4181c61ce676350b",
+      "size": 58956
     },
     {
       "path": "tables/blocks-format.json",
-      "sha256": "947aa57be173ba25fd247a3c69357ebad38875a3ed7e1cf4b27cda3164a5572a",
-      "size": 21735
+      "sha256": "7a881e254403782a1ce07f5d61989eae4f6d7a7d0b76c97f224ca851be05d5c0",
+      "size": 22755
     },
     {
       "path": "tables/codes.json",
