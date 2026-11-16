@@ -23,13 +23,14 @@ import { readSlots, type PlanSlots } from '../functions/slots.ts';
 import { planDataOf } from '../functions/subject.ts';
 import { isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
 import { parsedPlanFile } from './submit-plans.ts';
+import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, brief: false, run: false };
 const USAGE = 'node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <冻结运行JSON>]';
 
 export interface CheckProblem {
   code?: string;
-  verdict?: 'refute' | 'unknown';
+  verdict?: Extract<Verdict, 'refute' | 'unknown'>;
   requested?:import('../functions/call-boundaries.ts').CallBoundaryGap['requested'];
   allowed_calls?:import('../functions/call-boundaries.ts').CallBoundaryGap['allowed_calls'];
   allowed_seats?:string[];

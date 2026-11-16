@@ -13,6 +13,7 @@ import { shapeIssues } from './record-shape.ts';
 import seal from './seal.ts';
 import { selectCatalog, subject as recordSubject } from './subject.ts';
 import { CallFailure, isRecord } from './text.ts';
+import { isVerdict } from './generated/vocabulary.ts';
 
 type Row = { [key: string]: any };
 
@@ -181,7 +182,7 @@ const OUTCOME_KEYS = ['missing', 'exit', 'verdict', 'code', 'statement', 'ground
 /** The part of check-outcome@1 (contracts/src/tables.ts) that decides whether the Hub takes an output at all: strict keys, the three verdicts, a statement, and for an unknown its missing fact and reason. */
 const outcomeShape = (value: unknown): boolean =>
   isRecord(value) && Object.keys(value).every((key) => OUTCOME_KEYS.includes(key))
-  && (value.verdict === 'support' || value.verdict === 'refute' || value.verdict === 'unknown')
+  && isVerdict(value.verdict) && value.verdict !== 'abstain'
   && typeof value.statement === 'string' && value.statement.length > 0 && Array.isArray(value.grounds) && typeof value.tier === 'string'
   && (value.code === undefined || (typeof value.code === 'string' && value.code.length > 0))
   && (value.verdict !== 'unknown' || (value.missing !== undefined && value.reason !== undefined));

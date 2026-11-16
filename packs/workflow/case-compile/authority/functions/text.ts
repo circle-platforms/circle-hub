@@ -105,6 +105,17 @@ export function markers(synthetic: boolean, identity?: { runtimeVersion: string;
   return `（${basis}${who}；不证明在真实设备上跑得通）`;
 }
 
+/** Parse only this module's complete provenance-tail grammar for display, never the meaning of a fact. */
+export function reportStatement(text: string): string {
+  return text.replace(/（(按合成合约核对|按发布的运行器合约核对)；运行时 [^；\r\n]+；身份 [a-f0-9]{12}；不证明在真实设备上跑得通）/gu, '（$1；不证明在真实设备上跑得通）');
+}
+
+/** Local operator time, to the minute; raw timestamps stay in machine records. */
+export function localMinute(date: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${p(date.getMonth()+1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}`;
+}
+
 export function outcome(kind: Outcome['verdict'], statement: string, tier: Outcome['tier'], item: string, extras: Partial<Outcome> = {}): Outcome {
   return { verdict: kind, statement, grounds: [], tier, item, ...extras };
 }

@@ -80,8 +80,8 @@
     },
     {
       "path": "functions/generated/vocabulary.ts",
-      "sha256": "18b5252ec45fec48185200bacb1b5b3ab15623b9071fddf824bc4fa05784876d",
-      "size": 1117
+      "sha256": "4bb9f01326c96684003b2b30718d93110a76569efa0c2a3986d0eba737deb8e2",
+      "size": 1591
     },
     {
       "path": "functions/hub-retry.ts",
@@ -90,8 +90,8 @@
     },
     {
       "path": "functions/local-checks.ts",
-      "sha256": "d17af714ca24e8348b1b1c821716dca4d343c232f8aed532cfc294a0dd170668",
-      "size": 25204
+      "sha256": "e9aaf4faad42ca49a5f7df3cc023f7e36170f1ecbd8361f6efa678978d376859",
+      "size": 25224
     },
     {
       "path": "functions/project.ts",
@@ -105,8 +105,8 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "b1a90f99d338a893fd6f87aeb26e42d7f2cd7e125fd7ba4346f2cc5d029a9a2e",
-      "size": 4566
+      "sha256": "787dcba92f0113ab6ec5c008f40dbb3670a3b9fefe7b33ad560bdc4a5cdec760",
+      "size": 4585
     },
     {
       "path": "functions/record-shape.ts",
@@ -140,8 +140,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "c7c4e32979ef2a49b4ef61e23af955afa2ade08a05b6072fcb5cafa354cf6b4c",
-      "size": 11656
+      "sha256": "4b810aa14b58d70ecb12fd81ddf6de2fc5d4d7d8e1b136c045b5df33cecdd521",
+      "size": 12366
     },
     {
       "path": "requirements.json",
@@ -215,8 +215,8 @@
     },
     {
       "path": "tools/check-record.ts",
-      "sha256": "763d1f3482e1b41334cd4878795813e176ed6380bb77c032b27cbfd8a3752cf6",
-      "size": 14447
+      "sha256": "27f34209d0317d8069d4a54528f34aea01ff6cfb8d6daba97d81784b9c8056b8",
+      "size": 14546
     },
     {
       "path": "tools/download-run.cli.json",

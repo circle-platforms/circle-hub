@@ -14,6 +14,7 @@ import { readKnowledgeNodes, runLocalChecks, type CheckedOutcome, type Knowledge
 import { CallFailure, isRecord, parseCliOptions } from '../functions/text.ts';
 import type { CallErrorCategory } from '../functions/generated/vocabulary.ts';
 import { assertValidRecomposeShape, itemSubmission, submissionFor } from './submit-records.ts';
+import type { Verdict } from '../../../../../contracts/generated/vocabulary.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, run: false };
 const USAGE = 'node <技能目录>/tools/check-record.ts --file <重组记录JSON或目录> [--run <下载运行目录>]';
@@ -32,7 +33,7 @@ export interface RecordProblem {
   item?: string;
   /** The check of the pack's checks.json that gave it (absent for the format checks of this tool). */
   check?: string;
-  verdict?: 'refute' | 'unknown';
+  verdict?: Extract<Verdict, 'refute' | 'unknown'>;
   pointer?: string;
   message: string;
   /** The machine-readable part of the check's outcome, as the Hub records it. */

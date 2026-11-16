@@ -3,7 +3,11 @@ export const CALL_ERROR_CATEGORY = ['invalid_parameters', 'permission_denied', '
 export type CallErrorCategory = (typeof CALL_ERROR_CATEGORY)[number];
 export const CALL_ERROR_CATEGORY_LABEL = { 'invalid_parameters': '参数无效', 'permission_denied': '无权限', 'not_found': '不存在', 'occupied': '已被占用', 'temporarily_unavailable': '暂时不可用' } as const satisfies Record<CallErrorCategory, string>;
 export function isCallErrorCategory(value: unknown): value is CallErrorCategory { return typeof value === 'string' && (CALL_ERROR_CATEGORY as readonly string[]).includes(value); }
-export interface AxisValues { call_error_category: CallErrorCategory; }
+export const VERDICT = ['support', 'refute', 'unknown', 'abstain'] as const;
+export type Verdict = (typeof VERDICT)[number];
+export const VERDICT_LABEL = { 'support': '支持', 'refute': '反驳', 'unknown': '未知', 'abstain': '弃权' } as const satisfies Record<Verdict, string>;
+export function isVerdict(value: unknown): value is Verdict { return typeof value === 'string' && (VERDICT as readonly string[]).includes(value); }
+export interface AxisValues { call_error_category: CallErrorCategory; verdict: Verdict; }
 export type AxisName = keyof AxisValues;
-const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { call_error_category: CALL_ERROR_CATEGORY_LABEL };
+const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { call_error_category: CALL_ERROR_CATEGORY_LABEL, verdict: VERDICT_LABEL };
 export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }

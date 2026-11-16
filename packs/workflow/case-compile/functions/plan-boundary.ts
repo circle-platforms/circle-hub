@@ -8,6 +8,7 @@ import * as checkModule from './checks.ts';
 import * as subjectModule from './subject.ts';
 import {slotRecordProblems} from './slot-record.ts';
 import {isRecord,type Outcome} from './text.ts';
+import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 
 /** Modules a check or its subject builder is read from, as checks.json names them. */
 const MODULES:Record<string,Record<string,unknown>>={'functions/checks.ts':checkModule,'functions/subject.ts':subjectModule};
@@ -16,7 +17,7 @@ export const LATER_STAGE:Readonly<Record<string,string>>={
  scenario_fidelity:'场景保真审计在计划写完后由 fidelity-plumb 与 fidelity-apply 把判断写进 data.fidelity；submit-plans 发送前用同一个 fidelityProblems 函数复核',
 };
 export interface HubCheckCoverage { check:string;requirements:string[];ran:boolean;why?:string;problems?:number }
-export interface BoundaryProblem { code?:string;pointer:string;message:string;verdict?:'refute'|'unknown';[key:string]:unknown }
+export interface BoundaryProblem { code?:string;pointer:string;message:string;verdict?:Extract<Verdict,'refute'|'unknown'>;[key:string]:unknown }
 export interface BoundaryResult { structure_ok:boolean;problems:BoundaryProblem[];coverage:HubCheckCoverage[] }
 
 const requirementsOf=(check:string):string[]=>REQUIREMENTS.requirements.filter(row=>(row.checks as string[]).includes(check)).map(row=>row.key);
@@ -49,7 +50,7 @@ function problemsOf(outcome:Outcome):BoundaryProblem[]{
  const code=outcome.code??outcome.reason;
  const gaps=isRecord(outcome.data)&&Array.isArray(outcome.data.problems)?outcome.data.problems.filter(isRecord):[];
  if(gaps.length)return gaps.map(gap=>({...gap,...(code!==undefined?{code}:{}),pointer:String(gap.pointer??''),message:String(gap.message??'')}) as BoundaryProblem);
- return [{...(code!==undefined?{code}:{}),pointer:stripData(outcome.pointer??''),message:outcome.statement,verdict:outcome.verdict as 'refute'|'unknown'}];
+ return [{...(code!==undefined?{code}:{}),pointer:stripData(outcome.pointer??''),message:outcome.statement,verdict:outcome.verdict as Extract<Verdict,'refute'|'unknown'>}];
 }
 
 /**
