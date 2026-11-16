@@ -5,7 +5,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildFidelityVerdictDocument, mapPlumbSequenceToFidelityRow, type BoundStepDecision } from '../functions/fidelity-bind.ts';
-import { partitionFidelityBlocks, renderFidelityStepState, type PartitionedFidelityBlocks } from '../functions/fidelity-render.ts';
+import { FIDELITY_MAX_EST_TOKENS, partitionFidelityBlocks, renderFidelityStepState, type LiteralSubstitution, type PartitionedFidelityBlocks } from '../functions/fidelity-render.ts';
 import {
   createCasePlumbClient,
   extractPlumbCliOptions,
@@ -18,6 +18,7 @@ import {
 } from '../functions/plumb-cli.ts';
 import { writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import {
+  formatPlumbCallError,
   normalizeJudgeAnswer,
   sha256Hex,
   stableStringify,
@@ -52,6 +53,18 @@ interface PendingStepQuery {
   stepIdx: number;
   state: string;
   requestSha256: string;
+  /** Long literals this step's state names instead of repeating (none unless the plain state was over the limit). */
+  substitutions: LiteralSubstitution[];
+}
+
+/** A case whose state is over the Plumb limit even with its repeated long literals named: it goes to blind review, not to Plumb. */
+interface OverBudgetCase {
+  file: string;
+  item: string;
+  brief: string;
+  verdict: string;
+  verdict_present: boolean;
+  steps: Array<{ n: string; est_tokens: number; reduced_est_tokens: number | null; command_blocks: number; exemptions: number }>;
 }
 
 interface PendingCaseContext {
@@ -69,6 +82,31 @@ const readTextOrNull = async (path: string): Promise<string | null> => {
     return null;
   }
 };
+
+/**
+ * The refusal for cases whose state does not fit Plumb's limit: what was measured, and the audit they go to instead (blind
+ * review by an independent model with `task-brief.ts`, then `fidelity-apply.ts`). The single-case form is named because the
+ * directory form of `--batch` would write over the verdicts Plumb has just given the other cases.
+ */
+function overBudgetStop(waiting: readonly OverBudgetCase[], judgedByPlumb: number): string {
+  const steps = (c: OverBudgetCase): string => {
+    const shown = c.steps.slice(0, 6).map((st) => `${st.n} 约 ${st.est_tokens}`).join('、');
+    return `${shown}${c.steps.length > 6 ? ` 等共 ${c.steps.length} 步` : ''}`;
+  };
+  const worst = (c: OverBudgetCase) => c.steps.reduce((a, b) => (b.est_tokens > a.est_tokens ? b : a));
+  const describe = (c: OverBudgetCase): string => {
+    const w = worst(c);
+    const reduced = w.reduced_est_tokens === null ? '没有逐字重复的长字面量可换名' : `重复的长字面量换成名字后仍约 ${w.reduced_est_tokens}`;
+    return `${c.file}（步骤 ${steps(c)} token；候选命令块约 ${w.command_blocks}、豁免依据约 ${w.exemptions}，${reduced}；简报 ${c.brief}）`;
+  };
+  const fact = `${waiting.length} 条自动化用例的保真核对题面超过 Plumb 的 ${FIDELITY_MAX_EST_TOKENS} token 上限，工具不在命令块中间截断，这些用例没有交给 Plumb：${waiting.map(describe).join('；')}${judgedByPlumb > 0 ? `。其余 ${judgedByPlumb} 条已由 Plumb 核对并写入核对目录` : ''}`;
+  const next = [
+    '这些用例改走独立模型盲审：对上面每份简报运行 node \'<技能目录>/tools/task-brief.ts\' --role \'保真核对\' --case \'<用例文件名>\' --brief \'<简报>\' --out \'<同前缀的 .verdict.json>\' --task-file \'<任务文件>\'，派 compile-fidelity 写出判断（只用这种单条形式，不要对整个核对目录用 --batch，它会覆盖 Plumb 已写的判断）',
+    '写完运行 fidelity-apply.ts 并入自动化用例',
+    '也可以缩短这些用例的命令块后重跑本工具',
+  ].join('；');
+  return formatPlumbCallError('参数无效', fact, next);
+}
 
 export async function runFidelityPlumb(
   argv: readonly string[],
@@ -96,7 +134,7 @@ export async function runFidelityPlumb(
 
     const reused: Array<{ file: string; item: string; verdict: string }> = [];
     const pendingCases: PendingCaseContext[] = [];
-    const overBudget: Array<{ file: string; item: string; step: string; est_tokens: number }> = [];
+    const overBudget: OverBudgetCase[] = [];
 
     for (const [caseIdx, planCase] of cases.entries()) {
       const bPath = briefFile(briefsDir, planCase.base, planCase.brief.brief_sha256);
@@ -106,21 +144,29 @@ export async function runFidelityPlumb(
       }
       const partitioned = partitionFidelityBlocks(planCase.brief);
       const stepQueries: PendingStepQuery[] = [];
+      const tooBig: OverBudgetCase['steps'] = [];
       for (const [stepIdx, authorStep] of planCase.brief.author_steps.entries()) {
         const rendered = renderFidelityStepState(planCase.brief, stepIdx, partitioned);
         if (rendered.overBudget) {
-          overBudget.push({
-            file: planCase.file,
-            item: planCase.item,
-            step: authorStep.n,
-            est_tokens: rendered.estTokensAfter,
+          tooBig.push({
+            n: authorStep.n,
+            est_tokens: rendered.estTokensPlain,
+            reduced_est_tokens: rendered.reducedEstTokens,
+            command_blocks: rendered.parts?.commandBlocks ?? 0,
+            exemptions: rendered.parts?.exemptions ?? 0,
           });
+          continue;
         }
         const qid = `${caseIdx}:${authorStep.n}`;
         const requestSha256 = sha256Hex(stableStringify({ task: 'sequence', state: rendered.state }));
-        stepQueries.push({ qid, caseIdx, stepIdx, state: rendered.state, requestSha256 });
+        stepQueries.push({ qid, caseIdx, stepIdx, state: rendered.state, requestSha256, substitutions: rendered.substitutions });
       }
       const saved=await readTextOrNull(vPath);
+      if (tooBig.length > 0) {
+        // Plumb is not asked about this case; a verdict file already there is the blind review's, and fidelity-apply checks it.
+        overBudget.push({ file: planCase.file, item: planCase.item, brief: resolve(bPath), verdict: resolve(vPath), verdict_present: saved !== null, steps: tooBig });
+        continue;
+      }
       if(saved!==null){
         const doc=JSON.parse(saved);
         const digest=sha256Hex(stepQueries.map(step=>step.requestSha256).join(','));
@@ -137,16 +183,7 @@ export async function runFidelityPlumb(
       });
     }
 
-    if (overBudget.length > 0) {
-      const detail = overBudget.map((o) => `${o.file}(step ${o.step}: ${o.est_tokens} tokens)`).join('；');
-      throw plumbFailure(
-        '参数无效',
-        `以下用例的核心步骤+候选命令块超过 Plumb 2400 token 上限，拒绝截断并停用：${detail}`,
-        '请拆短单步命令块或缩减无关冗余后重新运行',
-      );
-    }
-
-    const written: Array<{ file: string; item: string; verdict: string; preserved: number; changed: number; unrealized: number; review_required: string[] }> = [];
+    const written: Array<{ file: string; item: string; verdict: string; preserved: number; changed: number; unrealized: number; review_required: string[]; literal_substitutions: Array<{ step: string } & LiteralSubstitution> }> = [];
     let modelVersion: string | undefined;
 
     if (pendingCases.length > 0) {
@@ -186,12 +223,14 @@ export async function runFidelityPlumb(
           );
         }
         const batchDigest = sha256Hex(ctx.steps.map((s) => s.requestSha256).join(','));
+        const substitutions = ctx.steps.flatMap((sq) => sq.substitutions.map((sub) => ({ step: ctx.planCase.brief.author_steps[sq.stepIdx]!.n, ...sub })));
         const doc = buildFidelityVerdictDocument({
           brief: ctx.planCase.brief,
           decisions,
           partitioned: ctx.partitioned,
           modelVersion: batchRes.model_version,
           requestSha256: batchDigest,
+          literalSubstitutions: substitutions,
         });
         await writeNew(ctx.verdictPath, Buffer.from(JSON.stringify(doc, null, 2) + '\n'));
         const countVerdict = (v: string) => decisions.filter((d) => d.row.verdict === v).length;
@@ -203,6 +242,7 @@ export async function runFidelityPlumb(
           changed: countVerdict('changed'),
           unrealized: countVerdict('unrealized'),
           review_required: decisions.filter((d) => d.reviewRequired).map((d) => d.row.n),
+          literal_substitutions: substitutions,
         });
       }
     }
@@ -215,12 +255,16 @@ export async function runFidelityPlumb(
       checked: cases.length,
       reused,
       written,
+      over_budget: overBudget,
       skipped,
     };
     const serialized = JSON.stringify(summary, null, 2) + '\n';
     if (outSummary) {
       await writePrivateFile(outSummary, serialized);
     }
+    // A case without a verdict file still needs its blind review: say so and stop. The cases Plumb could judge are already written.
+    const waiting = overBudget.filter((c) => !c.verdict_present);
+    if (waiting.length > 0) return { code: 1, stdout: serialized, stderr: overBudgetStop(waiting, written.length + reused.length) + '\n' };
     return { code: 0, stdout: serialized, stderr: '' };
   } catch (error) {
     return { code: 1, stdout: '', stderr: formatPlumbCliError(error) + '\n' };

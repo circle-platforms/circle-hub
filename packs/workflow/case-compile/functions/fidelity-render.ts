@@ -1,9 +1,11 @@
 // Complete exemption evidence, fact formatting, and 2400-token budgeting for Plumb scenario_fidelity.
-import type { AuthorStep, FidelityBrief } from './fidelity.ts';
-import { estimateTokens } from './generated/skills/plumb/plumb-client/index.ts';
+import { createHash } from 'node:crypto';
+import { literalLengths, type AuthorStep, type FidelityBrief } from './fidelity.ts';
+import { PLUMB_GATEWAY_LIMITS, estimateTokens } from './generated/skills/plumb/plumb-client/index.ts';
 import { isRecord } from './text.ts';
 
-export const FIDELITY_MAX_EST_TOKENS = 2400;
+/** The gateway's limit on a `sequence` state (pinned and cross-checked with the gateway source in the plumb skill). */
+export const FIDELITY_MAX_EST_TOKENS = PLUMB_GATEWAY_LIMITS.fidelityStateEstTokens;
 
 export interface PartitionedFidelityBlocks {
   negativeCase: null;
@@ -14,12 +16,34 @@ export interface PartitionedFidelityBlocks {
   exemptSummaryLines: string[];
 }
 
+/** A long literal the state writes once, in a table, and names wherever it occurs; the report of what was replaced. */
+export interface LiteralSubstitution {
+  /** The name the state uses in place of the literal, such as `«L1»`. */
+  name: string;
+  /** Characters of the literal, and of each dotted label when it has labels (the figures `literal_lengths` of the brief carries). */
+  length: number;
+  labels?: number[];
+  /** How many times the name stands in the state for the literal, the table not counted. */
+  occurrences: number;
+  /** The first 12 hex digits of the SHA-256 of the literal: names it in a report without repeating it. */
+  sha256_12: string;
+}
+
 export interface RenderedFidelityState {
   state: string;
   truncated: boolean;
   overBudget: boolean;
   estTokensBefore: number;
+  /** Estimated tokens of what is sent; of the smallest plain state when `overBudget`. */
   estTokensAfter: number;
+  /** Estimated tokens of the smallest plain state, before any long literal is replaced; equals `estTokensAfter` unless literals were replaced. */
+  estTokensPlain: number;
+  /** Long literals replaced by names in this state (none unless the plain state did not fit and replacing them made it fit). */
+  substitutions: LiteralSubstitution[];
+  /** When `overBudget`: estimated tokens of the smallest state with its repeated long literals replaced, null when none repeats. */
+  reducedEstTokens: number | null;
+  /** When `overBudget`: where the estimated tokens of the smallest plain state go. */
+  parts: { currentStep: number; commandBlocks: number; exemptions: number } | null;
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -117,9 +141,72 @@ function joinSections(parts: readonly string[]): string {
   return parts.filter((p) => p.length > 0).join('\n\n');
 }
 
+const LONG_LITERAL_CHARS = 32;
+const LITERAL_TABLE_TAG = '[长字面量对照]';
+const LITERAL_TABLE_NOTE = '下面每个名字，在上文和命令块里都代表一个逐字相同的长字面量，原文只在这里写一次：';
+
+/**
+ * Writes each long literal that occurs verbatim more than once in `segments` (a run of 32 characters or more between spaces,
+ * quotes around it ignored, as `literalLengths` reads literals) once in a table, and puts the same name in its place everywhere.
+ * Nothing is lost: the table gives the literal with its length and, for a dotted name, the length of each label, and the
+ * names restore the text exactly. Only a literal whose replacement makes the text shorter is replaced; a literal that differs
+ * by one character is not the same literal and stays as it is. The rule looks at length and repetition only.
+ */
+export function shortenRepeatedLiterals(segments: readonly string[]): { segments: string[]; legend: string; substitutions: LiteralSubstitution[] } {
+  const piece = /^(["']*)([^]*?)(["']*)$/u;
+  const split = segments.map((segment) => segment.split(/(\s+)/u));
+  const seen = new Map<string, number>();
+  const order: string[] = [];
+  for (const parts of split) {
+    for (const part of parts) {
+      const core = piece.exec(part)![2]!;
+      if (/^\s*$/u.test(part) || [...core].length < LONG_LITERAL_CHARS) continue;
+      if (!seen.has(core)) order.push(core);
+      seen.set(core, (seen.get(core) ?? 0) + 1);
+    }
+  }
+  const taken = (name: string): boolean => segments.some((segment) => segment.includes(name));
+  const chosen = new Map<string, { name: string; line: string; count: number }>();
+  let next = 1;
+  for (const literal of order) {
+    const count = seen.get(literal)!;
+    if (count < 2) continue;
+    while (taken(`«L${next}»`)) next += 1;
+    const name = `«L${next}»`;
+    const [facts] = literalLengths([literal]);
+    const line = `${name} = ${literal}（共 ${facts!.length} 个字符${facts!.labels ? `；各段 ${facts!.labels.join('、')}` : ''}）`;
+    if (estimateTokens(literal) * count <= estimateTokens(name) * count + estimateTokens(line)) continue;
+    chosen.set(literal, { name, line, count });
+    next += 1;
+  }
+  if (chosen.size === 0) return { segments: [...segments], legend: '', substitutions: [] };
+  const replaced = split.map((parts) => parts.map((part) => {
+    const [, open, core, close] = piece.exec(part)!;
+    const hit = chosen.get(core!);
+    return hit ? `${open}${hit.name}${close}` : part;
+  }).join(''));
+  return {
+    segments: replaced,
+    legend: [LITERAL_TABLE_TAG, LITERAL_TABLE_NOTE, ...[...chosen.values()].map((c) => c.line)].join('\n'),
+    substitutions: [...chosen.entries()].map(([literal, c]) => {
+      const [facts] = literalLengths([literal]);
+      return {
+        name: c.name,
+        length: facts!.length,
+        ...(facts!.labels ? { labels: facts!.labels } : {}),
+        occurrences: c.count,
+        sha256_12: createHash('sha256').update(literal).digest('hex').slice(0, 12),
+      };
+    }),
+  };
+}
+
 /**
  * Renders the product-format `state` for one author step inside the Plumb `sequence` (@2400 est-token) budget.
  * Never truncates inside `[当前作者步骤 N]` or `[候选命令块]`; sets `overBudget=true` when even the core exceeds 2400.
+ * Dropping earlier context is tried first. When even the core is too big, the long literals that repeat verbatim are written
+ * once in a table and named (shortenRepeatedLiterals) and the same ladder is tried again, so the model judges the same text
+ * with the same information; a state that fits as it is is never rewritten.
  */
 export function renderFidelityStepState(
   brief: FidelityBrief,
@@ -134,41 +221,52 @@ export function renderFidelityStepState(
 
   const blockLines = partitioned.candidateBlocks.map(formatBlockForFidelity);
   const exemptionSec = `[前置豁免规则]\n${brief.rules[2]}\n\n[mechanical.exemptions 原始依据，相关性及反向场景由模型核对]\n${JSON.stringify(brief.mechanical.exemptions)}`;
-  const blockSec = `[候选命令块]\n${blockLines.join('\n')}\n\n${exemptionSec}`;
+  const blockHead = `[候选命令块]\n${blockLines.join('\n')}`;
 
-  const full = joinSections([headerSec, renderPriorSection(priorSteps), currentSec, blockSec]);
-  const estTokensBefore = estimateTokens(full);
-  if (estTokensBefore <= maxEstTokens) {
-    return { state: full, truncated: false, overBudget: false, estTokensBefore, estTokensAfter: estTokensBefore };
-  }
-
+  // The ladder, widest context first: everything, then fewer earlier steps, then none, then without the case intent.
+  const rungs: Array<{ header: string; prior: string }> = [{ header: headerSec, prior: renderPriorSection(priorSteps) }];
   for (let drop = 1; drop < priorSteps.length; drop += 1) {
-    const remaining = priorSteps.slice(drop);
-    const priorSec = `[前序步骤]\n（前面 ${drop} 步已省略）\n${remaining.map((s) => `${s.n}. ${s.text}`).join('\n')}`;
-    const candidate = joinSections([headerSec, priorSec, currentSec, blockSec]);
-    const est = estimateTokens(candidate);
+    rungs.push({ header: headerSec, prior: `[前序步骤]\n（前面 ${drop} 步已省略）\n${priorSteps.slice(drop).map((s) => `${s.n}. ${s.text}`).join('\n')}` });
+  }
+  rungs.push({ header: headerSec, prior: '' }, { header: '', prior: '' });
+
+  const plainText = (rung: { header: string; prior: string }): string => joinSections([rung.header, rung.prior, currentSec, `${blockHead}\n\n${exemptionSec}`]);
+  const reducedText = (rung: { header: string; prior: string }): { text: string; substitutions: LiteralSubstitution[] } => {
+    const out = shortenRepeatedLiterals([rung.header, rung.prior, currentSec, blockHead]);
+    const [header, prior, cur, blocks] = out.segments as [string, string, string, string];
+    return { text: joinSections([header, prior, cur, out.legend, `${blocks}\n\n${exemptionSec}`]), substitutions: out.substitutions };
+  };
+
+  const estTokensBefore = estimateTokens(plainText(rungs[0]!));
+  for (const [i, rung] of rungs.entries()) {
+    const state = plainText(rung);
+    const est = estimateTokens(state);
     if (est <= maxEstTokens) {
-      return { state: candidate, truncated: true, overBudget: false, estTokensBefore, estTokensAfter: est };
+      return { state, truncated: i > 0, overBudget: false, estTokensBefore, estTokensAfter: est, estTokensPlain: est, substitutions: [], reducedEstTokens: null, parts: null };
     }
   }
 
-  const noPrior = joinSections([headerSec, currentSec, blockSec]);
-  const noPriorEst = estimateTokens(noPrior);
-  if (noPriorEst <= maxEstTokens) {
-    return { state: noPrior, truncated: true, overBudget: false, estTokensBefore, estTokensAfter: noPriorEst };
+  const minimalPlain = plainText(rungs.at(-1)!);
+  const estTokensPlain = estimateTokens(minimalPlain);
+  for (const [i, rung] of rungs.entries()) {
+    const { text, substitutions } = reducedText(rung);
+    if (substitutions.length === 0) break;
+    const est = estimateTokens(text);
+    if (est <= maxEstTokens) {
+      return { state: text, truncated: i > 0, overBudget: false, estTokensBefore, estTokensAfter: est, estTokensPlain, substitutions, reducedEstTokens: null, parts: null };
+    }
   }
 
-  const minimal = joinSections([currentSec, blockSec]);
-  const minEst = estimateTokens(minimal);
-  if (minEst <= maxEstTokens) {
-    return { state: minimal, truncated: true, overBudget: false, estTokensBefore, estTokensAfter: minEst };
-  }
-
+  const reduced = reducedText(rungs.at(-1)!);
   return {
-    state: minimal,
+    state: minimalPlain,
     truncated: true,
     overBudget: true,
     estTokensBefore,
-    estTokensAfter: minEst,
+    estTokensAfter: estTokensPlain,
+    estTokensPlain,
+    substitutions: [],
+    reducedEstTokens: reduced.substitutions.length > 0 ? estimateTokens(reduced.text) : null,
+    parts: { currentStep: estimateTokens(currentSec), commandBlocks: estimateTokens(blockHead), exemptions: estimateTokens(exemptionSec) },
   };
 }
