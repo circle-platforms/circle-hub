@@ -17,6 +17,14 @@
       "multiple": false,
       "placeholder": "<核对文件>",
       "type": "path"
+    },
+    {
+      "name": "run",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<冻结运行JSON>",
+      "type": "path"
     }
   ],
   "forms": [
@@ -32,6 +40,11 @@
           "name": "brief",
           "placeholder": "<核对文件>",
           "optional": true
+        },
+        {
+          "name": "run",
+          "placeholder": "<冻结运行JSON>",
+          "optional": true
         }
       ]
     },
@@ -46,6 +59,11 @@
         {
           "name": "brief",
           "placeholder": "<核对文件>",
+          "optional": true
+        },
+        {
+          "name": "run",
+          "placeholder": "<冻结运行JSON>",
           "optional": true
         }
       ]

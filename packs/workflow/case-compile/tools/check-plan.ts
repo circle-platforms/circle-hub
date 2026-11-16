@@ -1,8 +1,12 @@
+import {callBoundaryGaps} from '../functions/call-boundaries.ts';
+import {parseRuntimeContract} from '../functions/runtime-contract.ts';
+import {parseProfile} from '../functions/profile.ts';
+import {parseManifest} from '../functions/manifest.ts';
 import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
 // 只读检查自动化用例 JSON、自动化用例目录或场景保真判断（.verdict.json）的语法、长度占位与结构，不用令牌，不写入磁盘：
-//   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>]
+//   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <冻结运行JSON>]
 import { realpathSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -19,16 +23,23 @@ import { planDataOf } from '../functions/subject.ts';
 import { isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 
-const OPTIONS: Record<string, boolean> = { file: true, brief: false };
-const USAGE = 'node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>]';
+const OPTIONS: Record<string, boolean> = { file: true, brief: false, run: false };
+const USAGE = 'node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <冻结运行JSON>]';
 
 export interface CheckProblem {
   code?: string;
+  requested?:import('../functions/call-boundaries.ts').CallBoundaryGap['requested'];
+  allowed_calls?:import('../functions/call-boundaries.ts').CallBoundaryGap['allowed_calls'];
+  allowed_seats?:string[];
+  step_pointer?:string;
   pointer: string;
   message: string;
 }
 
 export interface PlanCheckResult {
+  structure_ok?:boolean;
+  authority_checked?:boolean;
+  disclosure?:string;
   ok: boolean;
   file: string;
   item: string | null;
@@ -45,12 +56,12 @@ export interface PlanCheckResult {
   problems: CheckProblem[];
 }
 
-function parseOptions(argv: string[]): { file: string; brief?: string } {
+function parseOptions(argv: string[]): { file: string; brief?: string;run?:string } {
   const values = parseCliOptions(argv, OPTIONS, USAGE);
-  return values.brief !== undefined ? { file: values.file!, brief: values.brief } : { file: values.file! };
+  return {file:values.file!,...(values.brief!==undefined?{brief:values.brief}:{}),...(values.run!==undefined?{run:values.run}:{})};
 }
 
-function checkPlanObject(file: string, parsed: unknown): PlanCheckResult {
+export function checkPlanObject(file: string, parsed: unknown, run?:unknown): PlanCheckResult {
   const problems: CheckProblem[] = [];
   if (!isRecord(parsed)) {
     return {
@@ -143,6 +154,22 @@ function checkPlanObject(file: string, parsed: unknown): PlanCheckResult {
   }
 
   const s = checked.slots;
+  const structureOk=problems.length===0;
+  let authorityChecked=false;
+  if(run===undefined)problems.push({code:'missing_frozen_run',pointer:'/run',message:'缺冻结权限输入；用 --run <本次运行下载的run.json> 重检。结构通过不等于允许调用'});
+  if(run!==undefined){
+    const groups=isRecord(run)&&Array.isArray(run.groups)?run.groups:[];
+    const groupsForPack=groups.filter(group=>isRecord(group)&&group.kind==='case-compile');
+    const group=groupsForPack.length===1?groupsForPack[0]:null;
+    const items=isRecord(run)&&Array.isArray(run.items)?run.items:[];
+    if(!group||!items.some(row=>isRecord(row)&&row.id===item))problems.push({pointer:'/run',message:'冻结运行缺唯一 case-compile 组或不包含此 item；用本次计划运行下载的 run.json'});
+    else{
+      const contract=parseRuntimeContract(group.contract),manifest=parseManifest(group.manifest);
+      const profile=contract.ok&&manifest.ok?parseProfile(group.profile,contract.contract,manifest.beds):null;
+      if(!contract.ok||!manifest.ok||!profile?.ok)problems.push({pointer:'/run/groups',message:'冻结合约、清单或运行环境配置无效；重新下载本次运行完整 run.json，不手写冻结输入'});
+      else{authorityChecked=true;problems.push(...callBoundaryGaps(contract.contract,profile.profile,s).map(gap=>({...gap,code:'case-compile.method_forbidden'})));}
+    }
+  }
   const kind = s.blocks.length > 0 ? 'blocks' : 'flat';
   const cleanupSteps =
     s.steps.filter((step) => step.cleanup === true).length +
@@ -155,6 +182,9 @@ function checkPlanObject(file: string, parsed: unknown): PlanCheckResult {
     handling,
     kind,
     expansions: describeExpansions(file, expanded.expansions),
+    structure_ok:structureOk,
+    authority_checked:authorityChecked,
+    disclosure:authorityChecked?'已核对结构、冻结共同方法集合和设备应答者座位；其他 Hub 检查仍以提交回执为准':'只核对结构；未核对冻结权限，提供 --run <本次运行下载的run.json> 后核对共同方法集合和设备应答者座位',
     counts: {
       blocks: s.blocks.length,
       steps: s.steps.length,
@@ -204,6 +234,7 @@ export async function main(argv: string[]): Promise<number> {
   try {
     const args = parseOptions(argv);
     const targetInfo = await stat(args.file);
+    const run=args.run!==undefined?parsedPlanFile(basename(args.run),await readFile(args.run)):undefined;
 
     if (targetInfo.isDirectory()) {
       if (args.brief !== undefined) {
@@ -235,7 +266,7 @@ export async function main(argv: string[]): Promise<number> {
           });
           continue;
         }
-        const res = checkPlanObject(name, parsed);
+        const res = checkPlanObject(name, parsed, run);
         if (res.item) {
           const earlier = seenItems.get(res.item);
           if (earlier !== undefined) {
@@ -256,7 +287,7 @@ export async function main(argv: string[]): Promise<number> {
         ...dirProblems,
         ...failedItems.flatMap((r) =>
           r.problems.map((p) => ({
-            ...(p.code ? { code: p.code } : {}),
+            ...p,
             pointer: p.pointer ? `${r.file}${p.pointer}` : r.file,
             message: p.message,
           })),
@@ -370,7 +401,7 @@ export async function main(argv: string[]): Promise<number> {
       return 0;
     }
 
-    const res = checkPlanObject(name, parsed);
+    const res = checkPlanObject(name, parsed, run);
     process.stdout.write(JSON.stringify({ mode: 'plan', ...res }) + '\n');
     if (!res.ok) {
       writeProblemStderr(

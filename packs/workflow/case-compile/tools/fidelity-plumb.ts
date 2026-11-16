@@ -1,3 +1,4 @@
+import {CallFailure} from '../functions/text.ts';
 // Client-side Plumb scenario-fidelity verifier: builds briefs, evaluates steps via Plumb sequence (@2400), and writes .verdict.json.
 import { realpathSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -103,11 +104,6 @@ export async function runFidelityPlumb(
       if ((await readTextOrNull(bPath)) === null) {
         await writeNew(bPath, Buffer.from(JSON.stringify(planCase.brief, null, 2) + '\n'));
       }
-      if ((await readTextOrNull(vPath)) !== null) {
-        reused.push({ file: planCase.file, item: planCase.item, verdict: resolve(vPath) });
-        continue;
-      }
-
       const partitioned = partitionFidelityBlocks(planCase.brief);
       const stepQueries: PendingStepQuery[] = [];
       for (const [stepIdx, authorStep] of planCase.brief.author_steps.entries()) {
@@ -123,6 +119,14 @@ export async function runFidelityPlumb(
         const qid = `${caseIdx}:${authorStep.n}`;
         const requestSha256 = sha256Hex(stableStringify({ task: 'sequence', state: rendered.state }));
         stepQueries.push({ qid, caseIdx, stepIdx, state: rendered.state, requestSha256 });
+      }
+      const saved=await readTextOrNull(vPath);
+      if(saved!==null){
+        const doc=JSON.parse(saved);
+        const digest=sha256Hex(stepQueries.map(step=>step.requestSha256).join(','));
+        if(doc.model_disclosure?.prompt_version!=='sequence@product-2400-exemptions-v2'||doc.model_disclosure?.request_sha256!==digest)
+          throw new CallFailure('invalid_parameters','已有判断没有绑定本版完整豁免题目；不能复用旧题目的判断','保留旧文件，改用新的 --briefs 目录重新核对');
+        reused.push({file:planCase.file,item:planCase.item,verdict:resolve(vPath)});continue;
       }
       pendingCases.push({
         planCase,

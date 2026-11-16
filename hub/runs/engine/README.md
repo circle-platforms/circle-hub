@@ -1151,3 +1151,6 @@ and stored run bytes stay unchanged.
 `runVisible(user, run)` answers whether `getRun` would answer for the run: it applies the same run-visibility rule (`visibleRun`: the account is enabled, the reader may view the run, and the run's grounds are readable) and reads neither submissions, results, requests nor withdrawal state. The console live stream asks it for every run event instead of reading the full detail once per subscriber and run; an engine without the port keeps the old `getRun(...) !== null` answer. The port keeps no verdict of its own (the stream's 30-second verdict cache is unchanged), so a revoked share is seen by the next question. It does not shorten the detail page, the export or the summary reads.
 
 T8：run-jobs@1 的未派发作业导出可选 missing_facts/next_action，并在已记录时保留 member_missing_facts；管理员与成员分别按现有权限取得原因。既有 outcome、逐条判定、来源身份和设备自报限定不改变。
+
+
+T9（2026-11-16）：startFresh 已确认前序对调用者可见后，输入绑定或投影拒绝附本工作流同名输入槽的前序冻结身份（外部身份保留摘要）。仅披露已有事实，不增加缺省绑定或跨工作流推断；前序不可见时不读取或披露来源。

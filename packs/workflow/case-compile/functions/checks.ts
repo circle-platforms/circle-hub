@@ -66,13 +66,13 @@ function typedPrerequisites(s: CheckSubject, slots: PlanSlots, covered?: RunnerC
   // an already out-of-scope flat step) stay inside the single refute outcome as expected by author contracts.
   if (refuteGaps.length && !unknownGaps.some((gap) => gap.document === 'blocks')) {
     const first = refuteGaps[0]!;
-    const pointer = blockMeta(slots) && first.pointer.startsWith('/blocks/') ? '/data' + first.pointer : '/data';
+    const pointer = first.requested !== undefined || blockMeta(slots) && first.pointer.startsWith('/blocks/') ? '/data' + first.pointer : '/data';
     return [refute(s, 'method_forbidden', authorityRecovery(gaps) + cleanupText, pointer, { problems: gaps, obligations: gaps.flatMap((gap) => (gap.obligation ? [gap.obligation] : [])), ...cleanupData })];
   }
   const outcomes: Outcome[] = [];
   if (refuteGaps.length) {
     const first = refuteGaps[0]!;
-    const pointer = blockMeta(slots) && first.pointer.startsWith('/blocks/') ? '/data' + first.pointer : '/data';
+    const pointer = first.requested !== undefined || blockMeta(slots) && first.pointer.startsWith('/blocks/') ? '/data' + first.pointer : '/data';
     outcomes.push(refute(s, 'method_forbidden', authorityRecovery(refuteGaps) + cleanupText, pointer, { problems: refuteGaps, obligations: refuteGaps.flatMap((gap) => (gap.obligation ? [gap.obligation] : [])), ...cleanupData }));
   }
   if (unknownGaps.length) {

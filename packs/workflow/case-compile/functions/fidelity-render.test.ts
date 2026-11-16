@@ -5,7 +5,6 @@ import { estimateTokens } from './generated/skills/plumb/plumb-client/index.ts';
 import {
   FIDELITY_MAX_EST_TOKENS,
   formatBlockForFidelity,
-  isNegativeMissingPreconditionCase,
   partitionFidelityBlocks,
   renderFidelityStepState,
 } from './fidelity-render.ts';
@@ -22,7 +21,7 @@ const RECORD = {
   ledgers: { original: [], adapted: [], rebindings: [] },
 };
 
-test('partitionFidelityBlocks folds exempted precondition_source + paired cleanup:true while hiding worker prose', () => {
+test('partitionFidelityBlocks preserves all preconditions and cleanup while hiding worker prose', () => {
   const plan = {
     bucket: 'bed-1',
     blocks: [],
@@ -64,9 +63,9 @@ test('partitionFidelityBlocks folds exempted precondition_source + paired cleanu
   };
   const brief = fidelityBrief('doc:1', RECORD, plan)!;
   const part = partitionFidelityBlocks(brief);
-  assert.equal(part.negativeCase, false);
-  assert.deepEqual([...part.exemptedIndices].sort((a, b) => a - b), [1, 4]);
-  assert.deepEqual(part.candidateBlocks.map((b) => b.index), [2, 3]);
+  assert.equal(part.negativeCase, null);
+  assert.equal(part.exemptedIndices.size,0);
+  assert.deepEqual(part.candidateBlocks.map((b) => b.index), [1,2,3,4]);
 
   const rendered = renderFidelityStepState(brief, 1, part);
   assert.equal(rendered.overBudget, false);
@@ -109,7 +108,7 @@ test('negative missing-precondition cases NEVER fold away preconditions or clean
     replacements: [],
   };
   const brief = fidelityBrief('doc:neg', negRecord, negPlan)!;
-  assert.equal(isNegativeMissingPreconditionCase(brief), true);
+  // Negative-scenario meaning remains a model judgment; no keyword classifier runs.
   const part = partitionFidelityBlocks(brief);
   assert.equal(part.exemptedIndices.size, 0);
   assert.deepEqual(part.candidateBlocks.map((b) => b.index), [1, 2]);
@@ -159,4 +158,11 @@ test('renderFidelityStepState truncates oldest prior steps first, never slices m
   assert.ok(hugeRes.estTokensAfter > FIDELITY_MAX_EST_TOKENS);
   assert.ok(hugeRes.state.includes(formatBlockForFidelity(hugeBrief.blocks[0]!)));
   assert.ok(estimateTokens(hugeRes.state) > FIDELITY_MAX_EST_TOKENS);
+});
+
+test('Plumb receives all exemption evidence and the authoritative rule without folding claims',()=>{
+ const brief=fidelityBrief('doc:synthetic', {...RECORD,sources:{states:[{atom:'1',state:'missing_prerequisite',prerequisites:['manual-only-antecedent'],reason:'registered proof'}]}},{bucket:'bed-1',blocks:[],steps:[{object:'apv0',method:'cmd_config',args:['prepare'],keywords:{},precondition_source:{reference:'knowledge:manual',text:'exact manual antecedent'}}],expects:[],replacements:[]})!;
+ const part=partitionFidelityBlocks(brief),rendered=renderFidelityStepState(brief,0,part);
+ assert.deepEqual(part.candidateBlocks,brief.blocks);assert.match(rendered.state,/manual-only-antecedent/);assert.match(rendered.state,/exact manual antecedent/);assert.ok(rendered.state.includes(brief.rules[2]));
+ assert.doesNotMatch(rendered.state,/已核验豁免说明/);
 });

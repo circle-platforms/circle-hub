@@ -41,7 +41,6 @@ export function blockGraphGaps(contract:RuntimeContract,profile:RuntimeProfile,s
   const row=matches[0],at='/block_context/responders/'+context.responders.indexOf(row);
   if(!TABLE.responder_kinds.includes(row.kind))note(at,'应答者类型不在包声明闭集中',true);
   else if(row.kind==='undetermined')note(at,(row.missing??'应答者未定')+'；下一步：'+(row.next_action??'模型核对来源和请求链后补明确应答者'));
-  else if(row.kind==='device'&&!profile.seats.some(seat=>seat.device===row.ref))note(at,'设备应答者不在冻结设备座位中',true);
   else if(row.kind==='fixture'){const source=meta.steps.get(row.ref),target=meta.steps.get(step.id!);if(!source||!target||source>=target)note(at,'案内 fixture 必须指向本次观察之前已安排的步骤',true);}
   else if(row.kind==='bed_service'){if(!Array.isArray(services))note(at,'缺冻结自动化测试环境服务清单；下一步：补绑定 inventory 后重新核验');else if(!services.some(service=>isRecord(service)&&service.host===row.ref))note(at,'床服务应答者没有冻结服务声明',true);}
  }

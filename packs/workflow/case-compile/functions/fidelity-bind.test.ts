@@ -25,7 +25,7 @@ const PLAN = {
   replacements: [],
 };
 
-test('mapStepIndices binds via author_step_refs first and falls back to token overlap cleanly', () => {
+test('mapStepIndices binds explicit references and exact command literals without token or positional inference', () => {
   const brief = fidelityBrief('doc:1', RECORD, PLAN)!;
   const part = partitionFidelityBlocks(brief);
   assert.deepEqual(mapStepIndices(brief, brief.author_steps[0]!, 0, part), { indices: [1], tier: 'author_step_refs' });
@@ -36,8 +36,14 @@ test('mapStepIndices binds via author_step_refs first and falls back to token ov
   delete (unannotated.steps[1] as Record<string, unknown>).author_step_refs;
   const briefNoRefs = fidelityBrief('doc:2', RECORD, unannotated)!;
   const partNoRefs = partitionFidelityBlocks(briefNoRefs);
-  assert.deepEqual(mapStepIndices(briefNoRefs, briefNoRefs.author_steps[0]!, 0, partNoRefs).indices, [1]);
-  assert.deepEqual(mapStepIndices(briefNoRefs, briefNoRefs.author_steps[1]!, 1, partNoRefs).indices, [2]);
+  assert.throws(()=>mapPlumbSequenceToFidelityRow({brief:briefNoRefs,authorStep:briefNoRefs.author_steps[0],authorStepIndex:0,partitioned:partNoRefs,plumb:{kind:'choice',choice:'保持',value:'保持',confidence:0.95,gate:{action:'pass',calibrated:true}},modelVersion:'synthetic'}),/缺确定的计划步骤对应/);
+  const exact=structuredClone(briefNoRefs);exact.author_steps[0].adapted_commands=['ip address 192.0.2.10/24'];
+  assert.deepEqual(mapStepIndices(exact,exact.author_steps[0],0,partitionFidelityBlocks(exact)),{indices:[1],tier:'command_or_rebinding'});
+  exact.author_steps[0].adapted_commands=['ip address 198.51.100.99/24'];
+  assert.deepEqual(mapStepIndices(exact,exact.author_steps[0],0,partitionFidelityBlocks(exact)),{indices:[],tier:'none'});
+
+  assert.deepEqual(mapStepIndices(briefNoRefs, briefNoRefs.author_steps[0]!, 0, partNoRefs).indices, []);
+  assert.deepEqual(mapStepIndices(briefNoRefs, briefNoRefs.author_steps[1]!, 1, partNoRefs).indices, []);
 });
 
 test('mapPlumbSequenceToFidelityRow implements Option A1 gate mapping and fail-closed unbound guard', () => {

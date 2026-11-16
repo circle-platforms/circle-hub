@@ -721,3 +721,6 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 ### Foundation
 
 - Repository created from Circle's public TypeScript baseline with the preceding platform archived under `references/` and verified by SHA; MIT license confirmed for the project's own content.
+
+
+T9 local candidate (2026-11-16): case-compile 3.21.3 discloses frozen call boundaries and profile problems, requires frozen run input for plan checks, supplies complete fidelity exemption evidence, and refuses stale prompt verdict reuse. Start input failures include visible predecessor input identities without changing binding semantics. Unpublished and undeployed.

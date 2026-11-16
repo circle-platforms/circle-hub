@@ -221,3 +221,13 @@ test('fidelity-plumb honors Option A1 review/reject/strict-review and fails clos
     await rm(w.dir, { recursive: true, force: true });
   }
 });
+
+test('fidelity-plumb refuses old prompt verdicts before reuse or service calls',async()=>{
+ const w=await setupWorkspace(1);try{
+  mode='pass';const args=['--run',w.runPath,'--plans',w.plans,'--briefs',w.briefs,'--base-url',baseUrl,'--no-cache','--key-stdin'];
+  const first=await runFidelityPlumb(args,{stdinText:'plumb_sk_test_123456\n'});assert.equal(first.code,0,first.stderr);
+  const summary=JSON.parse(first.stdout),path=summary.written[0].verdict;
+  const doc=JSON.parse(await readFile(path,'utf8'));doc.model_disclosure.prompt_version='sequence@product-2400';await writeFile(path,JSON.stringify(doc));
+  postCount=0;const second=await runFidelityPlumb(args,{stdinText:'plumb_sk_test_123456\n'});assert.equal(second.code,1);assert.match(second.stderr,/不能复用旧题目/);assert.equal(postCount,0);
+ }finally{await rm(w.dir,{recursive:true,force:true});}
+});

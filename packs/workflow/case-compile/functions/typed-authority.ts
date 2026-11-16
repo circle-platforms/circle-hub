@@ -1,3 +1,4 @@
+import {callBoundaryGaps,type CallBoundaryGap} from './call-boundaries.ts';
 import {blockMeta,blockPointer} from './blocks.ts';
 import {cellInput} from './cell-selection.ts';
 import {CallFailure,isRecord} from './text.ts';
@@ -17,7 +18,7 @@ import {identityOf,identityKey,valueProblem,type Authority,type ValueType} from 
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 import {addressKey} from './manifest.ts';
-export interface AuthorityGap { document: string; pointer: string; message: string; verdict?:Verdict;obligation?:Record<string,unknown> }
+export interface AuthorityGap { document: string; pointer: string; message: string; verdict?:Verdict;obligation?:Record<string,unknown>;requested?:CallBoundaryGap['requested'];allowed_calls?:CallBoundaryGap['allowed_calls'];allowed_seats?:string[];step_pointer?:string }
 export function replacedIdentity(identity:CommandIdentity,slots:PlanSlots):CommandIdentity {
  const out=structuredClone(identity);for(const p of out.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const original=p.parsed.value.value;const replacement=slots.replacements.find(r=>addressKey(r.case)===addressKey(original));if(replacement){p.parsed.value.value=replacement.bed;p.raw=replacement.bed;}}return out;
 }
@@ -25,14 +26,14 @@ export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimePr
  const blockGaps=blockRuntimeGaps(contract,profile,slots,catalog);
  const meta=blockMeta(slots);
  if(blockGaps.length&&(meta?.deferred.length||!runtimeBlocks(contract)||profile.block_model!==true))return blockGaps;
- const gaps:AuthorityGap[]=[...blockGaps];const note=(pointer:string,message:string,verdict:Verdict='unknown')=>gaps.push({document:'contract',pointer,message,verdict});
+ const gaps:AuthorityGap[]=[...blockGaps,...callBoundaryGaps(contract,profile,slots)];const note=(pointer:string,message:string,verdict:Verdict='unknown')=>gaps.push({document:'contract',pointer,message,verdict});
  const resolution=planCommands(contract,profile,slots,catalog);gaps.push(...resolution.problems);gaps.push(...prepareRestores(contract,profile,slots,catalog,resolution.byLine,manifestSha));gaps.push(...blockGraphGaps(contract,profile,slots,catalog,resolution.byLine,services));const knownIds=Array.isArray(known)?known.map(identityOf):known===undefined?[]:null;
  const keys=new Set((knownIds??[]).filter((i):i is CommandIdentity=>i!==null).map(i=>definitionKey(replacedIdentity(i,slots))));
  const usage=new Map<string,{budget:number;count:number}>();
  const effectUse=(a:Authority,at:string)=>{for(const e of a.effects){const row=usage.get(e.id)??{budget:e.budget,count:0};row.count++;row.budget=Math.min(row.budget,e.budget);usage.set(e.id,row);if(row.count>row.budget)note(at,`效果 ${e.id} 的计划调用 ${row.count} 次超过声明预算 ${row.budget} 次`,'refute');}};
  for(const [index,step]of slots.steps.entries()){
   const at=`/steps/${index}`,entry=runtimeMethod(contract,step.object,step.method),allowed=profile.allowed.find(p=>p.object===step.object&&p.method===step.method);
-  if(!entry||!allowed){note(at,'方法不在合约与发布配置的共同允许集合','refute');continue;}
+  if(!entry||!allowed)continue;
   const a=entry.authority;if(!a){note(entry.sourcePointer??at,'缺 runtime-contract@2 的类型、角色闭集、效果表和来源引用；旧合约一律未核对');continue;}
   effectUse(a,at);
   const bound=bindArguments(entry,step,at,new Set(Object.entries(allowed.parameters).filter(([,role])=>role==='executor_return').map(([name])=>name)));for(const problem of bound.problems)note(problem.pointer,problem.message,'refute');

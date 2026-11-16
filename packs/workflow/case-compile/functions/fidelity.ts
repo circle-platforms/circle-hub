@@ -80,7 +80,7 @@ function preconditionExemptions(
     if (!isRecord(s)) continue;
     const state = text(s.state);
     const prerequisites = Array.isArray(s.prerequisites)
-      ? s.prerequisites.filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => cut(v.trim(), 240))
+      ? s.prerequisites.filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim())
       : [];
     if (state !== 'missing_prerequisite' && prerequisites.length === 0) continue;
     out.push({
@@ -89,7 +89,7 @@ function preconditionExemptions(
       ...(typeof s.atom === 'string' && s.atom ? { atom: s.atom } : {}),
       ...(state ? { state } : {}),
       ...(prerequisites.length ? { prerequisites } : {}),
-      ...(text(s.reason) ? { reason: cut(text(s.reason), 240) } : {}),
+      ...(text(s.reason) ? { reason: text(s.reason) } : {}),
     });
   }
   if (!planBlocks.length) {
@@ -104,7 +104,7 @@ function preconditionExemptions(
         step_indices: [k + 1],
         ...(step.cleanup === true ? { cleanup: true } : {}),
         reference,
-        text: cut(quoteText, LIMITS.expectation),
+        text: quoteText,
       });
     }
   } else {
@@ -131,7 +131,7 @@ function preconditionExemptions(
         ...(indices.length ? { step_indices: indices } : {}),
         ...(text(item.for) ? { for: cut(text(item.for), 120) } : {}),
         reference,
-        text: cut(quoteText, LIMITS.expectation),
+        text: quoteText,
       });
     }
   }

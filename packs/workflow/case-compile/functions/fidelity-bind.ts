@@ -1,9 +1,7 @@
 // Deterministic step_indices binding and Option A1 Plumb sequence gate-to-verdict mapping.
 import type { AuthorStep, FidelityBrief, FidelityRow, FidelityVerdict, ModelDisclosure, ModelJudgment } from './fidelity.ts';
 import {
-  blockAsserts,
   blockCommandLines,
-  commandHeadTokens,
   type PartitionedFidelityBlocks,
 } from './fidelity-render.ts';
 import type { PlumbGate, PlumbNormalizedAnswer } from './generated/skills/plumb/plumb-client/index.ts';
@@ -30,20 +28,6 @@ function normalizePlumbSequenceChoice(choice: string): '保持' | '改变' | '�
   return mapped;
 }
 
-function semanticTokens(text: string): Set<string> {
-  const out = new Set<string>();
-  for (const tok of commandHeadTokens(text)) {
-    out.add(tok);
-  }
-  const cjkRuns = text.match(/[\u4e00-\u9fff]{2,}/gu) ?? [];
-  for (const run of cjkRuns) {
-    for (let i = 0; i <= run.length - 2; i += 1) {
-      out.add(run.slice(i, i + 2));
-    }
-  }
-  return out;
-}
-
 function validBriefIndices(brief: FidelityBrief): Set<number> {
   return new Set(
     brief.blocks
@@ -52,18 +36,13 @@ function validBriefIndices(brief: FidelityBrief): Set<number> {
   );
 }
 
-/**
- * Maps an authored step deterministically onto `brief.blocks` indices across three fallback tiers:
- * 1) explicit `author_step_refs` annotations
- * 2) exact `adapted_commands` / `rebindings` literal matches
- * 3) token overlap & single-step/1-to-1 candidate correspondence (excluding folded exempted/cleanup steps).
- */
+/** Binds only explicit author references or whole adapted command literals; missing evidence stays unbound. */
 export function mapStepIndices(
   brief: FidelityBrief,
   authorStep: AuthorStep,
   authorStepIndex: number,
   partitioned: PartitionedFidelityBlocks,
-): { indices: number[]; tier: 'author_step_refs' | 'command_or_rebinding' | 'token_overlap' | 'none' } {
+): { indices: number[]; tier: 'author_step_refs' | 'command_or_rebinding' | 'none' } {
   const validIndices = validBriefIndices(brief);
 
   // Tier 1: explicit author_step_refs on plan blocks/steps.
@@ -79,67 +58,9 @@ export function mapStepIndices(
     return { indices: [...new Set(tier1)].sort((a, b) => a - b), tier: 'author_step_refs' };
   }
 
-  // Tier 2: adapted_commands head matching against non-exempt candidate blocks.
-  const candidates = partitioned.candidateBlocks.filter((blk) => {
-    const idx = typeof blk.index === 'number' ? blk.index : -1;
-    return validIndices.has(idx);
-  });
-  if (candidates.length === 0) return { indices: [], tier: 'none' };
-
-  if (authorStep.adapted_commands && authorStep.adapted_commands.length > 0) {
-    const adaptedHeads = authorStep.adapted_commands
-      .map((cmd) => commandHeadTokens(cmd).slice(0, 3).join(' '))
-      .filter((h) => h.length > 0);
-    const tier2: number[] = [];
-    for (const blk of candidates) {
-      const cmdStr = commandHeadTokens(blockCommandLines(blk).join(' ')).join(' ');
-      if (adaptedHeads.some((head) => cmdStr.includes(head))) {
-        tier2.push(blk.index as number);
-      }
-    }
-    if (tier2.length > 0) {
-      return { indices: [...new Set(tier2)].sort((a, b) => a - b), tier: 'command_or_rebinding' };
-    }
-  }
-
-  // Single author step cleanly owns all non-exempt, non-cleanup candidate blocks when present.
-  if (brief.author_steps.length === 1) {
-    return {
-      indices: [...new Set(candidates.map((c) => c.index as number))].sort((a, b) => a - b),
-      tier: 'token_overlap',
-    };
-  }
-
-  // Tier 3: overlap scoring between author step + expectations and candidate blocks.
-  const queryText = [authorStep.text, authorStep.author_text ?? '', ...(authorStep.adapted_commands ?? [])].join(' ');
-  const qTokens = semanticTokens(queryText);
-  const scored: Array<{ index: number; score: number }> = [];
-  for (const blk of candidates) {
-    const blkText = [
-      ...blockCommandLines(blk),
-      ...blockAsserts(blk),
-      typeof blk.kind === 'string' ? blk.kind : '',
-    ].join(' ');
-    const bTokens = semanticTokens(blkText);
-    let score = 0;
-    for (const tok of qTokens) {
-      if (bTokens.has(tok)) score += 1;
-    }
-    if (score >= 2) scored.push({ index: blk.index as number, score });
-  }
-  if (scored.length > 0) {
-    const maxScore = Math.max(...scored.map((s) => s.score));
-    const winners = scored.filter((s) => s.score >= Math.max(2, maxScore - 1)).map((s) => s.index);
-    return { indices: [...new Set(winners)].sort((a, b) => a - b), tier: 'token_overlap' };
-  }
-
-  // 1-to-1 structural fallback when candidate blocks match author steps count exactly.
-  if (candidates.length === brief.author_steps.length && candidates[authorStepIndex]) {
-    const positional = candidates[authorStepIndex].index;
-    if (typeof positional === 'number' && validIndices.has(positional)) {
-      return { indices: [positional], tier: 'token_overlap' };
-    }
-  }
+  const commands=authorStep.adapted_commands??[];
+  const exact=partitioned.candidateBlocks.filter(block=>validIndices.has(block.index as number)&&blockCommandLines(block).some(line=>commands.includes(line))).map(block=>block.index as number);
+  if(exact.length)return {indices:[...new Set(exact)].sort((a,b)=>a-b),tier:'command_or_rebinding'};
 
   return { indices: [], tier: 'none' };
 }
@@ -197,8 +118,7 @@ export function mapPlumbSequenceToFidelityRow(params: {
   }
 
   if (verdict === 'preserved' && stepIndices.length === 0) {
-    verdict = 'unrealized';
-    notes.push('未能确定对应计划步骤 index，按 fail-closed 降级为 unrealized');
+    throw new Error(`作者步骤 ${authorStep.n} 缺确定的计划步骤对应；在计划中补 author_step_refs 或完整 adapted_commands 对应后重跑，不能把缺对应依据判成未实现`);
   }
 
   if (partitioned.exemptSummaryLines.length > 0 && verdict === 'preserved') {
@@ -275,7 +195,7 @@ export function buildFidelityVerdictDocument(params: {
       decided_by: '模型',
       model_version: modelVersion,
       ...(requestSha256 ? { request_sha256: requestSha256 } : {}),
-      prompt_version: 'sequence@product-2400',
+      prompt_version: 'sequence@product-2400-exemptions-v2',
       review_required_steps: reviewSteps,
     },
   };

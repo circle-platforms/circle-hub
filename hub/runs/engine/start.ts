@@ -7,7 +7,7 @@ import { deviceHelpClaims, observationClaims } from './observations.ts';
 import type { DeviceHelpResult, DeviceHelpTarget, DeviceObservation } from '../../../contracts/src/pack.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
-import {defaultPredecessorInputs} from './predecessor-defaults.ts';
+import {defaultPredecessorInputs,predecessorInputRefusal} from './predecessor-defaults.ts';
 import { PublishableRequirementsFile } from '../../../contracts/src/pack.ts';
 import { recordResultRequests, putRequest, answerSuccessorRequests } from './requests.ts';
 import { authorOriginOf } from './lineage.ts';
@@ -654,7 +654,7 @@ async function startFresh(
 
   const feedingOffset=await ctx.deps.knowledge.feeding?.freeze(user,runId,target.root?.root??null);
   const feedingScope={composition:target.root?.composition??null,product:target.product?.product.id??null,root:target.root?.root??null,run:runId,line:target.line,feeding_offset:feedingOffset,declaredLine:workflow.workflow.feeding?.declared_line_parameter?parameters[workflow.workflow.feeding.declared_line_parameter] as string:undefined};
-  const bound = await step('bind-inputs', () => bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null,feedingScope));
+  const bound = await step('bind-inputs', () => bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null,feedingScope)).catch(error=>predecessorInputRefusal(error,predecessor?.body??null,workflow));
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const {criterionReview,criterionSnapshot,builds}=await step('read-context',async()=>({
@@ -695,7 +695,7 @@ async function startFresh(
     ...(builds !== null ? { builds } : {}),
     ...(leaseRows !== null ? { leases: { now: startedAt, registrations: leaseView!.registrations, entries: leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
-  const projection = await step('project-items', () => projectItems(ctx, user, workflow, bound, parameters, context, call.traceId));
+  const projection = await step('project-items', () => projectItems(ctx, user, workflow, bound, parameters, context, call.traceId)).catch(error=>predecessorInputRefusal(error,predecessor?.body??null,workflow));
   if(isPersonalSpace(workflow.pack.space)&&projection.leaseRequests.length)throw new Refusal([personalCapabilityError()]);
   const expected = await step('bind-expected', () => bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null));
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here

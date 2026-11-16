@@ -14,7 +14,7 @@ description: 把原始用例编成自动化用例，经 Hub 核对、生成 Exce
 已备好简报后，在工作目录运行：
 
 ```sh
-node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成用例 A' --brief 'briefs/0.md' --out 'plans/0.json' --task-file 'tasks/0.md'
+node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成用例 A' --brief 'briefs/0.md' --out 'plans/0.json' --task-file 'tasks/0.md' --run 'plan-run'
 ```
 
 本地工具在 `<技能目录>`（用安装工具或按 Hub 命令**装进当前主目录的 `skills` 目录**，别处守卫拒执行）。文件工具限工作目录相对路径（`.`）及只读 `<技能目录>`，写入禁出工作目录（禁 `/tmp`）。触发本地脚本与 Hub 工具时，`execute` 使用本文列出的实际工具命令，技能脚本路径和值分别用单引号引用，每条命令只占一行（禁 `=`）；列目录用 `ls`，找文件用 `glob`，搜文本用 `grep`。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端展开；需令牌的命令把 `node` 命令行与 `<<'EOF'` 写在同一行（空格隔开，切勿在 `<<'EOF'` 前换行），下一行只写 `%HUB_TOKEN%`，再一行只写 `EOF`，令牌不落盘。
@@ -35,14 +35,15 @@ node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成�
 
 一条原始用例一个子代理：装了 `case-writers` 用 `write_case_plans`，否则 `task-brief.ts --role '脚本编写'` 写盘并原样传提示，**同条消息以前台方式并列多个 `task`（`subagent_type="case-compile:compile-writer"`，严禁用 `background`）**，不合并、**每批最多 6 个**，失败项单独重派。清理分工（存盘禁入 `cleanup:true`）、`adapted` 不是步骤白名单（补 `sources.states` 或手册/示例前置，附 `precondition_source` 与配对清理，不改“前置不存在”测试）与语法由包内定义与 `task-brief.ts` 注入；受限结构/示例/分块在 `<技能目录>/slots.schema.json`、`examples/submit-result.json`、`tables/blocks-format.json`。只在答案会改变做法、资料里又查不到时问使用者（设备的问题还是原始用例的问题，需要使用者决定），能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 
-每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，先把这条现有计划交给 Hub 核对，取得对本条具名的缺失事实和请求后，下一个脚本编写运行才排除它、其余继续；没有这条 Hub 记录，不把模型笔记称为“Hub 点名”。作者步骤与手册冲突时按 tools/delivery.md 写结构化 author_conflict，并保留逐字引文交作者或使用者裁定。只读自检单个计划或目录跑 `tools/check-plan.ts`。
+每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，先把这条现有计划交给 Hub 核对，取得对本条具名的缺失事实和请求后，下一个脚本编写运行才排除它、其余继续；没有这条 Hub 记录，不把模型笔记称为“Hub 点名”。作者步骤与手册冲突时按 tools/delivery.md 写结构化 author_conflict，并保留逐字引文交作者或使用者裁定。计划自检跑 `tools/check-plan.ts --file <计划> --run <运行目录/run.json>`。
 
 ### 主会话参数与本地工具命令
 
-以下参数只供主会话调用，不进使用者答复：
+主会话参数，不进使用者答复：
 
 ```text
 start_run: pack=case-compile; predecessor=<test-bed acquire run>
+不要从记忆填写旧版本。
 product/build/version: start_run 顶层，不放 parameters
 inputs: subject/contract/inventory/profile；后三项用发布的 doc:doc
 profile: device_count 只读预检及可选 fold_newlines

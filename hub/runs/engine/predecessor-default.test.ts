@@ -254,3 +254,14 @@ test('predecessor selection holds the submission key across every result page',a
   await writer;
   assert.equal((await select())!.digest,newer.digest,'the next selection sees the newly accepted result');
 });
+
+test('input binding refusals disclose same-named frozen predecessor inputs without enabling defaulting',{skip},async()=>{
+ const w=await setup({declared:false});try{
+  await w.submit();const result=await w.h.service.getResult(w.h.alice,w.draft.run);assert.ok(result);
+  const answer=await w.h.service.startRun(w.h.alice,{...w.input,inputs:{map:{external:'doc:doc:missing-map'},draft:{reference:'rec:'+result.record}}},w.h.call('hint-only'));
+  assert.equal(answer.call_result,'error');
+  assert.ok(answer.errors.some(error=>error.fix?.includes(w.map)&&error.fix?.includes('前序冻结输入')));
+  const hidden=await w.h.service.startRun(w.h.bob,{...w.input,inputs:{map:{external:'doc:doc:missing-map'}}},w.h.call('hidden-predecessor'));
+  assert.ok(!JSON.stringify(hidden.errors).includes(w.map));
+ }finally{await w.close();}
+});

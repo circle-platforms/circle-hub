@@ -15,7 +15,7 @@ const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
   const manifest = await computeManifest();
   assert.equal(PackManifest.safeParse(manifest).success, true);
-  assert.equal(manifest.version, '3.21.2');
+  assert.equal(manifest.version, '3.21.3');
   assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`);
   assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles();
@@ -346,4 +346,9 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
     assert.ok(doc.includes('sdns listener <arg1:ipv4/ipv6>'), 'must include negative template placeholder example');
   }
   assert.ok(!recomposer.includes('recompose-record.schema.json'));
+});
+
+test('start examples delegate version selection to Hub and skill forbids memory-pinned versions',()=>{
+ const example=JSON.parse(read('examples/start-run.json'));assert.equal(example.arguments.pack,'case-compile');
+ assert.match(read('SKILL.md'),/不要从记忆填写旧版本/);
 });

@@ -592,6 +592,7 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
   let brief = renderTaskBrief({
     ...(caseTitle === undefined ? {} : { caseTitle }),
     role,
+    ...(options.runDir!==undefined&&role.key==='plan'?{frozenRunPath:join(resolveExistingDirInsideCwd(cwd, options.runDir, '--run').canonical,'run.json')} : {}),
     caseRef,
     briefPath,
     outPath,

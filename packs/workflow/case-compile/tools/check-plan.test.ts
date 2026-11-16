@@ -116,15 +116,15 @@ test('valid flat and B1 block plans expand length placeholders in memory without
     await writeFile(b1File, b1Raw, 'utf8');
 
     const flatRes = await runCli(['--file', flatFile]);
-    assert.equal(flatRes.code, 0, flatRes.stderr);
+    assert.equal(flatRes.code, 1, flatRes.stderr);
     const flatReport = JSON.parse(flatRes.stdout);
-    assert.deepEqual([flatReport.ok, flatReport.kind, flatReport.counts.steps, flatReport.counts.cleanup_steps, flatReport.counts.expects], [true, 'flat', 2, 1, 1]);
+    assert.deepEqual([flatReport.structure_ok, flatReport.kind, flatReport.counts.steps, flatReport.counts.cleanup_steps, flatReport.counts.expects], [true, 'flat', 2, 1, 1]);
     assert.equal(flatReport.expansions.length, 1);
 
     const nameRes = await runCli(['--file', b1File]);
-    assert.equal(nameRes.code, 0, nameRes.stderr);
+    assert.equal(nameRes.code, 1, nameRes.stderr);
     const b1Report = JSON.parse(nameRes.stdout);
-    assert.deepEqual([b1Report.ok, b1Report.kind, b1Report.counts.blocks], [true, 'blocks', 2]);
+    assert.deepEqual([b1Report.structure_ok, b1Report.kind, b1Report.counts.blocks], [true, 'blocks', 2]);
 
     // Read-only guarantee: byte-for-byte unchanged on disk.
     const { readFile } = await import('node:fs/promises');
@@ -135,7 +135,8 @@ test('valid flat and B1 block plans expand length placeholders in memory without
     const nameFile = join(dir, 'name64.json');
     await writeFile(nameFile, JSON.stringify(flatPlan('doc:c', ['widget id {{name:64}}'])));
     const name64 = await runCli(['--file', nameFile]);
-    assert.equal(name64.code, 0, name64.stderr);
+    assert.equal(name64.code, 1, name64.stderr);
+    assert.equal(JSON.parse(name64.stdout).structure_ok,true);
     assert.equal(JSON.parse(name64.stdout).expansions.length, 1);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -214,15 +215,17 @@ test('directory mode checks every plan file and catches duplicates with 已被�
     await writeFile(join(okDir, '01.json'), JSON.stringify(flatPlan('doc:1')));
     await writeFile(join(okDir, '02.json'), JSON.stringify(b1Plan('doc:2')));
     const okRes = await runCli(['--file', okDir]);
-    assert.equal(okRes.code, 0, okRes.stderr);
+    assert.equal(okRes.code, 1, okRes.stderr);
     const okReport = JSON.parse(okRes.stdout);
-    assert.deepEqual([okReport.mode, okReport.checked, okReport.passed, okReport.failed], ['directory', 2, 2, 0]);
+    assert.deepEqual([okReport.mode, okReport.checked, okReport.passed, okReport.failed], ['directory', 2, 0, 2]);
 
     const dupDir = join(dir, 'dup-plans');
     await mkdir(dupDir);
     await writeFile(join(dupDir, '01.json'), JSON.stringify(flatPlan('doc:dup')));
     await writeFile(join(dupDir, '02.json'), JSON.stringify(flatPlan('doc:dup')));
-    const dupRes = await runCli(['--file', dupDir]);
+    const {CONTRACT_DOC,PROFILE_DOC,MANIFEST_DOC}=await import('../functions/test-support.ts');
+    const run=join(dir,'run.json');await writeFile(run,JSON.stringify({groups:[{kind:'case-compile',contract:CONTRACT_DOC,profile:PROFILE_DOC,manifest:MANIFEST_DOC}],items:[{id:'doc:dup'}]}));
+    const dupRes = await runCli(['--file', dupDir,'--run',run]);
     assert.equal(dupRes.code, 1);
     assert.match(dupRes.stderr, /^已被占用：/);
   } finally {
@@ -377,7 +380,9 @@ test('check-plan accepts valid precondition_source on flat steps and rejects mal
       }),
     );
     const validRes = await runCli(['--file', validPath]);
-    assert.equal(validRes.code, 0, validRes.stdout + validRes.stderr);
+    assert.equal(validRes.code, 1, validRes.stdout + validRes.stderr);
+    assert.equal(JSON.parse(validRes.stdout).structure_ok,true);
+    assert.deepEqual(JSON.parse(validRes.stdout).problems.map((p:any)=>p.code),['missing_frozen_run']);
 
     const invalidPath = join(dir, 'invalid.json');
     const badJson = JSON.parse(await readFile(validPath, 'utf8'));
@@ -389,4 +394,21 @@ test('check-plan accepts valid precondition_source on flat steps and rejects mal
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// T9: a syntax-only pass cannot claim the frozen authority boundary passed.
+test('plan checks disclose missing frozen run and share Hub method refusal with --run',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'plan-frozen-'));
+ try {
+  const {CONTRACT_DOC,PROFILE_DOC,MANIFEST_DOC}=await import('../functions/test-support.ts');
+  const plan=flatPlan();const file=join(dir,'plan.json'),run=join(dir,'run.json');
+  await writeFile(file,JSON.stringify(plan));
+  const syntax=await runCli(['--file',file]);
+  const syntaxResult=JSON.parse(syntax.stdout);assert.equal(syntaxResult.ok,false);assert.equal(syntaxResult.structure_ok,true);assert.equal(syntaxResult.authority_checked,false);assert.match(syntaxResult.disclosure,/冻结/);
+  await writeFile(run,JSON.stringify({run:'run_synthetic',groups:[{kind:'case-compile',contract:CONTRACT_DOC,profile:PROFILE_DOC,manifest:MANIFEST_DOC}],items:[{id:plan.item}]}));
+  plan.slots.plan[0].data.steps[0].object='invented-seat';await writeFile(file,JSON.stringify(plan));
+  const checked=await runCli(['--file',file,'--run',run]);assert.equal(checked.code,1,checked.stderr);
+  const result=JSON.parse(checked.stdout);assert.equal(result.authority_checked,true);
+  assert.ok(result.problems.some((p:any)=>p.code==='case-compile.method_forbidden'&&p.requested.object==='invented-seat'&&p.allowed_calls.length>0));
+ }finally{await rm(dir,{recursive:true,force:true});}
 });

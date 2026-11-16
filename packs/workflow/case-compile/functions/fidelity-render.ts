@@ -1,15 +1,12 @@
-// Deterministic exemption folding, fact formatting, and 2400-token budgeting for Plumb scenario_fidelity.
+// Complete exemption evidence, fact formatting, and 2400-token budgeting for Plumb scenario_fidelity.
 import type { AuthorStep, FidelityBrief } from './fidelity.ts';
 import { estimateTokens } from './generated/skills/plumb/plumb-client/index.ts';
 import { isRecord } from './text.ts';
 
 export const FIDELITY_MAX_EST_TOKENS = 2400;
 
-const NEGATIVE_MISSING_PRECOND_RE =
-  /(?:(?:前置|前提|对端|全局开关|监听|依赖对象|配置).{0,10}(?:未配置|未创建|不存在|未开启|未启用|缺失)|(?:未配置|未创建|不存在|未开启|未启用|缺少).{0,12}(?:前置|前提|对端|peer|监听|开关|场景|条件))/iu;
-
 export interface PartitionedFidelityBlocks {
-  negativeCase: boolean;
+  negativeCase: null;
   exemptedIndices: Set<number>;
   cleanupIndices: Set<number>;
   candidateBlocks: Array<Record<string, unknown>>;
@@ -65,135 +62,9 @@ export function blockAsserts(block: Record<string, unknown>): string[] {
   return out;
 }
 
-/** Extracts normalized lowercase alphanumeric/word tokens for deterministic command/prerequisite matching. */
-export function commandHeadTokens(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9._-]+/u)
-    .filter((tok) => tok.length >= 2 && tok !== 'no' && tok !== 'del' && tok !== 'delete');
-}
-
-/** Detects explicit negative cases verifying missing/absent prerequisites so they never fold away preconditions. */
-export function isNegativeMissingPreconditionCase(brief: FidelityBrief): boolean {
-  const texts: string[] = [brief.intent];
-  for (const step of brief.author_steps) {
-    texts.push(step.text);
-    if (step.author_text) texts.push(step.author_text);
-  }
-  for (const exp of brief.expectations) {
-    texts.push(exp.text);
-  }
-  return texts.some((t) => NEGATIVE_MISSING_PRECOND_RE.test(t));
-}
-
-function cmdMatchesPrerequisite(block: Record<string, unknown>, prerequisiteText: string): boolean {
-  const prereqTokens = commandHeadTokens(prerequisiteText);
-  if (prereqTokens.length === 0) return false;
-  const cmdText = blockCommandLines(block).join(' ');
-  const cmdTokens = new Set(commandHeadTokens(cmdText));
-  let hits = 0;
-  for (const tok of prereqTokens) {
-    if (cmdTokens.has(tok)) hits += 1;
-  }
-  return hits >= Math.min(2, prereqTokens.length);
-}
-
-function cleanupMatchesPartner(cleanupBlock: Record<string, unknown>, partnerBlock: Record<string, unknown>): boolean {
-  const cleanHost = blockHost(cleanupBlock);
-  const partnerHost = blockHost(partnerBlock);
-  if (cleanHost && partnerHost && cleanHost !== partnerHost) return false;
-  if (typeof cleanupBlock.for === 'string' && cleanupBlock.for === partnerBlock.id) return true;
-  const cleanTokens = new Set(commandHeadTokens(blockCommandLines(cleanupBlock).join(' ')));
-  const partnerTokens = commandHeadTokens(blockCommandLines(partnerBlock).join(' '));
-  let hits = 0;
-  for (const tok of partnerTokens) {
-    if (cleanTokens.has(tok)) hits += 1;
-  }
-  return hits >= Math.min(2, Math.max(1, partnerTokens.length));
-}
-
-/**
- * Separates Hub-verified added_precondition steps and paired cleanup:true steps out of the candidate
- * action list when safe (never in negative missing-precondition cases, and never when author_step_refs binds a block).
- */
+/** Exemptions are evidence for model judgment, not a program-derived permission to erase candidate actions. */
 export function partitionFidelityBlocks(brief: FidelityBrief): PartitionedFidelityBlocks {
-  const allBlocks = brief.blocks;
-  const negativeCase = isNegativeMissingPreconditionCase(brief);
-  const exemptedIndices = new Set<number>();
-  const cleanupIndices = new Set<number>();
-  const exemptSummaryLines: string[] = [];
-
-  if (!negativeCase) {
-    const explicitRefs = new Set<number>();
-    for (const blk of allBlocks) {
-      if (Array.isArray(blk.author_step_refs) && blk.author_step_refs.length > 0 && typeof blk.index === 'number') {
-        explicitRefs.add(blk.index);
-      }
-    }
-
-    const statePrereqs: string[] = [];
-    for (const ex of brief.mechanical.exemptions) {
-      if (ex.kind !== 'added_precondition') continue;
-      if (Array.isArray(ex.step_indices)) {
-        for (const idx of ex.step_indices) {
-          if (typeof idx === 'number' && !explicitRefs.has(idx)) exemptedIndices.add(idx);
-        }
-      }
-      if (ex.origin === 'record.sources.states' && Array.isArray(ex.prerequisites)) {
-        for (const p of ex.prerequisites) {
-          if (typeof p === 'string' && p.trim()) statePrereqs.push(p.trim());
-        }
-      }
-    }
-
-    if (statePrereqs.length > 0) {
-      const authoredText = brief.author_steps.map((s) => `${s.text} ${s.author_text ?? ''} ${(s.adapted_commands ?? []).join(' ')}`).join(' ').toLowerCase();
-      for (const blk of allBlocks) {
-        const idx = typeof blk.index === 'number' ? blk.index : -1;
-        if (idx <= 0 || explicitRefs.has(idx) || exemptedIndices.has(idx)) continue;
-        const cmds = blockCommandLines(blk).join(' ').toLowerCase();
-        const matchesAuthorLiterally = cmds.length > 0 && authoredText.includes(cmds);
-        if (!matchesAuthorLiterally && statePrereqs.some((p) => cmdMatchesPrerequisite(blk, p))) {
-          exemptedIndices.add(idx);
-        }
-      }
-    }
-
-    const nonCleanupBlocks = allBlocks.filter((b) => b.cleanup !== true && b.kind !== 'RESTORE_FROM');
-    for (const blk of allBlocks) {
-      const idx = typeof blk.index === 'number' ? blk.index : -1;
-      if (idx <= 0 || explicitRefs.has(idx) || exemptedIndices.has(idx)) continue;
-      const isCleanup = blk.cleanup === true || blk.kind === 'RESTORE_FROM';
-      if (!isCleanup) continue;
-      if (nonCleanupBlocks.some((partner) => cleanupMatchesPartner(blk, partner))) {
-        cleanupIndices.add(idx);
-      }
-    }
-
-    if (exemptedIndices.size > 0) {
-      exemptSummaryLines.push(`已核验前置步骤（index=${[...exemptedIndices].sort((a, b) => a - b).join(',')}）依 added_precondition 豁免`);
-    }
-    if (cleanupIndices.size > 0) {
-      exemptSummaryLines.push(`已配对清理步骤（index=${[...cleanupIndices].sort((a, b) => a - b).join(',')}）随主配置清理豁免`);
-    }
-  }
-
-  let candidateBlocks = allBlocks.filter((blk) => {
-    const idx = typeof blk.index === 'number' ? blk.index : -1;
-    return !exemptedIndices.has(idx) && !cleanupIndices.has(idx);
-  });
-  if (candidateBlocks.length === 0 && allBlocks.length > 0) {
-    candidateBlocks = allBlocks;
-  }
-
-  return {
-    negativeCase,
-    exemptedIndices,
-    cleanupIndices,
-    candidateBlocks,
-    allBlocks,
-    exemptSummaryLines,
-  };
+ return {negativeCase:null,exemptedIndices:new Set(),cleanupIndices:new Set(),candidateBlocks:brief.blocks,allBlocks:brief.blocks,exemptSummaryLines:[]};
 }
 
 /** Renders one plan block deterministically without leaking worker prose (`description`/`desc`/`rationale`). */
@@ -262,10 +133,8 @@ export function renderFidelityStepState(
   const currentSec = renderCurrentStepSection(current, brief);
 
   const blockLines = partitioned.candidateBlocks.map(formatBlockForFidelity);
-  const exemptNote = partitioned.exemptSummaryLines.length > 0
-    ? `\n\n[已核验豁免说明]\n${partitioned.exemptSummaryLines.join('\n')}`
-    : '';
-  const blockSec = `[候选命令块]\n${blockLines.join('\n')}${exemptNote}`;
+  const exemptionSec = `[前置豁免规则]\n${brief.rules[2]}\n\n[mechanical.exemptions 原始依据，相关性及反向场景由模型核对]\n${JSON.stringify(brief.mechanical.exemptions)}`;
+  const blockSec = `[候选命令块]\n${blockLines.join('\n')}\n\n${exemptionSec}`;
 
   const full = joinSections([headerSec, renderPriorSection(priorSteps), currentSec, blockSec]);
   const estTokensBefore = estimateTokens(full);
