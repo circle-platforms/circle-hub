@@ -1,3 +1,4 @@
+import {labelOf} from './generated/vocabulary.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { authorConflictProblems, CLOSING, closeFailed, closeUnrun, closingCounts, closingLine, lockedStatements, readNotes, type AuthorConflict, type CaseOutcome, type ConflictGround, type MissingFact, type Notes } from './delivery.ts';
@@ -127,7 +128,7 @@ test('the report names the closing and what was and was not checked, in plain wo
   assert.match(exhaustedLine, /计划已交给 Hub.*也没有被脚本合并接受.*不能据此确认原因在编写模型/);
   const auditedLine = closingLine({ ...failed('c5'), rounds: 2, closing: 'authoring_failure', history: [{ ordinal: 1, run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', job: 'job_1', terminal: 'pass', audit: { where: 'stdout', line: 'ERROR: bad' } }] })!;
   assert.doesNotMatch(auditedLine, /InfoTest/);
-  assert.equal(closingCounts([at(1), { ...failed('c2'), rounds: 3, closing: 'authoring_failure' }, { ...failed('c3', 'unrun'), closing: 'author_conflict', conflict: CONFLICT }]), '原始用例 c1，原因还没查清。原始用例 c2，原因还没查清。原始用例 c3，原因还没查清。');
+  assert.equal(closingCounts([at(1), { ...failed('c2'), rounds: 3, closing: 'authoring_failure' }, { ...failed('c3', 'unrun'), closing: 'author_conflict', conflict: CONFLICT }]), `原始用例 c1，原因${labelOf('attribution','author_input')}。原始用例 c2，原因${labelOf('attribution','unattributed')}。原始用例 c3，原因${labelOf('attribution','author_input')}。`);
 });
 
 test('the statements of the cited entries come from the Hub’s batch of the locked root and from nothing else', () => {
