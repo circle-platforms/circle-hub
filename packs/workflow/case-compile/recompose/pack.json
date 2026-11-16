@@ -90,8 +90,8 @@
     },
     {
       "path": "functions/local-checks.ts",
-      "sha256": "725f7dacc0e753abfba48e221f8b898671f0269841c35d066dcd84f161f5e24c",
-      "size": 24367
+      "sha256": "d17af714ca24e8348b1b1c821716dca4d343c232f8aed532cfc294a0dd170668",
+      "size": 25204
     },
     {
       "path": "functions/project.ts",

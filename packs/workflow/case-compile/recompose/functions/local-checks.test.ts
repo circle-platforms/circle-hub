@@ -54,6 +54,14 @@ test('the catalog the local runner selects is the catalog the Hub\'s selection a
     entry(['widget', 'overload'], 'a'),
     entry(['widget', 'overload'], 'b', [param('mode', 'string')]),
     entry(['gadget']),
+    // A definition a manual produced has no overloads of its own: the Hub takes it as a command without arguments, and when the
+    // command tree also defines the head, as the first of the two (round 33's real tree has such a head).
+    { words: ['widget', 'bare'], signatures: undefined as unknown as Row[] },
+    { words: ['widget', 'both'], signatures: undefined as unknown as Row[] },
+    entry(['widget', 'both'], 'z'),
+    // Not catalog data: no words, or overloads that are no list.
+    { words: [], signatures: [] },
+    { words: ['widget', 'broken'], signatures: 'none' as unknown as Row[] },
   ];
   const text = knowledgeNodes(ROOT, RUN, entries);
   const nodes = parsed(text);
@@ -61,6 +69,7 @@ test('the catalog the local runner selects is the catalog the Hub\'s selection a
     ['widget health interval pool1 5'],
     ['widget pool add pool1', 'widget pool add pool1', 'show health pool1'],
     ['widget overload x', 'gadget'],
+    ['widget bare', 'widget both x', 'widget broken'],
     ['widget health "interval" pool1', 'widget health probe pool1'],
     ['nothing here', 'widget', '', 'widget pool'],
     ['widget health interval \'pool1\' 5'],

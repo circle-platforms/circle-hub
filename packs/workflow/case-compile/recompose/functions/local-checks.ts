@@ -53,6 +53,17 @@ export async function readKnowledgeNodes(runDir: string, run: Row): Promise<Know
   return new Map(nodes.filter(isRecord).filter((node) => typeof node.path === 'string').map((node) => [node.path as string, node]));
 }
 
+/**
+ * The catalog data of a definition as the Hub reads it (hub/knowledge/produce.ts catalogData: catalog-entry@1): the head words, and
+ * the overloads, which a definition without any takes as none (a command without arguments). Null when it is not catalog data.
+ */
+function catalogData(data: unknown): { words: string[]; signatures: Row[] } | null {
+  if (!isRecord(data) || !Array.isArray(data.words) || data.words.length === 0 || data.words.some((word) => typeof word !== 'string' || word.length === 0)) return null;
+  const signatures = data.signatures ?? [];
+  if (!Array.isArray(signatures) || signatures.some((signature) => !isRecord(signature) || !Array.isArray(signature.params) || Object.keys(signature).some((key) => !['id', 'params', 'reference', 'access'].includes(key)))) return null;
+  return { words: data.words as string[], signatures };
+}
+
 const SELECTION_ERROR = '目录选择必须声明路径和至多 128 条完整命令，每条至多 8192 字节；拆分计划后重核';
 const UNREADABLE_PATH = '缺锁定目录的所选路径；管理员修复目录读取后原样重交，不用整棵目录代替';
 
@@ -85,10 +96,12 @@ export function selectedCatalog(nodes: KnowledgeNodes, selection: unknown): { en
   }
   let bytes = 0;
   for (const path of passed) {
-    const kept = (nodes.get(path)!.entries as Row[]).filter((row) => row.kind === 'definition' && isRecord(row.data) && Array.isArray(row.data.words) && Array.isArray(row.data.signatures));
+    const kept = (nodes.get(path)!.entries as Row[]).filter((row) => row.kind === 'definition');
     if (selected.size + kept.length > 512) return { missing: '所选路径超过 512 个目录条目；拆分计划后重核' };
     for (const row of kept) {
-      const entry = { words: row.data.words, signatures: row.data.signatures, reference: row.reference };
+      const data = catalogData(row.data);
+      if (data === null) continue;
+      const entry = { words: data.words, signatures: data.signatures, reference: row.reference };
       bytes += Buffer.byteLength(JSON.stringify(entry));
       if (bytes > 1024 * 1024) return { missing: '所选目录超过 1 MiB；拆分计划后重核' };
       selected.set(path + '@' + row.entry, entry);
