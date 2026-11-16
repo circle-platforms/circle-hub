@@ -9,7 +9,7 @@ description: 把原始用例编成自动化用例，经 Hub 核对、生成 Exce
 
 主代理先在工作目录写 `scope.md`：首行 `# 使用者原话，由主会话记录`，正文逐字抄录范围，变更逐字追加，不改写或缩减。首次只做部分用例时，从首次 `recompose` 起传同一 `parameters.scope`，`scope.md` 与 `parameters.scope.words` 同原话，首次开运行时定死。单条范围可按 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只传全局原文与本案分节；未写范围不得派发。各阶段只用 `task-brief.ts` 经 `--task-file` 写任务，标准输出的短派发提示原样传给 `task.description`，`subagent_type` 用输出的 `case-compile:compile-*`。
 
-任务参数：`--role` 取用例重组、脚本编写、保真核对或失败分析；`--case` 为用例或范围，`--brief` 为输入，`--out` 为目标，`--task-file` 为任务文件。可选 `--scope`、`--note`；返工加 `--round`、`--run`、`--item`、`--prior-plans`、`--prior-returns`、`--prior-answers`、`--prior-notes`，或 `--brief-json`。路径和值均单引号引用。
+任务参数：`--role` 取用例重组、脚本编写、保真核对或失败分析；`--case` 为用例或范围，`--brief` 为输入，`--out` 为目标，`--task-file` 为任务文件。可选 `--scope`、`--note`；返工加 `--round`、`--run`、`--item`、`--prior-plans`、`--prior-returns`、`--prior-answers`、`--prior-notes`，或 `--brief-json`。
 
 已备好简报后，在工作目录运行：
 
@@ -31,7 +31,7 @@ node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成�
 
 ## 2. 脚本编写
 
-先整份下载再读原始用例，本地读搜 `knowledge/`（“· 引用”行是标注，下面是原文），不逐页读 Hub。`items/<序号>.json`、`briefs/<序号>.md` 列有命令、参数、恢复法与待填计划。派发前先 `ls` 核对实名（`<10` 条为 `0.md` 非 `00.md`），文件落盘后再调 `task-brief.ts`；未写完 `plans/*.json` 禁跑 `fidelity-plumb.ts` / `fidelity-brief.ts` 或下游。
+先整份下载再读原始用例，本地读搜 `knowledge/`（“· 引用”行是标注，下面是原文），不逐页读 Hub；查命令写法跑 `tools/cmd-lookup.ts --run <运行目录/run.json> --param '<命令>'`，不逐段 grep。`items/<序号>.json`、`briefs/<序号>.md` 列有命令、参数、恢复法与待填计划。派发前先 `ls` 核对实名（`<10` 条为 `0.md` 非 `00.md`），文件落盘后再调 `task-brief.ts`；未写完 `plans/*.json` 禁跑 `fidelity-plumb.ts` / `fidelity-brief.ts` 或下游。
 
 一条原始用例一个子代理：装了 `case-writers` 用 `write_case_plans`，否则 `task-brief.ts --role '脚本编写'` 写盘并原样传提示，**同条消息以前台方式并列多个 `task`（`subagent_type="case-compile:compile-writer"`，严禁用 `background`）**，不合并、**每批最多 6 个**，失败项单独重派。清理分工（存盘禁入 `cleanup:true`）、`adapted` 不是步骤白名单（补 `sources.states` 或手册/示例前置，附 `precondition_source` 与配对清理，不改“前置不存在”测试）与语法由包内定义与 `task-brief.ts` 注入；受限结构/示例/分块在 `<技能目录>/slots.schema.json`、`examples/submit-result.json`、`tables/blocks-format.json`。只在答案会改变做法、资料里又查不到时问使用者（设备的问题还是原始用例的问题，需要使用者决定），能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 
@@ -130,6 +130,6 @@ tools/delivery.md 带 `--wait 3600` 的下载**必须 `background` 启动**（�
 
 ## 5. 失败分析
 
-每条原始用例最多编写并上机 3 轮；第 3 轮仍未写对即停止上机验证、写结论并组交付目录，严禁第 4 轮。完整读 `index.json`（含 `execution_refused`、`syntax_rejected`）、逐条会话与 `log.txt` 互校（可用 `tools/task-brief.ts --role '失败分析' --round <n>` 写盘派只读子代理，在 `notes.json` 记 `"round"` 且不改计划）后再写原因与下一步。先核版本一致、配置生效与手册及示例前置（含对端配对）是否漏写，查多案同症共因。上轮改过再跑仍出同句设备报错即证伪上轮假设，必须换向；设备点出所缺且手册/示例支持未试假设时，尚有轮次就必须下一轮先试，不得以“缺资料”或“剩一次机会”为由不试；轮次用完不开第 4 轮，按收尾规矩写结论（没有结构化归因时原因写还没查清），把未试的假设和试法写进下一步，交使用者决定（无任何来源支持才归“缺资料”）。确认返工：未进 `merge_run` 且 `rounds_left>0`、`scope`/`exclude`/`inputs` 未变直接重交当前 `plan_run`；否则先用 `carry-plans.ts` 结转未改案并按第 2 节 `start_run` 重走第 2～3 节。
+每条原始用例最多编写并上机 3 轮；第 3 轮仍未写对即停止上机验证、写结论并组交付目录，严禁第 4 轮。完整读 `index.json`（含 `execution_refused`、`syntax_rejected`）、逐条会话与 `log.txt` 互校（可用 `tools/task-brief.ts --role '失败分析' --round <n>` 写盘派只读子代理，在 `notes.json` 记 `"round"` 且不改计划）后再写原因与下一步。先核版本一致、配置生效与手册及示例前置（含对端配对）是否漏写，查多案同症共因。上轮改过再跑仍出同句设备报错即证伪上轮假设，必须换向；设备点出所缺且手册/示例支持未试假设时，尚有轮次就必须下一轮先试，不得以“缺资料”或“剩一次机会”为由不试；轮次用完不开第 4 轮，按收尾规矩写结论（没有结构化归因时原因写还没查清），把未试的假设和试法写进下一步，交使用者决定（无任何来源支持才归“缺资料”）。确认返工：按第 2 节「同运行重交与重开边界」重交或重开；重开先用 `carry-plans.ts` 结转未改案，再按第 2 节重走第 2～3 节。
 
 排除这些且无未试手册/示例假设后才判设备的问题（期望忠实实现、前置全有、观察方法/对象正确且命令未被拒绝）；说不清写状态未知、原因还没查清，加只读观察再验。设备输出只助排错，不抄进期望；点名的命令或配置先在同构建手册和命令树读到再改。时序、等待推测是未确认判断，不符即换解释。

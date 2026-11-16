@@ -43,8 +43,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "574294ff105f9384e7dcced6ec44b82f7694c515e441b9d13aaa6d808286dc05",
-      "size": 17121
+      "sha256": "825a96ca31be817445c3b708d6a0860309415745f4ac335061e56186430fd3a4",
+      "size": 17147
     },
     {
       "path": "agents/compile-attributor.md",
@@ -63,8 +63,8 @@
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "39018ffc421ce95f880bf2b0746100099faf003ab0db01e3abe99c0844524edf",
-      "size": 16956
+      "sha256": "8f7866759d3f2cf292762b44b90a91d6b9009cff76641ad3f36bea6fae30805e",
+      "size": 17359
     },
     {
       "path": "checks.json",
@@ -225,6 +225,11 @@
       "path": "functions/client-cli.ts",
       "sha256": "8edf9ceed67141245a7b91f7f209a13511e7c6fa98c9865ae4317ed4e33b1672",
       "size": 2492
+    },
+    {
+      "path": "functions/cmd-lookup.ts",
+      "sha256": "6431269368bfd81c1daffc25f1d8346256991f49af659eb3f3ed355f2b621fec",
+      "size": 39321
     },
     {
       "path": "functions/cmd-recall.ts",
@@ -498,8 +503,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "5afda91242ce5cbf233b6d439eaa75f04b9d07f223b5f36590d09cfc739d9518",
-      "size": 42295
+      "sha256": "47ea32ddaac3740d883957a1b1d69d36140ce79e21e4669dc492c549a85a41eb",
+      "size": 43761
     },
     {
       "path": "functions/subject.ts",
@@ -945,6 +950,16 @@
       "path": "tools/check-plan.ts",
       "sha256": "679a5998e415762e5f381cf1bb9dfc2c970cf2db2f323f223ed430708dcea0e7",
       "size": 20832
+    },
+    {
+      "path": "tools/cmd-lookup.cli.json",
+      "sha256": "dfd9dad2d45e9d145efc52eecf9bc9e2bd3fdbae0bc2f192443b267adc795752",
+      "size": 1242
+    },
+    {
+      "path": "tools/cmd-lookup.ts",
+      "sha256": "fa853c8de994f2000d05ef257ba2a040ce6dfe4f87892bc874b6a94affd1dd9f",
+      "size": 6410
     },
     {
       "path": "tools/cmd-select-plumb.cli.json",

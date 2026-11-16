@@ -8,6 +8,7 @@ import { buildCompileBrief } from '../../../packs/workflow/case-compile/function
 import { canonicalJson } from '../../../packs/workflow/case-compile/functions/canonical-json.ts';
 import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC, COMMAND_CATALOG, goodData } from '../../../packs/workflow/case-compile/functions/test-support.ts';
 import REQUIREMENTS from '../../../packs/workflow/case-compile/requirements.json' with { type: 'json' };
+import { lookupFixture, writeLookupDownload } from '../../../packs/workflow/case-compile/testing/lookup-fixture.ts';
 import { generationFixture } from '../../../packs/workflow/case-compile/testing/workbook.ts';
 import type { CliProbe } from '../verify-tool-cli.ts';
 const sha256 = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
@@ -137,6 +138,9 @@ async function fixtureInvocations(
   await writeFile(sealRun, JSON.stringify({ run: RUN_ID, items: [] }));
   await writeFile(sealParts, '[]');
 
+  // cmd-lookup reads a download: run.json with knowledge/ beside it, here the synthetic tree and manual of the lookup tests.
+  await writeLookupDownload(join(work, 'lookup-run'), lookupFixture());
+
   await writeFile(join(work, 'scope.md'), '只做 case-101 合成用例。\n');
   await writeFile(join(work, 'writer-brief.md'), '# 合成编写简报\n');
   await writeFile(join(work, 'precheck-input.json'), JSON.stringify({ root: COMMAND_CATALOG.root, contract: CONTRACT_DOC, profile: PROFILE_DOC, inventory: MANIFEST_DOC, catalog: COMMAND_CATALOG, plan: goodData() }));
@@ -162,10 +166,11 @@ async function fixtureInvocations(
     'tools/seal-recompose.ts': { argv: ['--run', sealRun, '--parts', sealParts, '--model', 'synthetic-model', '--out', join(work, 'sealed.json')] },
     'tools/task-brief.ts': { argv: ['--role', '脚本编写', '--case', 'case-101', '--brief', 'writer-brief.md', '--out', 'writer-plan.json', '--task-file', 'writer-task.md'], cwd: work },
     'tools/command-domain-precheck.ts': { argv: ['--input', 'precheck-input.json', '--out', 'precheck-output.json'], cwd: work },
+    'tools/cmd-lookup.ts': { argv: ['--run', 'lookup-run/run.json', '--param', 'orbit beacon add'], cwd: work },
   };
 }
 
-/** Supplies twelve local CLI invocations; remote stdin tools are supplied by remote-cli-probes.ts. */
+/** Supplies one local CLI invocation per local tool; remote stdin tools are supplied by remote-cli-probes.ts. */
 export async function buildLocalCliProbes(stagedCaseDir: string, stagedRecomposeDir: string, workRoot: string): Promise<{ caseCompile: Record<string, CliProbe[]>; recompose: Record<string, CliProbe[]> }> {
   const invocations = await fixtureInvocations(workRoot, stagedCaseDir);
   const caseCompile: Record<string, CliProbe[]> = {};

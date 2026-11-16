@@ -10,7 +10,7 @@ import { buildLocalCliProbes } from './testing/local-cli-probes.ts';
 import { buildRemoteCliProbes } from './testing/remote-cli-probes.ts';
 import { CASE_COMPILE_CLI_HELPERS, verifyCliInvocations } from './verify-tool-cli.ts';
 
-test('all eighteen staged release CLI entry points match declared argv and stdin contracts', { timeout: 120_000 }, async () => {
+test('all nineteen staged release CLI entry points match declared argv and stdin contracts', { timeout: 120_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'case-compile-cli-contracts-'));
   try {
     const cc = await stage(join(root, 'case-compile'));
@@ -18,7 +18,7 @@ test('all eighteen staged release CLI entry points match declared argv and stdin
     const local = await buildLocalCliProbes(cc, rc, root);
     const remote = await buildRemoteCliProbes(cc, rc, join(root, 'remote'));
     try {
-      assert.deepEqual(verifyCliInvocations(cc, CASE_COMPILE_CLI_HELPERS, { ...local.caseCompile, ...remote.caseCompile, ...remote.plumbCaseCompile }), { declarations: 18, invocations: 18, processes: 26 });
+      assert.deepEqual(verifyCliInvocations(cc, CASE_COMPILE_CLI_HELPERS, { ...local.caseCompile, ...remote.caseCompile, ...remote.plumbCaseCompile }), { declarations: 19, invocations: 19, processes: 27 });
       assert.deepEqual(verifyCliInvocations(rc, new Set(), { ...local.recompose, ...remote.recompose }), { declarations: 3, invocations: 3, processes: 5 });
       const receipts = await remote.receipts();
       assert.ok(receipts.length > 0);

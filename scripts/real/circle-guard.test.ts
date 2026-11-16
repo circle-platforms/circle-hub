@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { renderTaskBrief, resolveSubagentRole } from '../../packs/workflow/case-compile/functions/subagent-roles.ts';
 import { writeHome, type Endpoint, type Profile } from './circle-home.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -585,6 +586,31 @@ test('plumb skill and case-compile plumb scripts enforce host-pinning, subcomman
       h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin`), /标准输入读令牌/);
       h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin <<'EOF'\n%HUB_TOKEN%\nEOF`), /%PLUMB_API_KEY%/);
       h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin --ca-file ../outside.pem <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /不在工作目录/);
+    } finally {
+      h.close();
+    }
+  }
+});
+
+test('cmd-lookup is a declared tool: the command the writer task file prints passes both guards, and what its declaration does not allow is refused', () => {
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile);
+    try {
+      const lookup = `'${h.skillPath('case-compile', 'tools/cmd-lookup.ts')}'`;
+      // The task file of the writer role prints the lookup command with the frozen run it was given; that exact line must run.
+      const brief = renderTaskBrief({ role: resolveSubagentRole('plan')!, caseRef: 'case-1', briefPath: 'briefs/0.md', outPath: 'plans/0.json', skillDir: h.skillPath('case-compile'), frozenRunPath: join(h.workdir, 'plan-run', 'run.json'), scopeText: '合成范围' });
+      const printed = brief.split('\n').filter((line) => line.startsWith('`node ') && line.includes('cmd-lookup.ts'));
+      assert.equal(printed.length, 1, brief);
+      h.assertAllowed(h.exec(printed[0]!.slice(1, -1).replace("'<命令词，可带参数>'", "'orbit beacon add'")), `${profile}: the printed lookup command`);
+      h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --param 'orbit beacon add "b1" fast 3'`), `${profile}: a command with quoted arguments inside one single-quoted word`);
+      h.assertAllowed(h.exec(`node ${lookup} --run plan-run/run.json --heads 'orbit beacon'`), `${profile}: heads`);
+      h.assertRefused3(h.exec(`node ${lookup} --param 'orbit beacon add'`), /缺少必填选项 --run/);
+      h.assertRefused3(h.exec(`node ${lookup} --run ../outside/run.json --param 'orbit beacon add'`), /不在工作目录/);
+      h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --param=orbit`), /不认“=”/);
+      h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --guess orbit`), /没有 --guess 选项/);
+      h.assertRefused3(h.exec(`node ${lookup} --run plan-run/run.json --param 'orbit' <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明不读标准输入/);
+      h.assertRefused3(h.exec(`node tools/cmd-lookup.ts --run plan-run/run.json --param 'orbit'`), /脚本路径/);
+      assert.match(h.allowedText(), /^\| case-compile\/tools\/cmd-lookup\.ts \| `node '<技能目录>\/tools\/cmd-lookup\.ts' --run '<下载目录>\/run\.json' \[--param '<命令词，可带参数>'\] \[--heads '<命令词前缀>'\]` \|$/m);
     } finally {
       h.close();
     }

@@ -1,0 +1,62 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "run",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<下载目录>/run.json",
+      "type": "path"
+    },
+    {
+      "name": "param",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<命令词，可带参数>",
+      "type": "text"
+    },
+    {
+      "name": "heads",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<命令词前缀>",
+      "type": "text"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<下载目录>/run.json",
+          "optional": false
+        },
+        {
+          "name": "param",
+          "placeholder": "<命令词，可带参数>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<下载目录>/run.json",
+          "optional": false
+        },
+        {
+          "name": "heads",
+          "placeholder": "<命令词前缀>",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}
