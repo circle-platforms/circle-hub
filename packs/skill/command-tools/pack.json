@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "command-tools",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "kind": "skill",
   "title": "命令工具",
   "description": "按命令树逐词解析命令、由产品规则推出逆命令。工作流内嵌使用，不写命令",
