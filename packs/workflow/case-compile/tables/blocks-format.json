@@ -338,7 +338,8 @@
           },
           "criterion": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Id of the typed criterion in criteria[] that holds your own checkpoint for this author expectation. Write it only when the expectation node carries no literal declaration. The checkpoint is a model judgment, status 未确认, decided by the device run; no independent review is needed and none is started. The criterion's quote, operator and literal (or count, or relation) must equal this assertion's."
           }
         },
         "required": [
@@ -405,7 +406,8 @@
     },
     "criterion": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "Id of the typed criterion in criteria[] that holds your own checkpoint for this author expectation. Write it only when the expectation node carries no literal declaration. The checkpoint is a model judgment, status 未确认, decided by the device run; no independent review is needed and none is started. The criterion's quote, operator and literal (or count, or relation) must equal this assertion's."
     },
     "for": {
       "type": "string",
@@ -626,6 +628,7 @@
       "scope_root"
     ]
   },
+  "criteria_description": "Checkpoints you chose yourself for author expectations that carry no literal declaration (the author wrote a sentence, not the text to look for). Each entry is a model judgment, status 未确认: the Hub only checks that quote is the author's expectation word for word, that literal is a single line and that the entry equals its assertion; no independent review is needed and none is started, and the device run decides whether the checkpoint holds. quote: the author's expectation, copied verbatim from the original case. literal (or count, or relation): text the device output can contain. rationale: why you chose it. scope_root: the locked root of the command tree. A criteria_review input is read only when one is bound; leave it unbound.",
   "context_schema": {
     "type": "object",
     "additionalProperties": false,

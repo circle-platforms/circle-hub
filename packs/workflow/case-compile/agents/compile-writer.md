@@ -23,7 +23,7 @@ tools: read_file, write_file, edit_file, ls, glob, grep, execute
 - 要查询的记录先在步骤前部创建，配置先写入再查询，触发前按 `sources.states` 与手册/示例补齐全部运行前置与配对清理。仅当原始用例明确要测“前置不存在/未配置”的反向场景时保留该无配置前提，不补前置把它改掉。
 - 设备上的配置和观察都用执行器规则为该设备声明的方法。要跑很久的设备命令，在那一步给足读取时间，秒数不超过测试环境上限；等设备回到提示符再继续，不用固定等待猜时长。
 - 参数取值：写进命令的每个值都要在手册对该参数的说明之内，包括长度、允许的字符、范围和可选值。只有设备执行时才产生的值，要在同一条自动化用例里先取出再用；手册允许指定名字时，由生成器指定，本条先创建，再配置、查询和清理，全部使用同一个名字。不写死设备生成的名字，不从上一次上机验证的设备输出抄值，也不沿用设备上已有的东西。
-- 期望优先选设备实际输出里可核对的文字，如应答状态码、应答条数、表项计数、存在或不存在的关键行。原始用例的期望逐字保留；改用模型判断时，`text` 必须是设备执行后实际会输出、能在设备输出里逐字找到的一行原文（例如 `SDNS Query Statistics Summary`），对应原始期望及选择理由写入 `rationale`。命令自身含有的文字（回显在输出开头）及功能失效时也会出现的文字，均不能判断功能正确。
+- 期望优先选设备实际输出里可核对的文字，如应答状态码、应答条数、表项计数、存在或不存在的关键行。原始用例的期望逐字保留；改用模型判断时，`text` 必须是设备执行后实际会输出、能在设备输出里逐字找到的一行原文（例如 `SDNS Query Statistics Summary`），对应原始期望及选择理由写入 `rationale`（分块计划写成类型化判据，见下）。命令自身含有的文字（回显在输出开头）及功能失效时也会出现的文字，均不能判断功能正确。
 - 原始用例说“不存在”“无残留”“不再包含”时，不把这句话当设备输出去找，也不删掉这项检查；检查设备输出里没有对应记录。要求删除成功时，删除后再查询，指向这次查询的设备输出，不另立判定标准、不请评审员复核。不能把“查询一个不存在的名字”当成“访问成功”。顺序步骤在对应查询的 `expects` 写 `op:"not_found"`，`text` 使用原始期望的具体原文或本条先配置再按已声明逆操作撤销的名字，`after` 指向对应查询。
 - 清理段在每条自动化用例末尾，同一设备按改动逆序排列，恢复原地址。查询类步骤不需要清理；执行器已声明会清理的可以省略，但产品已声明的枚举/同级互逆取值仍须配对。按产品给出的恢复方法，只恢复主体结束后仍生效的配置，不从命令名字猜用途。
   - HA 等互逆开关：从同构建 `knowledge/manual` 逐字引用启用、关闭和清除的条文；`ha on` 后须在同设备的 `cleanup:true` 写 `ha off`，完成关闭后才交运行器 `clear ha all`，不能只依赖整体清除。顺序依据随计划保留手册引用，不从命令名字猜，不把“设备已清干净”当作未核验的事实。
@@ -54,6 +54,7 @@ command_scope 与逐条 commands 同时存在时取交集；不以 command_ident
 组合步骤: blocks 非空，steps/expects=[]；每块唯一 id
 取一格: 先查 contract.json 的 runtime.block_model.cell_inputs 与 cell_methods（及对应 object/method 可用条目）；未声明按缺资料写明执行器规则没有声明，不自造写法；已声明时 SELECT_CELL 的 from 指原输出保存名，table 写 format/separator/columns/header，column 为列号，select 写 row 或多列 where，register 另存；STEP/CONFIG 的 input_register 指单格名，首参数用 {}；数据行按声明字面分隔符与列数识别，取不到/零行/多行停止并带设备原话
 每条判断: 绑定 output、原始 expectation 引用和 quote；block_context.preconditions/causal_links/responders 写全（无写空表），主机观察写明谁应答：responders[].output 填观察块 id（blocks[].id，产生设备原文的那一块，不是 register 保存名，也不是设备名），ref 按 kind 填：device 填冻结 profile.seats[].device 之一（不是执行器对象名，也不是块 id），fixture 填本条前面某个步骤块的 id，bed_service 填冻结清单里服务的 host，undetermined 写 missing 与 next_action；obligations 覆盖全部原始期望（判断 id 或 unmet+missing/next_action）
+描述性期望: 作者没在期望节点写字面（items/<序号>.json 的 expected_nodes 里该节点没有 declaration）时，由模型自己写检查点（如应答含某个记录名），不做复核、不发起 criteria_review：断言写 literal（设备输出里可逐字找到的单行原文，不写“输出含……”之类描述句）和 quote（逐字取该期望原句），criterion 指向 criteria 里一条 {id,expectation,quote,kind,operator,literal 或 count 或 relation,rationale 写为何选它,scope_root 取简报的锁定根}，quote、算子、字面与断言逐项相同；这是模型判断，状态未确认，由上机验证的设备输出裁定
 否定结果: 常量用 OBSERVE_ASSERT/op=not_found，literal 写不应出现记录；动态值先 CAPTURE 再 EXPECT_FROM/op=not_found，expected_from 指捕获（需声明字面否定方法）；quote 保留原始期望，不填 criterion、不发起 criteria_review
 RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置块；仅用声明的 guarded restore；缺恢复能力记未知（不用普通命令加 {} 冒充，上面允许的 input_register 回填除外）；OBSERVE_DIST/MEMBER/EXIT 暂未提供，不自造正则或成功标记
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}；receipt/case_id 取 fields.recomposition；quote 逐字等于对应原始期望；无对应判断记未知不省略；新增声明引文用 Hub 已确定声明且 quote.text 逐字复制

@@ -32,9 +32,11 @@ export function blockPointer(slots:PlanSlots,pointer:string):string{
 }
 export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:PlanSlots}|{ok:false;problems:SlotProblem[]}{
  if(!schema(SHAPE).safeParse(value).success)return {ok:false,problems:[{pointer:'/blocks',message:'块计划不符合包声明的完整形状；按 slots.schema.json 修正，不能与 steps/expects 混写'}]};
- const blocks=value.blocks as Array<Record<string,any>>,steps:PlanStep[]=[],expects:PlanExpect[]=[],problems:SlotProblem[]=[];
+ const blocks=value.blocks as Array<Record<string,any>>,criteria=Array.isArray(value.criteria)?value.criteria as Array<Record<string,any>>:[],steps:PlanStep[]=[],expects:PlanExpect[]=[],problems:SlotProblem[]=[];
  const meta:BlockMeta={raw:value,registers:new Map(),steps:new Map(),deferred:[]},ids=new Set<string>(),assertions=new Set<string>();
  const issue=(pointer:string,message:string,fix?:string)=>problems.push({pointer,message,...(fix===undefined?{}:{fix})});
+ // The reason is what a flat model_judgment states beside its text; a typed criterion the model wrote carries it the same way.
+ for(const [index,row]of criteria.entries())if(typeof row.rationale!=='string'||!row.rationale.trim())issue('/criteria/'+index+'/rationale','类型化判据必须有非空 rationale，说明模型为何选择这个检查点');
  const capture=(name:unknown,id:string,index:number,at:string,object:string,cell=false)=>{
   if(!identifier(name))issue(at,'寄存器必须是区分大小写的 ASCII 标识符，不能以数字开头');
   else if(meta.registers.has(name))issue(at,'寄存器已经捕获，不能覆盖先前原文');
@@ -47,7 +49,8 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
   if(!TABLE.assertion_ops.some(row=>row.op===raw.op))issue(origin+'/op','断言族不在包声明的闭集中');
   if(raw.op==='found_times'&&(!Number.isSafeInteger(raw.count)||raw.count<1))issue(origin+'/count','次数断言必须有正整数 count');
   if(raw.op!=='found_times'&&raw.count!==undefined)issue(origin+'/count','只有次数断言可以写 count');
-  expects.push({id,origin,operator:raw.op,output:raw.output,text:raw.literal??raw.quote?.text??'',quote:raw.quote,after,expectation:raw.expectation,...(raw.count!==undefined?{count:raw.count}:{}),...(raw.criterion?{criterion:raw.criterion,basis:'model_judgment',rationale:'类型化判据声明须经独立复核'}:{}),...extra});
+  const written=raw.criterion?criteria.find(row=>row.id===raw.criterion):undefined;
+  expects.push({id,origin,operator:raw.op,output:raw.output,text:raw.literal??raw.quote?.text??'',quote:raw.quote,after,expectation:raw.expectation,...(raw.count!==undefined?{count:raw.count}:{}),...(raw.criterion?{criterion:raw.criterion,basis:'model_judgment',rationale:typeof written?.rationale==='string'&&written.rationale.trim()?written.rationale:'类型化判据由模型自写，状态未确认'}:{}),...extra});
  };
  for(const [index,block]of blocks.entries()){
   const at='/blocks/'+index,id=block.id;

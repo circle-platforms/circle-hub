@@ -1,26 +1,42 @@
 // Author expectation coverage and quoted, typed judgments. No descriptive-language classification.
+// Where the author wrote a literal it is kept as written. Where the author wrote only a sentence, the model writes the checkpoint
+// itself as a typed criterion beside the verbatim quote (owner, 2026-11-16: the model writes the checkpoint, nothing is reviewed).
+// That is a model judgment, status unconfirmed, and the device run decides; a flat plan states the same with basis model_judgment.
+// A review of the criterion by another account is still accepted when it is bound, and a bound review must then verify.
 import TABLE from '../tables/blocks-format.json' with {type:'json'};
 import {isRecord,type Outcome} from './text.ts';
 import {canonicalJson} from './canonical-json.ts';
 import {blockMeta} from './blocks.ts';
 import {hasSingleLineValue} from './binding.ts';
-import type {PlanSlots} from './slots.ts';
+import {labelOf,type ExpectationBasis} from './generated/vocabulary.ts';
+import type {PlanExpect,PlanSlots} from './slots.ts';
 function recordInput(value:unknown,kind:string):Record<string,any>|null{
  if(!isRecord(value)||!isRecord(value.meta)||value.meta.kind!==kind||typeof value.meta.record!=='string'||!isRecord(value.model)||value.model.kind!==kind||!isRecord(value.model.body)||value.external!==null||value.meta.pointer!==undefined)return null;
  return {reference:'rec:'+value.meta.record,body:value.model.body};
 }
+/** A review is in play as soon as either of its two Hub records is bound or the evidence is anything but the frozen empty pair; it is then verified, never set aside. */
+const reviewBound=(evidence:unknown):boolean=>evidence!=null&&!(isRecord(evidence)&&evidence.result==null&&evidence.run==null);
+/** The way out of a refused review is always the same two: make the bound review whole, or bind none and let the model's judgment stand. */
+const OR_NO_REVIEW='或都不绑定复核（criteria_review 与 criteria_review_run），让模型自写的判据作为模型判断（状态未确认）由上机验证裁定';
 export function criterionReviewed(declaration:Record<string,any>,evidence:unknown):{ok:true;data:Record<string,unknown>}|{ok:false;missing:string}{
  const raw=isRecord(evidence)?evidence:{},result=recordInput(raw.result,'validation_result'),snapshot=recordInput(raw.run,'run');
- const missing='缺类型化判据的独立复核运行快照与已受理结果；下一步：按本包 review 阶段，以原声明运行作只读前驱，由非作者账号核对，再绑定 criteria_review 与 criteria_review_run 的 Hub 记录；上传自述 JSON 不算复核';
+ const missing='已绑定的类型化判据复核不完整，或不属于本包的复核阶段：缺独立复核运行快照与已受理结果；下一步：补全这两条 Hub 记录（上传自述 JSON 不算复核），'+OR_NO_REVIEW;
  if(!result||!snapshot)return {ok:false,missing};
  const run=snapshot.body,body=result.body;
  if(run.pack!==TABLE.review_pack.id+'@'+TABLE.review_pack.version||body.schema!=='validation@1'||body.acceptance!=='accepted'||body.run!==run.run||body.locks?.pack!==run.pack||body.locks?.pack_digest!==run.pack_digest||!Array.isArray(run.items)||!isRecord(body.partitions))return {ok:false,missing};
  const item=run.items.find((row:any)=>isRecord(row)&&isRecord(row.fields)&&canonicalJson(row.fields.criterion)===canonicalJson(declaration));
- if(!item||typeof item.fields.author_run!=='string'||run.predecessor!==item.fields.author_run)return {ok:false,missing:'复核运行的实际前驱不等于原声明运行；下一步：以正确 author_run 重开独立复核，不能换无关前驱取得独立标记'};
+ if(!item||typeof item.fields.author_run!=='string'||run.predecessor!==item.fields.author_run)return {ok:false,missing:'复核运行的实际前驱不等于原声明运行；下一步：以正确 author_run 重开独立复核，不能换无关前驱取得独立标记，'+OR_NO_REVIEW};
  const rows=Object.values(body.partitions).flatMap(value=>Array.isArray(value)?value:[]),row=rows.find((value:any)=>isRecord(value)&&value.item===item.id),requirement=isRecord(row)&&Array.isArray(row.requirements)?row.requirements.find((value:any)=>value.requirement==='review'):null;
  const claim=requirement?.status==='satisfied'&&Array.isArray(requirement.claims)?requirement.claims.find((value:any)=>value.statement?.code==='accept'&&value.warrant?.producer==='model'&&value.warrant?.independence==='human_non_author'&&value.qualifier?.nature==='judgment'&&value.validity?.status==='valid'):null;
- if(!claim)return {ok:false,missing:'类型化判据尚无通过账号独立性核验的接受判断；下一步：非作者账号复核接受，或修改判据后重交，拒绝不能当作通过'};
+ if(!claim)return {ok:false,missing:'类型化判据尚无通过账号独立性核验的接受判断；下一步：非作者账号复核接受，或修改判据后重交，拒绝不能当作通过，'+OR_NO_REVIEW};
  return {ok:true,data:{criterion:declaration.id,review:result.reference,review_run:snapshot.reference,reviewer:run.runner,model:claim.warrant.id,conditional_on_judgment:true}};
+}
+const MODEL_BASIS:ExpectationBasis='model_judgment';
+/** The model's own checkpoint for a sentence the author wrote no literal for: its judgment, unconfirmed, never reviewed. */
+function modelCriterion(criterion:Record<string,any>,expect:PlanExpect):Record<string,unknown>{
+ return {criterion:criterion.id,expectation:criterion.expectation,assertion:expect.id,basis:MODEL_BASIS,kind:criterion.kind,operator:criterion.operator,
+  ...(criterion.literal!==undefined?{literal:criterion.literal}:{}),...(criterion.count!==undefined?{count:criterion.count}:{}),...(criterion.relation!==undefined?{relation:criterion.relation}:{}),
+  quote:criterion.quote,rationale:criterion.rationale,reviewed:false,status:'未确认',decided_by:labelOf('producer_kind','model'),conditional_on_judgment:true};
 }
 export function checkBlockExpected(slots:PlanSlots,nodes:unknown,evidence:unknown,root:unknown,item:string):Outcome[]{
  const meta=blockMeta(slots);if(!meta)return [];
@@ -29,7 +45,7 @@ export function checkBlockExpected(slots:PlanSlots,nodes:unknown,evidence:unknow
  if(!Array.isArray(nodes)||!nodes.length||nodes.some(node=>!isRecord(node)||typeof node.reference!=='string'||typeof node.text!=='string'))return [unknown('缺作者期望全集及稳定节点引用；下一步：按完整脑图原件重新投影，不用模型选中的子集替代')];
  if(!Array.isArray(slots.obligations))return [unknown('缺逐期望履约账；下一步：模型为全部期望逐条绑定断言，未实现写 unmet、缺事实和下一步')];
  if(typeof root!=='string')return [unknown('缺本轮锁定根，不能核对类型化判据适用范围；下一步：绑定产品构建与命令目录后重开运行')];
- const out:Outcome[]=[],reviews:Record<string,unknown>[]=[],ids=new Set(slots.expects.map(expect=>expect.id));
+ const out:Outcome[]=[],reviews:Record<string,unknown>[]=[],judged:Record<string,unknown>[]=[],ids=new Set(slots.expects.map(expect=>expect.id));
  for(const node of nodes){
   const obligations=slots.obligations.filter(row=>row.expectation===node.reference);
   if(obligations.length!==1){out.push(bad('作者期望没有唯一履约条目，不能遗漏或重复记账','/data/obligations'));continue;}
@@ -53,11 +69,15 @@ export function checkBlockExpected(slots:PlanSlots,nodes:unknown,evidence:unknow
   if(expect.operator==='not_found')continue;
 
   const declared=slots.criteria?.filter(value=>value.id===expect.criterion)??[];
-  if(declared.length!==1){out.push(unknown('期望未声明原文字面算子，缺唯一的类型化判据；下一步：模型按 literal / count / capture_relation 声明判据和理由并提交独立复核，不能把描述文字直接复制成断言',at+'/criterion'));continue;}
+  if(declared.length!==1){out.push(unknown('期望未声明原文字面算子，缺唯一的类型化判据；下一步：模型在 criteria 里按 literal / count / capture_relation 写出检查点（设备输出里可逐字找到的单行原文）和理由，断言的 criterion 指向它；这是模型判断，状态未确认，由上机验证裁定；不能把描述文字直接复制成断言',at+'/criterion'));continue;}
   const criterion=declared[0],kind=expect.register?'capture_relation':expect.count!==undefined?'count':'literal';
   if(!TABLE.criterion_kinds.includes(criterion.kind)||criterion.kind!==kind||criterion.expectation!==expect.expectation||canonicalJson(criterion.quote)!==canonicalJson(expect.quote)||criterion.scope_root!==root||criterion.operator!==expect.operator||!expect.register&&criterion.literal!==expect.text||expect.count!==undefined&&criterion.count!==expect.count||expect.comparison&&criterion.relation!==expect.comparison){out.push(bad('类型化判据的来源、锁根、类型或取值不等于本断言声明，不能凭引文相同代替类型核对',at+'/criterion'));continue;}
+  if(!reviewBound(evidence)){judged.push(modelCriterion(criterion,expect));continue;}
   const reviewed=criterionReviewed(criterion,evidence);if(!reviewed.ok)out.push(unknown(reviewed.missing,at+'/criterion'));else reviews.push(reviewed.data);
  }
  if(!slots.expects.length)out.push(unknown('缺可执行断言；下一步：模型为作者期望写明确观察和断言，只有观察或捕获不构成通过'));
- return out.length?out:[{verdict:'support',statement:'作者期望全集已逐条履约；字面声明、类型化判据复核与显式输出关系已核对；以判断为前提，不证明设备结果',grounds:nodes.map(node=>node.reference),tier:'blocking',item,data:{typed_criteria:reviews,obligations:slots.obligations},judgment_sources:['/plan/0']}];
+ if(out.length)return out;
+ const held=labelOf('qualifier_mark','conditional_on_judgment')+'，不证明设备结果';
+ const statement=judged.length?`作者期望全集已逐条履约；字面声明与显式输出关系已核对；其中 ${judged.length} 条类型化判据是模型自写的检查点（${labelOf('expectation_basis',MODEL_BASIS)}），未经独立复核，状态未确认，由上机验证的设备输出裁定；${held}`:`作者期望全集已逐条履约；字面声明、类型化判据复核与显式输出关系已核对；${held}`;
+ return [{verdict:'support',statement,grounds:nodes.map(node=>node.reference),tier:'blocking',item,data:{typed_criteria:reviews,...(judged.length?{model_criteria:judged}:{}),obligations:slots.obligations},judgment_sources:['/plan/0']}];
 }

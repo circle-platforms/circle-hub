@@ -486,6 +486,35 @@ export function timeline(outcome: CaseOutcome, excluded: boolean): string {
 export interface OutOfScopeCase { autoid: string; title: string }
 export interface ScopeSummary { words: string; cases: string[]; outOfScope: OutOfScopeCase[]; totalCases: number }
 
+/** A checkpoint the model chose itself for an expectation whose author wrote no literal: no independent review, the device run decides. */
+export interface ModelCheckpoint { expectation: string; literal?: string; count?: number; rationale: string }
+/**
+ * The checkpoints one item's plan result records as the model's own judgments in the expected_grounded check: the typed criteria
+ * of a block plan that no review stood behind (`model_criteria`) and the model_judgment expectations of a flat plan
+ * (`model_expectations`). They are read from the Hub's record of that check, never inferred from prose.
+ */
+export function modelCheckpointsOf(result: unknown, id: string): ModelCheckpoint[] {
+  if (!isRecord(result) || !isRecord(result.partitions)) return [];
+  const found = new Map<string, ModelCheckpoint>();
+  for (const entries of Object.values(result.partitions)) for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!isRecord(entry) || entry.item !== id || !Array.isArray(entry.requirements)) continue;
+    for (const requirement of entry.requirements) {
+      if (!isRecord(requirement) || requirement.requirement !== 'expected_grounded' || !Array.isArray(requirement.claims)) continue;
+      for (const claim of requirement.claims) {
+        const data = isRecord(claim) && isRecord(claim.statement) && claim.statement.verdict === 'support' && isRecord(claim.statement.data) ? claim.statement.data : null;
+        if (!data) continue;
+        for (const row of [...(Array.isArray(data.model_criteria) ? data.model_criteria : []), ...(Array.isArray(data.model_expectations) ? data.model_expectations : [])]) {
+          // an absence check keeps the author's own words (or a name configured earlier), whatever else it declares: not a checkpoint of the model's
+          if (!isRecord(row) || row.op === 'not_found' || !isRecord(row.quote) || typeof row.quote.text !== 'string' || typeof row.rationale !== 'string') continue;
+          const literal = typeof row.literal === 'string' ? row.literal : typeof row.text === 'string' ? row.text : undefined;
+          const checkpoint: ModelCheckpoint = { expectation: row.quote.text, ...(literal !== undefined ? { literal } : {}), ...(typeof row.count === 'number' && Number.isSafeInteger(row.count) ? { count: row.count } : {}), rationale: row.rationale };
+          found.set(JSON.stringify(checkpoint), checkpoint);
+        }
+      }
+    }
+  }
+  return [...found.values()];
+}
 export interface ReportInput {
   name: string; generatedAt: string; build: string | null;
   assembly: Assembly; notes: Notes; originals: Record<string, Original>; excluded: string[];
@@ -501,6 +530,8 @@ export interface ReportInput {
   userRulings?:Record<string,Array<{source:string;target:string;ruling:string}>>;
   /** verification runs that never reached the bed. */
   unsent?: Unsent[];
+  /** Per case, the checkpoints the model wrote itself (read from the Hub's check record by modelCheckpointsOf). */
+  checkpoints?: Record<string, ModelCheckpoint[]>;
 }
 const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || '标题未知';
 export function closingCounts(cases: CaseOutcome[]): string {
@@ -523,7 +554,20 @@ function recordedNext(outcome: CaseOutcome): string[] {
   });
   return [...new Set(texts)];
 }
-export function caseConclusion(input: ReportInput, outcome: CaseOutcome): string {
+/** One sentence for a case whose plan holds checkpoints the model wrote itself: its judgment, unconfirmed, decided by the device run. */
+const checkpointNote = (input: ReportInput, outcome: CaseOutcome): string => {
+  const count = input.checkpoints?.[outcome.autoid]?.length ?? 0;
+  return count ? `其中 ${count} 条期望没有字面，检查点由模型自写，是模型判断，状态未确认，没有独立复核；它是否成立由上机验证的设备输出裁定（逐条见交付报告）。` : '';
+};
+export function caseConclusion(input: ReportInput, outcome: CaseOutcome): string { return caseConclusionOf(input, outcome) + checkpointNote(input, outcome); }
+const shown = (checkpoint: ModelCheckpoint): string => checkpoint.literal === undefined ? '两次捕获的设备输出相互比较' : `「${publicWords(checkpoint.literal)}」${checkpoint.count === undefined ? '' : `出现 ${checkpoint.count} 次`}`;
+/** The report lists each such checkpoint with the author's sentence and the model's reason. */
+function checkpointLines(input: ReportInput, outcome: CaseOutcome): string[] {
+  const list = input.checkpoints?.[outcome.autoid] ?? [];
+  if (!list.length) return [];
+  return ['', '模型自写的检查点：模型判断，状态未确认，没有独立复核，由上机验证的设备输出裁定。', ...list.map((checkpoint) => `- 期望「${publicWords(checkpoint.expectation)}」：检查点${shown(checkpoint)}。模型的理由：${publicWords(checkpoint.rationale)}`)];
+}
+function caseConclusionOf(input: ReportInput, outcome: CaseOutcome): string {
   const named = `原始用例 ${outcome.autoid} ${title(input, outcome.autoid)}`;
   const exits = recordedNext(outcome);
   const observed = outcome.history.at(-1);
@@ -569,6 +613,7 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
   return [
     `## 原始用例 ${outcome.autoid} ${title(input, outcome.autoid)}`,
     caseConclusion(input, outcome),
+    ...checkpointLines(input, outcome),
     '', timeline(outcome, input.excluded.includes(outcome.autoid)),
     ...rulings.flatMap(row=>['','**使用者已记录的决定（卡片原文）**',...(reportableProse(row.ruling)?fence(row.ruling):['决定原文含内部引用，完整内容见机器资料'])]),
     ...(input.assembly.unsuccessful?.sources[outcome.autoid] ? ['', executed ? `本卷这条写法已在第 ${executed.ordinal} 次上机验证中执行。` : '本卷采用最后一次写好的自动化用例；这份写法尚未发到设备，上面的记录来自较早一次实际到设备的上机验证。'] : []),
@@ -603,7 +648,7 @@ export const REPORT_FILES = { report: 'delivery_report.md', unsuccessful: 'unsuc
 
 export function deliveryReport(input: ReportInput): string {
   const lines = [`# 交付报告 — ${input.name}`, `> 生成 ${input.generatedAt}`, '', ...head(input)];
-  for (const outcome of input.assembly.cases) lines.push('', ...(outcome.status === 'delivered' ? [caseConclusion(input, outcome)] : section(input, outcome)));
+  for (const outcome of input.assembly.cases) lines.push('', ...(outcome.status === 'delivered' ? [caseConclusion(input, outcome), ...checkpointLines(input, outcome)] : section(input, outcome)));
   if (input.scope && input.scope.outOfScope.length > 0) {
     lines.push('', `## 未纳入本次范围的原始用例（${input.scope.outOfScope.length} 条）`, '', '以下原始用例在开运行时未纳入本次范围，本次未做脚本编写与上机验证。', '');
     for (const omitted of input.scope.outOfScope) {
