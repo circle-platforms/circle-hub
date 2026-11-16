@@ -2,7 +2,7 @@ import { realpathSync } from 'node:fs';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { executionRefusals, failureLine, parseRunJobs, syntaxRejections, type ExecutionRefusal, type RowAudit, type SyntaxRejection } from '../functions/delivery.ts';
+import { executionRefusals, failureLine, parseRunJobs, syntaxRejections, unexecutedRows, type ExecutionRefusal, type ReachRow, type RowAudit, type SyntaxRejection } from '../functions/delivery.ts';
 import { HubReplyError, RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import {
   getOnce,
@@ -16,7 +16,7 @@ import {
   TransientHubReplyError,
   type RetryControl,
 } from '../functions/hub-retry.ts';
-import { CallFailure, failCall, parseCliOptions } from '../functions/text.ts';
+import { CallFailure, failCall, isRecord, parseCliOptions } from '../functions/text.ts';
 import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
 import { fetchRunInputs } from './fetch-run.ts';
 import { passReviewInputs } from './generate-workbook.ts';
@@ -123,13 +123,19 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       return name;
     };
     const index: Array<Record<string, unknown>> = [];
-    let refused = 0, unexecuted = 0;
+    let refused = 0, unexecuted = 0, unreached = 0;
     // The pass review reads the plan run of each job: the failure lines its contract declares and each case's own assertions.
     // A plan run that cannot be read leaves its passes unreviewed and says so; the delivery tool reviews them again in any case.
     const reviews = new Map<string, ReturnType<typeof passReviewInputs> | string>();
+    // The titles of the plan run's cases, for the sentence that names the case a stopped run ended in; unknown when the plan run cannot be read.
+    const titles = new Map<string, Map<string, string>>();
     const reviewOf = async (planRun: string) => {
       if (!reviews.has(planRun)) {
-        try { const plan = await fetchRunInputs(origin, bearer, planRun, readRetry); reviews.set(planRun, passReviewInputs({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory })); }
+        try {
+          const plan = await fetchRunInputs(origin, bearer, planRun, readRetry);
+          titles.set(planRun, new Map((Array.isArray(plan.run.items) ? plan.run.items : []).flatMap((item) => isRecord(item) && isRecord(item.fields) && typeof item.fields.autoid === 'string' && typeof item.fields.title === 'string' ? [[item.fields.autoid, item.fields.title] as const] : [])));
+          reviews.set(planRun, passReviewInputs({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory }));
+        }
         catch (error) { reviews.set(planRun, error instanceof Error ? error.message : '读取失败'); }
       }
       return reviews.get(planRun)!;
@@ -140,6 +146,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       const folder = job.job.slice(0, 12);
       const deviceReturn = await piece(job.device_return, join(folder, 'device-return.txt'));
       const rows: Array<Record<string, unknown>> = [];
+      const built: Array<{ entry: Record<string, unknown>; reach: ReachRow }> = [];
       // The declared failure lines are read for every job that has rows: a pass is reviewed against them and a row's sessions are
       // searched for the commands the device answered with one.
       const review = (job.rows ?? []).length ? await reviewOf(job.plan_run) : null;
@@ -155,7 +162,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
           else { passReview.read++; dropped = failureLine({ 运行日志: new TextDecoder().decode(bytes) }, review.markers, review.assertions.get(row.item) ?? []); if (dropped) passReview.downgraded++; }
         }
         const verdict = dropped ? 'no_verdict' : row.dynamic_terminal;
-        verdicts[verdict] = (verdicts[verdict] ?? 0) + 1;
         const sessions: Record<string, string | null> = {};
         for (const [k, [name, reference]] of Object.entries(row.evidence?.sessions ?? {}).entries()) {
           const file = SAFE_NAME.test(name) && name !== 'log.txt' ? name : `session-${k + 1}.txt`;
@@ -178,7 +184,22 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
           if (bytes) for (const refusal of executionRefusals(new TextDecoder().decode(bytes), markers)) failed.push({ session: name, ...refusal });
         }
         unexecuted += failed.length;
-        rows.push({ item: row.item, verdict, ...(row.report_check ? { report_check: row.report_check } : {}), ...(dropped ? { runner_verdict: row.dynamic_terminal, pass_review: dropped } : {}), log, sessions, ...(Object.keys(sessions).length ? { syntax_rejected: rejected, ...(markers?.length ? { execution_refused: failed } : {}) } : {}) });
+        const logBytes = log === null ? undefined : outputs.find((output) => output.name === log)?.bytes;
+        built.push({
+          entry: { item: row.item, verdict, ...(row.report_check ? { report_check: row.report_check } : {}), ...(dropped ? { runner_verdict: row.dynamic_terminal, pass_review: dropped } : {}), log, sessions, ...(Object.keys(sessions).length ? { syntax_rejected: rejected, ...(markers?.length ? { execution_refused: failed } : {}) } : {}) },
+          reach: { item: row.item, reached: Boolean(row.evidence?.log) || Object.keys(row.evidence?.sessions ?? {}).length > 0, log: logBytes ? new TextDecoder().decode(logBytes) : null },
+        });
+      }
+      // A run that stopped in a case (functions/delivery.ts unexecutedRows): the cases after the one whose log ends in the
+      // runner's exception never began. They are listed as not run with the program-decided reason and next step, not as the
+      // device verdict the Hub gave them for the whole job, and the Hub's own record of the report stays beside it.
+      const stopped = unexecutedRows(job.items, built.map(({ reach }) => reach), (item) => titles.get(job.plan_run)?.get(item));
+      for (const { entry } of built) {
+        const found = stopped.get(String(entry.item));
+        if (found) { unreached++; const { item, verdict: _hub, ...rest } = entry; rows.push({ item, verdict: 'not_run', not_executed: { reason: found.reason, next_action: found.next_action, aborted_by: found.by }, ...rest }); }
+        else rows.push(entry);
+        const verdict = String(rows.at(-1)!.verdict);
+        verdicts[verdict] = (verdicts[verdict] ?? 0) + 1;
       }
       index.push({ outcome: job.outcome, missing_facts: job.missing_facts ?? [], ...(job.member_missing_facts ? { member_missing_facts: job.member_missing_facts } : {}), next_action: job.next_action ?? null, job: job.job, plan_run: job.plan_run, workbook_sha256: job.sha256, ended: job.ended, device_return: deviceReturn, rows });
     }
@@ -189,7 +210,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     for (const job of jobs) outcomes[job.outcome] = (outcomes[job.outcome] ?? 0) + 1;
     const unsent = jobs.filter(job => job.outcome === 'not_dispatched');
     const missing = unsent.flatMap(job => job.missing_facts ?? []);
-    process.stdout.write(JSON.stringify({ outcomes, missing_facts: missing, ...(unsent.length ? { message: `有 ${unsent.length} 个上机验证作业未发到设备，不算一次上机验证；请先按 missing_facts 的原因与下一步处理，不用重交读取进展` } : {}), run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, pass_review: passReview }) + '\n');
+    process.stdout.write(JSON.stringify({ outcomes, missing_facts: missing, ...(unsent.length ? { message: `有 ${unsent.length} 个上机验证作业未发到设备，不算一次上机验证；请先按 missing_facts 的原因与下一步处理，不用重交读取进展` } : {}), run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, ...(unreached ? { not_executed: unreached } : {}), pass_review: passReview }) + '\n');
     return 0;
   } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }

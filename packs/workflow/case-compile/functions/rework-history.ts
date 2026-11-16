@@ -161,6 +161,8 @@ export interface DeviceReturnEvidence {
   sessionLengths: Record<string, number>;
   withheldNotes: string[];
   errorSignatures: string[];
+  /** The dispatch held the case but the run never reached it (tools/download-returns.ts `not_executed`): no device observation, no attempt. */
+  notExecuted?: { reason: string; next_action: string };
 }
 
 export interface HubAnswerNotices {
@@ -1563,6 +1565,9 @@ export function extractCaseDeviceEvidence(params: {
 
   const verdict = typeof matchedRow.verdict === 'string' ? matchedRow.verdict : 'unknown';
   const runnerVerdict = typeof matchedRow.runner_verdict === 'string' ? matchedRow.runner_verdict : undefined;
+  const notExecuted = isRecord(matchedRow.not_executed) && typeof matchedRow.not_executed.reason === 'string' && matchedRow.not_executed.reason.trim()
+    ? { reason: matchedRow.not_executed.reason, next_action: typeof matchedRow.not_executed.next_action === 'string' ? matchedRow.not_executed.next_action : '' }
+    : undefined;
 
   const withheldNotes: string[] = [];
   if (Array.isArray(params.returnsIndex.withheld)) {
@@ -1587,7 +1592,8 @@ export function extractCaseDeviceEvidence(params: {
   for (const rf of runnerFailLines.slice(0, MAX_ANOMALY_LINES)) {
     pushSig(`runner_fail:${normalizeErrorToken(rf)}`);
   }
-  if (errorSignatures.length === 0 && verdict !== 'pass') {
+  // A case the run never reached has no device error to repeat: it must not read as the same failure twice.
+  if (errorSignatures.length === 0 && verdict !== 'pass' && !notExecuted) {
     pushSig(`device_verdict:${verdict}`);
   }
 
@@ -1609,6 +1615,7 @@ export function extractCaseDeviceEvidence(params: {
     sessionLengths,
     withheldNotes,
     errorSignatures,
+    ...(notExecuted ? { notExecuted } : {}),
   };
 }
 
@@ -2427,6 +2434,7 @@ export function renderPriorRoundsMarkdown(params: {
       deviceLines.push(
         `- index.json 结论：run=${dev.verificationRun}，job=${dev.job}，verdict=${dev.verdict}${dev.runnerVerdict ? `，runner_verdict=${dev.runnerVerdict}` : ''}${dev.logFile ? `，log=${dev.logFile}` : ''}`,
       );
+      if (dev.notExecuted) deviceLines.push(`- 本轮没有在设备上执行，不算一次上机：${dev.notExecuted.reason}${dev.notExecuted.next_action ? `。下一步：${dev.notExecuted.next_action}` : ''}`);
       deviceLines.push(`- 证据边界：${MISSING_EVIDENCE_CAVEAT}`);
       if (dev.passReview) {
         deviceLines.push(`- pass_review 降级依据：${dev.passReview.where} -> ${dev.passReview.line}`);

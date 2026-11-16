@@ -1070,3 +1070,54 @@ test('a delivered case whose plan stands on a checkpoint the model wrote itself 
   assert.deepEqual(summary.cases[0].model_checkpoints, [{ expectation: '合成应答带有签名记录', literal: 'SYNTH-SIG', rationale: '合成理由：选应答里的签名记录名' }]);
   assert.equal(summary.cases[2].model_checkpoints, undefined);
 });
+
+// A workbook holds several cases and the runner runs them in one test: an exception in a step ends the whole run, the cases
+// after it never begin, the gateway has neither a result row nor a log for them, and the Hub answers every case of the job
+// with no verdict. A case the run did not reach is no device attempt of its own: the delivery says so and counts nothing.
+const STOPPED = Buffer.from([
+  '2026-11-17 07:08:56 #######   step2: 合成分组>合成用例 101',
+  '2026-11-17 07:08:58 #######   step9: 按声明的行列结构取一格',
+  '2026-11-17 07:09:03 ################# The failed check point num:   0   ####',
+  '2026-11-17 07:09:03 ################# The passed check point num:   0   ####',
+  '2026-11-17 07:09:03 >       return invoke(request, logger, check_point)',
+  '2026-11-17 07:09:03 lib/test_xlsx.py:1101: in test_xlsx',
+  '2026-11-17 07:09:03 E       lib.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行',
+  '2026-11-17 07:09:03 ######################      FAIL      ####################',
+].join('\n') + '\n');
+const NOT_COMPLETE = { condition: 'result.complete', pointer: '/complete', declared_pointer: '/complete', resolved: false, present: true, actual_sha256: 'e'.repeat(64), result_definition_sha256: 'f'.repeat(64), missing_fact: '结果完整字段 /complete 尚不为 true，缺完整报告', next_action: '按该指针对照已保存原件：原件未齐时稍后 job resume；不重交' };
+const stoppedWhole = () => {
+  const stopped = job('a', WHOLE, PLAN1, CASES.slice(0, 3), plan1.workbook, ['no_verdict', 'no_verdict', 'no_verdict']);
+  stopped.rows.forEach((row, k) => Object.assign(row, { report_check: NOT_COMPLETE, missing_facts: ['complete', 'closed', 'report'], missing_fact: NOT_COMPLETE.missing_fact, next_action: NOT_COMPLETE.next_action, ...(k === 0 ? { evidence: { log: `src:${sha256(STOPPED)}` } } : {}) }));
+  return stopped;
+};
+const WHY = `同一份自动化用例 Excel 中排在前面的原始用例 ${CASES[0]} 合成用例 101 在第 9 步出现异常，运行器中止了整本，本条没有在设备上执行`, NEXT = '修正前一条后重新上机；本次不算本条的一次上机';
+
+test('the cases a stopped run did not reach are reported as not executed with the reason and the next step, and none of them counts as a device attempt', async (t) => {
+  const h = await hub(undefined, undefined, { [WHOLE]: [stoppedWhole()] }, {}, [WHOLE], false, [STOPPED]); t.after(h.close);
+  const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-')), out = join(dir, 'out');
+  const note = { ...NOTES, [CASES[0]]: { judged: '合成判断：取格失败，运行器中止了整本', remedy: '合成取舍：改取格条件后重新上机', evidence: 'lib.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行' } };
+  const { code, stdout, stderr } = await run(h, await notes({ ...note, [CASES[1]]: { judged: '合成说明', remedy: '合成下一步' } }), out, WHOLE);
+  assert.equal(code, 0, stderr);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.deepEqual(summary.totals, { cases: 4, delivered: 0, failed: 0, unsettled: 1, unrun: 3 });
+  const [first, second, third] = summary.cases;
+  assert.deepEqual([first.status, first.dispatches.map((d: { terminal: string }) => d.terminal), first.not_executed], ['unsettled', ['no_verdict'], undefined], 'the case that stopped the run keeps the verdict the Hub gave it');
+  for (const c of [second, third]) {
+    assert.deepEqual([c.status, c.dispatches], ['unrun', []], 'no device attempt');
+    assert.deepEqual(c.not_executed, [{ ordinal: 1, run: WHOLE, job: 'a'.repeat(64), plan_run: PLAN1, by: { item: CASES[0], step: 9 }, reason: WHY, next_action: NEXT }]);
+    assert.equal(c.reenter, true, 'it is taken up again once the case before it is corrected');
+    assert.equal(c.basis, undefined, 'its workbook was verified and dispatched, so the plan run\'s pending workbook step says nothing about it');
+  }
+  assert.deepEqual(summary.unsuccessful_volume.items.map((c: { autoid: string }) => c.autoid), [CASES[0], CASES[1], CASES[2]], 'their plans are in the unsuccessful volume');
+  assert.equal(summary.incomplete, false);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.ok(report.includes(`原始用例 ${CASES[1]} 合成用例 102，没有在设备上执行，状态未知。原因：${WHY}。下一步：${NEXT}。决定者程序`), report);
+  assert.ok(report.includes(`第 1 次未执行：${WHY}。`), report);
+  assert.ok(JSON.parse(stdout).reply.includes(`原始用例 ${CASES[2]} 合成用例 103，没有在设备上执行，状态未知。`));
+  assert.doesNotMatch(report, new RegExp(`原始用例 ${CASES[1]}[^\\n]*(稍后 job resume|完整字段)`), 'the Hub advice for a report that is not yet complete does not stand for a case that did not run');
+
+  // It has not been to the device: a round of it cannot be declared, as for a case never dispatched.
+  const claimed = await run(h, await notes({ ...note, [CASES[1]]: { judged: '合成说明', remedy: '合成下一步', round: 1 } }), join(dir, 'claimed'), WHOLE);
+  assert.equal(claimed.code, 1);
+  assert.deepEqual(JSON.parse(claimed.stdout).hints.map((hint: { autoid: string; missing: string }) => [hint.autoid, hint.missing]), [[CASES[1], '本条没有到过设备，不能声明上机轮次']]);
+});

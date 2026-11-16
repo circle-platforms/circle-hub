@@ -330,3 +330,85 @@ test('run31 not-dispatched downloads expose the outcome, reason and next action 
   assert.match(summary.message, /未发到设备.*不算/);
   assert.equal(summary.missing_facts[0].next_action, '由测试环境管理员恢复后重开');
 });
+
+// A workbook holds several cases and the runner runs them in one test: an exception in a step ends the whole run and the
+// cases after it never begin (InfoTest lib/test_xlsx.py, no per-case guard), so the gateway has no result row and no log for
+// them and the Hub answers every case of the job with the same no verdict ("the report is not complete"). The returns say
+// which cases did not run and why, instead of handing the model a device verdict it cannot act on.
+const stoppedLog = text([
+  '2026-11-17 07:08:56 #######   step2: 合成分组>合成用例 301',
+  '2026-11-17 07:08:56 192.0.2.10 - sends command in config: widget on',
+  '2026-11-17 07:08:58 #######   step9: 按声明的行列结构取一格',
+  '2026-11-17 07:09:03 ################# The failed check point num:   0   ####',
+  '2026-11-17 07:09:03 ################# The passed check point num:   0   ####',
+  '2026-11-17 07:09:03 >       return invoke(request, logger, check_point)',
+  '2026-11-17 07:09:03 lib/test_xlsx.py:1101: in test_xlsx',
+  '2026-11-17 07:09:03 E       lib.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行',
+  '2026-11-17 07:09:03 ######################      FAIL      ####################',
+].join('\n') + '\n');
+const NOT_COMPLETE = { condition: 'result.complete', pointer: '/complete', declared_pointer: '/complete', resolved: false, present: true, actual_sha256: 'e'.repeat(64), result_definition_sha256: 'f'.repeat(64), missing_fact: '结果完整字段 /complete 尚不为 true，缺完整报告', next_action: '按该指针对照已保存原件：原件未齐时稍后 job resume；不重交' };
+const ITEMS3 = ['990000000000000301', '990000000000000302', '990000000000000303'];
+function stoppedJob(rows: Array<Record<string, unknown>>) {
+  const answer = jobs(); answer.jobs[0].items = ITEMS3;
+  answer.jobs[0].rows = ITEMS3.map((item, k) => ({ item, dynamic_terminal: 'no_verdict', report_check: NOT_COMPLETE, ...rows[k] })) as typeof answer.jobs[0]['rows'];
+  return answer;
+}
+async function planOfThree(): Promise<{ plan: ReturnType<typeof planRunFixture>; served: Uint8Array[] }> {
+  const contract = text(JSON.stringify(signTypedRuntime(structuredClone(CONTRACT_DOC)))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
+  return { plan: planRunFixture({ run: PLAN, autoids: ITEMS3, exclude: [], contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` }), served: [contract, profile, inventory] };
+}
+const read = async (out: string) => JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+
+test('the cases after the one whose exception ended the run are listed as not executed with the reason and the next step, not as a device verdict', async (t) => {
+  const { plan, served } = await planOfThree();
+  const answer = stoppedJob([{ evidence: { log: ref(stoppedLog), sessions: { 'dev-a.txt': ref(session) } } }, {}, {}]);
+  const h = await hub(answer, [deviceReturn, stoppedLog, session, ...served], [], plan); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const rows = (await read(out)).jobs[0].rows;
+  assert.deepEqual(rows.map((r: { verdict: string }) => r.verdict), ['no_verdict', 'not_run', 'not_run'], 'the first case keeps the verdict the Hub gave it');
+  assert.equal('not_executed' in rows[0], false, 'it ran; its own words are in its log');
+  assert.deepEqual(rows[0].report_check, NOT_COMPLETE);
+  const reason = '同一份自动化用例 Excel 中排在前面的原始用例 990000000000000301 合成用例 301 在第 9 步出现异常，运行器中止了整本，本条没有在设备上执行';
+  for (const k of [1, 2]) {
+    assert.deepEqual(rows[k].not_executed, { reason, next_action: '修正前一条后重新上机；本次不算本条的一次上机', aborted_by: { item: ITEMS3[0], step: 9 } });
+    assert.deepEqual([rows[k].log, rows[k].sessions], [null, {}], 'there is nothing of it on the device');
+    assert.deepEqual(rows[k].report_check, NOT_COMPLETE, 'what the Hub recorded stays disclosed');
+  }
+  const summary = JSON.parse(done.stdout);
+  assert.deepEqual([summary.verdicts, summary.not_executed], [{ no_verdict: 1, not_run: 2 }, 2]);
+});
+
+test('a run that reached every case, or whose last reached case shows no exception, is listed as before', async (t) => {
+  const { plan, served } = await planOfThree();
+  const plain = text('2026-11-17 07:08:58 #######   step2: 合成分组>合成用例 302\n2026-11-17 07:09:03 ######################      PASS      ####################\n');
+  const failedCheck = text('2026-11-17 07:08:58 #######   step3: 合成断言\n2026-11-17 07:08:58 fail to find: widget ready\n2026-11-17 07:09:03 ################# The failed check point num:   1   ####\n2026-11-17 07:09:03 ######################      FAIL      ####################\n');
+  const cases: Array<[string, Array<Record<string, unknown>>]> = [
+    ['every case has a log', [{ evidence: { log: ref(stoppedLog) } }, { evidence: { log: ref(plain) } }, { evidence: { log: ref(plain) } }]],
+    ['a later case has only a session', [{ evidence: { log: ref(stoppedLog) } }, { evidence: { sessions: { 'dev-a.txt': ref(session) } } }, {}]],
+    ['the last case reached failed a check point and the run went on', [{ evidence: { log: ref(plain) } }, { evidence: { log: ref(failedCheck) } }, {}]],
+    ['no case was reached', [{}, {}, {}]],
+  ];
+  for (const [name, rows] of cases) {
+    const h = await hub(stoppedJob(rows), [deviceReturn, stoppedLog, plain, failedCheck, session, ...served], [], plan); t.after(h.close);
+    const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+    const done = await run(h.url, out);
+    assert.equal(done.code, 0, `${name}: ${done.stderr}`);
+    const index = await read(out);
+    assert.deepEqual(index.jobs[0].rows.map((r: { verdict: string }) => r.verdict), ['no_verdict', 'no_verdict', 'no_verdict'], name);
+    assert.equal(index.jobs[0].rows.some((r: Record<string, unknown>) => 'not_executed' in r), false, name);
+    const summary = JSON.parse(done.stdout);
+    assert.deepEqual([summary.verdicts, 'not_executed' in summary], [{ no_verdict: 3 }, false], name);
+  }
+});
+
+test('without the plan run the cases not reached are still listed, with the title said to be unknown', async (t) => {
+  const h = await hub(stoppedJob([{ evidence: { log: ref(stoppedLog) } }, {}, {}]), [deviceReturn, stoppedLog]); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const rows = (await read(out)).jobs[0].rows;
+  assert.equal(rows[1].verdict, 'not_run');
+  assert.match(rows[1].not_executed.reason, /^同一份自动化用例 Excel 中排在前面的原始用例 990000000000000301 标题未知 在第 9 步出现异常，/);
+});
