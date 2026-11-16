@@ -4,7 +4,7 @@
 
 ## 默认方式：客户端侧 Plumb 保真核对
 
-1. 运行 `fidelity-plumb.ts` 生成或复用 `.brief.json` 与 `.verdict.json`（工具会自动展开定长文字、按 `added_precondition` 与配对 `cleanup:true` 折叠豁免步骤、按 2400 token 上限裁切前序步骤且不截断命令块，超过 32 题自动分批提交；遇 503/413 不静默放行，`review` 区加标 `[需人工复核：Plumb sequence 落入 review 区]`）：
+1. 运行 `fidelity-plumb.ts` 生成或复用 `.brief.json` 与 `.verdict.json`（工具会自动展开定长文字、按 `added_precondition` 与配对 `cleanup:true` 折叠豁免步骤、按 2400 token 上限裁切前序步骤且不截断命令块，超过网关单次请求上限（32 题、展开后 256 个打分对、1 MiB）自动分批提交；遇 503/413 不静默放行，`review` 区加标 `[需人工复核：Plumb sequence 落入 review 区]`）：
 
 ```sh
 node '<技能目录>/tools/fidelity-plumb.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --briefs '<核对目录>' --base-url %PLUMB_URL% --key-stdin <<'EOF'
@@ -18,9 +18,19 @@ EOF
 node '<技能目录>/tools/fidelity-apply.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --briefs '<核对目录>'
 ```
 
+## 题面超过 2400 token 时
+
+Plumb 一次最多读 2400 个估算 token 的核心内容（当前作者步骤加全部候选命令块和豁免依据），工具不在命令块中间截断。题面超了，工具依次做：
+
+1. 先裁掉更早的步骤（照旧）。
+2. 还超，就把在题面里逐字相同、出现至少两次的长字面量（32 个字符以上，按空白分词，引号不算）写成同一个名字（`«L1»`、`«L2»`），原文连同字符数（带点的还有各段字符数）只在题面的「长字面量对照」表里写一次。只看长度和重复，不认关键词；差一个字符的字面量不算同一个，原样保留。自动化用例和简报里的原文不改，换了什么写在判断的 `disclosure`（“长字面量换名”）和汇总的 `literal_substitutions` 里。原样就不超的题面一个字也不动。
+3. 换名后仍超（候选命令块和豁免依据本身就超限，例如一条用例几十个命令块），这条用例不交给 Plumb，其余用例照常核对并写入核对目录。汇总的 `over_budget` 列出这些用例，退出码为 1，停用文字写出每步的估算 token、命令块与豁免依据各占多少、简报路径和改走的审计：独立模型盲审（下一节的单条形式，加 `fidelity-apply.ts`）。已有同名 `.verdict.json`（盲审写的）的视为已审，不再停用，也不会被覆盖。
+
+不要对整个核对目录用 `task-brief.ts --batch`：它会给目录里全部简报派任务，写出的同名 `.verdict.json` 会盖掉 Plumb 已写的判断。
+
 ## 仅当 Plumb 未部署时的手动盲审流程
 
-若当前环境明确未配备 Plumb 网关，才改用 `fidelity-brief.ts` + `task-brief.ts --role '保真核对'` + `fidelity-apply.ts`：
+若当前环境明确未配备 Plumb 网关，或上一节说明的超限用例，才改用 `fidelity-brief.ts` + `task-brief.ts --role '保真核对'` + `fidelity-apply.ts`（超限用例的简报已由 `fidelity-plumb.ts` 写好，只做 `task-brief.ts` 的单条形式和 `fidelity-apply.ts`）：
 
 ```sh
 node '<技能目录>/tools/fidelity-brief.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --out '<核对目录>'

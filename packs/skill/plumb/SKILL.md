@@ -28,7 +28,7 @@ node '<技能目录>/tools/plumb.ts' wake --base-url %PLUMB_URL% --wait --timeou
 EOF
 ```
 
-3. 单条或批量调用判别接口（自动分批至多 32 题/请求、并发不超过 2、写审计 JSONL）：
+3. 单条或批量调用判别接口（超过网关单次请求上限时自动分批：32 题、展开后 256 个打分对、1 MiB；并发不超过 2；写审计 JSONL）：
 
 ```text
 node '<技能目录>/tools/plumb.ts' judge --base-url %PLUMB_URL% --file '<请求JSON>' --cache-dir .plumb-cache --out plumb-audit.jsonl --key-stdin <<'EOF'
@@ -40,4 +40,4 @@ EOF
 
 - 非回环地址强制要求 `https://`，默认读取 `PLUMB_CA_FILE`（与运行环境注入的 `NODE_EXTRA_CA_CERTS`）及可选 `PLUMB_CA_SHA256` 指纹校验；不关闭证书校验证书链。
 - 全部模型判别结果恒附带并强制核对 `status: "未确认"`、`decided_by: "模型"` 与真实 `model_version`，严禁直接当作已核准结论或省略披露字段。
-- `POST` 请求在超时（`408`/`504`）或中途断连时不自动重发；超长触发 `413 request_too_large` 时应按前序上下文裁剪或拆分，不得吞错放行。
+- `POST` 请求在超时（`408`/`504`）或中途断连时不自动重发；超长触发 `413 request_too_large` 时应按前序上下文裁剪或拆分，不得吞错放行。拒绝文字里的 `limit (N)` 是同一请求还剩的预算，不是上限；三项上限的数和来源见 README。

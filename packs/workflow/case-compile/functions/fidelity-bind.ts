@@ -5,6 +5,7 @@ import {
   blockCommandLines,
   type PartitionedFidelityBlocks,
 } from './fidelity-render.ts';
+import type { LiteralSubstitution } from './fidelity-render.ts';
 import type { PlumbGate, PlumbNormalizedAnswer } from './generated/skills/plumb/plumb-client/index.ts';
 
 export interface BoundStepDecision {
@@ -164,12 +165,14 @@ export function buildFidelityVerdictDocument(params: {
   partitioned: PartitionedFidelityBlocks;
   modelVersion: string;
   requestSha256?: string;
+  /** Long literals that stood in the state sent to Plumb as names, step by step (see shortenRepeatedLiterals). */
+  literalSubstitutions?: ReadonlyArray<{ step: string } & LiteralSubstitution>;
 }): {
   steps: FidelityRow[];
   disclosure: string;
   model_disclosure: ModelDisclosure;
 } {
-  const { decisions, partitioned, modelVersion, requestSha256 } = params;
+  const { decisions, partitioned, modelVersion, requestSha256, literalSubstitutions = [] } = params;
   const rows = decisions.map((d) => d.row);
   const kept = rows.filter((r) => r.verdict === 'preserved').map((r) => r.n);
   const changed = rows.filter((r) => r.verdict === 'changed').map((r) => r.n);
@@ -185,6 +188,14 @@ export function buildFidelityVerdictDocument(params: {
   if (unrealized.length > 0) segments.push(`未实现步骤：${unrealized.join('、')}`);
   if (partitioned.exemptSummaryLines.length > 0) {
     segments.push(partitioned.exemptSummaryLines.join('；'));
+  }
+  if (literalSubstitutions.length > 0) {
+    const perStep = new Map<string, string[]>();
+    for (const sub of literalSubstitutions) {
+      const row = `${sub.name}（${sub.length} 个字符，出现 ${sub.occurrences} 次，SHA-256 前 12 位 ${sub.sha256_12}）`;
+      perStep.set(sub.step, [...(perStep.get(sub.step) ?? []), row]);
+    }
+    segments.push(`长字面量换名：${[...perStep].map(([step, rows]) => `步骤 ${step} 的 ${rows.join('、')}`).join('；')}，送 Plumb 的题面里逐字相同的长字面量写成了名字，原文只在题面的对照表里列一次，自动化用例和简报里的原文没有改`);
   }
   segments.push(`依据 Plumb(${modelVersion}) 判断（状态未确认，决定者模型）。`);
 

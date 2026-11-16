@@ -154,6 +154,54 @@ describe('plumb CLI wrapper and security hygiene', async () => {
     assert.equal(JSON.parse(stdout[0]).key_id, 'k_1');
   });
 
+  it('splits a judge --file batch that exceeds the gateway pair budget instead of sending it whole', async () => {
+    const questions: Record<string, unknown> = {};
+    for (let i = 0; i < 14; i += 1) {
+      const count = i % 2 === 0 ? 24 : 16;
+      questions[`q${i}`] = {
+        task: 'choice',
+        node: { line: 'synthetic', title: 'synthetic step' },
+        candidates: [...Array.from({ length: count }, (_, k) => ({ name: `cmd ${k}`, text: 'syntax' })), { name: '都不是', text: '以上候选均不符合' }],
+      };
+    }
+    const requestFile = join(workDir, 'big-batch.json');
+    await writeFile(requestFile, JSON.stringify({ task: 'choice', questions }));
+    const sizes: number[] = [];
+    const batchServer = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { questions: Record<string, { candidates: Array<{ name: string }> }> };
+        const priced = Object.values(body.questions).reduce((n, q) => n + q.candidates.length - 1, 0);
+        sizes.push(priced);
+        if (priced > 256) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { type: 'request_too_large', message: 'Compiled judge pairs (24) exceed limit (16)' } }));
+          return;
+        }
+        const answers = Object.fromEntries(Object.entries(body.questions).map(([qid, q]) => [qid, { type: 'choice', choice: q.candidates[0]!.name, confidence: 0.9, probabilities: { [q.candidates[0]!.name]: 0.9, 都不是: 0.1 } }]));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: '未确认', decided_by: '模型', model_version: 'plumb-27b-0.5.0', task: 'choice', request_id: 'r', answers }));
+      });
+    });
+    await new Promise<void>((resolve) => batchServer.listen(0, '127.0.0.1', resolve));
+    try {
+      const url = `http://127.0.0.1:${(batchServer.address() as AddressInfo).port}`;
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      const code = await runPlumbCli(['judge', '--base-url', url, '--file', requestFile, '--no-cache', '--key-stdin'], {
+        stdinText: 'plumb_sk_cli_batch_1111\n',
+        stdout: (l) => stdout.push(l),
+        stderr: (l) => stderr.push(l),
+      });
+      assert.equal(code, 0, stderr.join('\n'));
+      assert.equal(Object.keys(JSON.parse(stdout.join('\n')).answers).length, 14);
+      assert.ok(sizes.length >= 2 && sizes.every((n) => n <= 256), `requests priced at ${sizes.join(', ')} pairs`);
+    } finally {
+      await new Promise<void>((resolve) => batchServer.close(() => resolve()));
+    }
+  });
+
   it('passes static skill-script safety scan and hub/runs/packs validatePack on staged copy', async () => {
     const safety = scanSkillPack(PACK_DIR);
     assert.deepEqual(safety.issues, [], JSON.stringify(safety.issues));

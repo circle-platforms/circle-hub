@@ -253,13 +253,13 @@
     },
     {
       "path": "functions/fidelity-bind.ts",
-      "sha256": "2ea0de8d755d4a1e72cf0a9154e24d2f4a5a15cf9c0ac46459e48c01e98431b4",
-      "size": 7829
+      "sha256": "3b263864500a6ea3a00d8e82ccfdc526ab258c465cb24311ed7983b0ff60c361",
+      "size": 8759
     },
     {
       "path": "functions/fidelity-render.ts",
-      "sha256": "3735ff4eceb7c5dafe3997e8e23f5a3edf276a53ead37b8e29c81f2b5ce3da83",
-      "size": 7569
+      "sha256": "ffc9b1abafce0f819645da7f62745c58c0ff750539854c63ac106bd8520ee8e5",
+      "size": 13684
     },
     {
       "path": "functions/fidelity.ts",
@@ -308,13 +308,18 @@
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/client.ts",
-      "sha256": "f99732e023511a914badf1108736d288a8fb07c2f8ec5d78e16ff8d5912a3ad5",
-      "size": 42740
+      "sha256": "447955030c5ff3be36b6c4f5187f2c6f91b5ae024ebaa24b490619e108032aa3",
+      "size": 44818
+    },
+    {
+      "path": "functions/generated/skills/plumb/plumb-client/gateway-limits.ts",
+      "sha256": "fd2d2ac1add990b969aea2876c8209502445b948e0ee3460a48dfc661026ca0c",
+      "size": 8192
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/index.ts",
-      "sha256": "989f9d37765fa069c297732f098dcb3e2a6151311040ccfeaae72bf0d576b9bb",
-      "size": 178
+      "sha256": "f1693b282afdb4a24a749e3c397003b31a791077345f386b0352dec7602fc911",
+      "size": 215
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/redact.ts",
@@ -1008,13 +1013,13 @@
     },
     {
       "path": "tools/fidelity-plumb.ts",
-      "sha256": "71c40af8fac4aebba25093df1cfe047e5261fb6feb8b0d54f3691eb321a8c8fb",
-      "size": 9654
+      "sha256": "b7bd06df5484d6738c81763f5fd9b7e1cdeb2b1b14672b52268b8a787980c70f",
+      "size": 13244
     },
     {
       "path": "tools/fidelity.md",
-      "sha256": "6e2aab1eb709deb788e900cbdd722a7c3c90243863887a38b04ccde0076187da",
-      "size": 4604
+      "sha256": "821bbcdc879035777fc01b7ee406030d9fe0217f05dd901f4f863844f5895b6b",
+      "size": 6415
     },
     {
       "path": "tools/generate-workbook.cli.json",
