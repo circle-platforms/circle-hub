@@ -86,7 +86,7 @@ node scripts/real/replay/replay-submissions.ts report --mode <模式> --export <
 node scripts/real/replay/replay-submissions.ts packs --export <导出目录> [--repo <代码树>]
 node scripts/real/replay/replay-submissions.ts verify-bundle --bundle <数据包>
 node scripts/real/replay/replay-submissions.ts preflight --export <导出目录> --bundle <数据包>
-node scripts/real/replay/export-bundle.ts --pg-host <套接字目录或回环地址> --pg-port <端口> --pg-user <账户> --pg-database <库名> --objects <数据根>/objects --out <新目录> (--index <导出目录>/index.tsv | --run <运行号>...) [--cutoff <位置>] [--dry-run]
+node scripts/real/replay/export-bundle.ts --pg-host <套接字目录或回环地址> --pg-port <端口> --pg-user <账户> --pg-database <库名> --objects <数据根>/objects --out <新目录> (--index <导出目录>/index.tsv | --run <运行号>...) [--cutoff <位置>] [--exclude-kind <记录种类>]... [--dry-run]
 ```
 
 所有位置显式传入，输出目录必须是新目录，导出目录和数据包只读。`run` 要用 `node --import scripts/real/replay/submissions-net-guard.mjs` 启动：进程只准连回环地址，任何要连别处的代码路径（派发、读业务系统）在这里失败，不会真的出去。退出码：0 全部相同；1 有不同；4 一条也没能回放（缺 Hub 数据，既不是通过也不是失败）。

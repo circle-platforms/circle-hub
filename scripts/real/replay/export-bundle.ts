@@ -5,7 +5,7 @@
 //
 //   node export-bundle.ts --pg-host <socket dir or 127.0.0.1> --pg-port <port> --pg-user <name> --pg-database <name> \
 //        --objects <data root>/objects --out <new directory> (--index <index.tsv of an export> | --run <id>...) \
-//        [--cutoff <position>] [--all-objects] [--dry-run] [--source <free text>]
+//        [--cutoff <position>] [--all-objects] [--exclude-kind <record kind>]... [--dry-run] [--source <free text>]
 //
 // --dry-run counts rows, record bytes per kind and objects and writes nothing: run it first and read the sizes. There is no
 // password option: the connection is the service account's own (a unix socket, or a loopback address the database trusts).
@@ -35,7 +35,7 @@ export async function main(argv: string[]): Promise<number> {
     args: argv,
     options: {
       'pg-host': { type: 'string' }, 'pg-port': { type: 'string' }, 'pg-user': { type: 'string' }, 'pg-database': { type: 'string' }, objects: { type: 'string' }, out: { type: 'string' },
-      index: { type: 'string' }, run: { type: 'string', multiple: true }, cutoff: { type: 'string' }, 'all-objects': { type: 'boolean' }, 'dry-run': { type: 'boolean' }, source: { type: 'string' },
+      index: { type: 'string' }, run: { type: 'string', multiple: true }, cutoff: { type: 'string' }, 'all-objects': { type: 'boolean' }, 'dry-run': { type: 'boolean' }, 'exclude-kind': { type: 'string', multiple: true }, source: { type: 'string' },
     },
   });
   for (const name of ['pg-host', 'pg-port', 'pg-user', 'pg-database', 'objects', 'out'] as const) if (values[name] === undefined) fail(`--${name} 必给`);
@@ -55,6 +55,7 @@ export async function main(argv: string[]): Promise<number> {
     runs: [...runs],
     ...(values['all-objects'] === true ? { allObjects: true } : {}),
     ...(values['dry-run'] === true ? { dryRun: true } : {}),
+    ...(values['exclude-kind'] === undefined ? {} : { excludeKinds: values['exclude-kind'] }),
     ...(values.source === undefined ? {} : { source: values.source }),
     log: (line) => process.stderr.write(`${new Date().toISOString()} ${line}\n`),
   });

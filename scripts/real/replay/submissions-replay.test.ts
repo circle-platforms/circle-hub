@@ -158,6 +158,14 @@ describe('a bundle of a synthetic Hub', { skip }, () => {
     assert.ok(manifest.tables.records.rows > 0);
     assert.equal(await readFile(join(out, 'manifest.json'), 'utf8').then(() => true, () => false), false, 'nothing was written');
   });
+
+  test('a record kind can be left out on request, and the manifest says so', async () => {
+    const kinds = Object.keys((await openBundle(bundleDir)).manifest.kinds);
+    const left = kinds.find((kind) => kind === 'claim') ?? kinds[kinds.length - 1];
+    const manifest = await exportBundle({ database: hub.records.database, objectsRoot: join(hub.records.dataDir, 'objects'), out: join(scratch, 'plan-excluded'), cutoff: 1_000_000, runs: [run], dryRun: true, excludeKinds: [left] });
+    assert.equal(manifest.kinds[left], undefined);
+    assert.ok(manifest.notes.some((note) => note.includes(left) && note.includes('不导出')));
+  });
 });
 
 describe('the faithful replay', { skip }, () => {

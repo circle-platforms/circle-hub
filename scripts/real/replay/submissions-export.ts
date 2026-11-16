@@ -22,6 +22,8 @@ export interface ExportOptions {
   runs: readonly string[];
   /** Export the bytes of every object the exported records name, not only those of the scoped runs, the compositions and the packs. */
   allObjects?: boolean;
+  /** More record kinds to leave out (named in the manifest): for a kind the dry run shows to be large and the replay does not read. */
+  excludeKinds?: readonly string[];
   /** Plan only: count rows and bytes per table and kind, write nothing. */
   dryRun?: boolean;
   source?: string;
@@ -30,7 +32,7 @@ export interface ExportOptions {
 
 const RUN_ID = /run_[0-9a-z]{26}/g;
 const HEX64 = /[0-9a-f]{64}/g;
-const PAGE = 400;
+const PAGE = 200;
 
 class JsonLines {
   readonly #stream: WriteStream;
@@ -94,6 +96,7 @@ function runClosure(seed: readonly string[], bodyOf: (run: string) => string | u
 /** Exports a bundle from a Hub database (read-only) and its object directory. Returns the manifest (also written, unless dryRun). */
 export async function exportBundle(options: ExportOptions): Promise<BundleManifest> {
   const log = options.log ?? (() => {});
+  const excluded = [...EXCLUDED_KINDS, ...(options.excludeKinds ?? [])];
   const client = await connect(options.database);
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -160,7 +163,7 @@ export async function exportBundle(options: ExportOptions): Promise<BundleManife
     for (let last = 0; ; ) {
       const page = await client.query<BundleRow & { seq: string; kind: string; body: string; size: number; digest: string }>(
         `SELECT seq, id, digest, kind, schema, provenance, created_at, body, size FROM records WHERE seq>$1 AND seq<=$2 AND kind<>ALL($3::text[]) ORDER BY seq LIMIT ${PAGE}`,
-        [last, options.cutoff, EXCLUDED_KINDS],
+        [last, options.cutoff, excluded],
       );
       if (page.rows.length === 0) break;
       for (const row of page.rows) {
@@ -198,7 +201,7 @@ export async function exportBundle(options: ExportOptions): Promise<BundleManife
       }
     }
     const digests = new Set<string>();
-    for (const digest of (await client.query<{ digest: string }>('SELECT digest FROM records WHERE seq<=$1 AND kind<>ALL($2::text[])', [options.cutoff, EXCLUDED_KINDS])).rows.map((r) => r.digest)) digests.add(digest);
+    for (const digest of (await client.query<{ digest: string }>('SELECT digest FROM records WHERE seq<=$1 AND kind<>ALL($2::text[])', [options.cutoff, excluded])).rows.map((r) => r.digest)) digests.add(digest);
     for (const row of (await client.query<BundleRow & { digest: string }>('SELECT kind, key, digest FROM record_keys ORDER BY kind, key')).rows) {
       if (!digests.has(row.digest)) continue;
       count('record_keys');
@@ -233,6 +236,7 @@ export async function exportBundle(options: ExportOptions): Promise<BundleManife
       }
     }
     await client.query('COMMIT');
+    if ((options.excludeKinds ?? []).length > 0) manifest.notes.push(`按要求另外不导出的记录种类：${(options.excludeKinds ?? []).join('、')}`);
     manifest.notes.push(`记录类别大小（字节）：${[...kindSizes].sort((a, b) => b[1] - a[1]).map(([kind, size]) => `${kind} ${size}`).join('，')}`);
     for (const file of files.values()) await file.end();
     if (options.dryRun !== true) await writeFile(join(options.out, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
