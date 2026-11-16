@@ -166,12 +166,6 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
     else notes.push(`${match.pack}：这棵代码树${match.status === 'absent' ? '没有这个版本' : `里这个版本的摘要是 ${String(match.found).slice(0, 12)}，不是记录的 ${match.digest.slice(0, 12)}`}`);
   }
 
-  if (config.bundle === null) {
-    for (const task of limited) outcomes.push(refuse(task, 'no_bundle', '没有给 Hub 数据包（--bundle）：验证要读知识树、来源原件、记录和任务包，这些在 Hub 的数据库里，导出里没有；清单见 needs-export.md'));
-    return { mode: config.mode, commit: config.commit, outcomes, skipped, packs, notes };
-  }
-
-  const known = await validationFacts(config.bundle);
   // A candidate binds each run to the tree's pack of the same id.
   const directories = config.mode === 'candidate' ? await findPackDirectories(config.repo) : [];
   const rebind = new Map<string, { pack: string; pack_digest: string }>();
@@ -199,6 +193,17 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
     }
   }
 
+  if (config.bundle === null) {
+    for (const task of limited) {
+      const binding = bindings.get(task.run);
+      outcomes.push(unbound.has(task.run)
+        ? refuse(task, unbound.get(task.run)!.code, unbound.get(task.run)!.message)
+        : make(task, { status: 'not_replayable', reason: { code: 'no_bundle', message: '没有给 Hub 数据包（--bundle）：验证要读知识树、来源原件、记录和任务包，这些在 Hub 的数据库里，导出里没有；清单见 needs-export.md' }, ...(binding === undefined ? {} : { rebound: binding }) }));
+    }
+    return { mode: config.mode, commit: config.commit, outcomes, skipped, packs, notes };
+  }
+
+  const known = await validationFacts(config.bundle);
   const replayable = limited.filter((t) => t.submission !== null && known.has(t.seq) && !unbound.has(t.run));
   let session: ReplaySession | null = null;
   let refusedPacks = new Map<string, string>();

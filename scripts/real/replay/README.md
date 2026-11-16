@@ -85,6 +85,7 @@ node scripts/real/replay/replay-submissions.ts run --mode faithful|candidate --e
 node scripts/real/replay/replay-submissions.ts report --mode <模式> --export <导出目录> [--bundle <数据包>] --out <新目录> <part.json>...
 node scripts/real/replay/replay-submissions.ts packs --export <导出目录> [--repo <代码树>]
 node scripts/real/replay/replay-submissions.ts verify-bundle --bundle <数据包>
+node scripts/real/replay/replay-submissions.ts preflight --export <导出目录> --bundle <数据包>
 node scripts/real/replay/export-bundle.ts --pg-host <套接字目录或回环地址> --pg-port <端口> --pg-user <账户> --pg-database <库名> --objects <数据根>/objects --out <新目录> (--index <导出目录>/index.tsv | --run <运行号>...) [--cutoff <位置>] [--dry-run]
 ```
 
@@ -92,7 +93,7 @@ node scripts/real/replay/export-bundle.ts --pg-host <套接字目录或回环地
 
 **输入一：记录导出**（`index.tsv` 加每个运行一个目录，`<位置>-run.json`、`-submission.json`、`-validation_result.json`、`-result_summary.json`）。每个文件读之前按 index 核对大小和 SHA-256；核对结果按提交的参数摘要配对到提交。
 
-**输入二：Hub 数据包**（`replay-bundle@1`）。验证读的知识树、来源原件、记录和任务包都在 Hub 的数据库里，不在导出里。`export-bundle.ts` 在 Hub 所在主机上只读地写出它：`records`（按追加位置）及其 `record_index`、`record_keys`，`objects` 及字节，以及 `users`（不含口令摘要）、`pointers` 等几张小表；`tokens`、被扣留的原件字节、个人空间字节、调用日志等不导出，清单和理由写在 `manifest.json` 的 `withheld`。个人空间的记录只以标记形式在包里（内容留在 Hub），载入时数出来。`--dry-run` 只数不写。它只依赖 node 和 `pg`，不引用本仓库的 Hub 代码。
+**输入二：Hub 数据包**（`replay-bundle@1`）。验证读的知识树、来源原件、记录和任务包都在 Hub 的数据库里，不在导出里。`export-bundle.ts` 在 Hub 所在主机上只读地写出它：`records`（按追加位置）及其 `record_index`、`record_keys`，`objects` 及字节，以及 `users`（不含口令摘要）、`pointers` 等几张小表；`tokens`、被扣留的原件字节、个人空间字节、调用日志等不导出，清单和理由写在 `manifest.json` 的 `withheld`。个人空间的记录只以标记形式在包里（内容留在 Hub），载入时数出来。`--dry-run` 只数不写。它只依赖 node 和 `pg`，不引用本仓库的 Hub 代码。`preflight` 在回放之前把记录里点名的东西（核对结果的 `validate` 动作、运行者账户、任务包和技能的 `pack_version`、知识根的组成、来源原件的字节和记录、绑定的 `rec:` 记录）逐个对数据包点名，缺什么列什么，用来决定还要不要补一次导出。
 
 **回放的方法**。数据包按位置载入一个草稿库：载到被回放那条核对结果之前的每一条记录，之后的一条不载，所以回放读不到当时的答案；每条记录的摘要重算核对，每个对象按 SHA-256 核对。每条核对在草稿库的复制（`CREATE DATABASE ... TEMPLATE`）里回放，用当时 `validate` 动作记下的会话和模型，以运行者的身份调用。回放读不到的记录和对象（`store.get`、`objects.get` 返回空）记在每条结果的 `misses` 里，用来看数据包缺什么。
 

@@ -6,6 +6,7 @@
 //   node scripts/real/replay/replay-submissions.ts packs --export <dir> [--repo <tree>]
 //   node scripts/real/replay/replay-submissions.ts export-bundle …    (the same as export-bundle.ts, which runs on the Hub's host)
 //   node scripts/real/replay/replay-submissions.ts verify-bundle --bundle <dir>
+//   node scripts/real/replay/replay-submissions.ts preflight --export <dir> --bundle <dir>     (what the recorded runs name that the bundle lacks)
 //
 // Every path is given on the command line; nothing about a system is written here. The export folder and the bundle are read
 // only. `run` is meant to be started with `node --import ./scripts/real/replay/submissions-net-guard.mjs` (the wrapper does).
@@ -16,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { main as exportMain } from './export-bundle.ts';
 import { openBundle } from './submissions-bundle.ts';
+import { preflight } from './submissions-preflight.ts';
 import { matchPacks } from './submissions-packs.ts';
 import { readRecordedExport } from './submissions-recorded.ts';
 import { renderDetails, summarize, type ReportMeta } from './submissions-report.ts';
@@ -99,6 +101,16 @@ async function packs(argv: string[]): Promise<number> {
   return 0;
 }
 
+async function preflightCommand(argv: string[]): Promise<number> {
+  const { values } = parseArgs({ args: argv, options: { export: { type: 'string' }, bundle: { type: 'string' } } });
+  if (values.export === undefined || values.bundle === undefined) fail('--export <dir> 和 --bundle <dir> 必给');
+  const report = await preflight(await readRecordedExport(values.export), await openBundle(values.bundle));
+  process.stdout.write(`${JSON.stringify(report.counts)}\n`);
+  for (const gap of report.gaps) process.stdout.write(`缺 ${gap.what}（${gap.for}）：${gap.detail}\n`);
+  process.stdout.write(report.gaps.length === 0 ? '数据包里有记录里点名的全部东西\n' : `共缺 ${report.gaps.length} 项\n`);
+  return report.gaps.length === 0 ? 0 : 1;
+}
+
 async function verify(argv: string[]): Promise<number> {
   const { values } = parseArgs({ args: argv, options: { bundle: { type: 'string' } } });
   if (values.bundle === undefined) fail('--bundle <dir> 必给');
@@ -120,6 +132,6 @@ async function verify(argv: string[]): Promise<number> {
 }
 
 const [command, ...rest] = process.argv.slice(2);
-const commands: Record<string, (argv: string[]) => Promise<number>> = { run, report, packs, 'export-bundle': exportMain, 'verify-bundle': verify };
+const commands: Record<string, (argv: string[]) => Promise<number>> = { run, report, packs, 'export-bundle': exportMain, 'verify-bundle': verify, preflight: preflightCommand };
 if (command === undefined || commands[command] === undefined) fail(`用法：replay-submissions.ts ${Object.keys(commands).join('|')} …（见文件头）`);
 process.exitCode = await commands[command](rest);

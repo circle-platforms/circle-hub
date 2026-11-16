@@ -12,12 +12,13 @@ import { after, before, describe, test } from 'node:test';
 import pg from 'pg';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { writePack } from '../../../hub/runs/api.ts';
-import { reviewPack } from '../../../hub/server/assemble/test-packs.ts';
+import { SITE_PACK, reviewPack, syncSiteFiles, writeTestPacks } from '../../../hub/server/assemble/test-packs.ts';
 import { createTestHub, type TestHub } from '../../../hub/server/testing-real.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { exportBundle, openBundle } from './submissions-bundle.ts';
 import { matchPacks, findPackDirectories } from './submissions-packs.ts';
 import { readRecordedExport } from './submissions-recorded.ts';
+import { preflight } from './submissions-preflight.ts';
 import { runReplay } from './submissions-run.ts';
 
 const skip = (await osIsolationAvailable()) ? false : 'operating-system isolation for pack functions (sandbox-exec) is not available here';
@@ -81,8 +82,15 @@ before(async () => {
   if (skip !== false) return;
   postgres = await startPostgres();
   scratch = await mkdtemp(join(tmpdir(), 'circle-hub-replay-test-'));
-  const review = (await writePack(join(scratch, 'packs-source', 'demo-check'), reviewPack())).dir;
-  hub = await createTestHub({ postgres, repositoryPacks: false, packs: [review], stubs: false });
+  // A real Hub over synthetic packs: a product pack whose knowledge is synced from a stub build site (a real tree, composition,
+  // sources and builds in the database), and a workflow pack the run below is of.
+  const repository = join(scratch, 'repository');
+  await writeTestPacks(repository);
+  hub = await createTestHub({ postgres, repositoryRoot: repository, buildSite: syncSiteFiles() });
+  await hub.addResource({ system_pack: SITE_PACK, name: '合成构建站', environment: 'shared', origins: { 'build-site': hub.stubs!.buildSite.origin } });
+  const synced = await hub.knowledgeSync('DEMO');
+  assert.equal(synced.error, null);
+  assert.ok(synced.counts.produced >= 1, 'a knowledge tree was produced');
   const alice = await hub.createUser('甲');
   await hub.assignPack(alice.principal, 'demo-check');
   const client = await hub.client(alice.token, { sessionId: 'replay-test-session' });
@@ -263,5 +271,32 @@ describe('the candidate replay', { skip }, () => {
     await mkdir(join(empty, 'packs'), { recursive: true });
     const report = await runReplay({ mode: 'candidate', recorded: await readRecordedExport(exportDir), bundle: await openBundle(bundleDir), repo: empty, commit: 'candidate', postgres });
     assert.ok(report.outcomes.every((o) => o.status === 'not_replayable' && o.reason?.code === 'pack_not_in_commit'));
+  });
+});
+
+describe('the check of a bundle before a replay', { skip }, () => {
+  test('a complete bundle has everything the recorded run names', async () => {
+    const report = await preflight(await readRecordedExport(exportDir), await openBundle(bundleDir));
+    assert.deepEqual(report.gaps, []);
+    assert.ok(report.counts.packs > 0 && report.counts.users >= 2 && report.counts.objects > 0 && report.counts.with_call >= 2);
+  });
+
+  test('a bundle without the actions, the pack records and the principal says what is missing, once each', async () => {
+    const trimmed = join(scratch, 'bundle-trimmed');
+    await cp(bundleDir, trimmed, { recursive: true });
+    const records = join(trimmed, 'tables', 'records.jsonl');
+    const kept = (await readFile(records, 'utf8')).split('\n').filter((line) => {
+      if (line === '') return true;
+      const row = JSON.parse(line) as { kind: string; body: string };
+      return row.kind !== 'pack_version' && !row.body.includes('"action":"validate"');
+    });
+    await writeFile(records, kept.join('\n'));
+    await writeFile(join(trimmed, 'tables', 'users.jsonl'), '');
+    const report = await preflight(await readRecordedExport(exportDir), await openBundle(trimmed));
+    const kinds = report.gaps.map((g) => g.what);
+    assert.ok(kinds.includes('validation'), 'the actions are missing');
+    assert.ok(kinds.includes('pack'), 'the pack records are missing');
+    assert.ok(kinds.includes('principal'), 'the runner is missing');
+    assert.equal(new Set(report.gaps.filter((g) => g.what === 'pack').map((g) => g.detail)).size, report.gaps.filter((g) => g.what === 'pack').length, 'each pack is named once');
   });
 });
