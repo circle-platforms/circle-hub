@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { openTestRecords } from '../testing/records.ts';
+import { WHOLE_HUB } from './constants.ts';
+
+test('whole-Hub pack reads follow current global decisions without granting user or team access', async t => {
+  let clock = Date.parse('2026-11-13T00:00:00.000Z');
+  const kit = await openTestRecords({ now: () => new Date(clock) });
+  t.after(() => kit.close());
+  const admin = (await kit.principals.bootstrapAdmin('合成管理员')).user;
+  const member = await kit.principals.createUser(admin, '合成成员');
+  const team = await kit.teams.create(admin, '合成团队');
+  await kit.teams.add(admin, team.id, member.id);
+  const a = kit.authorizations;
+  await a.grant(admin, { permission: 'assign', subject: WHOLE_HUB, object: 'global-product' });
+  await a.grant(admin, { permission: 'assign', subject: WHOLE_HUB, object: 'global-skill' });
+  await a.grant(admin, { permission: 'assign', subject: WHOLE_HUB, object: 'expired-product', expiresAt: new Date(clock + 1000).toISOString() });
+  await a.grant(admin, { permission: 'assign', subject: WHOLE_HUB, object: 'revoked-product' });
+  await a.revoke(admin, { permission: 'assign', subject: WHOLE_HUB, object: 'revoked-product' });
+  await a.assign(admin, member.id, 'direct-workflow');
+  await a.assignTeam(admin, team.id, 'team-workflow');
+  clock += 1000;
+  const globals = ['global-product', 'global-skill'];
+  assert.deepEqual(await a.packsFor(WHOLE_HUB), globals);
+  assert.deepEqual(await a.packsFor(member.id), ['direct-workflow', 'team-workflow']);
+  for (const invalid of ['', '**', ' *', team.id, 'usr_bad']) assert.deepEqual(await a.packsFor(invalid), []);
+  const ids = [WHOLE_HUB, member.id, team.id, '**', WHOLE_HUB];
+  assert.deepEqual(await a.packsForMany!(ids), new Map(await Promise.all([...new Set(ids)].map(async id => [id, await a.packsFor(id)] as const))));
+  await a.revoke(admin, { permission: 'assign', subject: WHOLE_HUB, object: 'global-product' });
+  assert.deepEqual(await a.packsFor(WHOLE_HUB), ['global-skill']);
+  await kit.principals.setDisabled(admin, member.id, true);
+  assert.deepEqual(await a.packsFor(member.id), []);
+  assert.deepEqual((await a.packsForMany!([WHOLE_HUB, member.id])).get(member.id), []);
+});

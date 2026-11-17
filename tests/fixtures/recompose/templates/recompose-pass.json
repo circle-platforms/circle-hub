@@ -107,7 +107,7 @@
     "adapted": [
       {
         "atom": "a1",
-        "action": "把作者写的间隔值保留为声明参数，不改命令头 widget health interval",
+        "action": "把作者写的间隔值保留为声明参数，不改命令名 widget health interval",
         "equivalence_reason": "命令树里 widget health interval 的参数 2 声明为整数类型（产品包声明位置）",
         "load_bearing": true,
         "conditions": [

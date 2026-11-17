@@ -450,6 +450,18 @@ Sync capabilities defined for version 1:
     replaces only that account's own earlier team entry.
   - The operation key follows section 9: the identical request returns the original answer, the same key with another
     request is `IDEMPOTENCY_MISMATCH`, and a changed epoch is `SYNC_EPOCH_CHANGED`.
+- **`team-spaces`.** The server keeps one knowledge space and one memory for each team. circle-hub names the capability
+  once it serves team spaces (model 42, decision 150); the team with id `team` is the team space it always had.
+  - `personal-sync-state@1` (`GET /state`) carries `teams`: `[{team, name}]`, sorted by `team`, only the teams the
+    account belongs to. An administrator's list is the same: the teams joined, not every team the account may reach.
+  - `team-memory-read`, `entry-share`, `memory-share` and `POST /share` accept an optional request member `team`, one of
+    the listed values. The client puts it into the operation's arguments; it is not one of the `fixed` members of the
+    discovery document.
+  - A request without `team` names the server's default team space (circle-hub: the team `team`). A `team` the account
+    does not belong to is refused as any outsider's request is.
+  - `personal-sync-share-result@1` carries `team` only when the target is not the default team space.
+  - A server keeps refusing request members it does not know, so a client sends `team` only when the discovery
+    document lists `team-spaces`.
 
 The request shapes of existing operations are unchanged by these capabilities, and so are the frozen vectors in
 `contracts/test-fixtures/sync/v1/`. The additive vectors are in `contracts/test-fixtures/sync/v1-capabilities/`.

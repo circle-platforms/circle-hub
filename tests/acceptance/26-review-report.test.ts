@@ -13,7 +13,7 @@ import { DOCUMENTS } from '../fixtures/agile/index.ts';
 import { fixtureText } from '../fixtures/mindmaps/index.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import type { McpClient } from './support/mcp.ts';
-import { startReview, draft, finding, level, VERIFIER, DRAFTER, VERIFIER_IDENTITY, DRAFTER_IDENTITY, readProjectedText, oracleCases, type SlotClaim } from './support/review.ts';
+import { startReview, draft, finding, level, VERIFIER, DRAFTER, VERIFIER_IDENTITY, DRAFTER_IDENTITY, oracleCases, type SlotClaim } from './support/review.ts';
 
 const REPORTER = 'omega-reporter 1.0 (scripted, temperature 0)';
 let postgres: TemporaryPostgres;
@@ -147,10 +147,23 @@ const refutesOf = async (run: string): Promise<string[]> => {
 
 };
 
-const recordReferenceOf=(text:string):string=>{
-  const line=text.split('\n').find(line=>line.startsWith('完整的槽位模式'));
-  assert.ok(line,'the response names its stored run record');
-  const reference=/rec:[a-f0-9]{64}/.exec(line)?.[0];assert.ok(reference);return reference;
+const recordReferenceOf=(reference:string|undefined):string=>{
+  assert.ok(reference, 'the machine-readable response names its stored run record');
+  assert.match(reference, /^rec:[a-f0-9]{64}$/);
+  return reference;
+};
+
+const readReportTable=async(reference:string):Promise<{text:string;pages:string[]}>=>{
+  const answer=await client.call('get_nodes',{reference});
+  assert.equal(answer.isError,false,answer.text.slice(0,500));
+  const text=answer.out.content?.text;
+  assert.equal(typeof text,'string');
+  assert.equal(answer.text,text,'the displayed table preserves every original byte');
+  return {text:text!,pages:[answer.text]};
+};
+
+const assertReportedCounts=(text:string,total:{cases:number;affectedCases:number;findings:number}):void=>{
+  assert.ok(text.includes(`已核对 ${total.cases} 条原始用例，其中 ${total.affectedCases} 条有问题，共 ${total.findings} 处问题`),text.slice(0,500));
 };
 
 /** The report item of a started run. */
@@ -203,9 +216,11 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P5', reference: await finalReferenceOf(blockB.run,'PARTIAL','P5') }, 'the worst of the blocks with its level');
     assert.deepEqual(report.fields.review_coverage, { expected: oracleCases(document).length, delivered: oracleCases(document).length, overlaps: [], missing: [] }, 'both slices reconcile the complete target, not merely the supplied blocks');
     assert.match(report.summary??'',/^整体结论码 PARTIAL、等级 P5（最差那块的，照抄）；评审表/);
-    assert.match(started.text, /整体结论码 PARTIAL、等级 P5（最差那块的，照抄）/);
-    assert.match(started.text,/复核发现 1 条；推翻 0 条/);
-    assert.match(started.text,/#\/items\/0\/fields\/review_tables/);
+    const counts=report.fields.review_counts as {total:{cases:number;affectedCases:number;findings:number;refuted:number}};
+    assert.equal(counts.total.findings,2);assert.equal(counts.total.refuted,0);
+    assertReportedCounts(started.text,counts.total);
+    assert.match(started.text,/评审终稿/);
+    assert.doesNotMatch(started.text,/整体结论码|rec:|#\/items\//);
   });
 
   test('a report claiming PASS is refused with the computed verdict in the fix', async () => {
@@ -293,8 +308,11 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     const run = started.out.run as RunSummary;
     assert.deepEqual(reportItemOf(run).fields.overall, { verdict: 'PARTIAL', level: 'P4', reference: await finalReferenceOf(runD.run,'PARTIAL','P4') });
     assert.match(reportItemOf(run).summary??'',/^整体结论码 PARTIAL、等级 P4（最差那块的，照抄）；评审表/);
-    assert.match(started.text, /整体结论码 PARTIAL、等级 P4（最差那块的，照抄）/);
-    assert.match(started.text,/复核发现 0 条；推翻 1 条/);
+    const counts=reportItemOf(run).fields.review_counts as {total:{cases:number;affectedCases:number;findings:number;refuted:number}};
+    assert.equal(counts.total.findings,0);assert.equal(counts.total.refuted,1);
+    assertReportedCounts(started.text,counts.total);
+    assert.match(started.text,/评审终稿/);
+    assert.doesNotMatch(started.text,/整体结论码|rec:/);
     assert.equal(reportItemOf(run).fields.findings,undefined,'unused text copies are not projected');
     assert.equal((reportItemOf(run).fields.review_counts as {total:{refuted:number}}).total.refuted,1);
     void draftFindings;
@@ -314,7 +332,7 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     let refutes = await refutesOf(run.run);
     assert.equal(refutes.filter((c) => c === 'case-review-report.finding_refuted').length, 0, `no refute when nothing is cited: ${refutes.join(', ')}`);
     // Optional valid references remain groundable; no retired per-finding citation rule is reintroduced.
-    const read=await readProjectedText(client,recordReferenceOf(started.text)+'#/items/0/fields/review_tables');
+    const read=await readReportTable(recordReferenceOf(started.out.record)+'#/items/0/fields/review_tables');
     assert.ok(!read.text.includes('核实后推翻初评发现'));
   });
 
@@ -367,26 +385,25 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     const run = started.out.run as RunSummary;
     const reportItem = reportItemOf(run);
 
-    // 1. Overall verdict and level in started.text and reportItem.summary
+    // Overall verdict and level remain in the machine-readable report.
     assert.deepEqual(reportItem.fields.overall, { verdict: 'PARTIAL', level: 'P4', reference: (await Promise.all([finalReferenceOf(blockE.run,'PARTIAL','P4'),finalReferenceOf(blockF.run,'PARTIAL','P4')])).sort()[0] });
     assert.match(reportItem.summary??'',/^整体结论码 PARTIAL、等级 P4（最差那块的，照抄）；评审表/);
-    assert.match(started.text, /整体结论码 PARTIAL、等级 P4（最差那块的，照抄）/);
+    assert.match(started.text,/评审终稿/);
+    assert.doesNotMatch(started.text,/整体结论码|rec:/);
 
-    const overallMatch=/整体结论码\s+(\w+)、等级\s+(\w+)/.exec(started.text);
-    assert.ok(overallMatch !== null, 'answer text contains overall verdict and level in report item line');
-    const [, overallVerdict, overallLevel] = overallMatch;
+    const {verdict:overallVerdict,level:overallLevel}=reportItem.fields.overall as {verdict:string;level:string};
     assert.equal(overallVerdict, 'PARTIAL');
     assert.equal(overallLevel, 'P4');
 
     // 2. All 44 findings remain in the deterministic table; individual references are not retranscribed.
     const citableMatches = [...started.text.matchAll(/(?:证实|部分正确|新增)\s+(rec:[0-9a-f]{64}#[^\s；、|]+)/g)].map((m) => m[1]!);
     assert.equal(citableMatches.length,0,'the reporter reads tables instead of retranscribing references');
-    const counts=reportItem.fields.review_counts as {total:{findings:number;refuted:number}};assert.equal(counts.total.findings,44);assert.equal(counts.total.refuted,1);
-    assert.match(started.text, /推翻 1 条/);
+    const counts=reportItem.fields.review_counts as {total:{cases:number;affectedCases:number;findings:number;refuted:number}};assert.equal(counts.total.findings,44);assert.equal(counts.total.refuted,1);
+    assertReportedCounts(started.text,counts.total);
 
     assert.equal(reportItem.fields.findings,undefined,'the original receipts retain findings without a second text copy');
 
-    // 3. Model submits the final report copied directly from started.text: accepted on the first attempt!
+    // The model uses the structured verdict and level without retranscribing finding references.
     const answer = await client.call('submit_result', {
       run: run.run,
       model: REPORTER,
@@ -460,9 +477,9 @@ test('IPv4 subitem tables preserve original cells, dispositions, suggestions and
   assert.equal(started.isError,false,started.text.slice(0,1000));
   const run=started.out.run as RunSummary,report=reportItemOf(run);
   assert.equal(run.items[0].id,'report');assert.match(report.summary??'',/#\/items\/0\/fields\/review_tables/);
-  const actual=await readProjectedText(client,recordReferenceOf(started.text)+'#/items/0/fields/review_tables');
+  const actual=await readReportTable(recordReferenceOf(started.out.record)+'#/items/0/fields/review_tables');
   assert.equal(actual.text,report.fields.review_tables);
-  assert.ok(actual.pages.length>1,'the public continuation reads every piece of the long row');
+  assert.equal(actual.pages.length,1,'the long field of the record comes whole in one answer');
   assert.match(actual.text,/^## 用例评审结果：/);assert.match(actual.text,/### 1\..*IPv4/);
   const rows=actual.text.split('\n').filter(line=>/^\| \d+ \|/u.test(line));
   assert.equal(rows.length,cases.length);

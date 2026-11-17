@@ -43,3 +43,29 @@ export function positiveBlocks():Record<string,PlanSlots>{
  const restore=plan([capture,{kind:'CONFIG',id:'configure',call:call('no demo set')},observe,{kind:'RESTORE_FROM',id:'restore',for:'configure',register:'baseline',call:{object:'ORBIT_0',method:'restore_checked',args:['{}'],keywords:{}}}]);restore.block_context!.causal_links=[{from:'configure',to:'observe',quote:quote()}];
  return {CONFIG:configuration,OBSERVE_ASSERT:plan([observe]),OBSERVE_ONLY:plan([{kind:'OBSERVE_ONLY',id:'warmup',call:call()},observe]),CAPTURE:plan([capture,observe]),CAPTURE_COMPARE:plan([capture,second,{kind:'CAPTURE_COMPARE',id:'comparison',left:'baseline',right:'second',output:'second',relation:'same',quote:quote(),expectation:EXPECTED_REF}]),EXPECT_FROM:plan([capture,{kind:'EXPECT_FROM',id:'observe',call:call(),expected_from:'baseline',output:'observe',op:'found',quote:quote(),expectation:EXPECTED_REF}]),SLEEP:plan([{kind:'SLEEP',id:'wait',call:{object:'clock',method:'pause',args:['1'],keywords:{}}},observe]),STEP:plan([{kind:'STEP',id:'generic',call:{object:'clock',method:'pause',args:['1'],keywords:{}}},observe]),RESTORE_FROM:restore};
 }
+
+export function cellFixture(){
+ const f=fixture(),doc=structuredClone(f.contractDoc) as Record<string,any>&{runtime:{minimum_version:string;[name:string]:any}},originalDevice=f.profile.seats[0].object,device='device0';
+ for(const object of doc.objects)if(object.e===originalDevice)object.e=device;
+ for(const entry of doc.entries)if(entry.e===originalDevice)entry.e=device;
+ for(const field of ['output_methods','restore_methods'])for(const row of doc.runtime.block_model[field])if(row.object===originalDevice)row.object=device;
+ const inventory=structuredClone(f.inventory);for(const bed of inventory.beds)for(const row of bed.devices)if(row.product)row.product='synthetic';
+ doc.types.cell_count={declaration:{name:'synthetic-cell-count',catalog_type:'int',declaration:source+'/types/cell_count',grammar:'synthetic-types@1'},minimum:0};
+ for(const name of ['cell_source','cell_selection'])doc.roles[name]={source:source+'/roles/'+name};
+ doc.effects.cell_selection={source:source+'/effects/cell_selection',roles:['cell_source','cell_selection'],budget:256,allowed_literals:[],command_roles:[]};
+ const parameters=[{name:'output',kind:'positional_only',required:true,default:null},{name:'conditions',kind:'var_positional',required:false,default:null},...['separator','columns','column','format','header','row'].map(name=>({name,kind:'keyword_only',required:['separator','columns','column'].includes(name),default:null}))];
+ const authority=Object.fromEntries(parameters.map(parameter=>[parameter.name,{type:['columns','column','header','row'].includes(parameter.name)?'cell_count':'text',role:parameter.name==='output'?'cell_source':'cell_selection'}]));
+ doc.entries.push({...entry(device,'table_cell',parameters),dispatch:'direct_method_call',typed_authority:{source:source+'/methods/table_cell',parameters:authority,effects:['cell_selection']}});
+ doc.runtime.block_model.cell_inputs=true;doc.runtime.block_model.cell_methods=[{object:device,method:'table_cell'}];doc.runtime.block_model.output_methods.push({object:device,method:'table_cell',output:'cell_text'});
+ const contractDoc=signTypedRuntime(doc),profileDoc=structuredClone(f.profileDoc);profileDoc.runtime.contract_sha256=contractDoc.original.contract_sha256;for(const call of profileDoc.allowed)if(call.object===originalDevice)call.object=device;profileDoc.seats[0].object=device;profileDoc.workbook.template=(profileDocument(contractDoc) as Record<string,any>).workbook.template;profileDoc.allowed.push({object:device,method:'table_cell',reviewed:true,parameters:Object.fromEntries(Object.entries(authority).map(([name,value])=>[name,value.role]))});
+ const contract=parseRuntimeContract(contractDoc),beds=parseManifest(inventory);if(!contract.ok||!beds.ok)throw new Error('synthetic cell runtime invalid');const profile=parseProfile(profileDoc,contract.contract,beds.beds);if(!profile.ok)throw new Error(JSON.stringify(profile.problems));
+ const manifest_sha256=createHash('sha256').update(JSON.stringify(inventory)).digest('hex');
+ const fields={...f.fields,manifest_sha256,title:'合成取格用例',path:['合成文档','合成分组','合成取格用例']};
+ const subject=(data:unknown,extra={})=>f.subject(data,{contract:contractDoc,profile:profileDoc,manifest:inventory,manifest_sha256,...extra});
+ return {...f,inventory,manifest_sha256,contractDoc,profileDoc,contract:contract.contract,profile:profile.profile,fields,subject};
+}
+export function cellPlan():PlanSlots{
+ const invoke=(line='demo show')=>({...call(line),object:'device0'});
+ const data=plan([{kind:'CAPTURE',id:'source',call:invoke(),register:'source_text'},{kind:'SELECT_CELL',id:'cell',call:{object:'device0',method:'table_cell',args:[],keywords:{}},from:'source_text',register:'selected',table:{format:'delimited',separator:'+',columns:6,header:false},column:3,select:{where:[{column:1,value:'zone.example.'},{column:6,value:'2048.key'}]}},{kind:'CONFIG',id:'configure',call:invoke('demo set {}'),input_register:'selected'},{kind:'OBSERVE_ASSERT',id:'observe',call:invoke(),assertions:[assertion()]},{kind:'CONFIG',id:'cleanup',call:invoke('no demo set'),cleanup:true}]);
+ data.block_context!.causal_links=[{from:'configure',to:'observe',quote:quote()}];return data;
+}

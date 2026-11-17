@@ -10,6 +10,8 @@ import { LeaseService } from '../../leases/api.ts';
 import type { RunDetail, WorkflowStore, LoadedWorkflow } from '../../ports.ts';
 import { ExecutorRegistry } from '../executors.ts';
 import { DispatchService } from '../service.ts';
+import { MemberEnvironments } from '../member-environments.ts';
+import { canUseEnvironment } from '../../records/environment-permissions.ts';
 import { definition } from './definition.ts';
 import { startEndpoint } from './server.ts';
 import {probes} from './probes.ts';
@@ -71,9 +73,13 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   const workflows = { byDigest: async () => ({ pack: { id: 'synthetic-workflow', version: '1.0.0', digest: detail.run.pack_digest }, requirements: [{ key: 'workbook_verified', required: true, target: 'item', accepted_producer: 'fact' }],readJson:async()=>effectDocument } as unknown as LoadedWorkflow) } satisfies Pick<WorkflowStore, 'byDigest'>;
   const runs = { getRun: async (_by: unknown, id: string) => id === run ? detail : id === plan ? { ...detail, run: { ...detail.run, run: plan, predecessor: undefined } } : null };
   await leases.acquire({ keys: d.resources, prefix: 'synthetic/', ttlSeconds: options.mode === 'expiry' ? 1 : 3600, maxTtlSeconds: 3600, holder: { user: owner.id, run: options.mode === 'lineage' ? newId('run') : run } });
-  const service = new DispatchService({ recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策通过',grounds:[],tier:'blocking',data:{parameters:Object.fromEntries(Object.entries(effectDocument.effects[0].parameters.values).map(([key,values])=>[key,values[0]]))}}]])),records: kit, leases, runs, workflows, now });
+  const environmentTeam=await kit.teams.create(admin,'合成环境使用团队');
+  await kit.teams.add(admin,environmentTeam.id,owner.id);
+  await kit.authorizations.assignResource(admin,executor.id,environmentTeam.id);
+  const environmentAccess=new MemberEnvironments(kit,registry,leases,(actor,id,tx)=>canUseEnvironment(kit,actor,id,tx));
+  const service = new DispatchService({ enforceEnvironmentAssignments:true, environmentAccess, recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策通过',grounds:[],tier:'blocking',data:{parameters:Object.fromEntries(Object.entries(effectDocument.effects[0].parameters.values).map(([key,values])=>[key,values[0]]))}}]])),records: kit, leases, runs, workflows, now });
   const server=endpoint;let closing:Promise<void>|undefined;
-  return { effectDocument,freezeExecutor,kit, db, clock, now, admin, owner, run, detail, workflows, runs, executor, registry, leases, service, calls, submitted, endpoint:server, payload,
+  return { environmentAccess,environmentTeam,effectDocument,freezeExecutor,kit, db, clock, now, admin, owner, run, detail, workflows, runs, executor, registry, leases, service, calls, submitted, endpoint:server, payload,
     get sawIntentAtSubmit() { return sawIntentAtSubmit; },
     close: () => (closing ??= (async () => { await server.close(); await db.end(); await kit.close(); })()) };
   } catch(error) { await endpoint?.close().catch(()=>{});await db.end().catch(()=>{});await kit.close();throw error; }

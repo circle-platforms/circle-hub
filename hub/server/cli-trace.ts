@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 // `circle-hub trace`: reads the traces (B08, decision 146), for administrators. list shows traces by their root step, show
 // one trace's step tree with its usage, top the totals per step name, so a background loop that reads a lot ranks itself.
 // Output is Chinese and made safe for a terminal; --json gives the same data. The rows hold no inputs or outputs.
@@ -101,7 +102,7 @@ async function withReader<T>(session: TraceCommandSession, read: (reader: TraceR
 
 async function administrator(session: TraceCommandSession, as: string | undefined): Promise<Principal> {
   const viewer = await session.viewer(as);
-  if (viewer.role !== 'admin') throw new CliError('只有管理员能读运行观测', '用管理员的操作令牌执行这一条命令');
+  if (!isAdmin(viewer)) throw new CliError('只有管理员能读运行观测', '用管理员的操作令牌执行这一条命令');
   return viewer;
 }
 

@@ -122,13 +122,10 @@ describe('retired names and startup', () => {
     assert.match(result.text, /CIRCLE_HUB_TYPO 不是 Hub 的配置项/);
   });
 
-  test('serve as the runtime role before the migrations refuses to start; an unknown flag is a usage error', async () => {
-    const env = await environment();
-    const result = await run(['serve'], env);
-    assert.equal(result.code, 1);
-    assert.match(result.text, /还没有应用/);
-    assert.equal((await run(['serve', '--bogus'], env)).code, 2);
-    assert.equal((await run(['serve', '--migrate-only', '--migrate'], env)).code, 2);
+  test('serve invalid flags remain usage errors before initialization', async () => {
+    const env=await environment();
+    assert.equal((await run(['serve','--bogus'],env)).code,2);
+    assert.equal((await run(['serve','--migrate-only','--migrate'],env)).code,2);
   });
 });
 
@@ -262,7 +259,10 @@ describe('users, tokens and logs', () => {
     assert.ok(rootToken, 'the bootstrap token is printed once');
     // The deployment's operator token item holds the admin's token (init-admin or operator-token set write it).
     const operator = tokensIn(memoryOperatorTokens(rootToken, '测试令牌存储'));
-    assert.equal((await run(['user', 'create', '甲'], env, operator)).code, 0);
+    const created = await run(['user', 'create', '甲'], env, operator);
+    assert.equal(created.code, 0, created.text);
+    assert.match(created.text, /已建立用户 甲（用户）/);
+    assert.doesNotMatch(created.text, /usr_|token issue/);
     assert.equal((await run(['user', 'create', '乙', '--role', 'superuser'], env, operator)).code, 2);
     const issued = await run(['token', 'issue', '甲', '--label', '笔记本'], env, operator);
     assert.equal(issued.code, 0, issued.text);
@@ -317,13 +317,14 @@ describe('users, tokens and logs', () => {
     assert.match(early.text, new RegExp(`还没有管理员[\\s\\S]*省略名字时为 ${DEFAULT_ADMIN_NAME}`));
     const root = await run(['user', 'create', '--role', 'admin'], env);
     assert.equal(root.code, 0, root.text);
-    assert.match(root.text, new RegExp(`已建立第一位管理员 ${DEFAULT_ADMIN_NAME}（usr_[0-9a-z]{26}）`));
+    assert.match(root.text, new RegExp(`已建立第一位管理员 ${DEFAULT_ADMIN_NAME}$`, 'm'));
+    assert.doesNotMatch(root.text, /usr_/);
     const operator = tokensIn(memoryOperatorTokens(root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line))!, '测试令牌存储'));
     const unnamed = await run(['user', 'create'], env, operator);
     assert.equal(unnamed.code, 2, unnamed.text);
     assert.match(unnamed.text, /已经有管理员：建用户要给出名字/);
     assert.equal((await run(['user', 'create', '甲', '乙'], env, operator)).code, 2);
-    assert.match((await run(['user', 'list'], env)).text, new RegExp(`\\t${DEFAULT_ADMIN_NAME}\\t管理员`));
+    assert.match((await run(['user', 'list'], env)).text, new RegExp(`^${DEFAULT_ADMIN_NAME}\\t管理员`, 'm'));
   });
 
   test('user rename renames an account as the operator token\'s admin (the first admin to the default name included) and refuses what it cannot rename', async () => {
@@ -689,10 +690,10 @@ describe('commands of other packages', () => {
     assert.equal(show.code, 1);
     assert.match(show.text, /错误：run show 要用运行模块，这个装配模块没有提供/);
     assert.match(show.text, /处理：这个装配模块没有给单条命令用的装配（assembleCommand）/);
-    for (const name of ['pack', 'skill', 'resource', 'secret', 'knowledge', 'init-admin', 'operator-token']) {
+    for (const name of ['pack', 'resource', 'secret', 'knowledge', 'team', 'init-admin', 'operator-token']) {
       const result = await run([name, 'list'], env, { assembly: missingAssembly });
       assert.equal(result.code, 1, name);
-      assert.match(result.text, new RegExp(`命令 ${name} 由装配模块注册（默认的 hub/server/assemble\\.ts 注册 pack、skill、resource、secret、knowledge、init-admin、operator-token），这个装配模块没有注册它`));
+      assert.match(result.text, new RegExp(`命令 ${name} 由装配模块注册（默认的 hub/server/assemble\\.ts 注册 pack、resource、secret、knowledge、team、init-admin、operator-token），这个装配模块没有注册它`));
     }
     for (const name of ['frobnicate', 'constructor', 'toString', '__proto__']) {
       const unknown = await run([name], env);
@@ -791,7 +792,8 @@ test('member deletion commands are read-only until confirmed, compare the previe
   const fresh=JSON.parse((await run(['user','delete',member.id,'--dry-run','--json'],env,operator)).out[0]),done=await execute(fresh);assert.equal(done.code,0,done.text);const receipt=JSON.parse(done.out[0]);assert.equal(await kit.store.get(first.digest),null);assert.ok((await kit.principals.get(member.id))?.deleted_at);assert.doesNotMatch(done.text,/合成命令清除正文|合成检查后的修改/);
   const replay=await run(['user','delete',member.id,'--confirm','--json','--operation-id='+fresh.operation_id],env,operator);assert.equal(replay.code,0,replay.text);assert.deepEqual(JSON.parse(replay.out[0]),receipt);assert.equal((await kit.store.list({kind:'member_deletion'})).items.length,1);
   assert.equal((await run(['user','enable',member.id],env,operator)).code,1);assert.equal((await run(['user','delete',admin.id,'--dry-run'],env,operator)).code,1);
-  for(const args of [['user','list'],['user','list','--json']]){const listed=await run(args,env,operator);assert.equal(listed.code,0,listed.text);assert.ok(listed.text.includes(member.id));assert.ok(listed.text.includes(uiLabelOf('account_display_name','deleted_member')));assert.ok(!listed.text.includes(member.name));}
+  const textList=await run(['user','list'],env,operator);assert.equal(textList.code,0,textList.text);assert.ok(textList.text.includes(uiLabelOf('account_display_name','deleted_member')));assert.ok(!textList.text.includes(member.name));assert.doesNotMatch(textList.text,/usr_/);
+  const jsonList=await run(['user','list','--json'],env,operator);assert.equal(jsonList.code,0,jsonList.text);assert.ok(jsonList.text.includes(member.id));assert.ok(jsonList.text.includes(uiLabelOf('account_display_name','deleted_member')));assert.ok(!jsonList.text.includes(member.name));
   assert.equal((await kit.principals.get(member.id))?.name,member.name,'display masking does not rewrite the identity tombstone');
   for(const args of [['token','list'],['token','list',member.id]]){const listed=await run(args,env,operator);assert.equal(listed.code,0,listed.text);assert.ok(listed.text.includes(memberToken.id)&&listed.text.includes(member.id)&&listed.text.includes(uiLabelOf('account_display_name','deleted_member')));assert.ok(!listed.text.includes(member.name));assert.ok(!listed.text.includes(memberToken.token));}
  }finally{await kit.close();}

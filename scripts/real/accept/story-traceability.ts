@@ -18,7 +18,7 @@ export default function scenario(gold: StoryGold): Scenario {
       const ids = gold.stories.map(s => s.story).sort((a, b) => Number(a) - Number(b));
       const stories = [];
       for (let i = 0; i < ids.length; i += 50) stories.push({ external: `plm:stories:${ids.slice(i, i + 50).join('+')}` });
-      return [{ tool: 'hub_start_run', input: { pack: 'story-traceability', inputs: { stories, cases: { external: `knowledge:index:${gold.product}:${gold.build}?kind=case&key=stories&fields=document,node,title` } } } }];
+      return [{ tool: 'mcp__hub__start_run', input: { pack: 'story-traceability', inputs: { stories, cases: { external: `knowledge:index:${gold.product}:${gold.build}?kind=case&key=stories&fields=document,node,title` } } } }];
     }, '已读取完整视图覆盖内的核验事实，不推断未索引用例。', 100),
     check(turns): Check[] {
       const texts = resultTexts(turns);

@@ -1,4 +1,4 @@
-import {evidence,technicalCode,stat,facts} from './presentation.ts';
+import {technicalCode} from './presentation.ts';
 import {personalOriginCleared,clearedPersonalFolder,singleItemOrigin} from './personal-origin.ts';
 // Decision 135 audit summaries: query only participant/all-administrator indexes, never private content or raw receipts.
 import { SpaceGrantBody } from '../../../contracts/src/spaces.ts';
@@ -8,8 +8,9 @@ import { KnowledgeGranteeSchema, MemoryFieldSchema, uiLabelOf } from '../../../c
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import { pathSegments } from '../../refs/api.ts';
 import { html, link, table, code, type Html } from './html.ts';
+import { count } from './components.ts';
 import { card, when } from './ui.ts';
-import type { PageContext } from './pages.ts';
+import type { PageContext } from './context.ts';
 
 const PAGE_SIZE = 50;
 /** Several lists stand on one tab: a list with nothing in it is one line under its title, not an empty card of its own. */
@@ -29,7 +30,7 @@ async function memoryRefusals(ctx:PageContext,path:string,user?:string,from?:str
    const upper=to?await store.countIndexed({kind:'action',index,since:new Date(Date.parse(to)+1).toISOString(),cap:100_000}):{count:0,capped:false};
    total+=Math.max(0,lower.count-upper.count);capped||=lower.capped||upper.capped;
   }
-  return card({title,hint:'按记录创建时间和成员筛选统计；只计数，不读取或显示拒收码、字段、行或正文'},capped?'统计超过上限':html`<p>${total.toLocaleString('en-US')} 次</p>`);
+  return card({title,hint:'按记录创建时间和成员筛选统计；只计数，不读取或显示拒收码、字段、行或正文'},capped?'统计超过上限':html`<p>${count(total)} 次</p>`);
  }
  const cursor='memory_refusals',page=await store.find({kind:'action',key:'memory.refusal.by',value:ctx.principal.id,newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get(cursor)}),rows=[];
  const fields={title:MemoryFieldSchema.enum.document_title,path:MemoryFieldSchema.enum.directory_path,markdown:MemoryFieldSchema.enum.markdown_text};
@@ -89,7 +90,7 @@ export async function spaceRecords(ctx: PageContext, path: string, user?: string
     const message=cleared?(body.code?PROTOCOL_CODES[body.code as keyof typeof PROTOCOL_CODES].when:''):body.message;
     rows.push([when(body.at), await ctx.userName(body.by), target, uiLabelOf('knowledge_share_status', body.status), body.code ?? '无', message, cleared?clearedPersonalFolder():origin?technicalCode(`tree:${origin.root}${origin.path}@${origin.entry}`):singleItemOrigin()]);
   }
-  cards.push(card({ title: '分享到团队记录', hint: ctx.admin ? '管理员可见全部分享到团队的安全回执；不包含私人原文或提交内容' : '仅显示本人分享到团队的安全回执，拒收后我的原条目保留' }, html`${rowsOrNote(['时间', '提交人', '团队文件夹', '状态', '拒收码', '说明', '来源条目'], rows, '本页没有匹配的分享到团队记录')}${shares.next ? more(cursor, shares.next, '更早的分享到团队') : ''}`));
+  cards.push(card({ title: '分享到公共空间记录', hint: ctx.admin ? '管理员可见全部分享到公共空间的安全核对记录；不包含私人原文或分享内容' : '仅显示本人分享到公共空间的安全核对记录，拒收后我的原条目保留' }, html`${rowsOrNote(['时间', '分享人', '公共空间文件夹', '状态', '拒收码', '说明', '来源条目'], rows, '本页没有匹配的分享到公共空间记录')}${shares.next ? more(cursor, shares.next, '更早的分享到公共空间') : ''}`));
   const memoryShares=ctx.admin?await ctx.deps.records.store.list({kind:'memory_share',newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get('memory_shares')}):await ctx.deps.records.store.find({kind:'memory_share',key:'memory.share.by',value:ctx.principal.id,newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get('memory_shares')});
   const memoryRows=[];
   for(const record of memoryShares.items){
@@ -97,6 +98,6 @@ export async function spaceRecords(ctx: PageContext, path: string, user?: string
     if(!ctx.admin&&body.by!==ctx.principal.id||!inFilter(body.by,body.at))continue;
     memoryRows.push([when(body.at),await ctx.userName(body.by),body.target_path?directory(body.target_path,true):'未记录',uiLabelOf('knowledge_share_status',body.status),body.code??'无',body.message,body.team_document?link('/console/knowledge',uiLabelOf('knowledge_view','memory'),{view:'memory',document:body.team_document,scope:'team'}):'无']);
   }
-  cards.push(card({title:uiLabelOf('knowledge_view','memory')+'分享到团队记录',hint:'只列安全回执，不显示私人记忆标题或正文'},html`${rowsOrNote(['时间','提交人','团队文件夹','状态','拒收码','说明','团队文档'], memoryRows, '本页没有匹配的分享到团队记录')}${memoryShares.next?more('memory_shares',memoryShares.next,'更早的分享到团队'):''}`));
+  cards.push(card({title:uiLabelOf('knowledge_view','memory')+'分享到公共空间记录',hint:'只列安全核对记录，不显示私人记忆标题或正文'},html`${rowsOrNote(['时间','分享人','公共空间文件夹','状态','拒收码','说明','公共空间文档'], memoryRows, '本页没有匹配的分享到公共空间记录')}${memoryShares.next?more('memory_shares',memoryShares.next,'更早的分享到公共空间'):''}`));
   return html`${cards}${await memoryRefusals(ctx,path,user,from,to)}`;
 }

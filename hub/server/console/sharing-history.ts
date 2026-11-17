@@ -6,7 +6,7 @@ import {parseReference} from '../../refs/api.ts';
 import {html,link,type Html} from './html.ts';
 import {timestamp} from './knowledge-display.ts';
 import {directoryName} from './audience.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 
 export async function sharingRows(ctx:PageContext,items:readonly KnowledgeShareReceipt[]):Promise<unknown[][]>{
  return Promise.all(items.map(async row=>{

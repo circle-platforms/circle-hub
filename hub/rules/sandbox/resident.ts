@@ -22,20 +22,26 @@ export function residentFailure(bytes: TreeObservation, limit: number, memoryMb:
 
 /**
  * The watchdog's verdict on each round of one call. A measured overrun stops the call at once. A round that cannot see the
- * whole tree stops it only once no round has measured the tree for `graceMs`: while Node starts, its thread set keeps
- * changing, which outlasts one round's retries on a loaded machine and failed healthy calls (#96). A pack function cannot
- * start threads or processes (no --allow-worker, no --allow-child-process), so the grace adds no way to evade the watchdog;
- * it matches the second a stalled sampler already has.
+ * whole tree stops it only when both hold: `stopRounds` rounds in a row could not see it (decision 116), and no round has
+ * measured it for `graceMs` (#96: while Node starts, its thread set keeps changing, which outlasts one round's retries on a
+ * loaded machine and failed healthy calls). A complete measurement, or proof that the root has exited, clears the count.
+ * Only a round that reported is counted: a stretch in which the Hub's own thread was held and no round ran is not a round,
+ * and the round that timed out inside it reports a single unobserved result per running child, so one stall costs a call at
+ * most one round. A pack function cannot start threads or processes (no --allow-worker, no --allow-child-process), so
+ * neither condition adds a way to evade the watchdog.
  */
-export function createResidentVerdict(limit: number, memoryMb: number, graceMs: number, now: () => number = Date.now): (bytes: TreeObservation) => ReturnType<typeof residentFailure> {
+export function createResidentVerdict(limit: number, memoryMb: number, stopRounds: number, graceMs: number, now: () => number = Date.now): (bytes: TreeObservation) => ReturnType<typeof residentFailure> {
   let measuredAt = now();
+  let unobserved = 0;
   return (bytes) => {
     const failure = residentFailure(bytes, limit, memoryMb);
     if (failure?.code !== 'SANDBOX_UNAVAILABLE') {
+      // Whole tree measured, root exited, or a measured overrun (which stops at once).
       measuredAt = now();
+      unobserved = 0;
       return failure;
     }
-    return now() - measuredAt < graceMs ? undefined : failure;
+    return ++unobserved >= stopRounds && now() - measuredAt >= graceMs ? failure : undefined;
   };
 }
 

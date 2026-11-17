@@ -13,24 +13,23 @@ circle-hub 正在重建为一个标准 MCP 服务器。模型在客户端（例�
 
 | 想做什么 | 读 |
 |---|---|
-| 了解这个里程碑做什么、不做什么，授权与边界 | [Hub r4 简报](hub-r4-brief.md) |
+| 从零搭建 Hub、用部署定义 `apply` 并跑通首个工作流（十分钟上手） | [十分钟上手](quickstart.md) · [English](quickstart.en.md) |
+| 日常建成员、分团队权限、发布技能/工作流、登记测试环境与升降级 | [管理员手册](admin-guide.md) |
+| 成员登录控制台、连接 Circle、占测试环境与完成用例编译 | [成员手册](member-guide.md) |
+| 修改工作流或技能的文案、规则并升级发布 | [改一个工作流或技能怎么做](edit-pack.md) |
+| 不兼容更新后重建、清理指定范围数据或保留配置重装 | [重置和重建](reset.md) |
+| 了解这个里程碑的工作与阶段 | [Hub r4 进度](hub-r4-progress.md) |
 | 参与构建：硬规则、包归属、约定、完成定义 | [Hub r4 架构](hub-r4-architecture.md)（英文） |
 | 理解设计：11 组元素、三条不变量、词表、内核 | [通用模型](design/generic-model.md)（[English](design/en/generic-model.md)） |
 | 设计新组件或接入新系统时逐条自查 | [对象标准：五要素检查单](design/object-standard.md) |
 | 看进度和已定的决定 | [Hub r4 进度](hub-r4-progress.md) |
-| 研究背景 | [置真对接架构](design/truth-docked-architecture.md)（研究提案，不是实现说明） |
 | 三个仓库彼此的要求 | [兼容矩阵](compatibility.md) |
 | 实现知识与记忆同步的客户端或服务器 | [同步协议 v1](protocols/knowledge-sync-v1.md)（英文规范；[中文概述](protocols/knowledge-sync-v1.zh-CN.md)） |
-| 设计索引，以及已被取代的旧设计篇 | [设计](design/README.md)（[English](design/en/README.md)） |
+| 设计索引，以及现行设计篇 | [设计](design/README.md)（[English](design/en/README.md)） |
 
 ## 历史记录
 
-下列文档属于已退役的任务与审批服务器（截至 0.2.0），每篇开头有标注，只作记录保留，不描述现行代码：
-
-- 简报与提案：[第二阶段简报 r3](server-s2-brief-r3.md) · [r2](server-s2-brief-r2.md) · [初版](server-s2-brief.md) · [第一阶段构建简报](server-build-brief.md) · [第一阶段优先级](server-s1-priority.md) · [参考采用清单](server-s1-adoption.md) · [harness 适配器任务书](harness-adapters-brief.md) · [B/C/D/E 融合提案](bcde-integration-plan.md)
-- 进度：[第二阶段进度](server-s2-progress.md) · [第一阶段进度](server-s1-progress.md)
-- 接口交接与命令：[客户端接口交接](client-api-handoff.md) · [用例执行交接](case-execution-handoff.md) · [资源身份交接](resource-identity-handoff.md) · [模块安装](module-installation.md) · [对象存储接口](object-storage-api.md) · [管理命令](admin-cli.md)
-- 起点：[初始化记录](bootstrap.md)
+已退役的任务与审批服务器（截至 0.2.0）的历史简报、进度与交接文档保存在 Git 历史中，不留在当前工作树里。
 
 ## 相关仓库
 

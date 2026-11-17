@@ -77,15 +77,15 @@ describe('scenario 7: call log', () => {
       assert.equal((call as unknown as Record<string, unknown>).arguments, undefined);
     }
 
-    // Console HTML check: /console/admin/calls displays the calls
-    const callsHtml = await consoleClient.get('/console/admin/calls');
+    // The current records page displays the calls; the retired admin page is not a compatibility entry.
+    const callsHtml = await consoleClient.get('/console/records');
     assert.equal(callsHtml.status, 200);
     assert.ok(callsHtml.body.includes('list_task_packs'), 'console calls page contains tool name');
     // The list names the call; its trace and session are read in the pane a row opens (decision 151: technical values
     // stand in the technical details, not in columns of every row).
     assert.ok(!callsHtml.body.includes(TRACE_ID), 'the list of calls carries no trace id');
     assert.ok(callsHtml.body.includes('call=' + userCalls[0].digest), 'each row links to its call');
-    const oneCall = await consoleClient.get('/console/admin/calls?call=' + userCalls[0].digest);
+    const oneCall = await consoleClient.get('/console/records?call=' + userCalls[0].digest);
     assert.equal(oneCall.status, 200);
     assert.ok(oneCall.body.includes(TRACE_ID), 'the selected call shows its trace id');
     assert.ok(oneCall.body.includes(SESSION_ID), 'and its session id');

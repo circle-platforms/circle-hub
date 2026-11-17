@@ -36,13 +36,8 @@ test('personal artifacts need a knowledge-source binding of the same owner',asyn
  }),/owning knowledge source/);
  assert.equal((await w.db.query('SELECT 1 FROM personal_payloads WHERE owner=$1',[w.owner.id])).rowCount,0);
 });
-test('runtime cannot insert completion markers or write payloads and objects after purge or into another epoch',async t=>{
- const w=await world(t),record=await w.kit.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{space:w.owner.id,markdown:'synthetic'}}),bytes=Buffer.from('synthetic late insert'),hash=sha256Hex(bytes);
- const denied=(e:unknown)=>(e as {code:string}).code==='42501';
- await assert.rejects(w.runtime.query('INSERT INTO personal_legacy_ready VALUES($1)',[record.digest]),denied);
- await assert.rejects(w.runtime.query('INSERT INTO personal_legacy_retired VALUES($1)',[hash]),denied);
- await assert.rejects(w.runtime.query('INSERT INTO personal_legacy_retire VALUES($1)',[hash]),denied);
- await assert.rejects(w.runtime.query('SELECT hub_finish_personal_retirement($1)',[hash]),/transfer incomplete/);
+test('runtime cannot write payloads and objects after purge or into another epoch',async t=>{
+ const w=await world(t),bytes=Buffer.from('synthetic late insert'),hash=sha256Hex(bytes);
  await assert.rejects(w.runtime.query('INSERT INTO personal_payloads VALUES($1,$2,$3,$4)',[w.owner.id,randomUUID(),hash,bytes]),/inactive personal scope/);
  await w.kit.personalPayloads!.purge(w.owner,INITIAL_PERSONAL_EPOCH);
  await assert.rejects(w.runtime.query('INSERT INTO personal_payloads VALUES($1,$2,$3,$4)',[w.owner.id,INITIAL_PERSONAL_EPOCH,hash,bytes]),/inactive personal scope/);

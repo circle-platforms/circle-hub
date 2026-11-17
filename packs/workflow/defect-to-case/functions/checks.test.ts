@@ -305,7 +305,7 @@ describe('pack checks', () => {
     });
 
     it('parses a command line to its head first: a line with parameters lands in the head’s bucket and duplicates', () => {
-      // 草稿的命令行 widget health interval 60 带参数，命令头是 widget health interval；索引条目的命令集合按命令头比。
+      // 草稿的命令行 widget health interval 60 带参数，命令名是 widget health interval；索引条目的命令集合按命令名比。
       const entry = {
         entry: '4'.repeat(64),
         kind: 'case' as const,

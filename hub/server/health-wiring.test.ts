@@ -133,9 +133,10 @@ test('a request refused before its body is read keeps its entry, without a calle
   assert.ok(!JSON.stringify(logged).includes('not-a-token'));
 });
 
-test('a path keeps its route only: a login link\'s secret, an id and a query never reach the log', async (t) => {
+test('a path keeps its route only: an extra path segment, an id and a query never reach the log', async (t) => {
   const { url, lines } = await observed(t);
   const secret = 'Synthetic-Login-Secret_0123456789';
+  // /console/login/<segment> is retired (U5) but still truncates to the login route for the request log.
   await (await fetch(`${url}/console/login/${secret}?next=${ARGUMENT}`, { redirect: 'manual' })).text();
   await (await fetch(`${url}/console/runs/run_01jacd5z8q3w7v9h2k4m6n8p0r?q=${ARGUMENT}`, { redirect: 'manual' })).text();
   await (await fetch(`${url}/console/%E5%90%88%E6%88%90/${ARGUMENT}`, { redirect: 'manual' })).text();
@@ -168,8 +169,8 @@ test('a console event stream is a stream, not a request in flight, and a page\'s
   beginRequest(log, incoming('GET'), '/console/api/stream')();
   assert.equal(begun.length, 0);
   assert.equal(ended(), 0);
-  beginRequest(log, incoming('GET'), '/console/api/runs')();
-  assert.equal(begun[0]?.name, 'GET /console/api/runs');
+  beginRequest(log, incoming('GET'), '/console/runs')();
+  assert.equal(begun[0]?.name, 'GET /console/runs');
 });
 
 test('the name and origin of every kind of target', () => {

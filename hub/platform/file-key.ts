@@ -1,10 +1,10 @@
 // The deployment's key store on every platform (decision 137 of 2026-11-03: the macOS keychain is no longer used). The
 // vault master key and the operator token are each a 32-byte file under <data root>/keys, which only the service account
 // may read: the directory is 0700, each file 0600 with one link, and both are checked on every access. A key is written
-// with O_EXCL, never over an existing file, and read back to check; it is never printed or logged, and no key is backed up
+// with O_EXCL by default; only an operator token may be atomically replaced and read back to check; it is never printed or logged, and no key is backed up
 // with the configuration or the vault. A file is named by a digest of the deployment settings' key names, never by data.
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, unlink } from 'node:fs/promises';
+import { lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
@@ -61,9 +61,9 @@ export interface KeyStore {
   init(): Promise<void>;
   /**
    * Stores `value` (exactly KEY_BYTES bytes); refuses when the key exists, then reads it back and compares. `value` itself
-   * is left as it is; the store's own copies are zeroed.
+   * is left as it is; the store's own copies are zeroed. Explicit replacement is limited to the operator token.
    */
-  write(value: Uint8Array): Promise<void>;
+  write(value: Uint8Array, options?: { replace?: boolean }): Promise<void>;
   status(): Promise<{ present: boolean }>;
   read(): Promise<Uint8Array>;
   /** True when a key was deleted. */
@@ -142,12 +142,28 @@ export function fileKeyStore(options: FileKeyOptions): KeyStore {
     if (stat.size !== KEY_BYTES) throw damaged();
     return {present:true};
   };
-  const write = async (input: Uint8Array): Promise<void> => {
+  const write = async (input: Uint8Array, options: { replace?: boolean } = {}): Promise<void> => {
     if (!(input instanceof Uint8Array)) throw new PlatformError(`${item.label}必须是 32 字节`);
     const bytes = Buffer.from(new Uint8Array(input));
     try {
       if (bytes.length !== KEY_BYTES) throw new PlatformError(`${item.label}必须是 32 字节`);
       await verifyDirectory(true);
+      if (options.replace) {
+        if (account !== OPERATOR_TOKEN_ACCOUNT || item === VAULT_KEY_ITEM) throw new PlatformError('只有操作令牌允许原子替换；主密钥不覆盖');
+        const previous = await lstat(path).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error; });
+        if (previous && (!previous.isFile() || previous.isSymbolicLink() || previous.nlink !== 1 || (owner !== undefined && previous.uid !== owner) || (previous.mode & 0o777) !== 0o600)) throw new PlatformError('操作令牌文件的属主或权限不对');
+        const temporary = path + '.' + randomBytes(12).toString('hex') + '.tmp';
+        try {
+          const staged = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+          try { await staged.writeFile(bytes); await staged.sync(); } finally { await staged.close(); }
+          await rename(temporary, path);
+          const parent = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+          try { await parent.sync(); } finally { await parent.close(); }
+          const actual = await read();
+          try { if (!timingSafeEqual(bytes, actual)) throw new PlatformError('读回的操作令牌不一致'); } finally { actual.fill(0); }
+        } finally { await unlink(temporary).catch(() => {}); }
+        return;
+      }
       const file = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600).catch((error: NodeJS.ErrnoException) => { if (error.code === 'EEXIST') throw new PlatformError(`已有${item.label}，不覆盖`, item.keepHint); throw new PlatformError(`无法安全写入${item.label}`); });
       let done = false;
       try { await file.writeFile(bytes); await file.sync(); done = true; } finally { await file.close(); if (!done) await unlink(path).catch(() => {}); }

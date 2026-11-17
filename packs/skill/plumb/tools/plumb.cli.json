@@ -1,0 +1,232 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "subcommands": {
+    "models": [
+      "%PLUMB_API_KEY%"
+    ],
+    "status": [
+      "%PLUMB_API_KEY%"
+    ],
+    "wake": [
+      "%PLUMB_API_KEY%"
+    ],
+    "judge": [
+      "%PLUMB_API_KEY%"
+    ],
+    "ask": [
+      "%PLUMB_API_KEY%"
+    ]
+  },
+  "options": [
+    {
+      "name": "base-url",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%PLUMB_URL%",
+      "type": "plumb"
+    },
+    {
+      "name": "model",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<模型>",
+      "type": "text"
+    },
+    {
+      "name": "ca-file",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<CA证书>",
+      "type": "path"
+    },
+    {
+      "name": "ca-sha256",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "cache-dir",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "path"
+    },
+    {
+      "name": "out",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "path"
+    },
+    {
+      "name": "result-out",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "path"
+    },
+    {
+      "name": "timeout-ms",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "int"
+    },
+    {
+      "name": "timeout-sec",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "int"
+    },
+    {
+      "name": "poll-sec",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "int"
+    },
+    {
+      "name": "file",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<请求JSON>",
+      "type": "path"
+    },
+    {
+      "name": "state-file",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "path"
+    },
+    {
+      "name": "node-file",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "path"
+    },
+    {
+      "name": "candidates-file",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "path"
+    },
+    {
+      "name": "task",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "command",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "definition",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "name",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "purpose",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "contact",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "request-id",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "key-stdin",
+      "required": false,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "claim-code-stdin",
+      "required": false,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "wait",
+      "required": false,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "no-cache",
+      "required": false,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "allow-insecure-http",
+      "required": false,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    }
+  ],
+  "forms": []
+}

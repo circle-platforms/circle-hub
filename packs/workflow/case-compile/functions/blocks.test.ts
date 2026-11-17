@@ -50,6 +50,14 @@ test('author expectation coverage never substitutes one quoted node for another'
  assert.ok(checkExpectedSources(f.subject(data,{expected_nodes:[...f.fields.expected_nodes,{reference:EXPECTED_REF+'other',text:'another'}]})).some(outcome=>outcome.verdict==='refute'));
  const unmet=structuredClone(data);unmet.obligations![0]={expectation:EXPECTED_REF,status:'unmet',assertions:[],missing:'合成缺事实',next_action:'合成维护者补证'};assert.ok(checkExpectedSources(f.subject(unmet)).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('合成维护者')));
  const description=f.subject(data,{expected_nodes:[{reference:EXPECTED_REF,text:EXPECTED}]});assert.ok(checkExpectedSources(description).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('类型化判据')));
+ const negativeQuote={reference:EXPECTED_REF,text:'删除后无残留'},negative=plan([{kind:'OBSERVE_ASSERT',id:'observe',call:call(),assertions:[{...assertion('absent','observe','not_found'),literal:'synthetic-record',quote:negativeQuote}]}]);
+ assert.deepEqual(checkExpectedSources(f.subject(negative,{expected_nodes:[negativeQuote]})).map(outcome=>outcome.verdict),['support']);
+ assert.ok(checkExpectedSources(f.subject(negative,{expected_nodes:[{...negativeQuote,declaration:{op:'abs_found',literal:'synthetic-record'}}]})).some(outcome=>outcome.verdict==='refute'));
+ const captured=plan([{kind:'CONFIG',id:'create',call:call('demo set 5')},{kind:'CAPTURE',id:'before',call:call(),register:'removed_record'},{kind:'CONFIG',id:'remove',call:call('no demo set')},{kind:'EXPECT_FROM',id:'observe',call:call(),expected_from:'removed_record',op:'not_found',output:'observe',quote:negativeQuote,expectation:EXPECTED_REF}]);
+ captured.block_context!.causal_links=[{from:'create',to:'before',quote:negativeQuote},{from:'remove',to:'observe',quote:negativeQuote}];
+ const document=structuredClone(f.contractDoc) as any;document.runtime.block_model.operators.push({op:'not_found',expected:'register',object:'check',method:'not_found',matching:'literal'});
+ const contract=signTypedRuntime(document),subject=f.subject(captured,{expected_nodes:[negativeQuote],contract,profile:{...f.profileDoc,runtime:{...f.profileDoc.runtime,contract_sha256:contract.original.contract_sha256}}});
+ assert.deepEqual(checkExpectedSources(subject).map(outcome=>outcome.verdict),['support']);
 });
 test('restore requires a pre-change capture, exact target and guarded executor capability',()=>{
  const early=positiveBlocks().RESTORE_FROM;[early.blocks[0],early.blocks[1]]=[early.blocks[1],early.blocks[0]];assert.equal(readSlots(early).ok,false);

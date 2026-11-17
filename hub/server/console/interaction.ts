@@ -68,8 +68,17 @@ export const INTERACTION_SCRIPT = `(() => {
  const scheduleContents=()=>{if(tocFrame===null&&document.querySelector('[data-page-toc]'))tocFrame=requestAnimationFrame(syncContents);};
  const focusContents=(hash=location.hash)=>{const nav=document.querySelector('[data-page-toc]');if(!nav)return;const link=[...nav.querySelectorAll('a[href]')].find(link=>link.getAttribute('href')===hash),target=link&&document.getElementById(hash.slice(1));if(target){target.tabIndex=-1;target.focus({preventScroll:true});}scheduleContents();};
  window.addEventListener('scroll',scheduleContents,{passive:true});window.addEventListener('resize',scheduleContents);
+ const localMinutes = () => {
+  const pad = (n) => String(n).padStart(2, '0');
+  for (const node of document.querySelectorAll('time[data-local-minute][datetime]')) {
+   const at = Date.parse(node.getAttribute('datetime') || '');
+   if (!Number.isFinite(at)) continue;
+   const d = new Date(at);
+   node.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+ };
  const initialize = () => {
-  controlTips();focusOriginal();updateBulk(document);syncDialog();scheduleContents();
+  controlTips();focusOriginal();updateBulk(document);syncDialog();scheduleContents();localMinutes();
   // A row of page tabs that does not fit scrolls in its own box: bring the current tab into it, without moving the page.
   for (const current of document.querySelectorAll('main nav.ch-seg a[aria-current]')) { const row = current.parentElement; if (row.scrollWidth > row.clientWidth) row.scrollLeft += current.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - current.offsetWidth) / 2; }
   document.dispatchEvent(new Event('circle-hub:render'));

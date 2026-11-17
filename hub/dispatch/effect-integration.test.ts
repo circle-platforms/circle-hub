@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {setup} from './testing/context.ts';
 import {DispatchService} from './service.ts';
+import type {CheckOutcome} from '../../contracts/src/tables.ts';
 for(const clause of [1,2,3,4,5,6,7,8])test(`the real dispatch refuses clause ${clause} before submit and records a dispatch refusal`,async t=>{
  const c=await setup();t.after(()=>c.close());
  if(clause===1)c.effectDocument.effects=[];
@@ -67,6 +68,50 @@ for(const missing of ['accepted result','replay port','policy result'] as const)
  assert.equal(refusal.body.error_code,missing==='accepted result'?'EFFECT_RELEASE_UNMET':'PACK_POLICY_DENIED');assert.equal(refusal.body.detail.boundary_clause,missing==='accepted result'?3:2);assert.equal(refusal.body.detail.effect_row,row.id);assert.deepEqual(refusal.body.detail.requirements,row.release.requirements);
  assert.match(state.missing_fact!,missing==='accepted result'?/受理.*核验事实/:/参数.*政策|参数政策/);assert.match(state.next_action!,missing==='accepted result'?/完成.*核验/:/恢复.*(接口|读取)/);assert.ok(!state.missing_fact!.includes('参数未落'));
  const effects=await c.kit.store.findMany<{boundary:{code:string;row:string};outcome:string}>({kind:'effect',key:'effect.job',values:[state.job]});assert.equal(effects.length,1);assert.equal(effects[0].body.boundary.code,refusal.body.error_code);assert.equal(effects[0].body.boundary.row,row.id);assert.ok(!JSON.stringify(effects).includes('SyntheticPrivatePolicyDetail84'));
+});
+// A policy check that reached no conclusion is worded from its own outcome (V01 R[2], reason and missing; data.sandbox from the Hub
+// only, D05 R[7]), at the parameter gate (clause 2) and at the frozen policy rerun (clause 7), and never as a missing frozen source.
+const unknownOutcome=(extra:Partial<CheckOutcome>):CheckOutcome=>({verdict:'unknown',statement:'合成未知',grounds:[],tier:'blocking',...extra});
+const noConclusionCases={
+ sandbox:{outcomes:[unknownOutcome({reason:'check_error',missing:'缺少沙箱进程树完整的内存观测；下一步：沙箱恢复后重核',data:{sandbox:'SANDBOX_UNAVAILABLE',phase:'subject'}})],message:[/沙箱没能运行/,/1\/1 条结果是未知/],absent:[/冻结来源/],fix:/原样重核/},
+ 'missing input':{outcomes:[unknownOutcome({reason:'missing_input',missing:'X',data:{}})],message:[/缺 X/,/缺输入/],absent:[/沙箱/,/冻结来源/],fix:/补上.*缺.*重核/},
+ 'no result':{outcomes:[],message:[/没有给出任何结果/],absent:[/沙箱/,/冻结来源/],fix:/核对冻结包里该检查的声明和输出/},
+};
+for(const clause of [2,7] as const)for(const [cause,expected] of Object.entries(noConclusionCases))test(`clause ${clause}: a policy check without a conclusion says it was ${cause}, and nothing was sent`,async t=>{
+ const c=await setup();t.after(()=>c.close());const row=c.effectDocument.effects[0];
+ if(clause===2)Object.assign(row,{parameters:{policy:'policies/synthetic.json',check:'policy_check'}});
+ c.service.options.recheckChecks=async()=>({policy_check:expected.outcomes});
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.includes('send_blob'),false);
+ const refusal=(await c.service.journal.events(state.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
+ assert.equal(refusal.body.error_code,'PACK_POLICY_DENIED');assert.equal(refusal.body.detail.boundary_clause,clause);assert.equal(refusal.body.detail.effect_row,row.id);assert.deepEqual(refusal.body.detail.requirements,row.release.requirements);
+ for(const pattern of expected.message)assert.match(state.missing_fact!,pattern);
+ for(const pattern of expected.absent)assert.doesNotMatch(state.missing_fact!,pattern);
+ // Decision 116: the plan, the workbook and the pack were not rejected, and nothing went out.
+ assert.match(state.missing_fact!,/不是计划、工作簿或包被驳回/);assert.match(state.missing_fact!,/什么都没发出/);assert.ok(!state.missing_fact!.includes('参数未落'));
+ assert.match(state.next_action!,expected.fix);assert.doesNotMatch(state.next_action!,/冻结来源|按政策表结论修正输入/);
+ const effects=await c.kit.store.findMany<{boundary:{clause:number;code:string;row:string};outcome:string}>({kind:'effect',key:'effect.job',values:[state.job]});assert.equal(effects.length,1);assert.deepEqual(effects[0].body.boundary,{clause,code:'PACK_POLICY_DENIED',row:row.id});assert.equal(effects[0].body.outcome,'not_dispatched');
+});
+test('clause 7: a refutation next to an unknown is still the policy refusing, not a missing conclusion',async t=>{
+ const c=await setup();t.after(()=>c.close());
+ c.service.options.recheckChecks=async()=>({policy_check:[unknownOutcome({reason:'missing_input',missing:'X',data:{}}),{verdict:'refute',code:'synthetic.denied',statement:'合成拒绝',grounds:[],tier:'blocking'}]});
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(c.calls.includes('send_blob'),false);
+ const refusal=(await c.service.journal.events(state.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
+ assert.equal(refusal.body.error_code,'PACK_POLICY_DENIED');assert.equal(refusal.body.detail.boundary_clause,7);assert.match(state.missing_fact!,/重核未通过/);assert.doesNotMatch(state.missing_fact!,/缺 X|没有给出/);
+});
+// A refutation decides the row at the parameter gate as it does at the policy rerun: out of range, whatever else has no conclusion.
+const refuted:CheckOutcome={verdict:'refute',code:'synthetic.denied',statement:'合成拒绝',grounds:[],tier:'blocking'};
+const otherUnknowns={
+ 'missing input':unknownOutcome({reason:'missing_input',missing:'X',data:{}}),
+ sandbox:unknownOutcome({reason:'check_error',missing:'缺少沙箱进程树完整的内存观测；下一步：沙箱恢复后重核',data:{sandbox:'SANDBOX_UNAVAILABLE',phase:'subject'}}),
+};
+for(const [cause,other] of Object.entries(otherUnknowns))for(const refutedFirst of [true,false])test(`clause 2: a refutation ${refutedFirst?'before':'after'} an unknown (${cause}) is the parameters out of range, not a missing conclusion`,async t=>{
+ const c=await setup();t.after(()=>c.close());const row=c.effectDocument.effects[0];
+ Object.assign(row,{parameters:{policy:'policies/synthetic.json',check:'policy_check'}});
+ c.service.options.recheckChecks=async()=>({policy_check:refutedFirst?[refuted,other]:[other,refuted]});
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.includes('send_blob'),false);
+ const refusal=(await c.service.journal.events(state.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
+ assert.equal(refusal.body.error_code,'EFFECT_PARAMETER_OUT_OF_RANGE');assert.equal(refusal.body.detail.boundary_clause,2);assert.equal(refusal.body.detail.effect_row,row.id);
+ assert.match(state.missing_fact!,/参数未落在/);assert.doesNotMatch(state.missing_fact!,/没有给出|没有运行完|沙箱|缺 X|不是计划、工作簿或包被驳回|什么都没发出/);
 });
 test('closed parameter sets also name absent verification facts instead of inventing a range violation',async t=>{
  const c=await setup();t.after(()=>c.close());c.detail.latest=null;

@@ -226,8 +226,7 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     };
     const read = await callTool(deps as unknown as Parameters<typeof callTool>[0], toolCall as unknown as Parameters<typeof callTool>[1], 'get_nodes', { reference: detail.answer.result!.reference });
     assert.equal(read.isError, false);
-    assert.match(read.content[0].text, /覆盖：完整：已查 0，共 0/);
-    assert.match(read.content[0].text, /条目明细：没有条目/);
+    assert.match(read.content[0].text, /没有需要核对的原始用例。/);
     assert.ok(!read.content[0].text.includes('个用例没有解析出命令'), 'hint counts are not validation claims');
     const content = (read.structuredContent as { content: { text: string; reference: string; readable: boolean } }).content;
     assert.equal(content.reference, detail.answer.result!.reference);

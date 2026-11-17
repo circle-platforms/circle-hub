@@ -1,7 +1,7 @@
 // Scenario 1 (brief section 9): a normal review. A reviewer lists the task packs, starts the draft review on the agile
 // platform's ~150-node synthetic mind map by its external id, and hands in every item; every item is delivered, each
 // (item, requirement) has its terminal on the one layer the requirement declares, the satisfaction counts follow from
-// the terminals, and the dynamic layer is "not applicable" (no entry, `本层不适用` in the text). The expected answers come
+// the terminals, and the undeclared dynamic layer has no entry. The expected answers come
 // from the fixture document itself (oracle over the tagged rule) and from its documented defects.
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
@@ -17,7 +17,7 @@ import { openConsole, type ConsoleClient } from './support/console.ts';
 import { WORKFLOW } from './support/env.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import type { McpClient } from './support/mcp.ts';
-import { draft, itemsOf, oracleCases, refutationCodes, requirementOf, resultOf, sharedIds, startReview, staticLayer, type OracleCase } from './support/review.ts';
+import { draft, itemsOf, oracleCases, refutationCodes, resultOf, sharedIds, startReview, staticLayer, type OracleCase } from './support/review.ts';
 
 let postgres: TemporaryPostgres;
 let bed: Bed;
@@ -209,18 +209,25 @@ describe('scenario 1: a normal review', () => {
     for (const item of run.items) assert.equal(staticLayer(result, item.id, 'findings').terminal, 'judgment');
   });
 
-  test('the receipt text states the counts per requirement as the structured result has them, the dynamic layer not applicable', () => {
-    for (const key of ['literal', 'catalog', 'findings']) {
-      const statuses = run.items.map((i) => requirementOf(result, i.id, key).status);
-      const count = (s: string) => statuses.filter((x) => x === s).length;
-      const line = receiptText.split('\n').find((l) => l.startsWith(`- ${key}：`));
-      assert.ok(line, `the text has a line for ${key}`);
-      assert.ok(line.includes(`满足 ${count('satisfied')}，未满足 ${count('unsatisfied')}`), line);
-      assert.ok(line.includes(`未决 ${count('pending')}`), line);
-      assert.ok(line.endsWith('动态：本层不适用'), line);
+  test('the receipt text gives each original case a conclusion and keeps unknown judgments distinct from errors', () => {
+    const lines = receiptText.split('\n').filter(line => line.startsWith('原始用例 '));
+    assert.equal(lines.length, run.items.length);
+    for (const [index, item] of run.items.entries()) {
+      const id = item.fields.autoid;
+      const name = `原始用例 ${typeof id === 'string' || typeof id === 'number' ? `${id} ` : ''}${item.label}`;
+      const line = lines[index];
+      assert.ok(line.startsWith(name + '：'), line); // 决定 20:32：结论句编号与陈述之间用冒号
+      assert.match(line, /；原因.+；下一步.+；决定者/);
+      // 06:48：程序能确定的错误（含标签闭集、跳过缺产物等）写「状态已确认；判断错误」；未知不带判断词
+      if (line.includes('；判断错误；')) {
+        assert.match(line, /；状态已确认；判断错误；/);
+      } else {
+        assert.match(line, /；状态未知；/);
+        assert.doesNotMatch(line, /；判断正确；|；判断错误；/);
+      }
     }
-    const unknown = itemsOf(result).filter(({ item }) => item.requirements.some((r) => r.layers.some((l) => l.terminal === 'unchecked'))).length;
-    assert.ok(receiptText.startsWith(`回执：已受理；分区：已交付 ${run.items.length}，已拒收 0，已隔离 0，未完成 0；未知 ${unknown}`), receiptText.slice(0, 200));
+    assert.ok(receiptText.startsWith('核对已完成。\n'), receiptText.slice(0, 200));
+    assert.doesNotMatch(receiptText, /回执：|分区：|本层不适用|静态：|动态：|rec:|src:/);
   });
 
   test('real effects: stored records, call log lines, and console HTML page', async () => {

@@ -1,0 +1,14 @@
+{
+  "task": "choice",
+  "node": {
+    "line": "network",
+    "module": "interface",
+    "path": ["网络配置", "接口地址"],
+    "title": "为接口 eth0 绑定文档测试网段地址 192.0.2.20/24"
+  },
+  "candidates": [
+    { "name": "ip address", "text": "ip address <ip> <mask>: 为当前接口配置 IPv4 地址与子网掩码" },
+    { "name": "ip route", "text": "ip route <prefix> <mask> <nexthop>: 配置静态路由" },
+    { "name": "都不是", "text": "以上候选均不符合" }
+  ]
+}

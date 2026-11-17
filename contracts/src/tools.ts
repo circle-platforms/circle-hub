@@ -120,7 +120,7 @@ export const UploadFileInput = z.strictObject({
   space: KnowledgeSpaceKindSchema.extract(['personal']).optional().describe('Import a file into the caller personal knowledge space; the Hub never drafts an entry'),
   media_type: z.string().optional().describe('Media type if known, for example text/markdown'),
   name: z.string().optional().describe('Original file name, for display'),
-  provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Client-declared upload provenance; defaults to declared. client_captured is for Circle operation captures and stays declaration grade.'),
+  provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Use declared (or omit this field) for uploaded workbooks and other user-supplied or generated workflow input files. client_captured is only for original model/client operation records, such as tool-hook captures, not merely a file generated or uploaded by a client. These captures stay declaration grade for operation-record knowledge feeding only; they cannot be used as ordinary workflow inputs or as verification, scoring or release evidence. Neither value makes an upload a Hub observation.'),
   captured_at: IsoTime.optional().describe('The original capture moment declared by the client, not the Hub receipt moment; Hub receipt is kept separately in the record created_at'),
 }).refine(input => [input.file_path,input.personal_entry,input.share_entry,input.withdraw_entry,input.memory,input.memory_share].filter(value=>value!==undefined).length===1, 'provide exactly one payload mode').refine(input=>!(input.memory||input.memory_share)||[input.space,input.media_type,input.name,input.provenance_type,input.captured_at].every(v=>v===undefined),'memory mode accepts no file metadata');
 // safeExtend: the receipt, optional in the envelope, is required here, and the envelope's refinements stay.
@@ -131,7 +131,7 @@ export const UploadFileOutput = Envelope.safeExtend({
   share: KnowledgeShareReceipt.optional(),
   withdrawn_reference: referenceUriOf('tree').optional(),
   acceptance: AcceptanceSchema,
-  reference: referenceUriOf('src').optional().describe('src:<sha256> of the stored bytes, to use as a run input; only when accepted'),
+  reference: referenceUriOf('src').optional().describe('src:<sha256> of accepted stored bytes; the reference alone does not establish input eligibility or verified evidence. For an ordinary declared upload, the returned artifact can select the exact capture when binding a workflow input. client_captured references are for operation-record knowledge feeding only, not ordinary workflow inputs.'),
   artifact: Sha256.optional().describe('Exact source_artifact record, so equal-byte captures can be bound independently; only when accepted'),
   sha256: Sha256.optional(),
   size: z.number().int().nonnegative().optional(),
@@ -185,7 +185,7 @@ export const AcceptedBy = z.strictObject({
   type: z.string().min(1),
   inputs: z.array(z.strictObject({ pack: z.string().describe('id@version'), slot: z.string().min(1), role: SourceRoleSchema })),
 });
-export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), result: ProductionResult.optional(), accepted_by: z.array(AcceptedBy).optional(), local_tools: LocalToolsSummary.optional().describe('the tools/ files of the pack this run froze; absent when it ships none. An answer-level fact: the run record itself never changes') }).superRefine((o, ctx) => {
+export const StartRunOutput = Envelope.extend({ record: referenceUriOf('rec').optional().describe('Immutable run record reference for machine readers'), run: RunSummary.optional(), result: ProductionResult.optional(), accepted_by: z.array(AcceptedBy).optional(), local_tools: LocalToolsSummary.optional().describe('the tools/ files of the pack this run froze; absent when it ships none. An answer-level fact: the run record itself never changes') }).superRefine((o, ctx) => {
   if ((o.call_result === 'ok') !== (o.run !== undefined)) issue(ctx, ['run'], 'an ok answer carries the run and an error answer carries none');
   if (o.result !== undefined && o.run === undefined) issue(ctx, ['result'], 'a result belongs to a run');
   if (o.local_tools !== undefined && o.run === undefined) issue(ctx, ['local_tools'], 'local tools belong to a run');
@@ -228,7 +228,7 @@ const NodeEntry = z.strictObject({
   kind: EntryKindSchema,
   statement: z.string(),
   reference: referenceUriOf('tree').describe('Tree address of the node pinned to this entry, tree:<root><path>@<entry>; cite it verbatim as a ground'),
-  applicability: z.string(),
+  applicability: z.string().optional().describe('The conditions under which the entry holds; absent when nothing is declared, judged or in conflict (K02 F[6], decision 159)'),
   applicability_fields:ApplicabilityFields.optional(),
   applicability_context:z.strictObject({composition:Sha256.nullable(),criteria_digest:Sha256.nullable()}).optional(),
   data: z.record(z.string(), z.unknown()).optional().describe('Machine-readable content of the entry, for example the signatures and typed parameters of a catalog leaf'),
@@ -324,6 +324,9 @@ export const ResolveReferenceOutput = Envelope.extend({
 
 export const SubmitResultInput = Submission;
 export const SubmitResultOutput = Envelope.safeExtend({
+  /** Producer-filled when the checked requirements resolve to exactly one workflow step (CHANGELOG Unreleased: submit_result lead / step_name). */
+  step_name: z.string().min(1).refine(value => value.trim().length > 0, 'a name is not whitespace').optional().describe('The declared user-facing step name only when the nonempty set of requirements actually checked by this submission explicitly resolves to one workflow step; absent for missing declarations, multiple steps or an unproven checked scope'),
+  record: referenceUriOf('rec').optional().describe('Immutable validation result record reference for machine readers'),
   withdrawn_grounds:z.array(Ground).optional().describe("Live withdrawal qualifier, outside the immutable historical result"),
   withdrawn_grounds_hidden_count:z.number().int().nonnegative().optional().describe('Count of currently unreadable withdrawn grounds, without their identities'),
   acceptance: AcceptanceSchema,
@@ -351,7 +354,30 @@ export const SubmitResultOutput = Envelope.safeExtend({
   if (Object.entries(derived).some(([key, value]) => counts[key] !== value)) issue(ctx, ['counts'], 'counts are derived from result.partitions (W08 R[0])');
 });
 
-export const TOOLS: ToolDefinition[] = [
+/** Clone output objects without changing shared input or record schemas. */
+function extensibleOutput(schema: z.ZodType): z.ZodType {
+  const copies = new Map<z.ZodType, z.ZodType>();
+  const visit = (value: unknown): unknown => {
+    if (value instanceof z.ZodType) {
+      const previous = copies.get(value);
+      if (previous) return previous;
+      const definition: z.core.$ZodTypeDef & Record<string, unknown> = {
+        ...Object.fromEntries(Object.entries(value._zod.def).map(([key, child]) => [key, visit(child)])),
+        type: value._zod.def.type,
+      };
+      if (definition.type === 'object') definition.catchall = z.unknown();
+      const clone = z.core.clone(value, definition, { parent: true });
+      copies.set(value, clone);
+      return clone;
+    }
+    if (Array.isArray(value)) return value.map(visit);
+    if (z.core.util.isPlainObject(value)) return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, visit(child)]));
+    return value;
+  };
+  return visit(schema) as z.ZodType;
+}
+
+export const TOOLS: ToolDefinition[] = ([
   {
     name: 'list_task_packs',
     label: '查询工作流',
@@ -366,7 +392,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'upload_file',
     label: '上传文件',
     title: 'Upload a file',
-    description: 'Upload a file for a run, or set space=personal to import a private original. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference. Use memory or memory_share instead for versioned session preferences: no evidence reference is returned.',
+    description: 'Upload a file for a run, or set space=personal to import a private original. For uploaded workbooks and other workflow input files, use provenance_type=declared or omit it. client_captured is only for original model/client operation records: declaration-grade knowledge feeding, not ordinary workflow inputs or verification evidence. Generating or uploading a workbook on the client does not make it an operation capture. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference. Use memory or memory_share instead for versioned session preferences: no evidence reference is returned.',
     input: UploadFileInput,
     output: UploadFileOutput,
     effect: 'none',
@@ -415,6 +441,6 @@ export const TOOLS: ToolDefinition[] = [
     writesHubRecords: true,
     idempotent: true,
   },
-];
+] satisfies ToolDefinition[]).map(tool => ({ ...tool, output: extensibleOutput(tool.output) }));
 
 export { Coverage, ItemId, PackId, ExternalObjectId, Fields };

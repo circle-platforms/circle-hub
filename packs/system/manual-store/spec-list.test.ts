@@ -66,6 +66,7 @@ test('the connector reads declared and empty directories but refuses undeclared 
    {settings:{},paths:null,folders:[]}];
  for(const {settings,paths,folders} of cases){
   const resource=await kit.connectors.admin.addResource(kit.admin,{system_pack:'manual-store',name:'合成规格库',environment:'test',origins:{'manual-store':stub.origin},settings});
+  await kit.records.authorizations.grant(kit.admin,{permission:'resource_assign',subject:'*',object:resource.id});
   const before=stub.requests.length;
   const read=await kit.connectors.reader.read('manual:spec-list:configured',{principal:kit.admin,run:null,purpose:'synthetic inventory'});
   if(paths===null)assert.equal(read.ok,false);

@@ -1,9 +1,10 @@
+import { isAdmin } from '../../records/api.ts';
 // What scheduled maintenance rounds remember, and how one learns what to do: the cost of a round follows what changed, not the
 // history (decision 146). Everything a round acts on comes from one of four sources, and an idle round reads only the first
 // two: the account list, the end of the append log, what the log gained since the last round, and the schedules below, which
 // are in memory. A round then reads, with verified reads, the runs and requests those name, and nothing else. A pass that
 // visits every run fills the schedules, so a process knows them from its first pass on.
-import { openAppendCursor, readAppended, type AppendCursor, type AppendedEntry, type RecordKind, type RecordStore } from '../../records/api.ts';
+import { openAppendCursor, readAppended, type AppendCursor, type AppendedEntry, type RecordKind, type RecordStore, type User } from '../../records/api.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { EngineContext } from './deps.ts';
 import type { RequestBody, RequestView } from './requests.ts';
@@ -41,13 +42,15 @@ export interface MaintenanceMemory {
   sources: Map<string, string>;
   /** Pack versions a repair request of which is answered: a run newly started on one is told about its repair. */
   repaired: Set<string>;
+  /** The length of the journal of each job still waiting for a result, as the last visit read it: a journal that grew is being written by its observer. */
+  watching: Map<string, number>;
 }
 
 export function newMaintenanceMemory(): MaintenanceMemory {
   return {
     fullAt: null, log: null, arrived: [], accounts: null, visits: new Set(), started: new Set(),
     requests: { all: false, runs: new Set(), packs: new Set(), answered: new Set(), versions: new Set() },
-    deadlines: new Map(), due: new Map(), sources: new Map(), repaired: new Set(),
+    deadlines: new Map(), due: new Map(), sources: new Map(), repaired: new Set(), watching: new Map(),
   };
 }
 
@@ -79,8 +82,8 @@ const LOOKUP_BATCH = 128;
  * The accounts as far as a request's next step depends on them, in the list's order (the first active administrator is the one
  * escalated to): who is an administrator and who cannot act. A new ordinary account changes nothing for any request.
  */
-const accountsKey = (accounts: readonly { id: string; role: string; disabled: boolean; deleted_at?: string | null }[]): string =>
-  JSON.stringify(accounts.filter((account) => account.role === 'admin' || account.disabled || account.deleted_at).map((account) => [account.id, account.role, account.disabled, account.deleted_at ?? null]));
+const accountsKey = (accounts: readonly Pick<User,'id'|'role'|'disabled'|'deleted_at'>[]): string =>
+  JSON.stringify(accounts.filter((account) => isAdmin(account) || account.disabled || account.deleted_at).map((account) => [account.id, account.role, account.disabled, account.deleted_at ?? null]));
 
 /**
  * Takes in what changed since the last call: what the log gained and whether the accounts moved. A run a record names is visited

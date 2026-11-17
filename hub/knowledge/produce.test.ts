@@ -77,7 +77,8 @@ describe('producing a root', () => {
     const reboot = page.nodes.find((n) => n.path === '/commands/system/reboot');
     assert.equal(reboot?.entries.length, 1);
     assert.equal(reboot?.entries[0].statement, 'system reboot <delay:int>\n  restart the unit');
-    assert.equal(reboot?.entries[0].applicability, '未声明');
+    assert.equal(reboot?.entries[0].applicability, undefined, 'nothing declared, nothing said (decision 159)');
+    assert.equal(reboot?.entries[0].applicability_fields, undefined);
     assert.equal(reboot?.entries[0].reference, `tree:${root}/commands/system/reboot@${reboot?.entries[0].entry}`);
 
     const body = await composition(w, result.composition as string);

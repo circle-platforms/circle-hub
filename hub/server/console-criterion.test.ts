@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {runRecord,accepted} from '../../contracts/src/fixtures.ts';
 import type {ServerDeps} from './api.ts';
-import {runPage,type PageContext} from './console/pages.ts';
+import type { PageContext } from './console/context.ts';
+import { runPage } from './console/pages.ts';
 import { everyTaskTab } from './console/testing-task-tabs.ts';
 test('run pages show escaped criterion changes request decisions and replacement history',async()=>{
  const run=structuredClone(runRecord),result=structuredClone(accepted) as unknown as import('../../contracts/src/validation.ts').ValidationResult;

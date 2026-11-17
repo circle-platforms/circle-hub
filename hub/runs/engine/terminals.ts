@@ -29,8 +29,10 @@ export interface JudgedOutcome {
 }
 
 /**
- * runCheck turns a sandbox failure into an unknown outcome carrying `data.sandbox`. A display hint only: a pack function can
- * return the same data, so no terminal depends on it (the terminal follows the outcome's reason, V01 R[6]).
+ * runCheck turns a sandbox failure into an unknown outcome carrying `data.sandbox`, and a failed subject builder's outcome
+ * carries it too. Only the Hub writes the key: runCheck drops it from the data a pack function returns (D05 R[7]), so a pack
+ * cannot pose as a sandbox failure. It words a refusal (the dispatch boundary) and steers no terminal (the terminal follows the
+ * outcome's reason, V01 R[6]).
  */
 export function isSandboxFailure(outcome: CheckOutcome): boolean {
   return outcome.verdict === 'unknown' && typeof outcome.data?.sandbox === 'string';

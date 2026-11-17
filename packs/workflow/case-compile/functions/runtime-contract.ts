@@ -21,7 +21,10 @@ export interface PinnedIdentity { identity: string; bytes: string | null }
  * module-wide and are not a teardown a case may copy. `pinned` says whether the original contract's source_hashes record
  * the same digest for the source; when it does not, the digest is the Hub-side declaration only.
  */
-export interface RunnerCleanup { source: string; sha256: string; objects: string[]; rules: Array<{ prefixes: string[]; line: number | null }>; pinned: boolean }
+export interface CommandDomainProbe { command: string; reference: string; read_only: true }
+export interface RunnerCleanupOrder { rule_match: 'first_hit'; tail: string[]; before: Array<[string, string]> }
+export interface RunnerCleanupRule { prefixes: string[]; clears?: string[]; line: number | null; probe?: CommandDomainProbe }
+export interface RunnerCleanup { source: string; sha256: string; objects: string[]; order?: RunnerCleanupOrder; rules: RunnerCleanupRule[]; pinned: boolean }
 /**
  * Device commands the runner is never asked to send (a runtime-contract@2 addition, decision 114). The reference
  * implementation bans, unconditionally, the commands that take a shared environment's device down or wipe it with its
@@ -31,7 +34,26 @@ export interface RunnerCleanup { source: string; sha256: string; objects: string
  * the locked tree resolves, except these.
  */
 export interface DestructiveCommands { source: string; sha256: string; exact: string[]; prefixes: string[]; segments: string[] }
-export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[]; cleanup?: RunnerCleanup; destructive?: DestructiveCommands }
+/**
+ * Lines a device prints when it did not carry out a command (a runtime-contract@2 addition, decision 163). The reference engine
+ * keeps them in its domain grammar (exec_failure_markers) and turns a pass whose output carries one into no verdict; the source
+ * of the declaration and its digest are declared here. Lines are compared as text, a marker is a part of a line.
+ */
+export interface FailureMarkers { source: string; sha256: string; lines: string[] }
+/**
+ * Access levels of commands that the prompt a method sends at does not accept (a runtime-contract@2 addition, 2026-11-10). The
+ * locked command tree declares an access level for each command by its native name (CatalogSignature.access); which method
+ * sends at which prompt is the bed framework's fact, and which level that prompt refuses is declared here with its evidence,
+ * row by row. Only refusals with evidence are declared: a level that is not listed for a method is not checked at all. In
+ * runs 16 and 19 thirteen commands of one level were typed with the method of the other prompt and answered with a caret;
+ * the two cases spent five and three rounds on it.
+ */
+export interface RefusedAccess { source: string; sha256: string; rows: Array<{ object: string; method: string; access: string[] }> }
+export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[]; cleanup?: RunnerCleanup; destructive?: DestructiveCommands; failureMarkers?: FailureMarkers; refusedAccess?: RefusedAccess }
+/** The access levels the prompt of this object's method refuses, as the contract declares them; empty when it declares none. */
+export function refusedAccess(contract: RuntimeContract, object: string, method: string): string[] {
+  return contract.refusedAccess?.rows.find((row) => row.object === object && row.method === method)?.access ?? [];
+}
 /** Whole path segments of a /commands path, or null when it is not one. */
 const segmentsOf = (path: string): string[] | null => /^\/commands(\/[^/]+)*$/.test(path) ? path.split('/').filter(Boolean) : null;
 const under = (path: string, prefix: string): boolean => { const a = segmentsOf(path), b = segmentsOf(prefix); return !!a && !!b && a.length >= b.length && b.every((segment, i) => a[i] === segment); };
@@ -86,7 +108,7 @@ export function runtimeMethod(contract: RuntimeContract, object: string, method:
   return contract.enabled.find((entry) => entry.object === object && entry.method === method) ?? null;
 }
 /** The members a runtime-contract@2 document adds on top of the original contract (Hub-side deployment declaration). */
-const ADDITIONS = ['types', 'roles', 'effects', 'promotions', 'cleanup', 'destructive'];
+const ADDITIONS = ['types', 'roles', 'effects', 'promotions', 'cleanup', 'destructive', 'exec_failure_markers', 'refused_access'];
 /**
  * Runtime members B1 reads that the pinned original contract does not have. That original (canonical identity
  * ca32544f…) has exactly minimum_version, runner_source, runner_sha256 and found_times_supported. block_model and
@@ -174,16 +196,45 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   if (value.cleanup !== undefined) {
     const c = value.cleanup;
     const rules = isRecord(c) && Array.isArray(c.rules) ? c.rules : [];
+    const probe = (p: unknown): boolean => p === undefined || isRecord(p) && Object.keys(p).every(key => ['command', 'reference', 'read_only'].includes(key)) && typeof p.command === 'string' && p.command.length > 0 && p.command.length <= 2000 && !/[\u0000-\u0008\u000a-\u001f\u007f]/.test(p.command) && typeof p.reference === 'string' && /^tree:[a-f0-9]{64}\/commands(?:\/[^@\s/]+)+(?:@[a-f0-9]{64})?$/.test(p.reference) && p.read_only === true;
     const prefix = (p: unknown): p is string => typeof p === 'string' && /\S/.test(p) && p.length <= 200 && !/[\r\n]/.test(p);
-    if (value.schema !== 'runtime-contract@2' || !isRecord(c) || Object.keys(c).some((key) => !['source', 'sha256', 'objects', 'rules'].includes(key)) || !nonempty(c.source) || typeof c.sha256 !== 'string' || !SHA.test(c.sha256)
+    const validOrder = (o: unknown): o is RunnerCleanupOrder => isRecord(o)
+      && Object.keys(o).every((key) => key === 'rule_match' || key === 'tail' || key === 'before')
+      && o.rule_match === 'first_hit'
+      && Array.isArray(o.tail) && o.tail.length <= 16 && o.tail.every(prefix) && new Set(o.tail).size === o.tail.length
+      && Array.isArray(o.before) && o.before.length <= 32 && o.before.every((pair) => Array.isArray(pair) && pair.length === 2 && prefix(pair[0]) && prefix(pair[1]) && pair[0] !== pair[1]);
+    const validRule = (r: unknown): boolean => isRecord(r)
+      && Object.keys(r).every((key) => key === 'prefixes' || key === 'clears' || key === 'line' || key === 'probe')
+      && Array.isArray(r.prefixes) && r.prefixes.length > 0 && r.prefixes.length <= 16 && r.prefixes.every(prefix)
+      && (r.clears === undefined || (Array.isArray(r.clears) && r.clears.length > 0 && r.clears.length <= 16 && r.clears.every(prefix)))
+      && probe(r.probe)
+      && (r.line === undefined || (Number.isSafeInteger(r.line) && (r.line as number) >= 1));
+    if (value.schema !== 'runtime-contract@2' || !isRecord(c) || Object.keys(c).some((key) => !['source', 'sha256', 'objects', 'order', 'rules'].includes(key)) || !nonempty(c.source) || typeof c.sha256 !== 'string' || !SHA.test(c.sha256)
       || !Array.isArray(c.objects) || c.objects.length === 0 || c.objects.length > 16 || c.objects.some((o) => !nonempty(o)) || new Set(c.objects).size !== c.objects.length
-      || rules.length === 0 || rules.length > 512 || rules.some((r) => !isRecord(r) || Object.keys(r).some((key) => !['prefixes', 'line'].includes(key)) || !Array.isArray(r.prefixes) || r.prefixes.length === 0 || r.prefixes.length > 16 || !r.prefixes.every(prefix) || r.line !== undefined && (!Number.isSafeInteger(r.line) || (r.line as number) < 1))) {
-      issue('/cleanup', '运行器清理声明只能是 runtime-contract@2 里的 source、sha256、objects（1–16 个对象）和 rules（1–512 条，每条 1–16 个单行前缀，可带源码行号）');
+      || (c.order !== undefined && !validOrder(c.order))
+      || rules.length === 0 || rules.length > 512 || !rules.every(validRule)) {
+      issue('/cleanup', '运行器清理声明只能是 runtime-contract@2 里的 source、sha256、objects（1–16 个对象）、可选 order（rule_match/tail/before）和 rules（1–512 条，每条 1–16 个单行前缀，可带 clears、源码行号和显式只读 probe）');
     } else {
       for (const [k, o] of (c.objects as string[]).entries()) if (!objects.has(o)) issue(`/cleanup/objects/${k}`, '清理声明的对象不在合约对象列表里');
       const recorded = isRecord(value.source_hashes) ? value.source_hashes[c.source as string] : undefined;
       if (recorded !== undefined && recorded !== c.sha256) issue('/cleanup/sha256', '清理源文件摘要与原合约源文件摘要表记的不同');
-      cleanup = { source: String(c.source), sha256: c.sha256, objects: [...c.objects as string[]], rules: rules.map((r) => ({ prefixes: [...(r as { prefixes: string[] }).prefixes], line: typeof (r as { line?: unknown }).line === 'number' ? (r as { line: number }).line : null })), pinned: recorded === c.sha256 };
+      const order = c.order !== undefined ? { rule_match: 'first_hit' as const, tail: [...(c.order as RunnerCleanupOrder).tail], before: (c.order as RunnerCleanupOrder).before.map(([a, b]): [string, string] => [a, b]) } : undefined;
+      cleanup = {
+        source: String(c.source),
+        sha256: c.sha256,
+        objects: [...c.objects as string[]],
+        ...(order ? { order } : {}),
+        rules: rules.map((r) => {
+          const row = r as { prefixes: string[]; clears?: string[]; line?: unknown; probe?: CommandDomainProbe };
+          return {
+            prefixes: [...row.prefixes],
+            ...(row.clears !== undefined ? { clears: [...row.clears] } : {}),
+            line: typeof row.line === 'number' ? row.line : null,
+            ...(row.probe === undefined ? {} : {probe: structuredClone(row.probe)}),
+          };
+        }),
+        pinned: recorded === c.sha256,
+      };
     }
   }
   let destructive: DestructiveCommands | undefined;
@@ -198,6 +249,26 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
     } else {
       destructive = { source: String(d.source), sha256: d.sha256 as string, exact: [...((d.exact as string[] | undefined) ?? [])], prefixes: [...((d.prefixes as string[] | undefined) ?? [])], segments: [...((d.segments as string[] | undefined) ?? [])] };
     }
+  }
+  let failureMarkers: FailureMarkers | undefined;
+  if (value.exec_failure_markers !== undefined) {
+    const m = value.exec_failure_markers;
+    const line = (v: unknown): boolean => typeof v === 'string' && v.length > 0 && v.length <= 200 && v === v.trim() && !/[\r\n]/.test(v);
+    if (value.schema !== 'runtime-contract@2' || !isRecord(m) || Object.keys(m).some((key) => !['source', 'sha256', 'lines'].includes(key)) || !nonempty(m.source) || typeof m.sha256 !== 'string' || !SHA.test(m.sha256)
+      || !Array.isArray(m.lines) || m.lines.length === 0 || m.lines.length > 32 || !m.lines.every(line) || new Set(m.lines).size !== m.lines.length) {
+      issue('/exec_failure_markers', '执行失败标记只能是 runtime-contract@2 里的 source、sha256 和 lines（1–32 条不重复的单行文字，每条至多 200 字，首尾无空白）');
+    } else failureMarkers = { source: String(m.source), sha256: m.sha256 as string, lines: [...m.lines as string[]] };
+  }
+  let refused: RefusedAccess | undefined;
+  if (value.refused_access !== undefined) {
+    const r = value.refused_access;
+    const word = (v: unknown): boolean => typeof v === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(v);
+    const row = (v: unknown): boolean => isRecord(v) && Object.keys(v).every((key) => ['object', 'method', 'access'].includes(key)) && nonempty(v.object) && nonempty(v.method)
+      && Array.isArray(v.access) && v.access.length >= 1 && v.access.length <= 8 && v.access.every(word) && new Set(v.access).size === v.access.length;
+    if (value.schema !== 'runtime-contract@2' || !isRecord(r) || Object.keys(r).some((key) => !['source', 'sha256', 'rows'].includes(key)) || !nonempty(r.source) || typeof r.sha256 !== 'string' || !SHA.test(r.sha256)
+      || !Array.isArray(r.rows) || r.rows.length === 0 || r.rows.length > 64 || !r.rows.every(row) || new Set(r.rows.map((v) => `${String(v.object)}\u0000${String(v.method)}`)).size !== r.rows.length) {
+      issue('/refused_access', '提示符不接受的命令级别声明只能是 runtime-contract@2 里的 source、sha256 和 rows（1–64 行，每行 object、method 和 1–8 个不重复的级别名，同一对象方法只写一行）');
+    } else refused = { source: String(r.source), sha256: r.sha256 as string, rows: (r.rows as Array<Record<string, unknown>>).map((v) => ({ object: String(v.object), method: String(v.method), access: [...v.access as string[]] })) };
   }
   const promotedPairs = new Set<string>();
   const enabled: RuntimeEntry[] = [];
@@ -268,8 +339,10 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
     }
   }
   if (expected && (expected.digest !== pinned.identity || expected.runtimeVersion !== runtime.minimum_version)) issue('/runtime', '合约身份与运行环境配置的期望值不一致');
+  // A row that names a pair the contract does not enable would never be read: a stale declaration is refused, not ignored.
+  for (const [k, row] of (refused?.rows ?? []).entries()) if (!enabled.some((entry) => entry.object === row.object && entry.method === row.method)) issue(`/refused_access/rows/${k}`, '这一行写的对象方法不是合约启用的组合');
   if (problems.length) return { ok: false, problems };
-  const contract: RuntimeContract = { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled, ...(cleanup ? { cleanup } : {}), ...(destructive ? { destructive } : {}) };
+  const contract: RuntimeContract = { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled, ...(cleanup ? { cleanup } : {}), ...(destructive ? { destructive } : {}), ...(failureMarkers ? { failureMarkers } : {}), ...(refused ? { refusedAccess: refused } : {}) };
   sourceDocuments.set(contract, value);
   return { ok: true, contract };
 }

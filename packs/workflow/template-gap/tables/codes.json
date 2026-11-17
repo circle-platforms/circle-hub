@@ -41,7 +41,7 @@
     {
       "code": "template-gap.index_invalid",
       "when": "用例索引不是 case/document 的 index-view@1、根或产品与运行不同、only 不等于敏捷平台文档集合，或连接与完整性事实不可读",
-      "fix": "按运行锁定的构建重绑 case_index，only 精确列出这次敏捷平台文档，fields=document,node,commands,title,path_labels；上传文件不写进 only"
+      "fix": "按运行锁定的构建重新绑定 case_index，only 精确列出这次敏捷平台文档，fields=document,node,commands,title,path_labels；上传文件不写进 only"
     }
   ],
   "warnings": [

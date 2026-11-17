@@ -3,6 +3,10 @@
 // the pack, and the account behind the refusal is only in the admin log.
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { workflowPack, writePack } from '../../hub/runs/packs/testing/builder.ts';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
 import { openBed, type Bed } from './support/hub.ts';
@@ -37,8 +41,8 @@ describe('scenario 6: user without pack', () => {
     assert.equal(unassignedAnswer.isError, true);
     assert.equal(unassignedAnswer.out.call_result, 'error');
     assert.equal(unassignedAnswer.out.errors[0]?.code, 'SOURCE_NOT_PERMITTED');
-    assert.ok(unassignedAnswer.text.includes('任务包 case-review 存在，没有分配给你'), unassignedAnswer.text);
-    assert.ok(unassignedAnswer.text.includes('请管理员把它分配给你'), 'the fix names who can assign it');
+    assert.ok(unassignedAnswer.text.includes('当前账户未获授权使用工作流「case-review」'), unassignedAnswer.text);
+    assert.ok(unassignedAnswer.text.includes('请联系管理员为该账户或所在团队分配此工作流'), 'the fix names who can assign it');
     assert.equal(unassignedAnswer.out.run, undefined);
 
     // 2. Calling start_run for a completely non-existent pack
@@ -51,7 +55,10 @@ describe('scenario 6: user without pack', () => {
     assert.equal(nonExistentAnswer.isError, true);
     assert.equal(nonExistentAnswer.out.call_result, 'error');
     assert.equal(nonExistentAnswer.out.errors[0]?.code, 'SOURCE_ABSENT');
-    assert.ok(nonExistentAnswer.text.includes('Hub 里没有任务包 totally-fictitious-pack-999'), nonExistentAnswer.text);
+    assert.equal(
+      nonExistentAnswer.text,
+      '不存在：Hub 里没有名为「totally-fictitious-pack-999」的工作流或技能。请核对名称；当前账户可用的工作流和技能用 list_task_packs 查看。',
+    );
 
     // Apart from the error itself, both answers have the same empty shape: nothing of the pack is shown.
     const shape = (out: Record<string, unknown>) => ({ ...out, trace: 'fixed', errors: undefined });
@@ -69,8 +76,35 @@ describe('scenario 6: user without pack', () => {
     assert.equal(unassignedCall.admin_note, `管理员理由 ${unassignedCall.admin_reasons?.length} 条；详见管理员调用日志详情`);
 
     // 4. Console log check
-    const callsPage = await consoleClient.get('/console/admin/calls');
+    const callsPage = await consoleClient.get('/console/records');
     assert.equal(callsPage.status, 200);
     assert.ok(callsPage.body.includes('SOURCE_NOT_PERMITTED') || callsPage.body.includes(outsider.user.id));
   });
+  test('name suggestions disclose a personal workflow only inside its owner namespace', async (t) => {
+    const owner = await bed.user('合成私有包主人', []), other = await bed.user('合成无授权读者', []);
+    const directory = await mkdtemp(join(tmpdir(), 's06-private-names-')); t.after(() => rm(directory, { recursive: true, force: true }));
+    const spec = workflowPack({ id: 'synthetic-private-suggestion', product: { catalogs: [] } });
+    spec.files['knowledge.json'] = { schema: 'knowledge@1', requires: [] };
+    const written = await writePack(join(directory, 'pack'), spec);
+    const published = await bed.hub.hub.registry.personal!.publish(owner.principal, written.dir);
+    assert.equal(published.ok, true, JSON.stringify(published));
+    const ownerClient = await bed.connect(owner), otherClient = await bed.connect(other);
+    assert.ok((await ownerClient.call('list_task_packs', {})).out.packs.some(row => row.id === spec.id && row.space === owner.user.id));
+    assert.ok(!(await otherClient.call('list_task_packs', {})).out.packs.some(row => row.id === spec.id));
+    const asked = 'synthetic-private-sugestion';
+    for (const actor of [ownerClient, otherClient]) {
+      const absent = await actor.call('start_run', { pack: asked, inputs: {} });
+      assert.equal(absent.out.errors[0]?.code, 'SOURCE_ABSENT');
+      assert.equal(absent.text, '不存在：Hub 里没有名为「synthetic-private-sugestion」的工作流或技能。请核对名称；当前账户可用的工作流和技能用 list_task_packs 查看。');
+      assert.equal(absent.out.run, undefined);
+      assert.ok(!JSON.stringify(absent).includes(spec.id), 'a team-space refusal discloses no personal workflow');
+    }
+    const own = await ownerClient.call('start_run', { pack: asked, pack_space: owner.user.id, inputs: {} });
+    assert.equal(own.out.errors[0]?.message, 'Hub 里没有名为「synthetic-private-sugestion」的工作流或技能，当前账户可用的名称里最接近的是 synthetic-private-suggestion@1.0.0');
+    const denied = await otherClient.call('start_run', { pack: asked, pack_space: owner.user.id, inputs: {} });
+    assert.equal(denied.out.errors[0]?.code, 'SOURCE_UNAVAILABLE');
+    assert.equal(denied.out.run, undefined);
+    assert.ok(!JSON.stringify(denied).includes(spec.id), 'another account cannot obtain the personal name by asking for its space');
+  });
+
 });

@@ -38,7 +38,7 @@ test('withdrawn absent no-tool outside traversal and encoded-slash requests have
 test('an unassigned version is said to exist and not be assigned, with who can assign it (D05 R[3], decision 113)', async () => {
   const result = await get('/local-tools/unassigned@10.6.0');
   assert.equal(result.status, 403);
-  assert.equal(result.bytes.toString(), '这个版本存在，没有分配给你；请管理员把这个任务包分配给你\n');
+  assert.equal(result.bytes.toString(), '无权限：当前账户未获授权使用工作流「unassigned」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。\n');
   assert.equal(result.headers['content-digest'], undefined);
   assert.equal(calls.at(-1)?.adminNote, '版本没有分配给这个用户');
 });

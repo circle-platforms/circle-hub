@@ -1,0 +1,117 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "source",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<上一轮脚本编写目录>",
+      "type": "path"
+    },
+    {
+      "name": "target",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新脚本编写目录>",
+      "type": "path"
+    },
+    {
+      "name": "plans",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<自动化用例目录>",
+      "type": "path"
+    },
+    {
+      "name": "source-plans",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<上一轮自动化用例目录>",
+      "type": "path"
+    },
+    {
+      "name": "source-briefs",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<上一轮核对目录>",
+      "type": "path"
+    },
+    {
+      "name": "briefs",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<核对目录>",
+      "type": "path"
+    },
+    {
+      "name": "rework",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<逗号分隔autoid>",
+      "type": "text"
+    },
+    {
+      "name": "exclude",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<逗号分隔autoid>",
+      "type": "text"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "source",
+          "placeholder": "<上一轮脚本编写目录>",
+          "optional": false
+        },
+        {
+          "name": "target",
+          "placeholder": "<新脚本编写目录>",
+          "optional": false
+        },
+        {
+          "name": "plans",
+          "placeholder": "<自动化用例目录>",
+          "optional": false
+        },
+        {
+          "name": "source-plans",
+          "placeholder": "<上一轮自动化用例目录>",
+          "optional": true
+        },
+        {
+          "name": "source-briefs",
+          "placeholder": "<上一轮核对目录>",
+          "optional": true
+        },
+        {
+          "name": "briefs",
+          "placeholder": "<核对目录>",
+          "optional": true
+        },
+        {
+          "name": "rework",
+          "placeholder": "<逗号分隔autoid>",
+          "optional": true
+        },
+        {
+          "name": "exclude",
+          "placeholder": "<逗号分隔autoid>",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

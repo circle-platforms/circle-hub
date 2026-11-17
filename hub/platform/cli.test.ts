@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, before, describe, test } from 'node:test';
 import { ENVIRONMENT, labelOf } from '../../contracts/generated/vocabulary.ts';
-import { isPlatformCommand, PLATFORM_COMMANDS, runPlatformCommand } from './cli.ts';
+import { isPlatformCommand, platformCommands, PLATFORM_COMMAND_METADATA, PLATFORM_COMMANDS, runPlatformCommand } from './cli.ts';
 import { createContext, postgresFor, type PlatformContext } from './context.ts';
 import { isMissingOrEmpty } from './files.ts';
 import { ensureLayout, layoutAt } from './layout.ts';
@@ -100,6 +100,16 @@ describe('platform CLI', () => {
     assert.match(unknown.err, /未知命令：frobnicate/);
     assert.match((await run('serve')).err, /serve 由服务器包提供/);
     assert.ok(isPlatformCommand('deploy') && !isPlatformCommand('serve') && !isPlatformCommand('toString'));
+    const bound = platformCommands(captureIo({ ...env, CIRCLE_HUB_DATADIR: '/synthetic' }, parent).io, overrides);
+    assert.deepEqual(bound.map(({ run, ...metadata }) => metadata), PLATFORM_COMMAND_METADATA);
+    const beforeFactoryCommand = system.calls.length;
+    assert.equal(await bound.find(({ name }) => name === 'status')!.run([]), 1, 'factory commands preserve configuration checks');
+    assert.equal(system.calls.length, beforeFactoryCommand, 'invalid configuration never reaches the platform runner');
+    for (const entry of bound) {
+      assert.equal(entry.bridge, false);
+      assert.equal(entry.step, `run-${entry.name}`);
+      assert.ok(entry.summary.length > 0);
+    }
     assert.deepEqual([...PLATFORM_COMMANDS].sort(), ['backup', 'db', 'deploy', 'init', 'key', 'rehearse', 'restore', 'rollback', 'service', 'status', 'tls']);
     assert.equal((await run('db', 'explode')).code, 2);
     assert.equal((await run('service', 'explode')).code, 2, 'usage is checked before the settings are read');

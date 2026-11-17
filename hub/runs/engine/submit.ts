@@ -1,3 +1,4 @@
+import type { DispatchNote } from '../../dispatch/api.ts';
 import {groundsAudience} from './grounds.ts';
 
 import {firstDeclarationGrowth,unknownOnlyRequirement} from './incremental.ts';
@@ -30,7 +31,7 @@ import type { SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { PARTITION, type Acceptance } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf, type Partitions, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, LimitError, recordExistence, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, LimitError, isAdmin, recordExistence, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -48,7 +49,7 @@ import {saveResult} from './result-summary.ts';
 import { repairRounds, isUnsettled } from './terminals.ts';
 import { clipPointer, clipText, isObject, pointerOf, receivedDigest, sessionOf, tooDeep, unique, wellFormed } from './util.ts';
 
-export type SubmitAnswer = Untraced<z.infer<typeof SubmitResultOutput>>;
+export type SubmitAnswer = Omit<Untraced<z.infer<typeof SubmitResultOutput>>, 'dispatch'> & { dispatch?: DispatchNote[] };
 
 /** Deepest nesting a submission may have (the root is level 0); slot data sits six levels down (`/items/<n>/slots/<key>/<j>/data`). */
 export const MAX_SUBMISSION_DEPTH = 64;
@@ -94,14 +95,14 @@ async function resultForObserver(ctx: EngineContext, run: string, submission: st
 }
 
 /** Repair rounds each requirement used in the run's earlier submissions (one per distinct submission with a problem for it). */
-export async function roundsUsedOf(ctx: EngineContext, run: string): Promise<Map<string, number>> {
+export async function roundsUsedOf(ctx: EngineContext, run: string, currentSubmission?: string): Promise<Map<string, number>> {
   const seen = new Set<string>();
   const counts = new Map<string, number>();
   for (const action of await actionsOf(ctx.deps.records.store, run)) {
     if (action.body.action !== 'validate' || !isObject(action.body.detail)) continue;
     if (action.body.detail.hub_error === true || action.body.detail.refusal === 'session_missing' || action.body.detail.refusal === 'RUN_ABANDONED' || action.body.detail.refusal === 'dispatch_in_flight') continue;
     const { submission, repair } = action.body.detail;
-    if (typeof submission !== 'string' || seen.has(submission) || !Array.isArray(repair)) continue;
+    if (typeof submission !== 'string' || submission === currentSubmission || seen.has(submission) || !Array.isArray(repair)) continue;
     seen.add(submission);
     for (const key of repair) if (typeof key === 'string') counts.set(key, (counts.get(key) ?? 0) + 1);
   }
@@ -215,9 +216,9 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const frozenWorkflow=eligible&&sessionNow===null?await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space):undefined;
   const useCached=eligible&&(sessionNow!==null||frozenWorkflow!==undefined&&frozenWorkflow!==null&&frozenWorkflow.requirements.every(t=>t.independent_of===undefined));
   const repeat = !useCached ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
-  if(repeat!==null){const refusal=repeat.acceptance==='accepted'?await groundsAudience(ctx,run,repeat,{recorded:true,submitter:user}):null;return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(repeat), call.traceId);}
+  if(repeat!==null){const refusal=repeat.acceptance==='accepted'?await groundsAudience(ctx,run,repeat,{recorded:true,submitter:user}):null;return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(repeat), call.traceId, user);}
   const previous=useCached?await resultFor(store,run.run,received.digest):null;
-  if (useCached && effective !== null && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space))?.workflow.contribution !== undefined)) {const refusal=await groundsAudience(ctx,run,previous.body,{recorded:true,submitter:user});return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(previous.body), call.traceId);}
+  if (useCached && effective !== null && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space))?.workflow.contribution !== undefined)) {const refusal=await groundsAudience(ctx,run,previous.body,{recorded:true,submitter:user});return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(previous.body), call.traceId, user);}
 
   const model = parsed?.success ? effective?.model ?? null : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
@@ -256,7 +257,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   // names this run is a branch of theirs; a run of another pack, such as the verification, continues it).
   if (successors.length > 0) {
     await action({ acceptance: 'not_accepted', codes: ['RUN_SUPERSEDED'], repair: [], result: null, extra: { superseded_by: successors.map((s) => s.body.run) } });
-    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('RUN_SUPERSEDED', `运行 ${run.run} 已被新修订 ${successors[successors.length - 1].body.run} 取代`, { path: '/run' })] };
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('RUN_SUPERSEDED', `这次运行已有后续的运行 ${successors[successors.length - 1].body.run}，不再接受提交`, { path: '/run' })] };
   }
   if(management!==null){
     const refusal=protocolError('RUN_ABANDONED',PROTOCOL_CODES.RUN_ABANDONED.when,{path:'/run'});
@@ -275,7 +276,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   // the same submission reads progress from the stored result, and a different one is kept as received but not validated,
   // so the job goes on (the reference compile skill reads a running task by its id and never resubmits it).
   if (!refresh && workflow.effects?.some((row) => row.trigger === 'hub_template') && ctx.deps.dispatch?.inFlight) {
-    const flight = await ctx.deps.dispatch.inFlight(run.run);
+    const flight = await ctx.deps.dispatch.inFlight(run.run, user);
     if (flight !== null) {
       const dispatched = await latestAccepted(store, run.run);
       if (dispatched !== null && dispatched.body.submission === received.digest) return { ...answerOf(dispatched.body), dispatch: flight.notes };
@@ -286,7 +287,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if(!await criterionReviewVisible(ctx,user,run))return {call_result:'error',acceptance:'not_accepted',errors:[missingError(true,'/inputs','这次判据复核的来源记录','请复核请求的发起人或管理员把来源分享给你')]};
   const priorMaterial=workflow.workflow.incremental_submissions===true&&existing===null?(await store.find({key:INDEX.submissionRun,value:run.run,kind:'submission',newestFirst:true,limit:2})).items.find(r=>r.digest!==record.digest)?.body??null:null;
   const incrementalGrowth=workflow.workflow.incremental_submissions===true&&existing===null&&parsed?.success===true&&firstDeclarationGrowth(priorMaterial,args);
-  const roundsUsed = await roundsUsedOf(ctx, run.run);
+  const roundsUsed = await roundsUsedOf(ctx, run.run, received.digest);
   const base: Basis = { ctx, user, call, run, workflow, digest: received.digest, submissionRecord:record.digest, roundsUsed };
   const early = earlyProblem(kept, received, args);
   let outcome: Validated;
@@ -326,14 +327,14 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     result: saved.result.digest,
     extra: { ...(saved.result.body.acceptance==='accepted' && outcome.runtimeAdmission?.length ? {admission:outcome.runtimeAdmission} : {}), reevaluation:refresh,...(incrementalGrowth?{first_material_growth:true}:{}),retry_attempts: saved.retryAttempts,...(outcome.parentObservedSuccess?{parent_observed_success:true}:{}), ...(sessionMissing ? {refusal:'session_missing'} : {}) },
   });
-  return withDispatch(ctx, run, answerOf(saved.result.body), call.traceId);
+  return withDispatch(ctx, run, answerOf(saved.result.body), call.traceId, user);
 }
 
 /** Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row carries the jobs the Hub dispatched
  * for it. An accepted answer whose result is ready lets the Hub dispatch when the run has no job yet; a repeat of the same
  * submission reads the jobs' progress. Ready is every item delivered without error with every release requirement of the
  * hub_template rows that the item lists satisfied, so a run whose artifact is not verified yet (a plan run) does not try. */
-async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAnswer, traceId: string | null): Promise<SubmitAnswer> {
+async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAnswer, traceId: string | null, user: Principal): Promise<SubmitAnswer> {
   if (answer.acceptance !== 'accepted' || !answer.result || !ctx.deps.dispatch?.accepted) return answer;
   const workflow = await ctx.deps.workflows.byDigest(run.pack_digest);
   const rows = workflow?.effects?.filter((row) => row.trigger === 'hub_template') ?? [];
@@ -343,11 +344,13 @@ async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAn
   const released = result.partitions.delivered.every((item) => item.requirements.every((row) => !release.has(row.requirement) || row.status === 'satisfied'));
   const ready = result.errors.length === 0 && Object.entries(result.partitions).every(([key, list]) => key === 'delivered' || list.length === 0) && result.partitions.delivered.length === run.items.length && released;
   try {
-    const notes = await ctx.deps.dispatch.accepted(run.run, ready);
+    const notes = await ctx.deps.dispatch.accepted(run.run, ready, user);
     return notes.length ? { ...answer, dispatch: notes } : answer;
   } catch (error) {
     ctx.log({ traceId, run: run.run, what: 'hub dispatch', detail: describe(error) });
-    return { ...answer, dispatch: [{ text: 'Hub 读取或发起派发时出错，没有派发；等管理员处理（已记下）后原样重交' }] };
+    const current=await ctx.deps.records.principals.get(user.id).catch(()=>null);
+    const next=current&&!current.disabled&&isAdmin(current)?`circle-hub run show ${run.run} --json`:'不要重新发送或另开运行重发；稍后原样重交原提交只读记录，或联系管理员核对';
+    return { ...answer, dispatch: [{ outcome: 'unknown', missing_facts: [{fact:'本次调用未能取得可核对的作业状态',next_action:next}], next_action:next, text:'上机验证状态尚未确认：本次未取得可核对的作业状态；不要重新发送或另开运行重发；下一步：'+next }] };
   }
 }
 
@@ -547,14 +550,14 @@ async function validatePartial(base: Basis, args: Record<string, unknown>, error
 /** Whole-submission boundary; an unruled interpreter is preserved but never executed. */
 export function runtimeCheckProblems(workflow: LoadedWorkflow, items: readonly {id:string}[], submission: Submission): ProtocolError[] {
   const errors: ProtocolError[] = [];
-  const add = (path:string,message:string) => errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION',message,{path,fix:'按要求项的 run_table 和已发布台账修正；样例必须引用本运行的条目后重交'}));
+  const add = (path:string,message:string) => errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION',message,{path,fix:'按要求项的 run_table 和已发布的裁定清单修正；样例必须引用本运行的条目后重交'}));
   for (const [i,check] of (submission.checks ?? []).entries()) {
     const at = pointerOf('checks',i);
     const requirement = workflow.requirements.find(r=>r.key===check.requirement);
     if (!requirement?.run_table) add(at+'/requirement','要求项没有声明允许运行内的表');
     if (workflow.ledger?.shapes.some(row=>row.requirement===check.requirement && row.interpreter===check.interpreter)) {
       const interpreter = getInterpreter(check.interpreter);
-      if (!interpreter || interpreter.validateTable(check.table).length) add(at+'/table','表不符合台账允许的解释器格式');
+      if (!interpreter || interpreter.validateTable(check.table).length) add(at+'/table','表不符合裁定清单允许的解释器格式');
     }
     check.samples.forEach((sample,j)=>{
       if (!items.some(item=>item.id===sample.item)) add(at+`/samples/${j}/item`,'样例不在本运行的条目中');

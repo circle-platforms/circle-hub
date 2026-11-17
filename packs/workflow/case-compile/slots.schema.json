@@ -77,7 +77,29 @@
                       ]
                     },
                     "cleanup": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "true 将步骤标为末尾清理段；仅放置非只读、正文未净抵消且未命中 contract.cleanup 运行器自动清理的改配步骤，按产品声明逆序执行对应逆操作，不能从文字猜测；存盘 write memory 等由执行器在收尾时做的命令禁止标为 cleanup:true"
+                    },
+                    "input_register": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "The name of a selected cell. The first argument of the command is a template with one {} (or {0}) that the runner replaces whole with the cell; it may stand inside quotes and between known words, e.g. demo use \"K<host>.+005+{}+ksk+RSASHA1+1024\"."
+                    },
+                    "author_step_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -188,7 +210,8 @@
                           },
                           "criterion": {
                             "type": "string",
-                            "minLength": 1
+                            "minLength": 1,
+                            "description": "Id of the typed criterion in criteria[] that holds your own checkpoint for this author expectation. Write it only when the expectation node carries no literal declaration. The checkpoint is a model judgment, status 未确认, decided by the device run; no independent review is needed and none is started. The criterion's quote, operator and literal (or count, or relation) must equal this assertion's."
                           }
                         },
                         "required": [
@@ -202,6 +225,22 @@
                       },
                       "minItems": 1,
                       "maxItems": 64
+                    },
+                    "author_step_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -262,6 +301,22 @@
                         "args",
                         "keywords"
                       ]
+                    },
+                    "author_step_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -325,6 +380,22 @@
                     "register": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "author_step_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -332,6 +403,176 @@
                     "kind",
                     "call",
                     "register"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "kind": {
+                      "const": "SELECT_CELL"
+                    },
+                    "call": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "object": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "method": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "args": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "keywords": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "object",
+                        "method",
+                        "args",
+                        "keywords"
+                      ]
+                    },
+                    "from": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "register": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "table": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "format",
+                        "separator",
+                        "columns",
+                        "header"
+                      ],
+                      "properties": {
+                        "format": {
+                          "type": "string",
+                          "enum": [
+                            "delimited",
+                            "key_value"
+                          ]
+                        },
+                        "separator": {
+                          "type": "string"
+                        },
+                        "columns": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "header": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "description": "The 1-based column of a row that the cell is taken from. The cell may be one segment of a longer name (the id inside a file name): then it is only the segment the device generated, and the command that uses it writes the known segments around its one {} placeholder (the writer role, \"取名字的一段\"). The value policy of the executor bounds this one cell, not the assembled command."
+                    },
+                    "select": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "row"
+                          ],
+                          "properties": {
+                            "row": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "where"
+                          ],
+                          "properties": {
+                            "where": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "column",
+                                  "value"
+                                ],
+                                "properties": {
+                                  "column": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "value": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "description": "Which row the cell comes from: a row ordinal, or conditions that each match one column exactly (where; all must hold). Pin every column the plan already knows (host, algorithm, type, size, suffix) with its own condition; no row or more than one row stops the case with the device's words, nothing is guessed."
+                    },
+                    "author_step_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "call",
+                    "from",
+                    "register",
+                    "table",
+                    "column",
+                    "select"
                   ]
                 },
                 {
@@ -385,7 +626,24 @@
                     },
                     "criterion": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Id of the typed criterion in criteria[] that holds your own checkpoint for this author expectation. Write it only when the expectation node carries no literal declaration. The checkpoint is a model judgment, status 未确认, decided by the device run; no independent review is needed and none is started. The criterion's quote, operator and literal (or count, or relation) must equal this assertion's."
+                    },
+                    "author_step_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -487,7 +745,24 @@
                     },
                     "criterion": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Id of the typed criterion in criteria[] that holds your own checkpoint for this author expectation. Write it only when the expectation node carries no literal declaration. The checkpoint is a model judgment, status 未确认, decided by the device run; no independent review is needed and none is started. The criterion's quote, operator and literal (or count, or relation) must equal this assertion's."
+                    },
+                    "author_step_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -552,6 +827,22 @@
                         "args",
                         "keywords"
                       ]
+                    },
+                    "author_step_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -621,7 +912,29 @@
                       "minLength": 1
                     },
                     "cleanup": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "true 将步骤标为末尾清理段；仅放置非只读、正文未净抵消且未命中 contract.cleanup 运行器自动清理的改配步骤，按产品声明逆序执行对应逆操作，不能从文字猜测；存盘 write memory 等由执行器在收尾时做的命令禁止标为 cleanup:true"
+                    },
+                    "input_register": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "The name of a selected cell. The first argument of the command is a template with one {} (or {0}) that the runner replaces whole with the cell; it may stand inside quotes and between known words, e.g. demo use \"K<host>.+005+{}+ksk+RSASHA1+1024\"."
+                    },
+                    "author_step_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -689,6 +1002,22 @@
                     "for": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "author_step_refs": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -713,6 +1042,11 @@
                     "payload": {
                       "type": "object",
                       "additionalProperties": true
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -735,6 +1069,11 @@
                     "payload": {
                       "type": "object",
                       "additionalProperties": true
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -757,6 +1096,11 @@
                     "payload": {
                       "type": "object",
                       "additionalProperties": true
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
                     }
                   },
                   "required": [
@@ -812,7 +1156,42 @@
                 },
                 "cleanup": {
                   "type": "boolean",
-                  "description": "true 将步骤标为末尾清理段；按产品声明逆序执行对应逆操作，不能从文字猜测"
+                  "description": "true 将步骤标为末尾清理段；仅放置非只读、正文未净抵消且未命中 contract.cleanup 运行器自动清理的改配步骤，按产品声明逆序执行对应逆操作，不能从文字猜测；存盘 write memory 等由执行器在收尾时做的命令禁止标为 cleanup:true"
+                },
+                "precondition_source": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "前置步骤来源（可选）：若本步是为使作者命令或触发动作生效而从手册或示例补齐的前提步骤（含对应 cleanup:true 逆清理）且未在重组 sources.states 列出，填锁定 knowledge/ 手册条文或示例的引用及逐字原文，供 Hub 核对引文并列入保真豁免",
+                  "properties": {
+                    "reference": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "reference",
+                    "text"
+                  ]
+                },
+                "author_step_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "description": "本步实现的作者步骤编号列表（本步不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一步写它的编号，没有的 check-plan 拒绝并点名；写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "这一步做什么的一句话，写进工作簿 D 列，运行报告按它显示步骤"
                 }
               }
             }
@@ -854,6 +1233,13 @@
                 "after": {
                   "type": "integer",
                   "minimum": 1
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "not_found"
+                  ],
+                  "description": "Use not_found to check absence; omit it to retain the existing found check"
                 },
                 "basis": {
                   "type": "string",
@@ -1016,11 +1402,13 @@
                   "properties": {
                     "output": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "The id of the observation block this row explains: a blocks[].id of a block that returns device text (OBSERVE_ASSERT, OBSERVE_ONLY, CAPTURE, EXPECT_FROM, or a STEP that declares output). It is never a register name (the register of a CAPTURE or STEP is only the name its text is saved under), never the name of a selected cell and never a device name."
                     },
                     "kind": {
                       "type": "string",
                       "minLength": 1,
+                      "description": "Who answers: device (a frozen environment seat), fixture (an earlier step block of this plan), bed_service (a service declared in the frozen environment inventory) or undetermined (not known yet; also write missing and next_action).",
                       "enum": [
                         "device",
                         "fixture",
@@ -1030,7 +1418,8 @@
                     },
                     "ref": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Identifies the answerer, by kind. device: one frozen runtime-profile device identity, exactly one of profile.seats[].device (not an executor object name and not a block id). fixture: the id of an earlier step block of this plan that provides the answer. bed_service: the host of a service of the frozen environment inventory (services[].host). undetermined: any non-empty text."
                     },
                     "quote": {
                       "type": "object",
@@ -1048,15 +1437,18 @@
                       "required": [
                         "reference",
                         "text"
-                      ]
+                      ],
+                      "description": "Verbatim source text that grounds the answerer; copy reference and text from the source."
                     },
                     "missing": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Only for kind=undetermined: the fact that is missing."
                     },
                     "next_action": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "description": "Only for kind=undetermined: the next step that would settle it."
                     }
                   },
                   "required": [
@@ -1065,7 +1457,8 @@
                     "ref",
                     "quote"
                   ]
-                }
+                },
+                "description": "Who answers the request a host-command observation sends. One row per host observation block; every row's output must be the id of an observation block of this plan."
               }
             },
             "required": [
@@ -1076,6 +1469,7 @@
           },
           "criteria": {
             "type": "array",
+            "description": "Checkpoints you chose yourself for author expectations that carry no literal declaration (the author wrote a sentence, not the text to look for). Each entry is a model judgment, status 未确认: the Hub only checks that quote is the author's expectation word for word, that literal is a single line and that the entry equals its assertion; no independent review is needed and none is started, and the device run decides whether the checkpoint holds. quote: the author's expectation, copied verbatim from the original case. literal (or count, or relation): text the device output can contain. rationale: why you chose it. scope_root: the locked root of the command tree. A criteria_review input is read only when one is bound; leave it unbound.",
             "maxItems": 128,
             "items": {
               "type": "object",
@@ -1277,6 +1671,193 @@
               "case_id",
               "slots",
               "rebindings"
+            ]
+          },
+          "fidelity": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "brief_sha256": {
+                "type": "string",
+                "minLength": 64,
+                "maxLength": 64
+              },
+              "steps": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 256,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "n": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "verdict": {
+                      "type": "string",
+                      "enum": [
+                        "preserved",
+                        "changed",
+                        "unrealized"
+                      ]
+                    },
+                    "step_indices": {
+                      "type": "array",
+                      "minItems": 0,
+                      "maxItems": 256,
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "rationale": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "model_judgment": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "const": "未确认"
+                        },
+                        "decided_by": {
+                          "type": "string",
+                          "const": "模型"
+                        },
+                        "model_version": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "task": {
+                          "type": "string",
+                          "enum": [
+                            "match",
+                            "choice",
+                            "sequence"
+                          ]
+                        },
+                        "choice": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "confidence": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "gate": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "type": "string",
+                              "enum": [
+                                "pass",
+                                "review",
+                                "reject"
+                              ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "maxLength": 512
+                            }
+                          },
+                          "required": [
+                            "action"
+                          ]
+                        },
+                        "request_sha256": {
+                          "type": "string",
+                          "minLength": 64,
+                          "maxLength": 64
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "decided_by",
+                        "model_version",
+                        "task",
+                        "choice",
+                        "confidence"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "n",
+                    "verdict",
+                    "step_indices",
+                    "rationale"
+                  ]
+                }
+              },
+              "disclosure": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              },
+              "model_disclosure": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "未确认"
+                  },
+                  "decided_by": {
+                    "type": "string",
+                    "const": "模型"
+                  },
+                  "model_version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "request_sha256": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64
+                  },
+                  "prompt_version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "review_required_steps": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 256,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                "required": [
+                  "status",
+                  "decided_by",
+                  "model_version"
+                ]
+              }
+            },
+            "required": [
+              "brief_sha256",
+              "steps",
+              "disclosure"
             ]
           }
         }

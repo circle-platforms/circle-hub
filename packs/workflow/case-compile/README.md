@@ -1,4 +1,86 @@
-# case-compile 3.9.18
+# case-compile 3.21.3
+
+本地修正（待升版本号，2026-11-17，T16 作者步骤覆盖，未发布、未部署）：第 36 轮同步那条（`c8op2ikg2ao0:911edce9e217`）的计划过了本地 check-plan 和 Plumb 命令核验（15/15），Plumb 场景保真审计才发现作者动作 a2「HA 已配置」没有任何计划步骤实现它（没有一步的 `author_step_refs` 写 a2，计划也没配 HA）；真跑时这要在 Plumb 审计之后整份返工（`A/review/compile-25365/run36-1117/plumb-replay/out/real-1117-2-20261117-100750/report.md`）。照 InfoTest：它的编写门里有作者过程覆盖门 `author_procedure_coverage`（`main/case_compiler/mechanical_case_gate.py`：`GATE_ORDER` 第 46 行；`_gate_author_procedure_coverage` 第 347–506 行，在 `_gate_structural_lint` 之后运行，第 2547 行调用）。它的做法：作者每一步原文（案里带适配时读适配后的文字，适配可以改参数、不能少命令头，少了的按作者原文补回并披露，第 405–437 行）里，能被命令树解析成完整命令的行（第 394–395 行）各算一条义务，义务是命令头加第一个参数的类别（IP、数字、含非 ASCII 的描述、字面，第 317–344 行），最终命令流里每种义务出现的次数不能少于要求，少了拒 `authored_command_occurrence_missing`（第 482、498 行：the sealed author procedure contains N occurrence(s) of build-valid command head=…, but the final APV action stream contains only M. A description saying the action happened is not execution evidence; land every authored occurrence before observing its result）。它按命令数，不用编号；不是命令的作者步骤（如「HA 已配置」）不在这一道门里，只由场景保真审计判（`scenario_fidelity.py`，没实现拒 `author_step_unrealized`，第 1325–1331 行：add the blocks that realize it or report the reason it cannot be realized）。「实现不了」在 InfoTest 只有整条用例的出口 `compile_report_underdetermined`（`main/ist_core/tools/device/verifiability_tool.py:1643`，四种 reason_code，要带逐字来源和命令头回执），没有逐步骤的豁免。本包没有步骤结构层（`functions/fidelity.ts` 的 `MECHANICAL_ABSENT_BASE`），作者步骤和计划步骤的对应只有计划自己写的 `author_step_refs`，所以这道门用编号做：新增检查 `author_step_coverage`（要求项 `scenario_kept` 里不需要审计就能核的一半；`functions/checks.ts` 的 `checkAuthorStepCoverage`，算法与拒绝文字在 `functions/fidelity.ts` 的 `authorStepCoverage`、`uncoveredAuthorStepText`）：重组记录里每条 kind 为 action 的作者原句，至少有一步（分块计划是一块）的 `author_step_refs` 写了它的 id，没有的拒 `case-compile.author_step_unreferenced`（重修 2 轮），文字用共用的拒绝形式（`functions/refusal-form.ts`）：作者步骤的 id 和原话、位置 `/slots/plan/0/data/steps/<序号>/author_step_refs`（分块是 `blocks`）、计划共几步和哪几步写了哪些编号、哪几步没写、允许的编号（重组记录的全部作者步骤 id）、这些 id 在冻结条目文件的位置、下一步（给实现它的步加编号；都不实现就补步并写编号；实现不了的不要硬凑，在最终回复向主代理报告）。`planBoundary` 逐项跑 `checks.json`，所以 check-plan 与 Hub 跑的是同一个函数，本地不再有「过了本地核对却被保真审计退回」的这一种。只核编号：编号写对了是否真的实现，仍由场景保真审计判；一步可写多个编号、一个编号可写在多步，写在清理步上也算（不按词猜）；写了不是作者步骤 id 的值（序号、笔误）不算覆盖，拒绝文字把计划写过的值列出来。没有重组记录、记录里没有作者动作原句的用例不适用；`handling: "skipped"` 的用例不进检查。写手角色文字（`functions/subagent-roles.ts`、`agents/compile-writer.md`）和三处模式描述（`slots.schema.json`、`tables/blocks-format.json`、`tables/block-plan.schema.json`；顺序步骤的那条原来写「如 ["1"]」，与重组记录的 id 相悖）改为必须覆盖。每个检查要有正反两例才能发布，新增 `samples/{positive,negative}/typed-author_step_coverage.json`（`testing/samples-v2.ts` 生成，`pack.json` 照 `pack-files.ts --write` 重写）。**没有做、等所有者定的**：计划里没有「某条作者步骤实现不了」的逐条声明，也没有现成的形式可用——`obligations` 和 `block_context.preconditions` 说的是期望和前置（分块计划才收，顺序计划两者都不收），`responders` 说的是观察由谁应答，整条用例的 `handling: "skipped"` 加 `reason` 不是已核验的结论（`tools/submit-plans.ts` 的 `SKIPPED_NOTE`），不自造字段，拒绝文字因此只让写手把实现不了的事实报告给主代理。回放（记录在验收目录 `review/compile-25365/run36-1117/cover-fix/`，不进 Git）：第 36 轮三位写手的 11 份计划稿、8 份合成变体、真实 Plumb 回放的 3 份计划和先清再配修正的 6 份 DNSSEC 计划，共 28 份，在 4a7d427613 与本改动上各跑 check-plan 和 Hub 的同一批函数：判定变化 9 份，全是同步那条的 a2（三份写手稿、五份合成变体、回放的 2.json，其中最终稿 `ok` 由 true 变 false），其余 19 份判定相同：14 份新检查跑了、每条作者动作都有步骤或块写了编号（冒号用例的 0.json 和它的 3 份稿、DNSSEC 的 1.json 和它的 2 份稿、先清再配的六份），2 份槽位结构有问题、3 份 item 或 `--run` 不对，都在更早处停下，新检查没有跑。
+
+本地修正（待升版本号，2026-11-17，T15 拒绝文字，未发布、未部署）：第 36 轮脚本编写为弄清拒绝文字多读了工具源码：同步写手两次读 `functions/recomposition.ts`，冒号写手三次搜 `check-plan.ts`，DNSSEC 写手把 item 写成了用例号，读了 3.5 MB 的 run.json 才发现。所有者的规矩：程序能判定的拒绝，给出错误、位置、看到的值、闭集时的允许集合和下一步，拒绝文字用共用的形式，不手写。新增 `functions/refusal-form.ts`（`refusalText`：做什么、位置、看到、允许、其他事实、下一步；`PLAN_DATA` 是计划数据在计划文件里的位置 `/slots/plan/0/data`，是常量，`refusal-form.test.ts` 核对它与 slots.schema.json 的唯一要求项一致；投影函数也引入这个文件，所以它不读模式）。三处拒绝改用它，判定（哪个条件是缺口、是未知还是错误、ok、structure_ok、每个问题的 code、verdict）一个没变：
+（1）`functions/recomposition.ts` 的 `recompositionGaps`（`checks.ts` 把条目 id 传进去）：缺重组消费声明时写出位置 `/slots/plan/0/data/recomposition`、要抄的 receipt 和 case_id 原值、可粘贴的整段 recomposition、这些值在冻结条目文件 `items/<序号>.json` 的 `/fields/recomposition`（`/receipt`、`/record/case/id`、`/record/expectation_slots`）和简报的计划文件外壳里；receipt 或 case_id 不对时写看到的和应有的值；重组记录之外的期望判断依据、共用断言、没有自己的断言、断言与用例原句对不上，各写位置、看到的值、允许集合（本计划的断言 id；引文与该期望判断依据的用例原句相同的断言单列）和下一步。
+（2）`tools/check-plan.ts` 的 `/run` 拒绝改由 `functions/plan-boundary.ts` 的 `frozenRunProblem` 生成，分三种：读到的不是冻结运行；case-compile 组不是恰好一个（写出运行号、工作流和它有的组）；item 不在运行的条目里（写出看到的 item 和运行全部条目 id 的闭集，item 恰是某条目的 autoid 时直接指出是哪一条）。第三种的 pointer 由 `/run` 改为 `/item`（出错的是计划文件里的 item）。合入 T14（`--run` 取运行目录）后，三种的下一步都写运行目录。
+（3）槽位记录里「不认识的字段」（`functions/slot-record.ts`）：Hub 的原话在前，后面加该节点允许的字段、模式里声明这个名字的全部位置（`functions/field-homes.ts` 的 `fieldHomes` 从冻结运行的槽位模式逐名字读出，不是写死的字符串）和另一种计划写法里的对应位置（`tables/field-homes.json`，现在只有 `precondition_source`：顺序步骤写在 `steps[]`，分块计划写在 `block_context.preconditions`；`functions/field-homes.test.ts` 核对表里的位置都在 slots.schema.json 里）。Hub 核心自己的「不认识的字段」文字没有改（它不知道包里的对应），不先跑 check-plan 直接提交的写手仍看到旧文字，要改得改 `hub/runs/engine/slots.ts` 的 `issuesOf`，用同一个 `fieldHomes`；因此 `hub-parity.test.ts` 和 `slot-record.test.ts` 对这一种问题不再比较整句，改成 Hub 的原话必须在最前面。
+（4）`check-plan.ts --help` 没有改。第 36 轮那次 `--help` 是被 Circle 守卫挡回的（`scripts/real/guard-lib.ts`：「这个脚本没有 --help 选项」，规则来自各工具的 `tool-cli@2` 声明 `tools/*.cli.json`，其中没有 help），脚本没有启动；脚本自己的 `parseCliOptions`（`functions/text.ts`）也把 `--help` 当未知选项以退出码 1 拒绝，它只返回取值或抛 `CallFailure`，不能自己决定退出码和输出。要让 `--help` 打印用法并退出 0，要一起改：每个工具的 `main` 在 `parseCliOptions` 之前识别单独的 `--help` 或 `-h`、打印 USAGE、返回 0（`task-brief.ts`、重组包的 `check-record.ts`、`functions/plumb-cli.ts` 已各自这样做，其余没有）；每份 `*.cli.json` 声明 help 这个形式，`guard-lib.ts` 对只带 `--help` 的调用不再要求必填选项；`scripts/real/verify-tool-cli.ts` 的探针各加一条 `--help`，期望状态 0、标准输出是用法。这些落在 T14 正在改的各工具 `--run` 处理和 `*.cli.json` 上，等 T14 合并后一并做。
+回放：第 36 轮三位写手写过的 11 份计划稿和 8 份合成变体，在 8db6b55036 上逐份跑 check-plan 和 Hub 的同一批函数，11 份真实稿的输出与当时记录的逐字节相同（基线可信），改后每份的 ok、structure_ok、authority_checked、每个问题的 code、verdict、pointer 和 hub_checks 与改前相同，只有文字不同（`/run` 拒绝的 pointer 如上）；记录在验收目录 `review/compile-25365/run36-1117/refusal-fix/`，不进 Git。
+
+本地修正（待升版本号，2026-11-17，T15 先清再配，未发布、未部署）：第 36 轮 DNSSEC 那条要在 keygen 之前先清掉设备上前几轮留下的同名密钥（两台测试设备上同一域名各留着一对旧密钥，新生成再得一把 ksk，取格选中 2 行就停下），计划写不出开头那一行 `no sdns dnssec keygen "<域名>"`：清理义务检查（`functions/command-obligations.ts`）把它当成一条还活着的配置，要求同设备逆序的清理 `sdns dnssec keygen …`，这条逆操作谁也写不出，它还占掉清理段的下一步，让 `sdns on`、`sdns dnssec on` 的清理也错位，一条拒绝变成三条（`A/review/compile-25365/run36-1117/cell-fix/out/check-plan.idroute-reset.json`）。照 InfoTest：它自己的用例先清再配（`smoke_test/sdns/sdns_sync_config/174701759051679394.py:111`，`配置DNSSEC` 动作 `lib/apv/apv_action.py:181` 的第一行都是 `no sdns dnssec keygen`，中间没有任何配对），它的拆除覆盖规则（`main/case_compiler/tau_coverage.py:221`）对 `no `、`clear `、`show ` 开头的行不要求清理，拆除图谱也把这三个词开头的命令头排除在「配置写入」之外（`scripts/gen_command_teardown_atlas.py:63`、:707）。现在：主段里的一条命令，若它是同设备上后面某条配置命令的、由产品 `command_policy` 的规则和锁定命令树判定的声明逆操作（`inverseProblem`，不看命令前缀的字面），而那条配置命令反过来不是它的逆操作（互相抵消的两条已在净效果回放里抵消），就不再要求它自己的清理（`clearsLater`）；被它清掉的配置命令照旧要配清理，写手在计划里写这一行，不需要再配一步清理。其余义务不变：对计划从没配置过的东西做的删除、另一个名字或另一台设备上的删除，仍是还活着的配置，仍要自己的清理（决定 104，`functions/confirmations.test.ts` 的「net effect keeps every live configuration」；InfoTest 的规则更宽，所有 `no` 开头的行都不要求，没有照搬，因为那会改掉这条决定）；锁定树解析不了的命令、产品没有声明逆操作的命令照旧被拒。本地核对与 Hub 的检查是同一个函数，一起变。测试在 `functions/inverse-removal.test.ts`（12 条，在 `a28af62f42` 上 7 条错误、5 条是保持不变的守卫，现在全部正确）和 `hub-parity-cleanup.test.ts`（真实 Hub、临时 PostgreSQL，新增 3 个变体：先清再配带运行器收尾、带清理、对没配置过的东西做删除；本地核对和 Hub 说的一样，在 `a28af62f42` 上第一个新变体就被 Hub 拒收）。第 31 轮 HA 那条（`c8op2ikg2ao0:911edce9e217`）的两次提交（记录 139575、139594）开头各有 8 条 `no ha unit`、`no synconfig peer`，被 Hub 以同一条规则拒收；提交回放（41 条可回放的核对）里这 8 条在两条核对结果里都消失，别的问题一条没变，判定没有变化（那两份计划还有别的问题）。写手角色文字（`functions/subagent-roles.ts`，`agents/compile-writer.md` 由它生成）新增一行教这个写法。
+
+本地修正（待升版本号，2026-11-17，T15 取名字的一段，未发布、未部署）：第 36 轮 DNSSEC 那条（200 字符域名）的 keypub 写不出：写手把 `show sdns dnssec keygen` 里的整条密钥文件名（`K<域名>.+005+<编号>+ksk+RSASHA1+1024`，229 字符）当作一格去取，看到取格值 `ascii-cell-value@1` 上限 128 字符，又以为每行没有可声明的分隔符，把 keypub 的前置记为 `unmet`，本地核对因此以 `missing_input` 拒收，那一轮停在 54 分钟。照 InfoTest：xlsx 运行器（`lib/test_xlsx.py`）在单元格里只有「H 把返回值整段存进寄存器、I 把它整段按 `{}` 替换进第一个参数」（:698-721、:662-669），不挑行、不取子串；要挑只能走 execute 动作（闭集，`配置DNSSEC` 在 InfoTest 契约里是 disabled）或写 Python。厂商 Python 用例取密钥名都是把设备生成的一段取出来、已知的头和尾由用例自己写：`'K' + re.findall('K(<域名>.*?ksk.*?)2048', 输出)[0] + '2048'`（`smoke_test/sdns/bug130582/0733230557.py:36-41`、`bug130584/0734019002.py:37-42` 等 17 个用例，名字不带 `.key`，与手册示例一致），只有 `sdns_sync_config/174701759051679394.py:111-135` 取含 ksk 的整行。取格器本来就能照同一个形状写，不用改：设备生成的只有编号，用名字自带的 `+` 把每行切成 6 列，`where` 逐列钉死已知的 5 列（域名、算法、类型、长度、`.key` 后缀），`column` 取第 3 列（5 个字符），keypub 命令把已知段写在 `{}` 两边，运行器整段替换成 229 字符的名字。`reference-plans.test.ts` 的 key-name 用例让这样的块计划过本地核对、Hub 各检查、生成与读回；`scripts/real/bed-side/table-cell.test.ts` 在 200 字符域名的设备形状（回显、每把密钥两行、提示符、别的域名的残留）上取出编号，同域名第二把同类密钥选中 2 行即停，算法或长度不符选中 0 行即停。所以只改了写手角色文字（`functions/subagent-roles.ts`，`agents/compile-writer.md` 由它生成）：新增「取名字的一段」，并说明取格值的字符集和 128 字符上限只管取出的这一格。取格器、运行器合约和 Hub 登记都没有改，不需要重新登记或重新部署。回放时还发现取格块的分隔符和选行常量有一处检查漏洞：含没有配对的引号、逗号（分隔符）、末尾反斜杠（常量）的值，Hub 各检查和工作簿读回都判正确，但运行器读 G 时会在预检里拒绝整本工作簿或把参数读错；`functions/cell-selection.ts` 现在用生成器自己的编码写出这一格、再用运行器读法的移植读回，读不回原值的在原字段拒绝（见下面「Separators and condition constants the runner's G reader would read differently」）。
+
+本地修正（待升版本号，2026-11-17，T14 `--run` 一个选项名一个意思，未发布、未部署）：第 36 轮主模型把 `plan-run/run.json` 传给 `task-brief.ts` 的 `--run`，三次都被拒（「--run plan-run/run.json 不是普通目录」）。查下来同一个选项名有三种意思：`task-brief.ts`、`cmd-select-plumb.ts`、`cmd-verify-plumb.ts` 和重组包的 `check-record.ts` 取运行目录；`cmd-lookup.ts`、`check-plan.ts`、`fidelity-plumb.ts`、`fidelity-brief.ts`、`fidelity-apply.ts`、`generate-workbook.ts`、`seal-recompose.ts` 取 run.json 文件，SKILL.md 和写手任务文件把两种写法并排教；`download-run.ts`、`fetch-run.ts`、`download-returns.ts`、`submit-plans.ts` 和重组包的 `download-run.ts`、`submit-records.ts` 取运行编号。所有者定：路径型的 `--run` 一律是运行目录（放 `run.json`、`knowledge/`、`sources/` 的那个目录），不接受 run.json 文件，两种写法不并存；运行编号的六个工具不动。现在上面第二类的七个工具都取运行目录、读 `<目录>/run.json`（`check-plan.ts` 的 `--file`、`--brief`，`generate-workbook.ts` 的 `--result`、`--submission` 和三份来源仍是文件）。`--run` 只在一处解析：`tools/workspace-path.ts` 的 `resolveRun`（及 `resolveRunDirectory`、`resolveRunFile`）。`task-brief.ts`（四处）和 `cmd-lookup.ts` 限在工作目录内；其余工具照旧按所给路径取，不新增限制（Circle 守卫已把 `--run` 限在工作目录里），`cmd-select-plumb.ts`、`cmd-verify-plumb.ts` 也用它认目录。传 run.json 文件，或不是目录、是链接、不存在、目录里没有 run.json 时，这些工具给同一句话：「参数无效：--run … 不是普通目录。…合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。」类别词只写一次（此前 `task-brief.ts` 写了两次）。重组包独立发布，不能引用这个解析处，`recompose/tools/check-record.ts` 自带同一句，`pack.test.ts` 核对两处文字一致，并核对每个 `--run` 声明要么是运行编号（类型 `run`）、要么是类型 `path` 加占位符 `<运行目录>`，包内技能文字、工具文档、角色定义和工具自己打印的文字里没有 `--run` 后面跟 run.json 的写法。同步改了：各 `*.cli.json` 的 `--run` 占位符统一为 `<运行目录>`（声明格式的类型只有 hub、plumb、run、int、text、path，没有目录类型，类型仍是 `path`；`seal-recompose` 原来是空的）、SKILL.md（第 38、89、93、94、102 行改成目录，第 20 行加一句「路径型 `--run` 写运行目录，不写 run.json」；9626 到 9602 字符）、`tools/fidelity.md`、`submit-plans.ts` 打印的两条保真命令、`check-plan.ts` 三条缺 `--run` 的提示、`docs/member-guide.md` 的生成命令、写手角色里「缺冻结运行时」一句和 `agents/compile-writer.md`（由 `functions/subagent-roles.ts` 重新生成）、写手任务文件（`frozenRunPath` 取消，只剩 `frozenRunDir`，查询行和自检行都打印运行目录）、`scripts/real` 的守卫测试和 CLI 探针、`tests/acceptance/28-device-run.test.ts`。没有改的：运行编号的六个工具；`scripts/real/score-injection.ts`、`gold/*.ts`、`replay/*.ts` 的 `--run` 是别的工具（run show 的输出、运行号），不在包里。下面各条里 `--run` 后面写 run.json 的地方（T9 的 `check-plan.ts`、T13、T14 的 `cmd-lookup.ts`）由这一条取代。离线回放（只在验收目录，不入库）：第 35 轮下载上，`cmd-lookup.ts` 的 192 次调用改用目录写法，答案与保存的答案逐字节相同；第二位编写写出的那份真实计划（SHA-256 与工作目录里的相同）和它的六种改动版本，用上一版带 run.json 的 `check-plan.ts` 与这一版带目录的 `check-plan.ts` 各跑一次：带 `--run` 的 8 次里 7 次逐字节相同、1 次只差点名运行的那句话（计划的条目不在这次运行里），不带 `--run` 的 8 次里 1 次相同、7 次只差同一类话；同一份计划上 `fidelity-brief.ts`、`fidelity-apply.ts` 的输出（目录名不计）和写出的简报、计划文件也逐字节相同。
+
+本地修正（待升版本号，2026-11-17，T14 执行器规则与块格式查询，未发布、未部署）：第 35 轮除命令树和手册外，两位脚本编写还零碎地读了冻结的执行器规则和块格式，为的是弄清某个对象.方法能不能用、G 列怎么写、H/I 是什么、类型化权限和允许的程序、字面命令、效果预算、取格方法、对应座位，和某个块种类有哪些字段：DNSSEC 那位读 `sources/contract.json` 21 次、`slots.schema.json` 22 次（21 次读搜、1 次 `execute`）、`tables/blocks-format.json` 6 次、`profile.json` 6 次、`inventory.json` 1 次；同步配置那位读 `slots.schema.json` 11 次、`profile.json` 7 次、`contract.json` 6 次、`inventory.json` 4 次。参照实现 InfoTest 的 `lang_query`（`main/ist_core/tools/device/lang_query_tool.py`）有三种：`kind=contract`（:175-357）先给契约知道的全部 E 值，分「有启用的函数」和「没有」两类并写每个没有的 E 的主要原因（:175-236），给一个 E 就列它启用、禁用、内部三类 F 名（:339-357），给 E 加 F 就答状态、原因、状态依据、Python 符号、签名、G/H/I 语义、派发、来源和契约摘要（:270-337，执行器动作另列预算与角色，:309-333）；E 或 F 不存在时不说拒绝，列已有的 E 或这个 E 的 F，名字其实是 F 值时说它在哪些 E 下（:246-269、:288-291）；`kind=signature`（:360-384，`apv_lang.py` :515-528）答一个方法必填和可选参数；`kind=dispatch`（:387-441，`apv_lang.py` :531-593）答一个名字怎么派发，或一个域的全部方法名，签名不列、要再查 `signature`。块格式在 InfoTest 不是单独的 kind：写手提示词要求先 `lang_query(kind="docs", query="blocks_schema")`（`main/ist_core/agents/compile-worker.md` :26），那份投影一处写全每个块种类、必填字段和信封各键的字段级结构。本包的 `tools/cmd-lookup.ts` 在 `--param`、`--heads` 之外加三种，同一个命令行、同样只读、同样每条答案写上限和是否截断（逻辑在 `functions/contract-lookup.ts`，声明在 `tools/cmd-lookup.cli.json`）：`--method '<对象>.<方法>'` 先说这个方法在 Hub 眼里的状态——合约启用（认证候选没有被合约推广的不算）并且本次配置开放，才是可以写进计划，其余各说原因（合约禁用或内部、认证候选没推广、合约启用但配置没开放并写配置记的原因），这个判定与 `functions/call-boundaries.ts` 的共同允许集合是同一个定义，测试里逐个方法对照；然后签名、派发、G/H/I 列（用配置声明的工作簿表头词）的合约原文、每个参数的必填可选、本次配置给的角色和合约声明的类型（范围、枚举、形状）、类型化权限的效果（预算、逐条允许的完整命令、命令范围、允许的程序和它的地址前缀、合约原文的字面命令）、块模型登记的输出和取格方法、取格值的策略、单格输入、提示符不接受的命令级别、对应座位（设备、序号、地址），以及每处依据的文件、指针和 `src:<摘要>/json@1/p/…` 引用，合约自己记录的来源另列；`--methods '<对象>'` 把一个对象的启用方法按这个状态分三组列出（每组 60 个），禁用和内部的只数不列；`--block '<块种类>'` 从 `run.json` 冻结的 `slots.schema`、包的分块表和包里的合成样例答这个块种类的必填与可选字段、字段说明原文、分块表给的封闭取值和一行示例，未启用的块种类写分块表记的原因，也答计划的其他成员（`block_context`、`criteria`、`obligations`、`steps`、`expects` 等），因为第 35 轮读 `slots.schema.json` 有近四成落在它们上，InfoTest 的 `blocks_schema` 投影也把这些放在一处。未找到时只按前缀列名字（对象、方法、块种类、计划成员），只差大小写的单独说，不排序、不猜。`--method` 和 `--methods` 经来源清单（`sources.json`，旧下载没有清单就读根目录）读 `sources/contract.json`、`profile.json`、`inventory.json`，核对摘要，再交 Hub 自己的读取函数（`parseRuntimeContract`、`parseManifest`、`parseProfile`）；`--block` 只读 `run.json`，不需要 `knowledge/`；`--param`、`--heads` 仍只读 `knowledge/`，互不依赖。写手角色（`functions/subagent-roles.ts` 生成 `agents/compile-writer.md`）的 `execute` 规则和第 1 条守则各加一句，写手任务文件的查询行写出三种换法，SKILL.md 没有改（守 9630 字符上限，余 4 字符）；发布 CLI 声明加三个选项和三种形式，探针从 19 个调用增到 22 个，`scripts/real/circle-guard.test.ts` 证明三种写法放行、`=` 和标准输入被拒。离线回放（只在验收目录，不入库，脚本和 SHA-256 在 `review/compile-25365/run35-1117/contract-fix/`）：两位编写共 84 次读取（收到 867409 字符），答完 48 次，答了一部分 30 次（没答到的是块模型的算子、默认断言和保留寄存器，配置的 `device_count`、`max_wait_seconds`，清单里不是座位的设备和服务，分块表的 `limits` 和内部常量等），答不了 1 次（搜 `cleanup`：运行器清理规则不在这三种里），没有可答的 5 次（零命中的搜索）；回放跑出 129 份答案，最小 177、中位 781、最大 4032 字符，1347 条事实（状态、指针、摘要、字面命令、参数、G/H/I 原文、计数、块字段）对回真实文件 0 处不符；真实合约 772 个条目的判定与 Hub 的调用边界逐条一致（可写进计划 21 个，正是配置的 21 个开放项）；第二位编写最后的计划只用 3 个方法，3 次 `--method` 共 9391 字符，它为弄清这些收到过 339947 字符。
+
+本地修正（待升版本号，2026-11-17，T13 命令查询，未发布、未部署）：第 35 轮两位脚本编写各用了 135 和 94 次工具调用，其中读或搜 `knowledge/commands.txt`、`manual.txt` 的有 30 和 27 次（另有读 slots.schema.json、contract.json、profile.json、items、briefs 的），为的是弄清几条命令的语法、参数、手册原文和示例：一次一段地读，一次一个词地搜。参照实现 InfoTest 给编写模型 `lang_query`（`main/ist_core/tools/device/lang_query_tool.py`）：`kind=heads` 列某个前缀下的命令头（:1080-1215），`kind=param` 给命令树对这条命令的参数契约（:904-975），并排给手册原文窗：从以 `**命令**` 开头的签名行起，到下一条以 `**` 开头的行或 80 行止，原文不改，带 `manual:<版本>/<文件>:<行>`（`main/case_compiler/apv_lang.py` `manual_param_excerpt` :129-183）；查不到时说命令树里没有匹配的头、这是这次查询未知而不是设备拒绝，并给词相同顺序不同的头（`vendor_stdlib.py` :1175-1208）和下一词（:1214-1255）。本包新增只读工具 `tools/cmd-lookup.ts`（逻辑在 `functions/cmd-lookup.ts`，声明在 `tools/cmd-lookup.cli.json`）：`--run <下载目录>/run.json` 加 `--param '<命令词，可带参数>'`，答命令树里这条命令的定义（原文，含类型、范围、枚举、默认值和每个参数的说明，要引用的 `tree:…@…` 在标注行上）、手册的签名条目、同源下一条命令签名行之前的手册条目（按原文行号排，跨节点也一样，原文不改）、手册对这条命令各参数的说明里不在窗内的行、产品声明的逆操作（用 `command-tools` 的 `alternativeLines` 与 `inverseLine`，只读前缀和确认提示一并写明）和手册里以这条命令开头的示例行；或加 `--heads '<命令词前缀>'`，答前缀下的命令头加语法行、下一词和各自的命令头数。只读 run.json 与同目录的 `knowledge/nodes.jsonl`（有 `commands.txt`、`manual.txt` 时用它们给出节点块的起始行和被截下的条目所在行，行号与文件一致），不调 Hub，不写文件。每条条目按 `knowledge/*.txt` 的写法给「· 引用」标注行和原文，所以引文可以从答案里直接照抄；窗口的起点是命令树里的手册签名条目，没有时是手册里以粗体写出命令名并把它记为字面值的文本条目（产出时没解析成签名的），终点是同源下一条签名行（含粗体签名行和 signature_drift 条目）；手册有签名行而命令树没有这条命令的，在未找到的答案里点名。答案的上限写在最后一行（手册原文窗 40 条或 8000 字，参数说明行 12 条，示例 6 条，命令头 60 条，下一词 60 个），截断时写明条数和从 `knowledge/` 的第几行读起；命令词按命令树的边精确匹配，未找到时列走到的节点的下一词（按词的前缀）、顶层命令词、词相同顺序不同或多一个词的命令头和只差大小写的词，不排序、不猜。写手角色（`functions/subagent-roles.ts` 生成 `agents/compile-writer.md`）、写手任务文件（打印带冻结运行的完整命令）和 SKILL.md（守 9630 字符上限，删去与第 2 节重复的返工条件和已写在别处的引号规则）各用一两句话教它，其余角色不提；发布 CLI 声明与探针从 18 增到 19（`scripts/real/testing/local-cli-probes.ts`），`scripts/real/circle-guard.test.ts` 证明任务文件打印的命令在 ops 与 skills 两种配置下放行、越权写法被拒。离线回放（只在验收目录，不入库）：第 35 轮下载里两位编写用过或要写的 47 条命令，每条一次 `--param` 都找到，42 条有手册原文窗，5 条手册没有签名行、只有定义；输出最小 1.2 KB、中位 5.0 KB、最大 17 KB（窗口最长的一条，27 条里显示 26 条），中位 0.18 秒；第二位编写计划里的 14 条命令全部一次答出定义和手册窗。两位编写里的字面串搜索（“回滚”“Zone Name”“对端节点将重启”等 12 次）不是命令查询，工具不替代。
+
+本地修正（待升版本号，2026-11-17，T12 手册显示，未发布、未部署）：第 34 轮脚本编写把 `knowledge/manual.txt` 里每条原文前的「· 」连同原文抄进引文，Hub 以 QUOTE_MISMATCH 拒收（引文须是引用所解析文字的逐字连续片段；`tree:<根>/<路径>@<条目>` 解析出的是该条的 statement，`hub/knowledge/read.ts` `#read`）。下载写的文本文件改为每条一行标注 `· 引用 tree:…`（有适用条件时同行加 `  适用 …`），标注行下面是 statement 本身，不加前缀、不截断、不改一个字；渲染放在本包 `functions/knowledge-text.ts`（`knowledgeFiles` 同名同形，`functions/hub-retry.ts` 的下载与编写简报共用其 `entryLines` / `nodeLines`，`testing/gen-recompose.ts` 把它和 `hub-retry.ts` 一并镜像到 `recompose/`），简报里的节点块与文件逐字相同；写手与重组角色、两份 SKILL.md、简报头各用一两句写明：标注行不是原文、引文只从原文行连续复制、条目先后不是手册先后。同一节点条目的顺序是另一回事：Hub 导出的顺序是按类别、原文、摘要排的（`hub/knowledge/read.ts` `#entriesAt`；子节点按名字排，`contracts/src/knowledge.ts` `TreeNodeBody`），知识树没有记录手册里的先后（第 34 轮根上 5087 个有条目的节点全是这个排法）。先后只留在组成里每个条目的来源片段中（手册章节按 `src:<摘要>/text@1/l/<起>-<止>` 引，`packs/product/famx/functions/adoc/entries.ts`），所以 `hub/knowledge/read.ts` 的批量导出现在给每个条目带上 `fragments`（同读引用时的 `grounds`，`get_nodes` 不带），下载按其中的行号把一个节点的条目排回原文的先后，标注行末尾写「源 <文件号> 行 <起>-<止>」。导出没有 `fragments`（还没升级的 Hub）、或有一个条目不是文本行号片段时，保持 Hub 的顺序。这部分要部署新的 Hub 才生效，需所有者决定。对照参考实现（InfoTest）：手册整份按文档顺序给模型，定位用 `manual:<文件>:<行>`，元数据写在单独的行、原文不加前缀，截断另起一行说明；手册引用只核对文件与行号范围，没有逐字引文核对（`provenance_ir.py:2421-2441`）。内嵌的 `run-tools` 1.0.2 `hub-client` 保持已发布的字节（它的 `knowledgeFiles` 本包不再调用），所以 `run-tools` 不用升版；下次给 `run-tools` 升版时，把这份渲染并回 `hub-client` 并删掉本包副本。本包未升版。
+
+本地修正（待升版本号，2026-11-17，T12，未发布、未部署）：同一份自动化用例 Excel 里有几条用例时，运行器在一个测试里顺序执行，某一步抛异常就中止整本，排在后面的用例没有开始（第 34 轮第一次上机：前一条用例第 9 步取格失败，同一份工作簿里排在后面的一条没有执行，Hub 对两条都只答“没有判定”和“稍后 job resume”，下载的设备输出里也没有说后一条没有执行，交付按一次上机算）。`functions/delivery.ts` 新增 `runnerAbort`（按 pytest 异常报告的结构读日志：`>` 源码行、`E` 异常行和异常前最后一行 `step<数字>:`）、`unexecutedRows`（工作簿顺序里最后一条有日志或会话的用例的日志以运行器异常结尾、其后各条没有日志也没有会话，才认定其后各条未执行；全部到过、最后到过的一条没有异常、后面有会话或日志时都不作任何断言）。`tools/download-returns.ts` 把这些条目记为 `verdict: not_run` 并写 `not_executed`（原因、下一步、`aborted_by`），出现异常的那一条保留 Hub 给的原判定，Hub 的 `report_check` 照留，命令输出多一项 `not_executed` 计数。`tools/assemble-delivery.ts` 在组装前做同样的认定：未执行的条目不进 `history`，因此不算已上机次数、不进 `rounds`、不能声明 `round`、不破坏更早的整卷通过，状态记没有上机、报告写“没有在设备上执行”和程序给的原因与下一步、时间线写“第 N 次未执行”、不再要求具名出口提示，未成功卷照常带它最后一份写法；机器资料的 `cases[].not_executed` 列出这些次。`functions/rework-history.ts` 读到带 `not_executed` 的返还行时不生成 `device_verdict:not_run` 签名，不算同错连击，简报写明本轮没有在设备上执行。Hub 核心未改；SKILL.md 受长度预算限制未改，说明写在 `tools/delivery.md`。
+
+本地修正（待升版本号，2026-11-16，T9 补充第 7 项，T11 离线回放发现，未发布、未部署）：Hub 选取命令目录时漏读互逆对的同级命令（`x on` 与 `x off`），清理义务找不到声明的逆操作，第 30 到 32 轮 Hub 接收了只开不关的计划；`command-tools` 的 `inverseLines` 现在把这些同级命令的路径也算进选择，一条不删，放不下就按选择超限处理。check-plan 改为按 Hub 的选择取目录，不再把整棵命令树交给检查，本地与 Hub 对同一计划判得一致。
+
+本地候选 3.21.3（2026-11-16，T9，未发布、未部署）：运行器整体清除不能替代产品已声明的枚举或同级互逆操作，要求同设备逆序配对；计划内的声明清除动作不能早于其配对逆操作。check-plan 同时读取 --run 所在下载目录的 knowledge/nodes.jsonl，核对运行号、根与节点计数后与 Hub 共用清理义务函数；缺本次知识根不报通过。写手角色与编写简报同步说明先关闭再清除、手册引用及来源边界。Hub 与 check-plan 共用冻结共同方法集合、设备应答者座位检查；拒绝列请求、精确指针和完整机器集合，长名单仅按拼写距离排序显示。check-plan 的 handled 计划须提供本次下载的 --run run.json；无冻结输入不报 ok，structure_ok 仅表示结构通过。运行配置整份拒绝逐项显示路径、原因和修法。Plumb 收到完整前置豁免依据与同一审计规则，不按词相似折叠候选；作者对应仅接受显式 author_step_refs 或完整适配命令，缺对应不擅判未实现。旧题目判断不得跨题目摘要复用。start_run 示例使用无版本包名，不从记忆指定旧版本；本轮源码和安装文件未检出所报旧字面值，模型自述尚不能证明文件来源。
+
+T10（同一未发布 3.21.3）：author_conflict 的报告原因取生成词表 attribution.author_input，保持模型未确认及原始 Hub 归因记录。交付工具读取工作目录 scope.md 既有具名使用者决定；已结为作者冲突且本条已有决定时，下一步交作者，报告引用原句，机器资料附可选 user_rulings（source/target/ruling）。不按自由文字推断决定含义，不从本地卡片改变 Hub 冻结交付范围；卡片不存在或无本条决定时沿用原出口。
+
+本地候选 3.21.2（2026-11-16，T8，未发布、未部署）：保留已发布 3.21.1 字节，不回写运行中的安装。整合 Plumb 1.0.1 示例和嵌入版本。未派发的运行不冒充设备验证，显式传入、自动发现、整批未派发采用同一分类，报告和机器资料列出 Hub 原因与下一步。未成功卷使用 Hub 最近受理的最后写法，实际到设备的记录另列；保留设备报告映射与 Hub 无判定的区别。报告用角色、本地分钟和可读事实；运行身份、原时间戳及完整观察保留机器资料。没有具名结论、作者冲突或设备引文未通过时逐条给合法示例并非零退出，仍保存其余条目及未知报告。未上机条目不造轮次，也不把说明来源称为核对过的设备输出。设备引文限一个文件中连续的一段；原始用例与手册冲突仍须结构化 author_conflict 与逐字核对，缺资料先交 Hub 取得具名事实再排除。
+
+本地整合候选 3.21.1（2026-11-16）：在 `hub-next-7`（T1/T1b）上合并 Plumb 方案与 Circle 1.18 适配（T4，含 B2/B7 裁定），仅推进 `case-compile` 至 `3.21.1`（`plumb@1.0.0`、`recompose@1.2.8`、`recompose-authority` / `recompose-adjudication@1.1.12`、`template-gap@1.2.24`、`knowledge-contribution@1.3.22` 版本不变）：（1）保留 T1/T1b 全部规则及 `hub-next-6@06779266aa` run30 的有来源前置、配对逆清理、`added_precondition` 豁免、结构化披露与 `tool-cli@2` 守卫；（2）接入 `plumb@1.0.0` 客户端侧命令选型/核验与 `sequence` 场景保真审定及 Bug #17/#18 修复，并补齐 `plumb.ts` 与 3 个 Plumb 工具的 `.cli.json` 声明；（3）按 B2 裁定删除 Circle 1.17.0 `general-purpose` 已知缺陷兼容提醒，按 B7 裁定改用 Circle 1.18 自动登记的 `case-compile:compile-*` 命名代理名、删除 `tools/install-agents.{ts,test.ts,cli.json}` 及定义正文里的 `<技能目录>` 占位符（`task-brief.ts` 保留实际路径注入），并在 `scripts/real/*` 保留 `mcpServers`、`PreToolUse` `hookSpecificOutput`、`mcp__<key>__*`、`/large_tool_results/`、`agent_id` 及 `circle-home --plumb-key-stdin`；`plumb/SKILL.md` 为含空格目录加单引号以兼容真实部署路径。刷新工作簿格式表、四份合成样例与包清单；本包及同批候选均未发布、未部署。
+
+T1b（2026-11-16，仍未发布）：完整传递已提取前置、历史可用性及独立缺口，按结构化条目生成披露，不把没有提取误说成没有前置。任务材料与范围完整保留；scope.md 用明确标题和标记传递当前记录的使用者决定，每次派发在内存中重新派生摘要，保留实际来源且不修改冻结重组或旧简报。未知标题、代码引用和其他用例的决定不提升为本条裁定；时间戳与归因标签不做猜测或别名归一。
+
+本地整合候选（2026-11-16）：从生产 `hub-next-6@06779266aa` 合入 run30，保留有来源前置及配对逆清理和 `added_precondition` 豁免。已发布版本的字节不改；新的子包为 `recompose@1.2.8`、`recompose-authority` / `recompose-adjudication@1.1.12`。本包 3.21.0 尚未发布，安装与部署另由整合者执行。
+
+本地修正 3.21.0（2026-11-15，注：随包 `install-agents.*` 已在 `3.21.1` 按 B7 删除）：接入通用技能包 `plumb@1.0.0`（`packs/skill/plumb`，经 `npm run gen:contracts` 镜像共享模块 `functions/generated/skills/plumb/plumb-client/`），将工作流中两项主观判断（命令选型/核验与场景保真审定）移至客户端侧 Plumb 推理服务（`plumb-27b-0.5.0`），严格遵守决定 15（Hub 永不调用任何模型或 Plumb，零外发出口）：（1）**客户端侧 Plumb 技能（`packs/skill/plumb@1.0.0`）**：提供受 HTTPS/CA/SHA-256 指纹锁、本地并发与速率上限（`2` 并发、`60 RPM`）、`>32` 题自动分批与“写请求超时/`408`/`504`/断连不重发”约束的 `plumb-client` 与守卫 CLI `tools/plumb.ts`（强制核验 `status: "未确认"`、`decided_by: "模型"` 与非空 `model_version`）；密钥只经 `--key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF` 或环境变量注入并自动脱敏。（2）**命令选型与核验（第 33 项）**：新增粗召回 `functions/cmd-recall.ts`（锁定命令树 + 锁定手册参数条目，`<= 40` 候选）、编写前 Plumb `choice` 锦标赛工具 `tools/cmd-select-plumb.ts`（每节点 `<= 25` 项，输出 `plumb/cmd_candidates/<序号>.json`，可选注入 `authoring-brief` 的 `plumb_candidates` 且缺省不出现）及提交前 Plumb `single_cmd_judge`/`steplist_judge` 核验 `tools/cmd-verify-plumb.ts`（`@1800`，`reject` 硬阻断、`review` 披露警告）；更新 `functions/subagent-roles.ts`、`agents/compile-writer.md` 与 `SKILL.md`。（3）**场景保真审定与缺陷修复（第 34 项及 Bug #17/#18）**：`tables/blocks-format.json`、`slots.schema.json` 与 `functions/slots.ts` 为平面 `steps[]` 新增可选 `author_step_refs?: string[]`；修复 `functions/blocks.ts`、`functions/fidelity.ts`、`tools/fidelity-brief.ts`、`tools/fidelity-apply.ts`、`tools/check-plan.ts` 与 `tools/submit-plans.ts` 的 Bug #17/#18，并新增客户端侧 Plumb `sequence`（`@2400`）保真判别链 `functions/fidelity-render.ts`、`functions/fidelity-bind.ts`、`functions/plumb-cli.ts`、`tools/fidelity-plumb.ts` 与 `tools/fidelity.md`。（4）**Circle Guard 与 Home 配置支持**：扩展 `scripts/real/{circle-home,guard-lib,guard-preflight}.ts` 支持 `--plumb-url`/`--plumb-model`/`--plumb-ca-file`、`%PLUMB_API_KEY%`、`trust_cert_files`、`'plumb'` 主机锁定及上述 CLI 守卫。刷新四份工作簿合成样例、`testing/hub.ts`（`publishPlumbSkill`）、`pack.test.ts` / `publish.test.ts` 与 `pack.json`，未发布或部署。
+
+# case-compile 3.20.4
+
+本地修正 3.20.4（2026-11-15）：合入 `e0a96efd59`（从 `record.sources.states` 抽取缺失前置到 `authoring-brief`）并完成三组紧急修正，同步推进子包 `recompose` 至 `1.2.7`、`recompose-authority` / `recompose-adjudication` 至 `1.1.11`（`functions/recompose-evidence.ts` 经 `testing/gen-recompose.ts` 新增接受 `1.2.7` / `1.1.11`）：（1）对齐 `InfoTest_Engine/main`（`ac898b68`、`compile-worker.md:44-45,70`、`scenario_fidelity.py`，对照本仓 `b9f417bc8f`、`49bb507aa3`、`52e655c1dc` 部分移植）：在 `SKILL.md`、`recompose/SKILL.md`、`tools/fidelity.md`、`functions/subagent-roles.ts` 及 `agents/compile-{recomposer,writer,fidelity}.md` 明确 `recomposition.adapted` 与原始步骤不是步骤白名单，保留“不替换作者被测对象/动作/约束、不把‘前置不存在’反向用例改配为正向前置”的同时，强制把 `sources.states`（`missing_prerequisite`）及锁定手册正文/配置示例要求的命令运行前置写入前置步骤并按两类规则配对 `cleanup:true` 逆操作；`slots.schema.json`、`functions/slots.ts` 与 `tables/block-plan.schema.json` 为平面 `steps[]` 新增可选 `precondition_source: { reference, text }` 并由 `functions/subject.ts`（`quoteSubject`）纳入 Hub `quote@1` 逐字核对；`functions/fidelity.ts`（`fidelityBrief`）从 `record.sources.states`、`plan.precondition_source` 与 `block_context.preconditions` 填充 `mechanical.exemptions`（`added_precondition`）且继续屏蔽编写自述；（2）对齐失败分析规则（`functions/subagent-roles.ts` `agents/compile-attributor.md`、`tools/delivery.md`、`SKILL.md`）：同错再现即证伪上一轮假设须改换机制或命令形式，设备报错明确指出缺失项且锁定手册/示例支持未试假设时下一轮必须修改重测（严禁借“缺资料”或“剩一次机会”阻拦），仅在锁定手册正文、示例、命令树与环境声明均无任何依据支持任何未试假设时才可归为“缺资料”；（3）扩展 `runtime-contract@2` 清理顺序/清理命令披露（`functions/runtime-contract.ts`、`functions/command-obligations.ts`、`functions/checks.ts`、`tables/blocks-format.json`、`tables/codes.json`：禁止把 `write memory` 等命中运行器自动清理的命令标为 `cleanup:true`，并披露 `order` 与 `clears`）及 `functions/block-runtime.ts` / `functions/typed-authority.ts` 观测能力缺口汇总披露（`functions/checks.ts` 对 `document === 'blocks'` 缺口独立分列 `unknown`、`functions/subject.ts` 在 `quoteSubject` 同轮兼有 `refute` 与 `unknown` 时优先阻断 `blocked`）。刷新四份工作簿合成样例、`pack.test.ts`/`publish.test.ts`/`tools/install-agents.test.ts` 与各包清单；未发布或部署。
+
+
+
+本地候选 3.21.0（2026-11-16）：逐条合并多次运行的结构化结论、限定、缺失事实和具名出口；未知原因保留为“还没查清”，设备报告与交付资格分别披露。共用阶段资格判断，按四个已安装名字派发子代理，保真判断与摘要信封共用唯一构造入口，交付清单来自实际文件。来源下载统一命名并按清单读取；仅不可变来源字节可复用本机临时目录中的摘要缓存（`sourceCacheDirectory:false` 关闭），每次仍重新核对运行状态和授权，缓存不构成新观察。CLI 和守卫使用显式 `tool-cli@2` 声明；发布清单与安装字节另行校验。命令域预检只披露，不阻断、不清理、不代替设备结果。本次保留作业后基线读取和预订保持行为，未发布或部署。
+
+安装候选前先在隔离目录使用 `pack-files.ts --stage <目录>`，再用 `--verify-install <目录>` 核对发布方文件摘要；守卫维护另外核对其独立收据及 CLI 声明，技能快照相等不代替发布清单校验。四个子代理必须在新会话启动前注册；不读取或重建旧会话的知识数据库。
+
+本地修正 3.20.3（2026-11-14）：随合约协议生成拆分与格式技能包仅镜像自身声明子集（`mindmap-format` 1.0.26、`workbook-format` 1.0.24、`html-format` 1.0.23、`xml-format` 1.0.24）同步推进，并纳入成员试跑与对照运行改进及技能合约清理，同步升级内嵌 `mindmap-format` `case-structure` 版本至 `1.0.26`（对应拆分后子集镜像与去 `migration_test` 后的最新包字节）、`recompose` 至 `1.2.6`、`recompose-authority` / `recompose-adjudication` 至 `1.1.10`（`recompose-evidence.ts` 新增接受 `1.2.6` / `1.1.10`）：（1）`functions/hub-retry.ts` 新增 `readTokenFromStdin`、`requireBearerToken`、`readSubmittedFileBytes` 与 `readSubmittedItemFiles`，修复 H1 标准输入读令牌时序/提示并将 `download-run`、`fetch-run`、`download-returns`、`submit-plans`、`assemble-delivery` 与 `recompose/tools/{download-run,submit-records}` 对齐；（2）修复 H3（`submit-plans`/`submit-records` 按选项名指向 `--plans` / `--records` 并点名损坏文件名）与 H4（`submit-records` 只留单一简写输入形状，拒绝完整 `recompose-record@1` 形状并在缺字段时点名 `method`）；（3）`tools/task-brief.ts` 支持 `--help`/`-h` 并在缺 `--brief` 时列出工作目录同级文件，改为 `--task-file <任务文件路径>` 写盘且 stdout 只输出固定短派发提示（不含任何用例原文），同时新增 `functions/text.ts` `wrapProseLine` 只对说明性文字按 `1600` 字符折行，逐字原始内容与 `>1800` 字符设备/原句行逐字节不折行并在 `--task-file` 开头披露精确 1 起始行号与字符数（防 Circle `read_file` 2000 字符单行截断而不破坏原文）；（4）`functions/delivery.ts` `closeUnrun` 合并未上机拒绝为一条汇总句（替换 `冲突` 为 `不一致` 并冠以 `不存在：`，避免误判 `已被占用` 及多条重复）；（5）`recompose/tools/check-record.ts` 新增提交前只读离线预检（UTF-8/JSON、单一精简形状、缺 `item`/`method`、重复 `item` 及可选 `--run` 覆盖检查）；（6）`SKILL.md`、`recompose/SKILL.md`、`tools/delivery.md`、`functions/subagent-roles.ts` 与 `agents/*.md` 去掉无法在 Circle `execute` 拦截的 `shell 管道或重定向` 空头禁令、统一 `download-returns --wait 3600`（明确须 `background` 启动并按同命令重试超时）、补齐 `--task-file` 与 `check-record.ts` 流程，并对齐同行 `<<'EOF'`、派前 `ls`、`严禁第 4 轮` 与禁止直连设备；（7）新增锚定于 Hub 运行记录的 `parameters.scope: { words, cases }`（`workflow.json`、`functions/project.ts` 与 `exclude`/`autoid` 互斥、脚本合并 `plan_result` 一致性校验，并冻结 `groups[0].scope.out_of_scope`），`tools/assemble-delivery.ts` 与 `functions/delivery.ts` 仅从 Hub 读取并逐运行核对各次脚本编写与脚本合并运行的 `scope` 一致（不一致直接拒绝；本地 `--scope` 文件参数仍明确拒绝；中途换范围须重新 `start_run`），按规范在 `delivery_report.md`、`delivery.json` 与简短答复中披露 `in_scope_total`、`out_of_scope_total` 与 `out_of_scope` 清单而不阻塞其余用例，范围内用例仍严格要求完整结案；（8）落实第 29 轮 P1–P3 与复核把关修正：明确脚本合并前且 `rounds_left>0`、范围/排除/输入未变时在原 `plan_run` 重交并禁止直接提交改动到 `merge_run`，新增 `tools/carry-plans.ts` 五道门与落盘 SHA-256 校验、`tools/task-brief.ts --batch` 批量生成与精确文件工具参数格式、用例重组具体可执行命令行约束与 `recompose.command_syntax`（带 `expected_types`、`pointer`、`owner: "重组模型"` 与 `determination: "error"` 及 `max_rounds: 2`），并同步对齐 `SKILL.md`/`tools/delivery.md`/`subagent-roles.ts` 术语与拒绝类别。刷新生成器身份、四份工作簿合成样例、`pack.test.ts`/`publish.test.ts`/`tools/install-agents.test.ts` 与各包清单；未发布或部署。
+
+
+本地修正 3.20.2（2026-11-14）：移除两处手写词表字面枚举，统一引用 `tools/gen-contracts.ts` 为本包生成的 `./generated/vocabulary.ts`（增列 `acceptance` 与 `item_handling` 两轴）使 `packs/workflow/case-review/packs.test.ts` 通过：`functions/rework-history.ts` 引用 `isAcceptance` / `type Acceptance`，并将「未解析出受理情况」拆为 `acceptanceParsed: boolean` 与 `acceptance: Acceptance | null`（不向 `Acceptance` 混入 `'unknown'`）；`tools/check-plan.ts` 引用 `isItemHandling` / `ITEM_HANDLING` / `type ItemHandling`。同步升本地 `case-compile` 为 `3.20.2`（原样保留 `3.20.1` 提交；`recompose`、`recompose-authority`、`recompose-adjudication` 字节未变，版本维持 `1.2.5` 与 `1.1.9`），刷新 `tables/workbook-format.json`、四份合成工作簿样例、`pack.test.ts`/`publish.test.ts`/`tools/install-agents.test.ts` 与 `pack.json`，未发布或部署。
+
+
+本地修正 3.20.1（2026-11-14）：第三次干跑验证通过后按 `17:08` 正式定版 `3.20.1`，同步将内嵌 `mindmap-format` `case-structure` 版本由 `1.0.24` 对齐为 `1.0.25`（内嵌模块字节不变）、独立子包 `recompose` 升为 `1.2.5`、共享证据模块所属 `recompose-authority` / `recompose-adjudication` 升为 `1.1.9`（接受 `1.2.5` 与 `1.1.9`）：（1）第二轮干跑四项修正（`N1`–`N4`）：`findExecutionStepExcerpt` 去重规整长命令、无行首截断时保留整条命令回显并改写长命令单调位置对齐；`parseHubAnswerNotices` 严按 `acceptance === 'accepted'` 分流，不再把已受理答复里的 `missing_input` 记成门禁拒绝、触发 `gate:<code>` 或 `vary_form_required`，并清理 `rec:`/`usr_`/毫秒时间戳、去重 `缺失事实：` 与 `fix`、不在摘要重复最新一轮 Hub 提示；`renderPriorRoundsMarkdown` 明示「最近一轮 Hub 回复状态：已受理（不是门禁拒绝），缺少 …」与「是否触发门禁连续同码强制换法：否」，仅在 `not_accepted` 时按 `consecutiveRepeatedGateCodes` 计连续同码拒收；渲染文本去掉 `pointer`/`contract/schema`/`vary_form_required` 等英文术语并改用中文 `路径与字段要求`，核对 InfoTest（`compile_engine/briefs.py:2982-2985`、`2681-2690`、`2792-2820` 与 `remedies.py:39-42`、`rejection_history.py:3-40`）。（2）Circle 用词把关对齐（`textcheck-3201-a/b`，1 阻塞 + 20 不一致 + 13 处顺手修正）：角色名「写计划」全面改为「脚本编写」（同步 `workflow.json` `plan_result` 描述、`SKILL.md`、`functions/subagent-roles.ts`、`agents/compile-*.md`、`tools/task-brief.ts` 及测试），`16:58` 从 `ROLE_ALIAS_MAP` 删除 `'写计划'` 旧别名不再兼容；`recompose/SKILL.md` 补清开始重组运行前须传入 `full_set`（整份重组）；`tables/codes.json` 对齐「自动化用例 Excel」/「已接收的计划」/「脚本合并运行」/「返回结果」；删除 `tools/authoring-brief.ts` 独立 `main()`，统一由 `tools/task-brief.ts` 为唯一入口；登记「用词待改：6 处」与延迟项 `N5`–`N9`（今晚不做）。（3）登记下一版随包代理路线图（`15:41`）：Circle `1.17.0` 运行验证推翻「须重启会话」判断，确认会话中途写入 `.circle/agents/` 后从下一模型步骤起即可按名派发（仅同一步写入并派发报错）；今晚只动单一变量仍维持 `general-purpose` + `task-brief.ts`，下一版先解决跨版本升级清理旧 `.circle/agents/*.md` 后再切回 Step 0 由 `install-agents.ts` 安装并按名派发。（4）刷新生成器身份、四份合成工作簿样例、`pack.test.ts`/`publish.test.ts`/`tools/install-agents.test.ts` 与四个包清单，未发布或部署。
+
+
+本地修正 3.20.0（2026-11-14）：（1）修复返还索引 `functions/delivery.ts` `executionRefusals()` 漏记设备常规 CLI 拒绝（如 `Error: <内容>`、`Failed to <动作>`、`% Invalid/Error/Unknown/Unrecognized`），在合约已声明拒绝模式时一并收入 `index.json` 的 `execution_refused`，同时保持 `log.txt` 按执行器原文逐字节不变（框架日志仅记录下发命令与超时，部分 CLI 拒绝只存在于逐条设备会话文本与 `index.json`）；另补充两则采用文档网段（RFC 5737 `192.0.2.0/24`）的合成复现测试。（2）以单源角色定义模块 `functions/subagent-roles.ts`（同时生成 `agents/compile-{recomposer,writer,fidelity,attributor}.md` 与 `tools/task-brief.ts` 输出）接入 `## 16:15` 与 `## 14:15` 工作流派发机制：主会话先将使用者范围原话逐字写入工作目录 `scope.md`（限 16,384 字节且拒绝空文件、仅标题或符号链接；支持 `## <autoid>` / `## <item_id>` 按用例分节，`task-brief.ts` 自动只摘出全局原文加本案分节并排除其他用例，整份重组 `--case all` 保留全文），统一且仅由 `tools/task-brief.ts`（从 `import.meta.url` 解析真实 `<技能目录>` 并校验工作目录路径边界；已取消 `SKILL.md` 中 `authoring-brief.ts --round` 双入口并在 `task-brief.ts` 内自动按单案组装内存 `compile-brief@1` 与传入合约 `exec_failure_markers`）在任务说明最前段附上 Circle 1.17.0 内置 `general-purpose`（`generate.md`）已知缺陷说明并输出完整 `description`，在同条消息以前台并行方式派发给 `task`（不用 `background`，每批最多 6 个作起始值，失败或超时单条重派），并在 `SKILL.md` 写明须装进当前主目录的 `skills` 目录（保留 `tools/install-agents.ts` 备 Circle 后续开放技能安装包内 `agents/` 时使用，已移除 `rename`/`unlink` 改为 Verified 写入以通过技能脚本安全扫描，暂不从 `SKILL.md` 引导使用 `.circle/agents/`）。（3）新增单案逐轮历史与结构化简报闭环（不改 Hub，含 `functions/rework-history.ts`、`tools/rework-inputs.ts` 与 `tools/check-brief.ts`），并在 dry-run 干跑复核（`15:00`）后完成九项关键修正与回归测试：a）`parseGateRefusalsFromAnswer` 正确解析多行 `submit_result` 末尾 `供模型引用\n{...}` JSON 并严格按 `caseIds` 只取紧凑 `{code, path, message, fix}`，绝不回落倾倒 1.9 MB 原始 JSON，同时在 `renderPriorRoundsMarkdown` / `renderTaskBrief` 对总篇幅按固定优先顺序截断并明确披露被省略项与省去字符数；b）步骤设备输出定位移除 24 字符前缀误匹配，支持 APV 横向滚动 `$` 重绘（如 `KSK` vs `ZSK`）与重复命令单调锚点按序对齐，无法区分时输出「这一步的输出无法唯一定位」；c）区分真实 12,000 字符截断（含换行/控制符规整后 ≥11,000 字符的末尾保留）、「在保留的设备输出里没有找到这一步」、以及跨运行失配直接报错拒生成，并恒输出「取不到证据的步骤不要当作正确，也不要当作无关。」；d）删除 `log.txt` 泛化关键词正则（避免 `NOERROR` 误判），改从结构化记录、合约 `exec_failure_markers` 与执行器框架失败行（`#### Fail Num`、`step N failed` 等）规整动态 `id`/时间戳/十六进制后提取签名，且通用 `device_verdict:fail` 不触发伪连续同类错误；e）`notes.json` 支持可选正整数 `"round"`，缺省时不借 CLI 位置冒充 `第 1 轮` 而是标为「最近一次失败分析（轮次未记录）」；f）拒绝整批 `submission.json` 及错配 `--prior-plans`/`--prior-answers`/`--prior-returns`/`--prior-notes`；g）`FINAL attempt` 提示改用中文并按 InfoTest（`compile_engine/briefs.py`、`remedies.py`）核对 `vary_form_required` 口径。另按 `14:33` 暂保版本号 `3.20.0` 待复跑干净后再行 `3.20.1` 终版定版，并登记四项后续路线图差距：`device_help`、`device_disclosure`、`batch_pass_examples` 与同码连拒统计。（4）修订返工重开运行引导与工作簿失配报错（应对第 28 轮失败 E10/E11）：`SKILL.md`（第 2、3、5 节）与 `tools/delivery.md` 明示返工或改动已交计划时必须以 `test-bed` 预订为 `predecessor` 用 `start_run` 新开一次脚本编写运行（附带可照抄单行 JSON 模板，禁止重交到已被核对锁定的旧计划运行或脚本合并运行）；`functions/workbook.ts` 与 `tables/codes.json` 的 `case-compile.workbook_invalid` 在计划与 `plan_set` 不一致时直接标出所核对的 `generation.plan_run` 编号并区分「改动计划须重开 `start_run` 计划运行 → 生成工作簿 → 新开核验运行」与「完全未改时才按原运行原样重交」（Hub 侧 `fixOf()` 仍仅读核心拒绝码表，已另行记入待跟进事项）。（5）包清单纳入 `agents/`（已获模型 81 合约允许）与新增只读工具/模块，同步更新生成器身份、四份合成工作簿样例与 `pack.json`，其余包版本不变，未发布或部署。
+
+本地修正 3.19.2（2026-11-14）：（1）新增只读本地检查工具 `tools/check-plan.ts`（不用令牌、不改写磁盘），可在脚本编写或保真审计阶段校验单份自动化用例（顺序与 B1 块状及 `skipped`）、计划目录或 `.verdict.json`（可选配合 `--brief` 复算场景保真校验问题），内存展开 `{{domain:N}}`/`{{name:N}}` 并拦截重复条目。（2）联动修订提示与守则：`SKILL.md` 与 `case-writers` 扩展明示 `slots.schema.json` 位于技能根目录、工作目录相对路径写入、禁止 `=` 连接选项、三行 `%HUB_TOKEN%` here-doc 与 `check-plan.ts` 用法，补充同网段/声明路由、`expect` 禁用命令自身回显与无效时输出、`reuse` 仅认 `rec:`、同一脑图同一构建沿用已核对正确的重组（`recomposition_run` 取 `references.json` / 导出顶层 `run_reference`，`recomposition_result` 写 `{"run":"<重组运行编号>"}`）、以及验证或交付结束后不释放 `test-bed` 预订（同步 `tools/delivery.md`）；`recompose/SKILL.md` 明示路径、命令、必含 IP 字段不自造 `<中文>` 占位及重组引用取法；`tools/download-run.ts`、`recompose/tools/download-run.ts` 与 `tools/fetch-run.ts` 在运行导出包含 `run_reference` / `accepted_result_reference` 时写入 `<目录>/references.json` 并随标准输出返回（未改变 `run-tools@1.0.2`）。（3）按《hub-terms》统一全部本地命令行工具（含 `recompose/tools/`）与 `case-writers` 扩展的调用错误口径为 `<类别词>：<这一次的事实>。<下一步>。`（五类封闭：`参数无效`/`无权限`/`不存在`/`已被占用`/`暂时不可用`）。（4）将 `functions/checks.ts` 注释中的具体网段/主机例子改写为说明性描述（不包含任何真实设备地址）。（5）为本地工具接入 Hub 调用重试与安全重发守则（共享实现 `functions/hub-retry.ts` 同步到 `recompose/functions/hub-retry.ts`，保持 `run-tools@1.0.2` 不变）：读取类调用在 503 与 `ECONNREFUSED` 下按 `Retry-After` 或 `2/4/8` 秒退避最多等待 `60` 秒并在超限时写明等待时长与尝试次数；提交类调用（`submit-plans` 与 `recompose/submit-records` 的 `POST /mcp`）仅在 Hub 明确答复 `503` 且包含「这次调用没有执行」时按同规则重试，中途断连、超时、连接被拒或含糊失败绝不自动重发并要求先查回原调用（`download-returns --wait` 在收到 `Retry-After` 时优先按头等待）。严守 `SKILL_BUDGET = 9630`，未放宽预算；同步升本地子包 `recompose` 到 `1.2.4` 及 `recompose-authority`/`recompose-adjudication` 到 `1.1.8`（共享 `functions/text.ts` 与 `functions/recompose-evidence.ts`），刷新生成器身份、四份合成工作簿样例与各包清单，未发布或部署。
+
+本地修正 3.19.1（2026-11-14）：（1）场景保真审计连跑防呆：`SKILL.md` 第 3 节合并命令块串联 `fidelity-brief` → 新子代理写 `.verdict.json` → `fidelity-apply` → `submit-plans`；`authoring-brief` 计划外壳末尾说明草稿交 Hub 前须走完保真核对；`submit-plans` 在发送前本地复用 `functions/fidelity.ts` 校验，缺少 `data.fidelity`、简报摘要过期或格式不对时直接本地退出并打印三步指令（不把必拒草稿发往 Hub 消耗修复次数，Hub 仍为准）。（2）通用取值文字补清：`SKILL.md` 点明先查 `contract.json` 中 `runtime.block_model.cell_inputs` 与 `cell_methods`（未声明按缺资料处理并写明执行器规则没有声明），并澄清 `RESTORE_FROM` 句不禁止按 `input_register` 使用 `{}`。（3）脚本合并防卡：`functions/text.ts` 与 `functions/project.ts` 补齐拒绝 `pointer`（缺 `plan_run` 指 `/parameters/plan_run`、缺 `plan_result` 指 `/inputs/plan_result`、工作簿原件错指 `/inputs/workbook` 等，不再回退到 `/inputs/subject`）并在 `fix` 与 `tables/codes.json` 写明三号字段；`SKILL.md` 第 3 节第二次 `start_run` 块分行写清 `predecessor`、`parameters.plan_run`、`inputs.plan_result`（均填脚本编写运行号）、普通上传 `inputs.workbook` 及通过 `tools/submit-plans.ts` 重交（不用 `reuse` 简写）。保持 `tables/runtime-profile-format.json` 不变以免影响 3.19.0 角色核对；更新生成器身份、四份工作簿合成样例及清单，未发布或部署。
+
+本地修正 3.19.0（2026-11-13）：顺序步骤的 expects 可写 op:"not_found"，生成并独立回读执行器已声明的不存在检查，可与同为顺序步骤的其它用例写进一份自动化用例 Excel。文字须来自本条原始期望，或本条配置后按产品有向逆操作撤销的完整名字；不另立判定标准、不发起复核。分块写法的既有行为保留。本次不发布或部署。
+
+本地修正 3.18.4（2026-11-13）：恢复模型判断期望的设备原话要求，text 填写设备执行后实际会输出的一行原文，对应原始期望及选择理由写入 rationale。更新编写资料、生成器身份、合成样例摘要和清单。本次不发布或部署。
+
+本地合并候选 3.18.3（2026-11-12）：#341 协议文案同步后 mindmap-format 升至 1.0.24，本包嵌入与嵌套包同步升版并刷新工作簿样例。能力相对 3.18.2 不变。本次不发布。
+
+本地合并候选 3.18.2（2026-11-12）：样例 runtime-profile-v2 补上 workbook.template；acceptsPack 接受 recompose 1.2.2 与 authority/adjudication 1.1.5/1.1.6；嵌套包同步升版重签。能力相对 3.18.1 不变。本次不发布。
+
+本地合并候选 3.18.1（2026-11-12）：主线并进后按规则 3 保留本线冲突内容并纳入未冲突主线改动；mindmap-format 升至 1.0.23，本包升版并重签清单与合成样例。能力相对 3.18.0 不变。本次不发布。
+
+本地候选 3.18.0（2026-11-12 下午）：新增按声明形状取一格、多列精确等值或行序号选择，并用既有 H/I 和可读 G 参数在本条自动化用例里回填。动态值单列为命令模板，明确地址用途的运行时位置保留未知，原有静态检查不变。取值由独立执行侧组件负责；本次仅本地实现与合成检查，未部署。
+
+3.17.3 的原有能力（2026-11-12 上午）：执行器关闭的动作由生成侧按手册和命令树改写为已开放的设备命令；手册允许指定名字时，同条创建、使用、查询和清理共用生成值。按所有者本人的决定，原始用例的否定结果采用字面或本条捕获值的 not_found 检查，不另立判定标准或发起评审员复核。原作者的明确声明、逐字引文、输出与捕获关系、执行器能力及场景保真检查保留。仅本地提交，尚未上线。
+
+本地补丁版本 3.17.1（2026-11-12）：完整检查后收窄 case-writers 实际使用的状态接口类型，包内文件字节因此变化，按版本不可复用规则补升并重签；生成器和合成样例同步。本次不发布。
+
+本地版本 3.17.0（2026-11-12）：加入产品声明的用例顺序及跨用例冲突核对、原始用例与手册冲突的第四种收口、逐条编写扩展、取值范围模块和统一措辞。自动化用例 Excel 的生成器同步为 case-compile@3.17.0。取值主张的 Hub 接收尚未实现；根 hooks 仅为未应用提案。本次只提交本地，不发布。
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -16,7 +98,7 @@ The original runner contract is not converted. Every original member except cont
 
 runtime-profile@1 defines expected identity; workbook sheet/nine headers/identity marker/range/closing row/autoid shape; seat and host-method mappings; allowed combinations with parameter roles; device/host rejection lists; synthetic; required device_count from read-only precheck; optional fold_newlines pairs, default empty. Decision 35 considers every enabled pair; allowed contains only opened combinations with role coverage and any required explicit reviewed decision. External-format closed sets live in the pack's format tables. Dispatch must check the real current device count again.
 
-For a flat plan, data is bucket, empty blocks, steps [{object,method,args,keywords}], expects [{text,quote,after}] and replacements [{case,bed}]. Args remain text; keywords may also be safe nonnegative integers because the runner converts digit keywords. Signatures enforce order, required/positional-only arguments, declared keywords and credential exclusion without defaults. Literal assertions are forbidden in steps: only expects supplies assertion text, with an original quotation and a one-based command after. Replacements are numeric one-to-one mappings, and slots contain final text. Device/host rejection lists, catalog@1, quote@1, address ownership and grounded expectations remain required checks. The bed/ prefix exposes test-bed predecessor allocations; unrelated runs cannot use them.
+For a flat plan, data is bucket, empty blocks, steps [{object,method,args,keywords}], expects [{text,quote,after}] with optional op:"not_found", and replacements [{case,bed}]. Args remain text; keywords may also be safe nonnegative integers because the runner converts digit keywords. Signatures enforce order, required/positional-only arguments, declared keywords and credential exclusion without defaults. Literal assertions are forbidden in steps: only expects supplies assertion text, with an original quotation and a one-based command after. Replacements are numeric one-to-one mappings, and slots contain final text. Device/host rejection lists, catalog@1, quote@1, address ownership and grounded expectations remain required checks. The bed/ prefix exposes test-bed predecessor allocations; unrelated runs cannot use them.
 
 ## G behavior and supported encoding
 
@@ -28,7 +110,7 @@ encodeG always decodes its result and compares types and values. It names the vi
 
 ## Deterministic file and independent reading
 
-The Node-built-in-only generator emits six fixed OOXML members, ZIP32 STORE with its own CRC32, fixed DOS timestamps and member order. A is inline text, C is numeric 0/2 and never initialization 1. Other values are inline strings. Row order is identity, nine-column header, description, then for each case in item order its steps, each with its after expectations immediately following, and a blank row, then the configured closing row. The description contains plan_run and build, never a person. Each case starts at the row of its textual autoid, with nonempty E. Every assertion row is generated from expects. Legacy register cells and all certification-request cells remain empty; block register cells are verified under the explicit runtime capability.
+The Node-built-in-only generator fills the runner's own template, which the run's profile carries as `workbook.template` (`{sha256, xlsx_base64}`): every member but the worksheet keeps its bytes, and the worksheet keeps its notes, lists, drop-downs and column widths. Output is ZIP32 STORE with its own CRC32, fixed DOS timestamps and the template's member order. A is inline text, C is numeric, 0 on the description row and counting up from 2 inside each case, never initialization 1. Other values are inline strings. Row order is identity, nine-column header, description, then for each case in item order its steps, each with its after expectations immediately following, and a blank row, then the configured closing row. The description contains plan_run and build, never a person. Each case starts at the row of its textual autoid, with nonempty E. Every assertion row is generated from expects. Legacy register cells and all certification-request cells remain empty; block register cells are verified under the explicit runtime capability.
 
 Identity F records the generator id; G records a canonical recipe digest so a changed quote/replacement also changes bytes without copying source content. The workbook-level range points exactly to the header. Invalid XML values are refused rather than dropped; CR text is preserved. SpreadsheetML-looking _xHHHH_ sequences are refused with xstring_escape because literal inline and ST_Xstring readers disagree. The reference circle-packs 10-13 xlsx.mjs was read only for OOXML behavior: differences are STORE versus Deflate, strict fixed layout and subset, no hidden-row facility, exact identity/range, rejection of invalid characters and _xHHHH_ text, and accounted recipe metadata. No reference code or template bytes are imported.
 
@@ -44,7 +126,7 @@ First reserve the bed, then start a plan run with that reservation predecessor a
 
 Run normalize-mindmap.ts only for local exports needing the declared transformations: remove the KityMinder export head (U+FFFF then U+FEFF, bytes EF BF BF EF BB BF, which every real local export carries; since 3.8.8) or two leading U+FFFF, and convert a single array wrapper into root. It preserves element spelling, including long numeric literals, and prints before/after SHA plus client-normalization disclosure. Ordinary root documents retain their original bytes.
 
-The offline generator accepts --run --result --submission --contract --profile --inventory --out. It checks the received-submission digest, accepted result, full coverage of every item of the run, locked pack/root, every mandatory plan status and exact expected-source bytes, then reads the verified identity receipt. It writes a new private file and prints only digest/version/size. No environment or network is read and existing files are not overwritten.
+The offline generator accepts --run --result --submission --contract --profile --inventory --out. It checks the received-submission digest, accepted result, full coverage of every item of the run, locked pack/root, every mandatory plan status and exact expected-source bytes, then reads the verified identity receipt. It writes a new private file and prints only digest/version/size (and, when cases were placed last for the state their commands leave behind, which ones: `moved_tail`). No environment or network is read and existing files are not overwritten.
 
 Source and published scripts both live under tools/, exactly as pack.json declares; staging copies those paths without namespace mapping. Installation must preserve tools/, functions/, tables/ and requirements.json together. The script and checker import the same functions/generate.ts. Node 24 is required; no production dependencies beyond built-ins are added.
 
@@ -158,11 +240,11 @@ samples are not evidence of completed remediation and this work-in-progress tree
 
 ## R5：runtime-contract@2
 
-新合约沿用原始签名、完整性字段和 canonical 摘要计算，schema 精确为 runtime-contract@2，并新增 types、roles、effects 三个以 id 为键的闭集对象。types[id] 包含 declaration（共享 DeclaredParameterType，catalog_type 必填），可声明 address_kind（共享 TypedAddressValue 的 kind）、数值/长度上下界、values 或 literal；roles[id] 包含来源 source，地址用途须显式给 bed_member 布尔值；effects[id] 包含 source、roles、每计划调用预算 budget，以及按需明确的完整 commands、allowed_literals、command_roles（signature、零基 position、role）。每个启用条目的 typed_authority 给 source、parameters[name]={type,role} 和 effects id 列表。allowed 项的 unsupplied 列出永不传入的可选参数：这些名字不计入个数，也不要求类型和角色；授权里若仍写了它们，照常接受。计划写入这些参数则拒绝。必需参数不能列入该名单。来源均为结构化 Ground 引用，作为合约作者声明保留，不冒充设备观察。合约身份仍覆盖全部字段。旧合约只核原身份，authority=null，一律未核对并阻止生成、回读受理与派发。
+新合约沿用原始签名、完整性字段和 canonical 摘要计算，schema 精确为 runtime-contract@2，并新增 types、roles、effects 三个以 id 为键的闭集对象；effects[id] 可声明 allowed_programs（{program, address_prefix?}），放行声明程序的静态主机命令。types[id] 包含 declaration（共享 DeclaredParameterType，catalog_type 必填），可声明 address_kind（共享 TypedAddressValue 的 kind）、数值/长度上下界、values 或 literal；roles[id] 包含来源 source，地址用途须显式给 bed_member 布尔值；effects[id] 包含 source、roles、每计划调用预算 budget，以及按需明确的完整 commands、allowed_literals、command_roles（signature、零基 position、role）。每个启用条目的 typed_authority 给 source、parameters[name]={type,role} 和 effects id 列表。allowed 项的 unsupplied 列出永不传入的可选参数：这些名字不计入个数，也不要求类型和角色；授权里若仍写了它们，照常接受。计划写入这些参数则拒绝。必需参数不能列入该名单。来源均为结构化 Ground 引用，作为合约作者声明保留，不冒充设备观察。合约身份仍覆盖全部字段。旧合约只核原身份，authority=null，一律未核对并阻止生成、回读受理与派发。
 
 设备命令由 Hub 提供锁定根的完整 commands@1 目录，复用 FAMX 的同一套精确语法从计划命令解析出 CommandIdentity，不要求自然语言用例或模型预先提供身份。逐词核路径，参数按树声明类型完整消费；不接受缩写、前缀、散文抽取或文本折叠。case_index 若有 data.command_identities，则从相同知识根按 document/node 精确取出，并额外核计划身份一致；畸形声明记未知。模型额外交身份时也核一致，不能代替原生目录。身份比较忽略 raw 的展示差异，但逐参数重核 raw 与 parsed 一致；显式替换仅改变已声明地址参数，保持根、签名和类型出处。普通字符串和期望正文不扫描地址；掩码/前缀按其声明语法核验，不按网络形状猜用途。替换源必须来自冻结类型化参数，目标须在自动化测试环境/本血缘租约中。
 
-派发允许集合来自方法、角色闭集、完整命令/字面效果允许集合及预算。denied 字段和拒绝词表已经退役；host_shell 另保留已声明的静态 POSIX 子集语法限制（无扩展、管道或重定向）。同一检查用于计划、客户端生成、独立工作簿回读和派发前重核；工作簿生成器升至 @3，旧记录不改写，新合约须重绑后生成新运行及新制品。缺事实时由当前运行者请求合约发布管理员补声明或绑定命令索引，按 Hub 具名补证请求继续。本次续接未运行验证。
+派发允许集合来自方法、角色闭集、完整命令/字面效果允许集合及预算。denied 字段和拒绝词表已经退役；host_shell 另保留已声明的静态 POSIX 子集语法限制（无扩展、管道或重定向）。同一检查用于计划、客户端生成、独立工作簿回读和派发前重核；工作簿生成器升至 @3，旧记录不改写，新合约须重新绑定后生成新运行及新制品。缺事实时由当前运行者请求合约发布管理员补声明或绑定命令索引，按 Hub 具名补证请求继续。本次续接未运行验证。
 
 新合成样例见 examples/runtime-contract-v2.json、runtime-profile-v2.json 和 command-identities-v2.json；类型/角色/效果引用逐字对应 typed-authority-source.json 的实际摘要，命令签名对应 command-tree-v2.xml 的实际摘要。它们是示例资源，不是已执行或已验证的结果；旧合约与旧工作簿夹具字节保留。
 
@@ -191,7 +273,7 @@ samples are not evidence of completed remediation and this work-in-progress tree
 
 计划身份可选声明（3.2.2）：plan 的 command_identities 通常省略，默认样例和客户端指令都不要求模型构造原生类型值。只从 steps 的设备命令行及锁定目录解析身份。模型主动交声明时，commands_known 核其结构和完整身份集合，一致才受理；错误提示允许删除可选声明重交。模型声明不进入 contract_shape、地址和期望的共同前置校验；用例本身的明确身份声明仍单独核一致。合成 Hub 回归在没有用例身份槽和模型身份声明时完成计划、客户端工作簿生成、后继回读并满足全部要求项。
 
-显式模型期望（3.3.0）：expects 可写 `{text, quote, after, basis:"model_judgment", rationale}`。basis 来自生成合约 expectation_basis 闭集，rationale 必须非空。quote 的引用必须完全等于本次被判对象中该用例期望节点的冻结引用，其文字逐字来自该节点；标题、步骤、其他用例、外部来源和判据 rec: 均不能代替。期望节点身份由现有用例结构解析在投影时固定，不按词语或标记猜类别。text 由模型选择设备可观察的检查文字，仍须满足单行、profile/原合约取值规则和 after 指向设备或主机步骤；Hub 不判断选择是否正确。省略 basis 时仍执行原来的引文片段规则，W10 的 expected 来源和独立复核规则不变。
+显式模型期望（3.3.0）：expects 可写 `{text, quote, after, basis:"model_judgment", rationale}`。basis 来自生成合约 expectation_basis 闭集，rationale 必须非空。quote 的引用必须完全等于本次被判对象中该用例期望节点的冻结引用，其文字逐字来自该节点；标题、步骤、其他用例、外部来源和判据 rec: 均不能代替。期望节点身份由现有用例结构解析在投影时固定，不按词语或标记猜类别。text 由模型选择设备执行后实际会输出、能在设备输出里逐字找到的一行原文，对应原始期望及选择理由写入 rationale；仍须满足单行、profile/原合约取值规则和 after 指向设备或主机步骤；Hub 不判断选择是否正确。省略 basis 时仍执行原来的引文片段规则，W10 的 expected 来源和独立复核规则不变。
 
 Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽位指针记录模型主张，绑定真实提交声明的模型、提交摘要及记录；basis、rationale、quote、text、after 一并保留。机械核验仍是事实，模型选择单独记判断，expected_grounded 显示“满足（判断）”，并标“以判断为前提”。工作簿字节逐行回读保持机械事实；生成配方摘要绑定完整期望形状及冻结期望节点。派发冻结相关必需项中的模型前提，设备 PASS/FAIL、各轮和回注结果继承限定及原判断；旧或无效前提不能被静默丢弃成无限定放行。Hub 不调用模型。
 
@@ -199,11 +281,21 @@ Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽�
 
 `runtime-contract@2.effects[id].command_scope` 是锁定命令树路径前缀的闭集，例如 `/commands/demo/pool` 与 `/commands/no/demo/pool`。按完整路径段匹配；`pool` 不覆盖 `poolish`。`commands` 可以省略；同时声明时与范围取交集，显式空数组仍是不允许。没有两种声明时设备 CLI 不获授权。所有命令先由原有锁定语法完整解析为唯一 CommandIdentity，参数类型、原始角色、地址用途、bed_member 和预算继续逐项核对。见 `examples/runtime-contract-scope.json`。
 
-产品包的 `command_policy` 随知识组成冻结，再随运行传入检查；不是模型槽位，也不读取后来换版的产品声明。`read_only` 只取声明的路径范围；其余设备命令须有规则映射的逆操作。规则映射 source_prefix 到 inverse_prefix，保留剩余路径与前导参数；`leading_parameters` 可明确给出数量，省略时须由已完整解析的逆签名唯一确定。缺规则或有歧义时保持未知并请求产品作者补声明。清理是 steps 的末尾连续段，显式 `cleanup:true`，同设备按主段改动的逆序对应；逆操作本身也必须通过锁定树、合约范围、类型和角色核验。目录只取计划实际命令与冻结作者片段的路径，不展开整个 `/commands`；逆路径存在性由计划中完整解析的清理命令证明。
+产品包的 `command_policy` 随知识组成冻结，再随运行传入检查；不是模型槽位，也不读取后来换版的产品声明。`read_only` 只取声明的路径范围；其余设备命令须有规则映射的逆操作。规则映射 source_prefix 到 inverse_prefix，保留剩余路径与前导参数；`leading_parameters` 可明确给出数量，省略时须由已完整解析的逆签名唯一确定。缺规则或有歧义时保持未知并请求产品作者补声明；规则推出的逆路径不在锁定树里时也一样，那条清理没有计划写得出。清理是 steps 的末尾连续段，显式 `cleanup:true`，同设备按主段改动的逆序对应；逆操作本身也必须通过锁定树、合约范围、类型和角色核验。目录只取计划实际命令、冻结作者片段和它们声明的逆命令的路径，沿确切的边走，不展开整个 `/commands`。声明的逆命令有两种：前缀规则推出的（`no …`），和互逆对的同级命令（`x on` 与 `x off`、`enable` 与 `disable`；枚举参数形式的互逆在命令自己的定义里，不用另取）。互逆对的同级命令只取到换成配对词的那个词为止的路径，一条也不删：计划的行加这些行超过 128 条，或所选条目超过 512 条、1 MiB 时，选择按超限处理，Hub 记缺所选命令目录并请拆分计划后重核，不会在读不到配对命令的目录上判计划没有清理义务。前缀规则推出的命令放不下时一条也不取，这时逆路径存在性由计划中完整解析的清理命令证明。check-plan 把下载目录的 knowledge/nodes.jsonl 当作冻结根的命令树，用同一个选择函数（checks.json 的 `catalog_select`）和 Hub 的同一套走法、同一组限制取检查拿到的目录（`functions/catalog-selection.ts`，`catalog-selection.test.ts` 逐条对照 `hub/knowledge/catalog-selection.ts`），不再把整棵命令树交给检查；所以同一计划的清理义务本地与 Hub 判断一致。
 
 作者片段按原有完整行语法解析，不截散文。出现次数按定义身份（来源根、完整路径、签名引用）计，不把参数值当成必须保留的文字；计划仍须独立核参数。可以改参数，不可以删命令：同一定义的执行次数至少等于作者次数，清理段不充数，缺失次数写入阻断结果的 `data.obligations` 并随结果留存。工作簿生成、独立核验、派发前检查共用这些边界。
 
 容量来自冻结 profile 的显式 ordinal 与自动化测试环境同类型设备计数，不读对象名中的数字。设备座位还不超过冻结的预检设备数；主机映射若声明 ordinal，也按其类型计数核对。越界时投影整份拒绝，写明“框架取不到那台设备，整卷不跑”，没有部分工作簿。旧根缺产品规则时设备计划保持未知，需升级产品包并重新育苗，不能从命令文字猜只读/修改。
+
+### 持久化通道：执行顺序与互斥组合
+
+产品的 `command_policy` 可声明 `persistence_channels` 和 `forbidden_combinations`，以锁定命令树的路径和可选参数位置说明哪些命令留下状态、哪些命令不能同时使用；`source` 保留手册原文。没有声明时保持原有行为。本包不带产品的真实声明。
+
+`functions/channels.ts` 按已解析的命令身份读规则。留下状态的用例排到自动化用例 Excel 最后，其余顺序保持；生成器、独立读取器和交付工具用同一顺序，并保留调整顺序的用例和依据。
+
+`commands_known` 拒绝一个自动化用例同时含互斥命令；`generate-workbook.ts` 在写文件前检查跨用例冲突，`workbook_verified` 再拒绝两侧用例，说明用例、命令和手册依据。这份 Excel 不进入上机验证。
+
+参考方法是 InfoTest `persistence.py` 的 `case_channels`、`order_volume`、`coexist_violations`；本实现按命令树结构读取。测试位于 `functions/channels.test.ts`、`tools/volume-order.test.ts` 和技能模块的 `command-policy.test.ts`。本次只执行第一个测试文件，5 项正确、0 项错误、0 项跳过。
 
 ### 公开线的互逆与触发核对（3.8.7）
 
@@ -260,13 +352,13 @@ use the frozen bed interfaces and declared capability, not keyword inference or 
 
 恢复到捕获值要求 CAPTURE 在所关联配置之前、同一设备、清理段逆序且完整使用该寄存器。它只能经合约明确声明的 guarded restore 方法：运行器必须在发送前核验插值后完整命令的锁根语法、效果范围与参数角色。普通 cmd_config 的 `{}` 不能当作已知命令放行。现有运行器不具备该守卫时计划保留 unknown，并给执行器维护者补能力、重新发布合约/profile 的出口；不在核心增加设备语义，不默默打开真实执行器。
 
-R03：每个新断言绑定期望身份、逐字 quote 与显式类型（字面/次数/捕获关系）。描述性期望不能直接当检查文字：需要模型提出类型化判据及理由，再以独立复核的 Hub 记录接入；上传的自述 review JSON 无效。复核阶段放在本目录的独立阶段声明中，复用现有只读前驱和账号独立核验；主包同时核绑定的复核运行快照与结果，防止拿无关前驱伪造独立性。既有 W10 期望来源角色规则不变。
+R03：每个新断言绑定期望身份、逐字 quote 与显式类型（字面/次数/捕获关系）。否定结果用 `not_found`，不另立判据；其它描述性期望不能直接当检查文字，需要模型提出类型化判据及理由；2026-11-16 起不要求独立复核（见“Model-written checkpoints”一节），绑定了复核的仍按本段核实；上传的自述 review JSON 无效。复核阶段放在本目录的独立阶段声明中，复用现有只读前驱和账号独立核验；主包同时核绑定的复核运行快照与结果，防止拿无关前驱伪造独立性。既有 W10 期望来源角色规则不变。
 
 W06：本用例全部期望节点有稳定引用身份；每条都映射到断言或显式 unmet（缺事实和下一步），遗漏是未履约，不能只核模型挑中的节点。unmet 不当作满足或可派发。W07：前置、因果边、交互应答者由模型显式声明（无此类前置也要明确空表），代码只核来源、引用图与顺序；缺声明 unknown，矛盾 refute，不通过搜索正文猜前置或应答者。
 
 新运行器能力默认关闭，checkpoint_two_argument、寄存器 H/I、捕获恢复与 found_times 必须来自完整合约的结构字段及本轮 profile 允许组合。工作簿生成和独立回读都核 E/F/G/H/I、输出指向和寄存器定义使用关系；身份配方绑定原始块计划、全部作者期望及最终展开。旧计划不被强行套进新的块语言，不因此承诺它已有块级表达能力。
 
-字面声明的结构依据：新块读取作者期望节点 data.assertion 中的 op/literal/count；原文没有这组明确声明时，不通过词语判断“是不是描述性”，而是保留 unknown，要求模型提出带引文的类型化判据并经独立复核。旧 flat 语言继续按其已发布的字面 text 规则，不宣称它已经具备块语言的判据能力。
+字面声明的结构依据：新块读取作者期望节点 data.assertion 中的 op/literal/count；原文没有这组明确声明时，`not_found` 按否定结果检查，其它算子保留 unknown，要求模型提出带引文的类型化判据（2026-11-16 起不要求独立复核），不通过词语判断“是不是描述性”。旧 flat 语言继续按其已发布的字面 text 规则，不宣称它已经具备块语言的判据能力。
 
 复核阶段发布目录是本目录的 review/，id=case-compile-criterion-review；先用其 api.ts stage/publish 并分配给独立复核账号。作者提交判据后共享该运行的只读视图，复核者以原声明运行为 predecessor 绑定原提交和 evidence；主包绑定该复核的真实 run 快照与 validation 结果，核实际前驱相等及账号独立标记。此阶段不会修改旧 W10 或核心角色规则。
 
@@ -274,15 +366,15 @@ W06：本用例全部期望节点有稳定引用身份；每条都映射到断�
 
 重组独立于评审和编写：模型提交 recompose-record@1 三元契约、来源状态和四本账；工作包只核结构、全集、声明、来源及凭证。编写显式绑定重组的实际运行和已受理结果，不能用评审记录或原件 steps/expects 代替。旧 flat 计划路径保留。
 
-四项实现口径：①现有全局词表没有等价的知识位置三值；局部工作语言闭集写在 tables/recompose-format.json，不借用含义不同的全局枚举。②R05 使用现有逐条提交、分区和追加记录：完整节点清单冻结，允许分片提交，每次从实际全集重算缺案，封批要求无遗漏、无重复且所有要求项满足；后版须以同一来源身份的旧运行作 predecessor，禁止跨来源冒接。③R03 接 B1 的 criteria/obligations：重组期望位保持原件身份，可携 criterion_id，编写期仍由 B1 核算子、引文与独立判据复核，不把重组方法当设备事实。④只用 recompose-sources@1，废弃误拼的 recompute-sources@1；与仓库既有 schema 无冲突。
+四项实现口径：①现有全局词表没有等价的知识位置三值；局部工作语言闭集写在 tables/recompose-format.json，不借用含义不同的全局枚举。②R05 使用现有逐条提交、分区和追加记录：完整节点清单冻结，允许分片提交，每次从实际全集重算缺案，封批要求无遗漏、无重复且所有要求项满足；后版须以同一来源身份的旧运行作 predecessor，禁止跨来源冒接。③R03 接 B1 的 criteria/obligations：重组记录里每条期望的判断依据保持原件身份，可携 criterion_id，编写期仍由 B1 核算子、引文与独立判据复核，不把重组方法当设备事实。④只用 recompose-sources@1，废弃误拼的 recompute-sources@1；与仓库既有 schema 无冲突。
 
-发布单元均在本目录：authority/（recompose-authority，产品声明凭证）、recompose/（recompose，独立重组）、adjudicate/（recompose-adjudication，独立原子裁定）。管理员一次性绑定实际产品包发布记录、发布授权和与清单 SHA 相等的 product.json；从产品生产器 params.recompose 中读 recompose-product@1 声明，再把已受理来源凭证分享给执行者。工作包没有默认规范来源排序，模型的 product-declared 字样不构成权威。普通执行者绑定可共享的真实 Hub 快照和结果，不需要管理员读所有原件。当前产品没有声明时，等待产品包作者补声明并重发。
+发布单元均在本目录：authority/（recompose-authority，产品声明凭证）、recompose/（recompose，独立重组）、adjudicate/（recompose-adjudication，对每条用例原句的独立裁定）。管理员一次性绑定实际产品包发布记录、发布授权和与清单 SHA 相等的 product.json；从产品生产器 params.recompose 中读 recompose-product@1 声明，再把已受理来源凭证分享给执行者。工作包没有默认规范来源排序，模型的 product-declared 字样不构成权威。普通执行者绑定可共享的真实 Hub 快照和结果，不需要管理员读所有原件。当前产品没有声明时，等待产品包作者补声明并重发。
 
-节点资格由 compile-structure@1 声明：autoid 与原始 auto 值按完全相等闭集；未声明标记单独报告，不按标题或自然语言判断。深度由层级和声明参数核对；嵌套用例及混合布局保留为未判定条目。两种布局共用同一结构投影：用例自身动作+直接叶期望，或标题/动作/叶期望；编号、行和方括号定位是声明的语法，原文字节不改。没有作者定位的多动作/多期望不强配，未绑定原子单列并给作者补定位出口。
+节点资格由 compile-structure@1 声明：autoid 与原始 auto 值按完全相等闭集；未声明标记单独报告，不按标题或自然语言判断。深度由层级和声明参数核对；嵌套用例、没有任何子节点的用例和与结构不符的 compile_layout 保留为未判定条目。三种布局共用同一结构投影：用例自身动作+直接叶期望；标题/动作/叶期望；标题加动作树（步骤可一层套一层，动作下的叶子是它的期望，步骤旁的叶子是没有期望的动作）。优先级等于 precondition_priority 的叶子在三种布局里都是前置，落成没有期望的动作。值为空的 autoid、auto 键等于没有声明；编号、行和方括号定位是声明的语法，原文字节不改。没有作者定位的多动作/多期望不强配，未绑定的用例原句单列并给作者补定位出口。
 
-覆盖分母是结构投影的作者原子全集，不采信模型 author_atoms 自报；mapped/unmapped 由代码与全集双向比。原文账只存逐字原子，释义另留说明。适配 action 为声明操作，commands 为完整命令行，按锁定树比较定义身份及次数；等价理由附声明引用。实际参数变化按产品声明的语义角色核 load_bearing，未能机械判定的语义由独立裁定提出且带逐字引文。具体化只接作者/规范来源/目录声明的值，缺来源或权限一律未知，点名产品包作者或重组者及提交前时点。
+覆盖分母是结构投影得出的用例原句全集，不采信模型 author_atoms 自报；mapped/unmapped 由代码与全集双向比。原文账只存用例原句的逐字内容，释义另留说明。改写项的 action 为声明操作，commands 为完整命令行，按锁定树比较定义身份及次数；等价理由附声明引用。实际参数变化按产品声明的语义角色核 load_bearing，未能机械判定的语义由独立裁定提出且带逐字引文。具体化只接作者/规范来源/目录声明的值，缺来源或权限一律未知，点名产品包作者或重组者及提交前时点。
 
-床无关按类型与来源判定：重组输入不读取 inventory；账本结构不允许物理床、座位或设备字段，具体化的来源闭集不含自动化测试环境，重组阶段 rebindings 为空。不会拿床名词表扫散文，也不会因作者原文地址恰好与某床相等就改写原文；散文是否带入物理语义由带引文的独立裁定披露。对两床运行同一产物，字节及结论必须一致。物理替换仅在编写阶段的类型化 replacements/重绑定账执行。
+床无关按类型与来源判定：重组输入不读取 inventory；账本结构不允许物理床、座位或设备字段，具体化的来源闭集不含自动化测试环境，重组阶段 rebindings 为空。不会拿床名词表扫散文，也不会因作者原文地址恰好与某床相等就改写原文；散文是否带入物理语义由带引文的独立裁定披露。对两床运行同一产物，字节及结论必须一致。物理替换仅在编写阶段的类型化 replacements 与用例参数替换中执行。
 
 孪生文件入库迁移：原示意中的占位引用、释义原文账、本机路径和自述裁定改成可核引用与合成凭证；四种预期状态不变。原 README 中的真实名扫描模式不作为数据复制。检查脚本改写为 TypeScript，使用已安装技能的解析接口，不恢复核心默认 KityMinder。
 
@@ -292,7 +384,7 @@ R05 首版采用单个冻结任务集合、逐案草稿和无损客户端汇总�
 
 B2 所需平台机制仅有通用只读运行上下文（实际 run、predecessor、冻结 product_pack_digest）及默认关闭的 incremental_submissions。后者只让保留已有全部材料、首次填空槽且仅有 unknown 的要求项不计修复；删除、替换、换模型或真实违反仍沿用原预算。旧工作流默认不启用。公共运行摘要不暴露私有锁字段，历史记录不回填产品包摘要。
 
-补充结构口径：标题/步骤布局把标题也保留为意图原子；未编号多行期望不切碎，编号与方括号标签按原样文字匹配，大小写或前导零不归一化。唯一层级父动作可以绑定无冲突的期望标签；存在冲突显式动作引用、多动作未定位或未知角色时单列未判定。span 是解析后文字的 UTF-16 代码单元位置；原始字节及解析器身份仍由 Hub 原件/引用机制保存。
+补充结构口径：标题/步骤布局把标题也保留为意图用例原句；未编号多行期望不切碎，编号与方括号标签按原样文字匹配，大小写或前导零不归一化。唯一层级父动作可以绑定无冲突的期望标签；存在冲突显式动作引用、多动作未定位或未知角色时单列未判定。span 是解析后文字的 UTF-16 代码单元位置；原始字节及解析器身份仍由 Hub 原件/引用机制保存。
 
 legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代表重组完成”。新客户端使用 pipeline=recomposed，缺真实重组凭证时全部后续核验保持未知，不允许拿 flat steps/expects 或评审回执冒充重组受理。
 
@@ -301,6 +393,595 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 地址入口统一先用 readSlots 解析作者计划：原始 blocks 中步骤数组为空，也必须展开为同一套类型化调用。观察、配置、显式清理与 RESTORE_FROM 的已声明参数逐个进入现有角色、bed_member、床接口/本血缘租约与触发可达规则；完整命令按锁定目录解析后，其类型化地址参数也进入同一检查。位置保留 /data/blocks/<序号>/call/...，角色违规的首要位置同样落回对应块。普通文本与捕获原文不扫描，不按 VIP、方法名或文字推地址用途。
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
+
+### 3.11.1: the auditor's rules and the long literals' lengths are in the brief; a tool merges the verdicts
+
+Three things the first real audit showed (run 19). The session under audit typed the auditor's rules into each task description:
+verbatim the first time, paraphrased the second, and by the third with sentences that named the verdict ("…判 preserved"); the
+reference engine's auditor has fixed instructions the authoring side cannot touch. The rules are now part of the brief (and so of
+its digest), and the task description is one fixed sentence that names the brief files. An auditor counted an expanded
+253-character name as 249 and returned a false "changed"; the brief now states the measured length of every literal of 32
+characters or more (`literal_lengths`, with the length of each dotted label). The model merged seventeen verdicts into the case
+files by hand and one reached the Hub with the verdict of an earlier plan; `tools/fidelity-apply.ts` merges a verdict only when the
+brief it answered is still the plan's, writes the digest itself and says before submitting what the Hub would send back.
+`tools/fidelity-brief.ts` keeps one brief directory across repairs and lists only the briefs to audit: a brief and its verdict carry
+the first eight digits of the brief's digest in their names, so an unchanged plan keeps its verdict, a changed plan gets a new brief
+file, and nothing is overwritten or renamed. The Hub's check is unchanged apart from the brief's content.
+
+### 3.11.2: the device method, the caret, and the wait, each the reference engine's way
+
+Run 19 closed one case after three rounds on the same device answer: a command typed with the method for the other prompt, the
+device's lone caret under its first word, read as the bed lacking a configuration; and the model spent 3550 seconds asleep in
+guessed blocks, 13 minutes of them after the last job had ended. The reference engine has a mechanism for each, and none was here.
+
+- **Method.** Its block compiler lowers every device configuration and observation to one method and leaves the model no
+  choice (`main/case_compiler/blocks.py`); the bed's existing scripts send observations the same way. Step 2 of SKILL.md now says
+  that a device step, configuration or observation, uses the method the runner contract declares for that device's output
+  (`runtime.block_model.output_methods`). It is an instruction, not a check: the reference engine's generic step may still name
+  any enabled method.
+- **Caret.** Its one mechanical pre-judgement of a failed case is the device's syntax rejection
+  (`fail_attribution.attribute_fail`: the command was not accepted, fix it first, later failures in the case mostly follow).
+  `functions/delivery.ts syntaxRejections` reads it by position: a session line holding only a caret, the echoed command on the
+  line directly above, the word under the caret (when the echo carries no prompt) and the prompt the command was typed at (when
+  that line is within eight lines above). `tools/download-returns.ts` lists them per row as `syntax_rejected` in `index.json`,
+  empty when the row's sessions have none, and counts them in its last line. Replayed over run 19's three failed dispatches it
+  names that one case each round and nothing in the other twenty-one failed returns. The device's help at the caret position,
+  which the reference engine also attaches, needs a device read the Hub does not have and is not ported.
+- **Wait.** Its run tool returns when the bed has finished; the model makes one call. Here the Hub runs the job in its own
+  process, sends the client nothing when it ends and asks for the submission to be repeated, and the skill's local tools had no
+  way to wait. `tools/download-returns.ts --wait <seconds>` reads the Hub's job list every 20 seconds until every job of the
+  run has ended, then writes the returns and prints the verdict counts; a read that fails on the way is tried again, a run that
+  shows no job for five minutes is reported as not dispatched, and at the limit nothing is written. Started as a background
+  command, the client tells the model when it exits. The Hub is unchanged.
+
+### 3.11.3: a syntax rejection is not a defect candidate
+
+Run 19 delivered one case as 声明与设备行为冲突（待仲裁） on the caret under a command typed at the wrong prompt: both quotes of its
+candidate verified verbatim, so `closeFailed` took it. The reference engine does not: a lone caret is its grammar-layer fault named
+by program, and a defect candidate "represents a signed expected-vs-device-actual product finding, not a grammar, environment,
+transient, or engine fault" (`submit_attribution`); a product claim needs the author's scenario realized on the device, and a
+command the device did not accept was not. `closeFailed` now refuses a candidate for a case whose last device output holds a
+syntax rejection (`syntaxRejections`), naming the commands; the case goes on to its rounds and at the cap closes as the model not
+finding a solution. The reference engine can still tell a wrong form from a command the build lacks, by asking the device for help
+at the caret; without that read here, such a case is not claimed as a product finding.
+
+### 3.12.0: a command's access level against the prompt its method sends at
+
+The first of three items the owner handed over on 2026-11-10 from the statistics of runs 16 to 19: stop before dispatch what a
+deterministic check can know. Thirteen commands in those runs were answered with a caret, all of them commands of one access
+level typed with the method of the other prompt; the head, the argument count and the types were right each time, which is
+what the locked-tree parse already checks. Three facts decide it, each with its owner:
+
+- the locked tree's level for the command (`CatalogSignature.access`, from the product pack's parser);
+- the runner contract's declaration, with evidence, of the levels the prompt of a method refuses
+  (`refused_access`: `{ source, sha256, rows: [{ object, method, access: [level…] }] }`, a runtime-contract@2 addition that leaves
+  the pinned identity alone; a row for a pair the contract does not enable is refused as stale);
+- the plan's step, which names the object and the method.
+
+`functions/plan-commands.ts accessRefusal` refuses a device command only when all three are there and the level is in the
+method's row; the message names the level, the method and the device methods of the same object without that refusal. A
+signature without a level, a method without a row and a level the row does not list are not checked: only refusals with
+evidence are declared (the same commands' level typed at the other prompt was accepted every time, and two more levels of
+the tree have no evidence either way), and nothing is read from a method's name. The refusal is a plan error
+(`method_forbidden`), not a missing fact. The reference engine has no such check because its compiler leaves the model no
+choice of method; SKILL.md step 2 states that rule for authoring since 3.11.2, and this makes it mechanical.
+
+### 3.12.1: "the repair rounds were used up" is the run's counter, not a reason on one requirement
+
+Since 3.11.0 a case that never went to the bed closes as the model not finding a solution when the Hub left its plan without an
+accepted version after the repair rounds, as the reference engine closes a case whose authored attempts were all refused at its
+cap. `missingFactOf` read that from a requirement layer whose reason is `repair_exhausted`. The Hub writes that reason on a
+requirement that has no repair rounds of its own (the plan slot) the first time an item is handed in as skipped: in run 20 a case
+declared skipped in the first submission, with both rounds unused, already carried it, and would have closed without one authored
+attempt. The tool now also requires the result's own counter (`rounds.used` not below `rounds.max`); a case handed in as skipped
+while rounds are left goes back to authoring, as the reference engine's rule says of a written claim.
+
+### 3.12.2: a dropped pass is reworked like a failure, and a declared skip is never an authored attempt
+
+Run 20 delivered twelve cases and showed three places where the closing rules let a case end short of the reference engine's.
+
+- **A pass the pass review drops goes back to its author.** The reference engine downgrades a pass whose log carries an
+  execution-failure marker its assertions do not read when it reads the verdict (`tools/device/batch_tools.py`: `broken`,
+  subtype `errored`), and `compile_engine/nodes.py` `author_redispatch_disposition` sends failed, contradicted and
+  broken-errored cases back to the author under the one round cap. Here the review ran only when the delivery was assembled
+  and the closing rules looked at failed cases only: a case passed twice by the runner's word, was dropped at the end, was left
+  out of the pass volume and handed over as 上机没有结论 after two authored versions. Now `closeFailed` treats a case whose
+  latest verdict is a dropped pass as it treats a failure (three rounds, or a verbatim defect candidate), a round is a distinct
+  plan that failed or whose pass was dropped, and `tools/download-returns.ts` applies the same review when it writes the returns:
+  such a row is listed as `no_verdict` with `runner_verdict` and `pass_review` (where, line), and the printed verdict counts use
+  it. Both tools read the markers and the assertions through one function (`passReviewInputs` in `tools/generate-workbook.ts`).
+  A plan run that cannot be read leaves its passes as the runner reported them and says they were not reviewed. Replayed over
+  run 20's own files, the case is listed as no verdict when its second dispatch is read, an hour and a dispatch earlier.
+- **A declared skip is never an authored attempt.** 3.12.1 asked for the run's round counter beside the `repair_exhausted`
+  mark; the counter is the run's, and in run 20 the other item of the plan run used a round while the case was declared
+  skipped in every submission. The Hub's record tells them apart (the skipped item's entry carries `skip_reason`, its other
+  requirements the reason `declared_skip`), and `missingFactOf` now reads that: only an item handed in as an authored plan
+  and refused until the rounds were used up closes as the model not finding a solution.
+- **The refusals say what to look at.** When no dispatch counts as a whole-volume pass because the review dropped a pass, the
+  refusal names the case and the line; a notes file that is not valid JSON is named with the place and the text around it
+  (it was answered with the shared reader's sentence for a run input, which told the model to export something).
+
+### 3.12.3: two answers given when the model hands something in
+
+Both come from run 20 and follow the reference engine's timing and words.
+
+- `tools/submit-plans.ts` states the closing rule under the Hub's receipt for every case handed in as skipped, as the reference
+  engine answers a case's exit when it is filed ("a free-text claim that the bed lacks data, certificates, topology, or a
+  helper is not a terminal credential. Continue authoring the case as written"). The receipt calls the plan slot of a skipped
+  item "修复轮数用完" with no round used; the model read that as settled and left the case out for the whole run, and the rule
+  reached it only when the delivery was assembled.
+- The message for a configuration command whose inverse is not in the locked tree carries the reference engine's two ways out
+  (`mechanical_case_gate.py`, `missing_teardown`): an equivalent construction with an object-scoped teardown first, the gap
+  reported only when there is none. It said only that the product pack's author has to declare the inverse, and two cases
+  stopped there, one of them on a command the model had put in place of the author's.
+
+### 3.12.4: a command the author named stays in the plan, even when the author wrote no arguments
+
+"可以改参数，不可以删命令" counted only author lines that parse as a whole command of the locked tree. An author's line that is
+a bare command, or a command followed by a description, parsed as nothing and left no obligation: in run 20 a case's author
+wrote a two-word command with no arguments, the plan sent a neighbouring command of the same family in its place, the audit
+model judged the step preserved, and the case closed on a missing fact that only the replacement lacked. The reference engine
+reads the author's procedure on command heads (`mechanical_case_gate.py`, `author_procedure_coverage`): its resolver answers on
+the longest command head whatever the arguments, and an occurrence whose first argument is a description is counted on the head
+alone ("adaptation may rewrite a command's arguments, never remove the command").
+
+`namedCommand` (`functions/command-obligations.ts`) finds, for an author's line that is no whole command, the longest command
+of the locked tree whose words start the line, when nothing follows or what follows is not ASCII. The plan owes that many
+commands of the same path beyond the occurrences the author wrote out in full; a command of another path does not serve.
+Two differences from the reference engine, both on the lenient side: a bare head is counted on the command alone (the
+reference engine holds it to an occurrence written out in the adapted steps), and an occurrence with a literal first argument
+that does not parse as a whole stays uncounted (the reference engine also compares that argument). The Hub's catalog selection
+already reads the author's lines along exact tree edges, so the named command's entry is in the catalog the check receives.
+Replayed over run 20: none of the 53 accepted case plans has such a line; the one case that replaced the author's command is
+refused.
+
+### 3.16.0: device command lines through the declared device methods, a read window for a long command
+
+Run 23, case 16 (a configuration sync between two units), dispatches 3 and 4. The plan configured the peer unit with the
+configuration method and later observed it with the enable method. While the sync ran, the device moved the peer's session out
+of configuration mode by itself ("***System is busy. No longer in config mode. ***"). The runner's enable method keeps its own
+record of the mode and, believing it was still in configuration mode, sent `exit` first; at the enable prompt that logs the
+session out (lib/apv/apv.py cmd_enable; the same `exit` ended a manual session at that prompt). Every later command on the
+peer timed out, the case's own cleanup of the peer and the runner's cleanup of it were never sent (the runner's cleanup runs over
+the same session, so no cleanup rule could have reached the device), and the peer kept its HA and sync settings twice. The
+configuration method does not have this problem: when its output shows the enable prompt it takes configuration mode back and
+sends the command again. The plan also waited a fixed 120 seconds after the sync command while the sync took about 165.
+
+The reference never leaves this choice to the writer: its block compiler lowers every device configuration and observation to
+the configuration method (main/case_compiler/blocks.py, "观测走 cmd_config"; the bed's own scripts call it 217,600 times against
+9 calls of the enable method, all `no page`), and it gives a long device step an explicit read window on that method only
+(`timeout_s`). The contract already says the same for the block form: its device output methods are the configuration methods.
+Now a flat plan follows that declaration (`functions/plan-commands.ts deviceMethodRefusal`): a device command line sent with a
+method the contract does not declare for that object's output is refused before dispatch, naming the declared methods the bed
+profile allows for device command lines there. A contract without that declaration is not checked. SKILL.md says to use those
+methods and to give a long device command its read window (the method's `timeout`, within the profile's `max_wait_seconds`)
+instead of a guessed wait. The closing procedure says that a device whose session was lost mid-case did not get its cleanup,
+that the batch note names it, and that, as the reference's bed check does on residue, the next volume waits until the bed is
+checked and the user is told.
+
+The bed's cleanup script is not changed. Its rule for HA (`clear ha all`, with no `ha off` before it) is refused while the unit
+is still in its domain, which matters only on a live session when the plan left HA on; a plan's own cleanup turns HA off, and the
+device's refusal is listed by program since 3.15.0.
+
+### 3.15.0: a parameter's value within the manual's statement, authored negatives, commands the device refused
+
+Run 23, one mind map, three dispatches. One case configured a host name with a character the manual's row for that
+parameter excludes; the device answered "format error" and its verdict line each time, the case was reworked twice without
+changing the name, and it was heading for a defect candidate. The row was not in the locked root (the product pack dropped
+block-style table cells, fixed in the product pack 1.7.49) and nothing put a parameter's row beside its command. Another case
+kept the author's negative outcome as a sentence in `text`, which the runner searches for word by word, failed on it twice,
+and then passed by dropping the check, which the Hub accepted because the expectation still had assertions.
+
+What the reference does, and what this version carries over:
+
+- **The value domain beside the command.** The reference hands its writer, for each argument position, the tree's contract
+  and "the value domain in the vendor's own words" from the manual (`lang_query kind=param`); its program rejects on type,
+  arity, integer range and closed enumerations and leaves a string's characters to the writer's judgement of that text. The
+  authoring brief now lists under each command the manual rows that state its parameters, word for word with their
+  references (`functions/authoring-brief.ts parameterRows`; the rows carry `data.parameter` from the product pack). SKILL.md
+  says a value must lie within that statement; a step of the author that needs a value outside it while expecting success is
+  a conflict between the author and the manual and goes to the user (the reference settles such conflicts before a device
+  is touched); a case that tests an invalid input keeps it; and a value only the device produces at run time is not copied
+  from an earlier return (reference: "never copy whatever the device happens to show right now").
+- **An authored negative is a polarity.** The reference: "a natural-language negative outcome signs semantic polarity, not
+  its sentence as a literal device-output token… do not grep the author sentence", and an expectation's polarity is
+  found or not_found. SKILL.md no longer offers a "judgement by description" (the runner has none): a negative outcome is a
+  `not_found` assertion of the block form, and the check is not dropped. The closing procedure carries the reference's rule
+  for a fix, "fixing a case keeps the signed expectations and authored scope".
+- **A command the device refused to execute is named by program.** The reference keeps one authority for a device's CLI
+  errors (the caret, and the device's one verdict line for a command that fails to execute) and gives the next writer the
+  lines of the last run that carry one, with the directive that the fault is in the case's own command sequence.
+  `tools/download-returns.ts` now lists them per row as `execution_refused` in `index.json` (session, command, prompt, the
+  device's reply up to the declared line; `functions/delivery.ts executionRefusals`), from the failure lines the plan run's
+  contract declares, the same lines the pass review reads. Over the three returns of run 23 it names the refused host name
+  with the device's reason, the sync command refused for a missing peer entry, and the two key files that did not exist.
+  The closing procedure says what to do with them, that a failure repeating after a fix that reached the volume falsifies
+  the direction (reference: re-failed after a recompile), and that a refusal of what the manual's statement excludes is a
+  conflict between the author and the manual, not a defect candidate.
+- The closing procedure says the pass volume is handed in from the same plan directory (the submission tool already leaves
+  out the items a run excludes); in run 23 the model had a subagent copy fifteen plan files one by one first.
+
+Not done here, and the owner's to decide. A hook file of the skill's own that refuses a subagent's question (a client
+that runs skill hooks arms `hooks.json` beside SKILL.md) was written and tested, but `hooks.json` at a pack's root is not a
+place the pack contract lets a pack keep a file, so shipping it needs that contract changed first; the rule stays in the
+skill text (3.14.3) and in the acceptance home's guard. And a program check of a string value against a typed domain (length, characters).
+The reference has none, and reading the manual's sentence by pattern is not allowed in this repository; the designed way is
+a model's typed claim with the manual's row quoted, verified and kept for the build, which a program then applies.
+
+### 3.14.3: when the user is asked
+
+In run 23 a subagent that reworked one case put three questions to the user through the client's question tool: which form
+of a command to write (the main session's task text named a form the locked tree does not have), which of two strings the
+task text gave, and which fragment of a name to assert on. All three were answerable from the locked tree, the manual and the
+files of the run; the owner: "这几个问题看起来都不应该是问用户的，全是自己理解的有问题，应该和infotest一致".
+
+The reference engine gives its ask-the-user tool to the lead agent alone: the definitions of its writer, attributor,
+recomposer and fidelity auditor list no such tool, and what they cannot settle goes back to the engine
+(`compile_report_underdetermined`, `engine_gap`). The tool's own text reserves it for an answer that changes what happens
+next and that no source settles (an ambiguous request, a device verdict that needs a human call, a mind map that lacks a
+field no manual or precedent supplies) and tells the agent to pick the obvious option and say so where there is a
+conventional default or a fact it can verify itself. SKILL.md now carries that rule as one paragraph, and says a subagent
+never asks: what it cannot settle goes into its report to the main agent (budget 9210). The acceptance home's tool guard
+refuses the question tool for a subagent's session with the same instruction; that guard is not part of the pack.
+
+### 3.14.2: one writer per case, all sent out together
+
+The prompt of every run since 17 asks for "每条用例的计划编写……各交给一个子代理去做", and the main session has grouped the
+cases each time. In run 22 six writers shared sixteen cases and the one that held six took twenty minutes; case 03 went to
+nobody. In run 23 the first wave was three writers for nine cases; two finished after 6 and 12 minutes, the one that held
+cases 02 and 03 was still working after 47, the main session waited for it, and the other eight cases had not been started.
+A brief makes one case cheaper to write; it does not decide how many cases are written at once.
+
+The reference engine fans its writers out in code: one brief and one writer per case, all at once up to a ceiling
+(`compile_engine/nodes.py` `_fanout_pool_size(len(_briefs_by_aid))`, `fanout_ceiling.py` `bounded_fanout`), so a hard case
+does not hold the others. Here the client's model does the sending out, so the rule is a sentence of SKILL step 2: a writer
+gets one case and its brief, all writers go out together, no case shares a writer and no batch waits for another (budget
+9060). Nothing else changes.
+
+### 3.14.1: the brief ends with the envelope of the case's plan file
+
+The Hub takes a plan as one statement in a list, `{text, quotes, data}`; `slots.schema.json` describes only `data`, and the
+one place that shows the whole file is `examples/submit-result.json`, which the skill text never named. A writer learnt the
+shape from a refusal: run 21's first plan submission had 162 schema violations; in run 22 the main session wrote its own
+template with the plan slot as an object and `bucket` beside `data`, fourteen plans copied it and all fourteen were refused,
+and its `bucket` was the words of the skill sentence instead of the bed the run's profile selects. In run 23 the main session
+spent six minutes before it started any writer reading the schema and searching `run.json` for `bucket`, item ids and receipts.
+
+The reference engine hands its writer the envelope's field-level schema (`lang_query` docs `blocks_schema`, section
+`mechanical_case_envelope`). Each brief now ends with the envelope of that case's plan file (`planEnvelope`): the item id,
+`handling`, the one statement with the case's expected sentences and their references as `quotes`, and in `data` the bed of
+the run's bound profile as `bucket`, the empty `blocks`, `replacements`, `steps` and `expects`, and `recomposition` with the
+receipt, the case id and one entry per expectation slot. Everything filled in is an identity copied from the frozen run;
+the statement's text, the steps, the expectations and each slot's assertions are the writer's and are left empty, and the
+Hub refuses an empty text, no expectation and an empty assertion list, so an unfilled envelope cannot pass as a plan. A
+test holds the envelope to the outer keys of the pack's example and to the keys the plan schema requires. SKILL step 2 says
+the brief ends with it (budget 9020).
+
+### 3.14.0: each case's authoring brief comes with the run
+
+With the root on local disk a search costs nothing, but each search is still a reply of the model. Run 22 made no `get_nodes`
+call, and its six plan writers spent 78% of their model time (49 of 63 minutes) in 208 replies that only searched, about 14
+seconds each: 91 searches for commands in `knowledge/commands.txt` (the commands the case's recomposition record already
+names, their inverse and read-only forms, their neighbours), the rest for the plan format, the bed and the manual. A writer wrote
+its first file 4 to 13 minutes after it started, and every rework round starts fresh writers that search again.
+
+The reference implementation does this before a writer starts: its engine builds each case's brief in code
+(`compile_engine/briefs.py` `build_brief`) and binds the recompose stage's command grounding to it, and the writer's rule is
+"Reuse sealed recompose grounding before querying" (`agents/compile-worker.md`): read it first, query only what it does not
+carry. `tools/download-run.ts` now writes `briefs/<index>.md` beside `items/` and `knowledge/` for every item that carries a
+recomposition record (`functions/authoring-brief.ts`; `tools/authoring-brief.ts` writes them for a directory downloaded
+before). A brief holds facts only, taken by structure:
+
+- the commands the record names: tree references anywhere in the record, and the command lines of its rewrites and of the
+  author's own lines followed word by word down the tree; each with its entries exactly as `knowledge/commands.txt` has them,
+  reference line included;
+- the inverse the product declares for each (`command_policy` of the run, in the cleanup check's own order: a declared pair
+  of sibling words such as `… on` and `… off` first, else the inverse rule with the longest prefix and its leading
+  parameters), with that command's entries, or the statement that the path the rule gives is not in the locked tree;
+- the command the same words lead to below each declared read-only prefix, when there is one;
+- the syntax line of each sibling under the same parent (40 at most) and where the parent's block starts in the text file;
+- the other nodes the record references (manual sections): quoted when short, otherwise the file, line and length.
+
+It states no judgement and writes no plan content; what it does not hold is searched for in `knowledge/` as before. SKILL
+step 2 names the file (two sentences, budget 8980). A brief that cannot be written is reported in the download's answer and
+does not fail the download. On run 22's seventeen items the briefs take 0.2 seconds and are 1 to 22 KB each. The
+recomposition stage's download is unchanged: its items are what a record is made from.
+
+### 3.13.0: the knowledge root comes with the run, once, and is read locally
+
+The design model has three knowledge interactions for a run (D06 R[2]: lock the root, fetch the subtree, verify the references
+at delivery) and says how the second goes (K05: "按包声明一次批量取回子树，Circle 按摘要缓存"; under a digest the content does
+not change, so it is not checked against the Hub piece by piece). The flow read the root page by page instead: run 21 made 126
+`get_nodes` calls in its first two hours, 97 of them command-tree subtrees and 23 manual pages, each about two minutes on the
+Hub's side, for a root whose every entry exports in under three seconds.
+
+`tools/download-run.ts` (module `hub-client` of `run-tools` 1.0.2, shared with the recomposition stage, now 1.1.3) asks
+`GET /run-export/<run>/knowledge` once and writes the locked root under `knowledge/`: `nodes.jsonl` (the Hub's answer byte for
+byte, checked against its digest), one text file per top-level node of the root (`# <path>`, its children, each entry's
+statement word for word followed by its reference) and `index.json`. SKILL step 2 names the folder; a quote is copied from
+those files with the reference under it, and the Hub verifies it at submission as before. A run that locked no root, a reader
+who may not read it and a Hub without the route leave `knowledge` null and nothing else changes. What the root does not hold
+(back-references, contributions, feeding) is still read from the Hub.
+
+### 3.11.0: the reference engine's scenario fidelity, audit and effects first
+
+Requirement `scenario_kept` (check `scenario_fidelity`, `functions/fidelity.ts`) ports the audit half of InfoTest's scenario
+fidelity (`main/case_compiler/scenario_fidelity.py`: `build_scenario_fidelity_brief`, `parse_scenario_fidelity_result`).
+`tools/fidelity-brief.ts` computes, from the plan run's frozen recomposition record and the plan as it will be submitted (length
+placeholders expanded first, as `tools/submit-plans.ts` does), a brief that lists every authored action with its adaptation, the
+expectations and the plan's steps without the model's own descriptions. A fresh session judges each action once as preserved,
+changed or unrealized (`tools/fidelity.md`, the reference engine's auditor rules), and the verdict travels in `data.fidelity`. The
+Hub recomputes the brief and checks only what is mechanical: the verdict answers this very brief (its digest), decides every action
+exactly once from the closed set, and a preserved action cites plan steps; changed, unrealized and a preserved action that cites no
+step go back to authoring, as in the reference engine. Who judged is the procedure's concern, not a check (owner, 2026-11-09). There
+is no step-structure layer yet, so the mechanical comparison is unavailable and every action is audited, which is what the reference
+engine does for a case without that layer. In run 17 a case whose author wrote a TCP query was planned with a UDP query and passed
+every check. Not ported yet: the step structure (recompose) and the mechanical comparison, the license override that needs the
+comparison, counting a fidelity rejection as an authored round, and the scenario line of the delivery report.
+
+The same version adds the reference engine's round-cap closing for a case never dispatched: when the latest plan run that holds
+it and has an accepted result shows its plan without an accepted version after the repair rounds were used up
+(`repair_exhausted`), it closes as 模型未找到解决方案, as the reference engine closes a case whose authored attempts were all refused
+at its round cap. A plan run opened but never answered is skipped in that lookup. In run 18 the model declined to plan a case in
+three submissions, the Hub recorded the spent repair rounds, and 3.10.15 refused the delivery because it knew only the
+missing-fact exit.
+
+### 3.10.15: a case never dispatched closes only on a fact the Hub recorded missing
+
+`closeUnrun` in `functions/delivery.ts` ports the first of the reference engine's exits for a case it could not compile
+(`tools/device/verifiability_tool.py` `_credential_gates`): an exit is certified only by what the engine's own checks recorded, and
+a written claim that the bed lacks data, topology or a helper sends the case back ("Continue authoring the case as written"). A case
+that never went to the bed now closes only when, in the latest plan run of the compilation that holds it, the Hub's latest accepted
+result leaves a requirement of its plan (not the workbook's) pending on a data gap with a request to a named audience; it is reported
+as 缺少 Hub 点名的事实（待补齐） with that plan run and the Hub's words. Any other case never dispatched refuses the delivery. In run 17
+two cases were left out before any plan of them was submitted and closed on the model's notes, which said the locked tree had no
+branch for their commands; the tree had both. The skill now says every case is written and submitted as authored, and that the
+length placeholders take any length (`{{domain:N}}`): the example `{{domain:253}}` read as the only length allowed.
+
+### 3.10.14: back to the reference engine for the pass review and for words a device generates
+
+The owner had both 3.10.12 additions that went beyond InfoTest taken back (2026-11-09). The pass review reads only the run log of a
+pass, as the reference engine does (it fetches device sessions only for failures); the Hub again saves device sessions only for
+rows that did not pass, so a run's job records and the downloads of a delivery shrink with it. `PICK` and the runtime addition
+`checkpoint_match_register` are gone: the reference engine's runner has no check point that keeps what it matched, and patching
+the bed's shared framework for it broke the runner's start-up check in run 16. A value a device generates is used as the
+reference engine uses it, with `CAPTURE`, `EXPECT_FROM` and `CAPTURE_COMPARE`; a case that needs more is closed by the closing rules.
+`tools/assemble-delivery.ts` also skips a verification run whose jobs all ended before anything went to the bed (not
+dispatched): in run 16 a Hub fault stopped a job in its pre-dispatch probe, the cases were verified again under a new run, and the
+lineage walk refused the delivery because the stopped run had no verdicts.
+
+### 3.10.13: one volume for every pass, the device's words on disk, plain words
+
+`assemble` refuses a delivery while any case whose latest verdict is a pass is outside the latest volume that passed whole, as the
+reference engine ships only a volume that ran its passes together; the left-out state (上机没有结论 for a pass) is gone. Run 15 ran
+fourteen passes together, reran one of them alone, and that one-case volume became the only delivered case.
+`tools/download-returns.ts` writes a verification run's device return, every saved run log and device session, each checked against
+its digest, with an index of verdicts and files, so the model copies the device's words for its notes from files; in run 15 it read
+them only through tool answers that were cut short and could not copy a line. The owner had the jargon replaced with plain words
+across the repository (用例原句 for atoms, 用例参数替换 for the rebinding ledger, and so on); the recompose stages move to 1.1.2
+together and mindmap-format to 1.0.22 for it.
+
+### 3.10.12: the pass review and words picked at run time
+
+Decision 164. `tools/assemble-delivery.ts` reviews every pass as the reference engine does (`tools/device/batch_tools.py`
+single-case verdict downgrade, markers from its domain grammar's `exec_failure_markers`): a pass whose log or device sessions
+carry a line with a declared execution-failure marker that none of the case's own assertion texts is part of becomes no verdict,
+with the session and the line in the report. The markers are a runtime-contract@2 addition (`exec_failure_markers`: source,
+digest, lines). The reference engine scans only the log of a pass, having fetched device sessions only for failures; this
+runner's log holds only the commands it sent, so the gateway (0.4.7) returns, and the Hub saves, the sessions of every case and
+the review reads them too. A pass dispatched before that has no sessions and is counted as not reviewed. (Withdrawn in 3.10.14.)
+
+`PICK` takes a word from a captured output into one quoted `"{}"` of the call that follows (a key file name a device generates,
+say). The runner keeps the part its last regex check point matched in `check_point.matched` (runtime addition
+`checkpoint_match_register`, naming the runner source that does it and its digest); the generator writes a `found` check point on
+the captured register right before the call and puts `check_point.matched` in the call's input column. The pattern is built from
+an escaped literal and a fixed word class, `starts_with` (the word beginning with the literal) or `after` (the word after it), so
+no author regex runs. Without the declaration a PICK plan stays unknown with the maintainer's next step. (Withdrawn in 3.10.14.)
+
+### 3.10.11: a failed case closes by the reference engine's rules
+
+`functions/delivery.ts` `closeFailed` closes a case that failed on the bed as InfoTest's engine does (`compile_engine/remedies.py`
+with `max_rounds` 3, `terminal_outcomes.py` and `render.py`; `tools/device/fail_attribution.py` and `verifiability_tool.py`). It
+goes back to authoring until three authored versions of it failed; the tool counts, per case, the distinct plans of it among its
+failed dispatches, so a rerun of the same plan is not a round. Before that it closes only as a product-defect candidate
+(`defect_candidate`: `repro`, `expected` verbatim from the author's expectation, `actual` verbatim from its last device output),
+reported as “声明与设备行为冲突（待仲裁）”. At the cap it closes as “模型未找到解决方案”, and its judged paragraphs are reported as
+the model's own account. A written judgement that the bed lacks a prerequisite, that the product is at fault or that the cause is
+undetermined is not a terminal credential, as in the reference engine ("A free-text claim that the bed lacks data, certificates,
+topology, or a helper is not a terminal credential. Continue authoring the case as written."); `tools/delivery.md` no longer says
+that such cases are not reworked. In run 14 one case failed in four authored rounds, each time on the device's refusal of a step its
+own plan wrote, and was delivered as 上机未通过 on the model's judgement that the bed lacked a prerequisite.
+
+Not ported yet: of the reference engine's exits for a case it could not compile, only the missing fact the Hub recorded is ported
+(3.10.15); a command-tree refusal bound to an expectation (no CLI equivalent), a refusal by the shared-bed procedure, an author's
+address the bed cannot reach and a contradiction between two authored surfaces are not. A case whose latest dispatch gave no verdict
+is not rerun up to three times before it closes as a platform limit.
+
+### 3.10.10: one plan directory for every run of the batch
+
+`tools/submit-plans.ts` reads the run's items from the Hub (`GET /run-export/<run>/run`) and submits only the case files of those
+items, naming the ones it leaves out, so a final verification that excludes cases takes the same directory and each passed plan
+reaches it byte for byte, as the reference engine composes a volume from sealed cases. It also reads each file strictly and names
+the file, the position and the text around a JSON or UTF-8 error. In run 14 the model copied sixteen plans by hand for its final
+verification, dropped a closing brace in all of them, and was told only "不是完整的 UTF-8 JSON".
+
+### 3.10.9: a recomposition refusal that names its condition
+
+`functions/recomposition.ts` `recompositionProblem` walks the admission conditions in order and the projection freezes the first
+one that fails on the case (`recomposition_problem`); the plan checks quote it. In run 13 the old single sentence ("缺可受理的独立
+重组记录……核对方") made the model wait for a reviewer when it had bound one result record in both slots.
+
+### 3.10.8: three rules from the reference engine
+
+Compared rule by rule with InfoTest after run 12 (decision 163). `bed_addresses` refuses an asserted query sent from a host with
+no interface on the target's segment (`driver_no_path`, after InfoTest `driver_no_declared_path`; the inventory declares no
+routes, an author-written target no host reaches is disclosed). `expected_grounded` refuses an expected text that is part of the
+command whose output it reads (`assertion_in_command`, after `assertion_matches_command_echo`: the runner's window starts with
+the echo). The delivery notes take `evidence`, the device's own words copied from the case's last runner log or session, and
+`tools/assemble-delivery.ts` refuses notes whose evidence is missing or not verbatim (after InfoTest's attribution check).
+
+### 3.10.7: literals of a set length
+
+A plan writes a literal the author gives by length as a placeholder: `{{domain:N}}`, `{{domain:N|prefix}}`,
+`{{domain:N|prefix|suffix}}`, `{{name:N}}` (decision 162). `tools/submit-plans.ts` expands it with `functions/length-literals.ts`
+before sending: a domain name is filled with labels of at most 63 characters to exactly N, the fixed parts kept verbatim, a name
+without dots; the same placeholder always gives the same literal. The expanded case is written back to its file, so the file is
+what the Hub receives, and each expansion is reported with its length and label lengths. A model miscounts long runs of
+characters; the reference engine generates such literals from the stated length too.
+
+The same release fixes the unsuccessful volume of `tools/assemble-delivery.ts`: cases that last failed in different dispatches
+(one in the whole-volume dispatch, another only after a rework) go in each with the plan it last ran, merged by
+`generateWorkbookSet(inputs, { merged: true })`, whose description row names every plan run; the default path and its bytes
+are unchanged. The pass volume is the latest dispatch that passed whole after which none of its cases failed; a later dispatch may try
+other cases or rerun its cases if they pass again, and a case whose latest verdict is a pass but which was left out of it is reported as not delivered (with no
+pass volume at all, such a pass is refused: it was never final-verified). Run 12 stopped on both: the tool asked for one dispatch holding all
+ten cases not passed, and a rerun of them would then have stood after the final verification.
+
+The tool no longer trusts the list of runs it is given: `--runs` names at least the final verification, and every
+verification run of the same compilation (plan runs under the same booking bound to the same recomposition result, read through
+the Hub's `GET /run-export/<run>/successors`) is taken in start order; the ones added are printed as `added_runs`. In run 12 the
+model named two of nine and the report said “上机 1 次” for cases that ran five times. The tool also prints `reply`, the
+answer for the person (directory, counts, paths), which `tools/delivery.md` has the model give verbatim.
+
+### 3.10.6: the delivery directory
+
+`tools/assemble-delivery.ts` ends a run as InfoTest's engine does (decision 161): `case.xlsx` is the pass volume, regenerated
+from the plan run of the final verification and refused unless it is byte for byte the workbook that verification dispatched and
+every item of it passed; `unsuccessful_cases.xlsx` holds the cases with a plan that did not pass, from the plan of the latest
+dispatch that held them all; `delivery_report.md`, `unsuccessful_cases.md` and `delivery.json` account for every case of the
+document. Verdicts come from the Hub's `GET /run-export/<run>/jobs`; the model writes only how each case not delivered was
+judged and its fix or trade-off. `tools/delivery.md` holds the closing steps (at most two rework rounds, a final verification of
+the pass volume, the answer with counts and paths only), so SKILL.md only points to it.
+
+### 3.10.5: the run on disk before the plans
+
+`tools/download-run.ts` (module `hub-client` of `run-tools` 1.0.1, decision 160) writes the run record, one file per item and the
+original bytes of every bound source right after `start_run`, each checked against its digest. Step 2 tells the model to read
+these files: in the last real run it read 83 items one `get_nodes` call each. `recompose` 1.1.1 ships the same tool, and the
+three recompose stages move to 1.1.1 together, since a stage takes as predecessor only a run of its own pack at that version.
+
+### 3.10.4: no paging of the device return
+
+The Hub now answers a source whole, so step 9 no longer tells the model to page.
+
+### 3.10.3: read what the device said, whole
+
+A finished job's answer names one device return: every case's verdict, then the log and device sessions of each case that did
+not pass, word for word. Step 9 reads all of it before attributing. The Hub picks, groups and interprets nothing, as InfoTest
+passes device output through whole (03 section 26.5). In a real run the model read logs only, which hold the commands sent and
+not the device's replies, and wrote "no error" where the device had answered `Failed to execute the command`.
+
+### 3.10.2: a case that cannot be written yet does not hold the others back
+
+`parameters.exclude` leaves named cases out of a whole-document run. The plan run and the verification run take the same list,
+each autoid must name a case the rule takes, and it does not go with `autoid`. InfoTest and CES isolate such a case and go on. A
+real run needed it: a case whose command takes a name generated at run time cannot be planned, and one such case kept the other
+16 from a workbook. The final report has to say which cases were left out, what is missing and what comes next.
+
+### 3.10.1: attribution in InfoTest's order, assertions that can tell failure from success
+
+The first real run with recomposition blamed the product for nine timed-out queries: the plans never configured the listener,
+a sentence the locked manual has. Step 9 now follows the layers of InfoTest's attributor: version, whether the configuration
+took effect, the other cases, and only then environment or product, with what a product claim has to show. A plan problem is
+rerun at least once before it goes to the user. Five statistics cases passed that run on the plan's own names, so the skill now
+asks for an observation that a failed feature would not produce. Both are skill text: what InfoTest leaves to its models stays
+with the model.
+
+### 3.10.0: a whole mind map goes through recomposition (decision 155)
+
+Recomposition is connected. The stage now takes the same cases as compilation, one item per case with an autoid; other nodes
+stay disclosed in the group, so a map with 270 unnumbered nodes no longer has 270 items that can never finish.
+
+The threshold follows InfoTest, where 21 of 34 cases were `underdetermined` and still compiled. Settling needs no independent
+ruling, and `underdetermined`, `missing_prerequisite`, `record.unknowns` and a `missing` method go on to the writer instead of
+leaving the case unknown. `conflict` still waits for a person. `recompose-authority` and `recompose-adjudication` stay optional:
+bound or named, they are checked as before; unbound, a record may claim no governing source. Verbatim atoms, the atom set and
+command identities are checked as before. A record may cite the locked tree (`tree:<root>/...`).
+
+Each case takes its own record: the projection looks it up by source and node and freezes it in `fields.recomposition`, where
+the writer reads it. `plan.recomposition.slots` must give every expectation slot an assertion, which also closes, for this
+pipeline, the gap that a flat plan needed only one expectation. The rebinding ledger is no longer checked: `replacements` has
+its own typed check. A whole mind map with no record is refused unless `parameters.pipeline` says `legacy`.
+
+`recompose/tools/submit-records.ts` fills what the projection already knows (atoms, spans, the original ledger, coverage), as
+InfoTest's `fill_mechanical_fields` does; the model writes only what takes judgment. The method text in `recompose/SKILL.md`
+follows the rules of the CES `mindmap-recompose` skill, in this pack's fields, with no product content.
+
+`tools/files.ts` and the Hub calls of `fetch-run.ts` and `submit-plans.ts` moved to the module `hub-client` of the skill
+`run-tools`, which `recompose` needs too.
+
+### 3.10.0: writing a workbook and reading commands come from skills
+
+`zip-store`, `workbook-template`, `g-syntax` and `xlsx-model` moved to the module `workbook-writer` of the skill
+`runner-workbook`; `command-policy` and the command grammar moved to the module `command-check` of `command-tools`. They are
+embedded as generated files. What reads a plan stays here: `generate.ts` (a plan into rows), `workbook.ts`, `plan-commands.ts`
+and `command-obligations.ts`. The writer's family is this runner's workbook: it serves every product on this runner, not any
+Excel file. The commands themselves stay the model's: `command-check` parses and derives, it does not write commands.
+
+### 3.10.0: the structural reading comes from the skill mindmap-format
+
+The structural projection moved to the module `case-structure` of `mindmap-format` (decision 154) and is embedded here and in
+`recompose` as generated files; change it in the skill, never here. The copies in `recompose-authority` and
+`recompose-adjudication` were never imported and are gone. `tables/compile-structure.json` is now the module's `policy.json`.
+After a version change run `testing/refresh-workbook-samples.ts`: the generator's name is written into the workbook samples.
+
+### 3.9.22: a run freezes the cells that hold something
+
+The runner's template formats 5,000 rows, so the parsed workbook grew to 4 MB and made up most of what every check of a run carries. On a 17-case run the checks took twice as long, and the dispatch boundary twice stopped with `SANDBOX_UNAVAILABLE` while the Hub's main thread was held up. A run now freezes the model without its empty cells, 120 KB for that workbook. The reader needs only cells that hold something, a hidden row stays so it can still be refused, and the byte comparison covers everything else.
+
+### 3.9.21: the workbook is the runner's template with rows filled in
+
+Until now this pack wrote its own small workbook: a header on row 2, none of the template's notes, lists or drop-downs, and C at 2 on every row. The runner read it, so nothing failed, and the reader here shared the generator's format, so nothing showed it. People open these files, and the reference compiler clones the template.
+
+- The profile carries the template as `workbook.template`, so the pack stays free of product text and the Hub recomputes the same bytes. Without one, generation stops and says so; there is no fallback layout.
+- Generation edits only the worksheet: the rows below the header, and the generator and recipe cells beside the identity on row 1. The header row comes from the template's defined range, and A1 to C1 must match this run's contract.
+- Rows follow the reference: the description row reads `Author         : <generator>`, then the plan run and the build. Id and priority stand only on a case's first row, priority is `P1` as the reference writes it, C counts up inside each case, a checkpoint has no description, and a blank row closes each case.
+- A plan step may carry `description`, one line for column D. The mind-map path stays on a case's first row, before that step's description.
+- The closing row may name a call, which is how the reference writes its sentinel. The runner does not execute the last case, and the reader does not count it as an execution.
+- The independent reader takes the header row, the members and the relationships from the template, and still compares the rows with the plan. `max_rows` and `max_model_bytes` follow the template's 5,000 rows.
+
+### 3.9.20: a cleanup the tree cannot send is the product's to declare
+
+A product's generic rule puts `no` in front of a command, and for many commands that path does not exist: `sync to` has a rollback
+instead, and one `no record <name>` removes every record type. The check still asked the plan for the missing path, so no plan
+could pass and the model went looking for a cause that was not there.
+
+- The catalog selection reads each command's line under the product's rule along with the plan, along exact tree edges, so a path
+  the catalog does not hold is one the locked tree does not have. All of those lines or none: when they do not fit the selection's
+  128 lines, the check keeps the earlier wording.
+- Such a command is now `unknown`, names the path and sends the next step to the product author, who declares the real inverse in
+  `inverse_rules` and seeds again. A cleanup the tree can send but the plan left out stays the plan's to write.
+- A cleanup step that undoes nothing now says which line it is, and that the runner covers the device's other configuration, so
+  the step can simply go.
+
+### 3.9.19: the tree decides a node's role, and declared host programs
+
+Real mind maps are not only the two layouts the reference's documents name. The reference's readers never refuse a shape: a leaf
+beside a step is a step no expectation follows, and it delivered such cases on the device. This pack refused them, so a whole
+mind map could end with no atoms and no way out, because a declared `compile_layout` cannot contradict the tree and recompose
+reads the same projection. Nothing here reads a word:
+
+- `steps_tree_expectations`: under a title, a node with children is an action, a chain of steps reads in order, a leaf under an
+  action is its expectation and a leaf beside a step is an action no expectation follows. This goes past the reference, which stops
+  two levels down and takes the second step of a chain for an expectation.
+- `precondition_priority` (3, as in `case-review`) in `tables/compile-structure.json`: such a leaf is a precondition in every
+  layout, carried as an action no expectation follows. A case body with one used to demand it as an expectation.
+- A key with no value declares nothing: a group node exported with `autoid: null` is no case, so its cases are no longer nested.
+- A case that stays undetermined says why in the item summary of the `start_run` answer.
+- `allowed_programs` on a contract effect: a host line may be a declared program with static arguments, besides a full literal.
+  `hasShellDynamicSyntax` still refuses expansion, separators and redirection. `address_prefix` names the arguments that are
+  addresses; they must parse and are checked against the environment like any declared address. A contract without the field
+  behaves as before, and an older pack ignores it.
+
+- Catalog data crosses a check subject as sealed text (`sealed`, `opened` in `functions/text.ts`). The evaluator reads every
+  reference-like string in a subject against one budget per submission (256 references, 16 MiB), and catalog entries carry two
+  or more each, so a submission of about fifteen cases stopped with `未校验（中断）` and read some 250 MB for nothing. Nothing
+  quotes those references. The content is unchanged, so recipe digests stay.
+- `tools/submit-plans.ts`: a run takes one complete submission, and five cases already took 27 KB of tool arguments, so a whole mind
+  map did not fit in one model message. The model writes one file per case and the tool sends them as that one submission. It
+  decides nothing. A repaired case is rewritten alone, and several writers can each own their files.
+
+The stage packs recompose, recompose-authority and recompose-adjudication move to 1.0.4 because they copy the projection.
 
 ### 3.9.18: the integration line's 3.8.9–3.9.17 on main
 
@@ -341,7 +1022,11 @@ Three generic rules a case that loads a certificate on a device needs.
 - **Net-effect cleanup.** Only what is alive at the end is torn down. An execution step that is exactly the declared inverse
   of a still-live earlier one on the same device (delete, then re-create) undoes it, and neither needs cleanup; every other
   configuration stays live and needs its own cleanup in reverse order (`functions/command-obligations.ts`). The bed's
-  pre/post check still decides whether the bed was restored.
+  pre/post check still decides whether the bed was restored. One removal is not live (run 36): the one sent ahead of the
+  configuration it clears, on the same device, as the declared inverse of that later configuration (which is not its inverse in
+  turn). It clears what an earlier round left, and the configuration's own cleanup clears the same thing again, so it owes none
+  (`clearsLater`; InfoTest's own cases start the same way). A delete of something the plan never makes, of another name or of
+  another device keeps needing its own.
 - **Declared text shapes.** A runtime-contract@2 type of catalog type `string` may declare `pattern`, one anchored expression
   the whole value must match (`functions/typed-contract.ts`), for names the runner splices into device lines.
 
@@ -357,8 +1042,8 @@ case, as before.
 - **One workbook.** `generateWorkbookSet` writes one identity row, header and description, then each case's rows in item
   order, each followed by a blank row, then the closing row; the runner begins a case at every A-column autoid row. The
   identity recipe digest covers the ordered list of the cases' recipes; one case keeps exactly the single-case bytes. The
-  independent reader (`readWorkbook`) walks the case blocks in the same order, and a block plan and a flat plan cannot share
-  a workbook.
+  independent reader (`readWorkbook`) walks the case blocks in the same order and reads each case's rows with that case's
+  own plan, so a block plan and a flat plan may share a workbook (see "Block plans and flat plans in one workbook" below).
 - **Verification against every accepted plan.** The verification run binds `plan_result` (a `from_runs` input: the plan run
   id, which the Hub replaces with that run's latest accepted result). The projection freezes, in item order, every case's
   accepted plan (the model's judgment claim on the plan slot) and commands_known catalog receipt (`plan_set` in the run
@@ -510,6 +1195,73 @@ is kept and disclosed.
 - Runs started before keep the item ids recorded with them; records are append-only and nothing is rewritten. The example
   item is now `fixture-document:fixture-case`.
 
-The stage packs recompose, recompose-authority and recompose-adjudication move to 1.0.3 with this release (the integration
+The stage packs recompose, recompose-authority and recompose-adjudication moved to 1.0.3 with 3.9.18 (the integration
 line's 1.0.2 and main's 1.0.1 hold different bytes): `functions/recompose-evidence.ts` accepts stage evidence of exactly that
 version, so the pin moves with them (in the parent, the three copies, `testing/recompose.ts` and the recompose samples).
+
+## Case writers
+
+`tools/case-writers/` is a Circle extension for one writer per case, started together. Copy the folder into the chosen Circle home's `extensions/` directory and reload extensions; installation is an operator action and was not performed here. The optional `max_parallel` setting limits concurrent writers.
+
+The extension gets the task tool from `model_call` middleware because Circle has no documented extension call for starting a subagent. Local tests use scripted writers and do not establish installed-client behavior. The owner must decide whether to keep this client interface or wait for a public subagent API. No Hub model calls are introduced.
+
+## Authored negative outcomes
+
+The owner's 2026-11-12 morning decision requires a query after deletion and a block-form `not_found` check for an authored absence or lack of residue, without a new criterion or criterion review. SKILL.md, the closing procedure and each authoring brief now state that instruction. The block check follows the explicit operator for literals and earlier captures, never words in the author's sentence. Dynamic values use `CAPTURE` and then `EXPECT_FROM/not_found` in the same case, with a declared literal-negation method; old device output is not copied. Source quotations, expectation coverage, authored literal declarations and the separate scenario-fidelity check remain required. The integrator updates the package version and generated manifests after merging.
+
+## Model-written checkpoints
+
+The owner's 2026-11-16 decision, 「模型直接写检查点（比如期望应答里有 RRSIG），不做复核 这么改」, follows InfoTest: where the author's expectation node carries no literal declaration, the model writes the checkpoint itself and nothing is reviewed independently. A flat plan states it as `basis: "model_judgment"` with a `rationale` (unchanged). A block plan states it as a typed criterion in `criteria[]`, referenced by the assertion's `criterion`, whose `quote` is the author's expectation word for word. The block check accepts the criterion when it equals its assertion (kind, operator, literal or count, quote, locked root) and the literal is a single-line value, the same rules a flat `model_judgment` expectation meets, and a blank `rationale` is refused as in flat plans. It records the criterion under `model_criteria` with `reviewed: false`, `status: 未确认` and `decided_by: 模型`; the support outcome keeps `judgment_sources: ["/plan/0"]`, so the Hub claim stays a judgment that the model's choices condition, and its statement says that the criterion is the model's judgment, unreviewed, decided by the device run. Whether a literal exists is read from the frozen node's `declaration`; nothing classifies the author's sentence.
+
+A review bound through `criteria_review` and `criteria_review_run` is verified exactly as before and then listed under `typed_criteria`. A bound review that does not verify is not set aside in favour of the model's judgment: the next step names both ways out, completing the pair or binding none. The delivery tool reads `model_criteria` and `model_expectations` from the plan run's recorded expected_grounded check and says, in the closing reply and `delivery_report.md` (and as `model_checkpoints` in `delivery.json`), that the checkpoint is the model's judgment, status 未确认, decided by the device run; it never calls it reviewed. The independent review stage in `review/` stays published and unchanged.
+
+## Generating without a closed executor action
+
+The owner's 2026-11-12 11:10 correction leaves closed executor actions closed. Writers must first use the build's manual and command tree to express the same authored effect through an already allowed device command method; a closed action alone is no reason to exclude a case. SKILL.md and each authoring brief now give that instruction. No runner contract, environment profile or executor definition changes here.
+
+When the manual permits naming an object, the existing `{{name:N|prefix|suffix}}` expansion provides the same concrete name to its creation, use, query and cleanup within one case. Both fidelity-brief and submit-plans expand the case file before Hub verification. This does not extract device-generated filenames: `CAPTURE/EXPECT_FROM` only supplies assertion operands, and `RESTORE_FROM` remains a guarded restore operation. A value the device names itself still needs an already declared same-case extraction and use channel; that capability is not added or claimed here. No existing device state or previous execution output supplies a name.
+
+## Structural cell selection
+
+SELECT_CELL consumes an earlier raw capture, declares literal table separation and either a row ordinal or several exact column equalities, and saves one cell as text. The new executor declaration identifies cell_methods, cell_inputs and cell_text output. Its G arguments are readable where-column conditions and fixed scalar options; there is no encoded selection payload. The package checks shape and same-case ordering, while the executor selects the row at execution time.
+
+Only a previously selected cell supplies an ordinary input_register template. Static command words and static arguments still use the locked catalog; runtime arguments are recorded separately as command_templates without invented concrete values. Existing raw captures and guarded restoration retain their own semantics. The integrator owns the next package version and publication manifest. This change does not establish a device outcome or a deployed capability.
+
+A runtime cell at an address position already constrained to the environment retains an unknown scope result until its concrete value is available. Concrete addresses, author-kept addresses and plain text templates keep their existing treatment.
+
+### Cell-selection values are judged by the cell-selection rules (run 33)
+
+The table and selector fields of a SELECT_CELL block become keywords and where-conditions of one method call. They are judged by `cellSelectionValueProblem` and `cellSelectionShapeProblems` in `functions/cell-selection.ts`, not by the single-line policy of ordinary command values: a leading `=` or a `{}` placeholder, which that policy refuses, means nothing in a separator or constant, because the runner formats only its first positional argument. A separator `=` is therefore legal. What the runner does with a value decides the rest: when it reads G it cuts whitespace at the ends of a keyword value and of a later argument (InfoTest `get_parameter`, `_unquote_parameter`), reads an all-digit keyword value as an integer, and takes only doubled braces as literal. A value that would arrive different from what the author wrote is refused at its own block field (`/blocks/<n>/table/separator`, `/blocks/<n>/select/where/<i>/value`) with the value seen, the one rule it breaks and the next step. A one-space separator is such a value: `table_cell` itself splits on it, but G cannot deliver it, so a table whose columns are separated by whitespace only is not readable by SELECT_CELL until the runner offers another way to name the separator. The block then records the expectation as `unmet` with the missing capability. The workbook reader marks the rows of a registered selection method the same way, so the Hub and the reader judge the same values.
+
+### A cell is one segment of a name, not the whole name (run 36)
+
+A value the device generates is often one segment of a longer name whose other segments the plan already knows: the key file name `K<host>.+005+<id>+ksk+RSASHA1+1024` of a 200-character host is 229 characters, of which the device chooses the five-character `<id>`. InfoTest's Python cases cut that one segment out of the listing with a regular expression and write the known head and tail themselves (`'K' + re.findall('K(<host>.*?ksk.*?)2048', out)[0] + '2048'`, `smoke_test/sdns/bug130582/0733230557.py:36-41` and sixteen more of the eighteen mirror cases that publish a key); its Excel runner can only store a whole return in a register (H) and put it whole in place of the one `{}` of the first argument of a later row (I; `lib/test_xlsx.py:698-721`, `:662-669`), so the text around the placeholder is the case's own. SELECT_CELL says the same thing with structure instead of a pattern: the name's own `+` is the separator (`columns` 6), a `where` condition pins each known column (host, algorithm, type, size, suffix), `column` picks the one the device generated, and the command that uses it writes the known segments on both sides of `{}`. The 1 to 128 characters of `ascii-cell-value@1` bound that picked cell (the executor checks it when the cell is read; no check of this pack reads it), not the command the runner assembles from it, so a long name is no reason to write the expectation as `unmet`. The writer role says so (`取名字的一段`); `reference-plans.test.ts` carries the plan through every gate and `scripts/real/bed-side/table-cell.test.ts` runs the pick on listings of the device's shape. Nothing in the executor, the runner contract or the Hub registration changes.
+
+### Separators and condition constants the runner's G reader would read differently (run 36)
+
+Looking for what else stands between a long name and the runner, the replay wrote separators and constants with quotes, commas and backslashes through the generator and read the cell with the runner's own reader (`lib/test_xlsx.py` `get_parameter` over `_split_parameter_parts`, `_keyword_split`, `_unquote_parameter`, executed from the mirror). The Hub checks and the workbook reader accepted all of these, because the embedded G reader (`functions/generated/skills/runner-workbook/workbook-writer/g-syntax.ts`, from the runner-workbook skill) is more lenient than the runner's: a quote left open (`a"b`, a lone `"`) makes the runner refuse the cell in its preflight of the whole workbook (`_preflight_excel_rows`, before any device is touched), so every case of the workbook is lost; a separator with a comma (`,`) is written as one quoted part `"separator=,"` and read as a positional argument, so the keyword `separator` is missing; a pair of quotes round a separator (`"+"`) is cut off; a backslash at the end of a condition constant takes the comma after it into the constant. `cellSelectionValueProblem` now writes the cell with the generator's own encoder, reads it back with a port of the runner's reader (`runnerRead` in `functions/cell-selection.ts`) and refuses a separator or constant that does not come back as declared, at its own field, with the reason and the next step (a table that needs such a separator is `unmet` until the runner offers another way to name it). Compared with the runner's reader over 12,393 separators and constants built from `a " ' \ , = + { ` and a space (up to four characters), the rule accepted none that the runner reads differently and refused none that it reads as written (the 794 of them the encoder cannot write at all, such as a comma with both kinds of quote, stay with the G stage as before). The root cause, the leniency of the embedded reader, belongs to the runner-workbook skill and is not changed here (it has its own version).
+
+### Responder rows name observation blocks (run 33)
+
+`block_context.responders[].output` is the id of an observation block (`blocks[].id` of a block whose call returns device text), never the register a capture saves it under or a device name; `ref` names the answerer by `kind` (a frozen `profile.seats[].device`, an earlier step block, a service host of the frozen inventory). The declarations in `tables/blocks-format.json` say so, the generator copies the text into `slots.schema.json` and `tables/block-plan.schema.json`, and the writer role says it. A refusal (`responderOutputGaps` in `functions/block-checks.ts`) gives the value written, this plan's observation ids and, when the value is the saved name of exactly one observation block, `应填块 id <id>`; the plan is never rewritten.
+
+### The plan check is the Hub's own boundary (run 33)
+
+Run 33 showed two plans that `tools/check-plan.ts` passed and the Hub refused: a slot claim without its `text` (`/items/0/slots/plan/0/text`) and a 54-step plan over the declared budget of one effect (50 calls). The cause was the same for both: the tool read only `slots.plan[0].data` and ran the call-membership part of the authority check, while the Hub judges a submission by its slot record against the schema it froze for the run and then by every check of `checks.json`, each of which starts with `typedAuthorityGaps` (budgets, bound values, block graph, responders, cleanup).
+
+`functions/plan-boundary.ts` now runs that boundary offline with the inputs of the frozen run (`run.json` as downloaded, which is the run record itself): `functions/slot-record.ts` judges the item's `slots` against `run.slots.schema`, the schema `start_run` handed the model, with the Hub's wording for a missing or mistyped value, an unknown field and a count; then each check of `checks.json` that judges a plan runs with its own subject builder and function (`contract_shape`, `bed_addresses`, `commands_catalog`, `expected_sources`), on the input the engine builds (`checkInput`, from `runContextOf`). Like the Hub, an item with a structure problem gets no check. A gap list becomes one problem per gap, as in the Hub's `data.problems`, the four checks' identical gaps are shown once, and a frozen run without `slots.schema` is refused instead of passing a plan unchecked.
+
+Hub-side checks the plan check does not run, and why (the result lists the first four in `hub_checks` with `ran: false` and the reason; `hub-parity.test.ts` asserts the list against `checks.json`):
+
+- `expected_quotes`: the core interpreter `quote@1` checks every quotation verbatim against the original text the Hub resolved; this machine has no such text.
+- `scenario_fidelity`: the audit is written into `data.fidelity` after the plan is written; `submit-plans.ts` runs the same `fidelityProblems` before it sends.
+- `workbook_verified` and `dispatch_policy`: they judge the uploaded workbook.
+- Resolution of the claim's `quotes`, `grounds`, `location` and `commands` to their originals (`resolveSubmission`), the Hub's limits on selecting the command tree (128 commands of at most 8192 bytes, 512 entries, 1 MiB), the resource limits of the sandbox that runs the pack functions, and the submission-level rules (unknown or repeated item, repair rounds). A plan the check passes can still be refused for these; the receipt names them.
+
+`hub-parity.test.ts` starts the real engine (a temporary PostgreSQL, the published pack) with a run of six cases, submits twelve plans, six with a structure fault and six with a fault of one of the checks, and requires check-plan to report the same problems with the same pointer, code and text, and to pass the plan the Hub passes; `tools/check-plan-hub.test.ts` holds the run 33 fixtures. Where the Hub names a claim's own fields in one round and its `data` in the next, check-plan names both together.
+
+## Block plans and flat plans in one workbook
+
+Round 34 (2026-11-17) merged two cases into one workbook, a block plan with a cell selection (the key-name case, whose `SELECT_CELL` and `input_register` exist only in the block form) and a flat plan of ordinary `steps` and `expects` (the synchronisation case), and the Hub refused it: 「同一份自动化用例 Excel 中的自动化用例必须使用同一种写法」. The refusal came from `readWorkbook`, which required every plan of a workbook to be of one form and then read every row with the first plan's form (`blockMeta(plans[0])` decided whether H and I must be empty and whether register rules apply). Nothing the workbook is for required that: the InfoTest runner (`lib/test_xlsx.py`) reads H and I of every row the same way, whatever the case's form (a register to save into or compare, a register to read; both are simply empty on a flat row), and clears its registers at every case's autoid row; the generator (`generateWorkbookSet`, `caseRows`, `caseRecipe`) already wrote each case with its own plan; the Hub's `workbook_verified` and `dispatch_policy` only call the reader and the generator. Neither SKILL.md nor the writer role said that a workbook could not mix the two forms, so a writer had no way to know.
+
+`readWorkbook` now computes where each case's rows begin from the plans alone (as it already did for the autoid and step checks) and reads a row with the plan of the case it falls in: a flat case still needs E/F/G with H and I empty, a block case still needs every register it reads saved earlier in the same case, and the registers still start empty at each case's autoid row. A workbook of one form is read exactly as before. The single-form refusal is gone; a plan that mixes `blocks` with `steps`/`expects` is still refused by `readSlots`, since that is one plan, not one workbook. `functions/mixed-plans.test.ts` holds the synthetic cases (block and flat in either order, and block, flat, block; a register written on a flat row, and corrupted registers of a block case, in a mixed workbook; `workbook_verified` and the dispatch policy). The package version and the published manifest digest are the integrator's.

@@ -15,7 +15,7 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "核对原始运行器签名、合约启用与本轮允许的交集、显式值和命令拒绝表；不复制默认值",
+      "basis": "核对原始运行器签名、合约启用与本轮允许的交集、显式值和命令拒绝表；不复制默认值；同时核对并披露 contract.cleanup（清配对象上命中规则含 write mem 等的正用步骤免写逆操作，cleanup:true 段禁止放入运行器收尾执行的清理/存盘命令）",
       "catalog": "commands@1",
       "catalog_select": {
         "module": "functions/subject.ts",
@@ -53,7 +53,7 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "计划设备命令由锁定 /commands 完整语法逐词解析为 CommandIdentity，再核类型、角色与效果授权；用例明确声明身份时额外核一致性，缺声明不限制计划解析",
+      "basis": "计划设备命令由锁定 /commands 完整语法逐词解析为 CommandIdentity，再核类型、角色与效果授权；用例明确声明身份时额外核一致性，缺声明不限制计划解析（清理校验以 contract.cleanup 为准：清配对象上命中规则含 write mem 的正用步骤记为 runnerOwned 放行，cleanup:true 段禁止出现由执行器收尾执行的清理或存盘命令）",
       "function": {
         "module": "functions/checks.ts",
         "export": "checkCommandsKnown"
@@ -78,7 +78,7 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "expected_grounded：quote 有逐字来源；默认 text 出自引文，显式 model_judgment 只核本用例期望节点、after 与取值规则，语义选择以判断为前提",
+      "basis": "expected_grounded：quote 有逐字来源；默认 text 出自引文，显式 model_judgment 只核本用例期望节点、after 与取值规则，语义选择以判断为前提；分块计划的类型化判据同样只核引文、锁根和取值规则，未绑定独立复核时记为模型判断（状态未确认）",
       "catalog": "commands@1",
       "catalog_select": {
         "module": "functions/subject.ts",
@@ -103,6 +103,38 @@
         "module": "functions/subject.ts",
         "export": "selectCommandCatalog"
       }
+    },
+    {
+      "id": "author_step_coverage",
+      "title": "每条作者动作原句都有计划步骤写了它的编号",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkAuthorStepCoverage"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "planSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 scenario_kept 里不需要审计就能核的一半：照 InfoTest 的 author_procedure_coverage（main/case_compiler/mechanical_case_gate.py），作者写的每个动作都要落进计划；InfoTest 靠步骤结构数命令，本包没有步骤结构层，靠计划自己写的编号：重组记录里每条 kind 为 action 的原句，至少有一个步骤（分块计划是块）的 author_step_refs 写了它的编号，没有的退回编写。只核编号，计划步骤是否真的实现了它由场景保真审计判断"
+    },
+    {
+      "id": "scenario_fidelity",
+      "title": "审计判断对得上这份计划，作者场景逐条保住",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkScenarioFidelity"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "planSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 scenario_kept：照 InfoTest 场景保真，审计判断须针对按同一规则重算的这份计划的简报（摘要相等），每条作者动作原句恰好一行、结论属闭集、判保住的引用计划步骤；改了、没实现、保住却未引用的退回编写"
     },
     {
       "id": "workbook_verified",

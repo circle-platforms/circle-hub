@@ -1,8 +1,8 @@
 // The MCP standard authorization end to end (decision 125): the official SDK client discovers the Hub's metadata from the
 // 401, registers, is sent to the authorization page, and after the invitation step and the approval exchanges the code
 // for a token it then calls tools with. Also: a signed-in browser approves without an invitation; every refusal of the
-// authorization and token endpoints; the request and code lifetimes; revocation; and the one-time login links, which lead
-// to the password sign-in and open no session.
+// authorization and token endpoints; the request and code lifetimes; and revocation. One-time console login links are
+// retired (U5; no production caller).
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
@@ -12,7 +12,6 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { AUTHORIZATION_CODE_TTL_MS, AUTHORIZATION_REQUEST_TTL_MS, AuthorizationStore, DEVICE_CODE_GRANT, RegistrationWindow, normalizeUserCode } from './oauth.ts';
-import { LOGIN_LINK_TTL_MS } from './console/session.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
 let server: TestServer;
@@ -524,108 +523,7 @@ describe('decisions, names and limits', () => {
   });
 });
 
-describe('one-time login links', () => {
-  const ask = (token: string | null, body?: unknown) => send('/console/api/login-links', {
-    method: 'POST',
-    headers: { ...(token === null ? {} : { authorization: `Bearer ${token}` }), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-
-  /** Posts a link as the confirmation form of earlier versions did, with a nonce of the login page (its cookie's path covers the link). */
-  async function postLink(path: string): Promise<Reply> {
-    const login = await send('/console/login');
-    return send(path, { method: 'POST', headers: { ...FORM, origin: origin(), cookie: `circle_hub_login=${valueOf(cookieOf(login, 'circle_hub_login'))}` }, body: form({ csrf: csrfOf(login.body) }) });
-  }
-
-  /**
-   * Opens a link (GET), then posts it: both lead to the password sign-in at the page the link names, neither sets a session
-   * cookie, and the POST uses the link up. Answers where the link led.
-   */
-  async function follow(url: string): Promise<string> {
-    const path = new URL(url).pathname;
-    const look = await send(path);
-    assert.equal(look.status, 303, look.body);
-    assert.match(String(look.headers.location), /^\/console\/login\?next=/);
-    assert.equal(cookieOf(look, 'circle_hub_session'), undefined, 'opening a link opens no session');
-    const posted = await postLink(path);
-    assert.equal(posted.status, 303, posted.body);
-    assert.equal(posted.headers.location, look.headers.location, 'posting the link leads to the same sign-in');
-    assert.equal(cookieOf(posted, 'circle_hub_session'), undefined, 'posting a link opens no session either');
-    return String(look.headers.location);
-  }
-
-  test('a client asks with its token; an administrator\'s link leads to the password sign-in at the page it names, opens no session and is used once', async () => {
-    const user = await server.createUser('合成链接管理员'+(++counter),'admin');
-    assert.equal((await ask(null)).status, 401);
-    assert.equal((await ask('A'.repeat(43))).status, 401);
-    assert.equal((await send('/console/api/login-links', { headers: { authorization: `Bearer ${user.token}` } })).status, 405);
-    const reply = await ask(user.token, { next: '/console/runs?result=passed' });
-    assert.equal(reply.status, 201, reply.body);
-    const { url, expires_at } = JSON.parse(reply.body);
-    assert.match(url, new RegExp(`^${origin()}/console/login/[A-Za-z0-9_-]{43}$`));
-    assert.equal(Date.parse(expires_at) - clock, LOGIN_LINK_TTL_MS);
-    const path = new URL(url).pathname;
-    const signInAt = `/console/login?next=${encodeURIComponent('/console/runs?result=passed')}`;
-    const look = await send(path);
-    assert.equal(look.headers.location, signInAt);
-    assert.equal(await follow(url), signInAt);
-    const used = await send(path);
-    assert.equal(used.status, 410);
-    assert.match(used.body, /登录链接已失效/);
-    assert.ok(!used.body.includes(user.user.name), 'a spent link does not say whose it was');
-    assert.equal((await postLink(path)).status, 410, 'and cannot be posted again');
-
-    // The sign-in it leads to takes the administrator's password, never a token, and returns to the page the link named.
-    const page = await send(signInAt);
-    assert.match(page.body, /name="next" value="\/console\/runs\?result=passed"/);
-    assert.doesNotMatch(page.body, /name="token"/);
-    const signedIn = await send('/console/login', {
-      method: 'POST',
-      headers: { ...FORM, cookie: `circle_hub_login=${valueOf(cookieOf(page, 'circle_hub_login'))}`, origin: origin() },
-      body: form({ ...testConsoleCredentials(user.token), csrf: csrfOf(page.body), next: '/console/runs?result=passed' }),
-    });
-    assert.equal(signedIn.headers.location, '/console/runs?result=passed');
-    const me = JSON.parse((await send('/console/api/me', { headers: { cookie: `circle_hub_session=${valueOf(cookieOf(signedIn, 'circle_hub_session'))}` } })).body);
-    assert.equal(me.id, user.user.id);
-
-    // A link whose token was revoked meanwhile, and a code never issued, read like a spent link.
-    const pending = new URL(JSON.parse((await ask(user.token)).body).url).pathname;
-    const [token] = await server.records.principals.tokens(user.user.id);
-    await server.records.principals.revokeToken(server.admin.principal, token.id);
-    assert.equal((await send(pending)).status, 410);
-    assert.equal((await postLink(pending)).status, 410);
-    assert.equal((await send(`/console/login/${'x'.repeat(43)}`)).status, 410);
-  });
-
-  test('a link expires after its lifetime, and a return path off this console leads to the overview', async () => {
-    const user = await server.createUser('合成链接管理员'+(++counter),'admin');
-    const late = new URL(JSON.parse((await ask(user.token)).body).url).pathname;
-    clock += LOGIN_LINK_TTL_MS;
-    assert.equal((await send(late)).status, 410);
-    assert.equal((await postLink(late)).status, 410);
-    for (const next of ['//192.0.2.10/x', 'https://192.0.2.10/', '/console/login', '/elsewhere', '/console\\..\\x']) {
-      assert.equal(await follow(JSON.parse((await ask(user.token, { next })).body).url), `/console/login?next=${encodeURIComponent('/console/overview')}`, next);
-    }
-    assert.equal((await ask(user.token, { next: 3 })).status, 400);
-    // One token keeps at most five open links: a sixth ends its own oldest, never another account's.
-    const other = await server.createUser('合成其他链接管理员'+(++counter),'admin');
-    const others = JSON.parse((await ask(other.token)).body).url as string;
-    const links: string[] = [];
-    for (let i = 0; i < 6; i++) links.push(JSON.parse((await ask(user.token)).body).url);
-    assert.equal((await send(new URL(links[0]).pathname)).status, 410);
-    assert.equal((await send(new URL(links[5]).pathname)).status, 303);
-    assert.equal((await send(new URL(others).pathname)).status, 303);
-  });
-
-  test('a member\'s link leads to the password sign-in the same way, opens no session and is used once',async()=>{
-    const user=await member();
-    const issued=JSON.parse((await ask(user.token,{next:'/console/team'})).body);
-    assert.equal(await follow(issued.url),'/console/login?next=%2Fconsole%2Fteam');
-    const path=new URL(issued.url).pathname;
-    assert.equal((await send(path)).status,410);
-    assert.equal((await postLink(path)).status,410);
-  });
-
+describe('console sign-in return path', () => {
   test('a page without a session sends the browser to sign in and back', async () => {
     const user = await member();
     const away = await send('/console/runs?result=passed');
@@ -639,6 +537,17 @@ describe('one-time login links', () => {
       body: form({ ...testConsoleCredentials(user.token), csrf: csrfOf(page.body), next: '/console/runs?result=passed' }),
     });
     assert.equal(reply.headers.location, '/console/runs?result=passed');
+  });
+
+  test('a retired one-time login path and its JSON twin are absent', async () => {
+    assert.equal((await send(`/console/login/${'x'.repeat(43)}`)).status, 404);
+    const user = await member();
+    assert.equal((await send('/console/api/login-links', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${user.token}`, 'content-type': 'application/json' },
+      body: '{}',
+    })).status, 405);
+    assert.equal((await send('/console/api/login-links', { headers: { cookie: await signIn(user.token) } })).status, 404);
   });
 });
 

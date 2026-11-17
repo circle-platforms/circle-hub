@@ -1,3 +1,9 @@
+import { createRebuildApp } from './rebuild-app.ts';
+import { createPlatformRebuildBridge } from './rebuild-platform.ts';
+import { rebuildRequiredState } from './rebuild-state.ts';
+import type { RebuildPageRenderer, RebuildResetBridge } from './rebuild-http.ts';
+import { renderRebuildPage } from './console/reset.ts';
+import { diagnoseRecordsSchema } from '../records/api.ts';
 // `circle-hub serve`: configuration from CIRCLE_HUB_* only (a retired CIRCLE_SERVER_* name refuses to start, and so does an
 // operator token in the environment: a server needs no admin token), the platform's cluster started when the database is the
 // data root's own socket (never initialised, never stopped on exit), records opened as the runtime role without migrating,
@@ -38,12 +44,14 @@ export interface ServeOptions {
   appOptions?: AppOptions;
   onListening?: (info: ListenInfo) => void;
   now?: () => Date;
+  rebuild?: { bridge?: RebuildResetBridge; render?: RebuildPageRenderer };
 }
 
 /** The longest one statement of the 运行状况 page may run; its part of the page then says 未知. */
 const OBSERVATION_STATEMENT_MS = 5000;
 
-export const SERVE_USAGE = 'serve [--migrate-only] [--migrate]   启动 Hub（默认只监听本机；配置了内置 HTTPS 时另开 HTTPS）；--migrate-only 以拥有表的角色应用迁移后退出；--migrate 用连接角色先迁移（单角色的开发环境）';
+import { SERVE_USAGE } from './cli-command-usage.ts';
+export { SERVE_USAGE } from './cli-command-usage.ts';
 
 /** CIRCLE_HUB_* names hub/config does not know but this program accepts: the platform's own (its commands read them). */
 export const ACCEPTED_PLATFORM_VARIABLES: readonly string[] = PLATFORM_ONLY_VARIABLES;
@@ -161,6 +169,27 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
       ...(options.now ? { now: options.now } : {}),
     });
   } catch (error) {
+    const diagnosis = await diagnoseRecordsSchema(config);
+    const needed = rebuildRequiredState(diagnosis);
+    if (needed !== null) {
+      let maintenanceApp: HubApp | undefined;
+      try {
+        const bridge = options.rebuild?.bridge ?? await createPlatformRebuildBridge(config, io.env);
+        maintenanceApp = await createRebuildApp(config, {
+          dataDir: config.dataDir, rebuildNeeded: needed, bridge, render: options.rebuild?.render ?? renderRebuildPage,
+          now: options.now, log: line => io.stderr(terminalSafe(line)), tls: options.appOptions?.tls,
+        });
+        const info = await maintenanceApp.listen();
+        io.stdout(`记录库需要重建；仅维护控制台和健康检查在 ${info.url} 上监听`);
+        options.onListening?.(info);
+        await (options.stopSignal ?? defaultStop)();
+        await maintenanceApp.close();
+        return 0;
+      } catch (maintenanceError) {
+        await maintenanceApp?.close().catch(() => {});
+        return reportFailure(io, maintenanceError);
+      }
+    }
     return reportFailure(io, error);
   }
   // The operator's log while serving (launchd's stderr file): one line each, made safe for a terminal, since a line may
@@ -186,6 +215,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   let app: HubApp | undefined;
   let telemetry: Telemetry | undefined;
   let maintenance: import('./api.ts').ServerDeps['maintenance'];
+  let closeAssembly: (() => Promise<void>) | undefined;
   try {
     // The built-in HTTPS certificate is read before anything starts: a missing, loose or expired one stops serve here.
     let tls = options.appOptions?.tls;
@@ -197,11 +227,23 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     }
     const assembly = await (options.assembly ?? (() => import('./assemble.ts') as Promise<AssemblyModule>))();
     const deps = await assembly.assemble(config, records);
+    closeAssembly = deps.close?.bind(deps);
     maintenance=deps.maintenance;
     // The console's management actions run the CLI's commands with this process's own configuration (decision 122).
     const bridge = options.appOptions?.bridge ?? createCommandBridge({ env: io.env, cwd: io.cwd, ...(options.keyProvider ? { overrides: { keyProvider: options.keyProvider } } : {}) });
     const observation = { health: healthReader(observationDatabase), traces: new TraceReader(observationDatabase), writer: () => telemetry?.stats() ?? null };
-    app = createApp(deps, { log: operatorLog, health, observation, ...options.appOptions, bridge, ...(tls ? { tls } : {}) });
+    app = createApp(deps, {
+      log: operatorLog,
+      health,
+      observation,
+      ...options.appOptions,
+      bridge,
+      reset: options.appOptions?.reset ?? {
+        bridge: () => createPlatformRebuildBridge(config, io.env),
+        render: options.rebuild?.render ?? renderRebuildPage,
+      },
+      ...(tls ? { tls } : {}),
+    });
     // Requests, background rounds and console actions are traced from here on (B08, decision 146).
     telemetry = startTelemetry({ database: config.database, release: app.release, environment: await deploymentEnvironment(config.dataDir), log: operatorLog, retention: true });
     const info = await app.listen();
@@ -218,6 +260,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   } catch (error) {
     await maintenance?.stopMaintenance({ abort: true }).catch(() => {});
     await app?.close().catch(() => {});
+    await closeAssembly?.().catch(error => operatorLog(`关闭装配资源时出错：${describeError(error)}`));
     health.abandon();
     await healthDatabase.end().catch(() => {});
     await observationDatabase.end().catch(() => {});
@@ -244,14 +287,20 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     io.stdout(`收到${typeof signal === 'string' ? ` ${signal}` : '停止请求'}，正在停止：等进行中的请求结束`);
     // A maintenance pass in progress stops at its next run; the next start goes on from there.
     await maintenance?.stopMaintenance({ abort: true }).catch((error: unknown) => operatorLog(`停止运行维护时出错：${describeError(error)}`));
-    await running.close();
-    // Pack-function children still running after the requests ended are stopped (hub/rules README).
-    stopAll();
-    await health.stop();
-    await healthDatabase.end().catch(() => {});
-    await observationDatabase.end().catch(() => {});
-    await telemetry?.close();
-    await records.close();
+    try {
+      await running.close();
+    } finally {
+      // Assembly cleanup must not skip the caller-owned connections when it fails.
+      stopAll();
+      try { await closeAssembly?.(); }
+      finally {
+        await health.stop();
+        await healthDatabase.end().catch(() => {});
+        await observationDatabase.end().catch(() => {});
+        await telemetry?.close();
+        await records.close();
+      }
+    }
   } finally {
     process.off('unhandledRejection', onRejection);
   }

@@ -6,7 +6,6 @@ import { GetNodesOutput } from '../../contracts/src/tools.ts';
 import { readStoredValidationResult, ValidationResult } from '../../contracts/src/validation.ts';
 import { canonicalJson } from '../refs/api.ts';
 import { toolText } from './text.ts';
-import { TEXT_BUDGET } from './budget.ts';
 
 const reference='rec:'+'a'.repeat(64);
 function legacy(){
@@ -21,13 +20,13 @@ function render(ref:string,value:unknown,cursor?:string){
   return toolText('get_nodes',answer,{paging:true,...(cursor?{cursor}:{})});
 }
 
-test('historical results retain counts, requirement states, problem lists and item blocks',()=>{
+test('historical results retain each original case conclusion and its unknown state',()=>{
   const value=legacy();const original=canonicalJson(value);
   const text=render(reference,value);
-  assert.match(text,/^结果 rec:/m);assert.match(text,/未知 1/);
-  assert.match(text,/要求项（满足状态与各层终态的条目数）/);
-  assert.match(text,/问题与未知/);assert.match(text,/- doc-1:n9 \|/);
-  assert.match(text,/下一步处理安排未记录/);assert.match(text,/未写明缺少什么/);
+  assert.match(text,/^原始用例 端口越界：.*状态未确认；判断错误；原因生产者错误/m);
+  assert.match(text,/^原始用例 未改动的用例：还没有确认结论；状态未知；原因缺资料；下一步使用者核对资料后重新交给 Hub 检查；决定者程序$/m);
+  assert.match(text,/^原始用例 已废弃：.*状态未知；原因还没查清/m);
+  assert.doesNotMatch(text,/doc-1:n9|rec:|要求项（|问题与未知|出口未写|缺失事实未写/);
   assert.equal(canonicalJson(value),original);
 });
 
@@ -36,14 +35,18 @@ for(const [suffix,select] of [
   ['#/partitions/delivered/1',(v:any)=>v.partitions.delivered[1]],
 ] as const)test('historical partition pointer keeps item layout '+suffix,()=>{
   const value=select(legacy());const text=render(reference+suffix,value);
-  assert.match(text,/^结果的已交付部分/m);assert.match(text,/- doc-1:n9 \|/);
-  assert.match(text,/catalog/);assert.match(text,/下一步处理安排未记录/);assert.match(text,/未写明缺少什么/);
+  assert.match(text,/^原始用例 未改动的用例：还没有确认结论；状态未知；原因缺资料；下一步使用者核对资料后重新交给 Hub 检查；决定者程序$/m);
+  assert.doesNotMatch(text,/doc-1:n9|catalog|出口未写|缺失事实未写/);
 });
 
- test('historical notices obey paging without replacing the structured result with a dump',()=>{
+ test('a large historical result gives every original case conclusion without truncation',()=>{
   const value=legacy();const item=value.partitions.delivered[1];
   value.partitions.delivered=Array.from({length:500},(_,i)=>({...structuredClone(item),item:'legacy:'+i,label:'合成历史条目'+i+'很'.repeat(200)}));
   const text=render(reference,value);
-  assert.ok(text.length<=TEXT_BUDGET);
-  assert.match(text,/未知 500/);assert.match(text,/下一步处理安排未记录/);assert.match(text,/未写明缺少什么/);assert.match(text,/下一页/);
+  const lines=text.split('\n').filter(line=>line.startsWith('原始用例 合成历史条目'));
+  assert.equal(lines.length,500);
+  assert.ok(lines.every(line=>line.includes('状态未知；原因缺资料；下一步使用者核对资料后重新交给 Hub 检查；决定者程序')));
+  assert.ok(lines[0].startsWith('原始用例 合成历史条目0很'));
+  assert.ok(lines[499].startsWith('原始用例 合成历史条目499很'));
+  assert.doesNotMatch(text,/legacy:|出口未写|缺失事实未写|下一页|个字符为限/);
 });

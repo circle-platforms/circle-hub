@@ -83,16 +83,16 @@ describe('paging', () => {
   test('extracts reference and cursor from balanced JSON after 下一页：get_nodes ', () => assert.deepEqual(parseNextCall(`下一页：get_nodes {"reference":"${rec}","cursor":"next"}`), { reference: rec, cursor: 'next' }));
   test('handles nested braces and extracts first complete JSON object', () => assert.deepEqual(parseNextCall(`下一页：get_nodes {"reference":"${rec}","cursor":"next","nested":{"n":1}}`), { reference: rec, cursor: 'next' }));
   test('returns null when there is no next page line or invalid format', () => { assert.equal(parseNextCall('完成'), null); assert.equal(parseNextCall('下一页：get_nodes {broken'), null); });
-  test('calls hub_get_nodes with reference in turn 1 when start_run returns rec reference', async () => {
+  test('calls mcp__hub__get_nodes with reference in turn 1 when start_run returns rec reference', async () => {
     const s = caseLocation(doc()); await s.respond(turn(0));
-    assert.deepEqual(await s.respond(turn(1, `完整结果 ${rec}：用 get_nodes 读`)), [{ tool: 'hub_get_nodes', input: { reference: rec } }]);
+    assert.deepEqual(await s.respond(turn(1, `完整结果 ${rec}：用 get_nodes 读`)), [{ tool: 'mcp__hub__get_nodes', input: { reference: rec } }]);
   });
   test('two-page answer flow: reads page 1, gets cursor, reads page 2, finishes and passes all candidate checks', async () => {
     const d = doc(), s = caseLocation(d), full = position(d.document, 'build_candidates', statement(builds(), d.line));
     const at = 170;
     await s.respond(turn(0)); await s.respond(turn(1, `完整结果 ${rec}：用 get_nodes 读`));
     const first = `条目（1 个；编号 | 名称 | 摘要）：\n${row(d)}\n- ${d.document} | 合成标题 | 已交付\n  · location 用例定位：满足\n${position(d.document, 'location', row(d).split(' | ').slice(2).join(' | '))}\n${full.slice(0, at)}\n下一页：get_nodes {"reference":"${rec}","cursor":"next"}`;
-    assert.deepEqual(await s.respond(turn(2, first)), [{ tool: 'hub_get_nodes', input: { reference: rec, cursor: 'next' } }]);
+    assert.deepEqual(await s.respond(turn(2, first)), [{ tool: 'mcp__hub__get_nodes', input: { reference: rec, cursor: 'next' } }]);
     const second = `内容 ${rec}\n共 1 行，这一页从第 1 行的第 ${at + 1} 个字符起：\n（接上页：第 1 行的前 ${at} 个字符在上一页）\n${full.slice(at)}`;
     assert.deepEqual(await s.respond(turn(3, second)), [{ text: '定位完成。' }]);
     assert.ok(s.check([...turnsOf('运行 run_synthetic\n' + first), ...turnsOf(second)]).every(c => c.ok));
@@ -133,7 +133,7 @@ describe('document ownership and report redaction', () => {
 describe('associated IDs and complete structured result data', () => {
   const d = doc({ stories: ['810001'], bugs: ['820001'], unclassified: ['830001'] });
   test('checks associated ID set and respective categories: bug to case (unclassified), bug to case 需求 (story), 缺陷 (bug)', () => assert.ok(allOk(d)));
-  test('reads complete result from hub_get_nodes claim.statement.data when start_run summary is truncated with 等 N 个', () => {
+  test('reads complete result from mcp__hub__get_nodes claim.statement.data when start_run summary is truncated with 等 N 个', () => {
     const data = JSON.stringify({ partitions: { delivered: [{ item: d.document, requirements: [{ requirement: 'location', claims: [{ statement: { data: { requirements: d.stories, defects: d.bugs, unclassified: d.unclassified } } }] }] }] } });
     const rows = caseLocation(d).check([...turnsOf('运行 run_synthetic\n' + answer(d).replaceAll('未分类编号 830001', '未分类编号 等 1 个')), ...turnsOf(data)]);
     assert.ok(rows.every(c => c.ok), JSON.stringify(rows));

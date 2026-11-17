@@ -14,15 +14,14 @@
     "node": ">=24"
   },
   "scripts": {
-    "verify:references": "node tools/verify-reference-archive.ts",
-    "test:references": "node --test tools/verify-reference-archive.test.ts",
     "gen:contracts": "node tools/gen-contracts.ts",
     "verify:contracts": "node tools/gen-contracts.ts --check",
     "gen:sync-errors": "node tools/gen-sync-error-table.ts",
     "test:unit": "node tools/run-unit-tests.ts",
+    "test:quick": "node tools/run-quick-tests.ts",
     "test:acceptance": "node tools/run-acceptance-tests.ts",
     "test:docs": "node --test \".github/checks/*.test.ts\"",
-    "test": "npm run verify:contracts && npm run test:unit && npm run test:docs && npm run test:acceptance && npm run test:references",
+    "test": "npm run verify:contracts && npm run test:unit && npm run test:docs && npm run test:acceptance",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

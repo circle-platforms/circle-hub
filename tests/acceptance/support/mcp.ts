@@ -1,7 +1,7 @@
 // The MCP side of the acceptance tests: the official SDK client over streamable HTTP (createTestHub's client(), which lists
 // the tools first so the SDK validates every structuredContent against the published output schema), plus the checks every
 // answer must pass whatever the scenario: it parses with the tool's zod output schema of the contracts, isError equals
-// `call_result === 'error'` (D05 R[1]), and the content is exactly one plain-text block (D05 R[0]).
+// `call_result === 'error'` (D05 R[1]), with reader text followed by a model-reference text block.
 import assert from 'node:assert/strict';
 import type { z } from 'zod';
 import { TOOLS } from '../../../contracts/src/tools.ts';
@@ -45,8 +45,13 @@ export function checkAnswer<N extends ToolName>(name: N, raw: ToolCallResult): A
   const out = parsed.data as Outputs[N];
   const envelope = out as { call_result: string };
   assert.equal(raw.isError, envelope.call_result === 'error', `${name}: isError agrees with call_result (D05 R[1])`);
-  assert.equal(raw.content.length, 1, `${name}: one content block`);
-  assert.equal(raw.content[0].type, 'text', `${name}: the content block is plain text`);
+  assert.equal(raw.content.length, 2, `${name}: reader text followed by model references`);
+  assert.ok(raw.content.every(block => block.type === 'text'), `${name}: both content blocks are plain text`);
+  assert.match(raw.content[1].text ?? '', /^供模型引用\n/, `${name}: the second block is for model references`);
+  const modelAnswer = JSON.parse(raw.content[1].text!.slice('供模型引用\n'.length));
+  delete modelAnswer.original_cases;
+  delete modelAnswer.source_context;
+  assert.deepEqual(modelAnswer, raw.structuredContent, `${name}: the model block preserves the complete answer`);
   return { isError: raw.isError, out, text: raw.content[0].text ?? '', raw };
 }
 

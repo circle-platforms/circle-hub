@@ -14,9 +14,10 @@ Until 2026-10-13 this repository was licensed under the MIT License, and
 contributions received before that date were submitted under it. Those
 contributions remain available under the MIT License as well.
 
-Third-party components and the frozen Circle source baseline in
-foundation/circle keep their own licenses and notices.
-They are described in THIRD_PARTY_NOTICES.md.
+Third-party components and code adapted from the Circle source baseline
+(https://github.com/qingshanfeihu/circle, commit
+9d23c09a0f8de2f71920b32b23db9af6c9a41100) keep their own licenses and
+notices. They are described in THIRD_PARTY_NOTICES.md.
 
 Design specifications
 ---------------------

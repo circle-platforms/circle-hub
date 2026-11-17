@@ -1,15 +1,15 @@
 import SLOT_TABLE from '../slots.schema.json' with {type:'json'};
 import {schema} from './schema.ts';
-import {readBlockSlots,isNormalized} from './blocks.ts';
+import {readBlockSlots,isNormalized,badDescription} from './blocks.ts';
 import {isExpectationBasis,type ExpectationBasis} from './generated/vocabulary.ts';
 // Restricted authored plan slots. This module verifies structure and never generates an execution artifact.
 import { isRecord } from './text.ts';
 export type KeywordValue = string | number;
-export interface PlanStep { id?:string;origin?:string;block_kind?:string;output?:boolean;save_as?:string;input_register?:string;restore_for?:number;restore_target?:{tree_root:string;path:string;leading_parameters:unknown[];bed:string;manifest_sha256:string};cleanup?:boolean; object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
-export interface PlanExpect {id?:string;origin?:string;operator?:string;output?:string;register?:string;actual_register?:string;comparison?:string;count?:number;expectation?:string;criterion?:string;basis?:ExpectationBasis;rationale?:string; text: string; quote: { reference: string; text: string }; after: number }
+export interface PlanStep { description?:string;id?:string;origin?:string;block_kind?:string;output?:boolean;save_as?:string;input_register?:string;cell_input?:boolean;restore_for?:number;restore_target?:{tree_root:string;path:string;leading_parameters:unknown[];bed:string;manifest_sha256:string};cleanup?:boolean;precondition_source?:{reference:string;text:string};author_step_refs?:string[]; object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
+export interface PlanExpect {id?:string;origin?:string;op?:'not_found';operator?:string;output?:string;register?:string;actual_register?:string;comparison?:string;count?:number;expectation?:string;criterion?:string;basis?:ExpectationBasis;rationale?:string; text: string; quote: { reference: string; text: string }; after: number }
 export interface Replacement { case: string; bed: string }
 export interface PlanSlots { recomposition?:{receipt:string;case_id:string;slots:Array<{slot:string;assertions:string[]}>;rebindings:Array<{slot:string;from:string;to:string;authority?:string;source_of_value?:string}>}; command_identities?:unknown; bucket: string; blocks: Array<Record<string,any>>;block_context?:Record<string,any>;criteria?:Array<Record<string,any>>;obligations?:Array<Record<string,any>>; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
-export interface SlotProblem { pointer: string; message: string }
+export interface SlotProblem { pointer: string; message: string; fix?: string }
 export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok: false; problems: SlotProblem[] } {
   if(isNormalized(value))return {ok:true,slots:value};
   if(isRecord(value)&&Array.isArray(value.blocks)&&value.blocks.length)return readBlockSlots(value);
@@ -19,7 +19,7 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
   const keys = (raw: Record<string, unknown>, allowed: string[], at: string): void => {
     for (const key of Object.keys(raw)) if (!allowed.includes(key)) issue(`${at}/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`, '多余字段；按 slots.schema.json 删除');
   };
-  keys(value, ['bucket', 'blocks', 'steps', 'expects', 'replacements','command_identities','recomposition'], '');
+  keys(value, ['bucket', 'blocks', 'steps', 'expects', 'replacements','command_identities','recomposition','fidelity'], '');
   if (typeof value.bucket !== 'string' || !value.bucket) issue('/bucket', 'bucket 必须是自动化测试环境名');
   if (!Array.isArray(value.blocks) || value.blocks.length) issue('/blocks', '本轮 blocks 必须是空数组');
   if(Object.hasOwn(value,'recomposition')&&!schema(SLOT_TABLE.item.plan.data.properties.recomposition).safeParse(value.recomposition).success)issue('/recomposition','重组消费形状不符合声明');
@@ -28,26 +28,45 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
   for (const [i, raw] of (Array.isArray(value.steps) ? value.steps : []).entries()) {
     const at = `/steps/${i}`;
     if (!isRecord(raw)) { issue(at, '步骤不是对象'); continue; }
-    keys(raw, ['object', 'method', 'args', 'keywords','cleanup'], at);
+    keys(raw, ['object', 'method', 'args', 'keywords','cleanup','description','precondition_source','author_step_refs'], at);
     if(raw.cleanup!==undefined&&typeof raw.cleanup!=='boolean')issue(at+'/cleanup','cleanup 必须是显式布尔声明');
+    if(raw.description!==undefined&&badDescription(raw.description))issue(at+'/description','description 是这一步的一句单行描述，写进工作簿 D 列');
+    let preconditionSource: { reference: string; text: string } | undefined;
+    if (raw.precondition_source !== undefined) {
+      if (!isRecord(raw.precondition_source) || typeof raw.precondition_source.reference !== 'string' || !raw.precondition_source.reference || typeof raw.precondition_source.text !== 'string' || !raw.precondition_source.text) {
+        issue(`${at}/precondition_source`, 'precondition_source 必须带非空 reference 和逐字 text');
+      } else {
+        keys(raw.precondition_source, ['reference', 'text'], `${at}/precondition_source`);
+        preconditionSource = { reference: raw.precondition_source.reference, text: raw.precondition_source.text };
+      }
+    }
+    let authorStepRefs: string[] | undefined;
+    if (raw.author_step_refs !== undefined) {
+      if (!Array.isArray(raw.author_step_refs) || !raw.author_step_refs.length || raw.author_step_refs.length > 32 || raw.author_step_refs.some((v) => typeof v !== 'string' || !v.trim() || [...v].length > 64)) {
+        issue(`${at}/author_step_refs`, 'author_step_refs 必须是 1..32 条非空作者步骤编号');
+      } else {
+        authorStepRefs = raw.author_step_refs.map((v) => String(v));
+      }
+    }
     for (const field of ['object', 'method']) if (typeof raw[field] !== 'string' || !raw[field]) issue(`${at}/${field}`, '缺少对象或方法原名');
     if (!Array.isArray(raw.args) || raw.args.some((v) => typeof v !== 'string')) issue(`${at}/args`, 'args 必须是文字列表，没有位置参数写 []');
     if (!isRecord(raw.keywords) || Object.values(raw.keywords).some((v) => typeof v !== 'string' && !(typeof v === 'number' && Number.isSafeInteger(v) && v >= 0))) issue(`${at}/keywords`, 'keywords 必须是参数名到文字或安全非负整数的映射，没有关键字写 {}');
-    if (typeof raw.object === 'string' && typeof raw.method === 'string' && Array.isArray(raw.args) && isRecord(raw.keywords)) steps.push({...(typeof raw.cleanup==='boolean'?{cleanup:raw.cleanup}:{}),object: raw.object, method: raw.method, args: raw.args as string[], keywords: raw.keywords as Record<string, KeywordValue> });
+    if (typeof raw.object === 'string' && typeof raw.method === 'string' && Array.isArray(raw.args) && isRecord(raw.keywords)) steps.push({...(typeof raw.cleanup==='boolean'?{cleanup:raw.cleanup}:{}),...(typeof raw.description==='string'?{description:raw.description}:{}),...(preconditionSource?{precondition_source:preconditionSource}:{}),...(authorStepRefs?{author_step_refs:authorStepRefs}:{}),object: raw.object, method: raw.method, args: raw.args as string[], keywords: raw.keywords as Record<string, KeywordValue> });
   }
   const expects: PlanExpect[] = [];
   if (!Array.isArray(value.expects)) issue('/expects', 'expects 必须是数组');
   for (const [i, raw] of (Array.isArray(value.expects) ? value.expects : []).entries()) {
     const at = `/expects/${i}`;
     if (!isRecord(raw)) { issue(at, '期望不是对象'); continue; }
-    keys(raw, ['text', 'quote', 'after','basis','rationale'], at);
+    keys(raw, ['text', 'quote', 'after','op','basis','rationale'], at);
+    if(raw.op!==undefined&&raw.op!=='not_found')issue(at+'/op','op 仅接受 not_found；查找检查省略此字段');
     if(raw.basis!==undefined&&!isExpectationBasis(raw.basis))issue(at+'/basis','basis 必须是生成合约声明的完全相等值；默认逐字规则请省略');
     if(raw.basis!==undefined&&(typeof raw.rationale!=='string'||!raw.rationale.trim()))issue(at+'/rationale','模型判断必须有非空 rationale，说明为何选择这段设备可观察文字');
     if(raw.basis===undefined&&raw.rationale!==undefined)issue(at+'/rationale','默认规则不接收 rationale；模型判断请显式声明 basis');
     if (typeof raw.text !== 'string' || !raw.text) issue(`${at}/text`, '期望文字不能为空');
     if (!Number.isSafeInteger(raw.after) || (raw.after as number) < 1) issue(`${at}/after`, 'after 必须是从 1 开始的步骤号');
     if (!isRecord(raw.quote) || typeof raw.quote.reference !== 'string' || !raw.quote.reference || typeof raw.quote.text !== 'string' || !raw.quote.text) issue(`${at}/quote`, 'quote 必须带 reference 和逐字 text');
-    else { keys(raw.quote, ['reference', 'text'], `${at}/quote`); expects.push({...(isExpectationBasis(raw.basis)?{basis:raw.basis,rationale:String(raw.rationale)}:{}), text: String(raw.text), after: raw.after as number, quote: { reference: raw.quote.reference, text: raw.quote.text } }); }
+    else { keys(raw.quote, ['reference', 'text'], `${at}/quote`); expects.push({...(raw.op==='not_found'?{op:raw.op}:{}),...(isExpectationBasis(raw.basis)?{basis:raw.basis,rationale:String(raw.rationale)}:{}), text: String(raw.text), after: raw.after as number, quote: { reference: raw.quote.reference, text: raw.quote.text } }); }
   }
   const replacements: Replacement[] = [];
   if (!Array.isArray(value.replacements)) issue('/replacements', 'replacements 必须是数组，没有替换写 []');

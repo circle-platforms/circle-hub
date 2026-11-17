@@ -503,6 +503,34 @@
                     "additionalProperties": false
                   }
                 },
+                "embeds": {
+                  "description": "skill modules this pack carries as generated files; publication compares them with the named skill version (T01 R[6])",
+                  "maxItems": 64,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "pack": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]{1,40}$"
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                      },
+                      "module": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]{0,62}$"
+                      }
+                    },
+                    "required": [
+                      "pack",
+                      "version",
+                      "module"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "files": {
                   "type": "array",
                   "items": {

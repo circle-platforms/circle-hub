@@ -2,7 +2,8 @@
 import {readFileSync,writeFileSync} from 'node:fs';
 import TABLE from '../tables/blocks-format.json' with {type:'json'};
 export function blockSchema(){
- const fields=TABLE.fields as Record<string,unknown>;
+ const fields=structuredClone(TABLE.fields) as Record<string,any>;
+ fields.table.properties.format.enum=TABLE.cell_formats;
  const block={anyOf:TABLE.kinds.map(row=>({type:'object',additionalProperties:false,properties:Object.fromEntries(row.fields.map(name=>[name,name==='id'?{type:'string',minLength:1}:name==='kind'?{const:row.kind}:fields[name]])),required:row.required}))};
  const context=structuredClone(TABLE.context_schema),criterion=structuredClone(TABLE.criterion_schema),obligation=structuredClone(TABLE.obligation_schema);
  criterion.properties.operator={...criterion.properties.operator,enum:TABLE.assertion_ops.map(row=>row.op)} as typeof criterion.properties.operator;
@@ -15,7 +16,7 @@ export function blockSchema(){
 export function generateBlockSchema(){
  const file=new URL('../slots.schema.json',import.meta.url),slots=JSON.parse(readFileSync(file,'utf8')),data=slots.item.plan.data,s=blockSchema();
  data.properties.blocks={type:'array',maxItems:TABLE.limits.blocks,items:s.block};data.properties.steps.minItems=0;data.properties.expects.minItems=0;
- data.properties.block_context=s.context;data.properties.criteria={type:'array',maxItems:TABLE.limits.criteria,items:s.criterion};data.properties.obligations={type:'array',maxItems:TABLE.limits.criteria,items:s.obligation};
+ data.properties.block_context=s.context;data.properties.criteria={type:'array',description:TABLE.criteria_description,maxItems:TABLE.limits.criteria,items:s.criterion};data.properties.obligations={type:'array',maxItems:TABLE.limits.criteria,items:s.obligation};
  writeFileSync(file,JSON.stringify(slots,null,2)+'\n');
  writeFileSync(new URL('../review/tables/criterion.schema.json',import.meta.url),JSON.stringify(s.criterion,null,2)+'\n');
  const validator=readFileSync(new URL('../functions/schema.ts',import.meta.url),'utf8').replace("import {addressValue} from './manifest.ts';","// Criterion schemas declare no address formats; unexpected formats fail closed.\nconst addressValue=(_kind:string,_value:string):null=>null;");

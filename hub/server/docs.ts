@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 // Named documents published by administrators (C4, docs/hub-r4-device-pack.md section 4). `circle-hub doc put` stores
 // the file through the source-artifact pipeline (the credential scan as usual: a hit is held back until an admin
 // accepts it) and moves a named pointer (hub/records/pointers.ts compare-and-set, `doc:<name>`) to its digest; a
@@ -6,12 +7,14 @@
 // system): the revision is the content digest, so withRevision freezes `doc:doc:<name>@<sha256>` into the run at
 // start (RunRecord.sources), and the provenance is `declared`. A read needs a run of a pack that declares the doc
 // input type (`accepts: ["doc:doc"]` on an input slot) and answers only that run's user; everyone else, and every
-// CLI user who is not an admin, gets the same answer as for a doc that does not exist.
+// CLI user who is not an admin, gets the same answer as for a doc that does not exist. A name that is not there is refused
+// with the documents the caller may read (the nearest first); an identity written wrong (a name with capitals, an `@` that is
+// followed by no digest) is refused for what is wrong in it, never as a resource that is missing.
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
-import { ExternalObjectId } from '../../contracts/src/reference.ts';
 import { RunId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, WorkflowStore } from '../ports.ts';
+import { suggestNames } from '../runs/api.ts';
 import {
   RECORD_SCHEMAS,
   sha256Hex,
@@ -34,6 +37,9 @@ const COMPONENT = 'server.docs@1';
 const MOVE_ATTEMPTS = 3;
 
 const DOC_ID = /^doc:doc:([a-z][a-z0-9-]{0,63})(?:@([0-9a-f]{64}))?$/;
+
+/** A part of an identity as an answer quotes it: what was written, cut when it is long. */
+const clipped = (text: string, max = 80): string => (text.length <= max ? text : `${text.slice(0, max)}…`);
 
 /** The external id of a named document, pinned when a digest is given. */
 export function docIdOf(name: string, sha256?: string): string {
@@ -121,7 +127,7 @@ export function createDocs(deps: DocsDeps): Docs {
   const now = deps.now ?? (() => new Date());
 
   async function put(admin: Principal, name: string, bytes: Uint8Array, options: { fileName?: string; mediaType?: string } = {}): Promise<DocPutResult> {
-    if (admin.role !== 'admin') throw new DocsError(`没有叫 ${name.slice(0, 80)} 的命名文档`);
+    if (!isAdmin(admin)) throw new DocsError(`没有叫 ${name.slice(0, 80)} 的命名文档`);
     if (!DOC_NAME.test(name)) throw new DocsError(`命名文档的名字要写成小写字母开头的字母、数字或连字符，1 到 64 个字符：${name.slice(0, 80)}`);
     if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
     if (bytes.byteLength > MAX_DOC_BYTES) throw new DocsError(`文件有 ${bytes.byteLength} 字节，超过命名文档的上限 ${MAX_DOC_BYTES} 字节（2 MiB），没有保存`);
@@ -171,37 +177,96 @@ export function createDocs(deps: DocsDeps): Docs {
     return out;
   }
 
-  async function read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
+  async function read(id: string, context: ExternalReadContext, includeOptions = true): Promise<ExternalRead> {
     const startedAt = now().toISOString();
     const bare = id.includes('@') ? id.slice(0, id.indexOf('@')) : id;
     const parsed = parseDocId(id);
-    if (parsed === null) return { ok: false, id: bare, reason: '不是命名文档的标识', inputError: { message: '不是命名文档的标识', fix: '按 doc:doc:<名字> 或 doc:doc:<名字>@<摘要> 写' } };
+    const principal = context.principal;
+    // The run that is reading, when it is stored already (a run that is being started is not).
+    let lookup: Promise<Pick<RunRecord, 'runner' | 'pack_digest' | 'pack_space'> | undefined> | undefined;
+    const storedRun = (): Promise<Pick<RunRecord, 'runner' | 'pack_digest' | 'pack_space'> | undefined> => lookup ??= (
+      context.run && RunId.safeParse(context.run).success
+        ? records.store.find<Pick<RunRecord, 'runner' | 'pack_digest' | 'pack_space'>>({ key: 'runs.id', value: context.run, kind: 'run', limit: 1 }).then((found) => found.items[0]?.body)
+        : Promise.resolve(undefined)
+    );
+    /**
+     * Why this caller may not read an existing document through this call, or null when it may: an administrator anywhere, a
+     * member through a run only: the run must exist and be this user's, and its pack must declare the doc input type. A run
+     * that is not stored yet is being started: bindInputs has already checked the assignment and the slot.
+     */
+    const denial = async (): Promise<string | null> => {
+      if (isAdmin(principal)) return null;
+      if (context.run === undefined || context.run === null || !RunId.safeParse(context.run).success) return '命名文档只经运行读取';
+      const record = await storedRun();
+      if (record === undefined) return null;
+      if (record.runner !== principal.id) return `运行 ${context.run} 不是你的`;
+      const workflow = typeof record.pack_digest === 'string' ? await deps.workflows.byDigest(record.pack_digest, record.pack_space) : null;
+      const declares = workflow?.workflow.inputs.some((slot) => slot.accepts.includes(DOC_EXTERNAL_TYPE)) ?? false;
+      return declares ? null : `运行 ${context.run} 的工作流没有声明命名文档输入`;
+    };
+    // Suggestions and machine-readable options share the same verified, bounded list.
+    let optionsLookup: Promise<{ options: string[]; complete: boolean }> | undefined;
+    const readableOptions = (): Promise<{ options: string[]; complete: boolean }> => optionsLookup ??= (async () => {
+      const record = await storedRun();
+      if (!includeOptions || record?.pack_space && record.pack_space !== 'team' || await denial() !== null) return { options: [], complete: true };
+      const pointers = await records.pointers.list('doc:');
+      const candidates = pointers.slice(0, 100);
+      const options: string[] = [];
+      for (const pointer of candidates) {
+        const candidate = docIdOf(pointer.name.slice('doc:'.length));
+        if ((await read(candidate, context, false)).ok) options.push(candidate);
+      }
+      return { options, complete: candidates.length === pointers.length };
+    })();
+    /**
+     * The documents this caller may read through this call, said beside a refusal of a name: the nearest when it is plainly
+     * the one meant, else the first few. Nothing for a caller who may not read one (they get the same answer as for no
+     * documents at all) and nothing for a personal workflow, which reads none.
+     */
+    const readable = async (asked: string): Promise<string> => {
+      const record = await storedRun();
+      if (record?.pack_space && record.pack_space !== 'team') return '';
+      if (await denial() !== null) return '';
+      const { options, complete } = await readableOptions();
+      const { nearest, listed, total } = suggestNames(asked, options.map(id => ({ shown: id.slice('doc:doc:'.length), key: id.slice('doc:doc:'.length) })));
+      if (!complete) return listed.length ? `，本次核验可读的部分命名文档：${listed.join('、')}（该填的名字看这个工作流的输入说明，用 list_task_packs 带 pack_id 读）` : '';
+      if (nearest !== null) return `，当前账户可读的命名文档里最接近的是 ${nearest.shown}`;
+      if (listed.length === 0) return '';
+      // A cut list says where the rest is: the name to write is in the description of the input.
+      return total > listed.length ? `，当前账户可读的命名文档共 ${total} 个，最接近的是：${listed.join('、')}（该填的名字看这个工作流的输入说明，用 list_task_packs 带 pack_id 读）` : `，当前账户可读的命名文档：${listed.join('、')}`;
+    };
+    if (parsed === null) {
+      // What is wrong with the way the identity is written, said as it is: this is the caller's to correct, not a missing resource.
+      const written = /^doc:doc:([^@]*)(?:@([\s\S]*))?$/.exec(id);
+      const name = written?.[1], revision = written?.[2];
+      const message = written === null ? `${clipped(id)} 不是命名文档的标识`
+        : !DOC_NAME.test(name!) ? `命名文档的名字「${clipped(name!)}」不合法：要写成小写字母开头的字母、数字或连字符，1 到 64 个字符${name === '' ? '' : await readable(name!.toLowerCase())}`
+          : `「@${clipped(revision!)}」不是命名文档的摘要：@ 后面要写 64 位十六进制摘要，只读当前版本就不写 @ 和后面的部分${await records.pointers.get(docPointerName(name!)) === null ? await readable(name!) : ''}`;
+      return { ok: false, id: bare, reason: message, inputError: { code: 'SUBMISSION_SCHEMA_VIOLATION', message, fix: '照 doc:doc:<名字> 或 doc:doc:<名字>@<64 位摘要> 写' } };
+    }
     // Not found or no permission (D05 R[3], decision 112): whether the document exists is checked first; the reason is
     // also kept for the admin note.
     const neutral = `账号 ${context.principal.id} 读命名文档 ${parsed.name}`;
-    const principal = context.principal;
-    const storedRun=context.run&&RunId.safeParse(context.run).success?(await records.store.find<Pick<RunRecord,'runner'|'pack_digest'|'pack_space'>>({key:'runs.id',value:context.run,kind:'run',limit:1})).items[0]:undefined;
-    if(storedRun?.body.pack_space&&storedRun.body.pack_space!=='team')return {ok:false,id:bare,reason:`个人工作流不能读取命名文档；${neutral}`};
-    const absent = (message: string): ExternalRead => ({ ok: false, id: bare, reason: `${message}；${neutral}`, inputError: { code: 'SOURCE_ABSENT', message, fix: '核对文档名；命名文档由管理员发布（circle-hub doc put）' } });
+    const record = await storedRun();
+    if (record?.pack_space && record.pack_space !== 'team') return { ok: false, id: bare, reason: `个人工作流不能读取命名文档；${neutral}` };
+    const absent = async (message: string, fix = '核对文档名；该填的名字写在这个工作流的输入说明里（list_task_packs 带 pack_id 读）；命名文档由管理员发布（circle-hub doc put）'): Promise<ExternalRead> => {
+      const { options, complete } = await readableOptions();
+      const total = options.length;
+      return { ok: false, id: bare, reason: `${message}；${neutral}`, inputError: {
+        code: 'SOURCE_ABSENT', message,
+        fix,
+        ...(includeOptions ? { options: options.slice(0, 20), options_coverage: { examined: Math.min(total, 20), ...(complete ? { total } : {}), complete: complete && total <= 20, ...(!complete || total > 20 ? { note: '仅列出本次已经核验可读的部分名称' } : {}) } } : {}),
+      } };
+    };
     const forbidden = (why: string): ExternalRead => ({ ok: false, id: bare, reason: `${why}；${neutral}`, inputError: { code: 'SOURCE_NOT_PERMITTED', message: `命名文档 ${parsed.name} 存在，你没有读取权限：${why}`, fix: '经你自己的、工作流声明了命名文档输入的运行读取它；没有这样的工作流时请管理员分配' } });
     const lost = (message: string): ExternalRead => ({ ok: false, id: bare, reason: message, inputError: { code: 'SOURCE_INTEGRITY_UNPROVEN', message, fix: '请管理员从备份恢复这份命名文档后重读' } });
     const pointer = await records.pointers.get(docPointerName(parsed.name));
-    if (pointer === null) return absent(`Hub 里没有命名文档 ${parsed.name}`);
-    if (principal.role !== 'admin') {
-      // Through a run only: the run must exist and be this user's, and its pack must declare the doc input type.
-      // A run that is not stored yet is being started: bindInputs has already checked the assignment and the slot.
-      if (context.run === undefined || context.run === null || !RunId.safeParse(context.run).success) return forbidden('命名文档只经运行读取');
-      const record = storedRun;
-      if (record !== undefined) {
-        if (record.body.runner !== principal.id) return forbidden(`运行 ${context.run} 不是你的`);
-        const workflow = typeof record.body.pack_digest === 'string' ? await deps.workflows.byDigest(record.body.pack_digest,record.body.pack_space) : null;
-        const declares = workflow?.workflow.inputs.some((slot) => slot.accepts.includes(DOC_EXTERNAL_TYPE)) ?? false;
-        if (!declares) return forbidden(`运行 ${context.run} 的工作流没有声明命名文档输入`);
-      }
-    }
+    if (pointer === null) return absent(`Hub 里没有命名文档 ${parsed.name}${await readable(parsed.name)}`);
+    const why = await denial();
+    if (why !== null) return forbidden(why);
     const target = parsed.sha256 ?? pointer.target;
     if (parsed.sha256 !== null && target !== pointer.target && !(await revisions(parsed.name)).has(target)) {
-      return absent(`命名文档 ${parsed.name} 没有过这份摘要的内容`);
+      return absent(`命名文档 ${parsed.name} 没有过这份摘要的内容`, '要读当前版本就不写 @ 和后面的部分；要读某一版，@ 后面写这份命名文档做过的那一版的 64 位摘要');
     }
     const bytes = await records.artifacts.trustedBytes(target);
     if (bytes === null) return lost(`命名文档 ${parsed.name} 的字节（${target.slice(0, 12)}）不在对象库里`);
@@ -285,7 +350,7 @@ export function createDocs(deps: DocsDeps): Docs {
     },
     show,
     reader: {
-      accepts: async (id: string) => typeof id === 'string' && parseDocId(id) !== null && ExternalObjectId.safeParse(id).success,
+      accepts: async (id: string) => typeof id === 'string' && id.startsWith('doc:doc:'),
       read,
     },
   };

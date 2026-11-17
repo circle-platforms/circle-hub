@@ -130,3 +130,13 @@ export async function defaultPredecessorInputs(ctx:EngineContext,workflow:Loaded
   }
   return{inputs:current,defaults};
 }
+
+/** Visibility of predecessor must already have been checked by startFresh; this adds facts, never defaults or grants. */
+export function predecessorInputRefusal(error:unknown,predecessor:RunRecord|null,workflow:LoadedWorkflow):never{
+ if(!(error instanceof Refusal)||!predecessor)throw error;
+ const slots=new Set(workflow.workflow.inputs.map(input=>input.slot));
+ const sources=predecessor.sources.filter(source=>source.slot!==undefined&&slots.has(source.slot));
+ if(!sources.length)throw error;
+ const hint=`前序冻结输入：${sources.map(source=>`${source.slot}=${source.external??source.reference}`).join('；')}。按本工作流输入说明核对后显式填写，未自动沿用或改变绑定`;
+ throw new Refusal(error.errors.map(row=>({...row,fix:`${row.fix??''}；${hint}`})),error.adminNote);
+}

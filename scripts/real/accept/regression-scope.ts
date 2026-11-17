@@ -43,7 +43,7 @@ export default function scenario(gold: ScopeGold): Scenario {
     prompt: `请对比 ${gold.earlier} 和 ${gold.later} 两个构建，给出回归范围。`,
     respond: (turn) =>
       turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1` }, facets: { external: `knowledge:facets:${gold.product}:${gold.later}?kind=case&by=commands` } } } }]
+        ? [{ tool: 'mcp__hub__start_run', input: { pack, inputs: { impact: { external: `knowledge:impact:${gold.product}:${gold.earlier}..${gold.later}?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1` }, facets: { external: `knowledge:facets:${gold.product}:${gold.later}?kind=case&by=commands` } } } }]
         : readFacets(turn, '对比完成。'),
     check(turns: LoggedTurn[]): Check[] {
       const answerTurns = withoutFacetPages(turns);
@@ -113,14 +113,14 @@ export function facetReader(): (turn: Turn, done: string) => Reply {
     if (turn.index === 1) {
       reference = boundFacetReference(turn.toolResults.map((r) => r.text));
       if (!reference) return [{ text: '缺少已绑定 facets 的源引用，未归位数尚未核对；请补齐运行来源回答后重试。' }];
-      return [{ tool: 'hub_get_nodes', input: { reference } }];
+      return [{ tool: 'mcp__hub__get_nodes', input: { reference } }];
     }
     const next = continuation(turn.toolResults.map((r) => r.text).join('\n'));
     if (next) {
       const key = JSON.stringify(next);
       if (!reference || !next.reference.startsWith(reference) || requested.has(key) || requested.size >= 1024) return [{ text: '分面分页没有前进或换了源，缺少完整计数；请补齐该源的完整分页后重试。' }];
       requested.add(key);
-      return [{ tool: 'hub_get_nodes', input: next }];
+      return [{ tool: 'mcp__hub__get_nodes', input: next }];
     }
     return [{ text: done }];
   };

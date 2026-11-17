@@ -14,6 +14,7 @@ async function world(t:{after:(fn:()=>Promise<void>)=>void},route:Record<string,
  const pack=await writePack(kit.packRoot,{id:'synthetic-routing',system:{schema:'system@1',title:'合成路由',roles:[{name:'source'}],auth:{kind:'none'},routes:[{id:'read',role:'source',method:'GET',path:'/{key}',params:{key:{type:'string',maxLength:100}},response:'json',max_bytes:4096,read:true,...route}],reads:[{name:'object',external:'fixture:item',plan:{module:'functions/plan.ts'},max_requests:10}]}});
  await writeFile(join(pack.directory,'functions/plan.ts'),'export default function(){return {requests:[],done:true}}');kit.packs.set(pack);
  const resource=await kit.connectors.admin.addResource(kit.admin,{system_pack:pack.id,name:'合成路由',environment:'test',origins:{source:'http://192.0.2.1'}});
+  await kit.records.authorizations.grant(kit.admin, { permission: 'resource_assign', subject: '*', object: resource.id });
  return {kit,paths,read:()=>kit.connectors.executeRead(resource.id,'object',{id:'sample'},{principal:kit.user,purpose:'synthetic routing'}),external:()=>kit.connectors.reader.read('fixture:item:sample',{principal:kit.user,purpose:'synthetic routing'})};
 }
 const redirectPlan=(i:any)=>i.round===1?{requests:[{key:'one',route:'read',params:{key:'one'}}],done:false}:i.round===2?{requests:[{key:'two',route:'read',href:i.responses.one.location,against:'one'}],original:'two',done:true}:{requests:[],done:true};

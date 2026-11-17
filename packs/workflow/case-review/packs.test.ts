@@ -6,11 +6,11 @@ import ts from 'typescript';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { packVocabularyFiles } from '../../../tools/gen-contracts.ts';
-import { AXES } from '../../../contracts/generated/vocabulary.ts';
+import { AXES, PackKindSchema } from '../../../contracts/generated/vocabulary.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
 import { StartRunInput } from '../../../contracts/src/tools.ts';
 import { readPackDirectory, refusalsOf, runPublishCheck, validatePack } from '../../../hub/runs/api.ts';
@@ -18,19 +18,6 @@ import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { PACK_DIRECTORIES, manifestProblems, readManifest, stagePack } from './packaging.ts';
 import { listSamples, sampleText, samples as draftSamples } from './testing/samples.ts';
 import { samples as verifySamples } from '../case-review-verify/testing/samples.ts';
-
-const KINDS: Record<string, string> = {
-  'case-review': 'workflow',
-  'case-review-verify': 'workflow',
-  'case-review-report': 'workflow',
-  famx: 'product',
-  'lumen-api': 'product',
-  'agile-platform': 'system',
-  plm: 'system',
-  'build-site': 'system',
-  'manual-store': 'system',
-  openkm: 'system',
-};
 
 let temp: string;
 before(async () => {
@@ -41,12 +28,17 @@ after(async () => {
 });
 
 describe('every pack of this package', () => {
-  for (const [id, kind] of Object.entries(KINDS)) {
+  const packsRoot = fileURLToPath(new URL('../../', import.meta.url));
+  for (const [id, directory] of Object.entries(PACK_DIRECTORIES)) {
     it(`${id}: pack.json is current, the pack validates and its publish check passes`, async () => {
-      assert.deepEqual(await manifestProblems(PACK_DIRECTORIES[id]), [], `run node packs/workflow/case-review/packaging.ts sign ${id}`);
-      const manifest = await readManifest(PACK_DIRECTORIES[id]);
+      const layout = relative(packsRoot, directory).split(sep);
+      assert.equal(layout.length, 2, 'registered packs use the packs/<kind>/<id> layout');
+      assert.equal(layout[1], id, 'the directory and registered identity agree');
+      const kind = PackKindSchema.parse(layout[0]);
+      assert.deepEqual(await manifestProblems(directory), [], `run node packs/workflow/case-review/packaging.ts sign ${id}`);
+      const manifest = await readManifest(directory);
       assert.deepEqual([manifest.id, manifest.kind], [id, kind]);
-      const staged = await stagePack(PACK_DIRECTORIES[id], join(temp, id));
+      const staged = await stagePack(directory, join(temp, id));
       const read = await readPackDirectory(staged);
       assert.ok(read.ok, JSON.stringify(!read.ok ? read.problems : []).slice(0, 2000));
       const validated = await validatePack(read.pack);
@@ -99,6 +91,44 @@ function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; check
       if (node.typeName.text === 'Extract' || node.typeName.text === 'Exclude') return node.typeArguments?.some(n => derives(n, type)) ?? false;
     }
     return ts.isParenthesizedTypeNode(node) && derives(node.type, type) || ts.isUnionTypeNode(node) && node.types.some(t => derives(t, type));
+  };
+  // A generic key argument is structural only when its declared keyof constraint and every actual key agree.
+  const checkedKeyArgument = (node: ts.TypeReferenceNode, index: number): boolean => {
+    if (!semantic || !node.typeArguments) return false;
+    let symbol = semantic.checker.getSymbolAtLocation(node.typeName);
+    if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = semantic.checker.getAliasedSymbol(symbol);
+    return symbol?.declarations?.some(declaration => {
+      if (!ts.isTypeAliasDeclaration(declaration) && !ts.isInterfaceDeclaration(declaration)) return false;
+      const parameters = declaration.typeParameters;
+      const constraint = parameters?.[index]?.constraint;
+      if (!constraint || !ts.isTypeOperatorNode(constraint) || constraint.operator !== ts.SyntaxKind.KeyOfKeyword) return false;
+      let targetName: string;
+      let subtract = false;
+      if (ts.isTypeReferenceNode(constraint.type) && ts.isIdentifier(constraint.type.typeName)) {
+        targetName = constraint.type.typeName.text;
+      } else {
+        if (constraint.type.kind !== ts.SyntaxKind.AnyKeyword || !ts.isTypeAliasDeclaration(declaration) || !ts.isTypeReferenceNode(declaration.type)) return false;
+        const [base, selection] = declaration.type.typeArguments ?? [];
+        if (!base || !ts.isTypeReferenceNode(base) || !ts.isIdentifier(base.typeName) || !selection || !ts.isTypeReferenceNode(selection)) return false;
+        const [allKeys, omitted] = selection.typeArguments ?? [];
+        if (!allKeys || !ts.isTypeOperatorNode(allKeys) || allKeys.operator !== ts.SyntaxKind.KeyOfKeyword || !ts.isTypeReferenceNode(allKeys.type) || !ts.isIdentifier(allKeys.type.typeName) || !omitted || !ts.isTypeReferenceNode(omitted) || !ts.isIdentifier(omitted.typeName)) return false;
+        if (allKeys.type.typeName.text !== base.typeName.text || omitted.typeName.text !== parameters![index].name.text) return false;
+        targetName = base.typeName.text;
+        subtract = true;
+      }
+      const targetIndex = parameters!.findIndex(parameter => parameter.name.text === targetName);
+      const targetNode = node.typeArguments![targetIndex];
+      if (!targetNode) return false;
+      const target = semantic.checker.getTypeFromTypeNode(targetNode);
+      const keys = semantic.checker.getTypeFromTypeNode(node.typeArguments![index]);
+      const members = keys.isUnion() ? keys.types : [keys];
+      if (!members.length || !members.every(member => member.isStringLiteral() && semantic.checker.getPropertyOfType(target, member.value) !== undefined)) return false;
+      if (!subtract) return true;
+      const omittedKeys = new Set(members.map(member => (member as ts.StringLiteralType).value));
+      const expected = new Set(target.getProperties().map(property => property.name).filter(name => !omittedKeys.has(name)));
+      const actual = semantic.checker.getTypeFromTypeNode(node).getProperties();
+      return actual.length === expected.size && actual.every(property => expected.has(property.name));
+    }) ?? false;
   };
   const visit = (node: ts.Node): void => {
     // Compiler-checked subsets are allowed; their argument literals do not declare a new enumeration.
@@ -175,6 +205,10 @@ function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; check
         const matching = [...values].filter(v => axis.values.has(v));
         if (matching.length >= 2) out.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, axis: axis.name, values: matching });
       }
+    }
+    if (ts.isTypeReferenceNode(node) && node.typeArguments?.some((_, index) => checkedKeyArgument(node, index))) {
+      node.typeArguments.forEach((argument, index) => { if (!checkedKeyArgument(node, index)) visit(argument); });
+      return;
     }
     const parts = ts.isUnionTypeNode(node) ? [...node.types] : ts.isArrayLiteralExpression(node) ? [...node.elements] : null;
     if (parts !== null) {
@@ -273,6 +307,31 @@ describe('the vocabulary', () => {
     const hits=handWrittenAxes(text,{source:program.getSourceFile(file)!,checker:program.getTypeChecker()});
     const badLines=text.split('\n').flatMap((line,i)=>line.includes('bad')?[i+1]:[]);
     assert.deepEqual([...new Set(hits.map(h=>h.line))].sort((a,b)=>a-b),badLines);
+  });
+
+  it('checks generic keyof arguments as structural keys without exempting unchecked axis unions', () => {
+    const file = join(root, 'scan-property-keys-self-test.ts');
+    const text = [
+      'interface Fields { admin: string; user: string; knowledge: string; packs: string }',
+      "type Picked = Pick<Fields, 'knowledge' | 'packs'>;",
+      "type Omitted = Omit<Fields, 'admin' | 'user'>;",
+      'type Checked<T, K extends keyof T> = { [P in K]: T[P] };',
+      "type Selected = Checked<Fields, 'knowledge' | 'packs'>;",
+      'type Unchecked<T, K> = { keys: K };',
+      "type Invalid = Unchecked<Fields, 'knowledge' | 'packs'>;",
+      "type Missing = Pick<Fields, 'admin' | 'user' | 'other'>;",
+      "type MissingOmitted = Omit<Fields, 'admin' | 'user' | 'other'>;",
+      'type NonKeys<T, K extends keyof any> = { keys: K };',
+      "type UncheckedOmitted = NonKeys<Fields, 'admin' | 'user'>;",
+      'type KeepKeys<T, K extends keyof any> = Pick<T, Extract<keyof T, K>>;',
+      "type NotOmitted = KeepKeys<Fields, 'admin' | 'user'>;",
+      "type Raw = 'admin' | 'user';",
+    ].join('\n');
+    const host = ts.createCompilerHost({}), original = host.getSourceFile;
+    host.getSourceFile = (path, language, onError, create) => path === file ? ts.createSourceFile(path, text, language, true) : original(path, language, onError, create);
+    const program = ts.createProgram([file], { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext }, host);
+    const hits = handWrittenAxes(text, { source: program.getSourceFile(file)!, checker: program.getTypeChecker() });
+    assert.deepEqual([...new Set(hits.map(hit => hit.line))].sort((a, b) => a - b), [7, 8, 9, 11, 13, 14]);
   });
 
   it('c3 detects negated membership and loose equality without field name exemptions',()=>{

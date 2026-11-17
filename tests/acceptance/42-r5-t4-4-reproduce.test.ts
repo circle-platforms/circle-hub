@@ -150,8 +150,9 @@ test('T4-4 synthetic reproduction: ticket, bed search, observation quotes, lease
   const sha = (await bed.hub.hub.docs.show('orbit-bed'))!.sha256;
   const raw = definition(gateway.endpoint);
   const seat = { ...probes.seats[0]!, seat: 'orbit0', manifest: { ...probes.seats[0]!.manifest, device: '/beds/0/devices/0' } };
-  const executor = ExecutorDefinition.parse({ ...raw, probes: { ...probes, seats: [seat] }, allowed_tools: [...raw.allowed_tools, 'inspect_seat'], manifest_sha256: sha });
-  await addSyntheticExecutor(bed.hub.records, bed.hub.hub.dispatch!.registry, bed.hub.admin.principal, executor, 'synthetic-orbit-key');
+  const executor = ExecutorDefinition.parse({ ...raw, target: 'orbit-bed', resources: inventory.beds[0]!.devices.map(device => `bed/orbit-bed/${device.name}`), probes: { ...probes, seats: [seat] }, allowed_tools: [...raw.allowed_tools, 'inspect_seat'], manifest_sha256: sha });
+  const registered = await addSyntheticExecutor(bed.hub.records, bed.hub.hub.dispatch!.registry, bed.hub.admin.principal, executor, 'synthetic-orbit-key');
+  await bed.hub.records.authorizations.assignResource(bed.hub.admin.principal, registered.id, bed.reviewer.user.id);
 
   // Before anyone looked: no observation, unknown, never the declared build.
   const unseen = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'search', need } });
@@ -165,8 +166,8 @@ test('T4-4 synthetic reproduction: ticket, bed search, observation quotes, lease
   assert.equal(booked.isError, false, booked.text.slice(0, 800));
   const booking = booked.out.run?.run;
   assert.ok(booking);
-  assert.match(booked.text, /预订时在设备上看到的构建：/);
-  assert.match(booked.text, new RegExp(`orbit-bed/orbit0 装的是 ${ticketBuild}（设备回显，观察于 \\d{4}-`));
+  assert.match(booked.text, /测试环境 orbit-bed\/orbit0，构建 /);
+  assert.match(booked.text, new RegExp(`orbit-bed/orbit0，构建 ${ticketBuild}，读取时间 \\d{2}-\\d{2} \\d{2}:\\d{2}（UTC[+-]\\d+(?::\\d{2})?）；状态已确认；决定者程序`));
   assert.ok(gateway.calls.some((call) => call.params.name === 'inspect_seat' && (call.params.arguments as Record<string, unknown>).command === 'inspect version'));
   assert.ok(!gateway.calls.some((call) => call.params.name === 'send_blob'), 'nothing is dispatched');
 

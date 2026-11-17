@@ -20,7 +20,7 @@ import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext, type Unresolved } from '../../refs/api.ts';
-import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
+import { SandboxError, callPackFunction, callPackFunctionBatch, DEFAULT_LIMITS, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { mapLimited, receivedDigest } from './util.ts';
 import { getInterpreter } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, sourceCoverage, rootDigest, statementOf, strongestRole } from './claims.ts';
@@ -29,7 +29,7 @@ import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead, type ReadFailureReason } from './retry-read.ts';
 import { narrowSubjectRead, type NarrowReadResult } from './narrow-reads.ts';
 import { putAction } from './store.ts';
-import { createFunctionBatches } from './function-batches.ts';
+import { createFunctionBatches, splitInputBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
 import { declarationGroundsRefusal } from '../../knowledge/declaration-grade.ts';
@@ -313,7 +313,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const itemIds = new Set(items.map((it) => it.id));
   const criterionBound=(run.accepted_criteria??[]).flatMap(change=>[rootDigest(change.declaration),rootDigest(change.review)]).filter((digest):digest is string=>digest!==null);
   const skills=ctx.parsers.skills??run.skills;
-  const baseBound = [run.pack_digest,...(ctx.parsers.bindingRecords??(ctx.parsers.bindingRecord?[ctx.parsers.bindingRecord]:[])), ...(skills??[]).map(skill=>skill.digest),...(run.root !== undefined ? [run.root] : []),...criterionBound];
+  const baseBound = [run.pack_digest,...(skills??[]).map(skill=>skill.digest),...(run.root !== undefined ? [run.root] : []),...criterionBound];
   const itemDigests = items.map((it) => it.digest).filter((d): d is string => d !== undefined);
   const entries = new Map<string, { index: number; entry: Submission['items'][number] }>();
   submission?.items.forEach((entry, index) => entries.set(entry.item, { index, entry }));
@@ -814,17 +814,20 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       const value = await builderInput(it, check); group.entries.set(subjectKey(target, JSON.stringify(value)), value);
     }
   }
-  for (const group of builders.values()) {
+  builderGroups: for (const group of builders.values()) {
     if (group.entries.size < 2) continue;
-    try {
-      const values = [...group.entries.values()];
-      const result = await callPackFunctionBatch(group.target, values, ctx.deps.sandboxLimits,
-        sandboxFor('subject_batch', group.target.module, undefined, { items: values.length, export: group.target.export ?? 'default' }));
-      const keys = [...group.entries.keys()]; for (const [index, value] of result.entries()) prepared.set(keys[index], value);
-    } catch (error) {
-      if (error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE' && error.detail.reason === 'stopping') {
-        functionBatches.cancel(error); break;
-      } else onError(error, `${group.target.module} subject batch; using individual calls`);
+    const entries = [...group.entries];
+    const batches = splitInputBatches(entries, ctx.deps.sandboxLimits?.inputBytes ?? DEFAULT_LIMITS.inputBytes);
+    for (const batch of batches) {
+      try {
+        const result = await callPackFunctionBatch(group.target, batch.map(([, value]) => value), ctx.deps.sandboxLimits,
+          sandboxFor('subject_batch', group.target.module, undefined, { items: batch.length, export: group.target.export ?? 'default' }));
+        for (const [index, value] of result.entries()) prepared.set(batch[index][0], value);
+      } catch (error) {
+        if (error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE' && error.detail.reason === 'stopping') {
+          functionBatches.cancel(error); break builderGroups;
+        } else onError(error, `${group.target.module} subject batch; using individual calls`);
+      }
     }
   }
   try {
@@ -1054,7 +1057,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
         errors.push({
           code: r.outcome.outcome.code ?? r.outcome.outcome.reason ?? 'check_error',
           message: r.outcome.outcome.missing ?? r.outcome.outcome.statement,
-          fix: runtimeCatalogGaps.get(r.outcome.check)?.next_action ?? (r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交'),
+          fix: runtimeCatalogGaps.get(r.outcome.check)?.next_action ?? (r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '', workflow) ?? '按陈述改正后重交'),
           ...(path !== undefined ? { path } : {}),
           item: it.id,
           requirement: t.key,
@@ -1120,7 +1123,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const crossBound = [...baseBound, ...itemDigests];
   const cross: Claim[] = [];
   for(const {check,index} of unruledChecks)cross.push(judgmentClaim({
-    requirement:check.requirement,pointer:pointerOf('checks',index),text:`要求项 ${check.requirement} 的 ${check.interpreter} 判定形状未裁定；由包作者在下一版台账裁定`,
+    requirement:check.requirement,pointer:pointerOf('checks',index),text:`要求项 ${check.requirement} 的 ${check.interpreter} 判定形状未裁定；由包作者在下一版的裁定清单里裁定`,
     data:{requirement:check.requirement,interpreter:check.interpreter},model:submission!.model,
     marks:['decision_shape_unruled'],grounds:[],resolutions:[],bound:[...crossBound,input.submissionDigest,receivedDigest(run).digest],
   }));
@@ -1207,7 +1210,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       complete: examined === items.length,
       examined,
       total: items.length,
-      ...((submission !== null && hasItemJudgments)||ctx.parsers.bindingDisclosure ? {note:[...(submission!==null&&hasItemJudgments?[`提交处理了 ${handled} 个条目，共 ${items.length} 个`]:[]),...(ctx.parsers.bindingDisclosure?[ctx.parsers.bindingDisclosure]:[])].join('；')} : {}),
+      ...(submission !== null && hasItemJudgments ? {note:`提交处理了 ${handled} 个条目，共 ${items.length} 个`} : {}),
     },
     locks: { ...(skills?{skills:[...skills]}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: input.traceId,

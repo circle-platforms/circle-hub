@@ -4,8 +4,8 @@
 // engine on them; the packs package writes packs in these shapes. Product dialect is data and pack functions, never core code.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import {FeedingOffsetSchema} from './feeding.ts';
-import {SkillDependencies,SkillLocks} from './skills.ts';
-export {SkillDependency,SkillLock,SkillDependencies,SkillLocks} from './skills.ts';
+import {EmbeddedModules,SkillDependencies,SkillLocks,SkillModuleId} from './skills.ts';
+export {EmbeddedModule,EmbeddedModules,EMBEDDED_SKILLS_DIR,SKILL_MODULES_DIR,SkillDependency,SkillLock,SkillDependencies,SkillLocks,SkillModuleId} from './skills.ts';
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
 import {FrozenCriterion} from './criterion.ts';
@@ -73,6 +73,7 @@ export type PackPath = z.infer<typeof PackPath>;
 /** Installed capabilities are dependencies, never per-user assignments. */
 
 export const SkillParser = z.strictObject({
+  /** Part of the published v1 skill.json parser shape; retained optional so published packs still parse at startup. No code reads it now. */
   migration_test:z.string().min(1).max(300).optional(),
   parser: Versioned.refine(value=>{const version=value.slice(value.lastIndexOf('@')+1);return Number.isSafeInteger(Number(version))&&String(Number(version))===version;},'parser version has one canonical integer spelling'),
   media_types: z.array(z.string().min(1).max(200)).min(1).max(32),
@@ -80,7 +81,10 @@ export const SkillParser = z.strictObject({
   function: PackFunctionRef,
   locate: PackFunctionRef.optional(),
 });
-export const SkillDeclaration = z.strictObject({ schema:z.literal('skill@1'), parsers:z.array(SkillParser).max(64) }).refine(value=>new Set(value.parsers.map(p=>p.parser)).size===value.parsers.length,'parser versions are unique in a skill');
+/** T01 F[13]: a reusable deterministic module of a skill pack. `family` is what it is generic for (C03 R[3]). */
+export const SkillModule = z.strictObject({ id:SkillModuleId, title:z.string().min(1).max(100), family:z.string().min(1).max(300) });
+export type SkillModule = z.infer<typeof SkillModule>;
+export const SkillDeclaration = z.strictObject({ schema:z.literal('skill@1'), parsers:z.array(SkillParser).max(64), modules:z.array(SkillModule).max(64).optional() }).refine(value=>new Set(value.parsers.map(p=>p.parser)).size===value.parsers.length,'parser versions are unique in a skill').refine(value=>new Set((value.modules??[]).map(m=>m.id)).size===(value.modules??[]).length,'module names are unique in a skill');
 export type SkillDeclaration = z.infer<typeof SkillDeclaration>;
 
 // ---------------------------------------------------------------- pack.json
@@ -113,6 +117,7 @@ export const PackManifest = z
     title: z.string().min(1),
     description: z.string().min(1),
     dependencies: SkillDependencies.optional(),
+    embeds: EmbeddedModules.optional().describe('skill modules this pack carries as generated files; publication compares them with the named skill version (T01 R[6])'),
     files: z.array(PackFileEntry).describe('every file of the pack except pack.json, sorted by path'),
   })
   .superRefine((m, ctx) => {
@@ -339,6 +344,47 @@ export const DeviceObservation = z.strictObject({
   note: z.string().optional().describe('why build is null'),
 }).refine((o) => (o.run === null) !== (o.job === null), 'an observation comes from exactly one booking run or one dispatch job');
 export type DeviceObservation = z.infer<typeof DeviceObservation>;
+
+export const DeviceHelpTarget = z.strictObject({
+  inventory: Sha256,
+  device: JsonPointer,
+  label: z.string().min(1).max(200),
+  line: z.string().min(1).max(2000),
+  mode: z.string().min(1).max(100).optional().describe('the level to ask at, from the closed set the executor declares; absent when it declares none'),
+  keys: z.array(z.string().min(1).max(500)).min(1).max(8),
+});
+export type DeviceHelpTarget = z.infer<typeof DeviceHelpTarget>;
+
+/** What the device answered at one prefix of the asked line, in its own words; the Hub interpreted none of them. */
+export const DeviceHelpPosition = z.strictObject({
+  prefix: z.string().min(1).describe('exactly the text typed before the question mark'),
+  words: z.number().int().min(1).describe('how many words of the line the prefix holds'),
+  next_word: z.string().nullable().describe('the word of the line that follows the prefix; null when the prefix is the whole line'),
+  described: z.boolean().describe('whether the device described the position at all (a non-empty text at the declared place of its answer)'),
+  caret_only: z.boolean().nullable().describe('whether the device answered with nothing but a caret; null when the executor does not say'),
+  text: z.string().nullable().describe('the device words as received; null when it described nothing or the text is not shown (withheld, anomaly)'),
+  truncated: z.boolean().describe('whether `text` is only the start of what the device said (the whole is in the original)'),
+  withheld: z.boolean().describe('the credential scan held the text back: it is in the original for administrators and not quoted'),
+  anomaly: z.string().nullable().describe('why the answer is not shown: the target did not confirm that nothing was entered and the line was cleared, or the text could not be stored'),
+  observed_at: IsoTime,
+  reference: z.string().min(1).describe('src: of the stored answer as received (function bytes only)'),
+  text_reference: z.string().nullable().describe('src: of the stored text the model may read; null when there is no text'),
+});
+export type DeviceHelpPosition = z.infer<typeof DeviceHelpPosition>;
+
+/** The outcome of one question: the positions asked, longest prefix first, and what stopped it short when it did not end on an answer. */
+export const DeviceHelpResult = z.strictObject({
+  inventory: Sha256,
+  device: JsonPointer,
+  label: z.string().min(1).max(200),
+  line: z.string().describe('the line as it was sent (its words joined by single spaces); when nothing was asked, the line as it was given'),
+  mode: z.string().nullable(),
+  words: z.number().int().min(0),
+  positions: z.array(DeviceHelpPosition),
+  missing: z.strictObject({ fact: z.string().min(1), next_action: z.string().min(1) }).nullable()
+    .describe('what is missing when nothing was asked or the questioning stopped before an answer, with the next step'),
+});
+export type DeviceHelpResult = z.infer<typeof DeviceHelpResult>;
 
 export const RunContext = z.strictObject({
   run: z.string().min(1).optional().describe('Actual Hub run identity; not supplied by a model'),
@@ -731,6 +777,11 @@ export const ProjectionOutput = z.union([
       .max(64)
       .optional()
       .describe('devices whose installed build the Hub looks at once the run\'s acquire is granted, by the digest of the inventory and the device\'s JSON Pointer in it (an executor seat bound to the same inventory and pointer is probed), with a label for display; only for a workflow that asks for the observations context'),
+    ask: z
+      .array(DeviceHelpTarget)
+      .max(8)
+      .optional()
+      .describe('lines to ask devices this run\'s lineage holds the lease of, what they expect at the end of each (the Hub types the line after a question mark and never presses Enter; the executor declares how); only for a workflow that declares leases'),
   }),
   PackFailure,
 ]);

@@ -78,7 +78,7 @@
 
 ## 从 AST 能直接得到什么
 
-最小原型见 [probe.ts](adoc-sandbox/probe.ts)，全部合成资料见 [sample.ts](adoc-sandbox/sample.ts)。
+最小原型见 `adoc-sandbox/probe.ts`（原型代码保存在 Git 历史），全部合成资料见 `adoc-sandbox/sample.ts`。
 
 - 章节：context、标题、level、id、parent。沿 parent 构造有序路径；例子是 `Pools(level=1,id=pools) / Add a pool(level=2,id=pool-add)`。
 - 表格：head/body/foot 行、单元格原文和 sourceLocation。原型取得三列参数表，包含 `interval / 1-60 / Probe interval in seconds` 和 `mode / on, off / Allowed modes`。这些是作者表格中的取值域候选原文，不把示例或描述自动提升成规则。
