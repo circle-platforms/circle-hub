@@ -105,6 +105,13 @@ test('the writer is taught to pick only the generated segment of a name and to k
   assert.equal(cellTemplate(template), true);
   assert.equal(template.replace('{}', sample.split('+')[2]!), `"${sample.slice(0, -'.key'.length)}"`);
 });
+test('the writer is taught to clear a leftover with the product\'s declared inverse before it configures, and that this removal owes no cleanup of its own (round 36)', () => {
+  const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
+  for (const phrase of [
+    '设备上可能残留同名配置时，先用产品声明的逆操作清掉再配置（如 InfoTest 用例先 `no …`）',
+    '这条逆操作写在它要清的那条配置命令之前，同设备、同对象名，本身不需要再配清理，被它清掉的配置命令自己的清理照旧',
+  ]) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
+});
 test('the client skill says when the user is asked and that a subagent never asks', () => {
   const skill = read('SKILL.md');
   for (const phrase of ['只在答案会改变做法、资料里又查不到时问使用者', '设备的问题还是原始用例的问题，需要使用者决定', '能查清的自己查并在报告说明', '子代理不问使用者：定不了的写进给主代理的报告']) assert.ok(skill.includes(phrase), phrase);

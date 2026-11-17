@@ -63,8 +63,8 @@
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "c29069afddee3f55177bed441e761bc1718f80de53887b4642b574177a758c83",
-      "size": 18337
+      "sha256": "6125b064e9682eeea5cc3d17b7061c370f19c353f8a01d9e71c13e19c385cff5",
+      "size": 18632
     },
     {
       "path": "checks.json",
@@ -243,8 +243,8 @@
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "b0ff87caa208d6863bf97c793033b190f19f6996d7a769d64ef4ffd81b82c442",
-      "size": 28867
+      "sha256": "3e9e71ae947a3b591cd8da66fa1ee756a7b164c8bd7472c02e48a4b8745200cf",
+      "size": 30045
     },
     {
       "path": "functions/command-tree-verdict.ts",
@@ -503,8 +503,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "abbf272d1c50e4f4c477a667dacdd63f79625ab3de2916351146b16451392cde",
-      "size": 44739
+      "sha256": "ee3c2d4f56b4ca6ac1891fc3a4c4090a54bc82d00ff41a493b56d1bf4535bc69",
+      "size": 45036
     },
     {
       "path": "functions/subject.ts",
