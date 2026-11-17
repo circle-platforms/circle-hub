@@ -143,6 +143,28 @@ test('the writer text and the block declarations teach no usage derived from one
   assert.ok(role.body.includes(contract) && writer.includes(contract), 'the one sentence of the runner contract');
   for (const phrase of ['写进命令的每个值都要在手册对该参数的说明之内，包括长度、允许的字符、范围和可选值', '不写死设备生成的名字，不从上一次上机验证的设备输出抄值，也不沿用设备上已有的东西']) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
 });
+test('nothing the writer reads names a product command or an output layout: no product command words in the role, the skill, the tool documents, the declarations, the samples and the examples, and the cleanup rules are stated by the contract (round 37, owner\'s rule)', () => {
+  const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
+  // Product command words, the names of device outputs and the key-file layout of one feature. A generic contract is stated without them:
+  // «互逆开关按产品声明的 command_policy 配对», «contract.cleanup 声明的收尾命令».
+  const product = [/\bsdns\b/i, /synconfig/i, /dnssec/i, /\bha (on|off|link|unit|group)\b/i, /clear ha/i, /write mem/i, /lib\/apv/, /\bksk\b/, /\bzsk\b/, /RSASHA/i, /keypub/i, /\+005\+/, /zone\.example/, /\.key\b/, /\.private\b/, /Statistics Summary/, /HA 等/];
+  const files = [
+    'SKILL.md', 'tools/delivery.md', 'tools/fidelity.md', 'tables/blocks-format.json', 'tables/block-plan.schema.json', 'slots.schema.json',
+    ...['positive', 'negative'].flatMap((kind) => readdirSync(join(PACK_DIR, 'samples', kind)).filter((name) => name.startsWith('typed-block-')).map((name) => `samples/${kind}/${name}`)),
+    ...readdirSync(join(PACK_DIR, 'examples')).map((name) => `examples/${name}`),
+  ];
+  for (const [file, text] of [['subagent-roles.ts body', role.body], ['agents/compile-writer.md', writer], ...files.map((file) => [file, read(file)] as [string, string])] as Array<[string, string]>)
+    for (const word of product) assert.ok(!word.test(text), `${file}: ${word}`);
+  assert.ok(!/SDNS Query/.test(read('functions/authoring-brief.ts')), 'the writer\'s brief carries no output line of one product either');
+  // What each of them says instead: the pairing of declared inverse values and the runner's own teardown, by the contract.
+  for (const phrase of [
+    '产品声明了互逆取值的开关（`command_policy`）：按声明在同设备的 `cleanup:true` 配对写出逆操作，完成关闭后才交运行器的整体清除，不能只依赖整体清除',
+    '运行器自动清理（`contract.cleanup`，对清配对象经 `cmd_config` 发出的匹配命令，前缀规则和收尾命令由合约声明）',
+    '存盘等运行器收尾命令禁写 cleanup:true',
+    '命中 `contract.cleanup` 声明的自动清理或收尾命令时禁写 `cleanup: true`',
+  ]) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
+  for (const file of ['tables/blocks-format.json', 'tables/block-plan.schema.json', 'slots.schema.json']) assert.ok(read(file).includes('存盘等由执行器在收尾时做的命令禁止标为 cleanup:true'), file);
+});
 test('the writer is told that the documentation address the recomposition record put into its adapted commands is no replacement source, and what to write instead (round 37)', () => {
   const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
   const line = '- 重组记录的改写命令里按规则暂用的文档保留地址（RFC 5737/3849，记在它的 unknowns 里）不是作者写的地址：不进 replacements，用到它的位置在步骤命令里直接写测试环境清单里的地址；replacements 只放作者原文命令里的地址，没有就写 []。';

@@ -91,7 +91,7 @@ test('a method of the contract that the profile did not open says so, with the r
   assert.equal(lines(answer)[0], '# 方法 widget-seat.spare：合约启用，本次配置没有开放；写进计划会被 Hub 拒绝（方法不在合约与发布配置的共同允许集合）。');
   hasLine(answer, '# 本次配置没有开放它（sources/profile.json 的 /unopened/0）：');
   hasLine(answer, '#   参数 line：synthetic: the method is not reviewed；原因：synthetic: the integrator has not read the method；下一步：synthetic: review it and open it in the next publication');
-  hasLine(answer, "# 签名：(line, key='cert/a.key')；必填 line，可选 key。");
+  hasLine(answer, "# 签名：(line, key='cert/a.pem')；必填 line，可选 key。");
   noLine(answer, '# 参数（共');
   noLine(answer, '#   效果 ');
   const quiet = lookupMethod(source, 'widget-seat.credential');

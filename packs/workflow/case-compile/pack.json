@@ -63,8 +63,8 @@
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "0703d5139de004fee47f6e1f43a76b0bc96a6384ba41f34a92c833c851594f26",
-      "size": 18514
+      "sha256": "ba09a9bbe76a619f0ce09d3a8597a29dfa808ca091cefd51026f3fabb053324d",
+      "size": 18375
     },
     {
       "path": "checks.json",
@@ -138,8 +138,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "15d909574a7bfe2078aa74c0a0af3a1f09b9ac6457c856d2cd58364b457cab37",
-      "size": 83956
+      "sha256": "1fefe0661014e0863883aba430f483d12b5ac7f59c2c12b7a8763121ac9187af",
+      "size": 83917
     },
     {
       "path": "functions/bed.ts",
@@ -523,8 +523,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "a31cda854e3d15ebc4b887d1785079d1d2a8db0363a04342fb2b7369e53e184c",
-      "size": 46104
+      "sha256": "c862953d9ab4287baa818eb117dc2b7638cf2db22e449a5d24821413fe7bce1c",
+      "size": 45947
     },
     {
       "path": "functions/subject.ts",
@@ -623,8 +623,8 @@
     },
     {
       "path": "samples/negative/typed-block-SELECT_CELL.json",
-      "sha256": "cc0b2f14a6fa8d6533d9663541bc8ae4aad8c2451698e9a39c601382b26847b8",
-      "size": 49772
+      "sha256": "7aa749471293fbc4f11aa8e40f1d74d1548ef3a954951a0afb6419c6590c9a70",
+      "size": 49762
     },
     {
       "path": "samples/negative/typed-block-SLEEP.json",
@@ -758,8 +758,8 @@
     },
     {
       "path": "samples/positive/typed-block-SELECT_CELL.json",
-      "sha256": "8b83f005d20791b12f85ae740c2e20e553e83a52bee8eca8f791e0ad9418c805",
-      "size": 49558
+      "sha256": "7f012ecdf870ac645d64ffc1ed1a666336c4df8deeef60a6d1645006cd98675d",
+      "size": 49548
     },
     {
       "path": "samples/positive/typed-block-SLEEP.json",
@@ -833,18 +833,18 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "5ee15895625a360d2d29f05d7d5d273057e1b106dbf5f9320f7361d1665dcdc1",
-      "size": 74770
+      "sha256": "56be93169b9ef3edf462590b698f7a60f11580f8a641a0d9eb810b77cc678366",
+      "size": 74728
     },
     {
       "path": "tables/block-plan.schema.json",
-      "sha256": "5d5b9388ebbfc8d9d6aa46feb1cf6fa75ac38ede25f2cd36e4f9ac7fd44b292e",
-      "size": 58914
+      "sha256": "7207c758504096632ab296fa8da5dedd0b39f7a6f6c7d8ed0f652ead1a425931",
+      "size": 58886
     },
     {
       "path": "tables/blocks-format.json",
-      "sha256": "7fec03606a0faceb23224e9b6280db6cfef8ef18a2f87cd8d0a5358eabd5e6b9",
-      "size": 21864
+      "sha256": "77f92ff5785a3963e9926fe7a83549247e070bc1fa16668eeece7315ecc9cb31",
+      "size": 21850
     },
     {
       "path": "tables/codes.json",

@@ -156,8 +156,8 @@ test('structural selection refusals name the field and the value seen',()=>{
  assert.equal(wide.length,1,JSON.stringify(wide));assert.equal(wide[0].pointer,'/blocks/1/table/columns');assert.ok(wide[0].message.includes('3'));assert.match(wide[0].message,/两列/);
  const single=refuse(block=>{block.table={format:'delimited',separator:'',columns:2,header:false};block.column=1;block.select={row:1};});
  assert.equal(single.length,1,JSON.stringify(single));assert.equal(single[0].pointer,'/blocks/1/table/separator');assert.ok(single[0].message.includes('""')&&single[0].message.includes('2'));
- const column=refuse(block=>{block.column=7;});assert.equal(column.length,1);assert.equal(column[0].pointer,'/blocks/1/column');assert.ok(column[0].message.includes('7')&&column[0].message.includes('6'));
- const select=refuse(block=>{block.select={where:[{column:7,value:'x'}]};});assert.equal(select.length,1);assert.equal(select[0].pointer,'/blocks/1/select/where/0/column');assert.ok(select[0].message.includes('7')&&select[0].message.includes('6'));
+ const column=refuse(block=>{block.column=7;});assert.equal(column.length,1);assert.equal(column[0].pointer,'/blocks/1/column');assert.ok(column[0].message.includes('7')&&column[0].message.includes('3'));
+ const select=refuse(block=>{block.select={where:[{column:7,value:'x'}]};});assert.equal(select.length,1);assert.equal(select[0].pointer,'/blocks/1/select/where/0/column');assert.ok(select[0].message.includes('7')&&select[0].message.includes('3'));
 });
 
 test('the human location of a table or selection gap carries the field path',()=>{

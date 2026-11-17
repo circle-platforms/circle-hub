@@ -21,7 +21,7 @@ test('selection lowers readable multiple-equality arguments and roundtrips G H a
  const input=recipe(),parsed=readSlots(input.slots);assert.ok(parsed.ok,JSON.stringify(parsed));if(!parsed.ok)return;
  assert.deepEqual(typedAuthorityGaps(input.contract,input.profile,parsed.slots,undefined,input.catalog,[],input.manifest_sha256),[]);
  assert.ok(checkAddresses(input.subject(input.slots)).every(outcome=>outcome.verdict==='support'));
- const selected=parsed.slots.steps[1];assert.deepEqual(selected.args,['{}','where 1=zone.example.','where 6=2048.key']);assert.deepEqual(selected.keywords,{separator:'+',columns:6,column:3,format:'delimited',header:0,row:0});
+ const selected=parsed.slots.steps[1];assert.deepEqual(selected.args,['{}','where 1=node-a','where 2=ready']);assert.deepEqual(selected.keywords,{separator:'|',columns:3,column:3,format:'delimited',header:0,row:0});
  assert.equal(selected.input_register,'source_text');assert.equal(selected.save_as,'selected');assert.equal(selected.output,undefined);assert.equal(blockMeta(parsed.slots)!.registers.get('selected')!.cell,true);
  const read=readWorkbook(coreModel(generateWorkbook(input)),input);assert.ok(read.ok,JSON.stringify(read));if(!read.ok)return;
  const row=read.executions.find(value=>value.method==='table_cell')!;assert.deepEqual(row.args,selected.args);assert.equal(row.h,'selected');assert.equal(row.i,'source_text');
@@ -34,8 +34,8 @@ test('row selection and header handling use explicit scalar parameters',()=>{
  const read=readWorkbook(coreModel(generateWorkbook(input)),input);assert.ok(read.ok,JSON.stringify(read));
 });
 test('condition constants retain leading zeros and commas through the existing G quoting',()=>{
- const input=recipe();input.slots.blocks[1].select={where:[{column:1,value:'00123'},{column:6,value:'a,b'}]};
- const read=readWorkbook(coreModel(generateWorkbook(input)),input);assert.ok(read.ok,JSON.stringify(read));if(read.ok)assert.deepEqual(read.executions.find(row=>row.method==='table_cell')!.args,['{}','where 1=00123','where 6=a,b']);
+ const input=recipe();input.slots.blocks[1].select={where:[{column:1,value:'00123'},{column:2,value:'a,b'}]};
+ const read=readWorkbook(coreModel(generateWorkbook(input)),input);assert.ok(read.ok,JSON.stringify(read));if(read.ok)assert.deepEqual(read.executions.find(row=>row.method==='table_cell')!.args,['{}','where 1=00123','where 2=a,b']);
 });
 test('selection references only earlier raw captures and ordinary templates only earlier cells',()=>{
  for(const mutate of [(data:ReturnType<typeof cellPlan>)=>{data.blocks[1].from='absent';},(data:ReturnType<typeof cellPlan>)=>{data.blocks[1].from='selected';},(data:ReturnType<typeof cellPlan>)=>{data.blocks[2].input_register='source_text';},(data:ReturnType<typeof cellPlan>)=>{[data.blocks[0],data.blocks[1]]=[data.blocks[1],data.blocks[0]];}]){
@@ -73,7 +73,7 @@ test('independent workbook reading rejects changed source result type scope and 
   if(corruption==='source')cell(selection,'I').text='selected';
   if(corruption==='result')cell(selection,'H').text='source_text';
   if(corruption==='template')cell(configuration,'I').text='source_text';
-  if(corruption==='condition')cell(selection,'G').text=cell(selection,'G').text.replace('2048.key','different');
+  if(corruption==='condition')cell(selection,'G').text=cell(selection,'G').text.replace('ready','different');
   if(corruption==='method')cell(selection,'F').text='command';
   assert.equal(readWorkbook(model,input).ok,false,corruption);
  }

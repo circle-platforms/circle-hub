@@ -35,8 +35,8 @@
           "register": "selected",
           "table": {
             "format": "delimited",
-            "separator": "+",
-            "columns": 6,
+            "separator": "|",
+            "columns": 3,
             "header": false
           },
           "column": 3,
@@ -44,11 +44,11 @@
             "where": [
               {
                 "column": 1,
-                "value": "zone.example."
+                "value": "node-a"
               },
               {
-                "column": 6,
-                "value": "2048.key"
+                "column": 2,
+                "value": "ready"
               }
             ]
           }

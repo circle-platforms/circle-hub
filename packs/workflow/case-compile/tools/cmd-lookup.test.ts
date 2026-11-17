@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { CallFailure } from '../functions/text.ts';
+import BLOCKS from '../tables/blocks-format.json' with { type: 'json' };
 import { contractFixture, hostLiterals, writeContractDownload, type DownloadOptions } from '../testing/contract-lookup-fixture.ts';
 import { lookupFixture, writeLookupDownload } from '../testing/lookup-fixture.ts';
 import { main } from './cmd-lookup.ts';
@@ -236,6 +237,24 @@ test('--method of an old download without the source manifest reads the root-lev
     const result = await run(['--run', runDir, '--method', 'widget-seat.configure'], dir);
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /^# 引用：合约条目 contract\.json 的 \/entries\/\d+；开放项 profile\.json 的 \/allowed\/\d+；座位 profile\.json 的 \/seats\/0；设备 inventory\.json 的 \/beds\/0\/devices\/\d+。$/m);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('what the writer\'s lookups print for every block kind and for the methods of an object names no product command and no output layout (round 37, owner\'s rule)', async () => {
+  const { dir, run: runDir } = await contractDownload();
+  try {
+    // The sample of a kind is a table or a plan of invented names; the fields have no description taken from one case. The words are those
+    // of the features whose cases taught the writer text of rounds 36 and 37 (a name-server, an HA pair, a signed zone) and their key files.
+    const product = [/\bsdns\b/i, /synconfig/i, /dnssec/i, /\bha (on|off|link|unit|group)\b/i, /clear ha/i, /write mem/i, /lib\/apv/, /\bksk\b/, /\bzsk\b/, /RSASHA/i, /keypub/i, /\+005\+/, /zone\.example/, /\.key\b/, /\.private\b/, /Statistics Summary/, /HA 等/, /2048/];
+    const answers: Array<[string, string]> = [];
+    for (const kind of BLOCKS.kinds) answers.push([`--block ${kind.kind}`, (await run(['--run', runDir, '--block', kind.kind], dir)).stdout]);
+    answers.push(['--block block_context', (await run(['--run', runDir, '--block', 'block_context'], dir)).stdout]);
+    answers.push(['--methods widget-seat', (await run(['--run', runDir, '--methods', 'widget-seat'], dir)).stdout]);
+    answers.push(['--method widget-seat.configure', (await run(['--run', runDir, '--method', 'widget-seat.configure'], dir)).stdout]);
+    assert.ok(answers.every(([, text]) => text.length > 0));
+    for (const [label, text] of answers) for (const word of product) assert.ok(!word.test(text), `${label}: ${word}`);
+    const cell = answers.find(([label]) => label === '--block SELECT_CELL')![1];
+    assert.ok(cell.split('\n').some((line) => line.startsWith('{"kind":"SELECT_CELL"') && line.includes('"separator":"|"') && line.includes('"value":"node-a"')), 'the sample is a name|state|count table');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

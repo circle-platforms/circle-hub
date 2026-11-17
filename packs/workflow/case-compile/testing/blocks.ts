@@ -66,6 +66,6 @@ export function cellFixture(){
 }
 export function cellPlan():PlanSlots{
  const invoke=(line='demo show')=>({...call(line),object:'device0'});
- const data=plan([{kind:'CAPTURE',id:'source',call:invoke(),register:'source_text'},{kind:'SELECT_CELL',id:'cell',call:{object:'device0',method:'table_cell',args:[],keywords:{}},from:'source_text',register:'selected',table:{format:'delimited',separator:'+',columns:6,header:false},column:3,select:{where:[{column:1,value:'zone.example.'},{column:6,value:'2048.key'}]}},{kind:'CONFIG',id:'configure',call:invoke('demo set {}'),input_register:'selected'},{kind:'OBSERVE_ASSERT',id:'observe',call:invoke(),assertions:[assertion()]},{kind:'CONFIG',id:'cleanup',call:invoke('no demo set'),cleanup:true}]);
+ const data=plan([{kind:'CAPTURE',id:'source',call:invoke(),register:'source_text'},{kind:'SELECT_CELL',id:'cell',call:{object:'device0',method:'table_cell',args:[],keywords:{}},from:'source_text',register:'selected',table:{format:'delimited',separator:'|',columns:3,header:false},column:3,select:{where:[{column:1,value:'node-a'},{column:2,value:'ready'}]}},{kind:'CONFIG',id:'configure',call:invoke('demo set {}'),input_register:'selected'},{kind:'OBSERVE_ASSERT',id:'observe',call:invoke(),assertions:[assertion()]},{kind:'CONFIG',id:'cleanup',call:invoke('no demo set'),cleanup:true}]);
  data.block_context!.causal_links=[{from:'configure',to:'observe',quote:quote()}];return data;
 }

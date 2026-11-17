@@ -81,12 +81,12 @@ test('a cell-selection block keeps its own description over the engine sentence,
  const cf=cellFixture();
  const plain=readSlots(cellPlan());assert.ok(plain.ok);if(!plain.ok)return;
  const cell=plain.slots.steps.find(step=>step.block_kind==='SELECT_CELL')!;assert.equal(cell.description,'按声明的行列结构取一格');
- const own=cellPlan();own.blocks.find(block=>block.kind==='SELECT_CELL')!.description='取出密钥文件名那一列';
+ const own=cellPlan();own.blocks.find(block=>block.kind==='SELECT_CELL')!.description='取出计数那一列';
  const parsed=readSlots(own);assert.ok(parsed.ok,JSON.stringify(parsed));if(!parsed.ok)return;
- assert.equal(parsed.slots.steps.find(step=>step.block_kind==='SELECT_CELL')!.description,'取出密钥文件名那一列');
+ assert.equal(parsed.slots.steps.find(step=>step.block_kind==='SELECT_CELL')!.description,'取出计数那一列');
  const recipe={slots:parsed.slots,contract:cf.contract,profile:cf.profile,fields:cf.fields,...RUN},model=coreModel(generateWorkbook(recipe)),read=readWorkbook(model,recipe);
  assert.ok(read.ok,JSON.stringify(read));if(!read.ok)return;
- assert.ok(read.executions.some(execution=>columnD(model,execution.row).endsWith('取出密钥文件名那一列')));
+ assert.ok(read.executions.some(execution=>columnD(model,execution.row).endsWith('取出计数那一列')));
 });
 
 test('a description that would break a workbook cell is refused at its block with the rule a flat step has',()=>{

@@ -105,9 +105,9 @@ test('an IPv6 address is matched by its value whatever its notation, and the com
 });
 
 test('a source that is not a documentation address is still said to come from the record when the record holds it, without the documentation wording',()=>{
-  const value=subjectOf(ON,[{case:'172.16.9.9',bed:ON}],recordOf({adapted:[adapted('a2','show demo peer 172.16.9.9')]}));
+  const value=subjectOf(ON,[{case:'127.0.0.9',bed:ON}],recordOf({adapted:[adapted('a2','show demo peer 127.0.0.9')]}));
   const [row]=refusals(value);
-  has(row.statement,'是重组记录里写到的地址','作者动作 a2 的改写命令「show demo peer 172.16.9.9」');
+  has(row.statement,'是重组记录里写到的地址','作者动作 a2 的改写命令「show demo peer 127.0.0.9」');
   lacks(row.statement,'文档保留地址');
 });
 

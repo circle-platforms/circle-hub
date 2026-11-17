@@ -98,8 +98,8 @@ test('a block reference plan with a cell selection and a cell input goes through
  const built=result.workbook(),read=offlineReadback(built.bytes,built.recipes);assert.ok(read.ok,JSON.stringify(read));
  const rows=(read as {executions:Array<{object:string;method:string;args:string[];keywords:Record<string,unknown>;h:string;i:string}>}).executions;
  const select=rows.find(row=>row.method==='table_cell')!;
- assert.deepEqual(select.args,['{}','where 1=zone.example.','where 6=2048.key'],'the where conditions are positional arguments, the first one is the saved text');
- assert.deepEqual({...select.keywords},{column:3,columns:6,format:'delimited',header:0,row:0,separator:'+'});
+ assert.deepEqual(select.args,['{}','where 1=node-a','where 2=ready'],'the where conditions are positional arguments, the first one is the saved text');
+ assert.deepEqual({...select.keywords},{column:3,columns:3,format:'delimited',header:0,row:0,separator:'|'});
  assert.equal(select.i,'source_text');assert.equal(select.h,'selected');
  const used=rows.find(row=>row.i==='selected'&&row.method!=='table_cell')!;
  assert.deepEqual(used.args,['demo set {}'],'the selected cell is formatted into the first positional argument only');
