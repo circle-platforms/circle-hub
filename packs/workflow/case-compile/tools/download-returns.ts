@@ -2,7 +2,7 @@ import { realpathSync } from 'node:fs';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { executionRefusals, failureLine, parseRunJobs, syntaxRejections, unexecutedRows, type ExecutionRefusal, type ReachRow, type RowAudit, type SyntaxRejection } from '../functions/delivery.ts';
+import { executionRefusals, failureLine, parseRunJobs, syntaxRejections, unexecutedRows, workbookAbort, type ExecutionRefusal, type ReachRow, type RowAudit, type SyntaxRejection } from '../functions/delivery.ts';
 import { HubReplyError, RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import {
   getOnce,
@@ -123,7 +123,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       return name;
     };
     const index: Array<Record<string, unknown>> = [];
-    let refused = 0, unexecuted = 0, unreached = 0;
+    let refused = 0, unexecuted = 0, unreached = 0, aborted = 0;
     // The pass review reads the plan run of each job: the failure lines its contract declares and each case's own assertions.
     // A plan run that cannot be read leaves its passes unreviewed and says so; the delivery tool reviews them again in any case.
     const reviews = new Map<string, ReturnType<typeof passReviewInputs> | string>();
@@ -193,7 +193,11 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       // A run that stopped in a case (functions/delivery.ts unexecutedRows): the cases after the one whose log ends in the
       // runner's exception never began. They are listed as not run with the program-decided reason and next step, not as the
       // device verdict the Hub gave them for the whole job, and the Hub's own record of the report stays beside it.
-      const stopped = unexecutedRows(job.items, built.map(({ reach }) => reach), (item) => titles.get(job.plan_run)?.get(item));
+      const titleOf = (item: string) => titles.get(job.plan_run)?.get(item);
+      const stopped = unexecutedRows(job.items, built.map(({ reach }) => reach), titleOf);
+      // The job says it once as well: the case and the step that ended the run, and that waiting for the rest of the report is no next step.
+      const abort = workbookAbort(stopped, titleOf);
+      if (abort) aborted++;
       for (const { entry } of built) {
         const found = stopped.get(String(entry.item));
         if (found) { unreached++; const { item, verdict: _hub, ...rest } = entry; rows.push({ item, verdict: 'not_run', not_executed: { reason: found.reason, next_action: found.next_action, aborted_by: found.by }, ...rest }); }
@@ -201,7 +205,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         const verdict = String(rows.at(-1)!.verdict);
         verdicts[verdict] = (verdicts[verdict] ?? 0) + 1;
       }
-      index.push({ outcome: job.outcome, missing_facts: job.missing_facts ?? [], ...(job.member_missing_facts ? { member_missing_facts: job.member_missing_facts } : {}), next_action: job.next_action ?? null, job: job.job, plan_run: job.plan_run, workbook_sha256: job.sha256, ended: job.ended, device_return: deviceReturn, rows });
+      index.push({ outcome: job.outcome, missing_facts: job.missing_facts ?? [], ...(job.member_missing_facts ? { member_missing_facts: job.member_missing_facts } : {}), next_action: job.next_action ?? null, job: job.job, plan_run: job.plan_run, workbook_sha256: job.sha256, ended: job.ended, device_return: deviceReturn, ...(abort ? { aborted: abort } : {}), rows });
     }
     outputs.push({ name: 'index.json', bytes: json({ schema: 'device-returns@1', run: args.run, jobs: index, withheld, pass_review: passReview }) });
     for (const { name } of outputs) await mkdir(join(args.out, name, '..'), { recursive: true, mode: 0o700 });
@@ -210,7 +214,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     for (const job of jobs) outcomes[job.outcome] = (outcomes[job.outcome] ?? 0) + 1;
     const unsent = jobs.filter(job => job.outcome === 'not_dispatched');
     const missing = unsent.flatMap(job => job.missing_facts ?? []);
-    process.stdout.write(JSON.stringify({ outcomes, missing_facts: missing, ...(unsent.length ? { message: `有 ${unsent.length} 个上机验证作业未发到设备，不算一次上机验证；请先按 missing_facts 的原因与下一步处理，不用重交读取进展` } : {}), run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, ...(unreached ? { not_executed: unreached } : {}), pass_review: passReview }) + '\n');
+    process.stdout.write(JSON.stringify({ outcomes, missing_facts: missing, ...(unsent.length ? { message: `有 ${unsent.length} 个上机验证作业未发到设备，不算一次上机验证；请先按 missing_facts 的原因与下一步处理，不用重交读取进展` } : {}), run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, ...(unreached ? { not_executed: unreached } : {}), ...(aborted ? { aborted } : {}), pass_review: passReview }) + '\n');
     return 0;
   } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }

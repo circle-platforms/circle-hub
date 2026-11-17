@@ -252,6 +252,22 @@ export function unexecutedRows(items: readonly string[], rows: readonly ReachRow
   const tail = trailingUnreached(items, rows);
   return tail === null ? new Map() : unexecutedAfter(tail, rows.find((row) => row.item === tail.last)?.log ?? null, titleOf);
 }
+/**
+ * What the dispatch as a whole says when its run stopped in a case (the cases `unexecutedRows` found): the case and the step that
+ * ended it, once, and the next step. The Hub's own report_check of every case of the job is that the report is not complete, which
+ * is the same whether the report is still arriving or the run ended in a case and no more of it will come; this is the second.
+ */
+export interface WorkbookAbort { by: NotExecuted['by']; reason: string; next_action: string }
+export function workbookAbort(stopped: ReadonlyMap<string, NotExecuted>, titleOf?: (item: string) => string | undefined): WorkbookAbort | null {
+  const [first] = stopped.values();
+  if (!first) return null;
+  const { by } = first;
+  return {
+    by: { ...by },
+    reason: `同一份自动化用例 Excel 中的原始用例 ${by.item} ${titleOf?.(by.item) || '标题未知'} ${by.step === null ? '' : `在第 ${by.step} 步`}出现异常，运行器中止了整本：其后 ${stopped.size} 条没有在设备上执行，整份报告因此不完整`,
+    next_action: `修正原始用例 ${by.item} 后重新上机，异常报告在它的设备输出里；等待和 job resume 都补不出缺的报告，也不重新提交这次上机验证`,
+  };
+}
 
 /** A command the device refused to parse, as one of its sessions shows it (see syntaxRejections). */
 export interface SyntaxRejection { command: string; token?: string; prompt?: string }

@@ -378,6 +378,14 @@ test('the cases after the one whose exception ended the run are listed as not ex
   }
   const summary = JSON.parse(done.stdout);
   assert.deepEqual([summary.verdicts, summary.not_executed], [{ no_verdict: 1, not_run: 2 }, 2]);
+  // The dispatch says once that the run was aborted, where, and what to do: the Hub's own report_check of every row is that the
+  // report is not complete, which is no advice for a report that will never be.
+  assert.deepEqual((await read(out)).jobs[0].aborted, {
+    by: { item: ITEMS3[0], step: 9 },
+    reason: '同一份自动化用例 Excel 中的原始用例 990000000000000301 合成用例 301 在第 9 步出现异常，运行器中止了整本：其后 2 条没有在设备上执行，整份报告因此不完整',
+    next_action: '修正原始用例 990000000000000301 后重新上机，异常报告在它的设备输出里；等待和 job resume 都补不出缺的报告，也不重新提交这次上机验证',
+  });
+  assert.equal(summary.aborted, 1);
 });
 
 test('a run that reached every case, or whose last reached case shows no exception, is listed as before', async (t) => {
@@ -398,8 +406,9 @@ test('a run that reached every case, or whose last reached case shows no excepti
     const index = await read(out);
     assert.deepEqual(index.jobs[0].rows.map((r: { verdict: string }) => r.verdict), ['no_verdict', 'no_verdict', 'no_verdict'], name);
     assert.equal(index.jobs[0].rows.some((r: Record<string, unknown>) => 'not_executed' in r), false, name);
+    assert.equal('aborted' in index.jobs[0], false, name);
     const summary = JSON.parse(done.stdout);
-    assert.deepEqual([summary.verdicts, 'not_executed' in summary], [{ no_verdict: 3 }, false], name);
+    assert.deepEqual([summary.verdicts, 'not_executed' in summary, 'aborted' in summary], [{ no_verdict: 3 }, false, false], name);
   }
 });
 
@@ -411,4 +420,5 @@ test('without the plan run the cases not reached are still listed, with the titl
   const rows = (await read(out)).jobs[0].rows;
   assert.equal(rows[1].verdict, 'not_run');
   assert.match(rows[1].not_executed.reason, /^同一份自动化用例 Excel 中排在前面的原始用例 990000000000000301 标题未知 在第 9 步出现异常，/);
+  assert.match((await read(out)).jobs[0].aborted.reason, /^同一份自动化用例 Excel 中的原始用例 990000000000000301 标题未知 在第 9 步出现异常，运行器中止了整本：其后 2 条没有在设备上执行，/);
 });

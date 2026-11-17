@@ -79,6 +79,26 @@ test('the cases after the last case the run reached are not executed when that c
   assert.deepEqual([...delivery.unexecutedRows([A, B], [reach(B, null), reach(A, aborted)], titles).keys()], [B]);
 });
 
+test('the dispatch as a whole names the case and the step that ended its run, and nothing is said when no case was left unreached', () => {
+  const titles = (item: string) => ({ [A]: '合成用例 501' })[item];
+  const abort = (found: ReturnType<typeof delivery.unexecutedRows>, titled = true) => delivery.workbookAbort(found, titled ? titles : undefined);
+  const found = delivery.unexecutedRows([A, B, C], [reach(A, aborted), reach(B, null), reach(C, null)], titles);
+  assert.deepEqual(abort(found), {
+    by: { item: A, step: 9 },
+    reason: `同一份自动化用例 Excel 中的原始用例 ${A} 合成用例 501 在第 9 步出现异常，运行器中止了整本：其后 2 条没有在设备上执行，整份报告因此不完整`,
+    next_action: `修正原始用例 ${A} 后重新上机，异常报告在它的设备输出里；等待和 job resume 都补不出缺的报告，也不重新提交这次上机验证`,
+  });
+  assert.match(abort(found, false)!.reason, /^同一份自动化用例 Excel 中的原始用例 \d+ 标题未知 在第 9 步出现异常，/, 'no title known');
+  const unnumbered = delivery.unexecutedRows([A, B], [reach(A, aborted.replace(/#######\s+step\d+:.*\n/g, '')), reach(B, null)], titles);
+  assert.equal(abort(unnumbered)!.reason, `同一份自动化用例 Excel 中的原始用例 ${A} 合成用例 501 出现异常，运行器中止了整本：其后 1 条没有在设备上执行，整份报告因此不完整`, 'no step known: the sentence leaves the step out');
+  assert.match(abort(unnumbered)!.next_action, /^修正原始用例 \d+ 后重新上机，异常报告在它的设备输出里；/);
+  assert.equal(abort(delivery.unexecutedRows([A, B], [reach(A, plain), reach(B, null)], titles)), null, 'no exception in the last case reached: nothing is said');
+  assert.equal(abort(new Map()), null);
+  const copy = abort(found)!;
+  copy.by.step = 1;
+  assert.equal(found.get(B)!.by.step, 9, 'the sentence does not share the cases\' own record');
+});
+
 const notExecuted = (title = '合成用例 501') => delivery.unexecutedRows([A, B], [reach(A, aborted), reach(B, null)], () => title).get(B)!;
 const dispatch = (run: string, items: string[], rows: JobRow[]): Dispatch => ({ run, job: `job-${run}`, plan_run: 'plan', sha256: 'a'.repeat(64), items, rows });
 const first = (rowOfB: JobRow = { item: B, dynamic_terminal: 'not_run', not_executed: notExecuted() }) => dispatch('d1', [A, B], [{ item: A, dynamic_terminal: 'no_verdict', evidence: { log: `src:${'1'.repeat(64)}` } }, rowOfB]);

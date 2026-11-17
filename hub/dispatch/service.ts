@@ -4,7 +4,7 @@ import * as bedOperations from './bed-lifecycle.ts';
 import * as deviceOperations from './devices.ts';
 import * as baselineOperations from './baselines.ts';
 import { environmentOf, runBound } from './precheck-context.ts';
-import { reportOutcome } from './report-outcome.ts';
+import { reportOutcome, runStop } from './report-outcome.ts';
 import { REPORT_READ_ATTEMPTS, REPORT_READ_WINDOW_MS, reportPending, reportReadDelay, trustedStatus } from './report-read.ts';
 import { releaseDigest, releaseField, releaseFailure, type ReleaseCheck } from './release-diagnostics.ts';
 import { formatReleaseRefusal } from './refusal-text.ts';
@@ -1455,8 +1455,9 @@ export class DispatchService {
     const admin=binding.acting_by ?? binding.initiated_by;
     const ownershipFailure=!attribution?{missing_fact:'执行器尚未声明本次结果的归属字段和唯一归属值',next_action:`请管理员 ${admin} 核对 ${response.source} 并登记 result.ownership 的字段、唯一归属值及原因指针声明；本作业保留无判定，不重交`}:!ownershipMatched?{missing_fact:'本结果未报告声明的唯一归属；具体原因见归属观察及原件',next_action:`请管理员 ${admin} 依据 ${response.source} 检查原派发日志、收集器目录和保留证据，恢复归属或登记该版本的能力缺口；本作业保留无判定，不重交`}:ownershipConflict?{missing_fact:'本结果的唯一归属值与原因字段相互矛盾，不能采用为归属事实',next_action:`请管理员 ${admin} 依据 ${response.source} 核对目标协议实现及报告归属，修复肯定值与原因的矛盾或登记能力缺口；本作业保留无判定，不重交`}:{missing_fact:'本结果的归属值相符，但当前目标版本的归属前提尚未认证',next_action:`请管理员 ${admin} 复核 ${response.source} 的归属证据，为该目标版本登记 result_ownership 认证；认证用于后续核验，本作业保留无判定，不重交`};
     const { found: evidence, returned } = await this.rowEvidence(binding, d, response, input.items);
+    const stop = complete ? null : runStop(response.value, d, input.items);
     const projected = input.items.map(id => {
-      const resolution=reportOutcome(response.value,d,id),{row,reported}=resolution;
+      const resolution=reportOutcome(response.value,d,id,stop),{row,reported}=resolution;
       if(!resolution.check.resolved)try{this.options.adminLog?.({traceId:null,run:binding.input?.run??binding.run??null,what:'result interpretation '+binding.job,detail:JSON.stringify(resolution.check)});}catch{}
       const log = d.result.log ? at(row,d.result.log) : undefined;
       const disposition = dynamicDisposition(reported,{owned:ownership,request:!!d.result.request_id && at(response.value,d.result.request_id) === intent.body.detail.request_id,remote:same(at(response.value,d.result.id),remoteId),digest:at(response.value,d.result.sha256) === input.sha256,complete:complete && Array.isArray(rows) && rows.length === input.items.length,unique:resolution.matches === 1,closed:!!d.result.closing_marker && typeof log === 'string' && log.includes(d.result.closing_marker),device:intent.body.detail.device_identity_proven === true && intent.body.detail.device_lease_digest === digestOfValue([remoteLease.id,remoteLease.token]),continuity:options?.execution?.continuity??(!drift&&!leaseInterrupted)},input.judgments?.length?['conditional_on_judgment']:[]);
@@ -1480,7 +1481,7 @@ export class DispatchService {
     await this.journal.append(binding, 'result', 'read_back', 'completed', {reference:`src:${artifact.body.sha256}`,items:projected.length,...(deviceReturn?{device_return:deviceReturn}:{}),no_verdict:projected.filter(row=>row.dynamic_terminal==='no_verdict').length,report_pending:pending,execution_integrity:options?.execution??{intent:intent.digest,continuity:!drift&&!leaseInterrupted,drift,lease_interrupted:leaseInterrupted}}, [response.source]);
     if(!options?.execution)await this.release(binding,client,remoteLease);
     const unresolved=projected.filter(row=>row.dynamic_terminal==='no_verdict');
-    await this.journal.append(binding, 'complete', 'read_back', 'completed', { done: true, outcome: 'effective',...(pending?{report_pending:true,missing_fact:'原请求已执行结束，判定仍缺事实：'+unresolved.map(row=>'missing_fact' in row?row.missing_fact:row.missing_facts.join('、')).join('；'),next_action:unresolved.find(row=>'next_action'in row)?.next_action??`circle-hub job resume ${binding.job}；只读补齐报告，不重交`}:{}),...(!pending&&unresolved.length?{missing_fact:[...new Set(unresolved.map(row=>'missing_fact' in row?row.missing_fact:'动态完整性事实尚不齐全；见 missing_facts'))].join('；'),next_action:[...new Set(unresolved.map(row=>row.next_action))].join('；')}:{} ) });
+    await this.journal.append(binding, 'complete', 'read_back', 'completed', { done: true, outcome: 'effective',...(pending?{report_pending:true,missing_fact:'原请求已执行结束，判定仍缺事实：'+[...new Set(unresolved.map(row=>'missing_fact' in row?row.missing_fact:row.missing_facts.join('、')))].join('；'),next_action:unresolved.find(row=>'next_action'in row)?.next_action??`circle-hub job resume ${binding.job}；只读补齐报告，不重交`}:{}),...(!pending&&unresolved.length?{missing_fact:[...new Set(unresolved.map(row=>'missing_fact' in row?row.missing_fact:'动态完整性事实尚不齐全；见 missing_facts'))].join('；'),next_action:[...new Set(unresolved.map(row=>row.next_action))].join('；')}:{} ) });
     return this.status(by, binding.job);
   }
 
