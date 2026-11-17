@@ -238,6 +238,17 @@ function looksLikeVerdict(filePath: string, parsed: unknown): boolean {
   );
 }
 
+/** A problem is about --run itself when its pointer is /run or under it: no usable frozen run, or one without its command tree. */
+const concernsRun = (problem: CheckProblem): boolean => problem.pointer === '/run' || problem.pointer.startsWith('/run/');
+const PLAN_NEXT_STEP = '按 problems 的位置与允许集合修改计划；结构问题对照 slots.schema.json，不改冻结配置绕过';
+/**
+ * What the stderr line of a failed plan check tells to do next. The sentence about --run is for the problems that are about it;
+ * a plan problem found with a right --run (a recomposition declaration, a field the schema does not have) is not told to look at it.
+ */
+export function planNextStep(problems: readonly CheckProblem[]): string {
+  return (problems.some(concernsRun) ? '先提供正确的 --run 冻结输入，再' : '') + PLAN_NEXT_STEP;
+}
+
 function writeProblemStderr(
   category: import('../functions/generated/vocabulary.ts').CallErrorCategory,
   summary: string,
@@ -428,12 +439,7 @@ export async function main(argv: string[]): Promise<number> {
     const res = checkPlanObject(name, parsed, run, catalog);
     process.stdout.write(JSON.stringify({ mode: 'plan', ...res }) + '\n');
     if (!res.ok) {
-      writeProblemStderr(
-        'invalid_parameters',
-        `${name} 本地核对未通过`,
-        res.problems,
-        '先提供正确的 --run 冻结输入，再按 problems 的位置与允许集合修改计划；结构问题对照 slots.schema.json，不改冻结配置绕过',
-      );
+      writeProblemStderr('invalid_parameters', `${name} 本地核对未通过`, res.problems, planNextStep(res.problems));
       return 1;
     }
     return 0;

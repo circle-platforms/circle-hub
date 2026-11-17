@@ -453,3 +453,81 @@ test('CLI checks declared inverse before runner clear using only the matching do
   await rm(nodesFile);const absent=await runCli(['--file',file,'--run',dir]);assert.equal(absent.code,1);assert.equal(JSON.parse(absent.stdout).cleanup_checked,false);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+// The line on stderr ends with what to do next. It names --run only when a problem is about the frozen run itself (the pointer is /run or
+// under it): round 36 printed «先提供正确的 --run 冻结输入» under a recomposition problem and a schema problem, where --run was fine.
+const RUN_FIRST = '先提供正确的 --run 冻结输入，再';
+const PLAN_NEXT = '按 problems 的位置与允许集合修改计划；结构问题对照 slots.schema.json，不改冻结配置绕过';
+const endsWithNext = (stderr: string, next: string): boolean => /。位置：[^\n]*。\n$/.test(stderr) && stderr.includes(`。${next}。位置：`);
+test('the next step on stderr names --run only for a problem that is about the frozen run', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'plan-next-step-'));
+  try {
+    const { fixture } = await import('../testing/inverse-alternatives.ts');
+    const { runtimeDigest } = await import('../functions/runtime-contract.ts');
+    const { frozenRun } = await import('../testing/frozen-run.ts');
+    const { treeLines } = await import('../testing/locked-tree.ts');
+    const { QUOTE } = await import('../functions/test-support.ts');
+    const value = fixture(['demo switch on']);
+    const contract = value.subject.contract as any;
+    contract.cleanup = { source: 'fixture/clear', sha256: 'a'.repeat(64), objects: ['widget-seat'], rules: [{ prefixes: ['demo'], clears: ['clear demo all'] }] };
+    contract.contract_sha256 = runtimeDigest(contract);
+    const catalog = value.subject.command_catalog as any, runId = 'run_synthetic_next_step';
+    const group = { kind: 'case-compile', contract, profile: value.subject.profile, manifest: value.subject.manifest };
+    const frozen = (over: Record<string, unknown> = {}) => frozenRun({ run: runId, root: catalog.root, command_policy: catalog.policy, groups: [group], items: [{ id: 'synthetic-item' }], ...over });
+    const plan: any = { item: 'synthetic-item', handling: 'handled', slots: { plan: [{ text: '合成计划', data: { ...(value.subject.data as any), expects: [{ text: QUOTE.text, quote: { ...QUOTE }, after: 1 }] } }] } };
+    const file = join(dir, 'plan.json'), runFile = join(dir, 'run.json');
+    await writeFile(file, JSON.stringify(plan));
+    await writeFile(runFile, JSON.stringify(frozen()));
+    const [head, ...nodes] = treeLines(catalog, runId);
+    await mkdir(join(dir, 'knowledge'));
+    await writeFile(join(dir, 'knowledge', 'nodes.jsonl'), [head, ...nodes].map((row) => JSON.stringify(row)).join('\n') + '\n');
+
+    // A plan problem with the right --run: the configuration owes its cleanup. Nothing here is about --run.
+    const planOnly = await runCli(['--file', file, '--run', dir]);
+    assert.equal(planOnly.code, 1, planOnly.stderr);
+    const planProblems = JSON.parse(planOnly.stdout).problems as Array<{ pointer: string }>;
+    assert.ok(planProblems.length > 0 && planProblems.every((p) => p.pointer !== '/run' && !p.pointer.startsWith('/run/')), JSON.stringify(planProblems));
+    assert.ok(endsWithNext(planOnly.stderr, PLAN_NEXT), planOnly.stderr);
+    assert.ok(!planOnly.stderr.includes('先提供正确的 --run'), planOnly.stderr);
+
+    // A structure problem of the plan, no --run asked for: the plan's own schema is to be read, the frozen input is not missing.
+    const broken = structuredClone(plan); broken.slots.plan[0].data.extra_field = 1;
+    const brokenFile = join(dir, 'broken.json'); await writeFile(brokenFile, JSON.stringify(broken));
+    const structure = await runCli(['--file', brokenFile]);
+    assert.equal(structure.code, 1);
+    assert.deepEqual(JSON.parse(structure.stdout).problems.map((p: { pointer: string }) => p.pointer), ['/extra_field']);
+    assert.ok(endsWithNext(structure.stderr, PLAN_NEXT), structure.stderr);
+    assert.ok(!structure.stderr.includes('先提供正确的 --run'), structure.stderr);
+
+    // A plan whose item is none of the run's items is told the items (the plan's /item is wrong); that is not a missing --run either.
+    const other = structuredClone(plan); other.item = 'synthetic-other-item';
+    const otherFile = join(dir, 'other.json'); await writeFile(otherFile, JSON.stringify(other));
+    const wrongItem = await runCli(['--file', otherFile, '--run', dir]);
+    assert.equal(wrongItem.code, 1);
+    assert.ok(JSON.parse(wrongItem.stdout).problems.some((p: { pointer: string }) => p.pointer === '/item'), wrongItem.stdout);
+    assert.ok(endsWithNext(wrongItem.stderr, PLAN_NEXT), wrongItem.stderr);
+    assert.ok(!wrongItem.stderr.includes('先提供正确的 --run'), wrongItem.stderr);
+
+    // Without --run the frozen input is what is missing: the --run sentence comes first.
+    const noRun = await runCli(['--file', file]);
+    assert.equal(noRun.code, 1);
+    assert.deepEqual(JSON.parse(noRun.stdout).problems.map((p: { pointer: string }) => p.pointer), ['/run']);
+    assert.ok(endsWithNext(noRun.stderr, RUN_FIRST + PLAN_NEXT), noRun.stderr);
+
+    // A run that is the run of another workflow (no case-compile group) is a problem of --run.
+    const foreign = join(dir, 'foreign'); await mkdir(foreign);
+    await writeFile(join(foreign, 'run.json'), JSON.stringify(frozen({ groups: [{ kind: 'recompose-scope@1' }] })));
+    const wrongRun = await runCli(['--file', file, '--run', foreign]);
+    assert.equal(wrongRun.code, 1);
+    assert.ok(JSON.parse(wrongRun.stdout).problems.some((p: { pointer: string }) => p.pointer === '/run'), wrongRun.stdout);
+    assert.ok(endsWithNext(wrongRun.stderr, RUN_FIRST + PLAN_NEXT), wrongRun.stderr);
+
+    // A run directory without the run's command tree is a problem of --run too (/run/knowledge), beside whatever the plan has.
+    const bare = join(dir, 'bare'); await mkdir(bare);
+    await writeFile(join(bare, 'run.json'), JSON.stringify(frozen()));
+    const noTree = await runCli(['--file', file, '--run', bare]);
+    assert.equal(noTree.code, 1);
+    assert.ok(JSON.parse(noTree.stdout).problems.some((p: { pointer: string }) => p.pointer === '/run/knowledge'), noTree.stdout);
+    assert.ok(endsWithNext(noTree.stderr, RUN_FIRST + PLAN_NEXT), noTree.stderr);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

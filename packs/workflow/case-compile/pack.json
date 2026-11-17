@@ -968,8 +968,8 @@
     },
     {
       "path": "tools/check-plan.ts",
-      "sha256": "c592ad7f009af6dbc477dc0cafc3e2eb5de5f74d1daf62de6631522b618599a9",
-      "size": 21014
+      "sha256": "a1fc906754a02e63cc13f565877274ce91e70404764695f2531abb5f7f4ef62d",
+      "size": 21693
     },
     {
       "path": "tools/cmd-lookup.cli.json",
