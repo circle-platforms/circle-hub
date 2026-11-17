@@ -3,8 +3,12 @@
 // plan the Hub refuses by shape (a claim without its text, a field the claim does not have, a count, a value of the wrong type)
 // is refused here too. Fail-closed: a schema keyword this reader does not know is reported, never skipped.
 import {isRecord} from './text.ts';
+import {fieldHomes,unknownFieldNote} from './field-homes.ts';
+import {refusalText} from './refusal-form.ts';
 
 export interface SlotRecordProblem { pointer: string; message: string }
+/** A problem while it is being collected. A refusal of unknown fields also carries which fields and which the node has, for the final pass that says where they belong. */
+interface Collected extends SlotRecordProblem { unknown?: { keys: string[]; allowed: string[] } }
 type Node=Record<string,unknown>;
 
 const KNOWN=new Set(['$schema','title','description','type','properties','required','additionalProperties','anyOf','const','enum','items','minItems','maxItems','minLength','maxLength','minimum','maximum','pattern']);
@@ -27,21 +31,21 @@ const leaf=(node:Node):boolean=>!isRecord(node.properties)&&node.type!=='object'
 
 const ANNOTATION=new Set(['$schema','title','description']);
 /** The alternatives of one node: leaf alternatives are tried as a list; object alternatives are told apart by the constant their kind declares. */
-function alternatives(branches:Node[],value:unknown,at:string,out:SlotRecordProblem[],lead:(text:string)=>string,wrong:(expected:string)=>void):void{
- if(branches.every(leaf)){if(!branches.some(branch=>{const probe:SlotRecordProblem[]=[];walk(branch,value,at,probe,lead);return probe.length===0;}))wrong(renderShape({anyOf:branches}));return;}
+function alternatives(branches:Node[],value:unknown,at:string,out:Collected[],lead:(text:string)=>string,wrong:(expected:string)=>void):void{
+ if(branches.every(leaf)){if(!branches.some(branch=>{const probe:Collected[]=[];walk(branch,value,at,probe,lead);return probe.length===0;}))wrong(renderShape({anyOf:branches}));return;}
  const discriminated=isRecord(value)?branches.find(branch=>isRecord(branch.properties)&&isRecord(branch.properties.kind)&&Object.hasOwn(branch.properties.kind,'const')&&branch.properties.kind.const===value.kind):undefined;
  if(discriminated){walk(discriminated,value,at,out,lead);return;}
  if(isRecord(value)&&value.kind!==undefined){
   const kinds=branches.flatMap(branch=>isRecord(branch.properties)&&isRecord(branch.properties.kind)&&Object.hasOwn(branch.properties.kind,'const')?[shown(branch.properties.kind.const)]:[]);
   if(kinds.length){out.push({pointer:`${at}/kind`,message:lead(`${at}/kind 要的是${kinds.join(' | ')}，收到的是${shown(value.kind)}`)});return;}
  }
- let best:SlotRecordProblem[]|null=null;
- for(const branch of branches){const probe:SlotRecordProblem[]=[];walk(branch,value,at,probe,lead);if(probe.length===0)return;if(best===null||probe.length<best.length)best=probe;}
+ let best:Collected[]|null=null;
+ for(const branch of branches){const probe:Collected[]=[];walk(branch,value,at,probe,lead);if(probe.length===0)return;if(best===null||probe.length<best.length)best=probe;}
  out.push(...(best??[{pointer:at,message:lead(`${at} 不符合任何一种允许的形状，收到的是${received(value)}`)}]));
 }
 
 /** One value against one node; every problem is reported at its own pointer, in the Hub's wording where the Hub has one. */
-function walk(node:unknown,value:unknown,at:string,out:SlotRecordProblem[],lead:(text:string)=>string):void{
+function walk(node:unknown,value:unknown,at:string,out:Collected[],lead:(text:string)=>string):void{
  if(!isRecord(node))return;
  for(const key of Object.keys(node))if(!KNOWN.has(key)){out.push({pointer:at,message:`${at} 的模式用了本地读不懂的关键字 ${key}；重新下载本次运行的完整 run.json，核对不了的部分以 Hub 回执为准`});return;}
  const wrong=(expected:string):void=>{out.push({pointer:at,message:lead(`${at} 要的是${expected}，收到的是${received(value)}`)});};
@@ -60,7 +64,7 @@ function walk(node:unknown,value:unknown,at:string,out:SlotRecordProblem[],lead:
   const properties=isRecord(node.properties)?node.properties:{};
   for(const key of Array.isArray(node.required)?node.required:[])if(typeof key==='string'&&!Object.hasOwn(value,key))out.push({pointer:`${at}/${key}`,message:lead(`${at}/${key} 要的是${renderShape(properties[key])}，收到的是undefined`)});
   const unknown=Object.keys(value).filter(key=>!Object.hasOwn(properties,key));
-  if(unknown.length&&node.additionalProperties===false)out.push({pointer:unknown.length===1?`${at}/${unknown[0]}`:at,message:lead(`不认识的字段 ${unknown.join('、')}`)});
+  if(unknown.length&&node.additionalProperties===false)out.push({pointer:unknown.length===1?`${at}/${unknown[0]}`:at,message:lead(`不认识的字段 ${unknown.join('、')}`),unknown:{keys:unknown,allowed:Object.keys(properties)}});
   else if(unknown.length&&isRecord(node.additionalProperties))for(const key of unknown)walk(node.additionalProperties,value[key],`${at}/${key}`,out,lead);
   for(const [key,child] of Object.entries(properties))if(Object.hasOwn(value,key))walk(child,value[key],`${at}/${key}`,out,lead);
   return;
@@ -98,7 +102,7 @@ function walk(node:unknown,value:unknown,at:string,out:SlotRecordProblem[],lead:
  */
 export function slotRecordProblems(schema:unknown,slots:unknown):SlotRecordProblem[]{
  if(!isRecord(schema)||!isRecord(schema.properties))return [{pointer:'/slots',message:'冻结运行没有槽位模式（run.slots.schema），不能核对槽位记录；重新下载本次运行的完整 run.json，不手写冻结输入'}];
- const declared=Object.keys(schema.properties),out:SlotRecordProblem[]=[];
+ const declared=Object.keys(schema.properties),out:Collected[]=[];
  if(!isRecord(slots))return [{pointer:'/slots',message:`已处理的条目要给出槽位记录（slots，对象，键是要求项：${declared.join('、')}）或沿用引用（reuse）`}];
  for(const key of Object.keys(slots))if(!declared.includes(key))out.push({pointer:`/slots/${key}`,message:`槽位里没有 ${key}（可填：${declared.join('、')||'无'}）`});
  const plain=(text:string):string=>`提交的结构不对：${text}`,inData=(text:string):string=>`data 不符合要求项 plan 声明的模式：提交的结构不对：${text}`;
@@ -113,13 +117,20 @@ export function slotRecordProblems(schema:unknown,slots:unknown):SlotRecordProbl
   const claim=isRecord(requirement.items)?requirement.items:null;if(claim===null)continue;
   for(const [index,statement] of value.entries()){
    const at=`/slots/${key}/${index}`,properties=isRecord(claim.properties)?claim.properties:{};
-   const { data:declaredData, ...fields }=properties as Node;
+   const { data:declaredData }=properties as Node;
    // The claim's own fields first, then its data against the pack's schema; an absent data is judged as {} (as the Hub does).
-   walk({...claim,properties:fields,required:(Array.isArray(claim.required)?claim.required:[]).filter(name=>name!=='data')},isRecord(statement)?Object.fromEntries(Object.entries(statement).filter(([name])=>name!=='data')):statement,at,out,plain);
+   walk({...claim,properties,required:(Array.isArray(claim.required)?claim.required:[]).filter(name=>name!=='data')},isRecord(statement)?Object.fromEntries(Object.entries(statement).filter(([name])=>name!=='data')):statement,at,out,plain);
    if(!isRecord(statement)||declaredData===undefined)continue;
    if(statement.data!==undefined&&!isRecord(statement.data))out.push({pointer:`${at}/data`,message:plain(`${at}/data 要的是对象，收到的是${received(statement.data)}`)});
    else walk(declaredData,statement.data??{},`${at}/data`,out,inData);
   }
  }
- return out;
+ // A node that refused a field says what it has, where else the schema declares the name and what the other plan mode writes; the
+ // Hub's own words lead, so the Hub's refusal of the same record is a prefix of this one.
+ const homes=out.some(row=>row.unknown!==undefined)?fieldHomes(schema):new Map<string,readonly string[]>();
+ return out.map(({unknown,...row})=>{
+  if(unknown===undefined)return row;
+  const note=unknownFieldNote({homes,keys:unknown.keys,allowed:unknown.allowed});
+  return {...row,message:refusalText({what:row.message,allowed:note.allowed,also:note.also,next:note.next})};
+ });
 }

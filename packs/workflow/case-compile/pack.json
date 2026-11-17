@@ -218,8 +218,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "cd0eaba7616ca60c59a2496ac6c11d5a71eef54ba1f08919632da3fe542aa8f8",
-      "size": 39045
+      "sha256": "3b7f213dd2cbc9f9e02f8de075d63577bd9cf936f6b99d0b60173eba690a7bf5",
+      "size": 39069
     },
     {
       "path": "functions/client-cli.ts",
@@ -285,6 +285,11 @@
       "path": "functions/fidelity.ts",
       "sha256": "c33bb53cc54d10233ee647be3d22edc9e328d77b5769cd14761f9119b6e9b4ce",
       "size": 31532
+    },
+    {
+      "path": "functions/field-homes.ts",
+      "sha256": "0f64cc8ec91c964511b17ef293c28cbd1e45e03a7e13253e57dde7747ac1c627",
+      "size": 3553
     },
     {
       "path": "functions/flat-expected.ts",
@@ -408,8 +413,8 @@
     },
     {
       "path": "functions/plan-boundary.ts",
-      "sha256": "4aef0593cc0ce7a46f158bd937bc5dbd04398690fb7588bf986515dc5eaeca40",
-      "size": 10620
+      "sha256": "3cd52af63040aef4874acee527096afdd386036cbb3b726a22b7f660f58b1652",
+      "size": 13242
     },
     {
       "path": "functions/plan-commands.ts",
@@ -463,8 +468,13 @@
     },
     {
       "path": "functions/recomposition.ts",
-      "sha256": "2624d66e904b0b834691ffc1546802b4eeafe2ba76a99e80bd4fded87eb40491",
-      "size": 7236
+      "sha256": "e2cf240d4d16037d313c260e5d95a322869fbda78b278c34ffa760e8526aaa3d",
+      "size": 14727
+    },
+    {
+      "path": "functions/refusal-form.ts",
+      "sha256": "b4a6b442e0646631a7b8fcd8ae93860ad7226a1de1ab793462a0f4cf09807676",
+      "size": 3074
     },
     {
       "path": "functions/rework-history.ts",
@@ -488,8 +498,8 @@
     },
     {
       "path": "functions/slot-record.ts",
-      "sha256": "f6ce2a40ad45097882ca2cf8e7ddc2fe269758f6d7e03c503e9fe11c580275c7",
-      "size": 11632
+      "sha256": "5dd16ebcc9203b039eb6696fab40d9c4e7e0cc92885653fc6fc3458402e6e85e",
+      "size": 12589
     },
     {
       "path": "functions/slots.ts",
@@ -852,6 +862,11 @@
       "size": 2495
     },
     {
+      "path": "tables/field-homes.json",
+      "sha256": "69e56d31430f566c0b8a27e28add68b8c527677e1727290324df3dc4719c6e36",
+      "size": 810
+    },
+    {
       "path": "tables/quotes.json",
       "sha256": "784e2a5cb5e252bdb5f7785509ec9111e93a235f2dfcec27a5948ffaa9650581",
       "size": 655
@@ -953,8 +968,8 @@
     },
     {
       "path": "tools/check-plan.ts",
-      "sha256": "e1d17b8bc4b4610f6d51c0a0bba2610be4e0ad66c20015626768d1ee065ca7b0",
-      "size": 21118
+      "sha256": "c592ad7f009af6dbc477dc0cafc3e2eb5de5f74d1daf62de6631522b618599a9",
+      "size": 21014
     },
     {
       "path": "tools/cmd-lookup.cli.json",

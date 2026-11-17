@@ -1,6 +1,7 @@
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 // Consume an admitted case artifact, not a review receipt or a self-described upload.
 import { acceptedPair, acceptsPack, envelope, object } from './recompose-evidence.ts';
+import { PLAN_DATA, listed, refusalText, shownValue } from './refusal-form.ts';
 import T from '../tables/recompose-format.json' with { type: 'json' };
 import type { PlanSlots } from './slots.ts';
 export function admittedRecomposition(runInput: any, resultInput: any, context: any, source: string, node: string) {
@@ -44,7 +45,17 @@ export function recompositionProblem(runInput: any, resultInput: any, context: a
     return '重组记录不完整，或它的前驱与重组运行不同；按重组回执补齐后重交';
 }
 
-export function recompositionGaps(slots: PlanSlots, proof: any): Array<{
+/** Where the plan declares the recomposition it consumes, and where the frozen item of the run discloses the values to declare. */
+const DECLARED = PLAN_DATA + '/recomposition';
+const DISCLOSED = '/fields/recomposition';
+
+/**
+ * What a plan's `recomposition` declaration lacks or gets wrong against the admitted recomposition record `proof` (the item's
+ * `fields.recomposition`). Each gap is one condition of the check, as it always was; its text says where it sits, the value seen,
+ * the allowed set and the next step, with the values the writer copies and where the frozen item discloses them. `where.item` is
+ * the id of the item (the item file the download writes holds it), named so the file is found without opening them all.
+ */
+export function recompositionGaps(slots: PlanSlots, proof: any, where: { item?: string } = {}): Array<{
     message: string;
     verdict: Extract<Verdict, 'unknown' | 'refute'>;
 }> {
@@ -54,35 +65,107 @@ export function recompositionGaps(slots: PlanSlots, proof: any): Array<{
         message: string;
         verdict: Extract<Verdict, 'unknown' | 'refute'>;
     }> = [], use = slots.recomposition, note = (message: string, verdict: Extract<Verdict, 'unknown' | 'refute'> = 'unknown') => issues.push({ message, verdict });
+    const expects = slots.expects.map((e, i) => ({ ...e, identity: e.id ?? String(i + 1), index: i }));
+    // What the texts read of the record never throws: a record the check itself cannot read fails where it always failed.
+    const slotsRead = (): any[] => proof.record?.expectation_slots ?? [];
+    const atomOf = (slot: any) => proof.record?.atoms?.find?.((a: any) => a.id === slot.atom);
+    // The assertions that can serve a slot: those the check below accepts for it (the slot's sentence, quoted whole, and its criterion).
+    const serving = (slot: any): string[] => { const atom = atomOf(slot); return expects.filter(e => e.quote?.reference === atom?.quote_ref && e.quote?.text === atom?.text && (slot.criterion_id === undefined || e.criterion === slot.criterion_id)).map(e => e.identity); };
+    const file = where.item === undefined ? '冻结条目文件 items/<序号>.json ' : `冻结条目文件 items/<序号>.json（里面的 id 是 ${where.item}）`;
+    const disclosed = `${file}的 ${DISCLOSED}：receipt 在 ${DISCLOSED}/receipt，case_id 在 ${DISCLOSED}/record/case/id，期望判断依据在 ${DISCLOSED}/record/expectation_slots`;
+    const sentence = (slot: any) => { const atom = atomOf(slot); return `reference ${shownValue(atom?.quote_ref)}，text ${shownValue(atom?.text)}`; };
     if (!use) {
-        note('缺显式重组消费身份；等待编写模型在编写提交前填写已受理 receipt 和 case_id');
+        const rows = slotsRead().map(slot => ({ slot: slot.slot, assertions: serving(slot), sentence: sentence(slot) }));
+        const declaration = JSON.stringify({ receipt: proof.receipt, case_id: proof.record?.case?.id, slots: rows.map(row => ({ slot: row.slot, assertions: row.assertions.length ? row.assertions : ['<断言 id>'] })), rebindings: [] });
+        note(refusalText({
+            what: '计划没有声明它消费的重组记录（recomposition）',
+            place: DECLARED,
+            seen: '没有这个字段',
+            also: [
+                `值都在${disclosed}；编写简报 briefs/<序号>.md 的计划文件外壳里已经填好同样的 recomposition`,
+                `各期望判断依据可用的断言 id（引文与它的用例原句相同，平面计划是 expects 从 1 起的序号写成字符串，分块计划是断言自己的 id）：${rows.map(row => row.assertions.length ? `${row.slot} 用 ${listed(row.assertions)}` : `${row.slot} 本计划没有断言引用它的用例原句（${row.sentence}），先写这样的断言`).join('，')}`,
+            ],
+            next: `在 ${PLAN_DATA} 里加上 "recomposition": ${declaration}`,
+        }));
         return issues;
     }
     if (use.receipt !== proof.receipt || use.case_id !== proof.record.case.id) {
-        note('receipt 或 case_id 不等于实际受理重组记录，不能用评审或别案替代', 'refute');
+        const wrongReceipt = use.receipt !== proof.receipt, wrongCase = use.case_id !== proof.record?.case?.id;
+        note(refusalText({
+            what: `recomposition 的 ${[wrongReceipt ? 'receipt' : '', wrongCase ? 'case_id' : ''].filter(Boolean).join('、')} 不是本条用例已受理的重组记录的，不能用评审或别的用例的替代`,
+            place: [wrongReceipt ? `${DECLARED}/receipt` : '', wrongCase ? `${DECLARED}/case_id` : ''].filter(Boolean).join('、'),
+            seen: [wrongReceipt ? `receipt ${shownValue(use.receipt)}` : '', wrongCase ? `case_id ${shownValue(use.case_id)}` : ''].filter(Boolean).join('，'),
+            allowed: [wrongReceipt ? `receipt 只能是 ${shownValue(proof.receipt)}` : '', wrongCase ? `case_id 只能是 ${shownValue(proof.record?.case?.id)}` : ''].filter(Boolean),
+            also: [`这些值披露在${disclosed}`],
+            next: '照允许的值改写',
+        }), 'refute');
         return issues;
     }
-    const expects = slots.expects.map((e, i) => ({ ...e, identity: e.id ?? String(i + 1) })), assigned = new Set<string>();
-    for (const row of use.slots) {
-        if (!proof.record.expectation_slots.some((s: any) => s.slot === row.slot))
-            note('对应关系里有重组记录之外的期望判断依据', 'refute');
-        for (const id of row.assertions) {
+    const recordSlots: any[] = proof.record.expectation_slots, slotIds: string[] = recordSlots.map(s => s.slot);
+    const assigned = new Map<string, string>();
+    for (const [i, row] of use.slots.entries()) {
+        if (!recordSlots.some((s: any) => s.slot === row.slot))
+            note(refusalText({
+                what: '对应关系里有重组记录之外的期望判断依据',
+                place: `${DECLARED}/slots/${i}/slot`,
+                seen: shownValue(row.slot),
+                allowed: slotIds,
+                next: '改成允许的期望判断依据，或删去这一行',
+            }), 'refute');
+        for (const [j, id] of row.assertions.entries()) {
             if (assigned.has(id))
-                note('不同的期望判断依据不能共用一个断言', 'refute');
-            assigned.add(id);
+                note(refusalText({
+                    what: '不同的期望判断依据不能共用一个断言',
+                    place: `${DECLARED}/slots/${i}/assertions/${j}`,
+                    seen: `断言 ${shownValue(id)} 已经列在 ${assigned.get(id)} 下，又列在 ${row.slot} 下`,
+                    next: `每个断言只列在一个期望判断依据下；${row.slot} 另选断言 id（本计划的断言 id：${listed(expects.map(e => e.identity))}）`,
+                }), 'refute');
+            else
+                assigned.set(id, row.slot);
         }
     }
-    for (const slot of proof.record.expectation_slots) {
+    for (const slot of recordSlots) {
         const rows = use.slots.filter(r => r.slot === slot.slot);
         if (rows.length !== 1 || !rows[0].assertions.length) {
-            note('重组记录里的期望判断依据 ' + slot.slot + ' 还没有自己的断言；编写模型提交前补齐');
+            const offered = serving(slot);
+            note(refusalText({
+                what: `重组记录里的期望判断依据 ${slot.slot} 还没有自己的断言`,
+                place: `${DECLARED}/slots`,
+                seen: rows.length === 1 ? `${slot.slot} 的一行 assertions 是空的` : `${slot.slot} 写了 ${rows.length} 行`,
+                allowed: offered,
+                also: [`允许的是本计划里引文与 ${slot.slot} 的用例原句相同的断言${offered.length ? '' : `；现在没有这样的断言（${sentence(slot)}）`}`],
+                next: `为 ${slot.slot} 写且只写一行 ${JSON.stringify({ slot: slot.slot, assertions: offered.length ? offered : ['<断言 id>'] })}${offered.length ? '' : '，并先在计划里写一条引文是这句原文的断言'}`,
+            }));
             continue;
         }
-        const atom = proof.record.atoms.find((a: any) => a.id === slot.atom);
-        for (const id of rows[0].assertions) {
+        const atom = proof.record.atoms.find((a: any) => a.id === slot.atom), rowIndex = use.slots.indexOf(rows[0]);
+        for (const [j, id] of rows[0].assertions.entries()) {
             const e = expects.find(e => e.identity === id);
-            if (!e || e.quote.reference !== atom?.quote_ref || e.quote.text !== atom?.text || slot.criterion_id !== undefined && e.criterion !== slot.criterion_id)
-                note('重组记录里的期望判断依据 ' + slot.slot + ' 的断言、用例原句的原文或判据 id 对不上', 'refute');
+            if (!e || e.quote.reference !== atom?.quote_ref || e.quote.text !== atom?.text || slot.criterion_id !== undefined && e.criterion !== slot.criterion_id) {
+                const offered = serving(slot);
+                if (!e)
+                    note(refusalText({
+                        what: `期望判断依据 ${slot.slot} 列的断言不在本计划里`,
+                        place: `${DECLARED}/slots/${rowIndex}/assertions/${j}`,
+                        seen: shownValue(id),
+                        allowed: expects.map(x => x.identity),
+                        also: offered.length === expects.length ? [] : [offered.length ? `其中引文与 ${slot.slot} 的用例原句相同的是 ${listed(offered)}` : `其中没有引文与 ${slot.slot} 的用例原句相同的（${sentence(slot)}）`],
+                        next: '改成允许的断言 id（平面计划是 expects 从 1 起的序号写成字符串，分块计划是断言自己的 id）',
+                    }), 'refute');
+                else {
+                    const differs = [
+                        e.quote.reference !== atom?.quote_ref ? `quote.reference 是 ${shownValue(e.quote.reference)}，应是 ${shownValue(atom?.quote_ref)}` : '',
+                        e.quote.text !== atom?.text ? `quote.text 是 ${shownValue(e.quote.text)}，应是 ${shownValue(atom?.text)}` : '',
+                        slot.criterion_id !== undefined && e.criterion !== slot.criterion_id ? `criterion 是 ${shownValue(e.criterion)}，应是 ${shownValue(slot.criterion_id)}` : '',
+                    ].filter(Boolean);
+                    note(refusalText({
+                        what: `期望判断依据 ${slot.slot} 的断言 ${shownValue(id)} 与它的用例原句对不上`,
+                        place: `${PLAN_DATA}${e.origin ?? `/expects/${e.index}`}/quote`,
+                        seen: differs.join('，'),
+                        next: `把这条断言的引文改成 ${slot.slot} 的用例原句（${sentence(slot)}），或在 recomposition 里为 ${slot.slot} 改列引文已经是它的断言${offered.length ? `：${listed(offered)}` : ''}`,
+                    }), 'refute');
+                }
+            }
         }
     }
     return issues;

@@ -1,4 +1,4 @@
-import {planBoundary,type HubCheckCoverage} from '../functions/plan-boundary.ts';
+import {frozenRunProblem,planBoundary,type HubCheckCoverage} from '../functions/plan-boundary.ts';
 import {lockedTree,type LockedTree} from '../functions/catalog-selection.ts';
 import {parseRuntimeContract} from '../functions/runtime-contract.ts';
 import {parseProfile} from '../functions/profile.ts';
@@ -166,7 +166,7 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
   const items = isRecord(run) && Array.isArray(run.items) ? run.items : [];
   let coverage: HubCheckCoverage[] | undefined, structureOk = checked.ok, authorityChecked = false, cleanupChecked = false;
   if (!isRecord(run) || !isRecord(group) || !items.some(row => isRecord(row) && row.id === item)) {
-    problems.push({ pointer: '/run', message: '冻结运行缺唯一 case-compile 组或不包含此 item；用 --run 指向本次计划运行下载的运行目录' });
+    problems.push(frozenRunProblem(run, item));
   } else {
     const contract = parseRuntimeContract(group.contract), manifest = parseManifest(group.manifest);
     const profile = contract.ok && manifest.ok ? parseProfile(group.profile, contract.contract, manifest.beds) : null;

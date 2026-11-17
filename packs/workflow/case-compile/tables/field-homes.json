@@ -1,0 +1,12 @@
+{
+  "schema": "case-compile.field-homes@1",
+  "description": "What the other plan mode writes in place of a field that only one mode has. The places of every field name are read from the schema the run froze (functions/field-homes.ts, fieldHomes); only what the schema cannot say is declared here: that a block plan carries the same fact somewhere else. Every place named here is checked against slots.schema.json by functions/field-homes.test.ts.",
+  "counterparts": [
+    {
+      "field": "precondition_source",
+      "declared_at": "/steps/<序号>/precondition_source",
+      "instead": "/block_context/preconditions",
+      "says": "分块计划（blocks 非空）的前置来源写成 block_context.preconditions 里的一行（id、state、for、established_by、quote），不写在块上"
+    }
+  ]
+}
