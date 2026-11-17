@@ -93,4 +93,3 @@ test('a block carrying precondition_source is told where the field is declared a
   assert.equal(own[0]!.code,'SUBMISSION_SCHEMA_VIOLATION');
   has(own[0]!.message,'不认识的字段 precondition_source','允许：','id、kind、call','/slots/plan/0/data/steps/<序号>/precondition_source','block_context.preconditions','下一步');
 });
-
