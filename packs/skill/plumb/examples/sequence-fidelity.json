@@ -1,5 +1,4 @@
 {
   "task": "sequence",
-  "step_n": 2,
   "state": "[用例]\n验证接口启用文档网段地址后状态可达\n\n[前序步骤]\n1. 进入接口 eth0 视图 -> interface eth0\n\n[当前作者步骤 2]\n配置接口地址 192.0.2.30/24 并启用\n\n[候选命令块]\nblock[0] (ASSERT_TEXT, host=dut1)\n  ip address 192.0.2.30/24\n  no shutdown\n  assert literal: 192.0.2.30"
 }
