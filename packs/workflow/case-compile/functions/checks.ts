@@ -23,7 +23,7 @@ import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingle
 import {identityOf} from './typed-contract.ts';
 import { replacedQuote } from './addresses.ts';
 import { citedCriterion, type FrozenItemCriterion } from './subject.ts';
-import { fidelityBrief, fidelityProblems } from './fidelity.ts';
+import { authorStepCoverage, fidelityBrief, fidelityProblems, uncoveredAuthorStepText, type FidelityBrief } from './fidelity.ts';
 interface CheckSubject {projection_unknowns?:string[];recomposition_requested?:boolean;recomposition?:any;recomposition_problem?:string;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown;expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[]; problems: Array<{ capacityExceeded?:boolean; document: string; pointer: string; message: string }> }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
@@ -296,6 +296,28 @@ export function checkCommandsKnown(input:unknown):Outcome[]{
  }
  return [support(s,resolved.templates.length?'设备命令的静态部分与单格回填位置已按锁定目录核对；单格实际值在上机时取得':'所有设备命令均由锁定目录完整解析，已核用例声明（如有）、类型与效果授权',{command_identities:resolved.identities,...(resolved.templates.length?{command_templates:resolved.templates}:{}),command_catalog:resolved.catalog})];
 }
+/** The brief of the plan this subject holds, and the audit verdict it carries (which is no part of the brief): null brief when the case has no authored action. */
+function briefOf(s: CheckSubject): { brief: FidelityBrief | null; plan: Record<string, unknown>; fidelity: unknown } {
+  const frozen = isRecord(s.recomposition) && isRecord(s.recomposition.record) ? s.recomposition.record : s.recomposition;
+  const { fidelity, ...plan } = isRecord(s.data) ? s.data : {};
+  return { brief: fidelityBrief(s.item, frozen, plan), plan, fidelity };
+}
+/**
+ * scenario_kept, the part that needs no audit: every authored action of the frozen recomposition record is named by at least one
+ * step's (or block's) author_step_refs (functions/fidelity.ts authorStepCoverage, the program's half of InfoTest's
+ * author_procedure_coverage gate). Round 36: the sync plan passed every other local check and the audit then found author step a2
+ * realized by no step, a full writer rework; the plan check refuses it first, naming the step, where the plan would carry it, what
+ * the plan does carry and what to do next. A case without authored actions has nothing to cover.
+ */
+export function checkAuthorStepCoverage(input: unknown): Outcome[] {
+  const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
+  const read = slotsOf(s); if (read.errors) return read.errors;
+  const { brief, plan } = briefOf(s);
+  if (!brief) return [support(s, '这条用例没有重组记录里的作者动作原句，没有要覆盖的作者步骤')];
+  const coverage = authorStepCoverage(brief, plan);
+  if (coverage.uncovered.length) return coverage.uncovered.map((step) => refute(s, 'author_step_unreferenced', uncoveredAuthorStepText(brief, coverage, step), '/data' + coverage.list, { author_step: step.n }));
+  return [support(s, `作者 ${brief.author_steps.length} 条动作原句都有计划${coverage.noun}在 author_step_refs 写了它的编号；这一项只核编号，计划${coverage.noun}是否真的实现了它由场景保真审计判断`, { author_steps: brief.author_steps.map((step) => ({ n: step.n, carriers: coverage.carriers.filter((row) => row.refs.includes(step.n)).map((row) => row.index) })) })];
+}
 /**
  * scenario_kept: the audit verdict in data.fidelity answers the brief of this very plan and keeps every authored action of the
  * frozen recomposition record (functions/fidelity.ts, after the reference engine's scenario fidelity). A case without authored
@@ -304,9 +326,7 @@ export function checkCommandsKnown(input:unknown):Outcome[]{
 export function checkScenarioFidelity(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
   const read = slotsOf(s); if (read.errors) return read.errors;
-  const frozen = isRecord(s.recomposition) && isRecord(s.recomposition.record) ? s.recomposition.record : s.recomposition;
-  const { fidelity, ...plan } = isRecord(s.data) ? s.data : {};
-  const brief = fidelityBrief(s.item, frozen, plan);
+  const { brief, fidelity } = briefOf(s);
   if (!brief) return [support(s, '这条用例没有重组记录里的作者动作原句，场景保真不适用')];
   const judged = fidelityProblems(brief, fidelity);
   if (judged.problems.length) return judged.problems.map((p) => refute(s, p.code, p.message, p.pointer));

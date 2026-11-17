@@ -99,7 +99,7 @@ describe('check-plan against the real Hub',{skip},()=>{
   const result=await parity(CHECKED),local=checkPlanObject('plan.json',result.items[0],result.frozen,result.catalog);
   assert.deepEqual(local.hub_checks!.map(row=>row.check),CHECKS.checks.map(row=>row.id),'one row per declared check, in declaration order');
   const ran=local.hub_checks!.filter(row=>row.ran).map(row=>row.check),notRun=local.hub_checks!.filter(row=>!row.ran);
-  assert.deepEqual(ran,['contract_shape','bed_addresses','commands_catalog','expected_sources']);
+  assert.deepEqual(ran,['contract_shape','bed_addresses','commands_catalog','expected_sources','author_step_coverage']);
   assert.deepEqual(notRun.map(row=>row.check),['expected_quotes','scenario_fidelity','workbook_verified','dispatch_policy']);
   for(const row of notRun)assert.ok(row.why&&row.why.length>8,row.check);
   // Everything the Hub judged for this item is in the list: each requirement it reported is served by a check named there.

@@ -19,7 +19,7 @@ test('a plan the Hub accepts passes, and says which Hub checks ran and which did
  const result=check(flatPlan());
  assert.equal(result.ok,true,JSON.stringify(result.problems));assert.equal(result.structure_ok,true);assert.equal(result.authority_checked,true);
  const ran=Object.fromEntries((result.hub_checks??[]).map(row=>[row.check,row.ran]));
- assert.deepEqual(ran,{contract_shape:true,bed_addresses:true,commands_catalog:true,expected_sources:true,expected_quotes:false,scenario_fidelity:false,workbook_verified:false,dispatch_policy:false});
+ assert.deepEqual(ran,{contract_shape:true,bed_addresses:true,commands_catalog:true,expected_sources:true,expected_quotes:false,author_step_coverage:true,scenario_fidelity:false,workbook_verified:false,dispatch_policy:false});
  for(const row of result.hub_checks!.filter(item=>!item.ran))assert.ok(row.why&&row.why.length>8,`${row.check} says why it did not run`);
  assert.match(result.disclosure!,/expected_quotes/);assert.match(result.disclosure!,/scenario_fidelity/);
 });

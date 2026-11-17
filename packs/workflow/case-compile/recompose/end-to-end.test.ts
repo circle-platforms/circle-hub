@@ -7,7 +7,7 @@ import { generateWorkbook } from '../functions/generate.ts';
 // The real run engine, registry, record reader and sandboxes; all systems and model decisions are synthetic.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { fidelityBrief } from '../functions/fidelity.ts';
+import { authorStepCoverage, fidelityBrief } from '../functions/fidelity.ts';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -123,7 +123,7 @@ test('a product publication, genuine independent adjudication and append-only re
         const planStarted = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: compileInputs, parameters: compileParameters }, call());
         assert.equal(planStarted.answer.call_result, 'ok', JSON.stringify(planStarted.answer.errors));
         const expected = record.contract.expectation, quote = { reference: expected.quote_ref, text: expected.text }, criterion = { id: 'interval_literal', expectation: quote.reference, quote, kind: 'literal', operator: 'abs_found', literal: 'interval=5', rationale: '合成模型选择可观察间隔字段，交独立复核', scope_root: build.root };
-        const data = blockPlan([{ kind: 'CONFIG', id: 'configure', call: blockCall('widget health interval pool1 5') }, { kind: 'OBSERVE_ASSERT', id: 'observe', call: blockCall('show health pool1'), assertions: [{ id: 'assert_interval', output: 'observe', op: 'abs_found', literal: 'interval=5', quote, expectation: quote.reference, criterion: criterion.id }] }, { kind: 'CONFIG', id: 'cleanup', cleanup: true, call: blockCall('no widget health interval pool1') }], [{ expectation: quote.reference, status: 'asserted', assertions: ['assert_interval'] }]);
+        const data = blockPlan([{ kind: 'CONFIG', id: 'configure', call: blockCall('widget health interval pool1 5'), author_step_refs: record.atoms.filter((atom: any) => atom.kind === 'action').map((atom: any) => atom.id) }, { kind: 'OBSERVE_ASSERT', id: 'observe', call: blockCall('show health pool1'), assertions: [{ id: 'assert_interval', output: 'observe', op: 'abs_found', literal: 'interval=5', quote, expectation: quote.reference, criterion: criterion.id }] }, { kind: 'CONFIG', id: 'cleanup', cleanup: true, call: blockCall('no widget health interval pool1') }], [{ expectation: quote.reference, status: 'asserted', assertions: ['assert_interval'] }]);
         data.criteria = [criterion];
         data.block_context = { preconditions: [], causal_links: [{ from: 'configure', to: 'observe', quote }], responders: [] };
         data.recomposition = { receipt: 'rec:' + result.digest, case_id: record.case.id, slots: [{ slot: 'e1', assertions: ['assert_interval'] }], rebindings: [] };
@@ -148,7 +148,7 @@ test('a product publication, genuine independent adjudication and append-only re
         // The scenario-fidelity audit a fresh session makes before submitting (tools/fidelity.md): here a scripted verdict that keeps every action.
         const { fidelity: _judged, ...plain } = data as unknown as Record<string, unknown>, frozenItem = ready.answer.run!.items[0] as any;
         const brief = fidelityBrief(frozenItem.id, frozenItem.fields?.recomposition?.record, plain)!;
-        (data as unknown as Record<string, unknown>).fidelity = { brief_sha256: brief.brief_sha256, steps: brief.author_steps.map((s) => ({ n: s.n, verdict: 'preserved', step_indices: [brief.blocks.length], rationale: '合成审计：计划实现了作者这一步' })), disclosure: '合成审计：作者步骤逐条保住。' };
+        (data as unknown as Record<string, unknown>).fidelity = { brief_sha256: brief.brief_sha256, steps: brief.author_steps.map((s) => ({ n: s.n, verdict: 'preserved', step_indices: authorStepCoverage(brief, plain).carriers.filter((row) => row.refs.includes(s.n)).map((row) => row.index), rationale: '合成审计：计划实现了作者这一步' })), disclosure: '合成审计：作者步骤逐条保住。' };
         const sent = planSubmission(ready.answer.run!), readyResult = await h.service.submitResult(h.alice, sent, call());
         assert.equal(readyResult.acceptance, 'accepted', JSON.stringify(readyResult.errors));
         for (const requirement of Object.values(readyResult.result!.partitions).flat().flatMap(i => i.requirements).filter(r => r.requirement !== 'workbook_verified'))

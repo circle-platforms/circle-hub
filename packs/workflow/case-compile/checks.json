@@ -105,6 +105,22 @@
       }
     },
     {
+      "id": "author_step_coverage",
+      "title": "每条作者动作原句都有计划步骤写了它的编号",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkAuthorStepCoverage"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "planSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 scenario_kept 里不需要审计就能核的一半：照 InfoTest 的 author_procedure_coverage（main/case_compiler/mechanical_case_gate.py），作者写的每个动作都要落进计划；InfoTest 靠步骤结构数命令，本包没有步骤结构层，靠计划自己写的编号：重组记录里每条 kind 为 action 的原句，至少有一个步骤（分块计划是块）的 author_step_refs 写了它的编号，没有的退回编写。只核编号，计划步骤是否真的实现了它由场景保真审计判断"
+    },
+    {
       "id": "scenario_fidelity",
       "title": "审计判断对得上这份计划，作者场景逐条保住",
       "function": {

@@ -11,6 +11,7 @@
 // instructions the authoring side cannot touch. Pure: the client tool and the check compute the same brief from the same bytes.
 import { createHash } from 'node:crypto';
 import { canonicalJson } from './canonical-json.ts';
+import { PLAN_DATA, listed, refusalText, shownValue } from './refusal-form.ts';
 import { isRecord } from './text.ts';
 
 export const FIDELITY_VERDICTS = ['preserved', 'changed', 'unrealized'] as const;
@@ -230,6 +231,79 @@ export function unknownAuthorStepRefs(brief: FidelityBrief, plan: unknown): Arra
     });
   }
   return out;
+}
+
+/** A plan step or block that names author steps, numbered as the brief numbers it: its place among the plan's steps or blocks, from 1. */
+export interface AuthorStepCarrier { index: number; id?: string; refs: string[] }
+export interface AuthorStepCoverage {
+  /** What the plan's rows are called in a refusal: 步骤 for a flat plan, 块 for a block plan. */
+  noun: '步骤' | '块';
+  /** The classifier of one row: 第 N 步, 第 N 块. */
+  unit: '步' | '块';
+  /** The list of the plan data they sit in. */
+  list: '/steps' | '/blocks';
+  /** How many steps or blocks the plan has. */
+  total: number;
+  /** Every step or block that has author_step_refs, whatever its refs name. */
+  carriers: AuthorStepCarrier[];
+  /** The author steps of the case that no step or block names, in the order of the record. */
+  uncovered: AuthorStep[];
+}
+
+/**
+ * Which author steps (the action atoms of the frozen recomposition record, the n of each brief author step) some plan step or
+ * block names in its author_step_refs, and which none does. The rows are the brief's own, so the numbering is the one the audit and
+ * its verdicts use. A value that is no author step id covers nothing (unknownAuthorStepRefs names those). This is the program's half
+ * of InfoTest's author_procedure_coverage gate (main/case_compiler/mechanical_case_gate.py `_gate_author_procedure_coverage`:
+ * every authored occurrence must land in the plan): InfoTest counts command signatures because it has the step structure, which
+ * this pack lacks (MECHANICAL_ABSENT_BASE), so here the plan's explicit ids are the binding and every authored action needs one.
+ */
+export function authorStepCoverage(brief: FidelityBrief, plan: unknown): AuthorStepCoverage {
+  const data = isRecord(plan) ? plan : {};
+  const inBlocks = Array.isArray(data.blocks) && data.blocks.some(isRecord);
+  const carriers: AuthorStepCarrier[] = [];
+  for (const row of brief.blocks) {
+    const refs = Array.isArray(row.author_step_refs) ? row.author_step_refs.filter((value): value is string => typeof value === 'string') : [];
+    if (refs.length && typeof row.index === 'number') carriers.push({ index: row.index, ...(typeof row.id === 'string' && row.id ? { id: row.id } : {}), refs });
+  }
+  const named = new Set(carriers.flatMap((row) => row.refs));
+  return {
+    noun: inBlocks ? '块' : '步骤', unit: inBlocks ? '块' : '步', list: inBlocks ? '/blocks' : '/steps', total: brief.blocks.length, carriers,
+    uncovered: brief.author_steps.filter((step) => !named.has(step.n)),
+  };
+}
+
+/**
+ * The refusal for one author step no plan step or block names (the shared refusal form, functions/refusal-form.ts): the step and
+ * the author's words, where the plan would carry it, which rows do carry ids, the closed set of ids, and what to do next. The plan
+ * has no way to declare a single author step unrealizable (obligations and block_context.preconditions name expectations and
+ * preconditions, and a flat plan takes neither), so the text does not offer one: it says what the writer does with a step that
+ * cannot be realized, which is to report it.
+ */
+export function uncoveredAuthorStepText(brief: FidelityBrief, coverage: AuthorStepCoverage, step: AuthorStep): string {
+  const { noun, unit, list, total, carriers } = coverage;
+  // A block has an id and is named by it; a flat step is named by its number, and a run of numbers shares one 第…步.
+  const rowsText = (rows: ReadonlyArray<{ index: number; id?: string }>): string => (unit === '块'
+    ? listed(rows.map((row) => `第 ${row.index} 块${row.id !== undefined ? `（${row.id}）` : ''}`))
+    : `第 ${listed(rows.map((row) => String(row.index)))} ${unit}`);
+  const byRef = new Map<string, AuthorStepCarrier[]>();
+  for (const row of carriers) for (const ref of row.refs) byRef.set(ref, [...(byRef.get(ref) ?? []), row]);
+  const carrying = new Set(carriers.map((row) => row.index));
+  const bare = brief.blocks.flatMap((row) => (typeof row.index === 'number' && !carrying.has(row.index) ? [{ index: row.index, ...(typeof row.id === 'string' && row.id ? { id: row.id } : {}) }] : []));
+  const named = [...byRef].map(([ref, rows]) => `${shownValue(ref)}：${rowsText(rows)}`).join('，');
+  return refusalText({
+    what: `作者步骤 ${step.n}（${shownValue(step.author_text ?? step.text)}）没有任何计划${noun}声明实现它：没有一${unit}的 author_step_refs 写了 ${shownValue(step.n)}`,
+    place: `${PLAN_DATA}${list}/<序号>/author_step_refs`,
+    seen: carriers.length
+      ? `计划共 ${total} ${unit}，写了 author_step_refs 的是 ${named}${bare.length ? `，没写的是${rowsText(bare)}` : ''}`
+      : `计划共 ${total} ${unit}，没有一${unit}写了 author_step_refs`,
+    allowed: brief.author_steps.map((row) => row.n),
+    also: [
+      `author_step_refs 里只能写本条重组记录里作者步骤的编号：冻结条目文件 items/<序号>.json（里面的 id 是 ${brief.item}）的 /fields/recomposition/record/atoms 里 kind 为 action 的 id`,
+      ...(step.author_text !== undefined ? [`重组记录把这一步改写成 ${shownValue(step.text)}${step.adapted_commands?.length ? `，命令 ${listed(step.adapted_commands.map((command) => shownValue(command)), 3)}` : ''}`] : []),
+    ],
+    next: `在实现它的${noun}的 author_step_refs 里加上 ${shownValue(step.n)}；现有各${noun}都不实现它，就补上实现它的${noun}并在那一${unit}写上 ${shownValue(step.n)}；确认实现不了的，不要删这条作者步骤，也不要硬凑一${unit}，在最终回复里向主代理报告缺什么、为什么实现不了（计划里没有单独声明某条作者步骤实现不了的写法）`,
+  });
 }
 
 export type FidelityCode = 'fidelity_missing' | 'fidelity_stale' | 'fidelity_shape' | 'scenario_changed' | 'author_step_unrealized' | 'author_step_unbound';

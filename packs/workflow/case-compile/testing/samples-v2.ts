@@ -43,6 +43,10 @@ const kept:any=subject();kept.recomposition={record};const brief=fidelityBrief('
 kept.data.fidelity={brief_sha256:brief.brief_sha256,steps:[{n:'a2',verdict:'preserved',step_indices:[1],rationale:'合成理由：第 1 步配置了作者写的间隔'}],disclosure:'合成说明：作者的一步由计划第 1 步实现。'};
 save('positive','typed-scenario_fidelity','scenario_fidelity',kept);
 const changed=structuredClone(kept);changed.data.fidelity.steps[0].verdict='changed';save('negative','typed-scenario_fidelity','scenario_fidelity',changed,'case-compile.scenario_changed');
+// Author step coverage: every authored action is named by an author_step_refs of the plan (functions/fidelity.ts authorStepCoverage).
+const named:any=subject();named.recomposition={record};named.data.steps[0].author_step_refs=['a2'];
+save('positive','typed-author_step_coverage','author_step_coverage',named);
+const unnamed=structuredClone(named);delete unnamed.data.steps[0].author_step_refs;save('negative','typed-author_step_coverage','author_step_coverage',unnamed,'case-compile.author_step_unreferenced');
 const budget=subject();save('positive','typed-effect-budget','contract_shape',budget);budget.contract.effects.effect_0.budget=0;budget.contract=signTypedRuntime(budget.contract);save('negative','typed-effect-budget','contract_shape',budget,'case-compile.method_forbidden');
 for(const polarity of ['positive','negative'])save(polarity,'quote','expected_quotes',{item:'doc-1:c-1',quotes:[{reference:QUOTE.reference,text:polarity==='positive'?QUOTE.text:'合成捏造引文'}]},polarity==='negative'?'QUOTE_MISMATCH':undefined,{sources:{[QUOTE.reference]:QUOTE.text}});
 const base=subject(),c=parseRuntimeContract(contract),m=parseManifest(MANIFEST_DOC);if(!c.ok||!m.ok)throw Error('invalid typed examples');const p=parseProfile(profile,c.contract,m.beds);if(!p.ok)throw Error('invalid typed profile');
