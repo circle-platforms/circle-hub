@@ -6,9 +6,13 @@ import {lockedTree,type LockedTree} from '../functions/catalog-selection.ts';
 import {pathOf} from '../../../../hub/refs/api.ts';
 
 type Row={[key:string]:any};
-export interface FlatCatalog {root:string;complete?:boolean;entries:ReadonlyArray<{words:string[];signatures:unknown[];summary?:string}>}
+/** A node of the manual below /manual: its path words and the entries it holds, each an entry statement as the Hub keeps it. */
+export interface ManualNode {words:string[];entries:ReadonlyArray<{statement:string;fragments?:string[]}>}
+export interface FlatCatalog {root:string;complete?:boolean;entries:ReadonlyArray<{words:string[];signatures:unknown[];summary?:string}>;manual?:ReadonlyArray<ManualNode>}
 const sha=(text:string):string=>createHash('sha256').update(text).digest('hex');
 export const RUN='run_synthetic';
+/** The digest of a manual entry in these fixtures: a function of its path and statement, so a test can name an entry before the tree is built. */
+export const manualEntryDigest=(words:readonly string[],statement:string):string=>sha('manual entry '+pathOf(['manual',...words])+'\n'+statement);
 
 /** The lines of nodes.jsonl for a catalog: the head, then the nodes of the tree. */
 export function treeLines(catalog:FlatCatalog,run:string=RUN):Row[]{
@@ -33,6 +37,25 @@ export function treeLines(catalog:FlatCatalog,run:string=RUN):Row[]{
   const node=at(path,'');node.level='leaf';
   const id=sha('entry '+entry.words.join(' ')+JSON.stringify(entry.signatures));
   node.entries.push({entry:id,kind:'definition',statement:entry.words.join(' '),reference:`tree:${catalog.root}${path}@${id}`,data:{words:entry.words,signatures:entry.signatures,...(entry.summary!==undefined?{summary:entry.summary}:{})}});
+ }
+ // The manual: one node per word below /manual, the entries at the node of their words, in the order given.
+ if(catalog.manual?.length){
+  at('/manual','manual');top.children.push({name:'manual',path:'/manual',digest:sha('node /manual')});
+  for(const manual of catalog.manual){
+   let path='/manual';
+   const segments=['manual'];
+   for(const word of manual.words){
+    segments.push(word);
+    const next=pathOf(segments),parent=at(path,'');
+    if(!nodes.has(next)){at(next,word);parent.children.push({name:word,path:next,digest:sha('node '+next)});}
+    path=next;
+   }
+   const node=at(path,'');node.level='leaf';
+   for(const entry of manual.entries){
+    const id=manualEntryDigest(manual.words,entry.statement);
+    node.entries.push({entry:id,kind:'behaviour',statement:entry.statement,reference:`tree:${catalog.root}${path}@${id}`,data:{},...(entry.fragments!==undefined?{fragments:entry.fragments}:{})});
+   }
+  }
  }
  const rows=[...nodes.values()];
  return [{schema:'run-knowledge@1',run,root:catalog.root,composition:null,nodes:rows.length,entries:rows.reduce((sum,row)=>sum+row.entries.length,0)},...rows];

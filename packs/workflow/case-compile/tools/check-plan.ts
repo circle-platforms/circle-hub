@@ -6,11 +6,13 @@ import {parseManifest} from '../functions/manifest.ts';
 import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
+import { blockPositions, type BlockPosition } from '../functions/cmd-lookup.ts';
 // Read-only plan/verdict checks. A plan is judged by the Hub's own boundary (functions/plan-boundary.ts): the slot record against
-// the schema the run froze, then every pack check that judges a plan, with the Hub's functions and the run's frozen inputs.
+// the schema the run froze, then every pack check that judges a plan, with the Hub's functions and the run's frozen inputs; the
+// quotation check of the core (quote@1) runs over the locked tree of the download (functions/quote-sources.ts).
 //   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <运行目录>]
 // `--run` is the run directory (the folder that holds run.json and knowledge/), as for every tool that reads a run (tools/workspace-path.ts).
-import { realpathSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -147,6 +149,10 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
     problems.push({ pointer: '/slots/plan', message: '缺少 slots.plan' });
   }
 
+  // The claim's own quotes (slots.plan[0].quotes) are resolved and checked verbatim by the Hub when it takes the submission, a step before
+  // its checks (hub/runs/engine/exact.ts resolveStatement); a mismatch there refuses the whole submission. This tool does not run that step.
+  const claim = Array.isArray(slots.plan) ? slots.plan[0] : slots.plan;
+  const claimQuotes = isRecord(claim) && Array.isArray(claim.quotes) ? claim.quotes.length : 0;
   const planData = planDataOf(expandedRecord);
   const checked = readSlots(planData);
   if (run === undefined) {
@@ -198,7 +204,7 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
       structure_ok: state.structureOk,
       authority_checked: state.authorityChecked,
       disclosure: state.coverage !== undefined
-        ? `已按冻结运行核对：槽位记录结构，以及 Hub 同名检查 ${state.coverage.filter(row => row.ran).map(row => row.check).join('、') || '（本次没有一项能跑）'}，用同一个函数和同一份冻结输入。本地没有跑的 Hub 检查：${notRun.map(row => `${row.check}（${row.why}）`).join('；') || '无'}；这些以提交回执为准`
+        ? `已按冻结运行核对：槽位记录结构，以及 Hub 同名检查 ${state.coverage.filter(row => row.ran).map(row => `${row.check}${row.why !== undefined ? `（${row.why}）` : ''}`).join('、') || '（本次没有一项能跑）'}，用同一个函数（引文检查 expected_quotes 是核心 quote@1 的同一条规则）和同一份冻结输入。本地没有跑的 Hub 检查：${notRun.map(row => `${row.check}（${row.why}）`).join('；') || '无'}；这些以提交回执为准${claimQuotes > 0 ? `。计划记录自己写的 quotes（${claimQuotes} 条）由 Hub 受理提交时另外逐条核对，原文不在所引片段里会整份不受理；这里没有核这一步，以提交回执为准` : ''}`
         : '只核对结构；未核对冻结权限，提供 --run <本次运行下载的运行目录> 后核对 Hub 对计划的全部本地可跑检查',
       counts: slots === null ? null : { blocks: slots.blocks.length, steps: slots.steps.length, expects: slots.expects.length, cleanup_steps: cleanupSteps, replacements: slots.replacements.length },
       problems,
@@ -208,14 +214,27 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
 
 /**
  * Read only the standard download beside the explicitly supplied frozen run; never infer catalog authority from prose. What comes
- * back is the locked tree of the run, not a catalog: the checks are given the part of it the Hub gives them (functions/plan-boundary.ts).
+ * back is the locked tree of the run, not a catalog: the checks are given the part of it the Hub gives them (functions/plan-boundary.ts),
+ * and the quotation check reads the statements of its entries, which are the texts the Hub reads for a tree: reference.
  */
 export async function downloadedTree(runDirectory:string,run:unknown):Promise<LockedTree|undefined>{
  if(!isRecord(run)||typeof run.root!=='string')return undefined;
  let bytes:string;try{bytes=await readFile(join(runDirectory,'knowledge','nodes.jsonl'),'utf8');}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw error;}
  const tree=lockedTree(bytes.split('\n').filter(Boolean).map(line=>JSON.parse(line) as unknown),{run:run.run,root:run.root});
  if(typeof tree==='string')throw new CallFailure('invalid_parameters',tree,'重新下载本次运行完整 knowledge/nodes.jsonl，不拼接其他运行的命令树');
- return tree;
+ let positions:ReadonlyMap<string,BlockPosition>|undefined;
+ return {...tree,blocks:()=>positions??=textFilePositions(join(runDirectory,'knowledge'))};
+}
+/**
+ * Where each node's block starts in the text files beside nodes.jsonl (knowledge/manual.txt, commands.txt, ...): what a refusal that
+ * names an entry of the manual needs to say which line of the file it stands on. Read when asked, once; a file that is not there is
+ * not looked for again, and the refusal then names the entry without a line.
+ */
+function textFilePositions(knowledge:string):ReadonlyMap<string,BlockPosition>{
+ const found=new Map<string,BlockPosition>();
+ let names:string[];try{names=readdirSync(knowledge).filter(name=>name.endsWith('.txt')).sort();}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return found;throw error;}
+ for(const name of names)for(const [path,at] of blockPositions(name,readFileSync(join(knowledge,name),'utf8')))if(!found.has(path))found.set(path,at);
+ return found;
 }
 
 function isBriefObject(value: unknown): value is FidelityBrief {

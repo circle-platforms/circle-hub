@@ -12,6 +12,10 @@ import {CONTRACT_DOC,PROFILE_DOC,MANIFEST_DOC,AUTOID,goodData} from './functions
 import {checkPlanObject} from './tools/check-plan.ts';
 import {lockedTreeOf} from './testing/locked-tree.ts';
 import {hubProblems,unique} from './testing/hub-answer.ts';
+import {PairKnowledge} from './testing/pair-knowledge.ts';
+import {catalogFor,SYNTHETIC_COMMAND_POLICY} from './testing/command-catalog.ts';
+import {COMMAND_IDENTITIES} from './functions/test-support.ts';
+import {CHAPTER,FLAGS_INTRO,HOST_ROW,MANUAL,PUBLISH,SIGN,manualReference} from './testing/manual-fixture.ts';
 import CHECKS from './checks.json' with {type:'json'};
 
 const skip=(await osIsolationAvailable())?false:'no OS network isolation on this machine (sandbox-exec)';
@@ -99,12 +103,77 @@ describe('check-plan against the real Hub',{skip},()=>{
   const result=await parity(CHECKED),local=checkPlanObject('plan.json',result.items[0],result.frozen,result.catalog);
   assert.deepEqual(local.hub_checks!.map(row=>row.check),CHECKS.checks.map(row=>row.id),'one row per declared check, in declaration order');
   const ran=local.hub_checks!.filter(row=>row.ran).map(row=>row.check),notRun=local.hub_checks!.filter(row=>!row.ran);
-  assert.deepEqual(ran,['contract_shape','bed_addresses','commands_catalog','expected_sources','author_step_coverage']);
-  assert.deepEqual(notRun.map(row=>row.check),['expected_quotes','scenario_fidelity','workbook_verified','dispatch_policy']);
+  assert.deepEqual(ran,['contract_shape','bed_addresses','commands_catalog','expected_sources','expected_quotes','author_step_coverage']);
+  assert.deepEqual(notRun.map(row=>row.check),['scenario_fidelity','workbook_verified','dispatch_policy']);
   for(const row of notRun)assert.ok(row.why&&row.why.length>8,row.check);
+  // The quotation check reads every quote of this plan: the original case's expectation node is in the frozen run, so nothing is left to the receipt.
+  assert.equal(local.hub_checks!.find(row=>row.check==='expected_quotes')!.unread,undefined);
   // Everything the Hub judged for this item is in the list: each requirement it reported is served by a check named there.
   const reported=new Set(Object.values(result.answer.result?.partitions??{}).flat().filter(row=>row.item===result.run.items[0].id).flatMap(row=>row.requirements.map(requirement=>requirement.requirement)));
   const covered=new Set(local.hub_checks!.flatMap(row=>row.requirements));
   for(const requirement of reported)if(requirement!=='plan')assert.ok(covered.has(requirement),`requirement ${requirement} is served by a listed check`);
+ });
+});
+
+// The quotation check (quote@1, the check expected_quotes) is the core's, not the pack's: the Hub reads the text of the entry a reference
+// names and looks for the quote in it. check-plan runs the same rule over the locked tree its run download holds. The Hub here reads a
+// synthetic manual through the tree reader of a knowledge port that serves the same lines as the run export (testing/manual-tree.ts); round
+// 37 sent three sentences of one chapter each with the reference of the entry next to the one that holds it, and check-plan passed them.
+describe('check-plan against the real Hub: the quotation check',{skip},()=>{
+ const ENTRIES=catalogFor(COMMAND_IDENTITIES,ROOT).entries.map(entry=>({words:entry.words as string[],signatures:entry.signatures as unknown[]}));
+ const ref=(statement:string)=>manualReference(ROOT,CHAPTER,statement);
+ // The step carries the quote in precondition_source, one of the places the pack hands to quote@1 (quoteSubject).
+ const VARIANTS:Array<[string,{reference:string;text:string}|null]>=[
+  ['a quote the cited entry holds',{reference:ref(PUBLISH),text:PUBLISH}],
+  ['a sentence cited with the reference of the entry beside it',{reference:ref(HOST_ROW),text:PUBLISH}],
+  ['a second sentence cited with the reference of the entry before it',{reference:ref(FLAGS_INTRO),text:SIGN}],
+  ['a sentence that stands in no entry',{reference:ref(SIGN),text:SIGN+'（改写）'}],
+  ['a reference that is no reference',{reference:ref(PUBLISH).replace('Widget%20Signing','Widget Signing'),text:PUBLISH}],
+  ['an entry of another root',{reference:ref(PUBLISH).replace(ROOT,'e'.repeat(64)),text:PUBLISH}],
+  ['an entry the tree does not have',{reference:ref(PUBLISH).replace(/@[0-9a-f]{64}$/,'@'+'c'.repeat(64)),text:PUBLISH}],
+  ['a quote of white space',{reference:ref(PUBLISH),text:' '}],
+  ['no quote at all',null],
+ ];
+ let quoteHub:Hub;
+ const document={root:{data:{id:'doc-quote',text:'合成文档'},children:VARIANTS.map((_,i)=>({data:{id:'case-'+i,text:'健康检查间隔配置测试'+i,resource:['功能'],priority:2,autoid:String(BigInt(AUTOID)+BigInt(i)),auto:'1'},children:[{data:{id:'step-'+i,text:'widget health interval 60'},children:[{data:{id:'expected-'+i,text:'健康检查间隔设置成功'}}]}]}))}};
+ const quoteBytes=Buffer.from(JSON.stringify(document));
+ const quoteNodes=(recognize(createTestParserRegistry(),quoteBytes,'application/json')!.document.model as {nodes:Array<{data:{id?:string};selector:string}>}).nodes;
+ const quoteLeaf=(i:number)=>`src:${sha(quoteBytes.toString())}/kityminder@1/${quoteNodes.find(node=>node.data.id==='expected-'+i)!.selector}`;
+ before(async()=>{
+  if(skip)return;
+  quoteHub=await openHub(postgres,{knowledge:new PairKnowledge(ENTRIES,SYNTHETIC_COMMAND_POLICY,MANUAL)});
+  const put=(id:string,value:Uint8Array)=>quoteHub.external.put(id,{bytes:value,mediaType:'application/json'});
+  put('agile:mindmap:doc-quote',quoteBytes);for(const [id,value] of [['quote-contract',CONTRACT_DOC],['quote-profile',PROFILE_DOC],['quote-bed',MANIFEST_DOC]] as const)put('doc:doc:'+id,Buffer.from(JSON.stringify(value)));
+ });
+ after(async()=>{await quoteHub?.close();});
+ const claimOf=(index:number)=>{
+  const data=goodData();data.expects[0].quote.reference=quoteLeaf(index);
+  const quote=VARIANTS[index][1];if(quote!==null)data.steps[0].precondition_source=quote;
+  return {text:'合成计划槽位',quotes:data.expects.map(row=>row.quote),data};
+ };
+ it('refuses the quotes the Hub refuses, with the Hub\'s words first, and passes the ones it passes',{timeout:240_000},async()=>{
+  const started=await quoteHub.service.startRunDetailed(quoteHub.alice,{pack:'case-compile',product:'widget',build:'Fixture_Build_A',inputs:{subject:{external:'agile:mindmap:doc-quote'},contract:{external:'doc:doc:quote-contract'},profile:{external:'doc:doc:quote-profile'},inventory:{external:'doc:doc:quote-bed'}},parameters:{pipeline:'legacy'}} as never,call());
+  assert.equal(started.answer.call_result,'ok',JSON.stringify(started.answer.errors));
+  const run=started.answer.run!,exported=await quoteHub.service.exportRun!(quoteHub.alice,run.run);assert.ok(exported);
+  const frozen=JSON.parse(JSON.stringify(exported.run)) as Record<string,unknown>;
+  assert.equal(frozen.root,ROOT);
+  const tree=lockedTreeOf({root:ROOT,complete:true,entries:ENTRIES,manual:MANUAL},String(frozen.run));
+  const items=run.items.map((item,index)=>({item:item.id,handling:'handled' as const,slots:{plan:[claimOf(index)]}}));
+  const answer=await quoteHub.service.submitResult(quoteHub.alice,{run:run.run,model:'synthetic-model',items} as never,call());
+  let refused=0;
+  for(const [index,[label]] of VARIANTS.entries()){
+   const item=run.items[index].id,local=checkPlanObject('plan.json',items[index],frozen,tree),hubSide=hubProblems(answer,item,index);
+   assert.deepEqual(hubSide.structure,[],label);
+   const isQuote=(row:unknown)=>(row as {code?:string}).code==='QUOTE_MISMATCH';
+   const hubQuotes=hubSide.checks.filter(isQuote) as Array<{message:string;verdict:string}>,localQuotes=local.problems.filter(isQuote);
+   // The Hub's words come first, byte for byte; the plan check goes on with where the quote is and what to do.
+   assert.deepEqual(localQuotes.map(row=>row.message.split('；位置：')[0]).sort(),hubQuotes.map(row=>row.message).sort(),`${label}: the same quote refusals`);
+   for(const row of localQuotes){assert.equal(row.verdict,'refute',label);assert.ok(row.message.includes('位置：/slots/plan/0/data/steps/0/precondition_source/'),`${label}: ${row.message}`);}
+   // Everything else the Hub says of the plan, check-plan says too, and the plan passes here exactly when it passes there.
+   assert.deepEqual(unique(local.problems.filter(row=>!isQuote(row))),unique(hubSide.checks.filter(row=>!isQuote(row))),`${label}: the other checks`);
+   assert.equal(local.ok,hubSide.checks.length===0,`${label}: the verdict of the Hub`);
+   refused+=hubQuotes.length>0?1:0;
+  }
+  assert.equal(refused,VARIANTS.length-2,'every variant but the accepted one and the one without a quote is refused by the Hub');
  });
 });

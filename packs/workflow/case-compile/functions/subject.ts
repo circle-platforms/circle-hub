@@ -11,6 +11,7 @@ import { parseRuntimeContract } from './runtime-contract.ts';
 import { parseProfile, allowedCall } from './profile.ts';
 import { parseManifest } from './manifest.ts';
 import { readSlots } from './slots.ts';
+import { blockPointer } from './blocks.ts';
 import { bindArguments, hasBalancedCommandText } from './binding.ts';
 import type { LeaseRow } from './bed.ts';
 /**
@@ -76,27 +77,50 @@ export function planSubject(input: unknown): PlanSubject {
   return {projection_unknowns:isRecord(item.fields)&&Array.isArray(item.fields.projection_unknowns)?item.fields.projection_unknowns as string[]:[],recomposition_requested:frozen.recomposition_requested===true||isRecord(planDataOf(raw))&&Object.hasOwn(planDataOf(raw) as object,'recomposition'),recomposition:isRecord(item.fields)&&item.fields.recomposition!==undefined?item.fields.recomposition:frozen.recomposition,recomposition_problem:isRecord(item.fields)&&typeof item.fields.recomposition_problem==='string'?item.fields.recomposition_problem:undefined,bed_services:inventory.ok?inventory.beds.find(bed=>bed.name===profile.bed)?.services:undefined,manifest_sha256:typeof frozen.manifest_sha256==='string'?frozen.manifest_sha256:undefined,criteria_review:frozen.criteria_review, expected_nodes:selectedExpectedNodes(isRecord(item.fields)?item.fields.expected_nodes:undefined,planDataOf(raw)),command_catalog:sealed(Array.isArray(raw.catalog)&&typeof context.root==='string'?{root:context.root,complete:raw.catalog_complete===true,entries:raw.catalog,...(context.command_policy!==undefined?{policy:context.command_policy}:{}),...(Array.isArray(raw.value_domains)?{value_domains:raw.value_domains}:{}),...(typeof raw.catalog_missing==='string'?{missing:raw.catalog_missing}:{})}:undefined),command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
 }
 export function commandSubject(input:unknown):unknown{return planSubject(input);}
-export function quoteSubject(input: unknown): unknown {
-  const subject = planSubject(input); const outcomes = checkContractShape({subject}); const blocked=outcomes.filter(v=>v.verdict==='refute'&&v.pointer&&v.code).map(v=>({check:'contract_shape',pointer:v.pointer!,code:v.code!}));if(blocked.length)return {blocked}; const gap = outcomes.find(v => v.verdict === 'unknown'); if (gap) return { item: subject.item, location: subject.location, missing: gap.missing, reason: gap.reason }; const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
+/** One quote the check expected_quotes hands to quote@1, and where it stands: `place` is a JSON Pointer into the plan data (`/data` left off), or into the frozen item when `frozen` is set. */
+export interface QuotePlace { quote: { reference: string; text: string }; place: string; frozen?: true }
+/**
+ * What the Hub's subject builder for expected_quotes found in one plan: the places that stop it before any quote is read (a front check
+ * of the plan refuses it, or the plan cannot be read), or every quote with the place it stands at. quoteSubject answers the Hub with
+ * the first kind as the Hub has always had it; the plan check reads the second to say where a refused quote is.
+ */
+export type QuotePlaces =
+  | { kind: 'blocked'; blocked: Array<{ check: string; pointer: string; code: string }> }
+  | { kind: 'gap'; item: string; location: string | null; missing: unknown; reason: unknown }
+  | { kind: 'unreadable'; item: string }
+  | { kind: 'quotes'; item: string; places: QuotePlace[] };
+export function quotePlaces(input: unknown): QuotePlaces {
+  const subject = planSubject(input); const outcomes = checkContractShape({subject}); const blocked=outcomes.filter(v=>v.verdict==='refute'&&v.pointer&&v.code).map(v=>({check:'contract_shape',pointer:v.pointer!,code:v.code!}));if(blocked.length)return {kind:'blocked',blocked}; const gap = outcomes.find(v => v.verdict === 'unknown'); if (gap) return { kind: 'gap', item: subject.item, location: subject.location, missing: gap.missing, reason: gap.reason }; const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
   const profile = contract.ok && beds.ok ? parseProfile(subject.profile, contract.contract, beds.beds) : null;
   // quote@1 has no required option: an explicit missing-field record produces missing_input, never a fictitious quote.
-  if (!read.ok || !contract.ok || !beds.ok || !profile?.ok) return { item: subject.item, quotes: [{}], unreadable: true };
+  if (!read.ok || !contract.ok || !beds.ok || !profile?.ok) return { kind: 'unreadable', item: subject.item };
   // An expectation taken from a frozen accepted criterion cites the declaration, which quote@1 cannot read as a source:
   // what has to be verbatim in an expected source of this run is the declaration's own grounds (W10 step two, B03 R[3]).
-  const stepQuotes = read.slots.steps.flatMap((step) => step.precondition_source ? [step.precondition_source] : []);
-  const quotes = [
-    ...read.slots.expects.flatMap((v) => {
-      const criterion = citedCriterion(subject.criteria, v.quote.reference);
-      return criterion === null || criterion.new !== v.quote.text ? [v.quote] : criterion.grounds.map((ground) => ({ reference: ground.reference, text: ground.quote }));
-    }),
-    ...stepQuotes,
-  ];
+  const places: QuotePlace[] = [];
+  // A block plan is read as steps and expects lowered from its blocks; blockPointer says where in the plan the lowered one came from.
+  const placeOf = (pointer: string): string => blockPointer(read.slots, pointer);
+  for (const [index, v] of read.slots.expects.entries()) {
+    const criterion = citedCriterion(subject.criteria, v.quote.reference);
+    const place = placeOf(`/expects/${index}/quote`);
+    if (criterion === null || criterion.new !== v.quote.text) places.push({ quote: v.quote, place });
+    else for (const ground of criterion.grounds) places.push({ quote: { reference: ground.reference, text: ground.quote }, place });
+  }
+  for (const [index, step] of read.slots.steps.entries()) if (step.precondition_source) places.push({ quote: step.precondition_source, place: placeOf(`/steps/${index}/precondition_source`) });
   if(read.slots.blocks.length){
     const context=read.slots.block_context;
-    for(const list of [context?.preconditions,context?.causal_links,context?.responders])for(const row of Array.isArray(list)?list:[])if(isRecord(row.quote)&&typeof row.quote.reference==='string'&&typeof row.quote.text==='string')quotes.push({reference:row.quote.reference,text:row.quote.text});
-    for(const row of Array.isArray(subject.expected_nodes)?subject.expected_nodes:[])if(isRecord(row)&&row.declaration!==undefined&&typeof row.reference==='string')quotes.push({reference:row.reference+'/@assertion',text:JSON.stringify(row.declaration)});
+    for(const name of ['preconditions','causal_links','responders'])for(const [index,row] of (Array.isArray(context?.[name])?context![name] as unknown[]:[]).entries())if(isRecord(row)&&isRecord(row.quote)&&typeof row.quote.reference==='string'&&typeof row.quote.text==='string')places.push({quote:{reference:row.quote.reference,text:row.quote.text},place:`/block_context/${name}/${index}/quote`});
+    for(const [index,row] of (Array.isArray(subject.expected_nodes)?subject.expected_nodes:[]).entries())if(isRecord(row)&&row.declaration!==undefined&&typeof row.reference==='string')places.push({quote:{reference:row.reference+'/@assertion',text:JSON.stringify(row.declaration)},place:`/fields/expected_nodes/${index}`,frozen:true});
   }
-  return { item: subject.item, quotes };
+  return { kind: 'quotes', item: subject.item, places };
+}
+export function quoteSubject(input: unknown): unknown {
+  const found = quotePlaces(input);
+  switch (found.kind) {
+    case 'blocked': return { blocked: found.blocked };
+    case 'gap': return { item: found.item, location: found.location, missing: found.missing, reason: found.reason };
+    case 'unreadable': return { item: found.item, quotes: [{}], unreadable: true };
+    case 'quotes': return { item: found.item, quotes: found.places.map((row) => row.quote) };
+  }
 }
 
 /** Authored source text is distinct from the model's final step values. */

@@ -12,6 +12,7 @@ import * as subjectModule from '../functions/subject.ts';
 import {canonicalJson} from '../functions/canonical-json.ts';
 import {checkInput} from '../functions/plan-boundary.ts';
 import {selectedCatalog,type LockedTree,type SelectedCatalog} from '../functions/catalog-selection.ts';
+import {frozenSourceTexts} from '../functions/quote-sources.ts';
 import {GENERATOR,generateWorkbookSet,type GenerationInput} from '../functions/generate.ts';
 import {sha256} from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import {quoteMatches} from '../functions/quote.ts';
@@ -32,18 +33,7 @@ export interface OfflineSubmissionItem {item:string;handling:ItemHandling;slots?
  * The texts a frozen run itself holds for references: the author's expectation nodes and atoms, and the declared assertion of an
  * expectation node under its `/@assertion` pseudo reference (what quoteSubject asks quote@1 to find). Manual and command texts come from the caller.
  */
-export function frozenTexts(run:Record<string,unknown>):Map<string,string>{
- const texts=new Map<string,string>();
- for(const item of Array.isArray(run.items)?run.items:[]){
-  const fields=isRecord(item)&&isRecord(item.fields)?item.fields:{};
-  for(const node of Array.isArray(fields.expected_nodes)?fields.expected_nodes:[])if(isRecord(node)&&typeof node.reference==='string'){
-   if(typeof node.text==='string')texts.set(node.reference,node.text);
-   if(node.declaration!==undefined)texts.set(node.reference+'/@assertion',JSON.stringify(node.declaration));
-  }
-  for(const atom of Array.isArray(fields.source_atoms)?fields.source_atoms:[])if(isRecord(atom)&&typeof atom.reference==='string'&&typeof atom.text==='string')texts.set(atom.reference,atom.text);
- }
- return texts;
-}
+export const frozenTexts=(run:Record<string,unknown>):Map<string,string>=>frozenSourceTexts(run);
 
 const requirementsOf=(check:string):string[]=>REQUIREMENTS.requirements.filter(row=>(row.checks as string[]).includes(check)).map(row=>row.key);
 type Declared=typeof CHECKS.checks[number];

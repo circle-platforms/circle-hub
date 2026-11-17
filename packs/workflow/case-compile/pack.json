@@ -198,8 +198,8 @@
     },
     {
       "path": "functions/catalog-selection.ts",
-      "sha256": "7b6fe92d07f7fdc82f8dd5f4791aa6b026478f542c99590367276d5bdd5abc20",
-      "size": 6607
+      "sha256": "275e0c913da73f353d5dd7e44520dcba1f189f170e92b05a696864807d3525a0",
+      "size": 6957
     },
     {
       "path": "functions/cell-commands.ts",
@@ -413,8 +413,8 @@
     },
     {
       "path": "functions/plan-boundary.ts",
-      "sha256": "3cd52af63040aef4874acee527096afdd386036cbb3b726a22b7f660f58b1652",
-      "size": 13242
+      "sha256": "310bd3e6720604bc75c9d9f7effdeeed0abc64673c536af8422066989d8bfe5b",
+      "size": 17614
     },
     {
       "path": "functions/plan-commands.ts",
@@ -442,14 +442,19 @@
       "size": 33890
     },
     {
+      "path": "functions/quote-sources.ts",
+      "sha256": "e3e357d3ee40e2e5419980f604132a6ddc9f014c874cb955ca4f714744808757",
+      "size": 19890
+    },
+    {
       "path": "functions/quote-width.ts",
       "sha256": "614774cd365ceb799a87a9c13e513ba0c44d75c30c5829b4a1c474bb404d4a99",
       "size": 4781
     },
     {
       "path": "functions/quote.ts",
-      "sha256": "f0db53eeeacf6367575671171ce5efd19afc0b811e58b53ff3b21078adc3735e",
-      "size": 870
+      "sha256": "2ef610633eeb94176d2bee14e947b43eda7b12a2a0c23e71184ba8c48ba93a56",
+      "size": 1236
     },
     {
       "path": "functions/recompose-authority.ts",
@@ -523,8 +528,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "59da96019cde4b2ad4ab4a4ccc11ebdbe689df24de14bf0a39acb294e2441f39",
-      "size": 13027
+      "sha256": "102190c983af860f01fb4c4ddc2509ca291e2625aa7f5cca5ee8b9b05e5bde45",
+      "size": 15175
     },
     {
       "path": "functions/text.ts",
@@ -978,8 +983,8 @@
     },
     {
       "path": "tools/check-plan.ts",
-      "sha256": "a1fc906754a02e63cc13f565877274ce91e70404764695f2531abb5f7f4ef62d",
-      "size": 21693
+      "sha256": "193dbeebc4d88c54900b8e81362d6a98b056dc405ca66fbb43357262f2ac3115",
+      "size": 23815
     },
     {
       "path": "tools/cmd-lookup.cli.json",

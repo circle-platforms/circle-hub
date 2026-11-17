@@ -9,16 +9,30 @@ import * as subjectModule from './subject.ts';
 import {slotRecordProblems} from './slot-record.ts';
 import {selectedCatalog,type LockedTree,type SelectedCatalog} from './catalog-selection.ts';
 import {isRecord,type Outcome} from './text.ts';
-import {listed,refusalText,shownValue} from './refusal-form.ts';
+import {PLAN_DATA,listed,refusalText,shownValue} from './refusal-form.ts';
+import {frozenQuoteView,quoteVerdicts} from './quote-sources.ts';
+import type {QuotePlaces} from './subject.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 
 /** Modules a check or its subject builder is read from, as checks.json names them. */
 const MODULES:Record<string,Record<string,unknown>>={'functions/checks.ts':checkModule,'functions/subject.ts':subjectModule};
+/**
+ * The one core interpreter whose rule is run here (functions/quote-sources.ts), and the export of the subject module that builds, for its
+ * subject builder, the same quotes together with the place of each in the plan (quoteSubject answers the Hub with them, without the places).
+ */
+const LOCAL_INTERPRETER='quote@1';
+const PLACES_OF:Record<string,string>={quoteSubject:'quotePlaces'};
 /** Checks the Hub runs on a plan submission that a plan check leaves to a later stage, with where the same function runs. */
 export const LATER_STAGE:Readonly<Record<string,string>>={
  scenario_fidelity:'场景保真审计在计划写完后由 fidelity-plumb 与 fidelity-apply 把判断写进 data.fidelity；submit-plans 发送前用同一个 fidelityProblems 函数复核',
 };
-export interface HubCheckCoverage { check:string;requirements:string[];ran:boolean;why?:string;problems?:number }
+export interface HubCheckCoverage {
+ check:string;requirements:string[];ran:boolean;
+ /** Why the check did not run; for a check that ran, what of it this machine could not judge. */
+ why?:string;problems?:number;
+ /** The quotes of a quotation check whose text this machine cannot read: they are neither refused nor passed here. */
+ unread?:Array<{pointer:string;reference:string;why:string}>;
+}
 export interface BoundaryProblem { code?:string;pointer:string;message:string;verdict?:Extract<Verdict,'refute'|'unknown'>;[key:string]:unknown }
 export interface BoundaryResult { structure_ok:boolean;problems:BoundaryProblem[];coverage:HubCheckCoverage[] }
 
@@ -32,8 +46,14 @@ const requirementsOf=(check:string):string[]=>REQUIREMENTS.requirements.filter(r
 export function notRunReason(check:typeof CHECKS.checks[number]):string|null{
  if(LATER_STAGE[check.id]!==undefined)return LATER_STAGE[check.id];
  if(check.applies!=='item')return '这条检查针对整个运行，不针对单个计划';
- if('interpreter' in check&&check.interpreter!==undefined)return `核心解释器 ${String(check.interpreter)} 在 Hub 里按它解出的原件文字逐字核对引文；本地没有这些原件文字，引文是否逐字以提交回执为准`;
  const fn=(check as {function?:{module:string;export?:string}}).function,subject=(check as {subject?:{module:string;export:string}}).subject;
+ if('interpreter' in check&&check.interpreter!==undefined){
+  if(check.interpreter!==LOCAL_INTERPRETER)return `核心解释器 ${String(check.interpreter)} 只在 Hub 里运行，本地没有它`;
+  const places=subject===undefined?undefined:PLACES_OF[subject.export];
+  if(subject===undefined||places===undefined||MODULES[subject.module]?.[subject.export]===undefined||MODULES[subject.module]?.[places]===undefined)return `本地没有载入 ${check.interpreter} 的条目取材函数`;
+  if('catalog' in check&&selectionOf(check)===undefined)return '这条检查读命令目录但没有声明目录选择函数；Hub 读整棵目录，本地不重放这种读法';
+  return null;
+ }
  if(fn===undefined||subject===undefined)return '这条检查没有声明包内函数或条目取材函数';
  if(subject.export==='workbookSubject')return '这条检查核对上传的工作簿；计划阶段还没有工作簿';
  if(MODULES[fn.module]?.[fn.export??'default']===undefined||MODULES[subject.module]?.[subject.export]===undefined)return `本地没有载入 ${fn.module}（${fn.export??'default'}）`;
@@ -92,6 +112,25 @@ export function problemsOf(outcome:Outcome):BoundaryProblem[]{
 }
 
 /**
+ * What the quotation check says of one plan, as problems and as the coverage row that tells what it could not judge. The subject
+ * builder's answer is the Hub's (functions/subject.ts quotePlaces, which quoteSubject wraps); the rule is quote@1 over the frozen
+ * run and the locked tree (functions/quote-sources.ts). A plan the front checks refuse, or one that cannot be read, has no quotes to
+ * check, as at the Hub (which waits for the front checks, "前置驳回"); a quote whose text is not held here is listed, never passed.
+ */
+function quoteCheck(found:QuotePlaces,run:Record<string,unknown>,tree:LockedTree|undefined):{rows:BoundaryProblem[];coverage:Pick<HubCheckCoverage,'ran'|'why'|'problems'|'unread'>}{
+ if(found.kind==='blocked')return {rows:[],coverage:{ran:false,why:`前置检查 contract_shape 驳回了这份计划（${listed(found.blocked.map(row=>`${row.pointer}（${row.code}）`),3)}），Hub 在这些驳回改好前不核引文；先改前置`}};
+ if(found.kind==='gap')return {rows:[],coverage:{ran:false,why:`前置检查还缺「${String(found.missing)}」，Hub 在补齐前不核引文`}};
+ if(found.kind==='unreadable')return {rows:[],coverage:{ran:false,why:'计划槽位、冻结的合约或清单读不出，没有可核的引文；先改结构，或重新下载本次运行'}};
+ const done=quoteVerdicts(found.item,found.places,frozenQuoteView(run,tree));
+ const rows=done.outcomes.filter(outcome=>outcome.verdict!=='support').flatMap(problemsOf);
+ // A quote the frozen item itself supplies stands in the item (items/<序号>.json), not in the plan file the writer edits.
+ const unread=done.unread.map(row=>({pointer:row.frozen===true?`冻结条目的 ${row.place}`:`${PLAN_DATA}${row.place}`,reference:row.reference,why:row.why}));
+ const reasons=listed([...new Set(unread.map(row=>row.why))],3);
+ const decided=found.places.length-unread.length;
+ return {rows,coverage:{ran:decided>0||found.places.length===0,problems:rows.length,...(unread.length?{why:`${decided>0?`其中 ${unread.length} 条`:`这 ${unread.length} 条`}引文的原文本地读不到（${reasons}），${decided>0?'这几条':'它们'}以提交回执为准`,unread}:{})}};
+}
+
+/**
  * The plan problems of one item with the frozen inputs of its run. `slots` is the item's `slots` object as it would be submitted;
  * `catalog` is the locked command tree downloaded beside the run (optional: without it the checks report what they cannot judge).
  * A check receives the part of it the Hub gives that check: what the check's own catalog_select function asks for, read by the
@@ -121,6 +160,21 @@ export function planBoundary(input:{run:Record<string,unknown>;item:string;slots
   if(structure.length){coverage.push({check:check.id,requirements,ran:false,why:'条目的槽位记录有结构问题时 Hub 不跑任何检查；先改结构'});continue;}
   if(!isRecord(item)){coverage.push({check:check.id,requirements,ran:false,why:'冻结运行里没有这个条目'});continue;}
   const fn=(check as unknown as {function:{module:string;export?:string}}).function,subject=(check as unknown as {subject:{module:string;export:string}}).subject;
+  if('interpreter' in check){
+   // The core interpreter of the quotation check: the subject builder's answer judged by the rule of the interpreter over the frozen texts.
+   try{
+    const bare=checkInput(input.run,item,input.slots);
+    const raw='catalog' in check&&input.catalog!==undefined?checkInput(input.run,item,input.slots,catalogOf(check,bare,input.catalog)):bare;
+    const found=(MODULES[subject.module][PLACES_OF[subject.export]!] as (value:unknown)=>QuotePlaces)(raw);
+    const done=quoteCheck(found,input.run,input.catalog);
+    for(const row of done.rows)add(row);
+    coverage.push({check:check.id,requirements,...done.coverage});
+   }catch(error){
+    add({code:'check_error',pointer:'',message:`检查 ${check.id} 在本地无法运行：${error instanceof Error?error.message:String(error)}`,verdict:'unknown'});
+    coverage.push({check:check.id,requirements,ran:false,why:'本地运行时出错'});
+   }
+   continue;
+  }
   let outcomes:Outcome[];
   try{
    const bare=checkInput(input.run,item,input.slots);

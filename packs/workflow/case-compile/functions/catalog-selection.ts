@@ -9,7 +9,14 @@ import {isRecord} from './text.ts';
 
 type Row={[key:string]:any};
 /** The locked tree of one run as the Hub's run export writes it: nodes by path, each with its children and its entries. */
-export interface LockedTree {root:string;complete:boolean;nodes:ReadonlyMap<string,Row>}
+export interface LockedTree {
+ root:string;complete:boolean;nodes:ReadonlyMap<string,Row>;
+ /**
+  * Where the block of each node starts in the text files of the download (knowledge/manual.txt, commands.txt; functions/cmd-lookup.ts
+  * blockPositions), read when a refusal wants to say which line of the file an entry stands on; absent when the download has no text files.
+  */
+ blocks?:()=>ReadonlyMap<string,{file:string;line:number}>;
+}
 /** What the checks receive for a catalog: the view's entries, or why the selection could not be read. */
 export type SelectedCatalog={entries:Row[]}|{missing:string};
 
