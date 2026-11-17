@@ -63,8 +63,8 @@
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "44447e437ae799fe84a00f64053c25e242697116bfe8cb7231cc0bd4d4bd3fe6",
-      "size": 19368
+      "sha256": "0703d5139de004fee47f6e1f43a76b0bc96a6384ba41f34a92c833c851594f26",
+      "size": 18514
     },
     {
       "path": "checks.json",
@@ -153,8 +153,8 @@
     },
     {
       "path": "functions/block-checks.ts",
-      "sha256": "97357ca587669535816ae5682ce6ce46769e99a9258318731525096b78c55fd2",
-      "size": 8754
+      "sha256": "0632d02ef99c593dec666a798276930c1724fda515e92045be6c08bfc21616a4",
+      "size": 13828
     },
     {
       "path": "functions/block-expected.ts",
@@ -218,8 +218,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "e91d548c07134f5c8be0c7d04aca0e071238f6814f45dee7589fbf21762bcaa6",
-      "size": 41161
+      "sha256": "ceb4c3c4f78acd092a4827f363d2deb98c9b343f0cb2b118b54b2d47874636d7",
+      "size": 41831
     },
     {
       "path": "functions/client-cli.ts",
@@ -243,8 +243,8 @@
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "3e9e71ae947a3b591cd8da66fa1ee756a7b164c8bd7472c02e48a4b8745200cf",
-      "size": 30045
+      "sha256": "ef729541606001afe9a62c1bb4b210da7455ff7a25073ec443ebade024733f22",
+      "size": 30402
     },
     {
       "path": "functions/command-tree-verdict.ts",
@@ -477,6 +477,11 @@
       "size": 3074
     },
     {
+      "path": "functions/replacement-source.ts",
+      "sha256": "a98b6ec6aa10b0aa210a0a2ff92086a2e60caa16d490fa023d0bc4e1d69f2022",
+      "size": 9354
+    },
+    {
       "path": "functions/rework-history.ts",
       "sha256": "1ed705160da067d3e8febd21ab246c7f9a90ef44fafccaac09d2647319a91360",
       "size": 110154
@@ -518,8 +523,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "ede89489f7a90f9607c96f2c9d552c0d910e0a7b6b3ebd90484caae5b0c5ce65",
-      "size": 46310
+      "sha256": "a31cda854e3d15ebc4b887d1785079d1d2a8db0363a04342fb2b7369e53e184c",
+      "size": 46104
     },
     {
       "path": "functions/subject.ts",
@@ -828,18 +833,18 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "46ecf1d704f38c5aed20186517f48c3aa5fdfa2176b85d6a9e6c42aede502ace",
-      "size": 76126
+      "sha256": "5ee15895625a360d2d29f05d7d5d273057e1b106dbf5f9320f7361d1665dcdc1",
+      "size": 74770
     },
     {
       "path": "tables/block-plan.schema.json",
-      "sha256": "96e89845f129c5ddcb4dc3c111b70694dba52cfef7b6c17e17058b3e7c83c81a",
-      "size": 60246
+      "sha256": "5d5b9388ebbfc8d9d6aa46feb1cf6fa75ac38ede25f2cd36e4f9ac7fd44b292e",
+      "size": 58914
     },
     {
       "path": "tables/blocks-format.json",
-      "sha256": "572f7319b5c14f99e39b91ed65d9ebd25a9b7fba7ac331bfeb438cadc4db0c2c",
-      "size": 22884
+      "sha256": "7fec03606a0faceb23224e9b6280db6cfef8ef18a2f87cd8d0a5358eabd5e6b9",
+      "size": 21864
     },
     {
       "path": "tables/codes.json",

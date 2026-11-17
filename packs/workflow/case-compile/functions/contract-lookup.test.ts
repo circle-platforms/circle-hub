@@ -293,12 +293,13 @@ test('the values the block table closes a field to are told beside the kind that
 test('a field with a table, a column or a selection is told by what it holds, closed values included', () => {
   const answer = lookupBlock(blockSource(), 'SELECT_CELL');
   hasLine(answer, '#   table：对象：必填 format（字符串，取值 delimited、key_value）、separator（字符串）、columns（整数 ≥1）、header（布尔）');
-  // The table also describes the cell fields (the id may be one segment of a longer name); the answer tells that text after what the field holds.
+  // The cell fields carry no description in the table (the ones T15 had put there came from one case and are gone, round 37), so the
+  // answer tells what they hold and nothing after it; a field that has a description gets it after what it holds (author_step_refs below).
   const cell = arm('SELECT_CELL').properties;
-  assert.equal(typeof cell.column.description, 'string');
-  assert.equal(typeof cell.select.description, 'string');
-  hasLine(answer, `#   column：整数 ≥1。${cell.column.description}`);
-  hasLine(answer, `#   select：以下之一：（1）对象：必填 row（整数 ≥1）；（2）对象：必填 where（数组（至少 1 项），每项对象：必填 column（整数 ≥1）、value（字符串））。${cell.select.description}`);
+  assert.equal(cell.column.description, undefined);
+  assert.equal(cell.select.description, undefined);
+  hasLine(answer, '#   column：整数 ≥1');
+  hasLine(answer, '#   select：以下之一：（1）对象：必填 row（整数 ≥1）；（2）对象：必填 where（数组（至少 1 项），每项对象：必填 column（整数 ≥1）、value（字符串））');
   hasLine(answer, '#   call：对象：必填 object（字符串）、method（字符串）、args（字符串数组）、keywords（对象，值为字符串或整数 0..9007199254740991）');
   assert.ok(lineWith(lookupBlock(blockSource(), 'CONFIG'), '#   author_step_refs：').startsWith('#   author_step_refs：字符串数组（1..32 项，每项至多 64 个字符）。'));
 });

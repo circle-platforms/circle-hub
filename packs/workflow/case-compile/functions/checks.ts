@@ -8,7 +8,8 @@ import {labelOf} from './generated/vocabulary.ts';
 import {planCommands,deviceCommandLines} from './plan-commands.ts';
 import {lineProfile,planProblems,planConflictText,PLAN_CONFLICT_FIX} from './channels.ts';
 import { typedAuthorityGaps, authorityRecovery, typedAddressUses } from './typed-authority.ts';
-import { authoredAddresses, type RunnerCovered } from './command-obligations.ts';
+import { authoredAddressTexts, type RunnerCovered } from './command-obligations.ts';
+import { replacementSourceText } from './replacement-source.ts';
 // Verify authored plans against original runner identities, runtime profile, manifest, and frozen lineage addresses.
 import { quoteMatches } from './quote.ts';
 import { encodeG, GSyntaxError } from './generated/skills/runner-workbook/workbook-writer/g-syntax.ts';
@@ -138,14 +139,22 @@ export function checkAddresses(input: unknown): Outcome[] {
   const uses=typedAddressUses(s.contract!,s.profile!,slots,s.command_catalog);
   const sourceIdentities=Array.isArray(s.command_identities)?s.command_identities:[];
   // The author's own addresses (decision 115, as SyntheticReference): parsed from the case's command lines by the locked tree.
-  const authored=authoredAddresses(s.command_catalog,Array.isArray(s.case_texts)?s.case_texts as string[]:[]);
+  const authoredTexts=authoredAddressTexts(s.command_catalog,Array.isArray(s.case_texts)?s.case_texts as string[]:[]);
+  const authored=new Set(authoredTexts.keys());
   const sourceValues=new Set([...sourceIdentities.flatMap(raw=>{const i=identityOf(raw);return i?i.parameters.flatMap(p=>p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')?[addressKey(p.parsed.value.value)]:[]):[];}),...authored]);
+  // What the refusal of a replacement source lists as allowed: the same addresses as sourceValues, as the case wrote them.
+  const allowedSources=():string[]=>{
+    const texts=new Map<string,string>();
+    for(const raw of sourceIdentities){const i=identityOf(raw);if(i)for(const p of i.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const written=String(p.parsed.value.value),key=addressKey(written);if(key&&!texts.has(key))texts.set(key,written);}}
+    for(const [key,written] of authoredTexts)if(!texts.has(key))texts.set(key,written);
+    return [...texts.values()];
+  };
   const kept:string[]=[];
   const from=new Set<string>(),to=new Set<string>();
   for(const [i,replacement]of slots.replacements.entries()){
     const source=addressKey(replacement.case),target=addressKey(replacement.bed),at='/data/replacements/'+i;
     if(!source||!target||from.has(source)||to.has(target)||source.split(':')[0]!==target.split(':')[0])out.push(refute(s,'replacement_invalid','替换必须是同一声明地址族的一一对应数值映射',at));
-    if(source&&!sourceValues.has(source))out.push(refute(s,'replacement_invalid',`替换的来源 ${replacement.case} 不是作者命令里的地址：只能替换锁定命令树从作者原文命令里解析出的地址参数（这里解析出 ${authored.size} 个${authored.size?`：${[...authored].slice(0,10).join('、')}`:''}），不按外形从散文里找地址`,at));
+    if(source&&!sourceValues.has(source))out.push(refute(s,'replacement_invalid',replacementSourceText({replacement,index:i,allowed:allowedSources(),record:isRecord(s.recomposition)&&isRecord(s.recomposition.record)?s.recomposition.record:s.recomposition,catalog:s.command_catalog}),at));
     if(source&&target&&source!==target&&slots.replacements.some((other,j)=>j!==i&&addressKey(other.case)===target))out.push(refute(s,'replacement_invalid','替换映射不能形成链或环',at));
     if(source)from.add(source);if(target)to.add(target);
     if(readAddress(bed,s.leases,s.now,replacement.bed).kind==='off_bed')out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址。下一步：换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译',at));

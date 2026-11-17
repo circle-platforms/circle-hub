@@ -121,29 +121,33 @@ test('the writer is told to write one Chinese line per block, and the skill says
   const block = json('slots.schema.json').item.plan.data.properties.blocks.items.anyOf[0].properties.description;
   assert.equal(block.type, 'string'); assert.match(block.description, /不是抄作者步骤/);
 });
-test('the writer is taught to pick only the generated segment of a name and to keep the known segments in the command that uses it (round 36)', () => {
+test('the writer text and the block declarations teach no usage derived from one feature or case: no key-name paragraph, no pre-clean line, no column-pinning advice, and the runner contract for a cell value in one generic sentence (round 37, owner\'s rule)', () => {
   const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
-  for (const phrase of [
-    '设备生成的往往只是名字的一段（如文件名里的编号），只取这一段，名字里已知的部分写在用它的命令里（写法见「取名字的一段」）',
-    '取名字的一段: 设备生成的往往只是名字的一段，不取整个名字',
-    'select.where 逐列钉死已知的各列',
-    '用它的命令把已知段写在 {} 两边，{} 可以夹在引号和文字之间',
-    '1 到 128 个字符的上限只管取出的这一格，不管拼出的整条命令，名字再长也不因此记为不能写',
-  ]) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
-  // The example the text gives is consistent: six columns at "+", the third is the id, and the template with the known segments
-  // around one "{}" gives back the example name without its suffix.
-  const sample = /如 (K\S+\.key) 里的 \+/.exec(role.body)![1]!, template = /如 demo use ("K\S+\{\}\S+")，/.exec(role.body)![1]!;
-  assert.equal(sample.split('+').length, 6);
-  assert.equal(sample.split('+')[2], '51877');
-  assert.equal(cellTemplate(template), true);
-  assert.equal(template.replace('{}', sample.split('+')[2]!), `"${sample.slice(0, -'.key'.length)}"`);
+  // InfoTest's worker prompt "intentionally contains no product algorithm classes, counter layouts, channel names, operator mappings,
+  // sample sizes, or interface answers" (main/ist_core/agents/compile-worker.md:51); T15 had put three such teachings into this one.
+  const caseDerived = [
+    '取名字的一段', '设备生成的往往只是名字的一段', '只取这一段', 'Kzone', 'RSASHA1', 'ksk', '.private', '逐列钉死', '长度、后缀各一列', '1024.key', 'where 6',
+    '设备上可能残留同名配置时', '先用产品声明的逆操作清掉再配置', '本身不需要再配清理，被它清掉的配置命令自己的清理照旧',
+  ];
+  for (const [file, text] of [['subagent-roles.ts body', role.body], ['agents/compile-writer.md', writer]] as Array<[string, string]>)
+    for (const phrase of caseDerived) assert.ok(!text.includes(phrase), `${file}: ${phrase}`);
+  // The declarations a writer reads through its block lookup carry none of it either (the fields had no description before T15).
+  const table = json('tables/blocks-format.json');
+  for (const name of ['input_register', 'column', 'select']) assert.equal(table.fields[name].description, undefined, name);
+  for (const file of ['tables/blocks-format.json', 'tables/block-plan.schema.json', 'slots.schema.json'])
+    for (const phrase of ['ksk', 'RSASHA1', 'keypub', 'Kzone', '取名字的一段', 'host, algorithm, type, size, suffix', 'between known words']) assert.ok(!read(file).includes(phrase), `${file}: ${phrase}`);
+  // What stays is the runner's contract and nothing about how to build a name: the selected cell goes into the {} of a later command,
+  // which the runner replaces whole (lib/test_xlsx.py:698-721) and which may stand in quotes. The rule that a removal sent ahead of the
+  // configuration it clears needs no cleanup of its own lives in functions/command-obligations.ts (inverse-removal.test.ts), not here.
+  const contract = '只有设备执行时才产生的值，要在同一条自动化用例里先取出再用，取出的单格写进后面命令的 `{}`，运行器把它整个替换进去，`{}` 可以在引号里；手册允许指定名字时，由生成器指定';
+  assert.ok(role.body.includes(contract) && writer.includes(contract), 'the one sentence of the runner contract');
+  for (const phrase of ['写进命令的每个值都要在手册对该参数的说明之内，包括长度、允许的字符、范围和可选值', '不写死设备生成的名字，不从上一次上机验证的设备输出抄值，也不沿用设备上已有的东西']) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
 });
-test('the writer is taught to clear a leftover with the product\'s declared inverse before it configures, and that this removal owes no cleanup of its own (round 36)', () => {
+test('the writer is told that the documentation address the recomposition record put into its adapted commands is no replacement source, and what to write instead (round 37)', () => {
   const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
-  for (const phrase of [
-    '设备上可能残留同名配置时，先用产品声明的逆操作清掉再配置（如 InfoTest 用例先 `no …`）',
-    '这条逆操作写在它要清的那条配置命令之前，同设备、同对象名，本身不需要再配清理，被它清掉的配置命令自己的清理照旧',
-  ]) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
+  const line = '- 重组记录的改写命令里按规则暂用的文档保留地址（RFC 5737/3849，记在它的 unknowns 里）不是作者写的地址：不进 replacements，用到它的位置在步骤命令里直接写测试环境清单里的地址；replacements 只放作者原文命令里的地址，没有就写 []。';
+  assert.ok(role.body.includes(line) && writer.includes(line), 'role text and the bundled agent file carry the line, identically');
+  assert.equal(writer.split('\n').filter((row) => row.includes('文档保留地址')).length, 1, 'one line');
 });
 test('the writer is told that every authored action of the record must be named by some step\'s author_step_refs, and that a step it cannot realize is reported, not forced (round 36, a2)', () => {
   const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;

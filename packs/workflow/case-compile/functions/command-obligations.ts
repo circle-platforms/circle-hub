@@ -49,10 +49,14 @@ export { definitions as commandDefinitions };
  * author wrote stays when it is not on the environment and is disclosed; only an address the plan made up is refused.
  */
 export function authoredAddresses(raw:unknown,sourceTexts:readonly string[]):Set<string>{
- const out=new Set<string>();
+ return new Set(authoredAddressTexts(raw,sourceTexts).keys());
+}
+/** The same addresses with the text the author wrote for each (the first one when it is written in several notations), for a refusal to show. */
+export function authoredAddressTexts(raw:unknown,sourceTexts:readonly string[]):Map<string,string>{
+ const out=new Map<string,string>();
  if(!isRecord(raw)||typeof raw.root!=='string'||!sourceTexts.length)return out;
  const grammar=compileGrammar(definitions(raw));
- for(const text of sourceTexts)for(const line of commandLines(text)){const identity=identityOf(commandIdentity(grammar,line.text));if(!identity)continue;for(const p of identity.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const key=addressKey(String(p.parsed.value.value));if(key)out.add(key);}}
+ for(const text of sourceTexts)for(const line of commandLines(text)){const identity=identityOf(commandIdentity(grammar,line.text));if(!identity)continue;for(const p of identity.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const written=String(p.parsed.value.value),key=addressKey(written);if(key&&!out.has(key))out.set(key,written);}}
  return out;
 }
 /**

@@ -77,8 +77,7 @@
               },
               "input_register": {
                 "type": "string",
-                "minLength": 1,
-                "description": "The name of a selected cell. The first argument of the command is a template with one {} (or {0}) that the runner replaces whole with the cell; it may stand inside quotes and between known words, e.g. demo use \"K<host>.+005+{}+ksk+RSASHA1+1024\"."
+                "minLength": 1
               },
               "author_step_refs": {
                 "type": "array",
@@ -491,8 +490,7 @@
               },
               "column": {
                 "type": "integer",
-                "minimum": 1,
-                "description": "The 1-based column of a row that the cell is taken from. The cell may be one segment of a longer name (the id inside a file name): then it is only the segment the device generated, and the command that uses it writes the known segments around its one {} placeholder (the writer role, \"取名字的一段\"). The value policy of the executor bounds this one cell, not the assembled command."
+                "minimum": 1
               },
               "select": {
                 "anyOf": [
@@ -539,8 +537,7 @@
                       }
                     }
                   }
-                ],
-                "description": "Which row the cell comes from: a row ordinal, or conditions that each match one column exactly (where; all must hold). Pin every column the plan already knows (host, algorithm, type, size, suffix) with its own condition; no row or more than one row stops the case with the device's words, nothing is guessed."
+                ]
               },
               "author_step_refs": {
                 "type": "array",
@@ -912,8 +909,7 @@
               },
               "input_register": {
                 "type": "string",
-                "minLength": 1,
-                "description": "The name of a selected cell. The first argument of the command is a template with one {} (or {0}) that the runner replaces whole with the cell; it may stand inside quotes and between known words, e.g. demo use \"K<host>.+005+{}+ksk+RSASHA1+1024\"."
+                "minLength": 1
               },
               "author_step_refs": {
                 "type": "array",
