@@ -99,7 +99,7 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
     plumbCaseCompile: {
       'tools/cmd-select-plumb.ts': plumbProbe(['--run', plumbDir, '--base-url', origin, '--no-cache', '--key-stdin']),
       'tools/cmd-verify-plumb.ts': plumbProbe(['--plans', plumbPlans, '--run', plumbDir, '--base-url', origin, '--no-cache', '--key-stdin']),
-      'tools/fidelity-plumb.ts': plumbProbe(['--run', join(plumbDir, 'run.json'), '--plans', plumbPlans, '--briefs', plumbBriefs, '--base-url', origin, '--no-cache', '--key-stdin']),
+      'tools/fidelity-plumb.ts': plumbProbe(['--run', plumbDir, '--plans', plumbPlans, '--briefs', plumbBriefs, '--base-url', origin, '--no-cache', '--key-stdin']),
     },
     recompose: {
       'tools/download-run.ts': probe(['--hub', origin + '/mcp', '--run', RUN, '--out', join(workRoot, 'recompose-download')]),

@@ -28,7 +28,7 @@ import {
 import { briefFile, planCases, verdictFile, type PlanCase } from './fidelity-brief.ts';
 
 const USAGE =
-  'node <技能目录>/tools/fidelity-plumb.ts --run <run.json> --plans <plansDir> --briefs <briefsDir> --base-url <url> [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--out <summary.json>] [--key-stdin]';
+  'node <技能目录>/tools/fidelity-plumb.ts --run <运行目录> --plans <plansDir> --briefs <briefsDir> --base-url <url> [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--out <summary.json>] [--key-stdin]';
 
 const OPTIONS: Record<string, boolean> = {
   run: true,
@@ -123,13 +123,13 @@ export async function runFidelityPlumb(
       }
       return val.trim();
     };
-    const runPath = getReq('--run');
+    const runDirectory = getReq('--run');
     const plansDir = getReq('--plans');
     const briefsDir = getReq('--briefs');
     const outSummary = typeof parsed.flags.get('--out') === 'string' ? (parsed.flags.get('--out') as string).trim() : '';
     const strictReview = parsed.flags.get('--strict-review') === true;
 
-    const { cases, skipped } = await planCases(runPath, plansDir);
+    const { cases, skipped } = await planCases(runDirectory, plansDir);
     await mkdir(briefsDir, { recursive: true, mode: 0o700 });
 
     const reused: Array<{ file: string; item: string; verdict: string }> = [];

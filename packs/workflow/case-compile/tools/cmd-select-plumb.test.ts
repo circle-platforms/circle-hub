@@ -212,6 +212,24 @@ test('cmd-select-plumb performs <=25 two-stage choice elimination and writes dis
   }
 });
 
+test('cmd-select-plumb takes the run directory as --run and refuses its run.json file with the one-line correct form before any call', async () => {
+  const dir = await setupRunDir(1);
+  try {
+    stubMode = 'pass';
+    seenRequests.length = 0;
+    const file = join(dir, 'run.json');
+    const refused = await runCmdSelectPlumb(['--run', file, '--base-url', baseUrl, '--no-cache', '--key-stdin'], { stdinText: 'plumb_sk_test_key\n' });
+    assert.equal(refused.code, 1);
+    assert.equal(refused.stdout, '');
+    assert.ok(refused.stderr.startsWith(`参数无效：--run ${file} 不是普通目录。`), refused.stderr);
+    assert.ok(refused.stderr.trimEnd().endsWith("合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。"), refused.stderr);
+    assert.equal(refused.stderr.trim().split('\n').length, 1);
+    assert.equal(seenRequests.length, 0, 'no question was asked of Plumb');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('cmd-select-plumb handles review, strict-review, none, reject, and fail-closed HTTP errors', async () => {
   const dir = await setupRunDir(5);
   try {

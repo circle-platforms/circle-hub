@@ -17,7 +17,7 @@ description: 把原始用例编成自动化用例，经 Hub 核对、生成 Exce
 node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成用例 A' --brief 'briefs/0.md' --out 'plans/0.json' --task-file 'tasks/0.md' --run 'plan-run'
 ```
 
-本地工具在 `<技能目录>`（用安装工具或按 Hub 命令**装进当前主目录的 `skills` 目录**，别处守卫拒执行）。文件工具限工作目录相对路径（`.`）及只读 `<技能目录>`，写入禁出工作目录（禁 `/tmp`）。触发本地脚本与 Hub 工具时，`execute` 使用本文列出的实际工具命令，技能脚本路径和值分别用单引号引用，每条命令只占一行（禁 `=`）；列目录用 `ls`，找文件用 `glob`，搜文本用 `grep`。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端展开；需令牌的命令把 `node` 命令行与 `<<'EOF'` 写在同一行（空格隔开，切勿在 `<<'EOF'` 前换行），下一行只写 `%HUB_TOKEN%`，再一行只写 `EOF`，令牌不落盘。
+本地工具在 `<技能目录>`（用安装工具或按 Hub 命令**装进当前主目录的 `skills` 目录**，别处守卫拒执行）。文件工具限工作目录相对路径（`.`）及只读 `<技能目录>`，写入禁出工作目录（禁 `/tmp`）。触发本地脚本与 Hub 工具时，`execute` 使用本文列出的实际工具命令，技能脚本路径和值分别用单引号引用，每条命令只占一行（禁 `=`）；路径型 `--run` 写运行目录，不写 run.json；列目录用 `ls`，找文件用 `glob`，搜文本用 `grep`。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端展开；需令牌的命令把 `node` 命令行与 `<<'EOF'` 写在同一行（空格隔开，切勿在 `<<'EOF'` 前换行），下一行只写 `%HUB_TOKEN%`，再一行只写 `EOF`，令牌不落盘。
 
 逐条一句，带原始用例 ID、标题、结论、状态和判断。状态只用未确认、已确认、未知；模型的判断是未确认。判断只用正确或错误，未知不替它写正确或错误。错误或未知才写原因和下一步。原因只用本包 `functions/generated/vocabulary.ts` 中 `attribution` 轴经 `labelOf` 生成的中文标签，机器字段用同源代码，禁另列词表或自造标签。证据和决定者放最后；决定者只用程序、模型、使用者。内部引用、工具参数只进机读部分。
 
@@ -31,11 +31,11 @@ node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成�
 
 ## 2. 脚本编写
 
-先整份下载再读原始用例，本地读搜 `knowledge/`（“· 引用”行是标注，下面是原文），不逐页读 Hub；查命令写法跑 `tools/cmd-lookup.ts --run <运行目录/run.json> --param '<命令>'`，不逐段 grep。`items/<序号>.json`、`briefs/<序号>.md` 列有命令、参数、恢复法与待填计划。派发前先 `ls` 核对实名（`<10` 条为 `0.md` 非 `00.md`），文件落盘后再调 `task-brief.ts`；未写完 `plans/*.json` 禁跑 `fidelity-plumb.ts` / `fidelity-brief.ts` 或下游。
+先整份下载再读原始用例，本地读搜 `knowledge/`（“· 引用”行是标注，下面是原文），不逐页读 Hub；查命令写法跑 `tools/cmd-lookup.ts --run <运行目录> --param '<命令>'`，不逐段 grep。`items/<序号>.json`、`briefs/<序号>.md` 列有命令、参数、恢复法与待填计划。派发前先 `ls` 核对实名（`<10` 条为 `0.md` 非 `00.md`），文件落盘后再调 `task-brief.ts`；未写完 `plans/*.json` 禁跑 `fidelity-plumb.ts` / `fidelity-brief.ts` 或下游。
 
 一条原始用例一个子代理：装了 `case-writers` 用 `write_case_plans`，否则 `task-brief.ts --role '脚本编写'` 写盘并原样传提示，**同条消息以前台方式并列多个 `task`（`subagent_type="case-compile:compile-writer"`，严禁用 `background`）**，不合并、**每批最多 6 个**，失败项单独重派。清理分工（存盘禁入 `cleanup:true`）、`adapted` 不是步骤白名单（补 `sources.states` 或手册/示例前置，附 `precondition_source` 与配对清理，不改“前置不存在”测试）与语法由包内定义与 `task-brief.ts` 注入；受限结构/示例/分块在 `<技能目录>/slots.schema.json`、`examples/submit-result.json`、`tables/blocks-format.json`。只在答案会改变做法、资料里又查不到时问使用者（设备的问题还是原始用例的问题，需要使用者决定），能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 
-每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。作者没写字面的期望，模型写检查点：模型判断，状态未确认，不做复核，上机验证裁定。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，先把这条现有计划交给 Hub 核对，取得对本条具名的缺失事实和请求后，下一个脚本编写运行才排除它、其余继续；没有这条 Hub 记录，不把模型笔记称为“Hub 点名”。作者步骤与手册冲突时按 tools/delivery.md 写结构化 author_conflict，并保留逐字引文交作者或使用者裁定。计划自检跑 `tools/check-plan.ts --file <计划> --run <运行目录/run.json>`。
+每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。作者没写字面的期望，模型写检查点：模型判断，状态未确认，不做复核，上机验证裁定。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，先把这条现有计划交给 Hub 核对，取得对本条具名的缺失事实和请求后，下一个脚本编写运行才排除它、其余继续；没有这条 Hub 记录，不把模型笔记称为“Hub 点名”。作者步骤与手册冲突时按 tools/delivery.md 写结构化 author_conflict，并保留逐字引文交作者或使用者裁定。计划自检跑 `tools/check-plan.ts --file <计划> --run <运行目录>`。
 
 ### 主会话参数与本地工具命令
 
@@ -86,12 +86,12 @@ EOF
 node '<技能目录>/tools/cmd-verify-plumb.ts' --plans '<自动化用例目录>' --run '<脚本编写目录>' --base-url %PLUMB_URL% --key-stdin <<'EOF'
 %PLUMB_API_KEY%
 EOF
-node '<技能目录>/tools/fidelity-plumb.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --briefs '<核对目录>' --base-url %PLUMB_URL% --key-stdin <<'EOF'
+node '<技能目录>/tools/fidelity-plumb.ts' --run '<脚本编写目录>' --plans '<自动化用例目录>' --briefs '<核对目录>' --base-url %PLUMB_URL% --key-stdin <<'EOF'
 %PLUMB_API_KEY%
 EOF
 # 无 Plumb 时跑 fidelity-brief.ts 与 task-brief.ts --role '保真核对' 写 .verdict.json
-node '<技能目录>/tools/fidelity-brief.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --out '<核对目录>'
-node '<技能目录>/tools/fidelity-apply.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --briefs '<核对目录>'
+node '<技能目录>/tools/fidelity-brief.ts' --run '<脚本编写目录>' --plans '<自动化用例目录>' --out '<核对目录>'
+node '<技能目录>/tools/fidelity-apply.ts' --run '<脚本编写目录>' --plans '<自动化用例目录>' --briefs '<核对目录>'
 # ready=true 后再提交（命令行与 <<'EOF' 同行）
 node '<技能目录>/tools/submit-plans.ts' --hub %HUB_URL% --run '<脚本编写编号>' --model '<模型>' --plans '<自动化用例目录>' <<'EOF'
 %HUB_TOKEN%
@@ -99,7 +99,7 @@ EOF
 node '<技能目录>/tools/fetch-run.ts' --hub %HUB_URL% --run '<脚本编写编号>' --out '<新目录>' <<'EOF'
 %HUB_TOKEN%
 EOF
-node '<技能目录>/tools/generate-workbook.ts' --run '<新目录>/run.json' --result '<新目录>/result.json' --submission '<新目录>/submission.json' --out '<新目录>/case.xlsx'
+node '<技能目录>/tools/generate-workbook.ts' --run '<新目录>' --result '<新目录>/result.json' --submission '<新目录>/submission.json' --out '<新目录>/case.xlsx'
 ```
 
 submit-plans 与 fetch-run 从标准输入取 %HUB_TOKEN%，Plumb 脚本用 --key-stdin 传入 %PLUMB_API_KEY%，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具提示修正，不猜另一种写法。上机返工后用 `carry-plans.ts` 结转并回第 2 节（`predecessor` 填原 `test-bed` 预订号）新开 `plan_run`，重生成上传并新开 `merge_run`；禁交已进 `merge_run` 的旧运行或当前 `merge_run`。

@@ -27,14 +27,38 @@ async function workspace() {
   const data = goodData() as unknown as Record<string, unknown>; (data.steps as Array<Record<string, unknown>>)[0].args = ['widget name {{name:40}}'];
   await writeFile(join(plans, '00.json'), JSON.stringify({ item: 'doc-1:c-1', handling: 'handled', slots: { plan: [{ data }] } }));
   await writeFile(join(plans, '01.json'), JSON.stringify({ item: 'doc-1:c-2', handling: 'handled', slots: { plan: [{ data: goodData() }] } }));
-  const runBrief = () => quiet(() => brief(['--run', join(dir, 'run.json'), '--plans', plans, '--out', briefs]));
-  const runApply = () => quiet(() => apply(['--run', join(dir, 'run.json'), '--plans', plans, '--briefs', briefs]));
+  const runBrief = () => quiet(() => brief(['--run', dir, '--plans', plans, '--out', briefs]));
+  const runApply = () => quiet(() => apply(['--run', dir, '--plans', plans, '--briefs', briefs]));
   const planOf = async () => JSON.parse(await readFile(join(plans, '00.json'), 'utf8'));
   /** Where the auditor of the plan as it stands writes its verdict: beside the brief, named by the brief's digest. */
   const verdictPath = async () => { const { fidelity: _f, ...rest } = (await planOf()).slots.plan[0].data; return verdictFile(briefs, '00', fidelityBrief('doc-1:c-1', RECORD, rest)!.brief_sha256); };
-  return { dir, plans, briefs, runBrief, runApply, planOf, verdictPath };
+  return { dir, plans, briefs, runBrief, runApply, planOf, verdictPath, quiet };
 }
 const VERDICT = { steps: [{ n: 'a2', verdict: 'preserved', step_indices: [1], rationale: '合成理由：第 1 步配置了名字' }], disclosure: '合成说明：作者的一步由第 1 步实现。' };
+
+test('--run is the run directory like task-brief.ts: the run.json file is refused by the brief and the merge tools with the one-line correct form, and nothing is written', async () => {
+  const w = await workspace();
+  const runFile = join(w.dir, 'run.json');
+  const form = "合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。";
+  for (const [name, refused] of [
+    ['fidelity-brief', await w.quiet(() => brief(['--run', runFile, '--plans', w.plans, '--out', w.briefs]))],
+    ['fidelity-apply', await w.quiet(() => apply(['--run', runFile, '--plans', w.plans, '--briefs', w.briefs]))],
+  ] as const) {
+    assert.equal(refused.code, 1, name);
+    assert.equal(refused.stdout, '', name);
+    assert.ok(refused.stderr.startsWith(`参数无效：--run ${runFile} 不是普通目录。`), `${name}: ${refused.stderr}`);
+    assert.ok(refused.stderr.trimEnd().endsWith(form), `${name}: ${refused.stderr}`);
+    assert.equal(refused.stderr.trim().split('\n').length, 1, name);
+  }
+  await assert.rejects(readdir(w.briefs), { code: 'ENOENT' }, 'a refused call creates no brief directory');
+  // A directory that holds no run.json is refused the same way a file is, with the hint of where to get one.
+  const bare = await mkdtemp(join(tmpdir(), 'cc-fidelity-bare-'));
+  const empty = await w.quiet(() => brief(['--run', bare, '--plans', w.plans, '--out', w.briefs]));
+  assert.equal(empty.code, 1);
+  assert.match(empty.stderr, /^不存在：找不到 --run 目录里的 run\.json 文件 /);
+  // The directory is what answers.
+  assert.equal((await w.runBrief()).code, 0);
+});
 
 test('the brief is computed from the expanded plan the Hub will receive, with the literal measured, one file per case with authored actions', async () => {
   const w = await workspace();
@@ -191,7 +215,7 @@ test('Bug #17 & #18: handling=skipped is skipped by fidelity-brief, and standalo
     await writeFile(join(plans, '00.json'), JSON.stringify({ item: 'doc-1:c-1', handling: 'handled', slots: { plan: [{ data: goodData() }] } }));
     await writeFile(join(plans, '01.json'), JSON.stringify({ item: 'doc-1:c-skip', handling: 'skipped', reason: '前置暂不具备' }));
 
-    const briefRes = await quiet(() => brief(['--run', join(dir, 'run.json'), '--plans', plans, '--out', briefs]));
+    const briefRes = await quiet(() => brief(['--run', dir, '--plans', plans, '--out', briefs]));
     assert.equal(briefRes.code, 0, briefRes.stderr);
     const briefJson = JSON.parse(briefRes.stdout);
     assert.equal(briefJson.briefs.length, 1);
@@ -219,7 +243,7 @@ test('Bug #17 & #18: handling=skipped is skipped by fidelity-brief, and standalo
         review_required_steps: [],
       },
     }));
-    const applyRes = await quiet(() => apply(['--run', join(dir, 'run.json'), '--plans', plans, '--briefs', briefs]));
+    const applyRes = await quiet(() => apply(['--run', dir, '--plans', plans, '--briefs', briefs]));
     assert.equal(applyRes.code, 0, applyRes.stderr);
     const applyJson = JSON.parse(applyRes.stdout);
     assert.equal(applyJson.ready, true);

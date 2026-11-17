@@ -32,8 +32,8 @@ import {
   isInsideRoot,
   resolveExistingFileInsideCwd,
   resolveCwdRoots,
-  resolveExistingDirInsideCwd,
   resolveInsideCwd,
+  resolveRunDirectory,
 } from './workspace-path.ts';
 
 const parsed = (name: string, text: string): unknown => { try { return JSON.parse(text); } catch { throw new CallFailure("invalid_parameters", `${name} 不是完整的 JSON`, "重新下载该运行对应的完整 JSON 原件，再按原文件名生成简报"); } };
@@ -354,7 +354,7 @@ export function buildSingleCaseStructuredBrief(params: {
  */
 export async function writeStructuredBriefs(options: WriteStructuredBriefsOptions): Promise<StructuredBriefReport> {
   const cwd = resolveCwdRoots(options.cwd);
-  const runResolved = resolveExistingDirInsideCwd(cwd, options.runDir, '--run');
+  const runResolved = resolveRunDirectory(options.runDir, cwd);
   const directory = runResolved.canonical;
   const ctx = await loadRunStructuredContext(directory);
   if (!ctx) {

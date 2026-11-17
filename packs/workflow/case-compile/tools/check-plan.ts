@@ -8,10 +8,11 @@ import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
 // Read-only plan/verdict checks. A plan is judged by the Hub's own boundary (functions/plan-boundary.ts): the slot record against
 // the schema the run froze, then every pack check that judges a plan, with the Hub's functions and the run's frozen inputs.
-//   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <冻结运行JSON>]
+//   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <运行目录>]
+// `--run` is the run directory (the folder that holds run.json and knowledge/), as for every tool that reads a run (tools/workspace-path.ts).
 import { realpathSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BRIEF_SCHEMA,
@@ -24,10 +25,11 @@ import { readSlots, type PlanSlots } from '../functions/slots.ts';
 import { planDataOf } from '../functions/subject.ts';
 import { isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
 import { parsedPlanFile } from './submit-plans.ts';
+import { resolveRun } from './workspace-path.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, brief: false, run: false };
-const USAGE = 'node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <冻结运行JSON>]';
+const USAGE = 'node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <运行目录>]';
 
 export interface CheckProblem {
   code?: string;
@@ -152,7 +154,7 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
       for (const p of checked.problems) problems.push({ pointer: p.pointer, message: p.message });
       return { ok: false, file, item, handling, kind: null, expansions: describeExpansions(file, expanded.expansions), counts: null, problems };
     }
-    problems.push({ code: 'missing_input', pointer: '/run', message: '缺冻结权限输入；用 --run <本次运行下载的run.json> 重检。结构通过不等于允许调用' });
+    problems.push({ code: 'missing_input', pointer: '/run', message: '缺冻结权限输入；用 --run <本次运行下载的运行目录> 重检。结构通过不等于允许调用' });
     return result(checked.slots, { structureOk: true, authorityChecked: false, cleanupChecked: false, coverage: undefined });
   }
 
@@ -164,7 +166,7 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
   const items = isRecord(run) && Array.isArray(run.items) ? run.items : [];
   let coverage: HubCheckCoverage[] | undefined, structureOk = checked.ok, authorityChecked = false, cleanupChecked = false;
   if (!isRecord(run) || !isRecord(group) || !items.some(row => isRecord(row) && row.id === item)) {
-    problems.push({ pointer: '/run', message: '冻结运行缺唯一 case-compile 组或不包含此 item；用本次计划运行下载的 run.json' });
+    problems.push({ pointer: '/run', message: '冻结运行缺唯一 case-compile 组或不包含此 item；用 --run 指向本次计划运行下载的运行目录' });
   } else {
     const contract = parseRuntimeContract(group.contract), manifest = parseManifest(group.manifest);
     const profile = contract.ok && manifest.ok ? parseProfile(group.profile, contract.contract, manifest.beds) : null;
@@ -197,7 +199,7 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
       authority_checked: state.authorityChecked,
       disclosure: state.coverage !== undefined
         ? `已按冻结运行核对：槽位记录结构，以及 Hub 同名检查 ${state.coverage.filter(row => row.ran).map(row => row.check).join('、') || '（本次没有一项能跑）'}，用同一个函数和同一份冻结输入。本地没有跑的 Hub 检查：${notRun.map(row => `${row.check}（${row.why}）`).join('；') || '无'}；这些以提交回执为准`
-        : '只核对结构；未核对冻结权限，提供 --run <本次运行下载的run.json> 后核对 Hub 对计划的全部本地可跑检查',
+        : '只核对结构；未核对冻结权限，提供 --run <本次运行下载的运行目录> 后核对 Hub 对计划的全部本地可跑检查',
       counts: slots === null ? null : { blocks: slots.blocks.length, steps: slots.steps.length, expects: slots.expects.length, cleanup_steps: cleanupSteps, replacements: slots.replacements.length },
       problems,
     };
@@ -208,9 +210,9 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
  * Read only the standard download beside the explicitly supplied frozen run; never infer catalog authority from prose. What comes
  * back is the locked tree of the run, not a catalog: the checks are given the part of it the Hub gives them (functions/plan-boundary.ts).
  */
-export async function downloadedTree(runPath:string,run:unknown):Promise<LockedTree|undefined>{
+export async function downloadedTree(runDirectory:string,run:unknown):Promise<LockedTree|undefined>{
  if(!isRecord(run)||typeof run.root!=='string')return undefined;
- let bytes:string;try{bytes=await readFile(join(dirname(runPath),'knowledge','nodes.jsonl'),'utf8');}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw error;}
+ let bytes:string;try{bytes=await readFile(join(runDirectory,'knowledge','nodes.jsonl'),'utf8');}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw error;}
  const tree=lockedTree(bytes.split('\n').filter(Boolean).map(line=>JSON.parse(line) as unknown),{run:run.run,root:run.root});
  if(typeof tree==='string')throw new CallFailure('invalid_parameters',tree,'重新下载本次运行完整 knowledge/nodes.jsonl，不拼接其他运行的命令树');
  return tree;
@@ -254,8 +256,9 @@ export async function main(argv: string[]): Promise<number> {
   try {
     const args = parseOptions(argv);
     const targetInfo = await stat(args.file);
-    const run=args.run!==undefined?parsedPlanFile(basename(args.run),await readFile(args.run)):undefined;
-    const catalog=args.run!==undefined?await downloadedTree(args.run,run):undefined;
+    const frozen=args.run!==undefined?resolveRun(args.run):undefined;
+    const run=frozen!==undefined?parsedPlanFile('run.json',await readFile(frozen.file.lexical)):undefined;
+    const catalog=frozen!==undefined?await downloadedTree(frozen.directory.lexical,run):undefined;
 
     if (targetInfo.isDirectory()) {
       if (args.brief !== undefined) {

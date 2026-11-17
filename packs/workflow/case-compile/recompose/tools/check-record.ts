@@ -17,12 +17,12 @@ import { assertValidRecomposeShape, itemSubmission, submissionFor } from './subm
 import type { Verdict } from '../../../../../contracts/generated/vocabulary.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, run: false };
-const USAGE = 'node <技能目录>/tools/check-record.ts --file <重组记录JSON或目录> [--run <下载运行目录>]';
+const USAGE = 'node <技能目录>/tools/check-record.ts --file <重组记录JSON或目录> [--run <运行目录>]';
 const HELP_TEXT = [
   `用法：${USAGE}`,
   '',
   '用途：在 submit-records.ts 前离线检查重组记录：合法 UTF-8 JSON、符合单一精简格式（拒绝完整 recompose-record@1 结构、缺 item/method 或同 item 重复）。',
-  '必带 --run <下载的运行目录>（含 run.json 和 knowledge/nodes.jsonl）：再核对原始条目覆盖完整性，并用同一份冻结的运行和锁定命令树、同一批检查函数（本包 checks.json 里的 record、full_set）按 Hub 的方式核对每条记录，Hub 会拒绝的问题这里同样报出，措辞相同。',
+  '必带 --run <运行目录>（下载的运行目录，含 run.json 和 knowledge/nodes.jsonl）：再核对原始条目覆盖完整性，并用同一份冻结的运行和锁定命令树、同一批检查函数（本包 checks.json 里的 record、full_set）按 Hub 的方式核对每条记录，Hub 会拒绝的问题这里同样报出，措辞相同。',
   '不带 --run 只核对形状，结果里 hub_checks.ran 为 false：Hub 的检查没有跑，不能当作 Hub 会接受。',
 ].join('\n');
 
@@ -81,13 +81,16 @@ interface FrozenRun { run: RunRow; nodes: KnowledgeNodes }
 
 const ASSUMED = ['产品声明的命令目录是否完整：下载里没有这条声明，本地按完整核对；若锁定根没有声明完整，Hub 会另外指出缺口'];
 
+/** The one-line correct form every refused `--run` is answered with: the same line as in the case-compile pack's tools/workspace-path.ts (the packs are published apart; the pack tests compare the two). */
+const RUN_DIRECTORY_FORM = "--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）";
+
 async function loadFrozenRun(runDir: string): Promise<FrozenRun> {
   const dirStat = await lstat(runDir).catch((error) => { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null; throw error; });
   if (!dirStat) {
-    throw new CallFailure("not_found", `找不到 --run 运行目录 ${runDir}。请确认目录存在或先运行 download-run.ts`, "先用 download-run.ts 保存完整运行目录，再用 --run 指定该目录");
+    throw new CallFailure("not_found", `找不到 --run 运行目录 ${runDir}。请确认目录存在或先运行 download-run.ts`, "先用 download-run.ts 保存完整运行目录，再用 --run 指定该目录", { legal_form: RUN_DIRECTORY_FORM });
   }
   if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
-    throw new CallFailure("invalid_parameters", `--run 路径 ${runDir} 必须是普通目录`, "把 --run 指向包含 run.json 的真实普通目录，不使用符号链接");
+    throw new CallFailure("invalid_parameters", `--run 路径 ${runDir} 必须是普通目录`, "把 --run 指向包含 run.json 的真实普通目录，不使用符号链接", { legal_form: RUN_DIRECTORY_FORM });
   }
   const runJsonPath = join(runDir, 'run.json');
   const bytes = await readSubmittedFileBytes(runJsonPath, 'run');
@@ -197,7 +200,7 @@ export async function checkRecordTarget(options: { file: string; run?: string })
   for (const name of names) files.push(await checkFile(name, directory ? join(options.file, name) : options.file, directory ? `--file 目录下的 ${name}` : `重组记录 ${name}`, frozen, seen));
 
   const dirProblems: RecordProblem[] = [];
-  let hub: CheckRecordReport['hub_checks'] = { ran: false, why: '没有 --run：只核对了单一精简格式；Hub 的重组检查没有运行，不能当作 Hub 会接受。下一步：用 --run <下载运行目录> 重检', structure: [], checks: [], not_run: [], assumed: [] };
+  let hub: CheckRecordReport['hub_checks'] = { ran: false, why: '没有 --run：只核对了单一精简格式；Hub 的重组检查没有运行，不能当作 Hub 会接受。下一步：用 --run <运行目录> 重检', structure: [], checks: [], not_run: [], assumed: [] };
   if (frozen !== null) {
     // The run-level checks need every frozen item; the tool-level wording for a missing item is the one submit-records gives too.
     let complete: true | string;

@@ -8,7 +8,7 @@
       "required": true,
       "kind": "string",
       "multiple": false,
-      "placeholder": null
+      "placeholder": "<运行目录>"
     },
     {
       "name": "parts",

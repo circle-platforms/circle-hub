@@ -224,6 +224,10 @@ test('local fidelity precheck blocks missing, stale, or malformed data.fidelity 
     assert.match(resMissing.err, /fidelity-brief\.ts/);
     assert.match(resMissing.err, /\.verdict\.json/);
     assert.match(resMissing.err, /fidelity-apply\.ts/);
+    // The two commands it prints take the run directory as --run, as every tool that reads a run does.
+    assert.match(resMissing.err, /fidelity-plumb\.ts --run <脚本编写目录> --plans /);
+    assert.match(resMissing.err, /fidelity-apply\.ts --run <脚本编写目录> --plans /);
+    assert.doesNotMatch(resMissing.err, /run\.json/);
 
     // 2. Stale brief_sha256 -> exit 1 locally, 0 POST /mcp requests
     const stalePlan = { ...plan, steps: [{ object: 'Device_0', method: 'cli', args: ['interval 120'], keywords: {} }], fidelity: { brief_sha256: brief.brief_sha256, steps: [{ n: 'A1', verdict: 'preserved', step_indices: [1], rationale: 'ok' }], disclosure: '保住' } };

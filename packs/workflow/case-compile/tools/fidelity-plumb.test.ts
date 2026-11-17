@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -127,7 +127,7 @@ test('fidelity-plumb evaluates batch <=32 chunks, writes .verdict.json, and merg
     postCount = 0;
     const summaryPath = join(w.dir, 'summary.json');
     const res = await runFidelityPlumb(
-      ['--run', w.runPath, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin', '--out', summaryPath],
+      ['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin', '--out', summaryPath],
       { stdinText: 'plumb_sk_test_123456\n' },
     );
     assert.equal(res.code, 0, res.stderr);
@@ -141,7 +141,7 @@ test('fidelity-plumb evaluates batch <=32 chunks, writes .verdict.json, and merg
     // Re-running reuses all existing .verdict.json files with 0 POST calls.
     postCount = 0;
     const second = await runFidelityPlumb(
-      ['--run', w.runPath, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'],
+      ['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'],
       { stdinText: 'plumb_sk_test_123456\n' },
     );
     assert.equal(second.code, 0, second.stderr);
@@ -153,7 +153,7 @@ test('fidelity-plumb evaluates batch <=32 chunks, writes .verdict.json, and merg
     const applyChunks: string[] = [];
     process.stdout.write = ((c: string | Uint8Array) => { applyChunks.push(String(c)); return true; }) as typeof process.stdout.write;
     try {
-      const code = await applyMain(['--run', w.runPath, '--plans', w.plans, '--briefs', w.briefs]);
+      const code = await applyMain(['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs]);
       assert.equal(code, 0);
     } finally {
       process.stdout.write = oldWrite;
@@ -176,13 +176,39 @@ test('fidelity-plumb evaluates batch <=32 chunks, writes .verdict.json, and merg
   }
 });
 
+test('fidelity-plumb takes the run directory as --run like task-brief.ts and refuses its run.json file with the one-line correct form before any call', async () => {
+  const w = await setupWorkspace(1);
+  try {
+    mode = 'pass';
+    postCount = 0;
+    const refused = await runFidelityPlumb(
+      ['--run', w.runPath, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'],
+      { stdinText: 'plumb_sk_test_123456\n' },
+    );
+    assert.equal(refused.code, 1);
+    assert.equal(refused.stdout, '');
+    assert.ok(refused.stderr.startsWith(`参数无效：--run ${w.runPath} 不是普通目录。`), refused.stderr);
+    assert.ok(refused.stderr.trimEnd().endsWith("合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。"), refused.stderr);
+    assert.equal(refused.stderr.trim().split('\n').length, 1);
+    assert.equal(postCount, 0, 'no question was asked of Plumb');
+    await assert.rejects(readdir(w.briefs), { code: 'ENOENT' }, 'no brief directory was made');
+    const answered = await runFidelityPlumb(
+      ['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'],
+      { stdinText: 'plumb_sk_test_123456\n' },
+    );
+    assert.equal(answered.code, 0, answered.stderr);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
 test('fidelity-plumb honors Option A1 review/reject/strict-review and fails closed on 503', async () => {
   const w = await setupWorkspace(1);
   try {
     // 503 service down NEVER writes a .verdict.json
     mode = 'service_down';
     const failRes = await runFidelityPlumb(
-      ['--run', w.runPath, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache'],
+      ['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache'],
       { env: { ...process.env, PLUMB_API_KEY: 'plumb_sk_env_key' } },
     );
     assert.equal(failRes.code, 1);
@@ -191,7 +217,7 @@ test('fidelity-plumb honors Option A1 review/reject/strict-review and fails clos
     // Option A1 review + 保持 -> provisional preserved with explicit review disclosure
     mode = 'review';
     const revRes = await runFidelityPlumb(
-      ['--run', w.runPath, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache'],
+      ['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache'],
       { env: { ...process.env, PLUMB_API_KEY: 'plumb_sk_env_key' } },
     );
     assert.equal(revRes.code, 0, revRes.stderr);
@@ -204,7 +230,7 @@ test('fidelity-plumb honors Option A1 review/reject/strict-review and fails clos
     // Fresh briefs dir with --strict-review -> changed instead of provisional preserved
     const strictBriefs = join(w.dir, 'briefs-strict');
     const strictRes = await runFidelityPlumb(
-      ['--run', w.runPath, '--plans', w.plans, '--briefs', strictBriefs, '--base-url', baseUrl, '--no-cache', '--strict-review'],
+      ['--run', w.dir, '--plans', w.plans, '--briefs', strictBriefs, '--base-url', baseUrl, '--no-cache', '--strict-review'],
       { env: { ...process.env, PLUMB_API_KEY: 'plumb_sk_env_key' } },
     );
     assert.equal(strictRes.code, 0, strictRes.stderr);
@@ -214,7 +240,7 @@ test('fidelity-plumb honors Option A1 review/reject/strict-review and fails clos
     mode = 'reject';
     const rejectBriefs = join(w.dir, 'briefs-reject');
     const rejRes = await runFidelityPlumb(
-      ['--run', w.runPath, '--plans', w.plans, '--briefs', rejectBriefs, '--base-url', baseUrl, '--no-cache'],
+      ['--run', w.dir, '--plans', w.plans, '--briefs', rejectBriefs, '--base-url', baseUrl, '--no-cache'],
       { env: { ...process.env, PLUMB_API_KEY: 'plumb_sk_env_key' } },
     );
     assert.equal(rejRes.code, 0, rejRes.stderr);
@@ -226,7 +252,7 @@ test('fidelity-plumb honors Option A1 review/reject/strict-review and fails clos
 
 test('fidelity-plumb refuses old prompt verdicts before reuse or service calls',async()=>{
  const w=await setupWorkspace(1);try{
-  mode='pass';const args=['--run',w.runPath,'--plans',w.plans,'--briefs',w.briefs,'--base-url',baseUrl,'--no-cache','--key-stdin'];
+  mode='pass';const args=['--run',w.dir,'--plans',w.plans,'--briefs',w.briefs,'--base-url',baseUrl,'--no-cache','--key-stdin'];
   const first=await runFidelityPlumb(args,{stdinText:'plumb_sk_test_123456\n'});assert.equal(first.code,0,first.stderr);
   const summary=JSON.parse(first.stdout),path=summary.written[0].verdict;
   const doc=JSON.parse(await readFile(path,'utf8'));doc.model_disclosure.prompt_version='sequence@product-2400';await writeFile(path,JSON.stringify(doc));
@@ -277,7 +303,7 @@ test('fidelity-plumb judges the cases that fit, names the cases that do not and 
     mode = 'pass';
     postCount = 0;
     seenStates.length = 0;
-    const args = ['--run', w.runPath, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'];
+    const args = ['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'];
     const res = await runFidelityPlumb(args, keyed);
 
     assert.equal(res.code, 1);
@@ -311,7 +337,7 @@ test('fidelity-plumb accepts the blind review verdict that is already there and 
   try {
     await addCase(w, 'big', BIG_ARGS);
     mode = 'pass';
-    const args = ['--run', w.runPath, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'];
+    const args = ['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'];
     const first = await runFidelityPlumb(args, keyed);
     assert.equal(first.code, 1);
     const { verdict } = JSON.parse(first.stdout).over_budget[0] as { verdict: string };
@@ -339,7 +365,7 @@ test('fidelity-plumb asks Plumb about a case whose long repeated name is the rea
     mode = 'pass';
     postCount = 0;
     seenStates.length = 0;
-    const res = await runFidelityPlumb(['--run', w.runPath, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'], keyed);
+    const res = await runFidelityPlumb(['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'], keyed);
 
     assert.equal(res.code, 0, res.stderr);
     assert.equal(postCount, 1);
@@ -360,7 +386,7 @@ test('fidelity-plumb asks Plumb about a case whose long repeated name is the rea
 
     // The rewritten state is a function of the plan alone, so the verdict binds to it and a second run reuses it.
     postCount = 0;
-    const again = await runFidelityPlumb(['--run', w.runPath, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'], keyed);
+    const again = await runFidelityPlumb(['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'], keyed);
     assert.equal(again.code, 0, again.stderr);
     assert.equal(postCount, 0);
     assert.equal(JSON.parse(again.stdout).reused.length, 1);

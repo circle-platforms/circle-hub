@@ -33,6 +33,7 @@ import {
 } from '../functions/plumb-cli.ts';
 import { isRecord } from '../functions/text.ts';
 import { loadRunStructuredContext, readKnowledge } from './authoring-brief.ts';
+import { resolveRunDirectory } from './workspace-path.ts';
 
 const USAGE =
   'node <技能目录>/tools/cmd-select-plumb.ts --run <runDir> [--out-dir <dir>] [--item <id|index>] [--limit <1..40>] [--base-url <url>] [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--out <summary.json>] [--key-stdin]';
@@ -220,7 +221,8 @@ export async function runCmdSelectPlumb(
       return typeof val === 'string' && val.trim() ? val.trim() : undefined;
     };
 
-    const runDir = resolve(getReq('--run'));
+    // --run is the run directory, as for every tool that reads a run: the run.json file is refused with the one-line correct form.
+    const runDir = resolveRunDirectory(getReq('--run')).lexical;
     const outDir = resolve(strOpt('--out-dir') ?? join(runDir, 'plumb', 'cmd_candidates'));
     const itemFilter = strOpt('--item');
     const limit = parseLimit(strOpt('--limit'));

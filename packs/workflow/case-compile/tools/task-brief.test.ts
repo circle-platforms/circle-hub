@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   renderAgentDefinition,
   renderTaskBrief,
@@ -15,10 +16,11 @@ import {
 } from '../functions/subagent-roles.ts';
 import { ATTRIBUTION, labelOf } from '../functions/generated/vocabulary.ts';
 import { CONTRACT_DOC } from '../functions/test-support.ts';
-import { PROSE_WRAP_MAX_CHARS } from '../functions/text.ts';
+import { CallFailure, formatCallError, PROSE_WRAP_MAX_CHARS } from '../functions/text.ts';
 import { stage } from '../pack-files.ts';
 import { lookupFixture, writeLookupDownload } from '../testing/lookup-fixture.ts';
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
+import { main as lookupMain } from './cmd-lookup.ts';
 import {
   buildTaskBrief,
   main,
@@ -1136,28 +1138,77 @@ test('the writer is taught the command lookup: its task file prints the command 
 
     const given = { caseRef: 'case-101', briefPath: 'briefs/01.md', outPath: 'plans/01.json', cwd: workDir, packRoot: packDir };
     const withRun = await buildTaskBrief({ ...given, role: '脚本编写', runDir: 'plan-run' });
-    const lookup = `node '${packDir}/tools/cmd-lookup.ts' --run '${workDir}/plan-run/run.json' --param '<命令词，可带参数>'`;
+    // The lookup and the check below it take the run directory as --run, the same value task-brief.ts itself took; no printed command names its run.json.
+    const lookup = `node '${packDir}/tools/cmd-lookup.ts' --run '${workDir}/plan-run' --param '<命令词，可带参数>'`;
     assert.ok(withRun.includes(`\`${lookup}\``), withRun);
+    assert.ok(withRun.includes(`\`node '${packDir}/tools/check-plan.ts' --file 'plans/01.json' --run '${workDir}/plan-run'\``), 'the check takes the run directory too');
+    assert.ok(!/--run '[^']*run\.json'/.test(withRun), 'no printed command passes the run.json file');
     assert.ok(withRun.includes(`命令查询工具（\`tools/cmd-lookup.ts\`）：${packDir}/tools/cmd-lookup.ts`));
     assert.ok(withRun.includes('--heads \'<命令词前缀>\''));
     assert.ok(withRun.includes('不在 knowledge/commands.txt、manual.txt 里逐段 grep 或分页读'));
+    // The task file also tells the three forms that answer from the executor rules and the block format, each as the swap of --param.
+    for (const form of ["`--method '<对象>.<方法>'` 查某个方法能不能用及怎么写", "`--methods '<对象>'` 列某对象的方法", "`--block '<块种类>'` 查块种类的必填、可选字段和示例"]) assert.ok(withRun.includes(form), form);
+    assert.ok(withRun.includes('不在 contract.json、profile.json、slots.schema.json、tables/blocks-format.json 里逐段读'));
     assert.ok(withRun.indexOf(lookup) < withRun.indexOf('写入后执行自检'), 'the lookup is told before the check');
     assert.ok(withRun.includes(`node '${packDir}/tools/check-plan.ts' --file`), 'the check is still told');
 
-    // Without a frozen run the file still prints the form, with the place the run is to be named.
+    // Without a frozen run the file still prints the form, with the place the run directory is to be named.
     const bare = await buildTaskBrief({ ...given, role: '脚本编写' });
-    assert.ok(bare.includes(`node '${packDir}/tools/cmd-lookup.ts' --run '<下载目录>/run.json' --param`));
+    assert.ok(bare.includes(`node '${packDir}/tools/cmd-lookup.ts' --run '<运行目录>' --param`));
+    assert.ok(!bare.includes('<下载目录>/run.json'));
 
     // The role text names the tool in its one allowed form of execute and in its rule on reading the knowledge.
     const writer = renderAgentDefinition(SUBAGENT_ROLES.find((role) => role.key === 'plan')!);
-    assert.ok(writer.includes('`check-plan.ts --file` 自检，和 `cmd-lookup.ts` 查命令写法（`--param` 或 `--heads`）'));
+    assert.ok(writer.includes('`check-plan.ts --file` 自检，和 `cmd-lookup.ts` 查询（`--param`/`--heads` 查命令写法，`--method`/`--methods`/`--block` 查执行器规则与块字段）'));
     assert.ok(writer.includes("先跑任务文件给出的 `cmd-lookup.ts --param '<命令词>'`，一次给全"));
-    assert.ok(writer.includes('不在 `knowledge/commands.txt`、`manual.txt` 里逐段 grep 或分页读'));
+    assert.ok(writer.includes("查某个对象.方法能不能用及怎么写（启用与否和原因、签名、G/H/I 写法、类型化权限与允许的程序和字面命令、效果预算、取格、座位）用 `--method '<对象>.<方法>'`，列某对象的方法用 `--methods '<对象>'`，查块种类的必填、可选字段和示例用 `--block '<块种类>'`"));
+    assert.ok(writer.includes('不在 `knowledge/commands.txt`、`manual.txt`、`contract.json`、`profile.json`、`slots.schema.json`、`tables/blocks-format.json` 里逐段 grep 或分页读'));
 
     for (const role of SUBAGENT_ROLES.filter((candidate) => candidate.key !== 'plan')) {
       assert.ok(!renderAgentDefinition(role).includes('cmd-lookup'), `${role.agentName} role text`);
       assert.ok(!renderTaskBrief({ role, caseRef: 'case-101', briefPath: 'briefs/01.md', outPath: 'out.json', skillDir: packDir, scopeText: '范围' }).includes('cmd-lookup'), `${role.agentName} task file`);
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('--run means one thing in task-brief.ts and cmd-lookup.ts: the run directory; the run.json file is refused by both in the same words', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-run-dir-'));
+  try {
+    const packDir = realpathSync(await stage(join(root, 'skill')));
+    await mkdir(join(root, 'work'));
+    const workDir = realpathSync(join(root, 'work'));
+    await writeFile(join(workDir, 'scope.md'), '只做 101 一条用例。', 'utf8');
+    await mkdir(join(workDir, 'briefs'), { recursive: true });
+    await writeFile(join(workDir, 'briefs', '01.md'), '# 合成编写简报\n', 'utf8');
+    await writeLookupDownload(join(workDir, 'plan-run'), lookupFixture());
+    const given = { caseRef: 'case-101', briefPath: 'briefs/01.md', outPath: 'plans/01.json', cwd: workDir, packRoot: packDir, role: '脚本编写' };
+
+    // The directory is accepted by both.
+    assert.ok((await buildTaskBrief({ ...given, runDir: 'plan-run' })).includes('命令查询工具'));
+    let out = '', err = '';
+    assert.equal(await lookupMain(['--run', 'plan-run', '--param', 'orbit beacon add'], { out: (text) => { out += text; }, err: (text) => { err += text; }, cwd: workDir }), 0, err);
+    assert.match(out, /^# 命令 orbit beacon add/);
+
+    // The run.json file is refused by both with the same fact and the same one-line correct form (the same resolver).
+    const refused = await buildTaskBrief({ ...given, runDir: 'plan-run/run.json' }).then(() => null, (error: unknown) => error);
+    assert.ok(refused instanceof CallFailure && /^--run plan-run\/run\.json 不是普通目录/.test(refused.fact), String(refused));
+    // task-brief.ts answers with the one-line correct form too, from the one resolver the tools share.
+    const form = "合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。";
+    assert.ok(formatCallError(refused).endsWith(form), formatCallError(refused));
+    const fact = refused.fact.replace(/^参数无效：/, '').replace(/[。.]+$/, '');
+    out = ''; err = '';
+    assert.equal(await lookupMain(['--run', 'plan-run/run.json', '--param', 'orbit beacon add'], { out: (text) => { out += text; }, err: (text) => { err += text; }, cwd: workDir }), 1);
+    assert.equal(out, '');
+    assert.ok(err.startsWith(`参数无效：${fact}。`), err);
+    assert.ok(err.trimEnd().endsWith(form), err);
+    // As a program: one line on stderr, nothing written.
+    const cli = spawnSync(process.execPath, [fileURLToPath(new URL('./task-brief.ts', import.meta.url)), '--role', '脚本编写', '--case', 'case-101', '--brief', 'briefs/01.md', '--out', 'plans/01.json', '--task-file', 'tasks/01.md', '--run', 'plan-run/run.json'], { cwd: workDir, encoding: 'utf8', env: { NODE_NO_WARNINGS: '1' } });
+    assert.equal(cli.status, 1, cli.stdout);
+    assert.ok(cli.stderr.startsWith('参数无效：--run plan-run/run.json 不是普通目录。'), cli.stderr);
+    assert.ok(cli.stderr.trimEnd().endsWith(form), cli.stderr);
+    assert.equal(cli.stderr.trim().split('\n').length, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

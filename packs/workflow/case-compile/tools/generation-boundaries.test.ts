@@ -38,10 +38,11 @@ test('a readable template with an invalid ZIP member is refused at the declared 
 test('workbook input reads retain the real flag and filesystem refusal instead of InputFileError', async (t) => {
   const scratch = await mkdtemp(join(tmpdir(), 'typed-generation-files-')); t.after(() => rm(scratch, { recursive: true, force: true }));
   const args: string[] = [];
-  for (const flag of ['run', 'result', 'submission', 'contract', 'profile', 'inventory']) { const path = join(scratch, flag + '.json'); args.push('--' + flag, path); if (flag !== 'run') await writeFile(path, '{}'); }
+  // --run is the run directory (the folder that holds run.json); the other inputs are files.
+  for (const flag of ['run', 'result', 'submission', 'contract', 'profile', 'inventory']) { const path = join(scratch, flag + '.json'); args.push('--' + flag, flag === 'run' ? scratch : path); if (flag !== 'run') await writeFile(path, '{}'); }
   args.push('--out', join(scratch, 'new.xlsx'));
   const missing = await stderrOf(() => main(args));
-  assert.equal(missing.code, 1); assert.match(missing.text, /^不存在：--run/); assert.match(missing.text, /合法写法：--run/);
+  assert.equal(missing.code, 1); assert.match(missing.text, /^不存在：找不到 --run 目录里的 run\.json 文件/); assert.match(missing.text, /合法写法：--run/);
   await writeFile(join(scratch, 'run.json'), Buffer.from([0xff]));
   const encoding = await stderrOf(() => main(args));
   assert.equal(encoding.code, 1); assert.match(encoding.text, /^参数无效：--run/); assert.match(encoding.text, /UTF-8/);
@@ -49,4 +50,11 @@ test('workbook input reads retain the real flag and filesystem refusal instead o
   const syntax = await stderrOf(() => main(args));
   assert.equal(syntax.code, 1); assert.match(syntax.text, /^参数无效：--run/); assert.match(syntax.text, /JSON/);
   assert.doesNotMatch(missing.text + encoding.text + syntax.text, /缺少结构化错误原因/);
+  // The run.json file is not accepted beside the directory: one line, the words of every other --run, the correct form.
+  const asFile = [...args]; asFile[asFile.indexOf('--run') + 1] = join(scratch, 'run.json');
+  const file = await stderrOf(() => main(asFile));
+  assert.equal(file.code, 1);
+  assert.ok(file.text.startsWith(`参数无效：--run ${join(scratch, 'run.json')} 不是普通目录。`), file.text);
+  assert.ok(file.text.trimEnd().endsWith("合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。"), file.text);
+  assert.equal(file.text.trim().split('\n').length, 1);
 });

@@ -8,6 +8,7 @@ import { buildCompileBrief } from '../../../packs/workflow/case-compile/function
 import { canonicalJson } from '../../../packs/workflow/case-compile/functions/canonical-json.ts';
 import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC, COMMAND_CATALOG, goodData } from '../../../packs/workflow/case-compile/functions/test-support.ts';
 import REQUIREMENTS from '../../../packs/workflow/case-compile/requirements.json' with { type: 'json' };
+import { contractFixture, writeContractDownload } from '../../../packs/workflow/case-compile/testing/contract-lookup-fixture.ts';
 import { lookupFixture, writeLookupDownload } from '../../../packs/workflow/case-compile/testing/lookup-fixture.ts';
 import { generationFixture } from '../../../packs/workflow/case-compile/testing/workbook.ts';
 import type { CliProbe } from '../verify-tool-cli.ts';
@@ -24,8 +25,10 @@ async function fixtureInvocations(
 
   const emptyPlans = join(work, 'empty-plans');
   await mkdir(emptyPlans);
-  const fidRunPath = join(work, 'fid-run.json');
-  await writeFile(fidRunPath, JSON.stringify({ run: RUN_ID, items: [] }));
+  // --run of every tool that reads a run is the run directory, the folder that holds run.json.
+  const fidRunDir = join(work, 'fid-run');
+  await mkdir(fidRunDir);
+  await writeFile(join(fidRunDir, 'run.json'), JSON.stringify({ run: RUN_ID, items: [] }));
 
   const briefRecord = {
     case: { id: 'case-1', title: '合成用例' },
@@ -133,13 +136,16 @@ async function fixtureInvocations(
   // normalize-mindmap & seal-recompose minimal inputs
   const mmIn = join(work, 'mm-in.json');
   await writeFile(mmIn, '{"root":{"data":{"id":"c1"},"children":[]}}');
-  const sealRun = join(work, 'seal-run.json');
+  const sealRunDir = join(work, 'seal-run');
   const sealParts = join(work, 'seal-parts.json');
-  await writeFile(sealRun, JSON.stringify({ run: RUN_ID, items: [] }));
+  await mkdir(sealRunDir);
+  await writeFile(join(sealRunDir, 'run.json'), JSON.stringify({ run: RUN_ID, items: [] }));
   await writeFile(sealParts, '[]');
 
-  // cmd-lookup reads a download: run.json with knowledge/ beside it, here the synthetic tree and manual of the lookup tests.
+  // cmd-lookup reads a download, named by its run directory (the folder with run.json and knowledge/), here the synthetic tree and manual of the lookup tests.
   await writeLookupDownload(join(work, 'lookup-run'), lookupFixture());
+  // The method and block forms read the sources and the frozen slot schema of a download, here the synthetic frozen run of the lookup tests.
+  await writeContractDownload(join(work, 'contract-run'), contractFixture());
 
   await writeFile(join(work, 'scope.md'), '只做 case-101 合成用例。\n');
   await writeFile(join(work, 'writer-brief.md'), '# 合成编写简报\n');
@@ -149,11 +155,11 @@ async function fixtureInvocations(
     'tools/carry-plans.ts': { argv: ['--source', 'carry-src', '--target', 'carry-dst', '--source-plans', 'carry-src-plans', '--plans', 'carry-dst-plans'], cwd: work },
     'tools/check-brief.ts': { argv: ['--file', '00.round-1.json'], cwd: work },
     'tools/check-plan.ts': { argv: ['--file', skippedPlanPath] },
-    'tools/fidelity-apply.ts': { argv: ['--run', fidRunPath, '--plans', emptyPlans, '--briefs', join(work, 'fid-briefs-empty')] },
-    'tools/fidelity-brief.ts': { argv: ['--run', fidRunPath, '--plans', emptyPlans, '--out', join(work, 'fid-briefs-out')] },
+    'tools/fidelity-apply.ts': { argv: ['--run', fidRunDir, '--plans', emptyPlans, '--briefs', join(work, 'fid-briefs-empty')] },
+    'tools/fidelity-brief.ts': { argv: ['--run', fidRunDir, '--plans', emptyPlans, '--out', join(work, 'fid-briefs-out')] },
     'tools/generate-workbook.ts': {
       argv: [
-        '--run', join(wbDir, 'run.json'),
+        '--run', wbDir,
         '--result', join(wbDir, 'result.json'),
         '--submission', join(wbDir, 'submission.json'),
         '--contract', join(wbDir, 'contract.json'),
@@ -163,10 +169,10 @@ async function fixtureInvocations(
       ],
     },
     'tools/normalize-mindmap.ts': { argv: ['--in', mmIn, '--out', join(work, 'mm-out.json')] },
-    'tools/seal-recompose.ts': { argv: ['--run', sealRun, '--parts', sealParts, '--model', 'synthetic-model', '--out', join(work, 'sealed.json')] },
+    'tools/seal-recompose.ts': { argv: ['--run', sealRunDir, '--parts', sealParts, '--model', 'synthetic-model', '--out', join(work, 'sealed.json')] },
     'tools/task-brief.ts': { argv: ['--role', '脚本编写', '--case', 'case-101', '--brief', 'writer-brief.md', '--out', 'writer-plan.json', '--task-file', 'writer-task.md'], cwd: work },
     'tools/command-domain-precheck.ts': { argv: ['--input', 'precheck-input.json', '--out', 'precheck-output.json'], cwd: work },
-    'tools/cmd-lookup.ts': { argv: ['--run', 'lookup-run/run.json', '--param', 'orbit beacon add'], cwd: work },
+    'tools/cmd-lookup.ts': { argv: ['--run', 'lookup-run', '--param', 'orbit beacon add'], cwd: work },
   };
 }
 
@@ -175,6 +181,8 @@ export async function buildLocalCliProbes(stagedCaseDir: string, stagedRecompose
   const invocations = await fixtureInvocations(workRoot, stagedCaseDir);
   const caseCompile: Record<string, CliProbe[]> = {};
   for (const [tool, spec] of Object.entries(invocations)) caseCompile[tool] = [{ argv: spec.argv, cwd: spec.cwd ?? workRoot, subcommand: null, stdinValues: [], complete: { status: 0 } }];
+  // cmd-lookup has five forms that read different parts of a download: one probe each beyond the first.
+  for (const form of [['--method', 'widget-host.shell'], ['--methods', 'widget-seat'], ['--block', 'CAPTURE_COMPARE']]) caseCompile['tools/cmd-lookup.ts']!.push({ argv: ['--run', 'contract-run', ...form], cwd: invocations['tools/cmd-lookup.ts']!.cwd ?? workRoot, subcommand: null, stdinValues: [], complete: { status: 0 } });
   const rcWork = join(workRoot, 'rc-local'); await mkdir(rcWork, { recursive: true });
   await writeFile(join(rcWork, 'record.json'), JSON.stringify({ item: 'n/case1', method: { kind: 'declared', text: '合成方法', sources: ['ref'], basis: '合成依据' } }));
   return { caseCompile, recompose: { 'tools/check-record.ts': [{ argv: ['--file', 'record.json'], cwd: rcWork, subcommand: null, stdinValues: [], complete: { status: 0 } }] } };

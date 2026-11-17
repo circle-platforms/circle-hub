@@ -42,6 +42,7 @@ import {
 } from '../functions/generated/skills/plumb/plumb-client/index.ts';
 import { loadRunStructuredContext, readKnowledge } from './authoring-brief.ts';
 import { downloadedTree } from './check-plan.ts';
+import { resolveRunDirectory } from './workspace-path.ts';
 import type { LockedTree } from '../functions/catalog-selection.ts';
 
 const USAGE =
@@ -391,7 +392,8 @@ export async function runCmdVerifyPlumb(
     const strictReview = parsed.flags.get('--strict-review') === true;
     const outPath = strOpt('--out');
 
-    const runDir = runArg ? resolve(runArg) : undefined;
+    // --run is the run directory, as for every tool that reads a run: the run.json file is refused with the one-line correct form.
+    const runDir = runArg ? resolveRunDirectory(runArg).lexical : undefined;
     const ctx = runDir ? await loadRunStructuredContext(runDir) : null;
     const knowledge = ctx?.knowledge ?? await readKnowledge(resolve(knowledgeArg ?? runArg!));
     if (!knowledge) {
@@ -417,7 +419,7 @@ export async function runCmdVerifyPlumb(
       }
       if (frozenRun) {
         try {
-          commandTree = await downloadedTree(join(runDir, 'run.json'), frozenRun);
+          commandTree = await downloadedTree(runDir, frozenRun);
         } catch (error) {
           treeProblem = `这次运行下载的命令树读不出来：${error instanceof Error ? error.message : String(error)}`;
         }

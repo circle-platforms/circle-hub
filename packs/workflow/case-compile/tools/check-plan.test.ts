@@ -229,7 +229,8 @@ test('directory mode checks every plan file and catches duplicates with 已被�
     await writeFile(join(dupDir, '01.json'), JSON.stringify(accepted('doc:dup')));
     await writeFile(join(dupDir, '02.json'), JSON.stringify(accepted('doc:dup')));
     const frozen=frozenRun({groups:[{kind:'case-compile',contract:CONTRACT_DOC,profile:PROFILE_DOC,manifest:MANIFEST_DOC,leases:{now:'2026-10-23T02:00:00.000Z',entries:[]}}],items:[{id:'doc:dup',label:'合成',location:QUOTE.reference,fields:{}}],root:COMMAND_CATALOG.root,command_policy:COMMAND_CATALOG.policy});
-    const run=await writeDownload(join(dir,'download'),frozen,COMMAND_CATALOG as never);
+    await writeDownload(join(dir,'download'),frozen,COMMAND_CATALOG as never);
+    const run=join(dir,'download');
     const dupRes = await runCli(['--file', dupDir,'--run',run]);
     assert.equal(dupRes.code, 1);
     assert.match(dupRes.stderr, /^已被占用：/);
@@ -406,16 +407,25 @@ test('plan checks disclose missing frozen run and share Hub method refusal with 
  const dir=await mkdtemp(join(tmpdir(),'plan-frozen-'));
  try {
   const {CONTRACT_DOC,PROFILE_DOC,MANIFEST_DOC}=await import('../functions/test-support.ts');
-  const plan=flatPlan();const file=join(dir,'plan.json'),run=join(dir,'run.json');
+  const plan=flatPlan();const file=join(dir,'plan.json'),runFile=join(dir,'run.json');
   await writeFile(file,JSON.stringify(plan));
   const syntax=await runCli(['--file',file]);
   const syntaxResult=JSON.parse(syntax.stdout);assert.equal(syntaxResult.ok,false);assert.equal(syntaxResult.structure_ok,true);assert.equal(syntaxResult.authority_checked,false);assert.match(syntaxResult.disclosure,/冻结/);assert.match(syntax.stderr,/本地核对未通过/);assert.doesNotMatch(syntax.stderr,/结构检查未通过/);
   const {frozenRun}=await import('../testing/frozen-run.ts');
-  await writeFile(run,JSON.stringify(frozenRun({groups:[{kind:'case-compile',contract:CONTRACT_DOC,profile:PROFILE_DOC,manifest:MANIFEST_DOC}],items:[{id:plan.item}]})));
+  await writeFile(runFile,JSON.stringify(frozenRun({groups:[{kind:'case-compile',contract:CONTRACT_DOC,profile:PROFILE_DOC,manifest:MANIFEST_DOC}],items:[{id:plan.item}]})));
   plan.slots.plan[0].data.steps[0].object='invented-seat';await writeFile(file,JSON.stringify(plan));
-  const checked=await runCli(['--file',file,'--run',run]);assert.equal(checked.code,1,checked.stderr);
+  const checked=await runCli(['--file',file,'--run',dir]);assert.equal(checked.code,1,checked.stderr);
   const result=JSON.parse(checked.stdout);assert.equal(result.authority_checked,true);
   assert.ok(result.problems.some((p:any)=>p.code==='case-compile.method_forbidden'&&p.requested.object==='invented-seat'&&p.allowed_calls.length>0));
+  // --run is the run directory, as for task-brief.ts: its run.json file is refused, and the answer is one line naming the correct form.
+  const refused=await runCli(['--file',file,'--run',runFile]);assert.equal(refused.code,1);assert.equal(refused.stdout,'');
+  assert.ok(refused.stderr.startsWith(`参数无效：--run ${runFile} 不是普通目录。`),refused.stderr);
+  assert.ok(refused.stderr.trimEnd().endsWith("合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。"),refused.stderr);
+  assert.equal(refused.stderr.trim().split('\n').length,1);
+  // Without --run the disclosure and the problem name the directory to give, not a file.
+  assert.match(syntaxResult.disclosure,/--run <本次运行下载的运行目录>/);
+  assert.ok(syntaxResult.problems.some((p:any)=>p.code==='missing_input'&&p.message.includes('--run <本次运行下载的运行目录>')),JSON.stringify(syntaxResult.problems));
+  assert.doesNotMatch(JSON.stringify(syntaxResult),/run\.json>/);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
@@ -437,9 +447,9 @@ test('CLI checks declared inverse before runner clear using only the matching do
   await mkdir(join(dir,'knowledge'));const [head,...nodes]=treeLines(catalog,runId);
   const nodesFile=join(dir,'knowledge','nodes.jsonl');
   await writeFile(nodesFile,[head,...nodes].map(row=>JSON.stringify(row)).join('\n')+'\n');
-  const missing=await runCli(['--file',file,'--run',runFile]);assert.equal(missing.code,1,missing.stderr);const report=JSON.parse(missing.stdout);assert.equal(report.cleanup_checked,true);assert.ok(report.problems.some((p:any)=>p.code==='case-compile.method_forbidden'&&p.message.includes('demo switch off')));
-  const cleaned=fixture(['demo switch on',cleanup('demo switch off')]);plan.slots.plan[0].data=withExpect(cleaned.subject.data);await writeFile(file,JSON.stringify(plan));const good=await runCli(['--file',file,'--run',runFile]);assert.equal(good.code,0,good.stderr);assert.equal(JSON.parse(good.stdout).cleanup_checked,true);
-  await writeFile(nodesFile,[{...head,root:'f'.repeat(64)},...nodes].map(row=>JSON.stringify(row)).join('\n'));const wrongRoot=await runCli(['--file',file,'--run',runFile]);assert.equal(wrongRoot.code,1);assert.match(wrongRoot.stderr,/冻结运行/);
-  await rm(nodesFile);const absent=await runCli(['--file',file,'--run',runFile]);assert.equal(absent.code,1);assert.equal(JSON.parse(absent.stdout).cleanup_checked,false);
+  const missing=await runCli(['--file',file,'--run',dir]);assert.equal(missing.code,1,missing.stderr);const report=JSON.parse(missing.stdout);assert.equal(report.cleanup_checked,true);assert.ok(report.problems.some((p:any)=>p.code==='case-compile.method_forbidden'&&p.message.includes('demo switch off')));
+  const cleaned=fixture(['demo switch on',cleanup('demo switch off')]);plan.slots.plan[0].data=withExpect(cleaned.subject.data);await writeFile(file,JSON.stringify(plan));const good=await runCli(['--file',file,'--run',dir]);assert.equal(good.code,0,good.stderr);assert.equal(JSON.parse(good.stdout).cleanup_checked,true);
+  await writeFile(nodesFile,[{...head,root:'f'.repeat(64)},...nodes].map(row=>JSON.stringify(row)).join('\n'));const wrongRoot=await runCli(['--file',file,'--run',dir]);assert.equal(wrongRoot.code,1);assert.match(wrongRoot.stderr,/冻结运行/);
+  await rm(nodesFile);const absent=await runCli(['--file',file,'--run',dir]);assert.equal(absent.code,1);assert.equal(JSON.parse(absent.stdout).cleanup_checked,false);
  }finally{await rm(dir,{recursive:true,force:true});}
 });

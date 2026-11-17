@@ -9,7 +9,7 @@
       "required": true,
       "kind": "string",
       "multiple": false,
-      "placeholder": "<脚本编写目录>",
+      "placeholder": "<运行目录>",
       "type": "path"
     },
     {
@@ -131,7 +131,7 @@
       "pairs": [
         {
           "name": "run",
-          "placeholder": "<脚本编写目录>",
+          "placeholder": "<运行目录>",
           "optional": false
         },
         {
