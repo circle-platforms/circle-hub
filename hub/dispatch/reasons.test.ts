@@ -247,3 +247,27 @@ test('source note refuses mismatched job and attempt identities instead of joini
   source.status.dispatch_attempt!.scope = { operation: 'dispatch', job: 'd'.repeat(64), round: 1 };
   assert.throws(() => runnerNote(source, 'usr_private'), /范围/);
 });
+
+test('historical job device return remains paired with the job report when the second attempt was not sent', () => {
+  const source = job({ outcome: 'not_dispatched', not_sent: true, result: `src:${'c'.repeat(64)}` });
+  source.status.job_facts.device_return = `src:${'d'.repeat(64)}`;
+  source.status.dispatch_attempt!.scope = { operation: 'dispatch', job: jobId, round: 2 };
+  const note = runnerNote(source, 'usr_private');
+  assert.equal(note.job_facts?.result, `src:${'c'.repeat(64)}`);
+  assert.equal(note.job_facts?.device_return, `src:${'d'.repeat(64)}`);
+  assert.equal(note.dispatch_attempt?.device_return, undefined); assert.equal(note.dispatch_attempt?.result, undefined);
+  assert.match(note.text, /作业历史原文引用/); assert.match(note.text, /第 2 轮派发.*没有发出/);
+  assert.doesNotMatch(note.text, /第 2 轮派发设备返回|第 2 轮派发.*已通过/);
+  assert.equal(Object.hasOwn(note, 'result'), false); assert.equal(Object.hasOwn(note, 'device_return'), false);
+});
+
+test('known missing-booking device counts come from declared devices rather than the number of resource keys', () => {
+  const source = job({ error_code: 'LEASE_UNAVAILABLE', reason: 'private keys must not leak',
+    booking: { target: '合成实验室', coverage_complete: false, required_resources: 11, missing_resources: 11, declared_device_count: 3 },
+    member_missing_facts: [{ fact: '本作业缺少 11 项所需资源的预订', next_action: '先预订整个测试环境，再从脚本编写重开' }],
+  });
+  const note = runnerNote(source, 'usr_private');
+  assert.match(note.text, /清单声明 3 台设备/); assert.doesNotMatch(note.text, /11 台设备|private keys/);
+  assert.match(note.job_facts?.admission_error?.message ?? '', /11 项/);
+  assert.equal(note.job_facts?.admission_error?.fix, '先预订整个测试环境，再从脚本编写重开');
+});

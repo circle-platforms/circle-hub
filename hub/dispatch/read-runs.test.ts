@@ -85,3 +85,19 @@ test('the runs of some jobs come from those jobs alone, never from a scan of eve
   assert.deepEqual(asked, [job, unbound]);
   assert.equal((await dispatchedRuns(records, [])).size, 0);
 });
+
+test('a final boundary after a target response retains the no-whole-job-retry control without changing attempt effects', async () => {
+  const job = 'a'.repeat(64);
+  const records = { store: {
+    find: async () => ({ items: [{ body: { detail: { binding: { job, input: { run, plan_run: plan, item: 'verification', items: ['case-a'], sha256: 'b'.repeat(64) } } } } }], next: null }),
+    findMany: async () => [
+      { digest: 'c'.repeat(64), body: { detail: { phase: 'precheck.response' } } },
+      { digest: 'd'.repeat(64), body: { detail: { phase: 'boundary_refused', done: true } } },
+    ],
+  } } as unknown as Pick<RecordsKit, 'store'>;
+  const dispatch = { status: async () => ({ job, events: 2, job_facts: { scope: { job }, frozen: false }, dispatch_attempt: { scope: { operation: 'dispatch' as const, job, round: 1 }, outcome: 'not_dispatched' as const, not_sent: true as const } }) };
+  const [read] = await readRunJobs(records, dispatch, admin, run);
+  assert.equal(read.boundary_refused, false); assert.equal(read.boundary_after_response, true);
+  assert.equal(read.status.dispatch_attempt?.outcome, 'not_dispatched');
+  assert.equal(read.status.dispatch_attempt?.not_sent, true);
+});

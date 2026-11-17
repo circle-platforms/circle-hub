@@ -16,6 +16,8 @@ export interface RunJob {
   /** Whether the job ended at the effect boundary before any remote call: its journal records the refusal and no response
    * of the target. A refusal at the final boundary, after the connector session, the precheck and the probes, is not one. */
   boundary_refused:boolean;
+  /** A final boundary refusal after a target response requires a new verification rather than a whole-job retry. */
+  boundary_after_response?:true;
   /** The executor (runtime environment) the reservation bound; absent when it names none. */
   executor?:string;
 }
@@ -96,8 +98,9 @@ export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick
     const ended=prefix.some(e=>e.body.detail.done===true)?'done':prefix.some(e=>e.body.detail.phase==='unknown')?'unknown':null;
     const refusal=prefix.findIndex(e=>e.body.detail.phase==='boundary_refused');
     const boundary_refused=refusal>=0&&!prefix.slice(0,refusal).some(e=>remoteResponse(e.body.detail.phase));
+    const boundary_after_response=refusal>=0&&prefix.slice(0,refusal).some(e=>remoteResponse(e.body.detail.phase));
     const bound=input?{verification_run:input.run,plan_run:input.plan_run,verification_item:input.item,items:[...input.items],sha256:input.sha256}:{verification_run:run,plan_run:'',verification_item:'',items:[],sha256:''};
-    out.push({job,record:proof.digest,...bound,status,ended,boundary_refused,...(executors.has(job)?{executor:executors.get(job)!}:{}),...(management_exit?{management_exit}:{})});
+    out.push({job,record:proof.digest,...bound,status,ended,boundary_refused,...(boundary_after_response?{boundary_after_response:true as const}:{}),...(executors.has(job)?{executor:executors.get(job)!}:{}),...(management_exit?{management_exit}:{})});
   }
   return out;
 }

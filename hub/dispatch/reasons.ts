@@ -63,13 +63,17 @@ function diagnosticFacts(source: JobStatus['job_facts'] | NonNullable<JobStatus[
     }
     if (!missing.length && (source.missing_fact || source.reason || source.failed_conditions?.length)) missing.push({ fact: `${label}仍缺少可供成员读取的具体核对事实`, next_action: next });
   }
+  if (source.booking?.coverage_complete === false && source.error_code === 'LEASE_UNAVAILABLE' && source.booking.declared_device_count !== null) {
+    missing.push({ fact: `${label}所需测试环境「${source.booking.target}」的清单声明 ${source.booking.declared_device_count} 台设备；当前缺少 ${source.booking.missing_resources} 项所需资源的预订（共 ${source.booking.required_resources} 项）`, next_action: admin ? source.next_action ?? next : source.member_missing_facts?.[0]?.next_action ?? next });
+  }
   return [...new Map(missing.map(fact => [fact.fact + '\0' + fact.next_action, fact])).values()].slice(0, 16);
 }
 
-export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: boolean): DispatchDiagnostics {
+export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused' | 'boundary_after_response'>, admin: boolean): DispatchDiagnostics {
   const facts = job.status.job_facts, attempt = job.status.dispatch_attempt;
   if (job.status.job !== job.job || facts.scope.job !== job.job || attempt && attempt.scope.job !== job.job) throw new Error('派发事实范围与作业身份不一致');
-  const next = facts.awaiting_disposition === true ? admin ? `circle-hub job resume ${job.job}` : '联系管理员只读核对本作业；不要重新发送作业'
+  const next = job.boundary_after_response ? '本作业不会整份重试；修正放行条件后，按任务包规程重新开始核验'
+    : facts.awaiting_disposition === true ? admin ? `circle-hub job resume ${job.job}` : '联系管理员只读核对本作业；不要重新发送作业'
     : job.ended === null ? admin ? `circle-hub job status ${job.job}` : '原样重交原提交读取本作业进展，不要重新发送作业'
     : facts.frozen === true ? admin ? `circle-hub job status ${job.job}` : '本作业保持重发保护；原样读取进展，不要重新发送作业'
     : admin ? `circle-hub job status ${job.job}` : '读取本作业结果引用及各轮结论；没有结论时不要当作通过';
@@ -85,7 +89,8 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
     ...(facts.readonly_verified !== undefined ? { readonly_verified: facts.readonly_verified } : {}),
     ...(facts.conformance_verified !== undefined ? { conformance_verified: facts.conformance_verified } : {}),
     ...(facts.result ? { result: facts.result } : {}),
-    ...(facts.admission_error ? { admission_error: { code: facts.admission_error.code, message: admin ? clip(facts.admission_error.message) : jobMissing.map(fact => fact.fact).join('；') || '本作业的准入核对未通过，请联系管理员核对', fix: admin ? facts.admission_error.fix : jobMissing.map(fact => fact.next_action).join('；') || next } } : {}),
+    ...(facts.device_return ? { device_return: facts.device_return } : {}),
+    ...(facts.admission_error ? { admission_error: { code: facts.admission_error.code, message: admin ? clip(facts.admission_error.message) : jobMissing.map(fact => fact.fact).join('；') || '本作业的准入核对未通过，请联系管理员核对', fix: admin ? facts.admission_error.fix : [...new Set(jobMissing.map(fact => fact.next_action))].join('；') || next } } : {}),
     missing_facts: jobMissing, next_action: next,
   };
   if (!attempt) return { job_facts };
