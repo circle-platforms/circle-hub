@@ -40,19 +40,21 @@ describe('自动化测试环境事实', () => {
     assert.equal(isBlind(facts, '192.0.2.10'), false);
   });
 
-  it('只有服务器触发设备的网段不算盲网段（server 默认有触发能力）', () => {
-    // dut1（192.0.2.130）的网段上只有 dut1 与 server0（192.0.2.190，合成）：server 默认可触发，不盲。
+  it('默认触发类型只有 router 和 client：只有服务器的网段是盲网段，部署声明加上 server 后不再盲', () => {
+    // dut1（192.0.2.130）的网段上只有 dut1 与 server0（192.0.2.190，合成）：默认不算触发设备，盲。
     const doc = structuredClone(bedsOf());
     const bed = { ...doc[0], devices: [...doc[0].devices.filter((d) => d.type !== 'console' && d.name !== 'router0' && d.name !== 'client0'), { ...doc[0].devices.find((d) => d.name === 'server0')!, ipv4: [{ family: 'ipv4' as const, address: '192.0.2.190', subnet: '192.0.2.128/26', prefix: 26, value: 0n }] }] };
     const facts = bedFacts(bed);
-    assert.ok(!facts.blind.some((f) => f.device === 'dut1'), 'dut1 的网段有 server0，不是盲网段');
-    assert.ok(facts.listeners.some((f) => f.device === 'dut1' && f.triggers.some((t) => t.device === 'server0')), JSON.stringify(facts.listeners));
+    assert.ok(facts.blind.some((f) => f.device === 'dut1'), 'dut1 的网段只有 server0，默认是盲网段');
+    const declared = bedFacts(bed, new Set(['router', 'client', 'server']));
+    assert.ok(!declared.blind.some((f) => f.device === 'dut1'), 'profile 声明 server 也是触发类型后不再盲');
+    assert.ok(declared.listeners.some((f) => f.device === 'dut1' && f.triggers.some((t) => t.device === 'server0')), JSON.stringify(declared.listeners));
   });
 
-  it('部署按自动化测试环境座位收窄触发类型后，只剩 server 的网段又算盲；没有任何触发座位的网段仍盲', () => {
+  it('显式写 router/client 与默认相同；没有任何触发座位的网段仍盲', () => {
     const doc = bedsOf();
     const bed = { ...doc[0], devices: [...doc[0].devices.filter((d) => d.type !== 'console' && d.name !== 'router0' && d.name !== 'client0'), { ...doc[0].devices.find((d) => d.name === 'server0')!, ipv4: [{ family: 'ipv4' as const, address: '192.0.2.190', subnet: '192.0.2.128/26', prefix: 26, value: 0n }] }] };
-    // 部署声明本自动化测试环境 server 没有可用的主机 shell 座位：只有 server 的网段回到盲。
+    // 显式写出 router/client，结果同默认。
     const narrowed = bedFacts(bed, new Set(['router', 'client']));
     assert.ok(narrowed.blind.some((f) => f.device === 'dut1'), JSON.stringify(narrowed.blind));
     // dut0 的网段上有 router0 被删掉了：整张床没有任何 router/client/server 以外……

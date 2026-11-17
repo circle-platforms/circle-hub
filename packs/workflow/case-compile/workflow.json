@@ -143,6 +143,21 @@
       }
     },
     {
+      "name": "exclude",
+      "description": "整份文档编译时先不编译的 autoid 列表（按原始文字匹配，每个都要是按规则取到的用例，找不到拒绝开始运行；不与 autoid 同用）。用于某些用例暂时过不了、其余要先出簿：计划运行与核验运行填同一列表，最终报告要写明排除了哪些、缺什么、下一步",
+      "required": false,
+      "schema": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 64,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    {
       "name": "plan_run",
       "description": "绑定 workbook 时必填：已满足的计划运行号，作为说明行来源；同时作 predecessor，二者一致由派发核对",
       "required": false,

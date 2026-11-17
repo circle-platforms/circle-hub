@@ -5,7 +5,7 @@
   "violations": [
     {
       "code": "case-compile.slots_invalid",
-      "when": "槽位形状不符合 slots.schema.json",
+      "when": "槽位形状不符合 slots.schema.json，或前置声明引用的步骤不成立（不存在、清理或等待步骤、不早于第一个被断言的步骤）、同一前置叶子声明多次、reference 不是本用例的前置叶子",
       "fix": "按完整形状填写 bucket、空 blocks、steps、expects、replacements，删除旧字段"
     },
     {
@@ -55,8 +55,8 @@
     },
     {
       "code": "case-compile.environment_unreachable",
-      "when": "计划地址落在没有触发设备的盲网段",
-      "fix": "环境不可达，整卷不跑。把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译"
+      "when": "计划地址落在没有触发设备的网段（被测设备接口或本血缘租约地址），或被断言读回显的查询发自与目标不同网段的主机（清单没有路由声明，只认同网段）",
+      "fix": "环境不可达，整卷不跑。改用有主机配对的监听地址，由配对的同网段主机发查询（配对见条目 fields.bed），或在该网段补触发设备后重新冻结清单再编译"
     },
     {
       "code": "case-compile.replacement_invalid",
@@ -127,6 +127,16 @@
       "code": "case-compile.expect_not_in_criterion",
       "when": "引用的期望与本运行冻结的已受理判据声明不一致",
       "fix": "逐字引用本运行冻结的新判据，或使用原件逐字引文"
+    },
+    {
+      "code": "case-compile.expect_in_command",
+      "when": "期望文字已经是它所读命令文字的子串：设备回显带着命令本身，肯定断言恒成立，“不出现”断言恒失败",
+      "fix": "期望改成只会出现在设备输出里的文字（输出里的相邻文字或状态词，取自手册或作者的期望原文）；描述性期望按 model_judgment 写并说明依据"
+    },
+    {
+      "code": "case-compile.precondition_missing",
+      "when": "用例的前置叶子（优先级 3 的叶子）在计划里没有声明",
+      "fix": "在 steps 里写建立该状态的步骤，再在 preconditions 里按叶子的 reference 声明 established_by；建立不了写 unmet 并给出缺什么和下一步"
     }
   ],
   "refusals": [

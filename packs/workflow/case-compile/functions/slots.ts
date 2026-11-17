@@ -8,7 +8,9 @@ export type KeywordValue = string | number;
 export interface PlanStep { description?:string;id?:string;origin?:string;block_kind?:string;output?:boolean;save_as?:string;input_register?:string;restore_for?:number;restore_target?:{tree_root:string;path:string;leading_parameters:unknown[];bed:string;manifest_sha256:string};cleanup?:boolean; object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
 export interface PlanExpect {id?:string;origin?:string;operator?:string;output?:string;register?:string;actual_register?:string;comparison?:string;count?:number;expectation?:string;criterion?:string;basis?:ExpectationBasis;rationale?:string; text: string; quote: { reference: string; text: string }; after: number }
 export interface Replacement { case: string; bed: string }
-export interface PlanSlots { recomposition?:{receipt:string;case_id:string;slots:Array<{slot:string;assertions:string[]}>;rebindings:Array<{slot:string;from:string;to:string;authority?:string;source_of_value?:string}>}; command_identities?:unknown; bucket: string; blocks: Array<Record<string,any>>;block_context?:Record<string,any>;criteria?:Array<Record<string,any>>;obligations?:Array<Record<string,any>>; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
+/** A flat plan's statement about one precondition leaf of the case: the steps (numbered as `expects[].after` counts) that establish it, or that it cannot be established. */
+export interface PlanPrecondition { reference: string; established_by?: number[]; unmet?: { missing: string; next_action: string } }
+export interface PlanSlots { preconditions?:PlanPrecondition[]; recomposition?:{receipt:string;case_id:string;slots:Array<{slot:string;assertions:string[]}>;rebindings:Array<{slot:string;from:string;to:string;authority?:string;source_of_value?:string}>}; command_identities?:unknown; bucket: string; blocks: Array<Record<string,any>>;block_context?:Record<string,any>;criteria?:Array<Record<string,any>>;obligations?:Array<Record<string,any>>; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
 export interface SlotProblem { pointer: string; message: string }
 export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok: false; problems: SlotProblem[] } {
   if(isNormalized(value))return {ok:true,slots:value};
@@ -19,7 +21,7 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
   const keys = (raw: Record<string, unknown>, allowed: string[], at: string): void => {
     for (const key of Object.keys(raw)) if (!allowed.includes(key)) issue(`${at}/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`, '多余字段；按 slots.schema.json 删除');
   };
-  keys(value, ['bucket', 'blocks', 'steps', 'expects', 'replacements','command_identities','recomposition'], '');
+  keys(value, ['bucket', 'blocks', 'steps', 'expects', 'replacements','command_identities','recomposition','preconditions'], '');
   if (typeof value.bucket !== 'string' || !value.bucket) issue('/bucket', 'bucket 必须是自动化测试环境名');
   if (!Array.isArray(value.blocks) || value.blocks.length) issue('/blocks', '本轮 blocks 必须是空数组');
   if(Object.hasOwn(value,'recomposition')&&!schema(SLOT_TABLE.item.plan.data.properties.recomposition).safeParse(value.recomposition).success)issue('/recomposition','重组消费形状不符合声明');
@@ -41,14 +43,15 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
   for (const [i, raw] of (Array.isArray(value.expects) ? value.expects : []).entries()) {
     const at = `/expects/${i}`;
     if (!isRecord(raw)) { issue(at, '期望不是对象'); continue; }
-    keys(raw, ['text', 'quote', 'after','basis','rationale'], at);
+    keys(raw, ['text', 'quote', 'after','basis','rationale','operator'], at);
+    if(raw.operator!==undefined&&raw.operator!=='not_found')issue(at+'/operator','operator 只能写 not_found（断言文字不出现）；要断言出现就省略 operator');
     if(raw.basis!==undefined&&!isExpectationBasis(raw.basis))issue(at+'/basis','basis 必须是生成合约声明的完全相等值；默认逐字规则请省略');
     if(raw.basis!==undefined&&(typeof raw.rationale!=='string'||!raw.rationale.trim()))issue(at+'/rationale','模型判断必须有非空 rationale，说明为何选择这段设备可观察文字');
     if(raw.basis===undefined&&raw.rationale!==undefined)issue(at+'/rationale','默认规则不接收 rationale；模型判断请显式声明 basis');
     if (typeof raw.text !== 'string' || !raw.text) issue(`${at}/text`, '期望文字不能为空');
     if (!Number.isSafeInteger(raw.after) || (raw.after as number) < 1) issue(`${at}/after`, 'after 必须是从 1 开始的步骤号');
     if (!isRecord(raw.quote) || typeof raw.quote.reference !== 'string' || !raw.quote.reference || typeof raw.quote.text !== 'string' || !raw.quote.text) issue(`${at}/quote`, 'quote 必须带 reference 和逐字 text');
-    else { keys(raw.quote, ['reference', 'text'], `${at}/quote`); expects.push({...(isExpectationBasis(raw.basis)?{basis:raw.basis,rationale:String(raw.rationale)}:{}), text: String(raw.text), after: raw.after as number, quote: { reference: raw.quote.reference, text: raw.quote.text } }); }
+    else { keys(raw.quote, ['reference', 'text'], `${at}/quote`); expects.push({...(isExpectationBasis(raw.basis)?{basis:raw.basis,rationale:String(raw.rationale)}:{}),...(raw.operator==='not_found'?{operator:'not_found'}:{}), text: String(raw.text), after: raw.after as number, quote: { reference: raw.quote.reference, text: raw.quote.text } }); }
   }
   const replacements: Replacement[] = [];
   if (!Array.isArray(value.replacements)) issue('/replacements', 'replacements 必须是数组，没有替换写 []');
@@ -59,5 +62,20 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
     if (typeof raw.case !== 'string' || !raw.case || typeof raw.bed !== 'string' || !raw.bed) issue(at, '替换条目必须是 {case, bed} 文字地址');
     else replacements.push({ case: raw.case, bed: raw.bed });
   }
-  return problems.length ? { ok: false, problems } : { ok: true, slots: { ...(Object.hasOwn(value,'command_identities')?{command_identities:value.command_identities}:{}),...(Object.hasOwn(value,'recomposition')?{recomposition:value.recomposition as PlanSlots['recomposition']}:{}),bucket: String(value.bucket), blocks: [], steps, expects, replacements } };
+  const preconditions: PlanPrecondition[] = [];
+  if (value.preconditions !== undefined && !Array.isArray(value.preconditions)) issue('/preconditions', 'preconditions 必须是数组，没有前置叶子写 []');
+  const line = (v: unknown): v is string => typeof v === 'string' && v !== '' && v.trim() === v && !/[\r\n]/.test(v);
+  for (const [i, raw] of (Array.isArray(value.preconditions) ? value.preconditions : []).entries()) {
+    const at = `/preconditions/${i}`;
+    if (!isRecord(raw)) { issue(at, '前置声明不是对象'); continue; }
+    keys(raw, ['reference', 'established_by', 'unmet'], at);
+    if (typeof raw.reference !== 'string' || !raw.reference) issue(`${at}/reference`, 'reference 写本用例条目 fields.preconditions 里该前置叶子的 reference');
+    if ((raw.established_by === undefined) === (raw.unmet === undefined)) issue(at, 'established_by 与 unmet 必须二选一：写由哪些步骤建立，或写建立不了的缺什么和下一步');
+    const by = raw.established_by;
+    if (by !== undefined && (!Array.isArray(by) || !by.length || by.some((n) => !Number.isSafeInteger(n) || (n as number) < 1) || new Set(by).size !== by.length)) issue(`${at}/established_by`, 'established_by 是不重复的步骤号列表（从 1 开始，同 expects 的 after），至少一个');
+    const un = raw.unmet;
+    if (un !== undefined && (!isRecord(un) || !line(un.missing) || !line(un.next_action) || Object.keys(un).some((key) => key !== 'missing' && key !== 'next_action'))) issue(`${at}/unmet`, 'unmet 写 {missing, next_action}，各是非空单行文字：缺什么事实、下一步由谁做什么');
+    if (typeof raw.reference === 'string' && raw.reference) preconditions.push({ reference: raw.reference, ...(Array.isArray(by) ? { established_by: by as number[] } : {}), ...(isRecord(un) && typeof un.missing === 'string' && typeof un.next_action === 'string' ? { unmet: { missing: un.missing, next_action: un.next_action } } : {}) });
+  }
+  return problems.length ? { ok: false, problems } : { ok: true, slots: { ...(Object.hasOwn(value,'preconditions')?{preconditions}:{}),...(Object.hasOwn(value,'command_identities')?{command_identities:value.command_identities}:{}),...(Object.hasOwn(value,'recomposition')?{recomposition:value.recomposition as PlanSlots['recomposition']}:{}),bucket: String(value.bucket), blocks: [], steps, expects, replacements } };
 }

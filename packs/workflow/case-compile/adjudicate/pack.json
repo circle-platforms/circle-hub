@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose-adjudication",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "kind": "workflow",
   "title": "recompose-adjudication",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -43,7 +43,7 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "a16e725105e26ac6e67c31c6bec06c3ebebb2e23bf951e3552ee54c98519a5c8",
+      "sha256": "73fdecf12510ae49d6c81500e7fcd799dc46c4e3d591b48501626b43cb4870f5",
       "size": 4185
     },
     {

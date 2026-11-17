@@ -871,6 +871,13 @@
                   "type": "string",
                   "minLength": 1,
                   "description": "model_judgment 的非空理由；声明是模型判断，Hub 不断言其语义正确"
+                },
+                "operator": {
+                  "type": "string",
+                  "enum": [
+                    "not_found"
+                  ],
+                  "description": "只写 not_found：断言 text 不出现在设备回显里；要断言出现就省略 operator"
                 }
               }
             }
@@ -892,6 +899,50 @@
                 "bed": {
                   "type": "string",
                   "minLength": 1
+                }
+              }
+            }
+          },
+          "preconditions": {
+            "type": "array",
+            "maxItems": 64,
+            "description": "用例条目 fields.preconditions 里每个前置叶子恰一项：reference 抄叶子的，established_by 写建立它的步骤号（从 1 开始，同 expects 的 after），或 unmet 写 {missing,next_action}",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "reference"
+              ],
+              "properties": {
+                "reference": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "established_by": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "unmet": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "missing",
+                    "next_action"
+                  ],
+                  "properties": {
+                    "missing": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "next_action": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
                 }
               }
             }

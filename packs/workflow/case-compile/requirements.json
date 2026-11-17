@@ -4,7 +4,7 @@
     {
       "key": "plan",
       "name": "执行计划",
-      "description": "客户端填写受限结构：自动化测试环境、空 blocks、原名步骤（args 和 keywords）、带逐字引文和 after 步骤号的期望、地址替换表。Hub 只核验槽位，不生成内容；满足后由客户端脚本生成工作簿（任务 2）。步骤自身承担前置与清理：断言要观察的记录先在前部创建；每条改配置的步骤在末尾清理段有逆序对应的逆操作（查询类不需要）；改过地址的接口在清理段恢复原地址。 清理段使用 cleanup:true 显式标记并位于 steps 末尾；对象 ordinal 超过冻结同类型设备容量时整卷拒绝。；另支持显式块计划，块、断言、H/I、前置因果应答者、逐期望义务及捕获恢复规则见包声明；Hub 不解析设备回显。",
+      "description": "客户端填写受限结构：自动化测试环境、空 blocks、原名步骤（args 和 keywords）、带逐字引文和 after 步骤号的期望、地址替换表。Hub 只核验槽位，不生成内容；满足后由客户端脚本生成工作簿（任务 2）。步骤自身承担前置与清理：断言要观察的记录先在前部创建；每条改配置的步骤在末尾清理段有逆序对应的逆操作（查询类不需要）；改过地址的接口在清理段恢复原地址。 清理段使用 cleanup:true 显式标记并位于 steps 末尾；对象 ordinal 超过冻结同类型设备容量时整卷拒绝。；另支持显式块计划，块、断言、H/I、前置因果应答者、逐期望义务及捕获恢复规则见包声明；Hub 不解析设备回显。；作者的前置叶子由计划的 preconditions 逐条声明（建立步骤号，或 unmet 写缺什么和下一步），Hub 只核引用、步骤顺序和步骤类别，不判断语义",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
@@ -105,7 +105,7 @@
     {
       "key": "bed_addresses",
       "name": "字面地址对得上自动化测试环境",
-      "description": "决定 35：每个主机字面地址属于本自动化测试环境任一设备接口或本血缘分配地址；设备命令可以出现本自动化测试环境其他设备的地址。自动化测试环境外原地址只能经有原文出处的一一对应 replacements 换入，槽位写最终文字，不由 Hub 改写",
+      "description": "决定 35：每个主机字面地址属于本自动化测试环境任一设备接口或本血缘分配地址；设备命令可以出现本自动化测试环境其他设备的地址。自动化测试环境外原地址只能经有原文出处的一一对应 replacements 换入，槽位写最终文字，不由 Hub 改写；触发机够不着的网段只拒被测设备的接口地址和本血缘租约地址；被断言读回显的查询要发自与目标同网段的已开放主机（清单没有路由声明）",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
@@ -209,7 +209,7 @@
     {
       "key": "expected_grounded",
       "name": "期望结果有逐字来源",
-      "description": "默认期望文字逐字来自引文；显式 model_judgment 的设备可观察文字由模型选择，Hub 核本用例期望节点引文、after 和取值规则，保留模型、理由并以判断为前提。期望优先写成可机械核对的输出（应答状态码、应答条数、表项计数、关键行存在与否）：查询类断言前必须在计划前部先建好被查记录（前置补齐），不得把查询不存在的记录当成功；作者原文的描述性期望仍以 quote 逐字保留作依据。确实无法机械化时才用 model_judgment 并在 rationale 写明原因。",
+      "description": "默认期望文字逐字来自引文；显式 model_judgment 的设备可观察文字由模型选择，Hub 核本用例期望节点引文、after 和取值规则，保留模型、理由并以判断为前提。期望优先写成可机械核对的输出（应答状态码、应答条数、表项计数、关键行存在与否）：查询类断言前必须在计划前部先建好被查记录（前置补齐），不得把查询不存在的记录当成功；作者原文的描述性期望仍以 quote 逐字保留作依据。确实无法机械化时才用 model_judgment 并在 rationale 写明原因。；期望文字不能是它所读命令文字的子串（设备回显带着命令本身）；用例的每个前置叶子在计划里恰有一项声明",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
@@ -259,6 +259,16 @@
         },
         {
           "code": "case-compile.expect_not_in_criterion",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.expect_in_command",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.precondition_missing",
           "action": "repair",
           "max_rounds": 2
         }

@@ -1,4 +1,4 @@
-# case-compile 3.9.22
+# case-compile 3.9.23
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -209,10 +209,11 @@ After the matched enum-parameter form, a declared inverse pair can name two comp
 locked parent. Both paths and the paired command with unchanged bound parameters must fully parse; a missing leaf
 or ambiguous target is not guessed from prose. Ordinary prefix rules remain as declared.
 
-The default trigger types are the package's closed router/client/server set. A published profile may narrow it with
-`trigger_types`; an omitted field uses the default, while an explicit empty array declares no trigger types. Types
-outside the package's closed trigger set are rejected rather than silently filtered. The reachability rules still
-use the frozen bed interfaces and declared capability, not keyword inference or an observed connectivity claim.
+The package's closed trigger set is router/client/server. A profile that declares none gets the default, router and client,
+as the test-bed pack reads them (3.9.23; before, server was in the default). A profile may declare any subset, and adding
+`server` makes a server host a trigger; an explicit empty array declares no trigger types. Types outside the closed set are
+rejected rather than silently filtered. The reachability rules use the frozen bed interfaces and declared capability, not
+keyword inference or an observed connectivity claim.
 
 ### 联合类型参数与声明的互逆对（3.8.6）
 
@@ -295,6 +296,33 @@ legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代�
 地址入口统一先用 readSlots 解析作者计划：原始 blocks 中步骤数组为空，也必须展开为同一套类型化调用。观察、配置、显式清理与 RESTORE_FROM 的已声明参数逐个进入现有角色、bed_member、床接口/本血缘租约与触发可达规则；完整命令按锁定目录解析后，其类型化地址参数也进入同一检查。位置保留 /data/blocks/<序号>/call/...，角色违规的首要位置同样落回对应块。普通文本与捕获原文不扫描，不按 VIP、方法名或文字推地址用途。
 
 规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。
+
+### 3.9.23: what the first real run of a whole mind map showed
+
+The first real run compiled 17 cases and 3 passed. The plans took the author's precondition leaf ("the feature is enabled") as a
+given, sent every query from a server the profile opened, and the device-side facts that decide whether a query can be answered
+never reached the model.
+
+- The default trigger types are router and client. The blind-segment rule refuses only an interface of a device under test, and a
+  leased address, on a segment without a trigger device; a server's reply address on that segment is on the bed and needs none.
+  The refusal names the open host that can query each listener.
+- A query that an assertion reads is sent from an open host (`profile.hosts`) that shares a segment with its target. The inventory
+  declares no routes, so another segment has no declared path. A query nothing reads is not judged; a target the author wrote and
+  no open host reaches is kept and disclosed. When no open host reaches any listener the answer is an unknown that names the
+  profile as the place to open one.
+- An item carries `fields.bed` (listeners with the open hosts that reach them, blind addresses, declared services) and
+  `fields.preconditions` (the case's priority-3 leaves, each with the reference a plan quotes back).
+- A flat plan states each leaf in `preconditions`: `established_by` (step numbers before the first asserted step, device or host
+  commands, not cleanup or waits) or `unmet` with what is missing and the next action. A block plan quotes the leaf in
+  `block_context.preconditions`. A leaf nobody stated is refused (`precondition_missing`, repairable); `unmet` is an unknown.
+  The Hub checks references, order and step kinds, not what a step means.
+- `parameters.exclude` leaves cases out of a whole-document run. The plan run and the verification run take the same list; the
+  run record keeps it under `parameters`.
+- A flat expectation may carry `operator: "not_found"`. An expectation whose text is already in the command it reads is refused
+  (`expect_in_command`): the device echoes the command, so the text is found whatever the device answers.
+- SKILL: what the runner clears and when, where a query starts, how to read a failed check point in the framework log.
+
+The recompose stage packs move to 1.0.5: their copy of `functions/text.ts` changed in 3.9.19 without a version.
 
 ### 3.9.22: a run freezes the cells that hold something
 
