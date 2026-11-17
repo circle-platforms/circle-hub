@@ -172,6 +172,11 @@
       "code": "case-compile.author_step_unbound",
       "when": "审计判保住的作者步骤没指出实现它的计划步骤",
       "fix": "在 step_indices 写上实现它的计划步骤号"
+    },
+    {
+      "code": "case-compile.author_step_unreferenced",
+      "when": "重组记录里某条作者动作原句，没有任何计划步骤（分块计划是块）的 author_step_refs 写了它的编号",
+      "fix": "在实现它的步骤或块的 author_step_refs 写上它的编号；现有步骤都不实现它就补上；确认实现不了的不要硬凑，在最终回复向主代理报告原因"
     }
   ],
   "refusals": [

@@ -282,7 +282,7 @@
     {
       "key": "scenario_kept",
       "name": "作者场景保住",
-      "description": "照 InfoTest 的场景保真：重组记录里每条作者动作原句都由一个新开的审计会话对照计划步骤判一次（保住、改了、没实现），判断随计划写在 data.fidelity。Hub 按同一规则重算简报核对摘要，只核能机械核的：每条原句恰好一行、结论在三种之内、判保住的写出实现它的计划步骤；改了、没实现和保住却没引用步骤的都退回编写。没有步骤结构层，机械比对不做，全部原句交审计。没有重组记录的用例不适用。",
+      "description": "照 InfoTest 的场景保真：重组记录里每条作者动作原句都由一个新开的审计会话对照计划步骤判一次（保住、改了、没实现），判断随计划写在 data.fidelity。Hub 按同一规则重算简报核对摘要，只核能机械核的：每条原句恰好一行、结论在三种之内、判保住的写出实现它的计划步骤；改了、没实现和保住却没引用步骤的都退回编写。没有步骤结构层，机械比对不做，全部原句交审计。不需要审计就能核的一半在计划写完时就核（照 InfoTest 的 author_procedure_coverage）：每条作者动作原句至少有一个计划步骤（分块计划是块）的 author_step_refs 写了它的编号，没有的退回编写，本地 check-plan 与 Hub 用同一个函数。没有重组记录的用例不适用。",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
@@ -291,9 +291,15 @@
       ],
       "accepted_producer": "fact",
       "checks": [
+        "author_step_coverage",
         "scenario_fidelity"
       ],
       "error_handling": [
+        {
+          "code": "case-compile.author_step_unreferenced",
+          "action": "repair",
+          "max_rounds": 2
+        },
         {
           "code": "case-compile.fidelity_missing",
           "action": "repair",

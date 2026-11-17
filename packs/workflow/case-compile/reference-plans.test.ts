@@ -63,7 +63,7 @@ test('a flat reference plan passes the local plan check and every Hub check, gen
  const result=chain(flatSubject(),goodData(),[QUOTE],undefined,[[QUOTE.reference,QUOTE.text]]);
  assert.equal(result.local.ok,true,JSON.stringify(result.local.problems));
  assert.equal(result.local.authority_checked,true);
- assert.deepEqual(result.rows.filter(row=>row.ran).map(row=>row.check),['contract_shape','bed_addresses','commands_catalog','expected_sources','expected_quotes','scenario_fidelity']);
+ assert.deepEqual(result.rows.filter(row=>row.ran).map(row=>row.check),['contract_shape','bed_addresses','commands_catalog','expected_sources','expected_quotes','author_step_coverage','scenario_fidelity']);
  assert.deepEqual(result.problems,[],'no Hub check refuses what the local check passes');
  const statuses=Object.fromEntries((result.validation.result.partitions.delivered[0].requirements as Array<{requirement:string;status:string}>).map(row=>[row.requirement,row.status]));
  assert.deepEqual(statuses,{plan:'satisfied',contract_methods:'satisfied',bed_addresses:'satisfied',commands_known:'satisfied',expected_grounded:'satisfied',scenario_kept:'satisfied',workbook_verified:'pending'});

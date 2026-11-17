@@ -42,7 +42,7 @@ describe('publishing the case-compile pack', { skip }, () => {
     if (!outcome.ok) return;
     assert.equal(outcome.created, true);
     const report = outcome.report;
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [52, 52, 0, 52]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [54, 54, 0, 54]);
     assert.deepEqual(report.failures, []);
     assert.deepEqual(report.unsampled, []);
     assert.deepEqual(
@@ -53,6 +53,7 @@ describe('publishing the case-compile pack', { skip }, () => {
         ['commands_catalog', 5, 5],
         ['expected_sources', 2, 2],
         ['expected_quotes', 1, 1],
+        ['author_step_coverage', 1, 1],
         ['scenario_fidelity', 1, 1],
         ['workbook_verified', 1, 1],
         ['dispatch_policy',1,1],

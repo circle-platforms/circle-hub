@@ -42,7 +42,7 @@ test('workflow binds the published profile and exposes reservation addresses und
 test('every check serves one requirement and repairable codes have exactly two rounds', () => {
   const checks = json('checks.json').checks as Array<{ id: string; tier: string }>;
   const requirements = RequirementsFile.parse(json('requirements.json')).requirements;
-  assert.deepEqual(checks.map((v) => v.id), ['contract_shape', 'bed_addresses', 'commands_catalog', 'expected_sources', 'expected_quotes', 'scenario_fidelity', 'workbook_verified', 'dispatch_policy']);
+  assert.deepEqual(checks.map((v) => v.id), ['contract_shape', 'bed_addresses', 'commands_catalog', 'expected_sources', 'expected_quotes', 'author_step_coverage', 'scenario_fidelity', 'workbook_verified', 'dispatch_policy']);
   assert.ok(checks.every((v) => v.tier === 'blocking'));
   assert.deepEqual([...new Set(requirements.flatMap((v) => v.checks))].sort(), checks.map((v) => v.id).sort());
   assert.ok(!requirements.some((v) => v.key === 'plan_deterministic'));
@@ -59,7 +59,7 @@ test('complete slot schema retains legacy fields and declares B1 blocks', () => 
 });
 test('each runtime plan rule has paired positive and negative author samples', () => {
   const positive = readdirSync(join(PACK_DIR, 'samples/positive')).sort(); const negative = readdirSync(join(PACK_DIR, 'samples/negative')).sort();
-  assert.deepEqual(positive, negative); assert.equal(positive.length, 16+json('tables/blocks-format.json').kinds.filter((kind:any)=>kind.enabled).length);
+  assert.deepEqual(positive, negative); assert.equal(positive.length, 17+json('tables/blocks-format.json').kinds.filter((kind:any)=>kind.enabled).length);
   const coverage = new Set<string>();
   for (const name of positive) {
     const yes = json(`samples/positive/${name}`); const no = json(`samples/negative/${name}`);
@@ -144,6 +144,14 @@ test('the writer is taught to clear a leftover with the product\'s declared inve
     '设备上可能残留同名配置时，先用产品声明的逆操作清掉再配置（如 InfoTest 用例先 `no …`）',
     '这条逆操作写在它要清的那条配置命令之前，同设备、同对象名，本身不需要再配清理，被它清掉的配置命令自己的清理照旧',
   ]) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
+});
+test('the writer is told that every authored action of the record must be named by some step\'s author_step_refs, and that a step it cannot realize is reported, not forced (round 36, a2)', () => {
+  const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
+  for (const phrase of [
+    'author_step_refs 必须覆盖作者步骤：本条重组记录 atoms 里每条 kind 为 action 的 id（items/<n>.json，如 a2，不是序号）都要写进至少一步的 author_step_refs:["a2"]（blocks 模式写在块上）',
+    '没有任何一步写它，check-plan 拒绝并点名；实现不了的不要硬凑，在最终回复向主代理报告原因',
+  ]) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
+  assert.ok(!writer.includes('可选 author_step_refs'), 'author_step_refs is no longer taught as optional');
 });
 test('the client skill says when the user is asked and that a subagent never asks', () => {
   const skill = read('SKILL.md');

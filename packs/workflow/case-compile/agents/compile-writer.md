@@ -39,7 +39,7 @@ tools: read_file, write_file, edit_file, ls, glob, grep, execute
 ```text
 每条文件: {item,handling,slots}；slots.plan 恰好一条 {text,quotes?,data}，text 必填（一句话说明这份计划），计划本体写在 data 里；plan.data.bucket=<测试环境>
 地址替换: replacements=[{case,bed},...]，一一对应，只用于类型确认的地址位置
-顺序步骤: blocks=[]；steps=[{object,method,args,keywords,description,author_step_refs?,precondition_source?},...]；expects 至少一项；手册/示例新增且未列于 sources.states 的前置与逆清理写 precondition_source:{reference,text}；可选 author_step_refs:["a2"] 写它实现的作者步骤编号，即本条重组记录 atoms 里 kind 为 action 的 id（items/<n>.json），不是序号（blocks 模式同，用于保真核对绑定）
+顺序步骤: blocks=[]；steps=[{object,method,args,keywords,description,author_step_refs?,precondition_source?},...]；expects 至少一项；手册/示例新增且未列于 sources.states 的前置与逆清理写 precondition_source:{reference,text}；author_step_refs 必须覆盖作者步骤：本条重组记录 atoms 里每条 kind 为 action 的 id（items/<n>.json，如 a2，不是序号）都要写进至少一步的 author_step_refs:["a2"]（blocks 模式写在块上），一步可写多个编号、一个编号可写在多步，也用于保真核对绑定；没有任何一步写它，check-plan 拒绝并点名；实现不了的不要硬凑，在最终回复向主代理报告原因
 设备 method: contract.output_methods 给该设备声明的方法；args 为文字；keywords 为文字或安全非负整数
 期望: {text,quote:{reference,text},after}；after 从 1 开始指产生输出的命令（不指等待）；禁 steps 中 literal_assertion
 未写 basis: text 是地址替换后引文的精确片段；model_judgment 须写设备实际可逐字输出的一行原文及 rationale
