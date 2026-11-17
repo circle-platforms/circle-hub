@@ -54,6 +54,53 @@ test('six declared filename segments select an exact key suffix and retain the o
   assert.match(duplicate.error, /选中2行/);
 });
 
+// Round 36: the key listing of a 200-character host. The shapes and lengths are those of the read-only probe of the bed's
+// "show sdns dnssec keygen" (echo, two lines per key, prompt; a .key line of a 200-character host is 233 characters). Synthetic names only.
+const KEY_LABEL = 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz';
+const KEY_HOST = [KEY_LABEL, KEY_LABEL, KEY_LABEL, 'example.com'].join('.');
+const OTHER_KEY_HOST = [[...KEY_LABEL].reverse().join(''), KEY_LABEL, KEY_LABEL, 'example.net'].join('.');
+const keyLines = (host: string, keys: Array<[string, string]>) => keys.flatMap(([kind, id]) => ['key', 'private'].map(ext => `K${host}.+005+${id}+${kind}+RSASHA1+1024.${ext}`));
+const listing = (lines: string[], eol = '\r\n') => [`show sdns dnssec keygen "${KEY_HOST}"`, ...lines, 'APV#'].join(eol) + eol;
+const pinned = (kind: string) => [`where 1=K${KEY_HOST}.`, 'where 2=005', `where 4=${kind}`, 'where 5=RSASHA1', 'where 6=1024.key'];
+const KEY_SHAPE = { columns: 6, column: 3 };
+// What the runner makes of "{}" in the first argument of the command that uses the picked cell: the whole value, in place.
+const keypub = (kind: string, id: string) => `sdns dnssec keypub "${KEY_HOST}" "${kind}" "K${KEY_HOST}.+005+{}+${kind}+RSASHA1+1024"`.replace('{}', id);
+
+test('a key listing of a 200-character host yields the generated key id; the fixed segments of the key name stay in the command that uses it', () => {
+  assert.equal(KEY_HOST.length, 200);
+  assert.equal(OTHER_KEY_HOST.length, 200);
+  const own = keyLines(KEY_HOST, [['zsk', '27457'], ['ksk', '51877']]);
+  assert.equal(own[0].length, 233, 'the .key line of a 200-character host');
+  assert.equal(own[1].length, 237, 'the .private line');
+  const residue = keyLines(OTHER_KEY_HOST, [['zsk', '00112'], ['ksk', '32329']]);
+  for (const eol of ['\r\n', '\n']) for (const output of [listing(own, eol), listing([...residue, ...own], eol), listing([...own, ...residue], eol)]) {
+    assert.deepEqual([select(output, pinned('ksk'), KEY_SHAPE).value, select(output, pinned('zsk'), KEY_SHAPE).value], ['51877', '27457']);
+  }
+  // The key name the device is given is the manual's form, 229 characters, far above what one picked cell may hold.
+  const name = (kind: string, id: string) => /"(K[^"]+)"$/.exec(keypub(kind, id))![1];
+  assert.equal(name('ksk', '51877'), `K${KEY_HOST}.+005+51877+ksk+RSASHA1+1024`);
+  assert.equal(name('ksk', '51877').length, 229);
+  // Taken whole, the same line is no cell: the value policy bounds one picked cell at 128 characters, whatever line it is.
+  const whole = select(listing(own), [], { separator: '', columns: 1, column: 1, row: 4 });
+  assert.match(whole.error, /取格值长度不在规则声明的1到128之间/);
+});
+
+test('a key listing that does not name exactly one key of the declared kind is refused with the device words, and the fixed segments are checked against what the device printed', () => {
+  const own = keyLines(KEY_HOST, [['zsk', '27457'], ['ksk', '51877']]);
+  // A second key of the same host and kind (an earlier run did not reach its cleanup): two rows, nothing is guessed.
+  const twice = listing([...own, ...keyLines(KEY_HOST, [['ksk', '99999']])]);
+  const refused = select(twice, pinned('ksk'), KEY_SHAPE);
+  assert.match(refused.error, /选中2行/);
+  assert.ok(refused.error.includes('51877') && refused.error.includes('99999'), 'the device words are attached');
+  assert.equal(select(twice, pinned('zsk'), KEY_SHAPE).value, '27457');
+  // Another algorithm, size or suffix than the command repeats: no row, so no id is poured into a name that would not match.
+  for (const output of [listing(own).replaceAll('+005+', '+008+'), listing(own).replaceAll('RSASHA1+1024', 'RSASHA256+2048'), listing(own).replaceAll('.key', '.pub')]) {
+    assert.match(select(output, pinned('ksk'), KEY_SHAPE).error, /选中0行/);
+  }
+  // The host column is pinned too: a listing of another host alone gives no row.
+  assert.match(select(listing(keyLines(OTHER_KEY_HOST, [['ksk', '32329']])), pinned('ksk'), KEY_SHAPE).error, /选中0行/);
+});
+
 test('zero, multiple, malformed-width and missing-column outcomes say why and carry the original output', () => {
   for (const [output, conditions, options, reason] of [
     ['sample+public+00123', ['where 1=absent'], {}, '选中0行'],

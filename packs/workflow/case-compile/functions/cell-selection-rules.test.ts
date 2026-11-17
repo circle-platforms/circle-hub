@@ -60,6 +60,46 @@ test('every separator the cell rules accept reaches the workbook, and every refu
  }
 });
 
+// ---- what the runner's G reader (InfoTest lib/test_xlsx.py `_split_parameter_parts`, `_keyword_split`, `_unquote_parameter`) makes of a value
+// A quote it would leave open stops its preflight of the whole workbook before any device is touched, so every case of the workbook is lost;
+// a quoted `separator=,` it reads as a positional argument, and a backslash before a comma it takes the comma into the value. The Hub and the
+// workbook reader judged all of these correct (the embedded G reader is more lenient than the runner's), so they are refused at their field.
+// The cell is read back as the generator writes it, keyword order included: a backslash ends a separator that is the last part of the cell harmlessly, and swallows the comma after a condition constant.
+const READ_DIFFERENTLY:Array<[string,string,RegExp]>=[
+ ['a lone double quote','"',/没有配对的引号/],['a lone single quote',"'",/没有配对的引号/],['a quote after a character','+"',/没有配对的引号/],
+ ['quotes the runner strips','"+"',/去掉/],['a comma','\u002c',/位置参数/],['two commas',',,',/位置参数/],['a comma inside','a,b',/位置参数/],
+];
+for(const [label,value,why] of READ_DIFFERENTLY)
+test(`separator ${label} is refused at its own field: the runner would not read it as written`,()=>{
+ const input=separator(value),gaps=gapsOf(input),own=gapAt(gaps,'/blocks/1/table/separator');
+ assert.equal(gaps.length,1,JSON.stringify(gaps));assert.equal(own.length,1,JSON.stringify(gaps));
+ assert.equal(own[0].verdict,'refute');assert.ok(own[0].message.includes(JSON.stringify(value)),own[0].message);assert.match(own[0].message,why);assert.match(own[0].message,/下一步/);
+ const outcome=checkContractShape(input.subject(input.slots)).find(row=>row.verdict==='refute')!;assert.ok(outcome,'the Hub check refuses it too');assert.equal((outcome as any).pointer,'/data/blocks/1/table/separator');
+});
+
+const PIN_READ_DIFFERENTLY:Array<[string,string,RegExp]>=[
+ ['a double quote in the middle','a"b',/没有配对的引号/],['a single quote in the middle',"a'b",/没有配对的引号/],['a quote at the end','a"',/没有配对的引号/],['a quote at the start','"a',/没有配对的引号/],
+ ['a trailing backslash','a\\',/反斜杠/],
+];
+for(const [label,value,why] of PIN_READ_DIFFERENTLY)
+test(`a condition constant with ${label} is refused at its own field: the runner would not read it as written`,()=>{
+ const input=recipe(block=>{block.select={where:[{column:1,value}]};}),gaps=gapsOf(input),own=gapAt(gaps,'/blocks/1/select/where/0/value');
+ assert.equal(gaps.length,1,JSON.stringify(gaps));assert.equal(own.length,1,JSON.stringify(gaps));
+ assert.equal(own[0].verdict,'refute');assert.ok(own[0].message.includes(JSON.stringify(value)),own[0].message);assert.match(own[0].message,why);assert.match(own[0].message,/下一步/);
+ const outcome=checkContractShape(input.subject(input.slots)).find(row=>row.verdict==='refute')!;assert.ok(outcome,'the Hub check refuses it too');assert.equal((outcome as any).pointer,'/data/blocks/1/select/where/0/value');
+});
+
+test('what the runner reads as written stays legal in a separator and a condition constant, and reaches the workbook',()=>{
+ for(const legal of ['+','|',':',';','\\x','a\\b','a\\\\b','{{','é','->']){
+  const input=separator(legal);assert.deepEqual(gapsOf(input),[],JSON.stringify(legal));
+  const read=readWorkbook(coreModel(generateWorkbook(input)),input);assert.ok(read.ok,JSON.stringify([legal,read]));
+ }
+ for(const legal of ['x,y','"ab"',"'ab'",'a,\'b','a,"b','a\\b','0012','K'+'a'.repeat(200)+'.']){
+  const input=recipe(block=>{block.select={where:[{column:1,value:legal}]};});assert.deepEqual(gapsOf(input),[],JSON.stringify(legal));
+  const read=readWorkbook(coreModel(generateWorkbook(input)),input);assert.ok(read.ok,JSON.stringify([legal,read]));
+ }
+});
+
 test('an all-digit separator would be read as an integer by the runner and is refused with the value seen',()=>{
  const input=separator('12'),gaps=gapsOf(input),own=gapAt(gaps,'/blocks/1/table/separator');
  assert.equal(own.length,1,JSON.stringify(gaps));assert.ok(own[0].message.includes('"12"'));assert.match(own[0].message,/整数/);

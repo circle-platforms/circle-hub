@@ -238,6 +238,13 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
  }
  const configured=replay(main).reverse();
  if(undoneConfigurations)replay(parsed,true);
+ // A removal ahead of the configuration it clears: the plan clears what an earlier round may have left, then configures it. The
+ // reference engine's cases start the same way and its teardown rule never asks anything of a removing line (InfoTest
+ // tau_coverage.py:221). It is the declared inverse of a later configuration of the same device, the configuration is not its
+ // inverse in turn (two commands that undo each other cancel in the replay above, whichever comes first), and that
+ // configuration's own cleanup clears the same thing, so the removal is no state left alive and owes none. Only that: a delete
+ // of something the plan never makes, or of another name or device, is still live and keeps needing its own (decision 104).
+ const clearsLater=(removal:typeof main[number])=>main.some(later=>later.object===removal.object&&ordinal(later.pointer)>ordinal(removal.pointer)&&modifies(later.identity!)&&inverseProblem(later,{...removal,restore:undefined})===null&&inverseProblem(removal,{...later,restore:undefined})!==null);
  // Reverse order binds within one device: a device does not undo another's state, so the order between devices is free
  // (the reference implementation's teardown check is not order-sensitive at all). One the runner's own cleanup covers without a declared paired inverse (every
  // sent line against the runner's prefix rules, first hit) needs none, and its explicit inverse is accepted wherever it
@@ -269,6 +276,7 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   let next=0;
   for(const operation of ordered){
    if(next<rest.length&&inverseProblem(operation,rest[next])===null){next++;continue;}
+   if(clearsLater(operation))continue; // takes no cleanup step, so the steps after it still pair with the configurations they belong to
    const problem=inverseProblem(operation,rest[next]);if(problem)note(problem.pointer,problem.message,problem.verdict,problem.obligation);next++;
   }
   // A left-over step that is the declared inverse of a live configuration of the same device stands out of reverse order; only

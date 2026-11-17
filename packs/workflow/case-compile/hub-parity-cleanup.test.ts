@@ -3,6 +3,7 @@
 // pack, synthetic documents, a knowledge port whose catalog selection is the Hub's own walk of the tree). Round 30 to 32 sent plans
 // with `ha on` and no `ha off`: the Hub accepted them because the selection of its catalog did not hold `ha off`, check-plan, given
 // the whole tree, refused them. A plan that turns a switch on owes the switch off, in reverse order, before the runner clears.
+// A removal sent ahead of the configuration it clears (run 36) owes nothing of its own; a delete of something the plan never makes does.
 import assert from 'node:assert/strict';
 import {after,before,describe,it} from 'node:test';
 import {osIsolationAvailable} from '../../../hub/rules/api.ts';
@@ -43,6 +44,9 @@ const VARIANTS:Array<[string,Step[],string|null]>=[
  ['the inverse before the runner\'s clear',['demo switch on','demo switch off','clear demo all'],null],
  ['the runner\'s clear before the cleanup',['demo switch on','clear demo all',cleanup('demo switch off')],'先执行同设备的产品声明逆操作'],
  ['an enum argument turned on and never off',['demo feature on'],'demo feature off'],
+ ['a removal ahead of the configuration it clears, which the runner clears at the end',['no demo pool add one','demo pool add one 10'],null],
+ ['the same removal with the cleanup written as well',['no demo pool add one','demo pool add one 10',cleanup('no demo pool add one')],null],
+ ['a delete of something the plan never makes',['no demo pool add one'],'缺唯一的产品逆操作规则'],
 ];
 const document={root:{data:{id:'doc-inv',text:'合成文档'},children:VARIANTS.map((_,i)=>({data:{id:'case-'+i,text:'开关配置测试'+i,resource:['功能'],priority:2,autoid:String(BigInt(AUTOID)+BigInt(i)),auto:'1'},children:[{data:{id:'step-'+i,text:'打开开关并检查'},children:[{data:{id:'expected-'+i,text:'健康检查间隔设置成功'}}]}]}))}};
 const bytes=Buffer.from(JSON.stringify(document));
