@@ -29,9 +29,9 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "exceljs": "4.4.0",
     "fflate": "0.8.3",
-    "parse5": "8.1.0",
+    "parse5": "8.1.1",
     "pg": "8.23.1",
-    "read-excel-file": "9.3.14",
+    "read-excel-file": "9.3.17",
     "saxes": "6.0.0",
     "typescript": "6.0.3",
     "zod": "4.6.7"
