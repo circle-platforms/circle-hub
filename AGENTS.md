@@ -2,9 +2,51 @@
 
 ## Current scope
 
-This is the public circle-hub repository. The Hub is being rebuilt as a standard MCP server that verifies results and never generates them: six tools, task packs, a content-addressed knowledge tree per product line and version, append-only records and a web console where administrators also manage the Hub (decision 122). The design authority is the generic model in `contracts/model.json`; read elements with `node tools/show-element.ts <ids>` and vocabulary axes with `node tools/show-element.ts --vocab <axis>`. The engineering brief for milestone 1 is `docs/hub-r4-architecture.md`: hard rules, package ownership, conventions, the case-review scenario, the structure of the real systems and the definition of done. Where the brief and the model disagree, the model wins; report the disagreement in your package README. `docs/hub-r4-brief.md` states the milestone for people. The integrator records phase progress and the owner's decisions, each with its source, in `docs/hub-r4-progress.md`; a package agent records its own decisions, limits and needs in its package README (architecture section 10). The root README stays the public face. Pages under `docs/` marked historical or superseded describe the retired task-and-approval server; they are records, not instructions.
+This is the public circle-hub repository. The Hub is being rebuilt as a standard MCP server (streamable HTTP, Bearer token) that verifies results and never generates them: six tools (`list_task_packs`, `upload_file`, `start_run`, `get_nodes`, `resolve_reference`, `submit_result`), task packs, a content-addressed knowledge tree per product line and version, append-only records and a web console whose pages are read-only and where administrators also manage users, tokens, packs, resources, secrets and knowledge sync, each action running the matching `circle-hub` command (decision 122). It serves HTTPS itself when configured (decision 121, `circle-hub tls`) and installs with one command on macOS and Linux (`install.sh`, release bundles, decision 123). The design authority is the generic model in `contracts/model.json`; read elements with `node tools/show-element.ts <ids>` and vocabulary axes with `node tools/show-element.ts --vocab <axis>`. The engineering brief for milestone 1 is `docs/hub-r4-architecture.md`: hard rules, package ownership, conventions, the case-review scenario, the structure of the real systems and the definition of done. Where the brief and the model disagree, the model wins; report the disagreement in your package README. `docs/hub-r4-brief.md` states the milestone for people. The integrator records phase progress and the owner's decisions, each with its source, in `docs/hub-r4-progress.md`; a package agent records its own decisions, limits and needs in its package README (architecture section 10). The root README stays the public face. Pages under `docs/` marked historical or superseded describe the retired task-and-approval server; they are records, not instructions.
 
-Hub executables and configuration use only `circle-hub` and `CIRCLE_HUB_*`. The pre-rename environment names were retired on 2026-10-16: they are not read or aliased, a hub process that still has one set refuses to start, and no fallback may be reintroduced. The Hub is not built on the Circle kernel. Circle and any other MCP client connect to it through an ordinary MCP server entry, and Circle shows no Hub-specific interface or label.
+Hub executables and configuration use only `circle-hub` and `CIRCLE_HUB_*`. The pre-rename environment names (`CIRCLE_SERVER_*`) were retired on 2026-10-16: they are not read or aliased, a hub process that still has one set refuses to start, and no fallback may be reintroduced. The Hub is not built on the Circle kernel. Circle and any other MCP client connect to it through an ordinary MCP server entry, and Circle shows no Hub-specific interface or label.
+
+## Commands
+
+Node >= 24, TypeScript run directly (type stripping; no build step).
+
+```sh
+npm ci
+npm run typecheck                 # tsc --noEmit
+npm run verify:contracts          # contracts/generated matches model.json, codes.json, contracts/src
+npm run gen:contracts             # regenerate contracts/generated (never hand-edit it)
+npm run test:unit                 # runs tools/run-unit-tests.ts (contracts, hub, packs, scripts)
+npm run test:acceptance           # tests/acceptance, temporary loopback PostgreSQL, concurrency 1
+npm run test:docs                 # .github/checks/*.test.ts
+npm run verify:references && npm run test:references   # after touching provenance tooling
+npm test                          # contracts check + unit + docs + acceptance + references
+
+node --test hub/runs/some.test.ts           # single test file
+node --test --test-name-pattern="x" file.ts # single test by name
+node --test "hub/server/**/*.test.ts"       # one package (a package agent's own check)
+
+node tools/show-element.ts B01 W06          # print model elements
+node tools/show-element.ts --vocab partition # print a vocabulary axis
+
+bash install.sh --dry-run --version <x.y.z>  # the installer's plan, changing nothing
+node tools/build-bundle.ts --platform darwin-arm64 --out <dir>   # build one release bundle
+```
+
+Tests start a temporary PostgreSQL from `embedded-postgres` (via `hub/testing/postgres.ts`). Backup/restore/deploy, `sandbox-exec` network denial and launchd tests need macOS and/or libpq (`pg_dump`/`pg_restore` of PG 18; `brew install libpq` or `CIRCLE_HUB_LIBPQ_BIN`) and skip elsewhere: a skip is not a pass; report skips explicitly. Never run `npm install` in a task worktree.
+
+## Architecture
+
+Packages under `hub/` have a strict dependency direction; cross-package calls go through each package's `api.ts` only, with no cycles:
+
+`server → runs, knowledge, connectors, records, platform, refs, rules`; `runs → knowledge(api), rules, refs, records`; `knowledge/connectors → rules(sandbox), refs, records`; `rules → refs(types)`; `refs, records → contracts`.
+
+- `records`: append-only `records` table + content-addressed objects + the few mutable stores (users, hashed tokens, root pointers with CAS, vault). Record digest = SHA-256 of RFC 8785 canonical JSON.
+- `refs`: reference resolution, deterministic parsers, verbatim quote check. `rules`: interpreters and the sandbox that runs pack functions (child process, Node permission model plus macOS `sandbox-exec` network denial).
+- `runs`: pack loading, run engine, validation, per-(item, requirement, layer) terminal state and partitions. Unknown stays unknown, never failure or success.
+- `knowledge`: tree, roots, producers, placement. `connectors`: read-only access to business systems (GET / allow-listed read routes only).
+- `server`: MCP endpoint, console, `circle-hub` CLI (`bin/circle-hub`). `platform`: key files (the vault master key and the operator token under `<data root>/keys`, on every platform; no macOS keychain), launchd/systemd, PG lifecycle, backup/restore.
+
+`packs/` holds the product, workflow and system packs. `tests/fixtures` and `scripts/real/` (owner-run, read-only against real systems) are the only places where real-system structure appears.
 
 ## Authorizations and limits
 
@@ -22,15 +64,18 @@ Never open the owner's environment file or the owner's own credential stores you
 
 ## Source and reference ownership
 
-- foundation/circle is the selected public TS source baseline. Keep its provenance and original license/notices. Do not run its client installers, updater or release scripts as server installation or deployment.
-- The archive of the platform that preceded the hub was removed from this public repository on 2026-10-30 (owner's decision); `references/source-manifest.json` now records only foundation/circle. Do not add it back.
+- foundation/circle is the selected public TS source baseline and is frozen: do not edit it, run it (its tests, client installers, updater and release scripts included) or import it. Keep its provenance and original license/notices.
+- The archive of the platform that preceded the hub was removed from this public repository on 2026-10-30 (owner's decision); `references/source-manifest.json` now records only foundation/circle (`npm run verify:references` checks its 287 files). Do not add it back.
 - Every piece of content has one of the model's four homes (C01: knowledge, policy, method, resource) and one of its four ownership classes (C02): generic content goes into the Hub core, product content into a product pack, a system adapter into a system pack, workflow content into a workflow pack. Core code names no product, command or customer. Section 4 of `docs/hub-r4-architecture.md` lists the work packages and the exact paths each one owns: edit only your own, call other packages only through their `api.ts`, and write what you need from another package in your README. Classification and code existence are not production availability.
 - Records are append-only and derived state is recomputed from them; an applied database migration never changes, a new migration is added instead. The earlier implementation is readable with `git show ca66002:<path>`: copy and adapt it, never import it, and do not import archived platform modules into runtime entry points.
-- New code is TypeScript run directly by Node 24 (erasable syntax only, imports ending in `.ts`, ESM) with exactly the dependencies in package.json. Enumerations, codes and their texts come only from `contracts/generated`: `vocabulary.ts` for the vocabulary axes, `protocol.ts` for record kinds, protocol and core violation codes, reference forms, pack file paths and the display order; vocabulary labels come only from `labelOf`. Never write an enumeration by hand and never coin a term. User-facing text is Chinese; tool and schema descriptions for models and code comments are English. Do not turn archived Python bridge or old SyntheticReference/compile runtimes into production dependencies.
+- New code is TypeScript run directly by Node 24 (erasable syntax only: no `enum`, parameter properties or namespaces; imports ending in `.ts`; ESM) with exactly the dependencies in package.json. Enumerations, codes and their texts come only from `contracts/generated`: `vocabulary.ts` for the vocabulary axes, `protocol.ts` for record kinds, protocol and core violation codes, reference forms, pack file paths and the display order; vocabulary labels come only from `labelOf`. Never write an enumeration by hand and never coin a term. User-facing text is Chinese; tool and schema descriptions for models and code comments are English. Do not turn archived Python bridge or old SyntheticReference/compile runtimes into production dependencies.
+- Errors are thrown as typed errors carrying a registered code (`PROTOCOL_CODES`, `CORE_VIOLATION_CODES`, `<pack>.<code>`); a new code is requested from the contracts owner, never invented. Pack functions are pure modules (`export default function (input: unknown): unknown`).
 
 ## Evidence and changes
 
 Use scripts for conclusions established by explicit inputs and rules; use model judgments for other content and label them as judgments. Facts come only from versioned rules and integrity-checked observations re-run at the Hub boundary; every exact value resolves to a reference; unknown stays unknown and is never shown as a failure or a success. Disclose actual inputs, outputs, transformations and missing evidence to authorized users. Tool returns, model conclusions, produced artifacts, observed effects and verified outcomes remain distinct.
+
+A failed read follows D05 R[3] (model 37): for team, product and business-system content, absent is `SOURCE_ABSENT` and present but unreadable is `SOURCE_NOT_PERMITTED`; another member's personal-space content and credential or login failures stay neutral (`SOURCE_UNAVAILABLE`), with the real cause only in the admin call log. New code follows this rule; existing read paths still answer the model-36 neutral form until consolidation step 4 ports them.
 
 Never use real Circle data, personal browser profiles or production devices for development checks; use scratch homes and synthetic resources. Local cancellation does not prove remote stopping.
 
