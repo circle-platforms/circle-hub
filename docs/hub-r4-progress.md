@@ -1112,6 +1112,10 @@ nav_order: 3
     - 旧记录：此前按 credential-scan@3 只保留的记录仍只保留，不放开，不改写；原件只有管理员能用 `circle-hub original export` 取出。当时已经接受的仍按那次接受读。之后对同一内容的新读取不改变旧记录：既不放开它，也不撤回它的接受（读取时，旧记录只按旧检测器的扫描判定，内容扫描写下的新记录按自己存下的档位读）。
     - 出口：要用被扣留的内容，按原对象重新读取，得到一份可读的新记录（遮盖字典照常替换）。运行引擎对只保留来源的请求、缺失事实和下一步都改成这句话。引用旧记录的运行结果保持原样。
     - 模型第 49 版：B02 R[4]、R[6]，C04 R[6]，D05 R[3]，R02 R[0]，V03 R[12]，显示规则第 9 条，协议码 `SOURCE_PENDING_REVIEW` 的说明。协议码都保留登记，供此前存下的记录和回执使用。四个通用技能包随协议文字升补丁版本（html-format 1.0.21，mindmap-format、workbook-format、xml-format 1.0.22）。
+162. **仓库的编码代理说明只用 AGENTS.md：CLAUDE.md 并进 AGENTS.md 后删去**（来源：所有者 2026-11-19 在对话里选“合并为只使用 AGENTS.md”，同时定下 Claude Code 自己的配置不进仓库；任务页 [`agents-md-only.md`](hub-r4-tasks/agents-md-only.md)）：
+    - 原因：Claude Code 2.1.277 起，工作目录及其上级都没有 CLAUDE.md 时才读 AGENTS.md。本仓库原来有 CLAUDE.md，有约束力的 AGENTS.md 因此不会自动加载；circle 和 circle-packs 只有 AGENTS.md，已经按这种方式加载。
+    - 并进的内容见任务页。命令清单原样保留作速查，和 Verification 一节有重叠；其余 AGENTS.md 已有的条文不再重复；“Git and commits”一节与 circle-packs 相同，没有改。
+    - 不进仓库的：hook、按路径加载的规则和插件开关，放在开发者本机的 Claude Code 设置里。
 
 ## 待所有者定
 
