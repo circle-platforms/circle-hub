@@ -11,13 +11,10 @@ import { ADMIN_COMMANDS } from './command-registry.ts';
 // enabled admin goes straight into the file and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
-import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
-import { maskCommand, MASK_USAGE } from './cli-mask.ts';
-import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE, readUploadedSource } from './cli-job.ts';
+import { readUploadedSource } from './cli-job.ts';
 import { DOC_MEDIA_TYPES, DOC_SUFFIXES, docMediaType, docSuffixOf } from './docs.ts';
-import { traceCommand, TRACE_USAGE } from './cli-trace.ts';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
-import { basename, isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, resolve } from 'node:path';
 import { isLeaseOp, labelOf } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError } from '../config/index.ts';
 import { productionShareKey, isSha256, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
@@ -31,20 +28,14 @@ import { terminalSafe } from './assemble/terminal.ts';
 import { CliError, UsageError } from './errors.ts';
 import { parse, decided } from './cli-arguments.ts';
 import { Session, REISSUE_LABEL, REISSUE, REMOVE_ITEM, type AdminCommandOptions, type OperatorAct } from './cli-session.ts';
-import { packCommand, packIdOf, PACK_USAGE } from './cli-pack.ts';
-import { resourceCommand, RESOURCE_USAGE } from './cli-resource.ts';
-import { knowledgeCommand, KNOWLEDGE_USAGE } from './cli-knowledge.ts';
+import { packIdOf } from './cli-pack.ts';
 export type { AdminCommandOptions, OperatorAct } from './cli-session.ts';
 export { PACK_USAGE } from './cli-pack.ts';
 export { RESOURCE_USAGE } from './cli-resource.ts';
 export { KNOWLEDGE_USAGE, writeKnowledgeViewFile, runContributionEntries } from './cli-knowledge.ts';
 
 export { SECRET_USAGE, ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, DOC_USAGE, INIT_ADMIN_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
-import { ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, DOC_USAGE, INIT_ADMIN_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
-
-async function secretCommand(session: Session, args: readonly string[]): Promise<number> { return namedSecretCommand(session, args); }
-
-// ---------------------------------------------------------------- knowledge
+import { ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, DOC_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
 
 // ---------------------------------------------------------------- init-admin
 
@@ -329,8 +320,6 @@ export async function docCommand(session: Session, args: readonly string[]): Pro
     const uploaded = values.reference !== undefined ? await readUploadedSource(await session.records(), admin, values.reference) : null;
     const bytes = uploaded !== null ? uploaded.bytes : await readFile(source!).catch(() => null);
     if (bytes === null) throw new CliError(`读不出文件 ${file.slice(0, 120)}`, '给一个有读取权限的现有文件');
-    // A workflow reads a named document through the core parser of its media type: a format no parser reads would be
-    // stored and then refused at every start_run that binds it (SOURCE_UNPARSEABLE), so it is not published at all.
     const mediaType = uploaded !== null ? uploaded.mediaType : docMediaType(basename(source!));
     if (!DOC_MEDIA_TYPES.includes(mediaType)) {
       const seen = uploaded !== null ? `上传原件 ${values.reference!.slice(0, 16)}… 的媒体类型是 ${mediaType}` : `文件名 ${basename(source!).slice(0, 120)} 的扩展名认不出格式`;

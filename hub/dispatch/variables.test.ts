@@ -133,7 +133,7 @@ test('resume keeps the pinned credential name while permitting a new version of 
  const interrupted=new DispatchService({...c.service.options,sleep:async()=>{throw new Error('DEMO_INTERRUPTED');}});
  const issued=await interrupted.dispatch(c.admin,c.run,c.executor.id);assert.equal(issued.outcome,'issued');assert.equal(c.submitted.length,1);
  const pinnedName=secretNameOf(c.executor.definition.credential!)!;
- const updated=await c.registry.update(c.admin,c.executor.id,{...c.executor.source,credential:'${secret:DEMO_OTHER_AUTH}'});
+ await c.registry.update(c.admin,c.executor.id,{...c.executor.source,credential:'${secret:DEMO_OTHER_AUTH}'});
  await c.kit.variables.setSecrets(c.admin,[{name:'DEMO_OTHER_AUTH',value:'Demo!DifferentAuth42'}],'DEMO_OTHER');
  const before=c.endpoint.calls.length;
  const resumed=await c.service.resume(c.admin,issued.job);assert.equal(resumed.outcome,'effective');

@@ -1,7 +1,5 @@
-/** Reset side effects and recovery state belong to the host. */
 export interface ResetHost {
   inspect(): Promise<void>;
-  /** Completes only after the backup has been verified. */
   backup(): Promise<void>;
   stop(): Promise<void>;
   exportConfiguration(): Promise<void>;
@@ -38,7 +36,6 @@ const ROLLBACK_TEXT: Record<ResetRollbackOutcome, string> = {
   failed: '自动恢复失败',
 };
 
-/** Retains both outcomes without retaining raw host errors, which may contain confidential values. */
 export class ResetFailure extends Error {
   readonly stage: ResetStage;
   readonly rollback: ResetRollbackOutcome;

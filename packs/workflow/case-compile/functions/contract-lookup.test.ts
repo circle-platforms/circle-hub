@@ -1,8 +1,7 @@
-// The method and block lookups (functions/contract-lookup.ts) over a synthetic frozen run (testing/contract-lookup-fixture.ts).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import BLOCKS from '../tables/blocks-format.json' with { type: 'json' };
-import { BULK_METHODS, contractFixture, hostLiterals, LITERALS, methodSource, signContract, type ContractFixture } from '../testing/contract-lookup-fixture.ts';
+import { BULK_METHODS, contractFixture, hostLiterals, LITERALS, methodSource, signContract } from '../testing/contract-lookup-fixture.ts';
 import { frozenSlots } from '../testing/frozen-run.ts';
 import { callBoundaryGaps } from './call-boundaries.ts';
 import { CONTRACT_BOUNDS, lookupBlock, lookupMethod, lookupMethods, type BlockSource } from './contract-lookup.ts';
@@ -25,7 +24,6 @@ test('a usable method says so, then its signature, the G, H and I columns as the
   hasLine(answer, '# 对象 widget-seat：类型 WidgetSeat，合约状态 enabled。');
   hasLine(answer, '# 签名：(line, auth_token=<redacted>)；必填 line，可选 auth_token。');
   hasLine(answer, '# 派发方式：direct_method_call；实现 fixture.configure（fixture/runtime.py 行 21）。');
-  // The columns carry the workbook's own header words, which the profile declares.
   hasLine(answer, '# G 列（FixtureData）：one device command line as text');
   hasLine(answer, '# H 列（FixtureOutput）：stores the returned text');
   hasLine(answer, '# I 列（FixtureInput）：the saved text replaces {} in G');
@@ -233,7 +231,6 @@ test('methods never lists more than its bound of a group, says how many there ar
   hasLine(answer, `# 还有 ${BULK_METHODS - CONTRACT_BOUNDS.methods} 个没有列出：--method 'widget-bulk.<前缀>' 按前缀找，例如 --method 'widget-bulk.c6'。`);
   assert.match(lines(answer).at(-2)!, new RegExp(`本次截断：.*认证候选 ${BULK_METHODS} 个只显示 ${CONTRACT_BOUNDS.methods} 个`));
   noLine(answer, 'widget-bulk.c64 ');
-  // The names that start the same are the way to the rest, with their own bound.
   const near = lookupMethod(source, 'widget-bulk.c');
   const nearLine = lines(near).find((line) => line.startsWith('# 以 c 开头的方法：'))!;
   assert.equal(nearLine.split('、').length, CONTRACT_BOUNDS.near);
@@ -248,9 +245,6 @@ test('every answer states its bounds and whether it cut anything, and is the sam
   }
   for (const call of [() => lookupMethod(source, 'widget-seat.configure'), () => lookupMethods(source, 'widget-seat'), () => lookupMethod(source, 'widget-host.shell')]) assert.equal(call(), call());
 });
-
-// ----------------------------------------------------------------------------------------------------------------------------
-// Block kinds: the frozen slot schema of the run, the pack's block table, an example when the pack has one.
 
 const frozen = frozenSlots();
 const arms = (schema: any = frozen.schema): Array<Record<string, any>> => schema.properties.plan.items.properties.data.properties.blocks.items.anyOf;
@@ -293,8 +287,6 @@ test('the values the block table closes a field to are told beside the kind that
 test('a field with a table, a column or a selection is told by what it holds, closed values included', () => {
   const answer = lookupBlock(blockSource(), 'SELECT_CELL');
   hasLine(answer, '#   table：对象：必填 format（字符串，取值 delimited、key_value）、separator（字符串）、columns（整数 ≥1）、header（布尔）');
-  // The cell fields carry no description in the table (the ones T15 had put there came from one case and are gone, round 37), so the
-  // answer tells what they hold and nothing after it; a field that has a description gets it after what it holds (author_step_refs below).
   const cell = arm('SELECT_CELL').properties;
   assert.equal(cell.column.description, undefined);
   assert.equal(cell.select.description, undefined);

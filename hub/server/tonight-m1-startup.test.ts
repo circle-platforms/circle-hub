@@ -1,4 +1,3 @@
-// A pre-existing M1 member and booking survive an ordinary serve; no upgrade command is part of this path.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Database, createPool, openRecords, type User } from '../records/api.ts';

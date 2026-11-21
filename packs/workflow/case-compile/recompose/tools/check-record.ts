@@ -1,10 +1,4 @@
 import { formatClientCallError } from '../functions/client-cli.ts';
-// Read-only offline pre-check of lite recompose records, one file or a directory of them: UTF-8/JSON syntax, the single lite shape,
-// item/method and duplicate items. With --run it also runs, on the same frozen run and locked command tree, what the Hub runs on a
-// records submission: the structure check of the slot record against slots.schema.json and the function checks of this pack's
-// checks.json (record, full_set), so a problem the Hub would refuse is reported here with the Hub's own words. It touches neither
-// the Hub nor a token and writes nothing:
-//   node <skill directory>/tools/check-record.ts --file <record JSON or directory> [--run <downloaded run directory>]
 import { realpathSync } from 'node:fs';
 import { lstat, readdir } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -29,14 +23,11 @@ const HELP_TEXT = [
 export interface RecordProblem {
   code?: string;
   file?: string;
-  /** The frozen item the problem is about. */
   item?: string;
-  /** The check of the pack's checks.json that gave it (absent for the format checks of this tool). */
   check?: string;
   verdict?: Extract<Verdict, 'refute' | 'unknown'>;
   pointer?: string;
   message: string;
-  /** The machine-readable part of the check's outcome, as the Hub records it. */
   data?: Record<string, unknown>;
 }
 
@@ -48,19 +39,13 @@ export interface CheckedRecordEntry {
   problems: RecordProblem[];
 }
 
-/** Which of the Hub's checks ran on the records, and which could not. */
 export interface HubChecks {
   ran: boolean;
   run?: string;
-  /** Why the Hub's checks did not run (only when `ran` is false). */
   why?: string;
-  /** The structure checks of the pack's slots file run here, which the Hub runs first and refuses the whole record on. */
   structure: string[];
-  /** The checks of the pack's checks.json run here, in declared order. */
   checks: string[];
-  /** The declared checks not run here, each with the reason. */
   not_run: Array<{ check: string; why: string }>;
-  /** Facts the Hub knows and the download does not carry, taken as stated here. */
   assumed: string[];
 }
 
@@ -81,7 +66,6 @@ interface FrozenRun { run: RunRow; nodes: KnowledgeNodes }
 
 const ASSUMED = ['产品声明的命令目录是否完整：下载里没有这条声明，本地按完整核对；若锁定根没有声明完整，Hub 会另外指出缺口'];
 
-/** The one-line correct form every refused `--run` is answered with: the same line as in the case-compile pack's tools/workspace-path.ts (the packs are published apart; the pack tests compare the two). */
 const RUN_DIRECTORY_FORM = "--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）";
 
 async function loadFrozenRun(runDir: string): Promise<FrozenRun> {
@@ -115,7 +99,6 @@ function writeProblemStderr(
   process.stderr.write(formatClientCallError(new CallFailure(category, `${summary}（${detail}${suffix}）`, nextStep)) + '\n');
 }
 
-/** An outcome of a Hub check as the problem the model reads: the Hub's own code and words (`code ?? reason`, `missing ?? statement`). */
 function problemOf(file: string | undefined, { check, item, outcome }: CheckedOutcome): RecordProblem {
   return {
     code: outcome.code ?? outcome.reason,
@@ -131,12 +114,10 @@ function problemOf(file: string | undefined, { check, item, outcome }: CheckedOu
 
 interface CheckedFile {
   entry: CheckedRecordEntry;
-  /** The validated file and its submission entry, when it passed every check before the Hub's. */
   row?: RunRow;
   submitted?: { item: string; slots: RunRow };
 }
 
-/** The format checks of one file, and, with a frozen run, its membership and the submission entry the Hub's checks run on. */
 async function checkFile(name: string, path: string, label: string, frozen: FrozenRun | null, seen: Map<string, string> | null): Promise<CheckedFile> {
   const problems: RecordProblem[] = [];
   let itemId: string | null = null;
@@ -171,7 +152,6 @@ async function checkFile(name: string, path: string, label: string, frozen: Froz
   return { entry: { file: name, ok: problems.length === 0, item: itemId, method_kind: methodKind, problems }, ...(problems.length === 0 && submitted !== undefined ? { row, submitted } : {}) };
 }
 
-/** Validates one lite recompose record file or a directory of `.json` record files offline. */
 export async function checkRecordTarget(options: { file: string; run?: string }): Promise<CheckRecordReport> {
   const targetStat = await lstat(options.file).catch((error) => { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null; throw error; });
   if (!targetStat) {
@@ -202,7 +182,6 @@ export async function checkRecordTarget(options: { file: string; run?: string })
   const dirProblems: RecordProblem[] = [];
   let hub: CheckRecordReport['hub_checks'] = { ran: false, why: '没有 --run：只核对了单一精简格式；Hub 的重组检查没有运行，不能当作 Hub 会接受。下一步：用 --run <运行目录> 重检', structure: [], checks: [], not_run: [], assumed: [] };
   if (frozen !== null) {
-    // The run-level checks need every frozen item; the tool-level wording for a missing item is the one submit-records gives too.
     let complete: true | string;
     if (!directory) complete = '单个文件只核对这一条；整批封批要用目录模式核对';
     else if (files.some((file) => !file.entry.ok)) complete = '还有文件没有通过上面的检查，整批封批无从核对';

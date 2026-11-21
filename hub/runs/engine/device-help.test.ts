@@ -194,7 +194,6 @@ describe('a run that asks the devices its lineage holds', { skip }, () => {
     assert.equal(unknown!.statement.text, '没有向设备问：bed/meadow/dev/4：目标这一版没有认证。下一步：管理员登记认证后再问');
     assert.deepEqual(unknown!.grounds, []);
     assert.match(toolText('start_run', refused.answer), /没有向设备问：bed\/meadow\/dev\/4：目标这一版没有认证。下一步：管理员登记认证后再问/);
-    // A port that throws is the same: an unknown, a line in the administrator's log, a run that starts.
     port = async () => { throw new Error('synthetic port failure'); };
     h.logs.length = 0;
     const broken = await start(h.alice, 'toy-ask-4', 's-help-4c', booking);

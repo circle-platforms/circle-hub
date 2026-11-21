@@ -1,10 +1,3 @@
-// Inputs bound after the start (W06 R[6] exception, R[7]; B03 R[0]; W08; decision 179): start_run freezes only which run a slot
-// declaring from_runs.after_start binds. Every evaluation and every run export reads that run's latest accepted submitted
-// validation record again, as the runner may read it at that moment, hands it with the frozen items and the frozen inputs
-// refresh.reads names to the workflow's refresh function, and gives each item the overlay item.late; the frozen projection is
-// never changed. The references used and the digest of the overlay go into locks.late, so a replay recomputes from those
-// references (lateFromLocks), never from the latest. The read takes no lock of the bound run: records are appended atomically,
-// so it sees whole accepted results only, and a validation never waits on the bound run's own validation.
 import type { BoundInput, LateBoundInput, RunContext, SubjectItem } from '../../../contracts/src/pack.ts';
 import { ItemRefreshInput, ItemRefreshOutput } from '../../../contracts/src/pack.ts';
 import { RunLateExport, type RunRecord } from '../../../contracts/src/run.ts';
@@ -24,32 +17,25 @@ import { isObject } from './util.ts';
 import { recordInput } from './inputs.ts';
 import { recordBytes } from './exact.ts';
 
-/** What an evaluation is given about the inputs bound after the start: the rows it resolved, and on a replay the overlay digest the stored result recorded. */
 export interface LateEvaluation {
   inputs: LateInputRow[];
-  /** A replay: the refresh digest of the stored result; a different recomputation is an error, never a new result. */
   expect?: string | null;
 }
 
-/** The overlay of one evaluation: the refresh digest (null when the function gave nothing usable) and each item's late. */
 export interface LateOverlay {
   refresh: string | null;
   items: Map<string, Record<string, unknown>>;
-  /** Why there is no overlay: the read of a frozen input, the sandbox or the function's output (admin log only). */
   failure?: unknown;
 }
 
-/** The slots of a workflow that declare from_runs.after_start. */
 export function lateSlotsOf(workflow: Pick<LoadedWorkflow, 'workflow'>): Set<string> {
   return new Set(workflow.workflow.inputs.filter((slot) => slot.from_runs?.after_start === true).map((slot) => slot.slot));
 }
 
-/** The rows a stored result recorded, for a replay that must recompute exactly what it did. */
 export function lateFromLocks(late: LateLocks | undefined): LateEvaluation | undefined {
   return late === undefined ? undefined : { inputs: late.inputs.map((row) => ({ ...row })), expect: late.refresh };
 }
 
-/** The account a run's evaluation reads as: its runner, or the configurer of a Hub-side run; null when that account is gone or disabled. */
 async function runnerNow(ctx: EngineContext, run: RunRecord): Promise<Principal | null> {
   const id = run.runner ?? run.configurer;
   if (id === undefined || ctx.deps.records.principals === undefined) return null;
@@ -58,7 +44,6 @@ async function runnerNow(ctx: EngineContext, run: RunRecord): Promise<Principal 
   return { id: user.id, name: user.name, role: user.role };
 }
 
-/** Why a run the runner may read has no accepted submitted result now, in the words the pack and the receipt show. */
 async function waitingFact(ctx: EngineContext, bound: StoredRecord<RunRecord>): Promise<string> {
   const owner = keyOwner(bound.body);
   const successors = (await successorsOf(ctx.deps.records.store, bound.body.run)).filter((s) => packIdOf(s.body.pack) === packIdOf(bound.body.pack) && keyOwner(s.body) === owner);
@@ -67,11 +52,6 @@ async function waitingFact(ctx: EngineContext, bound: StoredRecord<RunRecord>): 
   return `运行 ${bound.body.run} 还没有已受理提交`;
 }
 
-/**
- * Reads, for each input bound after the start, the latest accepted submitted validation record of its run as the runner may read
- * it now (B03 R[0]: this is not a frozen input). Without one the row carries the missing fact; a run the runner may not read is
- * said the D05 R[3] way. Takes no lock of the bound run. Null when the run froze no such input.
- */
 export async function resolveLateInputs(ctx: EngineContext, run: RunRecord): Promise<LateInputRow[] | null> {
   if (run.late_inputs === undefined || run.late_inputs.length === 0) return null;
   const store = ctx.deps.records.store;
@@ -81,7 +61,6 @@ export async function resolveLateInputs(ctx: EngineContext, run: RunRecord): Pro
     const bound = await runById(store, row.run);
     if (bound === null) { rows.push({ slot: row.slot, run: row.run, missing: `运行 ${row.run} 不存在` }); continue; }
     if (runner === null || !canSeeRun(runner, bound.body)) {
-      // A disabled account is of the login class and another member's personal run stays neutral (D05 R[3]).
       const existence = runner === null ? 'neutral' : await recordExistence(store, runner.id, bound);
       rows.push({ slot: row.slot, run: row.run, missing: existence === 'neutral' ? `运行 ${row.run} 对运行者不可用` : `运行者没有读取运行 ${row.run} 的权限` });
       continue;
@@ -93,17 +72,12 @@ export async function resolveLateInputs(ctx: EngineContext, run: RunRecord): Pro
   return rows;
 }
 
-/** The reader an evaluation of the run uses for its frozen inputs: the runner (or configurer) with the role it has, scoped to the run. */
 export async function runReaderOf(ctx: EngineContext, run: RunRecord): Promise<ReaderIdentity> {
   const id = run.runner ?? run.configurer ?? 'hub';
   const user = ctx.deps.records.principals !== undefined ? await ctx.deps.records.principals.get(id) : null;
   return { user: id, role: user?.role ?? 'user', run: run.run };
 }
 
-/**
- * The frozen inputs refresh.reads names, rebuilt from the run's bindings as start_run handed them to the projection, read with
- * the authority the run started with (B03 R[0]). A binding that cannot be read again is an error: the overlay is then unknown.
- */
 export async function frozenReads(ctx: EngineContext, run: RunRecord, workflow: LoadedWorkflow, reader: ReaderIdentity): Promise<BoundInput[]> {
   const reads = workflow.workflow.refresh?.reads ?? [];
   if (reads.length === 0) return [];
@@ -133,7 +107,7 @@ export async function frozenReads(ctx: EngineContext, run: RunRecord, workflow: 
           const sha = capture?.kind === 'source_artifact' && typeof capture.body.sha256 === 'string' ? capture.body.sha256 : null;
           const metaSource = sha === null ? null : await artifacts.source(principalOf(reader), sha, { consumer: 'function', record: binding.meta_artifact });
           if (metaSource?.bytes) {
-            try { const parsed: unknown = JSON.parse(new TextDecoder().decode(metaSource.bytes)); if (isObject(parsed)) meta = parsed; } catch { /* as at start: a meta that is not JSON is left out */ }
+            try { const parsed: unknown = JSON.parse(new TextDecoder().decode(metaSource.bytes)); if (isObject(parsed)) meta = parsed; } catch { }
           }
         }
       } else throw new Error(`frozen input ${slot}: ${ref.scheme} bindings are not inputs`);
@@ -145,7 +119,6 @@ export async function frozenReads(ctx: EngineContext, run: RunRecord, workflow: 
   return out;
 }
 
-/** The result each row names, as an explicit rec: binding would hand it to a workflow function; null with the missing fact otherwise. */
 async function lateBound(ctx: EngineContext, rows: readonly LateInputRow[]): Promise<LateBoundInput[]> {
   const out: LateBoundInput[] = [];
   for (const row of rows) {
@@ -159,12 +132,6 @@ async function lateBound(ctx: EngineContext, rows: readonly LateInputRow[]): Pro
   return out;
 }
 
-/**
- * Calls the workflow's refresh function once with the frozen items, the frozen reads and the resolved rows, and checks what it
- * returns (ItemRefreshOutput, each id once and an item of this run). The sandbox is tried once more when it could not run the
- * function, as for the projection. Never throws: a failure is an overlay with refresh null, which the evaluation turns into an
- * unknown for every check.
- */
 export async function refreshItems(ctx: EngineContext, run: RunRecord, workflow: LoadedWorkflow, rows: readonly LateInputRow[], options: { reader: ReaderIdentity; context: RunContext; sandbox?: SandboxOptions; traceId: string | null }): Promise<LateOverlay> {
   const fn = workflow.workflow.refresh;
   if (fn === undefined) return { refresh: null, items: new Map(), failure: new Error('the workflow declares no refresh function') };
@@ -196,7 +163,6 @@ export async function refreshItems(ctx: EngineContext, run: RunRecord, workflow:
   }
 }
 
-/** GET /run-export/<run>/late: the same reading and refresh an evaluation would do now, nothing stored (run-late@1). */
 export async function exportLateOf(ctx: EngineContext, stored: StoredRecord<RunRecord>, workflow: LoadedWorkflow | null, context: (run: RunRecord) => Promise<RunContext>): Promise<RunLateExport> {
   const run = stored.body;
   const resolvedAt = ctx.now().toISOString();

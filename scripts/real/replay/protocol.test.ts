@@ -21,11 +21,8 @@ test('a PreToolUse answer is read as Circle 1.18.0-local.2 reads it', () => {
   assert.deepEqual(block(0, deny('no way'), ''), { decision: 'deny', reason: 'no way', failed: false });
   assert.deepEqual(block(0, deny(), ''), { decision: 'deny', reason: 'hook denied', failed: false });
   assert.deepEqual(block(0, JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: 'sure?' } }), ''), { decision: 'ask', reason: 'sure?', failed: false });
-  // `defer` is ignored: Circle cannot hold a call for later
   assert.deepEqual(block(0, JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'defer' } }), ''), { decision: 'none', reason: '', failed: false });
-  // a rewrite beside a decision that lets the call run
   assert.deepEqual(block(0, JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { command: 'x' } } }), ''), { decision: 'allow', reason: '', failed: false, rewritten: true });
-  // the top-level form of the format before: it still counts, and is marked
   assert.deepEqual(block(0, JSON.stringify({ decision: 'block', reason: 'old way' }), ''), { decision: 'deny', reason: 'old way', failed: false, legacy: true });
   assert.deepEqual(block(0, JSON.stringify({ decision: 'approve' }), ''), { decision: 'allow', reason: '', failed: false, legacy: true });
 });
@@ -55,7 +52,6 @@ test('a failed hook denies when it blocks on failure and lets the call go ahead 
   assert.match(block(1, '', 'it crashed\nsecond line').reason, /exited 1: it crashed$/);
   assert.deepEqual(carryOn(1, '', 'crash'), { decision: 'none', reason: '', failed: true });
   assert.equal(block(null, '', '').reason, 'hook guard failed; blocking because onFailure is "block": exited unknown');
-  // another exit code with a JSON answer: the answer decides, unless the hook blocks on failure
   assert.deepEqual(carryOn(1, deny('exit 1 but said so'), ''), { decision: 'deny', reason: 'exit 1 but said so', failed: false });
   assert.deepEqual(block(1, deny('exit 1 but said so'), '').failed, true);
 });
@@ -108,11 +104,9 @@ test('a candidate is one file, or a folder of files, and never a link', () => {
     const folder = readCandidate([join(dir, 'folder')]);
     assert.equal(folder.mode, 'folder');
     assert.deepEqual([...folder.files.keys()], ['entry.mjs', 'nested/lib.ts']);
-    // several files are a folder too, named by their own names
     const several = readCandidate([join(dir, 'single.txt'), join(dir, 'folder', 'entry.mjs')]);
     assert.equal(several.mode, 'folder');
     assert.deepEqual([...several.files.keys()].sort(), ['entry.mjs', 'single.txt']);
-    // the same name twice, a missing path and a link are refused
     assert.throws(() => readCandidate([join(dir, 'folder', 'entry.mjs'), join(dir, 'folder')]), ReplayError);
     assert.throws(() => readCandidate([join(dir, 'missing')]));
     symlinkSync(join(dir, 'single.txt'), join(dir, 'folder', 'link.txt'));
@@ -125,8 +119,6 @@ test('a candidate is one file, or a folder of files, and never a link', () => {
   }
 });
 
-// The port above is checked against the candidate Circle's own build when one is given: the same exit code, output and error
-// text go through its `interpretHookRun` and `combineOutcomes`, and the decision and reason must be the same.
 const circle = process.env.CIRCLE_HUB_REPLAY_CIRCLE_CANDIDATE;
 test('the reading of a hook answer is the candidate Circle\'s own reading', { skip: circle === undefined ? '需要 CIRCLE_HUB_REPLAY_CIRCLE_CANDIDATE 指向候选 Circle（1.18.0-local.2）的目录' : false }, async () => {
   const { interpretHookRun, combineOutcomes } = await import(pathToFileURL(join(circle!, 'dist', 'hooks.js')).href);

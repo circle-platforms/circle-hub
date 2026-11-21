@@ -63,8 +63,6 @@ export async function login(request: IncomingMessage, response: ServerResponse, 
   const rawName = (form.get('username') ?? '').trim();
   const name = rawName.length <= 200 && [...rawName].length <= 100 ? rawName : '';
   const peerKey = 'peer:' + (request.socket.remoteAddress ?? 'unknown');
-  // Every account, administrators included, signs in with its username and password (owner, 2026-11-02); a token only
-  // connects a Circle and is never accepted here.
   const accountKey = 'account:' + name;
   if (!options.sessions.takeLoginAttempt(accountKey) || !options.sessions.takeLoginAttempt(peerKey, 50)) return loginPage(options, response, 429, '登录失败次数过多，请在 15 分钟后重试', secure);
   const principals = options.deps.records.principals;
@@ -87,7 +85,6 @@ export async function login(request: IncomingMessage, response: ServerResponse, 
   redirect(response, state?.mustChange ? '/console/password?next=' + encodeURIComponent(destination) : destination, [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.token, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
 }
 
-/** Password forms have no data navigation until the forced first change is complete. */
 export async function passwordPage(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, principal: Principal | null, secure: boolean, rest: string[]): Promise<void> {
   if (!session || !principal) { request.resume(); return redirect(response, '/console/login'); }
   const mustChange = (await options.deps.records.principals.passwordState(principal.id)).mustChange;
@@ -118,9 +115,6 @@ ${postForm({
     if (!await principals.changePassword(principal, form.get('current') ?? '', password)) return show(400, '当前密码无效，或新密码与当前密码相同');
     options.sessions.clearLoginAttempts(key);
     options.sessions.close(session.token);
-    // The change revoked every console session of the account. Whoever just proved both passwords continues in a fresh
-    // session bound to the new revision, so no second sign-in follows the change (owner report, 2026-11-02); a reset
-    // that lands in between leaves only the sign-in.
     const next = safeNext(form.get('next')), state = await principals.passwordState(principal.id);
     const token = state.mustChange ? null : (await principals.openConsoleSession(principal.id, state.revision))?.token ?? null;
     if (token !== null) {
@@ -209,7 +203,6 @@ export async function setup(request: IncomingMessage, response: ServerResponse, 
     return;
   }
   options.log(`控制台建立了第一位管理员 ${outcome.name}`);
-  // No session is opened here: like every account, the new administrator signs in with username and password.
   sendHtml(
     response,
     200,

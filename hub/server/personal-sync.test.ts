@@ -124,7 +124,6 @@ test('strict wire limits, query validation and refusal audits expose no request 
 test('audit start failures prevent writes and finish failures leave recoverable operation receipts',async t=>{
  const postgres=await startPostgres();
  const hub=await createTestHub({...options,postgres}).catch(async error=>{await postgres.stop();throw error;});
- // Only the fault injector owns DDL; HTTP and business records retain the real runtime connection.
  const {Database,createPool}=await import('../records/db.ts'),db=new Database(createPool({...postgres.config,database:hub.records.database.database}));
  t.after(async()=>{try{await db.end();}finally{try{await hub.close();}finally{await postgres.stop();}}});
  const owner=await hub.createUser('合成审计故障'),api=hub.records.personalSync!,client_id=randomUUID();

@@ -1,6 +1,6 @@
 import { isAdmin } from '../records/api.ts';
-import { open, lstat, rm, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { open, lstat, rm } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { createKnowledgeReader, formatKnowledgeRetract, formatReprojectReport, formatSeedReport, formatSyncReport, knowledgeReproject, knowledgeRetract, knowledgeSeed, knowledgeSync, parseKnowledgeReprojectArgs, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeReprojectArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import type { ProductHandle, RunsService } from '../ports.ts';
 import { isSha256, type Principal, type RecordStore } from '../records/api.ts';
@@ -18,7 +18,6 @@ async function productOf(hub: AssembledHub, viewer: Principal, name: string): Pr
   return product;
 }
 
-/** Own the newly created file before writing, so cleanup never removes a competing writer's file. */
 export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, openTarget = async () => open(target, 'wx', 0o600)): Promise<Record<string, unknown>> {
   let file: Awaited<ReturnType<typeof openTarget>>;
   try { file = await openTarget(); }
@@ -41,14 +40,6 @@ export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, 
 
 const objectOf = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 
-/**
- * `knowledge retract --run`: the contribution records a run stored, in receipt order, as its accepted validation results
- * list them (`contributions.stored`); a contribution record names no run. The run is read through the runs service, as
- * `run show` and `share run` read it. Every accepted result the run's detail names is read, not only the latest: a later
- * accepted submission's receipt lists only its own items, and an abandoned run's latest result is the management projection,
- * which has no receipt. Stored results are read as stored, so older result shapes still give their receipts. Null when the
- * run is absent; the retraction screen then refuses it.
- */
 export async function runContributionEntries(runs: Pick<RunsService, 'getRun'>, store: Pick<RecordStore, 'get'>, by: Principal, run: string): Promise<string[] | null> {
   const detail = await runs.getRun(by, run);
   if (detail === null) return null;
@@ -144,7 +135,6 @@ export async function knowledgeCommand(session: Session, args: readonly string[]
     return report.ok ? 0 : 1;
   }
   if (sub === 'reproject') {
-    // Re-projects a line's existing fed cases onto its current seedling root, as seed does before it moves the pointer.
     let parsed: KnowledgeReprojectArgs;
     try {
       parsed = parseKnowledgeReprojectArgs(rest);
@@ -172,8 +162,6 @@ export async function knowledgeCommand(session: Session, args: readonly string[]
     const hub = await session.hub(true);
     const feeding = hub.knowledge.feeding;
     if (!feeding) throw new CliError('喂入层没有装上', '用当前 Hub 装配后重试');
-    // A run's contributions join the entries of the same command, so the entry record lists them and the read side marks
-    // each one; entries an earlier record already lists are skipped as covered, as any other target is.
     const included: Array<{ run: string; count: number }> = [];
     const targets = [...entries];
     for (const run of new Set(runs)) {
@@ -200,8 +188,6 @@ export async function knowledgeCommand(session: Session, args: readonly string[]
     for (const line of lines) {
       const current = await hub.knowledge.currentRoot(id, line);
       session.out(`版本线 ${line}：${current === null ? '还没有当前根' : `当前根 ${current.root}（构建 ${current.build.name}，产出于 ${current.produced_at}）`}`);
-      // Builds that have a root first, one line each; a line with many name-only builds stays readable: they
-      // close the line as one count instead of one row per build.
       const ofLine = builds.filter((b) => b.line === line);
       const rooted = ofLine.filter((b) => b.root !== null || b.base !== b.name);
       const nameOnly = ofLine.filter((b) => b.root === null && b.base === b.name);
@@ -244,4 +230,3 @@ export async function knowledgeCommand(session: Session, args: readonly string[]
   }
   throw new UsageError(`knowledge 的子命令：${KNOWLEDGE_USAGE}`);
 }
-

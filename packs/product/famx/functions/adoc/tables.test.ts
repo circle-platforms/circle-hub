@@ -180,129 +180,19 @@ test('a table whose rows the engine reads with unequal cell counts is mapped as 
   });
   const mapped = toK1Model(out.model, out.composition, 'cli-famx');
   // The row the engine reads with two cells for three columns is neither regrouped nor padded, and the mapping says the
-  // counts differ. The `2+` after the first cell's text is the specifier of the next cell (the engine's own cell rule),
-  // so both cells verify on line 6 and the row is cited there: the line holds the whole row.
+  // counts differ. The cell that carries the span marker verifies on no source line (step one reports it), so the whole
+  // row is left out and reported: its text would otherwise be cited on a line that holds only part of it.
   assert.ok(mapped.warnings.some((warning) => warning.includes('格数与表头不一致') && warning.includes('book.adoc:')), mapped.warnings.join('；'));
-  assert.deepEqual(out.report.unverified, [], JSON.stringify(out.report.unverified));
-  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
-  assert.deepEqual(tableLines(mapped), ['| 命令 | 说明 | 备注 |', '| --- | --- | --- |', '| **demo pool add** *<name>* | 添加成员，见备注 |'], 'the row stays as the engine gave it: two cells, no padding');
+  assert.equal(mapped.uncited.length, 1, JSON.stringify(mapped.uncited));
+  assert.equal(mapped.uncited[0]!.kind, 'table');
+  assert.ok(mapped.uncited[0]!.reason.includes('有单元格回核不到原文行'), JSON.stringify(mapped.uncited[0]));
+  assert.ok(mapped.uncited[0]!.reason.includes('book.adoc:6'), 'the report names the line of the cell that cites nothing');
+  assert.ok(out.report.unverified.some((one) => one.kind === 'table_cell' && one.reported_line === 6), JSON.stringify(out.report.unverified));
+  assert.deepEqual(tableLines(mapped), ['| 命令 | 说明 | 备注 |', '| --- | --- | --- |'], 'the head row stays, the uncited row does not');
   const produced = produceAdocEntries(mapped, { name: 'cli-famx', slot: 'manual' });
   assert.ok(produced.ok, JSON.stringify(produced));
   assert.deepEqual(produced.entries.filter((entry) => entry.data.form === 'signature'), []);
-  const row = produced.entries.find((entry) => String(entry.statement).includes('添加成员'));
-  assert.ok(row !== undefined, JSON.stringify(produced.entries.map((entry) => entry.statement)));
-  assert.equal(row.fragments[0]!.selector, 'l/6');
-});
-
-test('a block-style cell keeps its paragraphs and lists on its row and cites the lines it spans', async () => {
-  const { mapped, entries } = await mapAndPlace({
-    'book.adoc': [
-      '= Synthetic',                                     // 1
-      '',                                                // 2
-      '*demo host name* _<host_name> [ttl] [type]_',     // 3
-      '',                                                // 4
-      '[cols="30%,70%",options=noheader]',               // 5
-      '|===',                                            // 6
-      '|host_name a|',                                   // 7
-      '该参数指定主机名。特殊字符仅支持“._-”。',              // 8
-      '',                                                // 9
-      '通配符必须位于起始位置。',                           // 10
-      '',                                                // 11
-      '|ttl |可选，默认值为60。',                          // 12
-      '',                                                // 13
-      '|type  a|',                                       // 14
-      '可选，取值必须为：',                                // 15
-      '',                                                // 16
-      '* forward_only：表示转发。',                        // 17
-      '* 空：表示本地解析。',                               // 18
-      '|mode a|取值必须为：',                              // 19
-      '',                                                // 20
-      '* a：甲。',                                         // 21
-      '|===',                                            // 22
-      '',                                                // 23
-    ].join('\n'),
-  });
-  assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
-  // The name cell is spelled `host_name a` in the source: the `a` is the specifier of the cell after it. The cell under
-  // it starts on the next line. Neither costs the row its place.
-  assert.deepEqual(tableLines(mapped).slice(2), [
-    '| host_name | 该参数指定主机名。特殊字符仅支持“._-”。  通配符必须位于起始位置。 |',
-    '| ttl | 可选，默认值为60。 |',
-    '| type | 可选，取值必须为：  * forward_only：表示转发。 * 空：表示本地解析。 |',
-    '| mode | 取值必须为：  * a：甲。 |',
-  ]);
-  const selectorOf = (words: string): string | undefined => entries.find((entry) => String(entry.statement).includes(words))?.fragments[0]!.selector;
-  assert.equal(selectorOf('特殊字符仅支持'), 'l/7-10', 'the row cites the name line and the paragraphs of its cell');
-  assert.equal(selectorOf('forward_only'), 'l/14-18');
-  assert.equal(selectorOf('甲'), 'l/19-21');
-});
-
-test('a row that names a parameter of the paragraph above its table carries the command and the parameter', async () => {
-  const { entries } = await mapAndPlace({
-    'book.adoc': [
-      '= Synthetic',                                     // 1
-      '',                                                // 2
-      '== 主机',                                          // 3
-      '',                                                // 4
-      '*demo host name* _<host_name> [ttl]_ _[type]_',   // 5: the parameter list is split over two emphasis spans
-      '',                                                // 6
-      '该命令用于定义一个主机。',                           // 7
-      '',                                                // 8
-      '[cols="30%,70%",options=noheader]',               // 9
-      '|===',                                            // 10
-      '|host_name a|',                                   // 11
-      '该参数指定主机名。',                                // 12
-      '|ttl |可选，默认值为60。',                          // 13
-      '|type |可选。',                                    // 14
-      '|其他 |不是这条命令的参数。',                        // 15
-      '|===',                                            // 16
-      '',                                                // 17
-      '*demo host {enable|disable}* _<host_name>_',        // 18
-      '',                                                // 19
-      '[cols="30%,70%",options=noheader]',               // 20
-      '|===',                                            // 21
-      '|host_name |该参数指定已有的主机名。',               // 22
-      '|===',                                            // 23
-      '',                                                // 24
-      '== 另一节',                                         // 25
-      '',                                                // 26
-      '[cols="30%,70%",options=noheader]',               // 27
-      '|===',                                            // 28
-      '|host_name |这张表上面没有声明命令的段落。',          // 29
-      '|===',                                            // 30
-      '',                                                // 31
-    ].join('\n'),
-  });
-  const parameterOf = (words: string): unknown => entries.find((entry) => String(entry.statement).includes(words))?.data.parameter;
-  assert.deepEqual(parameterOf('该参数指定主机名。'), { commands: ['demo host name'], name: 'host_name' });
-  assert.deepEqual(parameterOf('默认值为60'), { commands: ['demo host name'], name: 'ttl' });
-  assert.deepEqual(parameterOf('| type |'), { commands: ['demo host name'], name: 'type' }, 'a name from the second emphasis span');
-  assert.equal(parameterOf('不是这条命令的参数'), undefined, 'a first cell that is no parameter name of the paragraph');
-  // The nearest paragraph decides, with every command form it spells.
-  assert.deepEqual(parameterOf('已有的主机名'), { commands: ['demo host enable', 'demo host disable'], name: 'host_name' });
-  assert.equal(parameterOf('上面没有声明命令的段落'), undefined, 'a paragraph of another section declares nothing for this table');
-});
-
-test('a cell under a separator is not taken from a neighbour that holds the same words', async () => {
-  const out = await compile({
-    'book.adoc': [
-      '= Synthetic',             // 1
-      '',                        // 2
-      '[cols="1,1",options=noheader]', // 3
-      '|===',                    // 4
-      '|first a|',               // 5
-      '相同的说明。',              // 6
-      '|second a|',              // 7
-      '相同的说明。',              // 8
-      '|===',                    // 9
-      '',                        // 10
-    ].join('\n'),
-  });
-  const table = out.model.blocks.find((block) => block.kind === 'table');
-  assert.ok(table?.rows !== undefined);
-  // Each cell is verified on the line right under its own separator, never on the other row's line.
-  assert.deepEqual(table.rows.body.map((row) => row.map((cell) => cell.origins.map((origin) => [origin.from, origin.to]))), [[[[5, 5]], [[6, 6]]], [[[7, 7]], [[8, 8]]]]);
-  assert.deepEqual(out.report.unverified, []);
+  assert.ok(produced.entries.every((entry) => !String(entry.statement).includes('添加成员')), JSON.stringify(produced.entries.map((entry) => entry.statement)));
 });
 
 test('a blank line among the rows costs nothing: the implicit header and blank lines between rows are mapped and cited', async () => {

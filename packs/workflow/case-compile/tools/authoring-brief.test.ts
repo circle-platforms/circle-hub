@@ -1,7 +1,3 @@
-// The authoring brief of a case (functions/authoring-brief.ts) and the tool that writes one per item of a downloaded run. The
-// reference implementation builds each writer's brief in code and has the writer reuse the recompose stage's command grounding
-// before it queries anything; here the brief is taken, by structure alone, from the files the run download wrote. Synthetic
-// tree, policy and record only.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -35,7 +31,6 @@ const rows: Row[] = [
   { path: '/commands/show/widget', children: [], statements: [['definition', 'show widget [<arg1:string="">]']] },
   { path: '/manual', children: ['guide'], statements: [] },
   { path: '/manual/guide', children: ['parameters', 'two words', 'whole chapter'], statements: [] },
-  // Rows of a manual table: the producer records on a row the command forms and the parameter it states.
   { path: '/manual/guide/parameters', children: [], statements: [
     ['behaviour', '| peer_name | 合成参数说明：特殊字符仅支持“._-”。 |', { form: 'table_row', parameter: { commands: ['widget sync to', 'widget sync from'], name: 'peer_name' } }],
     ['behaviour', '| mode | 合成参数说明：取值为 full 或 delta。 |', { form: 'table_row', parameter: { commands: ['widget sync to'], name: 'mode' } }],
@@ -82,7 +77,6 @@ const ITEM = {
   },
 };
 
-/** A downloaded run directory: the knowledge files exactly as the run download writes them, the run record and the items. */
 async function downloaded(items: unknown[], policy: unknown = POLICY): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'cc-brief-'));
   for (const { name, bytes } of knowledgeFiles(batch(), RUN).outputs) { await mkdir(dirname(join(directory, name)), { recursive: true }); await writeFile(join(directory, name), bytes); }
@@ -132,7 +126,6 @@ test('a brief holds the commands the record names with their entries word for wo
   assert.match(text, /只有事实，没有判断，也不是计划/);
   assert.ok(text.includes(`条目 doc-1:c-1；锁定根 ${ROOT}。`));
   assert.ok(text.includes('只读前缀 /commands/show；互逆取值 on/off。核验认逆操作的顺序：'));
-  // An entry is the text the run download wrote, line for line, so what a writer cites is what it would have found by searching.
   const commands = await readFile(join(directory, 'knowledge', 'commands.txt'), 'utf8');
   const block = nodeBlock(knowledge.nodes.get('/commands/widget/name')!).join('\n');
   assert.ok(commands.includes(block + '\n\n') && text.includes('### widget name\n' + block + '\n'));
@@ -146,18 +139,13 @@ test('a brief holds the commands the record names with their entries word for wo
   assert.ok(text.includes(`### show widget\n# /commands/show/widget\n· 引用 tree:${ROOT}/commands/show/widget@${digest(200)}\nshow widget [<arg1:string="">]\n`));
   assert.ok(text.includes('这条命令在产品声明的只读前缀下。'));
   assert.ok(!text.includes('/commands/widget/off@' + entry) && !text.includes(OTHER_ROOT), 'nothing of another root');
-  // Other nodes: a short one is quoted with where it is, a long one only says where it is.
   assert.match(text, /## 重组记录点到的其它节点（2 个）\n\nknowledge\/manual\.txt 第 \d+ 行起，共 3 行：\n# \/manual\/guide\/two words\n· 引用 tree:a{64}\/manual\/guide\/two words@[0-9a-f]{64}\n合成手册句：部件默认关闭。\n/);
   assert.match(text, /# \/manual\/guide\/whole chapter\n（knowledge\/manual\.txt 第 \d+ 行起，共 3 行，没有抄在这里）\n/);
   assert.ok(text.includes('## 记录点到、锁定根里没有的路径\n- /commands/widget/gone\n\n## 这条用例的计划文件外壳\n'));
-  // The line the brief gives is the line of the block in the file.
   const at = knowledge.lines.get('/manual/guide/two%20words')!;
   assert.equal((await readFile(join(directory, 'knowledge', at.file), 'utf8')).split('\n')[at.line - 1], '# /manual/guide/two words');
 });
 
-// Run 23: the writer of a case gave a host name a character the manual's row for that parameter excludes, three dispatches
-// in a row; the row was not in the locked root (the producer dropped block-style cells) and nothing put a parameter's row
-// beside its command. The reference hands the writer the value domain in the vendor's own words with the argument contract.
 test('a brief lists under a command the manual rows that state its parameters, word for word with their references', async () => {
   const directory = await downloaded([ITEM]);
   const knowledge = (await readKnowledge(directory))!;
@@ -178,8 +166,6 @@ test('a brief lists under a command the manual rows that state its parameters, w
   assert.ok(!on.slice(0, on.indexOf('\n### ', 1)).includes('手册对这条命令各参数的说明'), 'a command whose parameters no row states gets no such list');
 });
 
-// Run 22: the main session's hand-written template made the plan slot an object and put `bucket` beside `data`; fourteen plans
-// copied it and were refused. The shape is the Hub's own and is shown whole only by the pack's example.
 test('the brief ends with the envelope of the plan file: the Hub’s shape, the item’s identities filled in, the writer’s parts empty', async () => {
   const knowledge = (await readKnowledge(await downloaded([])))!;
   const envelope = planEnvelope(ITEM, 'bed-a')!;
@@ -191,7 +177,6 @@ test('the brief ends with the envelope of the plan file: the Hub’s shape, the 
       data: { bucket: 'bed-a', blocks: [], replacements: [], steps: [], expects: [], recomposition: { receipt: `rec:${digest(7)}`, case_id: 'case-0001', slots: [{ slot: 'e1', assertions: [] }, { slot: 'e2', assertions: [] }], rebindings: [] } },
     }] },
   });
-  // The same outer keys as the pack's example submission, one statement as the slot schema asks, and every key the plan schema requires.
   const example = JSON.parse(readFileSync(new URL('../examples/submit-result.json', import.meta.url), 'utf8')).items[0];
   const schema = JSON.parse(readFileSync(new URL('../slots.schema.json', import.meta.url), 'utf8')).item.plan;
   const statement = (envelope.slots as { plan: Array<Record<string, unknown>> }).plan[0];
@@ -203,7 +188,6 @@ test('the brief ends with the envelope of the plan file: the Hub’s shape, the 
   assert.ok(text.endsWith('\n```json\n' + JSON.stringify(envelope, null, 2) + '\n```\n'));
   assert.match(text, /## 这条用例的计划文件外壳\n\n一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 \{text, quotes, data\}/);
   assert.ok(text.includes('bucket（本运行配置选定的自动化测试环境）、重组回执') && text.includes('空着的不填会被拒。'));
-  // Without a profile that names a bed the bucket is left to the writer and is not claimed as filled.
   const open = authoringBrief(ITEM, '00', knowledge, policyOf(POLICY))!.text;
   assert.ok(open.includes('"bucket": ""') && !open.includes('bucket（本运行配置选定的自动化测试环境）'));
   assert.equal(planEnvelope({ fields: {} }, 'bed-a'), null, 'an item without an id has no file to name');
@@ -227,7 +211,6 @@ test('the tool writes one brief per item that carries a record, beside items/ an
   assert.deepEqual(await writeBriefs(directory), { briefs: 1, kept: 0, without_record: 1 });
   assert.deepEqual(await readdir(join(directory, 'briefs')), ['00.md']);
   const first = await readFile(join(directory, 'briefs', '00.md'), 'utf8');
-  // The case's own recomposition record is written beside its brief, and the brief names it instead of late.json.
   assert.deepEqual(await readdir(join(directory, 'records')), ['00.json']);
   const kept = JSON.parse(await readFile(join(directory, 'records', '00.json'), 'utf8'));
   assert.equal(typeof kept.receipt, 'string');
@@ -239,7 +222,6 @@ test('the tool writes one brief per item that carries a record, beside items/ an
   await writeFile(join(directory, 'briefs', '00.md'), '写手自己的批注');
   assert.deepEqual(await writeBriefs(directory), { briefs: 0, kept: 1, without_record: 1 });
   assert.equal(await readFile(join(directory, 'briefs', '00.md'), 'utf8'), '写手自己的批注', 'left as it is');
-  // Standalone CLI entrypoint (`main`) was removed so all brief invocations flow solely through `task-brief.ts`.
   assert.equal('main' in authoringBriefTool, false);
 });
 

@@ -259,7 +259,6 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
     if(!requirements.requirements.length||requirements.requirements.some(row=>row.independent_of!=='predecessor'))c.add(problem('workflow.predecessor_access','workflow.json','只读前驱要求每个要求项都独立于前驱','所有要求项声明 independent_of: predecessor，或移除 predecessor_access',{field:'/predecessor_access'}));
     if(workflow.criterion_review&&workflow.inputs.some(row=>row.default_from_predecessor!==undefined||row.from_runs!==undefined))c.add(problem('workflow.predecessor_default','workflow.json','判据复核前驱不能缺省绑定已受理结果','显式绑定声明提交的 rec:，不要绑定前驱结果',{field:'/inputs'}));
   }
-  // W06 R[7]: a fact-only workflow is evaluated once at start_run (a production run), so nothing can be bound after its start.
   if(workflow&&requirements&&requirements.requirements.every(row=>row.accepted_producer==='fact'))workflow.inputs.forEach((row,k)=>{
     if(row.from_runs?.after_start===true)c.add(problem('workflow.late_binding','workflow.json',`输入槽 ${row.slot} 声明了开运行后再绑定（from_runs.after_start），可这个工作流的要求项全是事实，开运行时就算出结果，之后不再核验`,'去掉 after_start，在开运行时绑定已受理结果；或者给工作流加上由模型提交的要求项',{field:`/inputs/${k}/from_runs/after_start`}));
   });

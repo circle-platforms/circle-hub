@@ -1,6 +1,3 @@
-// The table of the places a name is declared at, read from the schema the run froze, and the small table of what the other plan
-// mode writes in place of a field. Both are checked against the schema here, so a renamed field cannot leave a refusal pointing
-// at a place that is gone.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {frozenSlots} from '../testing/frozen-run.ts';

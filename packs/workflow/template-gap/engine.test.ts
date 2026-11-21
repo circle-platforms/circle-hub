@@ -412,7 +412,6 @@ it('locks the command catalog and judges both requirements over agile documents 
   assert.equal(detail.answer.run!.root, ROOT);
   assert.match(detail.answer.run!.items.find(item => item.id === ids[3])!.summary ?? '', /文档不在完整索引里.*构建.*重跑/);
   const answer = await judged(detail);
-  // The six documents fit the 1024-reference budget of the locked baseline.
   assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
   const combined = Object.values(ValidationResult.parse(answer.result).partitions).flat();
   assert.equal(combined.length, 6);

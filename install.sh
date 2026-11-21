@@ -406,8 +406,6 @@ if [ "${DRY_RUN}" != 1 ]; then
 fi
 
 HOST_FOR_URL="${HTTPS_HOST:-127.0.0.1}"
-# Checked-in sample (docs/examples/quickstart-deployment.json) lives under current/ after deploy. First install writes a
-# ready-to-apply copy under DATA with the live admin name and an absolute pack directory (no hand edit on Linux 0700).
 QUICKSTART_DEFINITION="${DATA}/current/docs/examples/quickstart-deployment.json"
 QUICKSTART_APPLY="${DATA}/quickstart-first-apply.json"
 QUICKSTART_PACK_DIR="${DATA}/current/packs/workflow/test-bed"
@@ -420,7 +418,6 @@ say "  证书颁发机构：${DATA}/tls/ca.crt（浏览器和 Circle 信任它�
 if [ "${HUB_INSTALL_ADMIN_CREATED}" = 1 ]; then
   say "  管理员用户名：${HUB_INSTALL_ADMIN_NAME}；使用设置的密码或上面仅显示一次的初始密码登录。"
 fi
-# PATH tip before the apply command so macOS users do not hit "command not found" on the next line.
 if [ "${OS}" = darwin ]; then
   case ":${PATH}:" in *":${WRAPPER_DIR}:"*) ;; *) say "  把 ${WRAPPER_DIR} 加进 PATH 后就能直接用 circle-hub 命令" ;; esac
 fi

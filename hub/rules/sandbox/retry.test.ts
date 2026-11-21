@@ -46,7 +46,6 @@ test('a watchdog stop on an unobserved process tree is retried within three atte
   assert.deepEqual(attempts.map(attempt => [attempt.attempt, attempt.delayMs, attempt.retry, attempt.reason]),
     [[1, 50, true, 'resident_observation_unavailable'], [2, 100, true, 'resident_observation_unavailable'], [3, 0, false, 'resident_observation_unavailable']]);
   assert.equal(isExhaustedFunctionFailure(unobserved), true, 'a completed retry policy is marked, so a shared subject build is not retried again by every check');
-  // The list names reasons, not the whole code: no OS isolation is not a moment's trouble.
   let isolationCalls = 0;
   const noIsolation = new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'os_isolation' });
   await assert.rejects(retryFunction(async () => { isolationCalls++; throw noIsolation; }, 1000), failure => failure === noIsolation);

@@ -1,4 +1,3 @@
-// The shared form of a refusal the program can decide: what is wrong, where, the value seen, the allowed set, the next step.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {PLAN_DATA,listed,refusalText,shownValue} from './refusal-form.ts';

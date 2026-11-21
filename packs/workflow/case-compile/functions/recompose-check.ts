@@ -271,8 +271,6 @@ export function checkRecomposition(input: any): any[] {
         bad('', '重组产物不符合声明的完整形状');
         return out;
     }
-    // Decision 155, as InfoTest does: what the model could not settle stays in the record for the writer, it does not hold the
-    // case back. A named gap with its next step is the record doing its work.
     for (const u of record.unknowns ?? [])
         if (!unknownOk(u))
             bad('missing_without_exit', '未知条目缺 missing/next_action/audience/due');
@@ -318,7 +316,6 @@ export function checkRecomposition(input: any): any[] {
     for (const [id, targets] of Object.entries(mapped))
         if (!Array.isArray(targets) || !targets.length || new Set(targets).size !== targets.length || targets.some(t => !slotIds.includes(t)))
             bad('atom_dropped', '用例原句 ' + id + ' 没有对应的期望判断依据');
-    // An action with no expectation of its own is an ordinary step, so only an expectation has to reach a slot (checked below).
     for (const id of unmapped)
         if (atoms.find(a => a.id === id)?.kind === 'expectation')
             bad('atom_dropped', '作者期望 ' + id + ' 没有对应的判断依据');
@@ -342,8 +339,6 @@ export function checkRecomposition(input: any): any[] {
     }
     else if (record.predecessor !== undefined)
         bad('atom_dropped', '新系列没有实际前驱，不能自填旧记录');
-    // The authority stage is optional since decision 155: the run already locks the product pack. Bound, it is still checked;
-    // unbound, a governing source has nothing to stand on, so the record may not claim one.
     const authority = authorityOf(s.authority_run, s.authority_result, ctx);
     if (!authority && (record.sources?.governing ?? []).length)
         bad('candidate_signed', '没有绑定来源凭证，不能声称有签发权的规范来源；放进 candidates');
@@ -358,7 +353,6 @@ export function checkRecomposition(input: any): any[] {
             if (candidateRefs.includes(used) || authority)
                 bad('candidate_signed', '候选或未声明来源被当作方法/期望的签发依据');
         }
-    // Each reference the record leans on, with the place it is written in the model's own file, so a refusal names place and value.
     const usedAt: Array<{ ref: string; at: string; place: string }> = [];
     const lean = (refs: any, at: string, place: string) => (Array.isArray(refs) ? refs : []).forEach((ref: any, i: number) => usedAt.push({ ref, at: `${at}/${i}`, place: `${place} 第 ${i + 1} 项` }));
     lean(method?.sources, '/record/contract/method/sources', 'method.sources');
@@ -369,8 +363,6 @@ export function checkRecomposition(input: any): any[] {
     record.ledgers.concretizations.forEach((c: any, i: number) => { for (const key of ['value_ref', 'authority']) if (c[key]) usedAt.push({ ref: c[key], at: `/record/ledgers/concretizations/${i}/${key}`, place: `concretizations（slot=${c.slot}）的 ${key}` }); });
     for (const ref of new Set(usedAt.map(u => u.ref)))
         if (!atoms.some(a => a.reference === ref) && !(typeof ctx.root === 'string' && ref.startsWith('tree:' + ctx.root + '/')) && !(s.evidence ?? []).some((e: any) => e.reference === ref && e.resolved === true && typeof e.text === 'string')) {
-            // What the Hub cannot read this round it cannot tell from a reference the model wrote wrongly, so it stays unknown; the
-            // refusal says where the value is, what it is and what may stand there. Only the recomposition model can change it.
             const places = usedAt.filter(u => u.ref === ref);
             const full = `${places.map(u => u.place).join('、')} 的值「${ref}」不是本轮可读的引用；这里只能写本用例原句的引用（原始用例条目 fields.atoms[].reference，形如 src:<摘要>/…）或锁定知识树 tree:${typeof ctx.root === 'string' ? ctx.root : '<锁定根>'}/… 下的引用，原句文字不是引用；把它改成其中一种后重新提交`;
             out.push(recomposeOut('unknown', full, { reason: 'missing_input', missing: full, pointer: places[0].at, data: { missing_fact: full, next_action: '把这里的值改成原句的引用或锁定知识树的引用后重新提交', owner: '重组模型', due: '重新提交之前', value: ref, places: places.map(u => u.at) } }));
@@ -390,7 +382,6 @@ export function checkRecomposition(input: any): any[] {
             bad('prerequisite_as_conflict', '缺前置不能记成冲突');
         if (!exitOk(state.exit))
             bad('missing_without_exit', '来源状态缺完整 action/object/owner/due 出口');
-        // Decision 155: an independent ruling is checked when the record names one; settling needs none.
         if (state.state === 'settled') {
             if (state.adjudicated_by !== undefined && state.adjudicated_by !== null) {
                 if (!review || review.state !== 'settled' || state.adjudicated_by !== review.reference)
@@ -415,7 +406,6 @@ export function checkRecomposition(input: any): any[] {
             else
                 unknown('冲突来源的实际签发权尚未核对', '产品包作者');
         }
-        // underdetermined and missing_prerequisite go on to the writer with their reason and exit, as in InfoTest.
     }
     const fromBed = (ref: any) => typeof ref === 'string' && (s.bed_sources ?? []).some((base: string) => ref === base || ref.startsWith(base + '/'));
     for (const row of [...record.ledgers.adapted, ...record.ledgers.concretizations])

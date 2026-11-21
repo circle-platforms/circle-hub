@@ -11,11 +11,6 @@ import {isAbandonedResult} from './management.ts';
 import {canSeeRun} from './readers.ts';
 import {INDEX,runById,submissionByDigest} from './store.ts';
 
-/**
- * Newest accepted submitted validation, never a production result or a system/management delivery. start_run reads it under the
- * run's submit lock; an input bound after the start (W06 R[7]) reads it with locked false, so a validation of the binding run never
- * waits on the bound run's own validation: records are appended atomically and only whole accepted results are seen.
- */
 export async function latestSubmittedResult(ctx:EngineContext,predecessor:StoredRecord<RunRecord>,options:{locked?:boolean}={}):Promise<StoredRecord<ValidationResult>|null>{
   const read=async()=>{
     const store=ctx.deps.records.store;
@@ -65,11 +60,6 @@ async function acceptedOf(ctx:EngineContext,user:Principal,runId:string,expected
   return{run:record.body.run,reference:recReference(result.digest)};
 }
 
-/**
- * A run a slot binds after the start (W06 R[6] exception): only that it exists, the caller may see it and it is a run of the
- * declared workflow; an accepted submission is not required. A run of the starting workflow itself is refused: its own revisions
- * continue through predecessor.
- */
 async function lateRunOf(ctx:EngineContext,user:Principal,workflow:LoadedWorkflow,slot:string,runId:string,expected:string,path:string):Promise<StoredRecord<RunRecord>>{
   const record=await runById(ctx.deps.records.store,runId);
   if(record===null||!canSeeRun(user,record.body))throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION',`运行 ${runId} 不存在或当前用户不可见`,{path,fix:`改为一个可见的 ${expected} 运行编号；这个槽开运行后才取该运行的已受理结果，开始时不要求已有受理`})]);
@@ -82,7 +72,6 @@ export async function defaultPredecessorInputs(ctx:EngineContext,workflow:Loaded
   let current={...inputs};
   const defaults:InputDefault[]=[];
   const late:NonNullable<RunRecord['late_inputs']>=[];
-  // An input bound after the start leaves the inputs: bindInputs and the projection never see it, only context.late_inputs.
   const without=(slot:string)=>{const {[slot]:_dropped,...rest}=current;current=rest;};
   const resultSlots=workflow.workflow.inputs.filter(slot=>slot.default_from_predecessor?.slot===undefined&&slot.role==='artifact_under_verification'&&slot.default_from_predecessor!==undefined&&!Object.hasOwn(current,slot.slot));
   if(predecessor!==null&&resultSlots.length>0){
@@ -168,7 +157,6 @@ export async function defaultPredecessorInputs(ctx:EngineContext,workflow:Loaded
   return{inputs:current,defaults,late};
 }
 
-/** Visibility of predecessor must already have been checked by startFresh; this adds facts, never defaults or grants. */
 export function predecessorInputRefusal(error:unknown,predecessor:RunRecord|null,workflow:LoadedWorkflow):never{
  if(!(error instanceof Refusal)||!predecessor)throw error;
  const slots=new Set(workflow.workflow.inputs.map(input=>input.slot));

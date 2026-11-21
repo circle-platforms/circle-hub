@@ -1,4 +1,3 @@
-// Installed Circle runtime acceptance using only a synthetic home, scripted responses and no integrations.
 import assert from 'node:assert/strict';
 import { parentPort, workerData } from 'node:worker_threads';
 import { mkdtempSync, mkdirSync, rmSync, existsSync } from 'node:fs';

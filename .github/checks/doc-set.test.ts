@@ -207,7 +207,6 @@ describe('doc-set pure rules', () => {
       [],
     );
 
-    // Also supports a top-level array in exceptions.json.
     assert.deepEqual(
       docSetProblemsFromSnapshot(
         { files: ['docs/index.md', 'docs/temp.md'], historicalFiles: ['docs/temp.md'] },
@@ -217,7 +216,6 @@ describe('doc-set pure rules', () => {
       [],
     );
 
-    // Removing the file makes both doc-set exceptions stale.
     const stale = docSetProblemsFromSnapshot(
       { files: ['docs/index.md'], historicalFiles: [] },
       docSet,
@@ -227,7 +225,6 @@ describe('doc-set pure rules', () => {
     assert.match(stale[0], /^docs\/temp\.md: stale doc-set exception \(unlisted\)/);
     assert.match(stale[1], /^docs\/temp\.md: stale doc-set exception \(historical\)/);
 
-    // Bad prefix or unsupported what in exceptions.json is rejected.
     const badExceptions = parseDocSetExceptions([
       { check: 'doc-set', path: 'README.md', what: 'unlisted', reason: 'r', removeWhen: 'G2' },
       { check: 'doc-set', path: 'docs/a.md', what: 'other', reason: 'r', removeWhen: 'G2' },
@@ -253,7 +250,6 @@ describe('doc-set integration on temporary git repositories', () => {
       repo.git('commit', '-m', 'Initial docs');
       assert.deepEqual(docSetProblems(repo.root), []);
 
-      // Adding a new tracked file under docs/ without registering it fails.
       repo.write('docs/extra.md', '> **历史文档**：old note\n');
       repo.git('add', 'docs/extra.md');
       const extraProblems = docSetProblems(repo.root);
@@ -261,7 +257,6 @@ describe('doc-set integration on temporary git repositories', () => {
       assert.match(extraProblems[0], /^docs\/extra\.md: unlisted file under docs\//);
       assert.match(extraProblems[1], /^docs\/extra\.md: opens with a historical or superseded banner/);
 
-      // Registering both hits in exceptions.json passes.
       repo.write(
         '.github/checks/exceptions.json',
         JSON.stringify(
@@ -275,7 +270,6 @@ describe('doc-set integration on temporary git repositories', () => {
       );
       assert.deepEqual(docSetProblems(repo.root), []);
 
-      // Deleting a declared file on disk without updating doc-set.json fails.
       rmSync(join(repo.root, 'docs/index.md'));
       const missingProblems = docSetProblems(repo.root);
       assert.equal(missingProblems.length, 1);

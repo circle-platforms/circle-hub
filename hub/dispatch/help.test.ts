@@ -104,7 +104,6 @@ describe('the line before it is sent', () => {
     assert.match(refused.fact, /\^\[A-Za-z0-9/);
     assert.match(refused.fact, /demo;/);
     assert.equal(checkLine('widget set demo ?', undefined, spec()).ok, false, 'the question mark is the target\'s to add, this pattern leaves it out');
-    // A pattern that a short prefix does not fit refuses the whole line, although the line itself fits it.
     const twoWords = spec({ line_pattern: '^\\S+ \\S+.*$' });
     const checked = checkLine('widget set demo', undefined, twoWords);
     assert.ok(!checked.ok);

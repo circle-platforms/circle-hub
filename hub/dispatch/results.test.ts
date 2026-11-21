@@ -123,9 +123,6 @@ test('every row names its log as a source its runner reads, and a row that did n
     await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
     await c.freezeExecutor();
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id); const row = (await report(c, state.result!)).rows[0];
-    // A pass keeps its log, which the reference engine reviews for a command the device refused; device sessions are kept for
-    // a row that did not pass only, as the reference engine fetches them. An empty session names no source; the raw report stays
-    // readable by functions only.
     const text = async (reader: typeof c.owner, reference: string) => { const source = await c.kit.artifacts.source(reader, reference.slice(4)); return source?.bytes ? new TextDecoder().decode(source.bytes) : null; };
     assert.match(row.evidence.log, /^src:[a-f0-9]{64}$/); assert.equal(await text(c.owner, row.evidence.log), `synthetic log ${outcome}`);
     if (outcome === 'good') assert.equal(row.evidence.sessions, undefined, 'a pass names no device session');
@@ -137,8 +134,6 @@ test('every row names its log as a source its runner reads, and a row that did n
 
 test('the device return gives the runner what the target said word for word: every verdict, the words of each row that did not pass, nothing read into them', async t => {
   const said = 'Error: synthetic-peer is not found in the peer list\nFailed to execute the command';
-  // Decision 161 / credential-scan@4: content is not withheld for looking like a credential; a session that once
-  // would have been retain_only is quoted whole with the rest.
   const onceHeld = ['pass', 'word: ', 'Synth', 'heldvalue1!9\n'].join('');
   const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [
     { id: 'synthetic-case', outcome: 'bad', log: 'synthetic log', sessions: { 'device-a.txt': said, 'device-b.txt': onceHeld, 'device-c.txt': 'synthetic log' } },

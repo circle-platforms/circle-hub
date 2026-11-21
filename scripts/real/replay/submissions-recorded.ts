@@ -1,7 +1,3 @@
-// The recorded side of a submission replay: an export folder of what a Hub stored for runs (the frozen run record, every
-// submission, every validation result and result summary, one JSON file each) with an index.tsv naming each file with its
-// size and SHA-256. Everything is read from the folder given on the command line; nothing about a particular system is
-// written here. Every file is checked against the index when it is read, so a replay never compares against a damaged file.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -12,21 +8,16 @@ export type RecordedKind = 'run' | 'submission' | 'validation_result' | 'result_
 const KINDS: readonly string[] = ['run', 'submission', 'validation_result', 'result_summary'];
 
 export interface RecordedEntry {
-  /** Position of the record in the Hub's append log: also the number its file name starts with. */
   seq: number;
   kind: RecordedKind;
   run: string;
-  /** The pack the run was started with, `id@version`. */
   pack: string;
-  /** When the record was stored (UTC, to the second). */
   at: string;
   bytes: number;
   sha256: string;
-  /** Path of the file inside the export folder. */
   file: string;
 }
 
-/** One validation result to replay and what it is a validation of. */
 export interface ValidationTask {
   seq: number;
   run: string;
@@ -34,28 +25,19 @@ export interface ValidationTask {
   at: string;
   file: string;
   sha256: string;
-  /** The index entry of the recorded result. */
   entry: RecordedEntry;
-  /** The digest of the submission the recorded result names. */
   judged: string;
-  /** The exported submission with that digest; null when the export has none (a result a run produced on its own). */
   submission: { seq: number; file: string; digest: string; entry: RecordedEntry } | null;
-  /** 1 for the first validation result of the submission, 2 for the next, and so on; 0 without a submission. */
   ordinal: number;
 }
 
 export interface RecordedExport {
   dir: string;
   entries: RecordedEntry[];
-  /** The run record entry of each run. */
   runs: Map<string, RecordedEntry>;
-  /** Every validation result, in the order the Hub stored them. */
   tasks: ValidationTask[];
-  /** Entries of submissions that no exported validation result names. */
   unvalidated: RecordedEntry[];
-  /** What is wrong with the folder itself (an index line that names no file, a file the index does not list). */
   problems: string[];
-  /** The parsed JSON of an entry, after its size and SHA-256 were checked against the index. */
   read(entry: Pick<RecordedEntry, 'file' | 'bytes' | 'sha256'>): Promise<unknown>;
 }
 
@@ -68,7 +50,6 @@ export class ExportError extends Error {
   }
 }
 
-/** The lines of index.tsv after its header: seq, kind, run, pack, at, bytes, sha256. */
 export function parseIndex(text: string): RecordedEntry[] {
   const lines = text.split('\n').filter((line) => line.trim() !== '');
   if (lines.length === 0) throw new ExportError('index', 'index.tsv 是空的');
@@ -101,7 +82,6 @@ async function readChecked(dir: string, entry: Pick<RecordedEntry, 'file' | 'byt
   }
 }
 
-/** Reads the index and pairs every validation result with the submission it names (by the digest of the submission as received). */
 export async function readRecordedExport(dir: string): Promise<RecordedExport> {
   let text: string;
   try {
@@ -114,7 +94,6 @@ export async function readRecordedExport(dir: string): Promise<RecordedExport> {
   const runs = new Map<string, RecordedEntry>();
   for (const entry of entries) if (entry.kind === 'run') runs.set(entry.run, entry);
   const read = (entry: Pick<RecordedEntry, 'file' | 'bytes' | 'sha256'>) => readChecked(dir, entry);
-  // A submission is named by the digest of its arguments as received (canonical JSON); a validation result carries that digest.
   const digests = new Map<string, { seq: number; file: string; digest: string; entry: RecordedEntry }>();
   for (const entry of entries.filter((e) => e.kind === 'submission')) {
     try {

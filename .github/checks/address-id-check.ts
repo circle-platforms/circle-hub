@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { trackedSourcePaths } from './tracked-source.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -68,7 +68,6 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const IPV4_CATEGORY_SET = new Set<string>(IPV4_CATEGORIES);
 const ID_CATEGORY_SET = new Set<string>(ID_CATEGORIES);
 
-/** Returns true only for loopback (`127.0.0.0/8`) and RFC 5737 documentation blocks. */
 export function isAutoAllowedIpv4(literal: string): boolean {
   if (!SINGLE_IPV4_PATTERN.test(literal)) return false;
   const parts = literal.split('.');
@@ -82,17 +81,14 @@ export function isAutoAllowedIpv4(literal: string): boolean {
   return false;
 }
 
-/** Returns true for all-zero placeholder IDs and the single approved public example ID. */
 export function isAutoAllowedId(literal: string): boolean {
   return literal === APPROVED_PUBLIC_RUN_ID || ZERO_INTERNAL_ID_PATTERN.test(literal);
 }
 
-/** Documentation tree allows zero internal 26-character IDs of the protected prefixes. */
 export function isDocsPath(relPath: string): boolean {
   return relPath.startsWith('docs/');
 }
 
-/** Non-test files under `packs/`, `scripts/`, and `tools/` must not contain unapproved IDs. */
 export function isIdArtifactPath(relPath: string): boolean {
   if (!relPath.startsWith('packs/') && !relPath.startsWith('scripts/') && !relPath.startsWith('tools/')) {
     return false;
@@ -130,7 +126,6 @@ function scanPatternInText(
   }
 }
 
-/** Collects non-exempt IPv4 and internal ID literals found in a single source text. */
 export function collectLiteralsInText(relPath: string, text: string): LiteralHit[] {
   const hits: LiteralHit[] = [];
 
@@ -158,7 +153,6 @@ function isCanonicalRepoPath(relPath: string): boolean {
   return !relPath.split('/').some((seg) => seg === '' || seg === '.' || seg === '..');
 }
 
-/** Parses and strictly validates the tab-separated exception manifest. */
 export function parseExceptionList(
   content: string,
   exceptionsPath = DEFAULT_EXCEPTIONS_PATH,
@@ -262,7 +256,6 @@ function formatViolation(hit: LiteralHit, exceptionsPath: string): string {
   return `${hit.path}:${hit.line}: 发现未登记的 26 位内部编号 ${hit.literal}（非测试文件仅自动放行全 0 占位编号与已公开示例 ${APPROVED_PUBLIC_RUN_ID}）；请换成全 0 占位编号，或者说明理由后加进 ${exceptionsPath} 并由 Boss 看过`;
 }
 
-/** Evaluates in-memory sources against parsed exceptions in both directions (missing and stale). */
 export function evaluateAddressAndIds(
   sources: readonly SourceEntry[],
   parsed: ParsedExceptions,
@@ -303,13 +296,10 @@ export function evaluateAddressAndIds(
   return problems;
 }
 
-/** Lists all git-tracked paths sorted in repository order. */
 export function listTrackedPaths(root: string): string[] {
-  const raw = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' });
-  return raw.split('\0').filter(Boolean).sort();
+  return trackedSourcePaths(root);
 }
 
-/** Runs the full address and internal ID check on a git repository worktree. */
 export function addressAndIdProblems(root: string = REPO_ROOT, options: CheckOptions = {}): string[] {
   const exceptionsRelPath = options.exceptionsPath ?? DEFAULT_EXCEPTIONS_PATH;
   let exceptionsContent = options.exceptionsText;

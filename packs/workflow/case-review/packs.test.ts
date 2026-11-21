@@ -92,7 +92,6 @@ function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; check
     }
     return ts.isParenthesizedTypeNode(node) && derives(node.type, type) || ts.isUnionTypeNode(node) && node.types.some(t => derives(t, type));
   };
-  // A generic key argument is structural only when its declared keyof constraint and every actual key agree.
   const checkedKeyArgument = (node: ts.TypeReferenceNode, index: number): boolean => {
     if (!semantic || !node.typeArguments) return false;
     let symbol = semantic.checker.getSymbolAtLocation(node.typeName);

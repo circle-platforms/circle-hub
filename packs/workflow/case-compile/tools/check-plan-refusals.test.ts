@@ -1,7 +1,3 @@
-// What the plan check says when it refuses, for the refusals of round 36 that sent a writer to the tool's source: the plan's item
-// that is not in the frozen run, a recomposition declaration the plan does not carry or gets wrong, and a field a block does not
-// have. Each says where, what was seen, what is allowed and what to do next; the decisions (ok, structure_ok, the verdict and the
-// code of each problem) are the ones the check always gave.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {checkPlanObject} from './check-plan.ts';

@@ -114,7 +114,6 @@ async function resetting(config: HubConfig): Promise<boolean> {
   catch (error) { if (absent(error)) return false; throw error; }
 }
 
-/** Exact current authorization binding only. No scan of history and no inference from previous successful jobs. */
 export async function readDeploymentSyncIntent(session: Session): Promise<DeploymentSyncIntentValue | null> {
   await session.admin();
   return readIntent(await session.records());
@@ -151,7 +150,6 @@ export async function launchDeploymentSyncSupervisor(config: HubConfig, id: stri
   } else throw new CliError('当前系统不支持后台知识同步');
 }
 
-/** Returns only after durable requests and supervisor launches. Never probes or synchronizes in the submitting process. */
 export async function queueDeploymentSync(session: Session, input: readonly DeploymentSyncTarget[]): Promise<{ tasks: DeploymentSyncTask[]; current: DeploymentSyncTarget[] }> {
   const actor = await session.admin(), config = session.config();
   const targets = (await parseIntent({ schema: DEPLOYMENT_SYNC_INTENT_SCHEMA, targets: input })).targets;
@@ -192,13 +190,11 @@ export async function queueDeploymentSync(session: Session, input: readonly Depl
   });
 }
 
-/** A declared line must occur exactly in this report, even when a product plan ignores the requested selection. */
 export function deploymentSyncReportCoversLine(report: Pick<SyncReport,'builds'>, line: string | null): boolean {
   return line === null || report.builds.some(build => build.line === line);
 }
 const uncoveredLine = { reason:'本次报告未确认请求的版本线',nextAction:'核对产品计划是否按请求的版本线返回构建，再重新提交' };
 
-/** A fresh, complete report may establish unchanged roots. No timestamps or human reason strings are evidence. */
 export function unchangedDeploymentProbe(report: SyncReport, line: string | null): boolean {
   if (!deploymentSyncReportCoversLine(report,line)) return false;
   if (!report.dry_run || report.error !== null || !report.plan.done || report.plan.failed_reads.length || report.plan.limits.rounds || report.plan.limits.reads || report.counts.failed) return false;
@@ -212,7 +208,6 @@ export async function deploymentSyncStatus(session: Pick<Session,'admin'|'config
   return statusOf(session.config(),id);
 }
 
-/** Fixed internal CLI branch. Uses neither the submitting Session nor any of its pools or token material. */
 async function executeDeploymentSyncWorker(config: HubConfig, id: string, env: NodeJS.ProcessEnv): Promise<number> {
   await directory(config);
   const request = await requestOf(config,id);
@@ -271,7 +266,6 @@ async function executeDeploymentSyncWorker(config: HubConfig, id: string, env: N
   }
 }
 
-/** Share reset's existing exclusion boundary so it cannot replace a database between our OID check and a write. */
 export async function runDeploymentSyncWorker(config: HubConfig, id: string, env: NodeJS.ProcessEnv): Promise<number> {
   await directory(config);
   const request = await requestOf(config,id);

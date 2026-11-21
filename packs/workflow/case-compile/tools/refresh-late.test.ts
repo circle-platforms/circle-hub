@@ -1,6 +1,3 @@
-// refresh-late: each time a case's recomposition is accepted (submitted alone in its recompose run), the plan run directory's late.json
-// is rewritten from the Hub's late export (run-late@1) and that case gets its authoring brief; a case still waiting is listed with
-// what it waits for. Synthetic Hub stub only.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -65,7 +62,6 @@ test('each acceptance rewrites late.json whole and briefs the case just accepted
   assert.deepEqual(JSON.parse(first.stdout).waiting.map((row: { item: string; state: string }) => [row.item, row.state]), [['case-0', 'no_result'], ['case-1', 'no_result']]);
   assert.deepEqual(readLateFile(directory, RUN), current);
   await assert.rejects(readdir(join(directory, 'briefs')), 'no case is accepted, so nothing is briefed');
-  // The first case is accepted alone in its recompose run.
   current = late([accepted(0, '1'), waits(1)]);
   const second = await refresh();
   const report = JSON.parse(second.stdout);
@@ -73,7 +69,6 @@ test('each acceptance rewrites late.json whole and briefs the case just accepted
   assert.deepEqual(await readdir(join(directory, 'briefs')), ['00.md']);
   assert.ok((await readFile(join(directory, 'briefs', '00.md'), 'utf8')).includes(`"record_sha256": "${'1'.repeat(64)}"`), 'the envelope names the record by its digest');
   assert.deepEqual(readLateFile(directory, RUN), current, 'late.json is the answer as it came');
-  // The second case is accepted; the first case's record is accepted again, different: it is said, and its brief is left as it is.
   current = late([accepted(0, '2'), accepted(1, '3')]);
   const third = JSON.parse((await refresh()).stdout);
   assert.deepEqual([third.newly_accepted, third.changed, third.briefs], [['case-1'], ['case-0'], 1]);

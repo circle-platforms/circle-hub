@@ -1,11 +1,7 @@
-// Cross-package dependency cycle check over production TypeScript modules under hub/. Both value and type-only imports
-// create package edges; hub/ports.ts, hub/listen.ts, contracts/ and packs/ are outside the hub package graph. Tarjan's
-// strongly connected components (SCC) algorithm detects every package cycle (size >= 2), and every directed edge within
-// each SCC is checked bidirectionally against .github/checks/exceptions.json (check === 'package-cycles').
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, join, posix, relative } from 'node:path';
-import ts from 'typescript';
+import { scanFileImports } from './package-boundaries.ts';
 
 export const PACKAGE_CYCLES_CHECK = 'package-cycles';
 export const DEFAULT_EXCEPTIONS_PATH = '.github/checks/exceptions.json';
@@ -57,12 +53,10 @@ export interface CycleCheckOptions {
 
 const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Normalize a repository-relative path to POSIX separators without a leading dot-slash. */
 export function normalizeRepoPath(filePath: string): string {
   return posix.normalize(filePath.replaceAll('\\', '/')).replace(/^\.\//, '');
 }
 
-/** True when a tracked file belongs to production Hub code inside a `hub/<pkg>` package directory. */
 export function isProductionHubFile(filePath: string): boolean {
   const normalized = normalizeRepoPath(filePath);
   if (!normalized.startsWith('hub/') || !normalized.endsWith('.ts') || normalized.endsWith('.test.ts') || normalized.endsWith('.d.ts')) {
@@ -76,74 +70,14 @@ export function isProductionHubFile(filePath: string): boolean {
   return true;
 }
 
-/** The `hub/<pkg>` package name of a production Hub module, or undefined for leaves and non-production files. */
 export function packageOfHubFile(filePath: string): string | undefined {
   if (!isProductionHubFile(filePath)) return undefined;
   return normalizeRepoPath(filePath).split('/')[1];
 }
 
-function stringLiteralText(node: ts.Node | undefined): string | undefined {
-  if (node !== undefined && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) return node.text;
-  return undefined;
-}
 
-function isTypeOnlyImportClause(clause: ts.ImportClause | undefined): boolean {
-  if (clause === undefined) return false;
-  if (clause.isTypeOnly) return true;
-  if (clause.name === undefined && clause.namedBindings !== undefined && ts.isNamedImports(clause.namedBindings)) {
-    const { elements } = clause.namedBindings;
-    return elements.length > 0 && elements.every((element) => element.isTypeOnly);
-  }
-  return false;
-}
-
-function isTypeOnlyExport(node: ts.ExportDeclaration): boolean {
-  if (node.isTypeOnly) return true;
-  if (node.exportClause !== undefined && ts.isNamedExports(node.exportClause)) {
-    const { elements } = node.exportClause;
-    return elements.length > 0 && elements.every((element) => element.isTypeOnly);
-  }
-  return false;
-}
-
-/** Extract all static, type, re-export and dynamic import specifiers from TypeScript source using the TS AST. */
 export function extractModuleSpecifiers(file: string, source: string): ModuleSpecifier[] {
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const specifiers: ModuleSpecifier[] = [];
-  const lineOf = (node: ts.Node): number => sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-
-  function visit(node: ts.Node): void {
-    if (ts.isImportDeclaration(node)) {
-      const specifier = stringLiteralText(node.moduleSpecifier);
-      if (specifier !== undefined) {
-        specifiers.push({ specifier, line: lineOf(node), kind: isTypeOnlyImportClause(node.importClause) ? 'type' : 'value' });
-      }
-    } else if (ts.isExportDeclaration(node)) {
-      const specifier = stringLiteralText(node.moduleSpecifier);
-      if (specifier !== undefined) {
-        specifiers.push({ specifier, line: lineOf(node), kind: isTypeOnlyExport(node) ? 'type' : 'value' });
-      }
-    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
-      const specifier = stringLiteralText(node.argument.literal);
-      if (specifier !== undefined) {
-        specifiers.push({ specifier, line: lineOf(node), kind: 'type' });
-      }
-    } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments.length >= 1) {
-      const specifier = stringLiteralText(node.arguments[0]);
-      if (specifier !== undefined) {
-        specifiers.push({ specifier, line: lineOf(node), kind: 'value' });
-      }
-    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-      const specifier = stringLiteralText(node.moduleReference.expression);
-      if (specifier !== undefined) {
-        specifiers.push({ specifier, line: lineOf(node), kind: node.isTypeOnly ? 'type' : 'value' });
-      }
-    }
-    ts.forEachChild(node, visit);
-  }
-
-  visit(sourceFile);
-  return specifiers;
+  return scanFileImports(file, source).map(({ specifier, line, isTypeOnly }) => ({ specifier, line, kind: isTypeOnly ? 'type' : 'value' }));
 }
 
 function resolveCrossPackageTarget(
@@ -206,7 +140,6 @@ function stronglyConnectedComponents(nodes: readonly string[], adjacency: Readon
   return components.sort((a, b) => compareText(a.join(','), b.join(',')));
 }
 
-/** Find every cross-package strongly connected component (size >= 2) and its intra-SCC edges and import sites. */
 export function findPackageCycles(
   modules: readonly SourceModule[],
   options: { readonly leafTargets?: readonly string[] } = {},
@@ -266,11 +199,6 @@ function formatSites(sites: readonly ImportSite[]): string {
   return sites.map((site) => `${site.file}:${site.line} -> ${site.target} [${site.kind}]`).join(', ');
 }
 
-/**
- * Bidirectionally verify detected SCC edges against registered `package-cycles` exceptions:
- * every live SCC edge (`path: hub/<from>`, `what: <from> -> <to>`) must be registered, and every
- * registered entry must still match a live SCC edge.
- */
 export function validateCycleExceptions(cycles: readonly PackageCycle[], exceptions: readonly CheckException[]): string[] {
   const problems: string[] = [];
   const registered = new Map<string, CheckException>();
@@ -317,7 +245,6 @@ export function validateCycleExceptions(cycles: readonly PackageCycle[], excepti
   return problems;
 }
 
-/** Check an in-memory set of modules against an explicit list of exception entries. */
 export function cycleProblemsFromModules(
   modules: readonly SourceModule[],
   options: { readonly exceptions?: readonly CheckException[]; readonly leafTargets?: readonly string[] } = {},
@@ -326,7 +253,6 @@ export function cycleProblemsFromModules(
   return validateCycleExceptions(cycles, options.exceptions ?? []);
 }
 
-/** Load all tracked production TypeScript modules under `hub/` from Git. */
 export function loadHubProductionModules(root: string): SourceModule[] {
   const files = execFileSync('git', ['ls-files', '-z', '--', 'hub/'], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
     .split('\0')
@@ -356,7 +282,6 @@ function readExceptionsFile(exceptionsPath: string, displayPath: string): { entr
   return { entries };
 }
 
-/** Every unregistered or stale package cycle across tracked production Hub modules under `root`. */
 export function cycleProblems(root: string, options: CycleCheckOptions = {}): string[] {
   const cycles = findPackageCycles(loadHubProductionModules(root), options);
   if (options.exceptions !== undefined) return validateCycleExceptions(cycles, options.exceptions);

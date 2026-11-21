@@ -238,7 +238,6 @@ export function findSubschema(rootSchema: Record<string, unknown> | undefined, p
       continue;
     }
 
-    // Nested composition (e.g. additionalProperties → anyOf → anyOf → properties.reference).
     let nested: Record<string, unknown> | null = null;
     for (const branchKey of ['allOf', 'anyOf', 'oneOf'] as const) {
       if (!Array.isArray(node[branchKey])) continue;

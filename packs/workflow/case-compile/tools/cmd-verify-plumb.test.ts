@@ -1,4 +1,3 @@
-// Unit tests for post-write cmd-verify-plumb (single_cmd_judge/steplist_judge, @1800 budget, reject/review gates, fail-closed HTTP).
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -16,10 +15,8 @@ const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
 const ROOT = 'a'.repeat(64);
 
 let stubMode: 'pass' | 'review' | 'reject' | 'mismatch_no' | 'service_down' | 'too_large' = 'pass';
-/** When set, decides per question what the stub answers (a question is answered 'reject', 'review' or 'pass'); stubMode is the default. */
 let decide: ((question: { command?: string; commands?: string[] }) => 'pass' | 'review' | 'reject') | null = null;
 const seenBatches: Array<Record<string, unknown>> = [];
-/** When set, a request in which any question is too long for it is refused whole (413), in the words of the judging service; the sizes of the refused requests are kept. */
 let refuseLong: ((question: { state?: string }) => boolean) | null = null;
 const refusedForLength: number[] = [];
 
@@ -255,10 +252,6 @@ test('cmd-verify-plumb hard-blocks reject/mismatch, warns on review, strict-bloc
   }
 });
 
-// ---------------------------------------------------------------------------------------------------------------------
-// Round 34: a block plan had no description, so the tool took the intent of a block from the mind-map step at its position and
-// Plumb refused commands the Hub accepted. InfoTest gives every block its own one line (desc) and judges commands by program only.
-// ---------------------------------------------------------------------------------------------------------------------
 type Asked = { command?: string; commands?: string[]; state?: string; node?: { title?: string; line?: string } };
 const asked = (): Asked[] => seenBatches.flatMap((batch) => Object.values((batch as { questions?: Record<string, Asked> }).questions ?? {}));
 const intentOfQuestion = (q: Asked): string | undefined => /^步骤意图: (.*)$/mu.exec(q.state ?? '')?.[1] ?? q.node?.title;
@@ -338,7 +331,6 @@ test('a flat step keeps its own description even when it names author steps; wit
     decide = null;
     const res = await runOn(['--file', file, '--run', w.dir]);
     assert.equal(res.code, 0, res.stderr);
-    // What Plumb is asked, first: the intent line of each question.
     assert.deepEqual(asked().map(intentOfQuestion), ['配置接口地址', '接口配置与启用', '接口配置与启用']);
     assert.equal(JSON.stringify(asked()).includes('配置接口 eth0 地址为 192.0.2.10/24 并启用接口'), false);
     const report = JSON.parse(res.stdout).results[0].steps as Array<Record<string, unknown>>;
@@ -353,7 +345,6 @@ test('a flat step keeps its own description even when it names author steps; wit
   }
 });
 
-/** A run as the download leaves it, frozen as the Hub freezes it: a plan can be checked against its command tree here. */
 async function frozenWorkspace(steps: unknown[]) {
   const dir = await mkdtemp(join(tmpdir(), 'cc-cmd-verify-frozen-'));
   const item = { id: 'doc:case-1', label: '合成用例', location: QUOTE.reference, fields: { autoid: '990000000000000031', title: '健康检查间隔配置', path: ['合成文档', '合成分组', '健康检查间隔配置'], steps: [{ text: '配置健康检查间隔 widget health interval 60' }] } };
@@ -383,9 +374,7 @@ async function frozenWorkspace(steps: unknown[]) {
 }
 const seat = (line: string, description: string) => ({ object: 'widget-seat', method: 'configure', args: [line], keywords: {}, description });
 const VALID = [seat('widget health interval 60', '设置健康检查间隔为 60'), seat('widget health interval 61', '把健康检查间隔改成 61')];
-/** Resolved by the tree, but the contract does not allow this value: the program refuses it whatever the catalog's completeness. */
 const REFUSED = seat('widget health interval 62', '把健康检查间隔设成 62');
-/** Not a command of the tree. A download carries no word on whether the catalog is complete, so the tree cannot call it a refusal. */
 const UNPARSEABLE = seat('widget unknown command 5', '执行一条树里没有的命令');
 
 test('Plumb is advisory where the command tree decides: a command it rejects but the tree accepts is review_required, not blocked, and the exit code stays 0', async () => {
@@ -439,7 +428,6 @@ test('a command the tree refuses stays blocked, whatever Plumb says; the command
     assert.match(rej.stderr, /命令树核对未通过/, 'the stop text names the program check');
     assert.match(rej.stderr, /widget health interval 62/);
 
-    // Plumb passing a command the program refuses does not let it through either: the tree decides.
     stubMode = 'pass';
     const pass = await runOn(['--file', w.file, '--run', w.dir]);
     assert.equal(pass.code, 1, pass.stderr);
@@ -499,12 +487,6 @@ test('without a frozen run the tree cannot speak: a Plumb reject blocks as befor
   }
 });
 
-// ---------------------------------------------------------------------------------------------------------------------
-// Round 51: a case whose commands repeat a 200-character name. The earlier steps given with each question are cut to a budget
-// estimated by characters; the judging service counts in its own tokens, read the later questions as too long and refused the
-// whole request (413) without saying which. The gate told the writer "参数无效：Plumb 网关拒绝（413 request_too_large）", three
-// writers in a row wrote the same kind of plan and the case was one attempt from being stopped. Nothing in the plan was wrong.
-// ---------------------------------------------------------------------------------------------------------------------
 test('questions the judging service refuses for their length are asked again by themselves with fewer of the earlier steps, and the report says which', async () => {
   const w = await setupWorkspace();
   try {
@@ -521,7 +503,6 @@ test('questions the judging service refuses for their length are asked again by 
     assert.ok(full.every((state, k) => k === 0 || state.length > full[k - 1]!.length), 'every question carries the steps before it');
     assert.equal(JSON.parse(whole.stdout).results[0].steps.some((s: Record<string, unknown>) => s.earlier_steps_shortened), false);
 
-    // The service reads no state longer than the one of the fifth step.
     const limit = full[4]!.length;
     refuseLong = (q) => (q.state ?? '').length > limit;
     refusedForLength.length = 0;

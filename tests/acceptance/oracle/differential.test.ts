@@ -213,7 +213,6 @@ interface ItemPlan {
 
 interface Plan {
   seed: number;
-  /** Distinct other submissions charged before this evaluation (owner run30 #4). */
   roundsUsed: number;
   chargedRounds?:Record<string,number>;
   repairHistory?: RunDescription['repairHistory'];
@@ -597,8 +596,6 @@ test('random submissions and the revised fixed branches agree with the independe
   assert.equal(laterWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'indep')?.status, 'unsatisfied');
 
   // A repeated transitional body is rechecked without another charge. Subject refutations stay known violations;
-  // owner run30 #4 / T7 excludes its own earlier identity, so that recheck has zero other charged bodies.
-  // A genuinely changed body then sees A once; repeating A or B still sees the other one once. Subject and record-unknown refutations stay known.
   const roundSeed = SEED + 200;
   const roundOutcomes = { ...supportOutcomes, short: [{ verdict: 'refute' as const, code: HIT, tier: 'blocking' as const }], recorded: [{ verdict: 'refute' as const, code: HIT, tier: 'blocking' as const }] };
   const roundItems = handledItems(roundOutcomes);

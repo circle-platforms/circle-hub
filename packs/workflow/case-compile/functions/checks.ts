@@ -48,12 +48,6 @@ function slotsOf(s: CheckSubject): { slots: PlanSlots; errors: null } | { slots:
   const read = readSlots(s.data);
   return read.ok ? { slots: read.slots, errors: null } : { slots: null, errors: read.problems.map((v) => refute(s, v.pointer.includes('/quote') ? 'expect_without_source' : 'slots_invalid', `槽位 ${v.pointer}：${v.message}；${v.fix??'按 slots.schema.json 的形状修正'}`, `/data${v.pointer}`)) };
 }
-/**
- * A case whose recomposition is bound after the run started (W06 R[7]) and is not yet accepted in the latest accepted result of its
- * recompose run: its plan is not judged yet. Every check of the plan waits for that step (unknown, awaiting_step, which spends no
- * repair round, W02 R[6]); the text says what is awaited, where, what the Hub saw this time, what it needs and what to do. A case the
- * Hub resolved no overlay for (the local check without the run directory's late.json) waits the same way.
- */
 function awaitingRecomposition(s: CheckSubject): Outcome | null {
   if (s.recomposition) return null;
   const waiting = s.recomposition_waiting, marker = s.recomposition_late;
@@ -92,9 +86,6 @@ function typedPrerequisites(s: CheckSubject, slots: PlanSlots, covered?: RunnerC
   const cleanupData = cleanup && localCovered.length ? { runner_cleanup: { source: cleanup.source, sha256: cleanup.sha256, pinned: cleanup.pinned, ...(cleanup.order ? { order: cleanup.order } : {}), covered: localCovered } } : {};
   const refuteGaps = gaps.filter((gap) => gap.verdict === 'refute');
   const unknownGaps = gaps.filter((gap) => gap.verdict !== 'refute');
-  // Separate independent block-runtime capability unknowns from downstream command refutes so executor capability
-  // omissions are not mislabeled as method_forbidden, while secondary non-block unknowns (e.g. missing inverse rule on
-  // an already out-of-scope flat step) stay inside the single refute outcome as expected by author contracts.
   if (refuteGaps.length && !unknownGaps.some((gap) => gap.document === 'blocks')) {
     const first = refuteGaps[0]!;
     const pointer = first.requested !== undefined || blockMeta(slots) && first.pointer.startsWith('/blocks/') ? '/data' + first.pointer : '/data';
@@ -171,7 +162,6 @@ export function checkAddresses(input: unknown): Outcome[] {
   const authoredTexts=authoredAddressTexts(s.command_catalog,Array.isArray(s.case_texts)?s.case_texts as string[]:[]);
   const authored=new Set(authoredTexts.keys());
   const sourceValues=new Set([...sourceIdentities.flatMap(raw=>{const i=identityOf(raw);return i?i.parameters.flatMap(p=>p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')?[addressKey(p.parsed.value.value)]:[]):[];}),...authored]);
-  // What the refusal of a replacement source lists as allowed: the same addresses as sourceValues, as the case wrote them.
   const allowedSources=():string[]=>{
     const texts=new Map<string,string>();
     for(const raw of sourceIdentities){const i=identityOf(raw);if(i)for(const p of i.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const written=String(p.parsed.value.value),key=addressKey(written);if(key&&!texts.has(key))texts.set(key,written);}}
@@ -205,10 +195,6 @@ export function checkAddresses(input: unknown): Outcome[] {
     if(off)out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址，也不是作者原文命令里的地址（作者写的地址照原值保留并披露，只拒计划自己改出来的）。下一步：换用有触发设备的网段里的接口地址，或用作者原文里的地址，或先取得本血缘租约后再编译',use.pointer));
     else out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段，也不是作者原文命令里的地址。下一步：把计划地址改到有触发设备的网段，或用作者原文里的地址，或在该网段补一台触发设备后重新冻结清单再编译',use.pointer));
   }
-  // The reference engine's driver_no_declared_path (InfoTest structural_gate.py:951, env_facts.py:346): a query whose output an
-  // assertion reads is sent from a host with an interface on the target's segment. A segment with some trigger device is not
-  // enough when the step runs on another host (for example, a query from another host failed six times without reaching its target). A target the
-  // author wrote that no listed host reaches is kept and disclosed, as there; any other unreachable pair is refused.
   for(const [index,step]of slots.steps.entries()){
     const host=s.profile!.hosts.find(h=>h.object===step.object&&h.method===step.method);
     const entry=host?runtimeMethod(s.contract!,step.object,step.method):undefined,a=entry?.authority;
@@ -227,12 +213,6 @@ export function checkAddresses(input: unknown): Outcome[] {
   const disclosed=kept.length?`；作者原文命令里的 ${kept.length} 个地址不在本环境可达范围里，照原值保留（同 SyntheticReference：只拒计划自己编的地址，作者写的写进披露），上机时可能连不通：${kept.join('、')}`:'';
   return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描'+disclosed+(slots.steps.some(cellInput)?'；单格回填位置的实际值在上机时取得':''),{typed_positions:uses,replacements:slots.replacements,author_kept:kept})];
 }
-/**
- * The reference engine's assertion_matches_command_echo (InfoTest structural_gate.py:1319): the runner's output window starts with
- * the echo of the command it reads, so an expected text that is part of that command is found whatever the device answers (a
- * fake pass), and an absence check on it always fails. Run 12 delivered three such cases and passed one whose device refused the
- * domain, because the name was in the error message and the command. Register-based expectations take their text elsewhere.
- */
 function assertionsInCommand(s: CheckSubject, slots: PlanSlots): Outcome[] {
   const out: Outcome[] = [];
   for (const [i, expect] of slots.expects.entries()) {
@@ -289,7 +269,6 @@ export function checkExpectedSources(input: unknown): Outcome[] {
       if(!Array.isArray(s.expected_nodes)||s.expected_nodes.some(node=>!isRecord(node)||typeof node.reference!=='string'||typeof node.text!=='string'))return [{verdict:'unknown',reason:'missing_input',missing:'缺被判对象本用例期望节点的冻结原文与引用身份；下一步：用完整脑图原件开新运行，不用其他用例、标题或步骤代替',statement:'模型判断的原始期望节点尚未绑定；补齐原件后重核',grounds:[],tier:TIER,item:s.item}];
       if(!s.expected_nodes.some(node=>isRecord(node)&&node.reference===expect.quote.reference&&typeof node.text==='string'&&quoteMatches(node.text,expect.quote.text)))out.push(refute(s,'expect_not_in_quote','模型判断的 quote 必须逐字引用被判对象中本用例的期望节点，不能引用标题、步骤、其他用例或判据声明',`${pointer}/quote`));
     }else {
-    // W10 step two binds a reviewed criterion to the frozen declaration, never the plan's own copy.
     const criterion = citedCriterion(s.criteria, expect.quote.reference);
     if (criterion !== null) {
       if (expect.quote.text !== criterion.new) out.push(refute(s, 'expect_not_in_criterion', `引用的判据文字与冻结的已受理声明 ${criterion.declaration} 不符；照开始运行答复里的新判据逐字抄写，或改回原引文`, `${pointer}/quote/text`));
@@ -334,23 +313,14 @@ export function checkCommandsKnown(input:unknown):Outcome[]{
  }
  return [support(s,resolved.templates.length?'设备命令的静态部分与单格回填位置已按锁定目录核对；单格实际值在上机时取得':'所有设备命令均由锁定目录完整解析，已核用例声明（如有）、类型与效果授权',{command_identities:resolved.identities,...(resolved.templates.length?{command_templates:resolved.templates}:{}),command_catalog:resolved.catalog})];
 }
-/** The brief of the plan this subject holds, and the audit verdict it carries (which is no part of the brief): null brief when the case has no authored action. */
 function briefOf(s: CheckSubject): { brief: FidelityBrief | null; plan: Record<string, unknown>; fidelity: unknown } {
   const frozen = isRecord(s.recomposition) && isRecord(s.recomposition.record) ? s.recomposition.record : s.recomposition;
   const { fidelity, ...plan } = isRecord(s.data) ? s.data : {};
   return { brief: fidelityBrief(s.item, frozen, plan), plan, fidelity };
 }
-/**
- * scenario_kept, the part that needs no audit: every authored action of the frozen recomposition record is named by at least one
- * step's (or block's) author_step_refs (functions/fidelity.ts authorStepCoverage, the program's half of InfoTest's
- * author_procedure_coverage gate). Round 36: the sync plan passed every other local check and the audit then found author step a2
- * realized by no step, a full writer rework; the plan check refuses it first, naming the step, where the plan would carry it, what
- * the plan does carry and what to do next. A case without authored actions has nothing to cover.
- */
 export function checkAuthorStepCoverage(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
   const read = slotsOf(s); if (read.errors) return read.errors;
-  // Without the record there are no authored actions to cover yet: not "none to cover" while it is awaited.
   const awaiting = awaitingRecomposition(s); if (awaiting) return [awaiting];
   const { brief, plan } = briefOf(s);
   if (!brief) return [support(s, '这条用例没有重组记录里的作者动作原句，没有要覆盖的作者步骤')];
@@ -358,11 +328,6 @@ export function checkAuthorStepCoverage(input: unknown): Outcome[] {
   if (coverage.uncovered.length) return coverage.uncovered.map((step) => refute(s, 'author_step_unreferenced', uncoveredAuthorStepText(brief, coverage, step), '/data' + coverage.list, { author_step: step.n }));
   return [support(s, `作者 ${brief.author_steps.length} 条动作原句都有计划${coverage.noun}在 author_step_refs 写了它的编号；这一项只核编号，计划${coverage.noun}是否真的实现了它由场景保真审计判断`, { author_steps: brief.author_steps.map((step) => ({ n: step.n, carriers: coverage.carriers.filter((row) => row.refs.includes(step.n)).map((row) => row.index) })) })];
 }
-/**
- * scenario_kept: the audit verdict in data.fidelity answers the brief of this very plan and keeps every authored action of the
- * frozen recomposition record (functions/fidelity.ts, after the reference engine's scenario fidelity). A case without authored
- * actions has nothing to audit.
- */
 export function checkScenarioFidelity(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
   const read = slotsOf(s); if (read.errors) return read.errors;

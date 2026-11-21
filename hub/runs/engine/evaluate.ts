@@ -20,7 +20,7 @@ import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext, type Unresolved } from '../../refs/api.ts';
-import { SandboxError, callPackFunction, callPackFunctionBatch, DEFAULT_LIMITS, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
+import { SandboxError, callPackFunction, callPackFunctionBatch, DEFAULT_LIMITS, runCheck, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { mapLimited, receivedDigest } from './util.ts';
 import { getInterpreter } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, sourceCoverage, rootDigest, statementOf, strongestRole } from './claims.ts';
@@ -88,10 +88,6 @@ export interface EvaluationInput {
   exclude?: ReadonlySet<string>;
   /** Hub admission policy facts, kept on the declared item requirement rather than whole-submission errors. */
   admission?: {requirement:string;outcomes:ReadonlyMap<string,CheckOutcome[]>};
-  /**
-   * Inputs bound after the start (W06 R[7]) as the caller resolved them; a replay passes the rows a stored result recorded with
-   * its refresh digest. Absent for a run that froze none; for one that did, the evaluation resolves them itself.
-   */
   late?: LateEvaluation;
 }
 
@@ -130,10 +126,6 @@ export interface Evaluation {
   uncovered: Set<string>;
   retryAttempts: Array<Record<string, unknown>>;
   parentObservedSuccess:boolean;
-  /**
-   * W06 R[7], W02 R[6]: requirements whose only problems in this evaluation wait on an input bound after the start (an unknown
-   * awaiting_step, or no usable refresh overlay); they are not a repair round. Empty when the run binds nothing after the start.
-   */
   waiting: Set<string>;
 }
 
@@ -244,7 +236,6 @@ export function runContextOf(run: RunRecord): RunContext {
   };
 }
 
-/** The context checks and the refresh function see: the frozen run context with the frozen skills and accepted criteria. */
 export async function checkContextOf(ctx: EngineContext, run: RunRecord): Promise<RunContext> {
   const skills = ctx.parsers.skills ?? run.skills;
   const criteria = await frozenCriteria(ctx, run.accepted_criteria ?? []);
@@ -362,7 +353,6 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
     return input.exact?.items.get(id)?.slots ?? slotsOf(id);
   };
   const evidenceOf = (id: string): ItemEvidence => input.carried.get(id)?.evidence ?? input.exact?.items.get(id) ?? emptyEvidence();
-  // The refresh overlay of this evaluation (W06 R[7]), set once the inputs bound after the start are resolved below.
   let overlay: LateOverlay | null = null;
   const lateOf = (id: string): { late?: Record<string, unknown> } => (overlay !== null && overlay.items.has(id) ? { late: overlay.items.get(id)! } : {});
   const subjectItem = (it: ItemProjection): SubjectItem => ({ id: it.id, label: it.label, location: it.location, fields: it.fields, ...lateOf(it.id) });
@@ -413,8 +403,6 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   }
 
   if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;const observed=new Map<string,Promise<unknown>>();resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable'){const captures=run.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha&&binding.artifact;});for(const capture of captures.length?captures:[undefined]){const meta=capture?.meta_artifact?await ctx.deps.records.store.get<any>(capture.meta_artifact):null;const key=sha+'\0'+(capture?.artifact??'');let observation=observed.get(key);if(!observation){observation=ctx.deps.knowledge.feeding!.observeSourceBounded(principalOf(reader),sha,{sourceRecord:capture?.artifact,readManifest:capture?.read_manifest,metaRecord:capture?.meta_artifact,metaSource:meta?.kind==='source_artifact'?meta.body.sha256:undefined,composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version});observed.set(key,observation);}await observation;}}return value;}};}
-  // Inputs bound after the start (W06 R[7]): one refresh call per evaluation, as the runner may read the bound results now. A
-  // replay checks that the recorded references give the recorded overlay again; the references bind the claims (validity.bound).
   const late: LateEvaluation | undefined = input.late ?? (run.late_inputs?.length ? { inputs: (await resolveLateInputs(ctx, run)) ?? [] } : undefined);
   if (late !== undefined) {
     context.late_inputs = late.inputs;
@@ -423,7 +411,6 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
     for (const row of late.inputs) if (row.reference !== undefined) baseBound.push(row.reference.slice('rec:'.length));
   }
   const lateFailed = overlay !== null && overlay.refresh === null;
-  // Every (item, check) is unknown when the refresh function gave nothing usable; the Hub computed nothing, so no round is charged.
   const refreshFailures = new Set<CheckOutcome>();
   const refreshFailureOf = (check: CheckEntry): CheckOutcome => {
     const failure = builderFailure(check, overlay?.failure);
@@ -864,10 +851,6 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   builderGroups: for (const group of builders.values()) {
     if (group.entries.size < 2) continue;
     const entries = [...group.entries];
-    // The inputs are split by size before the call; the outputs can only be measured by it. A batch whose outputs together pass the
-    // output limit is halved and tried again, down to single subjects, instead of leaving every one of its subjects to a sandbox
-    // of its own: the eight subject groups of a seventeen-case submission each failed whole and cost 136 single calls (traces of
-    // 2026-11-19).
     const batches = [...splitInputBatches(entries, ctx.deps.sandboxLimits?.inputBytes ?? DEFAULT_LIMITS.inputBytes)];
     while (batches.length) {
       const batch = batches.shift()!;
@@ -961,7 +944,6 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const errors: ProtocolError[] = [];
   const problems = new Set<string>();
   const uncovered = new Set<string>();
-  // Requirements with a problem that is not a wait on an input bound after the start (see Evaluation.waiting).
   const firm = new Set<string>();
   const isWait = (o: CheckOutcome): boolean => late !== undefined && o.verdict === 'unknown' && (o.reason === 'awaiting_step' || refreshFailures.has(o));
   const partitionInputs: PartitionInput[] = [];

@@ -4,15 +4,9 @@ import { CALL_ERROR_CATEGORY, labelOf } from '../../contracts/generated/vocabula
 // as a protected file, and a hook that lets only the Hub's tools run. The environment file and the owner's Circle folder are
 // read here, at run time. Values reach only the 0600 files of the new folder; the screen shows names, presence and lengths.
 // The Hub token comes from the environment variable HUB_REAL_TOKEN, never from a command line.
-// With --plumb-key-stdin, PLUMB_API_KEY is read from the first line of stdin and written only to 0600 secrets.json.
 //   node scripts/real/circle-home.ts --env-file <file> --home <dir> --provider glm|qwen [--model <id>] [--section <text>]
-//        [--hub-url http://127.0.0.1:7420/mcp] [--workdir <dir>] [--profile review|skills|ops] [--jev-model <id>]
-//        [--plumb-url <url>] [--plumb-model <id>] [--plumb-ca-file <file>] [--plumb-key-stdin]
-// Refresh only the installed guard files of an existing skills/ops home (default dry-run; --apply writes after backup + preflight):
-//   node scripts/real/circle-home.ts refresh-guards --home <dir> [--apply]
 import { createHash } from 'node:crypto';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pick, readEnvFile, type EnvEntry } from './lib/env-file.ts';
 import { formatPreflightReport, resolveInstalledGuard, runPreflight } from './guard-preflight.ts';
@@ -44,7 +38,6 @@ export interface Options {
 export const SERVER_NAME = 'hub';
 export const TOKEN_SECRET = 'HUB_TOKEN';
 export const PLUMB_KEY_SECRET = 'PLUMB_API_KEY';
-/** The Hub's tool names as Circle shows them: mcp__<server key>__<tool>. */
 export const HUB_TOOLS = ['list_task_packs', 'upload_file', 'start_run', 'get_nodes', 'resolve_reference', 'submit_result'] as const;
 /** Circle's own planning tool has no effect outside the conversation; every other built-in tool stays denied. */
 export const INTERNAL_TOOLS_ALLOWED = ['write_todos'] as const;
@@ -165,24 +158,16 @@ let input = '';
 process.stdin.setEncoding('utf8');
 for await (const chunk of process.stdin) input += chunk;
 let tool = '';
-let preToolUse = false;
 try {
   const parsed = JSON.parse(input);
-  tool = String(parsed?.tool_name ?? '');
-  preToolUse = parsed?.hook_event_name === 'PreToolUse';
+  if (parsed?.hook_event_name === 'PreToolUse') tool = String(parsed.tool_name ?? '');
 } catch {
   // Unreadable input is a deny below.
 }
 const ok = isAllowedTool(tool, configuredHubServers());
 const decision = ok ? 'allow' : 'deny';
 const reason = ok ? 'a Hub tool' : 'only the Hub tools may run in this folder';
-process.stdout.write(
-  JSON.stringify(
-    preToolUse
-      ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision, permissionDecisionReason: reason } }
-      : { decision, reason },
-  ),
-);
+process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision, permissionDecisionReason: reason } }));
 `;
 
 const HUB_PREFIXED_TOOLS = HUB_TOOLS.map((t) => `mcp__${SERVER_NAME}__${t}`);
@@ -206,8 +191,6 @@ const SUBAGENT_ASKS_NOBODY_RULE = {
   how: '这次可以这样做：能在锁定的命令树、手册、执行器规则、条目和编写简报里查到的，查了就定，并在给主代理的报告里写明定了什么、依据在哪一行；资料里确实没有的，把缺的事实和建议的处理写进报告，交回派给你任务的主代理。',
 };
 
-// case-compile 3.23.0 decides by rule and records the decision: in an ops home, which runs a compile unattended, the lead agent
-// asks the user as little as a subagent does. A question card stops the run until somebody answers it (round 39: six cards).
 const LEAD_ASKS_NOBODY_RULE = {
   id: 'lead-asks-nobody',
   tool: 'question',
@@ -215,10 +198,6 @@ const LEAD_ASKS_NOBODY_RULE = {
   how: '这次可以这样做：按技能第 1 节的次序自行决定（与同构建手册和命令树一致、保住作者步骤与边界、已声明执行器能判定、改动最小），把决定记为“模型决定：”并写进最终报告，然后继续往下做。',
 };
 
-// Decision 179: whether a compile can start is decided by code. The recompose run and a case-compile plan run (the first one or
-// a rework one) are opened only by the skill's open-compile.ts, which checks the skills, Plumb, the named documents, the
-// booking and the mind map before any model work and says "无法编译：…" when one is not ready; a model's own start_run of
-// those would skip the check. A merge run (parameters.plan_run) and the test bed are still started by the model.
 const OPEN_COMPILE_HOW = "这次可以这样做：跑 node '<case-compile 技能目录>/tools/open-compile.ts' --hub %HUB_URL% --plumb %PLUMB_URL% --subject … --product … --build … --booking … --out 'open-compile.json'（标准输入两行 %HUB_TOKEN%、%PLUMB_API_KEY%；返工加 --recompose-run 与 --recompose-record）；它输出“无法编译：…”时把这一行原样告诉使用者并停止。";
 const RECOMPOSE_OPENS_BY_TOOL_RULE = {
   id: 'recompose-opens-by-tool',
@@ -238,7 +217,6 @@ const PLAN_OPENS_BY_TOOL_RULE = {
   how: OPEN_COMPILE_HOW,
 };
 
-/** Builds the skills/ops policies; both permit workspace file deletion, while direct writes remain ops-only. */
 export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration {
   const isOps = profile === 'ops';
   return {
@@ -265,7 +243,6 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
     allow: isOps
       ? {
           'Hub 的六个工具': HUB_PREFIXED_TOOLS,
-          // compact_conversation only shortens the conversation the model already holds; a long unattended run needs it (round 39: denied at half the window).
           '问使用者、任务清单、子代理': ['question', 'write_todos', 'todo', 'task', 'list_jobs', 'wait_jobs', 'stop_job', 'send_to_job', 'compact_conversation'],
           只读本地资料: ['terminal_sessions', 'knowledge_search', 'knowledge_read'],
           '浏览器（网页界面测试）': [
@@ -296,7 +273,6 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
     },
     skillTool: 'skill',
     skillRequiresInstalled: true,
-    // The loop of a compile is a workflow script of the pack (decision 183): the lead starts it, and no model runs between its steps.
     ...(isOps ? { workflowTool: 'workflow' } : {}),
     executeTool: 'execute',
     denyPrefix: {
@@ -423,7 +399,6 @@ if (process.argv.includes('--schemas')) {
 `;
 }
 
-/** Generated files owned by the guard installer; excludes credentials and mutable derived rules. */
 export function guardBundle(_home: string, profile: 'skills' | 'ops'): GuardBundle {
   const decl = profile === 'ops' ? 'ops-allow.declaration.json' : 'guard.declaration.json';
   const gen = profile === 'ops' ? 'ops-allow-gen.mjs' : 'guard-gen.mjs';
@@ -436,7 +411,6 @@ export function guardBundle(_home: string, profile: 'skills' | 'ops'): GuardBund
   };
 }
 
-/** Guard maintenance deliberately bypasses endpoint and credential loading. */
 export function guardMain(argv: string[], out: (line: string) => void): number {
   try {
     const [mode, ...rest] = argv;
@@ -463,7 +437,6 @@ export function guardMain(argv: string[], out: (line: string) => void): number {
       if (missing) undeclared += 1;
     }
     const gen = profile === 'ops' ? 'ops-allow-gen.mjs' : 'guard-gen.mjs';
-    // Generate against the new declaration, while retaining the current trusted settings and work folder.
     maintainInstallation(resolve(home), profile, guardBundle(home, profile), renderAllowed(nextEnv, `node hooks/${gen}`), mode, values.get('--baseline'));
     out(mode === 'verify' ? '守卫、规则全文与本地技能字节快照一致；此校验不证明发布包摘要已核验' : '守卫已更新并记录本地技能字节快照；此记录不证明发布包摘要已核验，请重新加载会话 Hook 配置');
     if (undeclared) out(`${undeclared} 个工具未声明标准输入；其标准输入协议仍未知，带 here-doc 调用将被拒绝，请补齐声明后使用标准输入`);
@@ -475,7 +448,6 @@ export function guardMain(argv: string[], out: (line: string) => void): number {
   }
 }
 
-/** Write via a sibling temp file then rename, so a crash mid-write does not leave a truncated target (G3). */
 function writePrivate(path: string, content: string): void {
   const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tmp, content, { mode: 0o600 });
@@ -483,7 +455,6 @@ function writePrivate(path: string, content: string): void {
   renameSync(tmp, path);
 }
 
-/** Restore hooks/ by staging the backup beside it, then renaming into place (no empty hooks/ window) (G3). */
 function restoreHooksFromBackup(home: string, backup: string): void {
   const live = join(home, 'hooks');
   const staging = join(home, `hooks.restore.${process.pid}`);
@@ -506,12 +477,10 @@ function guardedHookNames(profile: 'skills' | 'ops'): { hookName: string; declNa
     : { hookName: 'skills-only.mjs', declName: 'guard.declaration.json', genName: 'guard-gen.mjs' };
 }
 
-/** Static guard file bodies (entry, library, declaration, gen). ALLOWED.md is rendered after these land on disk. */
 export function planGuardFiles(profile: 'skills' | 'ops'): Array<{ relative: string; content: string }> {
-  return Object.entries(guardBundle('', profile)).filter(([relative]) => relative !== 'hooks.json').map(([relative, content]) => ({ relative, content }));
+  return Object.entries(guardBundle('', profile)).map(([relative, content]) => ({ relative, content }));
 }
 
-/** Writes only the unified guard files under hooks/ (entry, guard-lib, declaration, gen, ALLOWED.md). Leaves settings/credentials/secrets/skills untouched. */
 export function writeGuardFiles(homeRaw: string, workdirRaw: string, profile: 'skills' | 'ops'): string[] {
   const home = resolve(homeRaw);
   const workdir = resolve(workdirRaw);
@@ -529,7 +498,6 @@ export function writeGuardFiles(homeRaw: string, workdirRaw: string, profile: 's
   return written;
 }
 
-/** Builds the exact guard file set that writeGuardFiles would install, without touching the real home. */
 export function materializeGuardFiles(home: string, workdir: string, profile: 'skills' | 'ops'): Array<{ relative: string; content: string }> {
   const {declName, genName} = guardedHookNames(profile);
   const env = environment(home, workdir, declName);
@@ -548,7 +516,6 @@ export interface RefreshGuardsResult {
   lines: string[];
 }
 
-/** Dry-run (default) or apply a guards-only refresh for an existing skills/ops home. */
 export function refreshGuards(homeRaw: string, options: { apply?: boolean; baseline?: string; out?: (line: string) => void } = {}): RefreshGuardsResult {
   const apply = options.apply === true;
   const installed = resolveInstalledGuard(homeRaw);
@@ -580,7 +547,6 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; basel
     return { home, profile, workdir, apply: false, changes, lines };
   }
 
-  // Incomplete prior --apply: refuse so a partial hooks/ is not treated as the pristine original (G3).
   const marker = join(home, 'hooks.apply-in-progress');
   if (existsSync(marker)) {
     const priorBackup = readFileSync(marker, 'utf8').trim();
@@ -594,10 +560,7 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; basel
     return { home, profile, workdir, apply: true, changes, preflightOk: false, restored: false, lines };
   }
 
-  const bundle =
-    installed.hookFormat === 'before_tool' && existsSync(join(home, 'hooks.json'))
-      ? { ...guardBundle(home, profile), 'hooks.json': readFileSync(join(home, 'hooks.json'), 'utf8') }
-      : guardBundle(home, profile);
+  const bundle = guardBundle(home, profile);
   assertInstallationBaseline(home, profile, bundle, options.baseline);
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -611,7 +574,6 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; basel
     try {
       if (existsSync(marker)) unlinkSync(marker);
     } catch {
-      // Best effort: a leftover marker still blocks the next --apply.
     }
   };
 
@@ -806,7 +768,6 @@ export function parseRefreshGuardsArgs(argv: string[]): { home: string; apply: b
   return { home, apply, ...(baseline ? {baseline} : {}) };
 }
 
-/** Extracts the first line of stdin without altering key bytes other than the line ending. */
 export function firstLineOf(raw: string): string {
   return raw.split(/\r?\n/, 1)[0] ?? '';
 }
@@ -821,7 +782,6 @@ export function main(
   try {
     if (argv[0] === 'refresh-guards') {
       const options = parseRefreshGuardsArgs(argv.slice(1));
-      // Stream each step as it happens so an interrupt still shows where it stopped (G3).
       const result = refreshGuards(options.home, { apply: options.apply, baseline: options.baseline, out });
       if (result.apply && result.preflightOk === false) return 1;
       return 0;

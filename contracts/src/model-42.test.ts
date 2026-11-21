@@ -1,7 +1,3 @@
-// Model 42 (decisions 150 and 151): teams, team spaces and per-resource credential acceptance. The model only appends rules
-// (R01 R[13], K02 R[8]), so the rules that cite them by number resolve, and each element that changed says which owner
-// decision it follows. No protocol code, record kind or vocabulary axis is added; the generated files change by the model
-// version and by one value of the `audience_scope` axis.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -21,11 +17,8 @@ test('R01 R[13] and K02 R[8] are appended and the rules that cite them by number
   assert.ok(element('K02').rules.length >= 9);
   assert.ok(element('K02').rules[8].startsWith('条目文字给不给读者'));
   for (const [id, index] of [['T01', 3], ['C02', 2]] as const) assert.ok(element(id).rules[index].includes('R01 R[13]'), `${id} R[${index}]`);
-  // D05 R[3] cited R01 R[13] only in the pending-review clause; decision 161 removed that answer (model 51).
   assert.ok(element('D05').rules[3].includes('不再答“X 存在，内容待核看”'));
   assert.ok(element('D06').fields[3].includes('K02 R[8]'));
-  // B02 R[4] was rewritten by mainline decision 154 (no credential scan on new content); B01 R[7]
-  // possible_credentials remains for claims that still rest on older retain-only sources.
   assert.ok(element('B02').rules[4].includes('不做凭据扫描'));
   assert.ok(element('B01').rules[7].includes('possible_credentials'));
 });

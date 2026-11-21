@@ -1,7 +1,3 @@
-// A runtime profile describes one automation test bed. Round 38 of the acceptance runs bound the default profile, which
-// described another bed than the one the lineage had booked; the start was refused only for the contract identity it
-// expected, with no word of the bed, so the client could not tell a wrong binding from a broken environment.
-// Synthetic documents and lease keys only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { bookedBeds, bookingProblem } from './profile.ts';
@@ -50,20 +46,6 @@ test('the start refuses a profile of another bed than the booked one, at /inputs
   assert.equal(booked.items?.length, 1);
 });
 
-// A profile used to hold a copy of the contract's identity. It holds none now (decision 184): one that still carries the field
-// is told to drop it, whatever the value, so that no profile looks checked against a contract when nothing compares it.
-test('a profile that still carries the retired contract digest says so and says to delete it, besides the bed', () => {
-  const profile = { ...(profileDocument() as Record<string, unknown>), runtime: { ...((profileDocument() as { runtime: Record<string, unknown> }).runtime), contract_sha256: runtimeDocument().contract_sha256 } };
-  const refused = projectItems(startInput([lease('bed/bed-other/lb1')], profile)) as { error: { message: string; fix: string } };
-  assert.match(refused.error.message, /运行环境配置有 2 个问题，整份拒绝：\/bed：运行环境配置属于自动化测试环境 .+，本谱系预订的是 bed-other；\/runtime\/contract_sha256：配置里的合约摘要已退役：工作簿的身份行由生成器按运行锁定的运行器合约写，配置不再存它的副本/);
-  assert.match(refused.error.fix, /\/runtime\/contract_sha256：请管理员删除该字段后重新发布这份配置/);
-});
-
-// Round 44 of the acceptance runs (2026-11-19): a profile republished for a new runner contract had its field renewed and its
-// workbook template not. The start accepted it, all seventeen plans were written, and the merge refused the workbook
-// ("运行器模板的运行时或合约身份与本运行的合约不符"). Since decision 184 the template's identity row is not a copy anyone
-// compares: the generator writes it from the contract the run locked, so a template saved for another contract starts and
-// compiles. The start still refuses a template that cannot be read, which was the other way to lose every plan at the merge.
 test('the start takes a profile whose workbook template was saved with another identity, and refuses one whose template cannot be read', () => {
   const profile = profileDocument() as unknown as { runtime: { minimum_version: string }; workbook: { sheet: string; header: string[]; identity_marker: string; range_name: string } };
   const stale = { ...profile, workbook: { ...profile.workbook, template: templateDocument(profile.workbook, 'another-runtime', 'e'.repeat(64)) } };

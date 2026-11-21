@@ -13,16 +13,8 @@ import {boundaryPolicy,policyAllows} from './policy.ts';
 import {checkEffectBoundary,deny,durationBudget,EffectBoundaryError,unconcluded,type BoundaryContext} from './boundary.ts';
 const equal=(a:unknown,b:unknown)=>a!==undefined&&b!==undefined&&canonicalize(a)===canonicalize(b);
 export function effectParameters(input:VerifiedInput):Record<string,unknown>{return {target:input.target,manifest_sha256:input.manifest_sha256,build:input.build,sha256:input.sha256,items:input.items,generator:input.generator};}
-/** How the refusal names a policy check that replayed to no conclusion, by the clause that replays it (P11 R[3]). */
 const CONCLUSION={2:{check:'参数政策检查',verdict:'参数范围结论'},7:{check:'政策检查',verdict:'政策结论'}} as const;
-/** A refutation is a verdict on the frozen submission, whatever else in the replay has no conclusion (decision 116): clauses 2 and 7 both decide on it first. */
 const refutes=(outcomes:readonly CheckOutcome[]|undefined)=>Array.isArray(outcomes)&&outcomes.some(outcome=>outcome.verdict==='refute');
-/**
- * The refusal for a policy check whose replay reached no conclusion and refuted nothing (callers test `refutes` first): the plan, the
- * workbook and the pack are not rejected (decision 116). It names the cause its own unknown outcomes give, read from their closed
- * fields only: the reason (V03), `data.sandbox` (the Hub writes it alone, check.ts) and the missing fact (V01 R[2]). Whether a request
- * went out is not said here: this check also runs before a resend, so the caller that records the refusal says it (`refusalText`).
- */
 function noConclusion(clause:2|7,id:string,outcomes:readonly CheckOutcome[]|undefined,row:AllowedEffect):EffectBoundaryError{
  const {check,verdict}=CONCLUSION[clause],all:readonly CheckOutcome[]=Array.isArray(outcomes)?outcomes:[],unknown=all.filter(outcome=>outcome.verdict==='unknown'),first=unknown[0],count=`${unknown.length}/${all.length}`;
  const [what,fix]=!first
@@ -51,8 +43,6 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
    const outcomes=await replay(checks);
    const unsupported=checks.find(id=>!(Array.isArray(outcomes[id])&&outcomes[id].length>0&&outcomes[id].every(outcome=>outcome.verdict==='support')));
    if(unsupported===undefined)return true;
-   // A refutation is a verdict on the frozen submission; a check without a conclusion is not (decision 116): the first such check
-   // is named with its cause in a boundary refusal that checkEffectBoundary returns as it is.
    if(checks.some(id=>refutes(outcomes[id])))return false;
    throw noConclusion(7,unsupported,outcomes[unsupported],row);
  };
@@ -93,7 +83,6 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
      const id=row.parameters.check;
      if(!o.recheck)throw new EffectBoundaryError({...deny(2,'PACK_POLICY_DENIED',`参数政策检查 ${id} 缺少冻结提交重核接口；未取得参数范围结论，请 Hub 管理员恢复接口后重核，未提交`,row),fix:'请 Hub 管理员恢复冻结提交的检查重核接口，再重核该参数政策；不修改已核验的参数'});
      const outcomes=(await replay([id]))?.[id];
-     // The same rule as the policy rerun (clause 7): a refutation decides the row, which does not match, whatever else has no conclusion.
      if(refutes(outcomes))return false;
      if(!Array.isArray(outcomes)||!outcomes.length||outcomes.some(outcome=>outcome.verdict==='unknown'))throw noConclusion(2,id,outcomes,row);
      return outcomes.every(outcome=>outcome.verdict==='support'&&equal(at(outcome.data,'/parameters'),parameters));

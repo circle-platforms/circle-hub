@@ -1,4 +1,3 @@
-// Real loopback HTTP and SDK handling over synthetic in-memory ports; no database or credential files.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { request } from 'node:http';

@@ -1,4 +1,3 @@
-// schemaErrors: category sentence form「参数无效：<事实>」+「请<下一步>」；path resolves; never undefined / 你.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ProtocolError } from '../../contracts/src/common.ts';
@@ -21,7 +20,6 @@ function refuse(tool: Tool, args: unknown) {
   return schemaErrors(tool, parsed.error, args);
 }
 
-/** message=类别+事实、fix=下一步（规则短截可接后）；合起来即 `<类别词>：<事实>。<下一步>。` */
 function assertSchemaError(tool: Tool, error: ProtocolError, expectedFix: string) {
   const input = PUBLISHED.get(tool)!.inputSchema as Record<string, unknown>;
   assert.equal(typeof error.path === 'string' && pathInInputSchema(input, error.path), true, `path ${error.path} must resolve in ${tool} inputSchema`);

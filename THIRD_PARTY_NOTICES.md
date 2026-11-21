@@ -4,7 +4,7 @@ The project's own code, documentation, synthetic samples and interface assets ar
 
 ## The shared Circle baseline
 
-Code adapted from the Circle baseline derives from the public [Circle repository](https://github.com/qingshanfeihu/circle) at commit `9d23c09a0f8de2f71920b32b23db9af6c9a41100` (previously mirrored locally under `foundation/circle`, removed from the working tree on 2026-11-13). Its [MIT license](https://github.com/qingshanfeihu/circle/blob/9d23c09a0f8de2f71920b32b23db9af6c9a41100/LICENSE) and [third-party notices](https://github.com/qingshanfeihu/circle/blob/9d23c09a0f8de2f71920b32b23db9af6c9a41100/THIRD_PARTY_NOTICES.md) remain in effect for adapted and historical content.
+Code adapted from the Circle baseline derives from the public [Circle repository](https://github.com/qingshanfeihu/circle) at commit `9d23c09a0f8de2f71920b32b23db9af6c9a41100`, mirrored under `foundation/circle`. Its [MIT license](https://github.com/qingshanfeihu/circle/blob/9d23c09a0f8de2f71920b32b23db9af6c9a41100/LICENSE) and [third-party notices](https://github.com/qingshanfeihu/circle/blob/9d23c09a0f8de2f71920b32b23db9af6c9a41100/THIRD_PARTY_NOTICES.md) remain in effect for adapted and historical content.
 
 The compressed model catalogs in `src/data/` of that upstream baseline (and earlier Git history) contain metadata derived from models.dev; the original MIT notice and copyright are in the third-party notices linked above. Keep that notice when adopting or distributing that content.
 
@@ -28,7 +28,7 @@ The root package's current direct dependencies are `@modelcontextprotocol/sdk@1.
 
 Exact versions, download integrity and transitive dependencies are in the root `package-lock.json`. ExcelJS's uuid dependency is pinned by an override to `11.1.1`, which supports the same CommonJS v4 API and fixes the out-of-bounds advisory that npm audit reported; the lockfile currently has no reported vulnerability. A composition check describes the dependencies of this moment and promises nothing about future advisories. No `node_modules` and no server artifact is included.
 
-The historical lockfiles of the shared baseline and of the reference packages in earlier Git history recorded their original dependencies; they were removed from the working tree and are not used by the Hub's entry points.
+The shared baseline keeps its original lockfile for provenance. Hub entry points do not use it.
 
 When adopting a module, check the dependencies actually used, and ship the corresponding licenses and notices with the artifact. Special cases in the current root `package-lock.json` are `jszip@3.10.2`'s license choice (`MIT OR GPL-3.0-or-later`) and `pako@1.0.11`'s `MIT AND Zlib` (both pulled transitively by `exceljs@4.4.0`); historical reference lockfiles removed from the working tree also recorded `lightningcss`'s `MPL-2.0`, `caniuse-lite`'s `CC-BY-4.0`, and `unionfs@4.6.0` (whose lockfile lacked a license field while its npm tarball contained an Unlicense LICENSE). None of them can be turned into the project's license.
 

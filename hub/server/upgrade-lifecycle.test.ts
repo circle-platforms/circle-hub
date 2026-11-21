@@ -1,4 +1,3 @@
-// The real serve/assembly lifecycle must release its owned lease pool; callback-only tests cannot prove this.
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -43,7 +42,6 @@ async function lifecycle(failListen: boolean, port?: number) {
     if (!failListen) assert.equal(receipt.printedStopped, true);
     clean = true;
   } finally {
-    // On red, explicitly clean the fixture leak; on green the child must exit naturally with no pool cleanup here.
     if (child.connected) child.send({ cleanup: !clean });
     const exit = await exited;
     assert.equal(exit.signal, null);

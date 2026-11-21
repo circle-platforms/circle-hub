@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fidelityBrief, unknownAuthorStepRefs } from './fidelity.ts';
 
-// Recompose records number author steps by atom id (a1, a2, ...); a plan that writes ordinals ("2") binds nothing.
 const RECORD = {
   schema: 'recompose-record@1',
   contract: { intent: { text: '验证接口启用与静态路由' } },

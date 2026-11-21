@@ -1,4 +1,3 @@
-// Unit tests for active shared helpers exported by compile-check.ts (synthetic inputs only; no Hub or pack imports).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -98,7 +97,6 @@ test('canonicalJson sorts integer-like keys as strings, uses JavaScript UTF-16 o
 
 test('public product declarations supply commands@1 metadata without importing functions', () => {
   const product: unknown = JSON.parse(readFileSync(new URL('../../../packs/product/famx/product.json', import.meta.url), 'utf8'));
-  // The published FAMX command catalog declares case_sensitive: true; verify the public declaration only.
   assert.deepEqual(commandCatalogDeclaration(product), { complete: true, case_sensitive: true });
   for (const v of [{}, { schema: 'product@1', catalogs: [] }, { schema: 'product@1', catalogs: [{ id: 'commands@1', complete: true }] }]) {
     assert.throws(() => commandCatalogDeclaration(v));

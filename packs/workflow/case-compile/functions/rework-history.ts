@@ -1,36 +1,18 @@
-// Deterministic per-case prior-round history, device evidence extraction (with 12,000-char gateway
-// truncation disclosure), gate refusal extraction, and consecutive same-error streak analysis.
-// Strictly isolates a single original case and never generates model conclusions or similarity matches.
 import { recompositionRecordOf } from './late.ts';
-import { failureLine, LEADING_PROMPT, type RowAudit } from './delivery.ts';
+import { failureLine, LEADING_PROMPT, LOG_STAMP, MAX_ROUNDS, type RowAudit } from './delivery.ts';
 import { isAcceptance, type Acceptance } from './generated/vocabulary.ts';
 import { CallFailure, isRecord, wrapProseLine } from './text.ts';
 
-/** Gateway tail truncation limit in bytes/chars on retained session transcripts (compile-excel-server). */
 export const SESSION_RETAINED_CHARS = 12_000;
-/**
- * Lower char bound (90%+ of 12,000) recognizing real gateway 12,000-byte truncations whose
- * saved text measures slightly below 12,000 chars after CRLF/control normalization (e.g. ~11,371 chars).
- */
 export const SESSION_RETENTION_NEAR_CHARS = 11_000;
-/** Inline tail budget per session file inside structured/rendered briefs to protect context budget. */
 export const INLINE_TAIL_CHARS = 6_000;
-/** Total rendered budget for the prior-round history Markdown block (with deterministic omission order). */
 export const MAX_PRIOR_HISTORY_CHARS = 48_000;
-/** Total rendered ceiling for complete `renderTaskBrief()` output. */
 export const MAX_TASK_BRIEF_CHARS = 80_000;
-/** Maximum authoring rounds allowed before closing under delivery rules. */
-export const MAX_ROUNDS = 3;
-/** Maximum anomaly lines highlighted from logs/returns per round. */
 export const MAX_ANOMALY_LINES = 5;
 
-/** Disclosed ONLY when facts support that the session hit the 12,000-char retention cap before this step. */
 export const MISSING_STEP_TRUNCATION_MSG = '这一步的设备输出不在保留的末尾 12,000 个字符内';
-/** Disclosed when a step is absent from a retained session that did NOT truncate before it. */
 export const MISSING_STEP_NOT_FOUND_MSG = '在保留的设备输出里没有找到这一步';
-/** Disclosed when a step's command occurrence cannot be uniquely localized in a session transcript. */
 export const AMBIGUOUS_STEP_MSG = '这一步的输出无法唯一定位';
-/** Mandatory disclosure whenever any step or session evidence could not be retrieved. */
 export const MISSING_EVIDENCE_CAVEAT = '取不到证据的步骤不要当作正确，也不要当作无关。';
 export const UNCONFIRMED_HYPOTHESIS_NOTE =
   '以下失败分析结论均标记为未确认假设（confidence: "hypothesis"）；编写或核对前须对照上述原始设备输出独立核对后再采纳或推翻。';
@@ -97,9 +79,7 @@ export interface SyntaxRejectionItem {
   command: string;
   token?: string;
   prompt?: string;
-  /** The case's log shows the runner sending this command by itself, outside the plan's steps (runnerOwnLogCommands), or does not show it sent at all (unlogged). */
   runner_own?: true;
-  /** The case's log lists the commands the runner sent and this one is none of them: the framework typed it beneath that line. */
   unlogged?: true;
 }
 
@@ -109,7 +89,6 @@ export interface ExecutionRefusalItem {
   prompt: string;
   reply: string[];
   echo_cut?: true;
-  /** As in SyntaxRejectionItem. */
   runner_own?: true;
   unlogged?: true;
 }
@@ -169,14 +148,11 @@ export interface DeviceReturnEvidence {
   sessionLengths: Record<string, number>;
   withheldNotes: string[];
   errorSignatures: string[];
-  /** The dispatch held the case but the run never reached it (tools/download-returns.ts `not_executed`): no device observation, no attempt. */
   notExecuted?: { reason: string; next_action: string };
 }
 
 export interface HubAnswerNotices {
-  /** True only when an explicit contract `acceptance` value or failure envelope was parsed from the Hub answer. */
   acceptanceParsed: boolean;
-  /** Contract `Acceptance` value when `acceptanceParsed` is true; null when not parsed. */
   acceptance: Acceptance | null;
   refusals: GateRefusalItem[];
   acceptedNotices: GateRefusalItem[];
@@ -209,7 +185,6 @@ const WAIT_ONLY_METHOD = /^(?:sleep|wait|pause|delay)$/i;
 const ANSI_ESCAPE = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 const CTRL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f]/g;
 
-/** Strips ANSI CSI sequences and resolves terminal `\r` overwrites to the last non-empty segment. */
 function collapseAnsiCrLine(rawLine: string): string {
   const withoutAnsi = rawLine.replace(ANSI_ESCAPE, '');
   const parts = withoutAnsi.split('\r');
@@ -221,11 +196,6 @@ function collapseAnsiCrLine(rawLine: string): string {
   return '';
 }
 
-/**
- * Decodes terminal horizontal-scroll redraw lines (`BS` x W + `$<vis><spaces>` + `BS` x pad + `<chunk>`),
- * returning the reconstructed `prompt + fullCommand` line when scroll frames are present.
- * Returns `null` when the line does not follow a valid scroll-redraw sequence so callers never guess.
- */
 export function decodeHorizontalScrollRedraw(rawLine: string): string | null {
   const lastCr = collapseAnsiCrLine(rawLine);
   if (!lastCr.includes('\x08')) return null;
@@ -271,7 +241,6 @@ export function decodeHorizontalScrollRedraw(rawLine: string): string | null {
     if (!('bs' in t)) return null;
     const nxt = tokens[k + 1];
     if (!nxt) {
-      // Trailing BS at very end of line
       k++;
       break;
     }
@@ -326,10 +295,6 @@ export function decodeHorizontalScrollRedraw(rawLine: string): string | null {
   return prompt + out;
 }
 
-/**
- * Formats one terminal output line for rendered excerpts: decodes horizontal-scroll redraws first
- * and resolves any remaining `\x08` sequences via cursor overwrite so raw control bytes never leak.
- */
 function sanitizeTerminalExcerptLine(rawLine: string): string {
   const decoded = decodeHorizontalScrollRedraw(rawLine);
   if (decoded !== null) return decoded.replace(CTRL_CHARS, '');
@@ -382,7 +347,6 @@ function commandSignatureHead(command: string): string {
   return tokens.slice(0, Math.min(4, tokens.length)).join(' ').toLowerCase();
 }
 
-/** Expands known exact case identifiers from `--case` and optional item JSON; never fuzzy-matches other cases. */
 export function buildCaseIdSet(caseRef: string, item?: unknown): Set<string> {
   const ids = new Set<string>();
   const trimmed = caseRef.trim();
@@ -395,7 +359,6 @@ export function buildCaseIdSet(caseRef: string, item?: unknown): Set<string> {
     if (typeof item.id === 'string' && item.id.trim()) ids.add(item.id.trim());
     if (isRecord(item.fields)) {
       if (typeof item.fields.autoid === 'string' && item.fields.autoid.trim()) ids.add(item.fields.autoid.trim());
-      // The recomposition record of the item, the late overlay's when the item carries one (functions/late.ts).
       const record = recompositionRecordOf(item);
       if (record && isRecord(record.case) && typeof record.case.id === 'string' && record.case.id.trim()) {
         ids.add(record.case.id.trim());
@@ -483,7 +446,6 @@ function blockCommandText(block: Record<string, unknown>): string {
   if (Array.isArray(block.args) && typeof block.args[0] === 'string' && block.args[0].trim()) {
     return block.args[0].trim();
   }
-  // A typed block keeps its command under call.args (CONFIG, CAPTURE, OBSERVE_ASSERT …).
   const call = isRecord(block.call) ? block.call : null;
   if (call && Array.isArray(call.args) && typeof call.args[0] === 'string' && call.args[0].trim()) {
     return call.args[0].trim();
@@ -491,7 +453,6 @@ function blockCommandText(block: Record<string, unknown>): string {
   return '';
 }
 
-/** Parses one prior-round plan JSON into a normalized snapshot, refusing plans that belong to another case. */
 export function parsePriorPlanSnapshot(
   raw: unknown,
   caseIds: ReadonlySet<string>,
@@ -600,7 +561,6 @@ export function parsePriorPlanSnapshot(
   };
 }
 
-/** Line-level LCS diff returning verbatim added/removed entries in chronological order. */
 function diffLineLists(prevLines: readonly string[], currLines: readonly string[]): Array<{ kind: 'same' | 'del' | 'add'; line: string }> {
   const n = prevLines.length;
   const m = currLines.length;
@@ -631,7 +591,6 @@ function diffLineLists(prevLines: readonly string[], currLines: readonly string[
   return ops;
 }
 
-/** Deterministic verbatim diff between two rounds of the same case's plan without model interpretation. */
 export function diffPlanSnapshots(
   prev: PriorPlanSnapshot,
   curr: PriorPlanSnapshot,
@@ -721,6 +680,7 @@ function inspectSessionLine(rawLine: string): {
   rawNoAnsi: string;
   cleaned: string;
   body: string;
+  prompt: string;
   promptMatched: boolean;
   isRedraw: boolean;
   redrawHead: string;
@@ -737,6 +697,7 @@ function inspectSessionLine(rawLine: string): {
       rawNoAnsi,
       cleaned,
       body,
+      prompt: prompted ? prompted[1] : '',
       promptMatched: prompted !== null,
       isRedraw: true,
       redrawHead: '',
@@ -784,6 +745,7 @@ function inspectSessionLine(rawLine: string): {
     rawNoAnsi,
     cleaned,
     body,
+    prompt: prompted ? prompted[1] : '',
     promptMatched: prompted !== null,
     isRedraw,
     redrawHead,
@@ -833,13 +795,10 @@ function findCommandCandidatesInSession(
       continue;
     }
 
-    // Only permit redraw prefix matching when the terminal genuinely wrapped/truncated long echoes
-    // (never match arbitrary prefixes across distinct complete commands like `-t A` vs `-t CNAME`).
     const redrawTailMatches = (): boolean => {
       if (!info.redrawTail) return true;
       const tailWords = info.redrawTail.split(/\s+/).filter((w) => w.length >= 2);
       if (tailWords.length === 0) return true;
-      // Require the trailing suffix word(s) after `$` (ignoring a cut first fragment like `k`) to belong to cmdNorm.
       const significant = tailWords.length > 1 ? tailWords.slice(1) : tailWords;
       return significant.every((w) => cmdNorm.includes(w));
     };
@@ -879,7 +838,6 @@ function extractExcerptAt(rawLines: readonly string[], matchIndex: number): stri
     const cleaned = cleanLineForMatch(rawLines[end]);
     const prompted = LEADING_PROMPT.exec(cleaned);
     if (prompted && end > matchIndex) {
-      // Include a trailing bare return-to-prompt line, but stop before a non-empty next command.
       if (!cleaned.slice(prompted[1].length).trim()) end++;
       break;
     }
@@ -895,11 +853,6 @@ function extractExcerptAt(rawLines: readonly string[], matchIndex: number): stri
     : sliceText;
 }
 
-/**
- * Searches for a CLI command inside a retained device session transcript (`text`)
- * and returns a verbatim window (`<= ~1600` chars) at the requested occurrence index,
- * without fuzzy 24-char prefix matching across different commands.
- */
 export function findCommandInSession(
   sessionText: string,
   command: string,
@@ -928,7 +881,7 @@ const STRUCTURED_LOG_MARKER =
   /(?:^#{4,}\s+|^step\s+\d+\s+(?:dispatched|failed|timed out)\b|executes command:|end case:|\bdispatched\s+)/i;
 
 function isExecutorFailureLogLine(line: string): boolean {
-  const stripped = line.replace(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+/, '').trim();
+  const stripped = line.replace(LOG_STAMP, '').trim();
   return (
     /^#{4}\s+Fail Num\s+\d+\s*:/i.test(stripped)
     || /^#{4,}\s+The failed check point num:/i.test(stripped)
@@ -939,7 +892,7 @@ function isExecutorFailureLogLine(line: string): boolean {
 function extractExecutedLogCommands(logText: string): string[] {
   const cmds: string[] = [];
   for (const raw of logText.replace(/\r/g, '').split('\n')) {
-    const stripped = raw.replace(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+/, '').trim();
+    const stripped = raw.replace(LOG_STAMP, '').trim();
     if (!stripped) continue;
     const execMatch = /executes command:\s*(.+)$/i.exec(stripped);
     if (execMatch?.[1]?.trim()) {
@@ -954,14 +907,9 @@ function extractExecutedLogCommands(logText: string): string[] {
   return cmds;
 }
 
-/**
- * The commands a case's log shows the runner sending by itself: before the first step is announced (its own preparation) and
- * after the last announced step has sent its command (its own cleanup of the devices). The device's sessions hold them and a
- * device can refuse them, and they are in no plan, so a refused one says nothing about which plan ran. A command that a step
- * also sent as its own is not taken for the runner's. Nothing when the log announces no step.
- */
+const sentCommand = (line: string): string | undefined => (/sends command in [^:]*:\s*(.+)$/.exec(line) ?? /executes command:\s*(.+)$/i.exec(line))?.[1]?.trim();
+
 export function runnerOwnLogCommands(logText: string): Set<string> {
-  const sent = (line: string): string | undefined => (/sends command in [^:]*:\s*(.+)$/.exec(line) ?? /executes command:\s*(.+)$/i.exec(line))?.[1]?.trim();
   const lines = logText.replace(/\r/g, '').split('\n');
   const marks = lines.flatMap((line, at) => (/#######\s+step\d+\s*:/.test(line) ? [at] : []));
   const own = new Set<string>();
@@ -969,13 +917,13 @@ export function runnerOwnLogCommands(logText: string): Set<string> {
   const ofSteps = new Set<string>();
   marks.forEach((mark, n) => {
     const end = marks[n + 1] ?? lines.length;
-    for (let at = mark + 1; at < end; at++) { const command = sent(lines[at]!); if (command) { ofSteps.add(normWs(command)); break; } }
+    for (let at = mark + 1; at < end; at++) { const command = sentCommand(lines[at]!); if (command) { ofSteps.add(normWs(command)); break; } }
   });
-  for (let at = 0; at < marks[0]!; at++) { const command = sent(lines[at]!); if (command) own.add(normWs(command)); }
+  for (let at = 0; at < marks[0]!; at++) { const command = sentCommand(lines[at]!); if (command) own.add(normWs(command)); }
   let stepsOwn = true;
   for (let at = marks.at(-1)! + 1; at < lines.length; at++) {
     if (/#######\s+end case\b/.test(lines[at]!)) break;
-    const command = sent(lines[at]!);
+    const command = sentCommand(lines[at]!);
     if (!command) continue;
     if (stepsOwn) { stepsOwn = false; continue; }
     own.add(normWs(command));
@@ -984,16 +932,10 @@ export function runnerOwnLogCommands(logText: string): Set<string> {
   return own;
 }
 
-/**
- * Every command the case's log shows the runner sending, for a step or by itself. The framework writes one such line for each
- * command of its two senders; what it types beneath them — entering and leaving configuration mode, the login — is in a
- * device's session only. A device can refuse that too ("conf ter" while another session holds configuration mode); it is in no
- * plan and under no step of the log, so it says nothing about which plan ran.
- */
 export function runnerLoggedCommands(logText: string): string[] {
   const out: string[] = [];
   for (const line of logText.replace(/\r/g, '').split('\n')) {
-    const command = (/sends command in [^:]*:\s*(.+)$/.exec(line) ?? /executes command:\s*(.+)$/i.exec(line))?.[1]?.trim();
+    const command = sentCommand(line);
     if (command) out.push(normWs(command));
   }
   return out;
@@ -1008,7 +950,7 @@ function collectCandidateLogLines(logText: string): string[] {
   if (lines.length <= 24) return lines;
   const hitIndices = new Set<number>();
   for (let i = 0; i < lines.length; i++) {
-    const stripped = lines[i].replace(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+/, '').trim();
+    const stripped = lines[i].replace(LOG_STAMP, '').trim();
     if (STRUCTURED_LOG_MARKER.test(stripped) || isExecutorFailureLogLine(lines[i])) {
       for (let k = Math.max(0, i - 1); k <= Math.min(lines.length - 1, i + 1); k++) hitIndices.add(k);
     }
@@ -1053,30 +995,20 @@ export function commandMatchesPlanSet(
   if (!n) return true;
   const u = unquoteSimpleTokens(n);
   if (planNorms.includes(n) || planUnqs.includes(u)) return true;
-  // A plan command with the back-fill placeholder {} reached the device with a captured value in its place.
   const filled = planNorms.filter((pc) => pc.includes('{}'));
   const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   if (filled.some((pc) => new RegExp(`^${pc.split('{}').map(escape).join('.+')}$`).test(n))) return true;
   if (allowPrefixCut && n.length >= 16) {
     if (planNorms.some((pc) => pc.startsWith(n))) return true;
-    // A cut echo of a filled command: the text before the first placeholder agrees as far as the echo goes.
     return filled.some((pc) => { const head = pc.split('{}')[0]!; return n.length <= head.length ? head.startsWith(n) : n.startsWith(head); });
   }
   return false;
 }
 
-/** Said beside a refused command the runner sent by itself: the plan has no step to change for it. */
 const RUNNER_OWN_NOTE = '（日志显示这条是执行器在步骤之外自己发的，不在本计划的步骤里）';
-/** Said beside a refused command the log does not show the runner sending at all. */
 const RUNNER_UNLOGGED_NOTE = '（运行日志里没有发这条命令的记录：是执行器自己发的，例如进出配置模式，不在本计划的步骤里）';
 const runnerNote = (item: { runner_own?: true; unlogged?: true }): string => (item.unlogged ? RUNNER_UNLOGGED_NOTE : item.runner_own ? RUNNER_OWN_NOTE : '');
-const BOILERPLATE_PROMPT_CMD = /^(?:conf\s+ter|configure\s+terminal|exit|end|clear\s+slb\s+all)$/i;
 
-/**
- * Extracts deterministic single-case device evidence from `returns/index.json`, saved session texts,
- * and `log.txt`, aligning step outputs by sequential occurrence order in the session, validating
- * plan-vs-returns consistency, and disclosing factually when 12,000-char gateway retention clipped early steps.
- */
 export function extractCaseDeviceEvidence(params: {
   round: number;
   returnsIndex: unknown;
@@ -1092,7 +1024,6 @@ export function extractCaseDeviceEvidence(params: {
   const jobs = params.returnsIndex.jobs.filter(isRecord);
   let matchedJob: Record<string, unknown> | null = null;
   let matchedRow: Record<string, unknown> | null = null;
-  // Take the latest job row matching any exact ID of THIS single case.
   for (let ji = jobs.length - 1; ji >= 0; ji--) {
     const job = jobs[ji];
     if (!Array.isArray(job.rows)) continue;
@@ -1105,7 +1036,6 @@ export function extractCaseDeviceEvidence(params: {
   }
   if (!matchedJob || !matchedRow) return null;
 
-  // What the runner sent by itself, outside the plan's steps: a refusal of it is shown as that, and is not held against the plan.
   const runnerOwn = runnerOwnLogCommands(params.logText ?? '');
   const logged = runnerLoggedCommands(params.logText ?? ''), loggedUnquoted = logged.map(unquoteSimpleTokens);
   const unlogged = (command: string): boolean => logged.length > 0 && !commandMatchesPlanSet(command, logged, loggedUnquoted, true);
@@ -1159,14 +1089,11 @@ export function extractCaseDeviceEvidence(params: {
   const sessionNames = [...params.sessionTexts.keys()];
   const logText = params.logText ?? '';
 
-  // D2 mismatch guard: fail closed if the supplied plan and returns clearly belong to different runs.
   if (params.priorPlan && (params.priorPlan.steps.length > 0 || params.priorPlan.blocks.length > 0)) {
     const jobPlanRun = typeof matchedJob.plan_run === 'string' ? matchedJob.plan_run.trim() : '';
     if (params.priorPlan.planRun && jobPlanRun && params.priorPlan.planRun !== jobPlanRun) {
       throw new CallFailure("invalid_parameters", `传入的上一轮计划与设备返还不属于同一次运行（plan_run 不一致：${params.priorPlan.planRun} != ${jobPlanRun}），拒绝生成失配简报`, "成对选择同一 plan_run 的上一轮计划和设备返还后重新生成简报");
     }
-    // The same run on both sides is the pair itself. What follows guesses the pair from the commands, for a plan that does not
-    // say its run; twice it refused a right pair over a command the runner had sent by itself.
     const sameRun = Boolean(params.priorPlan.planRun && jobPlanRun && params.priorPlan.planRun === jobPlanRun);
     if (!sameRun) {
     const planCmdsNorm = [
@@ -1175,8 +1102,6 @@ export function extractCaseDeviceEvidence(params: {
     ].filter(Boolean);
     const planCmdsUnq = planCmdsNorm.map(unquoteSimpleTokens);
 
-    // A refused command the runner sent by itself is in no plan whichever plan ran (a compile stopped a case for good because
-    // the peer device refused the runner's own cleanup after the last step): it is no sign of a wrong pair.
     for (const sr of syntaxRejected) {
       if (sr.runner_own) continue;
       if (!commandMatchesPlanSet(sr.command, planCmdsNorm, planCmdsUnq, true)) {
@@ -1210,12 +1135,11 @@ export function extractCaseDeviceEvidence(params: {
         if (!matchedAnyPlanCmd) {
           const otherPromptedCmds: string[] = [];
           for (const rawLines of sessionRawLines.values()) {
-            for (const rawLine of rawLines) {
-              const info = inspectSessionLine(rawLine);
-              if (info.promptMatched && info.body.length >= 3 && !BOILERPLATE_PROMPT_CMD.test(info.body)) {
-                otherPromptedCmds.push(info.body);
-              }
-            }
+            const typed = rawLines.map(inspectSessionLine).filter((info) => info.promptMatched);
+            typed.forEach((info, at) => {
+              const switchesMode = at + 1 < typed.length && typed[at + 1]!.prompt !== info.prompt;
+              if (info.body.length >= 3 && !switchesMode && !ownMark(info.body).runner_own) otherPromptedCmds.push(info.body);
+            });
           }
           if (otherPromptedCmds.length > 0) {
             throw new CallFailure("invalid_parameters", `传入的上一轮计划（--prior-plans）与设备返还（--prior-returns）不属于同一次运行（未截断设备会话未命中任何计划命令，却执行了“${otherPromptedCmds[0]}”等其他命令），拒绝生成简报`, "核对设备会话所属运行，提供与上一轮计划对应的未截断返还，不改写原始命令");
@@ -1350,7 +1274,6 @@ export function extractCaseDeviceEvidence(params: {
       }
     }
   } else {
-    // Precompute candidates per session x target, then assign each step cleanly to its session.
     const candidatesPerTargetSession = locateTargets.map((t) => {
       const m = new Map<string, SessionLineCandidate[]>();
       for (const sName of sessionNames) {
@@ -1360,7 +1283,6 @@ export function extractCaseDeviceEvidence(params: {
       return m;
     });
 
-    // Learn dominant session for each (objectName, methodName) from affinity matches & candidate hits.
     const learnedObjectSession = new Map<string, string>();
     const byObjKey = new Map<string, Map<string, number>>();
     for (const t of locateTargets) {
@@ -1431,14 +1353,12 @@ export function extractCaseDeviceEvidence(params: {
       const sLength = entryTextLength(params.sessionTexts.get(sName)!);
       const isTruncatedLen = sLength >= SESSION_RETENTION_NEAR_CHARS;
 
-      // Count occurrences of each normalized command within THIS session's plan sequence.
       const cmdPlanCounts = new Map<string, number>();
       for (const t of sTargets) {
         const cn = normWs(t.commandText);
         cmdPlanCounts.set(cn, (cmdPlanCounts.get(cn) ?? 0) + 1);
       }
 
-      // Unique single-occurrence anchors that match cleanly once in this session.
       const rawAnchors: Array<{ pos: number; lineIndex: number }> = [];
       for (let pos = 0; pos < sTargets.length; pos++) {
         const t = sTargets[pos];
@@ -1450,7 +1370,6 @@ export function extractCaseDeviceEvidence(params: {
         }
       }
 
-      // Enforce strictly increasing monotonic anchor chain.
       const anchors: Array<{ pos: number; lineIndex: number }> = [];
       for (const a of rawAnchors) {
         if (anchors.length === 0 || a.lineIndex > anchors[anchors.length - 1].lineIndex) {
@@ -1472,7 +1391,6 @@ export function extractCaseDeviceEvidence(params: {
         };
       }
 
-      // Partition remaining positions into anchor-bracketed windows (lowLine, highLine).
       const windows: Array<{ startPos: number; endPos: number; lowLine: number; highLine: number }> = [];
       let prevPos = -1;
       let prevLine = -1;
@@ -1497,7 +1415,7 @@ export function extractCaseDeviceEvidence(params: {
           g.push(t);
           groups.set(cn, g);
         }
-        for (const [cn, grp] of groups.entries()) {
+        for (const grp of groups.values()) {
           const allCands = candidatesPerTargetSession[grp[0].slotIdx].get(sName) ?? [];
           const winCands = allCands.filter((c) => c.lineIndex > win.lowLine && c.lineIndex < win.highLine);
           if (winCands.some((c) => c.kind === 'ambiguous')) {
@@ -1533,8 +1451,6 @@ export function extractCaseDeviceEvidence(params: {
             continue;
           }
           if (winCands.length === 0) {
-            // Only cite 12,000-char gateway head truncation when session reached retention cap,
-            // is strictly absent from all retained session lines, and no earlier step was retained (`lowLine === -1`).
             const beforeRetained =
               isTruncatedLen
               && win.lowLine === -1
@@ -1554,7 +1470,6 @@ export function extractCaseDeviceEvidence(params: {
             }
             continue;
           }
-          // Count mismatch in same window (e.g. repeated command appeared fewer/more times with no anchor separating them).
           for (const t of grp) {
             resolvedExcerpts[t.slotIdx] = {
               ...(t.stepIndex !== undefined ? { stepIndex: t.stepIndex } : {}),
@@ -1575,7 +1490,6 @@ export function extractCaseDeviceEvidence(params: {
 
   const stepExcerpts = resolvedExcerpts.filter((x): x is StepDeviceExcerpt => x !== null);
 
-  // Extract tail excerpt across sessions (prefer session with refusal or longest transcript), bounded to INLINE_TAIL_CHARS.
   const sessionEntries = [...params.sessionTexts.entries()];
   sessionEntries.sort(([a, ea], [b, eb]) => {
     const aRefused = syntaxRejected.some((s) => s.session === a) || executionRefused.some((e) => e.session === a) ? 1 : 0;
@@ -1610,8 +1524,6 @@ export function extractCaseDeviceEvidence(params: {
   const logLines = logText ? collectCandidateLogLines(logText) : [];
   const logExcerpt = logLines.join('\n').slice(0, 3000);
 
-  // D5: Populate anomalies and error signatures STRICTLY from structured records, contract markers,
-  // and executor framework failure marker lines (never free-text keyword regexes that falsely hit `NOERROR`).
   const anomalyLines: string[] = [];
   const pushAnomaly = (line: string): void => {
     const clean = line.trim();
@@ -1673,7 +1585,6 @@ export function extractCaseDeviceEvidence(params: {
   for (const rf of runnerFailLines.slice(0, MAX_ANOMALY_LINES)) {
     pushSig(`runner_fail:${normalizeErrorToken(rf)}`);
   }
-  // A case the run never reached has no device error to repeat: it must not read as the same failure twice.
   if (errorSignatures.length === 0 && verdict !== 'pass' && !notExecuted) {
     pushSig(`device_verdict:${verdict}`);
   }
@@ -1731,10 +1642,6 @@ function cleanPunctuationRuns(text: string): string {
   return out;
 }
 
-/**
- * Strips internal Hub transport identifiers (`rec:<hex>`, `usr_<id>`, ms UTC timestamps)
- * from `errors[].message` / `errors[].fix`, and drops duplicated `缺失事实：<message>` clauses inside `fix`.
- */
 export function sanitizeHubAnswerField(raw: string, stripMissingFactText?: string): string {
   if (!raw) return '';
   let out = raw
@@ -1915,7 +1822,6 @@ function extractCompactGateErrorsFromObject(
     }
   }
 
-  // `submit_result` also groups outcome partitions inside `result.partitions` (array or keyed map).
   const partitions = isRecord(parsed.result) ? parsed.result.partitions : undefined;
   const inspectPartitionEntry = (entry: unknown, partitionKey?: string): void => {
     if (!isRecord(entry)) return;
@@ -1992,11 +1898,6 @@ function extractCompactGateErrorsFromObject(
   }
 }
 
-/**
- * Parses an `answer-*.txt` file from `submit-plans.ts` or Hub `submit_result` output,
- * separating unaccepted gate refusals (`acceptance !== 'accepted'`) from accepted missing-input
- * notices (`acceptance === 'accepted'`, e.g. `missing_input`) while scrubbing internal Hub IDs and duplicates.
- */
 export function parseHubAnswerNotices(
   answerText: string,
   caseIds: ReadonlySet<string>,
@@ -2035,7 +1936,6 @@ export function parseHubAnswerNotices(
       };
     }
   } catch {
-    // Multi-line `submit_result` text: inspect embedded single-line JSON payloads (e.g. after `供模型引用`).
   }
 
   const lines = trimmed.replace(/\r/g, '').split('\n');
@@ -2054,7 +1954,6 @@ export function parseHubAnswerNotices(
         recordObject(parsed);
       }
     } catch {
-      // Not a standalone JSON object line.
     }
   }
   if (parsedStructuredJson) {
@@ -2066,7 +1965,6 @@ export function parseHubAnswerNotices(
     };
   }
 
-  // Legacy plain-text Hub answer format (no structured JSON payload present): never emit raw JSON lines.
   const ids = [...caseIds];
   const scanLimit = markerLineIdx >= 0 ? markerLineIdx : lines.length;
   const pushRefusal = pushDedup(refusals);
@@ -2094,10 +1992,6 @@ export function parseHubAnswerNotices(
   return { acceptanceParsed: false, acceptance: null, refusals, acceptedNotices };
 }
 
-/**
- * Extracts only unaccepted Hub gate refusals (`acceptance !== 'accepted'`) for THIS case.
- * Accepted responses containing `missing_input` return `[]` here; inspect `parseHubAnswerNotices` for accepted gaps.
- */
 export function parseGateRefusalsFromAnswer(
   answerText: string,
   caseIds: ReadonlySet<string>,
@@ -2110,11 +2004,6 @@ function parsePositiveRoundValue(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : null;
 }
 
-/**
- * Parses prior attribution / delivery notes (`Notes` JSON `{ cases: { "<autoid>": ... } }` or single-case attribution JSON),
- * strictly matching ONLY `caseIds` and pinning `confidence: "hypothesis"`.
- * Never fabricates a round number when `notes.json` omits `round` (CLI positional round arguments are ignored for attribution).
- */
 export function parsePriorAttribution(
   raw: unknown,
   caseIds: ReadonlySet<string>,
@@ -2123,7 +2012,6 @@ export function parsePriorAttribution(
 ): PriorAttributionItem | null {
   if (!isRecord(raw)) return null;
 
-  // Format 1: Notes JSON from delivery (`{ round?, cases: { [autoid]: { round?, judged, remedy, evidence?, defect_candidate?, author_conflict? } } }`)
   if (isRecord(raw.cases)) {
     const topRound = parsePositiveRoundValue(raw.round);
     for (const id of caseIds) {
@@ -2162,7 +2050,6 @@ export function parsePriorAttribution(
     return null;
   }
 
-  // Format 2: Single-case attribution JSON (`compile-attributor` output)
   const record = raw;
   const itemKey = [record.item, record.item_id, record.autoid, record.case_id]
     .filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
@@ -2220,7 +2107,6 @@ function signaturesMatchAsSameError(prevSigs: readonly string[], currSigs: reado
   for (const sig of currSpecific) {
     if (prevSpecific.includes(sig)) return sig;
   }
-  // Fallback: match same syntax command root or same execution_refused command root across parameter retries.
   const coarse = (s: string): string => {
     const parts = s.split(':');
     if (parts[0] === 'syntax' || parts[0] === 'exec_refused' || parts[0] === 'gate') {
@@ -2235,10 +2121,6 @@ function signaturesMatchAsSameError(prevSigs: readonly string[], currSigs: reado
   return null;
 }
 
-/**
- * Returns Hub refusal codes that appeared sequentially in at least two trailing prior rounds
- * (only unaccepted responses in `gateRefusals`; never counts `acceptedNotices` or multiple errors in a single round).
- */
 export function consecutiveRepeatedGateCodes(rounds: readonly PriorRoundRecord[]): string[] {
   const ordered = [...rounds].sort((a, b) => a.round - b.round);
   if (ordered.length < 2) return [];
@@ -2259,17 +2141,6 @@ export function consecutiveRepeatedGateCodes(rounds: readonly PriorRoundRecord[]
   return repeated;
 }
 
-/**
- * Computes round-to-round plan diffs and detects trailing consecutive rounds hitting the same error class.
- * InfoTest provenance (`InfoTest_Engine/main/ist_core/compile_engine/`):
- * - `finalAttempt`: marks the last retry budget slot (`briefs.py:2982-2985`, rendered in Chinese).
- * - `varyFormRequired`: triggers ONLY when InfoTest itself requires changing approach:
- *   1) two or more consecutive unaccepted Hub gate refusals share the same code
- *      (`briefs.py:2681-2690`, `rejection_history.py:3-40`, `nodes.py:9532-9594`), OR
- *   2) failure attribution carries `disposition === "frozen"` (`remedies.py:39-42`).
- * - General device failures (`runner_fail:`, `exec_refused:`, `syntax:`) still report `consecutiveSameError`
- *   as a factual observation without auto-forcing `varyFormRequired` (no matching InfoTest rule in `briefs.py:2792-2820`).
- */
 export function analyzeRoundHistory(params: {
   currentRound: number;
   attemptLimit?: number;
@@ -2368,11 +2239,6 @@ function renderAttributionLines(attr: PriorAttributionItem, heading: string): st
   return lines;
 }
 
-/**
- * Renders the deterministic round 2+ prior-round history Markdown block embedded directly into
- * `task-brief.ts` stdout and round-specific `.round-<n>.md` briefs.
- * Enforces `maxChars` (default `MAX_PRIOR_HISTORY_CHARS`) via fixed priority omission order with explicit disclosure.
- */
 export function renderPriorRoundsMarkdown(params: {
   caseRef: string;
   currentRound: number;
@@ -2686,13 +2552,6 @@ export function renderPriorRoundsMarkdown(params: {
     return rendered.text;
   }
 
-  // Fixed omission order (never shuffle):
-  // 1. inlineTail (trim -> omit)
-  // 2. logExcerpt (trim -> omit)
-  // 3. stepExcerpts verbatim bodies (600 -> 240 -> omit)
-  // 4. latest.plan body (compact -> omit)
-  // 5. older rounds in historyLines (drop oldest rounds while retaining latest)
-  // 6. excess gate refusals beyond top 5
   const steps: Array<() => void> = [
     () => { state.inlineTailMode = 'trim'; },
     () => { state.inlineTailMode = 'omit'; },
@@ -2716,7 +2575,6 @@ export function renderPriorRoundsMarkdown(params: {
     if (rendered.text.length <= budget) return rendered.text;
   }
 
-  // Last-resort hard slice only if caller passed an unusually tiny budget.
   const marker = `\n…（已达篇幅上限 ${budget} 字符，截断 ${Math.max(0, rendered.text.length - budget + 48)} 字符）`;
   const keep = Math.max(0, budget - marker.length);
   return `${rendered.text.slice(0, keep)}${marker}`;

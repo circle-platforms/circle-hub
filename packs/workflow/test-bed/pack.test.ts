@@ -99,7 +99,7 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
   });
 });
 
-describe('Effort-AB guidance in test-bed/SKILL.md', () => {
+describe('the release guidance in SKILL.md', () => {
   it('includes a copy-paste release template with booking and predecessor and forbids direct terminal connections', () => {
     const skill = text('SKILL.md');
     assert.match(skill, /"action":\s*"release"/);

@@ -1,0 +1,221 @@
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { MediaAttachment } from './types.js';
+import { mediaType, readAttachment, validateAttachments } from './media.js';
+import { expandUser } from './paths.js';
+const SKIP = new Set(
+  '.git node_modules .venv venv __pycache__ .mypy_cache .pytest_cache .tox dist build .next .cache'.split(
+    ' ',
+  ),
+);
+/**
+ * The paths a message mentions: `@path`, `@"a path with spaces"`, or `@a\ path` with its
+ * spaces escaped as a dropped file is pasted. Punctuation after a bare path is not part of it.
+ * No-break spaces belong to the path: macOS names screenshots `… 10.15.32\u202fAM.png`.
+ */
+export function mentions(text: string): string[] {
+  return Array.from(
+    text.matchAll(/(?<!\S)@(?:"([^"\n]+)"|((?:\\ |[\u00a0\u202f]|[^\s@])+))/g),
+    (match) =>
+      match[1] ?? match[2]!.replace(/[.,;:!?)]+$/, '').replace(/\\ /g, ' '),
+  );
+}
+/** `@path` for a path, quoted when it has a space in it. */
+export function mention(path: string): string {
+  return /[\s"]/.test(path) && !path.includes('"')
+    ? `@"${path}"`
+    : '@' + path.replace(/ /g, '\\ ');
+}
+export function attachFiles(
+  text: string,
+  root: string,
+  allowed: (path: string) => boolean = () => true,
+): string {
+  root = realpathSync(root);
+  const seen = new Set<string>();
+  const blocks: string[] = [];
+  for (const raw of mentions(text)) {
+    const path = resolve(root, expandUser(raw));
+    try {
+      const full = realpathSync(path);
+      const rel = relative(root, full);
+      if (
+        rel === '..' ||
+        rel.startsWith('..' + sep) ||
+        seen.has(full) ||
+        !allowed(full) ||
+        !statSync(full).isFile() ||
+        statSync(full).size > 65536
+      )
+        continue;
+      const data = readFileSync(full);
+      const body = new TextDecoder('utf-8', { fatal: true }).decode(data);
+      seen.add(full);
+      blocks.push(
+        `<file path="${rel.split(sep).join('/')}">\n${body.trimEnd()}\n</file>`,
+      );
+    } catch {
+      /* Missing, outside, binary, or oversized attachments are omitted. */
+    }
+  }
+  return blocks.length ? text + '\n\n' + blocks.join('\n\n') : text;
+}
+/**
+ * A prompt as the model gets it: the text files it mentions in the workspace added after it,
+ * and the images and PDFs it mentions, in the workspace or anywhere else (`@~/Desktop/a.png`),
+ * as attachments. With `images` false (a model that does not read them) images are left out
+ * and counted in `leftOut`; their `@path` stays in the text.
+ */
+export async function attachPrompt(
+  text: string,
+  root: string,
+  signal: AbortSignal,
+  allowed: (path: string) => boolean,
+  images = true,
+): Promise<{
+  message: { content: string; attachments?: MediaAttachment[] };
+  leftOut: number;
+}> {
+  root = realpathSync(root);
+  const attachments: MediaAttachment[] = [];
+  const seen = new Set<string>();
+  let leftOut = 0;
+  for (const raw of mentions(text)) {
+    let full: string;
+    try {
+      full = realpathSync(resolve(root, expandUser(raw)));
+      if (
+        seen.has(full) ||
+        !allowed(full) ||
+        !mediaType(full) ||
+        !statSync(full).isFile()
+      )
+        continue;
+    } catch {
+      continue;
+    }
+    seen.add(full);
+    if (!images && mediaType(full) !== 'application/pdf') leftOut++;
+    else attachments.push(await readAttachment(full, signal));
+  }
+  signal.throwIfAborted();
+  validateAttachments(attachments);
+  return {
+    message: {
+      content: attachFiles(
+        text,
+        root,
+        (path) => allowed(path) && !mediaType(path),
+      ),
+      ...(attachments.length ? { attachments } : {}),
+    },
+    leftOut,
+  };
+}
+/**
+ * The image and PDF files a paste names, when it names nothing else: what a terminal pastes
+ * for files dragged onto it (absolute paths, quoted or with `\ ` before spaces, or
+ * `file://` addresses). Undefined for any other text.
+ */
+export function pastedFiles(
+  text: string,
+  platform: NodeJS.Platform = process.platform,
+): string[] | undefined {
+  const words: string[] = [];
+  let word: string | undefined;
+  let quote = '';
+  const chars = Array.from(text.trim());
+  for (let at = 0; at < chars.length; at++) {
+    const char = chars[at]!;
+    if (quote) {
+      if (char === quote) quote = '';
+      else word += char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      word ??= '';
+    } else if (char === '\\' && platform !== 'win32' && at + 1 < chars.length)
+      word = (word ?? '') + chars[++at];
+    else if (/[ \t\r\n]/.test(char)) {
+      if (word !== undefined) words.push(word);
+      word = undefined;
+    } else word = (word ?? '') + char;
+  }
+  if (quote) return undefined;
+  if (word !== undefined) words.push(word);
+  if (!words.length || words.length > 16) return undefined;
+  const paths: string[] = [];
+  for (const raw of words) {
+    let path = raw;
+    if (/^file:\/\//i.test(path))
+      try {
+        path = fileURLToPath(path);
+      } catch {
+        return undefined;
+      }
+    path = expandUser(path);
+    try {
+      if (!isAbsolute(path) || !mediaType(path) || !statSync(path).isFile())
+        return undefined;
+    } catch {
+      return undefined;
+    }
+    paths.push(path);
+  }
+  return paths;
+}
+export function complete(partial: string, root: string, limit = 20): string[] {
+  const slash = partial.lastIndexOf('/');
+  const folderPart = partial.slice(0, slash + 1);
+  const prefix = partial.slice(slash + 1);
+  const folder = resolve(root, folderPart || '.');
+  const relFolder = relative(root, folder);
+  if (relFolder === '..' || relFolder.startsWith('..' + sep)) return [];
+  const found: string[] = [];
+  try {
+    for (const entry of readdirSync(folder, { withFileTypes: true }).sort(
+      (a, b) => a.name.localeCompare(b.name),
+    ))
+      if (
+        !SKIP.has(entry.name) &&
+        (!entry.name.startsWith('.') || prefix.startsWith('.')) &&
+        entry.name.startsWith(prefix)
+      )
+        found.push(
+          relative(root, join(folder, entry.name)).split(sep).join('/') +
+            (entry.isDirectory() ? '/' : ''),
+        );
+  } catch {
+    /* Search by basename below. */
+  }
+  if (found.length || partial.includes('/') || !partial)
+    return found.slice(0, limit);
+  let count = 0;
+  const walk = (directory: string): void => {
+    if (!existsSync(directory) || count >= 5000) return;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (
+        entry.isDirectory() &&
+        !entry.name.startsWith('.') &&
+        !SKIP.has(entry.name)
+      )
+        walk(join(directory, entry.name));
+      else if (
+        entry.isFile() &&
+        ++count <= 5000 &&
+        entry.name.toLowerCase().includes(partial.toLowerCase())
+      )
+        found.push(relative(root, join(directory, entry.name)));
+    }
+  };
+  walk(root);
+  return found
+    .sort((a, b) => a.length - b.length || a.localeCompare(b))
+    .slice(0, limit);
+}

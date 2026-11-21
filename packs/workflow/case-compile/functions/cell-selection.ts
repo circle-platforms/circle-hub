@@ -9,7 +9,6 @@ export interface CellSelection {
 }
 export const cellInput=(step:PlanStep):boolean=>step.cell_input===true&&typeof step.input_register==='string';
 
-/** The runner formats only its first positional argument. */
 export function cellTemplate(value:string):boolean{
  let automatic=0,indexed=0;
  for(let at=0;at<value.length;at++){
@@ -36,22 +35,15 @@ export function cellArguments(selection:CellSelection):Pick<PlanStep,'args'|'key
  };
 }
 
-// ---- The cell-selection rules. A SELECT_CELL block writes its table and selector fields as keywords and where-conditions of
-// one method call (cellArguments); those values are judged here, by what the runner does with them, and not by the single-line
-// policy of ordinary command values (no leading =, no {} placeholder: neither applies to a keyword or to a later argument).
-
-/** The keywords cellArguments writes, in the order the block declares them. */
 export const CELL_SELECTION_KEYWORDS=['separator','columns','column','format','header','row'] as const;
 export type CellSelectionKeyword=typeof CELL_SELECTION_KEYWORDS[number];
 export type CellSelectionPosition={keyword:CellSelectionKeyword}|{where:number};
 
 const CELL_TEXT_CONTROL=/[\r\n\v\f\u0085\u2028\u2029\u0000-\u0008\u000e-\u001f\uFFFE\uFFFF]/;
-/** Text a workbook cell carries as written: well-formed, no line break or control character, no Excel _xHHHH_ escape. */
 export const cellSafeText=(value:unknown):value is string=>typeof value==='string'&&value.isWellFormed()&&!CELL_TEXT_CONTROL.test(value)&&!/_x[0-9a-fA-F]{4}_/.test(value);
 const unsafeReason=(value:string):string=>!value.isWellFormed()?'含不成对的代理字符':/[\r\n\v\f\u0085\u2028\u2029]/.test(value)?'含换行':CELL_TEXT_CONTROL.test(value)?'含控制字符':'含 Excel 转义写法 _xHHHH_';
 const shown=(value:unknown):string=>{const text=JSON.stringify(value)??String(value);return typeof value==='string'&&value!==''&&pythonTrim(value)===''?`${text}（全是空白，${[...value].length} 个字符）`:text;};
 
-/** Where a lowered SELECT_CELL argument sits in the block's own declaration; null for the input template and for any other step. */
 export function cellSelectionPosition(step:PlanStep,pointer:string,at:string):CellSelectionPosition|null{
  if(step.block_kind!=='SELECT_CELL'||!pointer.startsWith(at+'/'))return null;
  const parts=pointer.slice(at.length+1).split('/');
@@ -63,16 +55,7 @@ export function cellSelectionPosition(step:PlanStep,pointer:string,at:string):Ce
 const WHERE=/^where ([0-9]+)=([\s\S]*)$/;
 const UNMET='这条期望在 obligations 里写 unmet 并在 missing 写明缺这项取格能力，不自造写法';
 
-// ---- What the runner makes of the G cell of a SELECT_CELL row. InfoTest's runner reads G with a quote and backslash reader
-// (lib/test_xlsx.py `get_parameter` :424-445 over `_split_parameter_parts` :354-389, `_keyword_split` :399-421 and
-// `_unquote_parameter` :392-396), stricter than the embedded G reader that the generator and the workbook reader check their own output
-// with: a quote it leaves open stops the runner's preflight of the whole workbook before any device is touched (every case of the
-// workbook is lost), a whole part in quotes is read as a positional argument, a pair of quotes round a keyword value is cut off,
-// and a backslash before a comma takes the comma into the value. The cell is written by the generator (the embedded encoder) and read
-// back by a port of the runner's reader; a separator or a condition constant that does not come back as declared is refused at its
-// field with the reason instead of reaching the workbook.
 type RunnerRead='unclosed'|'merged'|'positional'|'unquoted';
-/** `_split_parameter_parts`: the parts of a G text, or null when a quote is left open. */
 function runnerParts(text:string):string[]|null{
  const parts:string[]=[];let current='',quote:string|null=null,escaped=false;
  for(const char of text){
@@ -87,7 +70,6 @@ function runnerParts(text:string):string[]|null{
  const tail=pythonTrim(current);if(tail)parts.push(tail);
  return parts;
 }
-/** `_keyword_split`: key and value of a part that is a keyword argument, null when it is a positional one. */
 function runnerKeyword(part:string):[string,string]|null{
  let quote:string|null=null,escaped=false;
  for(let index=0;index<part.length;index++){
@@ -100,9 +82,7 @@ function runnerKeyword(part:string):[string,string]|null{
  }
  return null;
 }
-/** `_unquote_parameter`: a value wrapped in one pair of the same quote loses it. */
 const runnerUnquote=(value:string):string=>{const text=pythonTrim(value);return text.length>=2&&(text[0]==='"'||text[0]==="'")&&text[text.length-1]===text[0]?pythonTrim(text.slice(1,-1)):text;};
-/** `get_parameter` for a single-line cell: the positional and the keyword arguments the runner reads, null when a quote is left open. */
 function runnerArguments(text:string):{args:string[];keywords:Record<string,string|number>}|null{
  const parts=runnerParts(text);if(parts===null)return null;
  const args:string[]=[],keywords:Record<string,string|number>={};
@@ -113,17 +93,10 @@ function runnerArguments(text:string):{args:string[];keywords:Record<string,stri
  }
  return {args,keywords};
 }
-/** The other keywords of a SELECT_CELL row as the generator writes them; their own values never disturb the reading of a neighbour. */
 const OTHER_KEYWORDS={column:1,columns:1,format:'delimited',header:0,row:0};
-/**
- * Why the runner would not read one separator or condition constant back as declared, null when it does. The cell is written by the
- * generator's own encoder with every keyword in the place the encoder gives it, so a value that touches its neighbour is found where it is.
- */
 function runnerRead(field:{pin:string}|{separator:string}):{problem:RunnerRead;read?:string}|null{
  const keywords:Record<string,string|number>={...OTHER_KEYWORDS,separator:'separator' in field?field.separator:'+'},args=['{}',...('pin' in field?[field.pin]:[])];
  let text:string;
- // What the encoder cannot write at all (both kinds of quote in a part that needs quotes, a quoted part that ends in a backslash) is
- // refused by the G stage with the encoder's own rule, as before.
  try{text=encodeG({args,keywords},{keywordNames:Object.keys(keywords)});}
  catch(error){if(error instanceof GSyntaxError)return null;throw error;}
  const read=runnerArguments(text);
@@ -140,11 +113,6 @@ const READ_REASON:Record<RunnerRead,(read?:string)=>string>={
  positional:()=>'会被运行器读成位置参数；含逗号的值写进 G 要把整个参数加引号，运行器把加了引号的整段读成位置参数，不是关键字',
  unquoted:read=>`首尾是一对引号；运行器读值时把外面一对引号去掉，读到的是 ${JSON.stringify(read)}，不是你写的值`,
 };
-/**
- * The one rule a value of a selection position breaks, with what was seen and the next step; null when the runner receives it as written.
- * Whitespace at the end of a keyword value or of a later argument is cut when the runner reads G, so such a value is refused
- * here with that consequence instead of reaching the workbook as a different value.
- */
 export function cellSelectionValueProblem(position:CellSelectionPosition,value:string|number):string|null{
  if('where' in position){
   const parsed=typeof value==='string'?WHERE.exec(value):null;
@@ -176,11 +144,6 @@ export function cellSelectionValueProblem(position:CellSelectionPosition,value:s
 }
 
 export interface CellShapeProblem {path:string;message:string;fix:string}
-/**
- * The relations a block's table and selector declare between themselves, after the schema has fixed their types; each problem is
- * located at the one field to change, relative to the block, and says the value seen. The values themselves are judged by
- * cellSelectionValueProblem once the block is lowered to a call.
- */
 export function cellSelectionShapeProblems(selection:CellSelection):CellShapeProblem[]{
  const problems:CellShapeProblem[]=[],{table}=selection,add=(path:string,message:string,fix:string)=>problems.push({path,message,fix});
  const conditions=selection.select.where??[];

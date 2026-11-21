@@ -7,7 +7,6 @@ import type { PageContext } from './context.ts';
 const detailContext=(kind:string,checks:unknown[]=[])=>{
  const principal={id:'reader',name:'合成成员',role:'user'};
  const pack={id:'synthetic-detail',kind,version:'1.0.0',title:'合成详情',owner:'admin',withdrawn:false,digest:'a'.repeat(64),samples:{},published_at:'2026-11-02T00:00:00.000Z'};
- // The usage scope reads the reader's teams (a member) or the pack's team grants (an administrator).
  return {principal,admin:false,url:new URL('http://127.0.0.1/console/workflows/'+pack.id),userName:async(id:string)=>id,chrome:(title:string,options:Record<string,unknown>)=>({title,...options,user:{name:principal.name,role:'成员',admin:false}}),deps:{packs:{list:async()=>[pack]},workflows:{byDigest:async()=>({requirements:[],checks})},records:{teams:{memberships:async()=>[]},authorizations:{teamsOf:async()=>({teams:[],all:false})}}}} as unknown as PageContext;
 };
 
@@ -40,7 +39,6 @@ test('breadcrumbs keep distinct classifications without repeating the area a pla
 
 test('received skills stay in their own group and team scopes disclose assignments only to administrators',async()=>{
  let assignments=['owner'];
- // What the usage scope reads: the reader's own teams (a member), and the teams the pack is granted to (an administrator).
  let memberships=[{id:'tm_a',name:'合成团队甲'}];let grants:{id:string;name:string}[]=[];
  const users=[{id:'owner',name:'合成作者',role:'user'},{id:'peer',name:'合成协作者',role:'user'},{id:'admin',name:'合成管理员',role:'admin'},{id:'disabled',name:'合成停用成员',role:'user',disabled:true}];
  const base={version:'1.0.0',withdrawn:false,digest:'a'.repeat(64),samples:{},published_at:'2026-11-02T10:41:34.891Z'};
@@ -56,14 +54,12 @@ test('received skills stay in their own group and team scopes disclose assignmen
  assert.ok(!body.includes('合成受权技能'));assert.ok(!skills.includes('合成团队工作流'));
  assert.match(skills,/href="\/console\/skills\/synthetic-shared\?/);assert.match(body,/href="\/console\/workflows\/synthetic-team\?/);
  const audience=(body:string)=>[...body.matchAll(/<span data-pack-audience>([^<]*)<\/span>/g)].map(match=>match[1]);
- // Members see the names of their own teams (never 公共空间 for a team grant), or 尚未指定成员 without one; they are not told who is assigned. Admins see assignment names.
  assert.deepEqual(audience(body),['团队 合成团队甲']);
  memberships=[];assert.deepEqual(audience(await render()),['已分配给当前账户（合成作者）']);
  ctx.admin=true;ctx.principal={...ctx.principal,role:'admin'};
  assert.deepEqual(audience(await render()),['合成作者']);
  assignments=[];assert.deepEqual(audience(await render()),['尚未指定成员']);
  assignments=['owner','peer','disabled'];assert.deepEqual(audience(await render()),['合成作者、合成协作者'],'a disabled member is not named');
- // A team grant shows as the teams, ahead of the members they expand to.
  grants=[{id:'tm_a',name:'合成团队甲'},{id:'tm_b',name:'合成团队乙'}];assert.deepEqual(audience(await render()),['团队 合成团队甲、团队 合成团队乙']);
 });
 
@@ -90,7 +86,6 @@ test('member team scopes reveal neither assignment counts nor member names on ca
  const pack={id:'synthetic-team-scope',space:'team',kind:'workflow',version:'1.0.0',title:'合成团队工作流',owner:'admin',withdrawn:false,digest:'a'.repeat(64),samples:{},published_at:'2026-11-02T00:00:00.000Z'};
  const ctx={principal,admin:false,url:new URL('http://127.0.0.1/console/workflows?scope=team'),userName:async(id:string)=>{assert.ok(!hidden.includes(id),'member rendering must not resolve assignment names');return id==='admin'?'合成管理员':principal.name;},chrome:(title:string)=>({title,user:{name:principal.name,role:'成员',admin:false}}),deps:{packs:{list:async()=>[{...pack,assigned_to:assigned}]},workflows:{byDigest:async()=>null},records:{principals:{list:async()=>[principal,{id:'admin',name:'合成管理员',role:'admin'}]},teams:{memberships:async()=>[{id:'tm_a',name:'合成团队甲'}]},authorizations:{canPublish:async()=>false,teamsOf:async()=>({teams:[],all:false}),usersOf:async()=>{assert.fail('member rendering must not query assignments');}}}}} as unknown as PageContext;
  for(const ids of [[],hidden.slice(0,1),hidden]){
-  // A member is told which of their own teams makes the pack visible, whoever else is assigned.
   assigned=ids;const cards=String((await packsPage(ctx)).body);
   assert.deepEqual([...cards.matchAll(/<span data-pack-audience>([^<]*)<\/span>/g)].map(match=>match[1]),['团队 合成团队甲']);
   const detail=String((await packPage(ctx,pack.id)).body);

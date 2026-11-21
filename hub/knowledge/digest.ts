@@ -56,10 +56,6 @@ export function normaliseApplicability(applicability: Applicability | null): App
   return out;
 }
 
-/**
- * A producer's condition marker that says nothing: no field declared, none in conflict, and no condition value (K02 F[6],
- * decision 159). Such an entry carries no applicability at all, so the marker is not stored.
- */
 function emptyConditionMarker(data: Record<string, unknown>, applicability: Applicability | null): boolean {
   const marker = data.applicability_state;
   if (applicability !== null || marker === null || typeof marker !== 'object' || Array.isArray(marker)) return false;

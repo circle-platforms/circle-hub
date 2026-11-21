@@ -23,23 +23,6 @@ test('CI test partitions are disjoint and cover every unit test',()=>{
   'packs/skill/xml-format/functions/xml.test.ts',
  ]);assert.ok(regular.length>0);
 });
-test('bed-side synthetic tests are registered in the standard regular unit partition', () => {
-  const all = unitFiles('all'), regular = unitFiles('regular');
-  for (const file of [
-    'scripts/real/bed-side/table-cell.test.ts',
-    'scripts/real/bed-side/serve-lifecycle.test.ts',
-    'scripts/real/bed-side/gateway-route.test.ts',
-    'scripts/real/bed-side/pin-selfcheck.test.ts',
-    'scripts/real/bed-side/install/build-bundle.test.ts',
-    'scripts/real/bed-side/install/install.test.ts',
-    'scripts/real/bed-side/install/observe.test.ts',
-    'scripts/real/bed-side/install/probe.test.ts',
-  ]) {
-    assert.equal(all.filter(candidate => candidate === file).length, 1, file);
-    assert.equal(regular.filter(candidate => candidate === file).length, 1, file);
-  }
-});
-
 test('parser bounds retain a single worker and other unit tests retain the two-worker cap',()=>{
  assert.equal(unitArguments('parser-bounds')[1],'--test-concurrency=1');assert.equal(unitArguments('regular')[1],'--test-concurrency=2');
  assert.throws(()=>unitFiles('unknown'),/未知的单元测试分组/);

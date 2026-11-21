@@ -20,7 +20,6 @@ export interface AdminLogEntry {
 
 export interface RunsEngineDeps {
   effectRegistry?:import('../../ports.ts').EffectRegistryPort;
-  /** Explicit staged policy switch; defaults to false independently of stored migration state. */
   enforceEnvironmentAssignments?: boolean;
   environmentAccess?: { authorizeKeys(actor: Principal, keys: readonly string[]): Promise<import('../../../contracts/api.ts').ProtocolError | null> };
   dispatch?: { jobs(by: import('../../records/api.ts').Principal,run:string,reservations?:import('../../dispatch/api.ts').RunReservations):Promise<import('../../dispatch/api.ts').RunJob[]>;
@@ -67,9 +66,7 @@ export interface RunsEngineDeps {
   observations?: {
     latest(): Promise<DeviceObservation[]>;
     observe(user: Principal, run: string, targets: ReadonlyArray<{ inventory: string; device: string; label: string }>): Promise<{ observed: DeviceObservation[]; missing: string | null }>;
-    /** Asks devices the run's lineage holds what they expect at the end of a line a writer chose; never throws, says what it could not ask. */
     ask?(user: Principal, run: string, targets: ReadonlyArray<DeviceHelpTarget>): Promise<DeviceHelpResult[]>;
-    /** Sends devices the run's lineage holds one read-only line a writer chose and returns what they printed; never throws, says what it could not read. */
     read?(user: Principal, run: string, targets: ReadonlyArray<DeviceReadTarget>): Promise<DeviceReadResult[]>;
   };
 }
@@ -78,11 +75,6 @@ export const ENGINE_COMPONENT = 'runs.engine@1';
 export const DEFAULT_CLIENT_KEY_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Pack function calls in flight per evaluation (the sandbox itself runs at most 8 children at a time). */
 export const CHECK_PARALLELISM = 8;
-/**
- * Sandbox limits of pack check functions, over the rules defaults (256 MB): a check that regenerates the workbook of every case
- * in a run holds the parsed upload and the regenerated workbook at once, about 450 MB resident for a run of 17 cases. The same
- * memory as the knowledge plan and producer functions; an engine's own sandboxLimits still apply on top.
- */
 export const CHECK_SANDBOX: Partial<SandboxLimits> = { memoryMb: 1024 };
 
 export interface EngineContext {

@@ -1,13 +1,3 @@
-// Reads what a device of the booked test bed prints for one read-only command, through the test-bed workflow's read action, and
-// keeps the answer as a file a writer can open. The Hub sends the line only when the whole of it has the shape the administrator
-// declared for reads of that executor, on a device the caller has booked, with no job running there. What comes back says how
-// the device writes and lays out its output at that moment; it is no source of the run and no basis for an expected value.
-// A read that cannot be made (the executor declares none, the line has another shape, the device is busy) is an answer, not a
-// failure: the tool prints why and exits 0, and nothing is written. The pipeline runs it before a case is written, for the
-// read-only commands the case's brief names that take no parameter (functions/device-read-lines.ts).
-//   node <skill directory>/tools/device-read.ts --hub %HUB_URL% --booking '<test-bed 预订号>' --device '<设备名>' --line '<只读命令>' --out '<新文件>' <<'EOF'
-//   %HUB_TOKEN%
-//   EOF
 import { realpathSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -19,14 +9,11 @@ import { failCall, isRecord, parseCliOptions } from '../functions/text.ts';
 import { hubTools, NotReady, refusalWords, type CallTool } from './open-compile.ts';
 
 const USAGE = "device-read.ts --hub <MCP地址> --booking <test-bed 预订号> --device <设备名> --line <只读命令> --out <新文件> [--bed <测试环境名>] [--inventory <doc:doc:名字>]";
-// A read is an aid before writing and nothing waits for it (the pipeline starts it and goes on). Reads of one device are partly
-// serialised, so the last of six asked at once needs more than the quarter of a minute one read takes.
 const READ_TIMEOUT_MS = 120_000;
 
 export interface DeviceRead { read: true; file: string; line: string; device: string; lines: number; chars: number; truncated: boolean }
 export interface NoDeviceRead { read: false; why: string }
 
-/** The claim of the run that carries the device's words for this line, or why there is none. */
 export function readClaim(envelope: Record<string, unknown> | null): { output: string; truncated: boolean; observed: string | null } | string {
   const run = isRecord(envelope) && isRecord(envelope.run) ? envelope.run : null;
   const claims = run && Array.isArray(run.device_reads) ? run.device_reads.filter(isRecord) : [];

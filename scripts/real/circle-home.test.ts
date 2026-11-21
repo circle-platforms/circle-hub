@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, PLUMB_KEY_SECRET, SERVER_NAME, TOKEN_SECRET, circleEndpoint, endpointFrom, firstLineOf, main, parseArgs, writeHome, type Endpoint } from './circle-home.ts';
 import { parseEnvText } from './lib/env-file.ts';
 import { extractTaughtCommands, instantiateTaughtCommand } from './taught-commands.ts';
-import { parseCommand } from './guard-lib.ts';
+import { decisionOf, parseCommand } from './guard-lib.ts';
 
 // Invented content: section names follow the owner's file layout, every value is made up.
 const ENV = [
@@ -95,14 +95,14 @@ test('the hook allows exactly the six Hub tools and the todo list and denies eve
     const decide = (stdin: string) => {
       const r = spawnSync(process.execPath, [hook], { input: stdin, encoding: 'utf8' });
       assert.equal(r.status, 0, r.stderr);
-      const parsed = JSON.parse(r.stdout);
-      return parsed.hookSpecificOutput ? parsed.hookSpecificOutput.permissionDecision : parsed.decision;
+      return decisionOf(JSON.parse(r.stdout)).decision;
     };
     for (const t of HUB_TOOLS) {
-      assert.equal(decide(JSON.stringify({ event: 'before_tool', tool_name: `mcp__${SERVER_NAME}__${t}` })), 'allow', t);
+      assert.equal(decide(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: `mcp__${SERVER_NAME}__${t}` })), 'allow', t);
       assert.equal(decide(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: `mcp__Hub__${t}` })), 'allow', `PreToolUse:${t}`);
+      assert.equal(decide(JSON.stringify({ tool_name: `mcp__${SERVER_NAME}__${t}` })), 'deny', `no event:${t}`);
     }
-    for (const t of INTERNAL_TOOLS_ALLOWED) assert.equal(decide(JSON.stringify({ event: 'before_tool', tool_name: t })), 'allow', t);
+    for (const t of INTERNAL_TOOLS_ALLOWED) assert.equal(decide(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: t })), 'allow', t);
     for (const t of ['bash', 'webfetch', 'websearch', 'write_file', 'read_file', `mcp__${SERVER_NAME}__other`, 'mcp__hubx__start_run', 'hub_start_run']) {
       assert.equal(decide(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: t })), 'deny', t);
     }
@@ -234,7 +234,7 @@ const REVIEW_BYTES = {
   'settings.json': '5109958f4222737c84f6ac0fe626971030f6aa858d2b11c5d1427fb1698ade43',
   'credentials.json': ["bae342","f65c62","474558","2bb94c","f7ff51","b0e3f6","e3ff60","8454ff","f61df2","17e294","7425"].join(''),
   'secrets.json': ["080e2c","babac7","df441b","fe6e72","0f4c06","7a3795","5a5077","9ce58d","981977","031c6a","79e5"].join(''),
-  'hooks/hub-only.mjs': '1029618481271a93b493105a8a3b242586b5891481fd26f81b6a1890847a4c70',
+  'hooks/hub-only.mjs': '2913accdf2cc6ad0e0b990a2910660c211ef89d2ba7ba6a17426028865e7552f',
 };
 test('default and explicit review preserve every pre-profile file byte', async () => {
   const { createHash } = await import('node:crypto'); const dir = scratch(); const home = join(dir, 'home');
@@ -326,8 +326,8 @@ function skillsFixture() {
   const token2 = join(root, 'tools', 't-send.ts'); writeFileSync(token2, '// synthetic token2\n');
   writeFileSync(join(root, 'tools', 't-send.cli.json'), JSON.stringify({ schema: 'tool-cli@2', stdin: ['%JEV_API_KEY%', '%HUB_TOKEN%'], options: [{name:'send',type:'text',required:false,kind:'boolean',multiple:false,placeholder:null}] }));
   const hook = join(home, written.files.find(f => f.startsWith('hooks/'))!);
-  const input = (tool_name = 'execute', tool_input: Record<string, unknown> = { command: `node ${script} --a b` }, paths: unknown = []) => ({ event: 'before_tool', cwd: written.workdir, tool_name, tool_input, paths });
-  const raw = (stdin: string) => { const child = spawnSync(process.execPath, [hook], { input: stdin, encoding: 'utf8', timeout: 5000 }); assert.equal(child.status, 0, child.stderr); return JSON.parse(child.stdout) as { decision: string; reason: string }; };
+  const input = (tool_name = 'execute', tool_input: Record<string, unknown> = { command: `node ${script} --a b` }, paths: unknown = []) => ({ hook_event_name: 'PreToolUse', cwd: written.workdir, tool_name, tool_input, paths });
+  const raw = (stdin: string) => { const child = spawnSync(process.execPath, [hook], { input: stdin, encoding: 'utf8', timeout: 5000 }); assert.equal(child.status, 0, child.stderr); return decisionOf(JSON.parse(child.stdout)) as { decision: string; reason: string }; };
   return { dir, home, root, script, token1, token2, workdir: written.workdir, hook, input, decide: (value: unknown) => raw(JSON.stringify(value)), raw, close: () => rmSync(dir, { recursive: true, force: true }) };
 }
 test('skills guard allows six Hub tools todos and installed skill but denies write tools and malformed input', () => {
@@ -382,7 +382,7 @@ test('an unloaded Jev style skill still asks for send and receives the identical
     const copy = join(f.root, 'received.json');
     skillHooks(f, [{ source: `import{writeFileSync}from'node:fs';let raw='';for await(const x of process.stdin)raw+=x;writeFileSync(${JSON.stringify(copy)},raw);const i=JSON.parse(raw);console.log(JSON.stringify({decision:i.tool_input.command.includes('--send')?'ask':'allow',reason:'合成外发需要确认'}));` }]);
     const input = f.input('execute', { command: `node ${f.token2} --send <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF` });
-    assert.equal(f.decide(input).decision, 'ask'); assert.equal(readFileSync(copy, 'utf8'), JSON.stringify(input));
+    assert.equal(f.decide(input).decision, 'ask'); assert.equal(readFileSync(copy, 'utf8'), JSON.stringify({ ...input, event: 'before_tool' }));
     assert.equal(f.decide(f.input()).decision, 'allow');
   } finally { f.close(); }
 });
@@ -591,12 +591,12 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
       const hook = join(home, written.files.find((file) => file.startsWith('hooks/'))!);
       const decide = (command: string) => {
         const child = spawnSync(process.execPath, [hook], {
-          input: JSON.stringify({ event: 'before_tool', cwd: written.workdir, tool_name: 'execute', tool_input: { command }, paths: [] }),
+          input: JSON.stringify({ hook_event_name: 'PreToolUse', cwd: written.workdir, tool_name: 'execute', tool_input: { command }, paths: [] }),
           encoding: 'utf8',
           timeout: 5000,
         });
         assert.equal(child.status, 0, `${label}: ${child.stderr}`);
-        return JSON.parse(child.stdout) as { decision?: string; reason?: string };
+        return decisionOf(JSON.parse(child.stdout));
       };
       const expectAllowed = (decision: { decision?: string; reason?: string }, msg: string) => {
         if (profile === 'ops') assert.deepEqual(decision, {}, msg);
@@ -612,7 +612,6 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
         {
           name: 'case-compile',
           dir: fileURLToPath(new URL('../../packs/workflow/case-compile/', import.meta.url)),
-          // cmd-verify-plumb.ts is no longer taught: tools/pipeline.ts runs it by code between two subagents (decision 179).
           expectedScripts: ['assemble-delivery.ts', 'carry-plans.ts', 'check-plan.ts', 'cmd-select-plumb.ts', 'download-returns.ts', 'download-run.ts', 'fetch-run.ts', 'fidelity-apply.ts', 'fidelity-brief.ts', 'fidelity-plumb.ts', 'generate-workbook.ts', 'normalize-mindmap.ts', 'open-compile.ts', 'open-merge.ts', 'pipeline.ts', 'submit-plans.ts', 'task-brief.ts'],
         },
         {
@@ -622,7 +621,6 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
         },
       ];
 
-      // Install every skill before reading any of them: case-compile/SKILL.md runs the recompose skill's download-run.ts.
       const stagedOf = (pack: (typeof packs)[number]) => (JSON.parse(readFileSync(join(pack.dir, 'pack.json'), 'utf8')) as { files: Array<{ path: string }> })
         .files.filter((file) => file.path === 'SKILL.md' || file.path.startsWith('tools/'));
       for (const pack of packs) {
@@ -699,7 +697,6 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
         }
       }
 
-      // Regenerate ALLOWED.md via installed hooks/guard-gen.mjs (ops) or verify pre-installed ALLOWED.md follows the single-quote rule.
       const jevDir = fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/tools/jev/', import.meta.url));
       const jevSkill = join(home, 'skills', 'jev');
       mkdirSync(join(jevSkill, 'lib'), { recursive: true });
@@ -729,15 +726,11 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
       const ccSkill = join(home, 'skills', 'case-compile');
       const quotedFetch = ccSkill.includes(' ') ? `'${ccSkill}/tools/fetch-run.ts'` : `${ccSkill}/tools/fetch-run.ts`;
       const quotedTaskBrief = ccSkill.includes(' ') ? `'${ccSkill}/tools/task-brief.ts'` : `${ccSkill}/tools/task-brief.ts`;
-      // Relative script path + here-string refused.
       assert.equal(decide(`node tools/fetch-run.ts --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
       assert.equal(decide(`node ${quotedFetch} --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
-      // Unquoted non-ASCII role argument refused on both skills and ops.
       assert.equal(decide(`node ${quotedTaskBrief} --role 脚本编写 --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`).decision, 'deny');
-      // Internal helper module under tools/ cannot be executed directly.
       assert.equal(decide(`node ${ccSkill.includes(' ') ? `'${ccSkill}/tools/authoring-brief.ts'` : `${ccSkill}/tools/authoring-brief.ts`}`).decision, 'deny');
 
-      // Four-consumer consistency: every CLI .cli.json in case-compile & recompose agrees with ALLOWED.md table rows.
       const allowedRows = new Map<string, string>();
       for (const row of allowedMd.split('\n')) {
         const m = /^\| ([^|]+?) \| (.+) \|$/.exec(row);
@@ -807,7 +800,6 @@ test('--plumb-key-stdin reads only the first line into 0600 secrets.json and omi
     assert.ok(!readFileSync(join(home, 'settings.json'), 'utf8').includes(fakeKey));
     assert.ok(!readFileSync(join(home, 'credentials.json'), 'utf8').includes(fakeKey));
 
-    // Empty stdin records PLUMB_API_KEY as empty and reports zero length status cleanly.
     const emptyHome = join(dir, 'empty-home');
     lines.length = 0;
     const emptyCode = main(['--env-file', envFile, '--home', emptyHome, '--provider', 'qwen', '--plumb-key-stdin'], { HUB_REAL_TOKEN: 'synthetic-token' }, (line) => lines.push(line), () => '\n');
@@ -819,7 +811,6 @@ test('--plumb-key-stdin reads only the first line into 0600 secrets.json and omi
       secrets: { HUB_TOKEN: 'synthetic-token', [PLUMB_KEY_SECRET]: '' },
     });
 
-    // End-to-end CLI stdin pipe via node process execution.
     const cliHome = join(dir, 'cli-home');
     const cliKey = 'synthetic-plumb-cli-piped-key';
     const cli = spawnSync(
@@ -851,13 +842,10 @@ test('the ops guard starts a workflow only from a script an installed skill ship
     writeFileSync(join(root, 'workflows', 'notes.txt'), 'not a script\n');
     writeFileSync(join(written.workdir, 'loop.js'), "export const meta = { name: 'own', description: 'synthetic', phases: [] }\n");
     const hook = join(home, written.files.find(f => f.startsWith('hooks/'))!);
-    const decide = (tool_input: Record<string, unknown>) => { const child = spawnSync(process.execPath, [hook], { input: JSON.stringify({ event: 'before_tool', cwd: written.workdir, tool_name: 'workflow', tool_input, paths: [] }), encoding: 'utf8', timeout: 5000 }); assert.equal(child.status, 0, child.stderr); return JSON.parse(child.stdout) as { decision: string; reason: string }; };
+    const decide = (tool_input: Record<string, unknown>) => { const child = spawnSync(process.execPath, [hook], { input: JSON.stringify({ hook_event_name: 'PreToolUse', cwd: written.workdir, tool_name: 'workflow', tool_input, paths: [] }), encoding: 'utf8', timeout: 5000 }); assert.equal(child.status, 0, child.stderr); return decisionOf(JSON.parse(child.stdout)) as { decision: string; reason: string }; };
     const first = decide({ script_path: script, args: { pipeline: 'whatever the script is given', state: 'pipeline.json' } });
-    // The ops guard does not object (it answers nothing, and the client's own approval mode decides); it never says deny.
     assert.notEqual(first.decision, 'deny', JSON.stringify(first));
-    // By the name a client lists the shipped script under, and nothing else beside it.
     assert.notEqual(decide({ name: 'x:loop', args: {} }).decision, 'deny');
-    // A script written in the call, another name, a name beside a path, a relaunch, a file of the work folder, a file that is no script, a relative path.
     for (const refused of [{ script: "export const meta = { name: 'own', description: 'synthetic', phases: [] }" }, { name: 'own' }, { name: 'x:other' }, { name: 'x:loop', script_path: script }, { name: 'x:loop', resume_from_run_id: 'w00000000' }, { script_path: script, resume_from_run_id: 'w00000000' }, { script_path: join(written.workdir, 'loop.js') }, { script_path: join(root, 'workflows', 'notes.txt') }, { script_path: 'skills/x/workflows/loop.js' }, {}]) {
       const got = decide(refused);
       assert.equal(got.decision, 'deny', JSON.stringify(refused));
@@ -866,7 +854,6 @@ test('the ops guard starts a workflow only from a script an installed skill ship
     }
     assert.match(readFileSync(join(home, 'hooks', 'ALLOWED.md'), 'utf8'), /- workflow：只运行已装技能自带的工作流脚本，script_path 写技能目录下 workflows\/ 里的文件[^\n]*或者 name 写客户端列出的名字/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
-  // The skills profile has no workflow tool.
   const f = skillsFixture();
   try { assert.equal(f.decide(f.input('workflow', { script_path: join(f.root, 'workflows', 'loop.js') })).decision, 'deny'); } finally { f.close(); }
 });

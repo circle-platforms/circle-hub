@@ -13,8 +13,8 @@
     },
     {
       "path": "functions/modules/command-check/command-policy.ts",
-      "sha256": "b7b6536765335065c5930c434a512b43d84d21171a22e619c25630c96a4f60ca",
-      "size": 11716
+      "sha256": "5fefb984e03ccf3f41fb4f0d5853c6c690c9e7bd7e3011564ec0e4dd175937c1",
+      "size": 9682
     },
     {
       "path": "functions/modules/command-check/grammar.ts",
@@ -23,8 +23,8 @@
     },
     {
       "path": "functions/modules/command-check/value-domain.ts",
-      "sha256": "5b5d4cfe103931868f74b93e64b332d9dcde565d6148a5bd2ea7ce5b999f3a93",
-      "size": 20716
+      "sha256": "33a1f62cc86addc36d27df6f43b89f60d53750e5c86a1304a17a4cefd61b6f38",
+      "size": 20474
     },
     {
       "path": "skill.json",

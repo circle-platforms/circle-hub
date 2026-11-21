@@ -4,9 +4,6 @@ import {setup} from './testing/context.ts';
 import {DispatchService} from './service.ts';
 import {probes} from './testing/probes.ts';
 import {canonicalBytes} from '../records/api.ts';
-// A workbook of several items whose execution ends inside one of them: the executor keeps saying its report is not complete, and
-// the items after the last one it reached will never be in it. The job's check, its rows and its complete record say that and no
-// longer send the reader to read it again later; a report that is incomplete without such a stop keeps that advice.
 const marker='#######   end case: ';
 const ITEMS=['synthetic-1','synthetic-2','synthetic-3'];
 const closed=(id:string)=>`step lines of ${id}\n${marker}${id}`;
@@ -16,7 +13,6 @@ async function fixture(cases:()=>unknown[],items:string[]=ITEMS){
  const c=await setup({items,extraTools:['inspect_seat'],alter:(name,value)=>{
   const args=c.endpoint.calls.filter(call=>call.params.name===name).at(-1)?.params.arguments as Record<string,unknown>;
   if(name==='inspect_seat')return {output:args.command==='inspect version'?'version: synthetic-build':`address: 192.0.2.${Number(args.seat)+1}/24`};
-  // The shape of the real executor's report: cases[] with the result, the log and, for a case that did not pass, its sessions.
   if(name==='read_blob')return {ok:true,complete:false,channel:'missing_after_done',rc:1,ownership:'staging_directory',task_id:value.key,request_id:value.request,xlsx_sha256:value.digest,submitted_at:value.submitted,cases:cases()};
   return value;
  }});
@@ -37,7 +33,6 @@ test('a workbook whose execution ended inside an item is told so in the checks, 
   {case_id:ITEMS[2],result:null,log_stale:false,log:''},
  ]);t.after(()=>c.close());
  const state=await c.service.dispatch(c.admin,c.run,c.executor.id),value=await report(c,state.result!);
- // what the Hub decided is what it decided before: no verdict for any item, the same missing facts, the report still pending
  assert.deepEqual(value.rows.map((row:{item:string})=>row.item),ITEMS);
  assert.deepEqual(value.rows.map((row:{dynamic_terminal:string})=>row.dynamic_terminal),['no_verdict','no_verdict','no_verdict']);
  assert.deepEqual(value.rows.map((row:{missing_facts:string[]})=>row.missing_facts),[['complete','report'],['complete','closed','report'],['complete','closed','report']]);
@@ -51,7 +46,6 @@ test('a workbook whose execution ended inside an item is told so in the checks, 
  assert.match(value.rows[0].missing_fact,/执行在条目 synthetic-2 处结束，其后 1 条没有到达，整份报告因此不完整，本条没有判定/);
  assert.match(value.rows[1].missing_fact,/执行在本条处结束，本条日志没有收尾标记，其后 1 条（synthetic-3）没有日志、会话和结果/);
  assert.match(value.rows[2].missing_fact,/本条没有日志、会话和结果，执行在条目 synthetic-2 处结束，没有到达本条/);
- // the job record and the status the administrator reads carry the same next step as the rows
  const complete=(await c.service.journal.events(state.job)).filter(event=>event.body.detail.phase==='complete').at(-1)!.body.detail;
  assert.equal(complete.report_pending,true);assert.equal(complete.next_action,value.rows[0].next_action);
  assert.doesNotMatch(String(complete.next_action),/稍后 job resume/);assert.ok(String(complete.missing_fact).includes('执行在本条处结束，本条日志没有收尾标记'));

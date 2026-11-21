@@ -1,19 +1,3 @@
-// A made-up frozen run for the method and block lookups: the contract, the profile and the bed manifest the Hub's own readers accept
-// (runtime-contract@2, runtime-profile@1, test-bed-manifest@1), written the way a run download leaves them (sources.json with the
-// file pointers and digests, sources/<slot>.json, run.json with the frozen slot schema). Every name is invented (widget-*); no real
-// system, command or address appears (addresses are 192.0.2.0/24 and 2001:db8::/32). Test support only, never pack code.
-//
-// What it holds, and which test needs it:
-//   widget-seat.configure     a device command method: typed, device_cli, a refused access level, a redacted default
-//   widget-seat.table_cell    a cell method: cell_effect with a value policy, registered output cell_text, in the block model
-//   widget-seat.promoted      a certification candidate the contract promotes: usable
-//   widget-seat.candidate     a certification candidate it does not promote: not enabled for the Hub
-//   widget-seat.spare         enabled in the contract, typed, not opened by the profile (profile.unopened says why)
-//   widget-seat.hidden        internal;  widget-seat.credential  enabled without typed authority and not opened
-//   widget-host.shell         a host method: allowed literals (more than the bound) and a declared program with an address prefix
-//   widget-check.literal      the literal assertion;  widget-clock.pause  the wait
-//   widget-disabled.cycle     a disabled object with a disabled method
-//   widget-bulk.c00 … c64     65 certification candidates below one object: more than the bound of a methods listing
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -30,10 +14,8 @@ export const BULK_METHODS = 65;
 export const LITERALS = 45;
 export const FIXTURE_RUN = 'run_01cccccccccccccccccccccccc';
 
-/** The literal host lines the fixture's host effect allows in full: more of them than one answer lists. */
 export const hostLiterals = (): string[] => Array.from({ length: LITERALS }, (_, i) => `probe @192.0.2.90 name${String(i).padStart(2, '0')}.example A`);
 
-/** Signs a contract the way the Hub's readers expect after a test changed it: the original identity of the stripped document, then the full digest. */
 export function signContract(contract: Doc): Doc {
   const original = stripAdditions(contract)!;
   const digest = runtimeDigest(original);
@@ -110,22 +92,17 @@ export function contractFixture(): ContractFixture {
   return { contract: signed, profile, inventory };
 }
 
-/** What the lookup reads of a download, parsed by the Hub's own readers; throws with their first problem when the fixture is invalid. */
 export function methodSource(from: ContractFixture = contractFixture(), options: { references?: boolean } = {}): MethodSource {
   const file = (name: string, document: unknown) => ({ file: `sources/${name}.json`, reference: options.references === false ? null : `src:${sha(JSON.stringify(document))}` });
   return methodSourceOf({ contract: from.contract, profile: from.profile, inventory: from.inventory }, { contract: file('contract', from.contract), profile: file('profile', from.profile), inventory: file('inventory', from.inventory) });
 }
 
 export interface DownloadOptions {
-  /** Leave sources.json out: the root-level layout of old fetch-run directories. */
   withoutManifest?: boolean;
-  /** Leave out run.json's frozen slot schema. */
   withoutSlots?: boolean;
-  /** Replace the bytes of one source file after its digest was written to sources.json. */
   tamper?: 'contract' | 'profile' | 'inventory';
 }
 
-/** Writes run.json with sources.json and sources/<slot>.json beside it, the way the download tool leaves a run; returns the path of run.json. */
 export async function writeContractDownload(directory: string, from: ContractFixture = contractFixture(), options: DownloadOptions = {}): Promise<string> {
   await mkdir(join(directory, 'sources'), { recursive: true });
   const slots = [['contract', from.contract], ['inventory', from.inventory], ['profile', from.profile]] as const;

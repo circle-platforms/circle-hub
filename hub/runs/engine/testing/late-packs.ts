@@ -1,8 +1,3 @@
-// Synthetic packs for inputs bound after the start (W06 R[7], decision 179): a stage workflow (toy-stage, incremental
-// submissions) whose runs record each case, and a consumer workflow (toy-consume) whose stage slot binds a toy-stage run after
-// the start; its refresh function reads that run's latest accepted result and tells each item whether its stage record is
-// accepted and satisfied, and its check waits (unknown, awaiting_step) on an item the stage run has not accepted yet. A small
-// harness over openHarness starts and submits both. Everything is invented; nothing names a real product, case or customer.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,14 +9,11 @@ import type { TemporaryPostgres } from '../../../testing/postgres.ts';
 import { openHarness, type Harness, type HarnessOptions } from './harness.ts';
 import { writePack, type PackSpec } from './packs.ts';
 
-/** The judged document both workflows project: one item per case. */
 export const CASES = { cases: [{ id: 'c1', title: '合成用例一：设置 3 区浇灌 15 分钟' }, { id: 'c2', title: '合成用例二：查看分区状态' }] };
 export const ITEM = { one: 'case-c1', two: 'case-c2' } as const;
 export const casesBytes = (): Uint8Array => new TextEncoder().encode(JSON.stringify(CASES));
 
-/** One item per case of the JSON document bound to cases; the consumer also keeps what its run context said about the stage slot. */
-export const PROJECT = `// Synthetic projection: one item per case of the JSON document { cases: [{ id, title }] } bound to the cases slot.
-interface Case { id?: unknown; title?: unknown }
+export const PROJECT = `interface Case { id?: unknown; title?: unknown }
 interface Bound { slot: string; model: unknown }
 export default function project(input: unknown): unknown {
   const value = input as { inputs?: Bound[]; context?: { late_inputs?: unknown } };
@@ -40,10 +32,7 @@ export default function project(input: unknown): unknown {
 }
 `;
 
-/** The refresh function: per item, the stage record of the bound run's latest accepted result, or what it waits for. */
-export const REFRESH = `// Synthetic refresh (toy-consume): the stage run's latest accepted result, bound after the start, says per item whether its
-// record requirement is satisfied. An item the result does not settle waits. The frozen reads are counted to show they arrive.
-interface Requirement { requirement?: string; status?: string }
+export const REFRESH = `interface Requirement { requirement?: string; status?: string }
 interface Row { item?: string; requirements?: Requirement[] }
 interface Late { slot: string; run: string; input: { model: unknown; meta: Record<string, unknown> | null } | null; missing?: string }
 export default function refresh(input: unknown): unknown {
@@ -63,9 +52,7 @@ export default function refresh(input: unknown): unknown {
 }
 `;
 
-/** The check: satisfied stage record supports, an unsatisfied one refutes, a waiting item is unknown (awaiting_step). */
-export const ALIGNED = `// Synthetic check (toy-consume, plan): the plan of a case may go on only once its stage record is accepted and satisfied.
-interface Late { stage?: { status?: string; record?: string; run?: string }; waiting?: { run?: string | null; status?: string | null; missing?: string | null } }
+export const ALIGNED = `interface Late { stage?: { status?: string; record?: string; run?: string }; waiting?: { run?: string | null; status?: string | null; missing?: string | null } }
 export default function aligned(input: unknown): unknown {
   const subject = (input as { subject?: { item?: string; late?: Late } }).subject ?? {};
   const late = subject.late;
@@ -80,7 +67,6 @@ const requirement = (key: string, name: string, checks: string[], errorHandling:
   key, name, description: name + '（合成）', target: 'item', required: true, done_rule: 'bookkeeping', layers: ['static'], accepted_producer: 'judgment', checks, error_handling: errorHandling,
 });
 
-/** The stage workflow: one judgment requirement per case, filled one case at a time (incremental submissions). */
 export function stagePack(): PackSpec {
   return {
     id: 'toy-stage', version: '1.0.0', kind: 'workflow', title: '合成前序阶段', description: '测试用的合成前序阶段包',
@@ -101,7 +87,6 @@ export function stagePack(): PackSpec {
 
 export interface ConsumeOptions { id?: string; version?: string; refresh?: string; from?: string; required?: boolean }
 
-/** The consumer workflow: the stage slot binds a stage run after the start; refresh and check as above. */
 export function consumePack(options: ConsumeOptions = {}): PackSpec {
   const id = options.id ?? 'toy-consume';
   const sample = (verdict: Extract<Verdict, 'support' | 'refute'>, late: unknown, extra: Record<string, unknown> = {}) => ({ json: {
@@ -134,11 +119,9 @@ export function consumePack(options: ConsumeOptions = {}): PackSpec {
   };
 }
 
-/** A stage submission recording the given items (the rest not covered yet). */
 export const stageSubmission = (run: string, items: readonly string[], note = '合成重组记录') => ({
   run, model: 'synthetic-stage-model', items: items.map((item) => ({ item, handling: 'handled', slots: { record: [{ text: note + ' ' + item }] } })),
 });
-/** A consumer submission with a plan for both items; extra slot claim fields (grounds) go into the first item's plan. */
 export const consumeSubmission = (run: string, note = '合成计划', first: Record<string, unknown> = {}) => ({
   run, model: 'synthetic-consume-model', items: [ITEM.one, ITEM.two].map((item, k) => ({ item, handling: 'handled', slots: { plan: [{ text: note + ' ' + item, ...(k === 0 ? first : {}) }] } })),
 });
@@ -153,7 +136,6 @@ export interface LateWorld {
   close(): Promise<void>;
 }
 
-/** The harness with the two packs (and any more consumer variants) assigned to alice and the cases document uploaded. */
 export async function openLateWorld(postgres: TemporaryPostgres, variants: ConsumeOptions[] = [], options: HarnessOptions = {}): Promise<LateWorld> {
   const h = await openHarness(postgres, options);
   const dir = await mkdtemp(join(tmpdir(), 'hub-late-'));

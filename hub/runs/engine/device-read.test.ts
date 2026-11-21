@@ -197,7 +197,6 @@ describe('a run that reads a device its lineage holds', { skip }, () => {
     assert.deepEqual([unknown!.statement.data?.line, unknown!.statement.data?.device, unknown!.statement.data?.sent], [LINE, '/devices/0', false]);
     assert.deepEqual(unknown!.grounds, []);
     assert.match(toolText('start_run', refused.answer), /没有读设备：bed\/meadow\/dev\/4：这台执行器没有声明可以按请求读设备。下一步：管理员加上声明后再读/);
-    // A port that throws is the same: an unknown, a line in the administrator's log, a run that starts.
     port = async () => { throw new Error('synthetic port failure'); };
     h.logs.length = 0;
     const broken = await start(h.alice, 'toy-read-4', 's-read-4c', booking);
@@ -217,7 +216,6 @@ describe('a run that reads a device its lineage holds', { skip }, () => {
     const [claim] = stopped.answer.run!.device_reads!;
     assert.equal(claim!.statement.text, '没有读成：“inspect peers”这一读连续三次没有取得完整应答。下一步：稍后再读一次');
     assert.deepEqual([claim!.qualifier.nature, claim!.statement.reason, claim!.statement.data?.sent], ['unknown', 'missing_input', true]);
-    // An answer that is kept but not shown: the claim is an unknown of unproven integrity resting on the stored answer.
     port = async (targets) => targets.map((t) => { const r = answered(t, null); return { ...r, answer: { ...r.answer!, anomaly: '设备输出的文本原件没有存下来', has_output: true }, missing: { fact: '“inspect peers”的输出没能存成原件，所以不呈现', next_action: '管理员检查本地存储后再读' } }; });
     const unstored = await start(h.alice, 'toy-read-5', 's-read-5c', booking);
     const [held] = unstored.answer.run!.device_reads!;

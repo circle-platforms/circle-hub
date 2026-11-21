@@ -2,7 +2,6 @@ import type { RecordsSchemaCompatibility } from '../records/api.ts';
 
 export interface RebuildNeeded { reason: string; detail?: string }
 
-/** Unknown connectivity or permission failures never authorize destructive recovery. */
 export function rebuildRequiredState(schema: RecordsSchemaCompatibility): RebuildNeeded | null {
   if (schema.status !== 'incompatible' || schema.compatible !== false) return null;
   return {

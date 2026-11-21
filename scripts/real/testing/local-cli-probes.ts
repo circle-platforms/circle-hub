@@ -1,4 +1,3 @@
-// Synthetic local CLI inputs reuse the package's existing brief/workbook fixtures.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -25,7 +24,6 @@ async function fixtureInvocations(
 
   const emptyPlans = join(work, 'empty-plans');
   await mkdir(emptyPlans);
-  // --run of every tool that reads a run is the run directory, the folder that holds run.json.
   const fidRunDir = join(work, 'fid-run');
   await mkdir(fidRunDir);
   await writeFile(join(fidRunDir, 'run.json'), JSON.stringify({ run: RUN_ID, items: [] }));
@@ -58,7 +56,6 @@ async function fixtureInvocations(
   const briefPath = join(work, '00.round-1.json');
   await writeFile(briefPath, JSON.stringify(briefObj));
 
-  // carry-plans minimal source & target
   const carrySource = join(work, 'carry-src');
   const carryTarget = join(work, 'carry-dst');
   const carrySourcePlans = join(work, 'carry-src-plans');
@@ -70,7 +67,6 @@ async function fixtureInvocations(
   await writeFile(join(carryTarget, 'run.json'), JSON.stringify({ ...commonCarry, run: RUN_ID_2 }));
   await writeFile(join(carrySourcePlans, '00.json'), JSON.stringify({ item: 'doc:c1', handling: 'handled', slots: { plan: [{ data: goodData() }] } }));
 
-  // generate-workbook minimal fixture
   const recipe = generationFixture();
   const wbDir = join(work, 'wb');
   await mkdir(wbDir);
@@ -133,7 +129,6 @@ async function fixtureInvocations(
   await writeFile(join(wbDir, 'inventory.json'), inventoryBytes);
 
 
-  // normalize-mindmap & seal-recompose minimal inputs
   const mmIn = join(work, 'mm-in.json');
   await writeFile(mmIn, '{"root":{"data":{"id":"c1"},"children":[]}}');
   const sealRunDir = join(work, 'seal-run');
@@ -142,9 +137,7 @@ async function fixtureInvocations(
   await writeFile(join(sealRunDir, 'run.json'), JSON.stringify({ run: RUN_ID, items: [] }));
   await writeFile(sealParts, '[]');
 
-  // cmd-lookup reads a download, named by its run directory (the folder with run.json and knowledge/), here the synthetic tree and manual of the lookup tests.
   await writeLookupDownload(join(work, 'lookup-run'), lookupFixture());
-  // The method and block forms read the sources and the frozen slot schema of a download, here the synthetic frozen run of the lookup tests.
   await writeContractDownload(join(work, 'contract-run'), contractFixture());
 
   await writeFile(join(work, 'scope.md'), '只做 case-101 合成用例。\n');
@@ -176,11 +169,6 @@ async function fixtureInvocations(
   };
 }
 
-/**
- * pipeline.ts: one probe per subcommand, each in its own directory because the tool resolves cases/<k>/plan against its working
- * directory. Only next reads stdin (the Hub token and the Plumb key); its case has used its last writer attempt without a plan, so it
- * stops there without any gate contacting the synthetic Hub or Plumb addresses.
- */
 async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
   const base = join(workRoot, 'pipeline');
   const k = (n: number) => String(n).padStart(2, '0'), autoid = (n: number) => `99000000000000${1000 + n}`;
@@ -188,29 +176,22 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
   const state = (cases: unknown[]) => JSON.stringify({ schema: 'compile-pipeline@1', width: 6, max_attempts: 3, model: 'synthetic-model', recompose_run: RUN_ID, plan_run: RUN_ID_2, recompose_dir: 'recompose-run', plan_dir: 'plan-run', records_dir: 'records', cases });
   const STOPPED = '脚本编写 3 次仍未通过：合成停下原因';
   const dirs = { init: join(base, 'init'), resume: join(base, 'resume'), next: join(base, 'next'), status: join(base, 'status'), collect: join(base, 'collect'), retry: join(base, 'retry'), rework: join(base, 'rework') };
-  // init: the two downloaded runs hold one case each, paired by node; the queued case starts a recomposer through the staged task-brief.ts.
   for (const run of ['recompose-run', 'plan-run']) await mkdir(join(dirs.init, run, 'items'), { recursive: true });
   await writeFile(join(dirs.init, 'recompose-run', 'items', '00.json'), JSON.stringify({ id: 'n/r00', fields: { case_id: autoid(0), node: 'n/00' } }));
   await writeFile(join(dirs.init, 'plan-run', 'items', '00.json'), JSON.stringify({ id: 'doc:00', fields: { autoid: autoid(0), title: '合成用例 00' }, location: { selector: 'n/00' } }));
   await writeFile(join(dirs.init, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, recompose_run: RUN_ID, plan_run: RUN_ID_2 }));
   await writeFile(join(dirs.init, 'scope.md'), `整份合成脑图，共 1 条用例（${autoid(0)}）。\n`);
-  // retry: the same two runs, case 00 stopped at the recompose gate; the user's decision starts its recomposer again.
   await cp(dirs.init, dirs.retry, { recursive: true });
   await writeFile(join(dirs.retry, 'pipeline.json'), state([row(0, 'stopped', { recompose: 3, write: 0 }, { stopped: '用例重组 3 次仍未通过：合成原因' })]));
-  // next: the writer of case 00 ended on its third attempt with no plan written.
   await mkdir(dirs.next, { recursive: true });
   await writeFile(join(dirs.next, 'pipeline.json'), state([row(0, 'writing', { recompose: 1, write: 3 })]));
-  // resume: the one case is ready, so nothing waits, nothing is to start and no gate contacts the synthetic addresses.
   await mkdir(dirs.resume, { recursive: true });
   await writeFile(join(dirs.resume, 'pipeline.json'), state([row(0, 'ready', { recompose: 1, write: 1 })]));
-  // status: one case at each stage.
   await mkdir(dirs.status, { recursive: true });
   await writeFile(join(dirs.status, 'pipeline.json'), state([row(0, 'ready', { recompose: 1, write: 1 }), row(1, 'stopped', { recompose: 1, write: 3 }, { stopped: STOPPED }), row(2, 'recomposing', { recompose: 1, write: 0 }), row(3, 'writing', { recompose: 1, write: 1 }), row(4, 'queued', { recompose: 0, write: 0 })]));
-  // collect: case 00 is ready with its plan, case 01 stopped.
   await mkdir(join(dirs.collect, 'cases', '00', 'plan'), { recursive: true });
   await writeFile(join(dirs.collect, 'cases', '00', 'plan', '00.json'), JSON.stringify({ item: 'doc:00', handling: 'handled', slots: { plan: [{ data: goodData() }] } }));
   await writeFile(join(dirs.collect, 'pipeline.json'), state([row(0, 'ready', { recompose: 1, write: 1 }), row(1, 'stopped', { recompose: 1, write: 3 }, { stopped: STOPPED })]));
-  // rework: the job of the last merge was not dispatched, so there is no device round to rework and nothing is opened.
   await mkdir(join(dirs.rework, 'returns-1'), { recursive: true });
   await writeFile(join(dirs.rework, 'pipeline.json'), state([row(0, 'ready', { recompose: 1, write: 1 })]));
   await writeFile(join(dirs.rework, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: RUN_ID, recompose_run: RUN_ID, recompose_record: 'rec:' + 'a'.repeat(64), plan_run: RUN_ID_2 }));
@@ -219,13 +200,13 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
   return [
     { argv: ['init', '--recompose-run', 'recompose-run', '--plan-run', 'plan-run', '--open', 'open-compile.json', '--model', 'synthetic-model', '--state', 'pipeline.json'], cwd: dirs.init, subcommand: 'init', stdinValues: [], complete: { status: 0, stderr: '' } },
     {
-      argv: ['next', '--state', 'pipeline.json', '--finished', '编写 00', '--hub', 'https://hub.example.invalid/mcp', '--plumb', 'https://plumb.example.invalid', '--ended', 'yes'], cwd: dirs.next, subcommand: 'next', stdinValues: ['synthetic-hub-token', 'synthetic-plumb-key'],
-      complete: { status: 0, stdout: line({ actions: [], running: [], ready: [], stopped: [{ label: `00 ${autoid(0)}`, reason: '脚本编写 3 次仍未通过：没有写出 cases/00/plan/00.json' }], queued: 0, all_done: true, message: '全部 1 条走完流水线：0 条计划就绪，1 条停下（见 stopped）。下一步：pipeline.ts collect 收拢计划后提交、合并工作簿' }), stderr: '' },
+      argv: ['next', '--state', 'pipeline.json', '--finished', '编写 00', '--hub', 'https://hub.example.invalid/mcp', '--plumb', 'https://plumb.example.invalid'], cwd: dirs.next, subcommand: 'next', stdinValues: ['synthetic-hub-token', 'synthetic-plumb-key'],
+      complete: { status: 0, stdout: line({ actions: [], running: [], ready: [], stopped: [{ label: `00 ${autoid(0)}`, reason: '脚本编写 3 次仍未通过：没有写出 cases/00/plan/00.json' }], queued: 0, all_done: true, message: '全部 1 条走完流水线：0 条计划就绪，1 条停下（见 stopped）。下一步：每条停下的先跑一次 pipeline.ts retry（--note \'模型决定：<针对停下原因的改法>\'），再照第 0 节启动编写循环（workflows/compile-loop.js）；retry 后又停下的照实写进报告' }), stderr: '' },
       empty: { status: 1, stdout: '流水线工具没有完成：标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%\n', stderr: '' },
     },
     {
       argv: ['resume', '--state', 'pipeline.json', '--hub', 'https://hub.example.invalid/mcp', '--plumb', 'https://plumb.example.invalid'], cwd: dirs.resume, subcommand: 'resume', stdinValues: ['synthetic-hub-token', 'synthetic-plumb-key'],
-      complete: { status: 0, stdout: line({ actions: [], running: [], ready: ['00'], stopped: [], queued: 0, all_done: true, message: '全部 1 条走完流水线：1 条计划就绪。下一步：pipeline.ts collect 收拢计划后提交、合并工作簿' }), stderr: '' },
+      complete: { status: 0, stdout: line({ actions: [], running: [], ready: ['00'], stopped: [], queued: 0, all_done: true, message: '全部 1 条走完流水线：1 条计划就绪。下一步：pipeline.ts collect 收拢到新目录，再后台跑合并工具 open-merge.ts（SKILL.md 第 3 节）' }), stderr: '' },
       empty: { status: 1, stdout: '流水线工具没有完成：标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%\n', stderr: '' },
     },
     {
@@ -239,21 +220,18 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
     { argv: ['retry', '--state', 'pipeline.json', '--case', '00', '--note', '合成决定：按手册改写'], cwd: dirs.retry, subcommand: 'retry', stdinValues: [], complete: { status: 0, stderr: '' } },
     {
       argv: ['rework', '--state', 'pipeline.json', '--open', 'open-compile.json', '--returns', 'returns-1', '--hub', 'https://hub.example.invalid/mcp', '--plumb', 'https://plumb.example.invalid'], cwd: dirs.rework, subcommand: 'rework', stdinValues: ['synthetic-hub-token', 'synthetic-plumb-key'],
-      complete: { status: 1, stdout: '流水线工具没有完成：returns-1 里没有一轮上机的结果：这次上机没有发出（合成原因），不算一轮，也不返工；原因消除后用同一份计划重跑合并工具\n', stderr: '' },
+      complete: { status: 1, stdout: '流水线工具没有完成：returns-1 里没有一轮上机的结果：这次上机没有发到设备（合成原因），不算一轮上机，也不返工：按 missing_facts 的原因和下一步处理，原因消除后用同一份计划重跑合并工具（open-merge.ts），不为读进展重交计划\n', stderr: '' },
       empty: { status: 1, stdout: '流水线工具没有完成：标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%\n', stderr: '' },
     },
   ];
 }
 
-/** Supplies one local CLI invocation per local tool; remote stdin tools are supplied by remote-cli-probes.ts. */
-export async function buildLocalCliProbes(stagedCaseDir: string, stagedRecomposeDir: string, workRoot: string): Promise<{ caseCompile: Record<string, CliProbe[]>; recompose: Record<string, CliProbe[]> }> {
+export async function buildLocalCliProbes(stagedCaseDir: string, workRoot: string): Promise<{ caseCompile: Record<string, CliProbe[]>; recompose: Record<string, CliProbe[]> }> {
   const invocations = await fixtureInvocations(workRoot, stagedCaseDir);
   const caseCompile: Record<string, CliProbe[]> = {};
   for (const [tool, spec] of Object.entries(invocations)) caseCompile[tool] = [{ argv: spec.argv, cwd: spec.cwd ?? workRoot, subcommand: null, stdinValues: [], complete: { status: 0 } }];
-  // cmd-lookup has five forms that read different parts of a download: one probe each beyond the first.
   for (const form of [['--method', 'widget-host.shell'], ['--methods', 'widget-seat'], ['--block', 'CAPTURE_COMPARE']]) caseCompile['tools/cmd-lookup.ts']!.push({ argv: ['--run', 'contract-run', ...form], cwd: invocations['tools/cmd-lookup.ts']!.cwd ?? workRoot, subcommand: null, stdinValues: [], complete: { status: 0 } });
   caseCompile['tools/pipeline.ts'] = await pipelineProbes(workRoot);
-  // open-merge.ts: nothing to merge yet (no plan in the directory) ends at its first step with the submit tool's own words, before any call to the Hub.
   const mergeDir = join(workRoot, 'open-merge');
   await mkdir(join(mergeDir, 'plans'), { recursive: true });
   await writeFile(join(mergeDir, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01cccccccccccccccccccccccc', recompose_run: RUN_ID, recompose_record: `rec:${'a'.repeat(64)}`, plan_run: RUN_ID_2 }));

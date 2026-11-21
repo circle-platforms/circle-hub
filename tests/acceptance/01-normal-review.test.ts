@@ -1,7 +1,6 @@
 // Scenario 1 (brief section 9): a normal review. A reviewer lists the task packs, starts the draft review on the agile
 // platform's ~150-node synthetic mind map by its external id, and hands in every item; every item is delivered, each
 // (item, requirement) has its terminal on the one layer the requirement declares, the satisfaction counts follow from
-// the terminals, and the undeclared dynamic layer has no entry. The expected answers come
 // from the fixture document itself (oracle over the tagged rule) and from its documented defects.
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
@@ -216,9 +215,8 @@ describe('scenario 1: a normal review', () => {
       const id = item.fields.autoid;
       const name = `原始用例 ${typeof id === 'string' || typeof id === 'number' ? `${id} ` : ''}${item.label}`;
       const line = lines[index];
-      assert.ok(line.startsWith(name + '：'), line); // 决定 20:32：结论句编号与陈述之间用冒号
+      assert.ok(line.startsWith(name + '：'), line);
       assert.match(line, /；原因.+；下一步.+；决定者/);
-      // 06:48：程序能确定的错误（含标签闭集、跳过缺产物等）写「状态已确认；判断错误」；未知不带判断词
       if (line.includes('；判断错误；')) {
         assert.match(line, /；状态已确认；判断错误；/);
       } else {

@@ -1,5 +1,4 @@
 import { verifiedRecord } from './store.ts';
-// Team tables are projections; verified authorization decisions and their bound definition bytes are authoritative.
 import { TeamId, UserId, PackId } from '../../contracts/api.ts';
 import type { Authorizations, AuthorizationRecord, ObjectStore, Page, Principal, Principals, RecordStore, Transaction, User } from './api.ts';
 import { canonicalBytes } from './canonical.ts';
@@ -132,7 +131,6 @@ export class PgTeams implements Teams {
     const rows = [...latest.values()].filter(row => this.#active(row));
     return { packs: rows.filter(row => row.body.permission === 'assign'), resources: rows.filter(row => row.body.permission === 'resource_assign') };
   }
-  /** Every mutation takes user rows in ID order, then the team lock, then authorization decision locks. */
   async #writer(by: Principal, tx: Transaction, userId?: string, enabled = false): Promise<User | null> {
     const ids = [...new Set(userId ? [by.id, userId] : [by.id])].sort();
     const rows = (await this.db.query('SELECT * FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE', [ids], tx)).rows;

@@ -7,9 +7,6 @@ import { isAdmin } from '../records/api.ts';
 // system): the revision is the content digest, so withRevision freezes `doc:doc:<name>@<sha256>` into the run at
 // start (RunRecord.sources), and the provenance is `declared`. A read needs a run of a pack that declares the doc
 // input type (`accepts: ["doc:doc"]` on an input slot) and answers only that run's user; everyone else, and every
-// CLI user who is not an admin, gets the same answer as for a doc that does not exist. A name that is not there is refused
-// with the documents the caller may read (the nearest first); an identity written wrong (a name with capitals, an `@` that is
-// followed by no digest) is refused for what is wrong in it, never as a resource that is missing.
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { RunId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
@@ -38,7 +35,6 @@ const MOVE_ATTEMPTS = 3;
 
 const DOC_ID = /^doc:doc:([a-z][a-z0-9-]{0,63})(?:@([0-9a-f]{64}))?$/;
 
-/** A part of an identity as an answer quotes it: what was written, cut when it is long. */
 const clipped = (text: string, max = 80): string => (text.length <= max ? text : `${text.slice(0, max)}…`);
 
 /** The external id of a named document, pinned when a digest is given. */
@@ -107,11 +103,8 @@ const MEDIA_BY_SUFFIX: ReadonlyArray<[string, string]> = [
   ['.txt', 'text/plain'],
 ];
 
-/** The media types a doc can be stored as: each has a core parser, so a workflow that binds the doc can read it. */
 export const DOC_MEDIA_TYPES: readonly string[] = [...new Set(MEDIA_BY_SUFFIX.map(([, type]) => type))];
-/** The file name endings that give a doc one of those media types. */
 export const DOC_SUFFIXES: readonly string[] = MEDIA_BY_SUFFIX.map(([suffix]) => suffix);
-/** The first file name ending that gives this media type, for the stored record's name. */
 export function docSuffixOf(mediaType: string): string | null {
   return MEDIA_BY_SUFFIX.find(([, type]) => type === mediaType)?.[0] ?? null;
 }
@@ -191,18 +184,12 @@ export function createDocs(deps: DocsDeps): Docs {
     const bare = id.includes('@') ? id.slice(0, id.indexOf('@')) : id;
     const parsed = parseDocId(id);
     const principal = context.principal;
-    // The run that is reading, when it is stored already (a run that is being started is not).
     let lookup: Promise<Pick<RunRecord, 'runner' | 'pack_digest' | 'pack_space'> | undefined> | undefined;
     const storedRun = (): Promise<Pick<RunRecord, 'runner' | 'pack_digest' | 'pack_space'> | undefined> => lookup ??= (
       context.run && RunId.safeParse(context.run).success
         ? records.store.find<Pick<RunRecord, 'runner' | 'pack_digest' | 'pack_space'>>({ key: 'runs.id', value: context.run, kind: 'run', limit: 1 }).then((found) => found.items[0]?.body)
         : Promise.resolve(undefined)
     );
-    /**
-     * Why this caller may not read an existing document through this call, or null when it may: an administrator anywhere, a
-     * member through a run only: the run must exist and be this user's, and its pack must declare the doc input type. A run
-     * that is not stored yet is being started: bindInputs has already checked the assignment and the slot.
-     */
     const denial = async (): Promise<string | null> => {
       if (isAdmin(principal)) return null;
       if (context.run === undefined || context.run === null || !RunId.safeParse(context.run).success) return '命名文档只经运行读取';
@@ -213,7 +200,6 @@ export function createDocs(deps: DocsDeps): Docs {
       const declares = workflow?.workflow.inputs.some((slot) => slot.accepts.includes(DOC_EXTERNAL_TYPE)) ?? false;
       return declares ? null : `运行 ${context.run} 的工作流没有声明命名文档输入`;
     };
-    // Suggestions and machine-readable options share the same verified, bounded list.
     let optionsLookup: Promise<{ options: string[]; complete: boolean }> | undefined;
     const readableOptions = (): Promise<{ options: string[]; complete: boolean }> => optionsLookup ??= (async () => {
       const record = await storedRun();
@@ -227,11 +213,6 @@ export function createDocs(deps: DocsDeps): Docs {
       }
       return { options, complete: candidates.length === pointers.length };
     })();
-    /**
-     * The documents this caller may read through this call, said beside a refusal of a name: the nearest when it is plainly
-     * the one meant, else the first few. Nothing for a caller who may not read one (they get the same answer as for no
-     * documents at all) and nothing for a personal workflow, which reads none.
-     */
     const readable = async (asked: string): Promise<string> => {
       const record = await storedRun();
       if (record?.pack_space && record.pack_space !== 'team') return '';
@@ -241,11 +222,9 @@ export function createDocs(deps: DocsDeps): Docs {
       if (!complete) return listed.length ? `，本次核验可读的部分命名文档：${listed.join('、')}（该填的名字看这个工作流的输入说明，用 list_task_packs 带 pack_id 读）` : '';
       if (nearest !== null) return `，当前账户可读的命名文档里最接近的是 ${nearest.shown}`;
       if (listed.length === 0) return '';
-      // A cut list says where the rest is: the name to write is in the description of the input.
       return total > listed.length ? `，当前账户可读的命名文档共 ${total} 个，最接近的是：${listed.join('、')}（该填的名字看这个工作流的输入说明，用 list_task_packs 带 pack_id 读）` : `，当前账户可读的命名文档：${listed.join('、')}`;
     };
     if (parsed === null) {
-      // What is wrong with the way the identity is written, said as it is: this is the caller's to correct, not a missing resource.
       const written = /^doc:doc:([^@]*)(?:@([\s\S]*))?$/.exec(id);
       const name = written?.[1], revision = written?.[2];
       const message = written === null ? `${clipped(id)} 不是命名文档的标识`

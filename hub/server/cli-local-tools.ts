@@ -65,7 +65,6 @@ export function localToolsRefusal(reason: LocalToolsReason): string {
       return 'Hub 里没有这个版本的本地工具（版本不存在、已退役、技能包没有安装或这个版本没有本地工具）；核对包号后再试';
     case 'unassigned': {
       const name = reason.pack && reason.pack.length > 0 ? reason.pack : '该版本';
-      // Same function output as MCP / local-tools HTTP (Boss 14:12).
       return unassignedPackRefusal(name, 'workflow');
     }
     case 'integrity':

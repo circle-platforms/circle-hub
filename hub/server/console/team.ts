@@ -17,18 +17,15 @@ import { registeredActionForm } from './command-form.ts';
 import {actionForm} from './manage.ts';
 import {RESOURCE_AUDIENCE} from './team-actions.ts';
 import {memberCapabilitiesHref} from './member-capabilities.ts';
-import type {Principal,Team,TeamAssignments,TeamMember,TeamRow,Teams,User} from '../../records/api.ts';
+import type {Team,TeamAssignments,TeamMember,TeamRow,Teams} from '../../records/api.ts';
 
-/** resource_assign objects that are executors (Boss 15:20 #3); never shown as 业务系统. */
 const EXECUTOR_OBJECT = /^exe_[0-9a-hjkmnp-tv-z]{26}$/;
 const isExecutorObject = (id: string): boolean => EXECUTOR_OBJECT.test(id);
 
-/** The two tabs of the members page (decision 151, step 7): the members, and the clients they connected. One list each. */
 const TEAM_TABS=['members','teams','clients'] as const;
 type TeamTab=typeof TEAM_TABS[number];
 const TEAM_TAB_LABEL:Record<TeamTab,string>={members:'成员',teams:'团队',clients:'已连接的客户端'};
 
-/** Re-export records shapes for console-teams tests (synthetic PageContext). */
 export type ConsoleTeam = Team;
 export type ConsoleTeamRow = TeamRow;
 export type ConsoleTeamMember = TeamMember;
@@ -37,12 +34,10 @@ export type ConsoleTeams = Teams;
 
 type PackSource = { pack: string; via: 'user' | { team: string } };
 
-/** Real kit always has teams (hub/records/index.ts); optional only for incomplete synthetic deps in unit tests. */
 function teamsApi(ctx: PageContext): Teams | undefined {
   return (ctx.deps.records as { teams?: Teams }).teams;
 }
 
-/** list must not treat the built-in knowledge space id `team` as a team row (decision 3). */
 function listedTeams(rows: readonly Team[]): TeamRow[] {
   return rows.filter((row) => row.id !== 'team' && row.deleted_at === null) as TeamRow[];
 }
@@ -53,7 +48,6 @@ async function membershipsForUsers(ctx: PageContext, teams: Teams | undefined, u
 }
 
 async function packSourcesFor(ctx: PageContext, userId: string): Promise<PackSource[] | null> {
-  // packSources is administrator-only (authorizations.ts); members fall back to direct assignments.
   if (!ctx.admin) return null;
   const auth = ctx.deps.records.authorizations;
   return auth.packSources ? auth.packSources(ctx.principal, userId) : null;
@@ -75,7 +69,6 @@ function workflowCell(titles: string[], sources: PackSource[] | null, packs: rea
 export async function teamPage(ctx:PageContext,member?:string):Promise<PageResult>{
  const {principals,authorizations}=ctx.deps.records,spaces=ctx.deps.knowledge?.spaces;
  if(member!==undefined&&!ctx.admin&&member!==ctx.principal.id)return neutralPage(ctx);
- // interfaces §5.2: default tab is 团队 (list); members/clients only when asked (admin).
  if(member===undefined&&!ctx.url.searchParams.get('circle')){
   const asked=ctx.url.searchParams.get('tab');
   if(!ctx.admin||(asked!=='members'&&asked!=='clients'))return teamsPage(ctx);
@@ -102,7 +95,6 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   }
   const titles=assigned.map(id=>packs.find(pack=>pack.id===id)?.title??'名称暂不可读'),clients=clientsOf.get(user.id)??0;
   const belonging=(teamsByUser.get(user.id)??[]).map(team=>team.name).join('、')||'无';
-  // List cells stay on direct assignments; the selected member's pane uses packSources when present (decision 1).
   members.push([link('/console/team/'+user.id,name),uiLabelOf('permission_role',user.role),chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass'),belonging,user.deleted_at?'不适用':workflowCell(titles,null,packs,user.role==='admin'),clients?`${count(clients)} 个`:'无']);
  }
  const devices:Array<ConnectedClient&{id:string}>=(await connectedClients(ctx.deps.records,connections)).map(client=>({...client,id:client.token.id}));
@@ -126,7 +118,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   if(ctx.admin)dialogs.push(publish);
   const belonging=(teamsByUser.get(user.id)??[]).map(team=>team.name).join('、')||'无';
   const permissions:Array<[string,unknown]>=[['角色',uiLabelOf('permission_role',user.role)],['所属团队',belonging],['具有发布权',canPublish?'是':'否'],...await memberSpaceMetadata(ctx,user)];
-  if(ctx.admin&&spaces){try{const usage=await spaces.usage(ctx.principal,user.id);confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,user.id,usage)}`;permissions.push(['容量管理',actionLink('#adjust-member-capacity','调整容量…')]);}catch{/* usage failure stays unknown; do not block member management */}}
+  if(ctx.admin&&spaces){try{const usage=await spaces.usage(ctx.principal,user.id);confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,user.id,usage)}`;permissions.push(['容量管理',actionLink('#adjust-member-capacity','调整容量…')]);}catch{}}
   const assignment=packs.find(pack=>pack.id===workflow);
   if(workflow&&!assignment)return neutralPage(ctx);
   const sources=await packSourcesFor(ctx,user.id);
@@ -144,7 +136,6 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   }else if(assignment){
    selectedAssignment=card({title:assignment.title},html`<p>${usable(assignment.id)?'可使用':'不可使用'}</p>`);
   }
-  // Consequences stay on the page (not only in a command dialog): admin must see them before enable/disable.
   const enableConsequence='启用后，私人空间和仍有效的分享恢复可用，已收回的分享不会恢复。未吊销且未过期的客户端访问令牌恢复可用；已关闭的控制台会话需要重新登录。';
   const disableConsequence='停用后，该成员无法访问 Hub，私人空间冻结，已分享的私人内容暂停访问。团队已取得的内容保留。重新启用后恢复仍有效的分享；不会清除内容或停止远程客户端。';
   const memberOps=ctx.admin?html`<div class="ch-stack" data-member-ops>
@@ -158,8 +149,6 @@ ${card({title:'重置密码',hint:'生成仅显示一次的初始密码；下次
   let usage=null;if(ctx.admin&&spaces){try{usage=await spaces.usage(ctx.principal,'team');}catch{usage=null;}}
   if(usage)confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,'team',usage)}`;
   // Decision 151: with nothing selected there is no pane. The member and client counts are the heads of the two lists; the
-  // shared capacity, the one fact only the pane had, stands above them with the link that opens its dialog. Label is 公共空间
-  // (decision 1500 / hub-terms); internal id `team` is unchanged.
   if(usage)capacityLine=html`<p class="ch-meta" data-team-capacity>公共空间容量 ${capacitySummary(usage)} · <a href="#adjust-team-capacity">调整容量…</a></p>`;
   inspector=html``;
  }
@@ -181,11 +170,9 @@ function countCell(value: number | undefined): string {
   return value === undefined ? '—' : count(value);
 }
 
-/** `/console/team` default tab and `/console/teams`: admin overview; a member only names of teams they belong to. */
 export async function teamsPage(ctx: PageContext): Promise<PageResult> {
   const teams = teamsApi(ctx);
   const spaces = ctx.deps.knowledge?.spaces;
-  // Teams.list already returns TeamRow with counts (interfaces §1 overview shape).
   const rows = teams ? listedTeams(await teams.list(ctx.principal)) : [];
   const detailPath = (id: string) => `/console/team/${id}`;
   const tableRows = rows.map((row) => {
@@ -241,7 +228,6 @@ export async function teamsPage(ctx: PageContext): Promise<PageResult> {
   };
 }
 
-/** `/console/team/tm_…` (and `/console/teams/<id>` alias): admin sees members and assignments; a member with no access gets the neutral page. */
 export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<PageResult> {
   if (!teamId.startsWith('tm_') || teamId === 'team') return neutralPage(ctx);
   const teams = teamsApi(ctx);
@@ -270,7 +256,7 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
   let environmentAssignmentsEnforced = false;
   try {
     environmentAssignmentsEnforced = (await ctx.deps.memberCapabilities(ctx.principal)).environmentAccess.enforced === true;
-  } catch { /* staged notice stays when the capability port is unavailable */ }
+  } catch { }
   const workflows = packs.filter((pack) => pack.kind === 'workflow' && !pack.space && !pack.withdrawn);
   const resourceName = (id: string) => resources.find((row) => row.id === id)?.name ?? '名称暂不可读';
   const environmentName = (id: string) => executorById.get(id)?.target ?? '名称暂不可读';
@@ -297,13 +283,11 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
     const form = actionForm('resource-unassign', ctx.csrf ?? '', html`<input type="hidden" name="resource" value="${id}"><input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">`, '撤回', { inline: true });
     return [resourceName(id), when(row.body.decided_at), form];
   });
-  // Boss 15:02 — reclaim confirmation lists occupied 测试环境 + since, with force-release checkboxes.
   const environmentConfirmations: Html[] = [];
   const environmentRows: unknown[][] = [];
   for (const row of assignedEnvironments) {
     const id = row.body.object;
     const target = environmentName(id);
-    // Fragment id must not surface exe_… (admin pages hide internal ids; value= stays in the POST form only).
     const dialogId = `unassign-environment-${environmentConfirmations.length}`;
     const view = executorById.get(id) ?? { id, target, endpoint: '', enabled: true, resources: [] };
     const occupancy = await heldOccupancyForEnvironment(ctx, view, memberIds);
@@ -314,7 +298,6 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
       postForm({
         action: '/console/admin/do/executor-unassign',
         csrf: ctx.csrf ?? '',
-        // Occupancy checkboxes must sit inside the POST form so force_release values submit.
         fields: html`<input type="hidden" name="executor" value="${id}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${unassignOccupancyFields(occupancy)}`,
         submit: '确认撤回',
         danger: true,
@@ -357,5 +340,4 @@ ${environmentConfirmations}${deleteDialog}
   };
 }
 
-/** Copy for connections/system-add: audience options live in team-actions (packs owns the form). */
 export { RESOURCE_AUDIENCE_OPTIONS, SYSTEM_ADD_AUDIENCE_HINT } from './team-actions.ts';

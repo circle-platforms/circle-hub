@@ -1,6 +1,3 @@
-// The plan check is the Hub's own boundary run offline: the same slot-record rule, the same check functions, the same frozen
-// inputs. These are the divergences of run 33 (a claim without its text, a call budget) and the refusals of items 1 and 2
-// reaching the writer before the Hub does.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {checkPlanObject} from './check-plan.ts';

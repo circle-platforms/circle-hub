@@ -4,7 +4,7 @@ import type {CommandIdentity} from '../../../../contracts/generated/shared-inter
 import {compileGrammar,commandIdentity,commandLines,commandTokens,type CommandDefinition} from './generated/skills/command-tools/command-check/grammar.ts';
 import {isRecord} from './text.ts';
 import {addressKey} from './manifest.ts';
-import {readCommandPolicy,within,pathSegments,inverseLine,inverseLines,type CommandPolicy} from './generated/skills/command-tools/command-check/command-policy.ts';
+import {readCommandPolicy,within,pathSegments,inverseLine,inverseLines} from './generated/skills/command-tools/command-check/command-policy.ts';
 import {identityOf} from './typed-contract.ts';
 import {commandTemplate,isCommandTemplate,resolvedKey,resolvedLine,type ResolvedCommand} from './cell-commands.ts';
 import {TEXT_PARAMETER_TYPES} from './generated/skills/command-tools/command-check/value-domain.ts';
@@ -19,7 +19,6 @@ export function runnerRule(cleanup:RunnerCleanup|undefined,object:string,line:st
  for(const [rule,row]of cleanup.rules.entries()){const prefix=row.prefixes.find(p=>line.startsWith(p));if(prefix!==undefined)return {rule,prefix,...(row.clears?{clears:row.clears}:{}),source_line:row.line};}
  return null;
 }
-/** Matches an unconsumed cleanup step that belongs to the runner's teardown rules (by sent-line prefix or declared clear action). */
 function runnerCleanupAction(cleanup:RunnerCleanup|undefined,object:string,line:string):{rule:number;prefix:string;clears?:string[];source_line:number|null}|null{
  if(!line)return null;
  const byPrefix=runnerRule(cleanup,object,line);if(byPrefix)return byPrefix;
@@ -41,7 +40,6 @@ function definitions(raw:unknown):CatalogCommandDefinition[]{
   return [{path,words:entry.words,signatures:entry.signatures,reference:entry.reference} as CatalogCommandDefinition];
  });
 }
-/** Frozen catalog declarations shared by obligation checks and disclosure-only precheck. */
 export { definitions as commandDefinitions };
 /**
  * The typed addresses of the author's own commands (decision 115, the reference implementation's author provenance of addresses):
@@ -51,7 +49,6 @@ export { definitions as commandDefinitions };
 export function authoredAddresses(raw:unknown,sourceTexts:readonly string[]):Set<string>{
  return new Set(authoredAddressTexts(raw,sourceTexts).keys());
 }
-/** The same addresses with the text the author wrote for each (the first one when it is written in several notations), for a refusal to show. */
 export function authoredAddressTexts(raw:unknown,sourceTexts:readonly string[]):Map<string,string>{
  const out=new Map<string,string>();
  if(!isRecord(raw)||typeof raw.root!=='string'||!sourceTexts.length)return out;
@@ -59,15 +56,6 @@ export function authoredAddressTexts(raw:unknown,sourceTexts:readonly string[]):
  for(const text of sourceTexts)for(const line of commandLines(text)){const identity=identityOf(commandIdentity(grammar,line.text));if(!identity)continue;for(const p of identity.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const written=String(p.parsed.value.value),key=addressKey(written);if(key&&!out.has(key))out.set(key,written);}}
  return out;
 }
-/**
- * The command a line of the author names without writing its arguments out: the longest command of the locked tree whose words
- * are the line's leading unquoted tokens, when nothing follows them or what follows is a description, not a CLI literal. The
- * reference engine reads the author's procedure this way (InfoTest mechanical_case_gate.py author_procedure_coverage: its
- * resolver answers `hit` on the longest head whatever the arguments, and an occurrence whose first argument is a description is
- * counted on the head alone, a description being a token that is not ASCII). A bare head is counted the same way here; the
- * reference engine holds it to an occurrence written out in the adapted steps. An occurrence with a literal first argument that
- * does not parse as a whole stays uncounted: the reference engine also compares that argument, which this port does not.
- */
 export function namedCommand(grammar:ReturnType<typeof compileGrammar>,text:string):{path:string;words:string}|null{
  const tokens=commandTokens(text);if(!tokens?.length)return null;
  let current=grammar.root,found:{path:string;at:number}|null=null;
@@ -100,9 +88,6 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  }
  for(const operation of main){const key=definitionKey(operation.identity!);planned.set(key,(planned.get(key)??0)+1);}
  for(const [key,row]of authored){const actual=planned.get(key)??0;if(actual<row.count)note('/steps',`可以改参数，不可以删命令：${row.identity.path} 作者 ${row.count} 次、计划 ${actual} 次，尚缺 ${row.count-actual} 次`,'refute',{identity:{tree_root:row.identity.tree_root,path:row.identity.path,signature:row.identity.signature},required_count:row.count,planned_count:actual,missing_count:row.count-actual});}
- // A command the author named without its arguments is owed on the command alone: what the plan sends of that command, beyond
- // the occurrences the author wrote out in full, must reach the count. Another command of the same family does not serve it
- // (in run 20 a plan sent a neighbouring command in place of the one the author named, and nothing refused it).
  for(const [path,row]of named){
   const sent=main.filter(operation=>operation.identity!.path===path).length;
   const owed=[...authored.values()].filter(value=>value.identity.path===path).reduce((sum,value)=>sum+value.count,0);
@@ -177,9 +162,8 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   if(alternative!==undefined)return !received||received.object!==operation.object||resolvedKey(received.identity!)!==resolvedKey(alternative)?{pointer:operation.pointer,message:`配置命令 ${identity.path} 缺同设备、逆序的清理操作（声明的枚举互逆：${resolvedLine(alternative)}）`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse:alternative,missing_count:1}}:null;
   const rule=sourceRule(identity);if(!rule)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 缺唯一的产品逆操作规则；下一步由产品包作者补声明后重核`,verdict:'unknown'};
   const path='/'+[...pathSegments(rule.inverse_prefix)!,...pathSegments(identity.path)!.slice(pathSegments(rule.source_prefix)!.length)].join('/');
-  // The catalog selection read the rule's line with the plan, so a path the catalog does not hold is one the locked tree does not have: no plan can send it.
   const line=inverseLine(policy,operation.line);
-  if(line!==null&&inversesRead.has(line)&&!native.some(definition=>definition.path===path))return {pointer:operation.pointer,message:`配置命令 ${identity.path} 按产品规则的逆操作 ${path} 不在锁定树里，计划写不出这条清理。照 InfoTest：不猜逆操作，也不改用范围更大的清除；先换一种在锁定树里有逐对象逆操作的等价写法，没有这样的写法才照实报告这个缺口；下一步由产品包作者声明这条命令的真实逆操作，并由管理员重新生成该构建的手册和命令树后重核`,verdict:'unknown'};
+  if(line!==null&&inversesRead.has(line)&&!native.some(definition=>definition.path===path))return {pointer:operation.pointer,message:`配置命令 ${identity.path} 按产品规则的逆操作 ${path} 不在锁定树里，计划写不出这条清理。不猜逆操作，也不改用范围更大的清除；先换一种在锁定树里有逐对象逆操作的等价写法，没有这样的写法才照实报告这个缺口；下一步由产品包作者声明这条命令的真实逆操作，并由管理员重新生成该构建的手册和命令树后重核`,verdict:'unknown'};
   if(!received||received.object!==operation.object||received.identity!.path!==path)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 缺同设备、逆序的清理操作 ${path}（清理命令必须由锁定树完整解析）`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse_path:path,missing_count:1}};
   const parameters=[...identity.parameters].sort((a,b)=>a.position-b.position);
   const counts=rule.leading_parameters!==undefined?[rule.leading_parameters]:[...new Set(native.filter(definition=>definition.path===path).flatMap(definition=>definition.signatures.flatMap(signature=>Array.from({length:Math.min(signature.params.length,parameters.length)+1},(_,count)=>count))))];
@@ -221,8 +205,6 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   if(collect)undoneConfigurations!.push(...removed.map(row=>row.proof));
   return live;
  };
- // An explicit clear inside the case cannot precede a still-live paired inverse, even if the product
- // classifies that clear as read-only for configuration obligations. Match declared clears by complete grammar identity.
  const pairedLive:typeof main=[];
  for(const operation of parsed){
   let undone=-1;
@@ -242,15 +224,8 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
  }
  const configured=replay(main).reverse();
  if(undoneConfigurations)replay(parsed,true);
- // A removal ahead of the configuration it clears: the plan clears what an earlier round may have left, then configures it. The
- // reference engine's cases start the same way and its teardown rule never asks anything of a removing line (InfoTest
- // tau_coverage.py:221). It is the declared inverse of a later configuration of the same device, the configuration is not its
- // inverse in turn (two commands that undo each other cancel in the replay above, whichever comes first), and that
- // configuration's own cleanup clears the same thing, so the removal is no state left alive and owes none. Only that: a delete
- // of something the plan never makes, or of another name or device, is still live and keeps needing its own (decision 104).
  const clearsLater=(removal:typeof main[number])=>main.some(later=>later.object===removal.object&&ordinal(later.pointer)>ordinal(removal.pointer)&&modifies(later.identity!)&&inverseProblem(later,{...removal,restore:undefined})===null&&inverseProblem(removal,{...later,restore:undefined})!==null);
  // Reverse order binds within one device: a device does not undo another's state, so the order between devices is free
- // (the reference implementation's teardown check is not order-sensitive at all). One the runner's own cleanup covers without a declared paired inverse (every
  // sent line against the runner's prefix rules, first hit) needs none, and its explicit inverse is accepted wherever it
  // stands on that device, the runner tearing down whatever is left anyway; the case then undid it itself. Each other live
  // configuration, latest first, takes the device's next remaining cleanup step, which must be its declared inverse.
@@ -260,7 +235,6 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   const taken=new Set<number>(),ordered:typeof mine=[],runnerOwned:RunnerCovered[]=[];
   for(const operation of mine){
    const rule=runnerRule(runner,operation.object,operation.line);
-   // A broad runner clear is not proof that a declared inverse state transition happened first.
    const alternatives=alternativeInverses(operation.identity!,undefined);
    if(!rule||alternatives.ambiguous||alternatives.identities.length){ordered.push(operation);continue;}
    const k=own.findIndex((step,index)=>!taken.has(index)&&inverseProblem(operation,step)===null);
@@ -280,7 +254,7 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   let next=0;
   for(const operation of ordered){
    if(next<rest.length&&inverseProblem(operation,rest[next])===null){next++;continue;}
-   if(clearsLater(operation))continue; // takes no cleanup step, so the steps after it still pair with the configurations they belong to
+   if(clearsLater(operation))continue;
    const problem=inverseProblem(operation,rest[next]);if(problem)note(problem.pointer,problem.message,problem.verdict,problem.obligation);next++;
   }
   // A left-over step that is the declared inverse of a live configuration of the same device stands out of reverse order; only

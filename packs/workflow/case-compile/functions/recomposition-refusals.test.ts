@@ -1,7 +1,3 @@
-// The refusals of a plan's `recomposition` declaration against the admitted recomposition record say where the fault sits, the
-// value that was seen, the allowed set and the next step, with the exact values to copy (round 36: the sync writer and the colon
-// writer read the tool's source to learn what the refusal could have told them). The decisions stay what they were: which
-// condition is a gap, and whether it is unknown or a refutation.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {recompositionGaps} from './recomposition.ts';
@@ -96,8 +92,6 @@ test('a slot the record does not have, a shared assertion and a slot without an 
   has(gap.message, DECLARED + '/slots', 'e1', '"assertions":["1","2"]');
 });
 
-// The decisions: for each input the verdicts the check has always given, in order. A refusal that changed its words only keeps
-// its row; one that changed its verdict, appeared or went away breaks this test.
 const MATRIX: Array<[string, () => PlanSlots, string[]]> = [
   ['no declaration', () => plan(), ['unknown']],
   ['right declaration', () => plan(declared(e1('1', '2'))), []],

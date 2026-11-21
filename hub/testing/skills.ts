@@ -26,7 +26,6 @@ export async function installMindmapFixture(registry:PackRegistry,records:Record
  }finally{await temp.remove();}
 }
 
-/** A skill a pack embeds has to be published first; it needs no installation, nothing in a run reads it (T01 R[6]). */
 export async function publishEmbeddedSkills(registry:PackRegistry,records:RecordsKit,admin:Principal){
  const temp=await temporaryDirectory('hub-embedded-skills-');
  try{

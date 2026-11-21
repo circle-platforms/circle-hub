@@ -1,9 +1,3 @@
-// The cleanup a declared pair of alternative values owes, through the real Hub: the same plans go through check-plan with the run's
-// frozen inputs and the locked tree it downloads, and through submit_result on the real engine (a temporary PostgreSQL, the published
-// pack, synthetic documents, a knowledge port whose catalog selection is the Hub's own walk of the tree). Round 30 to 32 sent plans
-// with `ha on` and no `ha off`: the Hub accepted them because the selection of its catalog did not hold `ha off`, check-plan, given
-// the whole tree, refused them. A plan that turns a switch on owes the switch off, in reverse order, before the runner clears.
-// A removal sent ahead of the configuration it clears (run 36) owes nothing of its own; a delete of something the plan never makes does.
 import assert from 'node:assert/strict';
 import {after,before,describe,it} from 'node:test';
 import {osIsolationAvailable} from '../../../hub/rules/api.ts';
@@ -24,11 +18,9 @@ type Step=Parameters<typeof fixture>[0][number];
 const skip=(await osIsolationAvailable())?false:'no OS network isolation on this machine (sandbox-exec)';
 let postgres:TemporaryPostgres,hub:Hub;
 
-// The tree and the policy of the fixture, with the command that clears the device and is read-only for the policy.
 const clearAll={words:['clear','demo','all'],signatures:[{id:'1',reference:`src:${'b'.repeat(64)}/xml@1/x/clear/arguments`,params:[]}]};
 const ENTRIES=[...catalog.entries.map(entry=>({words:entry.words,signatures:entry.signatures})),clearAll];
 const POLICY={...structuredClone(policy),read_only:[...policy.read_only,'/commands/clear']};
-// The contract of the fixture, with the runner's own cleanup declared for the device: it clears every command under `demo`.
 const CONTRACT=(()=>{
  const doc=structuredClone(fixture([]).subject.contract) as Doc;
  doc.cleanup={source:'fixture/clear',sha256:'a'.repeat(64),objects:['widget-seat'],rules:[{prefixes:['demo'],clears:['clear demo all']}]};
@@ -61,7 +53,6 @@ before(async()=>{
 });
 after(async()=>{await hub?.close();await postgres?.stop();});
 
-/** One plan the writer would put in a file, for case `index`. */
 function claim(index:number,steps:Step[]){
  const data=goodData();
  data.steps=steps.map(value=>({object:'widget-seat',method:'configure',args:[typeof value==='string'?value:value.line],keywords:{},...(typeof value==='string'?{}:{cleanup:true as const})}));

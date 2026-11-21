@@ -1,9 +1,3 @@
-// The request examples in examples/ are what a caller copies into `plumb judge --file`. The Plumb gateway refuses a request
-// whose shape it cannot compile with HTTP 400 before it scores anything: a `match` request that names the candidate command
-// only in the prose of `state` is answered "Task 'match' requires candidate command in 'document' or 'state.command'".
-// This file ports the shape rules of the gateway's judge compilation (`_compile_and_run_single_judge`,
-// `_extract_noul_document`, `_extract_candidates`, `_render_mindmap_node_state`) for the task families the examples use, and
-// holds every example in examples/ to them. A task without a rule here fails the test, so an example is never passed unchecked.
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
@@ -13,7 +7,6 @@ type Family = 'match' | 'choice' | 'sequence';
 
 const EXAMPLES = new URL('./examples/', import.meta.url);
 
-/** The task names the gateway answers in each family (its CANONICAL_FAMILY_MAP), for the families with a rule below. */
 const FAMILY: Readonly<Record<string, Family>> = {
   match: 'match', single_cmd_judge: 'match', steplist_judge: 'match',
   choice: 'choice', cmd_select: 'choice', manual_choice: 'choice',
@@ -22,7 +15,6 @@ const FAMILY: Readonly<Record<string, Family>> = {
 const familyOf = (task: string): Family | undefined => (Object.hasOwn(FAMILY, task) ? FAMILY[task] : undefined);
 
 const isObject = (value: unknown): value is Body => typeof value === 'object' && value !== null && !Array.isArray(value);
-/** The gateway reads a missing field and a JSON null alike (`is not None`). */
 const given = (value: unknown): boolean => value !== undefined && value !== null;
 const squash = (value: unknown): string => String(value ?? '').split(/\s+/u).filter(Boolean).join(' ');
 
@@ -33,7 +25,6 @@ function hasContent(value: unknown): boolean {
   return given(value);
 }
 
-/** Where the gateway looks for the candidate command of a `match` task, in its order (`_extract_noul_document`). */
 function candidateDocument(item: Body): unknown {
   const keys = ['document', 'command', 'commands'];
   for (const key of keys) if (given(item[key])) return item[key];
@@ -48,14 +39,12 @@ function candidateDocument(item: Body): unknown {
   return undefined;
 }
 
-/** The text the gateway scores as the candidate: a string, or a list of strings joined by newlines. */
 function documentText(value: unknown): string | null {
   if (typeof value === 'string') return value;
   if (Array.isArray(value) && value.every((line) => typeof line === 'string')) return value.join('\n');
   return null;
 }
 
-/** `candidates` as a list or an object of name to text (`_normalize_api_candidates`). */
 function candidateProblems(candidates: unknown): string[] {
   let names: string[];
   const problems: string[] = [];
@@ -73,7 +62,6 @@ function candidateProblems(candidates: unknown): string[] {
   return problems;
 }
 
-/** The mindmap `node` that replaces `state` (`_render_mindmap_node_state`). */
 function nodeProblems(node: unknown): string[] {
   if (!isObject(node)) return ["'node' must be an object"];
   const problems: string[] = [];
@@ -88,7 +76,6 @@ function nodeProblems(node: unknown): string[] {
   return problems;
 }
 
-/** What the gateway refuses in one question: the request itself, or one entry of `questions` (which share the request's `state`). */
 function questionProblems(question: Body, shared?: unknown): string[] {
   const task = String(question.task ?? '').trim().toLowerCase();
   if (task === '') return ["Missing required field 'task'"];
@@ -110,8 +97,6 @@ function questionProblems(question: Body, shared?: unknown): string[] {
     else if (typeof question.definition !== 'string') problems.push("'definition' must be a string");
   }
 
-  // The gateway writes step_n into the instruction of a `sequence` task ("Do the blocks realize author step N's scenario"),
-  // and reads 1 when it is absent, so the number has to be the one of the author step the state describes.
   let stepN = 1;
   if (given(question.step_n)) {
     if (typeof question.step_n === 'number' && Number.isInteger(question.step_n) && question.step_n >= 1) stepN = question.step_n;
@@ -134,7 +119,6 @@ function questionProblems(question: Body, shared?: unknown): string[] {
   return problems;
 }
 
-/** The problems of one request body: a single question, or a batch whose `questions` share the body's `state`. */
 function requestProblems(body: unknown): string[] {
   if (!isObject(body)) return ['the request must be a JSON object'];
   if (!('questions' in body)) return questionProblems(body);
@@ -162,7 +146,7 @@ describe('the gateway shape rules these examples are held to', () => {
   const step = '[已执行的步骤]\n1. configure terminal -> interface eth0\n[当前步骤]\n步骤意图: 配置接口 IPv4 地址为 192.0.2.10/24';
   const command = 'ip address 192.0.2.10/24';
 
-  it('refuse a match request that names the candidate command only in the prose of state (the defect of the first example)', () => {
+  it('refuse a match request that names the candidate command only in the prose of state', () => {
     const prose = { task: 'single_cmd_judge', state: `${step}\n候选命令: ${command}` };
     assert.deepEqual(requestProblems(prose), ["Task 'match' requires candidate command in 'document' or 'state.command'"]);
   });

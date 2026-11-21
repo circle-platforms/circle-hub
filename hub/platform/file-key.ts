@@ -1,8 +1,7 @@
 // The deployment's key store on every platform (decision 137 of 2026-11-03: the macOS keychain is no longer used). The
 // vault master key and the operator token are each a 32-byte file under <data root>/keys, which only the service account
-// may read: the directory is 0700, each file 0600 with one link, and both are checked on every access. A key is written
-// with O_EXCL by default; only an operator token may be atomically replaced and read back to check; it is never printed or logged, and no key is backed up
-// with the configuration or the vault. A file is named by a digest of the deployment settings' key names, never by data.
+// may read: the directory is 0700, each file 0600 with one link, and both are checked on every access. A file is named by
+// a digest of the deployment settings' key names, never by data.
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, rename, unlink } from 'node:fs/promises';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -59,10 +58,6 @@ export interface KeyStore {
   readonly account: string;
   /** Creates a new random value of KEY_BYTES; refuses when the key exists. */
   init(): Promise<void>;
-  /**
-   * Stores `value` (exactly KEY_BYTES bytes); refuses when the key exists, then reads it back and compares. `value` itself
-   * is left as it is; the store's own copies are zeroed. Explicit replacement is limited to the operator token.
-   */
   write(value: Uint8Array, options?: { replace?: boolean }): Promise<void>;
   status(): Promise<{ present: boolean }>;
   read(): Promise<Uint8Array>;

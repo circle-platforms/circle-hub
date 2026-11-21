@@ -41,7 +41,7 @@ Signing: `node packs/system/wecom-robot/api.ts sign | check` (the shared pack to
 
 ## What the owner's deployed robot actually uses (read-only code review, 2026-11-02)
 
-The existing robot (the owner's InfoTest engine project, reviewed without executing it; its env file was not opened)
+The existing robot (a project of the owner's, reviewed without executing it; its env file was not opened)
 reshapes this pack. Three channels, not one:
 
 1. **Smart-bot WebSocket channel** (official `wecom-aibot-sdk`): Bot ID + Secret + gateway URL; the SDK owns auth,

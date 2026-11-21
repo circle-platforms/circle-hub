@@ -1,9 +1,3 @@
-// Acceptance 63 (decision 182; model 86: W06 R[8]): the earlier target verifications of the subject a run judges, through the
-// real Hub, its run engine, its dispatch service and GET /run-export/<run>/history. A synthetic writer reviews one synthetic
-// mind map of the stubbed agile platform three times and another map once; a second writer reviews the first map once. Each
-// of those runs gets a job in the dispatch journal, written through the journal the dispatch service itself appends to, in
-// the form it writes: two that took effect, one that never went out, one still running, one of the other subject and one of
-// the other writer. Temporary PostgreSQL, synthetic documents, accounts and addresses (192.0.2.0/24) only; no device.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, describe, test } from 'node:test';
@@ -34,7 +28,6 @@ describe('scenario 63: a run lists the earlier target verifications of the subje
     other = await bed.user('另一位合成编写者', ['case-review']);
     client = await bed.connect(writer, 'sess-s63');
     otherClient = await bed.connect(other, 'sess-s63-b');
-    // The executor definition a reservation pins: the journal reads it back when it records an effect.
     executorDigest = (await bed.hub.records.objects.put(canonicalBytes(definition('http://192.0.2.20:7000/mcp')), 'application/json')).sha256;
   });
   after(async () => {
@@ -44,7 +37,6 @@ describe('scenario 63: a run lists the earlier target verifications of the subje
 
   const review = async (as: McpClient, external: string) => startReview(as, { product: bed.product.names[0], version: bed.site.LINE, inputs: { subject: { external } } });
   type Verdict = 'pass' | 'fail';
-  /** One job of `run` in the dispatch journal, as the dispatch service writes one: reservation, then what `end` says happened. */
   async function job(run: { run: string; items: Array<{ id: string }> }, runner: TestUser, planRun: string, end: { effective: { at: string; verdict: Verdict } } | 'not_sent' | 'running'): Promise<string> {
     const journal = bed.hub.hub.dispatch!.journal, id = sha256Hex(newId('job')), workbook = sha256Hex(`synthetic workbook of ${run.run}`);
     const items = run.items.map((item) => item.id);
@@ -76,7 +68,6 @@ describe('scenario 63: a run lists the earlier target verifications of the subje
     await job(elsewhere, writer, elsewhere.run, { effective: { at: '2026-11-19T04:00:00.000Z', verdict: 'pass' } });
     await job(theirs, other, theirs.run, { effective: { at: '2026-11-19T05:00:00.000Z', verdict: 'fail' } });
 
-    // The run asked about is a new one of the same subject; it has no job of its own.
     const now = await review(client, SUBJECT);
     const answer = await history(now.run, writer.token);
     assert.equal(answer.status, 200, await answer.clone().text());
@@ -93,24 +84,19 @@ describe('scenario 63: a run lists the earlier target verifications of the subje
       ],
     }, 'the two runs of this subject whose job took effect, newest first; the job never sent, the one still running, the other subject and the other writer stay out');
 
-    // The bound: one run when one is asked for, and that is the newest.
     const bounded = RunHistoryExport.parse(await (await history(now.run, writer.token, '?limit=1')).json());
     assert.deepEqual([bounded.limit, bounded.runs.map((run) => run.run)], [1, [second.run]]);
     for (const query of ['?limit=0', '?limit=9', '?limit=two', '?limit=1&x=1', '?other=1']) assert.equal((await history(now.run, writer.token, query)).status, 400, query);
 
-    // The same jobs the jobs export serves for the run that carried them, to the same reader.
     const jobs = await fetch(`${bed.hub.url}/run-export/${second.run}/jobs`, { headers: { authorization: `Bearer ${writer.token}` } });
     assert.equal(jobs.status, 200, await jobs.clone().text());
     const exported = await jobs.json() as { jobs: Array<{ job: string; outcome: string; rows: Array<{ item: string; dynamic_terminal: string }> }> };
     assert.deepEqual(exported.jobs.map((row) => [row.job, row.outcome, row.rows.map((r) => [r.item, r.dynamic_terminal])]), [[secondJob, 'effective', items(second).map((item) => [item, 'pass'])]]);
 
-    // The other writer sees only what that writer may export: their own run, not the two of the first writer.
     const others = RunHistoryExport.parse(await (await history((await review(otherClient, SUBJECT)).run, other.token)).json());
     assert.deepEqual(others.runs.map((run) => run.run), [theirs.run]);
-    // A run the caller may not export answers as an absent one; no token answers 401.
     assert.equal((await history(now.run, other.token)).status, 404);
     assert.equal((await history(now.run, 'not-a-token')).status, 401);
-    // An administrator may export every run, so both writers' runs of the subject are listed.
     const all = RunHistoryExport.parse(await (await history(now.run, bed.hub.admin.token)).json());
     assert.deepEqual(all.runs.map((run) => run.run), [theirs.run, second.run, first.run]);
   });

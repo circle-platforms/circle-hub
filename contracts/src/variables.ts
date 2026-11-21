@@ -103,7 +103,6 @@ export function validateSecret(value: unknown, short = false): string {
 }
 export const VariableRecord = z.strictObject({ schema: z.literal('variable@1'), name: OrdinaryVariableName, value: VariableValue });
 export type VariableRecord = z.infer<typeof VariableRecord>;
-/** Authenticated vault metadata, independent of the records database; never contains a value or value digest. */
 export const SecretVersion = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const SecretRecord = z.strictObject({
     schema: z.literal('secret@1'),
@@ -117,7 +116,6 @@ export const SecretRecord = z.strictObject({
     revoked: z.boolean(),
 }).refine(value => value.entry === 'secret.' + value.name.toLowerCase(), 'the vault entry belongs to this exact name');
 export type SecretRecord = z.infer<typeof SecretRecord>;
-/** Authenticated metadata for one unchanged legacy sealed file; the digest identifies ciphertext bytes, never the value. */
 export const SecretSidecar = z.strictObject({
     metadata: SecretRecord,
     sealed_entry: z.string().regex(/^secret\.[a-z][a-z0-9_]{0,63}\.[a-f0-9]{24}$/),
@@ -128,7 +126,6 @@ export const SecretSidecar = z.strictObject({
     if (value.current && !value.metadata.revoked && value.sealed_sha256 === null) ctx.addIssue({code:'custom',path:['sealed_sha256'],message:'an active current version identifies its ciphertext'});
 });
 export type SecretSidecar = z.infer<typeof SecretSidecar>;
-/** The sole authenticated metadata file for one name; versions identify values, not audit events. */
 export const SecretMetadataFile = z.strictObject({
     name: VariableName,
     versions: z.array(SecretSidecar).min(1),
@@ -149,13 +146,10 @@ export type SecretMetadataFile = z.infer<typeof SecretMetadataFile>;
 
 
 const VariableUseAt = z.string().min(1).max(2000).refine(value => { const split = value.indexOf('#'); return split > 0 && JsonPointer.safeParse(value.slice(split + 1)).success; }, 'a definition or package followed by # and a JSON pointer');
-/** Ordinary variables retain the real records-database decision identity. */
 export const OrdinaryVariableUse = z.strictObject({ kind: VariableKindSchema.extract(['var']), at: VariableUseAt, name: VariableName, decision: Sha256 });
 export type OrdinaryVariableUse = z.infer<typeof OrdinaryVariableUse>;
-/** Ciphertext identity from the authenticated sidecar; no value hash or records-database identity. */
 export const SecretCipherIdentity = z.strictObject({ name: VariableName, version: SecretVersion, sealed_sha256: Sha256 });
 export type SecretCipherIdentity = z.infer<typeof SecretCipherIdentity>;
-/** A secret use identifies the authenticated ciphertext, even when a newly set value restarts at version one. */
 export const SecretUse = z.strictObject({ kind: VariableKindSchema.extract(['secret']), at: VariableUseAt, ...SecretCipherIdentity.shape });
 export type SecretUse = z.infer<typeof SecretUse>;
 export const VariableUse = z.discriminatedUnion('kind', [OrdinaryVariableUse, SecretUse]);

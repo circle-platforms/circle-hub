@@ -1,5 +1,3 @@
-// Wire contract types and error structures for the Plumb HTTP(S) inference gateway client.
-
 export type CallErrorCategory = '参数无效' | '无权限' | '不存在' | '已被占用' | '暂时不可用';
 
 export function formatPlumbCallError(category: CallErrorCategory, fact: string, nextAction: string): string {

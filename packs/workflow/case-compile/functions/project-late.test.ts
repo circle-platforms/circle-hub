@@ -1,6 +1,3 @@
-// A plan run that binds the recomposition result by run id after its start (workflow.json from_runs.after_start) sees only
-// {slot, run} in context.late_inputs at projection: its items are marked to take their record at each evaluation, their fields do
-// not depend on how far the recomposition has come, and the subset check against the frozen recompose run record stays at start.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { projectItems } from './project.ts';
@@ -29,7 +26,6 @@ const input = (extra: unknown[], parameters: Record<string, unknown> = {}, late 
 type Projected = { error?: { code: string; message: string; pointer?: string }; items: Array<{ id: string; summary: string; fields: Record<string, any> }>; groups: Array<Record<string, unknown>> };
 
 test('every item of a late-bound recomposition is marked to take its record at each evaluation, with nothing of the result in it', () => {
-  // Red before: the late input was not seen, so the items carried a refusal of the unbound result instead of the marker.
   const out = projectItems(input([runRecord(['case-a', 'case-b'])])) as Projected;
   assert.equal(out.error, undefined, JSON.stringify(out.error));
   assert.deepEqual(out.items.map((item) => item.fields.recomposition_late), [
@@ -44,7 +40,6 @@ test('every item of a late-bound recomposition is marked to take its record at e
     assert.ok(item.summary.endsWith('；重组待受理'), item.summary);
   }
   assert.equal(out.groups[0].recomposition_requested, true);
-  // A whole document needs no pipeline parameter when the recomposition is bound late, as when it is bound frozen.
   const recomposed = projectItems(input([runRecord(['case-a', 'case-b'])], { pipeline: 'recomposed' })) as Projected;
   assert.equal(recomposed.error, undefined, JSON.stringify(recomposed.error));
 });

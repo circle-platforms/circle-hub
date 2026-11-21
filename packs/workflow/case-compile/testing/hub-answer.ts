@@ -1,20 +1,14 @@
-// What the Hub's answer to a plan submission says about one item, in the shape check-plan reports problems, so a test can put the two
-// side by side (hub-parity.test.ts). The same plan problems are the same set: the Hub reports a problem once for each check that
-// finds it. Test support only.
 import REQUIREMENTS from '../requirements.json' with {type:'json'};
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 import type {Hub} from './hub.ts';
 
-/** The pointer of a Hub path inside the item, and the text of a Hub message without the item position. */
 export const inItem=(text:string,index:number):string=>text.replaceAll(`/items/${index}`,'');
 export const stripData=(pointer:string):string=>pointer==='/data'?'':pointer.startsWith('/data/')?pointer.slice('/data'.length):pointer;
 export const canonical=(value:unknown):string=>JSON.stringify(value,(_key,inner)=>inner!==null&&typeof inner==='object'&&!Array.isArray(inner)?Object.fromEntries(Object.entries(inner).sort(([a],[b])=>a<b?-1:1)):inner);
 export const unique=(rows:unknown[]):string[]=>[...new Set(rows.map(canonical))].sort();
-// The requirements whose checks all judge the plan itself; the workbook requirement waits for an upload and is not compared.
 const PLAN_STAGE_CHECKS=['contract_shape','bed_addresses','commands_catalog','expected_sources','expected_quotes'];
 export const PLAN_REQUIREMENTS=new Set(REQUIREMENTS.requirements.filter(row=>(row.checks as string[]).length>0&&(row.checks as string[]).every(id=>PLAN_STAGE_CHECKS.includes(id))).map(row=>row.key));
 
-/** The problems the Hub's answer holds for one item, in the shape check-plan reports them. */
 export function hubProblems(answer:Awaited<ReturnType<Hub['service']['submitResult']>>,item:string,index:number){
  const structure=(answer.errors??[]).filter(error=>error.item===item&&error.code==='SUBMISSION_SCHEMA_VIOLATION').map(error=>({code:error.code,pointer:inItem(error.path??'',index),message:inItem(error.message,index)}));
  const checks:unknown[]=[];

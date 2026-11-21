@@ -66,4 +66,3 @@ fragments 的 JSON 估算超过 4 MiB 就不随解析输出，由 locate 按需�
 `functions/modules/case-structure/` 是可复用模块：按树位置和声明字段读出用例、前置、动作和期望，不按文字判断角色。工作流在 `pack.json` 的 `embeds` 写 `{"pack":"mindmap-format","version":"<版本>","module":"case-structure"}`，`npm run gen:contracts` 把它生成到 `functions/generated/skills/mindmap-format/case-structure/`。只在这里改模块，不改生成的副本；改了要升本包版本，再改 `embeds` 并重签工作流。模块里的 import 不能离开这个文件夹。
 
 当前 1.0.26 移除 `skill.json` 中历史保留的 `migration_test` 字段并清理旧 `bind-legacy` 说明，解析算法与接口不变。
-

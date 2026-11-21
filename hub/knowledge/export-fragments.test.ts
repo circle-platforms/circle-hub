@@ -1,8 +1,4 @@
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
-// The batch a run downloads (K05: GET /run-export/<run>/knowledge, Knowledge.subtree): the node views a subtree read gives, plus,
-// on each entry, the source fragments the composition lists for it. The tree records no document order (a node's entries are
-// sorted for reading), so the fragments are the one place a client finds where an entry stands in its source. They are what a
-// reference read gives as `grounds`, and get_nodes does not carry them.
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import type { KnownBuild } from '../../contracts/src/product.ts';

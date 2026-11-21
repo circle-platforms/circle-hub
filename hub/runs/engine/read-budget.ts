@@ -2,9 +2,6 @@
 // A budget is reserved before I/O, so rejected work cannot occupy database connections.
 import {HubReadFailure} from './retry-read.ts';
 export const CHECK_READ_CONCURRENCY=4;
-// One evaluation covers every item of a run, and an item's check subject carries the references the Hub supplies itself (its
-// source fragments and the command-tree entries looked up for each of its command lines) beside the submission's own. A whole
-// mind map of seventeen cases with explicit command adaptations needed more than 256, so no change to the submission could pass.
 export const CHECK_READ_REFERENCES=1024;
 export const CHECK_READ_TOTAL_BYTES=16*1024*1024;
 let active=0;

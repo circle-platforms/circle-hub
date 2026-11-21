@@ -1,5 +1,3 @@
-// The one resolver of a tool's --run (tools/workspace-path.ts): the run directory, the folder download-run.ts or fetch-run.ts wrote,
-// refused in one set of words whatever tool asks, each refusal naming the correct form.
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -58,7 +56,6 @@ test('the run.json file as --run is refused in the words of every other director
     assert.equal(free.legal_form, RUN_DIRECTORY_FORM);
     assert.equal(free.next_action, bounded.next_action);
     assert.ok(formatCallError(free).endsWith(ONE_LINE), formatCallError(free));
-    // resolveRun refuses it the same way before looking for a run.json.
     assert.equal(failureOf(() => resolveRun(file)).legal_form, RUN_DIRECTORY_FORM);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -1,14 +1,3 @@
-// The program that writes a replay bundle from a Hub database. It needs node, the `pg` package and the two files beside it
-// (submissions-export.ts, submissions-bundle-format.ts); it reads the database in one read-only transaction and the Hub's object
-// directory, and writes nothing else. Run it as the Hub's service account on the Hub's host, in a directory under the Hub's own
-// node_modules (so that `pg` resolves):
-//
-//   node export-bundle.ts --pg-host <socket dir or 127.0.0.1> --pg-port <port> --pg-user <name> --pg-database <name> \
-//        --objects <data root>/objects --out <new directory> (--index <index.tsv of an export> | --run <id>...) \
-//        [--cutoff <position>] [--all-objects] [--exclude-kind <record kind>]... [--dry-run] [--source <free text>]
-//
-// --dry-run counts rows, record bytes per kind and objects and writes nothing: run it first and read the sizes. There is no
-// password option: the connection is the service account's own (a unix socket, or a loopback address the database trusts).
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -20,7 +9,6 @@ function fail(message: string): never {
   process.exit(2);
 }
 
-/** The runs an export folder's index.tsv names (its third column), without reading anything else of the folder. */
 export function runsOfIndex(text: string): string[] {
   const runs = new Set<string>();
   for (const line of text.split('\n').slice(1)) {

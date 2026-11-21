@@ -35,7 +35,6 @@ function neverSupplied(raw: Record<string, unknown>, method: RuntimeEntry | null
   if (names.some((name) => { const param = method?.parameters.find((item) => item.name === name); return !param || param.required || Object.hasOwn(listed, name); })) return { names: [], problem: 'unsupplied 含必需、签名外或已定角色的参数' };
   return { names: names as string[], problem: null };
 }
-/** The automation test beds the caller's lineage holds device leases on, from the frozen lease view (keys bed/<bed>/<device>). */
 export function bookedBeds(leases: unknown): string[] {
   const entries = isRecord(leases) && Array.isArray(leases.entries) ? leases.entries : [];
   const beds = new Set<string>();
@@ -46,10 +45,6 @@ export function bookedBeds(leases: unknown): string[] {
   }
   return [...beds].sort();
 }
-/**
- * A runtime profile describes one automation test bed: bound to a run whose lineage booked another bed, the plans would be
- * written for devices the run cannot reach. Null when the lineage books no bed (a plan-only run) or books the profile's own.
- */
 export function bookingProblem(value: unknown, leases: unknown): Problem | null {
   const booked = bookedBeds(leases);
   if (!booked.length || !isRecord(value) || typeof value.bed !== 'string' || booked.includes(value.bed)) return null;
@@ -59,12 +54,6 @@ export function bookingProblem(value: unknown, leases: unknown): Problem | null 
     fix: `绑定属于 ${booked.join('、')} 的运行环境配置命名文档；缺省名 doc:doc:runtime-profile 指向哪一份由管理员发布时决定，属于别的测试环境时请管理员把 ${booked[0]} 的配置发布到这个名字，或改为预订 ${value.bed}`,
   };
 }
-/**
- * A workbook template that cannot be read was refused only when the workbook was generated, after every plan had been written.
- * The start of a run asks this, so that such a profile refuses the start. The template's identity row is not compared with
- * anything (decision 184): the generator writes the runtime and the contract identity from the contract the run locked, so a
- * profile holds no copy of them and stays as it is when the runner's files change.
- */
 export function templateProblem(value: unknown): Problem | null {
   const workbook = isRecord(value) && isRecord(value.workbook) ? value.workbook : null;
   if (workbook === null || workbook.template === undefined) return null;
@@ -87,7 +76,6 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   }
   const runtime = isRecord(value.runtime) ? value.runtime : {};
   if (runtime.minimum_version !== contract.runtimeVersion) issue('/runtime/minimum_version', '运行时版本与合约不符');
-  if (runtime.contract_sha256 !== undefined) problems.push({ pointer: '/runtime/contract_sha256', message: '配置里的合约摘要已退役：工作簿的身份行由生成器按运行锁定的运行器合约写，配置不再存它的副本', fix: '请管理员删除该字段后重新发布这份配置' });
   if (!Number.isSafeInteger(value.device_count) || (value.device_count as number) < 1) issue('/device_count', '缺少只读预检的正整数设备数');
   const bed = beds.find((v) => v.name === value.bed);
   if (!bed) issue('/bed', '配置的自动化测试环境不在清单里');

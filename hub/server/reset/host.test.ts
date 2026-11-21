@@ -1,4 +1,3 @@
-// Actual current-schema PostgreSQL and opaque file invariants; no previous-release reader or conversion fixture.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, mkdir, writeFile, rm, readFile, stat, readdir } from 'node:fs/promises';
@@ -132,7 +131,7 @@ test('all keep-config uses the actual U1 factory and current records restore onc
   let token: string, userId: string, tokenId: string;
   try {
     const admin = await source.principals.findByName('合成重建管理员'); assert.ok(admin);
-    await source.principals.resetPassword(admin, admin.id); // The returned synthetic password is deliberately not retained or printed.
+    await source.principals.resetPassword(admin, admin.id);
     const issued = await source.principals.issueToken(admin, admin.id, '合成重建保留验证');
     token = issued.token; tokenId = issued.id; userId = admin.id;
     const pack = await source.store.get<Record<string, unknown>>(f.records.packs!); assert.ok(pack);

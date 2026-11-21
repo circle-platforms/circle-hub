@@ -1,5 +1,3 @@
-// The generator's name is written into a workbook, so the workbook samples change with every version of the pack. This
-// regenerates only those four samples from their own inputs: node packs/workflow/case-compile/testing/refresh-workbook-samples.ts
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseManifest } from '../functions/manifest.ts';

@@ -76,7 +76,6 @@ export interface ConnectorsOptions {
 export interface ResourceAdmin {
   addResource(by: Principal, input: AddResourceInput): Promise<ResourceRecord>;
   updateResource(by: Principal, id: string, changes: UpdateResourceInput): Promise<ResourceRecord>;
-  /** Admins see every configured resource; other valid accounts see assigned resources without addresses. */
   listResources(by: Principal): Promise<ResourceListing[]>;
   /**
    * Admins only: one resource, enabled or not, with each named reference, wire rule and current storage metadata

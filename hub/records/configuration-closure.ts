@@ -1,4 +1,3 @@
-// Current configuration roots only. Dependencies follow declared bindings, package manifests, document pointers and holds.
 import { z } from 'zod';
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -18,7 +17,6 @@ import { parseStrictJson } from './strict-json.ts';
 import { IntegrityError,RecordsError } from './errors.ts';
 import type { ConfigurationClosure,ConfigurationRow,ConfigurationRecord,ConfigurationObject,ConfigurationPackage } from './configuration-snapshot-types.ts';
 
-// Kept local until a separately owned helper is actually assigned; there is no missing runtime dependency.
 function requiredConfigurationPackageObjects(packages:readonly ConfigurationPackage[]):string[]{
   return [...new Set(packages.flatMap(pack=>[pack.digest,...pack.manifest.files.map(file=>file.sha256)]))].sort();
 }
@@ -31,7 +29,7 @@ function validateConfigurationPackageObjects(packages:readonly ConfigurationPack
   }
 }
 
-const decimal=z.string().regex(/^[1-9][0-9]*$/),time=z.string().min(1),uuid=z.string().uuid();
+const decimal=z.string().regex(/^[1-9][0-9]*$/),time=z.string().min(1),uuid=z.uuid();
 const rawRecord=z.strictObject({seq:decimal,id:RecordId,digest:Sha256,kind:RecordKindSchema,schema:SchemaId,provenance:ProvenanceTypeSchema,created_at:time,body:z.string(),size:z.number().int().nonnegative()});
 const object=z.strictObject({sha256:Sha256,size:z.number().int().nonnegative(),media_type:z.string(),created_at:time,bytes_base64:z.string(),public:z.boolean()});
 const Team=z.strictObject({id:TeamId,name:z.string(),created_at:time,created_by:UserId,deleted_at:time.nullable()});

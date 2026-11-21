@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import { opened, sealed } from './text.ts';
 import { planSubject, workbookSubject } from './subject.ts';
 
-// The rule of hub/runs/engine/evaluate.ts: every reference-like string in a subject is read, against one budget per submission.
 const references = (value: unknown, out = new Set<string>()): Set<string> => {
   if (typeof value === 'string') { if (value.length <= 8192 && /^(?:src|tree|entry|rec):/.test(value)) out.add(value); }
   else if (Array.isArray(value)) for (const item of value) references(item, out);

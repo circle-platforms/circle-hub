@@ -1,4 +1,3 @@
-// Authored synthetic argv and exact expected stdin refusals for the seven remote release entry points.
 import { fork } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -10,7 +9,6 @@ import type { CliProbe } from '../verify-tool-cli.ts';
 export const REMOTE_CASE_COMPILE_TOOLS = ['tools/assemble-delivery.ts', 'tools/download-returns.ts', 'tools/download-run.ts', 'tools/fetch-run.ts', 'tools/submit-plans.ts'] as const;
 export const REMOTE_RECOMPOSE_TOOLS = ['tools/download-run.ts', 'tools/submit-records.ts'] as const;
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', PLAN = 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', EMPTY = 'run_01cccccccccccccccccccccccc';
-// A plan run whose recomposition is bound after its start, and the recompose run it binds; its own id keeps the late route away from RUN.
 const LATE = 'run_01dddddddddddddddddddddddd', LATE_RECOMPOSE = 'run_01eeeeeeeeeeeeeeeeeeeeeeee';
 export const EMPTY_TOKEN_STDERR = "参数无效：标准输入里没有令牌（标准输入为空，常见原因是 node 命令行与 <<'EOF' 之间多打了换行或漏了 <<'EOF'）。请把 node 命令行与 <<'EOF' 写在同一行（空格隔开，切勿在 <<'EOF' 前换行），下一行只写 %HUB_TOKEN%，再一行只写 EOF。\n";
 export const OPEN_EMPTY_STDOUT = "无法编译：开运行工具出错：标准输入里没有令牌（标准输入为空，常见原因是 node 命令行与 <<'EOF' 之间多打了换行或漏了 <<'EOF'）\n";
@@ -19,7 +17,6 @@ export interface RemoteCliReceipt { method: string; path: string; authorized: bo
 export interface RemoteCliProbes {
   caseCompile: Record<string, CliProbe[]>;
   plumbCaseCompile: Record<string, CliProbe[]>;
-  /** Case-compile tools that read inputs bound after the start; kept out of caseCompile, whose five tools remote-cli-probes.test.ts selects alone. */
   lateCaseCompile: Record<string, CliProbe[]>;
   readCaseCompile: Record<string, CliProbe[]>;
   recompose: Record<string, CliProbe[]>;
@@ -28,7 +25,6 @@ export interface RemoteCliProbes {
 }
 const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
-/** The caller supplies staged packs and a private scratch directory; no installed home, model or real Hub is used. */
 export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecomposeDir: string, workRoot: string): Promise<RemoteCliProbes> {
   if (!stagedCaseDir || !stagedRecomposeDir) throw new Error('Both staged pack directories are required');
   await mkdir(workRoot, { recursive: true, mode: 0o700 });
@@ -45,7 +41,6 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
   jsonRoute(`/run-export/${EMPTY}/jobs`, { schema: 'run-jobs@1', run: EMPTY, jobs: [] });
   jsonRoute(`/run-export/${RUN}/jobs`, { schema: 'run-jobs@1', run: RUN, jobs: [{ job: 'c'.repeat(64), verification_run: RUN, plan_run: PLAN, items: [], sha256: 'd'.repeat(64), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: null, rows: [] }] });
   for (const bytes of Object.values(originals)) routes[`GET /run-export/${RUN}/sources/${digest(bytes)}`] = { status: 200, body: bytes.toString(), contentType: 'application/json' };
-  // refresh-late: GET /run-export/<run>/late answers run-late@1; case-0's recomposition is accepted, case-1 still waits for one.
   const lateRoot = 'a'.repeat(64), lateEntry = 'e'.repeat(64);
   const lateRecord = { case: { id: '990000000000000300' }, atoms: [], ledgers: { adapted: [{ atom: 'a1', commands: [], equivalence_refs: [`tree:${lateRoot}/widgets@${lateEntry}`] }] } };
   const late = {
@@ -105,7 +100,6 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
   await mkdir(plumbPlans, { recursive: true });
   await writeFile(join(plumbPlans, '00.json'), JSON.stringify({ item: plumbItem.id, handling: 'handled', slots: { plan: [{ text: 'plan 0', quotes: [], data: { bucket: 'bed-0', blocks: [], replacements: [], steps: [{ object: 'dut0', method: 'cmd_config', args: ['ip address 192.0.2.10/24'], keywords: {}, author_step_refs: ['1'] }], expects: [] } }] } }));
   const plumbBriefs = join(workRoot, 'plumb-briefs');
-  // The plan run directory refresh-late rewrites: run.json, the two items and the knowledge the authoring brief of an accepted case reads.
   const lateDir = join(workRoot, 'late-run');
   await mkdir(join(lateDir, 'items'), { recursive: true }); await mkdir(join(lateDir, 'knowledge'));
   const lateItems = [0, 1].map((index) => ({ id: `case-${index}`, label: `合成用例 ${index}`, fields: { title: `合成用例 ${index}`, recomposition_late: { slot: 'recomposition_result', run: LATE_RECOMPOSE, source: `src:${'a'.repeat(64)}`, node: `n/case-${index}` } } }));
@@ -118,8 +112,6 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
   ];
   await writeFile(join(lateDir, 'knowledge', 'nodes.jsonl'), lateNodes.map((line) => JSON.stringify(line)).join('\n') + '\n');
   const lateReport = { run: LATE, dir: 'late-run', resolved_at: late.resolved_at, inputs: late.late.inputs, accepted: 1, newly_accepted: ['case-0'], waiting: [{ item: 'case-1', state: 'no_result', problem: '合成：还没有已受理提交' }], briefs: 1 };
-  // open-compile: the responder answers only submit_result calls, so the first Hub call (list_task_packs) is refused with HTTP 400
-  // after both stdin lines are read; empty stdin is refused before any request.
   const openArgv = ['--hub', origin + '/mcp', '--plumb', origin, '--subject', 'agile:mindmap:990001', '--product', 'synth-switch', '--build', 'b1', '--booking', PLAN, '--out', join(workRoot, 'open-compile.json')];
   const openProbe: CliProbe = {
     argv: openArgv, cwd: workRoot, subcommand: null, stdinValues: [token, 'synthetic-plumb-key'],
@@ -141,8 +133,6 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
       'tools/fidelity-plumb.ts': plumbProbe(['--run', plumbDir, '--plans', plumbPlans, '--briefs', plumbBriefs, '--base-url', origin, '--no-cache', '--key-stdin']),
       'tools/open-compile.ts': [openProbe],
     },
-    // device-read is run by the pipeline, not by the lead: the responder refuses start_run with HTTP 400; a read that cannot be
-    // made is an answer (exit 0), and nothing is written.
     readCaseCompile: {
       'tools/device-read.ts': probe(['--hub', origin + '/mcp', '--booking', PLAN, '--device', 'dev0', '--line', 'show widget name', '--out', join(workRoot, 'device-read.txt')], { status: 0, stdout: JSON.stringify({ read: false, why: 'Hub 答复 400' }) + '\n', stderr: '' }),
     },

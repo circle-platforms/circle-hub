@@ -1,5 +1,5 @@
 // Deployment references are accepted only in explicitly designated expected-value positions.
-import {VariableValue,referencesIn,resolve,VariableInputError,type OrdinaryVariableUse} from '../../contracts/src/variables.ts';
+import {VariableValue,resolve,VariableInputError,type OrdinaryVariableUse} from '../../contracts/src/variables.ts';
 import {ExecutorDefinition,at} from './definition.ts';
 import {canonicalBytes,type RecordsKit,type VariableSnapshot} from '../records/api.ts';
 export {ExecutorSource,checkedExecutorReferences as checkedReferences} from '../../contracts/src/resources.ts';

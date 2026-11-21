@@ -38,7 +38,6 @@ test('a readable template with an invalid ZIP member is refused at the declared 
 test('workbook input reads retain the real flag and filesystem refusal instead of InputFileError', async (t) => {
   const scratch = await mkdtemp(join(tmpdir(), 'typed-generation-files-')); t.after(() => rm(scratch, { recursive: true, force: true }));
   const args: string[] = [];
-  // --run is the run directory (the folder that holds run.json); the other inputs are files.
   for (const flag of ['run', 'result', 'submission', 'contract', 'profile', 'inventory']) { const path = join(scratch, flag + '.json'); args.push('--' + flag, flag === 'run' ? scratch : path); if (flag !== 'run') await writeFile(path, '{}'); }
   args.push('--out', join(scratch, 'new.xlsx'));
   const missing = await stderrOf(() => main(args));
@@ -50,7 +49,6 @@ test('workbook input reads retain the real flag and filesystem refusal instead o
   const syntax = await stderrOf(() => main(args));
   assert.equal(syntax.code, 1); assert.match(syntax.text, /^参数无效：--run/); assert.match(syntax.text, /JSON/);
   assert.doesNotMatch(missing.text + encoding.text + syntax.text, /缺少结构化错误原因/);
-  // The run.json file is not accepted beside the directory: one line, the words of every other --run, the correct form.
   const asFile = [...args]; asFile[asFile.indexOf('--run') + 1] = join(scratch, 'run.json');
   const file = await stderrOf(() => main(asFile));
   assert.equal(file.code, 1);

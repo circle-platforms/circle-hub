@@ -44,7 +44,6 @@ ${card({ title: '成员如何连接', meta: 'MCP 标准连接确认', hint:'把�
 /** A field's value as the form last had it (the trial brings the form back); credential contents never come back. */
 const prefilled = (prefill: Form | undefined, name: string): string => prefill?.get(name) ?? '';
 
-/** Teams for the system-add audience step; absent until Codex exports records.teams (interfaces §5.6). */
 async function listedTeams(ctx: PageContext): Promise<ConsoleTeamRow[]> {
   const teams = (ctx.deps.records as { teams?: ConsoleTeams }).teams;
   if (!teams) return [];
@@ -118,7 +117,6 @@ ${card({ title: '在运行 Hub 的服务器上发布',hint:'维护人在运行 H
 
 async function knowledgePage(ctx: PageContext, jobs: JobStore): Promise<Html> {
   const products = [...new Set((await ctx.deps.packs.list(ctx.principal)).filter((pack) => isPackKind(pack.kind) && pack.kind === 'product' && pack.active && !pack.withdrawn).map((pack) => pack.id))];
-  // U2: fields from command registration (knowledge.sync); product choices supplied as data.
   const form = actionForm('knowledge-sync', ctx.csrf ?? '', html`${commandFields('knowledge.sync', {
     product: products.map((id) => ({ value: id, label: id })),
   })}`, '开始导入', { primary: true });

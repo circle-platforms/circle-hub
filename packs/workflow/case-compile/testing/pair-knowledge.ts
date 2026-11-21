@@ -1,6 +1,3 @@
-// The Hub's fake knowledge port with a command tree and a command policy of the test's own, whose catalog selection is the Hub's
-// own (hub/knowledge/catalog-selection.ts over the nodes of an export: testing/hub-side.ts), not a filter of the entries. The tree is
-// served under the root the fake knowledge locks for the build. Test support only.
 import {selectCatalog} from '../../../../hub/knowledge/catalog-selection.ts';
 import {createCatalogView,type CatalogView} from '../../../../hub/rules/api.ts';
 import type {RootInfo} from '../../../../hub/ports.ts';
@@ -22,9 +19,7 @@ export class PairKnowledge extends FakeKnowledge {
     const members=this.#tree.slice(1).flatMap((node)=>(node.entries as Row[]).filter((row)=>row.kind==='definition').map((row)=>({words:row.data.words,signatures:row.data.signatures,reference:row.reference})));
     this.#whole=createCatalogView(members,{reference:`tree:${ROOT}/commands`,complete:true,caseSensitive:true});
   }
-  /** The head of the export a run of this root downloads: the tree this port serves. */
   get tree():readonly Row[]{return this.#tree;}
-  /** The tree the Hub's reference resolution reads, with the manual a test gave it: the entries a quotation is checked against. */
   override treeReader():TreeReader{
     const reader=treeReaderOf(this.#tree);
     return {...reader,read:(root,path,entry,who)=>{this.treeReads.push(root+path+'@'+entry);return reader.read(root,path,entry,who);}};

@@ -70,7 +70,6 @@ test('preflight passes on a fresh ops home whose path has spaces and Chinese', (
     assert.equal(report.ok, true, report.mismatches.map((m) => `${m.name} want=${m.want} got=${m.got} ${m.reason ?? ''}`).join('\n'));
     assert.ok(report.allowCount > 10, `expected many allow cases, got ${report.allowCount}`);
     assert.equal(report.denyCount, 8);
-    // operation-capture SKILL teaches enable/recover/disable; declaration only lists list/read/status/verify/flush/submit.
     assert.equal(report.mismatches.length, 0);
     assert.equal(report.declarationLimits.length, 3, report.declarationLimits.map((d) => d.name).join('\n'));
     assert.ok(report.declarationLimits.every((d) => /enable|recover|disable/.test(d.name)));
@@ -78,7 +77,6 @@ test('preflight passes on a fresh ops home whose path has spaces and Chinese', (
     assert.equal(preflightMain(['--home', home], (line) => lines.push(line)), 0);
     assert.match(lines.join('\n'), /核对相符|全部相符/);
     assert.match(lines.join('\n'), /声明里未放行且已拒绝 3|声明限制 3/);
-    // Spaced placeholder <原件 SHA-256> must become one synthetic allow case that still passes.
     const shaCase = report.results.find((r) => /原件 SHA-256|SHA-256/.test(r.name));
     assert.ok(shaCase, 'expected a taught command that uses the spaced SHA-256 placeholder');
     assert.equal(shaCase.kind, 'check');
@@ -94,7 +92,6 @@ test('preflight accepts single-quoted skill-dir docs with spaced and Chinese pla
   try {
     const home = makeHome(dir, 'ops', join('Application Support', '验收主目录'));
     const skillDir = join(home, 'skills', 'case-compile');
-    // Overlay the post-3d9 teaching shape without requiring that pack tip on this branch.
     writeFileSync(
       join(skillDir, 'SKILL.md'),
       [
@@ -143,7 +140,6 @@ test('declaration limit uses the scripts[].subcommands list, not keywords', () =
     assert.equal(isDeclarationLimitedCommand(env, `node ${script} disable --session s`), true);
     assert.equal(isDeclarationLimitedCommand(env, `node ${script} read --session s --sha a`), false);
     assert.equal(isDeclarationLimitedCommand(env, `node ${script} list --session s`), false);
-    // A subcommand that is neither in the declaration nor a known keyword still counts as limited.
     assert.equal(isDeclarationLimitedCommand(env, `node ${script} zzz-not-a-keyword --session s`), true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -181,7 +177,6 @@ test('declaration-limited command that the hook allows is a mismatch', () => {
   const dir = scratch('decl-allow');
   try {
     const home = makeHome(dir, 'ops', 'home');
-    // Force every execute to allow so declaration-limited taught commands fail the preflight (G2).
     writeFileSync(join(home, 'hooks', 'ops-allow.mjs'), 'process.stdout.write(JSON.stringify({decision:"allow"}));\n');
     const report = runPreflight(home);
     assert.equal(report.ok, false);
@@ -254,7 +249,6 @@ test('refresh-guards --apply restores the backup when post-install preflight fai
     writeFileSync(libPath, markedLib);
     recordInstallation(home, 'ops', {...guardBundle(home, 'ops'), 'hooks/guard-lib.ts': markedLib});
 
-    // A taught command with a pipe must be denied; preflight therefore fails after any guard rewrite.
     const badSkill = join(home, 'skills', 'bad-pipe');
     mkdirSync(join(badSkill, 'tools'), { recursive: true });
     writeFileSync(
@@ -286,7 +280,6 @@ test('refresh-guards --apply refuses when a prior apply left hooks.apply-in-prog
     mkdirSync(priorBackup, { recursive: true });
     writeFileSync(join(priorBackup, 'guard-lib.ts'), before);
     writeFileSync(join(home, 'hooks.apply-in-progress'), `${priorBackup}\n`, { mode: 0o600 });
-    // Corrupt the live hooks so a mistaken re-apply would back up the bad state.
     writeFileSync(libPath, `${before}\n// partial-write\n`);
 
     const lines: string[] = [];
@@ -305,21 +298,26 @@ test('refresh-guards --apply refuses when a prior apply left hooks.apply-in-prog
 });
 
 test('preflight accepts only exact installed hook decisions or the empty no-op object', () => {
+  const answer = (permissionDecision: unknown) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision } });
   assert.equal(classifyDecision({}), 'allow');
-  for (const decision of ['allow', 'deny', 'ask'] as const) assert.equal(classifyDecision({ decision }), decision);
-  for (const parsed of [null, undefined, { decision: ' allow ' }, { decision: 'unexpected' }]) assert.equal(classifyDecision(parsed), 'error');
+  for (const decision of ['allow', 'deny', 'ask'] as const) assert.equal(classifyDecision(answer(decision)), decision);
+  for (const parsed of [null, undefined, answer(' allow '), answer('unexpected'), { hookSpecificOutput: [] }]) assert.equal(classifyDecision(parsed), 'error');
 });
 
 test('preflight never executes an entry outside the selected Home hooks directory', () => {
   const home = mkdtempSync(join(tmpdir(), 'guard-preflight-'));
   try {
-    mkdirSync(join(home, 'hooks')); writeFileSync(join(home, 'settings.json'), JSON.stringify({ trusted_folders: [home] }));
+    mkdirSync(join(home, 'hooks'));
+    const settings = (command: string) => JSON.stringify({ trusted_folders: [home], hooks: { PreToolUse: [{ hooks: [{ type: 'command', command }] }] } });
     const entry = join(home, 'skills-only.mjs'); writeFileSync(entry, '{}');
-    writeFileSync(join(home, 'hooks.json'), JSON.stringify({ hooks: { before_tool: [{ command: `node '${entry}'` }] } }));
+    writeFileSync(join(home, 'settings.json'), settings(`node '${entry}'`));
     assert.throws(() => resolveInstalledGuard(home), /hooks 内/);
     const safe = join(home, 'hooks/skills-only.mjs'); symlinkSync(entry, safe);
-    writeFileSync(join(home, 'hooks.json'), JSON.stringify({ hooks: { before_tool: [{ command: `node '${safe}'` }] } }));
+    writeFileSync(join(home, 'settings.json'), settings(`node '${safe}'`));
     assert.throws(() => resolveInstalledGuard(home), /普通文件/);
+    writeFileSync(join(home, 'settings.json'), JSON.stringify({ trusted_folders: [home] }));
+    writeFileSync(join(home, 'hooks.json'), JSON.stringify({ hooks: { before_tool: [{ command: `node '${safe}'` }] } }));
+    assert.throws(() => resolveInstalledGuard(home), /hooks\.PreToolUse 里没有守卫命令/);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 

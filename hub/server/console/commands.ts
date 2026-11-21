@@ -61,7 +61,6 @@ export const commands = {
   }),
   secretSet: (name: string): CommandDialog => ({
     id: dialogId('secret-set', name), title: `更新凭据 ${name}`,
-    // C12: no prior definition reference required; value never appears in argv, records or the page.
     text: '新内容从标准输入读取，不出现在命令、记录和页面中；不必先有资源或执行器引用这个名字。引用它的业务系统与运行环境下次使用新版本。', command: command('secret', 'set', `--name=${name}`, REASON),
   }),
   secretUnset: (name: string): CommandDialog => ({
@@ -100,16 +99,8 @@ export const commands = {
     id: dialogId('bed-hold-clear', executor.id), title: `确认运行环境 ${executor.target} 已恢复`,
     text: '核实运行环境已恢复原状（例如设备已重启、执行留下的配置已清除）后再执行；执行后该运行环境恢复接受执行，原记录保留。', command: command('bed', 'hold', 'clear', executor.id, REASON),
   }),
-  /**
-   * Boss 15:02 — consequence on the reclaim-assignment confirmation (account or team).
-   * Bookings stay with the holder; in-progress runs finish; new use is blocked once Codex wires the guards.
-   */
   executorUnassignConsequence:
     '撤回后立即挡住新的预订、续期、在测试环境上执行、问设备和观察；正在进行的执行会跑完。预订仍留在持有人名下，持有人只能释放。',
-  /**
-   * Boss 04:30 — force-release a booking that remains after assignment revoke.
-   * When `heldKeys` is known, the dialog offers those keys as a single choice (no blank「租约键」placeholder).
-   */
   leaseRelease: (executor: { id: string; target: string }, detail: string, heldKeys: readonly string[] = []): CommandDialog => {
     const preface = `${detail}收回分配后预订仍留在原持有者名下；本地释放不证明远端已停。`;
     if (heldKeys.length > 0) {

@@ -1,4 +1,3 @@
-// Current indexed run listings retain exact ordering, cursors and pack filters without sorting record bodies.
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
 import {startPostgres} from '../testing/postgres.ts';

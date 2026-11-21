@@ -1,4 +1,3 @@
-// Concrete reset categories and the all selector derive from the approved generated vocabulary.
 import { z } from 'zod';
 import { RESET_SCOPE, ResetScopeSchema, labelOf } from '../generated/vocabulary.ts';
 

@@ -1,4 +1,3 @@
-// CLI wrapper for the Plumb inference gateway (models, status, wake, judge, ask, request-key, claim-key).
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -16,29 +15,6 @@ import {
 } from '../functions/modules/plumb-client/index.ts';
 
 const MAX_INPUT_BYTES = 8 * 1024 * 1024;
-const OPTIONS: Record<string, boolean> = {
-  'base-url': true,
-  model: false,
-  'ca-file': false,
-  'ca-sha256': false,
-  'cache-dir': false,
-  out: false,
-  'result-out': false,
-  'timeout-ms': false,
-  'timeout-sec': false,
-  'poll-sec': false,
-  file: false,
-  'state-file': false,
-  'node-file': false,
-  'candidates-file': false,
-  task: false,
-  command: false,
-  definition: false,
-  name: false,
-  purpose: false,
-  contact: false,
-  'request-id': false,
-};
 const BOOLEAN_OPTIONS = ['key-stdin', 'claim-code-stdin', 'wait', 'no-cache', 'allow-insecure-http'] as const;
 const BOOLEAN_FLAGS = new Set([
   ...BOOLEAN_OPTIONS.map((name) => `--${name}`),

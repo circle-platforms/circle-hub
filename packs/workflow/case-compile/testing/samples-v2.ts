@@ -32,18 +32,14 @@ const modeled={...subject(),expected_nodes:[{reference:QUOTE.reference,text:QUOT
 save('positive','typed-model-expected','expected_sources',modeled);const ungrounded=structuredClone(modeled);ungrounded.data.expects[0].quote.reference=QUOTE.reference+'/other_case';save('negative','typed-model-expected','expected_sources',ungrounded,'case-compile.expect_not_in_quote');
 save('positive','typed-address-member','bed_addresses',addressInput('192.0.2.10').subject);
 save('negative','typed-address-member','bed_addresses',addressInput('192.0.2.250').subject,'case-compile.address_off_bed');
-// Access level: the level the locked tree declares on the signature against the refusal the contract declares for the step's
-// method (functions/plan-commands.ts accessRefusal). Another level under the same declaration is not refused.
 const levelled=(level:string)=>{const value:any=subject();for(const entry of value.command_catalog.entries)for(const signature of entry.signatures)signature.access={name:level,declaration:String(signature.reference).replace(/\/arguments$/,''),grammar:'famx-command-tree@2'};value.contract.refused_access={source:'synthetic-framework/lib/seat.py',sha256:'b'.repeat(64),rows:[{object:value.data.steps[0].object,method:value.data.steps[0].method,access:['DEMO_LEVEL_CONFIG']}]};value.contract=signTypedRuntime(value.contract);return value;};
 save('positive','typed-access-level','commands_catalog',levelled('DEMO_LEVEL_USER'));
 save('negative','typed-access-level','commands_catalog',levelled('DEMO_LEVEL_CONFIG'),'case-compile.method_forbidden');
-// Scenario fidelity: the audit verdict answers this plan's brief and keeps the authored action (functions/fidelity.ts).
 const record={schema:'recompose-record@1',contract:{intent:{text:'合成意图：配置组件健康检查间隔'}},atoms:[{id:'a1',kind:'intent',text:'合成意图：配置组件健康检查间隔'},{id:'a2',kind:'action',text:'配置组件健康检查间隔 60'},{id:'a3',kind:'expectation',text:QUOTE.text}],ledgers:{original:[{atom:'a2',text:'配置组件健康检查间隔 60'}],adapted:[],concretizations:[],rebindings:[]}};
 const kept:any=subject();kept.recomposition={record};const brief=fidelityBrief('doc-1:c-1',record,kept.data)!;
 kept.data.fidelity={brief_sha256:brief.brief_sha256,steps:[{n:'a2',verdict:'preserved',step_indices:[1],rationale:'合成理由：第 1 步配置了作者写的间隔'}],disclosure:'合成说明：作者的一步由计划第 1 步实现。'};
 save('positive','typed-scenario_fidelity','scenario_fidelity',kept);
 const changed=structuredClone(kept);changed.data.fidelity.steps[0].verdict='changed';save('negative','typed-scenario_fidelity','scenario_fidelity',changed,'case-compile.scenario_changed');
-// Author step coverage: every authored action is named by an author_step_refs of the plan (functions/fidelity.ts authorStepCoverage).
 const named:any=subject();named.recomposition={record};named.data.steps[0].author_step_refs=['a2'];
 save('positive','typed-author_step_coverage','author_step_coverage',named);
 const unnamed=structuredClone(named);delete unnamed.data.steps[0].author_step_refs;save('negative','typed-author_step_coverage','author_step_coverage',unnamed,'case-compile.author_step_unreferenced');

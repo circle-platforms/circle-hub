@@ -1,4 +1,3 @@
-// A production assembly receives a real least-privilege records connection, never its migration owner's connection.
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { Database, createPool, migrateRecords, openRecords, type RecordsKit } from '../../records/api.ts';

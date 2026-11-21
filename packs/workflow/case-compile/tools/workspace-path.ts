@@ -1,5 +1,4 @@
 import { CallFailure } from '../functions/text.ts';
-// Shared working-directory containment and symlink-escape checks for pack CLI tools.
 import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 
@@ -29,10 +28,6 @@ function isInsideCwdLexical(candidate: string, cwd: ResolvedCwd): boolean {
   return isInsideRoot(candidate, cwd.canonical) || isInsideRoot(candidate, cwd.lexical);
 }
 
-/**
- * Resolves a candidate target or parent path inside `cwd`, rejecting lexical
- * escapes, control characters, dangling symlinks, and symlinks pointing outside `cwd`.
- */
 export function resolveInsideCwd(
   cwd: ResolvedCwd,
   targetArg: string,
@@ -110,9 +105,6 @@ function resolveExistingEntryInsideCwd(
   };
 }
 
-/**
- * Resolves an existing regular non-symlink file inside `cwd`.
- */
 export function resolveExistingFileInsideCwd(
   cwd: ResolvedCwd,
   fileArg: string,
@@ -122,9 +114,6 @@ export function resolveExistingFileInsideCwd(
   return resolveExistingEntryInsideCwd(cwd, fileArg, label, 'file', missingHint);
 }
 
-/**
- * Resolves an existing non-symlink directory inside `cwd`.
- */
 export function resolveExistingDirInsideCwd(
   cwd: ResolvedCwd,
   dirArg: string,
@@ -134,38 +123,21 @@ export function resolveExistingDirInsideCwd(
   return resolveExistingEntryInsideCwd(cwd, dirArg, label, 'directory', missingHint);
 }
 
-/** The one-line correct form every refused `--run` is answered with (printed as `合法写法：…`). */
 export const RUN_DIRECTORY_FORM = "--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）";
-/** What a run directory without a readable run.json is told to do, unless the tool has a more exact next step. */
 export const RUN_DOWNLOAD_AGAIN = '用 tools/download-run.ts 或 tools/fetch-run.ts 重新下载本次运行，run.json 留在运行目录里';
 
-/**
- * Every refusal of a `--run` value names the correct form beside its fact. The helpers above word their facts with the category
- * word in front, and the formatter writes it too: it is taken off here so that every tool prints it once.
- */
 function withRunForm(error: unknown): unknown {
   if (!(error instanceof CallFailure)) return error;
   const fact = error.fact.replace(/^(参数无效|无权限|不存在|已被占用|暂时不可用)：/u, '');
   return new CallFailure(error.category, fact, error.next_action, { ...(error.path === undefined ? {} : { path: error.path }), legal_form: RUN_DIRECTORY_FORM });
 }
-/** The file system root as the working directory: a path anywhere is inside it. */
 const anywhere = (): ResolvedCwd => resolveCwdRoots(parse(process.cwd()).root);
 
-/**
- * The run directory a `--run` names: the folder download-run.ts or fetch-run.ts wrote, which holds run.json, knowledge/ and sources/.
- * It is a real directory, not a link, and never a file: the run.json file is refused in the words of any other path that is no
- * directory, plus the one-line correct form, whichever tool asks (the one resolver of `--run`).
- *
- * With `cwd` the directory must lie under the working directory (the tools that bound every path to it, as task-brief.ts does).
- * Without it the value is taken as given, relative to the process's own directory, as the tools that never bounded their paths
- * always did; the Circle guard keeps those inside the working directory.
- */
 export function resolveRunDirectory(value: string, cwd?: ResolvedCwd): ResolvedCwdPath {
   try { return cwd === undefined ? resolveExistingDirInsideCwd(anywhere(), resolve(value), '--run') : resolveExistingDirInsideCwd(cwd, value, '--run'); }
   catch (error) { throw withRunForm(error); }
 }
 
-/** The run.json of a run directory, the regular file it must be (never a link), with the hint of where to get one when it is missing. */
 export function resolveRunFile(directory: ResolvedCwdPath, cwd?: ResolvedCwd, missingHint: string = RUN_DOWNLOAD_AGAIN): ResolvedCwdPath {
   try {
     return cwd === undefined
@@ -174,7 +146,6 @@ export function resolveRunFile(directory: ResolvedCwdPath, cwd?: ResolvedCwd, mi
   } catch (error) { throw withRunForm(error); }
 }
 
-/** A `--run` value as the run it names: its directory and the run.json in it. */
 export function resolveRun(value: string, cwd?: ResolvedCwd, missingHint?: string): { directory: ResolvedCwdPath; file: ResolvedCwdPath } {
   const directory = resolveRunDirectory(value, cwd);
   return { directory, file: resolveRunFile(directory, cwd, missingHint) };

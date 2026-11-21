@@ -18,7 +18,6 @@ test('failed cases preserve unverified attribution and invalid candidates as cas
 test('device pass remains an unconfirmed report and output names match the generated volumes',()=>{
   const assembly=assemble(['a'],[dispatch('first','a')]);const input={name:'synthetic',generatedAt:'synthetic',assembly,notes:{cases:{}},originals:{a:{title:'synthetic',lines:[]}},excluded:[],files:{pass:{sha256:'a'.repeat(64)},unsuccessful:null},logs:{}} as unknown as ReportInput;
   const text=caseConclusion(input,assembly.cases[0]);assert.equal(text,'原始用例 a synthetic：上机验证通过。');const report=deliveryReport(input);
-  // the report opens with the result; that the pass is the runner's own report stays in the machine summary, and nothing calls it confirmed
   assert.match(report,/^# 交付报告 — synthetic\n> 生成 synthetic\n\n原始脑图共 1 条用例：生成成功 1 条，失败 0 条。\n/);assert.doesNotMatch(text+report,/已确认|已核实|Hub|运行器/);assert.ok(!report.split('交付物：').at(-1)!.includes('unsuccessful_cases.xlsx'));
 });
 

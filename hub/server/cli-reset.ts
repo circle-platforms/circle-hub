@@ -5,7 +5,6 @@ import { boundResetConfigurationPorts } from './reset-configuration.ts';
 import { CliError } from './errors.ts';
 import { takeEnvironmentToken } from './assemble/operator-token.ts';
 
-/** Dispatch before ordinary CLI contexts and telemetry: an incompatible store cannot open a records session. */
 export async function dispatchReset(args: readonly string[], options: CliOptions): Promise<number> {
   const { resetCommand, parseResetArguments, resetUsage } = await import('./reset/cli.ts');
   let parsed: ReturnType<typeof parseResetArguments>;

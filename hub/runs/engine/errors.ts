@@ -46,7 +46,6 @@ export function missing(exists: boolean, path: string | undefined, what: string,
   return new Refusal([missingError(exists, path, what, fix)], adminNote);
 }
 
-/** Core and protocol fixes take precedence over the frozen workflow package code table. */
 export function fixOf(code: string, workflow?: Pick<LoadedWorkflow, 'pack' | 'manifest' | 'readJson'>): string | undefined {
   if (Object.hasOwn(CORE_VIOLATION_CODES, code)) return CORE_VIOLATION_CODES[code as keyof typeof CORE_VIOLATION_CODES].fix;
   if (Object.hasOwn(PROTOCOL_CODES, code)) return PROTOCOL_CODES[code as ProtocolCode].fix;

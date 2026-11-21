@@ -1,6 +1,3 @@
-// The access level the locked tree declares for a command against the prompt its method sends at. A refusal exists only where the
-// runner contract declares one with evidence (refused_access); a signature without a level, a method without a declaration and a
-// level the contract does not list are not checked. Synthetic contract, catalog and plan only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { checkCommandsKnown, checkContractShape } from './checks.ts';
@@ -12,7 +9,6 @@ import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 const SHA = 'b'.repeat(64);
 const REFUSED = { source: 'synthetic-framework/lib/seat.py', sha256: SHA, rows: [{ object: 'widget-seat', method: 'configure', access: ['DEMO_LEVEL_CONFIG'] }] };
 const contractWith = (refused?: unknown) => signTypedRuntime({ ...structuredClone(CONTRACT_DOC), ...(refused === undefined ? {} : { refused_access: refused }) } as Record<string, unknown>);
-/** The catalog of the fixtures with an access level on the one signature the plan's device command resolves to. */
 function catalogWith(level?: string) {
   const entries = structuredClone(COMMAND_CATALOG.entries) as Array<{ signatures: Array<Record<string, unknown>> }>;
   for (const entry of entries) for (const signature of entry.signatures) if (level) signature.access = { name: level, declaration: String(signature.reference).replace(/\/arguments$/, ''), grammar: 'famx-command-tree@2' };
@@ -62,7 +58,6 @@ test('nothing is refused without all three facts: the level on the signature, th
   assert.deepEqual(refusals(outcomes(contractWith(), 'DEMO_LEVEL_CONFIG')), [], 'the contract declares no refusal');
   assert.deepEqual(refusals(outcomes(contractWith(REFUSED), 'DEMO_LEVEL_USER')), [], 'another level: accepted at that prompt as far as anyone has declared');
   assert.deepEqual(refusals(outcomes(contractWith({ ...REFUSED, rows: [{ object: 'widget-seat', method: 'credential', access: ['DEMO_LEVEL_CONFIG'] }] }), 'DEMO_LEVEL_CONFIG')), [], 'declared for another method of the object');
-  // And with none of it the plan is accepted as before.
   assert.equal(checkCommandsKnownVerdict(outcomes(contractWith(REFUSED), 'DEMO_LEVEL_USER')), 'support');
 });
 function checkCommandsKnownVerdict(rows: Array<{ verdict: string }>): string { return rows[0].verdict; }

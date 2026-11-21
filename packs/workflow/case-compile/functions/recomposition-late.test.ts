@@ -1,6 +1,3 @@
-// A recomposition bound after the run started is named in the plan by its own digest (record_sha256), not by the receipt of the
-// whole recompose result: another case of the same recompose run being accepted makes a new result with a new receipt, and must
-// not refute a plan whose own record did not change (docs/hub-r4-tasks/t18-late-binding.md, section 4).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { admittedRecomposition, recompositionGaps, recompositionProblem } from './recomposition.ts';
@@ -28,7 +25,6 @@ test('the admitted record carries sha256 of its canonical JSON', () => {
 });
 
 test('a late record is checked by its digest: a plan written against an older result of the same record is not refuted', () => {
-  // Red before: the receipt of the whole result was compared, and another case's acceptance refuted this plan.
   assert.deepEqual(recompositionGaps(plan(declared()), lateProof(), { item: 'synthetic-map:case-1' }), []);
 });
 
@@ -40,7 +36,6 @@ test('a late record whose digest the plan does not name is refuted with the valu
   for (const part of ['/slots/plan/0/data/recomposition/record_sha256', JSON.stringify(stale), JSON.stringify(DIGEST), 'late.json', 'synthetic-map:case-1', '/late/recomposition/record_sha256', '重新被受理过', '下一步'])
     assert.ok(issues[0].message.includes(part), `missing ${part} in ${issues[0].message}`);
   assert.ok(!issues[0].message.includes('/receipt：'), 'the receipt is not what is refused');
-  // A plan that names no digest at all is told the same.
   const { record_sha256: _omitted, ...without } = declared();
   assert.equal(recompositionGaps(plan(without), lateProof()).map((issue) => issue.verdict).join(), 'refute');
 });

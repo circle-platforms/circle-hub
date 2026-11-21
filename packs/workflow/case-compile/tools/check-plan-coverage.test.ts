@@ -1,9 +1,3 @@
-// The plan check refuses a plan that leaves an authored action of its recomposition record unrealized, before the audit does
-// (round 36: the sync plan passed check-plan and the command check and was refused by the scenario audit for author step a2, a
-// full writer rework). The rule is the program's half of InfoTest's author_procedure_coverage gate
-// (main/case_compiler/mechanical_case_gate.py `_gate_author_procedure_coverage`: every authored occurrence must land in the plan);
-// where InfoTest counts command signatures, this pack has no step structure and binds by explicit ids: every `action` atom of the
-// bound record is named by at least one step's (or block's) `author_step_refs`.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {checkPlanObject} from './check-plan.ts';
@@ -16,7 +10,6 @@ const LEASES={now:'2026-10-23T02:00:00.000Z',entries:[]};
 const CODE='case-compile.author_step_unreferenced';
 const SOURCE='src:'+'a'.repeat(64),RECEIPT='rec:'+'9'.repeat(64),CASE_ID='980000000000044789';
 const atom=(id:string,kind:string,text:string,node:string)=>({id,kind,quote_ref:SOURCE+'/kityminder@1/n/'+node,span:[0,[...text].length],text});
-/** A bound recomposition record: the case intent, two authored actions, the authored expectation (which the plan quotes). */
 const record=(extra:Array<Record<string,unknown>>=[])=>({
  case:{id:CASE_ID,node:'n/1',source_ref:SOURCE},
  contract:{intent:{text:'配置组件健康检查间隔'}},
@@ -28,7 +21,6 @@ const proof=(rec:Record<string,unknown>=record())=>({receipt:RECEIPT,run:'run_sy
 const group=()=>({kind:'case-compile',contract:CONTRACT_DOC,profile:PROFILE_DOC,manifest:MANIFEST_DOC,leases:LEASES});
 const frozen=(fields:Record<string,unknown>)=>frozenRun({run:'run_synthetic_plan',groups:[group()],items:[{id:'doc:case-1',label:'合成用例',location:QUOTE.reference,fields}],root:(COMMAND_CATALOG as {root:string}).root,command_policy:(COMMAND_CATALOG as {policy:unknown}).policy,extra:{pack:'case-compile@3.21.6'}});
 const declared=()=>({receipt:RECEIPT,case_id:CASE_ID,slots:[{slot:'e1',assertions:['1']}],rebindings:[]});
-/** The flat plan of goodData(): step 1 configures, step 2 echoes on a host, step 3 pauses; `refs` is what each step names. */
 const flat=(refs:Array<string[]|undefined>):Record<string,unknown>=>{
  const data=goodData() as unknown as Record<string,any>;data.recomposition=declared();
  refs.forEach((ids,index)=>{if(ids!==undefined)data.steps[index].author_step_refs=ids;});
@@ -121,9 +113,6 @@ test('a block plan whose blocks name every authored action has no coverage refus
  assert.equal(result.hub_checks!.find(entry=>entry.check==='author_step_coverage')!.problems,0);
 });
 
-// Round 52: a writer named "a5", an id the case does not have, beside ids it has. Every action was covered, so no check refused
-// the plan; the fidelity brief could not be made of it, which was found at the gate after the writer had ended, and the case was
-// stopped on its first plan.
 test('an author_step_refs that names no author step of the case is refused where it stands, also when every action is covered',()=>{
  const result=check(flat([['a2'],['a3','a5'],undefined]));
  assert.equal(result.ok,false);

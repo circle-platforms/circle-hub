@@ -2,7 +2,7 @@
 
 本地修正（待升版本号，2026-11-17，未发布）：下载写的文本文件每条一行标注 `· 引用 tree:…`、下面是原文（渲染是 `functions/knowledge-text.ts`，由 case-compile 的 `testing/gen-recompose.ts` 镜像进来，`hub-retry.ts` 随之改用它；内嵌的 `run-tools` 字节不变）；Hub 的批量导出带来源行号时，同一节点的条目按原文行号排，标注行写「源 … 行 …」；`SKILL.md` 与重组角色相应说明（引用取标注行、条目先后不是手册先后）。
 
-本地修正 1.2.7（2026-11-15）：对齐 `InfoTest_Engine` `compile-worker.md:44-45,70` 补充 `recompose/SKILL.md` 用例重组要求（在不替换作者被测对象/动作/约束、也不将“前置不存在”反向测试改配为正向前置的前提下，必须完整抽出手册正文与配置示例要求的命令运行前置写入 `sources.states` `missing_prerequisite`），并同步 `testing/gen-recompose.ts` 生成的共享 `functions/recompose-evidence.ts`（接受 recompose `1.2.7` 与 authority/adjudicate `1.1.11`）；未发布或部署。
+本地修正 1.2.7（2026-11-15）：补充 `recompose/SKILL.md` 的用例重组要求（在不替换作者被测对象/动作/约束、也不将“前置不存在”反向测试改配为正向前置的前提下，必须完整抽出手册正文与配置示例要求的命令运行前置写入 `sources.states` `missing_prerequisite`），并同步 `testing/gen-recompose.ts` 生成的共享 `functions/recompose-evidence.ts`（接受 recompose `1.2.7` 与 authority/adjudicate `1.1.11`）；未发布或部署。
 
 # recompose 1.2.6
 
@@ -44,4 +44,3 @@ case-compile 的独立工作阶段。共享规则来自父目录 tables 和 func
 - 命令目录条目只取 `kind=definition` 且 `data.words`/`data.signatures` 是数组的；Hub 另用 `catalog-entry@1` 校验每个条目并按声明的产出者过滤，下载里没有产出者。
 - 证据行 `evidence` 的文字由条目自己的原句拼回节点原文（只在存在性和授权取值的字面比较里用到）；Hub 读的是脑图节点原文。运行上下文不含租约和观察。
 - `recompose-check.ts` 里有六处 `bad('', …)`（第 271、303、330、411、413、444 行）给出没有码的反驳，Hub 会把整份输出换成一条 `check_error` 未知（「输出无效：第 N 项是反驳却没有码」）。对 `submit-records.ts` 生成的记录，第 271、303、330、444 行被 Hub 先做的槽位形状检查挡在前面，第 411、413 行只在绑定了产品授权的冲突里到达；本地 `hubOutcomes` 与 Hub 一致，未改这些调用，是否给它们登记代码由包作者决定。
-- 共享的 `functions/text.ts` 在 `authority`、`adjudicate`、`recompose` 三个子包里的生成副本落后于 `case-compile` 的版本（缺 `reportStatement`、`localMinute`），本次没有重新生成。

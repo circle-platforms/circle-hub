@@ -121,7 +121,7 @@ async function setupWorkspace(caseCount = 1) {
 }
 
 test('fidelity-plumb evaluates batch <=32 chunks, writes .verdict.json, and merges through fidelity-apply & localFidelityBlocks', async () => {
-  const w = await setupWorkspace(18); // 18 * 2 = 36 steps -> 2 HTTP POST chunks (32 + 4)
+  const w = await setupWorkspace(18);
   try {
     mode = 'pass';
     postCount = 0;
@@ -138,7 +138,6 @@ test('fidelity-plumb evaluates batch <=32 chunks, writes .verdict.json, and merg
     assert.equal(summary.written.length, 18);
     assert.equal(summary.skipped.length, 1);
 
-    // Re-running reuses all existing .verdict.json files with 0 POST calls.
     postCount = 0;
     const second = await runFidelityPlumb(
       ['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'],
@@ -148,7 +147,6 @@ test('fidelity-plumb evaluates batch <=32 chunks, writes .verdict.json, and merg
     assert.equal(postCount, 0);
     assert.equal(JSON.parse(second.stdout).reused.length, 18);
 
-    // Merge into plans with fidelity-apply and confirm localFidelityBlocks returns [].
     const oldWrite = process.stdout.write.bind(process.stdout);
     const applyChunks: string[] = [];
     process.stdout.write = ((c: string | Uint8Array) => { applyChunks.push(String(c)); return true; }) as typeof process.stdout.write;
@@ -205,7 +203,6 @@ test('fidelity-plumb takes the run directory as --run like task-brief.ts and ref
 test('fidelity-plumb honors Option A1 review/reject/strict-review and fails closed on 503', async () => {
   const w = await setupWorkspace(1);
   try {
-    // 503 service down NEVER writes a .verdict.json
     mode = 'service_down';
     const failRes = await runFidelityPlumb(
       ['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache'],
@@ -214,7 +211,6 @@ test('fidelity-plumb honors Option A1 review/reject/strict-review and fails clos
     assert.equal(failRes.code, 1);
     assert.match(failRes.stderr, /^暂时不可用：/);
 
-    // Option A1 review + 保持 -> provisional preserved with explicit review disclosure
     mode = 'review';
     const revRes = await runFidelityPlumb(
       ['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache'],
@@ -227,7 +223,6 @@ test('fidelity-plumb honors Option A1 review/reject/strict-review and fails clos
     const verdictContent = JSON.parse(await readFile(revJson.written[0].verdict, 'utf8'));
     assert.match(verdictContent.disclosure, /\[需人工复核：Plumb sequence 落入 review 区\]/);
 
-    // Fresh briefs dir with --strict-review -> changed instead of provisional preserved
     const strictBriefs = join(w.dir, 'briefs-strict');
     const strictRes = await runFidelityPlumb(
       ['--run', w.dir, '--plans', w.plans, '--briefs', strictBriefs, '--base-url', baseUrl, '--no-cache', '--strict-review'],
@@ -236,7 +231,6 @@ test('fidelity-plumb honors Option A1 review/reject/strict-review and fails clos
     assert.equal(strictRes.code, 0, strictRes.stderr);
     assert.equal(JSON.parse(strictRes.stdout).written[0].changed, 2);
 
-    // Reject gate -> hard changed
     mode = 'reject';
     const rejectBriefs = join(w.dir, 'briefs-reject');
     const rejRes = await runFidelityPlumb(
@@ -260,11 +254,8 @@ test('fidelity-plumb refuses old prompt verdicts before reuse or service calls',
  }finally{await rm(w.dir,{recursive:true,force:true});}
 });
 
-/* ---- states over the Plumb limit: the cases that fit are judged, the others are named and sent to blind review ---- */
-
 const LONG_NAME = ['a'.repeat(63), 'b'.repeat(63), 'c'.repeat(63), 'd'.repeat(61)].join('.');
 
-/** Adds a case of three authored actions whose plan has one block per entry of `commands`. */
 async function addCase(w: { runPath: string; plans: string }, base: string, commands: string[]): Promise<string> {
   const run = JSON.parse(await readFile(w.runPath, 'utf8'));
   const id = `doc:${base}`;
@@ -384,7 +375,6 @@ test('fidelity-plumb asks Plumb about a case whose long repeated name is the rea
     assert.match(verdict.disclosure, /自动化用例和简报里的原文没有改/u);
     assert.equal(verdict.model_disclosure.prompt_version, 'sequence@product-2400-exemptions-v2');
 
-    // The rewritten state is a function of the plan alone, so the verdict binds to it and a second run reuses it.
     postCount = 0;
     const again = await runFidelityPlumb(['--run', w.dir, '--plans', w.plans, '--briefs', w.briefs, '--base-url', baseUrl, '--no-cache', '--key-stdin'], keyed);
     assert.equal(again.code, 0, again.stderr);

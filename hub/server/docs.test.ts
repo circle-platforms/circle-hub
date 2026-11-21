@@ -6,12 +6,12 @@
 // `declared`, and only a run of a pack that declares the doc input type reads them, only for that run's user;
 // everyone else gets the same answer as for a doc that does not exist. Temporary PostgreSQL, synthetic content only.
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import type { LoadedWorkflow, WorkflowStore } from '../ports.ts';
-import { canonicalBytes, sha256Hex, newId, type ActionBody, type Principal, type SourceArtifactBody } from '../records/api.ts';
+import { canonicalBytes, sha256Hex, newId, type Principal, type SourceArtifactBody } from '../records/api.ts';
 import { osIsolationAvailable } from '../rules/api.ts';
 import { writePack } from '../runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';

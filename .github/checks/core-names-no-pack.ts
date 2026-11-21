@@ -1,6 +1,3 @@
-// Core Hub and contract sources must stay pack-agnostic (C02): no production module under hub/ or contracts/src/ may
-// import from packs/, name a packs/<kind>/... path, or embed a pack id discovered from packs/{product,skill,system,workflow}/*/pack.json.
-// Comments and test/support/fixture files are excluded by design; human reviewers judge comments separately.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, join, posix, relative, resolve } from 'node:path';
@@ -47,12 +44,10 @@ export interface CoreNamesOptions {
 const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Normalize a repository-relative path to POSIX separators without a leading dot-slash. */
 export function normalizeRepoPath(filePath: string): string {
   return posix.normalize(filePath.replaceAll('\\', '/')).replace(/^\.\//, '');
 }
 
-/** True when a tracked file belongs to production code under `hub/` or `contracts/src/`. */
 export function isCoreProductionFile(filePath: string): boolean {
   const normalized = normalizeRepoPath(filePath);
   if (!normalized.startsWith('hub/') && !normalized.startsWith('contracts/src/')) return false;
@@ -80,7 +75,6 @@ function gitListFiles(root: string, pathspecs: readonly string[]): string[] {
   return out.split('\0').filter((file) => file !== '').map(normalizeRepoPath);
 }
 
-/** Dynamically load pack manifests from tracked `packs/<kind>/<name>/pack.json` files. */
 export function loadPackCatalog(root: string): PackManifestInfo[] {
   const manifests = gitListFiles(root, ['packs/'])
     .filter((file) => PACK_MANIFEST_PATTERN.test(file))
@@ -109,7 +103,6 @@ export function loadPackCatalog(root: string): PackManifestInfo[] {
   return packs;
 }
 
-/** Load all tracked production source files under `hub/` and `contracts/src/` from Git. */
 export function loadCoreProductionModules(root: string): SourceModule[] {
   const files = gitListFiles(root, ['hub/', 'contracts/src/'])
     .filter((file) => isCoreProductionFile(file))
@@ -261,7 +254,6 @@ function scanModuleWithMatchers(file: string, source: string, matchers: Matchers
     }));
 }
 
-/** Extract pack imports, `packs/<kind>` paths and pack-id string literals from one TypeScript/JavaScript source. */
 export function coreNameHitsInFile(
   file: string,
   source: string,
@@ -271,7 +263,6 @@ export function coreNameHitsInFile(
   return scanModuleWithMatchers(file, source, compileMatchers(packIds, packKinds));
 }
 
-/** Scan a collection of source modules against discovered packs, ignoring non-production paths. */
 export function findPackNameHits(modules: readonly SourceModule[], packs: readonly PackManifestInfo[]): PackNameHit[] {
   const matchers = compileMatchers(
     packs.map((pack) => pack.id),
@@ -289,10 +280,6 @@ function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
 }
 
-/**
- * Bidirectionally verify detected pack references against `core-names-no-pack` exceptions:
- * every live `(path, what)` hit must be registered, and every registered entry must match a live hit.
- */
 export function validateCoreNameExceptions(
   hits: readonly PackNameHit[],
   exceptions: readonly CheckException[],
@@ -342,7 +329,6 @@ export function validateCoreNameExceptions(
   return problems;
 }
 
-/** Check an in-memory set of modules and packs against explicit exception entries. */
 export function coreNameProblemsFromModules(
   modules: readonly SourceModule[],
   packs: readonly PackManifestInfo[],
@@ -373,7 +359,6 @@ function readExceptionsFile(exceptionsPath: string, displayPath: string): { entr
   return { entries };
 }
 
-/** Every unregistered or stale `core-names-no-pack` finding across tracked production files under `root`. */
 export function coreNamesNoPackProblems(root: string, options: CoreNamesOptions = {}): string[] {
   const packs = loadPackCatalog(root);
   const hits = findPackNameHits(loadCoreProductionModules(root), packs);

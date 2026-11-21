@@ -75,7 +75,6 @@ export type PackPath = z.infer<typeof PackPath>;
 /** Installed capabilities are dependencies, never per-user assignments. */
 
 export const SkillParser = z.strictObject({
-  /** Part of the published v1 skill.json parser shape; retained optional so published packs still parse at startup. No code reads it now. */
   migration_test:z.string().min(1).max(300).optional(),
   parser: Versioned.refine(value=>{const version=value.slice(value.lastIndexOf('@')+1);return Number.isSafeInteger(Number(version))&&String(Number(version))===version;},'parser version has one canonical integer spelling'),
   media_types: z.array(z.string().min(1).max(200)).min(1).max(32),
@@ -83,7 +82,6 @@ export const SkillParser = z.strictObject({
   function: PackFunctionRef,
   locate: PackFunctionRef.optional(),
 });
-/** T01 F[13]: a reusable deterministic module of a skill pack. `family` is what it is generic for (C03 R[3]). */
 export const SkillModule = z.strictObject({ id:SkillModuleId, title:z.string().min(1).max(100), family:z.string().min(1).max(300) });
 export type SkillModule = z.infer<typeof SkillModule>;
 export const SkillDeclaration = z.strictObject({ schema:z.literal('skill@1'), parsers:z.array(SkillParser).max(64), modules:z.array(SkillModule).max(64).optional() }).refine(value=>new Set(value.parsers.map(p=>p.parser)).size===value.parsers.length,'parser versions are unique in a skill').refine(value=>new Set((value.modules??[]).map(m=>m.id)).size===(value.modules??[]).length,'module names are unique in a skill');
@@ -357,7 +355,6 @@ export const DeviceHelpTarget = z.strictObject({
 });
 export type DeviceHelpTarget = z.infer<typeof DeviceHelpTarget>;
 
-/** What the device answered at one prefix of the asked line, in its own words; the Hub interpreted none of them. */
 export const DeviceHelpPosition = z.strictObject({
   prefix: z.string().min(1).describe('exactly the text typed before the question mark'),
   words: z.number().int().min(1).describe('how many words of the line the prefix holds'),
@@ -374,7 +371,6 @@ export const DeviceHelpPosition = z.strictObject({
 });
 export type DeviceHelpPosition = z.infer<typeof DeviceHelpPosition>;
 
-/** The outcome of one question: the positions asked, longest prefix first, and what stopped it short when it did not end on an answer. */
 export const DeviceHelpResult = z.strictObject({
   inventory: Sha256,
   device: JsonPointer,
@@ -388,7 +384,6 @@ export const DeviceHelpResult = z.strictObject({
 });
 export type DeviceHelpResult = z.infer<typeof DeviceHelpResult>;
 
-/** One read-only command line to send to a device the run's lineage holds the lease of; the executor declares the shape a line must have. */
 export const DeviceReadTarget = z.strictObject({
   inventory: Sha256,
   device: JsonPointer,
@@ -398,7 +393,6 @@ export const DeviceReadTarget = z.strictObject({
 });
 export type DeviceReadTarget = z.infer<typeof DeviceReadTarget>;
 
-/** What the device answered to the one line, in its own words; the Hub interpreted none of them. */
 export const DeviceReadAnswer = z.strictObject({
   has_output: z.boolean().describe('whether the device printed any text at the declared place of its answer'),
   output: z.string().nullable().describe('the device words as received, at most the executor\'s bound of them; null when there were none or they are not shown (withheld, anomaly)'),
@@ -411,7 +405,6 @@ export const DeviceReadAnswer = z.strictObject({
 });
 export type DeviceReadAnswer = z.infer<typeof DeviceReadAnswer>;
 
-/** The outcome of one requested read: the answer, or what is missing when the line was not sent or no answer can be shown. */
 export const DeviceReadResult = z.strictObject({
   inventory: Sha256,
   device: JsonPointer,
@@ -650,17 +643,12 @@ export const PredecessorInputDefault = z.strictObject({
   pack:PackId,
   slot:Key.optional().describe('Copy this frozen input of the predecessor run. An explicit value must be the same object'),
 });
-/**
- * A slot whose values may be run ids. Without after_start the Hub binds each run’s latest accepted submitted validation record at
- * start_run; with after_start it freezes the run only and resolves that record again at every evaluation and run export (W06 R[7]).
- */
 export const RunResultSource = z.strictObject({
   pack:PackId,
   after_start:z.boolean().optional().describe('true: start_run freezes the run id only; every evaluation and run export re-resolves its latest accepted submitted validation record, passes it to workflow.refresh and records the reference in locks.late. An explicit rec: binding stays frozen'),
 });
 const IndexFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
 /** How the Hub fills a missing only= on a knowledge index. Values come from structured records, never from a word list. */
-/** The workflow's refresh function and the frozen input slots it also reads (W06 R[7]). */
 export const ItemRefreshRef = PackFunctionRef.extend({
   reads: z.array(Key).max(16).describe('frozen input slots the function also receives (never one bound after the start)'),
 });
@@ -817,7 +805,6 @@ export const ProjectionInput = z.strictObject({
 });
 export type ProjectionInput = z.infer<typeof ProjectionInput>;
 
-/** One input bound after the start as workflow.refresh receives it: the run, its latest accepted submitted validation record or why there is none. */
 export const LateBoundInput = z.strictObject({
   slot: Key,
   run: RunId,
@@ -826,7 +813,6 @@ export const LateBoundInput = z.strictObject({
 });
 export type LateBoundInput = z.infer<typeof LateBoundInput>;
 
-/** Input of workflow.refresh (W06 R[7]): the frozen items and reads, and the results bound after the start as resolved now. */
 export const ItemRefreshInput = z.strictObject({
   items: z.array(SubjectItem).describe('the frozen items of the run, without late'),
   inputs: z.array(BoundInput).describe('the frozen inputs of the slots refresh.reads names'),
@@ -836,7 +822,6 @@ export const ItemRefreshInput = z.strictObject({
 });
 export type ItemRefreshInput = z.infer<typeof ItemRefreshInput>;
 
-/** Output of workflow.refresh: an overlay per item of this run (each id at most once); an item not listed gets no overlay. */
 export const ItemRefreshOutput = z.strictObject({
   items: z.array(z.strictObject({ id: ItemId, late: z.record(z.string(), z.unknown()) })),
   warnings: z.array(PackWarning).optional(),

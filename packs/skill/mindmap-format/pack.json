@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/modules/case-structure/index.ts",
-      "sha256": "cda38095f6ebf28363c002c09894fd9e88a0531102c97fca592ac6d24df46f5f",
-      "size": 14816
+      "sha256": "b69f6213de0a3b536b9e5f39c75ca315b6e2a6b9d5dabdbf5d2dded42d6212e2",
+      "size": 13681
     },
     {
       "path": "functions/modules/case-structure/policy.json",

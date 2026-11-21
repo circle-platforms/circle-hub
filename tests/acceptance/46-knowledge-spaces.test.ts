@@ -310,7 +310,6 @@ test('private input labels follow actual reader rights and automatic production 
   const references=[{reference:'src:'+source.body.sha256},{reference:'src:'+source.body.sha256,artifact:source.digest},{reference:'rec:'+source.digest}];
   for(const reference of references){
     const started=await client.call('start_run',{pack:REVIEW_PACK,inputs:{map:reference}});
-    // The owner reads their own source_artifact record under RECORD_ACCESS.source_artifact='source', so projection rejects its non-mindmap JSON; non-owners stay neutral.
     if(reference.reference.startsWith('rec:')){assert.equal(started.out.errors[0]?.code,'demo-check.invalid_input',started.text);assert.equal(started.out.run,undefined);continue;}
     assert.equal(started.isError,false,started.text);assert.ok(started.out.run);
     assert.equal(await hub.hub.runs.getRun(hub.admin.principal,started.out.run.run),null,'administrator run queries never expose private projected labels');

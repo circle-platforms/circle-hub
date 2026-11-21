@@ -249,8 +249,6 @@ describe('list_task_packs', () => {
   });
 
   test('the MCP text gives every assigned pack in full in one answer (decision 158)', { timeout: 360_000 }, async t => {
-    // The old 80-pack case took 27.7 s alone and 82.5 s under load. The ceiling is only a hang guard;
-    // fewer assignments keep at least 128 KiB of descriptions, and the request's actual SQL/answer counts are recorded.
     const CEILING_MS = 300_000;
     const packCount = 16, descriptionBytes = 128 * 1024, phrase = '合成说明';
     const repetitions = Math.ceil(descriptionBytes / (packCount * Buffer.byteLength(phrase, 'utf8')));
@@ -302,7 +300,6 @@ describe('list_task_packs', () => {
     assert.equal(firstError(prefix).path, '/pack_id');
     assert.match(prefix.content[0].text ?? '', /不存在：Hub 里没有名为「revie」的工作流或技能/);
     const incompatibleKind = await client.call('list_task_packs', { kind: 'product', pack_id: 'review' });
-    // Assigned workflow filtered by kind: absence is null → keep empty ok list.
     assert.equal(incompatibleKind.isError, false);
     assert.deepEqual(incompatibleKind.structuredContent.packs, []);
     const continued = await client.call('list_task_packs', { kind: 'workflow', offset: 1 });
@@ -591,7 +588,6 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(accepted.structuredContent.acceptance, 'accepted');
     SubmitResultOutput.parse(accepted.structuredContent);
     assert.deepEqual(accepted.structuredContent.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 1, unknown: 1 });
-    // No step_name until the workflow declares a unique checked step (CHANGELOG Unreleased: submit_result lead / step_name).
     assert.equal(accepted.content[0].text?.split('\n')[0], '核对已完成。');
     const repeat = await client.call('submit_result', submission);
     assert.deepEqual((repeat.structuredContent.result as { submission: string }).submission, (accepted.structuredContent.result as { submission: string }).submission);
@@ -705,7 +701,6 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
       const started = await startRun(client, reference);
       const text = started.content[0].text ?? '';
       const summary = started.structuredContent.run as { items: Array<{ id: string; label: string; summary: string; location: string }>; slots: { sha256: string; schema: { properties: Record<string, unknown> } } };
-      // start_run pending lines still use 「，」 before the summary; itemConclusion uses 「：」(决定 20:32)
       for (const i of [0, 49, 50, 59]) assert.ok(text.split('\n').includes(`原始用例 合成用例 ${i}，摘要 ${i}；状态未知；原因缺资料；下一步由模型按说明核对原始用例；决定者程序`), `original case ${i} keeps its summary`);
       assert.ok(summary.items.every((item) => item.location === reference), 'every machine-readable item keeps its location');
       assert.deepEqual(summary.items.map((item) => [item.id, item.label, item.summary]), Array.from({ length: 60 }, (_, i) => [`doc-9:n${i}`, `合成用例 ${i}`, `摘要 ${i}`]));
@@ -748,7 +743,6 @@ function jsonAt(text: string, at: number): Record<string, unknown> {
   throw new Error(`no JSON object at ${at}: ${text.slice(at, at + 80)}`);
 }
 
-// A continuation call appears only in a partial-answer notice.
 function callAfter(text: string, marker: string): Record<string, unknown> | null {
   const lines = text.split('\n');
   const note = lines.find((line) => line.startsWith('部分：')) ?? '';

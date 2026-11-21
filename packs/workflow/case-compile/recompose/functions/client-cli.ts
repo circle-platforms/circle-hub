@@ -1,7 +1,6 @@
-import { CallFailure, failCall, formatCallError, type CallFailureOptions } from './text.ts';
+import { CallFailure, failCall, formatCallError } from './text.ts';
 import { HubReplyError } from './generated/skills/run-tools/hub-client/index.ts';
 
-/** The CLI's explicit HTTP URL declaration, independent of exception prose. */
 export function parseHubOrigin(value: string): string {
   let url: URL;
   try { url = new URL(value); }
@@ -10,7 +9,6 @@ export function parseHubOrigin(value: string): string {
   return url.origin;
 }
 
-/** Only the declared HTTP reply class carries a remote status; arbitrary Error.status is not evidence. */
 export function hubReplyFailure(error: unknown): CallFailure | null {
   if (!(error instanceof HubReplyError)) return null;
   const status = error.status, fact = error.message || `Hub 返回 HTTP ${status}`;
@@ -22,7 +20,6 @@ export function hubReplyFailure(error: unknown): CallFailure | null {
   return null;
 }
 
-/** Client-only adapter; sandboxed pack functions keep using the pure text formatter. */
-export function formatClientCallError(error: unknown, options?: CallFailureOptions): string {
-  return formatCallError(hubReplyFailure(error) ?? error, options);
+export function formatClientCallError(error: unknown): string {
+  return formatCallError(hubReplyFailure(error) ?? error);
 }

@@ -1,14 +1,8 @@
-// The late overlay of a run on the client: GET /run-export/<run>/late answers run-late@1, the per-item values the workflow's refresh
-// function computed from the latest accepted result of a run bound after the start (W06 R[7]); tools/download-run.ts and
-// tools/refresh-late.ts keep it as late.json beside run.json. Every local tool that reads a frozen item's recomposition goes through
-// recompositionOf, so it sees the item the Hub's checks see: SubjectItem.late laid over the frozen fields. The checks themselves never
-// import this module; they read item.late as the Hub hands it (functions/subject.ts).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CallFailure, isRecord } from './text.ts';
 
 export const LATE_SCHEMA = 'run-late@1';
-/** The file of the run directory that holds the run-late@1 answer, beside run.json. */
 export const LATE_FILE = 'late.json';
 
 export interface LateInput { slot: string; run: string; reference?: string; missing?: string }
@@ -25,7 +19,6 @@ const RUN = /^run_[a-z0-9]+$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const RECORD = /^rec:[0-9a-f]{64}$/;
 
-/** The run-late@1 answer of `run` read from `value`, or the sentence that says why `value` is not one. */
 export function readLate(value: unknown, run?: string): RunLate | string {
   if (!isRecord(value)) return '顶层不是 JSON 对象';
   if (value.schema !== LATE_SCHEMA) return `schema 是 ${JSON.stringify(value.schema) ?? '没有'}，应是 ${LATE_SCHEMA}`;
@@ -53,11 +46,6 @@ export function readLate(value: unknown, run?: string): RunLate | string {
   return { schema: LATE_SCHEMA, run: value.run, ...(value.run_reference !== undefined ? { run_reference: value.run_reference as string } : {}), resolved_at: value.resolved_at, late: { inputs, refresh: late.refresh as string | null }, items };
 }
 
-/**
- * The late.json of a run directory, or null when there is none (the run binds nothing after its start, or it was downloaded
- * before the Hub answered the route). A file that is there but is no run-late@1 answer of `run` is refused, never ignored: the
- * local check would then judge a different item than the Hub.
- */
 export function readLateFile(directory: string, run?: string): RunLate | null {
   let text: string;
   try { text = readFileSync(join(directory, LATE_FILE), 'utf8'); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
@@ -68,22 +56,16 @@ export function readLateFile(directory: string, run?: string): RunLate | null {
   return read;
 }
 
-/** The overlay the late answer holds for one item, or undefined. */
 export function overlayOf(late: RunLate | null | undefined, item: string): Record<string, unknown> | undefined {
   return late?.items.find((row) => row.id === item)?.late;
 }
 
-/** The item with its late overlay attached as `late`, as the Hub hands it to a subject builder (SubjectItem.late); unchanged without one. */
 export function withLate<T>(item: T, late: RunLate | null | undefined): T {
   if (!isRecord(item) || typeof item.id !== 'string' || isRecord(item.late)) return item;
   const overlay = overlayOf(late, item.id);
   return overlay === undefined ? item : { ...item, late: overlay } as T;
 }
 
-/**
- * The recomposition proof a frozen item has for this evaluation: the late overlay's when the item carries one (item.late, or the
- * entry of `late` for its id), else the frozen field. Same rule as the plan subject: late.recomposition ?? fields.recomposition.
- */
 export function recompositionOf(item: unknown, late?: RunLate | null): Record<string, unknown> | undefined {
   if (!isRecord(item)) return undefined;
   const overlay = isRecord(item.late) ? item.late : typeof item.id === 'string' ? overlayOf(late, item.id) : undefined;
@@ -92,7 +74,6 @@ export function recompositionOf(item: unknown, late?: RunLate | null): Record<st
   return isRecord(value) ? value : undefined;
 }
 
-/** The recomposition record itself (`recompositionOf(...).record`), or undefined. */
 export function recompositionRecordOf(item: unknown, late?: RunLate | null): Record<string, unknown> | undefined {
   const proof = recompositionOf(item, late);
   return proof !== undefined && isRecord(proof.record) ? proof.record : undefined;

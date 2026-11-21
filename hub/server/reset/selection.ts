@@ -1,5 +1,4 @@
 import { KNOWLEDGE_CONTRIBUTION_SCHEMA } from '../../../contracts/src/contributions.ts';
-// Current-schema reset ownership. Unknown shapes block a reset instead of acquiring a default scope.
 import { RECORD_KINDS, type RecordKind } from '../../../contracts/generated/protocol.ts';
 import { AcceptanceSchema, ActionKindSchema, ActionResultSchema, CallResultSchema, LeaseOpSchema, PermissionKindSchema } from '../../../contracts/generated/vocabulary.ts';
 import { SCHEMA_REGISTRY } from '../../../contracts/src/index.ts';
@@ -13,7 +12,6 @@ import type { ResetProblem, ResetDataScope } from './types.ts';
 
 export interface CurrentReference {
   kind: 'record' | 'object'; digest: string; field: string;
-  /** Content/pack identities require a verified alias; they are never treated as records.digest directly. */
   recordAlias?: boolean;
 }
 export interface CurrentRecord {
@@ -21,23 +19,15 @@ export interface CurrentRecord {
   kind: string;
   schema: string;
   body: unknown;
-  /** False is an unreadable current observation, not a declaration of an incompatible schema. */
   available?: boolean;
-  /** Exact record_index entries supplied by the current database reader. */
   indices?: readonly { key: string; value: string }[];
-  /** Additional formal edges resolved by the current schema's reader, never strings found in prose. */
   references?: readonly CurrentReference[];
 }
 export interface SelectionOptions {
-  /** A content-addressed node/entry digest to its actual records.digest. */
   recordAliases?: ReadonlyMap<string, string>;
-  /** Scopes with a current, verified holder of these exact object bytes. */
   objectScopes?: ReadonlyMap<string, readonly ResetDataScope[]>;
-  /** Explicit empty lists are required for raw objects with no formal internal references. */
   objectReferences?: ReadonlyMap<string, readonly CurrentReference[]>;
-  /** Verified source_artifact holders, including held_by ownership resolved from SQL foreign keys. */
   sourceScopes?: ReadonlyMap<string, readonly ResetDataScope[]>;
-  /** Verified object bytes that the host explicitly keeps regardless of the selected record scopes. */
   retainedObjects?: ReadonlySet<string>;
 }
 export interface RecordSelection { retained: string[]; cleared: string[]; blocked: ResetProblem[] }
@@ -68,7 +58,6 @@ function classifyArtifact(record: CurrentRecord, body: Body, holders: readonly R
 function documentRevision(record: CurrentRecord, body: Body): boolean {
   const read = object(object(body.origin)?.read), external = read?.object;
   if (typeof external !== 'string') return false;
-  // Exact DOC_ID grammar from server/docs.ts; the pinned revision must cover these bytes.
   const match = /^doc:doc:([a-z][a-z0-9-]{0,63})@([0-9a-f]{64})$/.exec(external);
   return match !== null && match[2] === body.sha256 &&
     (record.indices === undefined || record.indices.some(entry => entry.key === 'artifact.object' && entry.value === external));
@@ -134,7 +123,6 @@ function classifyClaim(record: CurrentRecord, body: Body): ResetDataScope | null
   return schema === 'usage@1' ? 'history' : 'knowledge';
 }
 
-// Exact component identities emitted by the current writers; a new component needs an ownership decision.
 const ACTION_COMPONENTS: Readonly<Record<string, ResetDataScope>> = {
   'runs.engine@1': 'history', 'dispatch@1': 'history', 'requests@1': 'history', 'criterion-change@1': 'history',
   'skill@1': 'history',
@@ -203,14 +191,12 @@ export function classifyCurrentRecord(record: CurrentRecord, options: SelectionO
     CLASSIFIERS[record.kind as RecordKind](record, body);
 }
 
-/** A configured system pack is a registry record dependency, even when its manifest bytes are retained. */
 export function resourceDefinitionReferences(value: unknown): CurrentReference[] | null {
   const resource = ResourceRecord.safeParse(value);
   return resource.success ? [{ kind: 'record', digest: resource.data.system_pack_digest,
     field: '/system_pack_digest', recordAlias: true }] : null;
 }
 
-/** Formal SHA fields only. RunId, user ids, text and arbitrary JSON are not traversed for hashes. */
 export function currentRecordReferences(record: CurrentRecord): CurrentReference[] {
   const body = object(record.body);
   if (!body) return [];
@@ -264,7 +250,6 @@ export function currentRecordReferences(record: CurrentRecord): CurrentReference
     case 'pack_version': case 'personal_pack_version': {
       add('object', body.digest, '/digest');
       rows(object(body.manifest)?.files).forEach((file, n) => add('object', file.sha256, '/manifest/files/' + n + '/sha256'));
-      // runs/packs/personal.ts stores source_artifact.digest here, separately from manifest file byte hashes.
       if (record.kind === 'personal_pack_version') Object.entries(object(body.files) ?? {}).forEach(([key, digest]) => add('record', digest, '/files/' + key));
       break;
     }
@@ -401,7 +386,6 @@ function untypedDigestFields(record: CurrentRecord): { digest: string; field: st
   return out;
 }
 
-/** Sources inherit verified holder scopes; exact named-document provenance owns its configuration copies. */
 export function resolveCurrentRecordScopes(records: readonly CurrentRecord[], options: SelectionOptions = {}): ReadonlyMap<string, readonly ResetDataScope[]> {
   const byDigest = new Map(records.map(record => [record.digest, record]));
   const owners = new Map<string, ResetDataScope[]>(), pending: string[] = [];
@@ -480,7 +464,6 @@ export function selectCurrentRecords(records: readonly CurrentRecord[], scopes: 
   return { retained, cleared, blocked };
 }
 
-/** These tables use actual records.digest foreign keys; their names do not decide their ownership. */
 export const RECORD_HOLDER_COLUMNS = {
   run_originals: 'held_by', original_targets: 'held_by', held_objects: 'held_by', held_object_targets: 'held_by',
   object_holds: 'record', personal_record_bindings: 'record', record_keys: 'digest', record_index: 'digest',

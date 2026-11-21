@@ -1,8 +1,3 @@
-// One recorded validation, replayed through the Hub's own code. A scratch PostgreSQL holds a base database loaded from a data
-// bundle up to the position of the validation (every record appended before it, none after it); that base is cloned for each
-// replay (CREATE DATABASE ... TEMPLATE), the real assembly of the Hub (assembleHub) is built over the clone, and the recorded
-// submission goes through the runs service's submitResult, the function the submit_result tool calls. No validation rule is
-// written here: what is written here is the state the Hub would have been in, and the call.
 import { randomBytes } from 'node:crypto';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,25 +15,18 @@ import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/post
 import { RecordLoader, loadStatic, withLoadSession, type Bundle, type BundleRow, type LoadReport } from './submissions-bundle.ts';
 import type { Json } from './submissions-compare.ts';
 
-/** Records the replay appends start here, far above any position of a bundle, so they never meet the loaded ones. */
 const REPLAY_POSITIONS_FROM = 4_000_000_000;
 
 export interface ValidationFacts {
-  /** The digest of the stored validation_result record. */
   result: string;
   run: string;
-  /** The digest of the submission the result is for. */
   submission: string;
-  /** The session and model the call was made with, from the validate action that stored the result; undefined when the bundle has no such action. */
   session: string | null | undefined;
   model: string | null | undefined;
-  /** Whether the call that stored the result was a re-evaluation (the maintenance pass) rather than a client's submit_result. */
   reevaluation: boolean | undefined;
-  /** When the result was stored. */
   at: string;
 }
 
-/** What the bundle says about each validation result: its digest, its run and submission, and the call that stored it. */
 export async function validationFacts(bundle: Bundle): Promise<Map<number, ValidationFacts>> {
   const bySeq = new Map<number, ValidationFacts>();
   const byResult = new Map<string, ValidationFacts>();
@@ -67,23 +55,16 @@ export async function validationFacts(bundle: Bundle): Promise<Map<number, Valid
 
 export interface SessionOptions {
   bundle: Bundle;
-  /** Limits of the Hub being replayed (record size and so on); the defaults of the code under test otherwise. */
   limits?: Partial<Limits>;
-  /** Pack functions run under the operating-system sandbox, as on a Hub (default true). */
   requireOsIsolation?: boolean;
-  /** For a candidate replay: the runs to bind to another pack, by run id: the pack and its digest. */
   rebind?: ReadonlyMap<string, { pack: string; pack_digest: string }>;
-  /** Called once with the base database ready, before any replay: publishes the candidate's packs. */
   prepare?: (hub: AssembledHub, admin: Principal) => Promise<void>;
   log?: (line: string) => void;
-  /** An already running scratch cluster; the session starts and stops its own otherwise. */
   postgres?: TemporaryPostgres;
 }
 
 export interface ReplayCall {
-  /** The position of the recorded validation result in the append log. */
   seq: number;
-  /** The submission arguments as received. */
   args: Record<string, unknown>;
   facts: ValidationFacts;
 }
@@ -91,13 +72,10 @@ export interface ReplayCall {
 export interface ReplayOutcome {
   status: 'replayed' | 'not_replayable';
   reason?: { code: string; message: string };
-  /** The answer's validation result, when the engine answered with one. */
   result?: Json;
   answer?: { call_result: string; acceptance: string | undefined; errors: Array<{ code: string; message: string }> };
-  /** The call returned the result stored for this submission by an earlier call: nothing was evaluated. */
   cached?: boolean;
   notes: string[];
-  /** Reads that found nothing: record digests and object names the base database did not have. */
   misses: { records: string[]; objects: string[] };
   load?: { records: number; digestMismatches: number };
   ms: number;
@@ -121,7 +99,6 @@ export class ReplaySession {
   #loaded = 0;
   readonly #loader: RecordLoader;
   #closed = false;
-  /** Records loaded so far whose digest does not match their content: once there is one, nothing later can be trusted. */
   #damaged: Array<{ seq: number; kind: string; digest: string }> = [];
   readonly log: (line: string) => void;
 
@@ -137,7 +114,6 @@ export class ReplaySession {
     this.log = options.log ?? (() => {});
   }
 
-  /** Starts the scratch cluster, migrates an empty base database and loads what is not as of any position (users, pointers, objects). */
   static async open(options: SessionOptions): Promise<ReplaySession> {
     const owns = options.postgres === undefined;
     const postgres = options.postgres ?? (await startPostgres({ private: true, sharedBuffers: '256MB', autovacuum: false }));
@@ -147,7 +123,6 @@ export class ReplaySession {
       await keys.initKey();
       const base = await postgres.createDatabase(databaseName('replay_base'));
       const session = new ReplaySession(options, postgres, owns, dataDir, keys, base);
-      // Migrates, so that every table and trigger of the code under test exists; then the positions of new records are moved far up.
       const kit = await session.#openKit(base);
       await kit.close();
       await withLoadSession(base, async (db) => {
@@ -188,7 +163,6 @@ export class ReplaySession {
     }
   }
 
-  /** Brings the base database to the state just before `seq`: every record of the bundle appended before it, none from it on. */
   async #advance(seq: number): Promise<LoadReport | null> {
     if (seq < this.#loaded) throw new Error('回放要按位置从小到大进行');
     if (seq === this.#loaded) return null;
@@ -198,7 +172,6 @@ export class ReplaySession {
     return report;
   }
 
-  /** Replays one validation. Calls must come in the order of their positions in the append log. */
   async replay(call: ReplayCall): Promise<ReplayOutcome> {
     const started = Date.now();
     const notes: string[] = [];
@@ -283,7 +256,6 @@ export class ReplaySession {
   }
 }
 
-/** The account a run's validations are made as: its runner, or the configurer of a run a Hub started. */
 async function runnerOf(kit: RecordsKit, run: string): Promise<Principal | null> {
   const body = (await runById(kit.store, run))?.body;
   const id = body?.runner ?? body?.configurer;
@@ -292,7 +264,6 @@ async function runnerOf(kit: RecordsKit, run: string): Promise<Principal | null>
   return user === null ? null : { id: user.id, name: user.name, role: user.role };
 }
 
-/** The same record bound to another pack: the digest follows the body. */
 function rebound(row: BundleRow, bindings: ReadonlyMap<string, { pack: string; pack_digest: string }>): BundleRow | null {
   if (row.kind !== 'run') return null;
   const body = JSON.parse(String(row.body)) as { run?: string; pack?: string; pack_digest?: string };
@@ -303,4 +274,3 @@ function rebound(row: BundleRow, bindings: ReadonlyMap<string, { pack: string; p
   const created = normalizeTime(new Date(String(row.created_at)).toISOString(), 'created_at');
   return { ...row, body: text, size: Buffer.byteLength(text, 'utf8'), digest: recordDigest({ kind: 'run', schema: String(row.schema), provenance: String(row.provenance), created_at: created, body: next }) };
 }
-

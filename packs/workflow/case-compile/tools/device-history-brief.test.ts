@@ -1,5 +1,3 @@
-// The earlier device verifications of a case in its brief and in its writer's task (Hub decision 182): read from the history.json a
-// download of the run wrote and the returns it names in the working directory. Synthetic run, document, commands and device words only.
 import assert from 'node:assert/strict';
 import { realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -18,7 +16,6 @@ const V1 = `run_01${'b'.repeat(24)}`, V2 = `run_01${'c'.repeat(24)}`, V3 = `run_
 const digest = (n: number) => n.toString(16).padStart(2, '0').repeat(32);
 const PACK = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 const WORDS = ['必须', '一定', '不要', '不得', '禁止', '严禁', '务必', '应当', '绝不'];
-/** A generated name as long as the device makes them. */
 const NAME = `${'n'.repeat(249)}.net`;
 
 function batch(): Buffer {
@@ -42,7 +39,6 @@ const item = (autoid: string) => ({
     } },
   },
 });
-/** A working directory with one downloaded plan run of two cases, as the lead has it after download-run.ts. */
 async function workdir(): Promise<string> {
   const work = realpathSync(await mkdtemp(join(tmpdir(), 'cc-history-brief-'))), run = join(work, 'plan-run');
   for (const { name, bytes } of knowledgeFiles(batch(), RUN).outputs) { await mkdir(dirname(join(run, name)), { recursive: true }); await writeFile(join(run, name), bytes); }
@@ -53,7 +49,6 @@ async function workdir(): Promise<string> {
   return work;
 }
 const jobOf = (run: string) => (run === V1 ? digest(0xa1) : run === V2 ? digest(0xa2) : digest(0xa3));
-/** The returns of one earlier verification run on disk, as download-returns.ts leaves them: index.json, the case's log and its sessions. */
 async function returns(work: string, run: string, planRun: string, row: { verdict: string; sessions: Record<string, string>; execution_refused?: unknown[]; syntax_rejected?: unknown[] }): Promise<void> {
   const folder = join(jobOf(run).slice(0, 12), 'cases', CASE), base = join(work, 'history', run);
   await mkdir(join(base, folder), { recursive: true });
@@ -76,7 +71,6 @@ test('a case verified before gets its entries in the brief and in the writer\'s 
     }, execution_refused: [{ session: 'dev-a.txt', prompt: 'seat(config)#', command: `widget record add ${NAME} address 192.0.2.7`, reply: ['The synthetic record cannot coexist with another record type', 'Failed to run the synthetic command'] }],
       syntax_rejected: [{ session: 'dev-b.txt', command: 'widget sync to seat', token: 'sync', prompt: 'peer#' }] });
     await returns(work, V2, P2, { verdict: 'pass', sessions: { 'dev-a.txt': ['seat#configure terminal', 'seat(config)#widget on', 'seat(config)#exit', 'seat#show widget', 'on', 'seat#'].join('\n') } });
-    // V1 is the newer run and failed; V2 is older and passed; V3 ran the case too, and its returns could not be downloaded.
     await writeFile(join(work, 'plan-run', 'history.json'), JSON.stringify(history(
       [listed(V1, P1, 19, { [CASE]: 'fail', [OTHER]: 'pass' }), listed(V2, P2, 18, { [CASE]: 'pass' }), listed(V3, P2, 17, { [CASE]: 'fail' })],
       [{ run: V1, dir: join('history', V1) }, { run: V2, dir: join('history', V2) }, { run: V3, dir: null, reason: '取上机历史的总时限 240 秒已到，这一次的设备输出没有下载' }])));
@@ -95,7 +89,6 @@ test('a case verified before gets its entries in the brief and in the writer\'s 
     assert.deepEqual([prior.entries[2]!.log, prior.entries[2]!.sessions, prior.entries[2]!.device_commands, prior.entries[2]!.files_missing], [null, [], null, '这次上机的设备输出没有下载到本地：取上机历史的总时限 240 秒已到，这一次的设备输出没有下载']);
     for (const path of [prior.entries[0]!.log!, ...prior.entries[1]!.sessions]) assert.ok((await readFile(join(work, path), 'utf8')).length > 0, `${path} is where the brief says, from the working directory`);
 
-    // The same lines in the brief's text and in the task a writer is given; no command list, no whole name, no instruction.
     const markdown = await readFile(written.md_files[0]!, 'utf8');
     const task = await buildTaskBrief({ role: '脚本编写', caseRef: CASE, briefPath: join('plan-run', 'briefs', '00.md'), outPath: join('cases', '00', 'plan', '00.json'), runDir: 'plan-run', cwd: work, packRoot: PACK });
     const lines = historyLines(task);
@@ -109,7 +102,6 @@ test('a case verified before gets its entries in the brief and in the writer\'s 
     for (const text of [lines.join('\n'), JSON.stringify(prior)]) { assert.ok(!text.includes(NAME), 'the 253-character name is in the log and the session, not in the brief'); for (const word of WORDS) assert.ok(!text.includes(word), word); }
     assert.ok(Buffer.byteLength(JSON.stringify(prior)) < 4000 && Buffer.byteLength(lines.join('\n')) < 3000, 'three entries stay small');
 
-    // The other case of the run was in one earlier report only: one entry, and nothing of the first case's files.
     const other = await loadPriorDeviceHistory(join(work, 'plan-run'), OTHER, work);
     assert.deepEqual([other.status, other.entries.map((entry) => [entry.verification_run, entry.verdict, entry.log, entry.files_missing])], ['available', [[V1, 'pass', null, '这次上机的设备输出没有下载到本地']]], 'the returns hold no row of this case, so only the Hub\'s facts are stated');
   } finally { await rm(work, { recursive: true, force: true }); }
@@ -122,16 +114,13 @@ test('a case nothing verified, a Hub that gave no history and a run downloaded w
       const written = await writeStructuredBriefs({ runDir: 'plan-run', cwd: work, round, mode: 'initial', caseFilter: CASE, briefOut: `briefs-${round}` });
       return { brief: JSON.parse(await readFile(written.json_files[0]!, 'utf8')) as CompileBriefV1, lines: historyLines(await readFile(written.md_files[0]!, 'utf8')).join('\n').replace(/\n {2,}/g, '') };
     };
-    // No history.json: the download asked for none.
     const absent = await briefOf(1);
     assert.deepEqual([absent.brief.prior_device_history.status, absent.brief.prior_device_history.unavailable_reason, absent.brief.prior_device_history.entries], ['unavailable_from_hub', PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON, []]);
     assert.equal(absent.lines, `- 同用例历史上机记录（unavailable_from_hub）：没有取到。${PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON}`);
-    // The Hub was asked and had no such route.
     await writeFile(join(run, 'history.json'), JSON.stringify({ schema: DEVICE_HISTORY_SCHEMA, run: RUN, fetched_at: '2026-11-20T00:00:00.000Z', status: 'unavailable', reason: 'Hub 没有历次上机验证的查询接口（答复 404）：这台 Hub 的版本早于这个接口', answer: null, returns: [], elapsed_ms: 40 }));
     const old = await briefOf(2);
     assert.deepEqual([old.brief.prior_device_history.status, old.brief.prior_device_history.unavailable_reason], ['unavailable_from_hub', 'Hub 没有历次上机验证的查询接口（答复 404）：这台 Hub 的版本早于这个接口']);
     assert.equal(old.lines, '- 同用例历史上机记录（unavailable_from_hub）：没有取到。Hub 没有历次上机验证的查询接口（答复 404）：这台 Hub 的版本早于这个接口');
-    // The Hub answered: nothing verified this document, or only other cases of it.
     for (const [round, runs] of [[3, []], [4, [listed(V1, P1, 19, { [OTHER]: 'pass' })]]] as const) {
       await writeFile(join(run, 'history.json'), JSON.stringify(history([...runs], runs.map((row) => ({ run: row.run, dir: null, reason: '合成' })))));
       const none = await briefOf(round);
@@ -139,7 +128,6 @@ test('a case nothing verified, a Hub that gave no history and a run downloaded w
       assert.equal(none.lines, '- 同用例历史上机记录（none_found）：Hub 列出的此前上机里，没有哪一次的报告带这一条用例（按 autoid 对，0 条）。');
       assert.deepEqual(validateCompileBrief(none.brief, item(CASE)), { ok: true, problems: [] });
     }
-    // A file that is not a history, and returns outside the working directory, show nothing of what they hold.
     await writeFile(join(run, 'history.json'), '{"schema":"device-returns@1"}');
     assert.deepEqual([(await briefOf(5)).brief.prior_device_history.status, (await loadPriorDeviceHistory(run, CASE, work)).unavailable_reason], ['unavailable_from_hub', '运行目录里的 history.json 读不出来（不是 device-history@1）。']);
     await writeFile(join(run, 'history.json'), JSON.stringify(history([listed(V1, P1, 19, { [CASE]: 'fail' })], [{ run: V1, dir: join('..', 'elsewhere') }])));

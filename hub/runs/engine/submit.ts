@@ -72,15 +72,8 @@ function transitional(result:ValidationResult):boolean{
   return Object.values(result.partitions).flat().some(item=>item.requirements.some(r=>r.layers.some(l=>isUnsettled(l)||(l.gaps?.length??0)>0)))||result.cross_item.some(c=>c.qualifier.nature==='unknown');
 }
 
-/** Whether two resolutions of the inputs bound after the start are word for word the same (both absent for a run without any). */
 const sameLate = (a: unknown, b: readonly LateInputRow[] | null): boolean => canonicalize(a ?? null) === canonicalize(b ?? null);
 
-/**
- * The result already stored for this submission digest when this call's session and declared model are the ones that
- * produced it (A04: the judge is the session the Hub observed and the model the client declared). A result produced by
- * someone else is not this call's receipt. For a run with inputs bound after the start (W06 R[7]) the key also holds what
- * they resolved to: a result read from another accepted result of the bound run is validated again.
- */
 async function resultForObserver(ctx: EngineContext, run: string, submission: string, session: string | null, model: string | null, late: readonly LateInputRow[] | null = null): Promise<ValidationResult | null> {
   const store = ctx.deps.records.store;
   for (const action of (await actionsOf(store, run)).reverse()) {
@@ -222,7 +215,6 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const eligible=!refresh&&parserError===null&&management===null&&successors.length===0;
   const frozenWorkflow=eligible&&sessionNow===null?await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space):undefined;
   const useCached=eligible&&(sessionNow!==null||frozenWorkflow!==undefined&&frozenWorkflow!==null&&frozenWorkflow.requirements.every(t=>t.independent_of===undefined));
-  // W06 R[7]: what the inputs bound after the start read now, as the runner may read it; part of the key of a stored result.
   const late = await resolveLateInputs(ctx, run);
   const repeat = !useCached ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow, late);
   if(repeat!==null){const refusal=repeat.acceptance==='accepted'?await groundsAudience(ctx,run,repeat,{recorded:true,submitter:user}):null;return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(repeat), call.traceId, user);}
@@ -326,7 +318,6 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   await recordResultRequests(ctx,run,outcome.result,roundsUsed,args);
   for(const error of outcome.result.errors)if(error.requirement&&isReason(error.code))outcome.problems.add(error.requirement);
   if(incrementalGrowth&&outcome.result.acceptance==='accepted')for(const key of [...outcome.problems])if(unknownOnlyRequirement(outcome.result,key))outcome.problems.delete(key);
-  // W06 R[7], W02 R[6]: a requirement that only waits on an input bound after the start is not a repair round.
   for(const key of outcome.waiting??[])outcome.problems.delete(key);
   const saved = await keepResult(base, outcome);
   await answerRepairedRequests(ctx,run,saved.result.body,saved.result.digest);
@@ -376,7 +367,6 @@ interface Basis {
   /** Digest of the submission as received. */
   digest: string;
   roundsUsed: Map<string, number>;
-  /** The inputs bound after the start as resolved for this validation (W06 R[7]); absent when the run binds none. */
   late?: LateInputRow[];
 }
 
@@ -386,7 +376,6 @@ interface Validated {
   result: ValidationResult;
   /** Requirements whose problems in this submission count as a repair round. */
   problems: Set<string>;
-  /** Requirements whose only problems wait on an input bound after the start: never a repair round (Evaluation.waiting). */
   waiting?: Set<string>;
   retryAttempts?: Array<Record<string, unknown>>;
   parentObservedSuccess?:boolean;
@@ -676,7 +665,6 @@ async function validate(base: Basis, submission: EffectiveSubmission, before: Pr
   const evaluation = await evaluate(ctx, { ...input, exclude: failed });
   const notes = moved(evaluation.errors.filter((e) => e.code !== 'core.coverage.shortfall'));
   const result = notAccepted(base, [...rejection, ...notes]);
-  // A whole rejection records the same late locks as the evaluation of its other items (W08).
   if (evaluation.result.locks.late !== undefined) result.locks.late = evaluation.result.locks.late;
   if (prepared !== undefined) {
     const items = submission.items.filter(item => item.handling === 'handled');

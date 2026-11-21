@@ -220,7 +220,6 @@ describe('a large composition in parts', () => {
       assert.ok(x !== null && y !== null, path);
       assert.deepEqual(strip(y), strip(x), path);
       for(const [page,composition] of [[x,one.composition],[y,split.composition]] as const)
-        // Decision 159: an entry with a condition keeps its admission context; one without any carries none of it.
         for(const node of page.nodes)for(const entry of node.entries){if(entry.applicability_fields===undefined){assert.equal(entry.applicability_context,undefined,'no condition, no admission context');continue;}assert.ok(entry.applicability_context,'fresh entries with conditions retain their admission context');assert.equal(entry.applicability_context.composition,composition,'admission cites the actual layout record');}
     }
     const node = (await parted.knowledge.getNodes({ root, paths: ['/commands/system/reboot'], depth: 0 }, parted.user))?.nodes[0];

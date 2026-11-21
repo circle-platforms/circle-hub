@@ -1,4 +1,3 @@
-// Owner-only reset state. No vault, environment-file, login-reset, publication or create-user API is called here.
 import { z } from 'zod';
 import { mkdir } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
@@ -9,8 +8,7 @@ import { canonicalize } from './canonical.ts';
 import { sha256Hex } from './digest.ts';
 import { FileObjectStore } from './objects.ts';
 import { RecordsError } from './errors.ts';
-import { compareRecordMigrations } from './schema-compatibility.ts';
-import type { RecordMigrationReceipt } from './schema-compatibility.ts';
+import { appliedRecordMigrations, compareRecordMigrations, type RecordMigrationReceipt } from './schema-compatibility.ts';
 import type { ConfigurationSnapshot, ConfigurationRow } from './configuration-snapshot-types.ts';
 import {captureConfigurationAuthentication,restoreConfigurationAuthentication,validateConfigurationAuthentication,CONFIGURATION_AUTH_TABLES} from './configuration-authentication.ts';
 import { captureConfigurationClosure, validateConfigurationClosure } from './configuration-closure.ts';
@@ -21,8 +19,7 @@ const supportTables=['personal_spaces','personal_payloads','personal_record_bind
 const managedTables=[...CONFIGURATION_AUTH_TABLES,'records','record_index','record_keys','objects','teams','team_members','pointers','lease_registrations','object_holds',...supportTables] as const;
 
 async function assertCurrentSchema(db:Database,tx:Transaction):Promise<RecordMigrationReceipt[]> {
-  const rows=(await db.query<{version:number;name:string;sha256:string}>('SELECT version,name,sha256 FROM public.schema_migrations ORDER BY version',[],tx)).rows;
-  const receipts=rows.map(row=>({version:Number(row.version),name:row.name,sha256:row.sha256}));
+  const receipts=await appliedRecordMigrations(db,tx);
   if(compareRecordMigrations(receipts).status!=='compatible')throw new RecordsError('记录库与当前版本不兼容，不能导出或恢复受保护配置；请归档并初始化，或使用当前定义文件恢复');
   return receipts;
 }
@@ -76,7 +73,6 @@ export async function restoreConfigurationSnapshot(config:RecordsConfig,input:Co
         if(row.deleted_at!==null)throw new RecordsError('快照含有删除尚未完成的个人配置；请先完成该删除再重新导出');
         return row.disabled?{...row,disabled:false}:row;
       });
-      // No staged account state is visible outside this restore transaction.
       await restoreConfigurationAuthentication(db,{...snapshot.authentication,users:stagedUsers},tx);
       for(const table of ['personal_spaces','personal_payloads','personal_record_bindings','personal_objects','personal_purges'] as const)await insertRows(db,table,snapshot.personal[table],tx);
       await mkdir(join(config.dataDir,'objects'),{recursive:true,mode:0o700});

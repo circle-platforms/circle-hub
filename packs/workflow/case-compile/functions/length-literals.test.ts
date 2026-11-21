@@ -1,5 +1,3 @@
-// Length placeholders: the literal has exactly the stated length, labels stay within 63, the fixed parts are kept, and the same
-// placeholder always gives the same literal. Synthetic values only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { describeExpansions, expandText, expandValue, MAX_LABEL } from './length-literals.ts';
@@ -31,11 +29,11 @@ test('fixed parts are kept verbatim and the filler makes up the rest', () => {
 });
 
 test('the same placeholder gives the same literal everywhere in a case, and text around it is untouched', () => {
-  const plan = { steps: [{ args: ['sdns host name "{{domain:253}}" 60'] }, { args: ['dig {{domain:253}} A'] }], expects: [{ text: '{{domain:253}}', quote: { text: '253 字符域名' } }], n: 3, ok: true };
+  const plan = { steps: [{ args: ['demo host name "{{domain:253}}" 60'] }, { args: ['probe {{domain:253}} A'] }], expects: [{ text: '{{domain:253}}', quote: { text: '253 字符域名' } }], n: 3, ok: true };
   const { value, expansions } = expandValue(plan) as { value: any; expansions: unknown[] };
   const literal = expandText('{{domain:253}}').text;
-  assert.equal(value.steps[0].args[0], `sdns host name "${literal}" 60`);
-  assert.equal(value.steps[1].args[0], `dig ${literal} A`);
+  assert.equal(value.steps[0].args[0], `demo host name "${literal}" 60`);
+  assert.equal(value.steps[1].args[0], `probe ${literal} A`);
   assert.equal(value.expects[0].text, literal);
   assert.equal(value.expects[0].quote.text, '253 字符域名');
   assert.equal(value.n, 3); assert.equal(value.ok, true);

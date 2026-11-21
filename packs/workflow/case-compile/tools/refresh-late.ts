@@ -1,10 +1,3 @@
-// Rewrites the late.json of a plan run directory and writes the authoring brief of every case whose recomposition the Hub has
-// accepted since (each case's pipeline: its recomposition submitted alone and accepted -> refresh-late -> its writer). The Hub answers
-// GET /run-export/<run>/late with run-late@1: for a recomposition bound after the run started, the record each case takes from the
-// latest accepted result of its recompose run, resolved now. Nothing is decided here; a case still waiting is listed with what it waits for.
-//   node <skill directory>/tools/refresh-late.ts --hub %HUB_URL% --run <run id> --dir <run directory> <<'EOF'
-//   %HUB_TOKEN%
-//   EOF
 import { realpathSync } from 'node:fs';
 import { lstat, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -18,11 +11,6 @@ import { writeBriefs } from './authoring-brief.ts';
 
 const USAGE = "node <技能目录>/tools/refresh-late.ts --hub <MCP地址> --run <脚本编写运行号> --dir <运行目录>";
 
-/**
- * The run-late@1 answer of `run`, or null when the Hub answers 404: the run binds nothing after its start (or the Hub has no such
- * route), so its items carry their records frozen. Bytes that do not match the Hub's content digest, or that are no run-late@1 answer of
- * this run, are refused before anything is written.
- */
 export async function fetchLate(origin: string, bearer: string, run: string, retry?: RetryControl): Promise<RunLate | null> {
   let reply: Awaited<ReturnType<typeof fetchBytesRetrying>>;
   try { reply = await fetchBytesRetrying(`${origin}/run-export/${run}/late`, bearer, MAX_BYTES, retry); } catch (error) {
@@ -39,12 +27,10 @@ export async function fetchLate(origin: string, bearer: string, run: string, ret
 
 const lateBytes = (late: RunLate): Buffer => Buffer.from(JSON.stringify(late, null, 2) + '\n');
 
-/** Writes late.json into a directory that has none (a fresh download). */
 export async function writeNewLateFile(directory: string, late: RunLate): Promise<void> {
   await writeFile(join(directory, LATE_FILE), lateBytes(late), { flag: 'wx', mode: 0o600 });
 }
 
-/** Replaces late.json whole: written beside it and renamed over it, so a reader never sees half of it. */
 export async function replaceLateFile(directory: string, late: RunLate): Promise<void> {
   const target = join(directory, LATE_FILE), staged = join(directory, `.${LATE_FILE}.${process.pid}.tmp`);
   try {
@@ -53,7 +39,6 @@ export async function replaceLateFile(directory: string, late: RunLate): Promise
   } catch (error) { await rm(staged, { force: true }); throw error; }
 }
 
-/** What the overlays say, per case: accepted with the record's digest, or waiting with what it waits for. */
 export function lateSummary(late: RunLate, before: RunLate | null): { accepted: string[]; waiting: Array<{ item: string; state: string | null; problem: string | null }>; newly_accepted: string[]; changed: string[] } {
   const accepted: string[] = [], waiting: Array<{ item: string; state: string | null; problem: string | null }> = [], newly: string[] = [], changed: string[] = [];
   for (const row of late.items) {
@@ -89,7 +74,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       return 0;
     }
     await replaceLateFile(directory, late);
-    // The cases accepted since the last refresh get their authoring brief now; a brief already there is left as it is.
     let briefs = 0, note: string | undefined;
     try { briefs = (await writeBriefs(directory)).briefs; } catch (error) { note = `编写简报没有写成：${error instanceof Error ? error.message : '原因还没查清'}；${LATE_FILE} 已更新，写手可直接读它和 items/<序号>.json`; }
     const summary = lateSummary(late, before);

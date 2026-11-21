@@ -138,13 +138,8 @@ export function requireFact(condition: unknown, message: string, detail: Record<
     throw new ReplayError(message, 1, detail);
 }
 export const deniedLine = 'Hook denied this call:';
-/**
- * Circle 1.17.0 refuses a call whose arguments do not fit the tool's declared schema before any hook is asked
- * (`prepareToolCall`): its error result starts with the tool name and this text, and no before_tool decision exists for the call.
- */
 export const invalidArgumentsLine = ' was called with invalid arguments: ';
 export const refusedBeforeHook = (call: { name: string }, result: Message): boolean => result.status === 'error' && result.content.startsWith(call.name + invalidArgumentsLine);
-/** Circle 1.17.0's host-authored job notice display, not free-text tool output. */
 export function backgroundIds(message: Message): string[] {
   if (message.internal !== 'job_notice' || !message.content.startsWith('<system-reminder data-source="circle-jobs">\n') || typeof message.display !== 'string')
     return [];

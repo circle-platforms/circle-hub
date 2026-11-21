@@ -1,4 +1,3 @@
-// Shared CLI option parsing and PlumbClient factory for case-compile Plumb tools.
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { type CallErrorCategory as CallErrorCode } from './generated/vocabulary.ts';
@@ -23,7 +22,6 @@ export function plumbFailure(category: PlumbErrorCategory, fact: string, nextAct
   return new CallFailure(PLUMB_CATEGORY_TO_CODE[category], fact, nextAction);
 }
 
-/** Explicit refusal formatting for Plumb CLI tools, mapping structured PlumbHttpError categories without prose inference. */
 export function formatPlumbCliError(error: unknown): string {
   if (error instanceof PlumbHttpError) {
     const code = PLUMB_CATEGORY_TO_CODE[error.category];
@@ -57,7 +55,6 @@ export interface PlumbToolIo {
   env?: NodeJS.ProcessEnv;
 }
 
-/** Parses `--key value` options, rejecting `=`, secret CLI flags, and unexpected values. */
 export function parseFlagMap(
   argv: readonly string[],
   spec: {
@@ -153,7 +150,6 @@ async function readFirstLineStdin(io: PlumbToolIo): Promise<string> {
   return first;
 }
 
-/** Ensures a CA file is readable without following symlinks when explicitly configured. */
 async function checkCaPathSafe(caFile: string | undefined): Promise<void> {
   if (!caFile) return;
   const fh = await open(caFile, constants.O_RDONLY | constants.O_NOFOLLOW);

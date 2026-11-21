@@ -1,4 +1,3 @@
-// Eligibility uses declared handling and frozen scope identities, never prose or an old unbound result.
 import { isRecord } from './text.ts';
 export function planStateOf(value: unknown, excluded: ReadonlySet<string> = new Set(), run?: unknown): { process: boolean; excluded: boolean; skipped: boolean; reason: string | null } {
   if (!isRecord(value) || typeof value.item !== 'string') return { process: false, excluded: false, skipped: false, reason: '缺少条目身份' };

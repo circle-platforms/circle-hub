@@ -1,4 +1,3 @@
-// Unit tests for the embeddable plumb-client skill module (ephemeral TLS mock server, no real gateway).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';

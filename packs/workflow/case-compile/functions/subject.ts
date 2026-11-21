@@ -72,21 +72,13 @@ export function planSubject(input: unknown): PlanSubject {
   const frozen = isRecord(group) ? group : {};
   const leases = isRecord(frozen.leases) ? frozen.leases : {};
   const item = isRecord(raw.item) ? raw.item : {};
-  // This evaluation's overlay of the item (SubjectItem.late, from the workflow's refresh function): a recomposition bound after the
-  // run started is read here, over the frozen fields, at every evaluation.
   const late = isRecord(item.late) ? item.late : {};
   const id = typeof raw.item === 'string' ? raw.item : typeof item.id === 'string' ? item.id : '';
   const inventory=parseManifest(frozen.manifest),profile=isRecord(frozen.profile)?frozen.profile:{};
   return {projection_unknowns:isRecord(item.fields)&&Array.isArray(item.fields.projection_unknowns)?item.fields.projection_unknowns as string[]:[],recomposition_requested:frozen.recomposition_requested===true||isRecord(planDataOf(raw))&&Object.hasOwn(planDataOf(raw) as object,'recomposition'),recomposition:late.recomposition!==undefined?late.recomposition:isRecord(item.fields)&&item.fields.recomposition!==undefined?item.fields.recomposition:frozen.recomposition,recomposition_problem:typeof late.recomposition_problem==='string'?late.recomposition_problem:isRecord(item.fields)&&typeof item.fields.recomposition_problem==='string'?item.fields.recomposition_problem:undefined,recomposition_waiting:isRecord(late.recomposition_waiting)?late.recomposition_waiting:undefined,recomposition_late:isRecord(item.fields)&&isRecord(item.fields.recomposition_late)?item.fields.recomposition_late:undefined,bed_services:inventory.ok?inventory.beds.find(bed=>bed.name===profile.bed)?.services:undefined,manifest_sha256:typeof frozen.manifest_sha256==='string'?frozen.manifest_sha256:undefined,criteria_review:frozen.criteria_review, expected_nodes:selectedExpectedNodes(isRecord(item.fields)?item.fields.expected_nodes:undefined,planDataOf(raw)),command_catalog:sealed(Array.isArray(raw.catalog)&&typeof context.root==='string'?{root:context.root,complete:raw.catalog_complete===true,entries:raw.catalog,...(context.command_policy!==undefined?{policy:context.command_policy}:{}),...(Array.isArray(raw.value_domains)?{value_domains:raw.value_domains}:{}),...(typeof raw.catalog_missing==='string'?{missing:raw.catalog_missing}:{})}:undefined),command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
 }
 export function commandSubject(input:unknown):unknown{return planSubject(input);}
-/** One quote the check expected_quotes hands to quote@1, and where it stands: `place` is a JSON Pointer into the plan data (`/data` left off), or into the frozen item when `frozen` is set. */
 export interface QuotePlace { quote: { reference: string; text: string }; place: string; frozen?: true }
-/**
- * What the Hub's subject builder for expected_quotes found in one plan: the places that stop it before any quote is read (a front check
- * of the plan refuses it, or the plan cannot be read), or every quote with the place it stands at. quoteSubject answers the Hub with
- * the first kind as the Hub has always had it; the plan check reads the second to say where a refused quote is.
- */
 export type QuotePlaces =
   | { kind: 'blocked'; blocked: Array<{ check: string; pointer: string; code: string }> }
   | { kind: 'gap'; item: string; location: string | null; missing: unknown; reason: unknown }
@@ -100,7 +92,6 @@ export function quotePlaces(input: unknown): QuotePlaces {
   // An expectation taken from a frozen accepted criterion cites the declaration, which quote@1 cannot read as a source:
   // what has to be verbatim in an expected source of this run is the declaration's own grounds (W10 step two, B03 R[3]).
   const places: QuotePlace[] = [];
-  // A block plan is read as steps and expects lowered from its blocks; blockPointer says where in the plan the lowered one came from.
   const placeOf = (pointer: string): string => blockPointer(read.slots, pointer);
   for (const [index, v] of read.slots.expects.entries()) {
     const criterion = citedCriterion(subject.criteria, v.quote.reference);

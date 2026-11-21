@@ -9,7 +9,6 @@ import { CliError, UsageError } from './errors.ts';
 
 type Flags = Record<string, { type: 'string' | 'boolean'; multiple?: boolean }>;
 
-/** `positionals` arguments, or from `positionals` to `most` when an argument may be left out. */
 export function parse<T extends Flags>(args: readonly string[], options: T, positionals: number, most = positionals) {
   let parsed;
   try {
@@ -22,7 +21,6 @@ export function parse<T extends Flags>(args: readonly string[], options: T, posi
   return parsed;
 }
 
-/** A refusal of another package as an operator message with its fix (records' `fix`, the connectors' and knowledge's text). */
 export async function decided<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
@@ -34,4 +32,3 @@ export async function decided<T>(fn: () => Promise<T>): Promise<T> {
     throw error;
   }
 }
-

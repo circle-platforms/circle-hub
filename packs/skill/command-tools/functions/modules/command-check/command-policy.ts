@@ -1,6 +1,5 @@
-// Exact path segments and product-authored structure only. No command words are classified here.
-const isRecord = (value: unknown): value is { [key: string]: unknown } => typeof value === 'object' && value !== null && !Array.isArray(value);
 import {commandTokens} from './grammar.ts';
+const isRecord = (value: unknown): value is { [key: string]: unknown } => typeof value === 'object' && value !== null && !Array.isArray(value);
 export interface Confirmation {command_prefix:string;prompt:string;answer:string}
 export interface PolicyCommand {prefix:string;with_parameter?:number}
 export interface PersistenceChannel {id:string;commands:PolicyCommand[];source:string}
@@ -13,27 +12,16 @@ export function pathSegments(path:unknown):string[]|null {
 }
 export function within(path:string,prefix:string):boolean {const a=pathSegments(path),b=pathSegments(prefix);return !!a&&!!b&&a.length>=b.length&&b.every((part,index)=>a[index]===part);}
 const wordsOf=(prefix:string)=>pathSegments(prefix)!.slice(1).map(decodeURIComponent);
-/** The line the product's most specific rule makes of a command: the rule's inverse words, then the rest of the command as written. */
 export function inverseLine(policy:CommandPolicy,line:string):string|null {
  const tokens=commandTokens(line);if(!tokens)return null;
  const fits=policy.inverse_rules.filter(rule=>wordsOf(rule.source_prefix).every((word,index)=>tokens[index]?.value===word&&!tokens[index].quoted)).sort((a,b)=>wordsOf(b.source_prefix).length-wordsOf(a.source_prefix).length);
  const rule=fits[0];if(!rule||fits[1]?.source_prefix===rule.source_prefix)return null;
  return [...wordsOf(rule.inverse_prefix),...tokens.slice(wordsOf(rule.source_prefix).length).map(token=>token.raw)].join(' ');
 }
-/**
- * What a declared pair of alternative values asks the locked tree for, as the lines the catalog selection reads. The cleanup check
- * meets a pair in two forms: the value of an enum argument of one signature (the command's own definition holds both values, so
- * nothing more is needed) and two sibling commands (`x on` and `x off`), where the partner's definition has to be read to know a
- * cleanup is owed at all. The tree is walked by exact words and the walk stops at the first word it does not find, so the line of
- * a sibling is the command's line cut after the swapped word: one line per unquoted word that is a member of a pair, that word
- * replaced by its partner, nothing after it. A path the given lines already walk that far is not asked for twice.
- */
 export function alternativeLines(policy:CommandPolicy|null,lines:readonly string[]):string[] {
  const partners=new Map<string,string>();
  for(const [first,second]of policy?.inverse_alternatives??[]){partners.set(first,second);partners.set(second,first);}
- // Lines past the selection's own limit are refused as they stand: asking for more changes nothing.
  if(!partners.size||lines.length>128)return [];
- // The words each line walks: a quoted word ends the walk, so it is kept as null and equals no word.
  const walked=lines.flatMap(line=>{const tokens=commandTokens(line);return tokens?[tokens.map(token=>token.quoted?null:token.value)]:[];});
  const asked=new Set<string>();
  for(const line of lines){
@@ -48,13 +36,6 @@ export function alternativeLines(policy:CommandPolicy|null,lines:readonly string
  }
  return [...asked];
 }
-/**
- * The lines the catalog selection reads besides the plan's own, so a check can tell a cleanup left out from a path the locked tree
- * does not have. The sibling commands of declared pairs come first and are never dropped: a plan that turns a switch on is judged
- * owing no cleanup when the partner cannot be read, so when they do not fit the selection's limits the selection is over the limit
- * and the Hub refuses it as too large (the plan is split and checked again). The lines the product's prefix rules make of each
- * command come after: all of them, or none when they do not fit.
- */
 export function inverseLines(policy:CommandPolicy|null,lines:readonly string[]):string[] {
  if(!policy)return [];
  const alternatives=alternativeLines(policy,lines);
@@ -65,7 +46,6 @@ const declaredCommands=(list:unknown)=>Array.isArray(list)&&list.length>=1&&list
 export function readCommandPolicy(value:unknown):CommandPolicy|null {
  if(!isRecord(value)||value.schema!=='command-policy@1'||Object.keys(value).some(key=>!['schema','read_only','inverse_rules','inverse_alternatives','confirmations','persistence_channels','forbidden_combinations'].includes(key))||!Array.isArray(value.read_only)||value.read_only.length>64||value.read_only.some(path=>!pathSegments(path))||!Array.isArray(value.inverse_rules)||value.inverse_rules.length>64)return null;
  for(const rule of value.inverse_rules)if(!isRecord(rule)||Object.keys(rule).some(key=>!['source_prefix','inverse_prefix','leading_parameters'].includes(key))||!pathSegments(rule.source_prefix)||!pathSegments(rule.inverse_prefix)||rule.leading_parameters!==undefined&&(!Number.isSafeInteger(rule.leading_parameters)||Number(rule.leading_parameters)<0||Number(rule.leading_parameters)>128))return null;
- // Inverse alternatives are exact closed-set pairs of non-space values; a value paired with itself is meaningless.
  if(value.inverse_alternatives!==undefined){
   if(!Array.isArray(value.inverse_alternatives)||value.inverse_alternatives.length>64)return null;
   const partners=new Map<string,string>();
@@ -74,7 +54,6 @@ export function readCommandPolicy(value:unknown):CommandPolicy|null {
    for(const [from,to]of [[pair[0],pair[1]],[pair[1],pair[0]]]){if(partners.has(from)&&partners.get(from)!==to)return null;partners.set(from,to);}
   }
  }
- // A confirmation is the product's declared dialogue: one prompt text and one answer word per command prefix.
  if(value.confirmations!==undefined){
   if(!Array.isArray(value.confirmations)||value.confirmations.length>16)return null;
   const prefixes=new Set<string>();

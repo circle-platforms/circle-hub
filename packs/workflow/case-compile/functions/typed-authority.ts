@@ -7,7 +7,6 @@ import {blockGraphGaps} from './block-checks.ts';
 import {blockRuntimeGaps,assertionTarget,assertionCells,runtimeBlocks} from './block-runtime.ts';
 import {prepareRestores} from './block-restore.ts';
 import {commandObligations,definitionKey,type RunnerCovered} from './command-obligations.ts';
-import {within} from './generated/skills/command-tools/command-check/command-policy.ts';
 import {planCommands} from './plan-commands.ts';
 // One authority boundary is shared by checks, generation, workbook verification and dispatch.
 import { destructiveHit, runtimeMethod, scopeAllows, type RuntimeContract } from './runtime-contract.ts';
@@ -121,7 +120,6 @@ const oneBased = (raw: string | undefined): number | null => {
  const n = Number(raw);
  return Number.isSafeInteger(n) && n < Number.MAX_SAFE_INTEGER ? n + 1 : null;
 };
-/** Formats machine gap `(document, pointer)` into human-readable Chinese location prose while `data.problems` keeps exact machine pointers. */
 export function humanGapLocation(document: string, pointer: string): string {
  const doc = DOC_LABELS[document] ?? '原合约与手册检查';
  const parts = pointer === '' ? [] : pointer.startsWith('/') ? pointer.slice(1).split('/') : [];
@@ -140,7 +138,6 @@ export function humanGapLocation(document: string, pointer: string): string {
    if (parts[3] === 'keywords') return `第 ${block} 块调用步骤的命名参数`;
    return `第 ${block} 块的调用步骤`;
   }
-  // The block-relative field path is part of the location: a selection refusal names the one field to change.
   const field = `（/${parts.slice(2).join('/')}）`;
   if (parts[2] === 'select') {
    const row = parts[3] === 'where' ? oneBased(parts[4]) : null;

@@ -1,12 +1,10 @@
 // Controlled condition identifiers and hash-only field observations, never exception text or source fragments.
-// Optional plain expected/actual strings are for refusal wording only (C14); digests remain the observation.
 import {canonicalize,sha256Hex} from '../records/api.ts';
 export interface ReleaseField {
   field:string;
   matches:boolean|null;
   expected_sha256:string;
   actual_sha256:string;
-  /** Reader disclosure when safe (never secrets). Digests stay authoritative. */
   expected?:string;
   actual?:string;
 }
@@ -17,11 +15,9 @@ export interface ReleaseCheck {
   fields:ReleaseField[];
   missing_fact?:string;
   next_action?:string;
-  /** When satisfied is null because another check failed first (C14); judgment unchanged. */
   blocked_by?:string;
 }
 export const releaseDigest=(value:unknown):string=>{try{return sha256Hex(canonicalize(value===undefined?{present:false}:{present:true,value}));}catch{return sha256Hex('unserializable');}};
-/** Optional plain sides for identity-like fields; omitted values stay digest-only. */
 export const releaseField=(field:string,expected:unknown,actual:unknown,matches:boolean|null,plain?:{expected?:string;actual?:string}):ReleaseField=>({
   field,matches,expected_sha256:releaseDigest(expected),actual_sha256:releaseDigest(actual),
   ...(plain?.expected!==undefined?{expected:plain.expected}:{}),

@@ -1,4 +1,3 @@
-// Unit tests for single-case prior-round history extraction, 12,000-char truncation disclosure, and same-error streak analysis.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
@@ -96,8 +95,6 @@ test('device evidence extracts matched failing step excerpts and discloses missi
     ids,
   );
 
-  // Gateway keeps trailing <= 12,000 chars: early step `widget broken-early-step` was cut from head,
-  // while trailing output holds cleanup lines and `show widget summary`.
   const filler = Array.from({ length: 600 }, (_, i) => `seat# noise line ${String(i).padStart(3, '0')} ok`).join('\n');
   const sessionBody = [
     filler,
@@ -249,7 +246,6 @@ test('consecutive same-error streak counts matching rounds, sets vary_form_requi
   const streak = analyzeRoundHistory({ currentRound: 3, rounds });
   assert.equal(streak.consecutiveSameError, 2);
   assert.equal(streak.finalAttempt, true);
-  // InfoTest provenance (`remedies.py:39-42`, `briefs.py:2792-2820`): non-frozen device errors report consecutive streak without auto-forcing vary_form.
   assert.equal(streak.varyFormRequired, false);
   assert.equal(streak.roundChanges.length, 1);
 
@@ -308,7 +304,6 @@ test('D1: parseGateRefusalsFromAnswer parses multi-line submit_result JSON clean
   assert.ok(!JSON.stringify(gates).includes('WRONG_CASE_CODE'));
   assert.ok(!JSON.stringify(gates).includes(OTHER_CASE_ID));
 
-  // If THIS case passed while trailing JSON still mentions CASE_ID in `original_cases`, must return [] rather than dumping raw JSON line!
   const cleanPayload = {
     call_result: 'ok',
     original_cases: [{ id: 'doc-1:c-1', autoid: CASE_ID, title: '主用例', raw: padding }],
@@ -318,7 +313,6 @@ test('D1: parseGateRefusalsFromAnswer parses multi-line submit_result JSON clean
   const cleanMultiLine = [`用例 ${CASE_ID} 已接收`, '供模型引用', JSON.stringify(cleanPayload)].join('\n');
   assert.deepEqual(parseGateRefusalsFromAnswer(cleanMultiLine, ids, 1), []);
 
-  // Fixed omission order capper
   const p1 = parsePriorPlanSnapshot(makePlan(CASE_ID, 'cmd one', 'cmd two', 'exp'), ids);
   const mdCapped = renderPriorRoundsMarkdown({
     caseRef: CASE_ID,
@@ -372,7 +366,7 @@ test('D1: parseGateRefusalsFromAnswer parses multi-line submit_result JSON clean
   assert.ok(mdCapped.includes(MISSING_EVIDENCE_CAVEAT));
 });
 
-test('D4: step locator avoids 24-char prefix collisions, handles APV redraw & duplicate occurrences, and flags ambiguous steps', () => {
+test('D4: step locator avoids 24-char prefix collisions, handles terminal redraws & duplicate occurrences, and flags ambiguous steps', () => {
   const ids = buildCaseIdSet(CASE_ID);
   const plan = parsePriorPlanSnapshot({
     item: CASE_ID,
@@ -386,9 +380,9 @@ test('D4: step locator avoids 24-char prefix collisions, handles APV redraw & du
           blocks: [],
           replacements: [],
           steps: [
-            { object: 'dut0', method: 'exec', args: ['show dns record-config -t A -n alpha.example.test'], keywords: {} },
-            { object: 'dut0', method: 'exec', args: ['show dns record-config -t CNAME -n beta.example.test'], keywords: {} },
-            { object: 'dut0', method: 'exec', args: ['show gslb dnssec-key 256 ZSK example.test'], keywords: {} },
+            { object: 'dut0', method: 'exec', args: ['show widget record-config -t pool -n alpha.example.test'], keywords: {} },
+            { object: 'dut0', method: 'exec', args: ['show widget record-config -t member -n beta.example.test'], keywords: {} },
+            { object: 'dut0', method: 'exec', args: ['show widget signing-key 256 KEY2 example.test'], keywords: {} },
             { object: 'dut0', method: 'exec', args: ['check sync status'], keywords: {} },
             { object: 'dut0', method: 'exec', args: ['check sync status'], keywords: {} },
           ],
@@ -399,17 +393,17 @@ test('D4: step locator avoids 24-char prefix collisions, handles APV redraw & du
   }, ids);
 
   const sessionText = [
-    'apv#show dns record-config -t A -n alpha.example.test',
-    'A addr = 192.0.2.10',
-    'apv#show dns record-config -t CNAME -n beta.example.test',
-    'CNAME target = gw.example.test',
-    'apv#show gslb dnssec-key$k 256 ZSK example.test',
-    'ZSK active',
-    'apv#check sync status',
+    'demo#show widget record-config -t pool -n alpha.example.test',
+    'pool addr = 192.0.2.10',
+    'demo#show widget record-config -t member -n beta.example.test',
+    'member target = gw.example.test',
+    'demo#show widget signing-key$y 256 KEY2 example.test',
+    'KEY2 active',
+    'demo#check sync status',
     'first check: sync pending',
-    'apv#check sync status',
+    'demo#check sync status',
     'second check: sync done',
-    'apv#',
+    'demo#',
   ].join('\n');
 
   const ev = extractCaseDeviceEvidence({
@@ -417,10 +411,10 @@ test('D4: step locator avoids 24-char prefix collisions, handles APV redraw & du
     returnsIndex: {
       schema: 'device-returns@1',
       run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
-      jobs: [{ job: 'e'.repeat(64), verification_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', rows: [{ item: CASE_ID, verdict: 'fail', sessions: { 'apv.txt': 'apv.txt' } }] }],
+      jobs: [{ job: 'e'.repeat(64), verification_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', rows: [{ item: CASE_ID, verdict: 'fail', sessions: { 'dut0.txt': 'dut0.txt' } }] }],
     },
     caseIds: ids,
-    sessionTexts: new Map([['apv.txt', { path: 'apv.txt', text: sessionText }]]),
+    sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: sessionText }]]),
     logText: null,
     logPath: null,
     priorPlan: plan,
@@ -431,24 +425,23 @@ test('D4: step locator avoids 24-char prefix collisions, handles APV redraw & du
   const s3 = ev.stepExcerpts.find((s) => s.stepIndex === 3)!;
   const s4 = ev.stepExcerpts.find((s) => s.stepIndex === 4)!;
   const s5 = ev.stepExcerpts.find((s) => s.stepIndex === 5)!;
-  assert.ok(s1.found && s1.excerpt?.includes('A addr = 192.0.2.10'), 'step 1 matches -t A, never -t CNAME');
-  assert.ok(s2.found && s2.excerpt?.includes('CNAME target = gw.example.test'), 'step 2 matches -t CNAME, never -t A');
-  assert.ok(s3.found && s3.excerpt?.includes('ZSK active'), 'step 3 handles terminal $ redraw preserving ZSK token');
+  assert.ok(s1.found && s1.excerpt?.includes('pool addr = 192.0.2.10'), 'step 1 matches -t pool, never -t member');
+  assert.ok(s2.found && s2.excerpt?.includes('member target = gw.example.test'), 'step 2 matches -t member, never -t pool');
+  assert.ok(s3.found && s3.excerpt?.includes('KEY2 active'), 'step 3 handles terminal $ redraw preserving KEY2 token');
   assert.ok(s4.found && s4.excerpt?.includes('first check: sync pending'), 'first duplicate occurrence binds to step 4');
   assert.ok(s5.found && s5.excerpt?.includes('second check: sync done'), 'second duplicate occurrence binds to step 5');
 
-  // If count of repeated command occurrences mismatches in the window (3 occurrences for 2 plan steps without separating anchor), refuse guessing!
   const ambiguousEv = extractCaseDeviceEvidence({
     round: 1,
     returnsIndex: {
       schema: 'device-returns@1',
       run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
-      jobs: [{ job: 'e'.repeat(64), verification_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', rows: [{ item: CASE_ID, verdict: 'fail', sessions: { 'apv.txt': 'apv.txt' } }] }],
+      jobs: [{ job: 'e'.repeat(64), verification_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', rows: [{ item: CASE_ID, verdict: 'fail', sessions: { 'dut0.txt': 'dut0.txt' } }] }],
     },
     caseIds: ids,
-    sessionTexts: new Map([['apv.txt', {
-      path: 'apv.txt',
-      text: `${sessionText}\napv#check sync status\nthird check: extra occurrence\napv#\n`,
+    sessionTexts: new Map([['dut0.txt', {
+      path: 'dut0.txt',
+      text: `${sessionText}\ndemo#check sync status\nthird check: extra occurrence\ndemo#\n`,
     }]]),
     logText: null,
     logPath: null,
@@ -463,7 +456,7 @@ test('D4: step locator avoids 24-char prefix collisions, handles APV redraw & du
 test('D2 & Section 6: short missing steps cite not-found (not 12,000 truncation), ~11,371 truncated session cites 12,000, and plan/returns mismatch throws', () => {
   const ids = buildCaseIdSet(CASE_ID);
   const plan = parsePriorPlanSnapshot(makePlan(CASE_ID, 'widget setup-early', 'show widget summary', 'ok'), ids);
-  const shortSession = 'apv#show widget summary\nStatus: active\napv#\n';
+  const shortSession = 'demo#show widget summary\nStatus: active\ndemo#\n';
 
   const shortEv = extractCaseDeviceEvidence({
     round: 1,
@@ -482,9 +475,8 @@ test('D2 & Section 6: short missing steps cite not-found (not 12,000 truncation)
   assert.equal(earlyMissing.found, false);
   assert.equal(earlyMissing.missingNotice, MISSING_STEP_NOT_FOUND_MSG);
 
-  // Near-12,000 byte normalized transcript (e.g. ~11,400 chars from CRLF/control normalization) still qualifies as gateway tail truncation!
-  const near12kBody = Array.from({ length: 505 }, (_, i) => `apv#noise line ${String(i).padStart(3, '0')} ok`).join('\n')
-    + '\napv#show widget summary\nStatus: fail\napv#\n';
+  const near12kBody = Array.from({ length: 505 }, (_, i) => `demo#noise line ${String(i).padStart(3, '0')} ok`).join('\n')
+    + '\ndemo#show widget summary\nStatus: fail\ndemo#\n';
   assert.ok(near12kBody.length >= 11_000 && near12kBody.length < 12_000);
   const nearEv = extractCaseDeviceEvidence({
     round: 1,
@@ -502,7 +494,6 @@ test('D2 & Section 6: short missing steps cite not-found (not 12,000 truncation)
   const nearMissing = nearEv.stepExcerpts.find((s) => s.commandText === 'widget setup-early')!;
   assert.equal(nearMissing.missingNotice, MISSING_STEP_TRUNCATION_MSG);
 
-  // Mismatched run or un-truncated session executing unrelated commands refuses brief generation!
   assert.throws(() => extractCaseDeviceEvidence({
     round: 1,
     returnsIndex: {
@@ -511,17 +502,34 @@ test('D2 & Section 6: short missing steps cite not-found (not 12,000 truncation)
       jobs: [{ job: 'e'.repeat(64), verification_run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', rows: [{ item: CASE_ID, verdict: 'fail', sessions: { 'dut0.txt': 'dut0.txt' } }] }],
     },
     caseIds: ids,
-    sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: 'apv#unrelated cmd\nok\napv#\n' }]]),
+    sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: 'demo#unrelated cmd\nok\ndemo#\n' }]]),
     logText: null,
     logPath: null,
     priorPlan: plan,
   }), /不属于同一次运行/);
 });
 
+test('the commands a runner types by itself, a mode switch or one its log shows outside the steps, do not make a session look like another run\'s', () => {
+  const ids = buildCaseIdSet(CASE_ID);
+  const plan = parsePriorPlanSnapshot(makePlan(CASE_ID, 'widget setup-early', 'show widget summary', 'ok'), ids);
+  const given = (text: string, logText: string | null) => ({
+    round: 1,
+    returnsIndex: { schema: 'device-returns@1', run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', jobs: [{ job: 'e'.repeat(64), verification_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', rows: [{ item: CASE_ID, verdict: 'fail', sessions: { 'dut0.txt': 'dut0.txt' } }] }] },
+    caseIds: ids,
+    sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text }]]),
+    logText,
+    logPath: null,
+    priorPlan: plan,
+  });
+  assert.ok(extractCaseDeviceEvidence(given('demo#widget enter\ndemo(config)#widget leave\ndemo#\n', null)), 'a line after which the prompt changes switched the mode');
+  const log = ['2026-01-01 00:00:01 192.0.2.10 - sends command in config: widget wipe all', '2026-01-01 00:00:02 #######   step1: 合成步骤一', '2026-01-01 00:00:02 192.0.2.10 - sends command in config: widget setup-early'].join('\n');
+  assert.ok(extractCaseDeviceEvidence(given('demo#widget wipe all\nok\ndemo#\n', log)), 'the log shows the runner sent it before the first step');
+  assert.throws(() => extractCaseDeviceEvidence(given('demo#widget wipe all\nok\ndemo#\n', null)), /不属于同一次运行（未截断设备会话未命中任何计划命令，却执行了“widget wipe all”等其他命令）/, 'without the log nothing says the runner sent it');
+});
+
 test('a refused command the runner sent by itself, outside the announced steps, is shown as the runner\'s and is not held against the pair of plan and returns', () => {
   const ids = buildCaseIdSet(CASE_ID);
   const plan = parsePriorPlanSnapshot(makePlan(CASE_ID, 'widget setup-early', 'show widget summary', 'ok'), ids);
-  // The log of one case: the runner sets the clock before the first step and cleans the devices after the last one.
   const log = [
     '2026-01-01 00:00:01 192.0.2.10 - sends command in config: widget clock 0 0 1',
     '2026-01-01 00:00:02 #######   step1: 合成步骤一',
@@ -536,38 +544,30 @@ test('a refused command the runner sent by itself, outside the announced steps, 
   assert.deepEqual([...runnerOwnLogCommands(log)].sort(), ['widget clock 0 0 1', 'widget wipe all', 'widget wipe peers']);
   assert.deepEqual([...runnerOwnLogCommands('no step is announced\n192.0.2.10 - sends command in config: widget wipe all')], []);
   const returnsWith = (row: Record<string, unknown>) => ({ schema: 'device-returns@1', run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', jobs: [{ job: 'e'.repeat(64), verification_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', rows: [{ item: CASE_ID, verdict: 'fail', sessions: { 'dut0.txt': 'dut0.txt' }, ...row }] }] });
-  const given = (row: Record<string, unknown>, logText: string | null) => ({ round: 1, returnsIndex: returnsWith(row), caseIds: ids, sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: 'apv#show widget summary\nStatus: active\napv#\n' }]]), logText, logPath: null, priorPlan: plan });
-  // The peer refused the runner's own cleanup: the evidence is given, and says whose command it was.
-  const evidence = extractCaseDeviceEvidence(given({ syntax_rejected: [{ session: 'dut0.txt', command: 'widget wipe all', token: 'wipe', prompt: 'APV#' }], execution_refused: [{ session: 'dut0.txt', command: 'widget wipe peers', prompt: 'APV(config)#', reply: ['Failed to execute the command'] }] }, log))!;
+  const given = (row: Record<string, unknown>, logText: string | null) => ({ round: 1, returnsIndex: returnsWith(row), caseIds: ids, sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: 'demo#show widget summary\nStatus: active\ndemo#\n' }]]), logText, logPath: null, priorPlan: plan });
+  const evidence = extractCaseDeviceEvidence(given({ syntax_rejected: [{ session: 'dut0.txt', command: 'widget wipe all', token: 'wipe', prompt: 'demo#' }], execution_refused: [{ session: 'dut0.txt', command: 'widget wipe peers', prompt: 'demo(config)#', reply: ['Failed to execute the command'] }] }, log))!;
   assert.deepEqual(evidence.syntaxRejected.map((item) => [item.command, item.runner_own]), [['widget wipe all', true]]);
   assert.deepEqual(evidence.executionRefused.map((item) => [item.command, item.runner_own]), [['widget wipe peers', true]]);
-  // The same refusals without a log that shows who sent them, and a refused command no step and no log accounts for, are still a wrong pair.
-  assert.throws(() => extractCaseDeviceEvidence(given({ syntax_rejected: [{ session: 'dut0.txt', command: 'widget wipe all', token: 'wipe', prompt: 'APV#' }] }, null)), /不属于同一次运行（syntax_rejected 命令“widget wipe all”不在该计划步骤中）/);
-  // A refused command the log shows a step sending, and this plan does not have, is a wrong pair: another plan ran.
+  assert.throws(() => extractCaseDeviceEvidence(given({ syntax_rejected: [{ session: 'dut0.txt', command: 'widget wipe all', token: 'wipe', prompt: 'demo#' }] }, null)), /不属于同一次运行（syntax_rejected 命令“widget wipe all”不在该计划步骤中）/);
   const otherPlan = log.replace('sends command in enable: show widget summary', 'sends command in config: widget from another plan');
-  assert.throws(() => extractCaseDeviceEvidence(given({ syntax_rejected: [{ session: 'dut0.txt', command: 'widget from another plan', token: 'from', prompt: 'APV#' }] }, otherPlan)), /不属于同一次运行（syntax_rejected 命令“widget from another plan”不在该计划步骤中）/);
-  // Round 51: the framework entered configuration mode by itself and the device refused ("someone else is in config mode"). The
-  // log has a line for every command of the runner's two senders and none for what it types beneath them; such a command is in
-  // no plan, and the rework task of the case was about to be refused as a wrong pair.
-  const beneath = extractCaseDeviceEvidence(given({ execution_refused: [{ session: 'dut0.txt', command: 'widget enter', prompt: 'APV#', reply: ['Someone else holds it.', 'Failed to execute the command'] }], syntax_rejected: [{ session: 'dut0.txt', command: 'widget setup-early', token: 'widget', prompt: 'APV#' }] }, log))!;
+  assert.throws(() => extractCaseDeviceEvidence(given({ syntax_rejected: [{ session: 'dut0.txt', command: 'widget from another plan', token: 'from', prompt: 'demo#' }] }, otherPlan)), /不属于同一次运行（syntax_rejected 命令“widget from another plan”不在该计划步骤中）/);
+  const beneath = extractCaseDeviceEvidence(given({ execution_refused: [{ session: 'dut0.txt', command: 'widget enter', prompt: 'demo#', reply: ['Someone else holds it.', 'Failed to execute the command'] }], syntax_rejected: [{ session: 'dut0.txt', command: 'widget setup-early', token: 'widget', prompt: 'demo#' }] }, log))!;
   assert.deepEqual(beneath.executionRefused.map((item) => [item.command, item.runner_own, item.unlogged]), [['widget enter', true, true]]);
   assert.deepEqual(beneath.syntaxRejected.map((item) => [item.command, item.runner_own, item.unlogged]), [['widget setup-early', undefined, undefined]], 'a step\'s own command stays the plan\'s');
   assert.deepEqual(runnerLoggedCommands(log).slice(0, 3), ['widget clock 0 0 1', 'widget setup-early', 'show widget summary']);
-  // A plan that says its run is paired by that: the same run is the pair whatever the device refused, another run is not.
   const ran = (run: string) => parsePriorPlanSnapshot({ ...makePlan(CASE_ID, 'widget setup-early', 'show widget summary', 'ok'), plan_run: run }, ids);
   const job = (run: string, row: Record<string, unknown>) => ({ ...given(row, null), returnsIndex: { schema: 'device-returns@1', run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', jobs: [{ job: 'e'.repeat(64), plan_run: run, rows: [{ item: CASE_ID, verdict: 'fail', sessions: { 'dut0.txt': 'dut0.txt' }, ...row }] }] } });
-  const unexplained = { syntax_rejected: [{ session: 'dut0.txt', command: 'widget nobody accounts for', token: 'nobody', prompt: 'APV#' }] };
+  const unexplained = { syntax_rejected: [{ session: 'dut0.txt', command: 'widget nobody accounts for', token: 'nobody', prompt: 'demo#' }] };
   assert.ok(extractCaseDeviceEvidence({ ...job('run_01cccccccccccccccccccccccc', unexplained), priorPlan: ran('run_01cccccccccccccccccccccccc') }));
   assert.throws(() => extractCaseDeviceEvidence({ ...job('run_01dddddddddddddddddddddddd', unexplained), priorPlan: ran('run_01cccccccccccccccccccccccc') }), /不属于同一次运行（plan_run 不一致：run_01cccccccccccccccccccccccc != run_01dddddddddddddddddddddddd）/);
   assert.throws(() => extractCaseDeviceEvidence(job('run_01cccccccccccccccccccccccc', unexplained)), /不属于同一次运行（syntax_rejected 命令“widget nobody accounts for”不在该计划步骤中）/, 'a plan that does not say its run is still guessed');
-  // A command a step sent as its own is the plan's, never the runner's, also when the runner sends the same words afterwards.
   const twice = log.replace('widget wipe all', 'widget setup-early');
   assert.ok(!runnerOwnLogCommands(twice).has('widget setup-early'));
 });
 
-test('D5 & D6: NOERROR/free-text never triggers false streak, normalized framework/contract failures match across rounds, and unrecorded notes never forge round 1', () => {
+test('D5 & D6: error words in benign free text never trigger a false streak, normalized framework/contract failures match across rounds, and unrecorded notes never forge round 1', () => {
   const ids = buildCaseIdSet(CASE_ID);
-  const plan = parsePriorPlanSnapshot(makePlan(CASE_ID, 'widget on', 'show dns query', 'NOERROR'), ids);
+  const plan = parsePriorPlanSnapshot(makePlan(CASE_ID, 'widget on', 'show widget query', 'NO_ERROR'), ids);
 
   const mkReturns = (runId: string) => ({
     schema: 'device-returns@1',
@@ -575,13 +575,12 @@ test('D5 & D6: NOERROR/free-text never triggers false streak, normalized framewo
     jobs: [{ job: 'f'.repeat(64), verification_run: runId, rows: [{ item: CASE_ID, verdict: 'fail', sessions: { 'dut0.txt': 'dut0.txt' }, log: 'log.txt' }] }],
   });
 
-  // Benign DNS `NOERROR` output produces 0 false error signatures / anomalies and generic `device_verdict:fail` never triggers a false consecutive streak!
   const benignEv = extractCaseDeviceEvidence({
     round: 1,
     returnsIndex: mkReturns('run_01aaaaaaaaaaaaaaaaaaaaaaaa'),
     caseIds: ids,
-    sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: 'apv#show dns query\n;; status: NOERROR, id: 1001\napv#\n' }]]),
-    logText: 'dispatched show dns query\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 49684, no error found\n',
+    sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: 'demo#show widget query\n;; widget status: NO_ERROR, id: 1001\ndemo#\n' }]]),
+    logText: 'dispatched show widget query\n;; widget reply: kind QUERY, status: NO_ERROR, id: 49684, no error found\n',
     logPath: 'log.txt',
     priorPlan: plan,
   })!;
@@ -597,12 +596,11 @@ test('D5 & D6: NOERROR/free-text never triggers false streak, normalized framewo
   assert.equal(falseStreakCheck.consecutiveSameError, 1);
   assert.equal(falseStreakCheck.varyFormRequired, false);
 
-  // Framework `#### Fail Num <n>:` + dynamic DNS id + timestamp normalize identically across Round 1 and Round 2!
   const evR1 = extractCaseDeviceEvidence({
     round: 1,
     returnsIndex: mkReturns('run_01aaaaaaaaaaaaaaaaaaaaaaaa'),
     caseIds: ids,
-    sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: 'apv#show dns query\nfailed\napv#\n' }]]),
+    sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: 'demo#show widget query\nfailed\ndemo#\n' }]]),
     logText: '#### Fail Num 1: assert expect failed at Mon Nov 14 15:00:01 2026 id: 49684 rc=0x1a2b\n',
     logPath: 'log.txt',
     priorPlan: plan,
@@ -611,7 +609,7 @@ test('D5 & D6: NOERROR/free-text never triggers false streak, normalized framewo
     round: 2,
     returnsIndex: mkReturns('run_01bbbbbbbbbbbbbbbbbbbbbbbb'),
     caseIds: ids,
-    sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: 'apv#show dns query\nfailed\napv#\n' }]]),
+    sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: 'demo#show widget query\nfailed\ndemo#\n' }]]),
     logText: '#### Fail Num 2: assert expect failed at Mon Nov 14 15:08:19 2026 id: 51209 rc=0x1a2b\n',
     logPath: 'log.txt',
     priorPlan: plan,
@@ -627,7 +625,6 @@ test('D5 & D6: NOERROR/free-text never triggers false streak, normalized framewo
     ],
   });
   assert.equal(streak.consecutiveSameError, 2);
-  // InfoTest `briefs.py:2792-2820` & `remedies.py:39-42`: plain device error streak reports consecutiveSameError without auto varyFormRequired.
   assert.equal(streak.varyFormRequired, false);
 
   const streakFrozen = analyzeRoundHistory({
@@ -655,7 +652,6 @@ test('D5 & D6: NOERROR/free-text never triggers false streak, normalized framewo
   });
   assert.equal(streakFrozen.varyFormRequired, true);
 
-  // D6: Unrecorded attribution rendered alone never fabricates `第 1 轮`
   const mdUnrecorded = renderPriorRoundsMarkdown({
     caseRef: CASE_ID,
     currentRound: 2,
@@ -676,12 +672,10 @@ test('D5 & D6: NOERROR/free-text never triggers false streak, normalized framewo
   assert.ok(!mdUnrecorded.includes('上一轮（第 1 轮）'));
 });
 
-function buildApvScrollLine(prompt: string, fullCmd: string, viewportCols = 60): string {
-  // Simulates real APV horizontal-scroll redraws (`BS*W + $<W-1 chars>` frames, ending on a `<vis><spaces> + BS*pad + tail` chunk).
+function buildScrollLine(prompt: string, fullCmd: string, viewportCols = 60): string {
   const firstSlice = fullCmd.slice(0, viewportCols);
   let out = `${prompt}${firstSlice}`;
   let cursor = firstSlice.length;
-  // Scroll 1 char at a time for the middle window, then finish with a space-padded scroll frame + trailing chunk.
   const tailChunkLen = Math.min(24, Math.max(0, fullCmd.length - viewportCols - 5));
   const scrollUntil = fullCmd.length - tailChunkLen;
   while (cursor < scrollUntil) {
@@ -697,29 +691,29 @@ function buildApvScrollLine(prompt: string, fullCmd: string, viewportCols = 60):
   return out;
 }
 
-test('N1: APV horizontal-scroll \\x08/$ redraws match >=220-char commands and keep readable error excerpts', () => {
+test('N1: horizontal-scroll \\x08/$ redraws match >=220-char commands and keep readable error excerpts', () => {
   const ids = buildCaseIdSet(CASE_ID);
   const prefix = 'set synthetic param alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu ';
-  const cmdKsk = `${prefix}token-one token-two mode KSK tail-check`;
-  const cmdZsk = `${prefix}token-one token-two mode ZSK tail-check`;
-  assert.ok(cmdKsk.length > 220);
+  const cmdOne = `${prefix}token-one token-two mode ONE tail-check`;
+  const cmdTwo = `${prefix}token-one token-two mode TWO tail-check`;
+  assert.ok(cmdOne.length > 220);
 
-  const rawLineKsk = buildApvScrollLine('Dut0(config)#', cmdKsk);
+  const rawLineKsk = buildScrollLine('Dut0(config)#', cmdOne);
   assert.ok(rawLineKsk.length > 1000, 'raw terminal redraw stream exceeds naive excerpt cap');
   const decoded = decodeHorizontalScrollRedraw(rawLineKsk);
-  assert.equal(decoded, `Dut0(config)#${cmdKsk}`);
-  const tsLogLine = buildApvScrollLine('2026-11-14 09:52:52 ', cmdKsk, 75);
-  assert.equal(decodeHorizontalScrollRedraw(tsLogLine), `2026-11-14 09:52:52 ${cmdKsk}`);
+  assert.equal(decoded, `Dut0(config)#${cmdOne}`);
+  const tsLogLine = buildScrollLine('2026-11-14 09:52:52 ', cmdOne, 75);
+  assert.equal(decodeHorizontalScrollRedraw(tsLogLine), `2026-11-14 09:52:52 ${cmdOne}`);
 
   const session = [
     'Dut0(config)#echo start',
     rawLineKsk,
     '% Error: Unrecognized parameter near token tail-check',
-    buildApvScrollLine('Dut0(config)#', cmdZsk),
-    '% Info: Applied ZSK variant',
+    buildScrollLine('Dut0(config)#', cmdTwo),
+    '% Info: Applied TWO variant',
   ].join('\n');
 
-  const plan = parsePriorPlanSnapshot(makePlan(CASE_ID, cmdKsk, cmdZsk, 'ZSK succeeded'), ids);
+  const plan = parsePriorPlanSnapshot(makePlan(CASE_ID, cmdOne, cmdTwo, 'TWO succeeded'), ids);
   assert.ok(plan);
 
   const returnsIndex = {
@@ -753,13 +747,13 @@ test('N1: APV horizontal-scroll \\x08/$ redraws match >=220-char commands and ke
   assert.equal(evidence.stepExcerpts.length, 2);
   assert.equal(evidence.stepExcerpts[0].found, true);
   assert.equal(evidence.stepExcerpts[1].found, true);
-  assert.ok(evidence.stepExcerpts[0].excerpt?.includes('mode KSK tail-check'));
+  assert.ok(evidence.stepExcerpts[0].excerpt?.includes('mode ONE tail-check'));
   assert.ok(evidence.stepExcerpts[0].excerpt?.includes('% Error: Unrecognized parameter'));
-  assert.ok(!evidence.stepExcerpts[0].excerpt?.includes('mode ZSK tail-check'));
+  assert.ok(!evidence.stepExcerpts[0].excerpt?.includes('mode TWO tail-check'));
   assert.ok(!evidence.stepExcerpts[0].excerpt?.includes('\b'));
   assert.ok(!evidence.inlineTail.includes('\b'), 'inlineTail must decode scroll redraws without raw BS bytes');
-  assert.ok(evidence.inlineTail.includes(cmdKsk), 'inlineTail preserves decoded long APV command');
-  assert.ok(evidence.stepExcerpts[1].excerpt?.includes('% Info: Applied ZSK variant'));
+  assert.ok(evidence.inlineTail.includes(cmdOne), 'inlineTail preserves the decoded long command');
+  assert.ok(evidence.stepExcerpts[1].excerpt?.includes('% Info: Applied TWO variant'));
 });
 
 test('N2: MISSING_STEP_TRUNCATION_MSG only triggers before first retained anchor in >=11k session when cmd absent', () => {
@@ -935,7 +929,6 @@ test('N3 & N4: accepted missing_input splits from gate refusals, strips internal
   assert.ok(!mdAccepted.includes('Hub 没有受理'));
   assert.ok(!mdAccepted.includes('vary_form_required'));
   assert.ok(!/rec:[0-9a-f]{16,64}/i.test(mdAccepted));
-  // Earlier round shows in 历轮摘要, while latest round's notice renders only in 上一轮 block (never repeated twice verbatim).
   assert.ok(mdAccepted.includes('请补充第一轮旧缺失参数'));
   const occurrences = mdAccepted.split('请补充具体 Mbps 数值').length - 1;
   assert.equal(occurrences, 1, 'latest round Hub notice should not repeat verbatim in both summary and 上一轮 section');
@@ -980,7 +973,6 @@ test('N3 & N4: accepted missing_input splits from gate refusals, strips internal
   assert.ok(mdBriefAcc.includes('Hub 已受理，还缺'));
   assert.ok(!mdBriefAcc.includes('vary_form_required'));
 
-  // Contrast: 2 consecutive unaccepted refusals (both flat wrapper and standard `errors: [...]` envelope)
   const parsedNotAcc = parseHubAnswerNotices(notAcceptedRaw, ids, 1);
   assert.equal(parsedNotAcc.acceptanceParsed, true);
   assert.equal(parsedNotAcc.acceptance, 'not_accepted');
@@ -1044,7 +1036,6 @@ test('a round whose dispatch did not reach the case is no device error: it makes
   const md = renderPriorRoundsMarkdown({ caseRef: CASE_ID, currentRound: 2, rounds, streak });
   assert.ok(md.includes('本轮没有在设备上执行，不算一次上机') && md.includes(reason) && md.includes(next_action), md);
   assert.ok(!md.includes('device_verdict'));
-  // a row that ran is read as before
   const ran = { ...returnsIndex, jobs: [{ ...returnsIndex.jobs[0], rows: [{ item: CASE_ID, verdict: 'fail', log: null, sessions: {} }] }] };
   const failed = extractCaseDeviceEvidence({ round: 1, returnsIndex: ran, caseIds: ids, sessionTexts: new Map(), logText: null, logPath: null })!;
   assert.deepEqual([failed.errorSignatures, failed.notExecuted], [['device_verdict:fail'], undefined]);
@@ -1053,14 +1044,14 @@ test('a round whose dispatch did not reach the case is no device error: it makes
 test('a typed block gives its command to the plan-versus-returns check, and a back-filled command matches what the device echoed, whole or cut', () => {
   const ids = buildCaseIdSet(CASE_ID, { id: `case-${CASE_ID}`, fields: { autoid: CASE_ID } });
   const plan = parsePriorPlanSnapshot({ item: `case-${CASE_ID}`, handling: 'handled', slots: { plan: [{ data: { steps: [], blocks: [
-    { id: 'b1', kind: 'CONFIG', call: { object: 'DUT_0', method: 'cmd_config', args: ['widget key publish "example.test" "Kexample.test.+005+{}+ksk"'], keywords: {} }, input_register: 'key_id' },
-    { id: 'b2', kind: 'CONFIG', call: { object: 'DUT_0', method: 'cmd_config', args: ['widget zone sign "example.test"'], keywords: {} } },
+    { id: 'b1', kind: 'CONFIG', call: { object: 'DUT_0', method: 'cmd_config', args: ['widget key publish "example.test" "example.test.key.{}.pub"'], keywords: {} }, input_register: 'key_id' },
+    { id: 'b2', kind: 'CONFIG', call: { object: 'DUT_0', method: 'cmd_config', args: ['widget seal "example.test"'], keywords: {} } },
   ] } }] } }, ids, 'plans-r1/00.json');
   const norms = plan.blocks.map((block) => block.commandText ?? '');
-  assert.deepEqual(norms, ['widget key publish "example.test" "Kexample.test.+005+{}+ksk"', 'widget zone sign "example.test"'], 'round 41: the command of a typed block was not read, and every refused command looked foreign to the plan');
-  assert.equal(commandMatchesPlanSet('widget key publish "example.test" "Kexample.test.+005+34332+ksk"', norms, norms, false), true, 'the captured value in place of {}');
+  assert.deepEqual(norms, ['widget key publish "example.test" "example.test.key.{}.pub"', 'widget seal "example.test"'], 'the command of a typed block is read, so a refused command of the block is not foreign to the plan');
+  assert.equal(commandMatchesPlanSet('widget key publish "example.test" "example.test.key.34332.pub"', norms, norms, false), true, 'the captured value in place of {}');
   assert.equal(commandMatchesPlanSet('widget key publish "example.te', norms, norms, true), true, 'an echo cut before the placeholder');
-  assert.equal(commandMatchesPlanSet('widget key publish "example.test" "Kexample.test.+005+343', norms, norms, true), true, 'an echo cut inside the captured value');
-  assert.equal(commandMatchesPlanSet('widget key revoke "example.test" "Kexample.test.+005+34332+ksk"', norms, norms, false), false);
-  assert.equal(commandMatchesPlanSet('widget zone resign "example.te', norms, norms, true), false);
+  assert.equal(commandMatchesPlanSet('widget key publish "example.test" "example.test.key.343', norms, norms, true), true, 'an echo cut inside the captured value');
+  assert.equal(commandMatchesPlanSet('widget key revoke "example.test" "example.test.key.34332.pub"', norms, norms, false), false);
+  assert.equal(commandMatchesPlanSet('widget reseal "example.te', norms, norms, true), false);
 });

@@ -1,10 +1,8 @@
-// Complete exemption evidence, fact formatting, and 2400-token budgeting for Plumb scenario_fidelity.
 import { createHash } from 'node:crypto';
 import { literalLengths, type AuthorStep, type FidelityBrief } from './fidelity.ts';
 import { PLUMB_GATEWAY_LIMITS, estimateTokens } from './generated/skills/plumb/plumb-client/index.ts';
 import { isRecord } from './text.ts';
 
-/** The gateway's limit on a `sequence` state (pinned and cross-checked with the gateway source in the plumb skill). */
 export const FIDELITY_MAX_EST_TOKENS = PLUMB_GATEWAY_LIMITS.fidelityStateEstTokens;
 
 export interface PartitionedFidelityBlocks {
@@ -16,16 +14,11 @@ export interface PartitionedFidelityBlocks {
   exemptSummaryLines: string[];
 }
 
-/** A long literal the state writes once, in a table, and names wherever it occurs; the report of what was replaced. */
 export interface LiteralSubstitution {
-  /** The name the state uses in place of the literal, such as `«L1»`. */
   name: string;
-  /** Characters of the literal, and of each dotted label when it has labels (the figures `literal_lengths` of the brief carries). */
   length: number;
   labels?: number[];
-  /** How many times the name stands in the state for the literal, the table not counted. */
   occurrences: number;
-  /** The first 12 hex digits of the SHA-256 of the literal: names it in a report without repeating it. */
   sha256_12: string;
 }
 
@@ -34,21 +27,15 @@ export interface RenderedFidelityState {
   truncated: boolean;
   overBudget: boolean;
   estTokensBefore: number;
-  /** Estimated tokens of what is sent; of the smallest plain state when `overBudget`. */
   estTokensAfter: number;
-  /** Estimated tokens of the smallest plain state, before any long literal is replaced; equals `estTokensAfter` unless literals were replaced. */
   estTokensPlain: number;
-  /** Long literals replaced by names in this state (none unless the plain state did not fit and replacing them made it fit). */
   substitutions: LiteralSubstitution[];
-  /** When `overBudget`: estimated tokens of the smallest state with its repeated long literals replaced, null when none repeats. */
   reducedEstTokens: number | null;
-  /** When `overBudget`: where the estimated tokens of the smallest plain state go. */
   parts: { currentStep: number; commandBlocks: number; exemptions: number } | null;
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
-/** Extracts executable command strings from either flat-step or block-mode brief entries. */
 export function blockCommandLines(block: Record<string, unknown>): string[] {
   if (Array.isArray(block.cmds)) {
     return block.cmds.filter((c): c is string => typeof c === 'string' && c.trim().length > 0);
@@ -59,14 +46,12 @@ export function blockCommandLines(block: Record<string, unknown>): string[] {
   return [];
 }
 
-/** Extracts target host/object from either flat-step or block-mode brief entries. */
 export function blockHost(block: Record<string, unknown>): string {
   if (typeof block.host === 'string' && block.host) return block.host;
   if (isRecord(block.call) && typeof block.call.object === 'string') return block.call.object;
   return '';
 }
 
-/** Extracts assertion texts from either flat-step or block-mode brief entries. */
 export function blockAsserts(block: Record<string, unknown>): string[] {
   if (Array.isArray(block.asserts)) {
     return block.asserts.filter((a): a is string => typeof a === 'string' && a.trim().length > 0);
@@ -86,12 +71,10 @@ export function blockAsserts(block: Record<string, unknown>): string[] {
   return out;
 }
 
-/** Exemptions are evidence for model judgment, not a program-derived permission to erase candidate actions. */
 export function partitionFidelityBlocks(brief: FidelityBrief): PartitionedFidelityBlocks {
  return {negativeCase:null,exemptedIndices:new Set(),cleanupIndices:new Set(),candidateBlocks:brief.blocks,allBlocks:brief.blocks,exemptSummaryLines:[]};
 }
 
-/** Renders one plan block deterministically without leaking worker prose (`description`/`desc`/`rationale`). */
 export function formatBlockForFidelity(block: Record<string, unknown>): string {
   const index = typeof block.index === 'number' ? block.index : '?';
   const kind = str(block.kind) || 'STEP';
@@ -145,13 +128,6 @@ const LONG_LITERAL_CHARS = 32;
 const LITERAL_TABLE_TAG = '[长字面量对照]';
 const LITERAL_TABLE_NOTE = '下面每个名字，在上文和命令块里都代表一个逐字相同的长字面量，原文只在这里写一次：';
 
-/**
- * Writes each long literal that occurs verbatim more than once in `segments` (a run of 32 characters or more between spaces,
- * quotes around it ignored, as `literalLengths` reads literals) once in a table, and puts the same name in its place everywhere.
- * Nothing is lost: the table gives the literal with its length and, for a dotted name, the length of each label, and the
- * names restore the text exactly. Only a literal whose replacement makes the text shorter is replaced; a literal that differs
- * by one character is not the same literal and stays as it is. The rule looks at length and repetition only.
- */
 export function shortenRepeatedLiterals(segments: readonly string[]): { segments: string[]; legend: string; substitutions: LiteralSubstitution[] } {
   const piece = /^(["']*)([^]*?)(["']*)$/u;
   const split = segments.map((segment) => segment.split(/(\s+)/u));
@@ -201,13 +177,6 @@ export function shortenRepeatedLiterals(segments: readonly string[]): { segments
   };
 }
 
-/**
- * Renders the product-format `state` for one author step inside the Plumb `sequence` (@2400 est-token) budget.
- * Never truncates inside `[当前作者步骤 N]` or `[候选命令块]`; sets `overBudget=true` when even the core exceeds 2400.
- * Dropping earlier context is tried first. When even the core is too big, the long literals that repeat verbatim are written
- * once in a table and named (shortenRepeatedLiterals) and the same ladder is tried again, so the model judges the same text
- * with the same information; a state that fits as it is is never rewritten.
- */
 export function renderFidelityStepState(
   brief: FidelityBrief,
   stepIndex: number,
@@ -223,7 +192,6 @@ export function renderFidelityStepState(
   const exemptionSec = `[前置豁免规则]\n${brief.rules[2]}\n\n[mechanical.exemptions 原始依据，相关性及反向场景由模型核对]\n${JSON.stringify(brief.mechanical.exemptions)}`;
   const blockHead = `[候选命令块]\n${blockLines.join('\n')}`;
 
-  // The ladder, widest context first: everything, then fewer earlier steps, then none, then without the case intent.
   const rungs: Array<{ header: string; prior: string }> = [{ header: headerSec, prior: renderPriorSection(priorSteps) }];
   for (let drop = 1; drop < priorSteps.length; drop += 1) {
     rungs.push({ header: headerSec, prior: `[前序步骤]\n（前面 ${drop} 步已省略）\n${priorSteps.slice(drop).map((s) => `${s.n}. ${s.text}`).join('\n')}` });

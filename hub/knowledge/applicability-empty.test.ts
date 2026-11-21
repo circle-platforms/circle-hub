@@ -1,5 +1,3 @@
-// Decision 159 (K02 F[6], R[2], model 44): an entry with no declared, judged or conflicting condition carries no
-// applicability. The empty marker a producer writes is not stored, and a read says nothing of such an entry's conditions.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { entryContentOf, entryDigest } from './digest.ts';

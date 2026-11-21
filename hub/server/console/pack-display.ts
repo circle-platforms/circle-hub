@@ -30,11 +30,8 @@ export const PACK_PLACES = {
 } as const satisfies Partial<Record<PackKind, { active: NonNullable<PageChrome['active']>; path: string; title: string }>>;
 /** A kind with a place of its own: the keys of the table above, never a list of kinds written out again. */
 export type PlaceKind = keyof typeof PACK_PLACES;
-/** Personal zip staging and confirm (workflows and skills share one page under the workflows place). */
 export const PERSONAL_PUBLISH = `${workflowsPath()}/-/publish`;
-/** POST actions for the owner's personal pack forms. */
 export const personalPackDo = (action: string): string => `${workflowsPath()}/do/${encodeURIComponent(action)}`;
-/** The page of one pack: a skill under the skills place, every other kind under the workflows place. */
 export const packPath = (pack: { id: string; kind: PackKind }): string => (pack.kind === 'skill' ? skillPath(pack.id) : workflowPath(pack.id));
 
 export function packPurpose(kind:PackKind):string{

@@ -74,7 +74,6 @@ const requirement = (r: Partial<RequirementTemplate> & Pick<RequirementTemplate,
 
 export interface ReviewOptions {
   version?: string;
-  /** Add a fact requirement whose check throws, times out, returns a synthetic unknown reason or poses as a sandbox failure. */
   fragile?: 'boom' | 'spin' | 'output_failed' | 'bogus_reason' | 'forged_sandbox' | 'heavy';
   /** Accept the independence the client declares on findings (default true). */
   acceptsDeclared?: boolean;

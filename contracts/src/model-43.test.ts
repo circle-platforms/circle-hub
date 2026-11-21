@@ -1,5 +1,3 @@
-// Model 43 (decisions 153 and 154): a workflow is made of skill modules, acceptance requirements and data bindings. The model
-// appends rules, so what cites them by number resolves, and each changed element says which owner decision it follows.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -26,7 +24,6 @@ test('C02 no longer sends everything generic to the Hub core, and C03 keeps the 
 });
 
 test('every element that model 43 changed names the owner decision it follows', () => {
-  // W08 also has changes43 from main's result-summary model; this line's skill-module notes are the 2026-11-06 ones.
   const changed = model.elements.filter((e) => e.changes43?.some((note) => /所有者 2026-11-06/.test(note)));
   assert.deepEqual(changed.map((e) => e.id).sort(), ['C02', 'C03', 'T01']);
   for (const e of changed) for (const note of e.changes43!.filter((n) => /所有者 2026-11-06/.test(n))) {

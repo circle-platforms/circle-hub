@@ -75,7 +75,6 @@ type RecordTab = typeof RECORD_TABS[number];
 const RECORD_TAB_LABEL: Record<RecordTab, string> = { calls: '调用记录', stats: '统计', sharing: '分享记录', trials: `${uiLabelOf('action_kind', 'trial')}记录` };
 const ADMIN_TABS: readonly RecordTab[] = ['trials'];
 
-/** The records page at `path` (/console/records; /console/admin/calls retired with K3). */
 export async function recordsPage(ctx: PageContext, path: '/console/records' | '/console/admin/calls'): Promise<PageResult> {
   if (path === '/console/admin/calls' && !ctx.admin) return neutralPage(ctx);
   const user = ctx.admin ? param(ctx, 'user') : undefined;

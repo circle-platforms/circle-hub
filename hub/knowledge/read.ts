@@ -132,7 +132,13 @@ interface EntryAt {
 /** Children of an expanded node read in one query. */
 const CHILD_BATCH = 64;
 
-/** A node view of the batch export: every entry that the composition holds source fragments for carries them (see subtreeNodes). */
+function nodeSegments(path: string): string[] {
+  const invalid = () => new KnowledgeError('路径格式不对；按 nodes 返回的 path 重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/paths'}});
+  if (!TreePath.safeParse(path).success) throw invalid();
+  try { return pathSegments(path); }
+  catch (error) { if (error instanceof ReferenceSyntaxError) throw invalid(); throw error; }
+}
+
 function withFragments(view: NodeViews[number], rows: ReadonlyMap<string, ReadRow> | null): NodeViews[number] {
   if (rows === null) return view;
   return { ...view, entries: view.entries.map((entry) => { const fragments = rows.get(entry.entry)?.fragments; return fragments !== undefined && fragments.length > 0 ? Object.assign({}, entry, { fragments: [...fragments] }) : entry; }) };
@@ -298,15 +304,7 @@ export class TreeReading {
         if (skipped.length < 5) skipped.push(cutText(path, 100));
         continue;
       }
-      if (!TreePath.safeParse(path).success) throw new KnowledgeError('路径格式不对；按 nodes 返回的 path 重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/paths'}});
-      let segments: string[];
-      try {
-        segments = pathSegments(path);
-      } catch (error) {
-        if (error instanceof ReferenceSyntaxError) throw new KnowledgeError('路径格式不对；按 nodes 返回的 path 重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/paths'}});
-        throw error;
-      }
-      paths.push({ text: path, segments });
+      paths.push({ text: path, segments: nodeSegments(path) });
     }
     const badCursor = (reason:string):never => {throw new KnowledgeError(`游标${reason}；请从首页重新读取`,{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'},fix:'移除 cursor，从同一根、路径和深度的首页重新读取，再使用返回的 next'});};
     const decoded=query.cursor?decodeCursor(query.cursor):null;
@@ -321,18 +319,12 @@ export class TreeReading {
     const offset=decoded?.o??0,entryOffset=decoded?.e??0;
     const rootNode=await this.#context.store.node(root);
     if (rootNode === null) throw new KnowledgeError('已授权的根缺少原件；请管理员从备份恢复后重读',{code:'SOURCE_INTEGRITY_UNPROVEN'});
-    let composition = relationComposition ?? await this.compositionOf(root);
-    if(composition?.body.empty_scope||rootNode.entries.length===0&&rootNode.children.length===0){
-      if(!composition||!await this.mayReadProducts(reader,[composition.body.product])){
-        const candidates=relationComposition?[relationComposition]:await this.compositionsOf(root);
-        composition=null;
-        for(const view of candidates)if(await this.mayReadProducts(reader,[view.body.product])){composition=view;break;}
-      }
-      if(!composition)return null;
-      if(composition.body.empty_scope){
-        if(offset!==0||entryOffset!==0)throw new KnowledgeError('空根没有后续页；从首页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
-        return {nodes:[],next:null,coverage:{complete:true,examined:0,total:0,note:emptyScopeNote(composition.body.empty_scope)!}};
-      }
+    const chosen = await this.#readableComposition(root, reader, rootNode, relationComposition);
+    if (chosen === null) return null;
+    const composition = chosen.composition;
+    if(composition?.body.empty_scope){
+      if(offset!==0||entryOffset!==0)throw new KnowledgeError('空根没有后续页；从首页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
+      return {nodes:[],next:null,coverage:{complete:true,examined:0,total:0,note:emptyScopeNote(composition.body.empty_scope)!}};
     }
     const { pageNodes } = this.#context.limits;
     const pageBytes = budget ?? this.#context.limits.pageBytes;
@@ -460,44 +452,34 @@ export class TreeReading {
     };
   }
 
-  /**
-   * K05: the subtrees a run fetches in one batch ("按包声明一次批量取回子树"; under a digest the content does not change, so it is
-   * not read from the Hub again piece by piece, K05 R[0]). Every node under the given paths in pre-order, each once, to the
-   * leaves, with the node views a subtree read (getNodes) gives for the same root and composition: the same permission
-   * check before anything is read, the same composition choice, the same entries in the same order. No page limit, no
-   * cursor, and nothing of the layers that change after the root (back-references, contributions, feeding): those are read
-   * on their own. Null where getNodes answers null (absent and forbidden alike, D05 R[3]) and for an empty scope. One thing
-   * more than getNodes gives: each entry carries its `fragments`, the source fragments the composition lists for it in the
-   * order the producers gave them (what a reference read gives as `grounds`). The tree records no document order (a node's
-   * entries are sorted for reading, K01 R[1]); the fragments are where an entry stands in its source, so a client that
-   * keeps the batch can put the entries of a node back in the order of their source.
-   */
+  async #readableComposition(root: string, reader: Principal, rootNode: TreeNodeBody, related: CompositionView | null): Promise<{ composition: CompositionView | null } | null> {
+    let composition = related ?? await this.compositionOf(root);
+    if (composition?.body.empty_scope || rootNode.entries.length === 0 && rootNode.children.length === 0) {
+      if (!composition || !await this.mayReadProducts(reader, [composition.body.product])) {
+        const candidates = related ? [related] : await this.compositionsOf(root);
+        composition = null;
+        for (const view of candidates) if (await this.mayReadProducts(reader, [view.body.product])) { composition = view; break; }
+      }
+      if (!composition) return null;
+    }
+    return { composition };
+  }
+
   async subtreeNodes(query: { root: string; paths?: readonly string[]; composition?: string | null }, reader: Principal): Promise<AsyncGenerator<NodeViews[number]> | null> {
     const root = query.root;
     if (typeof root !== 'string' || !SHA256.test(root)) return null;
     if (query.composition != null && !SHA256.test(query.composition)) return null;
     if (!(await this.mayReadRoot(reader, root))) return null;
     const starts: string[][] = [];
-    for (const path of query.paths === undefined || query.paths.length === 0 ? ['/'] : query.paths) {
-      if (typeof path !== 'string' || !TreePath.safeParse(path).success) throw new KnowledgeError('路径格式不对；按 nodes 返回的 path 重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/paths'}});
-      try { starts.push(pathSegments(path)); }
-      catch (error) { if (error instanceof ReferenceSyntaxError) throw new KnowledgeError('路径格式不对；按 nodes 返回的 path 重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/paths'}}); throw error; }
-    }
+    for (const path of query.paths === undefined || query.paths.length === 0 ? ['/'] : query.paths) starts.push(nodeSegments(path));
     const hint = query.composition;
     const relationComposition = hint === null ? null : await this.#relations?.compositionFor(root, reader, hint) ?? null;
     if (hint && !relationComposition) throw new KnowledgeError('所给组成不属于该根；按运行锁定的组成重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/composition'}});
     const rootNode = await this.#context.store.node(root);
     if (rootNode === null) throw new KnowledgeError('已授权的根缺少原件；请管理员从备份恢复后重读',{code:'SOURCE_INTEGRITY_UNPROVEN'});
-    let composition = relationComposition ?? await this.compositionOf(root);
-    if (composition?.body.empty_scope || rootNode.entries.length === 0 && rootNode.children.length === 0) {
-      if (!composition || !await this.mayReadProducts(reader, [composition.body.product])) {
-        const candidates = relationComposition ? [relationComposition] : await this.compositionsOf(root);
-        composition = null;
-        for (const view of candidates) if (await this.mayReadProducts(reader, [view.body.product])) { composition = view; break; }
-      }
-      if (!composition || composition.body.empty_scope) return null;
-    }
-    const chosen = composition, reading = this, seen = new Set<string>();
+    const readable = await this.#readableComposition(root, reader, rootNode, relationComposition);
+    if (readable === null || readable.composition?.body.empty_scope) return null;
+    const chosen = readable.composition, reading = this, seen = new Set<string>();
     async function* walk(segments: string[], digest: string, node: TreeNodeBody): AsyncGenerator<NodeViews[number]> {
       const path = pathOf(segments);
       if (seen.has(path)) return;
@@ -532,7 +514,6 @@ export class TreeReading {
       children: node.children.map((child) => ({ name: child.name, path: pathOf([...segments, child.name]), digest: child.digest })),
       entries: entries.map(({ digest: entry, content }) => {
         const placement = rows?.get(entry)?.placement;
-        // Decision 159: nothing is said of conditions nobody declared; a placement note still goes out on its own.
         const conditions = applicabilityText(content.applicability,rows?.get(entry)?.applicability_sources??[]);
         const applicability = [...(conditions === UNDECLARED ? [] : [conditions]), ...(placement === undefined ? [] : [placement.note])].join('；');
         return {

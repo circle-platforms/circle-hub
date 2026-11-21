@@ -1,4 +1,3 @@
-// End-to-end release entry-point coverage; all inputs, Hub replies and credentials are synthetic.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -15,7 +14,7 @@ test('all twenty-four staged release CLI entry points match declared argv and st
   try {
     const cc = await stage(join(root, 'case-compile'));
     const rc = await stageRecompose('recompose', join(root, 'recompose'));
-    const local = await buildLocalCliProbes(cc, rc, root);
+    const local = await buildLocalCliProbes(cc, root);
     const remote = await buildRemoteCliProbes(cc, rc, join(root, 'remote'));
     try {
       assert.deepEqual(verifyCliInvocations(cc, CASE_COMPILE_CLI_HELPERS, { ...local.caseCompile, ...remote.caseCompile, ...remote.plumbCaseCompile, ...remote.lateCaseCompile, ...remote.readCaseCompile }), { declarations: 24, invocations: 33, processes: 48 });
@@ -23,8 +22,6 @@ test('all twenty-four staged release CLI entry points match declared argv and st
       const receipts = await remote.receipts();
       assert.ok(receipts.length > 0);
       assert.ok(receipts.every(receipt => receipt.authorized));
-      // Two submissions, three Plumb judge calls, and the first Hub call of open-compile (list_task_packs) and of device-read
-      // (start_run), which the responder refuses.
       assert.equal(receipts.filter(receipt => receipt.method === 'POST').length, 7);
     } finally { await remote.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }

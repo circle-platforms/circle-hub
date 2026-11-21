@@ -114,12 +114,15 @@ curl -sS http://127.0.0.1:7420/healthz
 
 控制台：`http://127.0.0.1:7420/console/`（`init-admin` 的初始密码，首次登录改密）。
 
-连接 Circle（**推荐普通 MCP 授权，不必手签 Bearer 令牌**）：
+在 Circle 中添加普通的 HTTP MCP 服务器。网页登录使用 MCP 标准授权。
 
-1. **桌面**：设置 → 能力 → 扩展 → Hub，填写 Hub 地址，在打开的页面用管理员用户名和密码登录（若显示一次性码，按提示输入）。
-2. **终端**：运行 `/hub http://127.0.0.1:7420/mcp`，或在 Circle 数据目录的 `settings.json` 的 `mcpServers` 对象下增加无 `Authorization` 头的条目，例如  
-   `{"mcpServers":{"Hub":{"type":"http","url":"http://127.0.0.1:7420/mcp","placeholders":{"url":"HUB_URL","token":"HUB_TOKEN"}}}}`  
-   （**不要**写 `Authorization` 头，否则不会走登录），然后 `/mcp` 或 `/mcp reload`，按提示登录（连上后工具名显示为 `mcp__Hub__<工具名>`，如 `mcp__Hub__list_task_packs`）。
+1. 在桌面版的 MCP 服务器页面新增连接，或在 Circle 数据目录的 `settings.json` 中合并以下配置。
+
+   ```json
+   {"mcpServers":{"Hub":{"type":"http","url":"http://127.0.0.1:7420/mcp","placeholders":{"url":"HUB_URL","token":"HUB_TOKEN"}}}}
+   ```
+
+2. 在终端执行 `/mcp reload` 后按 MCP 登录提示打开浏览器。在桌面版从 MCP 服务器页面登录。登录完成后可调用 `mcp__Hub__list_task_packs`。
 3. **邀请成员（可选）**：`./bin/circle-hub user invite <账户名>` 生成 24 小时邀请码，成员在授权页输入。
 4. **脚本排查或手动令牌（可选）**：`./bin/circle-hub token issue <账户名> --label "circle-local" --raw`，请求头 `Authorization: Bearer <令牌>`；在 Circle `settings.json` 中推荐用 `Bearer ${secret:CIRCLE_HUB_TOKEN}` 从 `secrets.json` 读取（`headers` 中直接 `${NAME}` 亦可从环境变量或 `secrets.json` 读取，但仍建议将静态令牌存进 `secrets.json`）。
 

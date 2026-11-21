@@ -1,30 +1,27 @@
-// Which authored actions of a recomposition record the plan's author_step_refs name, and the words of the refusal for one it does
-// not (functions/fidelity.ts authorStepCoverage, uncoveredAuthorStepText). The check that uses them is judged in
-// tools/check-plan-coverage.test.ts; this is the pure function on the brief the audit uses, so the numbers in the text are the audit's.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {authorStepCoverage,fidelityBrief,uncoveredAuthorStepText,unknownAuthorStepRefs} from './fidelity.ts';
 
 const RECORD={
  schema:'recompose-record@1',
- contract:{intent:{text:'253 域名 synconfig 同步'}},
+ contract:{intent:{text:'253 域名 widget 同步'}},
  atoms:[
-  {id:'a1',kind:'intent',text:'253 域名 synconfig 同步'},
+  {id:'a1',kind:'intent',text:'253 域名 widget 同步'},
   {id:'a2',kind:'action',text:'HA 已配置'},
   {id:'a3',kind:'action',text:'主设备配置 253 域名'},
-  {id:'a4',kind:'action',text:'synconfig to'},
+  {id:'a4',kind:'action',text:'widget sync to'},
   {id:'a5',kind:'action',text:'对端 show 查看'},
   {id:'a6',kind:'expectation',text:'对端同步完整'},
  ],
  ledgers:{
   original:[],
-  adapted:[{atom:'a4',text:'在主设备上执行 synconfig to peer2，把运行配置同步到对端',commands:['synconfig challenge "x"','synconfig peer peer2 192.0.2.2','synconfig to peer2','synconfig to peer3'],equivalence_reason:'补上必填的 peer name'}],
+  adapted:[{atom:'a4',text:'在主设备上执行 widget sync to peer2，把运行配置同步到对端',commands:['widget challenge "x"','widget peer peer2 192.0.2.2','widget sync to peer2','widget sync to peer3'],equivalence_reason:'补上必填的 peer name'}],
   concretizations:[],rebindings:[],
  },
 };
-const step=(line:string,refs?:string[])=>({object:'APV_0',method:'cmd_config',args:[line],keywords:{},...(refs!==undefined?{author_step_refs:refs}:{})});
+const step=(line:string,refs?:string[])=>({object:'DUT_0',method:'cmd_config',args:[line],keywords:{},...(refs!==undefined?{author_step_refs:refs}:{})});
 const flat=(refs:Array<string[]|undefined>)=>({blocks:[],steps:refs.map((ids,index)=>step('cmd '+index,ids)),expects:[]});
-const block=(id:string,refs?:string[])=>({id,kind:'CONFIG',call:{object:'APV_0',method:'cmd_config',args:['cmd '+id],keywords:{}},...(refs!==undefined?{author_step_refs:refs}:{})});
+const block=(id:string,refs?:string[])=>({id,kind:'CONFIG',call:{object:'DUT_0',method:'cmd_config',args:['cmd '+id],keywords:{}},...(refs!==undefined?{author_step_refs:refs}:{})});
 const has=(text:string,...parts:string[])=>{for(const part of parts)assert.ok(text.includes(part),`missing ${JSON.stringify(part)} in: ${text}`);};
 const coverageOf=(plan:unknown,record:unknown=RECORD)=>{const brief=fidelityBrief('doc:1',record,plan)!;return {brief,coverage:authorStepCoverage(brief,plan)};};
 
@@ -45,7 +42,6 @@ test('a value that is no author step id covers nothing, but it is still listed a
  const plan=flat([['2','a3'],['a1'],['a6','a_4']]);const {coverage}=coverageOf(plan);
  assert.deepEqual(coverage.uncovered.map(row=>row.n),['a2','a4','a5']);
  assert.deepEqual(coverage.carriers.map(row=>row.refs),[['2','a3'],['a1'],['a6','a_4']]);
- // the refusal for it names the stray values, the same ones unknownAuthorStepRefs names where the brief is made
  const text=uncoveredAuthorStepText(coverageOf(plan).brief,coverage,coverage.uncovered[0]!);
  has(text,'"2"：第 1 步','"a1"：第 2 步','"a6"：第 3 步','"a_4"：第 3 步');
  assert.deepEqual(unknownAuthorStepRefs(coverageOf(plan).brief,plan).map(row=>row.value),['2','a1','a6','a_4']);
@@ -75,8 +71,8 @@ test('an adapted action shows the author\'s words and the adaptation with its fi
  const {brief,coverage}=coverageOf(flat([['a2'],['a3'],['a5']]));
  assert.deepEqual(coverage.uncovered.map(row=>row.n),['a4']);
  const text=uncoveredAuthorStepText(brief,coverage,coverage.uncovered[0]!);
- has(text,'作者步骤 a4（"synconfig to"）','重组记录把这一步改写成 "在主设备上执行 synconfig to peer2，把运行配置同步到对端"','命令 "synconfig challenge \\"x\\""','"synconfig to peer2"');
- assert.ok(!text.includes('synconfig to peer3'),'only the first three commands are shown, the rest counted: '+text);
+ has(text,'作者步骤 a4（"widget sync to"）','重组记录把这一步改写成 "在主设备上执行 widget sync to peer2，把运行配置同步到对端"','命令 "widget challenge \\"x\\""','"widget sync to peer2"');
+ assert.ok(!text.includes('widget sync to peer3'),'only the first three commands are shown, the rest counted: '+text);
  has(text,'共 4 个');
 });
 

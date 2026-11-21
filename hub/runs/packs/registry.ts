@@ -377,7 +377,6 @@ class Registry implements PackRegistry {
     };
   }
 
-  /** T01 R[6]: what a publication compares embedded files with. Only a team skill version can be embedded. */
   async embeddedSkill(packId: string, version: string): Promise<EmbeddedSkill | null> {
     const info = await this.getVersion(packId, version);
     if (info === null || info.kind !== 'skill') return null;

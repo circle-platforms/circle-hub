@@ -159,7 +159,6 @@ export async function locateAll(document: ParsedDocument, attempts: FunctionAtte
 
 type Eager = ParsedDocument & { locate(selector: string): Fragment | null; listSelectors(prefix?: string, options?: { properties?: boolean }): string[] };
 
-/** Exercise every workbook selector through bounded operations instead of one deadline-sharing load. */
 async function locateWorkbookBatches(document: ParsedDocument, eager: Eager, attempts: FunctionAttempt[]) {
   const selectors = document.listSelectors('');
   const batchSize = 256;

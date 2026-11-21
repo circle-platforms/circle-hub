@@ -1,4 +1,3 @@
-// Match product declarations against parsed command identities, never command prose.
 import { planCommands } from './plan-commands.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
 import { isRecord } from './text.ts';

@@ -23,7 +23,6 @@ test('team and member management stay available without the knowledge port or it
  for(const missingPort of [true,false]){
   // Management-only hosts may omit knowledge entirely; others have not enabled personal spaces.
   const deps={...hub.deps};if(missingPort)Reflect.deleteProperty(deps,'knowledge');else{
-   // Spaces stay present (C3); a failing usage call keeps capacity unknown without dropping the port.
    const spaces=deps.knowledge.spaces!;
    deps.knowledge={...deps.knowledge,spaces:new Proxy(spaces,{get(target,prop,receiver){return prop==='usage'?async()=>{throw new Error('synthetic capacity unavailable');}:Reflect.get(target,prop,receiver);}})};
   }
@@ -31,7 +30,6 @@ test('team and member management stay available without the knowledge port or it
   try{
    const anonymous=await openConsole({port}),refused=await anonymous.get('/console/operations/member');assert.equal(refused.status,303);assert.match(String(refused.headers.location),/^\/console\/login\?/);
    const manager=await openConsole({port},hub.admin.token),reader=await openConsole({port},member.token);
-   // K3: bare /console/admin is gone (404); team pages and operations/member stay.
    for(const path of ['/console/team','/console/team?capacity=team','/console/team/'+member.user.id,'/console/team?tab=members']){
     const page=await manager.get(path);assert.equal(page.status,200,path);assert.equal(page.headers.location,undefined,path);assert.doesNotMatch(page.body,/公共空间容量|私人空间容量|adjust-(?:team|member)-capacity|团队容量…/);
    }

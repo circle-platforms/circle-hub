@@ -1,8 +1,3 @@
-// What the Hub does to the command catalog of a plan check, run without a database: the check's own catalog_select function names
-// {base, lines}, the engine's limits on that answer apply, the Hub's own selectCatalog (hub/knowledge/catalog-selection.ts) walks the
-// locked tree and answers the entries, and the subject builder and the check function the pack names judge the plan on them
-// (builderInput of hub/runs/engine/evaluate.ts). The tree is served the way the Hub's store serves the nodes of a run export.
-// Test support only: it never stands in for a Hub acceptance (hub-parity.test.ts runs the real engine).
 import CHECKS from '../checks.json' with {type:'json'};
 import REQUIREMENTS from '../requirements.json' with {type:'json'};
 import * as checkModule from '../functions/checks.ts';
@@ -14,15 +9,12 @@ import {pathOf} from '../../../../hub/refs/api.ts';
 
 type Row={[key:string]:any};
 const MODULES:Record<string,Record<string,unknown>>={'functions/checks.ts':checkModule,'functions/subject.ts':subjectModule};
-/** What the product pack declares for its catalog: the members are the entries of the producer of the command tree. */
 export const DECLARATION={id:'commands@1',entry_kind:'definition',producer:'command-tree',complete:true,case_sensitive:true};
-/** The words evaluate.ts gives a selection over the engine's own limits and one the store cannot read. */
 export const ENGINE_LIMIT='目录选择必须声明路径和至多 128 条完整命令，每条至多 8192 字节；拆分计划后重核';
 export const ENGINE_UNREADABLE='缺锁定目录的所选路径；管理员修复目录读取后原样重交，不用整棵目录代替';
 
 export type HubView={entries:Row[];complete:boolean}|{missing:string};
 
-/** The tree of a run export served the way the Hub's store serves it: nodes by digest, rows by path, the producer of the command tree. */
 export function hubStore(lines:readonly Row[]):Pick<Parameters<typeof selectCatalog>[0],'nodeAt'|'node'|'rowsAt'|'entries'>{
  const [,...rows]=lines;
  const byPath=new Map<string,Row>(rows.map(row=>[row.path,row])),byDigest=new Map<string,Row>(rows.map(row=>[row.digest,row]));
@@ -36,27 +28,23 @@ export function hubStore(lines:readonly Row[]):Pick<Parameters<typeof selectCata
  };
 }
 
-/** The Hub's own answer for `selection` over the lines of a run export (a head line, then the nodes), as builderInput takes it. */
 export async function hubView(lines:readonly Row[],selection:unknown,declaration:Row=DECLARATION):Promise<HubView>{
  if(!isRecord(selection)||typeof selection.base!=='string'||!Array.isArray(selection.lines)||selection.lines.length>128||selection.lines.some(line=>typeof line!=='string'||Buffer.byteLength(line)>8192))return {missing:ENGINE_LIMIT};
  try{
   const view=await selectCatalog({root:lines[0].root,selection:selection as {base:string;lines:string[]},declaration:declaration as never,...hubStore(lines)});
   return {entries:JSON.parse(JSON.stringify(view.entries())),complete:view.complete};
  }catch(error){
-  // evaluate.ts: a selection over a limit is told as the Hub words it; anything else the store cannot read is the unreadable path.
   return {missing:error instanceof RangeError?error.message:ENGINE_UNREADABLE};
  }
 }
 
 export interface HubSide {problems:BoundaryProblem[];selections:Array<{check:string;lines:string[];view:HubView}>}
-/** The problems the Hub's checks find in one plan (the slots of one item) on the tree of a run export, and the selections they read. */
 export async function hubSide(run:Record<string,unknown>,item:string,slots:unknown,tree:readonly Row[]):Promise<HubSide>{
  const row=(Array.isArray(run.items)?run.items:[]).find(value=>isRecord(value)&&value.id===item);
  if(!isRecord(row))throw new Error(`the frozen run has no item ${item}`);
  const problems:BoundaryProblem[]=[],selections:HubSide['selections']=[],views=new Map<string,Promise<{lines:string[];view:HubView}>>(),asked=new Set<string>();
  for(const check of CHECKS.checks){
   if(notRunReason(check)!==null)continue;
-  // The quotation check is the core interpreter's: it is put beside the Hub's own in functions/quote-sources.test.ts and hub-parity.test.ts.
   if('interpreter' in check)continue;
   const fn=(check as unknown as {function:{module:string;export?:string}}).function,subject=(check as unknown as {subject:{module:string;export:string}}).subject;
   const bare=checkInput(run,row,slots);

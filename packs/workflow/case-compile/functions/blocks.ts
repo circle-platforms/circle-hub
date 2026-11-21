@@ -12,7 +12,6 @@ export const blockMeta=(slots:PlanSlots)=>normalized.get(slots);
 export function withoutModelIdentities(slots:PlanSlots):PlanSlots{const {command_identities:_ignored,...copy}=slots;const meta=normalized.get(slots);if(meta)normalized.set(copy,meta);return copy;}
 export const sourcePlan=(slots:PlanSlots):unknown=>normalized.get(slots)?.raw??slots;
 export const isNormalized=(value:unknown):value is PlanSlots=>typeof value==='object'&&value!==null&&normalized.has(value);
-/** The line a writer gives a block or a flat step for column D of its row: one line of text without edge space or a formula prefix. */
 export const badDescription=(value:unknown):boolean=>typeof value!=='string'||!value.trim()||value!==value.trim()||/[\r\n]/.test(value)||value.startsWith('=');
 export function identifier(value:unknown):value is string{
  if(typeof value!=='string'||!value.length||value.length>TABLE.limits.register_chars)return false;
@@ -37,7 +36,6 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
  const blocks=value.blocks as Array<Record<string,any>>,criteria=Array.isArray(value.criteria)?value.criteria as Array<Record<string,any>>:[],steps:PlanStep[]=[],expects:PlanExpect[]=[],problems:SlotProblem[]=[];
  const meta:BlockMeta={raw:value,registers:new Map(),steps:new Map(),deferred:[]},ids=new Set<string>(),assertions=new Set<string>();
  const issue=(pointer:string,message:string,fix?:string)=>problems.push({pointer,message,...(fix===undefined?{}:{fix})});
- // The reason is what a flat model_judgment states beside its text; a typed criterion the model wrote carries it the same way.
  for(const [index,row]of criteria.entries())if(typeof row.rationale!=='string'||!row.rationale.trim())issue('/criteria/'+index+'/rationale','类型化判据必须有非空 rationale，说明模型为何选择这个检查点');
  const capture=(name:unknown,id:string,index:number,at:string,object:string,cell=false)=>{
   if(!identifier(name))issue(at,'寄存器必须是区分大小写的 ASCII 标识符，不能以数字开头');
@@ -57,7 +55,6 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
  for(const [index,block]of blocks.entries()){
   const at='/blocks/'+index,id=block.id;
   if(!identifier(id)||ids.has(id)){issue(at+'/id','块 id 不合式或重复');continue;}ids.add(id);
-  // The line goes to column D of the block's call row. A comparison of two captures has no call row: its line is accepted and stays in the plan.
   if(block.description!==undefined&&badDescription(block.description))issue(at+'/description','description 是这一块的一句单行描述，写进工作簿 D 列');
   const declaration=TABLE.kinds.find(row=>row.kind===block.kind)!;
   if(!declaration.enabled){meta.deferred.push({pointer:at,missing:'missing'in declaration?String(declaration.missing):'缺该块运行器能力',next_action:'next_action'in declaration?String(declaration.next_action):'维护者补声明后重开运行'});continue;}
@@ -113,10 +110,4 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
  const slots:PlanSlots={...(value.recomposition!==undefined?{recomposition:value.recomposition as PlanSlots['recomposition']}:{}),bucket:String(value.bucket),blocks:blocks,steps,expects,replacements:value.replacements as PlanSlots['replacements'],...(Object.hasOwn(value,'command_identities')?{command_identities:value.command_identities}:{}),...(value.block_context!==undefined?{block_context:value.block_context as Record<string,any>}:{}),...(value.criteria!==undefined?{criteria:value.criteria as Array<Record<string,any>>}:{}),...(value.obligations!==undefined?{obligations:value.obligations as Array<Record<string,any>>}:{})};
  normalized.set(slots,meta);return problems.length?{ok:false,problems}:{ok:true,slots};
 }
-/**
- * Escape a declared literal for a regex-backed checkpoint; no author-provided regex is executed or inferred. A run of blanks in
- * the literal stands for any run of blanks on the same line: a device aligns the values of its listings in columns, and a
- * checkpoint written from the manual's example ("Label: value") does not know how many blanks the device prints between the two.
- * In rounds 41 and 42 two to three of every seven or eight cases that failed on the device failed on that alone.
- */
 export function escapedLiteral(text:string):string{let out='',blank=false;for(const character of text){if(character===' '||character==='\t'){if(!blank)out+='[ \\t]+';blank=true;continue;}blank=false;if('\\^$.*+?()[]{}|'.includes(character))out+='\\';out+=character;}return out;}

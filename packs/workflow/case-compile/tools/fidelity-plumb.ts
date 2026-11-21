@@ -1,5 +1,4 @@
 import {CallFailure} from '../functions/text.ts';
-// Client-side Plumb scenario-fidelity verifier: builds briefs, evaluates steps via Plumb sequence (@2400), and writes .verdict.json.
 import { realpathSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -53,11 +52,9 @@ interface PendingStepQuery {
   stepIdx: number;
   state: string;
   requestSha256: string;
-  /** Long literals this step's state names instead of repeating (none unless the plain state was over the limit). */
   substitutions: LiteralSubstitution[];
 }
 
-/** A case whose state is over the Plumb limit even with its repeated long literals named: it goes to blind review, not to Plumb. */
 interface OverBudgetCase {
   file: string;
   item: string;
@@ -83,11 +80,6 @@ const readTextOrNull = async (path: string): Promise<string | null> => {
   }
 };
 
-/**
- * The refusal for cases whose state does not fit Plumb's limit: what was measured, and the audit they go to instead (blind
- * review by an independent model with `task-brief.ts`, then `fidelity-apply.ts`). The single-case form is named because the
- * directory form of `--batch` would write over the verdicts Plumb has just given the other cases.
- */
 function overBudgetStop(waiting: readonly OverBudgetCase[], judgedByPlumb: number): string {
   const steps = (c: OverBudgetCase): string => {
     const shown = c.steps.slice(0, 6).map((st) => `${st.n} 约 ${st.est_tokens}`).join('、');
@@ -163,7 +155,6 @@ export async function runFidelityPlumb(
       }
       const saved=await readTextOrNull(vPath);
       if (tooBig.length > 0) {
-        // Plumb is not asked about this case; a verdict file already there is the blind review's, and fidelity-apply checks it.
         overBudget.push({ file: planCase.file, item: planCase.item, brief: resolve(bPath), verdict: resolve(vPath), verdict_present: saved !== null, steps: tooBig });
         continue;
       }
@@ -213,7 +204,6 @@ export async function runFidelityPlumb(
             mapPlumbSequenceToFidelityRow({
               brief: ctx.planCase.brief,
               authorStep: ctx.planCase.brief.author_steps[sq.stepIdx]!,
-              authorStepIndex: sq.stepIdx,
               partitioned: ctx.partitioned,
               plumb: normalized,
               modelVersion: itemAns.model_version ?? batchRes.model_version,
@@ -262,7 +252,6 @@ export async function runFidelityPlumb(
     if (outSummary) {
       await writePrivateFile(outSummary, serialized);
     }
-    // A case without a verdict file still needs its blind review: say so and stop. The cases Plumb could judge are already written.
     const waiting = overBudget.filter((c) => !c.verdict_present);
     if (waiting.length > 0) return { code: 1, stdout: serialized, stderr: overBudgetStop(waiting, written.length + reused.length) + '\n' };
     return { code: 0, stdout: serialized, stderr: '' };

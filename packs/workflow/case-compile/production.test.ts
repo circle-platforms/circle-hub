@@ -101,8 +101,6 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     contract.original.sha256=sha(JSON.stringify(original));contract.contract_sha256=runtimeDigest(contract);
     const parsedContract=parseRuntimeContract(contract);assert.ok(parsedContract.ok,JSON.stringify(parsedContract));
     const profile=profileDocument(contract);
-    // Our synthetic runner template defaults to 80 rows; 34 cases need ~172. Size the template to the start input
-    // (same idea as pipeline=legacy): meet the mechanical rule without changing assertions.
     const book=profile.workbook;
     const templateRows=Math.max(80, TEMPLATE_HEADER_ROW + 1 + cases * 6 + 8);
     profile.workbook={...book,template:templateDocument({sheet:book.sheet,header:book.header,identity_marker:book.identity_marker,range_name:book.range_name},contract.runtime.minimum_version,contract.original?.contract_sha256??contract.contract_sha256,TEMPLATE_HEADER_ROW,templateRows)};
@@ -116,8 +114,6 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const put=(external:string,bytes:Uint8Array)=>hub.external.put(external,{bytes,mediaType:'application/json'});
     put('agile:mindmap:synthetic-batch',sourceBytes);put('doc:doc:synthetic-large-contract',contractBytes);put('doc:doc:synthetic-large-profile',Buffer.from(JSON.stringify(profile)));
     const started=start();delete (started.inputs as Partial<typeof started.inputs>).case_index;
-    // Decision 167 (rule 3): whole mind map without recomposition must set pipeline=legacy. Keep the check; give the
-    // mainline whole-workbook starts the winning parameter (派活方 18:35 option A). Assertions unchanged.
     const parameters: Record<string, string> = { pipeline: 'legacy' };
     started.inputs.subject.external='agile:mindmap:synthetic-batch';started.inputs.contract.external='doc:doc:synthetic-large-contract';started.inputs.profile.external='doc:doc:synthetic-large-profile';
     const args={ ...started, parameters };

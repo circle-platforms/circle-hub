@@ -81,7 +81,6 @@ test('a product publication, genuine independent adjudication and append-only re
         const submit = (run: string, item: string, data: any) => ({ run, model: 'scripted-recomposer', items: [{ item, handling: 'handled' as const, slots: { record: [{ text: '合成重组判断', quotes, data }] } }] });
         const draft = await h.service.submitResult(h.alice, submit(original.run, original.items[0].id, record), call());
         assert.equal(draft.acceptance, 'accepted', JSON.stringify(draft.errors));
-        // Decision 155: settling needs no ruling. The ruling below is the optional path, checked when a record names one.
         assert.ok(Object.values(draft.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(draft.result));
         const submission = (await h.kit.store.find({ kind: 'submission', key: INDEX.submissionRun, value: original.run })).items[0];
         await h.kit.authorizations.share(h.admin, original.run, [h.bob.id]);
@@ -145,7 +144,6 @@ test('a product publication, genuine independent adjudication and append-only re
         const finalInputs = { ...compileInputs, criteria_review_run: { reference: 'rec:' + criterionSnapshot.digest }, criteria_review: { reference: 'rec:' + criterionReceipt.digest } };
         const ready = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', predecessor: planStarted.answer.run!.run, inputs: finalInputs, parameters: compileParameters }, call());
         assert.equal(ready.answer.call_result, 'ok', JSON.stringify(ready.answer.errors));
-        // The scenario-fidelity audit a fresh session makes before submitting (tools/fidelity.md): here a scripted verdict that keeps every action.
         const { fidelity: _judged, ...plain } = data as unknown as Record<string, unknown>, frozenItem = ready.answer.run!.items[0] as any;
         const brief = fidelityBrief(frozenItem.id, frozenItem.fields?.recomposition?.record, plain)!;
         (data as unknown as Record<string, unknown>).fidelity = { brief_sha256: brief.brief_sha256, steps: brief.author_steps.map((s) => ({ n: s.n, verdict: 'preserved', step_indices: authorStepCoverage(brief, plain).carriers.filter((row) => row.refs.includes(s.n)).map((row) => row.index), rationale: '合成审计：计划实现了作者这一步' })), disclosure: '合成审计：作者步骤逐条保住。' };
@@ -185,8 +183,6 @@ test('a product publication, genuine independent adjudication and append-only re
         }
         const storedParts = await h.kit.store.find({ kind: 'submission', key: INDEX.submissionRun, value: partsRun.run });
         assert.equal(storedParts.items.length, 2);
-        // Decision 155, the way a real run goes: the model writes one file per case and only what takes judgment; no authority
-        // run, no ruling; a gap travels with the record; compilation takes each case's own record from one run.
         const wholeStart = await h.service.startRunDetailed(h.alice, { ...start, pack: 'recompose', inputs: { subject: { external: multiExternal } }, parameters: { case_depths: [1] } }, call());
         assert.equal(wholeStart.answer.call_result, 'ok', JSON.stringify(wholeStart.answer.errors));
         const wholeRun = wholeStart.answer.run!;
@@ -198,8 +194,6 @@ test('a product publication, genuine independent adjudication and append-only re
         const wholeRecord = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: wholeRun.run })).items[0];
         const compiled = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: { ...compileInputs, subject: { external: multiExternal }, recomposition_run: { reference: 'rec:' + wholeRecord.digest }, recomposition_result: { run: wholeRun.run } }, parameters: {} }, call());
         assert.equal(compiled.answer.call_result, 'ok', JSON.stringify(compiled.answer.errors));
-        // Decision 179: the compile run binds the recomposition result after its start, so its items freeze only the late marker and
-        // each case's admitted record arrives through the late export (GET /run-export/<run>/late) the Hub's checks also read.
         const lateOf = async (run: any) => {
             const answered: any = await (h!.service as any).exportLate(h!.alice, run.run);
             const read = readLate(answered?.body ?? answered, run.run);
@@ -213,7 +207,6 @@ test('a product publication, genuine independent adjudication and append-only re
         assert.ok(carried.every((proof: any) => proof?.record?.status === 'complete'), JSON.stringify(carried));
         assert.equal(carried[1].record.sources.states[0].state, 'missing_prerequisite');
 
-        // Scoped recompose: downloads the whole mindmap as context (full subject sha) while projecting & sealing only in-scope items.
         const firstId = String((wholeRun.items[0] as any).fields.case_id), secondId = String((wholeRun.items[1] as any).fields.case_id);
         const scopedStart = await h.service.startRunDetailed(h.alice, { ...start, pack: 'recompose', inputs: { subject: { external: multiExternal } }, parameters: { case_depths: [1], scope: { words: '本次仅范围验证第一条', cases: [firstId] } } }, call());
         assert.equal(scopedStart.answer.call_result, 'ok', JSON.stringify(scopedStart.answer.errors));

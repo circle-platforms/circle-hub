@@ -1,4 +1,3 @@
-// Current run admission decodes only indexed, hash-matching sources and freezes the declaration boundary.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {openTestRecords} from '../testing/records.ts';

@@ -1,10 +1,5 @@
-/**
- * D3 fact/next for call errors (Boss 13:05 / 14:12). Category words come from
- * error-reasons.callErrorCategoryOf. Next steps are table-driven by code × role × object kind.
- * Facts remain producer-authored; object routes require declared argument paths.
- */
 import type { ProtocolError } from '../../contracts/src/common.ts';
-import { CALL_ERROR_CATEGORY, labelOf, SYNC_MODE_UI, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
+import { CALL_ERROR_CATEGORY, labelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { callErrorCategoryOf, type CallErrorCategory } from './error-reasons.ts';
 import { circleHubFromMetadata, circleHubFromParameters, fillCallerAccountName } from './fix-by-role.ts';
 
@@ -16,10 +11,8 @@ export { callErrorCategoryOf as callErrorCategory } from './error-reasons.ts';
 export type { CallErrorCategory };
 export { packObjectWord, unassignedPackFact, unassignedPackNext } from './pack-words.ts';
 
-/** Closed five (hub-terms); mirrored here for tests that assert the set without importing D1 internals. */
 export const CALL_ERROR_CATEGORIES = CALL_ERROR_CATEGORY.map(code => labelOf('call_error_category', code)) as readonly CallErrorCategory[];
 
-/** Object kind is known only from an exact declared argument location. */
 export type NotPermittedKind = 'pack' | 'system' | 'root' | 'unknown';
 export function isKnowledgeRootDenial(_message: string, _fix: string | undefined, path?: string): boolean { return path === '/root'; }
 export function notPermittedKindOf(_message: string, _fix: string | undefined, path?: string): NotPermittedKind {
@@ -29,7 +22,6 @@ export function notPermittedKindOf(_message: string, _fix: string | undefined, p
   return 'unknown';
 }
 
-/** HH:MM in the process local zone from an ISO timestamp. */
 export function localClockOf(iso: string): string | null {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return null;
@@ -40,20 +32,16 @@ export function localClockOf(iso: string): string | null {
   return `${hour}:${minute}`;
 }
 
-/** Test-environment display name from a lease key; unregistered keys use the key itself (Boss 14:12). */
 export function environmentNameFromLeaseKey(key: string): string {
   const bed = /^bed\/([^/]+)\//.exec(key);
   if (bed) return bed[1]!;
   return key;
 }
 
-/** Preserve the lease producer fact without inferring a key or holder. */
 export function leaseUnavailableFact(message: string): string { return message; }
 
-/** Preserve the producer's complete fact; display adapters never extract claims from prose. */
 export function callErrorFact(_code: string, message: string): string { return message; }
 
-/** Strip a trailing 。 so the renderer can add exactly one. */
 export function stripSentenceEnd(text: string): string {
   return text.trim().replace(/[。．.!！;；]+$/u, '');
 }
@@ -76,10 +64,6 @@ const KNOWLEDGE_ROOT_NEXT: NextRow = {
     `用 ${circleHubFromParameters('pack.assign')} 为该账户分配绑定这条产品线的工作流；或改读这次运行锁定的构建的手册和命令树`,
 };
 
-/**
- * Next-step table: error code × admin|member. Knowledge-tree-root denial is a separate row
- * selected only by the exact declared /root argument path.
- */
 const NEXT_BY_CODE: Record<string, NextRow> = {
   SOURCE_NOT_PERMITTED: PACK_NEXT,
   LEASE_UNAVAILABLE: {
@@ -194,10 +178,6 @@ const NEXT_BY_CODE: Record<string, NextRow> = {
   },
 };
 
-/**
- * Next-step clause for the category sentence (no leading「下一步」).
- * Table-driven; knowledge-tree-root / knowledge-read / system denial are dedicated rows.
- */
 export function callErrorNext(
   code: string,
   role: PermissionRole,
@@ -232,7 +212,6 @@ export function callErrorNext(
   return role === 'admin' ? fillCallerAccountName(next, callerName) : next;
 }
 
-/** Full reader line when the code is a mapped call refusal; otherwise null. */
 export function renderCallError(
   error: ProtocolError,
   role: PermissionRole,

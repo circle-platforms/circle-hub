@@ -15,7 +15,7 @@ import { repositorySkillVersion } from '../../testing/skills.ts';
 // temporary directory. Every line printed, the assemblies' log lines included, is scanned for secrets.
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
-import { access, chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -1584,7 +1584,6 @@ async function importResource(admin: Admin): Promise<string> {
   await expectOk(admin, ['pack', 'publish', packs.agile]);
   return addImportResource(admin);
 }
-/** After resource add prints names only on stdout, take the internal id from the connector log on stderr. */
 function resourceIdFromAdded(added: RunResult): string {
   const id = /resource_added (res_[0-9a-z]{26})/.exec(added.text)?.[1];
   assert.ok(id, added.text);

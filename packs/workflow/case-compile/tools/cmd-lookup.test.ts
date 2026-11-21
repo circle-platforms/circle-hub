@@ -1,4 +1,3 @@
-// tools/cmd-lookup.ts: the command line around functions/cmd-lookup.ts, on a synthetic download (testing/lookup-fixture.ts).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -23,7 +22,6 @@ async function run(argv: string[], cwd: string): Promise<{ code: number; stdout:
   const code = await main(argv, { out: (text) => { stdout += text; }, err: (text) => { stderr += text; }, cwd });
   return { code, stdout, stderr };
 }
-/** `run` is what --run takes: the run directory (the folder that holds run.json), as for task-brief.ts; `file` is the run.json inside it. */
 async function download(options: { withText?: boolean } = {}): Promise<{ dir: string; run: string; file: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'cmd-lookup-'));
   await writeLookupDownload(join(dir, 'plan-run'), fixture, options);
@@ -138,13 +136,11 @@ test('calls it cannot answer are refused with a closed category, one fact and on
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-// The one-line correct form every refusal of a --run value names.
 const CORRECT_FORM = "合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。";
 
 test('--run is the run directory like task-brief.ts: the run.json file is refused in the same words with the correct form, and only the directory is accepted', async () => {
   const { dir, run: runDir, file } = await download();
   try {
-    // The words are those of the helper task-brief.ts resolves its --run with, for the same value.
     let helper: unknown;
     try { resolveExistingDirInsideCwd(resolveCwdRoots(dir), file, '--run'); } catch (error) { helper = error; }
     assert.ok(helper instanceof CallFailure && /不是普通目录/.test(helper.fact), String(helper));
@@ -158,11 +154,9 @@ test('--run is the run directory like task-brief.ts: the run.json file is refuse
       assert.ok(result.stderr.trimEnd().endsWith(CORRECT_FORM), result.stderr);
       assert.equal(result.stderr.trim().split('\n').length, 1);
     }
-    // The form the refusal names is the one that answers, by the relative path and by the absolute path the task file prints.
     const answer = await run(['--run', runDir, '--param', 'orbit beacon add'], dir);
     assert.equal(answer.code, 0, answer.stderr);
     assert.deepEqual(await run(['--run', realpathSync(join(dir, runDir)), '--param', 'orbit beacon add'], dir), answer);
-    // The usage a call without --run is answered with names the directory, never the file.
     const bare = await run([], dir);
     assert.equal(bare.code, 1);
     assert.ok(bare.stderr.includes("--run '<运行目录>'") && !bare.stderr.includes('run.json'), bare.stderr);
@@ -243,8 +237,6 @@ test('--method of an old download without the source manifest reads the root-lev
 test('what the writer\'s lookups print for every block kind and for the methods of an object names no product command and no output layout (round 37, owner\'s rule)', async () => {
   const { dir, run: runDir } = await contractDownload();
   try {
-    // The sample of a kind is a table or a plan of invented names; the fields have no description taken from one case. The words are those
-    // of the features whose cases taught the writer text of rounds 36 and 37 (a name-server, an HA pair, a signed zone) and their key files.
     const product = [/\bsdns\b/i, /synconfig/i, /dnssec/i, /\bha (on|off|link|unit|group)\b/i, /clear ha/i, /write mem/i, /lib\/apv/, /\bksk\b/, /\bzsk\b/, /RSASHA/i, /keypub/i, /\+005\+/, /zone\.example/, /\.key\b/, /\.private\b/, /Statistics Summary/, /HA 等/, /2048/];
     const answers: Array<[string, string]> = [];
     for (const kind of BLOCKS.kinds) answers.push([`--block ${kind.kind}`, (await run(['--run', runDir, '--block', kind.kind], dir)).stdout]);
@@ -303,7 +295,6 @@ test('the sources and the slot schema it cannot read are refused with a closed c
   await refusedIn({}, ['--method', 'nothing'], /^参数无效：--method 的值要写成 <对象>\.<方法>/);
   await refusedIn({}, ['--methods', 'widget-seat.configure'], /^参数无效：--methods 的值是一个对象名/);
   await refusedIn({}, ['--block', 'CAP TURE'], /^参数无效：--block 的值是一个块种类名/);
-  // A source whose bytes match its manifest but are no contract of the Hub's: refused with the reader's first problem.
   await refusedIn({}, ['--method', 'widget-seat.configure'], /^参数无效：.*冻结合约/, async (dir) => {
     const bytes = Buffer.from(JSON.stringify({ not: 'a contract' }));
     const digest = createHash('sha256').update(bytes).digest('hex');

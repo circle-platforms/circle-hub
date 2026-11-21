@@ -85,7 +85,6 @@ test('the failure limit also applies to unknown accounts and cannot be bypassed 
 test('a valid administrator token and a valid member token are both refused by the console sign-in, with no session',async()=>{
   assert.doesNotMatch((await send('/console/login')).body,/name="token"/,'the sign-in has no token field');
   const admin=await server.createUser('合成令牌管理员','admin'), member=await server.createUser('合成令牌成员');
-  // Administrators land on the overview, members on 我能做的事 (member home, bf4637f31c).
   for(const [user,landing] of [[admin,'/console/overview'],[member,'/console/me']] as const){
     assert.equal((await server.records.principals.authenticate('Bearer '+user.token))?.id,user.user.id,'the token is valid: it connects a Circle');
     for(const fields of [{token:user.token},{username:user.user.name,password:user.token}] as Record<string,string>[]){

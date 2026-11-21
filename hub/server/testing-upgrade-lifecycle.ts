@@ -1,4 +1,3 @@
-// Child-process fixture: real assembly and PostgreSQL, with controlled idle timer references and no production data.
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -23,7 +22,6 @@ const timeout = globalThis.setTimeout, clear = globalThis.clearTimeout;
 globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
   const [callback, delay, ...callbackArgs] = args;
   if (delay !== 30_000 || !new Error().stack?.includes('/pg-pool/')) return timeout(...args);
-  // A leaked idle timer must remain observable without waiting 30 seconds or asserting an elapsed ceiling.
   let timer: ReturnType<typeof setTimeout>;
   timer = timeout(() => { idleTimers.delete(timer); idleFired++; callback(...callbackArgs); }, 2 ** 31 - 1);
   idleTimers.add(timer);
@@ -51,7 +49,6 @@ process.once('message', async (input: Input) => {
       const deps = await assembly(config, records);
       const packContext = deps.runs.packContext!.bind(deps.runs);
       const context = [{ pack: 'synthetic-lifecycle@1.0.0', run_context: { parts: ['leases'], lease_prefix: 'synthetic-lifecycle/' } }] as unknown as Parameters<typeof packContext>[1];
-      // Supply only synthetic pack context metadata; the real run engine and owned lease connection do the read.
       deps.runs.packContext = (by) => packContext(by, context);
       if (input.failListen) await deps.runs.packContext(admin.user, context);
       return deps;

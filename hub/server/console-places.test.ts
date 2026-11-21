@@ -3,8 +3,6 @@ import {withoutNonces} from './console/testing-security.ts';
 import {THEME_TAGS,LIVE_TAG} from './console/html.ts';
 // The seven places of the redesigned console (proposal decisions 3 and 6 of 2026-10-31) over HTTP with the fake services:
 // every page of an administrator and of a member answers with the side navigation, interface terms only, no style attribute
-// and no script; task results follow display rule 20; registered management forms retain exact targets and CSRF;
-// remaining command dialogs retain real ids; members see only their own clients and calls.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {parse} from 'parse5';
@@ -62,7 +60,6 @@ const valueOf = (header: string | undefined): string => (header ?? '').split(';'
 const csrfOf = (body: string): string => /name="csrf" value="([^"]+)"/.exec(body)?.[1] ?? '';
 const own = () => `http://127.0.0.1:${server.port}`;
 
-/** Where a fresh sign-in lands: administrators on the overview, members on 我能做的事 (member home, bf4637f31c). */
 const landingOf = (token: string): string => (token === server.admin.token ? '/console/overview' : '/console/me');
 
 async function signIn(token: string): Promise<string> {
@@ -182,7 +179,6 @@ describe('tasks', () => {
     assert.doesNotMatch(detail.body, /data-timeline|<aside class="ch-inspector"/, 'the first tab draws no process and the page has no side pane');
     const process = await get(`/console/runs/${run}?tab=process`, session);
     for (const text of ['执行过程', '工具调用', 'Hub 校验', '提交结果', '启动任务', '调用日志']) assert.ok(process.body.includes(text), text);
-    // Section title from runs-pages.ts section('核对', …); not the bare substring (card hint already has 核对).
     assert.match(process.body, /<h2 class="ch-section-label">核对<\/h2>/);
     assert.match(process.body, /<svg class="ch-chart" data-timeline/, 'bars are SVG attributes');
     assert.ok(process.body.indexOf('data-task-outcome') < process.body.indexOf('data-timeline'), 'the result stays above every tab');
@@ -298,7 +294,6 @@ describe('operations and commands', () => {
     assert.match(skills.body,/要让客户端遵循一套通用做法，选择通用技能；技能不设验收要求/);assert.doesNotMatch(skills.body,/要完成一项有验收要求的任务/);
     assert.doesNotMatch(workflow,/title="规定做法与验收要求/);
     assert.doesNotMatch(list.body,/href="\/console\/(?:packs|workflows)\/(?:line-a|tracker-system)"/);
-    // Skill detail answers only under /console/skills (packs path removed).
     const skillDetail=await get('/console/skills/synthetic-skill',admin);assert.equal(skillDetail.status,200);
     assert.match(skillDetail.body,/<a class="ch-nav-item[^"]*" href="\/console\/skills" aria-current="page">/);
     assert.match(skillDetail.body,/<nav class="ch-crumbs" aria-label="位置"><ol><li><a href="\/console\/skills">技能<\/a><\/li><li><a href="" aria-current="page">合成通用技能<\/a><\/li><\/ol><\/nav>/);
@@ -349,7 +344,6 @@ describe('operations and commands', () => {
   test('team owns members and permissions, settings retains system settings and members cannot browse another account', async () => {
     const user=await member(), other=await member();
     const admin=await signIn(server.admin.token), session=await signIn(user.token);
-    // interfaces §5.2: default tab is 团队; members list is ?tab=members.
     const teamHome=await get('/console/team',admin);
     assert.match(teamHome.body,/尚无团队|新建团队/);
     const team=await get('/console/team?tab=members',admin);

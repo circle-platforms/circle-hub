@@ -1,4 +1,3 @@
-// Content-addressed disk cache for idempotent Plumb inference calls.
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';

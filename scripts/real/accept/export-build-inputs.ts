@@ -152,7 +152,6 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
   const keys = new Set<string>(Object.keys(initial.keys));
   const pagedListed = new Set<string>(Object.keys(initial.entries));
   const followed = new Set<string>();
-  /** Continuation reads the Hub refused while paging the index. */
   let refused = 0;
   let next = nextOf(initial);
   while (next !== null) {
@@ -242,14 +241,11 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
     const listed = Object.keys(page.entries).length;
     if (!Object.hasOwn(page.keys, document) || Object.keys(page.keys).length !== 1)
       fail('该文档键下列出的条目', '这个文档的条目一条也没有列出；核对视图截断、读取权限与来源，修复并必要时重新生产后导出');
-    // A single listed key should not claim truncation when every entry is listed; any shortfall below total_entries
-    // remains visible in the shard totals (for example, legacy/compatibility exclusions).
     if (page.truncated && page.total_entries === listed)
       fail('可解释的分片截断', '这个单文档分片标了截断，却没有条目差额可以解释；核对 Hub 与脚本版本后重新导出');
     shards.push(page);
   }
   const entries = new Set(shards.flatMap(page => Object.keys(page.entries)));
-  /** Entries counted in shard totals but omitted from listings (legacy/compatibility accounting). */
   const withheld = shards.reduce((sum, page) => sum + Math.max(0, page.total_entries - Object.keys(page.entries).length), 0);
   const lost = [...pagedListed].filter(digest => !entries.has(digest)).length;
   if (documents.length !== initial.total_keys || entries.size + withheld !== initial.total_entries || lost > 0)

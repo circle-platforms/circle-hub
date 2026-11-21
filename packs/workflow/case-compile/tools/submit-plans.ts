@@ -41,7 +41,6 @@ export function parsedPlanFile(name: string, bytes: Uint8Array): unknown {
   catch { throw new CallFailure('invalid_parameters', `${name} 不是合法的 JSON；原生解析器未提供结构化偏移，具体字符位置未知`, '请修复此文件的 JSON 结构，再重试脚本合并；不根据错误散文猜测位置', { path: name, legal_form: '{"item":"<编号>","handling":"handled","slots":{"plan":[]}}' }); }
 }
 
-/** Expands the length placeholders of every case file in `directory`, rewriting only the files that had one; returns what each became. */
 export async function expandPlanFiles(directory: string): Promise<string[]> {
   let names: string[];
   try { names = (await readdir(directory)).filter((name) => name.endsWith('.json')).sort(); } catch { return []; }
@@ -54,7 +53,7 @@ export async function expandPlanFiles(directory: string): Promise<string[]> {
     let expanded: ReturnType<typeof expandValue>;
     try { expanded = expandValue(value); } catch (error) { throw new CallFailure('invalid_parameters', `${name}：${error instanceof Error ? error.message : '长度占位无法展开'}`, "请依据本次错误的位置和说明修正计划或参数，再重试 submit-plans.ts"); }
     if (!expanded.expansions.length) continue;
-    await writeFile(path, JSON.stringify(expanded.value, null, 2) + '\n'); // the case file itself, as the model wrote it
+    await writeFile(path, JSON.stringify(expanded.value, null, 2) + '\n');
     lines.push(...describeExpansions(name, expanded.expansions));
   }
   return lines;
@@ -63,7 +62,6 @@ export async function expandPlanFiles(directory: string): Promise<string[]> {
 export interface HeldRunItem { label: string; recomposition: unknown }
 const LOCAL_FIDELITY_BLOCKS = new Set<FidelityCode>(['fidelity_missing', 'fidelity_stale', 'fidelity_shape']);
 
-/** Local precheck sharing functions/fidelity with the Hub: refuses missing/stale/malformed data.fidelity before spending a repair round. */
 export function localFidelityBlocks(
   items: readonly Record<string, unknown>[],
   held: ReadonlyMap<string, HeldRunItem>,
@@ -89,7 +87,6 @@ export function localFidelityBlocks(
 async function runItems(origin: string, bearer: string, run: string, retry?: RetryControl): Promise<Map<string, HeldRunItem>> {
   const value: unknown = JSON.parse(new TextDecoder('utf-8').decode(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry)));
   if (!isRecord(value) || value.schema !== 'run-export@1' || !isRecord(value.run) || value.run.run !== run || !Array.isArray(value.run.items)) throw new CallFailure('invalid_parameters', 'Hub 返回的原始用例不完整或与本次脚本编写不符', "请依据本次错误的位置和说明修正计划或参数，再重试 submit-plans.ts");
-  // A record bound after the run started is the one the Hub resolves now (GET /run-export/<run>/late), as the submission will be judged.
   const late = await fetchLate(origin, bearer, run, retry);
   return new Map(value.run.items.filter(isRecord).map((item) => {
     const fields = isRecord(item.fields) ? item.fields : {};
@@ -102,16 +99,13 @@ async function runItems(origin: string, bearer: string, run: string, retry?: Ret
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, retry?: RetryControl): Promise<number> {
   try {
     const parsedArgs = parseCliOptions(argv, { hub: true, run: true, model: true, plans: true, 'timeout-sec': false }, 'node <技能目录>/tools/submit-plans.ts --hub <hub> --run <run> --model <model> --plans <plans> [--timeout-sec <秒>]');
-    // Required options are checked by parseCliOptions.
     const args = { hub: parsedArgs.hub!, run: parsedArgs.run!, model: parsedArgs.model!, plans: parsedArgs.plans! };
     if (!RUN_ID.test(args.run)) throw new CallFailure('invalid_parameters', '--run 请使用本次脚本编写的编号', "请依据本次错误的位置和说明修正计划或参数，再重试 submit-plans.ts");
-    // The Hub checks a merge of many cases for minutes (round 39: 346 seconds for seventeen); a caller that waits in the background says how long.
     if (parsedArgs['timeout-sec'] !== undefined) {
       const seconds = Number(parsedArgs['timeout-sec']);
       if (!Number.isInteger(seconds) || seconds < 60 || seconds > 3600) throw new CallFailure('invalid_parameters', `--timeout-sec 写 60 到 3600 的整数秒（看到 ${String(parsedArgs['timeout-sec']).slice(0, 20)}）`, '改成等 Hub 答复的秒数后重试 submit-plans.ts');
       retry = { ...(retry ?? {}), timeoutMs: seconds * 1000 };
     }
-    // hubOrigin is a pure URL/option validator; its expected rejection is a parameter failure.
     let origin: string;
     try { origin = hubOrigin(args.hub); }
     catch { throw new CallFailure('invalid_parameters', '--hub 不是可用的 HTTP(S) Hub 地址', '核对 Hub 地址并重试；令牌仅从标准输入传入', { path: '--hub', legal_form: '--hub <HTTP(S) Hub 地址>' }); }

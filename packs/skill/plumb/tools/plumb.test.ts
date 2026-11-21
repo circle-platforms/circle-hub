@@ -1,4 +1,3 @@
-// CLI and pack validation tests for packs/skill/plumb (safety scan + hub/runs/packs validatePack).
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

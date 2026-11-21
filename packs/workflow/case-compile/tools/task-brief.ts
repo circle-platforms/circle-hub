@@ -2,9 +2,6 @@ import { withScopeUserRulings } from '../functions/authoring-brief.ts';
 import { formatClientCallError } from '../functions/client-cli.ts';
 import { readSourceManifest } from '../functions/source-materials.ts';
 import { CallFailure } from '../functions/text.ts';
-// 只读装配单条或批量子代理任务说明写入 `--task-file`（或 `--batch` 批量写盘，不折叠逐字超长行并披露行号），stdout 只输出极短派发提示给 `task` 工具：
-//   node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note '<补充说明>'] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
-//   node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --batch <批量清单JSON或核对目录> --task-dir <任务目录> [--out-dir <目标输出目录>] [--scope <范围文件>] [--note '<补充说明>']
 import { realpathSync } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -68,7 +65,6 @@ const USAGE =
   "node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note '<补充说明>'] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>] | --batch <批量清单或核对目录> --task-dir <核对任务目录>";
 const DEFAULT_SCOPE = 'scope.md';
 const MAX_SCOPE_BYTES = 16_384;
-/** Threshold above which a raw verbatim line is disclosed at the top of `--task-file` without wrapping. */
 export const VERBATIM_LINE_DISCLOSURE_THRESHOLD = 1_800;
 const MAX_DISCLOSED_LONG_LINES = 50;
 const DEFAULT_PACK_ROOT = realpathSync(resolve(fileURLToPath(new URL('..', import.meta.url))));
@@ -132,11 +128,6 @@ function hasMeaningfulScopeText(lines: readonly string[]): boolean {
   });
 }
 
-/**
- * Extracts global instructions plus sections matching THIS case (`caseIds`) from `scope.md`.
- * Supports optional per-case Markdown headings (`## <autoid>` / `## <item_id>`) while keeping
- * un-scoped global headings/paragraphs in full and excluding other cases' sections.
- */
 export function extractCaseScopeText(
   scopeText: string,
   caseRef: string,
@@ -180,7 +171,6 @@ export function extractCaseScopeText(
       const isCaseHeader = !isGlobalHeading(headingText) && (detected.length > 0 || matchesCaseSet(detected, headingText));
 
       if (current.caseTokens.length > 0 && depth > current.headingDepth && !isCaseHeader) {
-        // Subheading inside an active case-specific section belongs to that same case.
         current.lines.push(line);
         continue;
       }
@@ -328,7 +318,6 @@ async function maybeReadSiblingItem(
     return { item, caseIds: buildCaseIdSet(caseRef, item) };
   }
 
-  // Opportunistically enrich item_id <-> autoid mapping from sibling `items/<seq>.json` if it matches this exact case.
   const idxMatch = /^(\d+)(?:\.round-\d+)?\.(?:md|json)$/.exec(basename(briefRelative));
   const parentDir = dirname(briefRelative);
   if (idxMatch && basename(parentDir) === 'briefs') {
@@ -342,11 +331,8 @@ async function maybeReadSiblingItem(
         return { item, caseIds: buildCaseIdSet(caseRef, item) };
       }
     } catch {
-      // Missing optional sibling item JSON is normal when a brief path is passed standalone.
     }
   }
-  // With --run, the run's own items give both identities of the case (item id and autoid), whatever the brief is: the one
-  // item this case names is its item, so a prior plan or return keyed by the other identity is still this case's.
   if (runDirArg !== undefined) {
     const runDir = resolveRunDirectory(runDirArg, cwd);
     const names = await readdir(join(runDir.canonical, 'items')).catch(() => [] as string[]);
@@ -357,7 +343,6 @@ async function maybeReadSiblingItem(
         const item = parsedPlanFile(resolved.relative, await readFile(resolved.canonical));
         if ([...baseIds].some((id) => buildCaseIdSet('', item).has(id))) matches.push(item);
       } catch {
-        // An unreadable item names no case; the run's other items still can.
       }
     }
     if (matches.length === 1) return { item: matches[0], caseIds: buildCaseIdSet(caseRef, matches[0]) };
@@ -437,7 +422,6 @@ async function resolveOptionalRunContext(
       const ctx = await loadRunStructuredContext(resolved.canonical);
       if (ctx) return ctx;
     } catch {
-      // Optional opportunistic inference: ignore standalone non-run parent dirs.
     }
   }
   return null;
@@ -460,11 +444,6 @@ async function readVerifiedRoleReferences(
   return resolved;
 }
 
-/**
- * Validates the subagent role, workspace-contained paths, verbatim (and case-filtered) `scope.md`,
- * in-memory `compile-brief@1` context (when run data exists for plan/attribute roles),
- * and any round 2+ single-case prior history, returning rendered Markdown plus resolved metadata.
- */
 async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
   brief: string;
   cwd: ResolvedCwd;
@@ -515,16 +494,12 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
 
   const { item: readItem, caseIds } = await maybeReadSiblingItem(cwd, briefPath, options.itemPath, caseRef, options.runDir);
 
-  // Load run structured context first for plan/attribute roles so `executionFailureMarkers` feed history analysis
-  // and single-case `compile-brief@1` can be built directly in memory inside this single `task-brief.ts` entrypoint.
   const runCtx = role.key === 'plan' || role.key === 'attribute'
     ? await resolveOptionalRunContext(cwd, options, briefPath)
     : null;
-  // A case whose recomposition is bound after the run started reads its record from the run directory's late.json (functions/late.ts).
   const siblingItem = withLate(readItem, runCtx?.late ?? null);
   if (siblingItem !== readItem) for (const id of buildCaseIdSet('', siblingItem)) caseIds.add(id);
 
-  // Detect if `--brief` itself is a `.json` `compile-brief@1` file when `--brief-json` is not separately set.
   let compileBrief: CompileBriefV1 | undefined;
   const briefJsonTarget = options.briefJsonPath ?? (role.key !== 'fidelity' && briefPath.endsWith('.json') ? briefPath : undefined);
   if (briefJsonTarget) {
@@ -585,7 +560,6 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     const idx = inferItemIndex(briefPath, options.itemPath, siblingItem);
     const siblingItemId = isRecord(siblingItem) && typeof siblingItem.id === 'string' ? siblingItem.id : undefined;
     const plumbCandidates = await loadPlumbCandidates(runCtx.directory, idx, siblingItemId);
-    // The earlier device verifications of this case, when the download of the run fetched them (history.json in the run directory).
     const siblingAutoid = isRecord(siblingItem) && isRecord(siblingItem.fields) && typeof siblingItem.fields.autoid === 'string' ? siblingItem.fields.autoid : '';
     const priorDeviceHistory = await loadPriorDeviceHistory(runCtx.directory, siblingAutoid, cwd.canonical);
     const built = buildSingleCaseStructuredBrief({
@@ -618,8 +592,6 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
   const siblingFields = isRecord(siblingItem) && isRecord(siblingItem.fields) ? siblingItem.fields : {};
   const caseTitle = [compileBrief?.identity.title, siblingFields.title, isRecord(siblingItem) ? siblingItem.label : undefined].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
   const resolvedReferences = await readVerifiedRoleReferences(packReal, role);
-  // The writer's task file prints the run directory as --run of the lookup and of the check, the value taken here.
-  // The recomposer's check needs it too: without --run the check reads only the compact shape, not what the Hub will check.
   const frozenRunDir = options.runDir !== undefined && (role.key === 'plan' || role.key === 'recompose') ? resolveRunDirectory(options.runDir, cwd).canonical : undefined;
   let brief = renderTaskBrief({
     ...(caseTitle === undefined ? {} : { caseTitle }),
@@ -637,8 +609,6 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     ...(priorRounds && streak ? { priorRounds, streak } : {}),
     ...(unrecordedAttribution ? { unrecordedAttribution } : {}),
   });
-  // The attributor compares the build the run locked with the version the device returned. That build is one word of a run
-  // record of megabytes: in a measured compile, reads of run.json were a quarter of what the attributors carried.
   if (role.key === 'attribute' && runCtx?.runMeta.build) {
     const product = [runCtx.runMeta.product, runCtx.runMeta.version].filter(Boolean).join(' ');
     brief += `\n\n## 本次运行锁定的构建\n\`${runCtx.runMeta.build}\`${product ? `（${product}）` : ''}：运行记录 run.json 里的 \`build\` 就是这一项，核对设备返回的版本时对它。`;
@@ -648,8 +618,6 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     const manifestStat = await lstat(join(sourceDir.canonical, 'sources.json')).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
     if (manifestStat) {
       const materials = await readSourceManifest(sourceDir.canonical);
-      // Each file with its size: a source of megabytes, or one stored on a single line, is then opened knowingly (the run record
-      // alone is several megabytes; what a case needs of it is in its brief and in the lookup tools' answers).
       const sized = async (path: string | null): Promise<{ bytes?: number }> => { if (path === null) return {}; const st = await lstat(join(cwd.canonical, path)).catch(() => null); return st?.isFile() ? { bytes: st.size } : {}; };
       const rows: string[] = [];
       for (const material of materials) {
@@ -673,11 +641,6 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
   };
 }
 
-/**
- * Validates the subagent role, workspace-contained paths, verbatim (and case-filtered) `scope.md`,
- * in-memory `compile-brief@1` context (when run data exists for plan/attribute roles),
- * and any round 2+ single-case prior history, then renders a self-contained pack subagent task brief.
- */
 export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<string> {
   return (await buildTaskBriefWithMeta(options)).brief;
 }
@@ -691,7 +654,6 @@ async function assertValidTaskFilePath(
   if (resolved.relative === '.') {
     throw new CallFailure('invalid_parameters', '参数无效：--task-file 必须指向工作目录下的具体 .md 文件（如 briefs/0.task.md）。请修改参数后重试', "请核对当前角色、工作目录内的输入输出路径和任务参数后重试 task-brief.ts");
   }
-  // Refuse symlinks along the lexical path inside cwd before checking canonical collision.
   let probePath = resolved.lexical;
   while (probePath !== cwd.canonical && probePath !== cwd.lexical) {
     const st = await lstat(probePath).catch(() => null);
@@ -720,10 +682,6 @@ async function assertValidTaskFilePath(
   return resolved;
 }
 
-/**
- * Preserves every line > 1,800 chars byte-for-byte without wrapping, prepending a header with exact
- * shifted 1-based line numbers so readers know when Circle `read_file` will clip a verbatim line at 2,000 chars.
- */
 export function formatTaskBriefFileContent(rawBrief: string): {
   content: string;
   lineCount: number;
@@ -763,7 +721,6 @@ export function formatTaskBriefFileContent(rawBrief: string): {
   };
 }
 
-/** Fixed short dispatch notice emitted to stdout (`~200-350` chars, zero case content). */
 export function renderTaskDispatchPrompt(params: {
   subagentType: string;
   roleStageLabel: string;
@@ -786,7 +743,6 @@ export function renderTaskDispatchPrompt(params: {
   ].join('\n');
 }
 
-/** Validates, formats, and prepares one task brief without writing to disk yet. */
 async function stageTaskBrief(options: WriteTaskBriefOptions): Promise<{
   canonical: string;
   bytes: Buffer;
@@ -827,7 +783,6 @@ async function stageTaskBrief(options: WriteTaskBriefOptions): Promise<{
   };
 }
 
-/** Writes the full brief to `--task-file` inside cwd and returns a short dispatch prompt for stdout. */
 export async function writeTaskBrief(options: WriteTaskBriefOptions): Promise<WriteTaskBriefResult> {
   const staged = await stageTaskBrief(options);
   await mkdir(dirname(staged.canonical), { recursive: true });

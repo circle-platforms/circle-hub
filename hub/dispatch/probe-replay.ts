@@ -1,7 +1,3 @@
-// What a job may take from the booking it runs under, and nothing else. The build a device runs is not changed by a job, and
-// the booking kept the device's whole answer to the version probe; a job under the same lease, of the same executor
-// definition and inventory, reads that answer again instead of asking the device once more. What a job may have changed
-// (the interfaces, the residue of an earlier case) is never taken from the booking: it is read for every job.
 import type { ActionBody, Principal, RecordsKit } from '../records/api.ts';
 import { sha256Hex } from '../records/api.ts';
 import type { HolderSnapshot } from '../leases/api.ts';
@@ -10,38 +6,27 @@ import { digestOfValue } from './journal.ts';
 import { rpcResponse, toolContent } from './observations.ts';
 import type { Exchange } from './transport.ts';
 
-/** Index key of a booking's version observation: its run, executor, bound inventory and device. */
 export const BOOKING_PROBE_KEY = 'dispatch.booking_probe';
 export const bookingProbeKey = (run: string, executor: string, inventory: string, device: string): string => `${run}:${executor}:${inventory}#${device}`;
 
-/**
- * The leases of an executor's resources as one value. The same value later says the same leases have been held since: a
- * release and a new booking in between, by anyone, gives other lease ids and so another value.
- */
 export function leaseGeneration(rows: readonly Pick<HolderSnapshot, 'key' | 'lease'>[]): string {
   return digestOfValue(rows.map((row) => [row.key, row.lease]).sort((left, right) => (left[0]! < right[0]! ? -1 : left[0]! > right[0]! ? 1 : 0)));
 }
 
-/** Whether every lease of the rows is held now: not released and not expired. */
 export function leasesLive(rows: readonly Pick<HolderSnapshot, 'released' | 'expires_at'>[], now: number): boolean {
   return rows.length > 0 && rows.every((row) => !row.released && (row.expires_at === null || Date.parse(row.expires_at) > now));
 }
 
 export interface ReplayIdentity {
-  /** The run of the job and the runs it continues, nearest first: where a booking may have been observed. */
   ancestors: readonly string[];
   executor: string;
   executorDigest: string;
-  /** leaseGeneration of the executor's resources now. */
   leases: string;
 }
 
 export interface Replayed {
-  /** The booking run whose observation is read again. */
   run: string;
-  /** When the oldest of the answers was received. */
   observed_at: string;
-  /** The version answer of each seat, by `<seat index>.version`. */
   exchanges: ReadonlyMap<string, Exchange>;
 }
 
@@ -54,11 +39,6 @@ async function exchange(records: RecordsKit, owner: Principal, reference: string
   return { value, source: reference, received_at: observedAt, started_at: observedAt };
 }
 
-/**
- * The kept version answers of one booking that observed every seat of this executor, or null. Nothing is mixed across
- * bookings, executor definitions or inventories, and nothing is taken when the leases are not the ones the booking was
- * observed under, an answer is missing or does not match its digest: the job then reads every seat itself, as it always did.
- */
 export async function replayBookingVersions(records: RecordsKit, owner: Principal, identity: ReplayIdentity, d: ExecutorDefinition): Promise<Replayed | null> {
   if (!d.probes || !d.manifest_sha256) return null;
   for (const run of identity.ancestors) {

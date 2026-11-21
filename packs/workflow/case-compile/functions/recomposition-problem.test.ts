@@ -1,5 +1,3 @@
-// A recomposition the plan run cannot admit is refused with the condition that failed (decision 163, run 13: both slots bound to the
-// same result record and the old sentence sent the model to wait for an "independent reviewer"). Synthetic records only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { admittedRecomposition, recompositionProblem } from './recomposition.ts';

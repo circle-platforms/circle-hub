@@ -24,7 +24,6 @@ test('a policy recheck that reached no conclusion is not reported as a refusal o
  const {ctx}=context();ctx.policies=async()=>'unknown';
  const result=await checkEffectBoundary(ctx);assert.ok(!result.ok);assert.equal(result.code,'PACK_POLICY_DENIED');
  assert.match(result.message,/有检查没出结论/);assert.match(result.message,/不是计划、工作簿或包被驳回/);assert.doesNotMatch(result.message,/请修正/);
- // It leaves out what became of the request (this boundary also runs before a resend) and asks for no change of the plan or the pack.
  assert.equal(result.clause,7);assert.equal(result.no_conclusion,true);assert.doesNotMatch(result.message,/什么都没发出|原样重交/);assert.doesNotMatch(result.fix,/修正输入|原样重交/);
  assert.match(refusalText(result,false),/不是计划、工作簿或包被驳回；什么都没发出$/);assert.doesNotMatch(refusalText(result,true),/什么都没发出/);
  ctx.policies=async()=>false;const refused=await checkEffectBoundary(ctx);assert.ok(!refused.ok);assert.match(refused.message,/重核未通过；请修正后重核/);assert.equal(refused.no_conclusion,undefined);

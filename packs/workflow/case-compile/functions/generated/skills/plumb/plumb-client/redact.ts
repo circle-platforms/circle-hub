@@ -1,4 +1,3 @@
-// Redaction, canonical serialization, token estimation, and O_NOFOLLOW private file helpers.
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { mkdir, open, writeFile } from 'node:fs/promises';
@@ -10,7 +9,6 @@ const CLAIM_HEADER_PATTERN = /(x-claim-code\s*[:=]\s*)([^\s,;]+)/giu;
 const SECRET_HEADERS = new Set(['authorization', 'x-claim-code', 'proxy-authorization', 'cookie', 'set-cookie']);
 const CJK_PATTERN = /[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/gu;
 
-/** Redacts Plumb API keys, bearer credentials, and explicit secret strings before output or logging. */
 export function redactSecret(text: string, extraSecrets: readonly (string | undefined)[] = []): string {
   let out = text
     .replace(BEARER_PATTERN, 'Bearer [REDACTED]')
@@ -23,7 +21,6 @@ export function redactSecret(text: string, extraSecrets: readonly (string | unde
   return out;
 }
 
-/** Returns a shallow header copy with credential-bearing headers replaced by `[REDACTED]`. */
 export function redactHeaders(headers: Readonly<Record<string, string | undefined>>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
@@ -33,7 +30,6 @@ export function redactHeaders(headers: Readonly<Record<string, string | undefine
   return out;
 }
 
-/** Stable sorted-key JSON serialization for cache digests and deterministic request hashing. */
 export function stableStringify(value: unknown): string {
   const seen = new WeakSet<object>();
   const encode = (node: unknown): unknown => {
@@ -60,7 +56,6 @@ export function sha256Hex(text: string | Uint8Array): string {
   return createHash('sha256').update(text).digest('hex');
 }
 
-/** Token estimator aligned with Plumb gateway (`ceil(cjk + non_cjk / 3.5)`). */
 export function estimateTokens(text: string): number {
   if (!text) return 0;
   const cjkMatches = text.match(CJK_PATTERN);
@@ -69,13 +64,11 @@ export function estimateTokens(text: string): number {
   return Math.ceil(cjk + nonCjk / 3.5);
 }
 
-/** Atomically creates a brand-new 0600 file (`wx`); throws EEXIST if it already exists. */
 export async function writeNewPrivateFile(filePath: string, content: string | Uint8Array): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, content, { flag: 'wx', mode: 0o600 });
 }
 
-/** Writes or overwrites a regular 0600 file while refusing symlinks via O_NOFOLLOW. */
 export async function writePrivateFile(filePath: string, content: string | Uint8Array): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
   const handle = await open(
@@ -90,7 +83,6 @@ export async function writePrivateFile(filePath: string, content: string | Uint8
   }
 }
 
-/** Appends a single line to an audit log file with O_NOFOLLOW protection and 0600 mode. */
 export async function appendPrivateLine(filePath: string, line: string): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
   const handle = await open(

@@ -63,10 +63,6 @@ export const TASK_FILL: Readonly<Record<TaskResult, string>> = {
   abandoned: 'fill-unchecked',
 };
 
-/**
- * Run-page status uses only the three confirmation words (hub-terms): 未确认 / 已确认 / 未知.
- * task_result remains the filter key and the chip title for detail.
- */
 export type ConfirmationStatus = '未确认' | '已确认' | '未知';
 
 export function confirmationStatus(result: TaskResult | null, pending = 0): ConfirmationStatus {

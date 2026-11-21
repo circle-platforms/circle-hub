@@ -1,6 +1,3 @@
-// Read-only preflight: replay allow/deny cases through the installed Circle home hook.
-// Does not read credential values, does not change the home, and does not contact the Hub.
-//   node scripts/real/guard-preflight.ts --home <dir>
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, lstatSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -8,7 +5,6 @@ import { discoverTools, environment, quote, writeCommand, type DiscoveredTool, t
 import { extractTaughtCommands, instantiateTaughtCommand } from './taught-commands.ts';
 
 export type Verdict = 'allow' | 'deny' | 'ask' | 'error';
-/** How a case counts toward the exit code: checked allow/deny vs declaration-only listing. */
 export type CaseKind = 'check' | 'declaration-limit';
 
 export interface CaseResult {
@@ -39,7 +35,6 @@ export interface InstalledGuard {
   entry: string;
   profile: 'skills' | 'ops';
   declarationName: string;
-  hookFormat: 'PreToolUse' | 'before_tool';
   hubServer: string;
 }
 
@@ -60,26 +55,15 @@ function findHubServerKey(settings: Record<string, unknown>): string {
       if (key.toLowerCase() === 'hub' || urlPlaceholder === 'HUB_URL') return key;
     }
   }
-  const configuredList = settings.mcp_servers;
-  if (Array.isArray(configuredList)) {
-    for (const entry of configuredList) {
-      if (entry && typeof entry === 'object' && !Array.isArray(entry) && typeof (entry as { name?: unknown }).name === 'string') {
-        const name = (entry as { name: string }).name;
-        if (name.toLowerCase() === 'hub') return name;
-      }
-    }
-  }
   return 'hub';
 }
 
-/** Resolves the installed guard entry and trusted work folder of a skills/ops home. */
 export function resolveInstalledGuard(homeRaw: string): InstalledGuard {
   const home = resolve(homeRaw);
   const settingsPath = join(home, 'settings.json');
   if (!existsSync(settingsPath)) throw new Error(`主目录没有 settings.json：${home}`);
   const settings = readJson(settingsPath) as Record<string, unknown>;
   let command: string | undefined;
-  let hookFormat: 'PreToolUse' | 'before_tool' = 'PreToolUse';
 
   const hooksCfg = settings.hooks;
   const preToolUseGroups =
@@ -99,17 +83,8 @@ export function resolveInstalledGuard(homeRaw: string): InstalledGuard {
     if (command && /\/(ops-allow|skills-only)\.mjs\b/.test(command)) break;
   }
 
-  if (!command) {
-    const hooksJsonPath = join(home, 'hooks.json');
-    if (existsSync(hooksJsonPath)) {
-      const hooksJson = readJson(hooksJsonPath) as { hooks?: { before_tool?: Array<{ command?: string }> } };
-      command = hooksJson.hooks?.before_tool?.[0]?.command;
-      hookFormat = 'before_tool';
-    }
-  }
-
   if (typeof command !== 'string' || command === '') {
-    throw new Error('settings.json 的 hooks.PreToolUse（和 hooks.json）里没有守卫命令');
+    throw new Error('settings.json 的 hooks.PreToolUse 里没有守卫命令');
   }
   const match = /^node\s+(?:'([^']+)'|"([^"]+)"|(\S+))\s*$/.exec(command.trim());
   if (!match) throw new Error('守卫命令不是 node <入口>');
@@ -138,29 +113,31 @@ export function resolveInstalledGuard(homeRaw: string): InstalledGuard {
     entry,
     profile,
     declarationName,
-    hookFormat,
     hubServer: findHubServerKey(settings),
   };
 }
 
+function hookSpecificOutput(parsed: Record<string, unknown>): Record<string, unknown> | null {
+  const specific = parsed.hookSpecificOutput;
+  return typeof specific === 'object' && specific !== null && !Array.isArray(specific) ? (specific as Record<string, unknown>) : null;
+}
+
 export function classifyDecision(parsed: Record<string, unknown> | null | undefined): Verdict {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'error';
-  const specific =
-    typeof parsed.hookSpecificOutput === 'object' && parsed.hookSpecificOutput !== null && !Array.isArray(parsed.hookSpecificOutput)
-      ? (parsed.hookSpecificOutput as Record<string, unknown>)
-      : null;
-  const word = specific ? specific.permissionDecision : parsed.decision;
+  if (parsed.hookSpecificOutput === undefined) return 'allow';
+  const specific = hookSpecificOutput(parsed);
+  if (specific === null) return 'error';
+  const word = specific.permissionDecision;
   if (word === 'deny' || word === 'ask') return word;
   return word === 'allow' || word === undefined ? 'allow' : 'error';
 }
 
-/** Invokes the installed hook entry with a PreToolUse (or before_tool) payload; does not write home files. */
 export function invokeInstalledHook(
   guard: InstalledGuard,
   call: { tool_name: string; tool_input: Record<string, unknown>; paths?: string[] },
 ): { verdict: Verdict; reason?: string; raw: string; status: number | null } {
   const payload = JSON.stringify({
-    ...(guard.hookFormat === 'PreToolUse' ? { hook_event_name: 'PreToolUse' } : { event: 'before_tool' }),
+    hook_event_name: 'PreToolUse',
     session_id: 'guard-preflight',
     cwd: guard.workdir,
     tool_name: call.tool_name,
@@ -180,7 +157,6 @@ export function invokeInstalledHook(
     raw,
     status: child.status,
   });
-  // Hook crash / timeout / empty or non-JSON output is unknown, never treat as allow (G1).
   if (child.error) return fail(`钩子错误：${child.error.message}`);
   if (child.signal) return fail(`钩子被信号中断：${child.signal}`);
   if (child.status !== 0 && child.status !== null) return fail(`钩子退出码 ${child.status}`);
@@ -193,15 +169,8 @@ export function invokeInstalledHook(
     return fail('钩子输出不是 JSON');
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return fail('钩子输出不是 JSON 对象');
-  const specific =
-    typeof parsed.hookSpecificOutput === 'object' && parsed.hookSpecificOutput !== null && !Array.isArray(parsed.hookSpecificOutput)
-      ? (parsed.hookSpecificOutput as Record<string, unknown>)
-      : null;
-  const reason = typeof specific?.permissionDecisionReason === 'string'
-    ? specific.permissionDecisionReason
-    : typeof parsed.reason === 'string'
-      ? parsed.reason
-      : undefined;
+  const specificReason = hookSpecificOutput(parsed)?.permissionDecisionReason;
+  const reason = typeof specificReason === 'string' ? specificReason : undefined;
   return {
     verdict: classifyDecision(parsed),
     reason,
@@ -212,7 +181,6 @@ export function invokeInstalledHook(
 
 function finalizeNodeCommand(command: string): string { return command; }
 
-/** @deprecated Prefer extractTaughtCommands from taught-commands.ts; kept as a thin alias for callers. */
 export function extractDocCommands(docPath: string, text: string): Array<{ source: string; template: string; heredocLines: string[] | null }> {
   return extractTaughtCommands(text, docPath).map((entry) => ({
     source: entry.source,
@@ -323,7 +291,6 @@ export interface HookCase {
   call: { tool_name: string; tool_input: Record<string, unknown>; paths?: string[] };
 }
 
-/** Parses `node <script> [subcommand] …` after finalize; subcommand is the first bare word after the script. */
 export function parseExecuteHead(command: string): { script: string; subcommand: string | null } | null {
   const m = /^(?:node)\s+(?:'([^']+\.ts)'|(\S+\.ts))(?:\s+(.*))?$/s.exec(command);
   if (!m) return null;
@@ -335,10 +302,6 @@ export function parseExecuteHead(command: string): { script: string; subcommand:
   return { script, subcommand: first };
 }
 
-/**
- * Returns the declaration's subcommand allow-list for a script when the declaration names that script
- * with an explicit subcommands array; otherwise null (no structural restriction from the declaration).
- */
 export function declarationSubcommandsFor(env: GuardEnvironment, scriptFile: string): string[] | null {
   const scripts = env.declaration.scripts ?? [];
   for (const entry of scripts) {
@@ -349,7 +312,6 @@ export function declarationSubcommandsFor(env: GuardEnvironment, scriptFile: str
   return null;
 }
 
-/** True when the taught execute command's subcommand is outside the declaration's explicit list for that script. */
 export function isDeclarationLimitedCommand(env: GuardEnvironment, command: string): boolean {
   const head = parseExecuteHead(command);
   if (!head?.subcommand) return false;
@@ -358,7 +320,6 @@ export function isDeclarationLimitedCommand(env: GuardEnvironment, command: stri
   return !allowed.includes(head.subcommand);
 }
 
-/** Fixed cases that every skills/ops guard must deny. */
 export function fixedDenyCases(guard: InstalledGuard): HookCase[] {
   const { home } = guard;
   const skillProbe = join(home, 'skills', 'case-compile', 'tools', 'fetch-run.ts');
@@ -398,7 +359,6 @@ function buildCases(env: GuardEnvironment): HookCase[] {
     out.push({
       name: item.name,
       kind: limited ? 'declaration-limit' : 'check',
-      // Declaration-limited taught commands are expected to be denied by the installed guard.
       want: limited ? 'deny' : 'allow',
       call: { tool_name: 'execute', tool_input: { command: item.command } },
     });
@@ -406,7 +366,6 @@ function buildCases(env: GuardEnvironment): HookCase[] {
   return out;
 }
 
-/** Runs the read-only preflight against the installed hook. */
 export function runPreflight(homeRaw: string): PreflightReport {
   const guard = resolveInstalledGuard(homeRaw);
   const env = environment(guard.home, guard.workdir, guard.declarationName);
@@ -418,7 +377,6 @@ export function runPreflight(homeRaw: string): PreflightReport {
     const ok = got === item.want;
     const reason = ok ? undefined : (invoked.reason ?? invoked.raw).split('\n')[0]?.slice(0, 160);
     if (item.kind === 'declaration-limit') {
-      // G2: only got=deny (matching want) is informational; any other got is a mismatch.
       results.push({
         name: item.name,
         kind: 'declaration-limit',

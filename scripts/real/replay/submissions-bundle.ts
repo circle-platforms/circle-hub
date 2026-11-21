@@ -1,6 +1,3 @@
-// A replay bundle read back and loaded into a scratch database: every record's digest and every object's SHA-256 are checked on
-// the way in, so a damaged or hand-edited bundle is refused. The format is in submissions-bundle-format.ts, the writer in
-// submissions-export.ts.
 import { createReadStream } from 'node:fs';
 import { copyFile, mkdir, readFile, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
@@ -20,7 +17,6 @@ export interface Bundle {
   dir: string;
   manifest: BundleManifest;
   rows(table: string): AsyncGenerator<BundleRow>;
-  /** Where the bytes of an object are, or null when the bundle has none. */
   objectFile(sha256: string): Promise<string | null>;
 }
 
@@ -47,13 +43,10 @@ export async function openBundle(dir: string): Promise<Bundle> {
   };
 }
 
-// ---------------------------------------------------------------------------------------------- loading
-
 export interface LoadReport {
   records: number;
   rewritten: number;
   digestMismatches: Array<{ seq: number; kind: string; digest: string }>;
-  /** Records of a person's own space, stored as a marker that names their content: the content is not in a bundle (it stays in the Hub). */
   personalMarkers: number;
 }
 
@@ -71,7 +64,6 @@ async function hasIdentity(db: Connection, table: string): Promise<boolean> {
   return found.rows.length > 0;
 }
 
-/** One session of loads: triggers off (the rows already carry what a trigger would derive). */
 export async function withLoadSession<T>(config: DatabaseSettings, run: (db: pg.Client) => Promise<T>): Promise<T> {
   const client = await connect(config);
   try {
@@ -82,7 +74,6 @@ export async function withLoadSession<T>(config: DatabaseSettings, run: (db: pg.
   }
 }
 
-/** Reads a table of the bundle once, front to back, in the order of a position column: what lies below a limit, then the next limit. */
 class PositionCursor {
   readonly #rows: AsyncGenerator<BundleRow>;
   readonly #field: 'seq' | 'record_seq';
@@ -107,11 +98,6 @@ class PositionCursor {
   }
 }
 
-/**
- * Loads the records of a bundle into a database a stretch at a time, in the order of their positions: each call brings the
- * database to the state just before a position (every record appended before it, none from it on). The files of the bundle
- * are read once, front to back, whatever the number of calls; every digest is recomputed on the way in.
- */
 export class RecordLoader {
   readonly #records: PositionCursor;
   readonly #index: PositionCursor;
@@ -125,7 +111,6 @@ export class RecordLoader {
     this.#index = new PositionCursor(bundle, 'record_index', 'record_seq');
   }
 
-  /** Loads every record below `to` that was not loaded by an earlier call. `rewrite` replaces a record before it is stored (the digest of the new one is computed by the caller). */
   async load(db: pg.Client, to: number, rewrite?: (row: BundleRow) => BundleRow | null): Promise<LoadReport> {
     const report: LoadReport = { records: 0, rewritten: 0, digestMismatches: [], personalMarkers: 0 };
     this.#identity ??= await hasIdentity(db, 'records');
@@ -183,7 +168,6 @@ export class RecordLoader {
   }
 }
 
-/** Loads the small tables, which are not as of any position, and the object rows; places the object bytes under `objectsRoot`. */
 export async function loadStatic(db: pg.Client, bundle: Bundle, objectsRoot: string): Promise<{ objects: number; missingBytes: string[]; tables: Record<string, number> }> {
   const tables: Record<string, number> = {};
   for (const [table, policy] of Object.entries(TABLE_POLICY)) {
@@ -205,7 +189,6 @@ export async function loadStatic(db: pg.Client, bundle: Bundle, objectsRoot: str
     }
     const to = objectPath(objectsRoot, sha);
     await mkdir(dirname(to), { recursive: true });
-    // Verified here, not trusted: the Hub reads an object by its name, so a wrong byte under a right name must not get in.
     const bytes = await readFile(from);
     if (sha256Hex(bytes) !== sha) throw new Error(`数据包里的对象 ${sha} 的字节与名字对不上`);
     await copyFile(from, to, constants.COPYFILE_FICLONE);

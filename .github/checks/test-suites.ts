@@ -1,5 +1,4 @@
-// Enforces that every git-tracked *.test.ts belongs to a standard suite in `npm test`, or is explicitly listed here by exact file path with a reason (never a wildcard glob).
-import { execFileSync } from 'node:child_process';
+import { trackedSourcePaths } from './tracked-source.ts';
 import { existsSync, globSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +21,6 @@ const REAL_GOLD_REASON = 'real-system gold-corpus tooling test: outside default 
 const REAL_LIB_REASON = 'real-system helper/driver library test: outside default Hub unit suite (run directly with node --test when needed)';
 const REAL_TOOL_REASON = 'real-system diagnostic/probe/review runner test: outside default Hub unit suite (run directly with node --test when needed)';
 
-/** Tracked test files intentionally omitted from default `npm test`, listed by exact path (wildcards forbidden). */
 export const NOT_RUN: readonly NotRunEntry[] = [
   ...withReason(REAL_TOOL_REASON, [
     'scripts/real/accept-circle.test.ts',
@@ -116,26 +114,22 @@ function readPackageScripts(root: string): Record<string, string> {
   return pkg.scripts ?? {};
 }
 
-/** Patterns matched by direct `node --test` scripts in `package.json` (currently `test:docs`). */
 export function docsSuitePatterns(scripts: Readonly<Record<string, string>>): string[] {
-  const script = scripts['test:docs'] ?? '';
+  return testPatterns(scripts['test:docs'] ?? '');
+}
+
+function testPatterns(script: string): string[] {
   return [...script.matchAll(/"([^"]+\.test\.ts)"|(\S+\.test\.ts)/g)].map((match) => match[1] ?? match[2]);
 }
 
-/** Sorted deduplicated relative paths covered by the standard test runners under `root`. */
 export function suiteTestFiles(root = ROOT): string[] {
   const scripts = readPackageScripts(root);
-  const patterns = [...UNIT_PATTERNS, ...ACCEPTANCE_PATTERNS, ...docsSuitePatterns(scripts)];
+  const patterns = [...UNIT_PATTERNS, ...ACCEPTANCE_PATTERNS, ...docsSuitePatterns(scripts), ...testPatterns(scripts['test:references'] ?? '')];
   return [...new Set(globSync(patterns, { cwd: root }))].sort();
 }
 
-/** Sorted relative paths of all git-tracked `*.test.ts` files under `root`. */
 export function trackedTestFiles(root = ROOT): string[] {
-  return execFileSync('git', ['ls-files', '-z', '--', '*.test.ts'], { cwd: root })
-    .toString()
-    .split('\0')
-    .filter(Boolean)
-    .sort();
+  return trackedSourcePaths(root, '*.test.ts');
 }
 
 export interface TestSuiteSnapshot {
@@ -146,7 +140,6 @@ export interface TestSuiteSnapshot {
   readonly npmTestScript?: string;
 }
 
-/** Validate that every tracked `*.test.ts` belongs to a suite or has a valid exact `NOT_RUN` entry. */
 export function evaluateTestSuites(snapshot: TestSuiteSnapshot): string[] {
   const problems: string[] = [];
   if (snapshot.npmTestScript !== undefined) {
@@ -179,7 +172,6 @@ export function evaluateTestSuites(snapshot: TestSuiteSnapshot): string[] {
   return problems;
 }
 
-/** Check repository-level test suite coverage against git-tracked `*.test.ts` files. */
 export function testSuiteProblems(root = ROOT, notRun: readonly NotRunEntry[] = NOT_RUN): string[] {
   const scripts = readPackageScripts(root);
   const problems: string[] = [];

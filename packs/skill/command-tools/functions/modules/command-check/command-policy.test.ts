@@ -63,7 +63,6 @@ test('a case belongs to the channels and combination sides its commands name, wi
   const saver = caseProfile(policy, [command('/commands/demo/store/file', [0], 'demo store file a'), command('/commands/demo/show')]);
   assert.deepEqual(saver.channels, [{ id: 'disk', source: declared.persistence_channels[0].source, commands: ['demo store file a'] }]);
   assert.deepEqual(saver.sides, []);
-  // One command can sit in a channel and on a side of a combination: a push writes the peer and is also what the boot sync forbids.
   const pusher = caseProfile(policy, [command('/commands/demo/mirror/push', [0], 'demo mirror push b'), command('/commands/demo/mirror/push', [0], 'demo mirror push c'), command('/commands/demo/mirror/push', [0], 'demo mirror push b')]);
   assert.deepEqual(pusher.channels.map((row) => [row.id, row.commands]), [['peer', ['demo mirror push b', 'demo mirror push c']]]);
   assert.deepEqual(pusher.sides.map((row) => [row.combination, row.side]), [['boot_reload', 'b']]);
@@ -129,11 +128,9 @@ test('a partner the plan already walks to, a quoted word and a line the tokenize
   assert.deepEqual(alternativeLines(null, ['demo switch on']), []);
   const none = readCommandPolicy({ schema: 'command-policy@1', read_only: [], inverse_rules: [] }) as CommandPolicy;
   assert.deepEqual(alternativeLines(none, ['demo switch on']), [], 'a policy without pairs asks for nothing');
-  // A pair member that is not one bare word cannot be the last word of a path.
   const odd = readCommandPolicy({ schema: 'command-policy@1', read_only: [], inverse_rules: [], inverse_alternatives: [['up', 'down now']] }) as CommandPolicy;
   assert.deepEqual(alternativeLines(odd, ['demo link up']), []);
   assert.deepEqual(alternativeLines(odd, ['demo link down']), []);
-  // Lines past the selection's own limit are refused as they stand.
   assert.deepEqual(alternativeLines(pairs, Array.from({ length: 129 }, (_, index) => `s${index} on`)), []);
 });
 
@@ -141,16 +138,12 @@ test('the lines of declared pairs come first and are never dropped, the lines of
   assert.deepEqual(inverseLines(pairs, ['demo switch on', 'demo pool add one 10']), ['demo switch off', 'no demo switch on', 'no demo pool add one 10']);
   assert.deepEqual(inverseLines(pairs, ['demo switch on', 'no demo switch on']), ['demo switch off', 'no demo switch off'], 'a rule line the plan sends is not asked twice');
   assert.deepEqual(inverseLines(null, ['demo switch on']), []);
-  // 63 lines of the plan, 1 line of a pair and 63 rule lines are 127: all of them.
   const plan = Array.from({ length: 62 }, (_, index) => `demo pool add n${index} ${index}`);
   const fits = inverseLines(pairs, [...plan, 'demo switch on']);
   assert.equal(fits.length, 1 + 63);
   assert.equal(fits[0], 'demo switch off', 'the pair line comes first');
-  // One line more and the rule lines are 129 with the plan: they go, the pair line stays.
   const over = inverseLines(pairs, [...plan, 'demo pool add last 1', 'demo switch on']);
   assert.deepEqual(over, ['demo switch off']);
-  // 128 lines of pairs: asked for in full, so the selection is over its limit and the Hub refuses it, instead of reading a catalog
-  // in which every switch is judged to need no cleanup. Past 128 lines the plan alone is over, and nothing more is asked.
   const switches = Array.from({ length: 128 }, (_, index) => `s${index} on`);
   assert.deepEqual(inverseLines(pairs, switches), switches.map((line) => line.replace(' on', ' off')));
   assert.deepEqual(inverseLines(pairs, [...switches, 's128 on']), []);

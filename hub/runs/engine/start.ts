@@ -182,11 +182,6 @@ async function lineageOf(ctx: EngineContext, runId: string, predecessor: string 
   return lineage;
 }
 
-/**
- * A question or a read reaches only devices this run's lineage holds (D04 R[0]): every key under the declared prefix, held by
- * the same user through a run of the lineage, neither released nor expired. Refuses otherwise, before anything is sent;
- * returns the moment the leases were checked at.
- */
 async function lineageHolds(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, keys: readonly string[], runId: string, predecessor: string | undefined, words: { wants: string; prefix: string; unheld: string; again: string }): Promise<Date> {
   const declared = workflow.workflow.leases;
   const service = ctx.deps.leases;
@@ -220,7 +215,6 @@ export async function askClaims(ctx: EngineContext, user: Principal, workflow: L
   return deviceHelpClaims(results, at);
 }
 
-/** The claims of a requested read (decision 181): the lineage is checked as for a question, then the port reads; a port that fails is an unknown and a line in the administrator's log, never a refusal of the run. */
 export async function readClaims(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, reads: ReadonlyArray<DeviceReadTarget>, runId: string, predecessor: string | undefined, traceId: string): Promise<Claim[]> {
   if (reads.length === 0) return [];
   const now = await lineageHolds(ctx, user, workflow, [...new Set(reads.flatMap((read) => read.keys))], runId, predecessor, { wants: '要读设备的输出', prefix: '要读的设备的租约键不在声明的前缀下', unheld: '不能往它发命令', again: '重新预订后再读' });
@@ -488,12 +482,6 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
   }
 }
 
-/**
- * A fact to say beside a refusal of the name asked for: the nearest name when it is plainly the one meant, else the first few
- * workflows the caller may use. It is a fact of the refusal, not a next step: the reader says it as it is, the next step
- * stays the one for an absent name. Only the caller's own list is read (list_task_packs gives the same), in the space the
- * call asked for, so another account's personal workflow is never named. Empty when it names none.
- */
 async function nameHint(ctx: EngineContext, user: Principal, asked: string, space?: string): Promise<string> {
   let candidates: NameCandidate[];
   try {
@@ -532,7 +520,6 @@ async function packMissing(ctx: EngineContext, user: Principal, pack: string, fo
     return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有名为「${id}」的工作流或技能的可用版本（已退役）`, { path: '/pack', fix: LIST })], note);
   }
   if (absence === 'unassigned') {
-    // Kind is typically workflow (skills use uninstalled); wording uses 工作流 when kind is not looked up here.
     return new Refusal([protocolError('SOURCE_NOT_PERMITTED', `当前账户未获授权使用工作流「${id}」`, { path: '/pack', fix: `请联系管理员为该账户或所在团队分配此工作流；${LIST}` })], note);
   }
   // A skill pack is installed for the whole Hub, never assigned to one user (decision 113).
@@ -717,7 +704,6 @@ async function startFresh(
     root: target.root?.root ?? null,
     parameters,
     groups: [],
-    // Inputs bound after the start (W06 R[7]): the projection sees which run only, so the frozen items never depend on its progress.
     ...(defaulted.late.length ? { late_inputs: defaulted.late.map(({ slot, run }) => ({ slot, run })) } : {}),
     ...(observationContext !== null ? { observations: observationContext } : {}),
     ...(builds !== null ? { builds } : {}),

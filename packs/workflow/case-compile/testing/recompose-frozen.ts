@@ -1,5 +1,3 @@
-// A frozen recompose run as download-run.ts leaves it on disk (run.json and knowledge/nodes.jsonl), built from the synthetic mind
-// maps of tests/fixtures/recompose and the synthetic command catalog of testing/recompose.ts. Test support only, never pack code.
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -13,7 +11,6 @@ const sha = (text: string): string => createHash('sha256').update(text).digest('
 
 export const FROZEN_RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
 
-/** The two synthetic cases of the pass and underdetermined mind maps, as one subject. */
 export function syntheticMindMap(): { bytes: string; sha256: string } {
   const pass = JSON.parse(fixtureText('author-pass.km.json'));
   const other = JSON.parse(fixtureText('author-underdetermined.km.json'));
@@ -21,7 +18,6 @@ export function syntheticMindMap(): { bytes: string; sha256: string } {
   return { bytes, sha256: sha(bytes) };
 }
 
-/** The command nodes of the synthetic catalog as the Hub's run export writes them: one node per word, definitions at the last. */
 export function knowledgeNodes(root: string, run: string, entries: readonly Row[]): string {
   const nodes = new Map<string, Row>();
   const node = (path: string): Row => {
@@ -55,13 +51,10 @@ export function knowledgeNodes(root: string, run: string, entries: readonly Row[
 }
 
 export interface FrozenRunFixture {
-  /** run.json: the frozen run record, with the items the projection made of the synthetic mind map. */
   run: Row;
   items: Row[];
   root: string;
-  /** knowledge/nodes.jsonl */
   nodes: string;
-  /** The catalog entries the Hub's own fake knowledge answers with. */
   catalogEntries: Row[];
 }
 
@@ -90,7 +83,6 @@ export function frozenRunFixture(overrides: Row = {}): FrozenRunFixture {
   return { run, items, root: ROOT, nodes: knowledgeNodes(ROOT, FROZEN_RUN, catalogEntries), catalogEntries };
 }
 
-/** Writes the download the way download-run.ts does: run.json beside knowledge/nodes.jsonl. */
 export async function writeFrozenRun(dir: string, frozen: FrozenRunFixture = frozenRunFixture()): Promise<FrozenRunFixture> {
   await mkdir(join(dir, 'knowledge'), { recursive: true });
   await writeFile(join(dir, 'run.json'), JSON.stringify(frozen.run));

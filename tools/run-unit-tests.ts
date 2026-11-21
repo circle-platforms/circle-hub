@@ -40,8 +40,6 @@ export const UNIT_PATTERNS = [
   'scripts/real/verify-case-compile-cli.test.ts',
   'scripts/real/verify-tool-cli.test.ts',
 
-  // Synthetic only; probe cases report conditional skips without Python 3.11+ (CIRCLE_HUB_TEST_PYTHON or PATH).
-  'scripts/real/bed-side/**/*.test.ts',
   'tools/console-smoke.test.ts',
   'tools/gen-contracts*.test.ts',
   'tools/prepare-packs.test.ts',
@@ -135,9 +133,9 @@ export function sentinelConcurrency(group: UnitGroup): number {
   return sharedConcurrency(group);
 }
 
-function stringEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+export function stringEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const [key, value] of Object.entries(process.env)) if (typeof value === 'string' && !key.startsWith('HUB_UNIT_PG_')) env[key] = value;
+  for (const [key, value] of Object.entries(process.env)) if (typeof value === 'string' && !key.startsWith('HUB_UNIT_PG_') && key !== 'NODE_TEST_CONTEXT') env[key] = value;
   for (const [key, value] of Object.entries(extra)) env[key] = value;
   return env;
 }
@@ -196,6 +194,10 @@ export function unitSeconds(file: string): number {
   return UNIT_MEASURED_SECONDS[file] ?? UNIT_DEFAULT_SECONDS;
 }
 
+export function localUnitSeconds(file: string): number {
+  return LOCAL_UNIT_SECONDS[file] ?? unitSeconds(file);
+}
+
 /** The files of one shard of a public partition (all of them without a shard). */
 export function unitShardFiles(group: UnitGroup, shard: Shard | undefined): string[] {
   return shardFiles(unitFiles(group), shard, unitSeconds);
@@ -205,12 +207,16 @@ export function laneArguments(files: readonly string[], concurrency: number, rep
   return ['--test', '--test-isolation=process', `--test-concurrency=${concurrency}`, ...junitArguments(report), ...files];
 }
 
-function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv, report?: string, ordered = false): ChildProcess | undefined {
-  if (files.length === 0) return undefined;
-  return spawn(process.execPath, ordered ? orderedArguments(files, concurrency, report) : laneArguments(files, concurrency, report), { cwd: ROOT, env, stdio: 'inherit' });
+export function testArguments(files: readonly string[], concurrency: number, report?: string, ordered = false): string[] {
+  return ordered ? orderedArguments(files, concurrency, report) : laneArguments(files, concurrency, report);
 }
 
-function exitOf(child: ChildProcess | undefined): Promise<number> {
+function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv, report?: string, ordered = false): ChildProcess | undefined {
+  if (files.length === 0) return undefined;
+  return spawn(process.execPath, testArguments(files, concurrency, report, ordered), { cwd: ROOT, env, stdio: 'inherit' });
+}
+
+export function exitOf(child: ChildProcess | undefined): Promise<number> {
   if (child === undefined) return Promise.resolve(0);
   return new Promise((resolve, reject) => {
     child.once('error', reject);
@@ -278,6 +284,21 @@ export async function prepareTemplate(postgres: TemporaryPostgres): Promise<void
   }
 }
 
+export async function startSharedPostgres(): Promise<TemporaryPostgres> {
+  const postgres = await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
+  try {
+    await prepareTemplate(postgres);
+  } catch (error) {
+    await postgres.stop();
+    throw error;
+  }
+  return postgres;
+}
+
+export async function compileCacheDirectory(prefix: string): Promise<string | undefined> {
+  return process.env.NODE_DISABLE_COMPILE_CACHE === '1' || usesCoverage() ? undefined : mkdtemp(join(tmpdir(), prefix));
+}
+
 export function sharedEnv(postgres: TemporaryPostgres): NodeJS.ProcessEnv {
   return stringEnv({
     HUB_UNIT_PG_HOST: postgres.config.host,
@@ -343,19 +364,15 @@ async function runLocalLanes(files: string[], children: ChildProcess[]): Promise
     return done;
   };
   try {
-    if (process.env.NODE_DISABLE_COMPILE_CACHE !== '1' && process.env.NODE_V8_COVERAGE === undefined
-      && !process.execArgv.includes('--experimental-test-coverage') && !process.env.NODE_OPTIONS?.includes('--experimental-test-coverage')) {
-      compileCache = await mkdtemp(join(tmpdir(), 'circle-hub-unit-compile-'));
-    }
-    postgres = lanes.shared.length === 0 ? undefined : await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
+    compileCache = await compileCacheDirectory('circle-hub-unit-compile-');
+    postgres = lanes.shared.length === 0 ? undefined : await startSharedPostgres();
     if (postgres) {
-      await prepareTemplate(postgres);
       process.stderr.write(`template clone ${(await timeClone(postgres)).toFixed(0)} ms\n`);
     } else {
       process.stderr.write('unit shared cluster not started\n');
     }
     const ordered = !usesCoverage();
-    const sharedFiles = ordered ? slowestFirst(lanes.shared, file => LOCAL_UNIT_SECONDS[file] ?? unitSeconds(file)) : lanes.shared;
+    const sharedFiles = ordered ? slowestFirst(lanes.shared, localUnitSeconds) : lanes.shared;
     const shared = launch(sharedFiles, concurrency, postgres ? sharedEnv(postgres) : stringEnv(), ordered);
     // Own-cluster files stay at 2 so they do not add SysV segments while the shared lane is busy.
     const isolated = launch(lanes.isolated, 2, stringEnv());

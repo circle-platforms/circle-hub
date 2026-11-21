@@ -1,5 +1,4 @@
-// Read-only migration diagnostics: no bootstrap, migration execution or business-schema probing.
-import type { RecordsConfig } from './api.ts';
+import type { RecordsConfig, Transaction } from './api.ts';
 import { createPool, Database } from './db.ts';
 import { MIGRATIONS, migrationChecksum } from './migrations.ts';
 
@@ -12,7 +11,6 @@ export interface RecordsSchemaCompatibility {
   problems:string[];
 }
 
-/** The current program owns the expected schema; callers never duplicate baseline versions or hashes. */
 export function currentRecordMigrations():RecordMigrationReceipt[] {
   return MIGRATIONS.map(migration=>({version:migration.version,name:migration.name,sha256:migrationChecksum(migration)}));
 }
@@ -25,7 +23,11 @@ export function compareRecordMigrations(applied:RecordMigrationReceipt[]|null):R
   return {status:compatible?'compatible':'incompatible',compatible,expected,applied,problems:compatible?[]:[applied===null?'记录库没有可读的迁移登记；请归档并初始化，或用定义文件恢复':'记录库的迁移登记与当前程序不一致；请归档并初始化，或用定义文件恢复']};
 }
 
-/** A failed observation proves no schema incompatibility and must never enable destructive recovery. */
+export async function appliedRecordMigrations(db:Database,tx:Transaction):Promise<RecordMigrationReceipt[]> {
+  const rows=(await db.query<{version:number;name:string;sha256:string}>('SELECT version,name,sha256 FROM public.schema_migrations ORDER BY version',[],tx)).rows;
+  return rows.map(row=>({version:Number(row.version),name:row.name,sha256:row.sha256}));
+}
+
 export function unavailableRecordsSchema():RecordsSchemaCompatibility {
   return {status:'unavailable',compatible:null,expected:currentRecordMigrations(),applied:null,
     problems:['无法读取迁移登记，尚不能确认记录库是否兼容；请检查连接与读取权限后重试，当前不能执行重建']};
@@ -38,8 +40,7 @@ export async function diagnoseRecordsSchema(config:Pick<RecordsConfig,'database'
       await db.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',[],tx);
       const exists=(await db.query<{relation:string|null}>("SELECT pg_catalog.to_regclass('public.schema_migrations')::text AS relation",[],tx)).rows[0];
       if(!exists?.relation)return compareRecordMigrations(null);
-      const rows=(await db.query<{version:number;name:string;sha256:string}>('SELECT version,name,sha256 FROM public.schema_migrations ORDER BY version',[],tx)).rows;
-      return compareRecordMigrations(rows.map(row=>({version:Number(row.version),name:row.name,sha256:row.sha256})));
+      return compareRecordMigrations(await appliedRecordMigrations(db,tx));
     });
   } catch {
     return unavailableRecordsSchema();

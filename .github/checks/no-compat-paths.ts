@@ -180,9 +180,6 @@ function compileRegister(register: CompatRegister): CompiledRegister {
   };
 }
 
-/**
- * Splits an identifier into lowercase words along separators and camelCase/acronym boundaries.
- */
 export function splitIdentifierWords(name: string): string[] {
   const cleaned = name.startsWith('#') ? name.slice(1) : name;
   const words: string[] = [];
@@ -200,9 +197,6 @@ export function splitIdentifierWords(name: string): string[] {
   return words;
 }
 
-/**
- * Returns true if a repo-relative path is production TypeScript under `hub/` or `contracts/src/`.
- */
 export function isProductionTarget(
   relativePath: string,
   excludePaths: readonly string[] = DEFAULT_EXCLUDE_PATHS,
@@ -221,9 +215,6 @@ export function isProductionTarget(
   return !NON_PRODUCTION_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-/**
- * Loads and validates `.github/checks/compat-register.json` (or an explicit path).
- */
 export function loadCompatRegister(root: string, registerPath?: string): CompatRegister {
   const resolved = registerPath
     ? isAbsolute(registerPath)
@@ -234,9 +225,6 @@ export function loadCompatRegister(root: string, registerPath?: string): CompatR
   return validateRegister(raw, resolved);
 }
 
-/**
- * Loads `.github/checks/exceptions.json` if present (accepts array or `{ exceptions: [...] }`).
- */
 export function loadCompatExceptions(root: string, exceptionsPath?: string): readonly unknown[] {
   const resolved = exceptionsPath
     ? isAbsolute(exceptionsPath)
@@ -261,9 +249,6 @@ export function loadCompatExceptions(root: string, exceptionsPath?: string): rea
   throw new Error(`${resolved}: exceptions must be a JSON array or an object with an "exceptions" array`);
 }
 
-/**
- * Lists tracked production `.ts` files under `hub/` and `contracts/src/`.
- */
 export function trackedProductionFiles(
   root: string,
   excludePaths: readonly string[] = DEFAULT_EXCLUDE_PATHS,
@@ -428,10 +413,6 @@ function scanSourceWithCompiled(
   return hits;
 }
 
-/**
- * Inspects a single TypeScript file's AST (identifiers, member/declaration names, and string/template text).
- * Comments, JSDoc, and regular expression literals are ignored.
- */
 export function compatHitsInSource(
   filePath: string,
   content: string,
@@ -444,9 +425,6 @@ function isValidWhatFormat(what: string): boolean {
   return VALID_WHAT_PREFIXES.some((prefix) => what.startsWith(prefix) && what.length > prefix.length);
 }
 
-/**
- * Verifies exact bidirectional alignment between scanned compat hits and `no-compat-paths` exceptions.
- */
 export function compatProblemsForHits(
   hits: readonly CompatHit[],
   rawExceptions: readonly unknown[],
@@ -521,9 +499,6 @@ export function compatProblemsForHits(
   return problems;
 }
 
-/**
- * Scans production sources in memory and verifies bidirectional alignment with exceptions.
- */
 export function compatProblemsForSources(
   sources: readonly CompatSourceFile[],
   rawExceptions: readonly unknown[],
@@ -540,9 +515,6 @@ export function compatProblemsForSources(
   return compatProblemsForHits(hits, rawExceptions);
 }
 
-/**
- * Scans all tracked production files in the repository and returns raw AST compat hits.
- */
 export function compatHitsInRepo(root: string = REPO_ROOT, options: CompatOptions = {}): CompatHit[] {
   const register = options.register ?? loadCompatRegister(root, options.registerPath);
   const compiled = compileRegister(register);
@@ -558,9 +530,6 @@ export function compatHitsInRepo(root: string = REPO_ROOT, options: CompatOption
   return hits;
 }
 
-/**
- * Aggregates compat hits by `what` term and unique `(path, what)` pairs for reporting.
- */
 export function summarizeCompatHits(hits: readonly CompatHit[]): CompatHitSummary {
   const whatMap = new Map<
     string,
@@ -634,9 +603,6 @@ export function summarizeCompatHits(hits: readonly CompatHit[]): CompatHitSummar
   };
 }
 
-/**
- * Checks tracked production files in the repository against `.github/checks/exceptions.json`.
- */
 export function compatProblems(root: string = REPO_ROOT, options: CompatOptions = {}): string[] {
   const register = options.register ?? loadCompatRegister(root, options.registerPath);
   const exceptions = options.exceptions ?? loadCompatExceptions(root, options.exceptionsPath);

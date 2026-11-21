@@ -1,12 +1,3 @@
-// What a model reads in the knowledge text files of a run download (knowledge/<top node>.txt) and copies quotes from. The Hub
-// checks a quote against the text its reference resolves to, byte for byte (quote@1: an exact contiguous substring; for
-// tree:<root>/<path>@<entry> that text is the entry's statement, hub/knowledge/read.ts), so every line the model may copy has to
-// be the statement's own line: whatever the download adds for the reader (the reference, the conditions) goes on a line of its
-// own. Run 34's writer copied «· Demo(config)#sdns dnssec keygen …» out of manual.txt, bullet included, and the Hub refused the
-// quote. The order of the lines is the one the Hub's export lists (a node's entries by kind, statement and digest, hub/knowledge/
-// read.ts #entriesAt: the tree records no document order); the download must not reorder or regroup them.
-// The files are written by the real download tools of both packs against a synthetic Hub; the quote checks are the real ones
-// (hub/refs verifyQuote and the rules interpreter quote@1) over the text the real reference resolution returns.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -30,15 +21,12 @@ const digest = (text: string): string => createHash('sha256').update(text).diges
 interface SyntheticEntry { kind: 'behaviour' | 'definition'; statement: string; applicability?: string; fragments?: string[] }
 interface SyntheticNode { path: string; children: string[]; entries: SyntheticEntry[] }
 
-/** One paragraph of a manual: long, mixed Chinese and ASCII, full-width punctuation and a bold markup run inside quotation marks. */
 const PARAGRAPH = [
   '在设备中，SDNS动态域名负责处理A、AAAA、CNAME、MX和DNSKEY类型的DNS解析请求，如果请求的动态域名不存在或者请求为动态域名的其他类型，则交给全域名解析功能负责处理。',
   '使用全域名解析功能前需要启用SDNS功能（通过命令“**sdns on**”）。',
   ...Array.from({ length: 24 }, (_, i) => `第${i + 1}条说明：合成手册句，用来把这一段拉长到一千字以上，包含 ASCII 词 weight、policy、pool，也包含全角标点“”（）；以及星号 * 与下划线 _name_。`),
 ].join('');
 
-// The lines of an example block in the order the manual gives them, which is not their dictionary order: keygen zsk comes before
-// keygen ksk, and `show` comes between the lines that start with `sdns`.
 const EXAMPLE = [
   'sdns dnssec keygen www.example.com zsk',
   'sdns dnssec keygen www.example.com ksk',
@@ -47,12 +35,9 @@ const EXAMPLE = [
   'sdns dnssec zonesig www.example.com',
 ];
 
-// The same block as the Hub exports it: sorted by statement, which is not the manual's order, but each entry says the lines it stands on in
-// its source (the chapter file the manual is cited by): the manual gives the lines of EXAMPLE in the order EXAMPLE has them.
 const SOURCE = 'ab'.repeat(32), OTHER_SOURCE = 'cd'.repeat(32);
 const LINES = ['l/10', 'l/11', 'l/12', 'l/13-14', 'l/15'];
 const SEQUENCE = [...EXAMPLE].sort().map((statement): SyntheticEntry => ({ kind: 'behaviour', statement, fragments: [`src:${SOURCE}/text@1/${LINES[EXAMPLE.indexOf(statement)]}`] }));
-// A node whose entries come from two source files, one of them without a line range of a text source: left in the Hub's order.
 const MIXED = [
   { kind: 'behaviour' as const, statement: 'mixed b second in the export', fragments: [`src:${SOURCE}/text@1/l/5`] },
   { kind: 'behaviour' as const, statement: 'mixed c third in the export', fragments: [`src:${SOURCE}/xml@1/x/catalog/command[1]`] },
@@ -80,7 +65,6 @@ const NODES: SyntheticNode[] = [
 
 const referenceOf = (path: string, entry: SyntheticEntry): string => `tree:${ROOT}${path}@${digest(entry.kind + '\u0000' + entry.statement)}`;
 
-/** The export a run download gets: a head line, then one node a line, each entry with its statement and reference. */
 function exportBytes(): Buffer {
   const lines = NODES.map((node) => JSON.stringify({
     path: node.path,
@@ -95,7 +79,6 @@ function exportBytes(): Buffer {
   return Buffer.from([JSON.stringify(head), ...lines].join('\n') + '\n');
 }
 
-/** A Hub that answers the run and its locked knowledge root, and nothing else. */
 async function hub() {
   const bytes = exportBytes();
   const server = createServer((request, response) => {
@@ -110,7 +93,6 @@ async function hub() {
 }
 
 type Download = (argv: string[], token: () => Promise<string>, brief?: unknown, retry?: unknown) => Promise<number>;
-/** What the download tool of one pack writes under knowledge/, by file name. */
 async function downloaded(tool: 'case-compile' | 'recompose'): Promise<Map<string, string>> {
   const h = await hub();
   try {
@@ -127,7 +109,6 @@ async function downloaded(tool: 'case-compile' | 'recompose'): Promise<Map<strin
   } finally { await h.close(); }
 }
 
-/** What the Hub's reference resolution gives for an entry address: the entry's statement (hub/knowledge/read.ts, TreeRead.text). */
 const trees: TreeReader = {
   read: (_root, path, entry) => {
     for (const node of NODES) if (node.path === path) for (const e of node.entries) if (entry !== null && referenceOf(node.path, e).endsWith('@' + entry)) return { text: e.statement, mediaType: 'text/plain', readTier: 'model_readable', grounds: [] };
@@ -137,7 +118,6 @@ const trees: TreeReader = {
 };
 const reader = { user: 'usr_synthetic', role: 'user' as const };
 
-/** The Hub's two quote checks over a reference: hub/refs verifyQuote on the resolved text and the rules interpreter quote@1 over the same text. */
 async function hubAccepts(reference: string, quote: string): Promise<boolean> {
   const resolved = await resolveReference(reference, { reader, parsers: createDefaultRegistry(), trees });
   assert.equal(resolved.resolved, true, reference);
@@ -151,7 +131,6 @@ async function hubAccepts(reference: string, quote: string): Promise<boolean> {
   return refs === true;
 }
 
-/** The lines of one node's block in a text file: from its `# <path>` line to the blank line before the next one. */
 function blockOf(lines: string[], path: string): string[] {
   const start = lines.indexOf(`# ${path}`);
   assert.ok(start >= 0, `${path} is in the files`);
@@ -161,7 +140,6 @@ function blockOf(lines: string[], path: string): string[] {
   return lines.slice(start, end);
 }
 
-/** The text files a model reads (nodes.jsonl and index.json are data files, not read as text). */
 const textOf = (files: Map<string, string>): string => [...files].filter(([name]) => name.endsWith('.txt')).map(([, text]) => text).join('');
 
 for (const tool of ['case-compile', 'recompose'] as const) describe(`what a model copies out of the knowledge text files the ${tool} download writes`, () => {
@@ -179,14 +157,12 @@ for (const tool of ['case-compile', 'recompose'] as const) describe(`what a mode
     for (const node of NODES) for (const entry of node.entries) {
       const reference = referenceOf(node.path, entry);
       const own = entry.statement.split('\n');
-      // The model greps for the first line of the statement and copies the whole line it finds, then the lines below it.
       const at = lines.findIndex((line) => line.includes(own[0]));
       assert.ok(at >= 0, own[0]);
       for (let span = 1; span <= own.length; span++) {
         const quote = lines.slice(at, at + span).join('\n');
         assert.equal(await hubAccepts(reference, quote), true, `${node.path}: ${JSON.stringify(quote.slice(0, 80))}`);
       }
-      // A piece out of the middle of a line is still a quote of the statement.
       const middle = own[0].slice(Math.floor(own[0].length / 3), Math.floor(own[0].length / 3) + 12).trim();
       if (middle) assert.equal(await hubAccepts(reference, middle), true, middle);
     }
@@ -198,7 +174,6 @@ for (const tool of ['case-compile', 'recompose'] as const) describe(`what a mode
     assert.ok(positions.every((at) => at >= 0));
     assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'the example block stays in the order it came in');
     assert.notDeepEqual([...EXAMPLE].sort(), EXAMPLE, 'the fixture is not in dictionary order');
-    // The lines of the block are contiguous in the node: nothing but their own lines and their reference lines between the first and the last.
     const ownLine = (line: string): boolean => EXAMPLE.some((statement) => statement.split('\n').some((part) => line.includes(part)));
     const between = lines.slice(positions[0], positions.at(-1)! + 1).filter((line) => !ownLine(line) && !line.includes('tree:'));
     assert.deepEqual(between, [], 'no other text is mixed into the block');
@@ -260,7 +235,6 @@ describe('the words that explain the files to a model', () => {
       assert.ok(role.body.includes(heading), `the ${key} role names the heading line`);
       assert.ok(role.body.includes('不是手册') || role.body.includes('不是原文'), `the ${key} role says what is not the text`);
     }
-    // The brief a writer reads first names the heading line and what stands under it, and quotes the node the record points to as the file has it.
     const nodes = new Map(NODES.map((node): [string, BriefNode] => [canonicalPath(node.path), {
       path: node.path,
       children: node.children.map((name) => ({ name, path: `${node.path === '/' ? '' : node.path}/${name}` })),

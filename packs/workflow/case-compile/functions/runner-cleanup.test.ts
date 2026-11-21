@@ -1,6 +1,5 @@
 // The runner's own cleanup (decision 112): the runner clears every listed object at each case boundary and at the end of a
 // workbook, from the prefix rules of its clear source tested against each sent line, first hit. A live configuration command
-// such a rule covers needs no prefix inverse in the case; declared paired states still need their inverse before clearing.
 // Synthetic commands, objects and digests only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -103,7 +102,6 @@ test('optional clears and order are validated, disclosed when present, and refus
   (badOrder.subject.contract as Doc).contract_sha256 = runtimeDigest(badOrder.subject.contract as Doc);
   assert.equal(parseRuntimeContract(badOrder.subject.contract).ok, false);
 
-  // Used in main: accepted without inverse and discloses triggers + ordering.
   const inMain = declared(fixture(['demo mode auto', 'demo mode manual']), rules, { order });
   const [okShape] = checkContractShape(inMain);
   assert.equal(okShape?.verdict, 'support', JSON.stringify(okShape));
@@ -111,7 +109,6 @@ test('optional clears and order are validated, disclosed when present, and refus
   assert.match(okShape!.statement, /“demo mode manual” 放在收尾末尾/);
   assert.match(okShape!.statement, /顺序约束：“clear demo a”先于“clear demo b”/);
 
-  // Placed in cleanup:true (both with another uncovered command or alone): refused naming runner teardown, and preserves runner_cleanup disclosure.
   for (const plan of [
     ['demo pool add one 10', cleanup('demo mode manual')],
     ['demo pool add one 10', 'demo relay enable', cleanup('demo mode manual'), cleanup('demo relay disable')],
@@ -125,7 +122,6 @@ test('optional clears and order are validated, disclosed when present, and refus
     assert.equal((shapeRow as { data?: { runner_cleanup?: { covered: unknown[] } } }).data?.runner_cleanup?.covered.length, 1);
   }
 
-  // When an uncovered unknown gap occurs alongside a runner-covered command, runner_cleanup disclosure is still included.
   const withUnknown = declared(fixture(['demo pool add one 10', 'demo lamp bright']), [{ prefixes: ['demo pool'], clears: ['clear demo pool'], line: 17 }]);
   const [unknownRow] = checkContractShape(withUnknown);
   assert.equal(unknownRow?.verdict, 'unknown', JSON.stringify(unknownRow));

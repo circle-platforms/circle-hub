@@ -152,14 +152,11 @@ test('console sessions: cookie is the token; CSRF is derived; idle is by digest;
     now += 900;
     assert.ok(store.get(kept.token), `used every 900 ms: still open after ${(i + 1) * 900} ms`);
   }
-  // Absolute lifetime is tokens.expires_at, not SessionStore.
   assert.ok(store.get(kept.token), 'idle activity keeps the in-memory row; absolute expiry is the token record');
   store.open('1');
   store.open('2');
   store.open('3');
-  // Cap drops the oldest idle row; a later get recreates it as "just seen" (same as Hub restart).
   assert.ok(store.get('1'), 'a dropped row is re-admitted as just seen');
-  // Fresh store: no prior seen → still a valid view (Hub restart), then idle applies.
   const restarted = new SessionStore(() => now, { idleMs: 1000 });
   const again = restarted.get('token-after-restart');
   assert.ok(again);

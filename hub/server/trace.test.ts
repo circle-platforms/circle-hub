@@ -418,7 +418,6 @@ test('the last-resort 500 outside any page handler is a trace too', async (t) =>
   const { principals } = server.records;
   const user = await member();
   const cookie = await signIn(user.token);
-  // Decision 46: console pages authenticate the cookie via authenticateConsoleSession, not authenticate.
   const authenticateConsoleSession = principals.authenticateConsoleSession!.bind(principals);
   principals.authenticateConsoleSession = async () => { throw new Error('synthetic failure SECRETFAILTEXT'); };
   t.after(() => { principals.authenticateConsoleSession = authenticateConsoleSession; });

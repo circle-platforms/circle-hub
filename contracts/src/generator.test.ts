@@ -519,4 +519,3 @@ test('a format pack throwing or referencing an undeclared protocol code fails ge
     rmSync(workRoot, { recursive: true, force: true });
   }
 });
-

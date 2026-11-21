@@ -14,7 +14,6 @@ import {technicalCode} from './presentation.ts';
 // --stage` or discards it. Backup, restore, deploy and rollback stop the server and stay on the command line.
 //
 // The first administrator is created at /console/setup with the one-time setup code (`circle-hub setup-code`) while no
-// administrator exists; its token is shown once and opens a session. Other modules call registerActions (team-actions.ts).
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { ENVIRONMENT, PERMISSION_ROLE, isEnvironment, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
@@ -46,7 +45,6 @@ export interface Built {
 
 export type BuiltStepRun = { argv: readonly string[]; run: CommandRun };
 
-/** Shared command loop for HTML actions (K4; U5 retired JSON writes): stop at the first non-zero exit. */
 export async function runBuiltSteps(
   bridge: CommandBridge,
   built: readonly Built[],
@@ -72,7 +70,6 @@ export class FormError extends Error {
   }
 }
 
-/** Build from the U2 command registration; UsageError becomes a form message. */
 function fromRegistration(action: RegisteredActionName, form: Form): Built {
   try {
     return buildRegisteredAction(action, form);
@@ -118,7 +115,6 @@ export interface Action {
   onceNotice?: string;
 }
 
-// Result-page back links: K3 removed /console/admin/* page entries; keep POST /console/admin/do.
 const USERS = '/console/team?tab=members';
 const OPERATIONS = '/console/operations';
 
@@ -143,7 +139,6 @@ const RESOURCES = '/console/connections';
 const SECRETS = '/console/settings';
 const KNOWLEDGE = '/console/operations/knowledge';
 
-/** Mutable so other console modules register their ACTIONS without editing this object's literals. */
 export const ACTIONS: Record<string, Action> = {
   'password-reset': {
     title: '重置密码',
@@ -190,7 +185,6 @@ export const ACTIONS: Record<string, Action> = {
     title: '分配测试环境',
     back: `${RESOURCES}?tab=environments`,
     active: 'connections',
-    // Boss 03:45 #3: one POST may assign several executors under the same target (executors= newline list, or single executor=).
     build: (form) => {
       const listed = form.get('executors').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
       const single = form.get('executor').trim();
@@ -208,7 +202,6 @@ export const ACTIONS: Record<string, Action> = {
     title: '撤回测试环境分配',
     back: `${RESOURCES}?tab=environments`,
     active: 'connections',
-    // Boss 15:02: optional force_release checkboxes on the confirm page run lease release after unassign.
     build: (form) => {
       const unassign = fromRegistration('executor-unassign', form);
       const keys = [...new Set(form.get('force_release').split(/\r?\n/).map((line) => line.trim()).filter(Boolean))];
@@ -237,8 +230,6 @@ export const ACTIONS: Record<string, Action> = {
       const origins = pairs(form, 'origins', '地址');
       if (origins.length === 0) throw new FormError('至少写一行 角色=地址');
       const plaintext = form.get('plaintext').split(/[,，\s]+/).filter(Boolean);
-      // system-add audience (decision 1500 / interfaces §4.6): none omits flags; all → --all; team → --team=.
-      // Values are inlined so manage does not import team-actions (team-actions imports manage).
       const audience = form.get('audience') || 'none';
       const audienceFlags =
         audience === 'none' ? [] :
@@ -293,7 +284,6 @@ export const ACTIONS: Record<string, Action> = {
     title: '接入业务系统',
     back: `${OPERATIONS}/system`,
     build: (form) => {
-      // Resource first so the new system exists before its credentials are set (C12: secret set no longer needs a prior definition reference).
       const add = ACTIONS['resource-add'].build(form) as Built;
       const secrets = credentialValues(form);
       const names = Object.keys(secrets);
@@ -309,7 +299,6 @@ export const ACTIONS: Record<string, Action> = {
   },
 };
 
-/** Registers ACTIONS from another console module; refuses a key that is already present. */
 export function registerActions(extra: Readonly<Record<string, Action>>): void {
   for (const [name, action] of Object.entries(extra)) {
     if (Object.hasOwn(ACTIONS, name)) throw new Error(`action already registered: ${name}`);
@@ -403,11 +392,9 @@ function onceNotice(argv: readonly string[]): string | null {
   return argv[0] === 'user' && argv[1] === 'invite' ? INVITATION_ONCE : null;
 }
 
-/** Internal identity prefixes that must not appear in management result pages (hub-terms §2). */
 const INTERNAL_ID = /(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}/g;
 const INTERNAL_ID_ONLY = /^(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}$/;
 
-/** Drop internal ids from CLI output shown on the result page; keep surrounding Chinese text. */
 export function scrubInternalIds(text: string): string {
   return text
     .replace(/（(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}）/g, '')
@@ -420,7 +407,6 @@ export function scrubInternalIds(text: string): string {
     .trimEnd();
 }
 
-/** Resolve an internal id to the name the form selected, or look it up from records/dispatch. */
 async function displayNameFor(ctx: PageContext, id: string, form?: Form): Promise<string> {
   if (form) {
     for (const [field, labelField] of [['team', 'team_label'], ['user', 'user_label'], ['resource', 'resource_label'], ['executor', 'executor_label']] as const) {
@@ -449,7 +435,6 @@ async function displayNameFor(ctx: PageContext, id: string, form?: Form): Promis
   return id;
 }
 
-/** Command echo for the result page: same argv, but internal ids replaced by display names. */
 export async function displayCommandLine(ctx: PageContext, argv: readonly string[], form?: Form): Promise<string> {
   const parts: string[] = [];
   for (const word of argv) {
@@ -496,17 +481,15 @@ export async function resultPage(ctx: PageContext, action: Action, runs: Command
     : form.get('connect') === 'token'
       ? card({ title: '写入成员的客户端',hint:'把令牌保存为成员客户端的密钥 CIRCLE_HUB_TOKEN，再按下面 mcpServers 格式的条目填写 MCP 地址。'+trust+'完成连接后可在团队页查看最近使用时间。', meta: '访问令牌' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx))}</code></pre>${connected}`)
       : card({ title: '成员的客户端如何连接',hint:'按下面 mcpServers 格式的条目在成员的客户端中填写 MCP 地址。'+trust+'首次连接时在浏览器连接确认页输入邀请码并确认身份，完成后可在团队页查看。', meta: 'MCP 标准连接确认' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx), false)}</code></pre>${connected}`);
-  // interfaces §4.6: 先不分配 result says nobody can use it yet.
   const afterSystem = last.code === 0 && action === ACTIONS['system-add'] && form !== undefined && (form.get('audience') === 'none' || form.get('audience') === '')
     ? card({ title: '使用对象' }, html`<p>还没有分配，暂时谁都不能使用。可在连接页或团队页再分配。</p>`)
     : '';
-  // Boss 15:20 #2: environment assignment result pages carry the same staged-policy notice as the connections page.
   let environmentPreview = html``;
   if (last.code === 0 && (action === ACTIONS['executor-assign'] || action === ACTIONS['executor-unassign'])) {
     let enforced = false;
     try {
       enforced = (await ctx.deps.memberCapabilities(ctx.principal)).environmentAccess.enforced === true;
-    } catch { /* preview notice stays when capability port is unavailable */ }
+    } catch { }
     environmentPreview = environmentAssignmentPreviewNotice(enforced);
   }
   const after = html`${afterMember}${afterSystem}${environmentPreview}`;
@@ -700,7 +683,6 @@ export function stageResultPage(ctx: PageContext, result: StageResult): PageResu
   };
 }
 
-/** Next management forms after a successful publish (N2: one path to make the pack usable). */
 export async function publishFollowUp(ctx: PageContext, stage: StagedPack | undefined): Promise<Html> {
   if (stage === undefined) return html``;
   const csrf = ctx.csrf ?? '';
@@ -753,7 +735,7 @@ export async function publishResultPage(ctx: PageContext, result: PublishStageRe
 /** One of the steps of 发布任务包, run and shown as a page. */
 export async function runPackStep(ctx: PageContext, deps: ManageDeps, name: PackStep, form: Form, token: string, upload?: Buffer): Promise<PageResult> {
   if (name === 'pack-stage') return stageResultPage(ctx, await stagePack(ctx, deps, token, upload));
-  if (name === 'pack-publish') return publishResultPage(ctx, await publishStage(ctx, deps, token, form.get('stage'))); // async page with follow-up forms
+  if (name === 'pack-publish') return publishResultPage(ctx, await publishStage(ctx, deps, token, form.get('stage')));
   const discarded = await discardStage(ctx, deps, form.get('stage'));
   if (discarded === null) return refusedPage(ctx, { status: 404, message: NEUTRAL });
   const action = publishAction(ctx, discarded.kind);

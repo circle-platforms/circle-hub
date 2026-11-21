@@ -77,7 +77,6 @@ describe('scenario 7: call log', () => {
       assert.equal((call as unknown as Record<string, unknown>).arguments, undefined);
     }
 
-    // The current records page displays the calls; the retired admin page is not a compatibility entry.
     const callsHtml = await consoleClient.get('/console/records');
     assert.equal(callsHtml.status, 200);
     assert.ok(callsHtml.body.includes('list_task_packs'), 'console calls page contains tool name');

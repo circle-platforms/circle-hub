@@ -79,7 +79,6 @@ test('new run records freeze skills and keep working after uninstall while unloc
   assert.deepEqual(answer.run.skills,[{pack:'mindmap-format',version:'1.0.1',digest:firstDigest}]);
   const original=await h.kit.store.find<RunRecord>({kind:'run',key:'runs.id',value:answer.run.run,limit:1});
   const old={...original.items[0].body,run:newId('run')};delete old.skills;
-  // Copy synthetic historical structure without fabricating a skill lock; resolution refuses cleanly without bind-legacy.
   await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',created_at:original.items[0].created_at,body:old,index:[{key:'runs.id',value:old.run}]});
   const registry=createSkillParserRegistry(options());
   const sources={read:()=>({bytes,mediaType:'application/json',size:bytes.length,readTier:'model_readable' as const})};

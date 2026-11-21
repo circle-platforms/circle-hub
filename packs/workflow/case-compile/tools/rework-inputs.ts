@@ -1,5 +1,3 @@
-// Shared local-only loader for single-case prior-round history inputs (plans, returns, answers, notes).
-// Enforces working-directory containment and strict single-case isolation across all prior rounds.
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import {
@@ -131,7 +129,6 @@ async function loadDeviceEvidenceFromDir(
     throw new CallFailure("invalid_parameters", `${indexResolved.relative} 不是合法的 device-returns@1 索引文件`, "使用原始 device-returns@1 索引，保留 schema 和 jobs 数组后重试");
   }
 
-  // Locate matching job row first so only THIS single case's session/log files are read from disk.
   const jobs = returnsIndex.jobs.filter(isRecord);
   let matchedRow: Record<string, unknown> | null = null;
   for (let i = jobs.length - 1; i >= 0; i--) {
@@ -168,7 +165,6 @@ async function loadDeviceEvidenceFromDir(
         logPath = read.path;
       }
     } catch {
-      // Unreadable or escaped path in row metadata: leave null rather than failing silently on missing evidence.
       logText = null;
     }
   }
@@ -187,7 +183,6 @@ async function loadDeviceEvidenceFromDir(
         );
         if (read) sessionTexts.set(sName, read);
       } catch {
-        // Invalid or missing session path stays noted via withheldNotes / null sessionFiles.
       }
     }
   }
@@ -443,7 +438,6 @@ export async function loadCasePriorRounds(params: {
           );
         }
       } else {
-        // Notes JSON omitted `round`: keep strictly un-numbered so we never invent a `第 1 轮` claim.
         unrecordedAttribution = attribution;
       }
     }

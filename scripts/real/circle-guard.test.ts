@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { renderTaskBrief, resolveSubagentRole } from '../../packs/workflow/case-compile/functions/subagent-roles.ts';
 import { writeHome, type Endpoint, type Profile } from './circle-home.ts';
+import { decisionOf } from './guard-lib.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const ENDPOINT: Endpoint = {
@@ -67,13 +68,13 @@ function createGuardHarness(profile: Exclude<Profile, 'review'>, opts: { homeNam
       timeout: 5000,
     });
     assert.equal(child.status, 0, child.stderr);
-    return JSON.parse(child.stdout) as { decision?: 'allow' | 'deny' | 'ask'; reason?: string };
+    return decisionOf(JSON.parse(child.stdout));
   };
 
   const call = (tool_name: string, tool_input: Record<string, unknown>, extra: { cwd?: string; paths?: string[]; session_id?: string } = {}) =>
     runHook(
       {
-        event: 'before_tool',
+        hook_event_name: 'PreToolUse',
         cwd: extra.cwd ?? written.workdir,
         tool_name,
         tool_input,
@@ -125,13 +126,11 @@ test('guard-offline A/D: literal quote grammar, space-in-home, and 3-line fixes 
     const h = createGuardHarness(profile, { homeName: 'Application Support/circle home' });
     try {
       const tb = `'${h.skillPath('case-compile', 'tools/task-brief.ts')}'`;
-      // Valid single-quoted script path and single-quoted Chinese / space values pass.
       h.assertAllowed(
         h.exec(`node ${tb} --role '脚本编写' --case case-01 --brief briefs/0.md --out 'plans/case 01.json' --task-file tasks/0.md --note '加一条 中文说明' --round 2 --run case-compile-run --brief-json briefs/0.json`),
         `${profile}: single quotes allowed`,
       );
 
-      // Comma-separated --prior-* paths inside workdir pass, traversal outside workdir fails.
       h.assertAllowed(
         h.exec(`node ${tb} --role '脚本编写' --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md --prior-plans 'plans/r1/0.json,-,plans/r2/0.json' --prior-returns -`),
       );
@@ -140,27 +139,22 @@ test('guard-offline A/D: literal quote grammar, space-in-home, and 3-line fixes 
         /--prior-plans/,
       );
 
-      // Owner T5 permits literal double-quoted words; expansions remain a separate denial.
       const dbl = h.exec(`node "${h.skillPath('case-compile', 'tools/task-brief.ts')}" --role "脚本编写" --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`);
       h.assertAllowed(dbl);
 
-      // Backslash escapes, bare non-ASCII, concatenated quotes, --opt=val are all refused cleanly.
       h.assertRefused3(h.exec(`node ${tb} --role '脚本编写' --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md --note foo\\ bar`), /反斜杠/);
       h.assertRefused3(h.exec(`node ${tb} --role 脚本编写 --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`), /英文单引号/);
       h.assertRefused3(h.exec(`node ${tb} --role '脚本''编写' --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`), /紧连/);
       h.assertRefused3(h.exec(`node ${tb} --role '脚本编写' --case=case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`), /--case=…/);
 
-      // All 3.20.3 readTokenFromStdin tools (assemble-delivery, download-returns, check-record) work with single-quoted args & EOF heredoc.
       const ad = `'${h.skillPath('case-compile', 'tools/assemble-delivery.ts')}'`;
       h.assertAllowed(h.exec(`node ${ad} --hub ${HUB_URL} --runs ${RUN_ID},${RUN_ID_2} --notes notes.json --out dist --recompose ${RUN_ID} --name '合成 交付' <<'EOF'\n%HUB_TOKEN%\nEOF`));
       const dr = `'${h.skillPath('case-compile', 'tools/download-returns.ts')}'`;
       h.assertAllowed(h.exec(`node ${dr} --hub ${HUB_URL} --run ${RUN_ID} --out returns --wait 30 <<'EOF'\n%HUB_TOKEN%\nEOF`));
       const cr = `'${h.skillPath('recompose', 'tools/check-record.ts')}'`;
       h.assertAllowed(h.exec(`node ${cr} --file records --run recompose-run`));
-      // Missing required stdin heredoc or unexpected heredoc are refused.
       h.assertRefused3(h.exec(`node ${ad} --hub ${HUB_URL} --runs ${RUN_ID} --notes notes.json --out dist`), /从标准输入读令牌/);
       h.assertRefused3(h.exec(`node ${cr} --file records <<'EOF'\n%HUB_TOKEN%\nEOF`), /不读标准输入/);
-      // Internal non-CLI helpers are excluded from ALLOWED.md and blocked from execution.
       assert.ok(!h.allowedText().includes('authoring-brief.ts'));
       assert.ok(!h.allowedText().includes('rework-inputs.ts'));
       assert.ok(!h.allowedText().includes('workspace-path.ts'));
@@ -187,13 +181,11 @@ test('guard-offline B/C: virtual readOnly files, ALLOWED.md access, shell altern
       h.assertRefused3(h.exec('ls -la'), /只放行技能目录里的脚本/, /ls/);
       h.assertRefused3(h.exec('sed -i s/a/b/ x.txt'), /只放行技能目录里的脚本/, h === hOps ? /先 read_file.*edit_file/ : /没有放行编辑能力/);
     }
-    // write_file works in workdir on ops, denied on virtual paths / ALLOWED.md / outside work, and denied everywhere on skills.
     hOps.assertAllowed(hOps.call('write_file', { file_path: 'out/a.md' }, { paths: [join(hOps.workdir, 'out/a.md')] }));
     hOps.assertRefused3(hOps.call('write_file', { file_path: virtualLog }, { paths: [virtualLog] }), /不在工作目录/);
     hOps.assertRefused3(hOps.call('write_file', { file_path: hOps.allowedPath }, { paths: [hOps.allowedPath] }), /不在工作目录/);
     hSkills.assertRefused3(hSkills.call('write_file', { file_path: 'out/a.md' }, { paths: [join(hSkills.workdir, 'out/a.md')] }), /不在这个配置放行/);
 
-    // sleep bounds on ops vs completely blocked on skills.
     hOps.assertAllowed(hOps.exec('sleep 10'));
     hOps.assertAllowed(hOps.exec('sleep 600'));
     hOps.assertRefused3(hOps.exec('sleep 0'), /1 到 600/);
@@ -216,7 +208,6 @@ test('operation-capture subcommands & parameter checks enforce declared bounds',
     h.assertAllowed(h.exec(`node ${op} verify --session s1`));
     h.assertAllowed(h.exec(`node ${op} flush --session s1`));
     h.assertAllowed(h.exec(`node ${op} submit --session s1 --proposals props.json --product prod --build '2026.11' --model synthetic-model`));
-    // enable and unknown subcommands stay blocked even if present in source.
     h.assertRefused3(h.exec(`node ${op} enable --session s1 --hub ${HUB_URL} --token-file tok.txt`), /不在放行的/);
     h.assertRefused3(h.exec(`node ${op} unknown --session s1`), /不在放行的/);
   } finally {
@@ -278,7 +269,6 @@ test('PreToolUse schema, case-insensitive/custom mcpServers key, agent_id subage
         assert.match(String(out.hookSpecificOutput?.permissionDecisionReason ?? ''), pattern, label);
       };
 
-      // M1 + M2: case-insensitive mcp__Hub__start_run allowed vs test-bed release denied vs legacy/other denied.
       assertPreAllowed(
         callPre({ tool_name: 'mcp__Hub__start_run', tool_input: { pack: 'other-pack@1.0.0', parameters: { action: 'release' } } }),
         `${profile}: mcp__Hub__start_run allow`,
@@ -291,7 +281,6 @@ test('PreToolUse schema, case-insensitive/custom mcpServers key, agent_id subage
       assertPreDenied(callPre({ tool_name: 'mcp__hubx__start_run', tool_input: {} }), /不在这个配置放行的工具里/, `${profile}: mcp__hubx__ deny`);
       assertPreDenied(callPre({ tool_name: 'hub_start_run', tool_input: {} }), /ALLOWED\.md/, `${profile}: flat hub_start_run deny`);
 
-      // B1: ops refuses `question` to a subagent and to the lead agent, each in its own words (agent_id tells a subagent without circle.sqlite); skills denies `question` unconditionally.
       const emptyAgentRes = callPre({ tool_name: 'question', tool_input: { questions: [] }, agent_id: '' });
       const subAgentRes = callPre({ tool_name: 'question', tool_input: { questions: [] }, agent_id: 'sub_agent_01' });
       if (profile === 'ops') {
@@ -302,14 +291,12 @@ test('PreToolUse schema, case-insensitive/custom mcpServers key, agent_id subage
         assertPreDenied(subAgentRes, /不在这个配置放行的工具里/, `${profile}: non-empty agent_id`);
       }
 
-      // B5: read_file & grep on /large_tool_results/<24-hex>.txt under PreToolUse (with and without paths[]).
       assertPreAllowed(callPre({ tool_name: 'read_file', tool_input: { file_path: virtualLog } }), `${profile}: read_file virtual no paths`);
       assertPreAllowed(callPre({ tool_name: 'read_file', tool_input: { file_path: virtualLog }, paths: [virtualLog] }), `${profile}: read_file virtual with paths`);
       assertPreAllowed(callPre({ tool_name: 'grep', tool_input: { path: virtualLog, pattern: 'err' } }), `${profile}: grep virtual no paths`);
       assertPreDenied(callPre({ tool_name: 'read_file', tool_input: { file_path: '/large_tool_results/not24hex.txt' } }), /不在工作目录/, `${profile}: bad virtual read`);
       assertPreDenied(callPre({ tool_name: 'write_file', tool_input: { file_path: virtualLog, content: 'x' } }), /不允许|不在工作目录|禁止|不在这个配置放行的工具里/, `${profile}: write_file virtual deny`);
 
-      // Custom mcpServers server key (configured with placeholders.url === 'HUB_URL') via ALLOWED.md regeneration.
       const settingsPath = join(h.home, 'settings.json');
       const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
       settings.mcpServers = { customHub: settings.mcpServers.hub };
@@ -355,7 +342,6 @@ test('ops sibling ^work-ops trust, execute key hygiene, skills/ symlink, globWit
   const hOps = createGuardHarness('ops');
   const hSkills = createGuardHarness('skills', { withSkills: false });
   try {
-    // 1. Sibling ^work-ops is auto-trusted on ops, rejected on skills; non-matching sibling rejected on ops.
     const opsSibling = join(hOps.dir, 'work-ops-run29');
     const badSibling = join(hOps.dir, 'other-dir');
     mkdirSync(opsSibling, { recursive: true });
@@ -367,24 +353,20 @@ test('ops sibling ^work-ops trust, execute key hygiene, skills/ symlink, globWit
     mkdirSync(skillsSibling, { recursive: true });
     hSkills.assertRefused3(hSkills.call('read_file', { file_path: 'a.txt' }, { cwd: skillsSibling, paths: [join(skillsSibling, 'a.txt')] }), /trusted_folders/);
 
-    // 2. execute field shape & unexpected env/cwd keys refused.
     const fetchRun = hOps.skillPath('case-compile', 'tools/fetch-run.ts');
     hOps.assertRefused3(hOps.exec(`node ${fetchRun} --hub ${HUB_URL} --run ${RUN_ID} --out r <<'EOF'\n%HUB_TOKEN%\nEOF`, { fields: { env: {} } }), /execute 参数形状无效/);
     hOps.assertRefused3(hOps.exec(`node ${fetchRun} --hub ${ALT_HUB_URL} --run ${RUN_ID} --out r <<'EOF'\n%HUB_TOKEN%\nEOF`), /Hub 的地址/);
 
-    // 3. Delegated skill hooks.json works under ops (ask stays ask even though normal allow is {}).
     const jev = hOps.skillPath('jev', 'jev.ts');
     const jevAsk = hOps.exec(`node ${jev} ask --hub ${HUB_URL} --model synthetic-jev --input ask.json --send case --out jev-out <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`);
     assert.equal(jevAsk.decision, 'ask');
 
-    // 4. globWithin on ops catches directory symlink traversal inside workdir.
     const outside = join(hOps.dir, 'outside');
     mkdirSync(outside);
     writeFileSync(join(outside, 'secret.txt'), 'synthetic');
     symlinkSync(outside, join(hOps.workdir, 'linked'), 'dir');
     hOps.assertRefused3(hOps.call('glob', { pattern: 'linked/*', path: hOps.workdir }, { paths: [hOps.workdir] }), /软链接/);
 
-    // 5. local-tools/<pack>/tools/*.ts allowed on ops only (while helper lib excluded).
     const localDir = join(hOps.workdir, 'local-tools/demo/tools');
     mkdirSync(localDir, { recursive: true });
     const localCli = join(localDir, 'run.ts');
@@ -396,7 +378,6 @@ test('ops sibling ^work-ops trust, execute key hygiene, skills/ symlink, globWit
     hOps.assertRefused3(hOps.exec(`node ${localCli} --out ../outside.json`), /不在工作目录/);
     hOps.assertRefused3(hOps.exec(`node ${localLib}`), /可执行身份未知/);
 
-    // 6. --schemas output produces valid JSON schema entries without hub property.
     const schemasOut = spawnSync(process.execPath, [hOps.gen, '--schemas'], { cwd: hOps.workdir, encoding: 'utf8', timeout: 5000 });
     assert.equal(schemasOut.status, 0, schemasOut.stderr);
     const schemas = JSON.parse(schemasOut.stdout) as Array<{ name: string; description: string; inputSchema: { properties: Record<string, unknown>; required: string[] } }>;
@@ -443,13 +424,11 @@ test('every command-form second line across all execute refusals passes replay, 
         }
       };
 
-      // Undeclared internal helper: must list actual installed declared scripts instead of a copyable template.
       const undeclaredRes = h.exec(`node ${undeclared}`);
       verifyRefusalSecondLine('undeclared helper', undeclaredRes, false);
       const undeclaredHow = String(undeclaredRes.reason ?? '').split('\n').slice(1, -1).join('\n');
       assert.match(undeclaredHow, /已装.*脚本|assemble-delivery\.ts|task-brief\.ts/, `undeclared helper should list installed scripts:\n${undeclaredHow}`);
 
-      // Outside skills / missing file / non-interpreter / node -e / ambiguous or incomplete relative path.
       verifyRefusalSecondLine('outside script', h.exec(`node ${outside}`), false);
       verifyRefusalSecondLine('missing script', h.exec(`node '${h.skillPath('case-compile', 'tools/no-such.ts')}'`), false);
       verifyRefusalSecondLine('node -e', h.exec("node -e 'console.log(1)'"), false);
@@ -460,10 +439,8 @@ test('every command-form second line across all execute refusals passes replay, 
       verifyRefusalSecondLine('invalid --run id', h.exec(`node ${fr} --hub ${HUB_URL} --run bad_id --out r <<'EOF'\n%HUB_TOKEN%\nEOF`), false);
       verifyRefusalSecondLine('bad subcommand', h.exec(`node ${op} bogus --session s1`), false);
 
-      // Unique relative script whose remaining arguments are already complete & valid -> computable passing command!
       verifyRefusalSecondLine('unique relative complete check-record', h.exec('node recompose/tools/check-record.ts --file records --run recompose-run'), true);
 
-      // Fixable syntax / quoting / --hub / heredoc mistakes -> second line is a concrete command that passes replay!
       h.assertAllowed(h.exec(`node "${h.skillPath('case-compile', 'tools/task-brief.ts')}" --role "脚本编写" --case c1 --brief b.md --out p.json --task-file t.md`));
       verifyRefusalSecondLine('bare Chinese', h.exec(`node ${tb} --role 脚本编写 --case c1 --brief b.md --out p.json --task-file t.md`), true);
       verifyRefusalSecondLine('backslash space', h.exec(`node ${tb} --role '脚本编写' --case c1 --brief b.md --out p.json --task-file t.md --note foo\\ bar`), true);
@@ -499,7 +476,6 @@ test('helper-rename regression: renaming readTokenFromStdin never changes guard 
     cpSync(join(ccSrc, 'functions'), join(h.skillPath('case-compile'), 'functions'), { recursive: true });
     writeFileSync(fetchPath, readFileSync(fetchPath, 'utf8').replaceAll('readTokenFromStdin', 'customSecretPipe'));
     writeFileSync(retryPath, readFileSync(retryPath, 'utf8').replaceAll('readTokenFromStdin', 'customSecretPipe'));
-    // Add misleading helper name into a zero-stdin tool whose .cli.json declares [].
     writeFileSync(
       checkPlanPath,
       `${readFileSync(checkPlanPath, 'utf8')}\n// synthetic distraction: readTokenFromStdin readKeys\n`,
@@ -528,7 +504,6 @@ test('helper-rename regression: renaming readTokenFromStdin never changes guard 
 test('epistemic refusal when a tool or command has no pure-data stdin declaration', () => {
   const h = createGuardHarness('ops');
   try {
-    // 1. Delete check-plan.cli.json -> undeclared tool called with <<'EOF' must refuse epistemically.
     const cpPath = h.skillPath('case-compile', 'tools/check-plan.ts');
     rmSync(join(h.skillPath('case-compile', 'tools'), 'check-plan.cli.json'));
     const regen = spawnSync(process.execPath, [h.gen], {
@@ -542,10 +517,8 @@ test('epistemic refusal when a tool or command has no pure-data stdin declaratio
     h.assertRefused3(refusedTool, /没有在已声明的可执行工具清单里找到/);
     assert.ok(!String(refusedTool.reason).includes('不读标准输入'), `must not assert 不读标准输入: ${refusedTool.reason}`);
     assert.ok(!String(refusedTool.reason).includes('这次可以这样写：'), `must not blindly suggest stripping EOF: ${refusedTool.reason}`);
-    // Without heredoc, undeclared tool stays runnable instead of inventing a token requirement.
     h.assertRefused3(h.exec(`node '${cpPath}' --file plans/0.json`), /缺少明确|未声明|身份未知/);
 
-    // 2. Remove declaration.commands[0].stdin -> simple command called with <<'EOF' refuses epistemically.
     const declPath = join(h.home, 'hooks', 'ops-allow.declaration.json');
     const decl = JSON.parse(readFileSync(declPath, 'utf8')) as { commands: Array<Record<string, unknown>> };
     delete decl.commands[0].stdin;
@@ -597,14 +570,11 @@ test('cmd-lookup is a declared tool: the command the writer task file prints pas
     const h = createGuardHarness(profile);
     try {
       const lookup = `'${h.skillPath('case-compile', 'tools/cmd-lookup.ts')}'`;
-      // The task file of the writer role prints the lookup command with the frozen run it was given; that exact line must run.
       const brief = renderTaskBrief({ role: resolveSubagentRole('plan')!, caseRef: 'case-1', briefPath: 'briefs/0.md', outPath: 'plans/0.json', skillDir: h.skillPath('case-compile'), frozenRunDir: join(h.workdir, 'plan-run'), scopeText: '合成范围' });
       const printed = brief.split('\n').filter((line) => line.startsWith('`node ') && line.includes('cmd-lookup.ts'));
       assert.equal(printed.length, 1, brief);
-      // --run is the run directory, the value task-brief.ts takes, never the run.json file.
       assert.ok(printed[0]!.includes(` --run '${join(h.workdir, 'plan-run')}' --param `) && !printed[0]!.includes('run.json'), printed[0]);
       h.assertAllowed(h.exec(printed[0]!.slice(1, -1).replace("'<命令词，可带参数>'", "'orbit beacon add'")), `${profile}: the printed lookup command`);
-      // The check below it takes the same run directory, so that one option name means one thing in the task file.
       const check = brief.split('\n').filter((line) => line.startsWith('`node ') && line.includes('check-plan.ts'));
       assert.equal(check.length, 1, brief);
       assert.ok(check[0]!.includes(` --file 'plans/0.json' --run '${join(h.workdir, 'plan-run')}'`) && !check[0]!.includes('run.json'), check[0]);

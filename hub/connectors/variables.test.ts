@@ -104,7 +104,7 @@ test('migrations retain only current and previous values inside the named vault'
     const k = await openConnectorKit(pg);
     t.after(() => k.close());
     const named = { ...input, credentials: { username: 'DEMO_USER', password: 'DEMO_PASSWORD' } };
-    const first = await k.connectors.admin.addResource(k.admin, named);
+    await k.connectors.admin.addResource(k.admin, named);
     await k.records.variables.setSecrets(k.admin, [{ name: 'DEMO_USER', value: 'demo-reader' }], 'DEMO_INITIAL');
     for (let index = 0; index < 2; index++) {
         const r = await k.connectors.admin.addResource(k.admin, { ...named, name: 'DEMO_MIGRATION_' + index,environment:ENVIRONMENT.filter(value=>value!=='test')[index] });

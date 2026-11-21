@@ -77,7 +77,6 @@ export function requestPermissions(user: string): RequestPermissions | null {
   return snapshot?.active && snapshot.principalId === user ? snapshot : null;
 }
 
-/** Accounts, memberships, team assignments and pack audiences come from one PostgreSQL statement snapshot. */
 export async function capturePermissionSnapshots(db: Database, userIds: readonly string[], at: Date, tx?: Transaction): Promise<Map<string, RequestPermissions>> {
   const ids = [...new Set(userIds)];
   const snapshots = new Map(ids.map(id => [id,new RequestPermissions(id,null,at,[])]));

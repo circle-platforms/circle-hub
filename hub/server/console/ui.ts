@@ -43,7 +43,6 @@ export function box(head:{title:unknown;hint?:string;meta?:unknown;tail?:unknown
 export function tile(figure:Html,path?:string,to?:string):Html{
  return html`<div class="ch-card ch-tile">${figure}${path===undefined?'':html`<a class="ch-tile-link" href="${path}" aria-label="${to??''}"></a>`}</div>`;
 }
-/** Richer figure tile (unit/note/state); presentation.stat is the simple wrapper — both call figure(). */
 export function kpi(label:unknown,value:unknown,options:{unit?:unknown;note?:unknown;state?:DotState;tone?:'bad'|'unk';hint?:string}={}):Html{
  return figure(label,value,{unit:options.unit,note:options.note,hint:options.hint,lead:options.state?dot(options.state):undefined,tip:tooltip});
 }
@@ -94,7 +93,6 @@ export interface CommandDialog {
   title: string;
   text: unknown;
   command: string;
-  /** Optional single-choice command variants (e.g. held lease keys); each shows its ready-to-copy command. */
   choices?: ReadonlyArray<{ label: string; command: string }>;
 }
 

@@ -5,10 +5,8 @@ import { fixture } from '../testing/blocks.ts';
 
 test('an expectation without an operator is matched the way the contract declares for the literal operator of the same method', () => {
   const { contract } = fixture();
-  // The synthetic contract lists check.found for the literal operator as an escaped literal, and check.abs_found as raw text.
   assert.equal(declaredLiteralMatching(contract, { object: 'check', method: 'found' }), 'escaped_literal');
   assert.equal(declaredLiteralMatching(contract, { object: 'check', method: 'abs_found' }), 'literal');
-  // A default method the contract lists for no operator keeps the raw text, as it always did.
   assert.equal(declaredLiteralMatching(contract, { object: 'check', method: 'literal' }), 'literal');
   assert.equal(declaredLiteralMatching(contract, { object: 'elsewhere', method: 'found' }), 'literal');
 });
@@ -21,7 +19,6 @@ test('the cell of an escaped literal matches the device line whatever its column
   const dotted = assertionCells({ text: 'addr 192.0.2.7', quote: { reference: 'src:synthetic', text: 'x' }, after: 1 }, target).g;
   assert.ok(new RegExp(dotted).test('addr   192.0.2.7'));
   assert.equal(new RegExp(dotted).test('addr 192x0y2z7'), false, 'a dot is not any character');
-  // Raw text, as a flat expectation was written before: it is a pattern, and one blank is one blank.
   const raw = assertionCells({ text: 'Widget Name: w1', quote: { reference: 'src:synthetic', text: 'w1' }, after: 1 }, { matching: 'literal' } as AssertionTarget).g;
   assert.equal(new RegExp(raw).test('Widget Name:                 w1'), false);
 });

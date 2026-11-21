@@ -1156,13 +1156,6 @@
   },
   {
     "check": "no-compat-paths",
-    "path": "hub/server/cli-resource.ts",
-    "what": "word:legacy",
-    "reason": "Legacy/compatibility path (missingLegacy on line(s) 216,218); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
     "path": "hub/server/cli.ts",
     "what": "symbol:assertNoRetiredEnvironment",
     "reason": "Legacy/compatibility path (assertNoRetiredEnvironment on line(s) 18,718); remove in C3",
@@ -1195,5 +1188,103 @@
     "what": "symbol:StoredValidationResult",
     "reason": "Legacy/compatibility path (StoredValidationResult on line(s) 14,541); remove in C3",
     "removeWhen": "C3"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/read-manifest.v1.schema.json",
+    "what": "property-deleted: variables[].at",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/read-manifest.v1.schema.json",
+    "what": "property-deleted: variables[].name",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/read-manifest.v1.schema.json",
+    "what": "property-deleted: variables[].decision",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/read-manifest.v1.schema.json",
+    "what": "required-added: variables[].kind",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/secret.v1.schema.json",
+    "what": "value-narrowed: entry",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/secret.v1.schema.json",
+    "what": "property-deleted: consumers",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/secret.v1.schema.json",
+    "what": "required-added: version",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/secret.v1.schema.json",
+    "what": "required-added: set_by",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/secret.v1.schema.json",
+    "what": "required-added: set_at",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/secret.v1.schema.json",
+    "what": "required-added: revoked",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/tree_root.v1.schema.json",
+    "what": "property-deleted: variables[].at",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/tree_root.v1.schema.json",
+    "what": "property-deleted: variables[].name",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/tree_root.v1.schema.json",
+    "what": "property-deleted: variables[].decision",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
+  },
+  {
+    "check": "contract-schema-freeze",
+    "path": "contracts/generated/schemas/tree_root.v1.schema.json",
+    "what": "required-added: variables[].kind",
+    "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
+    "removeWhen": "first release/* tag"
   }
 ]

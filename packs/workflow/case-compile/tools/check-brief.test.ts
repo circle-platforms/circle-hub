@@ -1,4 +1,3 @@
-// Unit tests for structured compile-brief@1 generation, writeStructuredBriefs, and offline check-brief verification.
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -166,7 +165,6 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
     await mkdir(join(runDir, 'items'));
     await writeFile(join(runDir, 'items', '00.json'), JSON.stringify(ITEM_WITH_STATES));
 
-    // Round 1 structured brief
     const r1 = await writeStructuredBriefs({ runDir: 'run1', cwd: workDir, round: 1, mode: 'initial' });
     assert.equal(r1.json_files.length, 1);
     const brief1 = JSON.parse(await readFile(r1.json_files[0], 'utf8'));
@@ -179,7 +177,6 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
     assert.ok(brief1.materials.bed_facts.blind.some((b: { address: string }) => b.address === '192.0.2.130'));
     assert.equal(brief1.task.user_rulings[0].ruling, '使用者决定：保留开启步骤');
 
-    // Verify via checkBriefTarget with expected item JSON
     const okCheck = await checkBriefTarget({
       file: 'run1/briefs/00.round-1.json',
       item: 'run1/items/00.json',
@@ -187,7 +184,6 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
     });
     assert.equal(okCheck.ok, true, JSON.stringify(okCheck));
 
-    // Round 2 rework brief + prior return + prior notes
     const plansDir = join(workDir, 'plans-r1');
     await mkdir(plansDir);
     await writeFile(
@@ -200,7 +196,6 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
     );
     const retDir = join(workDir, 'returns-r1');
     await mkdir(join(retDir, 'a'.repeat(12), 'cases', '990000000000000301'), { recursive: true });
-    // Build a genuine 12,000-char retained session tail where early `widget on` was cut off before retention limit.
     const fillerTail = (Array.from({ length: 600 }, (_, i) => `seat#noise line ${String(i).padStart(3, '0')} ok`).join('\n') + '\nseat#\n').slice(-12_000);
     await writeFile(join(retDir, 'a'.repeat(12), 'cases', '990000000000000301', 'dut0.txt'), fillerTail);
     await writeFile(
@@ -224,7 +219,6 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
       }),
     );
 
-    // Mismatched short un-truncated returns directory refuses brief generation rather than faking 12k truncation
     const mismatchRet = join(workDir, 'returns-mismatch');
     await mkdir(join(mismatchRet, 'b'.repeat(12), 'cases', '990000000000000301'), { recursive: true });
     await writeFile(join(mismatchRet, 'b'.repeat(12), 'cases', '990000000000000301', 'dut0.txt'), 'seat#show status\nseat#\n');
@@ -248,7 +242,6 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
       /不属于同一次运行/,
     );
 
-    // runDir is the run directory like --run of every tool that reads a run: its run.json file is refused with the one-line correct form.
     await assert.rejects(
       writeStructuredBriefs({ runDir: 'run1/run.json', cwd: workDir }),
       (error: unknown) => error instanceof CallFailure && /^--run run1\/run\.json 不是普通目录/.test(error.fact) && error.legal_form === "--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）",
@@ -283,7 +276,6 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
     assert.ok(md3.includes('最后一次机会'));
     assert.ok(!md3.includes('FINAL attempt'));
 
-    // Re-running round 1 never overwrites existing round-1 files
     const r1Again = await writeStructuredBriefs({ runDir: 'run1', cwd: workDir, round: 1, mode: 'initial' });
     assert.equal(r1Again.kept, 1);
     assert.equal(r1Again.json_files.length, 0);
@@ -310,18 +302,15 @@ test('validateCompileBrief rejects tampered SHA, mutated atoms, missing hypothes
     })!;
     assert.equal(validateCompileBrief(good, ITEM_WITH_STATES).ok, true);
 
-    // Tampered brief_sha256
     const badSha = structuredClone(good);
     badSha.identity.title = '被篡改的标题';
     assert.equal(validateCompileBrief(badSha).ok, false);
 
-    // Mutated atom text even with recomputed SHA caught against expectedItem
     const badAtom = structuredClone(good);
     badAtom.materials.original_case.atoms[0].text = '改写后的动作';
     badAtom.brief_sha256 = computeCompileBriefSha256(badAtom);
     assert.equal(validateCompileBrief(badAtom, ITEM_WITH_STATES).ok, false);
 
-    // Round 2 rework_device with empty history
     const emptyR2 = buildCompileBrief({
       item: ITEM_WITH_STATES,
       index: '00',
@@ -333,7 +322,6 @@ test('validateCompileBrief rejects tampered SHA, mutated atoms, missing hypothes
     })!;
     assert.equal(validateCompileBrief(emptyR2).ok, false);
 
-    // Bad CLI call exits 1 cleanly
     const origErr = process.stderr.write.bind(process.stderr);
     let errText = '';
     process.stderr.write = ((chunk: string | Uint8Array) => { errText += String(chunk); return true; }) as typeof process.stderr.write;
@@ -420,7 +408,6 @@ test('buildCompileBrief and renderCompileBriefMd disclose contract.cleanup for r
     assert.match(md, /执行器自动清理（lib\/demo\/clear\.py@dddddddddddd）/);
     assert.match(md, /逆操作（runner_cleanup：/);
 
-    // Without plumb/cmd_candidates, sha is unchanged; with plumb_candidates, status=未确认 & decided_by=模型 are preserved and validated.
     const baselineSha = compiled.brief_sha256;
     await mkdir(join(workDir, 'plumb', 'cmd_candidates'), { recursive: true });
     await writeFile(

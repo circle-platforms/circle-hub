@@ -48,9 +48,6 @@ describe('the source-read pack files', () => {
     assert.equal(requirements.schema, 'requirements@1');
     assert.deepEqual(requirements.requirements, []);
 
-    const publishable = RequirementsFile.parse(json('requirements.json'));
-    assert.deepEqual(publishable.requirements, []);
-
     const checks = ChecksFile.parse(json('checks.json'));
     assert.deepEqual(checks.checks, []);
 

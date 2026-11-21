@@ -23,15 +23,12 @@ export interface WorkbookProblem { rule: string; pointer: string; message: strin
 export interface ReadExecution { row: number; object: string; method: string; args: string[]; keywords: Record<string, string | number>; assertion: boolean;h?:string;i?:string }
 export type WorkbookRead = { ok: true; executions: ReadExecution[]; autoids: string[] } | { ok: false; problems: WorkbookProblem[] };
 const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
-/** Interpret uploaded rows independently in the same declared case order as the generator. */
 export function readWorkbook(input: unknown, recipes: GenerationInput | GenerationInput[]): WorkbookRead {
   const problems: WorkbookProblem[] = []; const issue = (rule: string, pointer: string, message: string) => problems.push({ rule, pointer, message });
   const model = readWorkbookModel(input); if (!model) return { ok: false, problems: [{ rule: 'model', pointer: '', message: '不是完整的 xlsx@1 模型' }] };
   const set = volumeOrder(Array.isArray(recipes) ? recipes : [recipes]).ordered; if (!set.length) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '没有可核对的自动化用例' }] };
   const plans: PlanSlots[] = [];
   for (const recipe of set) { const slots = readSlots(recipe.slots); if (!slots.ok) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '自动化用例不完整' }] }; plans.push(slots.slots); }
-  // Block plans and flat plans may share one workbook: the runner reads every row alike (H and I are simply empty on a flat row), and the
-  // generator writes each case with its own plan. The contract, profile, build and generator are the set's (generateWorkbookSet), the rows are each case's.
   const recipe = set[0]; const profile = recipe.profile; const book = profile.workbook;
   let template: WorkbookTemplate;
   try { template = readTemplate(book); } catch (error) { if (error instanceof TemplateError) return { ok: false, problems: [{ rule: 'template', pointer: '/profile/workbook/template', message: error.message }] }; throw error; }
@@ -53,7 +50,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
       const at = `/sheets/0/rows/${r}/cells/${c}`; const match = /^([A-Z])([1-9][0-9]*)$/.exec(cell.reference);
       if (!match || Number(match[2]) !== row.number || match[1] > 'I' && row.number > headerRow) { issue('subset', at, '表头以下的单元格超出 A–I，或与行号不符'); continue; }
       const column = match[1].charCodeAt(0) - 65;
-      if (column > 8) continue; // The template's own lists; the bytes are compared below.
+      if (column > 8) continue;
       if (columns.has(column)) issue('subset', at, '单元格坐标重复'); columns.add(column); grid[column] = cell.text;
       if (cell.formula || cell.text.startsWith('=')) issue('formula', at, '不接受公式或以等号开头的值');
       if (row.number > headerRow && (!FORMAT.cell_types.includes(cell.type) || cell.type === 'n' && cell.text !== '' && column !== 2)) issue('subset', at, '只接受内联字符串及 C 列数字');
@@ -75,10 +72,6 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   const ranges = model.definedNames.filter((value) => value.name === book.range_name);
   if (ranges.length !== 1 || ranges[0].scope !== null || ranges[0].reference !== reference) issue('range', '/definedNames', '范围名必须是工作簿级，唯一且正好指向九列表头');
   const expectedLast = headerRow + 2 + plans.reduce((sum, value) => sum + value.steps.length + value.expects.length + 1, 0);
-  // Where each case's rows begin, from the plans alone: below the description row, each case's steps and expectations and a blank row. A row is
-  // read with the plan of the case it falls in, so each case keeps the rules of its own form (a flat row has empty H and I, a block row may
-  // carry registers); rows above the first case or below the last (which the closing and description checks refuse when they hold anything)
-  // are read with the nearest case's plan.
   const starts: number[] = []; { let at = headerRow + 2; for (const value of plans) { starts.push(at); at += value.steps.length + value.expects.length + 1; } }
   const planAt = (number: number): PlanSlots => { let k = 0; while (k + 1 < starts.length && number >= starts[k + 1]) k++; return plans[k]; };
   if (sheet.lastRow !== template.lastRow || [...values].some(([number, cells]) => number > expectedLast && cells.some(Boolean))) issue('closing', '/sheets/0', '收尾行之后不能再有内容，模板的行数不能变');

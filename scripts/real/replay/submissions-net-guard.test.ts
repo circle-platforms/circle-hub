@@ -1,5 +1,3 @@
-// The network guard of a replay process: loopback and unix sockets work, every other address is refused before a connection
-// is tried. Loopback only; nothing leaves this machine, the refused address is a documentation address (192.0.2.0/24).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { describe, test } from 'node:test';

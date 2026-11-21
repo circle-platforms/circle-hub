@@ -1,22 +1,3 @@
-// The whole run on local disk before anything is written for it (decision 160, step 1): run.json, one file per frozen item and
-// the original bytes of every bound source, each checked against its digest, so the model reads them with its own file tools
-// instead of one Hub call per item. It reads the run alone, so it works right after start_run; it decides nothing. When the
-// run brought its knowledge root and its items carry recomposition records, each case also gets its authoring brief
-// (`briefs/<index>.md`, tools/authoring-brief.ts): the tree entries the record names, so a writer reads one file first. A run whose
-// recomposition is bound after its start also gets late.json (GET /run-export/<run>/late, run-late@1): the records the Hub has accepted
-// so far; a case accepted later gets its brief from tools/refresh-late.ts. A run without such an input has no late route (404): nothing is written.
-// The first download of a compile also asks the Hub once for the earlier device verifications of the same document
-// (GET /run-export/<run>/history, Hub decision 182): the answer and where the returns of the listed runs were saved go to
-// history.json in the run directory, the returns themselves to history/<run>/ beside it, so every case's task can say what the
-// device answered before. At most six runs and four minutes; whatever fails there is said in history.json and never fails the
-// download. The download does not wait for it: six runs take about three minutes on a real Hub, and a lead's command that runs
-// past two minutes is moved to the background by its harness. The download starts this tool again with --history-fetch, detached,
-// and leaves a history.json that says the fetch is under way and where its answer will be; a task generated later reads that.
-// A later download beside the first reuses what was fetched. The pipeline's own call for a reworked round passes
-// --history-reuse <that history directory>: nothing is asked of the Hub again.
-//   node <skill directory>/tools/download-run.ts --hub %HUB_URL% --run <run id> --out <directory> <<'EOF'
-//   %HUB_TOKEN%
-//   EOF
 import { spawn } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -40,12 +21,9 @@ async function saveRunReference(origin: string, bearer: string, run: string, out
   return exported.run_reference;
 }
 
-/** Bounds of the history a download fetches; tests lower them. */
 export interface HistoryControl {
   budgetMs?: number; maxRuns?: number; parallel?: number;
-  /** Fetch inside the download and wait for it (tests of the fetch itself); a real download starts the fetch and goes on. */
   inline?: boolean;
-  /** Starts the fetch without waiting: this tool again with the given arguments and the token on standard input. */
   start?: StartFetch;
 }
 export type StartFetch = (argv: string[], token: string) => void;
@@ -56,18 +34,10 @@ const startSelf: StartFetch = (argv, token) => {
   child.stdin.end(`${token}\n`);
   child.unref();
 };
-/** Returns of this many runs are downloaded at a time. */
 const HISTORY_PARALLEL = 3;
 const said = (error: unknown): string => (error instanceof CallFailure ? error.fact : error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim().slice(0, 300);
 
-/**
- * The earlier device verifications of the document this run compiles, once per compile. `shared` is the compile's history
- * directory: with a history.json a download already fetched there, that one is taken and the Hub is not asked; `reuseOnly`
- * (the pipeline's call for a reworked round) never asks. Otherwise the Hub is asked for the newest runs, the returns of each are
- * saved under `shared` (tools/download-returns.ts, without waiting for a job), and everything stops at the time budget:
- * history.json then holds what was fetched and says what was not. Throws nothing a caller has to handle beyond a file it cannot write.
- */
-export async function deviceHistory(input: { origin: string; bearer: string; run: string; out: string; shared: string; reuseOnly: boolean; /** The run directory already holds a history.json that says the fetch is under way: it is replaced. */ replace?: boolean }, retry?: RetryControl, control: HistoryControl = {}): Promise<HistoryReport> {
+export async function deviceHistory(input: { origin: string; bearer: string; run: string; out: string; shared: string; reuseOnly: boolean; replace?: boolean }, retry?: RetryControl, control: HistoryControl = {}): Promise<HistoryReport> {
   const timing = retry?.timing ?? DEFAULT_TIMING, started = timing.now(), budget = control.budgetMs ?? HISTORY_BUDGET_MS, deadline = started + budget;
   const maxRuns = Math.max(1, Math.min(HISTORY_MAX_RUNS, control.maxRuns ?? HISTORY_MAX_RUNS));
   const target = join(input.out, HISTORY_FILE), kept = join(input.shared, HISTORY_FILE);
@@ -88,8 +58,6 @@ export async function deviceHistory(input: { origin: string; bearer: string; run
     return reportOf(none, false);
   }
 
-  // Every request of the history shares one deadline: what is left of the budget bounds its wait, its retries and its timeout.
-  // Nothing is started in the last moments of the budget: a timer may fire a little before the clock says the time is up.
   const left = () => deadline - timing.now(), spent = () => left() <= 25;
   const base: FetchLike = retry?.fetch ?? fetch;
   const bounded = (): RetryControl => ({
@@ -127,7 +95,6 @@ export async function deviceHistory(input: { origin: string; bearer: string; run
   const worker = async (): Promise<void> => {
     for (let at = next++; at < runs.length; at = next++) {
       const run = runs[at]!.run, dir = join(input.shared, run), shown = relative(process.cwd(), resolve(dir)) || '.';
-      // Returns a download already saved are taken as they are: what a job returned does not change.
       if (existsSync(join(dir, 'index.json'))) { returns[at] = { run, dir: shown }; continue; }
       if (spent()) { returns[at] = { run, dir: null, reason: `取上机历史的总时限 ${Math.round(budget / 1000)} 秒已到，这一次的设备输出没有下载` }; continue; }
       try {
@@ -141,11 +108,6 @@ export async function deviceHistory(input: { origin: string; bearer: string; run
   return save({ schema: DEVICE_HISTORY_SCHEMA, run: input.run, fetched_at: new Date().toISOString(), status: 'fetched', answer: { ...answer, runs }, returns, elapsed_ms: Math.max(0, timing.now() - started) });
 }
 
-/**
- * What a download does about the history without waiting: a history already fetched beside is taken; otherwise the run directory
- * gets a history.json that says the fetch is under way and names the compile's history directory, and the fetch is started
- * unless one started less than its time budget ago (the lead downloads more than one run of a compile).
- */
 export async function startHistory(input: { hub: string; bearer: string; run: string; out: string; shared: string }, control: HistoryControl = {}): Promise<HistoryReport> {
   const target = join(input.out, HISTORY_FILE), kept = join(input.shared, HISTORY_FILE), marker = join(input.shared, HISTORY_FETCHING_FILE);
   const bytes = (file: DeviceHistoryFile) => Buffer.from(JSON.stringify(file, null, 2) + '\n');
@@ -176,22 +138,18 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const bearer = await requireBearerToken(readToken);
     const shared = args['history-reuse'] ?? join(dirname(args.out), HISTORY_DIRECTORY);
     if (args['history-fetch'] !== undefined) {
-      // The fetch a download started and did not wait for: the run is on disk already, only its history is fetched.
       let fetched: HistoryReport;
       try { fetched = await deviceHistory({ origin, bearer, run: args.run, out: args.out, shared, reuseOnly: false, replace: true }, retry, history); }
       catch (error) { fetched = { status: 'unavailable_from_hub', runs: 0, downloaded: 0, file: join(args.out, HISTORY_FILE), reason: `上机历史没有存下来：${said(error)}` }; }
       finally { await rm(join(shared, HISTORY_FETCHING_FILE), { force: true }); }
       process.stdout.write(JSON.stringify({ run: args.run, history: fetched }) + '\n'); return 0;
     }
-    // The late answer is read first, so an answer that is refused leaves nothing written at all.
     const late = await fetchLate(origin, bearer, args.run, retry);
     const { files, ...report } = await downloadRunRetrying(origin, bearer, args.run, args.out, retry);
     const runReference = await saveRunReference(origin, bearer, args.run, args.out, retry);
     if (late) await writeNewLateFile(args.out, late);
-    // The run is on disk by now: a brief that cannot be written is said, and is no reason to call the download failed.
     let briefs = 0, note: string | undefined;
     try { briefs = (await brief(args.out)).briefs; } catch (error) { note = `脚本编写所需的原始用例和手册未保存。原因${error instanceof Error ? error.message : '还没查清'}；其余原始资料已下载，请从原始资料继续脚本编写`; }
-    // The run is on disk: its device history is fetched last, and whatever happens there is reported, never thrown.
     const historyFile = join(args.out, HISTORY_FILE);
     let historyReport: HistoryReport;
     try {

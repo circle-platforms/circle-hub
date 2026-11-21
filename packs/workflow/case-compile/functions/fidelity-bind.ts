@@ -1,5 +1,4 @@
 import {CallFailure} from './text.ts';
-// Deterministic step_indices binding and Option A1 Plumb sequence gate-to-verdict mapping.
 import type { AuthorStep, FidelityBrief, FidelityRow, FidelityVerdict, ModelDisclosure, ModelJudgment } from './fidelity.ts';
 import {
   blockCommandLines,
@@ -38,16 +37,13 @@ function validBriefIndices(brief: FidelityBrief): Set<number> {
   );
 }
 
-/** Binds only explicit author references or whole adapted command literals; missing evidence stays unbound. */
 export function mapStepIndices(
   brief: FidelityBrief,
   authorStep: AuthorStep,
-  authorStepIndex: number,
   partitioned: PartitionedFidelityBlocks,
 ): { indices: number[]; tier: 'author_step_refs' | 'command_or_rebinding' | 'none' } {
   const validIndices = validBriefIndices(brief);
 
-  // Tier 1: explicit author_step_refs on plan blocks/steps.
   const tier1: number[] = [];
   for (const blk of brief.blocks) {
     const idx = typeof blk.index === 'number' ? blk.index : -1;
@@ -75,23 +71,19 @@ function toJudgmentGate(gate: PlumbGate | undefined): ModelJudgment['gate'] | un
   };
 }
 
-/**
- * Applies Option A1 verdict mapping + unbound fail-closed guard for one Plumb `sequence` result.
- */
 export function mapPlumbSequenceToFidelityRow(params: {
   brief: FidelityBrief;
   authorStep: AuthorStep;
-  authorStepIndex: number;
   partitioned: PartitionedFidelityBlocks;
   plumb: PlumbNormalizedAnswer;
   modelVersion: string;
   requestSha256?: string;
   strictReview?: boolean;
 }): BoundStepDecision {
-  const { brief, authorStep, authorStepIndex, partitioned, plumb, modelVersion, requestSha256, strictReview = false } = params;
+  const { brief, authorStep, partitioned, plumb, modelVersion, requestSha256, strictReview = false } = params;
   const normalizedChoice = normalizePlumbSequenceChoice(plumb.choice);
   const gateAction = plumb.gate?.action ?? 'pass';
-  const mapped = mapStepIndices(brief, authorStep, authorStepIndex, partitioned);
+  const mapped = mapStepIndices(brief, authorStep, partitioned);
   let stepIndices = mapped.indices;
   let reviewRequired = false;
   let verdict: FidelityVerdict;
@@ -114,7 +106,6 @@ export function mapPlumbSequenceToFidelityRow(params: {
       notes.push('[需人工复核：Plumb sequence 落入 review 区]');
     }
   } else {
-    // gateAction === 'reject' always fails closed against preserving unverified deviations.
     verdict = normalizedChoice === '未实现' ? 'unrealized' : 'changed';
     notes.push('Plumb gate=reject，拒绝自动放行');
   }
@@ -158,14 +149,12 @@ export function mapPlumbSequenceToFidelityRow(params: {
   };
 }
 
-/** Assembles a standalone `.verdict.json` payload with model disclosure metadata (brief digest bound by `embedFidelity`). */
 export function buildFidelityVerdictDocument(params: {
   brief: FidelityBrief;
   decisions: readonly BoundStepDecision[];
   partitioned: PartitionedFidelityBlocks;
   modelVersion: string;
   requestSha256?: string;
-  /** Long literals that stood in the state sent to Plumb as names, step by step (see shortenRepeatedLiterals). */
   literalSubstitutions?: ReadonlyArray<{ step: string } & LiteralSubstitution>;
 }): {
   steps: FidelityRow[];

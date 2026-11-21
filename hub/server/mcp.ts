@@ -369,7 +369,6 @@ async function answer(
   server.setNotificationHandler(CancelledNotificationSchema, notification => {
     if (notification.params.requestId === undefined) return;
     const calls = pending!.get(cancellationKey(notification.params.requestId));
-    // Duplicate live request IDs cannot identify which call the client intends to cancel.
     if (calls?.size === 1) calls.values().next().value!.abort();
   });
   server.setRequestHandler(ListToolsRequestSchema, async (_message, extra) => {
@@ -429,7 +428,6 @@ async function answer(
     const reply = await transport.handleRequest(webRequest, { parsedBody: parsed });
     let text = await reply.text();
     const protocol = webRequest.headers.get('mcp-protocol-version');
-    // In stateless mode a parsed non-initialize request has no session-validation refusal before this SDK gate.
     if (!early && reply.status === 400 && protocol !== null && !SUPPORTED_PROTOCOL_VERSIONS.includes(protocol)
       && JSONRPCMessageSchema.safeParse(parsed).success && !isInitializeRequest(parsed)) {
       try {
@@ -439,7 +437,7 @@ async function answer(
           refused.error.message = `MCP 协议版本不匹配：收到 ${received}，支持 ${SUPPORTED_PROTOCOL_VERSIONS.join('、')}；这次调用没有执行；下一步重新初始化连接并按协商返回的协议版本调用，不支持该版本的客户端请更新后重连`;
           text = JSON.stringify(refused);
         }
-      } catch { /* Preserve any SDK answer that is not the expected JSON refusal. */ }
+      } catch { }
     }
     if (reply.status >= 400) {
       // The transport refused the message before any handler ran (a missing Accept, a malformed message, a protocol version).

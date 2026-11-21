@@ -1,5 +1,4 @@
 import { ATTRIBUTION, PRODUCER_KIND } from '../../contracts/generated/vocabulary.ts';
-// Console fields keep their contract labels; reader-facing conclusions use the display mappings below.
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, labelOf, uiLabelOf, type Attribution, type DynamicTerminal, type ExitAction, type Layer, type ProducerKind, type Reason, type StaticTerminal, type Verdict } from '../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
@@ -15,7 +14,6 @@ export interface Labels {
   axis: typeof axisLabel;
 }
 
-/** Contract labels used by existing displays. */
 export const MODEL_LABELS: Labels = { of: labelOf, axis: axisLabel };
 /** The interface terms of the console (display rule 20); a value without one shows its label. */
 export const INTERFACE_LABELS: Labels = { of: uiLabelOf, axis: axisUiLabel };
@@ -178,19 +176,19 @@ export function userVerdict(verdict: Verdict | undefined): string | null | undef
   return verdict === undefined ? undefined : USER_VERDICT[verdict];
 }
 
-const REASON_TEXT = {
-  no_check: '缺资料', check_error: '还没查清', timeout: '临时故障', missing_input: '缺资料',
-  declared_skip: '还没查清', not_covered: '缺资料', awaiting_step: '缺资料', output_failed: '还没查清',
-  repair_exhausted: '还没查清', budget_exhausted: '还没查清', integrity_unproven: '缺资料',
-} as const satisfies Record<Reason, string>;
+const REASON_ATTRIBUTION = {
+  no_check: 'data_gap', check_error: 'unattributed', timeout: 'transient', missing_input: 'data_gap',
+  declared_skip: 'unattributed', not_covered: 'data_gap', awaiting_step: 'data_gap', output_failed: 'unattributed',
+  repair_exhausted: 'unattributed', budget_exhausted: 'unattributed', integrity_unproven: 'data_gap',
+} as const satisfies Record<Reason, Attribution>;
 
 const NEXT_STEP = {
-  reread: '程序重新读取资料', reconcile: '程序重新核对资料', observe: '程序重新读取设备输出',
+  reread: '程序重新读取资料', reconcile: '程序重新核对资料', observe: '程序重新观察',
   request: '使用者补齐资料', rerun: '使用者重新核对原始用例', reevaluate: '程序重新核对结论',
 } as const satisfies Record<ExitAction, string>;
 
 export function userReason(layer: Pick<LayerResult, 'attribution' | 'reason'>): string {
-  return layer.attribution !== undefined ? USER_REASON[layer.attribution] : layer.reason !== undefined ? REASON_TEXT[layer.reason] : '还没查清';
+  return USER_REASON[layer.attribution ?? (layer.reason !== undefined ? REASON_ATTRIBUTION[layer.reason] : 'unattributed')];
 }
 
 export function userNextStep(layer: Pick<LayerResult, 'exit'>): string {
@@ -205,7 +203,7 @@ export function userClaimText(claim: Claim): string {
   const judgment = unknown ? undefined : verdict;
   const parts = [claim.statement.text, `状态${status}`, judgment === undefined ? undefined : `判断${judgment}`];
   if (unknown || judgment === '错误') {
-    parts.push(`原因${partial ? '缺资料' : claim.statement.reason === undefined ? '还没查清' : REASON_TEXT[claim.statement.reason]}`, '下一步由使用者核对原始用例和资料');
+    parts.push(`原因${USER_REASON[partial ? 'data_gap' : claim.statement.reason === undefined ? 'unattributed' : REASON_ATTRIBUTION[claim.statement.reason]]}`, '下一步由使用者核对原始用例和资料');
   }
   const quotes = claim.resolutions?.filter(value => !value.references.includes(value.text)).map(value => value.text) ?? [];
   if (quotes.length) parts.push(`证据${quotes.join('；')}`);

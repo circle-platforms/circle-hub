@@ -1,4 +1,3 @@
-// Recover one interrupted reset by the original database OID, not by guessing which schema its name now carries.
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';

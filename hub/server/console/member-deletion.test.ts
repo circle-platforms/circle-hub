@@ -1,5 +1,4 @@
 // Real password-console HTTP responses, synthetic accounts and temporary database/storage only.
-// U5: /console/api/members* and /console/api/search retired — use deletionCheck + HTML pages.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createTestHub} from '../testing-real.ts';

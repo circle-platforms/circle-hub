@@ -74,7 +74,6 @@ test('without identity facts, occurrence is null and escalate appends nothing (B
     },
   };
   const published = PUBLISHED.get('start_run')!;
-  // 参数无效 but no path → no count.
   assert.equal(
     await occurrenceOf({
       callLog,
@@ -84,7 +83,6 @@ test('without identity facts, occurrence is null and escalate appends nothing (B
     }),
     null,
   );
-  // SOURCE_RETRYABLE is a category but no object/digest → no count (acceptance 36).
   const retryable = {
     code: 'SOURCE_RETRYABLE',
     message: '连不上来源',

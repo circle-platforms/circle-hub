@@ -59,7 +59,6 @@ test('the whole line is asked first and shorter prefixes after it until a positi
   assert.ok(asked.every((a) => !/[?\x00-\x1f]/.test(String(a.line))), 'the Hub sends the line alone: no question mark of its own, no line end');
   assert.ok(!c.calls.includes('send_blob') && !c.calls.includes('inspect_slot'), 'nothing is dispatched or prechecked');
   assert.ok(c.calls.indexOf('open_slot') < c.calls.indexOf('ask_position') && c.calls.lastIndexOf('ask_position') < c.calls.indexOf('close_slot'), 'asked inside one gateway lease, released after');
-  // The answer as received is stored apart from the text the model may read.
   const described = result!.positions[2]!;
   const raw = await c.kit.artifacts.source(c.admin, described.reference.slice(4), { consumer: 'function' });
   assert.match(new TextDecoder().decode(raw!.bytes!), /configure|1-9/);
@@ -120,7 +119,7 @@ test('an executor that has the device but declares no help is named, and nothing
   assert.equal(traffic(), 0);
 });
 
-test('without a certified premise for this version of the target no word is typed; the target is connected and left alone', async (t) => {
+test('without a certified premise for this version of the target no word is typed; the target is connected and left alone', async () => {
   for (const premise of ['none', 'other-version', 'unreadable-evidence'] as const) {
     const { c, asked, target } = await ready({ premise });
     const [result] = await c.service.askDevices(c.owner, 'run_synthetic', [target('widget')]);
@@ -152,7 +151,6 @@ test('a text that looks like a credential is quoted; a very long one keeps its s
   const long = 'x'.repeat(20000);
   const { c, target } = await ready({ reply: (line) => ({ help: line === 'looks-like' ? `name   the name\n${secret}\n` : long, caret: false, entered: false, cleared: true }) });
   t.after(() => c.close());
-  // Decision 161 / credential-scan@4: looking like a credential does not withhold device help text.
   const [quoted] = await c.service.askDevices(c.owner, 'run_synthetic', [target('looks-like')]);
   assert.equal(quoted!.positions[0]!.withheld, false);
   assert.equal(quoted!.positions[0]!.text, `name   the name\n${secret}\n`);

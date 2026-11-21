@@ -1,17 +1,3 @@
-// Opens the two runs of a whole-mind-map compile before any model work, and decides readiness in code only (decision 179).
-// Order: the installed recompose and case-compile skills are the versions the Hub publishes; start_run recompose (the Hub
-// reads the mind map, the product, the build and its knowledge); start_run case-compile with the recompose run bound after
-// the start (the Hub checks the three named documents, the booking, the profile's test bed and the mind map's cases with the
-// pack's own functions). Any refusal is printed as one line "无法编译：<原因>" with the Hub's location, words and next step,
-// and the tool exits 1; nothing is retried, guessed or rebound here. On success it writes open-compile.json and prints
-// "就绪：…" with the commands that download both runs.
-// The Plumb judge the pipeline's command and fidelity checks call is part of the environment: its own client (the plumb
-// skill's tools/plumb.ts status) must answer ready.
-//   node <skill directory>/tools/open-compile.ts --hub %HUB_URL% --plumb %PLUMB_URL% --subject 'agile:mindmap:<文档号>'
-//     --product '<产品>' --build '<构建>' --booking '<test-bed 预订号>' --out '<新文件>' <<'EOF'
-//   %HUB_TOKEN%
-//   %PLUMB_API_KEY%
-//   EOF
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
@@ -26,13 +12,11 @@ const CALL_TIMEOUT_MS = 180_000;
 const DEFAULT_DOCS = { contract: 'doc:doc:runner-contract', inventory: 'doc:doc:bed-topology', profile: 'doc:doc:runtime-profile' } as const;
 const USAGE = "open-compile.ts --hub <MCP地址> --plumb <Plumb地址> --subject <脑图外部标识或 src: 引用> --product <产品> --build <构建> --booking <test-bed 预订号> --out <新文件> [--version <版本线>] [--scope <范围文件>] [--exclude <autoid,...>] [--contract <doc:doc:名字>] [--inventory <doc:doc:名字>] [--profile <doc:doc:名字>] [--recompose-run <重组运行编号> --recompose-record <rec:引用>]";
 
-/** A readiness verdict the tool prints; ready=false is a refusal the client relays word for word and stops on. */
 export class NotReady extends Error {}
 
 export interface ToolAnswer { failed: boolean; text: string; envelope: Record<string, unknown> | null }
 export type CallTool = (name: string, args: Record<string, unknown>) => Promise<ToolAnswer>;
 
-/** The machine part of a tool answer: the JSON after “供模型引用”, else the whole text when it is JSON. */
 export function envelopeOf(text: string): Record<string, unknown> | null {
   const marker = text.lastIndexOf('供模型引用');
   const start = text.indexOf('{', marker < 0 ? 0 : marker);
@@ -40,7 +24,6 @@ export function envelopeOf(text: string): Record<string, unknown> | null {
   try { const value = JSON.parse(text.slice(start)); return isRecord(value) ? value : null; } catch { return null; }
 }
 
-/** One stateless MCP tools/call to the Hub, as the other tools of this skill send submit_result. */
 export function hubTools(origin: string, bearer: string, timeoutMs = CALL_TIMEOUT_MS): CallTool {
   return async (name, args) => {
     let reply: Response, body: string;
@@ -66,7 +49,6 @@ export function hubTools(origin: string, bearer: string, timeoutMs = CALL_TIMEOU
   };
 }
 
-/** The Hub's own words for a refused call: each error's location, message and next step. */
 export function refusalWords(answer: ToolAnswer): string {
   const errors = Array.isArray(answer.envelope?.errors) ? answer.envelope.errors.filter(isRecord) : [];
   if (!errors.length) return answer.text.split('\n')[0]!.slice(0, 600);
@@ -77,7 +59,6 @@ export function refusalWords(answer: ToolAnswer): string {
   }).join('；另：');
 }
 
-/** Standard input: the Hub token on the first line, the Plumb key on the second. */
 export async function readStdinLines(): Promise<string[]> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
@@ -85,7 +66,6 @@ export async function readStdinLines(): Promise<string[]> {
 }
 
 export type PlumbStatus = (url: string, key: string) => Promise<unknown>;
-/** The plumb skill's own client asked for status, as every Plumb tool of the pipeline reaches it. */
 export function plumbStatusVia(skillsRoot: string): PlumbStatus {
   return (url, key) => new Promise((done, fail) => {
     const tool = join(skillsRoot, 'plumb', 'tools', 'plumb.ts');
@@ -102,7 +82,6 @@ export function plumbStatusVia(skillsRoot: string): PlumbStatus {
   });
 }
 
-/** Ready when the judge says so and every model it serves is loaded and passed its self check. */
 export function plumbProblem(status: unknown): string | null {
   if (!isRecord(status)) return 'Plumb 状态答复不是对象';
   const models = isRecord(status.models_status) ? Object.values(status.models_status).filter(isRecord) : [];
@@ -112,7 +91,6 @@ export function plumbProblem(status: unknown): string | null {
   return `Plumb 判定服务没有就绪（${seen}）；下一步：唤醒 Plumb，等状态为 ready 后重跑`;
 }
 
-/** The version of a skill installed next to this one, from its pack.json; null when it is not installed. */
 function installedVersion(skillsRoot: string, pack: string): string | null {
   const file = join(skillsRoot, pack, 'pack.json');
   if (!existsSync(file)) return null;
@@ -123,7 +101,6 @@ export interface OpenOptions {
   subject: string; product: string; build: string; booking: string; version?: string;
   scope?: { words: string; cases: string[] }; exclude?: string[];
   contract?: string; inventory?: string; profile?: string;
-  /** A rework plan run reuses the recompose run already accepted: its id and its run record reference (rec:). */
   reuse?: { run: string; record: string };
 }
 export interface Opened { recomposeRun: string; recomposeRecord: string; planRun: string; planRecord: string | null; items: number }
@@ -131,7 +108,6 @@ export interface Opened { recomposeRun: string; recomposeRecord: string; planRun
 const subjectInput = (subject: string) => subject.startsWith('src:') ? { reference: subject } : { external: subject };
 const runOf = (answer: ToolAnswer) => isRecord(answer.envelope?.run) && typeof answer.envelope.run.run === 'string' ? answer.envelope.run as Record<string, unknown> : null;
 
-/** The checks and the two starts, in order; the first refusal ends it. */
 export async function openCompile(call: CallTool, options: OpenOptions, skillsRoot: string, plumb?: { url: string; key: string; status: PlumbStatus }): Promise<Opened> {
   const listed = await call('list_task_packs', {});
   if (listed.failed) throw new NotReady(`读不到 Hub 的任务包：${refusalWords(listed)}`);

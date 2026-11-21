@@ -160,7 +160,6 @@ describe('runtime environments', () => {
   });
 
   test('the interface gives the derived state beside the facts; members get the neutral answer', async () => {
-    // U5: /console/api/environments retired — the connections page carries the same facts; retired path is unavailable.
     const page = (await send('/console/connections?tab=environments', { headers: { cookie: await signIn(server.admin.token) } })).body;
     for (const [target, label] of [
       ['合成运行环境甲', uiLabelOf('environment_state', 'available' as EnvironmentState)],

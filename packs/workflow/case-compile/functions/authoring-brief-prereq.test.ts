@@ -1,5 +1,3 @@
-// Prerequisites in compile-brief@1 must be read from record.sources.states (real recompose shape),
-// not record.adjudication.states / record.states (wrong paths that silently yield none).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildCompileBrief, renderCompileBriefMd } from './authoring-brief.ts';
@@ -11,7 +9,6 @@ function emptyKnowledge(): BriefKnowledge {
   return { root: ROOT, nodes: new Map(), lines: new Map(), parameters: new Map() };
 }
 
-/** Synthetic shape matching real recomposition records (sources.states), not production case text. */
 function itemWithSourceStates(prerequisites: string[]) {
   return {
     id: 'synth-doc:case-1',
@@ -105,7 +102,6 @@ test('buildCompileBrief discloses when sources.states is missing instead of clai
           expectation_slots: [],
           ledgers: { adapted: [] },
           unknowns: [],
-          // Wrong legacy shape only — no sources.states
           adjudication: { states: [{ atom: 'a1', state: 'missing_prerequisite', prerequisites: ['旧路径前置'], reason: '不应再读' }] },
         },
       },
@@ -128,7 +124,6 @@ test('buildCompileBrief discloses when sources.states is missing instead of clai
   assert.doesNotMatch(JSON.stringify(brief!.materials.prerequisites), /旧路径前置/);
 });
 
-/** Shape of a settled user ruling once written into the recompose record (recompose/SKILL + submit-records). */
 test('buildCompileBrief lists user rulings from record.sources.states settled「使用者决定：」', () => {
   const ruling = '使用者决定：合成决定——保留原步骤，本条先不编';
   const item = {
@@ -161,7 +156,6 @@ test('buildCompileBrief lists user rulings from record.sources.states settled「
               },
             ],
           },
-          // Decoy: pack never writes this; must not be read for rulings.
           adjudication: {
             states: [{ atom: 'a1', state: 'settled', reason: '使用者决定：旧路径诱饵，不得出现在任务书' }],
           },
@@ -182,7 +176,6 @@ test('buildCompileBrief lists user rulings from record.sources.states settled「
   assert.equal(brief!.task.user_rulings[0]!.source, 'record.sources.states');
   assert.equal(brief!.task.user_rulings[0]!.target, 'a1');
   assert.equal(brief!.task.user_rulings[0]!.ruling, ruling);
-  // Decoy on the non-schema path must not leak into the brief payload.
   assert.doesNotMatch(JSON.stringify(brief!.task.user_rulings), /旧路径诱饵/);
 });
 

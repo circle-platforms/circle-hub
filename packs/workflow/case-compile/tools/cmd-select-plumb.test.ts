@@ -1,4 +1,3 @@
-// Unit tests for pre-write cmd-select-plumb (tournament choice <=25, no definition/state mixup, gate & HTTP handling).
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -16,7 +15,6 @@ let stubMode: 'pass' | 'review' | 'reject' | 'none' | 'service_down' | 'too_larg
 const seenRequests: Array<Record<string, unknown>> = [];
 const GATEWAY_MAX_PAIRS = 256;
 
-/** What the gateway charges a choice question on a model with a none threshold: its candidates, less the single none option. */
 function chargedPairs(question: { candidates?: Array<{ name: string }> }): number {
   const names = (question.candidates ?? []).map((c) => c.name);
   return names.length >= 2 && names.filter((n) => n === '都不是').length === 1 ? names.length - 1 : names.length;
@@ -46,7 +44,6 @@ const server = http.createServer((req, res) => {
     };
     seenRequests.push(body as unknown as Record<string, unknown>);
     if (stubMode === 'gateway_budget') {
-      // execute_judge: one pair budget for the whole request, spent by its questions in order.
       let remaining = GATEWAY_MAX_PAIRS;
       for (const q of Object.values(body.questions ?? {})) {
         const cost = chargedPairs(q);
@@ -185,7 +182,7 @@ async function setupRunDir(cmdCount = 35, stepCount = 1): Promise<string> {
 }
 
 test('cmd-select-plumb performs <=25 two-stage choice elimination and writes disclosed candidate file', async () => {
-  const dir = await setupRunDir(35); // 36 recalled candidates -> Stage 1 (24 + 12) + Stage 2
+  const dir = await setupRunDir(35);
   try {
     stubMode = 'pass';
     seenRequests.length = 0;
@@ -283,7 +280,7 @@ test('cmd-select-plumb handles review, strict-review, none, reject, and fail-clo
 });
 
 test('cmd-select-plumb sends no request that the gateway prices above its 256-pair budget when seven steps recall 40 commands each', async () => {
-  const dir = await setupRunDir(60, 7); // each step recalls 40 commands: chunks of 24 and 16, 14 questions and 280 pairs for stage 1
+  const dir = await setupRunDir(60, 7);
   try {
     stubMode = 'gateway_budget';
     seenRequests.length = 0;

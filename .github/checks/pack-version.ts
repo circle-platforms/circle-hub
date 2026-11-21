@@ -1,7 +1,3 @@
-// A published pack version is frozen at the baseline commit: its manifest digest and listed bytes cannot move while keeping
-// the same version. The baseline is the nearest ancestor commit with a `release/*` tag, or when none exists, the merge-base
-// with the default branch. Commits after that baseline with a new version are not compared against each other as long as the
-// final manifest and on-disk listed files match.
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -63,7 +59,6 @@ function shallowBoundaries(root: string): Set<string> | null {
   if (isShallow !== 'true') return null;
   const shallowGitPath = git(root, ['rev-parse', '--git-path', 'shallow'])?.trim();
   if (!shallowGitPath) throw new Error('git rev-parse --git-path shallow failed');
-  // Resolve relative to `root` so both main checkouts and git worktrees locate the shared shallow file.
   const shallowFile = resolve(root, shallowGitPath);
   if (!existsSync(shallowFile)) throw new Error('shallow repository has no shallow boundary file');
   const hashes = readFileSync(shallowFile, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -99,10 +94,6 @@ function defaultBranchRef(root: string, headRev: string): string {
   throw new Error('cannot determine published baseline: no release/* tag or default branch found');
 }
 
-/**
- * Nearest ancestor commit tagged `release/*` for `head`, falling back to merge-base with the default branch.
- * Fails closed across shallow boundaries that cut off tag discovery or hide closer merge ancestors.
- */
 export function publishedBaseline(root: string, head = 'HEAD'): string {
   const headRev = git(root, ['rev-parse', '--verify', `${head}^{commit}`])?.trim();
   if (!headRev) throw new Error(`cannot resolve commit ${head}`);
@@ -168,10 +159,6 @@ function onDiskMismatches(root: string, directory: string, files: readonly Liste
   return mismatched;
 }
 
-/**
- * Packs whose on-disk manifest/bytes diverge from the published baseline at the same version,
- * or whose manifest digest/listed-file checksums do not match disk.
- */
 export function versionReuseProblems(root: string): string[] {
   const listed = git(root, ['ls-files', '-z', '--', 'packs/**/pack.json']);
   if (listed === null) return ['git file list failed'];

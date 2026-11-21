@@ -65,7 +65,6 @@ test('baseline with release/* tag selects nearest ancestor release/* tag and ign
     assert.notEqual(publishedBaseline(root), c3);
     assert.deepEqual(versionReuseProblems(root), []);
 
-    // Adding a newer release/* tag in HEAD ancestry moves the baseline forward to that commit.
     gitIn(root, 'tag', 'release/2026-11-15');
     assert.equal(publishedBaseline(root), c3);
   } finally {
@@ -83,7 +82,6 @@ test('baseline without release/* tags falls back to merge-base with the default 
     const c1 = commitPack(originRepo, '1.0.0', 'one', 'Initial pack on main');
     gitIn(originRepo, 'tag', 'non-release-tag');
 
-    // Create a local branch before advancing origin/main so merge-base differs from both tips.
     gitIn(originRepo, 'branch', 'feature', c1);
     commitPack(originRepo, '1.0.1', 'main-advance', 'Advance main past branch point');
 
@@ -96,7 +94,6 @@ test('baseline without release/* tags falls back to merge-base with the default 
     assert.equal(publishedBaseline(localRepo), c1);
     assert.deepEqual(versionReuseProblems(localRepo), []);
 
-    // When local main is stale behind origin/main, fallback prefers the newer origin/main merge-base.
     gitIn(localRepo, 'branch', '-f', 'main', c1);
     const originTip = gitIn(originRepo, 'rev-parse', 'main');
     gitIn(localRepo, 'checkout', '-b', 'off-origin-tip', originTip);
@@ -135,13 +132,11 @@ test('editing content twice after baseline with a single version bump passes whe
     commitPack(root, '1.0.1', 'three', 'Second unpublished edit keeping same new version 1.0.1');
     assert.deepEqual(versionReuseProblems(root), []);
 
-    // Editing content further without updating pack.json checksums still fails even on an unpublished version.
     writeFileSync(join(root, 'packs/workflow/sample/SKILL.md'), 'four-unsigned');
     const unsignedProblems = versionReuseProblems(root);
     assert.equal(unsignedProblems.length, 1);
     assert.match(unsignedProblems[0], /manifest checksums do not match disk for SKILL\.md/);
 
-    // Once re-signed at the same unpublished version 1.0.1, it passes again.
     writePackFiles(root, '1.0.1', 'four-signed');
     assert.deepEqual(versionReuseProblems(root), []);
   } finally {
@@ -156,21 +151,18 @@ test('keeping baseline version with different content fails across tag, merge-ba
     commitPack(root, '1.0.0', 'one', 'Release 1.0.0', ' ');
     gitIn(root, 'tag', 'release/1.0.0');
 
-    // 1. Committed change after release/* tag keeping baseline version 1.0.0 (even with spaced key formatting).
     gitIn(root, 'checkout', '-b', 'reused-on-branch');
     commitPack(root, '1.0.0', 'two', 'Change content without bumping after release tag', ' ');
     let problems = versionReuseProblems(root);
     assert.equal(problems.length, 1);
     assert.match(problems[0], /packs\/workflow\/sample\/pack\.json: version 1\.0\.0 is unchanged since [0-9a-f]{12} but manifest digest, SKILL\.md changed/);
 
-    // 2. Bumping to 1.0.1 then reverting back to frozen baseline version 1.0.0 with new content also fails.
     commitPack(root, '1.0.1', 'two-bumped', 'Temporary bump');
     commitPack(root, '1.0.0', 'three-reverted-version', 'Revert version back to baseline 1.0.0');
     problems = versionReuseProblems(root);
     assert.equal(problems.length, 1);
     assert.match(problems[0], /version 1\.0\.0 is unchanged since [0-9a-f]{12} but manifest digest, SKILL\.md changed/);
 
-    // 3. Same-version file rename fails against baseline.
     gitIn(root, 'checkout', '-b', 'rename-from-base', 'release/1.0.0');
     const packDir = join(root, 'packs/workflow/sample');
     rmSync(join(packDir, 'SKILL.md'));
@@ -186,7 +178,6 @@ test('keeping baseline version with different content fails across tag, merge-ba
     assert.equal(problems.length, 1);
     assert.match(problems[0], /version 1\.0\.0 is unchanged since [0-9a-f]{12} but manifest digest, GUIDE\.md changed/);
 
-    // 4. Same-version modification against default-branch merge-base when no release/* tag is an ancestor.
     gitIn(root, 'checkout', '--orphan', 'untagged-main');
     gitIn(root, 'rm', '-rf', '.');
     commitPack(root, '2.0.0', 'base', 'Initial untagged main');
@@ -197,7 +188,6 @@ test('keeping baseline version with different content fails across tag, merge-ba
     assert.equal(problems.length, 1);
     assert.match(problems[0], /version 2\.0\.0 is unchanged since [0-9a-f]{12} but manifest digest, SKILL\.md changed/);
 
-    // 5. Dirty unstaged and staged listed-file edits on disk keeping baseline version fail.
     gitIn(root, 'checkout', 'main');
     writeFileSync(join(root, 'packs/workflow/sample/SKILL.md'), 'dirty-unstaged');
     assert.equal(versionReuseProblems(root).length, 1);
@@ -264,7 +254,6 @@ test('shallow clones fail closed across boundaries and pass when a release/* bas
     gitIn(src, 'tag', 'release/1.1.0');
     commitPack(src, '1.1.1', 'three', 'Post-release edit');
 
-    // depth=1 truncates before release/1.1.0 so baseline cannot be proven (main checkout and worktree both fail closed).
     cloneShallow(src, depth1, 1);
     const problems1 = versionReuseProblems(depth1);
     assert.equal(problems1.length, 1);
@@ -276,7 +265,6 @@ test('shallow clones fail closed across boundaries and pass when a release/* bas
     assert.equal(wtProblems.length, 1);
     assert.match(wtProblems[0], /shallow boundary/);
 
-    // depth=2 includes release/1.1.0 and every commit above it.
     cloneShallow(src, depth2, 2);
     assert.equal(publishedBaseline(depth2), releaseRev);
     assert.deepEqual(versionReuseProblems(depth2), []);

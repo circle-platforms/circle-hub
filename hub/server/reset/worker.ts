@@ -1,4 +1,3 @@
-// Reset is the only operation accepted by this worker; the parent CLI supplies its already-bound execution ports.
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, writeFile } from 'node:fs/promises';

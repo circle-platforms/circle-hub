@@ -68,15 +68,10 @@ export function withRevision(id: string, revision: string | null): string {
 
 const VIEW_ID_FIX = '照该输入槽说明里的写法逐字填视图标识：knowledge:<视图>:<产品>:<构建>?<参数>=<取值>；错误里点名的参数必须写上，取值不要自己编；改好后重新开始运行';
 
-/** The meta of a Hub record bound as an input (B03 R[4]): the same for a rec: binding at start_run and a result bound after the start. */
 function recordMeta(digest: string, record: { kind: string; schema: string; created_at: string }, pointer: string | undefined, source: string): Record<string, unknown> {
   return { record: digest, kind: record.kind, schema: record.schema, created_at: record.created_at, ...(pointer !== undefined ? { pointer } : {}), source };
 }
 
-/**
- * A whole Hub record as the workflow functions receive an input bound to it (B03 R[4]): its canonical JSON parsed by the core
- * parser for application/json, with the meta an explicit rec: binding gets. Nothing is stored. Null when no parser reads it.
- */
 export async function recordInput(ctx: EngineContext, slot: string, digest: string, record: { kind: string; schema: string; provenance: string; created_at: string; body: unknown }): Promise<BoundInput | null> {
   const bytes = recordBytes(record, undefined);
   if (bytes === null) return null;
@@ -98,7 +93,6 @@ export async function bindInputs(
   variables?:VariableSnapshot,
   unversioned?: ExternalReadContext['unversioned'],
   feeding?:import('../../knowledge/feeding.ts').FeedingScope&{feeding_offset?:ExternalReadContext['feeding_offset']},
-  /** Slots bound after the start (W06 R[7]): start_run froze only their run, so a required one counts as given. */
   late: ReadonlySet<string> = new Set(),
 ): Promise<BoundSource[]> {
   const { artifacts, store } = ctx.deps.records;

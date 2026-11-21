@@ -1,12 +1,6 @@
-// The workflow's refresh function (workflow.json refresh, ItemRefreshInput -> ItemRefreshOutput): at every evaluation and every run
-// export the Hub resolves the latest accepted result of the recompose run bound after the start (inputs.recomposition_result by run id)
-// and calls this once; it lays each case's own admitted record over its frozen item (SubjectItem.late), or says why it is not admitted
-// and, when the case only waits for its own record to be accepted, what it waits for. Pure and deterministic: the Hub digests the output
-// into locks.late.refresh and a replay recomputes it from the recorded reference.
 import { lateRecomposition, type LateMarker } from './recomposition.ts';
 import { isRecord } from './text.ts';
 
-/** The inputs of the run this function reads (workflow.json refresh.reads): the frozen recompose run record. */
 const RUN_SLOT = 'recomposition_run';
 
 function markerOf(fields: Record<string, unknown>): LateMarker | null {
@@ -30,7 +24,6 @@ export function refreshItems(input: unknown): { items: Array<{ id: string; late:
     const marker = markerOf(fields);
     if (!marker) continue;
     const entry = late.find((row) => row.slot === marker.slot);
-    // A late slot the Hub did not resolve at all is no result yet, with the Hub's own words when it gave any.
     const resolved = entry === undefined
       ? { run: marker.run, input: null, missing: `Hub 这次没有给出槽 ${marker.slot} 的晚绑定结果` }
       : { run: typeof entry.run === 'string' ? entry.run : marker.run, input: isRecord(entry.input) ? entry.input : null, ...(typeof entry.missing === 'string' && entry.missing.trim() ? { missing: entry.missing } : {}) };

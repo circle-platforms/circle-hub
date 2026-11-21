@@ -1,11 +1,6 @@
 import {dot} from './ui.ts';
-import {technical,technicalCode,facts,actionLink,evidence,tooltip} from './presentation.ts';
+import {technical,technicalCode,facts,evidence,tooltip} from './presentation.ts';
 // 连接 (the design canvas's Connections board): the Circles connected with a token, the business systems the Hub reads
-// (resources, administrators only: the catalog gives others none) and the runtime environments dispatch jobs go to.
-// Members see readiness for their assigned targets; administrators also see registration and occupancy. The Hub only
-// reads business systems; a write route is never opened here. Enabling, disabling and re-authenticating a system or an
-// environment are commands for the administrator's Circle (proposal decision 6 of 2026-10-31); connecting a business
-// system is one of the console's four operations.
 import { ENVIRONMENT_STATE, axisUiLabel, isEnvironment, uiLabelOf, type EnvironmentState } from '../../../contracts/generated/vocabulary.ts';
 import type { TokenInfo } from '../../records/api.ts';
 import type { ExecutorView } from '../api.ts';
@@ -18,7 +13,7 @@ import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { readsText, systemReads } from './trial.ts';
 import { packSources } from './pack-sources.ts';
 import { loadReadinessReports, readinessUnknownNotice } from './environment-readiness.ts';
-import { box, button, callout, card, chip, commandLink, commandModal, duration, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
+import { box, button, card, chip, commandLink, commandModal, duration, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
 import { count, errorLine, segments, postForm } from './components.ts';
 import { field } from './presentation.ts';
 import { byId, shownVersion } from './packs.ts';
@@ -58,10 +53,8 @@ export function clientInspector(item: ConnectedClient): Html {
 
 const shortJob = (job: string): string => job.slice(0, 12);
 
-/** Boss 04:30 — occupied after assignment revoke; not 「未知」. */
 export const NO_ASSIGNMENT_LABEL = '已无分配';
 
-/** Staged environment-assignment policy (Boss 15:20 #2): same wording wherever such assignments appear. */
 export const ENVIRONMENT_ASSIGNMENT_PREVIEW =
   '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断。下面列出的测试环境分配只是预览，不代表现在的许可。';
 
@@ -75,21 +68,15 @@ export function environmentAssignmentPreviewNotice(enforced: boolean | undefined
 
 type AssignmentFlags = { assigned?: boolean; can_use?: boolean; canUse?: boolean };
 
-/** Duck-typed Codex/MemberEnvironments flags on an executor row when the projection carries them. */
 export function environmentLacksAssignment(flags: AssignmentFlags): boolean {
   return flags.assigned === false || flags.can_use === false || flags.canUse === false;
 }
 
-/** Occupancy from the dispatch journal (jobs holding the target), not a lease-key inventory. */
 export function environmentIsOccupied(view: ExecutorView): boolean {
   const holding = view.state?.holding;
   return view.state?.known.occupancy === true && Array.isArray(holding) && holding.length > 0;
 }
 
-/**
- * Held lease keys that belong to this executor's declared resources (exact match via leases.view).
- * null when the lease port is absent or the read fails — the dialog then keeps a manual placeholder.
- */
 export async function heldLeaseKeysForEnvironment(ctx: PageContext, view: ExecutorView): Promise<string[] | null> {
   const leases = ctx.deps.leases;
   if (leases === undefined) return null;
@@ -103,7 +90,6 @@ export async function heldLeaseKeysForEnvironment(ctx: PageContext, view: Execut
   }
 }
 
-/** One held booking on a test environment, for the unassign confirmation (Boss 15:02). */
 export type HeldOccupancy = {
   key: string;
   environment: string;
@@ -112,10 +98,6 @@ export type HeldOccupancy = {
   holderName: string;
 };
 
-/**
- * Held leases on this executor's resources by the given holders (account or team members).
- * null when the lease port is absent or the read fails — the confirmation stays honest and still allows unassign.
- */
 export async function heldOccupancyForEnvironment(
   ctx: PageContext,
   view: ExecutorView,
@@ -150,10 +132,6 @@ export async function heldOccupancyForEnvironment(
   }
 }
 
-/**
- * Boss 15:02 — confirmation fields for reclaiming an assignment: list occupied 测试环境 + since, with force-release checkboxes.
- * Checkboxes post as `force_release` (newline-joined when several); manage runs lease-release after unassign.
- */
 export function unassignOccupancyFields(occupancy: HeldOccupancy[] | null): Html {
   if (occupancy === null) {
     return html`<p class="ch-meta" data-unassign-occupancy="unknown">当前占用暂不可读；撤回后预订仍留在持有人名下，可稍后在连接页强制释放。</p>`;
@@ -168,10 +146,6 @@ export function noAssignmentMark(flags: AssignmentFlags): Html {
   return environmentLacksAssignment(flags) ? chip(NO_ASSIGNMENT_LABEL, 'unchecked') : html``;
 }
 
-/**
- * N3: last environment-check projection from Codex's unified gate (optional on EnvironmentFacts).
- * Field absent → 尚无核对; null → 未知 (read failed); object → result + time. Never treat latest dispatch as a check.
- */
 export type EnvironmentLastCheck = {
   at: string;
   items: Array<{ name: string; ok: boolean | null; detail?: string; next_action?: string }>;
@@ -189,7 +163,6 @@ function checkPresentation(check: EnvironmentLastCheck): { text: string; tone: T
   return { text: '已确认', tone: 'pass' };
 }
 
-/** Cell for the environments table: time + three-word status; missing projection stays honest. */
 export function environmentCheckCell(view: ExecutorView): Html {
   const check = environmentLastCheck(view);
   if (check === undefined) return html`<span class="ch-meta">尚无核对</span>`;
@@ -200,7 +173,6 @@ export function environmentCheckCell(view: ExecutorView): Html {
   return html`${when(check.at)}<div class="ch-meta">${chip(text, tone)} · ${note}</div>`;
 }
 
-/** Inspector block listing each check item once Codex projects them. */
 export function environmentCheckFacts(view: ExecutorView): Array<[string, unknown]> {
   const check = environmentLastCheck(view);
   if (check === undefined) return [['最近核对', '尚无核对']];
@@ -262,7 +234,6 @@ function systemState(resource: ResourceListing): { text: string; tone: Tone; dot
   return resource.enabled ? { text: '启用', tone: 'pass', dot: 'ok' } : { text: '已停用', tone: 'unchecked', dot: 'idle' };
 }
 
-/** Group registered executors by their declared target (Boss 03:45 #3); permission unit remains the executor. */
 function executorsByTarget(executors: readonly ExecutorView[]): Array<{ target: string; rows: ExecutorView[] }> {
   const order: string[] = [];
   const map = new Map<string, ExecutorView[]>();
@@ -278,7 +249,6 @@ function executorsByTarget(executors: readonly ExecutorView[]): Array<{ target: 
   return order.map((target) => ({ target, rows: map.get(target)! }));
 }
 
-/** One assign form for several executors under the same target (team or account). */
 function targetAssignForm(
   csrf: string,
   target: string,
@@ -305,7 +275,6 @@ function targetAssignForm(
   });
 }
 
-/** Registration forms for environments (N2). Upload → src: reference; do not claim isolation until Codex guards merge. */
 async function environmentAdminForms(ctx: PageContext, executors: readonly ExecutorView[] | null): Promise<Html> {
   const csrf = ctx.csrf ?? '';
   const teamsApi = (ctx.deps.records as { teams?: { list(by: PageContext['principal']): Promise<Array<{ id: string; name: string; deleted_at: string | null }>> } }).teams;
@@ -344,7 +313,7 @@ async function environmentAdminForms(ctx: PageContext, executors: readonly Execu
         rows.map((row) => {
           const state = environmentState(row);
           let gateway = row.endpoint;
-          try { gateway = new URL(gateway).origin; } catch { /* keep */ }
+          try { gateway = new URL(gateway).origin; } catch { }
           const update = postForm({
             action: '/console/admin/do/executor-update',
             csrf,
@@ -368,7 +337,6 @@ async function environmentAdminForms(ctx: PageContext, executors: readonly Execu
   return html`<div class="ch-stack" data-environment-admin>${docPut}${executorAdd}${grouped}</div>`;
 }
 
-/** Who may use a business system: 全体 / 团队名 / 尚未分配 — never expand to member ids (findings N2 §6). */
 export async function resourceAudienceText(ctx: PageContext, resourceId: string): Promise<string> {
   if (!ctx.admin) return '未知';
   const of = await ctx.deps.records.authorizations.teamsOf(ctx.principal, 'resource', resourceId);
@@ -383,7 +351,6 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const now=(ctx.deps.now?.()??new Date()).getTime(),circles=await circlesOf(ctx),resources=ctx.admin?await ctx.deps.resources.list(ctx.principal):[];
  let executors:ExecutorView[]|null=null,executorsFailed=false;
  if(ctx.admin&&ctx.deps.dispatch){try{executors=await ctx.deps.dispatch.executors(ctx.principal);}catch{executorsFailed=true;}}
- // Assigned targets for members come from the capability port; administrators group registered executors by target.
  let memberTargets:string[]=[];
  let environmentAssignmentsEnforced:boolean|undefined;
  {
@@ -402,7 +369,6 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  if([systemId,circleId,environmentId].filter(Boolean).length>1||systemId&&!chosen||circleId&&!circle||environmentId&&!environment)return neutralPage(ctx);
  const recent=circles.filter(circle=>circle.token.last_used_at!==null&&now-Date.parse(circle.token.last_used_at)<DAY).length;
  // Decision 151, step 7: one list a tab instead of four lists down one page. A selected system, client or environment opens
- // its own tab. Members see clients and readiness for assigned runtime environments; the other lists stay administrator-only.
  const asked=ctx.url.searchParams.get('tab');
  const tab:ConnectionTab=!ctx.admin
   ?(asked==='environments'||environment?'environments':'clients')
@@ -410,7 +376,6 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const listings=ctx.admin?await ctx.deps.packs.list(ctx.principal):[];
  const systemPacks=new Map([...byId(listings).values()].map(shownVersion).filter(pack=>pack.kind==='system').map(pack=>[pack.id,pack]));
  // A system names the access it was configured from by that access's title; its identifier stays in the pane's technical details.
- // System packs have no /console/packs page (K3); title only — management stays on 连接 / operations.
  const systemPackTitle=(resource:ResourceListing)=>{const pack=systemPacks.get(resource.system_pack.split('@')[0]);return pack?pack.title:'未找到';};
  const counts:Partial<Record<ConnectionTab,number>>={systems:resources.length,packs:systemPacks.size,clients:circles.length,environments:ctx.admin?(executors?.length??readinessTargets.length):readinessTargets.length};
  const memberTabs=([{href:href('/console/connections'),label:CONNECTION_TAB_LABEL.clients,count:counts.clients,current:tab==='clients'},{href:href('/console/connections',{tab:'environments'}),label:CONNECTION_TAB_LABEL.environments,count:counts.environments,current:tab==='environments'}] as const);
@@ -425,7 +390,7 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const period=reads===null?undefined:[...reads.values()][0];
  const systemFacts=html`<p class="ch-meta" data-tab-facts>已启用 ${count(resources.filter(resource=>resource.enabled).length)} 个，共 ${count(resources.length)} 个${period?html` · 统计时段 ${when(period.since)} 至 ${when(period.until)}`:''}</p>`;
  const orderedExecutors=executors===null?null:executorsByTarget(executors).flatMap((group)=>group.rows);
- const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}const flags=executor as AssignmentFlags;const revoked=environmentAssignmentsEnforced&&environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 执行结果未确认':''}</div>`:'尚无执行':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
+ const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{}const flags=executor as AssignmentFlags;const revoked=environmentAssignmentsEnforced&&environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 执行结果未确认':''}</div>`:'尚无执行':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
  const environmentTable=!ctx.admin?html`<p class="ch-meta">运行环境仅管理员可见；已分配的测试环境在「我能做的事」。${link('/console/me','打开')}</p>`:executors===null?html`<p class="ch-meta">${executorsFailed?'运行环境列表暂不可用。':'这个 Hub 进程未接入在运行环境上执行；运行环境在运行 Hub 的服务器上以 circle-hub executor 登记。'}</p>`:table(['测试环境（按目标）','执行器','执行器版本','网关','资源','最近核对','最近执行','响应时间','状态'],environmentRows,{title:'尚无运行环境',text:'在运行 Hub 的服务器上以 circle-hub executor 登记后列在这里。'},undefined,{selected:orderedExecutors!.findIndex(executor=>executor.id===environmentId),hrefs:orderedExecutors!.map(executor=>href('/console/connections',{environment:executor.id}))});
  const readinessSection=html`<div class="ch-stack" data-environment-readiness>${readinessTargets.length?readinessCards.map(card=>card.body):ctx.deps.dispatch?.readiness?html`<p class="ch-meta">${ctx.admin?'尚无运行环境目标。':'尚无已分配的运行环境；请管理员分配后重读。'}</p>`:readinessUnknownNotice()}${!ctx.deps.dispatch?.readiness&&readinessTargets.length?html`<p class="ch-meta">上列目标的只读报告尚未接线；页面不作许可判断。</p>`:''}</div>`;
  const dialogs:CommandDialog[]=[];let inspector:Html;

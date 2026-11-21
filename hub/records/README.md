@@ -1288,7 +1288,7 @@ by the calling boundary; the helper does not authenticate an account or grant a 
 policy. Its ports require a current account, authorized run headers, source and contribution permissions, and the existing
 request, result and submission checks. Dedicated space, memory and personal-pack records remain behind their own readers.
 
-The two existing `runOfRecord` argument shapes are supported. Wrapped submission arguments must carry
+`runOfRecord` takes a stored record. Wrapped submission arguments must carry
 `submission-received@1`; a canonical top-level run takes precedence. The shared modules are exported through `api.ts`; server/runs adapter changes require interface coordination. Until those callers adopt `mayReadRecord`, their existing implementations have not been replaced. No system account or environment variable is introduced.
 
 

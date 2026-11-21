@@ -1,8 +1,3 @@
-// The replay of recorded validations through the real assembly of the Hub, end to end on synthetic data: a Hub with a synthetic
-// pack runs a submission (accepted, and one that is not); a bundle and a recorded export are written from its database; the
-// replay loads the bundle into a scratch database as of each validation and calls the same submitResult the tool calls. The
-// replay of the faithful kind must come out the same, a changed record must be told as changed, a damaged bundle must be
-// refused, and a candidate pack that is stricter must change what it should. One PostgreSQL cluster serves both sides.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -42,7 +37,6 @@ const MAP = {
   version: '1.4.43',
 };
 
-/** The recorded export folder of a run, written from the bundle exactly as the real export writes it from a database. */
 async function writeRecordedExport(bundleDirectory: string, out: string, runId: string): Promise<void> {
   const bundle = await openBundle(bundleDirectory);
   const lines = ['seq\tkind\trun\tpack\tat\tbytes\tsha256'];
@@ -61,7 +55,6 @@ async function writeRecordedExport(bundleDirectory: string, out: string, runId: 
   await writeFile(join(out, 'index.tsv'), `${lines.join('\n')}\n`);
 }
 
-/** Rewrites one recorded file (and its index line) after a change, as a changed record would look. */
 async function changeRecorded(dir: string, run: string, kind: string, change: (body: Record<string, unknown>) => void, which: 'first' | 'last' = 'first'): Promise<void> {
   const index = (await readFile(join(dir, 'index.tsv'), 'utf8')).split('\n');
   const matching = index.flatMap((line, i) => (line.split('\t')[1] === kind ? [i] : []));
@@ -82,8 +75,6 @@ before(async () => {
   if (skip !== false) return;
   postgres = await startPostgres();
   scratch = await mkdtemp(join(tmpdir(), 'circle-hub-replay-test-'));
-  // A real Hub over synthetic packs: a product pack whose knowledge is synced from a stub build site (a real tree, composition,
-  // sources and builds in the database), and a workflow pack the run below is of.
   const repository = join(scratch, 'repository');
   await writeTestPacks(repository);
   hub = await createTestHub({ postgres, repositoryRoot: repository, buildSite: syncSiteFiles() });
@@ -101,7 +92,6 @@ before(async () => {
     const startedRun = started.structuredContent.run as { run: string; items: Array<{ id: string }> };
     run = startedRun.run;
     const [first, second] = startedRun.items.map((item) => item.id);
-    // 1: a code the pack does not know (not accepted); 2: a valid one (accepted); 3: the same as 2 again (the stored result is answered).
     const bad = await client.call('submit_result', { run, model: 'scripted-replay-1', items: [{ item: first, handling: 'handled', slots: { notes: [{ text: '一条意见', code: 'no-such-code' }] } }, { item: second, handling: 'handled', slots: { notes: [] } }] });
     assert.equal(bad.structuredContent.acceptance, 'not_accepted');
     const good = await client.call('submit_result', { run, model: 'scripted-replay-1', items: [{ item: first, handling: 'handled', slots: { notes: [{ text: '缺少边界值的用例', code: 'gap' }] } }, { item: second, handling: 'handled', slots: { notes: [] } }] });
@@ -117,11 +107,9 @@ before(async () => {
   await exportBundle({ database: hub.records.database, objectsRoot: join(hub.records.dataDir, 'objects'), out: bundleDir, cutoff, runs: [run], source: 'synthetic' });
   exportDir = join(scratch, 'export');
   await writeRecordedExport(bundleDir, exportDir, run);
-  // A candidate tree: the same pack id at a higher version whose first requirement asks for two expected results of every case.
   const stricter = reviewPack('1.0.1');
   const titles = stricter.files['tables/titles.json'] as { rules: Array<{ fields: Array<{ path: string; minItems?: number }> }> };
   titles.rules[0].fields.find((field) => field.path === '/fields/expected')!.minItems = 2;
-  // Its samples say the same: a case with two expected results is a good one.
   const good = stricter.files['samples/positive/titles-good.json'] as { subject: { items: Array<{ fields: { expected: string[] } }> } };
   good.subject.items[0].fields.expected = ['结果', '结果二'];
   const bad = stricter.files['samples/negative/titles-bad.json'] as { subject: { items: Array<{ fields: { expected: string[] } }> } };

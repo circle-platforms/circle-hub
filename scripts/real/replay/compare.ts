@@ -10,18 +10,12 @@ import { hookIdentityEnvironment, hookRegistration, interpretCircle118, mcpToolN
 export interface GuardCase {
   session: string;
   call: string;
-  /** The JSON the hook gets on standard input, as Circle 1.17.0 builds it. `tool_input` is the recorded arguments, or those with `variables` applied. */
   input: Record<string, unknown>;
-  /** The guard entry, a name in the case's files. */
   entry: string;
-  /** The file the candidate replaces; the entry when absent. */
   replace?: string;
-  /** false: the case runs its files as they are even when a candidate is given (another guard decided it, so there is nothing to replace). */
   candidate?: boolean;
-  /** The files of this case, or the name of a shared set in `sets` (exactly one of the two). */
   files?: Record<string, GuardFile>;
   set?: string;
-  /** What the history recorded for this call. `evidence` says how well: `record` is the recorded denial, `log` a hooks log line bound by order. */
   baseline: {
     decision: 'allow' | 'deny' | 'ask' | 'none';
     reason: string;
@@ -31,15 +25,12 @@ export interface GuardCase {
 }
 export interface GuardContextInput {
   schema: 'circle-replay-guard-context@1';
-  /** Plain variables Circle expanded in tool arguments before the hook saw them (`%NAME%` becomes the value). */
   variables?: Record<string, string>;
-  /** An absolute directory prefix of the recorded session. The guard runs where that prefix is replaced by a private one of equal length. */
   mirror?: string;
   sets?: Record<string, Record<string, GuardFile>>;
   cases: GuardCase[];
 }
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-/** Circle's variable expansion: `%NAME%` for each declared name, the longest names first. Secrets are not expanded for hooks and are not handled here. */
 export function expandVariables(value: unknown, variables: Record<string, string>): unknown {
   const names = Object.keys(variables).filter(name => variables[name].length > 0).sort((a, b) => b.length - a.length);
   if (!names.length)
@@ -63,7 +54,6 @@ export function validateGuardContext(value: GuardContextInput, b: Bundle): void 
     seen.add(key);
     requireFact(c.provenance === 'scripted' || c.provenance === 'operator', '守卫上下文缺少来源声明');
     requireFact(isRecord(c.input) && c.input.tool_name === p.call.name, '守卫上下文改变了模型工具参数');
-    // The hook saw the recorded arguments or those after variable expansion; nothing else may stand in for what the model wrote.
     requireFact([p.call.args, expandVariables(p.call.args, variables)].some(args => canonical(args) === canonical(c.input.tool_input)), '守卫上下文改变了模型工具参数');
     requireFact(c.input.session_id === undefined || c.input.session_id === c.session, '守卫上下文的会话与来源调用不符');
     requireFact((c.files === undefined) !== (c.set === undefined), '守卫上下文必须给出 files 或 set 之一');
@@ -77,13 +67,10 @@ export function validateGuardContext(value: GuardContextInput, b: Bundle): void 
   }
 }
 
-/** The candidate: one file that replaces one file of the context, or a folder of files that replaces the guard's own folder. */
 export interface Candidate {
   mode: 'file' | 'folder';
-  /** A file: its name and bytes, as given. A folder: the relative names of its files. */
   files: Map<string, Buffer>;
 }
-/** Every regular file under a directory, by relative name; a symbolic link is refused. */
 export function readTree(root: string, into = new Map<string, Buffer>()): Map<string, Buffer> {
   const walk = (dir: string, prefix: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -100,7 +87,6 @@ export function readTree(root: string, into = new Map<string, Buffer>()): Map<st
   walk(root, '');
   return into;
 }
-/** Reads the candidate's paths: a single regular file is a file; several paths, or a directory, are a folder of files (no symbolic links). */
 export function readCandidate(paths: string[]): Candidate {
   requireFact(paths.length > 0, '候选路径缺失');
   const files = new Map<string, Buffer>();
@@ -123,34 +109,21 @@ export function readCandidate(paths: string[]): Candidate {
 export interface CompareOptions {
   bundle: string;
   app: string;
-  /** The candidate guard: a file, or several files and directories (a folder of files). Without it the context's own files run as recorded: the baseline check. */
   guard?: string | string[];
-  /** A file candidate: the context file it replaces, for every case it applies to. Without it each case names its own (`replace`, else its entry). */
   replace?: string;
-  /** A folder candidate: its entry, a name in the folder. The entry of each case by default. */
   candidateEntry?: string;
-  /** A file that replaces the settings.json beside the guard's folder (in the folder's parent), for the candidate's runs. */
   candidateSettings?: string;
-  /** A directory that replaces the skills beside the guard's folder (`skills` in the folder's parent), for the candidate's runs: a guard that reads declarations the installed skills carry comes with the skills it was written for. */
   candidateSkills?: string;
-  /** How the candidate is spoken to and heard: Circle 1.17.0's before_tool (default) or Circle 1.18.0-local.2's PreToolUse. */
   protocol?: '1.17.0' | '1.18';
-  /** 1.18: the MCP server whose tools 1.17.0 named `<server>_<tool>` and 1.18 names `mcp__<server>__<tool>`. */
   mcpServer?: string;
-  /** 1.18: the `permission_mode` the hook is told. */
   permissionMode?: string;
-  /** 1.18: what a failure of the hook does, when the candidate's settings do not say. */
   onFailure?: 'block' | 'continue';
-  /** Compare what the candidate decided with what was recorded by kind (deny, ask, go ahead) and not by the words of its reason. */
   decisionOnly?: boolean;
-  /** Run the candidate on the cases marked `candidate: false` too. */
   allCases?: boolean;
   out: string;
   timeoutMs?: number;
   guardTimeoutMs?: number;
-  /** Judge every call instead of stopping at the first difference or the first call that cannot be judged. */
   survey?: boolean;
-  /** A short real directory for the equal-length mirror prefix (default: /tmp). */
   mirrorBase?: string;
 }
 export type DecisionKind = 'deny' | 'ask' | 'go';
@@ -160,30 +133,22 @@ export interface CallRecord {
   session: string;
   call: string;
   tool: string;
-  /** The name the candidate was given for the tool, when the protocol renamed it. */
   candidateTool?: string;
-  /** `candidate`: the candidate ran. `reference`: the case's own files ran (no candidate, or a case the candidate does not apply to). */
   role: 'candidate' | 'reference';
   evidence: string;
   expectedDecision: string;
   outcome: 'match' | 'mismatch' | 'unknown';
-  /** Why the call could not be judged. */
   cause?: string;
   actualDecision?: string;
-  /** Set when the candidate is compared by the kind of its decision. */
   expectedKind?: DecisionKind;
   actualKind?: DecisionKind;
-  /** The guard crashed or printed no JSON. */
   failed?: boolean;
-  /** Same kind of decision, other words (a candidate compared by decision only). */
   reasonChanged?: boolean;
   rewritten?: boolean;
-  /** The answer used the fields of the format before `hookSpecificOutput`; Circle still counts it and says so once. */
   legacy?: boolean;
   expectedReasonSha256: string;
   actualReasonSha256?: string;
   inputSha256: string;
-  /** Paths the guard tried to read that its sandbox does not hold. */
   outsideReads: number;
   outsideReadsSha256?: string;
 }
@@ -192,18 +157,14 @@ export interface CompareReport {
   status: string;
   mode: 'candidate' | 'baseline';
   survey: boolean;
-  /** Guard runs that gave a decision which could be set against the recorded one. */
   compared: number;
-  /** Guard runs started. */
   attempted: number;
   matched: number;
   mismatched: number;
   unknown: number;
-  /** Matches whose guard also tried to read outside its sandbox. */
   matchedWithOutsideReads: number;
   roles: Record<string, Record<string, number>>;
   evidence: Record<string, Record<string, number>>;
-  /** Only when they are not zero or false: a candidate compared by the kind of its decision, matches in other words, answers that rewrote the call, hooks that failed. */
   decisionOnly?: boolean;
   reasonChanged?: number;
   rewritten?: number;
@@ -229,7 +190,6 @@ const tally = (into: Record<string, Record<string, number>>, key: string, outcom
   row[outcome]++;
 };
 const asBase64 = (bytes: Buffer): GuardFile => ({ base64: bytes.toString('base64') });
-/** The agent type Circle tells a hook for a call made in a subagent: the `subagent_type` of the task call that started it. */
 function agentTypeOf(b: Bundle, session: string): string {
   const task: ToolPair | undefined = [...b.pairs.values()].find(p => p.child === session);
   return String(task?.call.args.subagent_type || 'general-purpose');
@@ -297,7 +257,6 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
           requireFact(candidate.files.has(options.candidateEntry ?? posix.basename(c.entry)), '候选文件夹里没有守卫入口', { entry: options.candidateEntry ?? posix.basename(c.entry) });
         }
       }
-      // What a failure of the candidate's hook does (1.18): the candidate's own settings say, else the option, else Circle's own default (carry on).
       let hook: HookRegistration & { source: string } = { name: 'candidate', onFailure: options.onFailure ?? 'block', source: options.onFailure ? 'option' : 'default' };
       if (protocol === '1.18' && candidate) {
         const registered = settingsBytes ? hookRegistration(settingsBytes.toString('utf8'), options.candidateEntry ?? posix.basename(context.cases[0]?.entry ?? 'guard')) : undefined;
@@ -309,15 +268,12 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
         report.candidate!.entry = options.candidateEntry ?? '(entry of each case)';
       const mcpServer = options.mcpServer ?? 'hub';
       const permissionMode = options.permissionMode ?? 'bypassPermissions';
-      // Only calls the Harness put to the hook are judged: a call refused before that (invalid arguments) has no decision in the history.
       const order = (baseline.coverage.hookOrder ?? baseline.coverage.invocationOrder) as { session: string; call: string }[];
       if (!order.length)
         throw new ReplayError('没有任何调用交给过守卫，无法比较', 2);
       const timeout = options.guardTimeoutMs ?? 10000;
-      /** A file as a context holds it: text when it is text, base64 otherwise. */
       const asFile = (bytes: Buffer): GuardFile => { const text = bytes.toString('utf8'); return Buffer.from(text, 'utf8').equals(bytes) ? text : asBase64(bytes); };
       const candidateSkillFiles: Record<string, GuardFile> | undefined = skillFiles && Object.fromEntries([...skillFiles].map(([name, bytes]) => [name, asFile(bytes)]));
-      /** What a case's guard runs as, before its files are put together: which file is replaced and which one starts it. */
       const shape = (c: GuardCase, candidateRuns: boolean) => {
         if (!candidateRuns || !candidate)
           return { entry: c.entry, name: '' };
@@ -325,7 +281,6 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
           return { entry: c.entry, name: options.replace ?? c.replace ?? c.entry };
         return { entry: `${posix.dirname(c.entry)}/${options.candidateEntry ?? posix.basename(c.entry)}`, name: 'folder' };
       };
-      /** The files and mapped text files a case's guard runs with. */
       const prepare = (c: GuardCase, candidateRuns: boolean) => {
         const base = filesOf(c);
         if (!candidateRuns || !candidate)
@@ -378,7 +333,6 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
         mkdirSync(evidence, { mode: 0o700 });
         const { sandbox, entry, shared } = sandboxFor(c, candidateRuns);
         try {
-          // 1.18 is spoken to in its own fields (hook_event_name, agent_id, tool_use_id) and 1.17.0's tool names are renamed.
           let given: Record<string, unknown> = c.input;
           if (use118) {
             const candidateTool = mcpToolName(pair.call.name, mcpServer);
@@ -407,7 +361,6 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
           const same = byKind ? record.actualKind === record.expectedKind : run.decision === c.baseline.decision && reason === c.baseline.reason;
           if (same && byKind && record.expectedKind === 'deny' && reason !== c.baseline.reason)
             record.reasonChanged = true;
-          // A difference found after the guard tried to read what the context lacks says nothing about the guard.
           record.outcome = same ? 'match' : run.outsideReads.length ? 'unknown' : 'mismatch';
           if (!same && run.outsideReads.length)
             record.cause = 'outside-read';

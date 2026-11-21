@@ -1,6 +1,3 @@
-// A field the schema does not give a node is refused in the Hub's own words, and then (here, where the writer sees it first) with
-// the closed set of the node's fields, every place the schema declares that name, and what the other plan mode writes instead.
-// Round 36: a block carried precondition_source, a field of a flat step; the refusal said "不认识的字段" twelve times.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {slotProblems} from '../../../../hub/runs/engine/slots.ts';

@@ -300,7 +300,6 @@ describe('runCheck with a pack function', () => {
     assert.deepEqual(outcomes[1].data, {});
     assert.equal(outcomes[2].data, undefined);
     assert.ok(outcomes.every((o) => !Object.hasOwn(o.data ?? {}, 'sandbox')));
-    // The Hub's own mark of a real sandbox failure is not touched.
     const [threw] = await runCheck({ id: 'throws', function: { module: 'throws.ts' }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
     assert.equal(threw.data?.sandbox, 'FUNCTION_THREW');
   });

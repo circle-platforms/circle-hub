@@ -96,7 +96,6 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
   let client: McpClient;
 
   let inventoryExecutors: string[] = [];
-  // Booking fixtures declare environments and grants explicitly; they do not disable the production assignment guard.
   async function declareBookingEnvironments(manifest: { beds: Array<{name:string;devices:Array<{name:string}>}> }, document: string): Promise<string[]> {
     const digest = (await bed.hub.hub.docs.show(document))!.sha256;
     const out: string[] = [];

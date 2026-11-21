@@ -1,11 +1,9 @@
-// The names offered when something is asked for by a name the Hub does not have: a workflow, a named document.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { boundedDistance, suggestNames, LISTED_NAMES, type NameCandidate } from './names.ts';
 
 const named = (...ids: string[]): NameCandidate[] => ids.map((id) => ({ key: id, shown: `${id}@1.0.0` }));
 
-/** The plain dynamic-programming distance, to check the bounded one against. */
 function levenshtein(left: string, right: string): number {
   let previous = Array.from({ length: right.length + 1 }, (_, column) => column);
   for (let row = 1; row <= left.length; row++) {

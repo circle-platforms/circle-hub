@@ -1,11 +1,8 @@
-
-// Reader-facing text; the original tool data stays in structuredContent.
-// Reader-facing text; the original tool data stays in structuredContent.
 import { createHash } from 'node:crypto';
 import type { DispatchNote } from '../dispatch/api.ts';
 import { viewIdExample } from '../knowledge/api.ts';
 import { z } from 'zod';
-import { CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, axisLabel, labelOf, isReason, isKnowledgeEntryStatus, type KnowledgeEntryStatus, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
+import { CALL_ERROR_CATEGORY, CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, labelOf, isReason, isKnowledgeEntryStatus, type KnowledgeEntryStatus, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import { ItemProjection, type PackSummary, type RequirementSummary, type RunSummary, type SlotSchema } from '../../contracts/src/run.ts';
@@ -13,7 +10,7 @@ import { Submission } from '../../contracts/src/submission.ts';
 import { StartRunInput, type GetNodesOutput, type ListTaskPacksOutput, type ResolveReferenceOutput, type StartRunOutput, type SubmitResultOutput, type UploadFileOutput } from '../../contracts/src/tools.ts';
 import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, partitionCountsOf, isUnknownTerminal, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { oneLine, type Entry, type Omission } from './budget.ts';
-import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymbol, userClaimText, userVerdict, userReason, userNextStep, USER_DECIDER, type Labels, type LayerTerminal } from './claims.ts';
+import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymbol, userClaimText, userVerdict, userReason, userNextStep, USER_DECIDER, USER_REASON, type Labels, type LayerTerminal } from './claims.ts';
 import { callErrorFact, callErrorNext } from './call-error-category.ts';
 import { SOURCE_UNKNOWN_CODES, callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
 import { fixByRole, proseByRole, type CallerRole } from './fix-by-role.ts';
@@ -30,7 +27,6 @@ type KnowledgeNode = NonNullable<NodesOut['nodes']>[number];
 type ResolveOut = z.infer<typeof ResolveReferenceOutput>;
 type SubmitOut = z.infer<typeof SubmitResultOutput>;
 
-/** Frozen source details available to the display layer. */
 export interface TextContext {
   /** list_task_packs: the exact filters and absolute offset needed to continue the same list. */
   packList?: { offset: number; kind?: string; packId?: string; contextUnread?: boolean };
@@ -47,7 +43,6 @@ export interface TextContext {
   unavailable?: readonly { external: string; role: SourceRole }[];
   /** start_run: what the pack's expected-sources function reported, its failure included (further evidence gaps). */
   gaps?: readonly { code: string; message: string }[];
-  /** Caller role and account name for D3 next-step wording; omit or non-admin → member projection. */
   caller?: { role: CallerRole; name?: string };
 }
 
@@ -70,6 +65,8 @@ const EXTERNAL_TYPE = /^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*$/;
 const required = (yes: boolean): string => (yes ? '必填' : '可选');
 /** How to read a field shortened with a 全文 marker. */
 const WHOLE_MORE = '读全文：用 get_nodes 读各处“全文”后面的引用';
+const CATEGORY_HEAD = new RegExp(`^(${CALL_ERROR_CATEGORY.map((code) => labelOf('call_error_category', code)).join('|')})：`);
+const CATEGORY_PROSE = new RegExp(`${CATEGORY_HEAD.source}(.+)$`, 's');
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -188,14 +185,12 @@ function unknownError(error: ProtocolError): boolean {
   return isReason(error.code) || Object.hasOwn(SOURCE_UNKNOWN_CODES, error.code);
 }
 
-/** Ensure a clause ends with a sentence stop (owner 13:05: `<类别词>：<事实>。<下一步>。`). */
 function asSentence(text: string): string {
   const trimmed = text.trim();
   if (trimmed.length === 0) return '';
   return /[。！？]$/.test(trimmed) ? trimmed : `${trimmed}。`;
 }
 
-/** Codes whose fact/next always go through D3 helpers (table-driven next; no keyword rewrite). */
 const D3_FACT_REWRITE = new Set([
   'SOURCE_NOT_PERMITTED',
   'LEASE_UNAVAILABLE',
@@ -214,21 +209,15 @@ const D3_FACT_REWRITE = new Set([
   'RUN_ABANDONED',
 ]);
 
-/**
- * Call-refusal line: category word, fact, next step; then optional independent appendages in fixed order:
- * 规则见… → 这是一小时内第 N 次… → 还可以重交 N 次。
- * When the fact already ends with the next-step sentence, do not print it twice (Boss 06:48 / round-29).
- */
 function callErrorLine(category: string, message: string, fix: string | undefined, roundsLeft?: number): string {
   const { fact, next, rounds } = callErrorParts(category, message, fix, roundsLeft);
   return `${category}：${fact}${next}${rounds}`;
 }
 
-/** The sentences of one call refusal: the fact, the next step (empty when the fact already says it) and the rounds left. */
 interface CallErrorParts { category: string; fact: string; next: string; rounds: string }
 
 function callErrorParts(category: string, message: string, fix: string | undefined, roundsLeft?: number): CallErrorParts {
-  const factBody = message.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, '').trim();
+  const factBody = message.replace(CATEGORY_HEAD, '').trim();
   const fact = asSentence(factBody);
   const nextRaw = fix && fix.trim().length > 0 ? fix.trim() : '由使用者核对输入资料';
   const nextSentence = asSentence(nextRaw);
@@ -238,12 +227,6 @@ function callErrorParts(category: string, message: string, fix: string | undefin
   return { category, fact, next, rounds };
 }
 
-/**
- * Refusals in the order they came. Refusals of one category that give the same next step and the same rounds left say them
- * once, after their facts, at the place of the first of them, and every fact stays on a line of its own; a refusal alone keeps
- * the one-sentence form, and a line already written stays as it is. Nothing is merged by what its words say, only by the
- * next step being the same sentence.
- */
 function callErrorLines(rows: readonly (CallErrorParts | string)[]): string[] {
   const keyOf = (row: CallErrorParts): string => `${row.category}\0${row.next}\0${row.rounds}`;
   const shared = new Map<string, CallErrorParts[]>();
@@ -262,10 +245,6 @@ function callErrorLines(rows: readonly (CallErrorParts | string)[]): string[] {
   return lines;
 }
 
-/**
- * Pack-marked program-determined error (not missing input). Field name reserved until agy lands:
- * claim.statement.data.determination === 'error' (Boss 06:48 b).
- */
 function packMarkedDeterminedError(claim: Claim): boolean {
   const data = claim.statement.data;
   return isRecord(data) && data.determination === 'error';
@@ -276,7 +255,6 @@ function requirementDeterminedError(requirement: RequirementResult): boolean {
   return requirement.claims.some((claim) => claim.statement.verdict === 'refute' || packMarkedDeterminedError(claim));
 }
 
-/** SOURCE_UNAVAILABLE keeps the unknown string; subject is「当前账户」(Boss afternoon). */
 function conclusionErrorLine(error: ProtocolError, message: string, fix: string | undefined, options: { rounds?: boolean } = {}): string {
   const withRounds = options.rounds !== false;
   const presentation = errorPresentationOf(error.code);
@@ -290,7 +268,6 @@ function conclusionErrorLine(error: ProtocolError, message: string, fix: string 
       '决定者程序',
     ].filter((part) => part !== null).join('；');
   }
-  // A call error without a declared category is not evidence of a business refutation.
   const status = unknownError(error) ? ['状态未知', isReason(error.code) ? `原因${labelOf('reason', error.code)}` : '原因缺资料'] : [];
   const next = fix && fix.trim().length > 0 ? fix.trim() : '缺少来源声明的修正指引，需补齐这次调用的下一步处理资料';
   return [
@@ -301,10 +278,6 @@ function conclusionErrorLine(error: ProtocolError, message: string, fix: string 
   ].filter((part) => part !== null).join('；');
 }
 
-/**
- * Group item-level submit errors: one block per original case; identical fact lines merge with（×N）only when
- * verbatim equal (transitional; Boss 06:48 a). Shared「还可以重交」「决定者程序」once per case.
- */
 function submitErrorBlocks(
   errors: readonly ProtocolError[],
   context: TextContext,
@@ -363,7 +336,7 @@ function submitErrorBlocks(
   for (const group of groups.values()) {
     const byFact = new Map<string, { row: Row; count: number }>();
     for (const row of group.rows) {
-      const factKey = row.fact; // verbatim only (Boss 06:48 a)
+      const factKey = row.fact;
       const seen = byFact.get(factKey);
       if (seen) seen.count += 1;
       else byFact.set(factKey, { row, count: 1 });
@@ -374,13 +347,8 @@ function submitErrorBlocks(
       lines.push(`${group.label}：`);
       for (const { row, count } of unique) {
         const mark = count > 1 ? `（×${count}）` : '';
-        if (row.category !== null) {
-          const factOnly = row.fact.startsWith(group.label) ? row.fact.slice(group.label.length).replace(/^，/, '') : row.fact;
-          lines.push(`- ${row.category}：${factOnly}${mark}`);
-        } else {
-          const factOnly = row.fact.startsWith(group.label) ? row.fact.slice(group.label.length).replace(/^，/, '') : row.fact;
-          lines.push(`- ${factOnly}${mark}`);
-        }
+        const factOnly = row.fact.startsWith(group.label) ? row.fact.slice(group.label.length).replace(/^，/, '') : row.fact;
+        lines.push(`- ${row.category !== null ? `${row.category}：` : ''}${factOnly}${mark}`);
       }
       const nextSteps = [...new Set(group.rows.map(row => row.fix?.trim()).filter((fix): fix is string => Boolean(fix)))];
       if (nextSteps.length === 0) nextSteps.push('缺少来源声明的下一步处理资料');
@@ -391,7 +359,6 @@ function submitErrorBlocks(
       continue;
     }
 
-    // Single error, no case header: keep the historical one-line shapes.
     for (const { row, count } of unique) {
       const mark = count > 1 ? `（×${count}）` : '';
       if (row.category !== null) {
@@ -411,10 +378,8 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
   const role = callerRole(context);
   const account = callerName(context);
   const allUnknown = v.errors.length > 0 && v.errors.every(unknownError);
-  // Call refusals use the five-category sentence form: no 「这次核对有错误。」 lead (Boss 13:05).
   const lead = allUnknown ? '资料尚未取得。' : null;
   const lines = v.errors.map((error): CallErrorParts | string => {
-    // Preserve D5 escalation already merged into structured fix (do not let fixByRole drop it).
     const escalated = isEscalatedError(error);
     const fix = escalated ? error.fix : fixByRole(error.code, role, error.fix, account);
     const presentation = errorPresentationOf(error.code);
@@ -425,7 +390,7 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
     if (category !== null) {
       const fact = D3_FACT_REWRITE.has(error.code)
         ? callErrorFact(error.code, error.message)
-        : error.message.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, '');
+        : error.message.replace(CATEGORY_HEAD, '');
       const next = escalated
         ? fix
         : D3_FACT_REWRITE.has(error.code)
@@ -491,15 +456,9 @@ export function startRunExample(pack: PackSummary): string {
   return JSON.stringify(StartRunInput.safeParse(call).success ? call : { pack: pack.pack, inputs: {} });
 }
 
-/** Tool-facing clock: month-day, minute, Hub zone (Boss 20:53). Console keeps browser-local formatting. */
-function localMinute(value: string): string {
-  return toolLocalMinute(value);
-}
-
 function listText(v: ListOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v, context);
   const index = v.index ?? v.packs;
-  // Boss 03:45 #4: when Codex projects unassigned_workflows_count, disclose that Hub has more packs than this member can use.
   const capabilities = (v as ListOut & {
     member_capabilities?: {
       workflows?: readonly unknown[];
@@ -510,14 +469,13 @@ function listText(v: ListOut, context: TextContext): string {
   }).member_capabilities;
   const unassigned = capabilities?.unassigned_workflows_count;
   const role = callerRole(context);
-  // The bundled skill is every account's, so the list is never empty: an account with nothing assigned still reads its next step.
   const assigned = capabilities?.workflows?.length === 0 && capabilities.skills?.length === 0 ? 0 : index.length;
   const head = typeof unassigned === 'number' && unassigned > 0
     ? proseByRole(role, 'unassigned_packs', { usable: index.length, unassigned, assigned })
     : packListHead(index.length, undefined, assigned);
   const lines = [head, ...index.map(pack => pack.title)];
   for (const observation of v.context?.observations ?? []) {
-    lines.push(`测试环境 ${observation.label}，${observation.build === null ? '构建未知' : `构建 ${observation.build}`}；读取时间 ${localMinute(observation.observed_at)}`);
+    lines.push(`测试环境 ${observation.label}，${observation.build === null ? '构建未知' : `构建 ${observation.build}`}；读取时间 ${toolLocalMinute(observation.observed_at)}`);
   }
   if (context.packList?.contextUnread) lines.push(proseByRole(role, 'context_unread'));
   for (const pack of v.packs) {
@@ -527,7 +485,6 @@ function listText(v: ListOut, context: TextContext): string {
     lines.push(...pack.parameters.map(parameter => `${parameter.description}，${required(parameter.required)}`));
     if (pack.local_tools) lines.push(`已提供 ${pack.local_tools.count} 个本地工具。`);
   }
-  // 15:20: same preview fact as the console banner while environment assignment is not enforced.
   if (capabilities?.environmentAccess?.enforced === false) lines.push(ENVIRONMENT_ASSIGNMENT_PREVIEW);
   return lines.join('\n');
 }
@@ -646,10 +603,7 @@ function messageOf(r: RequirementResult): string | null {
   return claim === undefined ? null : claim.statement.text;
 }
 
-/** Text of an entry whatever its form. */
 const entryLines = (entry: Entry): readonly string[] => (typeof entry === 'string' ? [entry] : Array.isArray(entry) ? (entry as readonly string[]) : (entry as { lines: readonly string[] }).lines);
-
-// ---------------------------------------------------------------- start_run
 
 const visibly = (line: string): string => line.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, control => `\\x${control.charCodeAt(0).toString(16).padStart(2, '0')}`);
 
@@ -659,14 +613,6 @@ function itemSummary(item: ItemProjection): string {
   return item.summary || '等待核对';
 }
 
-/** Slot placeholder written by submit-records; not a conclusion of its own when a check already spoke. */
-const SLOT_JUDGMENT_PLACEHOLDER = '模型的重组判断';
-
-/**
- * Reader label for one original case. Prefer fields.title when the pack wrote it
- * (recompose project.ts → intent text; patch text-next-pack-part for agy/cc-next).
- * Until that lands: case_id present but title absent →「标题未知」(do not echo case_id/label twice).
- */
 function caseName(item: ItemProjection | undefined, label: string): string {
   if (item && isRecord(item.fields.review_counts)) return label;
   const id = item?.fields.autoid ?? item?.fields.case_id;
@@ -679,20 +625,8 @@ function caseName(item: ItemProjection | undefined, label: string): string {
   return `原始用例 ${typeof id === 'string' || typeof id === 'number' ? `${id} ` : ''}${title}`;
 }
 
-/** Unique claim statements in order; drop the slot placeholder when a real check statement is present. */
 function conclusionStatements(texts: readonly string[]): string[] {
-  const unique: string[] = [];
-  for (const text of texts) {
-    if (!text || unique.includes(text)) continue;
-    unique.push(text);
-  }
-  const withoutPlaceholder = unique.filter((text) => text !== SLOT_JUDGMENT_PLACEHOLDER);
-  return withoutPlaceholder.length > 0 ? withoutPlaceholder : unique;
-}
-
-function awaitingExcel(item: ItemResult): boolean {
-  if (item.requirements.some((requirement) => requirement.requirement === 'workbook_verified' && requirement.status !== 'satisfied')) return true;
-  return false;
+  return [...new Set(texts.filter((text) => text.length > 0))];
 }
 
 function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
@@ -706,22 +640,17 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
   const unknown = !determined && (partial || pending || item.requirements.length === 0 || claims.some(claim => claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || userVerdict(claim.statement.verdict) === null) || item.requirements.some(requirement => requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete')));
   const status = determined ? (model ? '未确认' : '已确认') : unknown ? '未知' : model ? '未确认' : '已确认';
   const judgment = determined ? '错误' : unknown ? null : '正确';
-  const excel = unknown && !determined && awaitingExcel(item);
   const problems = item.requirements.filter(requirement => requirement.status !== 'satisfied' || requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete') || requirement.claims.some(packMarkedDeterminedError));
   const layers = problems.flatMap(requirement => requirement.layers.filter(layer => layer.terminal !== 'pass' && layer.terminal !== 'judgment'));
-  const recordGap = problems.some((requirement) => requirement.requirement === 'record');
-  // Prefer concrete missing/refute facts for record (and similar) gaps; Excel/in-flight keep their fixed statements.
-  const gapFacts = excel ? [] : [...new Set(problems.flatMap((requirement) => {
+  const gapFacts = [...new Set(problems.flatMap((requirement) => {
     const fromLayers = requirement.layers.flatMap((layer) => typeof layer.missing === 'string' ? [layer.missing] : []);
     const fromClaims = requirement.claims
       .filter((claim) => claim.statement.verdict === 'unknown' || claim.statement.verdict === 'refute' || packMarkedDeterminedError(claim))
       .map((claim) => claim.statement.text);
     return [...fromLayers, ...fromClaims];
   }).filter((text) => text.length > 0))];
-  // In progress: waiting on the next step / device output — keep 状态未知, do not force a reason word (Boss 20:53).
-  // Concrete layer reasons (not_covered, missing_input, check_error, …) stay on the reason-word path.
   const concreteGap = layers.some((layer) => (layer.reason !== undefined && layer.reason !== 'awaiting_step') || layer.attribution !== undefined);
-  const inFlight = unknown && !determined && !excel && !partial && !concreteGap
+  const inFlight = unknown && !determined && !partial && !concreteGap
     && (pending || item.requirements.length === 0 || layers.some((layer) => layer.reason === 'awaiting_step' || layer.terminal === 'incomplete' || isUnknownTerminal(layer)));
   const statement = determined
     ? conclusionStatements([
@@ -730,31 +659,27 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
     ]).join('；') || '核对发现错误'
     : inFlight
       ? '上机验证还在进行，还没有设备输出'
-      : excel
-        ? '还没有确认结论'
-        : unknown
-          ? (gapFacts.length > 0 ? gapFacts.join('；') : '还没有确认结论')
-          : conclusionStatements(claims.map(claim => claim.statement.text)).join('；') || '已按要求核对';
+      : unknown
+        ? (gapFacts.length > 0 ? gapFacts.join('；') : '还没有确认结论')
+        : conclusionStatements(claims.map(claim => claim.statement.text)).join('；') || '已按要求核对';
+  const statedNext = statement.includes('下一步');
   const parts = [`${caseName(original, item.label)}：${statement}`, `状态${status}`];
   if (judgment !== null) parts.push(`判断${judgment}`);
-  if (excel) {
-    parts.push('下一步由模型生成并上传自动化用例 Excel 后重新交给 Hub 检查');
-  } else if (inFlight) {
+  if (inFlight) {
     parts.push('下一步由模型在上机验证结束后读取设备输出');
   } else if (determined) {
-    parts.push(`原因${[...new Set(layers.map(userReason))].join('、') || '还没查清'}`);
-    parts.push(recordGap ? '下一步由模型改正重组记录后重交' : '下一步由模型改正');
+    parts.push(`原因${[...new Set(layers.map(userReason))].join('、') || USER_REASON.unattributed}`);
+    if (!statedNext) parts.push('下一步由模型改正');
   } else if (unknown) {
-    parts.push(`原因${partial ? '缺资料' : [...new Set(layers.map(userReason))].join('、') || '还没查清'}`);
-    parts.push(recordGap
-      ? '下一步由模型改正重组记录后重交'
-      : `下一步${partial ? '使用者补齐资料后重新交给 Hub 检查' : [...new Set(layers.map(userNextStep))].join('；') || '使用者核对资料后重新交给 Hub 检查'}`);
+    parts.push(`原因${partial ? USER_REASON.data_gap : [...new Set(layers.map(userReason))].join('、') || USER_REASON.unattributed}`);
+    const next = partial ? ['使用者补齐资料后重新交给 Hub 检查'] : [...new Set(layers.filter((layer) => layer.exit !== undefined || !statedNext).map(userNextStep))];
+    if (next.length > 0) parts.push(`下一步${next.join('；')}`);
+    else if (!statedNext) parts.push('下一步使用者核对资料后重新交给 Hub 检查');
   }
-  // Evidence must not restate quote texts already shown as「引文 … 与所引片段逐字一致」.
   const quotes = [...new Set(claims.flatMap(claim => claim.resolutions?.filter(value => !value.references.includes(value.text)).map(value => value.text) ?? []))].filter((text) => !statement.includes(text));
   if (quotes.length) parts.push(`证据${quotes.join('；')}`);
   if (item.replaced_criteria?.length) parts.push(...item.replaced_criteria.map(change => `原始用例的要求由${change.old}改为${change.new}`));
-  parts.push(`决定者${[...new Set(claims.map(claim => USER_DECIDER[claim.warrant.producer]))].join('、') || '程序'}`);
+  parts.push(`决定者${[...new Set(claims.map(claim => USER_DECIDER[claim.warrant.producer]))].join('、') || USER_DECIDER.function}`);
   return parts.join('；');
 }
 
@@ -779,13 +704,12 @@ function startText(v: StartOut, context: TextContext): string {
   }
   for (const observation of run.device_observations ?? []) {
     const data = observation.statement.data;
-    // Booking fact for devices that take no commands: one plain line, no verification conclusion chain (Boss 20:53).
     if (data?.kind === 'no_command_devices' && typeof observation.statement.text === 'string') {
       lines.push(observation.statement.text);
       continue;
     }
     if (typeof data?.label === 'string') {
-      const text = `测试环境 ${data.label}，${typeof data.build === 'string' ? `构建 ${data.build}` : '构建未知'}${observation.qualifier.collected_at ? `，读取时间 ${localMinute(observation.qualifier.collected_at)}` : ''}`;
+      const text = `测试环境 ${data.label}，${typeof data.build === 'string' ? `构建 ${data.build}` : '构建未知'}${observation.qualifier.collected_at ? `，读取时间 ${toolLocalMinute(observation.qualifier.collected_at)}` : ''}`;
       lines.push(claimLine({ ...observation, statement: { ...observation.statement, text } }));
     } else lines.push(claimLine(observation));
   }
@@ -795,7 +719,6 @@ function startText(v: StartOut, context: TextContext): string {
     const words = claim.statement.data?.help;
     if (typeof words === 'string') lines.push('设备输出', ...words.split(/\r\n|\r|\n/).map(visibly));
   }
-  // What a device printed for a read-only line the run had sent (decision 181): the claim, then the words as received.
   for (const claim of run.device_reads ?? []) {
     lines.push(claimLine(claim));
     const words = claim.statement.data?.output;
@@ -804,7 +727,6 @@ function startText(v: StartOut, context: TextContext): string {
   return lines.join('\n');
 }
 
-/** A node: its line, all its entries (the definitions to cite), its children and the related references the service gave. */
 function nodeEntry(node: KnowledgeNode, _root: string, role: CallerRole): Entry {
   const lines = [node.name, ...node.entries.map(entry => entry.statement)];
   for (const entry of node.entries) {
@@ -847,12 +769,11 @@ const ENTRY_QUALIFICATION = {
   superseded: '资料已有新版本，以下是当时保存的原文。\n',
 } as const satisfies Record<KnowledgeEntryStatus, string>;
 
-/** Call diagnostics in a reader's words: when, which tool, how it ended and how long it took. Identifiers stay in the answer. */
 function observationText(result: NonNullable<NodesOut['observability']>): string {
   if ('calls' in result) {
     return [
       `调用记录 ${result.calls.length} 条。`,
-      ...result.calls.map(call => `${localMinute(call.at)}，${oneLine(call.tool)}，${labelOf('call_result', call.call_result)}，耗时 ${call.duration_ms} 毫秒` +
+      ...result.calls.map(call => `${toolLocalMinute(call.at)}，${oneLine(call.tool)}，${labelOf('call_result', call.call_result)}，耗时 ${call.duration_ms} 毫秒` +
         (call.acceptance ? `，回执${labelOf('acceptance', call.acceptance)}` : '')),
       ...(result.next ? ['还有调用记录未列出，请继续读取。'] : []),
     ].join('\n');
@@ -880,7 +801,7 @@ function nodesText(v: NodesOut, context: TextContext): string {
   if (v.matches !== undefined) return [`找到 ${v.matches.length} 份相关资料，仅作参考。`, ...v.matches.map(hit => hit.statement), ...(v.warnings ?? []).map(warning => `${warning.message}；下一步${warning.fix ?? '使用者核对资料'}`)].join('\n');
   if (v.call_status) {
     const status = v.call_status;
-    return [`正在处理 ${status.active_total} 次，已结束 ${status.completed.length} 次。`, ...(status.active.map(call => `开始时间 ${localMinute(call.started_at)}`)), ...(status.missing ? [`状态未知；原因缺资料；${status.missing}`] : []), `下一步${status.next_action}`].join('\n');
+    return [`正在处理 ${status.active_total} 次，已结束 ${status.completed.length} 次。`, ...(status.active.map(call => `开始时间 ${toolLocalMinute(call.started_at)}`)), ...(status.missing ? [`状态未知；原因缺资料；${status.missing}`] : []), `下一步${status.next_action}`].join('\n');
   }
   if (v.content !== undefined) {
     const content = v.content, status = content.structure?.entry_status;
@@ -895,7 +816,6 @@ function nodesText(v: NodesOut, context: TextContext): string {
   return ['手册和命令树', ...nodes.flatMap(node => entryLines(nodeEntry(node, v.root ?? '', role))), ...(v.next ? ['还有资料未列出，请继续读取。'] : [])].join('\n');
 }
 
-/** Whether UTF-16 offset `at` of `text` falls between the two halves of a surrogate pair (no page starts there). */
 function insidePair(text: string, at: number): boolean {
   if (at <= 0 || at >= text.length) return false;
   const before = text.charCodeAt(at - 1);
@@ -903,7 +823,6 @@ function insidePair(text: string, at: number): boolean {
   return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
 }
 
-/** The content a reference points at, whole from the reader's position (a cursor an earlier answer gave), else from the start. */
 function contentText(c: Content, _trace: string, context: TextContext): string {
   if (c.text === undefined) {
     if (c.read_tier === 'retain_only') {
@@ -934,8 +853,6 @@ function contentText(c: Content, _trace: string, context: TextContext): string {
   return `${notice}原文（${c.text.length} 个字符）：\n${[lines[start.line].slice(start.offset), ...lines.slice(start.line + 1)].join('\n')}`;
 }
 
-// ---------------------------------------------------------------- resolve_reference
-
 function resolveText(v: ResolveOut, context: TextContext): string {
   if (v.call_result === 'error' || v.resolution === undefined) return errorText(v, context);
   const state = v.resolution === 'resolved' ? '已确认' : '未知';
@@ -944,83 +861,12 @@ function resolveText(v: ResolveOut, context: TextContext): string {
   return lines.join('\n');
 }
 
-// ---------------------------------------------------------------- submit_result
-
-/** Five call-error category heads (owner 2026-11-14): no status/judgment/decider chain after these. */
-const CALL_ERROR_HEAD = /^(参数无效|无权限|不存在|已被占用|暂时不可用)：/;
-
-/**
- * Member next steps aligned with formatReleaseRefusal (hub/dispatch/refusal-text.ts).
- * Used when accepted/reasons dropped the self-serve path and left only「联系管理员…」.
- */
-const RELEASE_IDENTITY_MEMBER_NEXT =
-  '先确认预订的是哪个测试环境，用它对应的运行环境配置重新做脚本编写和脚本合并，再发起上机验证；预订和配置都没错时，请管理员核对执行器的声明';
-const RELEASE_RESULT_MEMBER_NEXT =
-  '按脚本合并返回的错误逐条改正，脚本合并正确后再发起上机验证';
-const RELEASE_GENERIC_MEMBER_NEXT =
-  '能在自动化用例 Excel 或预订上改的，改正后再发起上机验证；其余请管理员按放行条件逐条对照处理';
-const RELEASE_IDENTITY_ADMIN_NEXT =
-  '按执行器声明的测试环境和清单重新做脚本编写和脚本合并，再发起上机验证；或者登记一个和这次核对一致的执行器';
-const RELEASE_RESULT_ADMIN_NEXT =
-  '按脚本合并返回的错误逐条改正，脚本合并正确后再发起上机验证';
-const RELEASE_GENERIC_ADMIN_NEXT =
-  '按上面的错误补齐后，再发起上机验证';
-
-function noteBlob(note: DispatchNote): string {
-  return [note.text, note.next_action ?? '', ...(note.missing_facts ?? []).flatMap((row) => [row.fact, row.next_action])].join('\0');
+function noteNext(note: DispatchNote): string | undefined {
+  return note.missing_facts?.length ? [...new Set(note.missing_facts.map((row) => row.next_action))].join('；') : note.next_action ?? undefined;
 }
 
-function releaseIdentityNote(blob: string): boolean {
-  return /目标或清单摘要与当前执行器声明不一致|核验目标与清单等于执行器声明/.test(blob);
-}
-
-function releaseResultNote(blob: string): boolean {
-  return /核验结果没有未消除错误|脚本合并的结果里还有错误/.test(blob);
-}
-
-/** True when the note is a release-gate refusal that lost the self-serve next step. */
-function releaseRefusalNeedsNext(blob: string, message: string): boolean {
-  if (/先确认预订|按脚本合并返回的错误逐条改正|现在可以做：/.test(message)) return false;
-  return releaseIdentityNote(blob) || releaseResultNote(blob)
-    || /联系管理员核对当前环境的清单绑定|联系管理员查看具体放行条件|上机前的放行条件尚未满足|放行条件/.test(blob);
-}
-
-function releaseNextByRole(note: DispatchNote, role: CallerRole): string | null {
-  const blob = noteBlob(note);
-  // Already carries formatReleaseRefusal self-serve / diagnosed next — leave it.
-  if (/先确认预订|按脚本合并返回的错误逐条改正|现在可以做：/.test(note.text)) return null;
-  if (!releaseRefusalNeedsNext(blob, note.text) && !releaseIdentityNote(blob) && !releaseResultNote(blob)) return null;
-  if (releaseIdentityNote(blob)) {
-    if (role === 'admin') {
-      const explain = note.executor
-        ? `。逐条对照：circle-hub job explain-release --executor ${note.executor}`
-        : '';
-      // 【问题】DispatchNote 无 run id，拼不出完整的 explain-release --run …；有 executor 时仍给管理命令半句。
-      return RELEASE_IDENTITY_ADMIN_NEXT + explain;
-    }
-    return RELEASE_IDENTITY_MEMBER_NEXT;
-  }
-  if (releaseResultNote(blob)) {
-    if (role === 'admin') {
-      const explain = note.executor
-        ? `。逐条对照：circle-hub job explain-release --executor ${note.executor}`
-        : '';
-      return RELEASE_RESULT_ADMIN_NEXT + explain;
-    }
-    return RELEASE_RESULT_MEMBER_NEXT;
-  }
-  if (role === 'admin') {
-    const explain = note.executor
-      ? `。逐条对照：circle-hub job explain-release --executor ${note.executor}`
-      : '';
-    return RELEASE_GENERIC_ADMIN_NEXT + explain;
-  }
-  return RELEASE_GENERIC_MEMBER_NEXT;
-}
-
-/** Split `<类别词>：<事实>。<下一步>。` (formatCallError / callErrorLine); last sentence is the next step when ≥2. */
 function splitCallErrorProse(message: string): { category: string; fact: string; next: string } | null {
-  const matched = message.trim().match(/^(参数无效|无权限|不存在|已被占用|暂时不可用)：(.+)$/s);
+  const matched = message.trim().match(CATEGORY_PROSE);
   if (!matched) return null;
   const body = matched[2].trim();
   const sentences = body.match(/[^。！？]+[。！？]/gu);
@@ -1032,17 +878,10 @@ function splitCallErrorProse(message: string): { category: string; fact: string;
   return { category: matched[1], fact: body.replace(/[。！？]$/u, '').trim(), next: '' };
 }
 
-/**
- * Decision 155 puts three dispatch outcomes in `dispatch[].text`. Reader wording is usually owned by hub/dispatch;
- * this exit still (Boss 15:02): (1) never appends a conclusion chain onto five-category call-error prose;
- * (2) restores formatReleaseRefusal member/admin next steps when accepted/reasons dropped them;
- * (3) does not let the booking rewrite cover an existing occupied/absent/expired category sentence.
- */
-function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
+function dispatchNoteLine(note: DispatchNote): string {
   const message = note.text;
-  const callError = CALL_ERROR_HEAD.test(message.trim());
+  const callError = CATEGORY_HEAD.test(message.trim());
 
-  // Booking rewrite: only when the note is not already a five-category call-error sentence (E1 must not wipe 已被占用/不存在).
   if (
     !callError
     && note.submission_verified === true
@@ -1052,28 +891,19 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
   ) {
     const count = note.booking.declared_device_count;
     const devices = typeof count === 'number' && Number.isInteger(count) && count >= 0 ? `共 ${count} 台设备` : '设备数量尚未核对';
-    return `脚本合并正确（已确认）；本次没有上机验证，因为这次运行没有带着测试环境的预订；测试环境：${note.booking.target}（${devices}）；下一步：先预订整个测试环境，再从脚本编写重开并核验合并。`;
+    return `提交已核对正确（已确认）；本次没有上机验证，因为这次运行没有带着测试环境的预订；测试环境：${note.booking.target}（${devices}）；下一步：先预订整个测试环境，再带着预订重新开始运行。`;
   }
-  // a job that was not sent, was refused by the target or is proven not executed has no device return; its
-  // `result` reference is only the pre-dispatch check conclusion, so it is never "设备输出已取回".
   const notRun = note.outcome === 'not_dispatched' || note.outcome === 'target_rejected' || note.outcome === 'proven_not_executed';
   if (note.result !== undefined && !notRun) {
     return '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。';
   }
 
-  // Five-category call errors: keep `<类别词>：<事实>。<下一步>。` — no 状态/判断/决定者 chain.
   if (callError) {
     const parts = splitCallErrorProse(message);
     if (parts === null) return message;
-    const better = releaseNextByRole(note, role);
-    const next = better
-      ?? (parts.next.length > 0 ? parts.next : undefined)
-      ?? (note.missing_facts?.length ? [...new Set(note.missing_facts.map((row) => row.next_action))].join('；') : note.next_action)
-      ?? undefined;
-    return callErrorLine(parts.category, parts.fact, next);
+    return callErrorLine(parts.category, parts.fact, parts.next.length > 0 ? parts.next : noteNext(note));
   }
 
-  // In-progress dispatch notes already say what is waiting and who acts next — no reason-word chain (Boss 20:53).
   if (
     message.includes('下一步由模型稍后把这次脚本合并原样再交一次，读取进展')
     || /已按工作流的规定自动开始上机验证/.test(message)
@@ -1083,14 +913,10 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
     return message;
   }
 
-  // A job still in progress has no outcome of its own yet: the provisional "not dispatched" of an administrator's note
-  // ("作业 <id>：进行中（阶段 …）；未发出") is not a refusal. Round 41: the lead of an administrator account read "上机验证未发出：
-  // 未取得可读取的未派发原因" for a job that was running on the devices, and stopped to ask for `circle-hub job status`.
   if (/：进行中（阶段 [^）]+）/.test(message) && !note.missing_facts?.length && note.frozen !== true) {
-    return '上机验证还在进行；下一步由模型稍后把这次脚本合并原样再交一次，读取进展';
+    return '上机验证还在进行；下一步由模型稍后把这次提交原样再交一次，读取进展';
   }
 
-  // Owner 2026-11-12: unanswered stays 「上机验证结果未知」. Match the dispatch package's reader wording.
   if (message.includes('上机验证结果未知') || /不要重交，也不要另开/.test(message)) {
     return `${message}；状态未知；原因还没查清；决定者程序`;
   }
@@ -1101,30 +927,21 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
     /目标在“.+”阶段拒绝/.test(message) ||
     message.includes('已证明目标没有执行')
   ) {
-    // C14: when release refusal already names the错误 and next step, do not append「原因还没查清」.
     const diagnosed = message.includes('放行条件里有 ') || message.includes('还没有核对');
-    const better = releaseNextByRole(note, role);
-    let body = message;
-    if (better && !/现在可以做：|先确认预订|按脚本合并返回的错误逐条改正/.test(message)) {
-      body = /下一步/.test(message)
-        ? message.replace(/下一步：[^；]*/u, `下一步：${better}`)
-        : `${message.replace(/[。；]?$/u, '')}。现在可以做：${better}`;
-    }
+    const next = noteNext(note);
+    const body = next !== undefined && !/下一步|现在可以做：/.test(message) ? `${message.replace(/[。；]?$/u, '')}；下一步：${next}` : message;
     return diagnosed
       ? `${body}；状态已确认；判断错误；决定者程序`
       : `${body}；状态已确认；判断错误；原因还没查清；决定者程序`;
   }
-  // a job that did not go out and carries the Hub's own facts says them (reason and named next step, from the
-  // structure) instead of the generic "原因还没查清；下一步由使用者继续读取设备输出".
   if (notRun) {
     const fact = note.missing_facts?.length ? [...new Set(note.missing_facts.map((row) => row.fact))].join('；') : '未取得可读取的未派发原因';
-    const next = note.missing_facts?.length ? [...new Set(note.missing_facts.map((row) => row.next_action))].join('；') : note.next_action ?? '由使用者联系测试环境管理员核对未派发记录并补齐原因';
+    const next = noteNext(note) ?? '由使用者联系测试环境管理员核对未派发记录并补齐原因';
     return `上机验证${labelOf('effect_outcome', note.outcome!)}：${fact}。下一步：${next}；未取得用例在设备上的判断，状态未知；决定者程序仅披露派发记录`;
   }
   return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;
 }
 
-/** Lead sentence for submit_result: only the producer-supplied step_name (trimmed), else the neutral form (CHANGELOG Unreleased: submit_result lead / step_name). */
 function submitLead(v: Pick<SubmitOut, 'acceptance' | 'step_name'>): string {
   const name = typeof v.step_name === 'string' ? v.step_name.trim() : '';
   const labeled = name.length > 0 ? name : null;
@@ -1133,7 +950,6 @@ function submitLead(v: Pick<SubmitOut, 'acceptance' | 'step_name'>): string {
 }
 
 function submitText(v: SubmitOut, context: TextContext): string {
-  const role = callerRole(context);
   const lines = [submitLead(v)];
   const represented = new Set(v.acceptance === 'accepted' && v.result !== undefined ? itemsOf(v.result.partitions).map(({ item }) => item.item) : []);
   if (v.acceptance === 'accepted' && v.result !== undefined) {
@@ -1148,16 +964,11 @@ function submitText(v: SubmitOut, context: TextContext): string {
       lines.push(`${original ? caseName(original, original.label) : '资料未保存'}，${rejected.reason}；状态已确认；判断错误；原因缺资料；下一步由使用者补齐资料。`);
     }
   }
-  lines.push(...sayOnce((v.dispatch ?? []).map((note) => dispatchNoteLine(note, role))));
+  lines.push(...sayOnce((v.dispatch ?? []).map((note) => dispatchNoteLine(note))));
   lines.push(...submitErrorBlocks(v.errors, context, represented));
   return lines.join('\n');
 }
 
-/**
- * A line the reader would read twice is said once, with how many times it came: jobs of a run that ended the same way, with
- * nothing in their note to tell them apart, are one fact of the run. Lines that differ at all stay as they are, in order; the
- * notes themselves, each with its job, stay whole in the structured answer.
- */
 function sayOnce(lines: readonly string[]): string[] {
   const counts = new Map<string, number>();
   for (const line of lines) counts.set(line, (counts.get(line) ?? 0) + 1);
@@ -1183,14 +994,12 @@ export function modelReferencesText(value: Record<string, unknown>, context: Tex
   });
 }
 
-/** User-facing text; identifiers remain in structuredContent. */
 export function toolText(tool: string, value: unknown, context: TextContext = {}): string {
   const render = RENDERERS[tool] as ((value: unknown, context: TextContext) => string) | undefined;
   if (render === undefined) throw new Error(`no text renderer for ${tool}`);
   return render(value, context);
 }
 
-/** A readable failure when a validated answer cannot be rendered. */
 export function fallbackText(_tool: string, _value: unknown, context: TextContext = {}): string {
   return proseByRole(callerRole(context), 'fallback');
 }

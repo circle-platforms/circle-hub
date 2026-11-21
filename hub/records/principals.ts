@@ -198,7 +198,6 @@ export class PgPrincipals implements Principals {
     });
   }
 
-  /** Ends every open console session for the account (password change and disable; decision 46 / freeze). */
   async #revokeConsoleSessions(tx: PgTransaction, by: string, userId: string, at: string): Promise<void> {
     const revoked = await this.#db.query(
       'UPDATE tokens SET revoked_at=$2, revoked_by=$1 WHERE user_id=$3 AND console_session AND revoked_at IS NULL RETURNING id',
@@ -238,7 +237,6 @@ export class PgPrincipals implements Principals {
       if (current.disabled === disabled) return current;
       if (disabled && isAdmin(current)) await this.#keepAnAdmin(tx, current.id);
       const updated = await this.#update(tx, current, { role: current.role, disabled }, by.id);
-      // Decision 46: cookie is the console-session token; disable must revoke it so re-enable does not revive the session (52-member-freeze).
       if (disabled) await this.#revokeConsoleSessions(tx, by.id, userId, this.#now().toISOString());
       return updated;
     }).finally(retireReadScope);
@@ -472,9 +470,7 @@ export class PgPrincipals implements Principals {
   }
 
   async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,'any'))?.principal??null;}
-  /** Live access Bearer only, excluding console sessions. */
   authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,'access');}
-  /** Console cookie Bearer only; access tokens are refused. */
   async authenticateConsoleSession(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,'console'))?.principal??null;}
   identify(authorization:string|null|undefined){return this.#authenticate(authorization,'any');}
   async #authenticate(authorization:string|null|undefined,kind:'any'|'access'|'console'):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{

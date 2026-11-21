@@ -82,10 +82,8 @@ export interface RunDescription {
   /** Keys of run-level requirements (cross-item claims): they never appear in an item result (V05 R[4]). */
   runLevel: string[];
   checks: CheckDescription[];
-  /** Legacy hand-calculated count of distinct other submissions eligible for artifact repair. */
   roundsUsed: number;
   chargedRounds?:Record<string,number>;
-  /** Owner run30 #4 / T7: explicit independent history; exclude the current body and count each other body once per requirement. */
   repairHistory?: { current: string; earlier: Array<{ submission: string; requirements: string[] }> };
   /** The author an independent judgment must be independent of: the predecessor run's accepted submission; null when unknown. */
   author: Party | null;

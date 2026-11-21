@@ -73,7 +73,6 @@ export class VaultError extends RecordsError {
   }
 }
 
-/** A validated entry identity and repair facts, for administrators only; never copied into public error detail. */
 export interface VaultReadinessIssue {
   readonly name: string | null;
   readonly entry: string | null;
@@ -82,7 +81,6 @@ export interface VaultReadinessIssue {
   readonly next_action: string;
 }
 
-/** Safe to expose as an error; entry identities are available only through the explicit administrator getters. */
 export class VaultReadinessError extends VaultError {
   readonly #issues: readonly VaultReadinessIssue[];
   constructor(issues: readonly VaultReadinessIssue[]) {
@@ -97,7 +95,6 @@ export class VaultReadinessError extends VaultError {
   }
 }
 
-/** Only native filesystem codes and explicit vault/decoder errors describe an expected availability boundary. */
 export function isVaultReadBoundaryError(error: unknown): boolean {
   if (error instanceof VaultError) return true;
   if (!(error instanceof Error)) return false;
@@ -106,7 +103,6 @@ export function isVaultReadBoundaryError(error: unknown): boolean {
   return error instanceof TypeError && native.code === 'ERR_ENCODING_INVALID_ENCODED_DATA';
 }
 
-/** An unexpected implementation failure is fatal to assembly, with no original message, input or cause attached. */
 export function unexpectedVaultReadError(): RecordsError {
   return new RecordsError('密钥库内部读取异常；本次启动或读取已停止，不能按元数据未就绪继续', { fix: '请管理员保留当前密钥库并检查软件实现；不要跳过脱敏或补造元数据' });
 }

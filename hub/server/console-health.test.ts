@@ -181,7 +181,6 @@ function section(markup: string, title: string): string {
   return found;
 }
 
-/** The tabs of the page (decision 151): each is an address of its own and reads only what it shows. N7 adds 告警 first. */
 const TABS = ['alerts', 'resources', 'tasks', 'events', 'clients', 'releases', 'self'] as const;
 const tabPath = (tab: typeof TABS[number]): string => (tab === 'alerts' ? '/console/health' : `/console/health?tab=${tab}`);
 

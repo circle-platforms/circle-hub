@@ -1,6 +1,3 @@
-// Device observations as claims (decision 111, B01): what each booked device showed when the booking was granted is an
-// observed claim with the probe output as its ground and its moment as its time bound (A05 R[3]); devices that do not
-// take commands are named once as a booking fact (no verification conclusion chain; Boss 20:53).
 import { QualifierMarkSchema, type Reason } from '../../../contracts/generated/vocabulary.ts';
 import { Claim } from '../../../contracts/src/claim.ts';
 import type { DeviceHelpPosition, DeviceHelpResult, DeviceObservation, DeviceReadResult } from '../../../contracts/src/pack.ts';
@@ -27,7 +24,6 @@ export function observationClaims(result: { observed: DeviceObservation[]; missi
     });
   });
   if (result.missing !== null) {
-    // Booking fact only: reader text is the missing line itself (already user-facing); no unknown/conclusion chain.
     claims.push(Claim.parse({
       statement: { text: result.missing, data: { missing: result.missing, kind: 'no_command_devices' } },
       qualifier: { nature: 'fact', provenance: 'projected', marks: [], collected_at: at },
@@ -105,15 +101,9 @@ export function deviceHelpClaims(results: readonly DeviceHelpResult[], at: strin
 }
 
 const READ_RULE = 'dispatch.device_read@1';
-// The same two limits as a help answer: the target's own report, local operation not excluded.
 const READ_MARKS = HELP_MARKS;
 const READ_PREMISE = '设备的输出只说明这条命令当时在这台设备上的输出写法和排版：它不是运行的来源，不能作为期望值的依据';
 
-/**
- * What a requested read returned, as claims (decision 181): per request one observation with the device's words as received
- * (data.output), or an unknown that names what is missing and the next step when the line was not sent, no answer was
- * received or the answer is not shown. The words are data of the claim and no source of the run.
- */
 export function deviceReadClaims(results: readonly DeviceReadResult[], at: string): Claim[] {
   return results.map((r) => {
     const data = { label: r.label, inventory: r.inventory, device: r.device, line: r.line };

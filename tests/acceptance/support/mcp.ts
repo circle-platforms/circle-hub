@@ -1,7 +1,6 @@
 // The MCP side of the acceptance tests: the official SDK client over streamable HTTP (createTestHub's client(), which lists
 // the tools first so the SDK validates every structuredContent against the published output schema), plus the checks every
 // answer must pass whatever the scenario: it parses with the tool's zod output schema of the contracts, isError equals
-// `call_result === 'error'` (D05 R[1]), with reader text followed by a model-reference text block.
 import assert from 'node:assert/strict';
 import type { z } from 'zod';
 import { TOOLS } from '../../../contracts/src/tools.ts';

@@ -1,4 +1,3 @@
-// Acceptance runner. The local full run shares a PostgreSQL template and runs independent files in parallel.
 // With ACCEPTANCE_SHARD=<index>/<total> (CI) it runs one of `total` slices, balanced by the durations below (test-shards.ts).
 // With JUNIT_REPORT=<file> (CI) the run also writes Node's junit report there (test-report.ts).
 import { spawn } from 'node:child_process';
@@ -7,9 +6,8 @@ import { globSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startPostgres } from '../hub/testing/postgres.ts';
 import type { TemporaryPostgres } from '../hub/testing/postgres.ts';
-import { prepareTemplate, sharedEnv } from './run-unit-tests.ts';
+import { exitOf, sharedEnv, startSharedPostgres } from './run-unit-tests.ts';
 import { LOCAL_ACCEPTANCE_SECONDS } from './local-test-timings.ts';
 import { orderedArguments, slowestFirst, usesCoverage } from './ordered-test-runner.ts';
 import { junitArguments } from './test-report.ts';
@@ -70,7 +68,6 @@ export function expectedSeconds(file: string): number {
   return MEASURED_SECONDS[file] ?? DEFAULT_SECONDS;
 }
 
-/** CI slices keep one worker; the local full run supplies its independent-file concurrency. */
 export function acceptanceArguments(files: readonly string[], report?: string, concurrency = 1): string[] {
   return ['--test', `--test-concurrency=${concurrency}`, ...junitArguments(report), ...files];
 }
@@ -93,10 +90,8 @@ export async function runAcceptanceTests(shard: Shard | undefined, report?: stri
     const concurrency = shard === undefined ? Math.max(2, Math.min(8, availableParallelism() - 1)) : 1;
     if (shard === undefined) {
       const began = performance.now();
-      postgres = await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
-      const started = performance.now();
-      await prepareTemplate(postgres);
-      process.stderr.write(`acceptance shared files=${files.length} concurrency=${concurrency} postgres=${((started - began) / 1000).toFixed(3)}s template=${((performance.now() - started) / 1000).toFixed(3)}s\n`);
+      postgres = await startSharedPostgres();
+      process.stderr.write(`acceptance shared files=${files.length} concurrency=${concurrency} postgres=${((performance.now() - began) / 1000).toFixed(3)}s\n`);
     }
     const runner = spawn(process.execPath, ordered ? orderedArguments(files, concurrency, report) : acceptanceArguments(files, report, concurrency), {
       cwd: ROOT,
@@ -104,10 +99,7 @@ export async function runAcceptanceTests(shard: Shard | undefined, report?: stri
       ...(postgres ? { env: sharedEnv(postgres) } : {}),
     });
     child = runner;
-    return await new Promise<number>((resolve, reject) => {
-      runner.once('error', reject);
-      runner.once('exit', (code) => resolve(code ?? 1));
-    });
+    return await exitOf(runner);
   } finally {
     process.off('SIGINT', forward);
     process.off('SIGTERM', forward);

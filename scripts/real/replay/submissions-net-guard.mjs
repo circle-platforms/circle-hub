@@ -1,7 +1,3 @@
-// A replay never reaches a network but loopback: the scratch PostgreSQL listens on 127.0.0.1 and nothing else is wanted. Loaded
-// with `node --import` before anything else, this refuses every connection to another address and every datagram socket, so
-// that a Hub code path that would call an executor or a business system (a dispatch, a read) fails here instead of reaching it.
-// It is a guard inside the process, not an operating-system sandbox: the pack functions run under the Hub's own sandbox.
 import net from 'node:net';
 import tls from 'node:tls';
 import http from 'node:http';
@@ -9,7 +5,6 @@ import https from 'node:https';
 import dgram from 'node:dgram';
 import { syncBuiltinESMExports } from 'node:module';
 
-// The replay program checks this before it starts: a replay that did not load the guard refuses to run.
 globalThis.__replayNetworkGuard = true;
 const refused = [];
 const loopback = (host) => host === undefined || host === null || host === '' || host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '::ffff:127.0.0.1';
@@ -24,10 +19,8 @@ const deny = (what, target) => {
 
 const originalConnect = net.Socket.prototype.connect;
 net.Socket.prototype.connect = function (...args) {
-  // net.connect hands the socket its arguments already normalized: one array, [options, callback].
   const given = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
   const first = given[0];
-  // A unix socket path is local.
   if (typeof first === 'string' && !/^[0-9]+$/.test(first)) return originalConnect.apply(this, args);
   if (typeof first === 'object' && first !== null && typeof first.path === 'string') return originalConnect.apply(this, args);
   const host = typeof first === 'object' && first !== null ? first.host : typeof given[1] === 'string' ? given[1] : undefined;

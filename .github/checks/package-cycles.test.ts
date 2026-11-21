@@ -25,7 +25,6 @@ test('repository production modules match registered package-cycles exceptions',
     return;
   }
 
-  // Before exceptions.json is added on this branch, strict checking must fail on the missing file.
   const strictProblems = cycleProblems(ROOT);
   assert.ok(strictProblems.length >= 2);
   assert.equal(strictProblems[0], `${DEFAULT_EXCEPTIONS_PATH}: exceptions file is missing`);
@@ -46,7 +45,6 @@ test('repository production modules match registered package-cycles exceptions',
   );
   assert.deepEqual(cycleProblems(ROOT, { exceptions: syntheticExceptions }), []);
 
-  // Verify how leafTargets behaves when hub/telemetry/usage.ts is treated as a leaf.
   const withoutUsageLeaf = cycles.map((cycle) => cycle.members);
   const withUsageLeaf = findPackageCycles(modules, { leafTargets: ['hub/telemetry/usage.ts'] }).map((cycle) => cycle.members);
   assert.ok(withoutUsageLeaf.some((members) => members.includes('records') && members.includes('telemetry')));
@@ -70,7 +68,6 @@ test('acyclic packages, leaves, intra-package imports and test/support files pro
     { file: 'hub/a/internal.ts', source: "import './api.ts';\nexport const helper = 1;" },
     { file: 'hub/b/api.ts', source: "import { a } from '../a/api.ts';\nexport const b = a;" },
     { file: 'hub/c/api.ts', source: "import { b } from '../b/api.ts';\nimport { a } from '../a/api.ts';\nexport const c = { a, b };" },
-    // Non-production files that form cycles must be ignored.
     { file: 'hub/a/cycle.test.ts', source: "import { c } from '../c/api.ts';" },
     { file: 'hub/a/testing/fixture.ts', source: "import { c } from '../c/api.ts';" },
     { file: 'hub/a/fakes.ts', source: "import { c } from '../c/api.ts';" },
@@ -134,12 +131,10 @@ test('bidirectional exception verification catches unregistered edges, stale ent
   ];
   assert.deepEqual(cycleProblemsFromModules(modules, { exceptions: validExceptions }), []);
 
-  // Unregistered edge (missing b -> a).
   const missingOne = cycleProblemsFromModules(modules, { exceptions: [validExceptions[1]!] });
   assert.equal(missingOne.length, 1);
   assert.match(missingOne[0]!, /^hub\/b: unregistered package cycle edge b -> a in SCC \[a, b\] \(hub\/b\/api\.ts:1 -> hub\/a\/api\.ts \[value\]\)$/);
 
-  // Adding a new edge inside an existing SCC must fail even when members stay the same.
   const withNewEdge: SourceModule[] = [
     { file: 'hub/a/api.ts', source: "import { b } from '../b/api.ts';\nimport { c } from '../c/api.ts';\nexport const a = b + c;" },
     { file: 'hub/b/api.ts', source: "import { c } from '../c/api.ts';\nexport const b = c;" },
@@ -154,7 +149,6 @@ test('bidirectional exception verification catches unregistered edges, stale ent
   assert.equal(newEdgeProblems.length, 1);
   assert.match(newEdgeProblems[0]!, /^hub\/a: unregistered package cycle edge a -> c in SCC \[a, b, c\]/);
 
-  // Breaking the cycle makes registered entries stale.
   const brokenCycle: SourceModule[] = [
     { file: 'hub/a/api.ts', source: "import { b } from '../b/api.ts';\nexport const a = b;" },
     { file: 'hub/b/api.ts', source: 'export const b = 1;' },
@@ -164,7 +158,6 @@ test('bidirectional exception verification catches unregistered edges, stale ent
   assert.match(staleProblems[0]!, /^hub\/a: stale package-cycles exception for a -> b/);
   assert.match(staleProblems[1]!, /^hub\/b: stale package-cycles exception for b -> a/);
 
-  // Duplicate and malformed entries are reported.
   const badEntries: CheckException[] = [
     { check: PACKAGE_CYCLES_CHECK, path: 'hub/a', what: 'a -> b', reason: 'first', removeWhen: 'C4' },
     { check: PACKAGE_CYCLES_CHECK, path: 'hub/a', what: 'a -> b', reason: 'dup', removeWhen: 'C4' },

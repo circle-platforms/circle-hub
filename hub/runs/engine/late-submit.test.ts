@@ -1,8 +1,3 @@
-// W06 R[7], W08 (decision 179): every submit_result of a run with an input bound after the start reads the bound run's latest
-// accepted result again (as the runner may read it now), records the reference and the overlay digest in locks.late, binds the
-// claims to the reference, and treats an item that only waits on the bound run as no repair round (W02 R[6]). A stored result
-// is given back for the same submission only while the bound run gave the same result; otherwise the submission is checked
-// again. Synthetic packs (testing/late-packs.ts), temporary PostgreSQL.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
@@ -44,12 +39,10 @@ test('each submission reads the latest accepted stage result, binds it, and a wa
     assert.deepEqual(action.repair, [], 'a requirement that only waits is not a repair round');
     assert.deepEqual(action.late, r1.locks.late!.inputs);
 
-    // Another submission of the run: the first one charged nothing.
     const c2 = await w.submitConsume(consume.run, '合成计划修订');
     assert.equal(c2.acceptance, 'accepted', JSON.stringify(c2.errors));
     assert.equal(c2.result!.rounds.used, 0);
 
-    // The stage run accepts the second case; the same first submission is checked again and reads the new result.
     const second = await w.submitStage(stage.run, [ITEM.one, ITEM.two]);
     const again = await w.submitConsume(consume.run);
     assert.equal(again.acceptance, 'accepted', JSON.stringify(again.errors));
@@ -59,12 +52,10 @@ test('each submission reads the latest accepted stage result, binds it, and a wa
     assert.equal(plan(again.result!, ITEM.two).status, 'satisfied');
     assert.equal(again.result!.rounds.used, 0);
 
-    // Nothing changed: the stored result is the answer.
     const cached = await w.submitConsume(consume.run);
     assert.equal(cached.acceptance, 'accepted', JSON.stringify(cached.errors));
     assert.equal(cached.result!.trace, again.result!.trace, 'the same submission against the same stage result is not checked again');
 
-    // The stage run accepts another result: the stored result no longer answers the same submission.
     const third = await w.submitStage(stage.run, [ITEM.one, ITEM.two], '合成重组记录修订');
     const rechecked = await w.submitConsume(consume.run);
     assert.equal(rechecked.acceptance, 'accepted', JSON.stringify(rechecked.errors));

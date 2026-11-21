@@ -18,7 +18,6 @@ const RULES = [
   { kind: 'reserved_words', words: ['default', 'all'], case_insensitive: true, quote: '不允许为保留字“default”或“all”，这些保留字不区分大小写' },
   { kind: 'no_whitespace', quote: '取值不能包含空格' },
 ];
-/** A claim about the row of host_name; the row it quotes is ROW for the rules above, otherwise the quotes of the rules it is given. */
 const claim = (extra: Record<string, unknown> = {}) => {
   const rules = (extra.rules ?? RULES) as Array<{ quote: string }>;
   return { commands: ['demo host name'], parameter: 'host_name', reference: REFERENCE, row: extra.rules === undefined ? ROW : rules.map((rule) => rule.quote).join('。'), rules, record: RECORD, ...extra };
@@ -54,7 +53,6 @@ test('a host name excluded by the manual’s row is refused with its quotation a
   assert.ok(message.includes('（手册写：「特殊字符仅支持“._-”」）'), message);
   assert.match(message, /下一步由编写模型改成符合手册说明的取值/);
   assert.match(message, /证据是上述手册原句，决定者是模型$/);
-  // The command still resolves to its identity: the refusal is about a value, not about the command.
   assert.equal(plan('demo host name a:b 60', [claim()]).identities.length, 1);
 });
 
@@ -83,24 +81,19 @@ test('a plan is changed by nothing when no claim covers its parameter', () => {
   same(undefined);
   same([]);
   same('not a list');
-  // A claim about another command, another form of the command or another parameter does not apply.
   same([claim({ commands: ['demo host other'] })]);
   same([claim({ commands: ['demo host'] })]);
   same([claim({ parameter: 'hostname' })]);
-  // A claim that is not in the closed shape is left out, whatever else the list holds.
   same([claim({ rules: [{ kind: 'max_bytes', limit: 0, quote: '0' }] })]);
   same([claim({ extra: 1 })]);
-  // A claim whose quotes are not in the row it quotes, or whose characters are not in their quote, is not confirmed here and is left out.
   same([claim({ row: '另一行手册原文' })]);
   same([claim({ rules: [{ kind: 'allowed_specials', characters: ['.', '_', '-', ':'], quote: '特殊字符仅支持“._-”' }] })]);
   assert.equal(refusals('demo host name a:b 60', [claim({ extra: 1 }), claim()]).length, 1);
 });
 
 test('only text is judged by a claim: a number, or an address the grammar read, keeps its own type', () => {
-  // ttl is an integer of the tree: a claim about it, however it is written, is not applied to the number.
   const ttl = claim({ parameter: 'ttl', rules: [{ kind: 'max_characters', limit: 1, quote: '最长1个字符' }] });
   assert.deepEqual(plan('demo host name a.b 60', [ttl]).problems, []);
-  // peer is a host name or an address: a host name is text and is judged by the claim, an address the grammar read is not.
   const peer = claim({ commands: ['demo host peer'], parameter: 'peer', rules: [{ kind: 'max_characters', limit: 5, quote: '最长5个字符' }] });
   assert.equal(refusals('demo host peer host-1.example', [peer]).length, 1);
   assert.deepEqual(refusals('demo host peer abc', [peer]), []);
@@ -115,7 +108,6 @@ test('claims that disagree on a rule do not judge by it; the rules they agree on
   const line = `demo host name ${'a'.repeat(20)}`;
   assert.deepEqual(refusals(line, [claim(), stricter]), [], 'the lengths are read two ways: neither is used');
   assert.equal(refusals('demo host name a:b', [claim(), stricter]).length, 1, 'the characters are read one way');
-  // Two readers who read the row the same way are one rule.
   assert.equal(refusals(`demo host name ${'a'.repeat(65)}`, [claim(), claim({ record: 'rec:' + 'c'.repeat(64) })]).length, 1);
 });
 
@@ -128,7 +120,6 @@ test('the refusal reaches the plan check of the pack as a refusal of the command
   assert.match(refused[0]!.statement, /命令“demo show host”的参数 host_name 的取值“a:b”不符合手册对这个参数的说明/);
   assert.deepEqual(check('demo show host a.b', [claim({ commands: ['demo show host'] })]).map((one) => one.verdict), ['support']);
 
-  // The Hub gives the claims beside the catalog entries; the subject keeps them in the catalog it passes on, sealed with it.
   const raw = (extra: Record<string, unknown>): any => {
     const slots = goodData();
     return { item: { id: 'doc-1:c-1', location: QUOTE.reference, fields: { autoid: AUTOID, title: '健康检查间隔配置测试', path: ['合成文档', '健康检查间隔配置测试'], priority: '2', steps: [{ text: '开启' }], expected: [QUOTE.text] } }, slots: { plan: [{ data: slots }] }, catalog: COMMAND_CATALOG.entries, catalog_complete: true, ...extra,
@@ -139,7 +130,6 @@ test('the refusal reaches the plan check of the pack as a refusal of the command
   assert.equal(carried.root, COMMAND_CATALOG.root);
   assert.equal('value_domains' in (opened(planSubject(raw({})).command_catalog) as object), false, 'a check that is given none carries none');
   assert.equal('value_domains' in (opened(planSubject(raw({ value_domains: 'x' })).command_catalog) as object), false);
-  // The claims judge a plan; the plan’s own result does not carry them on.
   const lines = planCommands(f.contract, f.profile, flat('demo host name a.b'), catalogWith([claim()]));
   assert.equal('value_domains' in (lines.catalog as object), false);
 });
@@ -148,7 +138,6 @@ test('a long value and a long list of broken rules are told short enough to read
   const read = refusals('demo host name ' + 'a'.repeat(200) + ':', [claim()])[0]!.message;
   assert.ok(read.includes('取值“' + 'a'.repeat(79) + '…”'), read.slice(0, 200));
   assert.ok(read.length < 1500, String(read.length));
-  // Eight rules, six of them broken: five are told and the rest are counted.
   const many = claim({ rules: [
     { kind: 'max_bytes', limit: 253, quote: '长度不大于253个字节' }, { kind: 'part_max_characters', limit: 63, separator: '.', quote: '由“.”分隔的各部分不超过63个字符' }, { kind: 'allowed_specials', characters: ['.', '_', '-'], quote: '特殊字符仅支持“._-”' },
     { kind: 'wildcard', character: '*', quote: '通配符“*”只能位于起始位置' }, { kind: 'not_at_start', characters: ['.'], quote: '“.”不能置于起始位置' }, { kind: 'not_at_end', characters: ['.'], quote: '“.”不能置于结尾位置' },

@@ -1,23 +1,17 @@
-/**
- * D3: next-step (fix) wording by caller role. Contract PROTOCOL_CODES.*.fix stays the member line;
- * Administrators get registry-backed commands only when the error code establishes the action.
- */
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { COMMAND_METADATA } from './command-registry.ts';
 import { COMMAND_PARAMETERS, commandParameterHelp, type CommandParameterId } from './command-parameters.ts';
-import { connectionsPath, knowledgePath, recordsPath, settingsPath, teamPath } from './console/routes.ts';
+import { connectionsPath, knowledgePath, settingsPath, teamPath } from './console/routes.ts';
 import { packListHead, packListHeadForMember } from './pack-words.ts';
 
 export type CallerRole = PermissionRole;
 
-/** Fill runtime caller account name into admin next steps; keep `<理由>` and other admin-written placeholders. */
 export function fillCallerAccountName(text: string, callerName: string | undefined): string {
   if (callerName === undefined || callerName.length === 0) return text;
   return text.replaceAll('<当前账户的名字>', callerName);
 }
 
-/** Top-level `circle-hub <name>` must appear in COMMAND_METADATA. */
 export function registeredCommandName(name: string): string {
   if (!COMMAND_METADATA.some((command) => command.name === name)) {
     throw new Error(`command not in COMMAND_METADATA: ${name}`);
@@ -25,14 +19,12 @@ export function registeredCommandName(name: string): string {
   return name;
 }
 
-/** Usage line from the parameter registry; top-level name checked against COMMAND_METADATA. */
 export function circleHubFromParameters(id: CommandParameterId): string {
   const top = COMMAND_PARAMETERS[id].path[0];
   registeredCommandName(top);
   return `circle-hub ${commandParameterHelp(id)}`;
 }
 
-/** Top-level command with its registered summary (platform / admin commands without parameter ids). */
 export function circleHubFromMetadata(name: string, options: { brief?: boolean } = {}): string {
   const meta = COMMAND_METADATA.find((command) => command.name === name);
   if (meta === undefined) throw new Error(`command not in COMMAND_METADATA: ${name}`);
@@ -41,7 +33,6 @@ export function circleHubFromMetadata(name: string, options: { brief?: boolean }
   return summary.length === 0 ? `circle-hub ${name}` : `circle-hub ${name} ${summary}`;
 }
 
-/** Every `circle-hub <cmd>` top-level name mentioned in text must be registered. */
 export function circleHubNamesIn(text: string): string[] {
   const names: string[] = [];
   for (const match of text.matchAll(/\bcircle-hub\s+([a-z][a-z0-9-]*)/g)) names.push(match[1]);
@@ -95,10 +86,6 @@ function adminForCode(code: string): string | undefined {
   }
 }
 
-/**
- * Fix string for this caller. Member (default): contract / provided fix. Admin: registry-backed next steps;
- * Unmapped or ambiguous codes preserve the producer fix verbatim.
- */
 export function fixByRole(code: string, role: CallerRole, memberFix?: string, callerName?: string): string | undefined {
   const member = memberDefault(code, memberFix);
   if (role !== 'admin') return member;
@@ -111,7 +98,6 @@ export function fixByRole(code: string, role: CallerRole, memberFix?: string, ca
   return member;
 }
 
-/** Hardcoded reader lines in text.ts that still say「请管理员…」when the caller is a member. */
 export function proseByRole(
   role: CallerRole,
   kind:

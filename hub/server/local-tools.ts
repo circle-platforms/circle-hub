@@ -13,7 +13,6 @@ import { unassignedPackRefusal } from './pack-words.ts';
 import { newTraceId } from './trace.ts';
 const PREFIX = '/local-tools/';
 const ABSENT = Buffer.from('没有这个本地工具版本或文件\n');
-/** Same unassigned fact as MCP (Boss afternoon): one function renders the line. */
 function unassignedBytes(packId: string): Buffer {
   return Buffer.from(`${unassignedPackRefusal(packId, 'workflow')}\n`);
 }

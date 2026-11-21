@@ -60,7 +60,6 @@ test("a user's ruling stays in the fields the file already has: the atom's state
   assert.equal(record.sources.states[1].adjudicated_by, null, 'a user’s ruling names no independent adjudication');
   assert.equal(record.ledgers.adapted[0].equivalence_reason, ruling);
   assert.deepEqual(record.ledgers.concretizations.map((c: any) => c.decided_by), ['用户', 'scripted'], 'the model’s name is the default, the user is kept when the file names the user');
-  // A case left for the author: an underdetermined atom and a gap with a named audience; the record stays complete.
   const waiting = recordFor(item(), { method, states: [{ atom: 'a2', state: 'underdetermined', reason: '用户裁定：保留作者原样，这条先不编，待作者裁定' }], unknowns: [{ missing: '作者步骤与手册冲突', next_action: '作者或用户裁定', audience: '作者或用户', due: '交付之前' }] }, 'scripted');
   assert.deepEqual([waiting.sources.states[1].state, waiting.status, waiting.unknowns.length], ['underdetermined', 'complete', 1]);
 });
@@ -146,7 +145,7 @@ test('submit-records main retries GET /run and explicit non-execution 503 on sub
   }
 });
 
-test('H1/H3/H4: submit-records checks empty stdin, names --records and offending filename (never --plans or re-export), and enforces single lite shape', async (t) => {
+test('H1/H3/H4: submit-records checks empty stdin, names --records and offending filename (never --plans or re-export), and enforces single lite shape', async () => {
   const runCapture = async (argv: string[], token: string) => {
     const out: string[] = [], err: string[] = [];
     const stdout = process.stdout.write.bind(process.stdout), stderr = process.stderr.write.bind(process.stderr);
@@ -155,17 +154,14 @@ test('H1/H3/H4: submit-records checks empty stdin, names --records and offending
     try { return { code: await main(argv, async () => token), out: out.join(''), err: err.join('') }; } finally { process.stdout.write = stdout; process.stderr.write = stderr; }
   };
 
-  // H4: method missing error names method & shows lite JSON shape while keeping existing substring
   assert.throws(
     () => recordFor(item(), {}, 'scripted'),
     (error: Error) => /缺少用例重组的方法/.test(error.message) && /\bmethod\b/.test(error.message) && /declared/.test(error.message),
   );
-  // H4: rejects unknown/bogus method kind
   assert.throws(
     () => recordFor(item(), { method: { kind: 'bogus', text: 'x', sources: [], basis: 'y' } }, 'scripted'),
     /method\.kind/,
   );
-  // H4: rejects full recompose-record@1 schema & handling wrapper
   assert.throws(
     () => recordFor(item(), { schema: 'recompose-record@1', case: { case_id: 'ORBIT-1' }, contract: { method } }, 'scripted'),
     /精简格式.*recompose-record@1/,
@@ -175,7 +171,6 @@ test('H1/H3/H4: submit-records checks empty stdin, names --records and offending
     /精简格式.*handling/,
   );
 
-  // H3 & H1 CLI paths
   const dirBadJson = await mkdtemp(join(tmpdir(), 'cc-rec-bad-'));
   await writeFile(join(dirBadJson, '11.json'), '{"item":"n/case","method":');
   const badJsonRes = await runCapture(['--hub', 'http://127.0.0.1:1/mcp', '--run', 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', '--model', 'scripted', '--records', dirBadJson], 'synthetic-token-1234');
@@ -247,7 +242,6 @@ test('parallel per-case submissions take turns, each reading the directory insid
     const lock = { waitMs: 10_000, staleMs: 60_000, stepMs: 20 };
     const first = main(args, async () => 'synthetic-token-1234', undefined, lock);
     while (seen.length < 1) await new Promise((done) => setTimeout(done, 10));
-    // The second case finishes while the first submission is still with the Hub.
     await writeFile(join(directory, '01.json'), JSON.stringify({ item: 'two', method }));
     const second = main(args, async () => 'synthetic-token-1234', undefined, lock);
     await new Promise((done) => setTimeout(done, 200));

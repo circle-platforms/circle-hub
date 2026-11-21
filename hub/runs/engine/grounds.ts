@@ -64,18 +64,7 @@ export async function groundsAudience(ctx:EngineContext,run:RunRecord,value:Vali
  * holds them (a result's summary lists them, in the order the result gives them); `value` is then not looked at.
  */
 export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:unknown,by:Principal,options:{pending?:boolean;trustedResult?:boolean;provisionalSubmission?:string;unavailableReferences?:readonly string[];references?:readonly string[];proven?:Set<string>}={}):Promise<boolean>{
-  // The parsed documents of the call are shared: a parsed document is not an authorization (every resolution reads the source as
-  // its own reader before it looks at the cache), and one result names the same few sources a hundred times. With a cache of its
-  // own per check, admitting the result of a seventeen-case submission re-read the same documents for every ground and every
-  // reader: about 30 000 queries and 100 seconds after the checks had ended (traces of 2026-11-19).
-  // Only a cache made here is disposed here: disposing the call's own would end its use for the rest of the call.
   const own=ctx.documents===undefined,documents=ctx.documents??createDocumentCache(8);
-  // What this reader was already found able to read is not asked again in the same check, nor in the same admission when the
-  // caller passes its set (groundsAudience). Only a yes is kept: it holds for the reference whatever path led to it (a reference
-  // met again below itself is refused before this is looked at), while a no may be the cut of a cycle. The answer for a source
-  // file does not depend on the part of it a reference selects, so it is kept by the file. In a real seventeen-case submission
-  // one admission asked about 104 grounds for every reader with about 20 000 queries, nearly all of them the same few sources
-  // (Hub traces of 2026-11-19). Nothing is kept past the call that made the set.
   const proven=options.proven??new Set<string>();
   const check=async(reference:string,seen:Set<string>,depth:number,atRun=run,pending=options.pending===true,inheritedInput=false):Promise<boolean>=>{
     if(depth>64||seen.has(reference))return false;

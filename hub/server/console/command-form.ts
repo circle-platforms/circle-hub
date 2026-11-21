@@ -1,6 +1,3 @@
-// U2 (decisions-1600): console forms generated from the shared command parameter registration
-// (hub/server/command-parameters.ts). Pages pass DynamicChoices; argv comes from buildCommandArgv;
-// sensitive stdin values stay out of argv and go through the command bridge's secrets map.
 import {
   COMMAND_PARAMETERS,
   buildCommandArgv,
@@ -15,7 +12,6 @@ import { field } from './presentation.ts';
 
 export type { CommandParameterId, DynamicChoices };
 
-/** Trimmed form fields (same contract as manage.Form). */
 export type CommandForm = { get(name: string): string };
 
 export interface CommandBuilt {
@@ -23,7 +19,6 @@ export interface CommandBuilt {
   secrets?: Record<string, string>;
 }
 
-/** ACTION name → registered command id for onboarding management that maps 1:1. */
 export const REGISTERED_ACTIONS = {
   'user-create': 'user.create',
   'user-disable': 'user.disable',
@@ -64,12 +59,10 @@ export const REGISTERED_ACTIONS = {
 
 export type RegisteredActionName = keyof typeof REGISTERED_ACTIONS;
 
-/** Management POSTs that accept a file and turn it into `--reference=src:…` before the bridge. */
 export const UPLOAD_REFERENCE_ACTIONS = new Set<RegisteredActionName>(['executor-add', 'executor-update', 'doc-put']);
 
 const isBooleanSchema = (schema: Record<string, unknown>): boolean => schema.type === 'boolean';
 
-/** Visible fields for one registered command (no CSRF, no submit). Hidden options stay out. */
 export function commandFields(
   id: CommandParameterId,
   choices: DynamicChoices = {},
@@ -120,7 +113,6 @@ export function commandFields(
   return html`<div data-fields data-command="${id}">${parts}</div>`;
 }
 
-/** A POST form to /console/admin/do/<action> whose fields come from the command registration. */
 export function registeredActionForm(
   action: RegisteredActionName,
   csrf: string,
@@ -147,7 +139,6 @@ function readMultiple(raw: string): string[] {
   return raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
-/** A form value that becomes an argv word must not look like a flag (same rule as manage.word). */
 function safeWord(value: string, label: string): string {
   if (value.startsWith('-') || /[\u0000-\u001f\u007f]/.test(value) || value.length > 512) {
     throw new UsageError(`${label}的写法不对`);
@@ -155,7 +146,6 @@ function safeWord(value: string, label: string): string {
   return value;
 }
 
-/** Read a field; hyphenated registration names also accept the underscore form used by older forms. */
 function readField(form: CommandForm, name: string): string {
   const direct = form.get(name);
   if (direct !== '') return direct;
@@ -163,7 +153,6 @@ function readField(form: CommandForm, name: string): string {
   return '';
 }
 
-/** Form fields → argument object for buildCommandArgv (no secret values). */
 export function valuesFromForm(id: CommandParameterId, form: CommandForm): Record<string, unknown> {
   const shape = commandParameterShape(id);
   const values: Record<string, unknown> = {};
@@ -174,7 +163,6 @@ export function valuesFromForm(id: CommandParameterId, form: CommandForm): Recor
       continue;
     }
     if (raw === '') continue;
-    // Positionals must not look like flags; option values may start with `-` (`--label=--raw`).
     const guard = item.location === 'positional'
       ? (value: string) => safeWord(value, item.label)
       : (value: string) => {
@@ -190,7 +178,6 @@ export function valuesFromForm(id: CommandParameterId, form: CommandForm): Recor
   return values;
 }
 
-/** Sensitive stdin map for the bridge; empty when the command has no stdin binding. */
 export function secretsFromForm(id: CommandParameterId, form: CommandForm): Record<string, string> | undefined {
   const shape = commandParameterShape(id);
   if (shape.stdin.length === 0) return undefined;
@@ -221,7 +208,6 @@ export function secretsFromForm(id: CommandParameterId, form: CommandForm): Reco
   return Object.keys(out).length === 0 ? undefined : out;
 }
 
-/** Build argv (and optional secrets) from the registration. */
 export function buildRegistered(id: CommandParameterId, form: CommandForm): CommandBuilt {
   const argv = buildCommandArgv(id, valuesFromForm(id, form));
   const secrets = secretsFromForm(id, form);
@@ -232,7 +218,6 @@ export function buildRegisteredAction(action: RegisteredActionName, form: Comman
   return buildRegistered(REGISTERED_ACTIONS[action], form);
 }
 
-/** Every registered onboarding id the console form generator can render. */
 export function registeredCommandIds(): CommandParameterId[] {
   return Object.keys(COMMAND_PARAMETERS) as CommandParameterId[];
 }

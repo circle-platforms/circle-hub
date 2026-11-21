@@ -1,5 +1,3 @@
-// SELECT_CELL parameters are judged by the cell-selection rules only: a refusal names the block field, the value seen and
-// the one rule it breaks, never the ordinary single-line conditions of other command values.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {cellFixture,cellPlan} from '../testing/blocks.ts';
@@ -48,23 +46,16 @@ test('every separator the cell rules accept reaches the workbook, and every refu
  const candidates=[' ','\t','  ',' x','x ',' = ','\u00a0','\u3000','12','٣','a1','=','==',':','|','||',',',';','/','\\','-','_','x',"'",'"','a b','\n','\r','\u0001','_x0041_','\ud800','{{','}}','中文','→'];
  for(const value of candidates){
   const input=separator(value),parsed=readSlots(input.slots);
-  // A separator is judged by what the runner does with it: whitespace at its ends, line breaks and all-digit text never survive G.
   const lost=/^[\p{Number}]+$/u.test(value)||value.trim()!==value||/[\r\n]/.test(value);
   if(!parsed.ok){assert.ok(!lost,JSON.stringify([value,parsed.problems]));assert.ok(parsed.problems.every(problem=>problem.pointer.startsWith('/blocks/1/')),JSON.stringify([value,parsed.problems]));continue;}
   const gaps=gapsOf(input),own=gapAt(gaps,'/blocks/1/table/separator');
   if(lost)assert.equal(own.length,1,JSON.stringify([value,gaps]));
   if(own.length){assert.ok(own.every(gap=>gap.message.includes(JSON.stringify(value))),JSON.stringify([value,own]));continue;}
-  // Not refused at the field: the later G stage may still judge quoting, but never a property listed above.
   const refused=checkContractShape(input.subject(input.slots)).filter(row=>row.verdict==='refute');
   assert.ok(!lost,`${JSON.stringify(value)} reached the later G stage: ${JSON.stringify(refused)}`);
  }
 });
 
-// ---- what the runner's G reader (InfoTest lib/test_xlsx.py `_split_parameter_parts`, `_keyword_split`, `_unquote_parameter`) makes of a value
-// A quote it would leave open stops its preflight of the whole workbook before any device is touched, so every case of the workbook is lost;
-// a quoted `separator=,` it reads as a positional argument, and a backslash before a comma it takes the comma into the value. The Hub and the
-// workbook reader judged all of these correct (the embedded G reader is more lenient than the runner's), so they are refused at their field.
-// The cell is read back as the generator writes it, keyword order included: a backslash ends a separator that is the last part of the cell harmlessly, and swallows the comma after a condition constant.
 const READ_DIFFERENTLY:Array<[string,string,RegExp]>=[
  ['a lone double quote','"',/没有配对的引号/],['a lone single quote',"'",/没有配对的引号/],['a quote after a character','+"',/没有配对的引号/],
  ['quotes the runner strips','"+"',/去掉/],['a comma','\u002c',/位置参数/],['two commas',',,',/位置参数/],['a comma inside','a,b',/位置参数/],

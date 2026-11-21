@@ -188,7 +188,6 @@ export class FakeWorkflows implements WorkflowStore {
     return (await this.usable(user)).map((pack) => pack.summary!).filter((summary) => summary !== null);
   }
 
-  /** Same reasons as the real WorkflowStore.absence (D05 R[3]); used by list_task_packs exact pack_id. */
   async absence(user: Principal, ref: string): Promise<'unknown' | 'unassigned' | 'uninstalled' | 'withdrawn' | 'disabled' | null> {
     const pack = this.find(ref);
     if (pack === undefined) return 'unknown';
@@ -864,7 +863,6 @@ export class FakeRuns implements RunsService {
   async exportRun(user: Principal, run: string): Promise<{ run_reference: string; accepted_result_reference: string | null; run: RunRecordView; result: ValidationResult | null; submission: unknown | null } | null> {
     const stored = await this.#visible(user, run);
     if (stored === null || (stored.record.runner !== user.id && !(await isAdmin(this.#records, user)))) return null;
-    // This fake also stores real records: export their digests, never a hash of a projected body.
     const accepted = [...stored.results.entries()].reverse().find(([key, entry]) => key !== stored.recordDigest && entry.result.acceptance === 'accepted' && this.#bodies.has(`${run}:${entry.result.submission}`))?.[1] ?? null;
     return { run_reference: `rec:${stored.recordDigest}`, accepted_result_reference: accepted ? `rec:${accepted.record}` : null, run: stored.record, result: accepted?.result ?? null, submission: accepted ? this.#bodies.get(`${run}:${accepted.result.submission}`) ?? null : null };
   }

@@ -1,17 +1,12 @@
-// Curated <5-minute regression suite ("npm run test:quick") across all six required dimensions:
-// contracts, TypeScript typechecks, the six MCP tools, teams & permissions, named secrets/variables,
-// and the mindmap compile path & fast acceptance checks. Existing tests remain untouched in full suites.
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { availableParallelism, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { rm } from 'node:fs/promises';
+import { availableParallelism } from 'node:os';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startPostgres } from '../hub/testing/postgres.ts';
 import type { TemporaryPostgres } from '../hub/testing/postgres.ts';
-import { LOCAL_UNIT_SECONDS } from './local-test-timings.ts';
-import { orderedArguments, slowestFirst, usesCoverage } from './ordered-test-runner.ts';
-import { prepareTemplate, sharedEnv, UNIT_MEASURED_SECONDS } from './run-unit-tests.ts';
+import { slowestFirst, usesCoverage } from './ordered-test-runner.ts';
+import { compileCacheDirectory, exitOf, localUnitSeconds, sharedEnv, startSharedPostgres, stringEnv, testArguments } from './run-unit-tests.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TSC_ENTRY = resolve(ROOT, 'node_modules/typescript/bin/tsc');
@@ -40,7 +35,6 @@ export interface QuickCategory {
   readonly acceptanceFiles: readonly string[];
 }
 
-/** Curated regression checks grouped strictly by the six required coverage dimensions. */
 export const QUICK_CATEGORIES: readonly QuickCategory[] = [
   {
     id: 'contracts',
@@ -198,12 +192,7 @@ export const QUICK_CATEGORIES: readonly QuickCategory[] = [
   },
 ];
 
-const QUICK_EXPECTED_SECONDS: Readonly<Record<string, number>> = {
-  ...UNIT_MEASURED_SECONDS,
-  ...LOCAL_UNIT_SECONDS,
-  // Start the full HTTP MCP SDK test first so fast unit files overlap behind it.
-  'hub/server/mcp.test.ts': 55,
-};
+const QUICK_FIRST = 'hub/server/mcp.test.ts';
 
 export interface QuickStageResult {
   readonly label: string;
@@ -216,54 +205,35 @@ export interface QuickRunOptions {
   readonly dryRun?: boolean;
 }
 
-/** Command checks included in the quick suite. */
 export function quickCommandSteps(): QuickCommandSpec[] {
   return QUICK_CATEGORIES.flatMap((category) => [...category.commands]);
 }
 
-/** Unit and workflow-pack test files included in the quick suite, in declaration order. */
 export function quickUnitFiles(): string[] {
   return QUICK_CATEGORIES.flatMap((category) => [...category.unitFiles]);
 }
 
-/** Acceptance test files included in the quick suite, in declaration order. */
 export function quickAcceptanceFiles(): string[] {
   return QUICK_CATEGORIES.flatMap((category) => [...category.acceptanceFiles]);
 }
 
-/** All test files (unit + acceptance) included in the quick suite. */
 export function quickAllFiles(): string[] {
   return [...quickUnitFiles(), ...quickAcceptanceFiles()];
 }
 
-/** Bounded parallelism for the shared-PG unit lane in test:quick. */
 export function quickUnitConcurrency(fileCount: number): number {
   const cap = Math.max(2, Math.min(6, availableParallelism() - 1));
   return Math.max(1, Math.min(cap, fileCount));
 }
 
-/** Unit files ordered slowest-first so the longest file starts immediately. */
 export function orderedQuickUnitFiles(): string[] {
-  return slowestFirst(quickUnitFiles(), (file) => QUICK_EXPECTED_SECONDS[file] ?? 2);
-}
-
-function cleanBaseEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (typeof value === 'string' && !key.startsWith('HUB_UNIT_PG_') && key !== 'NODE_TEST_CONTEXT') {
-      env[key] = value;
-    }
-  }
-  return env;
+  return slowestFirst(quickUnitFiles(), (file) => (file === QUICK_FIRST ? Infinity : localUnitSeconds(file)));
 }
 
 function runSpawned(args: readonly string[], env: NodeJS.ProcessEnv, children: ChildProcess[]): Promise<number> {
   const child = spawn(process.execPath, [...args], { cwd: ROOT, env, stdio: 'inherit' });
   children.push(child);
-  return new Promise((resolvePromise, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code) => resolvePromise(code ?? 1));
-  });
+  return exitOf(child);
 }
 
 async function timedStage(label: string, fn: () => Promise<number>): Promise<QuickStageResult> {
@@ -306,14 +276,6 @@ function printSummary(results: readonly QuickStageResult[], totalSeconds: number
   process.stderr.write(`  总计墙钟耗时: ${totalSeconds.toFixed(2)}s（目标上限 300.00s）\n`);
 }
 
-function testLaneArgs(files: readonly string[], concurrency: number): string[] {
-  if (usesCoverage()) {
-    return ['--test', '--test-isolation=process', `--test-concurrency=${concurrency}`, ...files];
-  }
-  return orderedArguments(files, concurrency);
-}
-
-/** Runs the curated quick regression set and resolves to the exit code. */
 export async function runQuickTests(options: QuickRunOptions = {}): Promise<number> {
   if (options.list || options.dryRun) {
     process.stdout.write(formatPlan(Boolean(options.dryRun)));
@@ -335,7 +297,7 @@ export async function runQuickTests(options: QuickRunOptions = {}): Promise<numb
   let compileCache: string | undefined;
 
   try {
-    const baseEnv = cleanBaseEnv();
+    const baseEnv = stringEnv();
     const contractResult = await timedStage('[1/4] 合约生成物一致性校验', () =>
       runSpawned(['tools/gen-contracts.ts', '--check'], baseEnv, children),
     );
@@ -356,36 +318,29 @@ export async function runQuickTests(options: QuickRunOptions = {}): Promise<numb
       return typeResult.code;
     }
 
-    if (
-      process.env.NODE_DISABLE_COMPILE_CACHE !== '1'
-      && !usesCoverage()
-    ) {
-      compileCache = await mkdtemp(join(tmpdir(), 'circle-hub-quick-compile-'));
-    }
+    compileCache = await compileCacheDirectory('circle-hub-quick-compile-');
 
     const pgBegan = Date.now();
-    postgres = await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
-    await prepareTemplate(postgres);
+    postgres = await startSharedPostgres();
     process.stderr.write(`\n共享 PostgreSQL 模板准备完成 (${((Date.now() - pgBegan) / 1000).toFixed(2)}s)\n`);
 
     const laneEnv: NodeJS.ProcessEnv = {
       ...sharedEnv(postgres),
       ...(compileCache ? { NODE_COMPILE_CACHE: compileCache } : {}),
     };
-    delete laneEnv.NODE_TEST_CONTEXT;
 
     const unitOrdered = orderedQuickUnitFiles();
     const unitConcurrency = quickUnitConcurrency(unitOrdered.length);
     const unitResult = await timedStage(
       `[3/4] 快速单元测试（${unitOrdered.length} 文件，concurrency=${unitConcurrency}）`,
-      () => runSpawned(testLaneArgs(unitOrdered, unitConcurrency), laneEnv, children),
+      () => runSpawned(testArguments(unitOrdered, unitConcurrency, undefined, !usesCoverage()), laneEnv, children),
     );
     results.push(unitResult);
 
     const acceptanceOrdered = quickAcceptanceFiles();
     const acceptanceResult = await timedStage(
       `[4/4] 快速验收测试（${acceptanceOrdered.length} 文件，concurrency=1）`,
-      () => runSpawned(testLaneArgs(acceptanceOrdered, 1), laneEnv, children),
+      () => runSpawned(testArguments(acceptanceOrdered, 1, undefined, !usesCoverage()), laneEnv, children),
     );
     results.push(acceptanceResult);
 

@@ -159,8 +159,6 @@ test('the expected identity of a @2 document is the pinned original, not the rec
   const wrong = parseRuntimeContract(v2.document, { digest: (v2.document as { contract_sha256: string }).contract_sha256, runtimeVersion: 'synthetic-runtime-v2' });
   assert.equal(wrong.ok, false);
 });
-// Decision 184: an original contract has two identities. The whole digest says which bytes run; the interface identity is the
-// digest of what a workbook depends on, and is what a workbook carries when the contract's bed pins it.
 test('the interface form leaves out the members that say which bytes, and only those', () => {
   const original = runtimeDocument() as Record<string, any>;
   original.entries[0].status_authority = 'device_receipt_set:' + 'a'.repeat(64);
@@ -216,9 +214,7 @@ test('a @2 document that declares the interface identity of its original pins it
   const read = parseRuntimeContract(document); assert.ok(read.ok, JSON.stringify(read)); if (!read.ok) return;
   assert.deepEqual(read.contract.pinned, { identity: declared, build: v2.originalIdentity, bytes: v2.bytes });
   assert.notEqual(declared, v2.originalIdentity);
-  // The declaration is not part of the original: stripping the additions recovers the same original either way.
   assert.equal(runtimeDigest(stripAdditions(document)!), v2.originalIdentity);
-  // An original-format document is its own original: it pins its whole digest, as the bed it comes from does.
   const plain = parseRuntimeContract(original); assert.ok(plain.ok); if (plain.ok) assert.deepEqual(plain.contract.pinned, { identity: original.contract_sha256, build: original.contract_sha256, bytes: null });
 });
 for (const [name, value] of Object.entries({ 'another digest': 'b'.repeat(64), 'the whole digest': null, 'not a digest': 'interface', 'not a text': 7 })) test(`a declared interface identity that is not the one recomputed from the original is refused at its pointer: ${name}`, () => {

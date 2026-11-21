@@ -1,5 +1,3 @@
-// The written report of a replay: the counts and reasons of its parts merged, the normalizations added up, the Chinese text.
-// Synthetic outcomes only.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { compareResults } from './submissions-compare.ts';

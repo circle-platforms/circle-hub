@@ -1,4 +1,3 @@
-// Reset scopes are the four choices named by the owner; this is one declaration shared by CLI and console adapters.
 import { z } from 'zod';
 
 export { RESET_SCOPE, RESET_DATA_SCOPE, ResetScopeSchema, ResetDataScopeSchema, RESET_SCOPE_LABEL, RESET_ALL_LABEL } from '../../../contracts/api.ts';

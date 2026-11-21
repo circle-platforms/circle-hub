@@ -1,6 +1,3 @@
-// A synthetic runner template in the shape of the real one: a hidden identity row, notes, object and method lists to the right, a
-// header well below the top, formatted empty rows, drop-downs and defined names. Invented names only; the real template is a
-// deployment document and never lives in this pack. Deflated with a fixed time, so a generated sample stays byte-stable.
 import { createHash } from 'node:crypto';
 import { zipSync } from 'fflate';
 
@@ -15,8 +12,6 @@ const inline = (reference: string, value: string, style = '') => `<c r="${refere
 const dataRow = (number: number) => `<row r="${number}">${['3', '4', '4', '5', '5', '5', '5', '5', '5'].map((style, column) => `<c r="${String.fromCharCode(65 + column)}${number}" s="${style}" t="n"></c>`).join('')}</row>`;
 
 export interface TemplateBookFixture { sheet: string; header: string[]; identity_marker: string; range_name: string }
-/** `headerRow` defaults to TEMPLATE_HEADER_ROW (6). The bundled example pins 2 so description is row 3 and the first case lands on A4.
- *  `lastRow` defaults to TEMPLATE_LAST_ROW (80). Whole-workbook production tests that emit more rows pass a larger lastRow. */
 export function templateDocument(book: TemplateBookFixture, runtime: string, identity: string, headerRow = TEMPLATE_HEADER_ROW, lastRow = TEMPLATE_LAST_ROW): { sha256: string; xlsx_base64: string } {
   if (headerRow < 2) throw new Error('headerRow must leave row 1 for the identity marker');
   if (lastRow <= headerRow) throw new Error('lastRow must leave room after the header');
@@ -24,7 +19,6 @@ export function templateDocument(book: TemplateBookFixture, runtime: string, ide
   const rows = [
     `<row r="1" hidden="1" customHeight="1">${inline('A1', book.identity_marker)}${inline('B1', runtime)}${inline('C1', identity)}${header === 2 ? `${inline('K1', 'widget-seat')}${inline('L1', 'configure')}` : ''}</row>`,
   ];
-  // Decorative / list-source rows only when they sit strictly above the header (default layout keeps notes at 2–5).
   if (header > 5) {
     rows.push(
       `<row r="2">${inline('A2', '初始化', ' s="1"')}${inline('D2', '说明文字')}${inline('K2', '对象')}${inline('L2', 'widget-seat')}</row>`,

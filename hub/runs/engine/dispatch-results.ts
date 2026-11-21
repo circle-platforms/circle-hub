@@ -22,7 +22,6 @@ const Projection=z.object({job:z.string(),sha256:z.string(),rows:z.array(Row),ro
 export function appliesTo(job:RunJob,run:string,item:string):boolean{return job.verification_run===run?job.verification_item===item:job.plan_run===run&&job.items.includes(item);}
 type Admin={id:string;name:string;role:'admin'};
 async function activeAdmin(ctx:EngineContext):Promise<Admin|null>{const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);return admin?{id:admin.id,name:admin.name,role:'admin'}:null;}
-/** The job's result projection when it is the dispatch service's own, bound to this job and its workbook, one row per item; else null. */
 async function readProjection(ctx:EngineContext,reader:Principal,job:RunJob):Promise<z.infer<typeof Projection>|null>{
   if(!job.status.result)return null;
   const ref=parseReference(job.status.result);
@@ -33,26 +32,15 @@ async function readProjection(ctx:EngineContext,reader:Principal,job:RunJob):Pro
   const parsed=Projection.safeParse(json);
   return parsed.success&&parsed.data.job===job.job&&parsed.data.sha256===job.sha256&&parsed.data.rows.length===job.items.length&&new Set(parsed.data.rows.map(r=>r.item)).size===job.items.length&&parsed.data.rows.every(r=>job.items.includes(r.item))?parsed.data:null;
 }
-/**
- * Decision 160 (relay): the jobs a run was dispatched in, with each item's verdict from the same checked projection the run
- * engine applies, so a client tool reads the outcome by structure instead of re-reading the device return's prose. Nothing is
- * judged here; the administrative proof record of a job stays out.
- */
-/** Relay checked row fields without changing their nature or inferring missing fields. */
 export function exportedJobRow(row:z.infer<typeof Row>):NonNullable<ExportedJob['rows']>[number]{return structuredClone(row);}
 export async function exportedJobs(ctx:EngineContext,run:string,reader:Principal):Promise<ExportedJob[]>{return (await exportedJobsWithEnd(ctx,run,reader)).map(row=>row.exported);}
-/** exportedJobs, each with the time its journal recorded the end (the history export lists it); `reservations` saves reading them again for every run. */
 export async function exportedJobsWithEnd(ctx:EngineContext,run:string,reader:Principal,reservations?:RunReservations):Promise<Array<{exported:ExportedJob;ended_at:string|null}>>{
   if(!ctx.deps.dispatch)return [];
-  // The journal is read as a named administrator, as applyDispatchResults reads it: the dispatch service answers a job's status
-  // to administrators only, and a runner who is none got no job list at all (the call threw). What leaves here is still the
-  // runner's form: the projection is read at the reader's own tier and the reasons are the member-safe ones.
   const journalReader=reader.role==='admin'?reader:await activeAdmin(ctx);
   if(!journalReader)return [];
   const out:Array<{exported:ExportedJob;ended_at:string|null}>=[];
   for(const job of await ctx.deps.dispatch.jobs(journalReader,run,reservations)){
     const report=await readProjection(ctx,reader,job);
-    // a job that did not go out has no rows; say why and who acts, as the submit_result note does.
     const notRun=job.status.outcome==='not_dispatched'||job.status.outcome==='target_rejected'||job.status.outcome==='proven_not_executed';
     const why=notRun?statusDiagnostics(job,reader.role==='admin').missing_facts:[];
     out.push({ended_at:job.ended_at??null,exported:{job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,outcome:job.status.outcome,frozen:job.status.frozen,result:job.status.result??null,device_return:job.status.device_return??null,rows:report?report.rows.map(exportedJobRow):null,...(why.length?{missing_facts:why,next_action:why.map(f=>f.next_action).join('；')}:{}),...(notRun&&job.status.member_missing_facts?.length?{member_missing_facts:job.status.member_missing_facts.map(f=>({...f}))}:{})}});

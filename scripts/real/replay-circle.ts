@@ -1,4 +1,3 @@
-// Local read-only capture and inert Harness replay. Raw evidence stays in explicit private directories outside Git.
 import { capture, inspectBundle, safeFile } from './replay/bundle.ts';
 import { runReplay } from './replay/run.ts';
 import { compareReplay } from './replay/compare.ts';
@@ -13,7 +12,6 @@ export async function main(argv: string[], out: (line: string) => void = console
     const candidateGuards: string[] = [];
     for (let i = 0; i < args.length; i++) {
       const key = args[i].slice(2);
-      // The candidate may be several files or directories: that one option may repeat
       requireFact(args[i].startsWith('--') && allowed[command].includes(key) && (key === 'candidate-guard' || !values.has(key)) && (flags.has(key) || args[i + 1] !== undefined), '参数缺失、重复或不支持');
       if (key === 'candidate-guard')
         candidateGuards.push(args[++i]);

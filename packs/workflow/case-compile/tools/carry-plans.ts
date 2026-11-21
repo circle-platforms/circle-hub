@@ -1,8 +1,6 @@
 import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
-// Safely carries unchanged case-compile plan files and valid fidelity artifacts from a superseded plan run
-// to a newly opened plan run under five fail-closed gates and post-write byte-for-byte SHA-256 verification.
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -49,7 +47,6 @@ interface RunItemEntry {
   id: string;
   autoid: string | null;
   fields: Record<string, unknown>;
-  /** The item's overlay in the run directory's late.json (a recomposition bound after the run started), as the Hub's checks see it. */
   late?: Record<string, unknown>;
 }
 
@@ -303,11 +300,6 @@ async function resolveDestDir(cwd: ResolvedCwd, arg: string, label: string): Pro
   return { canonical: checked.canonical, relative: checked.relative };
 }
 
-/**
- * Carries eligible plan files and valid fidelity artifacts from `--source` to `--target`
- * after checking compatibility, scope/exclusion/rework filters, spec equivalence, fidelity digest,
- * workspace path containment, and post-write byte-for-byte SHA-256 verification.
- */
 export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
   try {
     const args = parseCliOptions(argv, OPTIONS, USAGE);

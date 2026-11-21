@@ -30,7 +30,6 @@ export function parseDeployment(input: unknown): Definition {
   return parsed.data;
 }
 
-/** Field paths only: values may contain deployment information and are never diagnostics. */
 export function differentFields(current: unknown, desired: unknown, path = ''): string[] {
   if (Object.is(current, desired)) return [];
   if (current !== null && desired !== null && typeof current === 'object' && typeof desired === 'object') {
@@ -44,7 +43,6 @@ export function differentFields(current: unknown, desired: unknown, path = ''): 
 type PackInput = Definition['packs'][number];
 export interface DeploymentPack extends PackInput { manifest: PackManifest | null; }
 
-/** Exact version edges only. Missing external edges are checked by the caller before writes. */
 export function deploymentOrder(packs: readonly DeploymentPack[]): DeploymentPack[] {
   const entries = new Map<string, DeploymentPack>();
   for (const pack of packs) {
@@ -131,7 +129,6 @@ function resourceDefinition(record: ResourceRecord): Definition['resources'][num
     allow_plaintext: record.allow_plaintext, credentials, settings: record.settings, ...(record.limits ? { limits: record.limits } : {}) };
 }
 
-/** Reads definitions and authorization metadata, never credential APIs or resolved variable values. */
 async function readDeploymentState(session: Session): Promise<DeploymentState> {
   const by = await session.admin(), records = await session.records(), hub = await session.hub(false, true);
   const users = (await records.principals.list()).filter(user => !user.deleted_at);
@@ -404,13 +401,9 @@ export async function exportCommand(session: Session, args: readonly string[]): 
   return 0;
 }
 
-/** Required records-owned current-schema capability; no fallback to public export or an older reader. */
 export interface ProtectedConfigurationDomain<State> {
-  /** Verifies the exact current schema before reading configuration, including auth hashes and complete pack object bytes. */
   capture(): Promise<State>;
-  /** Validates current format, object integrity and configuration closure without applying or logging it. */
   validate(input: unknown): State | Promise<State>;
-  /** Verifies the target schema and restores original identities and configuration through the controlled records API. */
   restore(snapshot: State): Promise<void>;
 }
 
@@ -455,7 +448,6 @@ async function readProtectedConfiguration(config: ProtectedRoot, input: unknown)
   } finally { await handle.close(); }
 }
 
-/** Captures a protected current-schema configuration file before reset's destructive stage. Never prints payload or hashes. */
 export async function exportProtectedConfiguration<State>(config: ProtectedRoot, domain: ProtectedConfigurationDomain<State>, target?: string): Promise<ProtectedConfigurationReceipt> {
   let payload: State;
   try { payload = await domain.validate(await domain.capture()); }
@@ -490,7 +482,6 @@ export async function exportProtectedConfiguration<State>(config: ProtectedRoot,
   }
 }
 
-/** Restores only a verified private snapshot. Reset owns quiescence, authorization and rollback on any failure. */
 export async function applyProtectedConfiguration<State>(config: ProtectedRoot, receipt: ProtectedConfigurationReceipt, domain: ProtectedConfigurationDomain<State>): Promise<void> {
   let snapshot: State;
   try { snapshot = await domain.validate((await readProtectedConfiguration(config, receipt)).payload); }
@@ -514,18 +505,15 @@ export interface ResetConfigurationPorts {
 }
 export interface DomainResetConfigurationOptions<State> extends ProtectedRoot {
   domain: ProtectedConfigurationDomain<State>;
-  /** Existing public apply orchestration, bound to the new database and closed before resolving; reject on differences. */
   applyDefinition(path: string): Promise<void>;
 }
 
-/** Owner DSN for the same database name before and after reset; records opens and closes each operation's pool. */
 export interface CurrentResetConfigurationOptions {
   config: RecordsConfig;
   applyDefinition(path: string): Promise<void>;
 }
 export type ResetConfigurationOptions<State = ConfigurationSnapshot> = DomainResetConfigurationOptions<State> | CurrentResetConfigurationOptions;
 
-/** Composition entry for server/api: platform receives callbacks, and imports no server implementation. */
 export function createResetConfigurationPorts<State = ConfigurationSnapshot>(options: ResetConfigurationOptions<State>): ResetConfigurationPorts {
   if ('config' in options) {
     return createResetConfigurationPorts<ConfigurationSnapshot>({

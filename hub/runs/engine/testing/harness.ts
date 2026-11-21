@@ -36,7 +36,6 @@ export interface HarnessOptions {
   /** Wire the lease service into the engine (a workflow that declares leases needs it). */
   leases?: boolean;
   leaseJobs?: (keys: readonly string[]) => Promise<Array<{key:string;job:string}>>;
-  /** Supplied explicitly by environment tests; leases alone never grant permission. */
   environmentAccess?: RunsEngineDeps['environmentAccess'];
   /** The device observations port (decision 112): the newest observations and a look at booked devices. */
   observations?: RunsEngineDeps['observations'];

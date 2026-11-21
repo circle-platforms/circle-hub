@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync, lstatSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { trackedSourcePaths } from './tracked-source.ts';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
@@ -192,8 +192,7 @@ describe('recorded decisions name their source', () => {
 });
 
 // Git's inventory covers code, tests, ops, dot-directories and extensionless text without scanning dependencies or build output.
-const TRACKED_TEXT = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0')
-  .filter(Boolean)
+const TRACKED_TEXT = trackedSourcePaths(ROOT)
   .flatMap((path) => {
     let byteDigest: string | undefined;
     const text = trackedFileText(join(ROOT, path), bytes => { byteDigest = createHash('sha256').update(bytes).digest('hex'); });
@@ -339,10 +338,11 @@ describe('no machine paths in repository text', () => {
     assert.ok(localPathProblems(file, text + '\n/' + 'Users/operator/project', digest).length > 0);
   });
 
-  it('covers docs, root Markdown, CI, code and tests', () => {
+  it('covers docs, root Markdown, CI, code and tests while excluding the frozen reference paths', () => {
     for (const path of ['AGENTS.md', 'docs/index.md', '.github/workflows/checks.yml', 'hub/server/units.test.ts', 'scripts/real/gold/regression-doc.test.ts', 'tests/acceptance/26-review-report.test.ts']) {
       assert.ok(TRACKED_TEXT.some((entry) => entry.path === path), path);
     }
+    assert.ok(TRACKED_TEXT.every(({ path }) => !path.startsWith('foundation/circle/') && !path.startsWith('references/')));
   });
 
   it('no tracked text has an unapproved machine path', () => {

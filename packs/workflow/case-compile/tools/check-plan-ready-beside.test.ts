@@ -1,4 +1,3 @@
-// The ready plans a pipeline case is checked beside: only the layout the pipeline writes has any.
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

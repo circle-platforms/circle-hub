@@ -18,7 +18,6 @@ export interface DispatchDiagnostics {
 const object = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 const clip = (value: string): string => value.slice(0, 800);
 
-/** Read only this job's integrity-checked projected report, never an administrative journal body. */
 export async function reportMissingFacts(records: Pick<RecordsKit, 'objects'>, job: RunJob, admin: boolean): Promise<Pick<DispatchDiagnostics, 'no_verdict' | 'missing_facts'>> {
   const reference = job.status.result;
   if (!reference || !/^src:[0-9a-f]{64}$/.test(reference) || job.status.outcome === 'not_dispatched') return { missing_facts: [] };
@@ -35,7 +34,6 @@ export async function reportMissingFacts(records: Pick<RecordsKit, 'objects'>, j
       if (admin && typeof row!.missing_fact === 'string' && typeof row!.next_action === 'string') {
         facts.push({ fact: clip(row!.missing_fact), next_action: clip(row!.next_action) });
       } else {
-        // These are existing projected completeness facts, not classifications of the diagnostic prose.
         const missing = Array.isArray(row!.missing_facts) ? row!.missing_facts : [];
         const fact = missing.includes('owned') ? '这次设备结果缺少可采用的归属事实' : missing.includes('report') || missing.includes('complete') ? '这次设备结果的完整报告尚未取得' : '这次设备结果的完整性前提尚未齐全';
         facts.push({ fact, next_action: '读取本次答复中的结果引用查看缺失前提；需要管理员处理的，联系管理员核对；不要重新发送作业' });
@@ -51,7 +49,6 @@ export function releaseMissingFacts(checks: NonNullable<JobStatus['admin_release
     : {fact:check.satisfied===null?`核对项目“${check.label}”缺少前置事实，尚未核对`:`核对项目“${check.label}”尚未满足`,next_action:'核对本次预订和核验结果；联系管理员查看具体放行条件后重新核验'}).slice(0,16);
 }
 
-/** A declared JSON field and operator name are public; expected values and raw response bytes are not. */
 export function readConditionFact(condition: {pointer:string;operator:string}): DispatchMissingFact {
   const operation = condition.operator==='at_least'?'至少数量':condition.operator==='equals'?'相等':condition.operator==='sha256'?'摘要一致':'声明';
   return {fact:`缺少通过环境只读核对项目 ${condition.pointer}（${operation}）的有效前提`,next_action:'请管理员核对该项目的声明和受限原件，补齐这项条件后重新核验'};

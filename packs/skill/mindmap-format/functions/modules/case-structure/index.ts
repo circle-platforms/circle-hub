@@ -1,5 +1,3 @@
-// The module case-structure of mindmap-format: one declared structural reading of a test mind map, for recomposition and
-// compilation. A node's role comes from its tree position and declared fields. No prose classification.
 import POLICY from './policy.json' with { type: 'json' };
 const isRecord = (value: unknown): value is { [key: string]: unknown } => typeof value === 'object' && value !== null && !Array.isArray(value);
 export interface AuthorAtom {
@@ -38,7 +36,6 @@ export interface StructureReport {
         next_action: string;
     }>;
 }
-// A platform export writes a key with no value on group nodes: that declares nothing, so it makes no node a case.
 const declared = (value: unknown) => value !== undefined && value !== null && value !== '';
 const white = (c: string) => c === ' ' || c === '\t' || c === '\r';
 const ident = (s: string) => s.length > 0 && [...s].every(c => c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c === '_' || c === '-');
@@ -112,10 +109,6 @@ export function analyzeStructure(model: unknown, sha: string, depths?: number[])
             excluded.push('不在本轮声明的用例深度');
         if (c.parent !== null || candidates.some(other => other.parent === c.index))
             missing.push('嵌套用例的编译范围未声明；作者拆开或明确独立用例边界');
-        // Roles come from the tree and declared fields, never from the words. A leaf with the declared precondition priority is a
-        // state to establish. Of the rest, a node with children is an action and a leaf under it is that action's expectation, at
-        // any depth, so a chain of steps reads as its actions in order. A leaf beside a step is an action no expectation follows,
-        // as the reference implementation reads it; it is only an expectation when the case has no step at all.
         const leaf = (n: any) => Array.isArray(n?.children) && n.children.length === 0;
         const children = (node.children ?? []).map((index: number) => nodes[index]);
         const preconditions = children.filter((n: any) => leaf(n) && Number(n?.data?.priority) === POLICY.precondition_priority);
@@ -170,9 +163,7 @@ export function analyzeStructure(model: unknown, sha: string, depths?: number[])
                     let matches = explicit ? after.filter(a => a.labels.includes(explicit) || a.node_id === explicit) : labels.length ? after.filter(a => a.labels.some(label => labels.includes(label))) : after.length === 1 ? after : [];
                     if (!explicit && !matches.length && after.length === 1 && !after[0].explicit_labels.length && (!number || after[0].number_label === number || after[0].number_label === null))
                         matches = after;
-                    // Decision 103 (aligned with SyntheticReference): an expectation with no step_ref, label or number under several actions
-                    // belongs to them as one step; the authoring model splits it into verbatim clauses and asserts each after the
-                    // operation it observes, a judgment the Hub checks by quote. An explicit reference matching none or several stays unbound.
+                    // An expectation with no step_ref, label or number under several actions belongs to all of them as one step.
                     const wholeStep = !explicit && !(n.data && Object.hasOwn(n.data, 'step_ref')) && !labels.length && !number && !matches.length && after.length > 1;
                     if (wholeStep)
                         matches = after;

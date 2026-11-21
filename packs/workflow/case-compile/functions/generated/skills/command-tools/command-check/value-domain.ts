@@ -1,5 +1,3 @@
-// Typed rules carry a model judgment; literal quote checks do not establish their meaning.
-
 export const VALUE_RULE_KINDS = ['max_bytes', 'max_characters', 'part_max_characters', 'allowed_specials', 'forbidden_characters', 'not_at_start', 'not_at_end', 'wildcard', 'reserved_words', 'no_whitespace'] as const;
 export type ValueRuleKind = typeof VALUE_RULE_KINDS[number];
 
@@ -16,12 +14,12 @@ export type ValueRule =
   | { kind: 'no_whitespace'; quote: string };
 
 export interface ValueDomainClaim {
-    commands: string[];
-    parameter: string;
-    reference: string;
-    row: string;
+  commands: string[];
+  parameter: string;
+  reference: string;
+  row: string;
   rules: ValueRule[];
-    record?: string;
+  record?: string;
 }
 
 export const TEXT_PARAMETER_TYPES: readonly string[] = ['string', 'hostname', 'ip_or_hostname'];
@@ -281,7 +279,6 @@ export function effectiveRules(claims: readonly ValueDomainClaim[]): { rules: Ru
     if (stated.every((one) => sameRule(one.rule, stated[0]!.rule))) rules.push(stated[0]!);
     else disagreed.push(kind);
   }
-  // Rules of different claims can contradict each other as the rules of one claim cannot: the readers disagree, and neither side is used.
   for (let clash = contradiction(rules.map((one) => one.rule)); clash !== null; clash = contradiction(rules.map((one) => one.rule))) {
     for (const kind of clash.kinds) { rules.splice(rules.findIndex((one) => one.rule.kind === kind), 1); disagreed.push(kind); }
   }

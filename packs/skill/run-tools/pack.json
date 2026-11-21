@@ -13,8 +13,8 @@
     },
     {
       "path": "functions/modules/hub-client/index.ts",
-      "sha256": "9711937aa8567929cf96e2af7336eda73e567893b1d9230e72f00e707cd3e8c4",
-      "size": 18728
+      "sha256": "a108ab67eca392a3c59fa57fb1ff99f5e7bebfccbc1fad15181857fb85fdc4fc",
+      "size": 15494
     },
     {
       "path": "skill.json",

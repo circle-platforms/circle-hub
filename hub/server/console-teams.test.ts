@@ -1,4 +1,3 @@
-// Synthetic PageContext only; team rows are faked in this file (fakes.ts stays Codex-owned).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Principal } from '../records/api.ts';
@@ -232,7 +231,6 @@ test('teamDetailPage lists executor assignments under 测试环境 with target n
   (ctx.deps as unknown as { memberCapabilities: () => Promise<unknown> }).memberCapabilities = async () => ({
     environmentAccess: { enforced: false, ready: true, missing: null, nextAction: null },
   });
-  // A second business system remains unassigned so the bulk checkbox form is rendered.
   const listed = await ctx.deps.resources.list(ADMIN);
   ctx.deps.resources.list = async () => [
     ...listed,
@@ -252,7 +250,6 @@ test('teamDetailPage lists executor assignments under 测试环境 with target n
   const environmentSection = body.slice(body.indexOf('测试环境分配'));
   assert.match(environmentSection, /合成实验室/);
   assert.doesNotMatch(environmentSection.replace(/value="exe_[^"]+"/g, 'value="hidden"'), /exe_/);
-  // Boss 15:02 — reclaim goes through a confirmation dialog with occupancy + force-release, not an inline POST.
   assert.match(environmentSection, /href="#unassign-environment-0"/);
   assert.match(environmentSection, /撤回…/);
   assert.match(environmentSection, /id="unassign-environment-0"/);

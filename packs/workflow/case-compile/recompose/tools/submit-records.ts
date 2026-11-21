@@ -1,11 +1,4 @@
 import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
-// Recomposition, one file per case. The model writes only what takes judgment: the method, what it adapted, what it made
-// concrete and what is missing. Everything the projection already knows (the atoms, their spans, the original ledger, the
-// coverage) is filled in here, as InfoTest's fill_mechanical_fields does, so a model never retypes author text. It decides
-// nothing: the Hub checks every record, and a file that says nothing about an atom leaves that atom settled.
-//   node <skill directory>/tools/submit-records.ts --hub %HUB_URL% --run <run id> --model <model> --records <directory> <<'EOF'
-//   %HUB_TOKEN%
-//   EOF
 import { realpathSync } from 'node:fs';
 import { open, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -19,7 +12,6 @@ const SHOWN_CHARS = 12_000;
 type Row = { [key: string]: any };
 const list = (value: unknown): Row[] => Array.isArray(value) ? value as Row[] : [];
 
-/** The exit a state carries when the model names none: the case goes on to the writer. */
 const onward = (atom: string) => ({ action: '进入编写', object: atom, owner: '编写模型', due: '编写提交之前' });
 
 const ALLOWED_RECOMPOSE_FILE_KEYS = new Set([
@@ -48,7 +40,6 @@ const RECOMPOSE_METHOD_KINDS: readonly string[] = RECOMPOSE_FORMAT.method_kinds;
 const LITE_SHAPE_HINT =
   '{"item":"<下载文件中的 id>","method":{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"}}（可选字段仅 slots/states/adapted/concretizations/unknowns），严禁写完整 schema 字段或 "handling"';
 
-/** Enforces the single lite record format on both model files and direct `recordFor` callers. */
 export function assertValidRecomposeShape(value: unknown, contextLabel: string, requireItem: boolean): Row {
   if (!isRecord(value)) {
     throw new CallFailure("invalid_parameters", `${contextLabel} 必须使用精简格式 JSON 对象（实际不是对象）。请按单一精简格式重写为 ${LITE_SHAPE_HINT}`, "提供单条精简重组 JSON 对象；按错误中展示的 item 与 method 字段形状重写");
@@ -82,7 +73,6 @@ export function assertValidRecomposeShape(value: unknown, contextLabel: string, 
   return value as Row;
 }
 
-/** The complete recompose-record@1 of one case: the frozen item plus the model's file. */
 export function recordFor(item: Row, file: Row, model: string): Row {
   const fields = item.fields ?? {}, atoms = list(fields.atoms);
   const named = [fields.case_id, atoms.find((a) => a.kind === 'intent')?.text].filter(Boolean).join(' ') || '编号和标题未知';
@@ -133,18 +123,11 @@ export function recordFor(item: Row, file: Row, model: string): Row {
   };
 }
 
-/** What one case's file becomes in the submission: the entry the Hub receives and check-record checks (one builder for both). */
 export function itemSubmission(item: Row, file: Row, model: string): Row {
   const data = recordFor(item, file, model);
   return { item: item.id, handling: 'handled', slots: { record: [{ text: '模型的重组判断', quotes: data.atoms.map((a: Row) => ({ reference: a.quote_ref, text: a.text })), data }] } };
 }
 
-/** The whole submission: one record per case file, and every frozen item accounted for. */
-/**
- * The submission of a records directory. A whole submission covers every frozen case; a partial one (`--partial yes`,
- * per-case pipelines, decision 179) covers the cases written so far: the run declares incremental submissions, so a later
- * submission that keeps them and adds new cases costs no repair round, and the batch is sealed when every case is in.
- */
 export function submissionFor(run: Row, files: Row[], model: string, partial = false): Row {
   const items = list(run.items), byId = new Map(items.map((item) => [item.id, item]));
   const missing = items.filter((item) => !files.some((file) => file.item === item.id)).map((item) => item.id);
@@ -159,11 +142,6 @@ export function submissionFor(run: Row, files: Row[], model: string, partial = f
   };
 }
 
-/**
- * One submission of a records directory at a time. Each reads the directory inside the lock, so with cases submitted one by
- * one from parallel pipelines a later submission holds every record an earlier one did, and the run's latest accepted
- * result never loses a case that was already in. A lock older than `staleMs` is a crashed submitter's and is taken over.
- */
 export async function withRecordsLock<T>(directory: string, work: () => Promise<T>, options: { waitMs: number; staleMs: number; stepMs: number } = { waitMs: 20 * 60_000, staleMs: 30 * 60_000, stepMs: 500 }): Promise<T> {
   const lock = join(directory, '.submit.lock');
   const started = Date.now();
@@ -174,7 +152,6 @@ export async function withRecordsLock<T>(directory: string, work: () => Promise<
       break;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      // A directory that is not there is refused by the read below, in the words that name --records.
       if (code === 'ENOENT' || code === 'ENOTDIR') return await work();
       if (code !== 'EEXIST') throw error;
       const age = await stat(lock).then((s) => Date.now() - s.mtimeMs, () => 0);

@@ -1,4 +1,3 @@
-// Pre-write command candidate selector using coarse recall (<=40) + Plumb choice tournament (<=25 per batch).
 import { readLateFile, recompositionRecordOf, withLate } from '../functions/late.ts';
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir, readFile } from 'node:fs/promises';
@@ -113,7 +112,6 @@ function parseLimit(raw: string | undefined): number {
 function extractItemSteps(raw: Record<string, unknown>): Array<{ stepIndex: number; stepText: string; query: string }> {
   const fields = isRecord(raw.fields) ? raw.fields : {};
   const title = typeof fields.title === 'string' ? fields.title.trim() : '';
-  // The late overlay's record when the item carries one (functions/late.ts), else the frozen one.
   const recomposition = recompositionRecordOf(raw) ?? null;
 
   const adaptedCmds: string[] = [];
@@ -176,7 +174,6 @@ async function loadRunCaseItems(runDir: string, filter?: string): Promise<Loaded
   }
 
   const loaded: LoadedCaseItem[] = [];
-  // Records bound after the run started are in the run directory's late.json once the Hub has accepted them.
   const late = readLateFile(runDir);
   for (const name of entries) {
     const stem = basename(name, '.json');
@@ -223,7 +220,6 @@ export async function runCmdSelectPlumb(
       return typeof val === 'string' && val.trim() ? val.trim() : undefined;
     };
 
-    // --run is the run directory, as for every tool that reads a run: the run.json file is refused with the one-line correct form.
     const runDir = resolveRunDirectory(getReq('--run')).lexical;
     const outDir = resolve(strOpt('--out-dir') ?? join(runDir, 'plumb', 'cmd_candidates'));
     const itemFilter = strOpt('--item');

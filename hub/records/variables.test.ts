@@ -5,12 +5,11 @@ import { readdir, readFile, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { openTestRecords } from '../testing/records.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
-import { canonicalize, newId, type RecordsKit } from './api.ts';
+import { newId, type RecordsKit } from './api.ts';
 let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });
 after(() => postgres?.stop());
 async function setup(t: any) { const kit = await openTestRecords({ postgres }); t.after(() => kit.close()); const admin = (await kit.principals.bootstrapAdmin('合成管理员')).user; const user = await kit.principals.createUser(admin, '合成用户'); return { kit, admin, user }; }
-const consumer = () => ({ definition: newId('res'), item: 'password', sends_to: 'a'.repeat(64) });
 const key = () => randomBytes(24).toString('base64url');
 test('named variable versions are append only, idempotent by canonical content, private and mutually exclusive', async (t) => {
     const { kit, admin, user } = await setup(t);

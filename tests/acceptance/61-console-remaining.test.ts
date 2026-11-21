@@ -117,10 +117,8 @@ describe('the administrator\'s entries say what they are for (issues 219, 220, 2
     assert.equal(page.status, 200);
     const materials = /<div data-product-materials>(.*?)<\/div><\/div>/s.exec(page.body)?.[0] ?? '';
     assert.match(materials, /各产品来源导入的内容，由产品包自己声明：/);
-    // Every row is a product that can be chosen in the U2 command form, with at least one thing its producers import.
     const rows = [...materials.matchAll(/<tr[^>]*><td><b>([^<]+)<\/b> <code>([^<]+)<\/code><\/td><td><ul class="ch-plain-list">((?:<li>[^<]+<\/li>)+)<\/ul><\/td><\/tr>/g)];
     assert.ok(rows.length > 0, materials.slice(0, 400));
-    // Product choices come from command registration (select), not a hand-copied datalist (regression rule 0 / U2).
     const offered = [...(/<select name="product">(.*?)<\/select>/s.exec(page.body)?.[1] ?? '').matchAll(/<option value="([^"]+)">/g)].map((option) => option[1]).filter((value) => value.length > 0);
     assert.deepEqual(rows.map((row) => row[2]).sort(), [...offered].sort());
     // The general card assumes no kind of material; a planned module no longer takes a card of its own.

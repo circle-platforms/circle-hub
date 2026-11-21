@@ -1,4 +1,3 @@
-// Projection-only synthetic ports; no PostgreSQL, environment files, vault or network.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { memberCapabilities, type MemberCapabilitySources, type MemberCapabilities, type MemberEnvironmentCapability } from './permissions.ts';
@@ -50,7 +49,6 @@ test('member projection preserves independent unattributed own bookings without 
   assert.equal(view.unattributed_holdings?.[0].booking_run, holdings[0].booking_run);
   assert.equal(view.unattributed_holdings?.[0].since, at);
   assert.equal(view.unattributed_holdings?.[1].until, null);
-  // Without the assignment guard a missing assignment stops nothing: it is no denial, and the booking's sentence says it can be used.
   assert.equal(view.denials.some(item => item.reason === '尚无已分配的运行环境'), false);
   assert.ok(view.unattributed_holdings?.every(row => /没有启用运行环境分配检查/.test(row.assignment_reason ?? '')));
   enforcement = true;

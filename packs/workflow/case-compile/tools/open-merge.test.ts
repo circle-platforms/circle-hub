@@ -1,6 +1,3 @@
-// The merge is done by code after the pipeline (decision 179): plans to the plan run, the workbook generated and uploaded as a
-// workbook, the merge run started with the plan run's own inputs, the plans to the merge run; any refusal is one line
-// "合并不了：…" in the Hub's words and exit 1. Synthetic tool answers only.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -25,7 +22,6 @@ async function world() {
   await writeFile(join(dir, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01bookingbookingbooking0', recompose_run: RECOMPOSE, recompose_record: 'rec:' + 'a'.repeat(64), plan_run: PLAN }));
   return dir;
 }
-/** The skill's tools, scripted: submit-plans writes the Hub's whole answer beside the plans and prints where it is. */
 function tools(dir: string, answers: { plan: string; merge: string }, overrides: Partial<Record<string, ToolRun>> = {}) {
   const calls: Array<{ tool: string; args: string[]; stdin?: string }> = [];
   let n = 0;

@@ -140,7 +140,6 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
     }
   }
   if (run.predecessor !== undefined) for (const result of await readScope(`run:${run.predecessor}`, () => resultsOf(store, run.predecessor!))) if (!records.has(result.digest)) records.set(result.digest, null);
-  // W06 R[7]: the result an input bound after the start resolved to in this validation is citable, in the role of its slot.
   for (const row of late ?? []) {
     if (row.reference === undefined) continue;
     const digest = row.reference.slice('rec:'.length);

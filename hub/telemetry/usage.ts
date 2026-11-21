@@ -1,2 +1,1 @@
-// The process context is owned by records so lower layers never depend on telemetry.
 export { SLOW_QUERY_MS, MAX_TRACE_STEPS, MAX_STATUS_LENGTH, installTraceSink, traceSinkInstalled, tracing, currentTrace, addUsage, startTrace, background, step, addEvent, updateTrace, setTraceStatus, withoutTrace, recordQuery, recordSourceRead, type Usage, type SpanRow, type TraceSink, type TraceOptions, type TraceFields } from '../records/api.ts';

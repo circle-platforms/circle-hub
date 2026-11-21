@@ -28,7 +28,6 @@ export const startOfDay = (time: number): number => {
   return d.getTime();
 };
 
-/** Load for the overview page (K4; U5 retired the JSON twin). */
 export interface OverviewWindow {
   days: number;
   now: number;
@@ -46,7 +45,6 @@ export async function loadOverviewWindow(ctx: PageContext, days: number): Promis
   return { days, now, since, runs, more, tasks };
 }
 
-/** One bucket per day in the window, oldest first. */
 export function overviewDayBuckets(tasks: readonly TaskRow[], days: number, now: number): { start: number; end: number; inDay: TaskRow[] }[] {
   return Array.from({ length: days }, (_, i) => {
     const start = startOfDay(now - (days - 1 - i) * DAY);

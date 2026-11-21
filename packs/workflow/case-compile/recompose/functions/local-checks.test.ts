@@ -1,6 +1,3 @@
-// The local runner rebuilds, from the frozen download, input the Hub builds in its own code. Each piece that mirrors Hub code is
-// run here beside the Hub's own function on the same data, so a change of the Hub's side shows up as a red test here, and the
-// words copied from it are pinned to its source. The Hub's whole validation is compared in tools/check-record-hub.test.ts.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -20,7 +17,6 @@ const entry = (words: string[], id = '1', params: Row[] = [param('pool', 'string
 
 const parsed = (text: string): KnowledgeNodes => new Map(text.split('\n').filter(Boolean).map((line) => JSON.parse(line)).slice(1).map((node: Row) => [node.path, node]));
 
-/** The Hub's own selection (hub/knowledge/catalog-selection.ts) over the same nodes, answered from what the export wrote. */
 async function hubSays(text: string, selection: { base: string; lines: string[] }): Promise<{ entries: Row[] } | { missing: string }> {
   const nodes = parsed(text);
   const byDigest = new Map([...nodes.values()].map((node) => [node.digest, node]));
@@ -50,16 +46,12 @@ test('the catalog the local runner selects is the catalog the Hub\'s selection a
     entry(['widget', 'pool', 'add']),
     entry(['widget', 'pool']),
     entry(['show', 'health']),
-    // Two definitions of one head are one entry with both signatures.
     entry(['widget', 'overload'], 'a'),
     entry(['widget', 'overload'], 'b', [param('mode', 'string')]),
     entry(['gadget']),
-    // A definition a manual produced has no overloads of its own: the Hub takes it as a command without arguments, and when the
-    // command tree also defines the head, as the first of the two (round 33's real tree has such a head).
     { words: ['widget', 'bare'], signatures: undefined as unknown as Row[] },
     { words: ['widget', 'both'], signatures: undefined as unknown as Row[] },
     entry(['widget', 'both'], 'z'),
-    // Not catalog data: no words, or overloads that are no list.
     { words: [], signatures: [] },
     { words: ['widget', 'broken'], signatures: 'none' as unknown as Row[] },
   ];
@@ -94,7 +86,6 @@ test('the limits of the Hub\'s selection are the local runner\'s, with the Hub\'
     assert.ok('missing' in local, JSON.stringify(lines).slice(0, 40));
     assert.deepEqual(local, await hubSays(text, { base: '/commands', lines }), JSON.stringify(lines).slice(0, 40));
   }
-  // The count and size of the lines are limited where the evaluation builds the check input, before the selection is asked for.
   const evaluate = readFileSync(new URL('../../../../../hub/runs/engine/evaluate.ts', import.meta.url), 'utf8');
   const tooMany = selectedCatalog(nodes, { base: '/commands', lines: Array.from({ length: 129 }, (_, index) => 'widget ' + index) });
   const tooLong = selectedCatalog(nodes, { base: '/commands', lines: ['x'.repeat(8193)] });

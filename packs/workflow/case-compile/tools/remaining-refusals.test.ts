@@ -30,7 +30,6 @@ test('normalization refuses missing inputs and occupied outputs using native fil
 test('recomposition CLI declares JSON and argument failures at their producer boundary', async (t) => {
   const scratch = await mkdtemp(join(tmpdir(), 'typed-recompose-')); t.after(() => rm(scratch, { recursive: true, force: true }));
   await writeFile(join(scratch, 'run.json'), '{'); await writeFile(join(scratch, 'parts.json'), '[]');
-  // --run is the run directory (the folder that holds run.json), as for every tool that reads a run.
   const malformed = cli('seal-recompose.ts', ['--run', '.', '--parts', 'parts.json', '--model', 'synthetic-model', '--out', 'draft.json'], scratch);
   assert.equal(malformed.status, 1); assert.match(malformed.stderr, /^参数无效：--run 不是完整的 UTF-8 JSON/);
   const asFile = cli('seal-recompose.ts', ['--run', 'run.json', '--parts', 'parts.json', '--model', 'synthetic-model', '--out', 'draft.json'], scratch);

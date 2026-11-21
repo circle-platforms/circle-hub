@@ -294,7 +294,6 @@ test('parameters.scope projects only in-scope cases, freezes out_of_scope metada
   assert.equal(picked.groups[0].scope?.words, '本次只编第一、三条');
   assert.deepEqual(picked.groups[0].scope?.out_of_scope.map((entry) => entry.autoid), [SECOND]);
 
-  // Verification run narrowed to [AUTOID] against a plan_result of [AUTOID, THIRD] is refused.
   const workbook = { slot: 'workbook', parser: 'xlsx@1', sha256: 'b'.repeat(64), model: coreModel(generateWorkbook(generationFixture())) };
   const delivered = picked.items.map((item: any) => ({
     item: item.id,
@@ -326,7 +325,6 @@ test('recompose parameters.scope filters items & seal batch while retaining full
     context: { run: 'run_recompose_scoped' },
   });
 
-  // 1. Invalid recompose scope shapes and missing autoids refuse.
   for (const bad of [
     {},
     { words: '   ', cases: [AUTOID] },
@@ -340,7 +338,6 @@ test('recompose parameters.scope filters items & seal batch while retaining full
     assert.ok(out.error?.fix);
   }
 
-  // 2. Valid scoped recompose projects only in-scope items in mindmap order, records scope + out_of_scope, and seals on those items alone.
   const recomposeOut = projectRecompose(recomposeInput({ words: '本次仅编第一、三条', cases: [THIRD, AUTOID] })) as unknown as {
     items: Array<{ id: string; fields: { case_id: string; source_ref: string; node: string } }>;
     groups: Array<{ kind: string; items: string[]; scope?: { words: string; cases: string[]; out_of_scope: Array<{ autoid: string; title: string }> } }>;
@@ -363,7 +360,6 @@ test('recompose parameters.scope filters items & seal batch while retaining full
   assert.equal(sealOk[0].verdict, 'support');
   assert.equal((sealOk[0].data as { total: number; supplied: number }).total, 2);
 
-  // 3. case-compile must fail closed at start_run if requested selection exceeds bound recomposition_run items.
   const recompRunBound = {
     slot: 'recomposition_run',
     external: null,
@@ -409,24 +405,20 @@ test('recompose parameters.scope filters items & seal batch while retaining full
     context: { leases: { now: '2026-10-23T02:00:00.000Z', entries: [] }, product: 'orbit', root: 'r'.repeat(64), product_pack_digest: 'p'.repeat(64) },
   });
 
-  // Unscoped whole-doc compile exceeds scoped [AUTOID, THIRD] -> refused.
   const wholeTooWide = projectItems(compileWithRecomp({ pipeline: 'recomposed' })) as { error?: { code: string; message: string; fix: string; pointer?: string } };
   assert.equal(wholeTooWide.error?.code, 'case-compile.invalid_parameter', JSON.stringify(wholeTooWide));
   assert.match(wholeTooWide.error?.message ?? '', /超出.*冻结范围|不在.*冻结条目/);
   assert.match(wholeTooWide.error?.fix ?? '', /扩大范围.*recompose|重开.*recompose/);
 
-  // Wider scope [AUTOID, SECOND, THIRD] -> refused at /parameters/scope/cases.
   const scopeTooWide = projectItems(compileWithRecomp({ pipeline: 'recomposed', scope: { words: '临时加第二条', cases: [AUTOID, SECOND, THIRD] } })) as { error?: { code: string; pointer?: string; message: string; fix: string } };
   assert.equal(scopeTooWide.error?.code, 'case-compile.invalid_parameter', JSON.stringify(scopeTooWide));
   assert.equal(scopeTooWide.error?.pointer, '/parameters/scope/cases');
   assert.match(scopeTooWide.error?.message ?? '', new RegExp(SECOND));
 
-  // Out-of-scope single autoid SECOND -> refused at /parameters/autoid.
   const autoidOutside = projectItems(compileWithRecomp({ autoid: SECOND, pipeline: 'recomposed' })) as { error?: { code: string; pointer?: string } };
   assert.equal(autoidOutside.error?.code, 'case-compile.invalid_parameter', JSON.stringify(autoidOutside));
   assert.equal(autoidOutside.error?.pointer, '/parameters/autoid');
 
-  // Matching scope [AUTOID, THIRD] and narrowing subset scope [AUTOID] -> both allowed.
   const exactOk = projectItems(compileWithRecomp({ pipeline: 'recomposed', scope: { words: '本次仅编第一、三条', cases: [AUTOID, THIRD] } })) as { error?: unknown; items: Array<{ fields: { autoid: string } }> };
   assert.equal(exactOk.error, undefined, JSON.stringify(exactOk.error));
   assert.deepEqual(exactOk.items.map((i) => i.fields.autoid), [AUTOID, THIRD]);
@@ -435,4 +427,3 @@ test('recompose parameters.scope filters items & seal batch while retaining full
   assert.equal(narrowOk.error, undefined, JSON.stringify(narrowOk.error));
   assert.deepEqual(narrowOk.items.map((i) => i.fields.autoid), [AUTOID]);
 });
-

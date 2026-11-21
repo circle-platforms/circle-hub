@@ -1,18 +1,9 @@
-// Where a value leaves the JSON Schema a pack declares for it, with the place, what was found and what the schema allows. The
-// Hub checks a slot record's data against the slots.schema.json of the pack before it runs any check, and refuses the whole
-// record when it does not fit (SUBMISSION_SCHEMA_VIOLATION at the JSON Pointer of the first leaf that does not). The same schema
-// is read here, so the refusal can come before the submission. Only the keywords the pack's generated schemas use are read, and
-// a keyword outside them is not guessed: a value the schema reader of this pack (functions/schema.ts) refuses with no place found
-// is reported at the root.
 import { schema as packSchema } from './schema.ts';
 import { isRecord } from './text.ts';
 
 export interface ShapeIssue {
-  /** JSON Pointer into the value checked ('' is the value itself). */
   pointer: string;
-  /** What the value has there, as a phrase: what is written, or that it is missing or not declared. */
   found: string;
-  /** What the schema allows there. */
   expected: string;
 }
 
@@ -28,7 +19,6 @@ const show = (value: unknown): string => {
 };
 const fits = (type: unknown, value: unknown): boolean => type === 'number' ? typeof value === 'number' && Number.isFinite(value) : type === 'integer' ? Number.isInteger(value) : kindOf(value) === type;
 
-/** What a schema node allows, in words: the closed set of an enum, the constant, the alternatives, or the type. */
 export function allowed(node: unknown): string {
   if (!isRecord(node)) return '符合声明的值';
   if (Array.isArray(node.enum)) return node.enum.map((value) => JSON.stringify(value)).join(' | ');
@@ -74,9 +64,7 @@ function walk(node: unknown, value: unknown, pointer: string, out: ShapeIssue[])
   }
 }
 
-/** The leaves of `value` that do not fit `shape`, in document order; empty when it fits. */
 export function shapeIssues(shape: unknown, value: unknown): ShapeIssue[] {
-  // The verdict is the pack's own schema reader's (the one the `record` check uses); the walk below only says where.
   if (packSchema(shape).safeParse(value).success) return [];
   const out: ShapeIssue[] = [];
   walk(shape, value, '', out);

@@ -252,8 +252,6 @@ export class PgCallLog implements CallLog {
     if (typeof query.tool !== 'string' || !TOOL.test(query.tool)) throw new TypeError('tool must be a tool name or protocol method');
     if (typeof query.errorCode !== 'string' || !ERROR_CODE.test(query.errorCode)) throw new TypeError('errorCode is not a code');
     const since = normalizeTime(query.since, 'since');
-    // Boss 18:09: without stored path / object / request digest, a coarse count would claim false sameness.
-    // Codex records those facts on append and filters here; until then identity queries count as zero priors.
     if (
       (typeof query.path === 'string' && query.path.length > 0) ||
       (typeof query.objectKey === 'string' && query.objectKey.length > 0) ||

@@ -1,4 +1,3 @@
-// Disclosure-only command-domain collection. No verdict, cleanup or resource-policy decision is produced.
 import { createHash } from 'node:crypto';
 import { parseRuntimeContract, type CommandDomainProbe } from './runtime-contract.ts';
 import { parseManifest } from './manifest.ts';
@@ -18,7 +17,6 @@ export interface PrecheckInputs { root: string; contract: unknown; profile: unkn
 export interface DisclosureGap { pointer: string; missing: string; next_action: string }
 export interface ReadOnlyQuery { object: string; command: string; reference: string; identity: CommandIdentity; mapping: { contract_sha256: string; pointer: string; cleanup_source: string; cleanup_sha256: string } }
 export interface ProbeObservation { reference: string; sha256: string; bytes: Uint8Array; complete: boolean }
-/** Implementations must be the caller's already-authorized, read-only transport, never an arbitrary command runner. */
 export interface ReadOnlyProbeReader { read(query: ReadOnlyQuery): Promise<ProbeObservation> }
 export interface PrecheckRow {
   object: string; operation: { pointer: string; line: string; identity: CommandIdentity | null };
@@ -79,7 +77,6 @@ export function commandDomainPrecheck(input: PrecheckInputs): CommandDomainRepor
 }
 function queryFor(probe: CommandDomainProbe, object: string, grammar: ReturnType<typeof compileGrammar>, definitions: readonly CatalogCommandDefinition[], policy: ReturnType<typeof readCommandPolicy>, contract: string, source: string, sha256: string, rule: number, gaps: DisclosureGap[]): ReadOnlyQuery | null {
   const identity = identityOf(commandIdentity(grammar, probe.command));
-  // Resolve the exact catalog reference through the same frozen declarations used by the full grammar.
   const bound = definitions.filter(entry => entry.reference === probe.reference && entry.path === identity?.path);
   const declaredIdentity = identityOf(commandIdentity(compileGrammar(bound), probe.command));
   if (!identity || !declaredIdentity || JSON.stringify(identity) !== JSON.stringify(declaredIdentity) || !policy?.read_only.some(path => within(identity.path, path))) {
@@ -87,9 +84,7 @@ function queryFor(probe: CommandDomainProbe, object: string, grammar: ReturnType
   }
   return { object, command: probe.command, reference: probe.reference, identity, mapping: { contract_sha256: contract, pointer: `/cleanup/rules/${rule}/probe`, cleanup_source: source, cleanup_sha256: sha256 } };
 }
-/** Returns observations as evidence only. Reader failures never become cleanliness verdicts or dispatch decisions. */
 export async function collectCommandDomainObservations(input: PrecheckInputs, reader: ReadOnlyProbeReader): Promise<CommandDomainReport> {
-  // Rebuild from frozen inputs at the collection boundary; a serialized/edited report is not execution authority.
   const output = commandDomainPrecheck(structuredClone(input)), observed = new Map<string, Promise<ProbeObservation>>();
   for (const row of output.rows) {
     const query = row.query; if (!query) continue;

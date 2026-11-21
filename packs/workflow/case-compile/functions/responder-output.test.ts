@@ -1,6 +1,3 @@
-// block_context.responders[].output names an observation block by its id. The schema and the writer text say so, and a
-// refusal names the value written, the closed set of this plan's observation ids and, when the value is the saved name of one
-// observation block, that block's id. Nothing is rewritten for the model.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
@@ -11,7 +8,6 @@ import {checkContractShape} from './checks.ts';
 import {SUBAGENT_ROLES} from './subagent-roles.ts';
 
 const host=()=>({object:'client',method:'shell',args:['echo SYNTHETIC_READY'],keywords:{} as Record<string,string>});
-/** A saved device output, a configuration, a host observation and a second saved output: the shape of the round-33 plan. */
 function scenario(responders:Array<Record<string,any>>){
  const f=fixture();
  const data=plan([

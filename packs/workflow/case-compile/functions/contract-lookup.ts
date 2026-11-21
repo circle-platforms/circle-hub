@@ -1,25 +1,3 @@
-// Local lookup of the executor rules a run froze, and of the block format of its plans. A script writer otherwise learns which
-// object.method a step may use, how its G, H and I cells read, what it is typed and budgeted to, and which fields a block takes
-// by reading contract.json, profile.json, inventory.json, slots.schema.json and tables/blocks-format.json a window at a time: in
-// round 35 the two writers read them 21 + 22 + 6 and 6 + 7 + 11 times.
-//
-// The reference implementation (InfoTest, lang_query) has three kinds for this. `contract` (main/ist_core/tools/device/
-// lang_query_tool.py :175-357) lists the E values that have an enabled surface and those that have none with the dominant
-// reasons, then one E's enabled, disabled and internal F names, then one E/F pair: status, reason, status authority, Python
-// symbol, signature, G, H and I semantics, dispatch, source and the contract's digest; an unknown E or F is answered with the
-// names that exist, never as a rejection. `signature` (:360-384) gives the required and optional parameters of one method, and
-// `dispatch` (:387-441) how one name is dispatched. This is the same over what a Hub run freezes: the contract
-// (runtime-contract@2, read by the Hub's own parser), the profile that opens a subset of it for this bed, and the bed manifest.
-// A method is answered with the state the Hub itself gives it (the contract enables it AND the profile opens it: the common
-// allowed set of functions/call-boundaries.ts), its signature and the contract's own G, H and I texts, the typed authority the
-// Hub checks a plan against (roles and types of the parameters, the effects with their budgets, the full literal commands and the
-// programs a host line may use), the block model's facts (what it returns, whether it is a cell method, the single-cell input),
-// the access levels its prompt refuses, the seat it maps to on the bed, and every place it rests on with the reference to cite.
-// A block kind is answered from the frozen slot schema of the run, the pack's block table and, when the pack has one, its sample.
-//
-// Facts by structure only, never by matching words: a name is found by exact match; a miss names the names that start the same
-// (case-sensitive; a name that differs only in case is told as that), and the objects or kinds there are. Nothing is ranked or
-// guessed, nothing is written, and every answer states its bounds and whether it cut anything.
 import FORMAT from '../tables/runtime-contract-format.json' with { type: 'json' };
 import { parseManifest, type ManifestBed, type ManifestDevice } from './manifest.ts';
 import { parseProfile, type AllowedCall, type RuntimeProfile } from './profile.ts';
@@ -29,32 +7,20 @@ import { CallFailure, clip, isRecord } from './text.ts';
 
 type Row = { [key: string]: any };
 
-/** What one answer holds at most. */
 export const CONTRACT_BOUNDS = {
-  /** Parameters of one method. */
   parameters: 32,
-  /** Effects of one method. */
   effects: 8,
-  /** Commands an effect allows one by one. */
   commands: 12,
-  /** Full literal commands an effect allows, and the characters of one. */
   literals: 40,
   literalChars: 300,
-  /** Addresses of one family of the seat's device. */
   addresses: 8,
-  /** Lines of the contract's own sources. */
   sources: 24,
-  /** Parameter rows of a profile's unopened record. */
   unopenedRows: 6,
-  /** Characters of a reason or a text the contract or the profile records. */
   reasonChars: 400,
   textChars: 600,
-  /** Methods of one group of a methods listing. */
   methods: 60,
-  /** Names of a list of names that start the same, and objects. */
   near: 12,
   objects: 60,
-  /** Fields of one block kind, the characters of a field's description, the characters of the example line, kinds of a listing. */
   fields: 40,
   fieldChars: 900,
   exampleChars: 1200,
@@ -65,19 +31,15 @@ const RETRY = '重新下载本次运行完整的 run.json、sources.json 和 sou
 
 export interface SourceFile { file: string; reference: string | null }
 export interface MethodSource {
-  /** The contract as the Hub's reader takes it: what it enables, with the typed authority it can read. */
   contract: RuntimeContract;
   profile: RuntimeProfile;
-  /** The profile as written: it holds what the reader drops (the reasons a method is not opened). */
   profileDoc: Row;
   beds: readonly ManifestBed[];
-  /** Where each document stands in the download, with the reference the run gives it. */
   files: { contract: SourceFile; profile: SourceFile; inventory: SourceFile };
 }
 
 const firstProblem = (problems: readonly Problem[]): string => (problems[0] === undefined ? '' : `${problems[0].pointer || '/'} ${problems[0].message}`);
 
-/** The three documents of a download read by the Hub's own readers; a document they refuse is refused here with their first problem. */
 export function methodSourceOf(documents: { contract: unknown; profile: unknown; inventory: unknown }, files: MethodSource['files']): MethodSource {
   const contract = parseRuntimeContract(documents.contract);
   if (!contract.ok) throw new CallFailure('invalid_parameters', `${files.contract.file} 不是有效的冻结合约：${firstProblem(contract.problems)}`, RETRY);
@@ -88,9 +50,6 @@ export function methodSourceOf(documents: { contract: unknown; profile: unknown;
   return { contract: contract.contract, profile: profile.profile, profileDoc: documents.profile as Row, beds: manifest.beds, files };
 }
 
-// ----------------------------------------------------------------------------------------------------------------------------
-// What the contract and the profile hold, indexed once per source.
-
 type State = 'usable' | 'unopened' | 'candidate' | 'disabled' | 'internal';
 const TAG: Readonly<Record<State, string>> = { usable: '可写进计划', unopened: '合约启用，本次未开放', candidate: '认证候选，没有推广', disabled: '禁用', internal: '内部' };
 
@@ -99,7 +58,6 @@ interface ObjectRow { name: string; raw: Row; methods: Method[] }
 interface Index {
   objects: ObjectRow[];
   byName: Map<string, ObjectRow>;
-  /** Methods of one name across the objects, in the contract's order. */
   byMethod: Map<string, Method[]>;
   allowed: Map<string, { call: AllowedCall; index: number }>;
   unopened: Map<string, { row: Row; index: number }>;
@@ -132,7 +90,6 @@ function indexOf(source: MethodSource): Index {
     if (!isRecord(entry)) continue;
     const object = String(entry.e), name = String(entry.f);
     const status = String(entry.status);
-    // The contract's reader keeps an enabled certification candidate only when the contract promotes it.
     const state: State = status === 'disabled' ? 'disabled' : status === 'internal' ? 'internal' : runtimeMethod(source.contract, object, name) === null ? 'candidate' : index.allowed.has(pair(object, name)) ? 'usable' : 'unopened';
     const method: Method = { object, name, index: at, entry, state };
     index.byName.get(object)?.methods.push(method);
@@ -142,10 +99,6 @@ function indexOf(source: MethodSource): Index {
   return index;
 }
 
-// ----------------------------------------------------------------------------------------------------------------------------
-// Pieces shared by the answers.
-
-/** The cuts an answer made, for its last line. */
 class Cuts {
   readonly list: string[] = [];
   note(text: string): void { this.list.push(text); }
@@ -155,13 +108,10 @@ function limits(cuts: Cuts, shown: string): string {
 }
 const METHOD_LIMITS = `参数最多列 ${CONTRACT_BOUNDS.parameters} 个，效果最多列 ${CONTRACT_BOUNDS.effects} 个，逐条允许的完整命令最多列 ${CONTRACT_BOUNDS.commands} 条，允许的字面命令最多列 ${CONTRACT_BOUNDS.literals} 条（每条最多 ${CONTRACT_BOUNDS.literalChars} 字符），设备地址每类最多列 ${CONTRACT_BOUNDS.addresses} 个，方法每组最多列 ${CONTRACT_BOUNDS.methods} 个，名字最多列 ${CONTRACT_BOUNDS.near} 个，对象最多列 ${CONTRACT_BOUNDS.objects} 个`;
 
-/** The words a value may be made of when it names an object, a method or a kind: no space, no quote, no dot. */
 const WORD = /^[^\s'"`.]+$/u;
 
-/** A place in a document of the download, with the reference to cite it by when the run gives the document one. */
 const sourceAt = (file: SourceFile, pointer: string): string => `${file.file} 的 ${pointer}${file.reference === null ? '' : `（${file.reference}/json@1/p${pointer}）`}`;
 
-/** Names that start with the typed ones, in the order given, and the names that differ from the typed one only in case. */
 function sameStart<T>(items: readonly T[], name: (item: T) => string, typed: string): { starts: T[]; caseOnly: string[] } {
   const starts = items.filter((item) => name(item).startsWith(typed));
   const caseOnly = [...new Set(items.map(name))].filter((word) => word !== typed && word.toLowerCase() === typed.toLowerCase());
@@ -182,9 +132,6 @@ function objectLine(row: ObjectRow): string {
   return `# 对象 ${row.name}：${type}合约状态 ${status}${reason}。`;
 }
 
-// ----------------------------------------------------------------------------------------------------------------------------
-// The seat on the bed.
-
 const addressesOf = (device: ManifestDevice, cuts: Cuts): string => {
   const parts: string[] = [];
   for (const [family, label] of [[device.ipv4, 'IPv4'], [device.ipv6, 'IPv6']] as const) {
@@ -203,7 +150,6 @@ const deviceOf = (source: MethodSource, name: string): { device: ManifestDevice;
 const buildOf = (device: ManifestDevice): string => (device.installed === null ? '' : `，已装构建 ${device.installed.build}`);
 
 interface Seat { line: string; cites: string[] }
-/** The seat of an object (a device the profile seats it at) or of a host method (the test host it runs on); the line says when it has none. */
 function seatOf(source: MethodSource, object: string, method: string | null, cuts: Cuts): Seat[] {
   const out: Seat[] = [];
   const describe = (name: string, extra: string): { text: string; cite: string | null } => {
@@ -215,7 +161,6 @@ function seatOf(source: MethodSource, object: string, method: string | null, cut
   const seat = source.profile.seats.findIndex((row) => row.object === object);
   const hostRows = source.profile.hosts.map((row, at) => ({ row, at })).filter(({ row }) => row.object === object && (method === null || row.method === method));
   const bed = source.profile.bed;
-  // An object seated at a device is told by its seat; a host method by the test host it runs on (an object may have both).
   if (seat >= 0 && (method === null || hostRows.length === 0)) {
     const row = source.profile.seats[seat]!;
     const made = describe(row.device, `序号 ${row.ordinal}，`);
@@ -229,9 +174,6 @@ function seatOf(source: MethodSource, object: string, method: string | null, cut
   if (out.length === 0) out.push({ line: `# 座位：本次配置的 seats 和 hosts 没有列${method === null ? `对象 ${object}` : ` ${object}.${method}`}，它不对应测试环境里的设备。`, cites: [] });
   return out;
 }
-
-// ----------------------------------------------------------------------------------------------------------------------------
-// The typed authority of a method.
 
 function typeText(type: ValueType): string {
   const kind = type.address_kind ?? type.declaration.catalog_type;
@@ -300,9 +242,6 @@ function effectLines(source: MethodSource, effect: Effect, cuts: Cuts): string[]
   return out;
 }
 
-// ----------------------------------------------------------------------------------------------------------------------------
-// What the block model says of a method.
-
 function blockModelLines(doc: Row, method: Method, firstPositional: string | undefined): string[] {
   const model = isRecord(doc.runtime) && isRecord(doc.runtime.block_model) ? doc.runtime.block_model : null;
   if (model === null) return ['# 取格方法与输出：这份合约没有 runtime.block_model，计划不能用块（blocks）。'];
@@ -319,8 +258,6 @@ function blockModelLines(doc: Row, method: Method, firstPositional: string | und
   if (isRecord(effect)) {
     const policy = isRecord(effect.value_policy) ? effect.value_policy : {};
     out.push(`# 取格值的策略（合约 cell_effect）：${String(policy.schema)}；允许的字符 ${String(policy.characters)}；长度 ${String(policy.min_length)}..${String(policy.max_length)}；预算 ${String(effect.budget)} 次；${effect.device_calls === false ? '不调设备（device_calls 为 false）' : `device_calls 为 ${String(effect.device_calls)}`}。`);
-    // What the bound is a bound of: in a real run a writer took it for a bound on the name a later command needs, concluded the case
-    // could not be written and looked for other commands for an hour (Langfuse, 2026-11-19).
     out.push('# 这项策略只管取出的这一格；把这一格回填进去之后的整条命令不受它限制。取出的一格可以只是一个名字里由设备生成的那一段，名字里已知的各段写在用它的命令里。');
   }
   if (firstPositional !== undefined) {
@@ -330,9 +267,6 @@ function blockModelLines(doc: Row, method: Method, firstPositional: string | und
   }
   return out;
 }
-
-// ----------------------------------------------------------------------------------------------------------------------------
-// The answers.
 
 function missObjectLines(index: Index, typed: string, cuts: Cuts, next: string): string[] {
   const { starts, caseOnly } = sameStart(index.objects, (row) => row.name, typed);
@@ -359,7 +293,6 @@ const stateSentence = (state: State): string => {
   }
 };
 
-/** `--method '<object>.<method>'`: what the frozen executor rules say of one method, and the way to cite each fact. */
 export function lookupMethod(source: MethodSource, query: string): string {
   const text = query.trim();
   const index = indexOf(source);
@@ -472,7 +405,6 @@ const commonPrefix = (words: readonly string[]): string => {
   return prefix;
 };
 
-/** `--methods '<object>'`: the methods of one object by what the contract and the profile make of them. */
 export function lookupMethods(source: MethodSource, name: string): string {
   const text = name.trim();
   if (text === '' || !WORD.test(text)) throw new CallFailure('invalid_parameters', `--methods 的值是一个对象名，不含点、空白和引号（现在是 ${JSON.stringify(name)}）`, "写法：--methods '<对象>'");
@@ -511,25 +443,15 @@ export function lookupMethods(source: MethodSource, name: string): string {
   return `${out.join('\n')}\n`;
 }
 
-// ----------------------------------------------------------------------------------------------------------------------------
-// Block kinds.
-
-export interface BlockExample { file: string; /** One-based place of the block in the sample and how many blocks the sample has. */ index: number; count: number; block: unknown }
+export interface BlockExample { file: string; index: number; count: number; block: unknown }
 export interface BlockSource {
-  /** run.json's slots.schema: what the run froze for the plan. */
   schema: unknown;
   schemaSha256: string | null;
-  /** tables/blocks-format.json of the pack. */
   table: Row;
-  /** The sample the pack has of a kind, or null. */
   example: (kind: string) => BlockExample | null;
 }
 
 const BLOCK_LIMITS = `字段最多列 ${CONTRACT_BOUNDS.fields} 个，字段说明每条最多 ${CONTRACT_BOUNDS.fieldChars} 字符，示例最多 ${CONTRACT_BOUNDS.exampleChars} 字符，块种类最多列 ${CONTRACT_BOUNDS.kinds} 个`;
-/**
- * The fields whose values the block table closes, by the scope (a block kind or a plan member) and the path of the field in it, and
- * the list of the table that holds the values. Each is a membership the Hub's own checks make against that list.
- */
 const CLOSED_FIELDS: Readonly<Record<string, string>> = {
   'CAPTURE_COMPARE:relation': 'relations',
   'EXPECT_FROM:op': 'assertion_ops',
@@ -565,7 +487,6 @@ function integerText(node: Row): string {
   return high !== undefined ? ` ≤${high}` : '';
 }
 
-/** What a field holds, as one line: structure only, from the schema. Objects nest to two levels with their types, then by names. */
 function summarize(node: unknown, level = 0): string {
   if (!isRecord(node)) return '任意值';
   if (node.const !== undefined) return `固定为 ${JSON.stringify(node.const)}`;
@@ -593,7 +514,6 @@ function summarize(node: unknown, level = 0): string {
   return '任意值';
 }
 
-/** The descriptions of nested fields: path, text; an array's items are told as `每项的`. */
 function nestedDescriptions(node: unknown, path: string, out: Array<[string, string]> = []): Array<[string, string]> {
   if (!isRecord(node)) return out;
   if (node.type === 'array' && isRecord(node.items)) return nestedDescriptions(node.items, `${path} 每项的`, out);
@@ -605,7 +525,6 @@ function nestedDescriptions(node: unknown, path: string, out: Array<[string, str
   }
   return out;
 }
-/** The paths of the fields of a node (a field of an array's items is told by the array's name), as `a.b`. */
 function fieldPaths(node: unknown, prefix = '', out = new Set<string>()): Set<string> {
   if (!isRecord(node)) return out;
   if (isRecord(node.properties)) for (const [name, child] of Object.entries(node.properties)) { const path = prefix === '' ? name : `${prefix}.${name}`; out.add(path); fieldPaths(child, path, out); }
@@ -616,7 +535,6 @@ function fieldPaths(node: unknown, prefix = '', out = new Set<string>()): Set<st
 
 const KIND = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/** The frozen plan schema's `data` object: its members, the kinds of its blocks and which members it requires. */
 function planOf(schema: unknown): { arms: Map<string, Row>; members: Map<string, Row>; required: string[] } {
   const at = (node: unknown, ...path: string[]): unknown => path.reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), node);
   const data = at(schema, 'properties', 'plan', 'items', 'properties', 'data');
@@ -630,10 +548,6 @@ function planOf(schema: unknown): { arms: Map<string, Row>; members: Map<string,
   return { arms: kinds, members, required: Array.isArray(required) ? required.filter((name): name is string => typeof name === 'string') : [] };
 }
 
-/**
- * `--block '<name>'`: the fields a block kind takes, or the fields of one of the plan's other members (block_context, criteria,
- * obligations and the rest), from the frozen slot schema, the pack's block table and its sample.
- */
 export function lookupBlock(source: BlockSource, query: string): string {
   const typed = query.trim();
   if (!KIND.test(typed)) throw new CallFailure('invalid_parameters', `--block 的值是一个块种类名或计划成员名（字母、数字、下划线；现在是 ${JSON.stringify(query)}）`, "写法：--block '<块种类>'，例如 --block 'CAPTURE_COMPARE'；或 --block 'block_context'");
@@ -649,7 +563,7 @@ export function lookupBlock(source: BlockSource, query: string): string {
     const kinds = [...arms.keys()], names = [...members.keys()];
     const found = sameStart(kinds, (name) => name, typed), foundMembers = sameStart(names, (name) => name, typed);
     const caseOnly = [...found.caseOnly, ...foundMembers.caseOnly];
-    const told = (what: string, all: readonly string[], starts: readonly string[]): string => {
+    const told = (what: string, starts: readonly string[]): string => {
       const shown = starts.slice(0, CONTRACT_BOUNDS.near);
       if (starts.length > shown.length) cuts.note(`${what} ${starts.length} 个只列 ${shown.length} 个`);
       return `# 以 ${typed} 开头的${what}：${starts.length === 0 ? '无' : list(shown)}${starts.length > shown.length ? `（共 ${starts.length} 个，只列前 ${shown.length} 个）` : ''}。`;
@@ -659,8 +573,8 @@ export function lookupBlock(source: BlockSource, query: string): string {
     const lines = [
       `# ${frozen}里没有块种类或计划成员 ${typed}。`,
       ...(caseOnly.length > 0 ? [`# 名字区分大小写，计划结构不折叠：这里的名字是 ${list(caseOnly)}，写的是 ${typed}。`] : []),
-      told('块种类', kinds, found.starts),
-      told('计划成员', names, foundMembers.starts),
+      told('块种类', found.starts),
+      told('计划成员', foundMembers.starts),
       `# 全部块种类（${kinds.length} 个）：${list(all.map((name) => (declared(name)?.enabled === false ? `${name}（未启用）` : name)))}。`,
       `# 全部计划成员（${names.length} 个）：${list(names)}。`,
       "# 下一步：--block '<块种类或计划成员>' 看它的必填和可选字段。",
@@ -685,7 +599,6 @@ export function lookupBlock(source: BlockSource, query: string): string {
     const range = bounds(node);
     out.push(`# 形状：${node.type === 'array' ? `数组${range === null ? '' : `（${range}）`}，每项${items !== null && items.type === 'object' ? '是一个对象' : summarize(items)}` : node.type === 'object' ? '对象' : summarize(node)}`);
     if (typeof node.description === 'string') out.push(`# 说明：${clip(node.description, CONTRACT_BOUNDS.fieldChars)}`);
-    // The fields of a member are those of the object it is, or of the objects an array of it holds.
     node = node.type === 'array' && isRecord(node.items) ? node.items : node;
     if (!isRecord(node.properties)) out.push(`# 每项没有逐字段的声明：${summarize(node)}`);
   }

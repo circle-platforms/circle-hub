@@ -38,7 +38,6 @@ export async function recheckEffectChecks(deps:RunsEngineDeps,input:Parameters<E
  const action=await actionOfResult(store,record.digest,result.digest),session=typeof action?.body.detail?.session==='string'?action.body.detail.session:null;
  const submission=effectiveSubmission(raw,run,session);
  if(!submission)throw new Error('缺少本次提交的模型身份；请恢复原验证动作或显式声明后重核');
- // W06 R[7]: a replay reads the results the stored result recorded for the inputs bound after the start, never the latest.
  const late=lateFromLocks(result.body.locks.late);
  if(run.late_inputs?.length&&!late)throw new Error('已受理结果没有记录开运行后再绑定的输入用到的结果；请恢复原结果记录后重核');
  const scope=await buildScope(ctx,run,workflow,user,'function',[],late?.inputs),resolver=createResolver(ctx,scope,'function');

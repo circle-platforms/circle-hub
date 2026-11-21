@@ -7,12 +7,10 @@ import { card, chip, when } from './ui.ts';
 import { mePath } from './routes.ts';
 
 const EMPTY_TEAM = '请管理员把当前账户加入团队';
-/** Boss 04:30 — occupied after assignment revoke; not 「未知」. */
 export const NO_ASSIGNMENT_LABEL = '已无分配';
 
 type OccupancyRow = { since: string; until: string | null; mine: boolean; name?: string; holder?: string };
 
-/** Console accepts Codex's assigned/can_use fields when present; older singular occupancy stays readable. */
 type EnvironmentRow = {
   name: string;
   assigned?: boolean;
@@ -33,7 +31,6 @@ function occupancyLine(row: OccupancyRow): Html {
   return html`被${who}的运行占用 · 自 ${when(row.since)} · ${until}`;
 }
 
-/** Accepts the single-row shape and Codex's array of holders; empty local lease is not physical idleness. */
 function occupancyText(occupancy: EnvironmentRow['occupancy']): Html {
   if (occupancy === null) return html`未知（空租约不代表物理空闲）`;
   if (Array.isArray(occupancy)) {
@@ -49,7 +46,6 @@ export function environmentIsOccupied(occupancy: EnvironmentRow['occupancy']): b
   return true;
 }
 
-/** True when the projection confirms the caller may no longer use this environment. */
 export function environmentLacksAssignment(item: EnvironmentRow): boolean {
   if (item.assigned === false) return true;
   if (item.can_use === false || item.canUse === false) return true;
@@ -64,7 +60,6 @@ function occupancyCell(item: EnvironmentRow, enforced: boolean): Html {
   return text;
 }
 
-/** Three steps for a logged-in member; invitation codes stay an administrator action (Boss 03:45 #1). */
 function connectClientSection(ctx: PageContext): Html {
   const entry = circleEntry(originOf(ctx), false);
   return card(
@@ -87,7 +82,6 @@ function packRows(items: MemberCapabilities['workflows']): unknown[][] {
   ]);
 }
 
-/** Boss 15:20 #5: member page and team page both call assigned resources 业务系统 (not 连接). */
 function alignConnectionDenial(row: { reason: string; nextAction: string }): { reason: string; nextAction: string } {
   let { reason, nextAction } = row;
   if (reason === '尚无可用的已分配连接') {
@@ -158,7 +152,6 @@ ${card({ title: view.environmentAccess.enforced === true ? '当前不能做的�
 </div>`;
 }
 
-/** `/console/me` — the member home projection; administrators may pass `?user=` to preview another member. */
 export async function memberCapabilitiesPage(ctx: PageContext): Promise<PageResult> {
   const asked = ctx.url.searchParams.get('user');
   const targetId = asked && asked.length > 0 && asked !== ctx.principal.id ? asked : undefined;

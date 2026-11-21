@@ -1,4 +1,4 @@
-// Deterministic implementation of the integrator's runner G specification. No evaluation or execution.
+// Encodes and decodes the runner's G column arguments the way the runner reads them; nothing is evaluated or executed.
 export interface GArguments { args: string[]; keywords: Record<string, string | number> }
 export interface GOptions { keywordNames?: readonly string[]; foldNewlines?: boolean; literalAssertion?: boolean; wait?: boolean }
 export class GSyntaxError extends Error {

@@ -4,9 +4,6 @@
 // listener with the certificate of <data root>/tls). Every request first passes the Host check of the listener it arrived
 // on (127.0.0.1:<port>, localhost:<port> and the declared names, against DNS rebinding) and the Origin check (absent, or
 // one of this server's own origins); then the route decides. The request target is parsed once and never throws:
-// a target that is neither a path nor an absolute http URL of this server is a 400. close() refuses new work, lets requests in
-// flight end across both bounded drain periods before closing every connection. A handler still running at that boundary
-// has an unknown outcome; the caller must reconcile it rather than blindly resend. It never stops the database.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
 import type { TLSSocket } from 'node:tls';
@@ -322,8 +319,6 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       const listeners = [server, secureServer].filter((s): s is Server => s !== null);
       if (current !== null) {
         const completed = await drained(closeTimeoutMs) || await drained(closeGraceMs);
-        // Node's close also destroys HTTP-idle sockets whose end() still has buffered response bytes.
-        // Keep the listener behind the stopping gate until admitted responses finish or the budget ends.
         const closed = Promise.all(listeners.map((s) => new Promise<void>((resolve) => s.close(() => resolve()))));
         if (completed) {
           for (const s of listeners) s.closeIdleConnections();

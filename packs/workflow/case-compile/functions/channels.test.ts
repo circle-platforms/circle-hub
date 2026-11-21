@@ -14,7 +14,6 @@ const RANK_LOCAL = 'demo link rank group-a 10 20', RANK_PEER = 'demo link rank g
 const codes = (outcomes: Array<{ verdict: string; code?: string }>) => outcomes.filter((row) => row.verdict === 'refute').map((row) => row.code);
 const autoids = (inputs: readonly GenerationInput[]) => inputs.map((input) => input.fields.autoid);
 
-/** The Hub's check input for item k of a verification run over `inputs` (document order), the workbook being `bytes`. */
 function itemInput(inputs: GenerationInput[], bytes: Uint8Array, k: number) {
   const base = workbookCheckInput(bytes).subject;
   const planSet = inputs.map((input, at) => ({ item: `doc-1:c-${at + 1}`, fields: { autoid: input.fields.autoid, title: input.fields.title, path: input.fields.path, priority: input.fields.priority, steps: input.fields.steps }, plan: input.slots, command_catalog: input.fields.command_catalog }));
@@ -35,10 +34,9 @@ test('the cases that leave state behind are written last, in the order they had,
   assert.deepEqual(read.autoids, [A, C, E, B, D], 'the workbook holds the cases in volume order');
   assert.equal(digest(generateWorkbookSet(ordered)), digest(bytes), 'the same bytes whichever order the cases are given in');
   assert.ok(readWorkbook(model, ordered).ok);
-  // The cases written in document order are not this workbook.
   const rows = (model.sheets[0].rows.flatMap((row) => row.cells.filter((cell) => cell.reference.startsWith('A') && cell.text !== '').map((cell) => cell.text)));
   assert.deepEqual(rows.filter((text) => AUTOIDS.includes(text)), [A, C, E, B, D]);
-  const plain = inputs.map((input, k) => recipe(AUTOIDS[k], [[SHOW], [STORE], [SHOW], [PUSH], [SHOW]][k], plainPolicy));
+  const plain = inputs.map((_, k) => recipe(AUTOIDS[k], [[SHOW], [STORE], [SHOW], [PUSH], [SHOW]][k], plainPolicy));
   assert.deepEqual(autoids(volumeOrder(plain).ordered), AUTOIDS, 'a policy without the declarations leaves the order alone');
   assert.deepEqual(volumeOrder(plain).moved, []);
   assert.notEqual(digest(generateWorkbookSet(plain)), digest(bytes));
@@ -55,7 +53,6 @@ test('a command is in a channel by its tree prefix, and an optional parameter co
   assert.deepEqual(only(['demo pool list']), []);
   assert.deepEqual(only([SHOW, BOOT_OFF, SHOW]), []);
   assert.deepEqual(only([SHOW, STORE]), [B], 'one command anywhere in the case is enough');
-  // Nothing runs after anything when every case of the volume is a channel case, or the volume is one case: no placement is told.
   assert.deepEqual(volumeOrder([recipe(B, [STORE]), recipe(D, [PUSH])]).moved, []);
   assert.deepEqual(volumeOrder([recipe(B, [STORE])]).moved, []);
   assert.deepEqual(autoids(volumeOrder([recipe(B, [STORE]), recipe(D, [PUSH])]).ordered), [B, D]);
@@ -71,11 +68,9 @@ test('a volume that holds both sides of a forbidden combination is not written, 
   const text = conflictText(rows[0]);
   for (const part of [A, C, D, BOOT_ON, RELOAD, PUSH, '合成用例 41', '同一份自动化用例 Excel 中有产品文档声明不能一起使用的命令']) assert.ok(text.includes(part), part);
   assert.ok(!text.includes(B), 'a case on neither side is not named');
-  // Only one side, the other side switched off, or no declaration: nothing is refused.
   assert.deepEqual(volumeProblems([recipe(A, [BOOT_ON]), recipe(B, [SHOW])]), []);
   assert.deepEqual(volumeProblems([recipe(A, [BOOT_OFF]), recipe(C, [RELOAD])]), [], 'switching the boot sync off is not side A');
-  assert.deepEqual(volumeProblems(inputs.map((input, k) => recipe(AUTOIDS[k], [[BOOT_ON], [SHOW], [RELOAD], [PUSH]][k], plainPolicy))), []);
-  // One case with both sides is the same violation.
+  assert.deepEqual(volumeProblems(inputs.map((_, k) => recipe(AUTOIDS[k], [[BOOT_ON], [SHOW], [RELOAD], [PUSH]][k], plainPolicy))), []);
   const same = volumeProblems([recipe(A, [BOOT_ON, RELOAD])]);
   assert.deepEqual(same.map((row) => [row.side_a[0].autoid, row.side_b[0].autoid]), [[A, A]]);
   assert.match(conflictText(same[0]), /^同一条自动化用例中有产品文档声明不能一起使用的命令/);
@@ -91,10 +86,8 @@ test('the verification run supports a volume with its placement disclosed, and r
   assert.deepEqual(data.moved_tail.map((row) => [row.autoid, row.channels.map((channel) => [channel.id, channel.source])]), [[B, [['disk', DISK]]], [D, [['peer', PEER]]]]);
   assert.match(results[0][0].statement, new RegExp(`原始用例 ${B} 合成用例 42、${D} 合成用例 44 的命令会留下用例结束后仍未清除的配置，已在自动化用例 Excel 中排到最后。决定者程序。`));
   assert.deepEqual(results[1][0].data, results[0][0].data, 'every item of the run reports the same volume');
-  // A workbook written in document order is not this volume's workbook.
   const unordered = generateWorkbookSet(inputs.map((input) => ({ ...input, fields: { ...input.fields, command_catalog: { ...(input.fields.command_catalog as object), policy: plainPolicy } } })));
   assert.ok(check(itemInput(inputs, unordered, 0)).some((row) => row.verdict === 'refute' && row.code === 'case-compile.workbook_invalid'));
-  // Nothing is disclosed when no case leaves state behind.
   const quiet = [recipe(A, [SHOW]), recipe(C, [SHOW])];
   const quietData = check(itemInput(quiet, generateWorkbookSet(quiet), 0))[0].data as Record<string, unknown>;
   assert.deepEqual(Object.keys(quietData).sort(), ['autoids', 'bed', 'build', 'generator', 'plan_run', 'sha256']);

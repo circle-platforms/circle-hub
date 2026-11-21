@@ -1,4 +1,3 @@
-// Unit tests for coarse command recall (<=40), tournament chunking, node builder, and @1800 state truncation.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { BriefKnowledge, BriefNode } from './authoring-brief.ts';

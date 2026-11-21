@@ -209,7 +209,7 @@ export type ProducedEntry = {
  * never crosses a declared contract: it is not a key of `data` (which is exactly catalog-entry@1, strict) and not a key
  * of a produced entry (which is exactly producer-output@1, strict). It travels in the pack's own result, keyed by the
  * entry path, and only the pack's command grammar consumes it. */
-export type SignatureDeclarations = Record<string, { selector: string; parameters: Array<{ name: string; selector: string; native?: boolean }>; /** The access level the tree declares for the command (native name) and the item that declares it. */ access?: { name: string; selector: string } }>;
+export type SignatureDeclarations = Record<string, { selector: string; parameters: Array<{ name: string; selector: string; native?: boolean }> }>;
 
 /** Provenance of every produced command entry, keyed by its tree path. */
 export type DeclarationsByPath = Record<string, SignatureDeclarations>;

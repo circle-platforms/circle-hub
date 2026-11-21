@@ -1,14 +1,7 @@
 import {contributionSlots} from './slot-schema.ts';
 // Generates everything that must not be written by hand from the cause model:
-//   contracts/generated/vocabulary.ts      the one set of enumerations, with Chinese labels and zod enums
-//   contracts/generated/protocol-codes.ts  machine tables: protocol and core violation code lists, categories, interpreters, record kinds, pack file names
-//   contracts/generated/protocol.ts        human sentences and display layout, re-exporting protocol-codes.ts for compatibility
-//   contracts/generated/tools.json         the six MCP tools with JSON Schemas and derived annotations
-//   contracts/generated/schemas/*.json     JSON Schema of every registered record and pack-file shape
 //   packs/.../functions/generated/vocabulary.ts  package-local runtime snapshots of the axes each pack uses
-//   packs/skill/*-format/functions/generated/protocol.ts  declared subset of protocol code names per format skill pack
 //   packs/product/famx/functions/generated/adoc-directory.ts  package-local copy of the adoc-format skill's directory
-//   packs/.../functions/generated/skills/<skill>/<module>/  the skill modules a pack's pack.json embeds (T01 R[6])
 //     walk (packs/skill/adoc-format/functions/directory.ts), since a sandboxed pack function reads only its own files
 // Usage: node tools/gen-contracts.ts [--check]
 //   without options it writes the files that changed and removes stale ones; --check writes nothing and lists every
@@ -348,7 +341,6 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
   return p;
 }
 
-/** Names the generator itself declares in vocabulary.ts and protocol-codes.ts/protocol.ts; index.ts re-exports both with export *. */
 const FIXED_VALUES = ['AXES', 'LABELS', 'labelOf', 'axisLabel', 'UI_LABELS', 'uiLabelOf', 'axisUiLabel', 'z', 'PROTOCOL_CODES', 'PROTOCOL_CODE_NAMES', 'isProtocolCode', 'CORE_VIOLATION_CODES', 'CORE_VIOLATION_CODE_NAMES', 'CORE_VIOLATION_CODE_INTERPRETERS', 'isCoreViolationCode', 'REFERENCE_FORMS', 'RECORD_KINDS', 'PACK_FILE_PATHS', 'DISPLAY_ORDER', 'MODEL_VERSION', 'CALL_ERROR_CATEGORY_BY_CODE', 'callErrorCategory', 'formatCallError'];
 const FIXED_TYPES = ['AxisName', 'AxisValues', 'ProtocolCode', 'CoreViolationCode', 'RecordKind'];
 
@@ -824,11 +816,9 @@ function firstDifference(expected: string, actual: string): number {
 }
 
 /** Every missing, out-of-date or stale file under contracts/generated, sorted; empty when the directory matches. */
-// The same two folders as contracts/src/skills.ts, which this tool cannot import: it writes what that file's imports read.
 const SKILL_MODULES_DIR = 'functions/modules/';
 const EMBEDDED_SKILLS_DIR = 'functions/generated/skills/';
 
-/** Every pack directory under packs/, by its pack.json. Pack data folders are not searched. */
 function packDirectories(root: string, relative = 'packs', depth = 0): string[] {
   const out: string[] = [];
   if (existsSync(join(root, relative, 'pack.json'))) out.push(relative);
@@ -844,7 +834,6 @@ const filesUnder = (dir: string, relative = ''): string[] => readdirSync(join(di
   return entry.isDirectory() ? filesUnder(dir, path) : entry.isFile() ? [path] : [];
 });
 
-/** A module is copied as a folder, so no import may leave it: a relative path out of the folder would break in the copy. */
 function moduleEscapes(name: string, text: string): string[] {
   const out: string[] = [];
   for (const match of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.[^'"]+)['"]/g)) {
@@ -854,7 +843,6 @@ function moduleEscapes(name: string, text: string): string[] {
   return out;
 }
 
-/** T01 R[6]: the module files each pack's pack.json embeds, from the skill sources. Tests stay in the skill. */
 export function embeddedPackFiles(root: string, generated: Record<string, string> = {}): Record<string, string> {
   const out: Record<string, string> = {};
   const problems: string[] = [];
@@ -879,7 +867,6 @@ export function embeddedPackFiles(root: string, generated: Record<string, string
   return out;
 }
 
-/** Files on disk in the embedded folders of the packs, generated earlier; those no pack.json names any more are stale. */
 function embeddedOnDisk(root: string): string[] {
   return packDirectories(root).flatMap((consumer) => {
     const dir = join(root, consumer, EMBEDDED_SKILLS_DIR);
@@ -907,7 +894,6 @@ export function drift(root: string, files: Record<string, string>, packFiles: Re
       if (actual !== expected) out.push(`out of date: ${name} (first difference at line ${firstDifference(expected, actual)})`);
     }
   }
-  // Only a caller that passes the pack files can tell what is stale; generate() alone knows no pack file.
   if (Object.keys(packFiles).length > 0) for (const name of embeddedOnDisk(canonical(root))) if (!(name in packFiles)) out.push(`stale: ${name}`);
   return out;
 }
@@ -965,7 +951,6 @@ export function write(root: string, files: Record<string, string>, packFiles: Re
 
 const USAGE = 'usage: node tools/gen-contracts.ts [--check]\n  --check  write nothing; list every missing, out-of-date or stale contract file and every package vocabulary snapshot';
 
-/** Protocol codes mirrored into each format skill pack; generated subset files contain only these names and type. */
 export const SKILL_PROTOCOL_TARGETS: Readonly<Record<string, readonly string[]>> = {
   'packs/skill/mindmap-format': ['SOURCE_UNPARSEABLE', 'REFERENCE_UNRESOLVED'],
   'packs/skill/workbook-format': ['SOURCE_UNPARSEABLE', 'REFERENCE_UNRESOLVED'],
@@ -998,7 +983,6 @@ function tsFilesUnder(dir: string, skipDirNames: ReadonlySet<string>): string[] 
   return out;
 }
 
-/** Validates format-pack protocol subsets and fails if any pack throws or references a code outside its subset. */
 export function validateSkillProtocolUsage(root: string, model: Model): string[] {
   const registered = new Set(model.formatProposals.protocolCodes.map((c) => c.code));
   const problems: string[] = [];
@@ -1108,8 +1092,6 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
     return 2;
   }
   if(files['command-grammar.ts'])for(const pack of ['packs/product/famx'])packFiles[pack+'/functions/generated/command-grammar.ts']=files['command-grammar.ts'].replaceAll("from '../src/tables.ts'","from '../../../../../contracts/src/tables.ts'").replaceAll("from './vocabulary.ts'","from '../../../../../contracts/generated/vocabulary.ts'").replaceAll("import('./shared-interfaces.ts')","import('../../../../../contracts/generated/shared-interfaces.ts')");
-  // The module copy has no way back to contracts/ (a module folder is self-contained), so it names the types loosely; the source
-  // in contracts/src is where they are checked.
   if(files['command-grammar.ts'])packFiles['packs/skill/command-tools/functions/modules/command-check/grammar.ts']='// @ts-nocheck\n'+files['command-grammar.ts'].replace("import type {CatalogParam,CatalogSignature} from '../src/tables.ts';\n","type CatalogParam = any;\ntype CatalogSignature = any;\n").replace("import type {CommandParseStatus} from './vocabulary.ts';\n","type CommandParseStatus = any;\n").replace(/import\('\.\/shared-interfaces\.ts'\)\.\w+/g,'any');
   const adocDirectory=join(root,'packs/skill/adoc-format/functions/directory.ts');
   if(existsSync(adocDirectory))packFiles['packs/product/famx/functions/generated/adoc-directory.ts']='// Generated by tools/gen-contracts.ts from packs/skill/adoc-format/functions/directory.ts; do not edit\n'+readFileSync(adocDirectory,'utf8');

@@ -121,12 +121,7 @@ export function sandboxStats(): SlotStats & { timeouts: number } {
 }
 
 const residentWatch = createResidentWatch({ intervalMs: POLL_MS, measure: residentTreeSizes, unavailable: () => null, timeoutMs: 1_000 });
-/**
- * A call ends as unobservable only when both hold (resident.ts createResidentVerdict): this many rounds in a row could not see
- * the child's whole tree (decision 116), and no round has measured it for UNOBSERVED_GRACE_MS (#96).
- */
 const UNOBSERVED_STOP_ROUNDS = 5;
-/** How long no round may measure a child's whole tree before the call ends as unobservable. */
 const UNOBSERVED_GRACE_MS = 1_000;
 
 // Running children by pid, with the function that stops each.

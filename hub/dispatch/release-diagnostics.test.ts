@@ -53,7 +53,6 @@ for(const [condition,change]of cases)test('release inspection identifies '+condi
  const c=await setup();t.after(()=>c.close());const d=structuredClone(c.executor.definition);await change(c,d);
  const result=await inspectInput(c.admin,c.run,d,c.kit,c.runs,c.workflows,c.now());
  assert.equal(result.input,undefined);assert.ok(result.checks.some(check=>check.condition===condition&&check.satisfied!==true),JSON.stringify(result.checks));
- // C14: identity fields may disclose plain expected/actual for refusal wording; digests stay authoritative. Other fields stay digest-only.
  const serialized=JSON.stringify(result.checks);
  if(condition==='proof.executor_identity'){
   const identity=result.checks.find(check=>check.condition===condition)!;

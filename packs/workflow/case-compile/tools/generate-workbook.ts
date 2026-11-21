@@ -82,21 +82,15 @@ export function satisfiedRecipes(input: { run: unknown; result: unknown; submiss
   return { slots: plan.slots, fields: {source_atoms:fields.source_atoms,bed_services:inventory.beds.find(bed=>bed.name===profile.profile.bed)?.services,manifest_sha256:sha256(input.inventory),criteria_review:(Array.isArray(run.groups)?run.groups:[]).find((value:unknown)=>isRecord(value)&&value.kind==='case-compile')?.criteria_review??blockReviewSources(run.sources),expected_nodes:selectedExpectedNodes(fields.expected_nodes,plan.slots), command_catalog:parsedCommand,command_identities:fields.command_identities,autoid: fields.autoid, title: fields.title, ...(Array.isArray(fields.path) ? { path: fields.path as string[] } : {}), priority: fields.priority, steps: fields.steps as Array<{ text: string }> }, contract: contract.contract, profile: profile.profile, plan_run: run.run as string, build: run.build as string, generator: GENERATOR };
   });
 }
-/**
- * What the reference engine's pass review reads of a plan run (functions/delivery.ts failureLine): the execution-failure lines
- * its bound contract declares, and each case's own assertion texts by autoid. One reading for the two tools that apply the
- * review, when the returns are read and when the delivery is assembled. No markers when the contract declares none.
- */
 export function passReviewInputs(input: Parameters<typeof satisfiedRecipes>[0]): { markers: string[]; assertions: Map<string, string[]> } {
   let markers: string[] = [];
-  try { const parsed = parseRuntimeContract(parseSubmittedJson('contract', '来源槽 contract', input.contract, '重新核对后生成工作簿')); if (parsed.ok && parsed.contract.failureMarkers) markers = parsed.contract.failureMarkers.lines; } catch { /* a contract that does not parse declares no markers */ }
+  try { const parsed = parseRuntimeContract(parseSubmittedJson('contract', '来源槽 contract', input.contract, '重新核对后生成工作簿')); if (parsed.ok && parsed.contract.failureMarkers) markers = parsed.contract.failureMarkers.lines; } catch { }
   if (!markers.length) return { markers, assertions: new Map() };
   return { markers, assertions: new Map(satisfiedRecipes(input).map((recipe) => [String(recipe.fields.autoid), recipe.slots.expects.map((expect) => expect.text).filter((text): text is string => typeof text === 'string' && text.length > 0)])) };
 }
 export async function main(argv: string[]): Promise<number> {
   try {
     const args = parseCliOptions(argv, { run: true, result: true, submission: true, out: true, contract: false, profile: false, inventory: false }, 'node <技能目录>/tools/generate-workbook.ts --run <运行目录> --result <运行目录>/result.json --submission <运行目录>/submission.json --out <目标.xlsx>');
-    // The CLI parser enforces the four required options above. --run is the run directory (fetch-run.ts's output), the folder that holds run.json.
     const run = resolveRun(args.run!);
     const runPath = run.file.lexical, resultPath = args.result!, submissionPath = args.submission!, outputPath = args.out!;
     const directory = run.directory.lexical;

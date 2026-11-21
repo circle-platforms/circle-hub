@@ -1,4 +1,3 @@
-// Coarse command recall (<=40 candidates), Plumb node builder, and @1800 state truncation for case-compile.
 import {
   canonicalPath,
   commandPath,
@@ -76,7 +75,6 @@ function clipChars(text: string, maxChars: number): string {
   return `${text.slice(0, Math.max(0, maxChars - 1))}…`;
 }
 
-/** Extracts search tokens from mixed Chinese/CLI prose and optional intent cues. */
 export function tokenizeCommandText(text: string, expandCues = false): string[] {
   const tokens: string[] = [];
   const lower = text.toLowerCase();
@@ -111,7 +109,6 @@ export function tokenizeCommandText(text: string, expandCues = false): string[] 
   return tokens;
 }
 
-/** Decodes canonical `/commands/...` path segments into space-joined command words. */
 export function commandWordsFromPath(path: string): string | null {
   const norm = canonicalPath(path);
   const parts = norm.split('/').filter(Boolean);
@@ -164,7 +161,6 @@ function extractNodeDefinitionAndSummary(node: BriefNode, command: string, knowl
   };
 }
 
-/** Builds an in-memory BM25-like command index over all `/commands/...` nodes with entries. */
 export function buildCommandIndex(knowledge: BriefKnowledge): CommandIndex {
   const seenCommands = new Set<string>();
   const docs: IndexedCommand[] = [];
@@ -209,9 +205,6 @@ export function buildCommandIndex(knowledge: BriefKnowledge): CommandIndex {
   };
 }
 
-/**
- * Recalls up to `limit` (`<= 40`) candidate commands from `CommandIndex` using BM25 + exact phrase/word boosts.
- */
 export function recallCommandCandidates(
   index: CommandIndex,
   query: string,
@@ -263,7 +256,6 @@ export function recallCommandCandidates(
   return scored.slice(0, limit);
 }
 
-/** Splits candidates into chunks of `<= 24` items so adding `'都不是'` never exceeds Plumb's 25-candidate limit. */
 export function partitionChoiceChunks<T>(items: readonly T[], chunkSize: number = CMD_CHOICE_CHUNK_SIZE): T[][] {
   const safeSize = Math.max(1, Math.min(CMD_CHOICE_CHUNK_SIZE, chunkSize));
   const out: T[][] = [];
@@ -273,7 +265,6 @@ export function partitionChoiceChunks<T>(items: readonly T[], chunkSize: number 
   return out;
 }
 
-/** Formats command candidates plus `{ name: '都不是', text: '以上候选均不符合' }` for Plumb `choice`. */
 export function formatChoiceCandidates(candidates: readonly CommandCandidate[]): PlumbCandidate[] {
   return [
     ...candidates.map((c) => ({ name: c.command, text: c.summary })),
@@ -281,7 +272,6 @@ export function formatChoiceCandidates(candidates: readonly CommandCandidate[]):
   ];
 }
 
-/** Resolves Plumb `choice` return text back onto an exact recalled `CommandCandidate`. */
 export function normalizeMatchedCandidate(
   choiceValue: string,
   candidates: readonly CommandCandidate[],
@@ -303,7 +293,6 @@ export function normalizeMatchedCandidate(
     if (byHead) return { matched: byHead, noneSelected: false };
   }
 
-  // Longest candidate command appearing as word-boundary prefix of model answer.
   const sorted = [...candidates].sort((a, b) => b.command.length - a.command.length);
   for (const cand of sorted) {
     const cmdLower = cleanLine(cand.command).toLowerCase();
@@ -315,7 +304,6 @@ export function normalizeMatchedCandidate(
   return { matched: null, noneSelected: false };
 }
 
-/** Builds a Plumb mindmap `node` (`line` guaranteed non-empty; never combined with `state`). */
 export function buildPlumbNode(
   item: unknown,
   stepText: string,
@@ -343,7 +331,6 @@ export function buildPlumbNode(
   return node;
 }
 
-/** Looks up locked-knowledge syntax/definition metadata for one command line. */
 export function lookupCommandDefinition(
   knowledge: BriefKnowledge,
   line: string,
@@ -368,17 +355,12 @@ export function lookupCommandDefinition(
   return { path, command, definition };
 }
 
-/**
- * Renders `state` for Plumb `single_cmd_judge` / `steplist_judge` within `1800` estimated tokens.
- * Drops oldest `[已执行的步骤]` first; never cuts `[当前步骤]`; flags `overBudget` if core still exceeds budget.
- */
 export function truncateCmdVerifyState(input: {
   caseTitle?: string;
   executedSteps: readonly string[];
   currentStepSection: string;
   overheadText?: string;
   maxEstTokens?: number;
-  /** Also keep the rendered state within this many characters: the caller's own measure, taken from what the service refused. */
   maxChars?: number;
 }): RenderedCmdVerifyState {
   const maxEstTokens = input.maxEstTokens ?? CMD_VERIFY_MAX_EST_TOKENS;

@@ -1,5 +1,3 @@
-// The client side of late binding (functions/late.ts): late.json is the Hub's run-late@1 answer kept beside run.json, and every tool
-// that reads a case's recomposition reads it through recompositionOf, so it sees the record the Hub's checks see. Synthetic data only.
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -53,7 +51,6 @@ test('the tools that read a case\'s record read the late one: case ids, the plan
   const doc = readLate(late([{ id: 'doc:a', late: { recomposition: proof } }]), RUN);
   assert.ok(typeof doc !== 'string');
   const item = withLate(lateItem, doc);
-  // Red before: only fields.recomposition was read, so the record's case id was missing and the envelope had no recomposition.
   assert.ok(buildCaseIdSet('', item).has('synthetic-case-7'));
   const envelope = planEnvelope(item, 'bed-a') as any;
   assert.deepEqual(envelope.slots.plan[0].data.recomposition, { receipt: proof.receipt, record_sha256: proof.record_sha256, case_id: 'synthetic-case-7', slots: [{ slot: 'e1', assertions: [] }], rebindings: [] });

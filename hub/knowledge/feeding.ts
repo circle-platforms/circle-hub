@@ -67,14 +67,6 @@ interface FeedingJob {key:string;captureKey:string;pack:ProductHandle|null;princ
 
 const LOG='knowledge.feeding.log',OBJECT='knowledge.feeding.object',USAGE='knowledge.feeding.usage',BINDING='knowledge.feeding.binding',RETRACT='knowledge.feeding.retraction',TODO='knowledge.feeding.todo';
 const object=(v:unknown):v is Record<string,any>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
-/**
- * Where a feeding record can show on a node page (entriesAtNodes): its own path, the root page when it has none, and the path
- * of every command it names. Each is an index entry of the record, by product and root, so a page reads the records of its
- * nodes instead of the product's whole history (one product held 71,456 records, 258 MB, of which 663 were on the root read).
- * A record with more places than NODE_PLACES is indexed once under the root alone and read with every page of that root; the
- * page still decides by the record's body, so the index only narrows and never decides. Records stored before this index
- * are given the same entries by a migration (feeding_node_index), written to hold at least what this function gives.
- */
 export const NODE='knowledge.feeding.node',NODE_PLACES=64;
 export const nodeValue=(product:string,root:string,path:string|null):string=>`${product}:${root}:${path===null?'*':sha256Hex(path)}`;
 export function nodeIndex(product:string,body:Record<string,any>):Array<{key:string;value:string}>{
@@ -540,10 +532,10 @@ export class FeedingLayer {
   for(const row of await this.pending(principal,run))out.push(row.source);return [...new Set(out)];
  }
  /**
-  * A note proposal annotates the note the Hub wrote for one upload, exactly as it was written (round-five review, item 5).
+  * A note proposal annotates the note the Hub wrote for one upload, exactly as it was written.
   * Only the uploader or an admin may. A note written now names its upload record. An older note does not, and is read as
   * main always read it: the uploader's upload of these bytes captured at its `at`. Equal uploads without a record of their
-  * own count as one, as InfoTest merges equal facts that carry no id of their own.
+  * own count as one.
   */
  private async uploadedSource(principal:Principal,body:Record<string,any>){
   if(typeof body.by!=='string'||body.by!==principal.id&&principal.role!=='admin')fail('声明来源只允许上传者和管理员');
@@ -645,17 +637,9 @@ export class FeedingLayer {
   }
   return shown;
  }
- /**
-  * visible() for many object ids. An id without object records asks for its bytes, as visible does; otherwise its records are
-  * checked in order and the first visible one decides, a batched round per position, so no record is checked that the
-  * sequential loop would not check (the first record of an object is asked once more when it did not decide).
-  */
  private async objectsVisible(ids:readonly string[],session:Visibility):Promise<Map<string,boolean>>{
   const out=new Map<string,boolean>(),wanted=[...new Set(ids)];
   if(!wanted.length)return out;
-  // The first record of an object decides for nearly every object, so it is read alone first, and only an object it does
-  // not decide has all its records read. With every record of every object read up front, each answer of a run that had
-  // used 188 objects read 63,427 records (235 MB) before it was sent: every tool call that names a run lists its objects.
   let undecided=wanted;
   {
    const first=new Map<string,StoredRecord<ClaimBody>>();
@@ -717,8 +701,6 @@ export class FeedingLayer {
  private async frozenEntries(principal:Principal,product:string,through:number,select?:(body:Record<string,any>)=>boolean,session?:Visibility,nodes?:{root:string;paths:readonly string[]}):Promise<FeedingView[]>{
   let productRows:IndexedRecord<ClaimBody>[];
   if(nodes){
-   // A node page reads the records indexed at its nodes (and those indexed under the root alone), in the order the product's
-   // whole history would give them; `select` below still decides which of them show.
    const groups=await this.indexed<ClaimBody>(NODE,[...nodes.paths.map(path=>nodeValue(product,nodes.root,path)),nodeValue(product,nodes.root,null)],'claim',through);
    const once=new Map<string,IndexedRecord<ClaimBody>>();
    for(const rows of groups.values())for(const row of rows)if(!once.has(row.record.digest))once.set(row.record.digest,row);

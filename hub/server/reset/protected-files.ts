@@ -1,4 +1,3 @@
-// Byte identities only: reset never reads a credential value, rewrites a key, or resets an external login state.
 import { join } from 'node:path';
 import { listFiles, sha256File } from '../../platform/api.ts';
 import type { Layout } from '../../platform/api.ts';

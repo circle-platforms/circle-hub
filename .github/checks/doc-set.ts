@@ -1,6 +1,3 @@
-// Enforces a fixed documentation inventory under docs/: every published page and internal doc asset is declared in
-// doc-set.json, no unlisted file or historical/superseded banner appears without a live entry in exceptions.json, and
-// declared paths and exceptions remain live on disk.
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
@@ -27,11 +24,8 @@ export interface DocSetException {
 }
 
 export interface DocSetSnapshot {
-  /** Tracked repository-relative paths under `docs/` present on disk. */
   readonly files: readonly string[];
-  /** Subset of `files` whose content opens with a historical or superseded banner (`isHistorical`). */
   readonly historicalFiles: readonly string[];
-  /** Optional Jekyll exclude prefixes from `docs/_config.yml` (relative to `docs/`). */
   readonly siteExcludes?: readonly string[];
 }
 
@@ -51,20 +45,17 @@ function jekyllSkips(name: string): boolean {
   return name.startsWith('_') || name.startsWith('.') || name === 'vendor';
 }
 
-/** Parse the `exclude:` prefix list of `docs/_config.yml` (paths relative to `docs/`). */
 export function parseSiteExcludes(configYaml: string): string[] {
   const block = /^exclude:\n((?:[ \t]+.*(?:\n|$)|\n)+)/m.exec(configYaml);
   if (block === null) throw new Error('docs/_config.yml has no exclude list');
   return [...block[1].matchAll(/^\s+-\s+(\S+)\s*$/gm)].map((match) => match[1]);
 }
 
-/** Whether a path relative to `docs/` is excluded from the published Jekyll site. */
 export function isJekyllSkipped(insideDocsPath: string, excludes: readonly string[]): boolean {
   if (insideDocsPath.split('/').some(jekyllSkips)) return true;
   return excludes.some((entry) => insideDocsPath.startsWith(entry));
 }
 
-/** Whether `path` is a canonical repository-relative file path under `docs/`. */
 export function isValidDocsPath(path: string): boolean {
   return path.startsWith('docs/') && path.length > 'docs/'.length && !path.endsWith('/') && !path.includes('\\') && posix.normalize(path) === path;
 }
@@ -109,7 +100,6 @@ function parsePathList(
   return { valid, broken: false, problems };
 }
 
-/** Validate raw JSON parsed from `doc-set.json`. */
 export function parseDocSet(raw: unknown, excludes?: readonly string[]): { docSet?: DocSet; problems: string[] } {
   if (!isRecord(raw)) {
     return { problems: [`${DOC_SET_PATH}: root must be a JSON object`] };
@@ -156,7 +146,6 @@ export function parseDocSet(raw: unknown, excludes?: readonly string[]): { docSe
   };
 }
 
-/** Validate `doc-set` entries from raw JSON parsed from `exceptions.json`. */
 export function parseDocSetExceptions(raw: unknown): { entries: DocSetException[]; problems: string[] } {
   if (raw === undefined) return { entries: [], problems: [] };
   const list = Array.isArray(raw) ? raw : isRecord(raw) && Array.isArray(raw.exceptions) ? raw.exceptions : null;
@@ -216,7 +205,6 @@ export function parseDocSetExceptions(raw: unknown): { entries: DocSetException[
   return { entries, problems };
 }
 
-/** Compare a snapshot of `docs/` against `doc-set.json` and `exceptions.json` (`check: "doc-set"`). */
 export function docSetProblemsFromSnapshot(snapshot: DocSetSnapshot, docSetRaw: unknown, exceptionsRaw?: unknown): string[] {
   const parsedDocSet = parseDocSet(docSetRaw, snapshot.siteExcludes);
   const parsedExceptions = parseDocSetExceptions(exceptionsRaw);
@@ -300,7 +288,6 @@ function trackedExists(fullPath: string): boolean {
   }
 }
 
-/** Load and validate `.github/checks/doc-set.json` from a repository root. */
 export function loadDocSet(root: string): DocSet {
   const docSetFile = join(root, DOC_SET_PATH);
   const parsedJson = readJsonFile(docSetFile, DOC_SET_PATH);
@@ -312,7 +299,6 @@ export function loadDocSet(root: string): DocSet {
   return docSet;
 }
 
-/** Every problem found by comparing tracked `docs/` files in `root` against `doc-set.json` and `exceptions.json`. */
 export function docSetProblems(root: string): string[] {
   const docSetFile = join(root, DOC_SET_PATH);
   if (!existsSync(docSetFile)) return [`${DOC_SET_PATH}: missing file`];

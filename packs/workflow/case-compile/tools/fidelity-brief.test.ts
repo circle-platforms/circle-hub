@@ -1,6 +1,3 @@
-// The brief and merge tools on synthetic files only: placeholders are expanded first, as submit-plans does, so the brief the
-// audit answers is the one the Hub recomputes; one brief directory lasts across repairs; a verdict is merged only for the plan
-// it answered, with the digest written by the tool.
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,7 +17,6 @@ async function quiet(run: () => Promise<number>) {
   process.stderr.write = ((c: string | Uint8Array) => { err.push(String(c)); return true; }) as typeof process.stderr.write;
   try { return { code: await run(), stdout: out.join(''), stderr: err.join('') }; } finally { process.stdout.write = stdout; process.stderr.write = stderr; }
 }
-/** A plan directory of two cases (one with authored actions, one without) beside its run.json. */
 async function workspace() {
   const dir = await mkdtemp(join(tmpdir(), 'cc-fidelity-')); const plans = join(dir, 'plans'), briefs = join(dir, 'briefs'); await mkdir(plans);
   await writeFile(join(dir, 'run.json'), JSON.stringify({ run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', items: [{ id: 'doc-1:c-1', fields: { recomposition: { record: RECORD } } }, { id: 'doc-1:c-2', fields: {} }] }));
@@ -30,7 +26,6 @@ async function workspace() {
   const runBrief = () => quiet(() => brief(['--run', dir, '--plans', plans, '--out', briefs]));
   const runApply = () => quiet(() => apply(['--run', dir, '--plans', plans, '--briefs', briefs]));
   const planOf = async () => JSON.parse(await readFile(join(plans, '00.json'), 'utf8'));
-  /** Where the auditor of the plan as it stands writes its verdict: beside the brief, named by the brief's digest. */
   const verdictPath = async () => { const { fidelity: _f, ...rest } = (await planOf()).slots.plan[0].data; return verdictFile(briefs, '00', fidelityBrief('doc-1:c-1', RECORD, rest)!.brief_sha256); };
   return { dir, plans, briefs, runBrief, runApply, planOf, verdictPath, quiet };
 }
@@ -51,12 +46,10 @@ test('--run is the run directory like task-brief.ts: the run.json file is refuse
     assert.equal(refused.stderr.trim().split('\n').length, 1, name);
   }
   await assert.rejects(readdir(w.briefs), { code: 'ENOENT' }, 'a refused call creates no brief directory');
-  // A directory that holds no run.json is refused the same way a file is, with the hint of where to get one.
   const bare = await mkdtemp(join(tmpdir(), 'cc-fidelity-bare-'));
   const empty = await w.quiet(() => brief(['--run', bare, '--plans', w.plans, '--out', w.briefs]));
   assert.equal(empty.code, 1);
   assert.match(empty.stderr, /^不存在：找不到 --run 目录里的 run\.json 文件 /);
-  // The directory is what answers.
   assert.equal((await w.runBrief()).code, 0);
 });
 
@@ -118,7 +111,6 @@ test('a verdict is merged only for the plan it answered, with the digest the too
   assert.deepEqual(fidelityProblems(current, fidelity).problems, [], 'what the Hub checks passes');
   assert.equal(JSON.parse((await w.runBrief()).stdout).briefs[0].state, '未确认', 'the merged verdict is not part of the brief');
 
-  // The plan is edited after the audit: the old verdict is not merged again, and a changed verdict is reported, not hidden.
   data.steps[1].args = ['echo 192.0.2.92']; await writeFile(join(w.plans, '00.json'), JSON.stringify(plan));
   assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '未知');
   await w.runBrief();
@@ -157,7 +149,6 @@ test('fidelityBrief populates added_precondition exemptions from sources.states,
   assert.ok(briefSourced.rules.some((r) => r.includes('added_precondition') && r.includes('recomposition.adapted 不是步骤白名单') && r.includes('前置不存在')));
   assert.equal(JSON.stringify(briefSourced.blocks).includes('编写自述'), false, 'step.description never leaks to fidelity audit');
 
-  // Positive (block mode): block_context.preconditions (state=present) also populates exemptions.
   const blockPlanData = {
     bucket: 'bed-1',
     blocks: [
@@ -182,7 +173,6 @@ test('fidelityBrief populates added_precondition exemptions from sources.states,
   assert.deepEqual(briefBlocks.mechanical.exemptions[0]!.step_indices, [1]);
   assert.deepEqual(briefBlocks.mechanical.exemptions[0]!.established_by, ['prep_peer']);
 
-  // Negative: extra unauthored step with worker description only (no sources.states & no precondition_source) yields zero exemptions.
   const unsourcedPlan = structuredClone(goodData());
   (unsourcedPlan.steps[0] as unknown as Record<string, unknown>).description = '擅自添加但自称前置';
   const briefUnsourced = fidelityBrief('doc-1:c-1', RECORD, unsourcedPlan)!;

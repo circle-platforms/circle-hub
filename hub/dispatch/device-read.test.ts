@@ -26,7 +26,6 @@ async function ready(options: { reply?: Reply; read?: Record<string, unknown> | 
   } });
   const readable = (user: string) => ({ readers: [user, c.admin.id], admins: true, packs: [], shareable: false });
   const manifest = await c.kit.artifacts.ingest({ bytes: canonicalBytes({ id: 'synthetic-bed', devices: [1, 2].map((n) => ({ interfaces: [{ address: `192.0.2.${n}/24` }] })) }), mediaType: 'application/json', origin: { upload: { session: 'synthetic' } }, author: { user: c.admin.id }, provenanceType: 'declared', visibility: readable(c.owner.id) });
-  // A question (help) needs its certified premise; a read asks for none, so it is declared only where a test mixes the two.
   let help = {};
   if (options.help) {
     const proof = await c.kit.artifacts.ingest({ bytes: new TextEncoder().encode('synthetic audit of the help tool'), mediaType: 'text/plain', origin: { upload: { session: 'synthetic' } }, author: { user: c.admin.id }, provenanceType: 'declared', visibility: { readers: [c.admin.id], admins: true, packs: [], shareable: false } });
@@ -54,13 +53,11 @@ test('one line is sent once through the per-seat read inside one gateway lease, 
   assert.deepEqual(sent, [{ seat: 1, command: 'inspect peers', ticket: 'synthetic-ticket' }], 'one call: the seat of the device, the line, the gateway lease of this read');
   assert.ok(!c.calls.includes('send_blob') && !c.calls.includes('inspect_slot'), 'nothing is dispatched or prechecked');
   assert.deepEqual(c.calls.filter((name) => ['open_slot', 'inspect_seat', 'close_slot'].includes(name)), ['open_slot', 'inspect_seat', 'close_slot'], 'read inside one gateway lease, released after');
-  // The answer as received is stored apart from the text the model may read.
   const raw = await c.kit.artifacts.source(c.admin, answer.reference.slice(4), { consumer: 'function' });
   assert.match(new TextDecoder().decode(raw!.bytes!), /peer-1/);
   assert.match(answer.text_reference ?? '', /^src:[0-9a-f]{64}$/);
   const stored = await c.kit.artifacts.source(c.owner, answer.text_reference!.slice(4), { consumer: 'function' });
   assert.equal(new TextDecoder().decode(stored!.bytes!), KNOWN['inspect peers']);
-  // One line in the log: the line, whether there was output, the two references.
   const logged = (await c.kit.store.find<ActionBody>({ kind: 'action', key: 'dispatch.phase', value: 'device_read', limit: 5 })).items;
   assert.equal(logged.length, 1);
   assert.deepEqual([logged[0]!.body.detail.line, logged[0]!.body.detail.has_output, logged[0]!.body.inputs], ['inspect peers', true, [answer.reference, answer.text_reference]]);
@@ -138,7 +135,6 @@ test('a text that looks like a credential is quoted; a long one keeps its start 
   const reply: Reply = (command) => ({ output: command === 'inspect looks-like' ? `name   the name\n${secret}\n` : long });
   const { c, target } = await ready({ reply });
   t.after(() => c.close());
-  // Decision 161 / credential-scan@4: looking like a credential does not withhold what a device printed.
   const [quoted] = await c.service.readDevices(c.owner, 'run_synthetic', [target('inspect looks-like')]);
   assert.equal(quoted!.answer!.withheld, false);
   assert.equal(quoted!.answer!.output, `name   the name\n${secret}\n`);

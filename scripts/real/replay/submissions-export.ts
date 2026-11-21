@@ -1,6 +1,3 @@
-// Writes a replay bundle from a Hub database: read-only (one REPEATABLE READ READ ONLY transaction) and from PostgreSQL's client
-// alone, so that it can run on the host of the Hub next to the Hub's own node and node_modules with nothing else of this
-// repository: node scripts/real/replay/export-bundle.ts --pg-host <socket dir> ... (see needs-export.md).
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -13,18 +10,12 @@ const sha256Hex = (bytes: Uint8Array): string => createHash('sha256').update(byt
 
 export interface ExportOptions {
   database: DatabaseSettings;
-  /** The Hub's object store directory (<ab>/<sha256>). */
   objectsRoot: string;
   out: string;
-  /** Export records up to and including this append position. */
   cutoff: number;
-  /** The runs the replay is about: their run-family records are exported, and those of the runs they name. */
   runs: readonly string[];
-  /** Export the bytes of every object the exported records name, not only those of the scoped runs, the compositions and the packs. */
   allObjects?: boolean;
-  /** More record kinds to leave out (named in the manifest): for a kind the dry run shows to be large and the replay does not read. */
   excludeKinds?: readonly string[];
-  /** Plan only: count rows and bytes per table and kind, write nothing. */
   dryRun?: boolean;
   source?: string;
   log?: (line: string) => void;
@@ -62,7 +53,6 @@ export async function connect(options: DatabaseSettings): Promise<pg.Client> {
     user: options.user,
     database: options.database,
     ssl: false,
-    // pg never falls back to PG* variables or a password file.
     password: async () => {
       if (password === undefined) throw new Error('the database asked for a password it was not given');
       return password;
@@ -76,7 +66,6 @@ export async function connect(options: DatabaseSettings): Promise<pg.Client> {
 
 const objectPath = (root: string, sha: string): string => join(root, sha.slice(0, 2), sha);
 
-/** The runs the scoped runs name (predecessors, inputs, bookings), to a fixpoint; the bodies are the run records' JSON text. */
 function runClosure(seed: readonly string[], bodyOf: (run: string) => string | undefined): string[] {
   const seen = new Set(seed);
   const queue = [...seed];
@@ -93,7 +82,6 @@ function runClosure(seed: readonly string[], bodyOf: (run: string) => string | u
   return [...seen].sort();
 }
 
-/** Exports a bundle from a Hub database (read-only) and its object directory. Returns the manifest (also written, unless dryRun). */
 export async function exportBundle(options: ExportOptions): Promise<BundleManifest> {
   const log = options.log ?? (() => {});
   const excluded = [...EXCLUDED_KINDS, ...(options.excludeKinds ?? [])];
@@ -107,7 +95,6 @@ export async function exportBundle(options: ExportOptions): Promise<BundleManife
       if (Object.hasOwn(TABLE_POLICY, table)) continue;
       withheld.push({ table, reason: WITHHELD_TABLES[table] ?? '没有列入导出策略' });
     }
-    // Scope: the requested runs and every run their records name.
     const runBodies = new Map<string, string>();
     const loadRuns = async (ids: readonly string[]): Promise<void> => {
       const todo = ids.filter((id) => !runBodies.has(id));
@@ -150,11 +137,8 @@ export async function exportBundle(options: ExportOptions): Promise<BundleManife
       manifest.tables[table] = { rows: (manifest.tables[table]?.rows ?? 0) + 1, file: `tables/${table}.jsonl` };
     };
 
-    // records, in append order, a page at a time (keyset on seq).
     const exportedSeq = new Set<number>();
     const kindSizes = new Map<string, number>();
-    // Where the bytes of objects are named: by the bodies of the scoped runs, the compositions and the packs, and through the
-    // source artifacts those name (an artifact record's `sha256` is its object).
     const tokens = new Set<string>();
     const artifacts = new Map<string, string>();
     const collect = (text: string): void => {
@@ -186,7 +170,6 @@ export async function exportBundle(options: ExportOptions): Promise<BundleManife
       if (artifact !== undefined) for (const inner of artifact.match(HEX64) ?? []) sha256s.add(inner);
     }
     if (options.allObjects === true) for (const body of artifacts.values()) for (const inner of body.match(HEX64) ?? []) sha256s.add(inner);
-    // The index rows belong to the exported records: keyset on (position, key, value) so no page splits a record's rows.
     for (let after: [number, string, string] = [0, '', '']; ; ) {
       const page = await client.query<BundleRow & { record_seq: string; key: string; value: string }>(
         `SELECT key, value, digest, record_seq FROM record_index WHERE (record_seq, key, value) > ($1::bigint, $2::text, $3::text) AND record_seq<=$4 ORDER BY record_seq, key, value LIMIT ${PAGE * 5}`,
@@ -207,7 +190,6 @@ export async function exportBundle(options: ExportOptions): Promise<BundleManife
       count('record_keys');
       await sink('record_keys')?.write(row);
     }
-    // The small tables.
     for (const [table, policy] of Object.entries(TABLE_POLICY)) {
       if (policy.how !== 'full' || !present.has(table)) continue;
       const columns = policy.columns === undefined ? '*' : policy.columns.map((c) => `"${c}"`).join(', ');
@@ -216,7 +198,6 @@ export async function exportBundle(options: ExportOptions): Promise<BundleManife
         await sink(table)?.write(row);
       }
     }
-    // The objects the exported records name, with their bytes.
     const known = new Map((await client.query<{ sha256: string; size: string; media_type: string; created_at: Date }>('SELECT sha256, size, media_type, created_at FROM objects')).rows.map((r) => [r.sha256, r]));
     for (const sha of [...sha256s].sort()) {
       const row = known.get(sha);
@@ -246,15 +227,12 @@ export async function exportBundle(options: ExportOptions): Promise<BundleManife
   }
 }
 
-/** Which run a run-family record belongs to: the `run` of a run record, a validation result, a result summary; the `run` of a submission's arguments. */
 export function ownerRun(kind: string, body: string, firstRun: string | undefined): string | null {
   try {
     const parsed = JSON.parse(body) as { run?: unknown; received?: { run?: unknown } };
     if (typeof parsed.run === 'string') return parsed.run;
     if (kind === 'submission' && typeof parsed.received?.run === 'string') return parsed.received.run;
   } catch {
-    /* fall through to the first run id in the text */
   }
   return firstRun ?? null;
 }
-

@@ -33,7 +33,6 @@ function escape(text: string, at: string, xstring = true): string {
 /** Column D of a case's first row (issue #144): the case's place in the mind map, the node texts from the root to the case
  * joined by ">". The runner only logs D, so it is free text for people. */
 export const PATH_SEPARATOR = '>';
-/** Column D of a step row: the step's own description, after the case's path on its first row. */
 export function stepDescription(path: string | null, description: string | undefined): string { return [path, description].filter((value) => value !== null && value !== undefined).join('\n'); }
 export function pathCell(path: unknown): string | null {
   return Array.isArray(path) && path.length > 0 && path.every((v) => typeof v === 'string') ? path.join(PATH_SEPARATOR) : null;
@@ -49,11 +48,6 @@ export function recipeDigest(recipes: unknown[]): string {
 }
 /** Rows are constructed only here; the independent workbook reader does not call this routine to interpret input. */
 export function generateWorkbook(input: GenerationInput): Uint8Array { return generateWorkbookSet([input]); }
-/** One workbook for the cases of one run (decision 104): the runner's template, then below its header the description row,
- * each case's rows in policy order followed by a blank row, and the closing case. One case keeps the single-case layout.
- * `merged` lets the cases come from several plan runs of the same contract, profile, build and generator, as the unsuccessful
- * volume of a delivery does (each case as it last went to the bed); the description row then names every plan run. Such a
- * workbook is not one plan run's recomputation, so it is never what a verification run binds. */
 export function generateWorkbookSet(given: GenerationInput[], options: { merged?: boolean } = {}): Uint8Array {
   if (!given.length) reject('/cases', '至少一个已核验用例才可生成');
   const inputs = volumeOrder(given).ordered;
@@ -74,7 +68,6 @@ export function generateWorkbookSet(given: GenerationInput[], options: { merged?
   if (rows.length > FORMAT.max_rows) reject('/rows', `工作簿 ${rows.length} 行，超过本包上限 ${FORMAT.max_rows} 行；把脑图拆成几份分别上传、各开一次运行，或填 autoid 一次编一条`);
   try {
     const template = readTemplate(profile.workbook);
-    // The local ZIP32 STORE output grammar; validate template members before the shared writer consumes them.
     if (template.members.length < 1 || template.members.length > 65535) reject('/profile/workbook/template', '运行器模板的 ZIP 成员数不在 1..65535 范围内');
     const memberNames = new Set<string>();
     for (const member of template.members) {
@@ -84,14 +77,10 @@ export function generateWorkbookSet(given: GenerationInput[], options: { merged?
       memberNames.add(member.name);
     }
     const column = (number: number) => String.fromCharCode(64 + number);
-    // The identity row is written here, from the contract the run locked (decision 184): B the runtime and C the identity the
-    // gateway pins, where the runner reads them. Whatever the template was saved with in those two cells is replaced.
     return fillTemplate(template, { B: contract.runtimeVersion, C: contract.pinned.identity, [column(FORMAT.identity_generator_column)]: GENERATOR, [column(FORMAT.identity_recipe_column)]: digest }, rows, escape);
   } catch (error) { if (error instanceof TemplateError) reject('/profile/workbook/template', error.message); throw error; }
 }
-/** Column D of the description row, which the reader compares with the frozen plan run. */
 export function describedRun(planRun: string, build: string): string { return `Author         : ${GENERATOR}\n计划运行 ${planRun}；构建 ${build}`; }
-/** The closing case, C a number as in every other row. */
 function closingRow(row: readonly string[]): Array<string | number> { return row.map((value, column) => column === 2 && value !== '' ? Number(value) : value); }
 /** One case's rows; `at` places a pointer inside the case. */
 function caseRows(input: GenerationInput, slots: PlanSlots, at: (pointer: string) => string): Array<Array<string | number>> {

@@ -51,13 +51,6 @@ export function confirmationSteps(contract:RuntimeContract,profile:RuntimeProfil
  }
  return {answers,problems};
 }
-/**
- * The access level the locked tree declares for the parsed command against the prompt its method sends at: a refusal only where
- * the runner contract declares, with evidence, that this method's prompt does not accept commands of that level
- * (RefusedAccess). The level is read from the signature the identity names; a signature without a level, a method without a
- * declared refusal, or a level the contract does not list is not checked, and nothing is read from a method's name. The
- * message names the methods of the same object that send device commands and carry no such refusal.
- */
 export function accessRefusal(contract:RuntimeContract,profile:RuntimeProfile,catalog:CommandCatalog,identity:Pick<CommandIdentity,'path'|'signature'>,object:string,method:string):string|null{
  const refused=refusedAccess(contract,object,method);if(!refused.length)return null;
  const entry=catalog.entries.find(candidate=>isRecord(candidate)&&Array.isArray(candidate.words)&&'/commands/'+candidate.words.map(encodeURIComponent).join('/')===identity.path);
@@ -66,20 +59,12 @@ export function accessRefusal(contract:RuntimeContract,profile:RuntimeProfile,ca
  const others=profile.allowed.filter(call=>call.object===object&&call.method!==method&&Object.values(call.parameters).some(role=>role==='device_cli')&&!refusedAccess(contract,object,call.method).includes(level)).map(call=>call.method);
  return `命令“${entry!.words.join(' ')}”在锁定命令树里的级别是 ${level}，方法 ${method} 下发时所在的提示符不接受这一级别的命令（运行器合约 refused_access），设备会以语法错误拒绝；${others.length?`这台设备上可以下发它的方法：${others.join('、')}`:'这台设备上没有声明可以下发它的方法，缺的是运行器合约的方法声明，由合约维护者补'}`;
 }
-/**
- * The method a device command line is sent with, against the methods the runner contract declares for that object's output
- * (runtime.block_model.output_methods, the methods the block form lowers every device step to). The reference compiler
- * lowers every device configuration and observation to its configuration method, so a flat plan follows the same
- * declaration: a device command line sent with a method the contract does not declare for that object is refused, naming
- * the declared methods the bed profile allows for device command lines there. A contract without that declaration for the
- * object, or a declared method, is not checked; nothing is read from a method's name.
- */
 export function deviceMethodRefusal(contract:RuntimeContract,profile:RuntimeProfile,object:string,method:string):string|null{
  const blocks=runtimeBlocks(contract),outputs=blocks&&Array.isArray(blocks.output_methods)?blocks.output_methods.filter(isRecord):[];
  const declared=[...new Set(outputs.filter(row=>row.object===object&&typeof row.method==='string').map(row=>row.method as string))];
  if(!declared.length||declared.includes(method))return null;
  const usable=profile.allowed.filter(call=>call.object===object&&declared.includes(call.method)&&Object.values(call.parameters).some(role=>role==='device_cli')).map(call=>call.method);
- return `设备命令行要用运行器合约为 ${object} 声明的设备方法下发（runtime.block_model.output_methods），方法 ${method} 不在其中；照 InfoTest，设备上的配置和观察都经这些方法下发。${usable.length?`这台设备上可以用：${usable.join('、')}`:'环境配置没有放行这些方法里能下发设备命令行的，缺的是环境配置的放行，由维护者补'}`;
+ return `设备命令行要用运行器合约为 ${object} 声明的设备方法下发（runtime.block_model.output_methods），方法 ${method} 不在其中；设备上的配置和观察都经这些方法下发。${usable.length?`这台设备上可以用：${usable.join('、')}`:'环境配置没有放行这些方法里能下发设备命令行的，缺的是环境配置的放行，由维护者补'}`;
 }
 export function valueDomainMessages(identity:Pick<ResolvedCommand,'path'|'parameters'>,claims:readonly ValueDomainClaim[]):string[]{
  const command=identity.path.split('/').slice(2).map(decodeURIComponent).join(' ');

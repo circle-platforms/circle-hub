@@ -1,11 +1,4 @@
-// /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 工作流, 技能, 连接, 记录,
 // 设置, and 运行状况 for administrators) and the four management operations of proposal decision 6 (2026-10-31), which post to the actions of owner
-// decision 122. Workflows live at /console/workflows; skills at /console/skills; second admin page entries are gone.
-// /console/results and POST /console/admin/do/<action> remain. The session cookie is HttpOnly, SameSite=Strict and scoped to
-// /console. Every POST form (sign-in, sign-out, first-admin setup and the management actions under /console/admin/do/)
-// carries a CSRF token the server issued and must come from this server's own origin; a management action also needs an
-// administrator's session. Every request re-authenticates the session's token, so revoking it or disabling the account
-// ends the session. Everything that is not one of those forms is GET only.
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { type Principal } from '../../records/api.ts';
@@ -48,7 +41,6 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     return;
   }
   if (segments[0] === 'login') {
-    // U5 follow-up: /console/login/<code> and POST /console/api/login-links retired — no production caller.
     if (segments.length !== 1) return sendHtml(response, 404, page(anonymous('没有这个页面'), html`<p>没有这个页面</p>`));
     if (request.method === 'GET') return loginPage(options, response, 200, null, secure, cookiesOf(request).get(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE) === '1', url.searchParams.get('next'));
     if (request.method === 'POST') return login(request, response, options);
@@ -101,7 +93,6 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     const back = isAction || isKnowledgeAction || segments.length === 0 ? null : safeNext(`${url.pathname}${url.search}`);
     return redirect(response, back === null || back === HOME ? '/console/login' : `/console/login?next=${encodeURIComponent(back)}`, cookies);
   }
-  // Members land on 我能做的事; administrators keep the overview.
   if (segments.length === 0) return redirect(response, principal.role === 'admin' ? HOME : '/console/me');
   const ctx = pageContext(options, request, url, principal, session!, secure);
   return handleAuthenticatedConsole(request, response, url, options, ctx, session!, principal, segments, isAction, isKnowledgeAction);

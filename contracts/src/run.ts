@@ -297,10 +297,6 @@ export type RunRecord = z.infer<typeof RunRecord>;
 /** Derived read view: historical originals stay unchanged. */
 export type RunRecordView = RunRecord & {requirements:RequirementSummary[];criterion_changes?:z.infer<typeof CriterionNotice>[]};
 
-/**
- * GET /run-export/<run>/late (run-late@1, W06 R[7]): the inputs bound after the start resolved for the reader now, by the same
- * reading an evaluation does, and the per-item overlay the workflow's refresh function computed from them. Nothing is stored.
- */
 export const RunLateExport = z.strictObject({
   schema: z.literal('run-late@1'),
   run: RunId,
@@ -311,14 +307,8 @@ export const RunLateExport = z.strictObject({
 });
 export type RunLateExport = z.infer<typeof RunLateExport>;
 
-/** Runs one GET /run-export/<run>/history answer lists at most; the `limit` query parameter may lower it. */
 export const RUN_HISTORY_MAX_RUNS = 8;
 
-/**
- * GET /run-export/<run>/history (run-history@1, W06 R[8]): the earlier runs that verified the same subject on a target and that
- * the reader may export, newest first, reduced to recorded facts: the run, its locked build, and for each job that took effect
- * the plan run it verified, when its journal ended and each report row's item and verdict. Nothing is judged and nothing is stored.
- */
 export const RunHistoryExport = z.strictObject({
   schema: z.literal('run-history@1'),
   run: RunId,

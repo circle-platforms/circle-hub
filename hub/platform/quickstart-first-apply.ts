@@ -1,5 +1,3 @@
-// Builds a first-install deployment definition from the checked-in quickstart sample: the live admin name and an
-// absolute pack directory, so circle-hub apply needs no hand-edit (install tip, 2026-11-15).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 
@@ -10,7 +8,6 @@ export interface QuickstartSample {
   [key: string]: unknown;
 }
 
-/** Rewrite the sample so apply uses the installing admin and an absolute pack path. */
 export function materializeQuickstartApply(sample: QuickstartSample, adminName: string, packDirectory: string): QuickstartSample {
   if (typeof adminName !== 'string' || adminName.trim().length === 0) throw new Error('admin name is required');
   if (typeof packDirectory !== 'string' || !isAbsolute(packDirectory)) throw new Error('pack directory must be an absolute path');

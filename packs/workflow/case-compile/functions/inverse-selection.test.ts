@@ -1,10 +1,3 @@
-// A plan that turns a switch on owes the switch off, in reverse order, before the runner clears the device (T9 supplement 7). The
-// Hub judges a plan on the catalog its selection reads, not on the whole tree: the check's catalog_select function names what the plan
-// sends and what the product's declared inverses of those commands ask for, and the Hub's walk of the locked tree returns only that.
-// Round 30 to 32 sent plans with `ha on` and no `ha off`: the sibling `ha off` was not selected, so the cleanup check could not find
-// the declared inverse and the runner's own clear was taken to be enough, while check-plan, given the whole tree, refused the same
-// plan. The Hub's selection is run here with the Hub's own functions (testing/hub-side.ts, no database; hub-parity.test.ts runs the
-// real engine), beside check-plan, on synthetic commands only.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {selectCommandCatalog} from './subject.ts';
@@ -21,11 +14,6 @@ type Doc=Record<string,any>;
 const param=(index:number)=>({id:'1',reference:`src:${'b'.repeat(64)}/xml@1/x/commands/item[${index}]/arguments`,params:[]});
 const clearAll={words:['clear','demo','all'],signatures:[param(99)]};
 
-/**
- * One plan against one frozen run, as the writer would hand it in: the contract of the fixture with the runner's own cleanup
- * declared for the device (the runner clears every command under `demo`, as the real one clears the commands of its prefixes), the
- * product policy of the fixture, and the tree of the catalog. `extra` adds commands to the tree and to the contract's scope.
- */
 function scenario(steps:Step[],options:{runner?:boolean;catalog?:FlatCatalog;scope?:string[];readOnly?:string[]}={}){
  const value=fixture(steps),contract=value.subject.contract as Doc,flat=options.catalog??catalog;
  if(options.runner!==false)contract.cleanup={source:'fixture/clear',sha256:'a'.repeat(64),objects:['widget-seat'],rules:[{prefixes:['demo'],clears:['clear demo all']}]};
@@ -36,11 +24,9 @@ function scenario(steps:Step[],options:{runner?:boolean;catalog?:FlatCatalog;sco
  return {run,slots,plan:{item:'synthetic-item',handling:'handled',slots},flat};
 }
 const withClear={catalog:{...catalog,entries:[...catalog.entries,clearAll]} as FlatCatalog,scope:['/commands/clear'],readOnly:['/commands/clear']};
-// The Hub reports a problem once for each check that finds it and check-plan once in all: the same problems are the same set.
 const canonical=(rows:unknown[])=>[...new Set(rows.map(row=>JSON.stringify(row,(_key,value)=>value!==null&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a<b?-1:1)):value)))].sort();
 const problemKey=(row:{code?:string;pointer:string;message:string})=>({code:row.code??null,pointer:row.pointer,message:row.message});
 
-/** What the Hub's checks and check-plan each say about the same plan on the same locked tree. */
 async function decide(steps:Step[],options:Parameters<typeof scenario>[1]={}){
  const made=scenario(steps,options),hub=await hubSide(made.run,'synthetic-item',made.slots,treeLines(made.flat));
  const local=checkPlanObject('plan.json',made.plan,made.run,lockedTreeOf(made.flat));
@@ -56,7 +42,6 @@ test('the catalog the Hub selects holds the sibling a plan\'s switch is undone w
  assert.ok('entries' in selection.view);
  const heads=(selection.view as unknown as {entries:Array<{words:string[]}>}).entries.map(entry=>entry.words.join(' '));
  for(const head of ['demo switch on','demo switch off','demo relay enable','demo relay disable'])assert.ok(heads.includes(head),`${head} is in what the checks receive: ${heads.join(', ')}`);
- // The partner the plan itself sends, as the cleanup or in any other place, is already walked.
  const good=await decide(['demo switch on',cleanup('demo switch off')]);
  assert.deepEqual(good.hub.selections[0].lines.filter(line=>line.startsWith('demo switch')).sort(),['demo switch off','demo switch on']);
 });
@@ -80,7 +65,6 @@ test('the inverse is owed on the device that configured it, before the runner\'s
  assert.deepEqual(canonical(late.localProblems),canonical(late.hubProblems));
  const early=await decide(['demo switch on','demo switch off','clear demo all'],withClear);
  assert.deepEqual(early.hubProblems,[],JSON.stringify(early.hubProblems));assert.deepEqual(early.localProblems,[]);
- // Two switches are undone in reverse order of their configuration, and the order is part of what the Hub checks.
  const reversed=await decide(['demo switch on','demo relay enable',cleanup('demo relay disable'),cleanup('demo switch off')]);
  assert.deepEqual(reversed.hubProblems,[],JSON.stringify(reversed.hubProblems));assert.deepEqual(reversed.localProblems,[]);
  const crossed=await decide(['demo switch on','demo relay enable',cleanup('demo switch off'),cleanup('demo relay disable')]);
@@ -93,7 +77,6 @@ test('the declared prefix rules and the enum arguments decide as before, here an
  assert.deepEqual(canonical(rule.localProblems),canonical(rule.hubProblems));
  const done=await decide(['demo pool add one 10',cleanup('no demo pool add one')],{runner:false});
  assert.deepEqual(done.hubProblems,[],JSON.stringify(done.hubProblems));assert.deepEqual(done.localProblems,[]);
- // A switch without a runner clear behind it is owed its inverse too, and the answer is the same with or without the clear.
  const bare=await decide(['demo switch on'],{runner:false});
  assert.ok(says(bare.hubProblems,'demo switch off'),JSON.stringify(bare.hubProblems));assert.deepEqual(canonical(bare.localProblems),canonical(bare.hubProblems));
 });
@@ -113,7 +96,6 @@ test('the sibling lines are never dropped: when they do not fit the limit the se
  assert.ok(over.hubProblems.some(row=>row.message===ENGINE_LIMIT),JSON.stringify(over.hubProblems.slice(0,3)));
  assert.ok(over.hub.problems.every(row=>row.verdict==='unknown'),'it is unknown, with the next step to split the plan, never a pass and never a failure of the plan');
  assert.deepEqual(canonical(over.localProblems),canonical(over.hubProblems),'check-plan says the same');
- // A plan of half that size, each switch undone in reverse order, is read and judged: nothing is owed.
  const on=steps.slice(0,30),fits=await decide([...on,...on.map(step=>cleanup(step.replace(' on',' off'))).reverse()],options);
  assert.ok(fits.hub.selections.every(entry=>'entries' in entry.view),'the selection of 60 lines is read');
  assert.deepEqual(fits.hubProblems,[],JSON.stringify(fits.hubProblems.slice(0,3)));assert.deepEqual(fits.localProblems,[]);
@@ -124,10 +106,8 @@ test('the prefix rules\' lines are all or none, and the sibling lines come first
  const made=scenario([...rules,'demo switch on'],{runner:false});
  const raw={context:{root:made.flat.root,command_policy:made.run.command_policy,groups:made.run.groups},item:{id:'synthetic-item'},slots:made.slots};
  const asked=(selectCommandCatalog(raw) as {lines:string[]}).lines;
- // 61 lines of the plan + 1 sibling + 60 rule lines would be 122: all of them fit.
  assert.equal(asked.length,61+1+60);assert.ok(asked.includes('demo switch off'));
  const more=scenario([...rules,...Array.from({length:6},(_,index)=>`demo pool add m${index} ${index}`),'demo switch on'],{runner:false});
  const asked2=(selectCommandCatalog({context:{root:more.flat.root,command_policy:more.run.command_policy,groups:more.run.groups},item:{id:'synthetic-item'},slots:more.slots}) as {lines:string[]}).lines;
- // 67 lines + 1 sibling + 66 rule lines are over 128: the rule lines are dropped, the sibling is kept.
  assert.equal(asked2.length,67+1);assert.ok(asked2.includes('demo switch off'));
 });

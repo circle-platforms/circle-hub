@@ -22,25 +22,14 @@ export function admittedRecomposition(runInput: any, resultInput: any, context: 
         return null;
     return { record, receipt: pair.reference, run: pair.run.run, source, conditional_on_judgment: true, record_sha256: recordSha256(record) };
 }
-/**
- * The digest a plan names a recomposition record by: sha256 of the record's canonical JSON. A late-bound result changes its receipt
- * whenever another case of the same recompose run is accepted; the record of this case changes only when this case is recomposed again.
- */
 export function recordSha256(record: unknown): string {
     return createHash('sha256').update(canonicalJson(record), 'utf8').digest('hex');
 }
-/** The late-bound slot a frozen item takes its recomposition from at every evaluation (functions/project.ts writes it into the item). */
 export interface LateMarker { slot: string; run: string; source: string; node: string }
-/** What a late-bound recomposition still waits for: the result the Hub resolved, if any, and what this case's entry in it shows. */
 export type WaitingState = 'no_result' | 'uncovered' | Extract<RequirementStatus, 'unsatisfied' | 'pending'> | 'partial';
 export interface RecompositionWaiting { run: string; result: string | null; state: WaitingState; item: string | null; autoid?: string; missing?: string }
-/** The latest accepted result of a late-bound recompose run as the Hub resolved it for this evaluation (ItemRefreshInput.late). */
 export interface LateResult { run: string; input: unknown; missing?: string }
 
-/**
- * The overlay of one item for this evaluation (ItemRefreshOutput.items[].late): the admitted record with its digest, marked late;
- * or why it is not admitted, and, when the case only waits for its own recomposition to be accepted, what it waits for.
- */
 export function lateRecomposition(runInput: any, late: LateResult, context: any, source: string, node: string, autoid?: string): Record<string, unknown> {
     const proof = admittedRecomposition(runInput, late.input, context, source, node);
     if (proof)
@@ -51,19 +40,9 @@ export function lateRecomposition(runInput: any, late: LateResult, context: any,
         ...(found.waiting ? { recomposition_waiting: { run: late.run, result: object(late.input) && typeof (late.input as any).meta?.record === 'string' ? 'rec:' + (late.input as any).meta.record : null, state: found.waiting, item: found.item, ...(autoid !== undefined ? { autoid } : {}), ...(late.missing !== undefined ? { missing: late.missing } : {}) } satisfies RecompositionWaiting } : {}),
     };
 }
-/**
- * Why the bound recomposition was not admitted (called after admittedRecomposition returned null), one of its conditions at a
- * time and in the same order, in words the writer can act on. Without it every one of these collapsed into one sentence that sent
- * a model in run 13 to wait for an "independent reviewer" when it had bound the same result record in both slots.
- */
 export function recompositionProblem(runInput: any, resultInput: any, context: any, source: string, node: string, late?: { run: string; missing?: string }): string {
     return diagnose(runInput, resultInput, context, source, node, late).text;
 }
-/**
- * The first condition admittedRecomposition found unmet, in words, and for a late-bound result whether the case only waits for its own
- * record to be accepted. A frozen binding keeps the order it always had. A late binding checks first what the frozen run record alone
- * decides (the run, its pack, its product and whether it has this case at all: these never change by waiting), then the result.
- */
 function diagnose(runInput: any, resultInput: any, context: any, source: string, node: string, late?: { run: string; missing?: string }): { text: string; waiting: WaitingState | null; item: string | null } {
     const problem = (text: string) => ({ text, waiting: null, item: null });
     const run = envelope(runInput, 'run'), result = envelope(resultInput, 'validation_result');
@@ -102,18 +81,10 @@ function diagnose(runInput: any, resultInput: any, context: any, source: string,
     return problem('重组记录不完整，或它的前驱与重组运行不同；按重组回执补齐后重交');
 }
 
-/** Where the plan declares the recomposition it consumes, and where the frozen item of the run discloses the values to declare. */
 const DECLARED = PLAN_DATA + '/recomposition';
 const DISCLOSED = '/fields/recomposition';
-/** Where late.json discloses the values of a late-bound record: the item's overlay (run-late@1 items[].late). */
 const LATE_DISCLOSED = '/late/recomposition';
 
-/**
- * What a plan's `recomposition` declaration lacks or gets wrong against the admitted recomposition record `proof` (the item's
- * `fields.recomposition`). Each gap is one condition of the check, as it always was; its text says where it sits, the value seen,
- * the allowed set and the next step, with the values the writer copies and where the frozen item discloses them. `where.item` is
- * the id of the item (the item file the download writes holds it), named so the file is found without opening them all.
- */
 export function recompositionGaps(slots: PlanSlots, proof: any, where: { item?: string } = {}): Array<{
     message: string;
     verdict: Extract<Verdict, 'unknown' | 'refute'>;
@@ -125,13 +96,9 @@ export function recompositionGaps(slots: PlanSlots, proof: any, where: { item?: 
         verdict: Extract<Verdict, 'unknown' | 'refute'>;
     }> = [], use = slots.recomposition, note = (message: string, verdict: Extract<Verdict, 'unknown' | 'refute'> = 'unknown') => issues.push({ message, verdict });
     const expects = slots.expects.map((e, i) => ({ ...e, identity: e.id ?? String(i + 1), index: i }));
-    // What the texts read of the record never throws: a record the check itself cannot read fails where it always failed.
     const slotsRead = (): any[] => proof.record?.expectation_slots ?? [];
     const atomOf = (slot: any) => proof.record?.atoms?.find?.((a: any) => a.id === slot.atom);
-    // The assertions that can serve a slot: those the check below accepts for it (the slot's sentence, quoted whole, and its criterion).
     const serving = (slot: any): string[] => { const atom = atomOf(slot); return expects.filter(e => e.quote?.reference === atom?.quote_ref && e.quote?.text === atom?.text && (slot.criterion_id === undefined || e.criterion === slot.criterion_id)).map(e => e.identity); };
-    // A late-bound record (proof.late) is named by its own digest: the receipt of the whole result changes whenever another case of the
-    // same recompose run is accepted, so it is disclosed and never compared; a frozen binding is compared by its receipt as it always was.
     const late = proof.late === true, digestOf = (): string => typeof proof.record_sha256 === 'string' ? proof.record_sha256 : recordSha256(proof.record);
     const file = late
         ? (where.item === undefined ? '运行目录的 late.json 里本条目的 ' : `运行目录的 late.json 里 items 中 id 为 ${where.item} 的条目的 `)
@@ -156,7 +123,6 @@ export function recompositionGaps(slots: PlanSlots, proof: any, where: { item?: 
         }));
         return issues;
     }
-    // In this order, as it always was: a record the check cannot read fails where it always failed (reading its case id).
     const wrongReceipt = !late && use.receipt !== proof.receipt;
     const wrongDigest = late ? use.record_sha256 !== digestOf() : use.record_sha256 !== undefined && use.record_sha256 !== digestOf();
     if (wrongReceipt || wrongDigest || use.case_id !== proof.record.case.id) {

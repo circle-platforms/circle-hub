@@ -1,5 +1,3 @@
-// Renaming an account (owner's requirement of 2026-11-04): an administrator renames any account but a deleted member,
-// through the runtime role's UPDATE (name) (RUNTIME_GRANTS, consolidated baseline), with a user_history snapshot of the new name.
 // Records name accounts by id, so login and lookups follow the new name and nothing else changes. Synthetic names only.
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';

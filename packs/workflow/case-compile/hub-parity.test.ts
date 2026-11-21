@@ -1,6 +1,3 @@
-// The plan check against the real Hub: the same plans go through check-plan with the run's frozen inputs and through submit_result
-// on the real engine (a temporary PostgreSQL, the published pack, synthetic documents); what the Hub refuses in a plan, check-plan
-// refuses with the same pointer, code and text. Divergences of run 33 (a claim without its text, an effect budget) are fixtures.
 import assert from 'node:assert/strict';
 import {after,before,describe,it} from 'node:test';
 import {osIsolationAvailable} from '../../../hub/rules/api.ts';
@@ -35,7 +32,6 @@ before(async()=>{
 after(async()=>{await hub?.close();await postgres?.stop();});
 
 type Claim=Record<string,unknown>;
-/** One plan the writer would put in a file, built for case `index`; `mutate` makes the flaw under test. */
 const claim=(index:number,mutate:(claim:Claim,data:ReturnType<typeof goodData>)=>void=()=>{}):Claim=>{
  const data=goodData();data.expects[0].quote.reference=leaf(index);const value:Claim={text:'合成计划槽位',quotes:data.expects.map(row=>row.quote),data};mutate(value,data);return value;
 };
@@ -57,7 +53,6 @@ const CHECKED:Array<[string,(claim:Claim,data:ReturnType<typeof goodData>)=>void
  ['a command the locked tree does not have',(_,data)=>{data.steps[0].args=['widget unknown command 5'];}],
 ];
 
-/** Structure variants whose local text continues the Hub's words instead of repeating them: the Hub's words come first, byte for byte. */
 const EXTENDED=new Set(['a claim with a field it does not have']);
 
 async function parity(variants:typeof STRUCTURE){
@@ -76,15 +71,12 @@ describe('check-plan against the real Hub',{skip},()=>{
   for(const [index,[label]] of STRUCTURE.entries()){
    const item=result.run.items[index].id,local=checkPlanObject('plan.json',result.items[index],result.frozen,result.catalog),hubSide=hubProblems(result.answer,item,index);
    const localStructure=local.problems.filter(problem=>problem.code==='SUBMISSION_SCHEMA_VIOLATION').map(({code,pointer,message})=>({code,pointer,message}));
-   // Pointer and code always agree; the text agrees where the Hub's own words are specific (a missing or mistyped value, an unknown field).
    assert.deepEqual(localStructure.map(row=>[row.code,row.pointer]).sort(),hubSide.structure.map(row=>[row.code,row.pointer]).sort(),label);
    if(index<=4&&!EXTENDED.has(label))assert.deepEqual(unique(localStructure),unique(hubSide.structure),label);
-   // A node that refuses a field says what it has and where the field belongs after the Hub's words (functions/unknown-field-refusals.test.ts).
    if(EXTENDED.has(label))for(const row of localStructure)assert.ok(hubSide.structure.some(hub=>hub.code===row.code&&hub.pointer===row.pointer&&row.message.startsWith(hub.message)),`${label}: the Hub's words lead: ${row.message}`);
    assert.equal(local.ok,hubSide.structure.length===0&&local.problems.length===0,label);
    if(hubSide.structure.length)assert.equal(local.ok,false,`${label}: the Hub refuses it, so the local check does not pass it`);
   }
-  // The very fixture of run 33: the Hub refuses a claim without its text and the local check no longer says ok.
   assert.equal(checkPlanObject('plan.json',result.items[1],result.frozen,result.catalog).ok,false);
  });
  it('names the same problems of the Hub checks for the same plans, and passes the plan the Hub passes',{timeout:180_000},async()=>{
@@ -95,7 +87,6 @@ describe('check-plan against the real Hub',{skip},()=>{
    assert.deepEqual(unique(local.problems),unique(hubSide.checks),label);
    assert.equal(local.ok,hubSide.checks.length===0,label);
   }
-  // Run 33, 54 calls against a budget of 50: the over-budget plan is refused here with the Hub's text.
   const over=checkPlanObject('plan.json',result.items[1],result.frozen,result.catalog);assert.equal(over.ok,false);assert.ok(over.problems.some(problem=>problem.message==='效果 effect_0 的计划调用 11 次超过声明预算 10 次'));
   assert.equal(checkPlanObject('plan.json',result.items[0],result.frozen,result.catalog).ok,true,'the plan the Hub passes is passed here');
  });
@@ -106,23 +97,16 @@ describe('check-plan against the real Hub',{skip},()=>{
   assert.deepEqual(ran,['contract_shape','bed_addresses','commands_catalog','expected_sources','expected_quotes','author_step_coverage']);
   assert.deepEqual(notRun.map(row=>row.check),['scenario_fidelity','workbook_verified','dispatch_policy']);
   for(const row of notRun)assert.ok(row.why&&row.why.length>8,row.check);
-  // The quotation check reads every quote of this plan: the original case's expectation node is in the frozen run, so nothing is left to the receipt.
   assert.equal(local.hub_checks!.find(row=>row.check==='expected_quotes')!.unread,undefined);
-  // Everything the Hub judged for this item is in the list: each requirement it reported is served by a check named there.
   const reported=new Set(Object.values(result.answer.result?.partitions??{}).flat().filter(row=>row.item===result.run.items[0].id).flatMap(row=>row.requirements.map(requirement=>requirement.requirement)));
   const covered=new Set(local.hub_checks!.flatMap(row=>row.requirements));
   for(const requirement of reported)if(requirement!=='plan')assert.ok(covered.has(requirement),`requirement ${requirement} is served by a listed check`);
  });
 });
 
-// The quotation check (quote@1, the check expected_quotes) is the core's, not the pack's: the Hub reads the text of the entry a reference
-// names and looks for the quote in it. check-plan runs the same rule over the locked tree its run download holds. The Hub here reads a
-// synthetic manual through the tree reader of a knowledge port that serves the same lines as the run export (testing/manual-tree.ts); round
-// 37 sent three sentences of one chapter each with the reference of the entry next to the one that holds it, and check-plan passed them.
 describe('check-plan against the real Hub: the quotation check',{skip},()=>{
  const ENTRIES=catalogFor(COMMAND_IDENTITIES,ROOT).entries.map(entry=>({words:entry.words as string[],signatures:entry.signatures as unknown[]}));
  const ref=(statement:string)=>manualReference(ROOT,CHAPTER,statement);
- // The step carries the quote in precondition_source, one of the places the pack hands to quote@1 (quoteSubject).
  const VARIANTS:Array<[string,{reference:string;text:string}|null]>=[
   ['a quote the cited entry holds',{reference:ref(PUBLISH),text:PUBLISH}],
   ['a sentence cited with the reference of the entry beside it',{reference:ref(HOST_ROW),text:PUBLISH}],
@@ -166,10 +150,8 @@ describe('check-plan against the real Hub: the quotation check',{skip},()=>{
    assert.deepEqual(hubSide.structure,[],label);
    const isQuote=(row:unknown)=>(row as {code?:string}).code==='QUOTE_MISMATCH';
    const hubQuotes=hubSide.checks.filter(isQuote) as Array<{message:string;verdict:string}>,localQuotes=local.problems.filter(isQuote);
-   // The Hub's words come first, byte for byte; the plan check goes on with where the quote is and what to do.
    assert.deepEqual(localQuotes.map(row=>row.message.split('；位置：')[0]).sort(),hubQuotes.map(row=>row.message).sort(),`${label}: the same quote refusals`);
    for(const row of localQuotes){assert.equal(row.verdict,'refute',label);assert.ok(row.message.includes('位置：/slots/plan/0/data/steps/0/precondition_source/'),`${label}: ${row.message}`);}
-   // Everything else the Hub says of the plan, check-plan says too, and the plan passes here exactly when it passes there.
    assert.deepEqual(unique(local.problems.filter(row=>!isQuote(row))),unique(hubSide.checks.filter(row=>!isQuote(row))),`${label}: the other checks`);
    assert.equal(local.ok,hubSide.checks.length===0,`${label}: the verdict of the Hub`);
    refused+=hubQuotes.length>0?1:0;

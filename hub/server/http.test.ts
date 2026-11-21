@@ -1,7 +1,6 @@
 // The HTTP surface: request targets that URL parsing refuses (never an unhandled rejection), /healthz with the release id,
 // the Host and Origin checks against DNS rebinding, the same 401 for every kind of bad token, method and media type
 // refusals and their call-log lines, strict UTF-8, bounded bodies (declared and streamed), the process-wide body budget,
-// and a graceful close that keeps admitted replies open throughout both drain periods.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';

@@ -1,6 +1,3 @@
-// Decision 182 (W06 R[8]): the history export of a run. Synthetic runs stored as records (no pack function runs, so no
-// sandbox is needed), synthetic jobs behind the dispatch port, and for the cost the journal's own reading of reservations and jobs
-// over records written in the journal's form. Costs are counted from what the database returned, never from a clock.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { RUN_HISTORY_MAX_RUNS, RunHistoryExport, type RunRecord } from '../../../contracts/src/run.ts';
@@ -28,7 +25,6 @@ const bound = (external: string | null, bytes = '1'): RunRecord['sources'] => [
 
 interface World {
   h: Harness; service: RunsEngine;
-  /** Runs in the order their first job was reserved, and the jobs of each. */
   order: string[]; jobs: Map<string, RunJob[]>;
   reservationReads: number; journalReaders: string[]; handed: boolean[];
 }
@@ -43,14 +39,12 @@ async function world(): Promise<World> {
   w.service = createRunsService({ parsers: createTestParserRegistry(), records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external, dispatch });
   return w;
 }
-/** The subject source of a synthetic run over stored bytes, which the members and an administrator may read. */
 async function subject(w: Pick<World, 'h'> | Harness, external: string | null, text = '合成文档'): Promise<RunRecord['sources']> {
   const h = 'h' in w ? w.h : w;
   const artifact = await h.kit.artifacts.ingest({ bytes: new TextEncoder().encode(text), mediaType: 'application/json', origin: { upload: { session: 'synthetic' } }, author: { user: h.alice.id }, provenanceType: 'declared', visibility: { readers: [h.alice.id, h.bob.id], admins: true, packs: [], shareable: false } });
   return [{ reference: `src:${artifact.body.sha256}`, role: 'subject', slot: 'map', ...(external === null ? {} : { external }), media_type: 'application/json' }];
 }
 interface Dispatched { runner?: Principal; sources?: RunRecord['sources']; build?: string; ended?: RunJob['ended']; outcome?: EffectOutcome; ended_at?: string; verdicts?: Record<string, 'pass' | 'fail'>; projection?: 'own' | 'withheld' | 'none' }
-/** A stored run and one job of it behind the dispatch port. */
 async function dispatched(w: World, at: string, options: Dispatched = {}): Promise<{ run: string; plan: string; job: string }> {
   const runner = options.runner ?? w.h.alice;
   const stored = await storeQuietRun(w.h, { runner: runner.id, sources: options.sources ?? await subject(w, `${DOCUMENT}@3`), started_at: at, build: options.build }, at);
@@ -91,7 +85,6 @@ test('the runs of the same subject whose job took effect are listed newest first
   const running = await dispatched(w, '2026-11-17T05:00:00.000Z', { ended: null, outcome: 'issued' });
   const unsent = await dispatched(w, '2026-11-17T06:00:00.000Z', { outcome: 'not_dispatched' });
   const unresolved = await dispatched(w, '2026-11-17T07:00:00.000Z', { ended: 'unknown', outcome: 'unknown' });
-  // Reserved after the others, ended before the withheld one: the order of the answer is the end of the jobs.
   const latest = await dispatched(w, '2026-11-17T08:00:00.000Z', { sources: await subject(w, DOCUMENT), ended_at: '2026-11-17T01:30:00.000Z', verdicts: { 'case-1': 'pass', 'case-2': 'pass' } });
   const untimed = await dispatched(w, '2026-11-16T00:00:00.000Z', { ended_at: 'none' });
   const run = await asked(w);
@@ -113,18 +106,15 @@ test('the runs of the same subject whose job took effect are listed newest first
   assert.deepEqual([...new Set(w.journalReaders)], ['admin'], 'the journal is read as a named administrator; the projection at the reader\'s tier');
   assert.equal(w.journalReaders.length, 7, 'only the runs of the subject that the reader may export have their jobs read');
 
-  // The bound: the newest by dispatch are taken, then ordered by the end of their jobs.
   const two = (await w.service.exportHistory!(w.h.alice, run, { limit: 2 }))!;
   assert.deepEqual([two.limit, two.complete, two.runs.length], [2, true, 2]);
   assert.deepEqual(two.runs.map((row) => row.run), [latest.run, untimed.run], 'the two dispatched last among those listed: reserved last, and the one before it in the journal');
   assert.equal((await w.service.exportHistory!(w.h.alice, run, { limit: 99 }))!.limit, 8);
 
-  // Another member may not export this run; of their own run of the subject they see their own verification only.
   assert.equal(await w.service.exportHistory!(w.h.bob, run), null);
   assert.equal(await w.service.exportHistory!(w.h.alice, 'run_01aaaaaaaaaaaaaaaaaaaaaaaa'), null);
   const own = await asked(w, await subject(w, `${DOCUMENT}@9`), w.h.bob);
   assert.deepEqual((await w.service.exportHistory!(w.h.bob, own))!.runs.map((row) => row.run), [theirs.run]);
-  // An administrator may export every run: the other member's verification is listed, and the withheld projection is theirs to read.
   const all = (await w.service.exportHistory!(w.h.admin, run))!;
   assert.deepEqual(all.runs.map((row) => row.run), [theirs.run, withheld.run, latest.run, first.run, untimed.run]);
   assert.deepEqual(all.runs[1].jobs[0].rows, [{ item: 'case-1', dynamic_terminal: 'pass' }]);
@@ -139,7 +129,6 @@ test('bytes bound directly are the same subject only as the same bytes, and a ru
   const run = await asked(w, bytes);
   const answer = (await w.service.exportHistory!(w.h.alice, run))!;
   assert.deepEqual([answer.subjects, answer.runs.map((row) => row.run)], [[bytes[0].reference], [same.run]]);
-  // Nothing of this subject was dispatched; a run that judges no subject names none; a run is never its own history.
   const lonely = await asked(w, await subject(w, `${OTHER_DOCUMENT}@1`));
   assert.deepEqual(await w.service.exportHistory!(w.h.alice, lonely), { schema: 'run-history@1', run: lonely, subjects: [OTHER_DOCUMENT], limit: 8, complete: true, runs: [] });
   const unsubjected = await asked(w, []);
@@ -147,7 +136,6 @@ test('bytes bound directly are the same subject only as the same bytes, and a ru
   assert.deepEqual(await w.service.exportHistory!(w.h.alice, unsubjected), { schema: 'run-history@1', run: unsubjected, subjects: [], limit: 8, complete: true, runs: [] });
   assert.equal(w.reservationReads, reads, 'without a subject the journal is not read');
   assert.deepEqual((await w.service.exportHistory!(w.h.alice, same.run))!.runs, []);
-  // An engine with no dispatch service has dispatched nothing.
   const bare = createRunsService({ parsers: createTestParserRegistry(), records: w.h.kit, workflows: w.h.workflows, packs: w.h.packs, knowledge: w.h.knowledge, external: w.h.external });
   assert.deepEqual((await bare.exportHistory!(w.h.alice, run))!.runs, []);
 });
@@ -167,8 +155,6 @@ test('the scan looks at a bounded number of dispatched runs and says when that w
   assert.deepEqual([found.complete, found.runs.map((row) => row.run)], [true, [recent.run]], 'an answer that reached its limit is the newest, whatever lies beyond the scan');
 });
 
-// ---------------------------------------------------------------- what an answer costs
-
 interface Cost { queries: number; rows: number; bytes: number }
 async function costOf<T>(work: () => Promise<T>): Promise<{ cost: Cost; value: T }> {
   const spans: SpanRow[] = [];
@@ -178,7 +164,6 @@ async function costOf<T>(work: () => Promise<T>): Promise<{ cost: Cost; value: T
   const usage = spans.find((row) => row.is_root)!.usage;
   return { value, cost: { queries: usage['db.queries'] ?? 0, rows: usage['db.rows'] ?? 0, bytes: usage['db.bytes'] ?? 0 } };
 }
-/** A run record about as large as one that froze seventeen cases and its instructions, and one ended job in the journal's form. */
 async function journalled(h: Harness, at: string, sources: RunRecord['sources']): Promise<string> {
   const stored = await storeQuietRun(h, { sources, started_at: at, instructions: '合成规程。'.repeat(12_000) }, at);
   const run = stored.body.run, job = sha256Hex(newId('job')), workbook = sha256Hex(`workbook ${run}`);
@@ -194,7 +179,6 @@ async function journalled(h: Harness, at: string, sources: RunRecord['sources'])
 async function measured(dispatchedRuns: number, ofSubject: number) {
   const h = await openHarness(pg);
   try {
-    // The status the dispatch service answers, from the same journal: one reading of the job's events, as the service does.
     const status = async (_by: Principal, job: string) => {
       const events = await h.kit.store.findMany<ActionBody>({ kind: 'action', key: 'dispatch.job', values: [job] });
       const result = events.find((event) => event.body.detail.phase === 'result')?.body.detail.reference;
@@ -202,7 +186,6 @@ async function measured(dispatchedRuns: number, ofSubject: number) {
     };
     const service = createRunsService({ parsers: createTestParserRegistry(), records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external,
       dispatch: { reservations: () => runReservations(h.kit), jobs: (by, run, reservations) => readRunJobs(h.kit, { status }, by, run, reservations ? { reservations } : {}), reconcile: async () => { throw new Error('unexpected'); } } });
-    // The runs of the subject are the oldest: an answer has to look past every other dispatched run to find them.
     const same = await subject(h, `${DOCUMENT}@3`), other = await subject(h, `${OTHER_DOCUMENT}@1`);
     for (let at = 0; at < ofSubject; at++) await journalled(h, `2026-11-1${at % 10}T00:00:00.000Z`, same);
     for (let at = ofSubject; at < dispatchedRuns; at++) await journalled(h, '2026-11-19T00:00:00.000Z', other);
@@ -219,11 +202,9 @@ async function measured(dispatchedRuns: number, ofSubject: number) {
 
 test('an answer reads the reservations once and the run records in batches; what it reads per run found does not grow with the history', { timeout: 300_000 }, async () => {
   const small = await measured(100, 8), large = await measured(300, 8);
-  // Looking past 200 more dispatched runs costs their run records, a batch at a time, and nothing per run.
   const batches = (runs: number) => Math.ceil(runs / HISTORY_SCAN_BATCH);
   assert.ok(large.none.queries - small.none.queries <= batches(300) - batches(100) + 1, `${small.none.queries} -> ${large.none.queries} queries for a subject nothing verified`);
   assert.ok(large.found.queries - small.found.queries <= batches(300) - batches(100) + 1, `${small.found.queries} -> ${large.found.queries} queries for eight runs found`);
-  // The eight runs found cost the same reads whatever the history holds.
   assert.equal(large.found.queries - large.none.queries, small.found.queries - small.none.queries);
   assert.ok(large.none.queries <= batches(300) + 8, `${large.none.queries} queries to look at 300 dispatched runs`);
 });

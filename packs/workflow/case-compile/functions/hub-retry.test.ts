@@ -1,4 +1,3 @@
-// Synthetic retry tests for read-only and submit Hub helpers (scripted fetch + injectable clock, plus loopback HTTP stub).
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
@@ -150,7 +149,6 @@ test('read fails immediately when Retry-After exceeds remaining 60s budget and c
   assert.equal(calls, 1);
   assert.deepEqual(timing.pauses, []);
 
-  // Repeated Retry-After: 0 cannot spin forever: falls back to bounded backoff after 3 zero pauses.
   const zeroClock = fakeClock();
   let zeroCalls = 0;
   await assert.rejects(

@@ -13,7 +13,7 @@ import { acceptedProducerHead, doneRuleHead } from './pack-display.ts';
 import type { LoadedWorkflow, PackListing } from '../../ports.ts';
 import {KnowledgeSearchScopeSchema,type KnowledgeSearchScope} from '../../../contracts/generated/vocabulary.ts';
 import {timestamp} from './knowledge-display.ts';
-import {badge as chip,facts as kv,commandLink,commandModal,tooltip} from './presentation.ts';
+import {badge as chip,facts as kv,commandModal,tooltip} from './presentation.ts';
 import { compareVersions } from '../../runs/api.ts';
 import { commands } from './commands.ts';
 import { code, html, href, link, liveModule, page, pageLayout, table, type Html } from './html.ts';
@@ -51,12 +51,10 @@ async function assignedNames(ctx: PageContext, pack: PackListing): Promise<strin
 async function usageAudience(ctx:PageContext,pack:PackListing):Promise<string>{
   if(pack.space&&pack.space!=='team')return (await currentAudience(ctx,pack.space,'/',false,pack.id)).text;
   if(pack.kind!=='workflow')return uiLabelOf('audience_scope','team');
-  // Members: say which of their teams makes the pack visible — never label team grants as 公共空间 (findings).
   if(!ctx.admin){
     const teams=await ctx.deps.records.teams.memberships(ctx.principal);
     return teams.length?teams.map((team)=>`团队 ${team.name}`).join('、'):`已分配给当前账户（${ctx.principal.name}）`;
   }
-  // Administrators: prefer team names over expanding to member names so team grants stay visible as teams.
   const of=await ctx.deps.records.authorizations.teamsOf(ctx.principal,'pack',pack.id);
   if(of.teams.length)return of.teams.map((team)=>`团队 ${team.name}`).join('、');
   const users=(await memoReadPort(ctx.deps.records.principals,['get','list']).list()).filter(user=>!user.disabled);

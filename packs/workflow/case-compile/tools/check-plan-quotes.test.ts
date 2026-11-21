@@ -1,7 +1,3 @@
-// The quotation check of the Hub (quote@1, the check expected_quotes) run by the plan check: a quote whose text is not in the entry its
-// reference reads is refused here as the Hub refuses it, with the words of the Hub first and then the place in the plan, the reference
-// cited and what it reads, and where the text stands. Round 37 (2026-11-17): all three plans passed check-plan and Plumb, and the Hub
-// refused the DNSSEC plan because each of three sentences was cited with the reference of the entry beside the one that holds it.
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -20,7 +16,6 @@ const ROOT=f.catalog.root;
 const CATALOG:FlatCatalog={...(f.catalog as unknown as FlatCatalog),manual:MANUAL};
 const ref=(words:readonly string[],statement:string)=>manualReference(ROOT,words,statement);
 const run=()=>frozenRun({groups:[{kind:'case-compile',contract:f.contractDoc,profile:f.profileDoc,manifest:f.inventory,manifest_sha256:f.manifest_sha256,leases:LEASES}],items:[{id:'synthetic-case',label:'合成用例',location:'src:'+'a'.repeat(64)+'/kityminder@1/n/expected',fields:f.fields}],root:ROOT,command_policy:(f.catalog as {policy:unknown}).policy});
-/** The block plan of the pack's sample (configure, observe, clean up) whose causal links carry the given quotes, in the order given. */
 const planOf=(quotes:Array<{reference:string;text:string}>)=>{
  const data=positiveBlocks().CONFIG;
  data.block_context!.causal_links=quotes.map(quote=>({from:'configure',to:'observe',quote}));
@@ -34,7 +29,6 @@ test('a quote the entry it cites holds passes, and the plan check says it ran th
  const result=check([{reference:ref(CHAPTER,PUBLISH),text:PUBLISH},{reference:ref(CHAPTER,HOST_ROW),text:'该参数指定一个已存在的演示域名。'}]);
  assert.deepEqual(result.problems,[],JSON.stringify(result.problems));assert.equal(result.ok,true);
  const row=result.hub_checks!.find(value=>value.check==='expected_quotes')!;assert.equal(row.ran,true,JSON.stringify(row));
- // The one quote this machine does not read is the frozen item's own declaration of the expectation: named as the item's, not as a place of the plan.
  assert.deepEqual(row.unread!.map(value=>value.pointer),['冻结条目的 /fields/expected_nodes/0'],JSON.stringify(row));
  assert.match(result.disclosure!,/expected_quotes/);
 });
@@ -105,7 +99,6 @@ test('a flagged status line and an introduction beside each other: the three sen
  for(const [index,[statement,words]] of ([[SIGN,CHAPTER],[PUBLISH,CHAPTER],[HOST_SIGNED,CHAPTER]] as const).entries())assert.ok(rows[index].message.includes(`这句原文在 ${ref(words,statement)}`),rows[index].message);
 });
 
-/** What `main` writes to stdout and stderr and the code it returns. */
 async function runCli(argv:string[]):Promise<{code:number;stdout:string;stderr:string}>{
  const out:string[]=[],err:string[]=[],stdoutWrite=process.stdout.write.bind(process.stdout),stderrWrite=process.stderr.write.bind(process.stderr);
  process.stdout.write=((chunk:string|Uint8Array)=>{out.push(String(chunk));return true;}) as typeof process.stdout.write;
@@ -116,7 +109,6 @@ async function runCli(argv:string[]):Promise<{code:number;stdout:string;stderr:s
 test('from a run download the refusal says which lines of knowledge/manual.txt the entry stands on, and says nothing of lines when the file is not there',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'plan-quote-lines-'));
  try{
-  // The download the way download-run.ts leaves it: run.json, knowledge/nodes.jsonl and the text files rendered from it.
   const bytes=Buffer.from(nodesText(CATALOG,RUN));
   const files=knowledgeFiles(bytes,RUN).outputs;
   await mkdir(join(dir,'knowledge'));
@@ -129,16 +121,13 @@ test('from a run download the refusal says which lines of knowledge/manual.txt t
   const report=JSON.parse(refused.stdout) as {ok:boolean;problems:Array<{code:string;pointer:string;message:string}>;hub_checks:Array<{check:string;ran:boolean}>};
   assert.equal(report.ok,false);assert.equal(report.hub_checks.find(row=>row.check==='expected_quotes')!.ran,true);
   const quotes=report.problems.filter(row=>row.code==='QUOTE_MISMATCH');assert.equal(quotes.length,2,JSON.stringify(report.problems));
-  // The lines are counted in the file as written: the heading line `· 引用 <reference>`, then the statement.
   const text=Buffer.from(files.find(file=>file.name==='knowledge/manual.txt')!.bytes).toString('utf8').split('\n');
   for(const [problem,statement] of [[quotes[0]!,PUBLISH],[quotes[1]!,HOST_SIGNED]] as const){
    const at=text.findIndex(line=>line.startsWith(`· 引用 ${ref(CHAPTER,statement)}`))+1;assert.ok(at>1,statement);
    assert.equal(text[at],statement,'the statement is the line under the heading');
    assert.ok(problem.message.includes(`${ref(CHAPTER,statement)}（knowledge/manual.txt 第 ${at}-${at+1} 行）；把 reference 改成它`),problem.message);
   }
-  // The stderr line names the first problems with their pointers, as for every refused plan.
   assert.ok(refused.stderr.includes('/block_context/causal_links/0/quote/reference:'),refused.stderr);
-  // The same plan against a download that has no text files: the entry is named, no line is made up.
   await rm(join(dir,'knowledge','manual.txt'));await rm(join(dir,'knowledge','commands.txt'));
   const bare=JSON.parse((await runCli(['--file',planFile,'--run',dir])).stdout) as typeof report;
   const own=bare.problems.filter(row=>row.code==='QUOTE_MISMATCH')[0]!;

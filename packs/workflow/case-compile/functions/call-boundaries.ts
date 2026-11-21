@@ -1,4 +1,3 @@
-// Exact frozen membership checks shared by the Hub and the offline plan checker.
 import {blockMeta,blockPointer} from './blocks.ts';
 import {runtimeMethod,type RuntimeContract} from './runtime-contract.ts';
 import type {RuntimeProfile} from './profile.ts';
@@ -10,7 +9,6 @@ export interface CallBoundaryGap {
  allowed_seats?:string[];
  step_pointer?:string;
 }
-// Spelling distance orders disclosure only; it never grants authority or identifies a semantic carrier.
 function distance(a:string,b:string):number{
  let row=Array.from({length:b.length+1},(_,i)=>i);
  for(let i=0;i<a.length;i++){const next=[i+1];for(let j=0;j<b.length;j++)next.push(Math.min(next[j]+1,row[j+1]+1,row[j]+(a[i]===b[j]?0:1)));row=next;}
@@ -29,7 +27,6 @@ export function callBoundaryGaps(contract:RuntimeContract,profile:RuntimeProfile
   const pointer=blockPointer(slots,`/steps/${index}`),requested={object:step.object,method:step.method};
   const call=allowed.find(row=>row.object===step.object&&row.method===step.method);
   if(!call)gaps.push({document:'contract',pointer,verdict:'refute',requested,allowed_calls:calls,message:`${pointer} 写的是 ${step.object}.${step.method}；方法不在合约与发布配置的共同允许集合；共同允许：${listed(`${step.object}.${step.method}`,calls.map(row=>`${row.object}.${row.method}`))}`});
-  // Responder membership has always applied only to block host observations with one explicit responder.
   const declared=profile.allowed.find(row=>row.object===step.object&&row.method===step.method);
   if(!blockMeta(slots)||!step.output||!Object.values(declared?.parameters??{}).includes('host_shell'))continue;
   const rows=slots.block_context?.responders;

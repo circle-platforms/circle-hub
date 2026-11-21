@@ -14,8 +14,8 @@ import type { RunDetail, RunRequestView, RunStatistics } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
 import {runStatistics} from '../../runs/api.ts';
 import { code, html, link, type Html } from './html.ts';
-import { TASK_DOT, TASK_FILL, confirmationChip, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
-import { card, kpi, chip, dot, duration, when, fullTime, clock, localMinute, type DotState } from './ui.ts';
+import { TASK_DOT, TASK_FILL, confirmationChip, pendingCount, primaryResult, taskResultOf } from './status.ts';
+import { card, kpi, chip, duration, when, fullTime, clock, localMinute, type DotState } from './ui.ts';
 import type { PageContext } from './context.ts';
 import { environmentState } from './connections.ts';
 
@@ -25,7 +25,6 @@ export interface TaskRow {
   statistics: RunStatistics | null;
   result: TaskResult | null;
   pending: number;
-  /** Latest tool-call instant for the run, else started_at; used when the chip is 未知 / awaiting. */
   lastActivityAt?: string;
 }
 
@@ -74,8 +73,6 @@ export function taskTitle(run: Pick<RunRecordView, 'pack'|'pack_space'>, titles:
 }
 
 export function resultCell(row: Pick<TaskRow, 'result' | 'pending' | 'lastActivityAt'>): Html {
-  // N7: visible status is only 未确认 / 已确认 / 未知; task_result stays in the chip title.
-  // Awaiting: keep the chip; say there is no submission yet and when the run last moved (Boss 20:32).
   const awaiting = row.result === 'awaiting' && row.lastActivityAt
     ? html` <span class="ch-meta">还没有提交结果（最近一次活动 ${localMinute(row.lastActivityAt)}）</span>`
     : '';
@@ -257,7 +254,6 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
         const held = environment?.state?.holding?.find((holder) => holder.job === job.job);
         if (job.frozen) parts.push(held !== undefined && !held.frozen ? '等待执行结果中，不可重发' : '运行环境已冻结，不可重发');
         if (job.disposition !== undefined) parts.push(`处置：${uiLabelOf('disposition', job.disposition)}`);
-        // Admin-only timeline step (ctx.admin above): use 运行环境, same rule as other admin-only pages.
         steps.push({ name: '在运行环境上执行', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
       }
     } catch {

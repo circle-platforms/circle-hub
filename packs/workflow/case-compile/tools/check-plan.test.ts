@@ -126,12 +126,10 @@ test('valid flat and B1 block plans expand length placeholders in memory without
     const b1Report = JSON.parse(nameRes.stdout);
     assert.deepEqual([b1Report.structure_ok, b1Report.kind, b1Report.counts.blocks], [true, 'blocks', 2]);
 
-    // Read-only guarantee: byte-for-byte unchanged on disk.
     const { readFile } = await import('node:fs/promises');
     assert.equal(await readFile(flatFile, 'utf8'), flatRaw);
     assert.equal(await readFile(b1File, 'utf8'), b1Raw);
 
-    // {{name:64}} also expands validly in memory.
     const nameFile = join(dir, 'name64.json');
     await writeFile(nameFile, JSON.stringify(flatPlan('doc:c', ['widget id {{name:64}}'])));
     const name64 = await runCli(['--file', nameFile]);
@@ -219,8 +217,6 @@ test('directory mode checks every plan file and catches duplicates with 已被�
     const okReport = JSON.parse(okRes.stdout);
     assert.deepEqual([okReport.mode, okReport.checked, okReport.passed, okReport.failed], ['directory', 2, 0, 2]);
 
-    // Two plans the Hub accepts, so that the only problem is the duplicate: the frozen run carries what the Hub froze (the slot
-    // schema, the lease view, the locked command tree downloaded beside it).
     const dupDir = join(dir, 'dup-plans');
     await mkdir(dupDir);
     const {CONTRACT_DOC,PROFILE_DOC,MANIFEST_DOC,COMMAND_CATALOG,QUOTE,goodData}=await import('../functions/test-support.ts');
@@ -273,14 +269,12 @@ test('verdict mode checks .verdict.json standalone and against --brief for fidel
     const pairedOk = await runCli(['--file', okVerdictPath, '--brief', briefPath]);
     assert.equal(pairedOk.code, 0, pairedOk.stderr);
 
-    // Extra root key -> fidelity_shape
     const extraPath = join(dir, 'extra.verdict.json');
     await writeFile(extraPath, JSON.stringify({ ...validVerdict, extra: true }));
     const extraRes = await runCli(['--file', extraPath, '--brief', briefPath]);
     assert.equal(extraRes.code, 1);
     assert.equal(JSON.parse(extraRes.stdout).problems[0].code, 'fidelity_shape');
 
-    // Empty step_indices for preserved -> author_step_unbound
     const unboundPath = join(dir, 'unbound.verdict.json');
     await writeFile(
       unboundPath,
@@ -297,7 +291,6 @@ test('verdict mode checks .verdict.json standalone and against --brief for fidel
     assert.equal(JSON.parse(unboundRes.stdout).problems[0].code, 'author_step_unbound');
     assert.equal((await runCli(['--file', unboundPath])).code, 1);
 
-    // changed verdict -> scenario_changed
     const changedPath = join(dir, 'changed.verdict.json');
     await writeFile(
       changedPath,
@@ -402,7 +395,6 @@ test('check-plan accepts valid precondition_source on flat steps and rejects mal
   }
 });
 
-// T9: a syntax-only pass cannot claim the frozen authority boundary passed.
 test('plan checks disclose missing frozen run and share Hub method refusal with --run',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'plan-frozen-'));
  try {
@@ -417,12 +409,10 @@ test('plan checks disclose missing frozen run and share Hub method refusal with 
   const checked=await runCli(['--file',file,'--run',dir]);assert.equal(checked.code,1,checked.stderr);
   const result=JSON.parse(checked.stdout);assert.equal(result.authority_checked,true);
   assert.ok(result.problems.some((p:any)=>p.code==='case-compile.method_forbidden'&&p.requested.object==='invented-seat'&&p.allowed_calls.length>0));
-  // --run is the run directory, as for task-brief.ts: its run.json file is refused, and the answer is one line naming the correct form.
   const refused=await runCli(['--file',file,'--run',runFile]);assert.equal(refused.code,1);assert.equal(refused.stdout,'');
   assert.ok(refused.stderr.startsWith(`参数无效：--run ${runFile} 不是普通目录。`),refused.stderr);
   assert.ok(refused.stderr.trimEnd().endsWith("合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。"),refused.stderr);
   assert.equal(refused.stderr.trim().split('\n').length,1);
-  // Without --run the disclosure and the problem name the directory to give, not a file.
   assert.match(syntaxResult.disclosure,/--run <本次运行下载的运行目录>/);
   assert.ok(syntaxResult.problems.some((p:any)=>p.code==='missing_input'&&p.message.includes('--run <本次运行下载的运行目录>')),JSON.stringify(syntaxResult.problems));
   assert.doesNotMatch(JSON.stringify(syntaxResult),/run\.json>/);
@@ -438,7 +428,6 @@ test('CLI checks declared inverse before runner clear using only the matching do
   const catalog=value.subject.command_catalog as any,runId='run_synthetic_cleanup';
   const {frozenRun}=await import('../testing/frozen-run.ts');
   const run=frozenRun({run:runId,root:catalog.root,command_policy:catalog.policy,groups:[{kind:'case-compile',contract,profile:value.subject.profile,manifest:value.subject.manifest}],items:[{id:'synthetic-item'}]});
-  // The Hub also asks every flat plan for an expectation with its source; the fixture only builds what the cleanup rule needs.
   const {QUOTE}=await import('../functions/test-support.ts');
   const withExpect=(data:any)=>({...data,expects:[{text:QUOTE.text,quote:{...QUOTE},after:1}]});
   const plan={item:'synthetic-item',handling:'handled',slots:{plan:[{text:'合成计划',data:withExpect(value.subject.data)}]}};
@@ -454,8 +443,6 @@ test('CLI checks declared inverse before runner clear using only the matching do
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 
-// The line on stderr ends with what to do next. It names --run only when a problem is about the frozen run itself (the pointer is /run or
-// under it): round 36 printed «先提供正确的 --run 冻结输入» under a recomposition problem and a schema problem, where --run was fine.
 const RUN_FIRST = '先提供正确的 --run 冻结输入，再';
 const PLAN_NEXT = '按 problems 的位置与允许集合修改计划；结构问题对照 slots.schema.json，不改冻结配置绕过';
 const endsWithNext = (stderr: string, next: string): boolean => /。位置：[^\n]*。\n$/.test(stderr) && stderr.includes(`。${next}。位置：`);
@@ -482,7 +469,6 @@ test('the next step on stderr names --run only for a problem that is about the f
     await mkdir(join(dir, 'knowledge'));
     await writeFile(join(dir, 'knowledge', 'nodes.jsonl'), [head, ...nodes].map((row) => JSON.stringify(row)).join('\n') + '\n');
 
-    // A plan problem with the right --run: the configuration owes its cleanup. Nothing here is about --run.
     const planOnly = await runCli(['--file', file, '--run', dir]);
     assert.equal(planOnly.code, 1, planOnly.stderr);
     const planProblems = JSON.parse(planOnly.stdout).problems as Array<{ pointer: string }>;
@@ -490,7 +476,6 @@ test('the next step on stderr names --run only for a problem that is about the f
     assert.ok(endsWithNext(planOnly.stderr, PLAN_NEXT), planOnly.stderr);
     assert.ok(!planOnly.stderr.includes('先提供正确的 --run'), planOnly.stderr);
 
-    // A structure problem of the plan, no --run asked for: the plan's own schema is to be read, the frozen input is not missing.
     const broken = structuredClone(plan); broken.slots.plan[0].data.extra_field = 1;
     const brokenFile = join(dir, 'broken.json'); await writeFile(brokenFile, JSON.stringify(broken));
     const structure = await runCli(['--file', brokenFile]);
@@ -499,7 +484,6 @@ test('the next step on stderr names --run only for a problem that is about the f
     assert.ok(endsWithNext(structure.stderr, PLAN_NEXT), structure.stderr);
     assert.ok(!structure.stderr.includes('先提供正确的 --run'), structure.stderr);
 
-    // A plan whose item is none of the run's items is told the items (the plan's /item is wrong); that is not a missing --run either.
     const other = structuredClone(plan); other.item = 'synthetic-other-item';
     const otherFile = join(dir, 'other.json'); await writeFile(otherFile, JSON.stringify(other));
     const wrongItem = await runCli(['--file', otherFile, '--run', dir]);
@@ -508,13 +492,11 @@ test('the next step on stderr names --run only for a problem that is about the f
     assert.ok(endsWithNext(wrongItem.stderr, PLAN_NEXT), wrongItem.stderr);
     assert.ok(!wrongItem.stderr.includes('先提供正确的 --run'), wrongItem.stderr);
 
-    // Without --run the frozen input is what is missing: the --run sentence comes first.
     const noRun = await runCli(['--file', file]);
     assert.equal(noRun.code, 1);
     assert.deepEqual(JSON.parse(noRun.stdout).problems.map((p: { pointer: string }) => p.pointer), ['/run']);
     assert.ok(endsWithNext(noRun.stderr, RUN_FIRST + PLAN_NEXT), noRun.stderr);
 
-    // A run that is the run of another workflow (no case-compile group) is a problem of --run.
     const foreign = join(dir, 'foreign'); await mkdir(foreign);
     await writeFile(join(foreign, 'run.json'), JSON.stringify(frozen({ groups: [{ kind: 'recompose-scope@1' }] })));
     const wrongRun = await runCli(['--file', file, '--run', foreign]);
@@ -522,7 +504,6 @@ test('the next step on stderr names --run only for a problem that is about the f
     assert.ok(JSON.parse(wrongRun.stdout).problems.some((p: { pointer: string }) => p.pointer === '/run'), wrongRun.stdout);
     assert.ok(endsWithNext(wrongRun.stderr, RUN_FIRST + PLAN_NEXT), wrongRun.stderr);
 
-    // A run directory without the run's command tree is a problem of --run too (/run/knowledge), beside whatever the plan has.
     const bare = join(dir, 'bare'); await mkdir(bare);
     await writeFile(join(bare, 'run.json'), JSON.stringify(frozen()));
     const noTree = await runCli(['--file', file, '--run', bare]);

@@ -1,6 +1,3 @@
-// The compile is opened by code before any model work (decision 179): the skills are the published versions, the recompose
-// run opens, the plan run opens with the recompose run bound after the start; any refusal is one line "无法编译：…" in the
-// Hub's words and exit 1. Synthetic tool answers only.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

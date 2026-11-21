@@ -1,5 +1,3 @@
-// A satisfied plan run as the Hub exports it, for the tests of the tools that read one (assemble-delivery, download-returns).
-// Synthetic only: the generation fixture's one plan, repeated for each case named.
 import REQUIREMENTS from '../requirements.json' with { type: 'json' };
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { GENERATOR, generateWorkbookSet } from '../functions/generate.ts';
@@ -8,7 +6,6 @@ import { satisfiedRecipes } from '../tools/generate-workbook.ts';
 import { generationFixture } from './workbook.ts';
 
 export interface PlanRunFixture { run: string; autoids: string[]; exclude: string[]; pause?: string; contract: Uint8Array; profile: Uint8Array; inventory: Uint8Array; predecessor: string; recomposed: string }
-/** A satisfied plan run over `autoids`, as the Hub exports it, with `exclude` frozen in its parameters; `pause` varies the plan (another authored round). */
 export function planRunFixture({ run, autoids, exclude, pause, contract, profile, inventory, predecessor, recomposed }: PlanRunFixture) {
   const recipe = generationFixture();
   if (pause) recipe.slots.steps[2] = { ...recipe.slots.steps[2], args: [pause] };

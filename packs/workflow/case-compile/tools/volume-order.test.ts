@@ -18,7 +18,6 @@ const [A, B, C] = AUTOIDS;
 const SHOW = 'show pool', STORE = 'demo store file backup', BOOT_ON = 'demo mirror boot on', RELOAD = 'demo reload file backup';
 const PLAN_RUN = 'run_00000000000000000000000000';
 
-/** The files fetch-run writes for a satisfied plan run over `recipes` (document order), as tools/scripts.test.ts builds them for one case. */
 function planRunFiles(recipes: GenerationInput[]) {
   const contract = Buffer.from(JSON.stringify(contractDoc)), profile = Buffer.from(JSON.stringify(profileDoc)), inventory = Buffer.from(JSON.stringify(MANIFEST_DOC));
   const ids = recipes.map((_, k) => `case-${k + 1}`);
@@ -59,7 +58,6 @@ test('the client generator writes the cases that leave state behind last and nam
   assert.match(printed.moved_text, new RegExp(`原始用例 ${A} 合成用例 41 的命令会留下用例结束后仍未清除的配置，已在自动化用例 Excel 中排到最后。决定者程序。$`));
   const read = readWorkbook(coreModel(done.bytes!), recipes);
   assert.ok(read.ok, JSON.stringify(read)); if (read.ok) assert.deepEqual(read.autoids, [B, C, A]);
-  // A volume without such a case prints what it printed before.
   const plain = generate([recipe(B, [SHOW]), recipe(C, [SHOW])]);
   assert.equal(plain.status, 0, plain.stderr);
   assert.deepEqual(Object.keys(JSON.parse(plain.stdout)).sort(), ['bytes', 'generator', 'sha256']);

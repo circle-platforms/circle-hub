@@ -1,8 +1,3 @@
-// Causal links of a block plan (block_context.causal_links): each edge runs from a step block to an observation block that is not
-// earlier than it, and every business configuration needs one such edge. Round 36 and round 37 (DNSSEC) wrote edges that end at
-// another configuration block and were told «因果边必须由已有步骤指向不早于它的原文观察» and, for eleven configurations,
-// «缺配置到后续观察的因果声明», with neither the edge as written, the block ids that exist, nor which end was wrong. The refusals
-// now say all of that; what is refused, and whether it is an error or an unknown, is what it always was. Synthetic blocks only.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {assertion,call,fixture,plan,quote} from '../testing/blocks.ts';
@@ -10,10 +5,6 @@ import {readSlots} from './slots.ts';
 import {typedAuthorityGaps} from './typed-authority.ts';
 
 type Edge={from:string;to:string};
-/**
- * A capture (observation, 1), a configuration (2), a second configuration (3), an observation (4) and the cleanup of the first
- * configuration (5). The blocks' kinds decide what an end may be: the two captures/observations carry device text, the rest do not.
- */
 function scenario(edges:Edge[],extra:Array<Record<string,any>>=[]){
  const f=fixture();
  const data=plan([

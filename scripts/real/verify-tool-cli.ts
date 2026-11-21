@@ -1,5 +1,3 @@
-// Publish-time verification: integrity-checked declarations and explicitly supplied synthetic invocations.
-// Inspected modules are never imported. Behavior probes run only the caller's enumerated entry points.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -12,17 +10,13 @@ export interface CliProbeOutcome { status: number; stdout?: string; stderr?: str
 export interface CliProbe {
   argv: string[];
   cwd: string;
-  /** Exact subcommand whose stdin contract is exercised, or null for the base form. */
   subcommand: string | null;
-  /** Synthetic values in declaration order. No production environment is inherited. */
   stdinValues: string[];
   complete: CliProbeOutcome;
-  /** Explicit expected result for empty stdin; required when the declaration requires input. */
   empty?: CliProbeOutcome;
 }
 export interface CliVerification { declarations: number; invocations: number; processes: number }
 
-// Reviewed release inventory: these files expose local APIs, not command-line entry points.
 export const CASE_COMPILE_CLI_HELPERS: ReadonlySet<string> = new Set([
   'tools/authoring-brief.ts',
   'tools/workspace-path.ts',
@@ -42,7 +36,6 @@ function fileBytes(root: string, rel: string): Buffer {
   return readFileSync(current);
 }
 
-/** `helpers` is an explicit release inventory, never inferred from module text or export names. */
 export function verifyCliManifest(stagedDirectory: string, helpers: ReadonlySet<string>): Map<string, Declaration> {
   const root = resolve(stagedDirectory);
   const manifest = JSON.parse(fileBytes(root, 'pack.json').toString()) as { files: { path: string; sha256: string; size: number }[] };
@@ -69,7 +62,6 @@ export function verifyCliManifest(stagedDirectory: string, helpers: ReadonlySet<
   return declarations;
 }
 
-/** Every declared executable gets one or more caller-authored probes, with no argument or status inference. */
 export function verifyCliInvocations(
   stagedDirectory: string,
   helpers: ReadonlySet<string>,

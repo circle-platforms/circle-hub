@@ -1,6 +1,3 @@
-// T01 R[6]: a pack may carry skill modules as generated files. Publication compares those files, by manifest, with the
-// published skill version the pack names, so a composition the console shows is a checked fact and not the author's word.
-// The comparison needs no sandbox: the files are ordinary files of the pack, under its digest.
 import { EMBEDDED_SKILLS_DIR, SKILL_MODULES_DIR, type PackManifest, type SkillModule } from '../../../contracts/src/pack.ts';
 import { problem } from './problems.ts';
 import type { PackProblem } from './types.ts';
@@ -8,7 +5,6 @@ import type { PackProblem } from './types.ts';
 export interface EmbeddedSkill {
   manifest: PackManifest;
   withdrawn: boolean;
-  /** The module names the skill's skill.json declares. */
   modules: readonly string[];
   declared: SkillModule[];
   parsers: number;

@@ -10,11 +10,6 @@ import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
 import { blockPositions, type BlockPosition } from '../functions/cmd-lookup.ts';
-// Read-only plan/verdict checks. A plan is judged by the Hub's own boundary (functions/plan-boundary.ts): the slot record against
-// the schema the run froze, then every pack check that judges a plan, with the Hub's functions and the run's frozen inputs; the
-// quotation check of the core (quote@1) runs over the locked tree of the download (functions/quote-sources.ts).
-//   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>] [--run <运行目录>]
-// `--run` is the run directory (the folder that holds run.json and knowledge/), as for every tool that reads a run (tools/workspace-path.ts).
 import { readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -54,7 +49,6 @@ export interface CheckProblem {
 }
 
 export interface PlanCheckResult {
-  /** Every check the Hub runs on a plan submission, whether it ran here and, if not, why. */
   hub_checks?:HubCheckCoverage[];
   cleanup_checked?:boolean;
   structure_ok?:boolean;
@@ -73,7 +67,6 @@ export interface PlanCheckResult {
     cleanup_steps: number;
     replacements: number;
   } | null;
-  /** What the local check noticed and no check refuses (functions/plan-advice.ts): the plan is acceptable with or without it. */
   advice?: string[];
   problems: CheckProblem[];
 }
@@ -83,8 +76,6 @@ function parseOptions(argv: string[]): { file: string; brief?: string;run?:strin
   return {file:values.file!,...(values.brief!==undefined?{brief:values.brief}:{}),...(values.run!==undefined?{run:values.run}:{})};
 }
 
-/** The ready plans of the other cases of a compilation, when `file` is the plan a pipeline case is written to (cases/<k>/plan/<name>.json):
- *  each cases/<other>/ready/<name>.json with its text, the path as the workdir sees it. Any other place has no such plans. */
 export function readyPlansBeside(file: string): Array<{ path: string; text: string }> {
   const planDir = dirname(resolve(file)), caseDir = dirname(planDir), casesDir = dirname(caseDir);
   if (basename(planDir) !== 'plan' || basename(casesDir) !== 'cases') return [];
@@ -93,7 +84,7 @@ export function readyPlansBeside(file: string): Array<{ path: string; text: stri
     for (const other of readdirSync(casesDir).sort()) {
       if (other === basename(caseDir)) continue;
       let names: string[]; try { names = readdirSync(join(casesDir, other, 'ready')).filter((name) => name.endsWith('.json')).sort(); } catch { continue; }
-      for (const name of names) { try { found.push({ path: ['cases', other, 'ready', name].join('/'), text: readFileSync(join(casesDir, other, 'ready', name), 'utf8') }); } catch { /* A plan that cannot be read is not offered. */ } }
+      for (const name of names) { try { found.push({ path: ['cases', other, 'ready', name].join('/'), text: readFileSync(join(casesDir, other, 'ready', name), 'utf8') }); } catch { } }
     }
   } catch { return []; }
   return found;
@@ -174,8 +165,6 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
     problems.push({ pointer: '/slots/plan', message: '缺少 slots.plan' });
   }
 
-  // The claim's own quotes (slots.plan[0].quotes) are resolved and checked verbatim by the Hub when it takes the submission, a step before
-  // its checks (hub/runs/engine/exact.ts resolveStatement); a mismatch there refuses the whole submission. This tool does not run that step.
   const claim = Array.isArray(slots.plan) ? slots.plan[0] : slots.plan;
   const claimQuotes = isRecord(claim) && Array.isArray(claim.quotes) ? claim.quotes.length : 0;
   const planData = planDataOf(expandedRecord);
@@ -189,8 +178,6 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
     return result(checked.slots, { structureOk: true, authorityChecked: false, cleanupChecked: false, coverage: undefined });
   }
 
-  // With the frozen run the plan goes through the Hub's own boundary. An item whose slot record has a structure problem gets
-  // no check there, as at the Hub; the checks that need an upload or a later audit are listed with the reason they did not run.
   const groups = isRecord(run) && Array.isArray(run.groups) ? run.groups : [];
   const groupsForPack = groups.filter(group => isRecord(group) && group.kind === 'case-compile');
   const group = groupsForPack.length === 1 ? groupsForPack[0] : null;
@@ -204,14 +191,10 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
     const frozenValid = contract.ok && manifest.ok && profile?.ok === true;
     if (!frozenValid) problems.push({ pointer: '/run/groups', message: '冻结合约、清单或运行环境配置无效；重新下载本次运行完整 run.json，不手写冻结输入' });
     if (frozenValid && catalog === undefined) problems.push({ code: 'missing_input', pointer: '/run/knowledge', message: '缺本次冻结根的命令树；保留下载目录 knowledge/nodes.jsonl 与 run.json 一起重检，没有它命令身份、逆操作和运行器清理都核对不了' });
-    // A case whose recomposition is bound after the run started is judged with the record the Hub resolves at each evaluation: here the
-    // run directory's late.json (download-run.ts writes it, refresh-late.ts rewrites it), the same overlay the Hub's checks see.
     const frozenItem = items.find(row => isRecord(row) && row.id === item);
     if (late == null && isRecord(frozenItem) && isRecord(frozenItem.fields) && isRecord(frozenItem.fields.recomposition_late)) problems.push(lateMissingProblem(String(frozenItem.fields.recomposition_late.run)));
     const boundary = planBoundary({ run, item: item!, slots: expandedRecord.slots, catalog, late });
     problems.push(...boundary.problems);
-    // An author_step_refs that names no author step of this case. The fidelity brief cannot be made for such a plan, and that was
-    // found only at the gate, after the writer had ended; said here, the writer corrects it while it still holds the plan.
     if (isRecord(frozenItem) && isRecord(planData)) {
       const { fidelity: _judged, ...authored } = planData;
       const brief = fidelityBrief(item!, recompositionRecordOf(frozenItem, late ?? null), authored);
@@ -220,14 +203,11 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
     coverage = boundary.coverage;
     structureOk = checked.ok && boundary.structure_ok;
     authorityChecked = frozenValid && coverage.some(row => row.check === 'contract_shape' && row.ran);
-    // The runner's cleanup rule is judged inside the Hub's check (the product's declared inverses need the locked command tree of this run).
     cleanupChecked = frozenValid && contract.ok && contract.contract.cleanup !== undefined && catalog !== undefined && catalog.root === run.root && run.command_policy !== undefined && structureOk && authorityChecked;
-    // Advice is what the local check can see and no Hub check refuses (functions/plan-advice.ts); it never changes ok.
     if (frozenValid && contract.ok && profile?.ok === true && checked.ok && catalog !== undefined) {
       const tree = catalog, device = deviceCommandLines(contract.contract, profile.profile, checked.slots);
       const deviceSteps = new Set(device.map((row) => /^\/steps\/(\d+)/.exec(row.pointer)?.[1]));
       const other = checked.slots.steps.flatMap((step, index) => (deviceSteps.has(String(index)) ? [] : step.args.filter((value): value is string => typeof value === 'string')));
-      // The plans of the same compilation that already passed its gates (cases/<k>/ready), read with the same contract and profile.
       const siblings = ready.flatMap((sibling) => {
         try { const slots = readSlots(planDataOf(JSON.parse(sibling.text))); return slots.ok ? [{ path: sibling.path, device: deviceCommandLines(contract.contract, profile.profile, slots.slots).map((row) => row.line) }] : []; } catch { return []; }
       });
@@ -260,11 +240,6 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
   }
 }
 
-/**
- * Read only the standard download beside the explicitly supplied frozen run; never infer catalog authority from prose. What comes
- * back is the locked tree of the run, not a catalog: the checks are given the part of it the Hub gives them (functions/plan-boundary.ts),
- * and the quotation check reads the statements of its entries, which are the texts the Hub reads for a tree: reference.
- */
 export async function downloadedTree(runDirectory:string,run:unknown):Promise<LockedTree|undefined>{
  if(!isRecord(run)||typeof run.root!=='string')return undefined;
  let bytes:string;try{bytes=await readFile(join(runDirectory,'knowledge','nodes.jsonl'),'utf8');}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return undefined;throw error;}
@@ -273,11 +248,6 @@ export async function downloadedTree(runDirectory:string,run:unknown):Promise<Lo
  let positions:ReadonlyMap<string,BlockPosition>|undefined;
  return {...tree,blocks:()=>positions??=textFilePositions(join(runDirectory,'knowledge'))};
 }
-/**
- * Where each node's block starts in the text files beside nodes.jsonl (knowledge/manual.txt, commands.txt, ...): what a refusal that
- * names an entry of the manual needs to say which line of the file it stands on. Read when asked, once; a file that is not there is
- * not looked for again, and the refusal then names the entry without a line.
- */
 function textFilePositions(knowledge:string):ReadonlyMap<string,BlockPosition>{
  const found=new Map<string,BlockPosition>();
  let names:string[];try{names=readdirSync(knowledge).filter(name=>name.endsWith('.txt')).sort();}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return found;throw error;}
@@ -285,7 +255,6 @@ function textFilePositions(knowledge:string):ReadonlyMap<string,BlockPosition>{
  return found;
 }
 
-/** The plan's case takes its recomposition after the run started, and the run directory has no late.json to judge it with. */
 function lateMissingProblem(run: string): CheckProblem {
   return { code: 'missing_input', pointer: '/run/late.json', message: refusalText({
     what: '这条用例的重组记录是开运行后再绑定的，运行目录里没有 late.json，本地核对拿不到 Hub 为它取的重组结果',
@@ -315,13 +284,8 @@ function looksLikeVerdict(filePath: string, parsed: unknown): boolean {
   );
 }
 
-/** A problem is about --run itself when its pointer is /run or under it: no usable frozen run, or one without its command tree. */
 const concernsRun = (problem: CheckProblem): boolean => problem.pointer === '/run' || problem.pointer.startsWith('/run/');
 const PLAN_NEXT_STEP = '按 problems 的位置与允许集合修改计划；结构问题对照 slots.schema.json，不改冻结配置绕过';
-/**
- * What the stderr line of a failed plan check tells to do next. The sentence about --run is for the problems that are about it;
- * a plan problem found with a right --run (a recomposition declaration, a field the schema does not have) is not told to look at it.
- */
 export function planNextStep(problems: readonly CheckProblem[]): string {
   return (problems.some(concernsRun) ? '先提供正确的 --run 冻结输入，再' : '') + PLAN_NEXT_STEP;
 }
@@ -450,7 +414,7 @@ export async function main(argv: string[]): Promise<number> {
       process.stdout.write(
         JSON.stringify({ ok: false, mode: args.brief || name.endsWith('.verdict.json') ? 'verdict' : 'plan', file: args.file, problems: [problem] }) + '\n',
       );
-      process.stderr.write(formatClientCallError(error, { category: '参数无效' }) + '\n');
+      process.stderr.write(formatClientCallError(error) + '\n');
       return 1;
     }
 

@@ -18,18 +18,18 @@
     },
     {
       "path": "functions/modules/workbook-writer/g-syntax.ts",
-      "sha256": "cdfb1c16f1fc2e2673f9243dbdc558028ebfdb8afa17523cf65e1d2f596aa1ba",
-      "size": 6326
+      "sha256": "6a0027369719d5d1149a206c20a4ed03ce74121350eb213cb3e995521041da39",
+      "size": 6342
     },
     {
       "path": "functions/modules/workbook-writer/workbook-template.ts",
-      "sha256": "f98b235ecbfb129a8b6742c25d8da6ef3f2c9918fd6e0e8d252e24bb1b0a0a41",
-      "size": 10584
+      "sha256": "677ee80d4cfb5d2a4ae0afc926bb3f1165233dd2ec0939e9d8d880557f240b99",
+      "size": 9377
     },
     {
       "path": "functions/modules/workbook-writer/xlsx-model.ts",
-      "sha256": "7f4375955a3364c6b3912a6147f19c535c516e5b2a1453da849f8cf0f27d17ed",
-      "size": 3155
+      "sha256": "df0cd2168492cedfb54dbcf80b2937c6cb49fc00a01d220db50015e3cb5d9e1f",
+      "size": 2666
     },
     {
       "path": "functions/modules/workbook-writer/zip-store.ts",

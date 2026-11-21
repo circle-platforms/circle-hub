@@ -43,24 +43,6 @@ export function signatureOf(block:{kind:string;inline?:InlineNode[]}):Signature|
  const params=parameters(shape.parameters);
  return {...shape,words,drift_slots:words.map(row=>row.every(word)),params:params??[],parameter_problem:params?null:'参数跨度不符合完整的 <必选> / [可选] 参数语法'};
 }
-/**
- * The command and the parameter names a paragraph declares for the table under it: one authored strong, then authored
- * emphasis spans separated by white space (a manual may split one parameter list over several spans). It is read for the
- * parameter names only; what counts as a signature for placement and drift stays signatureOf, which this never widens.
- */
-export function parameterHeading(block:{kind:string;inline?:InlineNode[]}):{commands:string[];params:Array<{name:string;required:boolean}>}|null {
- if(block.kind!=='paragraph'||!block.inline)return null;
- const nodes=block.inline,textOnly=(node:InlineNode)=>node.authored===true&&!node.children?.some(child=>child.kind!=='text');
- if(nodes[0]?.kind!=='strong'||!textOnly(nodes[0])||nodes.length%2!==1)return null;
- const spans:string[]=[];
- for(let at=1;at<nodes.length;at+=2){
-  const gap=nodes[at],span=nodes[at+1];
-  if(gap.kind!=='text'||!gap.text.length||gap.text.trim()!==''||span.kind!=='emphasis'||!textOnly(span))return null;
-  spans.push(span.text);
- }
- const words=headWords(nodes[0].text),params=parameters(spans.join(' '));
- return words&&params?{commands:words.map(row=>row.join(' ')),params}:null;
-}
 export function exactNode(catalog:CommandGrammar|null|undefined,words:readonly string[]):{path:string;signatures:readonly CatalogSignature[]}|null {
  if(!catalog)return null;let node=catalog.root;for(const word of words){const next=node.children.get(word);if(!next)return null;node=next;}
  return node.path===null?null:{path:node.path,signatures:node.signatures??[]};

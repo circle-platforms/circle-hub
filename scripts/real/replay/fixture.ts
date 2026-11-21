@@ -1,4 +1,3 @@
-// Synthetic database fixtures only. No live Home, model connection or business adapter is used.
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

@@ -1,4 +1,3 @@
-// Model 44 (decision 159): an entry with no declared, judged, conflicting or unread condition carries no applicability.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';

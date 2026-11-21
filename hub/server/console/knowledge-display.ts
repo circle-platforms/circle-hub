@@ -5,7 +5,6 @@ import {count,fullTime,type Tone} from './ui.ts';
 import {hoverTime,relativeTime} from './format.ts';
 import {badge as chip,tooltip} from './presentation.ts';
 
-/** Visible label for the Hub-wide shared knowledge space (owner 2026-11-13); internal code stays `team`. */
 export const PUBLIC_SPACE_LABEL='公共空间';
 export const knowledgeSearchScopeLabel=(scope:KnowledgeSearchScope)=>scope==='team'?PUBLIC_SPACE_LABEL:uiLabelOf('knowledge_search_scope',scope);
 export const knowledgeSpaceKindLabel=(kind:KnowledgeSpaceKind)=>kind==='team'?PUBLIC_SPACE_LABEL:uiLabelOf('knowledge_space_kind',kind);

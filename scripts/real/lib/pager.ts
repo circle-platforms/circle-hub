@@ -1,7 +1,5 @@
-// Shared pager for reading complete results with mcp__hub__get_nodes across real client scenarios.
 import type { Reply, Turn } from '../scripted-model.ts';
 
-/** Maximum number of result pages to read with mcp__hub__get_nodes. */
 export const MAX_PAGES = 6;
 
 /**
@@ -54,11 +52,6 @@ export function createPagerState(): PagerState {
   return { reference: null, pagesRead: 0 };
 }
 
-/**
- * Handles the common paging respond flow:
- * Turn 0: returns startAction();
- * Later turns: extracts rec: reference, calls mcp__hub__get_nodes, and pages using parseNextCall up to maxPages.
- */
 export function pagedRespond(
   turn: Pick<Turn, 'index' | 'toolResults'>,
   state: PagerState,

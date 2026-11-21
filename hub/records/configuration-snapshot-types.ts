@@ -1,4 +1,3 @@
-// Protected current-schema state. These payloads must never be rendered in logs or ordinary export output.
 import type { PackManifest } from '../../contracts/src/pack.ts';
 import type { RecordKind } from '../../contracts/generated/protocol.ts';
 import type { ProvenanceType } from '../../contracts/generated/vocabulary.ts';

@@ -150,28 +150,26 @@ test('every published client skill and helper passes the manifest gate with all 
 test('scanSkillPack validates pure-data .cli.json declarations via AST without regex or execution', () => {
   const f = fixture();
   try {
-    // Valid pack with CLI script + helper module.
     f.write({
       'tools/run.ts': `if (import.meta.main) console.log(process.argv.slice(2));\n`,
-      'tools/run.cli.json': JSON.stringify({ schema: 'tool-cli@1', stdin: ['%HUB_TOKEN%'] }),
+      'tools/run.cli.json': JSON.stringify({ schema: 'tool-cli@2', stdin: ['%HUB_TOKEN%'], options: [] }),
       'tools/helper.ts': `export const helperValue = 1;\n`,
     });
     assert.deepEqual(scanSkillPack(f.dir, []).issues, []);
 
-    // Adding a second CLI entrypoint without .cli.json in a .cli.json pack fails static audit.
     f.write({
       'tools/run.ts': `if (import.meta.main) console.log(process.argv.slice(2));\n`,
-      'tools/run.cli.json': JSON.stringify({ schema: 'tool-cli@1', stdin: [] }),
+      'tools/run.cli.json': JSON.stringify({ schema: 'tool-cli@2', stdin: [], options: [] }),
       'tools/extra.ts': `console.log(process.argv[2] ?? 'ok');\n`,
     });
     assert.ok(scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration' && i.file.endsWith('tools/extra.ts')));
 
-    // Invalid schema, extra key, or non-placeholder entry rejected.
     for (const badJson of [
       '{not-json',
       JSON.stringify({ schema: 'wrong@1', stdin: [] }),
-      JSON.stringify({ schema: 'tool-cli@1', stdin: [], extra: true }),
-      JSON.stringify({ schema: 'tool-cli@1', stdin: ['raw-secret'] }),
+      JSON.stringify({ schema: 'tool-cli@1', stdin: [] }),
+      JSON.stringify({ schema: 'tool-cli@2', stdin: [], options: [], extra: true }),
+      JSON.stringify({ schema: 'tool-cli@2', stdin: ['raw-secret'], options: [] }),
     ]) {
       f.write({
         'tools/run.ts': `console.log(process.argv.length);\n`,
@@ -180,15 +178,14 @@ test('scanSkillPack validates pure-data .cli.json declarations via AST without r
       assert.ok(scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration'), badJson);
     }
 
-    // A declared entry need not have a particular source-code spelling.
     f.write({
-      'tools/orphan.cli.json': JSON.stringify({ schema: 'tool-cli@1', stdin: [] }),
+      'tools/orphan.cli.json': JSON.stringify({ schema: 'tool-cli@2', stdin: [], options: [] }),
     });
     assert.ok(scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration' && i.file.endsWith('orphan.cli.json')));
 
     f.write({
       'tools/helper.ts': `export const helperOnly = 42;\n`,
-      'tools/helper.cli.json': JSON.stringify({ schema: 'tool-cli@1', stdin: [] }),
+      'tools/helper.cli.json': JSON.stringify({ schema: 'tool-cli@2', stdin: [], options: [] }),
     });
     assert.ok(!scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration' && i.file.endsWith('helper.cli.json')));
   } finally {

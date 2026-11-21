@@ -1,15 +1,3 @@
-// Replays recorded submissions through the Hub's own validation and compares each result with the record.
-//
-//   node scripts/real/replay/replay-submissions.ts run --mode faithful|candidate --export <dir> --out <dir> [--bundle <dir>]
-//        [--repo <tree>] [--commit <id>] [--windows <file>] [--run <id>]... [--seq <n>]... [--limit <n>] [--max-record-bytes <n>]
-//   node scripts/real/replay/replay-submissions.ts report --out <dir> --export <dir> [--bundle <dir>] --mode <mode> <part.json>...
-//   node scripts/real/replay/replay-submissions.ts packs --export <dir> [--repo <tree>]
-//   node scripts/real/replay/replay-submissions.ts export-bundle …    (the same as export-bundle.ts, which runs on the Hub's host)
-//   node scripts/real/replay/replay-submissions.ts verify-bundle --bundle <dir>
-//   node scripts/real/replay/replay-submissions.ts preflight --export <dir> --bundle <dir>     (what the recorded runs name that the bundle lacks)
-//
-// Every path is given on the command line; nothing about a system is written here. The export folder and the bundle are read
-// only. `run` is meant to be started with `node --import ./scripts/real/replay/submissions-net-guard.mjs` (the wrapper does).
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -46,7 +34,6 @@ async function run(argv: string[]): Promise<number> {
   if (values.mode !== 'faithful' && values.mode !== 'candidate') fail('--mode faithful|candidate');
   if (values.export === undefined || values.out === undefined) fail('--export <dir> 和 --out <dir> 必给');
   if (values.packs !== undefined && values.packs !== 'commit' && values.packs !== 'recorded') fail('--packs commit|recorded');
-  // A replay never reaches beyond loopback and runs pack functions under the Hub's own sandbox, or it does not run.
   if ((globalThis as { __replayNetworkGuard?: boolean }).__replayNetworkGuard !== true) fail('回放要用网络守卫启动：node --import scripts/real/replay/submissions-net-guard.mjs scripts/real/replay/replay-submissions.ts run …');
   if (!(await osIsolationAvailable())) fail(`包内函数的沙箱在这里不能用，回放不跑：${isolationFailureText(osIsolationFailure())}`);
   const repo = values.repo ?? TREE;
@@ -76,7 +63,6 @@ async function run(argv: string[]): Promise<number> {
   const counts = { same: 0, changed: 0, not_replayable: 0 };
   for (const outcome of report.outcomes) counts[outcome.status] += 1;
   log(`提交 ${commit.slice(0, 12)}：相同 ${counts.same}，不同 ${counts.changed}，不能回放 ${counts.not_replayable}，不属于这棵树或未选中 ${report.skipped}`);
-  // 1: something is different; 4: nothing could be replayed at all (the data is missing): that is neither a pass nor a failure.
   return counts.changed > 0 ? 1 : counts.same === 0 && counts.not_replayable > 0 ? 4 : 0;
 }
 

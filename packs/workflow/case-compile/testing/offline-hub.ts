@@ -1,10 +1,3 @@
-// The Hub's plan validation, run offline over one frozen run: the pack's own check functions on the input the Hub builds for them
-// (functions/plan-boundary.ts), the quotation check of quote@1 against texts the caller supplies, and the validation@1 record the
-// generator tool reads. The command catalog of a check is what the check's own catalog_select function asks for, read from the locked
-// tree of the run by functions/catalog-selection.ts, the very walk the local plan check (tools/check-plan.ts, planBoundary) makes of
-// the same tree, so the two read one selection. Nothing here needs a database, a sandbox or the network; the Hub's run engine
-// (requirement statuses over several rounds, accounts, records) is not reproduced, only what one accepted submission of plans looks
-// like to the generator. Used by tests of this pack and by offline reference-plan checks; it never stands in for a Hub acceptance.
 import CHECKS from '../checks.json' with {type:'json'};
 import REQUIREMENTS from '../requirements.json' with {type:'json'};
 import * as checkModule from '../functions/checks.ts';
@@ -24,37 +17,23 @@ import {coreModel} from './workbook-model.ts';
 
 const MODULES:Record<string,Record<string,unknown>>={'functions/checks.ts':checkModule,'functions/subject.ts':subjectModule};
 
-/** What the quotation check reads: the text a reference points at, or undefined when the caller has none. */
 export type TextOf=(reference:string)=>string|undefined;
 export interface OfflineCheck {check:string;requirements:string[];ran:boolean;why?:string;outcomes:Outcome[]}
 export interface OfflineSubmissionItem {item:string;handling:ItemHandling;slots?:unknown;reason?:string}
 
-/**
- * The texts a frozen run itself holds for references: the author's expectation nodes and atoms, and the declared assertion of an
- * expectation node under its `/@assertion` pseudo reference (what quoteSubject asks quote@1 to find). Manual and command texts come from the caller.
- */
 export const frozenTexts=(run:Record<string,unknown>):Map<string,string>=>frozenSourceTexts(run);
 
 const requirementsOf=(check:string):string[]=>REQUIREMENTS.requirements.filter(row=>(row.checks as string[]).includes(check)).map(row=>row.key);
 type Declared=typeof CHECKS.checks[number];
-/** The function a check names to choose what it reads of the catalog (catalog_select), as the local plan check reads it. */
 const selectionOf=(check:Declared):((input:unknown)=>unknown)|undefined=>{
  const select=(check as {catalog_select?:{module:string;export:string}}).catalog_select;
  return select===undefined?undefined:MODULES[select.module]?.[select.export] as ((input:unknown)=>unknown)|undefined;
 };
 
-/**
- * Every check of checks.json that judges one plan, on the input the Hub builds for it; workbook checks wait for a workbook.
- * `tree` is the locked tree of the run (testing/locked-tree.ts builds one from a catalog; a run download holds it as
- * knowledge/nodes.jsonl). A check that reads a catalog receives what its own selection function asks for, walked with the Hub's
- * rules and limits (functions/catalog-selection.ts), never the whole tree; the local plan check is given the same tree and walks it
- * the same way.
- */
 export function offlineChecks(run:Record<string,unknown>,item:string,slots:unknown,tree:LockedTree|undefined,textOf?:TextOf):OfflineCheck[]{
  const row=(Array.isArray(run.items)?run.items:[]).find(value=>isRecord(value)&&value.id===item);
  if(!isRecord(row))throw new Error(`the frozen run has no item ${item}`);
  const bare=checkInput(run,row,slots);
- // One selection serves every check that names the same catalog and function, as in the engine (selectionKey of evaluate.ts).
  const selections=new Map<string,SelectedCatalog>();
  const inputOf=(check:Declared):Record<string,unknown>=>{
   const select=selectionOf(check);
@@ -86,10 +65,8 @@ export function offlineChecks(run:Record<string,unknown>,item:string,slots:unkno
  return rows;
 }
 
-/** The problems of one plan: every outcome of the checks that ran that is not a support. */
 export const offlineProblems=(rows:OfflineCheck[]):Outcome[]=>rows.flatMap(row=>row.outcomes.filter(outcome=>outcome.verdict!=='support'));
 
-/** One item's requirements the way the generator reads them: a requirement is satisfied when every check behind it ran and every outcome supports. */
 function requirementRows(rows:OfflineCheck[]){
  return REQUIREMENTS.requirements.map(requirement=>{
   const claims=rows.filter(row=>row.requirements.includes(requirement.key)||(requirement.checks as string[]).includes(row.check)).flatMap(row=>row.outcomes);
@@ -103,10 +80,6 @@ function requirementRows(rows:OfflineCheck[]){
  });
 }
 
-/**
- * The submission and the accepted validation@1 of the handled items, as the generator tool reads them. An item the submission
- * skips needs no checks. The result is `accepted` only the way the Hub accepts a submission: it holds the problems it found.
- */
 export function offlineValidation(run:Record<string,unknown>,items:OfflineSubmissionItem[],tree:LockedTree|undefined,textOf?:TextOf){
  const submission={run:run.run,model:'offline-reference',items:items.map(value=>value.handling==='skipped'?{item:value.item,handling:'skipped',reason:value.reason??'skipped offline',slots:{plan:[]}}:{item:value.item,handling:'handled',slots:value.slots})};
  const checked=items.filter(value=>value.handling==='handled').map(value=>({item:value.item,rows:offlineChecks(run,value.item,value.slots,tree,textOf)}));
@@ -121,7 +94,6 @@ export function offlineValidation(run:Record<string,unknown>,items:OfflineSubmis
 }
 
 export interface OfflineDocuments {contract:Uint8Array;profile:Uint8Array;inventory:Uint8Array}
-/** The workbook the generator tool would write for the handled items: the same recipes (tools/generate-workbook.ts) and the same writer. */
 export function offlineWorkbook(run:Record<string,unknown>,items:OfflineSubmissionItem[],tree:LockedTree|undefined,documents:OfflineDocuments,textOf?:TextOf):{bytes:Uint8Array;recipes:GenerationInput[];problems:Outcome[];submission:unknown;result:unknown}{
  const made=offlineValidation(run,items,tree,textOf);
  const problems=made.checked.flatMap(value=>offlineProblems(value.rows));
@@ -129,5 +101,4 @@ export function offlineWorkbook(run:Record<string,unknown>,items:OfflineSubmissi
  return {bytes:generateWorkbookSet(recipes),recipes,problems,submission:made.submission,result:made.result};
 }
 
-/** The independent reading the Hub's workbook check starts from: the rows of the workbook read back and compared with the recipes they were generated from. */
 export function offlineReadback(bytes:Uint8Array,recipes:GenerationInput[]):ReturnType<typeof readWorkbook>{return readWorkbook(coreModel(bytes),recipes);}

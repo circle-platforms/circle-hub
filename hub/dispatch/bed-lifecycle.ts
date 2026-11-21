@@ -117,7 +117,6 @@ export async function clearBedHold(this: BedContext, by: Principal, executor: st
     return { cleared: true, job: open.job, bed: open.bed };
   }
 
-/** Member-readable residue facts exclude device echoes and credential or account identities. */
 function unrestoredMember(ids: readonly string[]): { fact: string; next_action: string } {
   return { fact: `测试环境的配置或残留不符合本次核对依据，这次没有发出（来源探针 ${[...new Set(ids)].join('、')}）`, next_action: '由测试环境管理员按已声明的清理流程处理并确认恢复后，原样重交原提交' };
 }
@@ -132,7 +131,6 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
 
     const declaration = await this.frozenValue(binding, d, '/surface');
 
-    // Missing probe check (when not using surface judgment)
     if (declaration === undefined) {
       const missing = reads.filter(read => !read.ok).map(read => read.id);
       if (missing.length) {
@@ -141,7 +139,6 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
       }
     }
 
-    // Open bed hold check. Overlapping probes compare held text; probes added since the hold compare a registered baseline.
     const hold = await this.openBedHold(bedNameOrExecutor);
     if (hold) {
       const heldReads = hold.pre_reads?.filter(read => read.ok && 'text' in read && typeof read.text === 'string') ?? [];
@@ -218,7 +215,6 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
       }
     }
 
-    // Baseline residue check
     const itemBaselines = await Promise.all(spec.items.map(async item => ({
       item,
       baseline: await this.getBaseline(binding.executor, item.id),
@@ -357,4 +353,3 @@ export async function finishBed(this: BedContext, binding: JobBinding, d: Execut
     const ids = recovery === 'unknown' ? spec.items.map(item => item.id) : differences.map(diff => diff.item);
     return { bed: name ?? '', pre: 'passed', recovery, differences, originals: sources, limits: bedLimits(recovery), next_action: recovery === 'restored' ? null : recovery === 'unknown' ? unknownSteps(spec.items, ids) : cleanupSteps(spec.items, ids) };
   }
-

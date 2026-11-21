@@ -1,4 +1,3 @@
-// The read-only commands a brief names that can be sent as they stand, and the note that discloses what was read for them.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { deviceReadNote, readableLines, readFileName, readOnlyPrefixes } from './device-read-lines.ts';

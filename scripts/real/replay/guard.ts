@@ -1,6 +1,3 @@
-// Guard sandbox for the replay's guard comparison: files in, one decision out. The guard runs under the Node permission model
-// (read-only, no child process, no network), inside a private directory that holds only what the operator's context names.
-// Nothing here reads a Circle Home, a credential file or the network.
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,20 +8,13 @@ import { writePrivate } from './bundle.ts';
 import type { Interpret } from './protocol.ts';
 import { ReplayError, requireFact, sha } from './types.ts';
 
-/** A file of a guard context: UTF-8 text, or base64 for bytes that are not text (a session table, an image). */
 export type GuardFile = string | { base64: string };
 export const guardFileBytes = (file: GuardFile): Buffer => typeof file === 'string' ? Buffer.from(file, 'utf8') : Buffer.from(file.base64, 'base64');
 export function validGuardFile(file: unknown): file is GuardFile {
   return typeof file === 'string' || (typeof file === 'object' && file !== null && Object.keys(file).join() === 'base64' && typeof (file as { base64: unknown }).base64 === 'string' && /^[A-Za-z0-9+/]*={0,2}$/.test((file as { base64: string }).base64));
 }
-/** A context file name: relative, plain segments only, so a context can never leave its sandbox. */
 export const safeName = (name: unknown): name is string => typeof name === 'string' && name.length > 0 && !isAbsolute(name) && name.split('/').every(part => part !== '' && part !== '.' && part !== '..' && !part.includes('\\') && !part.includes('\0'));
 
-/**
- * The guard sees the same absolute paths as in the recorded session, except for one directory prefix (`from`) which is replaced by a
- * private directory of exactly the same length. Same length keeps every clipped message and every word split the way the history had it;
- * the prefix itself is plain characters only, so the guard's lexical rules see no new quoting problem.
- */
 export interface Mirror {
   from: string;
   to: string;
@@ -34,7 +24,7 @@ const MIN_RANDOM = 8;
 export function mirrorBase(requested?: string): string {
   const candidates = requested ? [requested] : ['/tmp', tmpdir()];
   for (const candidate of candidates) {
-    try { return realpathSync(candidate); } catch { /* try the next one */ }
+    try { return realpathSync(candidate); } catch { }
   }
   throw new ReplayError('没有可用的临时目录来建立等长镜像前缀', 2);
 }
@@ -58,7 +48,6 @@ export function createMirror(from: string, requestedBase?: string): Mirror {
   throw new ReplayError('无法为镜像前缀找到未被占用的目录名', 2);
 }
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/** Every string value that names the recorded prefix (as a whole directory, not as part of a longer name) now names the private one. */
 export function toMirror<T>(value: T, mirror: Mirror): T {
   const pattern = new RegExp(`(?<![A-Za-z0-9._/-])${escapeRegExp(mirror.from)}(?![A-Za-z0-9._-])`, 'g');
   const walk = (item: unknown): unknown => typeof item === 'string' ? item.replace(pattern, () => mirror.to) : Array.isArray(item) ? item.map(walk) : item && typeof item === 'object' ? Object.fromEntries(Object.entries(item).map(([key, entry]) => [key, walk(entry)])) : item;
@@ -67,12 +56,9 @@ export function toMirror<T>(value: T, mirror: Mirror): T {
 export const fromMirror = (text: string, mirror: Mirror): string => text.split(mirror.to).join(mirror.from);
 
 export interface SandboxOptions {
-  /** Files by name, relative to the sandbox root (with a mirror: relative to the mirrored directory). */
   files: Record<string, GuardFile>;
-  /** One file replaced by the candidate's bytes. */
   replace?: { name: string; bytes: Uint8Array };
   mirror?: { from: string; base?: string };
-  /** Text files in which the recorded prefix is written as the private one (a settings file that names a folder). Only with a mirror. */
   mapped?: string[];
 }
 export class GuardSandbox {
@@ -104,7 +90,6 @@ export class GuardSandbox {
       throw error;
     }
   }
-  /** The input as the guard process sees it: mapped into the mirror, or (without one) with the working directory replaced. */
   input(input: Record<string, unknown>): Record<string, unknown> {
     if (!this.mirror)
       return { ...input, cwd: join(this.root, 'work') };
@@ -118,7 +103,6 @@ export class GuardSandbox {
   dispose(): void { rmSync(this.root, { recursive: true, force: true }); }
 }
 
-/** What Circle 1.17.0 makes of a gating hook's exit code and output (`interpretOutput` for before_tool). A failed hook denies. */
 export const interpretGuardOutput: Interpret = (exitCode, stdout, stderr) => {
   const text = stdout.trim();
   let parsed: Record<string, unknown> | undefined;
@@ -152,30 +136,20 @@ export const interpretGuardOutput: Interpret = (exitCode, stdout, stderr) => {
 export interface GuardRun {
   decision: 'allow' | 'deny' | 'ask' | 'none';
   reason: string;
-  /** The hook failed (it crashed or printed something that is not JSON); Circle denies the call then. */
   failed: boolean;
   exitCode: number | null;
   stdoutSha256: string;
   stderrSha256: string;
-  /** Paths the guard tried to read that the sandbox does not hold. The process saw an access error for each. */
   outsideReads: string[];
-  /** The answer rewrote the call's input (Circle 1.18). */
   rewritten?: boolean;
-  /** The answer used fields of an older format. */
   legacy?: boolean;
 }
 export interface RunGuardOptions {
-  /** Variables Circle adds to the hook's environment. */
   env?: Record<string, string>;
-  /** How the hook's exit code and output are read; Circle 1.17.0's reading by default. */
   interpret?: Interpret;
 }
 const PRELOAD = fileURLToPath(new URL('./guard-preload.mjs', import.meta.url));
 const OUTPUT_LIMIT = 1048576;
-/**
- * Runs one guard entry once and keeps the evidence of the attempt (input, output, receipt) in `evidence`. A run that cannot give a
- * decision at all (injected limit, forbidden operation, no process) throws a ReplayError with exit 2 and a `cause`.
- */
 export function runGuard(sandbox: GuardSandbox, entry: string, input: Record<string, unknown>, timeoutMs: number, evidence: string, options: RunGuardOptions = {}): Promise<GuardRun> {
   requireFact(safeName(entry), '守卫入口路径无效');
   const stdin = JSON.stringify(input);
@@ -211,7 +185,7 @@ export function runGuard(sandbox: GuardSandbox, entry: string, input: Record<str
         const value = JSON.parse(Buffer.concat(side).toString() || '[]');
         outside = Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
       }
-      catch { /* a report that did not arrive whole counts as none */ }
+      catch { }
       const forbidden = err.includes('REPLAY_NETWORK_BLOCKED') || /ERR_ACCESS_DENIED[\s\S]*(?:FileSystemWrite|ChildProcess|WorkerThreads)/.test(err);
       writePrivate(evidence, 'stdout.txt', out);
       writePrivate(evidence, 'stderr.txt', err);

@@ -25,7 +25,6 @@ test('quotes that stand close the case at any round, as the author-and-manual co
     assert.deepEqual(closed.problems, [], String(rounds));
     assert.deepEqual([closed.cases[0].closing, closed.cases[0].rounds, closed.cases[0].conflict], ['author_conflict', rounds, CONFLICT], `round ${rounds}: a verified claim waits for a ruling, it does not wait for the cap`);
   }
-  // A case whose last runner verdict is no verdict, with no round counted, closes the same way.
   const unsettled = close(failed('c1', 'unsettled'), notes, undefined);
   assert.deepEqual([unsettled.problems, unsettled.cases[0].closing, unsettled.cases[0].rounds], [[], 'author_conflict', undefined]);
 });
@@ -56,11 +55,9 @@ test('each quote is checked on its own and a claim that does not stand names wha
     assert.match(closed.cases[0].pending![0], expected, name);
     assert.ok(closed.cases[0].pending![0].startsWith('用例 c1 判断原始用例的问题时，'), name);
   }
-  // Two faults are told together; a carriage return in the device words or the entry changes nothing.
   const both = close(failed('c1'), { cases: { c1: note({ author_conflict: { ...CONFLICT, author: '作者没写过这一句', manual: '手册没写过这一句' } }) } }, 1);
   assert.match(both.cases[0].pending![0], /原始用例引文不是标题、步骤或期望的原句；手册引文不是所选手册的原话；逐字复制/);
   assert.deepEqual(authorConflictProblems('c1', CONFLICT, { authored: { c1: WORDS.map((line) => line.replace(' ', ' \r')) }, statements: new Map([[ENTRY, MANUAL.replace('特殊字符', '特殊\r字符')]]) }, []), []);
-  // Nothing known about the case's words or the root is not a pass: the claim is not checked against nothing.
   assert.match(close(failed('c1'), { cases: { c1: note({ author_conflict: CONFLICT }) } }, 1, [SEEN], { authored: {}, statements: new Map() }).cases[0].pending![0], /这条原始用例的原文取不到，请补齐用例重组或脚本编写时的原始用例；所选手册不属于/);
   assert.match(closeFailed([failed('c1')], { cases: { c1: note({ author_conflict: CONFLICT }) } }, { c1: 1 }, {}, { c1: [SEEN] }).cases[0].pending![0], /取不到/);
 });
@@ -71,7 +68,6 @@ test('a last device output with a syntax rejection is the device not accepting t
   assert.equal(refused.cases[0].closing, undefined);
   assert.equal(refused.cases[0].pending!.length, 1);
   assert.match(refused.cases[0].pending![0], /用例 c1 判断原始用例的问题时，它最后一次上机里设备用 \^ 拒绝了命令 “widget sync to peer-b”（在 seat# 下）。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上作者步骤与手册冲突：请重新判断原因，先修这条命令再做上机验证；最多重交 3 次，仍未核对正确时只陈述这些内容的核验结果，原因未查清就保留未知/);
-  // The device accepted the command and refused the value: that is the conflict. Without any device words the guard has nothing to read.
   assert.equal(close(failed('c1'), notes, 1, [SEEN]).cases[0].closing, 'author_conflict');
   assert.equal(close(failed('c1'), notes, 1, []).cases[0].closing, 'author_conflict');
 });
@@ -86,7 +82,6 @@ test('a case never sent to the bed closes on the claim too, after the Hub’s ow
   const stale = closeUnrun([unrun], {}, { cases: { c3: note({ author_conflict: { ...CONFLICT, manual: '手册没写过这一句' } }) } }, GROUND);
   assert.equal(stale.cases[0].closing, undefined);
   assert.match(stale.cases[0].pending![0], /^用例 c3 判断原始用例的问题时，手册引文不是所选手册的原话；逐字复制/);
-  // No claim: aggregated single refusal with category '不存在' (never '已被占用') and capped case list.
   const none = closeUnrun([unrun], {}, { cases: { c3: note() } }, GROUND);
   assert.match(none.cases[0].pending![0], /^没有取得可核验的计划结论或具名缺失事实出口$/);
   assert.equal(closeUnrun([unrun], {}).cases[0].pending!.length, 1, 'the callers that pass no notes keep working');
@@ -124,10 +119,10 @@ test('the report names the closing and what was and was not checked, in plain wo
   assert.match(closingLine({ ...failed('c1', 'unsettled'), closing: 'author_conflict', conflict: CONFLICT })!, /。它已上机 1 次，裁定前不再为它上机/, 'no authored rounds are counted for a case with no verdict, so none is claimed');
   assert.equal(closingLine({ ...failed('c1'), closing: 'authoring_failure', rounds: 3 })!.startsWith('所记录的核验尚未通过：已核验 3 份不同内容'), true, 'recorded failures do not claim a model cause');
   const exhaustedLine = closingLine({ autoid: 'c4', rounds: 0, status: 'unrun', closing: 'authoring_failure', missing: { kind: 'repair_exhausted', plan_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', requirement: 'plan', missing: '合成拒绝原话' }, history: [] })!;
-  assert.doesNotMatch(exhaustedLine, /InfoTest|收口|受理|计划运行/);
+  assert.doesNotMatch(exhaustedLine, /收口|受理|计划运行/);
   assert.match(exhaustedLine, /计划已交给 Hub.*也没有被脚本合并接受.*不能据此确认原因在编写模型/);
   const auditedLine = closingLine({ ...failed('c5'), rounds: 2, closing: 'authoring_failure', history: [{ ordinal: 1, run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', job: 'job_1', terminal: 'pass', audit: { where: 'stdout', line: 'ERROR: bad' } }] })!;
-  assert.doesNotMatch(auditedLine, /InfoTest/);
+  assert.doesNotMatch(auditedLine, /收口|受理|计划运行/);
   assert.equal(closingCounts([at(1), { ...failed('c2'), rounds: 3, closing: 'authoring_failure' }, { ...failed('c3', 'unrun'), closing: 'author_conflict', conflict: CONFLICT }]), `原始用例 c1，原因${labelOf('attribution','author_input')}。原始用例 c2，原因${labelOf('attribution','unattributed')}。原始用例 c3，原因${labelOf('attribution','author_input')}。`);
 });
 

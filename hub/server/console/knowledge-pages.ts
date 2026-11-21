@@ -54,7 +54,6 @@ async function productReadable(ctx: PageContext, product: string): Promise<Produ
   return (await readableLines(ctx)).find((line) => line.id === product) ?? null;
 }
 
-/** A root is readable when one of its compositions belongs to a product line the reader may read. */
 export async function rootReadable(ctx: PageContext, root: string): Promise<boolean> {
   if (!SHA256.test(root)) return false;
   const infos = await ctx.deps.knowledge.rootInfo(root);
@@ -63,13 +62,11 @@ export async function rootReadable(ctx: PageContext, root: string): Promise<bool
   return infos.some((info) => lines.has(info.product));
 }
 
-/** The pending intake of the knowledge feeding for this reader; empty when there is none. */
 async function intakePending(ctx: PageContext): Promise<Html> {
   const todos = await ctx.deps.knowledge.feeding?.todos(ctx.principal) ?? [];
   return todos.length === 0 ? html`` : knowledgeSection('知识入库待处理', table(['来源', '待补充内容', '后续处理', '检查脚本出错详情'], todos.map(row => [technicalCode(JSON.stringify(row.source)), row.missing, row.next_action, row.detail ? technicalCode(JSON.stringify(row.detail)) : '无'])));
 }
 
-/** The fourth tab of the knowledge place: the product knowledge sources the reader may see, and what waits for intake. */
 export async function productSourcesPage(ctx: PageContext): Promise<PageResult> {
   const content = html`${knowledgeTabs(ctx)}${knowledgeContext(ctx, uiLabelOf('pack_kind', 'product'), undefined, uiLabelOf('knowledge_search_scope', 'team'))}${await packSources(ctx, 'product', [], { bare: true })}${await intakePending(ctx)}`;
   return { status: 200, body: page(ctx.chrome('知识库', { active: 'knowledge', hint: packPurpose('product') }), await spaceLayout(ctx, pageLayout(content, { inspector: null }))) };
@@ -78,9 +75,7 @@ export async function productSourcesPage(ctx: PageContext): Promise<PageResult> 
 export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   if(ctx.url.searchParams.get('view')==='sources')return sourceArchivePage(ctx);
   if(ctx.url.searchParams.get('view')==='memory')return memoryPage(ctx);
-  // Decision 151: the home is the list of entries; the product knowledge sources and what waits for intake are the fourth tab.
   if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为任务的来源'}),await knowledgeHome(ctx))};
-  // Dynamic import: spaces imports treePage from pages/knowledge-pages; a static edge here would re-form the cycle.
   const { spaceOverview } = await import('./spaces.ts');
   const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
@@ -107,7 +102,6 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
         entry.total,
         entry.released,
         entry.produced,
-        // N7: each version line shows its current root and produced_at.
         current === null ? '尚未产出' : html`${link(knowledgeTreePath(), current.build.name, { root: current.root, path: '/' })}`,
         current === null ? '—' : html`${link(knowledgeRootPath(), technicalCode(current.root.slice(0, 12)), { root: current.root })}`,
         current === null ? '—' : timestamp(current.produced_at),
@@ -211,7 +205,6 @@ export async function treePage(ctx: PageContext): Promise<PageResult> {
   if (!SHA256.test(root)) return neutralPage(ctx);
   const nodes = await loadKnowledgeNodes(ctx, root, path, cursor ?? null);
   if (nodes === null) return neutralPage(ctx);
-  // The node asked for gets its citations and its entries' provenance; the nodes below it are listed as before.
   const main = nodes.nodes.find((node) => node.path === path);
   const citations = main === undefined ? null : await nodeCitations(ctx, root, main);
   const parts = nodes.nodes.map((node) => {

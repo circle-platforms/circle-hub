@@ -26,10 +26,9 @@ import { OPERATOR_TOKEN_VARIABLE, takeEnvironmentToken, type OperatorTokenStore 
 import { jsonSafe, terminalSafe } from './assemble/terminal.ts';
 import type { OperatorAct } from './cli-admin.ts';
 import { AssemblyMissingError, CliError, UsageError, isAssemblyMissing } from './errors.ts';
-import { SERVE_USAGE, deploymentEnvironment, loadServerConfig, prepareDatabase, serve, type ServeOptions } from './main.ts';
+import { deploymentEnvironment, loadServerConfig, prepareDatabase, serve, type ServeOptions } from './main.ts';
 import { commandStep, setTraceStatus, startTelemetry, startTrace, step, traceSinkInstalled, tracing, type Telemetry } from '../telemetry/api.ts';
 import { readReleaseId } from './release.ts';
-import { localToolsCommand, LOCAL_TOOLS_USAGE } from './cli-local-tools.ts';
 import { listRunInventory, RUN_LIST_DEFAULT_LIMIT, RUN_LIST_MAX_LIMIT, RUN_LIST_STATES, runListLines, type RunListState } from './run-list.ts';
 import { countsLine } from './text.ts';
 import { DEFAULT_ADMIN_NAME, initialPassword } from '../records/api.ts';
@@ -200,7 +199,6 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
     const user = await requireUser(kit, positionals[0]);
     const changed = await kit.principals.setDisabled(act.admin, user.id, sub === 'disable');
     out(io, `${changed.name}（${changed.id}）${labelOf('account_status', changed.disabled ? 'disabled' : 'enabled')}${changed.disabled ? '：它的令牌立即失效' : ''}`);
-    // Disabling the operator token's own account cuts it off: say so, and how to recover (records keep an enabled admin).
     if (changed.disabled) await sayIfLost(io, act);
     return 0;
   };
@@ -745,7 +743,6 @@ export async function main(argv: readonly string[] = process.argv.slice(2), over
     catch (error) { return report(io, error, commands()); }
   }
   if (isPlatformCommand(command)) {
-    // The server owns reset; platform commands here perform only platform operations.
     const platformIo = { stdout: io.stdout, stderr: io.stderr, env: platformEnvironment(io.env), cwd: io.cwd, allowVariables: [OPERATOR_TOKEN_VARIABLE], ...(overrides.io === undefined ? { keyPipe: liveKeyPipe() } : {}) };
     const registered = platformCommands(platformIo).find(entry => entry.name === command)!;
     return traced(options, command, () => registered.run(rest));

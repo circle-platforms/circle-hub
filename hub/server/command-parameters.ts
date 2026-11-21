@@ -1,4 +1,3 @@
-// Onboarding command syntax, help and form metadata. No deployment state or secret values are read here.
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
@@ -191,10 +190,8 @@ export function commandParseOptions<K extends CommandParameterId>(id: K): ParseO
   return Object.fromEntries(Object.entries(definition.options).map(([name, option]) => [name, { type: option.type, ...(option.multiple ? { multiple: true } : {}) }])) as ParseOptions<(typeof COMMAND_PARAMETERS)[K]['options']>;
 }
 
-/** Matches node:util syntax and arity; original handlers retain permission and business validation. */
 export function parseCommandParameters<K extends CommandParameterId>(id: K, argv: readonly string[]) {
   let parsed;
-  // Node's ParseArgsOptionsConfig is invariant across option maps; the runtime shape matches.
   try {
     parsed = parseArgs({
       args: [...argv],
@@ -247,7 +244,6 @@ export function commandParameterHelp(id: CommandParameterId): string {
 }
 
 const validator = new AjvJsonSchemaValidator();
-/** Form values contain only arguments. Sensitive stdin values must be passed separately to the existing command bridge. */
 export function buildCommandArgv(id: CommandParameterId, values: Record<string, unknown>): string[] {
   const definition: Definition = COMMAND_PARAMETERS[id], shape = commandParameterShape(id);
   if (!validator.getValidator(shape.argumentSchema)(values).valid) throw new UsageError('参数不符合命令登记；请核对必填项、范围和互斥选项');

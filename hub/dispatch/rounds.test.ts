@@ -134,7 +134,6 @@ test('residue found at a later round\'s baseline makes that round not_run, like 
   assert.equal(rounds[1]?.reason, 'integrity_unproven');
   assert.equal((await intents(c)).some(row => row.body.detail.round === 2), false);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 2);
-  // Four residue reads open the job (two seats, two commands); the fifth is the first of round 2's baseline.
   const found = (await c.service.journal.events(state.job)).filter(e => e.body.detail.phase === 'device_probe' && e.body.detail.matched === false);
   assert.deepEqual(found.map(e => [e.body.detail.seat, e.body.detail.check, e.body.detail.state]), [['synthetic-0', 'residue-1', 'residue']]);
 });

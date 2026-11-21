@@ -38,7 +38,6 @@ describe('the admin note of a call', () => {
     const start = noted();
     const answer = await h.service.startRun(h.bob, { pack: 'toy-review', inputs: {} }, start.context);
     // Not assigned: the caller is told so in its words (D05 R[3], decision 112); the admin note keeps the account.
-    // Member fact+next match text-changes total table SOURCE_NOT_PERMITTED (workflow); engine message is the fact clause.
     assert.deepEqual(answer.errors.map((e) => [e.code, e.message]), [['SOURCE_NOT_PERMITTED', '当前账户未获授权使用工作流「toy-review」']]);
     assert.equal(
       answer.errors[0]!.fix,

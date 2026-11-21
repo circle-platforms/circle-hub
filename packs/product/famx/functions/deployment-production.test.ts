@@ -1,4 +1,4 @@
-import { runById, canViewRun, readPackDirectory, packSchema } from '../../../../hub/runs/api.ts';
+import { TEST_KNOWLEDGE_READ_PORTS } from '../../../../hub/knowledge/testing/read-ports.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 // A real knowledge service over synthetic ports: deployment values are explicit even when equal to a sample default.
 import assert from 'node:assert/strict';
@@ -21,7 +21,7 @@ test('real sync refuses unset conventions before reading; only dry run uses synt
  const product={id:'famx',version:'1.0.0',digest:sha256Hex(raw),kind:'product' as const,directory:fileURLToPath(new URL('..',import.meta.url)),product:ProductDeclaration.parse(JSON.parse(raw))};
  const packs=new FakePacks();packs.add(product);
  const external=new FakeExternal(records);external.set('buildsite:listing:index',{bytes:'<html></html>',mediaType:'text/html'});
- const knowledge=createKnowledge({ runReads: { runById, canViewRun }, packReads: { readPackDirectory, packSchema },records,parsers:createDefaultRegistry(),packs,external,admin,sandbox:{requireOsIsolation:false}});
+ const knowledge=createKnowledge({ ...TEST_KNOWLEDGE_READ_PORTS,records,parsers:createDefaultRegistry(),packs,external,admin,sandbox:{requireOsIsolation:false}});
  const refused=await knowledge.syncProduct(product);assert.match(refused.error??'',/circle-hub var set FAMX_MIN_LINE/);assert.match(refused.error??'',/circle-hub var set FAMX_MAINLINE_PAGE_WORDS/);assert.equal(external.reads.length,0);
  const dry=await knowledge.syncProduct(product,{dryRun:true});assert.equal(dry.error,null);assert.ok(dry.variables?.every(v=>v.default));
  for(const declaration of product.product.variables??[])await records.variables.setVariable(admin,declaration.name,declaration.default,'合成部署设置');

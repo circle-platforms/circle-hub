@@ -1,4 +1,3 @@
-// Secure Plumb HTTPS/HTTP client enforcing CA pinning, rate limits, safe retries, caching, and disclosure invariants.
 import { X509Certificate } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
@@ -26,7 +25,6 @@ import {
   type PlumbBatchQuestion,
   type PlumbClientConfig,
   type PlumbGate,
-  type PlumbGateAction,
   type PlumbJudgeRequest,
   type PlumbJudgeResponse,
   type PlumbKeyClaimResponse,
@@ -61,7 +59,6 @@ function isLoopbackHost(hostname: string): boolean {
   return /^127(?:\.\d{1,3}){3}$/u.test(lower);
 }
 
-/** Validates gateway URL, enforcing HTTPS for non-loopback endpoints unless explicitly overridden. */
 export function validatePlumbBaseUrl(rawUrl: string, allowInsecureHttp = false): string {
   const trimmed = rawUrl.trim();
   if (!trimmed) {
@@ -136,7 +133,6 @@ function caPemMatchesFingerprint(caPem: string | undefined, expectedSha256: stri
       const hex = new X509Certificate(block).fingerprint256.replace(/:/gu, '').toLowerCase();
       if (hex === expectedSha256) return true;
     } catch {
-      // Ignore malformed trailing block; TLS handshake itself still enforces valid CA parsing.
     }
   }
   return false;
@@ -203,7 +199,6 @@ function unwrapAnswerNode(raw: unknown): { answer: PlumbAnswer; gate?: PlumbGate
   return { answer: ans, ...(ans.gate ? { gate: ans.gate } : {}) };
 }
 
-/** Normalizes single or batch `/v1/judge` item (`noul`, `choice`, or `sequence`) into one consistent shape. */
 export function normalizeJudgeAnswer(raw: PlumbJudgeResponse | PlumbBatchAnswer): PlumbNormalizedAnswer {
   const unwrapped = unwrapAnswerNode(raw);
   if (!unwrapped) {
@@ -274,7 +269,6 @@ function validateAnswerInvariants(rawItem: unknown, label: string): void {
   }
 }
 
-/** Validates disclosure invariants and propagates top-level disclosure onto batch answers when absent. */
 export function verifyJudgeDisclosure<T extends PlumbAnyJudgeResponse>(
   payload: unknown,
 ): T {
@@ -700,7 +694,6 @@ export class PlumbClient {
       try {
         const parsed = JSON.parse(resp.body) as Record<string, unknown>;
         const errObj = typeof parsed.error === 'object' && parsed.error !== null ? (parsed.error as Record<string, unknown>) : parsed;
-        // The gateway names its refusals `error.type` (`request_too_large`, `backend_down`, `rate_limited`...); `code` is kept for older servers.
         if (typeof errObj.code === 'string' && errObj.code) errCode = errObj.code;
         else if (typeof errObj.type === 'string' && errObj.type) errCode = errObj.type;
         if (typeof errObj.message === 'string' && errObj.message) errMsg = redactSecret(errObj.message, [this.apiKey]);
@@ -835,7 +828,6 @@ export class PlumbClient {
     });
   }
 
-  /** Submits a single request, or a batch that fits the gateway's limits (questions, expanded pairs, body bytes), with caching & disclosure verification. */
   async judge<T extends PlumbAnyJudgeResponse = PlumbJudgeResponse>(request: PlumbJudgeRequest): Promise<T> {
     if (request.state !== undefined && request.node !== undefined) {
       throw new Error(formatPlumbCallError('参数无效', '/v1/judge 不能同时传入 state 与 node', '请仅保留其中一种输入形态'));
@@ -935,7 +927,6 @@ export class PlumbClient {
     }
   }
 
-  /** The request body without its questions, as `judge` will send it: the effective model, the task and the shared state. */
   private requestFrame(params: { model?: string; task?: string; state?: PlumbJudgeRequest['state'] }): Record<string, unknown> {
     const model = (params.model ?? this.defaultModel ?? '').trim();
     return {
@@ -945,7 +936,6 @@ export class PlumbClient {
     };
   }
 
-  /** True when the request has to be sent in several, because it exceeds a per-request limit of the gateway: use `judgeBatched` then. */
   exceedsRequestLimits(request: PlumbJudgeRequest): boolean {
     if (!request.questions) return false;
     const { questions, ...rest } = request;
@@ -956,10 +946,6 @@ export class PlumbClient {
     }).length > 1;
   }
 
-  /**
-   * Splits a multi-question batch, in order, into the fewest requests that each stay inside the gateway's limits (questions,
-   * pairs the questions expand to together, body bytes; see gateway-limits.ts) while respecting concurrency <= 2.
-   */
   async judgeBatched(params: {
     model?: string;
     task?: string;
@@ -1024,7 +1010,6 @@ export class PlumbClient {
     };
   }
 
-  /** Submits a `/v1/systemone` structured assessment request. */
   async ask(request: PlumbSystemOneRequest): Promise<PlumbAnyJudgeResponse> {
     const model = (request.model ?? this.defaultModel ?? '').trim();
     const wireRequest: PlumbSystemOneRequest = model ? { ...request, model } : { ...request };
@@ -1075,5 +1060,3 @@ export class PlumbClient {
     return { ...verified, cache_hit: false };
   }
 }
-
-export type { PlumbAnyJudgeResponse, PlumbBatchJudgeResponse, PlumbClientConfig, PlumbJudgeRequest, PlumbJudgeResponse };

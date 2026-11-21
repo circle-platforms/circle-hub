@@ -1,6 +1,3 @@
-// The quotation check the plan check runs (functions/quote-sources.ts) beside the core's own: the reference grammar and the verdicts of
-// quote@1 over the same texts, a quote against the Hub's interpreter and its reference resolution on one tree, the shared vectors of the
-// verbatim rule, and the places of a plan the Hub hands to quote@1 against the schema's own list of quotes.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {describe,test} from 'node:test';
@@ -76,7 +73,6 @@ describe('a reference is read as the core reads it',()=>{
   });
 });
 
-/** The text the Hub's graded read gives for a reference over `lines`, or the grade it refuses it with (hub/runs/engine/evaluate.ts gradeFragment, with the real resolution of hub/refs). */
 async function hubRead(reference:string,lines:typeof LINES,roots:readonly string[],texts:ReadonlyMap<string,string>):Promise<{text:string}|{why:string}>{
   let parsed;try{parsed=parseReference(reference);}catch{return {why:'malformed'};}
   if(parsed.scheme==='entry')return {why:'entry_unaddressed'};
@@ -90,7 +86,6 @@ async function hubRead(reference:string,lines:typeof LINES,roots:readonly string
   return {text:read.text};
 }
 const TABLE={schema:'quote@1',origin:'合成',tier:'blocking',basis:'要求项 expected_grounded：每个期望结果的引文必须逐字出现在其来源里',item:'/item',quotes:[{select:'$.quotes[*]',text:'/text',reference:'/reference'}]};
-/** The core's interpreter over the same quotes and the texts the Hub's read gave them. */
 async function hubOutcomes(quotes:Array<{reference:string;text:string}>,lines:typeof LINES,roots:readonly string[],texts:ReadonlyMap<string,string>){
   const read=new Map<string,Awaited<ReturnType<typeof hubRead>>>();
   for(const quote of quotes)if(!read.has(quote.reference))read.set(quote.reference,await hubRead(quote.reference,lines,roots,texts));
@@ -152,7 +147,6 @@ describe('the verdicts are the interpreter\'s, quote by quote, on one tree',()=>
     for(const [index,[label]] of quotes.entries()){
       const core=hub[index]!,mine=own.outcomes[index]!;
       assert.equal(mine.verdict,core.verdict,`${label}: ${mine.statement}`);assert.equal(mine.code,core.code,label);
-      // The words of the interpreter come first, byte for byte; a refusal here goes on with where, what was read and what to do.
       if(core.verdict==='support')assert.equal(mine.statement,core.statement,label);
       else assert.ok(mine.statement.startsWith(core.statement+'；位置：'),`${label}:\n  core ${core.statement}\n  mine ${mine.statement}`);
       assert.equal(mine.pointer!.startsWith(`/data/block_context/causal_links/${index}/quote/`),true,label);
@@ -173,7 +167,6 @@ describe('the verdicts are the interpreter\'s, quote by quote, on one tree',()=>
     assert.deepEqual(own.unread.map(row=>row.place),['/block_context/causal_links/0/quote','/block_context/causal_links/1/quote','/fields/expected_nodes/0']);
     assert.deepEqual(own.unread.map(row=>row.frozen),[undefined,undefined,true],'only the frozen item\'s own declaration is marked as the item\'s');
     assert.ok(own.unread.every(row=>row.why.length>8));
-    // The Hub also answers an entry the product placed in no node when it is asked for at the root; an entry the download lacks there is not refused here.
     const unplaced=quoteVerdicts('synthetic-item',placesOf([{reference:`tree:${ROOT}/@${'c'.repeat(64)}`,text:'未放置条目的原文'}]),viewOf());
     assert.deepEqual(unplaced.outcomes,[]);assert.deepEqual(unplaced.unread.map(row=>row.why),['根节点上未放置的条目不在下载里']);
   });
@@ -244,7 +237,6 @@ describe('the quotes of a plan, and the place of each',()=>{
     };
     walk(schema,[]);
     const BASE='item/plan/data/properties';
-    // How the Hub's subject builder (quotePlaces) reaches each place of the schema, checked above for the plan kinds that have them.
     const READ:Record<string,string>={
       [`${BASE}/expects/items/properties/quote`]:'a flat plan\'s expectation: expects[i].quote',
       [`${BASE}/steps/items/properties/precondition_source`]:'a flat plan\'s step: steps[i].precondition_source',
@@ -265,4 +257,3 @@ describe('the quotes of a plan, and the place of each',()=>{
     assert.deepEqual(frozenQuoteView({root:ROOT,items:[]},TREE).texts.size,0);
   });
 });
-

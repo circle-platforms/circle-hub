@@ -186,8 +186,6 @@ test('the single-key lookups of a frozen cut, a node page, run usages and a view
 });
 
 test('the usages of a run ask the first record of each object and read no other record of an object that one decides', { timeout: 300_000 }, async t => {
-  // Every tool answer that names a run lists the run's feeding objects. In production one such answer read 63,427 records
-  // (235 MB) for the 188 objects of a run, because every record of every object was read before the first one was asked.
   const postgres = await startPostgres();
   let close = async (): Promise<void> => {};
   t.after(async () => { await close(); await postgres.stop(); });

@@ -1,4 +1,3 @@
-// The outline of a schema says what the schema says, shorter; the file the pack ships is the outline of the schema it ships.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -46,7 +45,6 @@ test('the outline the pack ships is the outline of the schema it ships, and is a
   const shipped = readFileSync(new URL('../tools/plan-fields.md', import.meta.url), 'utf8');
   assert.equal(shipped, slotsOutline(JSON.parse(schema)), 'regenerate tools/plan-fields.md from slots.schema.json (functions/schema-outline.ts slotsOutline)');
   assert.ok(shipped.length * 4 < schema.length, `${shipped.length} characters of outline for ${schema.length} of schema`);
-  // Every field name and every description of the schema is in the outline.
   const names = new Set<string>(), descriptions = new Set<string>();
   const visit = (node: unknown): void => {
     if (Array.isArray(node)) { node.forEach(visit); return; }

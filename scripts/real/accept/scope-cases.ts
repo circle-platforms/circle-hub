@@ -7,7 +7,6 @@
 //   - --regression-run: circle-hub run show <run> --json export for the regression scope run
 //   - --maintenance-run: circle-hub run show <run> --json export for the maintenance sweep run
 //
-// Rules (scope-cases, Git history):
 //   1. Expected regression scope: nodes on added and modified paths in later root, entries with kind === 'case',
 //      deduped by data.document and data.node.
 //   2. Expected maintenance sweep: nodes on removed and modified paths in earlier root, entries with kind === 'case',

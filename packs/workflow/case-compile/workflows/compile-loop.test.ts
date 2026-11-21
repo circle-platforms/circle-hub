@@ -1,5 +1,3 @@
-// The loop script against the pipeline itself: every command it runs is given to pipeline.ts (scripted gates), every agent it
-// starts writes, or does not write, what its task names. The script runs as a workflow runs it: its calls are functions here.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -31,17 +29,11 @@ async function world(cases: number): Promise<string[]> {
 }
 
 interface Bench {
-  /** What a gate answers: undefined is a pass. */
   gate?: (tool: string, args: string[]) => ToolRun | undefined;
-  /** Whether the agent given this label, on this start of it, writes its target. */
   writes?: (label: string, start: number) => boolean;
-  /** Whether the agent given this label, on this start of it, ends by itself; one that does not gives the script null. */
   ends?: (label: string, start: number) => boolean;
-  /** The args reach the script as JSON text, as a model that writes an untyped tool argument as text gives them. */
-  argsAsText?: boolean;
 }
-/** Starts a pipeline of `cases` cases and runs the loop script over it; what happened is returned with the script's result. */
-async function bench(cases: number, { gate = () => undefined, writes = () => true, ends = () => true, argsAsText = false }: Bench = {}) {
+async function bench(cases: number, { gate = () => undefined, writes = () => true, ends = () => true }: Bench = {}) {
   const items = await world(cases);
   const answer = ok('合成答复\n供模型引用\n' + JSON.stringify({ call_result: 'ok', acceptance: 'accepted', result: { partitions: { delivered: items.map((item) => ({ item, requirements: [{ requirement: 'record', status: 'satisfied', claims: [] }] })) } } }));
   const run: RunTool = async (_skill, tool, args) => {
@@ -57,7 +49,6 @@ async function bench(cases: number, { gate = () => undefined, writes = () => tru
 
   const commands: string[] = [], pauses: number[] = [], started: string[] = [];
   let inCommand = false, working = 0, most = 0;
-  // A command as the script wrote it: one line that the guard of a client can read, then the two values on standard input.
   const execute = async (command: string, options: { timeout?: number; label?: string } = {}) => {
     assert.equal(inCommand, false, 'one pipeline call at a time: its state is one file');
     inCommand = true;
@@ -65,16 +56,12 @@ async function bench(cases: number, { gate = () => undefined, writes = () => tru
       commands.push(command);
       const [line, ...rest] = command.split('\n');
       assert.deepEqual(rest, ['%HUB_TOKEN%', '%PLUMB_API_KEY%', 'EOF'], command);
-      assert.match(line!, /^node '\/synthetic skills\/case-compile\/tools\/pipeline\.ts' (resume|next) --state 'pipeline\.json' (--finished '(重组|编写|审计) \d\d' (--ended yes )?|--pause [1-9]\d* )?--hub %HUB_URL% --plumb %PLUMB_URL% <<'EOF'$/);
+      assert.match(line!, /^node '\/synthetic skills\/case-compile\/tools\/pipeline\.ts' (resume|next) --state 'pipeline\.json' (--finished '(重组|编写|审计) \d\d' |--pause [1-9]\d* )?--hub %HUB_URL% --plumb %PLUMB_URL% <<'EOF'$/);
       assert.ok(options.timeout === 600 && options.label, 'each command names itself and takes the longest time a command may');
       const words = [...line!.matchAll(/'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2]!).slice(2, -1).map((word) => word === '%HUB_URL%' ? 'http://127.0.0.1:9/mcp' : word === '%PLUMB_URL%' ? 'https://127.0.0.1:9' : word);
-      // A pause is not waited for here: the time it stands for is taken off every dispatch time instead.
       const at = words.indexOf('--pause');
       if (at >= 0) {
         const seconds = Number(words[at + 1]); pauses.push(seconds); words.splice(at, 2);
-        const state = JSON.parse(await readFile('pipeline.json', 'utf8')) as PipelineState;
-        for (const c of state.cases) if (c.dispatched_at) c.dispatched_at = new Date(Date.parse(c.dispatched_at) - seconds * 1000).toISOString();
-        await writeFile('pipeline.json', JSON.stringify(state));
       }
       return await printed(words, ['synthetic-token-1234', 'synthetic-plumb-key']);
     } finally { inCommand = false; }
@@ -101,7 +88,7 @@ async function bench(cases: number, { gate = () => undefined, writes = () => tru
   const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor as new (...names: string[]) => (...values: unknown[]) => Promise<unknown>;
   const body = new AsyncFunction('agent', 'execute', 'args', 'log', 'phase', SOURCE.replace(/^export const meta = /, 'const meta = '));
   const given = { pipeline: PIPELINE, state: 'pipeline.json' };
-  const result = (await body(agent, execute, argsAsText ? JSON.stringify(given) : given, (line: string) => logs.push(line), () => undefined)) as Record<string, unknown>;
+  const result = (await body(agent, execute, given, (line: string) => logs.push(line), () => undefined)) as Record<string, unknown>;
   const state = JSON.parse(await readFile('pipeline.json', 'utf8')) as PipelineState;
   return { result, commands, pauses, started, most, logs, state };
 }
@@ -112,7 +99,6 @@ test('the script is a workflow a client can run: its meta is a plain literal fir
   const meta = new Function(`return ${literal}`)() as { name: string; description: string; phases: Array<{ title: string }> };
   assert.deepEqual([meta.name, meta.phases.map((phase) => phase.title)], ['compile-loop', ['重组', '编写', '审计']]);
   assert.ok(!/\$\{/.test(literal), 'no template in the meta');
-  // Nothing a workflow's context does not have: no import, no clock, no timer, no file.
   for (const word of [/\bimport\b/, /\brequire\(/, /Date\.now|new Date\(\)/, /Math\.random/, /setTimeout|setInterval/, /process\./]) assert.ok(!word.test(SOURCE.replace(/^\/\/.*$/gm, '')), String(word));
 });
 
@@ -120,9 +106,8 @@ test('eight cases go through recomposition and writing six at a time with one pi
   const { result, commands, started, most, logs } = await bench(8);
   assert.deepEqual([result.all_done, (result.ready as string[]).length, result.stopped, result.queued, result.running], [true, 8, [], 0, []]);
   assert.equal((result as { actions?: unknown }).actions, undefined, 'the tasks are not handed back to the lead');
-  assert.match(String(result.message), /^全部 8 条走完流水线：8 条计划就绪。下一步：pipeline\.ts collect 收拢计划后提交、合并工作簿$/);
+  assert.match(String(result.message), /^全部 8 条走完流水线：8 条计划就绪。下一步：pipeline\.ts collect 收拢到新目录，再后台跑合并工具 open-merge\.ts（--open 写 open-compile\.json，SKILL\.md 第 3 节）$/);
   assert.deepEqual(logs, [result.message]);
-  // One recomposer and one writer a case, never more than six subagents, a next for each that ended after the one resume.
   assert.deepEqual([...started].sort(), [...Array.from({ length: 8 }, (_, n) => `编写 0${n}`), ...Array.from({ length: 8 }, (_, n) => `重组 0${n}`)].sort());
   assert.equal(most, 6);
   assert.match(commands[0]!, / resume --state /);
@@ -130,14 +115,12 @@ test('eight cases go through recomposition and writing six at a time with one pi
   assert.ok(commands.slice(1).every((command) => / next --state 'pipeline\.json' --finished '/.test(command)));
 });
 
-test('a subagent that ends without writing is reported as ended once the tool takes that, and its case is given to another', async () => {
+test('a subagent that finishes without writing is replaced on the same completion event', async () => {
   const { result, commands, pauses, started } = await bench(2, { writes: (label, start) => !(label === '编写 00' && start === 1) });
   assert.deepEqual([result.all_done, (result.ready as string[]).sort()], [true, ['00', '01']]);
   assert.equal(started.filter((label) => label === '编写 00').length, 2);
-  // The tool refuses --ended within half a minute of the dispatch: the script waits that out and says it again.
-  const said = commands.filter((command) => /--finished '编写 00'/.test(command)).map((command) => / --ended yes /.test(command));
-  assert.deepEqual(said, [false, true, true, false]);
-  assert.deepEqual(pauses, [31]);
+  assert.equal(commands.filter((command) => /--finished '编写 00'/.test(command)).length, 2);
+  assert.deepEqual(pauses, []);
 });
 
 test('a case that uses up its attempts is stopped and the others go on; the result names it for the lead to decide', async () => {
@@ -155,8 +138,7 @@ test('a subagent whose model failed is started again with the same task after a 
   assert.deepEqual([result.all_done, (result.ready as string[]).sort(), result.interrupted], [true, ['00', '01'], undefined]);
   assert.equal(started.filter((label) => label === '编写 00').length, 2);
   assert.deepEqual(pauses, [60]);
-  // The tool was never told that this writer ended without writing: one attempt, as for the case that had no trouble.
-  assert.ok(!commands.some((command) => / --ended yes /.test(command)));
+  assert.equal(commands.filter((command) => /--finished '编写 00'/.test(command)).length, 1);
   assert.deepEqual(state.cases.map((c) => c.attempts.write), [1, 1]);
 });
 
@@ -167,7 +149,6 @@ test('when the model service is down the run ends after six subagents in a row d
   assert.equal(result.all_done, false);
   assert.deepEqual(pauses, [60, 120, 180, 240, 300]);
   assert.ok(started.length >= 6 && started.every((label) => label.startsWith('重组 ')));
-  // Nothing was said to have ended, no attempt was spent, and every case is still where a later run of the loop finds it.
   assert.ok(commands.every((command) => / resume --state /.test(command)));
   assert.deepEqual(state.cases.map((c) => [c.stage, c.attempts.recompose]), [['recomposing', 1], ['recomposing', 1], ['recomposing', 1]]);
   assert.ok(state.cases.every((c) => c.action?.label === `重组 ${c.k}`));
@@ -177,16 +158,9 @@ test('when only a gate that waits for a service is left the script looks again a
   let refusals = 0;
   const { result, pauses, commands, started } = await bench(1, { gate: (tool) => tool === 'cmd-verify-plumb.ts' && refusals++ < 4 ? bad('暂时不可用：Plumb 网关拒绝（503 backend_down）') : undefined });
   assert.deepEqual([result.all_done, result.ready, result.waiting], [true, ['00'], undefined]);
-  // Each look runs the gate twice (once more after the wake): two looks found the service down, the third found it back.
   assert.deepEqual(pauses, [60, 60]);
   assert.equal(commands.filter((command) => / resume --state 'pipeline\.json' --pause 60 /.test(command)).length, 2);
-  // The writer ended before the gate waited: looking again starts no second writer.
   assert.deepEqual(started, ['重组 00', '编写 00']);
-});
-
-test('args written as JSON text are read as the object they spell', async () => {
-  const { result, started } = await bench(2, { argsAsText: true });
-  assert.deepEqual([result.all_done, (result.ready as string[]).sort(), started.length], [true, ['00', '01'], 4]);
 });
 
 test('a path the command line cannot carry is refused before anything runs', async () => {

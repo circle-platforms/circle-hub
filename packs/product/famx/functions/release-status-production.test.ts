@@ -1,4 +1,4 @@
-import { runById, canViewRun, readPackDirectory, packSchema } from '../../../../hub/runs/api.ts';
+import { TEST_KNOWLEDGE_READ_PORTS } from '../../../../hub/knowledge/testing/read-ports.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 // Actual FAMX producer modules, Hub production, real temporary PostgreSQL; only synthetic source bytes.
 import assert from 'node:assert/strict';
@@ -22,7 +22,7 @@ for(const format of ['html','json'])test('missing '+format+' release status pres
  const handle:ProductHandle={id:'famx',version:manifest.version,digest:createHash('sha256').update(bytes).digest('hex'),kind:'product',directory,product};const packs=new FakePacks();packs.add(handle);const external=new External(kit);
  external.set('site:tree:synthetic',{bytes:'<commands><scope type="global"><menu name="synthetic"><item name="show"><arguments></arguments></item></menu></scope></commands>',mediaType:'application/xml'});
  external.set('manual:cli:10.8.9',{bytes:'# 合成手册\n\n这是独立的合成手册原文。',mediaType:'text/markdown'});
- const knowledge=createKnowledge({ runReads: { runById, canViewRun }, packReads: { readPackDirectory, packSchema },records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,sandbox:{requireOsIsolation:await osIsolationAvailable()},admin});
+ const knowledge=createKnowledge({ ...TEST_KNOWLEDGE_READ_PORTS,records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,sandbox:{requireOsIsolation:await osIsolationAvailable()},admin});
  const build:KnownBuild={name:format==='html'?'Rel_FAMX_10_8_9_42_main_zx-u':'Rel_FAMX_10_8_9_43_main_zx-u',family:'FAMX',line:'10.8.9',base:format==='html'?'Rel_FAMX_10_8_9_42_main_zx-u':'Rel_FAMX_10_8_9_43_main_zx-u',platform:null,built_at:'2026-01-01T00:00:00.000Z',released_at:null,sources:{tree:'site:tree:synthetic'},root:null};
  const before=await knowledge.produceTree({product:handle,build,by:admin});assert.equal(before.ok,true,JSON.stringify(before));
  const subtree=async(root:string,name:string)=>(await knowledge.store.node(root))?.children.find(child=>child.name===name)?.digest;

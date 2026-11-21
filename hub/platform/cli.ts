@@ -611,7 +611,6 @@ const COMMANDS = [
 export type PlatformCommandMetadata = Omit<PlatformCommandDefinition, 'handler'>;
 
 export interface PlatformCommand extends PlatformCommandMetadata {
-  /** Arguments exclude the command name. Uses the same checks and exit codes as the platform CLI. */
   run(args: readonly string[]): Promise<number>;
 }
 
@@ -622,7 +621,6 @@ export function isPlatformCommand(name: string | undefined): boolean {
   return COMMANDS.some((command) => command.name === name);
 }
 
-/** Binds command execution without starting services, creating a context or reading deployment settings. */
 export function platformCommands(io: PlatformIo, overrides: Partial<PlatformContext> = {}): readonly PlatformCommand[] {
   return PLATFORM_COMMAND_METADATA.map((metadata) => ({
     ...metadata,

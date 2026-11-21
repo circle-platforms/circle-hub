@@ -1,20 +1,14 @@
-// A look at a bundle before any replay: does it hold what the recorded runs name? Nothing is run and nothing is loaded into a
-// database; the bundle's files are read once. Every gap is named, so that a second export can be asked for exactly what is
-// missing instead of finding out one failed replay at a time.
 import type { Bundle } from './submissions-bundle.ts';
 import type { RecordedExport } from './submissions-recorded.ts';
 
 export interface Gap {
-  /** What is missing: `validation`, `principal`, `pack`, `skill`, `root`, `source`, `object`, `record`. */
   what: string;
-  /** Which run or position it is needed for. */
   for: string;
   detail: string;
 }
 
 export interface PreflightReport {
   gaps: Gap[];
-  /** What the bundle holds that the check counted. */
   counts: { validations: number; with_call: number; packs: number; roots: number; objects: number; users: number };
 }
 

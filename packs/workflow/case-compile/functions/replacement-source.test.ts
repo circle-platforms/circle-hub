@@ -1,9 +1,3 @@
-// A replacement may only replace an address the locked tree parses out of the author's own commands (decision 115). Round 37: all
-// three writers wrote the documentation address that the recompose step put into its adapted commands (192.0.2.10, 2001:db8::1,
-// ...) as the source of a replacement and were refused once, with a refusal that said what the rule is and nothing about the
-// address they had written, the record it came from or what to write instead. The rule is unchanged (the first test); the refusal
-// now names the place, the value seen, the allowed set and the next step, and says where in the frozen recomposition record the
-// address comes from when it does come from there. Synthetic addresses only.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {checkAddresses} from './checks.ts';
@@ -15,7 +9,6 @@ const ON='192.0.2.10',ON6='2001:db8:1::10',AUTHORED='198.51.100.7',PLACEHOLDER='
 function entry(catalog:{root:string;entries:Array<Record<string,unknown>>},word:string,type:'ipv4'|'ipv6'){
   catalog.entries.push({words:['show','demo',word],reference:`tree:${catalog.root}/commands/show/demo/${word}`,signatures:[{id:'1',reference:`src:${catalog.root}/xml@1/x/commands/${word}[1]/arguments`,params:[{name:'address',type,native_type:{name:type==='ipv4'?'IPADDR':'IP6ADDR',declaration:`src:${catalog.root}/xml@1/x/commands/${word}[1]/arguments/arg[1]`,grammar:'famx-command-tree@1'}}]}]});
 }
-/** The plan configures nothing but one read-only command that takes an address; the author wrote one address; the record is the given one. */
 function subjectOf(planned:string,replacements:Array<{case:string;bed:string}>,record?:Record<string,unknown>,authored:string[]=[`show demo peer ${AUTHORED}`]){
   const value=fixture([`show demo ${planned.includes(':')?'peer6':'peer'} ${planned}`]);
   const catalog=value.subject.command_catalog as {root:string;entries:Array<Record<string,unknown>>};
@@ -24,13 +17,11 @@ function subjectOf(planned:string,replacements:Array<{case:string;bed:string}>,r
   subject.case_texts=authored;
   (subject.data as Record<string,unknown>).replacements=replacements;
   if(record!==undefined){
-    // The plan declares the recomposition it consumes, as every plan of a run with a record does; this case has no expectation slot.
     subject.recomposition={receipt:RECEIPT,record};
     (subject.data as Record<string,unknown>).recomposition={receipt:RECEIPT,case_id:CASE_ID,slots:[],rebindings:[]};
   }
   return value;
 }
-/** A recomposition record the way the frozen run carries it: the adapted ledger with commands, the unknowns, the states. */
 const recordOf=(over:{adapted?:Array<Record<string,unknown>>;unknowns?:Array<Record<string,unknown>>;concretizations?:Array<Record<string,unknown>>;states?:Array<Record<string,unknown>>}={})=>({
   case:{id:CASE_ID},atoms:[],expectation_slots:[],ledgers:{original:[],adapted:over.adapted??[],concretizations:over.concretizations??[],rebindings:[]},unknowns:over.unknowns??[],sources:{states:over.states??[]},
 });

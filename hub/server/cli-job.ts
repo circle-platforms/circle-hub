@@ -48,7 +48,6 @@ function output(s: JobCommandSession, state: JobStatus): void {
 export async function readUploadedCommandBytes(records: Pick<RecordsKit, 'artifacts'>, by: Principal, reference: string): Promise<Uint8Array> {
   return (await readUploadedSource(records, by, reference)).bytes;
 }
-/** The bytes of an uploaded original the caller may read, with the media type the Hub stored it as. */
 export async function readUploadedSource(records: Pick<RecordsKit, 'artifacts'>, by: Principal, reference: string): Promise<{ bytes: Uint8Array; mediaType: string }> {
   if (!reference.startsWith('src:') || !isSha256(reference.slice(4))) throw new UsageError('上传引用须为 src:<完整摘要>，不接受片段或记录引用');
   const source = await records.artifacts.source(by, reference.slice(4), { consumer: 'function' });

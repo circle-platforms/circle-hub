@@ -21,7 +21,6 @@ import {
   type ConsoleOptions, ACTION_FORM_LIMIT, sendHtml, redirect, forbidden, sameOrigin, formOf,
 } from './console-http.ts';
 
-/** File download, knowledge/pack POST actions, management actions, and ROUTES. */
 export async function handleAuthenticatedConsole(
   request: IncomingMessage,
   response: ServerResponse,
@@ -60,7 +59,6 @@ export async function handleAuthenticatedConsole(
         const target = personalPack ? await performPersonalPackAction(ctx, segments[2], values, options.staging, upload) : segments[2].startsWith('memory-') ? await performMemoryAction(ctx, segments[2].slice(7), values) : await performSpaceAction(ctx, segments[2], values, upload);
         if (ctx.feedback) session.notice = ctx.feedback;
         else if (values.get('preview_grant') !== '1' && segments[2] !== 'share-batch' && segments[2] !== 'memory-share') {
-          // A replay may return an earlier mode receipt; feedback reports the current state, never a new purge.
           const state = segments[2] === 'sync-mode' || segments[2] === 'sync-resume' || segments[2] === 'sync-confirm-purge' ? await ctx.deps.records.personalSync?.state(ctx.principal) : undefined;
           const done = personalPack ? actionNotice('packs', segments[2], values) : segments[2].startsWith('memory-') ? actionNotice('memory', segments[2].slice(7), values) : actionNotice('knowledge', segments[2], values, upload);
           session.notice = state ? (segments[2] === 'sync-confirm-purge' ? '已确认清除 · ' : '') + axisUiLabel('sync_mode') + '：' + uiLabelOf('sync_mode', state.mode) : done ?? '已保存';
@@ -72,7 +70,6 @@ export async function handleAuthenticatedConsole(
       if (result === null) return;
     } else {
       const route = Object.hasOwn(ROUTES, segments[0]) ? ROUTES[segments[0]] : undefined;
-      // A page reads with the permissions captured when its request started (decision 82).
       result = route === undefined ? neutralPage(ctx) : await withRequestPermissions(options.deps.records.artifacts, principal, () => withReadScope(() => route(ctx, segments.slice(1), options, session)));
     }
   } catch (error) {

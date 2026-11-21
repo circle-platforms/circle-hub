@@ -1,4 +1,3 @@
-// Public telemetry surface: records owns the process context; telemetry owns persistence and readers.
 import type { Environment } from '../../contracts/generated/vocabulary.ts';
 import type { DatabaseConfig } from '../config/index.ts';
 import { createPool, Database } from '../records/api.ts';
@@ -34,7 +33,6 @@ export {
   type Usage,
 } from './usage.ts';
 export { BATCH_ROWS, FLUSH_MS, QUEUE_ROWS, TraceWriter, type StoredSpanRow, type WriterOptions, type WriterStats } from './writer.ts';
-/** Tool-return clock times (Hub process zone, month-day); console keeps browser-local formatting. */
 export { toolLocalMinute, toolZoneOf } from './tool-time.ts';
 
 /** How long close() waits for the last write; a process that is stopping does not wait for a database that is gone. */

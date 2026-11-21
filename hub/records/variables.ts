@@ -1,5 +1,4 @@
 import { isAdmin } from './permissions.ts';
-// Ordinary variables use record decisions; secret versions live in the vault and records provide audit only.
 import { createHash } from 'node:crypto';
 import { OrdinaryVariableName, VariableName, VariableRecord, VariableValue, validateSecret, referencesIn, resolve as resolveValue, type OrdinaryVariableUse } from '../../contracts/src/variables.ts';
 import { isDigestRule, type DigestRule, type VariableKind, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
@@ -83,7 +82,7 @@ export class RecordVariables {
         out.push(...page.items);
         cursor = page.next;
     } while (cursor); return out; }
-    async #definition(decision: AuthorizationRecord, kind: VariableKind, name: string) {
+    async #definition(decision: AuthorizationRecord, name: string) {
         if (decision.body.revoked)
             return null;
         if (!decision.body.bound)
@@ -97,7 +96,7 @@ export class RecordVariables {
         return parsed.data;
     }
     async #version(kind: VariableKind, name: string, decision: AuthorizationRecord, history?: AuthorizationRecord[], known?: VariableRecord | null): Promise<NamedVersion> { const rows = history ?? await this.#history(kind, name); const at = rows.findIndex(row => row.digest === decision.digest); if (at < 0)
-        throw new IntegrityError('变量决定不在它的历史链里'); return { kind, name, version: rows.slice(at).filter(row => !row.body.revoked).length, decision, definition: known === undefined ? await this.#definition(decision, kind, name) : known }; }
+        throw new IntegrityError('变量决定不在它的历史链里'); return { kind, name, version: rows.slice(at).filter(row => !row.body.revoked).length, decision, definition: known === undefined ? await this.#definition(decision, name) : known }; }
     async #kindFree(name: string, kind: VariableKind, tx: Transaction) {
         const occupied = kind === 'var' ? (await this.#p.vault.secretHistory(name)).length > 0 : (await this.#history('var', name, tx)).length > 0;
         if (occupied) throw new VariableError('名字已经属于另一种；撤回也不改变名字的种类，请换一个名字', name);
@@ -240,7 +239,7 @@ export class RecordVariables {
         return out;
     }
     async valueAt(name: string, decision: string): Promise<unknown> { name = this.#name(name, 'var'); const row = await this.#p.store.get<AuthorizationRecord['body']>(decision); if (!row || row.kind !== 'authorization' || row.body.permission !== CONFIG || row.body.subject !== WHOLE_HUB || row.body.object !== 'var:' + name || row.body.revoked)
-        throw new VariableError('变量版本不可用；请先 circle-hub var set <名字>', name); return (await this.#definition(row, 'var', name) as VariableRecord).value; }
+        throw new VariableError('变量版本不可用；请先 circle-hub var set <名字>', name); return (await this.#definition(row, name) as VariableRecord).value; }
     async resolveVariables(value: unknown, at: string, snapshot?: VariableSnapshot): Promise<{
         value: unknown;
         uses: OrdinaryVariableUse[];

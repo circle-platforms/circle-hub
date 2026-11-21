@@ -21,8 +21,6 @@ import { type ConsoleOptions, bridgeRun } from './console-http.ts';
 
 type Route = (ctx: PageContext, rest: string[], options: ConsoleOptions, session: ConsoleSession) => Promise<PageResult>;
 
-// Path literals until kit lands routes.ts (K3). Second admin page entries (calls/packs/resources/secrets/knowledge
-// and bare /console/admin as the team page) are gone; POST /console/admin/do/<action> stays in index.ts.
 export const ROUTES: Record<string, Route> = {
   overview: (ctx, rest) => (rest.length === 0 ? overviewPage(ctx) : Promise.resolve(neutralPage(ctx))),
   me: (ctx, rest) => (rest.length === 0 ? memberCapabilitiesPage(ctx) : Promise.resolve(neutralPage(ctx))),
@@ -35,25 +33,20 @@ export const ROUTES: Record<string, Route> = {
     return Object.hasOwn(pages, rest[0]) ? pages[rest[0]](ctx) : Promise.resolve(neutralPage(ctx));
   },
   workflows: (ctx, rest, options) => (rest.length === 0 ? packsPage(ctx) : rest.join('/') === '-/publish' ? personalPublishPage(ctx, options.staging) : rest.length === 1 ? packPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
-  // The skills place (decision 151). List and detail both live under /console/skills (no packs fallback).
   skills: (ctx, rest) => (rest.length === 0 ? packsPage(ctx, 'skill') : rest.length === 1 ? packPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   connections: (ctx, rest) => (rest.length === 0 ? connectionsPage(ctx) : Promise.resolve(neutralPage(ctx))),
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
   search: (ctx, rest) => (rest.length === 0 ? searchPage(ctx) : Promise.resolve(neutralPage(ctx))),
   settings: (ctx, rest, options, session) => (rest.length === 0 ? settingsPage(ctx, bridgeRun(options, session)) : Promise.resolve(neutralPage(ctx))),
-  // K11: incompatible store — dedicated page (judgment on ctx.rebuildNeeded from ConsoleOptions).
   rebuild: (ctx, rest) => (rest.length === 0 ? Promise.resolve(needsRebuildPage(ctx, ctx.rebuildNeeded ?? null)) : Promise.resolve(neutralPage(ctx))),
   health: (ctx, rest, options) => (rest.length === 0 && ctx.admin ? healthPage(ctx, options.observation, options.log) : Promise.resolve(neutralPage(ctx))),
-  // interfaces §5.2: /console/team/<id> splits on prefix — tm_ → team detail, member id → member page.
   team: (ctx, rest) => {
     if (rest.length === 0) return teamPage(ctx);
     if (rest.length === 1) return rest[0].startsWith('tm_') ? teamDetailPage(ctx, rest[0]) : teamPage(ctx, rest[0]);
     return Promise.resolve(neutralPage(ctx));
   },
-  // Alias kept for the 团队 tab list and older links; same pages as /console/team?tab=teams and /console/team/tm_….
   teams: (ctx, rest) => (rest.length === 0 ? teamsPage(ctx) : rest.length === 1 ? teamDetailPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs, options.staging) : Promise.resolve(neutralPage(ctx))),
-  // Job progress pages only; bare /console/admin is no longer the team page.
   admin: (ctx, rest, options) => {
     if (!ctx.admin) return Promise.resolve(neutralPage(ctx));
     if (rest.length === 2 && rest[0] === 'jobs') return Promise.resolve(jobPage(ctx, options.jobs.get(rest[1])));

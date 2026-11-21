@@ -1,7 +1,3 @@
-// The closing reply answers what the person asked for (owner, 2026-11-21): how many cases the mind map holds, how many became
-// automated cases, how many did not and why, and where the workbook is. It follows the closing card of the reference engine
-// (docs/engine/07_display_contract.md §11.2: a result line, one line for each case that needs attention, the paths), and says
-// nothing of how the Hub records a result.
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -21,7 +17,7 @@ function input(cases: CaseOutcome[], notes: Record<string, CaseNote> = {}, scope
     ...(scope ? { scope } : {}),
   };
 }
-const reply = (cases: CaseOutcome[], notes?: Record<string, CaseNote>, files = FILES, scope?: ScopeSummary): string[] => { const given = input(cases, notes, scope); return replyText('/out', given.assembly.totals, files, cases, given).split('\n'); };
+const reply = (cases: CaseOutcome[], notes?: Record<string, CaseNote>, files = FILES, scope?: ScopeSummary): string[] => { const given = input(cases, notes, scope); return replyText('/out', files, cases, given).split('\n'); };
 
 test('every case succeeded: the reply is the result, the workbook and the report', () => {
   assert.deepEqual(reply([passed('a'), passed('c')]), ['原始脑图共 2 条用例：生成成功 2 条，失败 0 条。', `自动化用例 Excel：${join('/out', 'case.xlsx')}`, `交付报告：${join('/out', 'delivery_report.md')}`]);
@@ -40,11 +36,9 @@ test('a case that did not succeed has one line: what happened and why, the model
     `失败用例的 Excel（没有整卷上机验证）：${join('/out', 'unsuccessful_cases.xlsx')}`,
     `交付报告：${join('/out', 'delivery_report.md')}`,
   ]);
-  // without that sentence the line holds the start of the model's explanation, cut where it gets long
   const long = '合成说明'.repeat(60);
   const fallen = reply([passed('a'), thrice], { b: { judged: long, remedy: '合成下一步' } })[4];
   assert.equal(fallen, `- 原始用例 b 合成乙：上机 3 次、写过 3 版自动化用例，都没有通过。原因（模型的分析）：${long.slice(0, 160)}…。`);
-  // a note the model has not written yet says nothing of a cause
   assert.match(reply([passed('a'), thrice], { b: { judged: '尚未提供模型说明', remedy: '尚未提供模型建议', absent: true } })[4], /都没有通过。原因：还没查清。$/);
 });
 

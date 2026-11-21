@@ -163,7 +163,6 @@ test('property: whatever the blocks, the text is within the budget, lines are ne
         unit: `块${b}`,
         more: next() < 0.8 ? (from: number) => `块${b}：从第 ${from + 1} 个起读` : undefined,
       } satisfies Block;
-      // Some blocks must follow an earlier one.
       blocks.push(next() < 0.3 && blocks.length > 0 ? { ...block, after: Math.floor(next() * blocks.length) } : block);
     }
     const fitted = fit(blocks, { budget, tail });

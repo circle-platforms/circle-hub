@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { decideRaw, environment, parseCommand } from './guard-lib.ts';
+import { decideRaw, decisionOf, environment, parseCommand } from './guard-lib.ts';
 import { writeHome } from './circle-home.ts';
 
 function fixture(profile:'skills'|'ops'='ops') {
@@ -17,7 +17,7 @@ function fixture(profile:'skills'|'ops'='ops') {
     {name:'note',required:false,kind:'string',multiple:false,placeholder:'<说明>',type:'text'},
   ]}));
   const env=environment(home,workdir,profile==='ops'?'ops-allow.declaration.json':'guard.declaration.json');
-  const call=(tool_name:string,tool_input:Record<string,unknown>,paths:string[]=[])=>decideRaw(env,JSON.stringify({event:'before_tool',cwd:workdir,tool_name,tool_input,paths}));
+  const call=async(tool_name:string,tool_input:Record<string,unknown>,paths:string[]=[])=>decisionOf(await decideRaw(env,JSON.stringify({hook_event_name:'PreToolUse',cwd:workdir,tool_name,tool_input,paths})));
   return {root,home,workdir,script,env,call,exec:(command:string)=>call('execute',{command}),close:()=>rmSync(root,{recursive:true,force:true})};
 }
 const suffix=" <<'EOF'\n%HUB_TOKEN%\nEOF";

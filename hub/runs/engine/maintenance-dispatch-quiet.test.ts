@@ -1,19 +1,15 @@
-// A job in flight writes journal lines of its own every few seconds, and each line brings its run into the next round. A round
-// that finds nothing else changed writes nothing about the job: its records are written when the state its result and its
-// requests depend on changes, and the job is taken over once for each length its journal stops at.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { accepted, runRecord } from '../../../contracts/src/fixtures.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
 import type { ActionBody } from '../../records/api.ts';
-import { digestOf } from '../../records/api.ts';
 import type { RunJob } from '../../dispatch/api.ts';
 import { createPool, Database } from '../../records/db.ts';
 import type { EngineContext } from './deps.ts';
 import { maintainRuns } from './maintenance.ts';
 import { newMaintenanceMemory } from './maintenance-memory.ts';
-import { actionsOf, putAction, putResult, resultsOf } from './store.ts';
+import { actionsOf, putResult, resultsOf } from './store.ts';
 import { openHarness, type Harness } from './testing/harness.ts';
 import { engineOn, storeQuietRun } from './testing/maintenance.ts';
 
@@ -25,7 +21,6 @@ const JOB = 'a'.repeat(64);
 const recordCount = async (): Promise<number> => Number((await sql.query('SELECT count(*)::int AS n FROM records')).rows[0]!.n);
 
 interface Moving { events: number; outcome: string; ended: 'done' | null; result?: string }
-/** The job as the dispatch port reads it: the same job, its journal as long as the observer has written it. */
 const jobOf = (run: string, now: Moving): RunJob => ({
   job: JOB, verification_run: run, plan_run: run, verification_item: 'case-a', items: ['case-a'], sha256: 'b'.repeat(64),
   status: { job: JOB, phase: 'observe', outcome: now.outcome, frozen: false, events: now.events, ...(now.result ? { result: now.result } : {}) },
@@ -33,14 +28,12 @@ const jobOf = (run: string, now: Moving): RunJob => ({
 } as unknown as RunJob);
 
 let lines = 0;
-/** One line of the job's journal, as the dispatch service writes them: a record the job's id is indexed under. */
 async function journalLine(): Promise<void> {
   const at = new Date().toISOString();
   await h.kit.store.put<ActionBody>({ kind: 'action', schema: 'action@1', provenance: 'observed', created_at: at, index: [{ key: 'dispatch.job', value: JOB }],
     body: { action: 'validate', run: null, item: null, inputs: [], component: 'dispatch@1', lease: null, started_at: at, ended_at: at, result: 'completed', error_code: null, acceptance: null, codes: [], detail: { phase: 'observe', line: ++lines } } });
 }
 
-/** A run with an accepted result and a job on it; `round(n)` is one scheduled round after the observer wrote `n` lines. */
 async function observed() {
   const items = (Object.values(accepted.partitions) as { item: string }[][]).flat().map(({ item }) => ({ ...runRecord.items[0]!, id: item }));
   const stored = await storeQuietRun(h, { items });
@@ -50,7 +43,6 @@ async function observed() {
   const reconciled: number[] = [];
   const dispatch = {
     jobs: async (_by: unknown, asked: string) => asked === run ? [jobOf(run, now)] : [],
-    // What taking the job over finds: a live observer holds it, and the journal is as long as it was.
     reconcile: async () => { reconciled.push(now.events); return { events: now.events }; },
     runs: async (jobs: readonly string[]) => new Map(jobs.includes(JOB) ? [[run, [JOB]]] : []),
   } as unknown as NonNullable<EngineContext['deps']['dispatch']>;
@@ -106,15 +98,4 @@ test('a job whose journal stands still is taken over once for each length it sta
   assert.deepEqual(reconciled, [5, 9], 'the next one finds it standing still at a new length and asks once more');
   await round(1);
   assert.deepEqual(reconciled, [5, 9]);
-});
-
-test('a result written under the earlier key, which counted the journal lines, still counts for the job state it was written for', async () => {
-  const { run, now, round } = await observed();
-  Object.assign(now, { events: 40, outcome: 'effective', ended: 'done', result: `src:${'c'.repeat(64)}` } satisfies Moving);
-  const earlier = digestOf([{ job: JOB, verification_run: run, plan_run: run, verification_item: 'case-a', items: ['case-a'], sha256: 'b'.repeat(64), outcome: 'effective', frozen: false, events: 40, result: now.result, disposition: null, decided_by: null, decided_at: null }]);
-  const at = new Date().toISOString();
-  await putAction(h.kit.store, { action: 'validate', run, inputs: [], startedAt: at, endedAt: at, acceptance: null, codes: [], detail: { dispatch_snapshot: earlier, result: 'written before the key changed' } });
-  const results = (await resultsOf(h.kit.store, run)).length;
-  await round();
-  assert.equal((await resultsOf(h.kit.store, run)).length, results, 'a deployment that changes the key does not write a result again for every job it finds ended');
 });

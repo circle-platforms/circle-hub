@@ -1,6 +1,5 @@
 // Independent case-to-command gold; imports only independent format readers, never Hub/pack implementations.
 // Rule sources, sentence by sentence (the owner's stricter 2026-10-24 instruction takes precedence):
-// - hub-view-scope rule (Git history): "用例也从步骤和预期行解析命令（同一个解析器）".
 // - packs/product/famx/README.md:889-890: "把标题、上级节点、步骤、预期文本送进同一个命令解析器";
 //   "没有任何目录命中时明确计数". Every text below uses the same build-specific grammar.
 // - packs/product/famx/README.md:280-285: leaves are expected results, precondition-priority leaves are not;

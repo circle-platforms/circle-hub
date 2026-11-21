@@ -17,7 +17,7 @@ const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
   const manifest = await computeManifest();
   assert.equal(PackManifest.safeParse(manifest).success, true);
-  assert.equal(manifest.version, '3.26.3');
+  assert.equal(manifest.version, '3.26.4');
   assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`);
   assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles();
@@ -75,12 +75,10 @@ test('the examples use the original synthetic contract, matching profile and fin
   const start = json('examples/start-run.json').arguments; assert.equal(typeof start.parameters.autoid, 'string'); assert.ok(start.inputs.profile.external.startsWith('doc:doc:'));
   const data = json('examples/submit-result.json').items[0].slots.plan[0].data; assert.deepEqual(data.blocks, []); assert.ok(Array.isArray(data.steps[0].args)); assert.equal(typeof data.expects[0].after, 'number');
 });
-// Keep the client instructions within the existing skill budget.
 const SKILL_BUDGET = 9630;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
   const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成执行器规则或发布的执行器规则核对', '不证明在真实设备上跑得通', '自动重交', '最多重交 2 次', '后台**跑合并工具', "open-merge.ts' --hub %HUB_URL% --open 'open-compile.json' --plans 'plans'", '脚本合并运行只由合并工具开，不手写 `start_run`', 'predecessor', '有失败不停在报告、不问使用者，直接按下节返工', '返工（只改失败案）']) assert.ok(skill.includes(phrase), phrase);
 });
-// One option name, one meaning: --run is a run id (type run) or the run directory, the folder that holds run.json (type path), never its file.
 test('--run is the run id or the run directory in every declaration, and nothing taught or printed passes the run.json file as --run', () => {
   const declared = [
     ...readdirSync(join(PACK_DIR, 'tools')).filter((name) => name.endsWith('.cli.json')).map((name) => `tools/${name}`),
@@ -99,7 +97,6 @@ test('--run is the run id or the run directory in every declaration, and nothing
   }
   assert.deepEqual(directories.sort(), ['recompose/tools/check-record.cli.json', 'tools/check-plan.cli.json', 'tools/cmd-lookup.cli.json', 'tools/cmd-select-plumb.cli.json', 'tools/cmd-verify-plumb.cli.json', 'tools/fidelity-apply.cli.json', 'tools/fidelity-brief.cli.json', 'tools/fidelity-plumb.cli.json', 'tools/generate-workbook.cli.json', 'tools/seal-recompose.cli.json', 'tools/task-brief.cli.json']);
   assert.deepEqual(ids.sort(), ['recompose/tools/download-run.cli.json', 'recompose/tools/submit-records.cli.json', 'tools/download-returns.cli.json', 'tools/download-run.cli.json', 'tools/fetch-run.cli.json', 'tools/refresh-late.cli.json', 'tools/submit-plans.cli.json']);
-  // What a skill, a tool document, an agent definition or a tool's own text teaches or prints: `--run` followed by a run.json.
   const texts = [
     'SKILL.md', 'recompose/SKILL.md', ...readdirSync(join(PACK_DIR, 'tools')).filter((name) => name.endsWith('.md')).map((name) => `tools/${name}`),
     ...readdirSync(join(PACK_DIR, 'agents')).map((name) => `agents/${name}`),
@@ -109,7 +106,6 @@ test('--run is the run id or the run directory in every declaration, and nothing
     '../../../docs/member-guide.md',
   ];
   for (const file of texts) assert.doesNotMatch(read(file), /--run\s+['"]?[<\w./\-\u4e00-\u9fff>]*run\.json/, file);
-  // The recompose pack is published apart and cannot import the resolver; its one-line correct form is the same line.
   assert.ok(read('recompose/tools/check-record.ts').includes(`"${RUN_DIRECTORY_FORM}"`));
 });
 test('the writer is told to write one Chinese line per block, and the skill says the command tree decides what Plumb only advises', () => {
@@ -123,30 +119,22 @@ test('the writer is told to write one Chinese line per block, and the skill says
 });
 test('the writer text and the block declarations teach no usage derived from one feature or case: no key-name paragraph, no pre-clean line, no column-pinning advice, and the runner contract for a cell value in one generic sentence (round 37, owner\'s rule)', () => {
   const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
-  // InfoTest's worker prompt "intentionally contains no product algorithm classes, counter layouts, channel names, operator mappings,
-  // sample sizes, or interface answers" (main/ist_core/agents/compile-worker.md:51); T15 had put three such teachings into this one.
   const caseDerived = [
     '取名字的一段', '设备生成的往往只是名字的一段', '只取这一段', 'Kzone', 'RSASHA1', 'ksk', '.private', '逐列钉死', '长度、后缀各一列', '1024.key', 'where 6',
     '设备上可能残留同名配置时', '先用产品声明的逆操作清掉再配置', '本身不需要再配清理，被它清掉的配置命令自己的清理照旧',
   ];
   for (const [file, text] of [['subagent-roles.ts body', role.body], ['agents/compile-writer.md', writer]] as Array<[string, string]>)
     for (const phrase of caseDerived) assert.ok(!text.includes(phrase), `${file}: ${phrase}`);
-  // The declarations a writer reads through its block lookup carry none of it either (the fields had no description before T15).
   const table = json('tables/blocks-format.json');
   for (const name of ['input_register', 'column', 'select']) assert.equal(table.fields[name].description, undefined, name);
   for (const file of ['tables/blocks-format.json', 'tables/block-plan.schema.json', 'slots.schema.json'])
     for (const phrase of ['ksk', 'RSASHA1', 'keypub', 'Kzone', '取名字的一段', 'host, algorithm, type, size, suffix', 'between known words']) assert.ok(!read(file).includes(phrase), `${file}: ${phrase}`);
-  // What stays is the runner's contract and nothing about how to build a name: the selected cell goes into the {} of a later command,
-  // which the runner replaces whole (lib/test_xlsx.py:698-721) and which may stand in quotes. The rule that a removal sent ahead of the
-  // configuration it clears needs no cleanup of its own lives in functions/command-obligations.ts (inverse-removal.test.ts), not here.
   const contract = '只有设备执行时才产生的值，要在同一条自动化用例里先取出再用，取出的单格写进后面命令的 `{}`，运行器把它整个替换进去，`{}` 可以在引号里；手册允许指定名字时，由生成器指定';
   assert.ok(role.body.includes(contract) && writer.includes(contract), 'the one sentence of the runner contract');
   for (const phrase of ['写进命令的每个值都要在手册对该参数的说明之内，包括长度、允许的字符、范围和可选值', '不写死设备生成的名字，不从上一次上机验证的设备输出抄值，也不沿用设备上已有的东西']) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
 });
 test('nothing the writer reads names a product command or an output layout: no product command words in the role, the skill, the tool documents, the declarations, the samples and the examples, and the cleanup rules are stated by the contract (round 37, owner\'s rule)', () => {
   const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
-  // Product command words, the names of device outputs and the key-file layout of one feature. A generic contract is stated without them:
-  // «互逆开关按产品声明的 command_policy 配对», «contract.cleanup 声明的收尾命令».
   const product = [/\bsdns\b/i, /synconfig/i, /dnssec/i, /\bha (on|off|link|unit|group)\b/i, /clear ha/i, /write mem/i, /lib\/apv/, /\bksk\b/, /\bzsk\b/, /RSASHA/i, /keypub/i, /\+005\+/, /zone\.example/, /\.key\b/, /\.private\b/, /Statistics Summary/, /HA 等/];
   const files = [
     'SKILL.md', 'tools/delivery.md', 'tools/fidelity.md', 'tables/blocks-format.json', 'tables/block-plan.schema.json', 'slots.schema.json',
@@ -156,7 +144,6 @@ test('nothing the writer reads names a product command or an output layout: no p
   for (const [file, text] of [['subagent-roles.ts body', role.body], ['agents/compile-writer.md', writer], ...files.map((file) => [file, read(file)] as [string, string])] as Array<[string, string]>)
     for (const word of product) assert.ok(!word.test(text), `${file}: ${word}`);
   assert.ok(!/SDNS Query/.test(read('functions/authoring-brief.ts')), 'the writer\'s brief carries no output line of one product either');
-  // What each of them says instead: the pairing of declared inverse values and the runner's own teardown, by the contract.
   for (const phrase of [
     '产品声明了互逆取值的开关（`command_policy`）：按声明在同设备的 `cleanup:true` 配对写出逆操作，完成关闭后才交运行器的整体清除，不能只依赖整体清除',
     '运行器自动清理（`contract.cleanup`，对清配对象经 `cmd_config` 发出的匹配命令，前缀规则和收尾命令由合约声明）',
@@ -221,7 +208,7 @@ test('the client skill and the closing procedure carry the reference rules on pa
     '不单凭它判定原因属于模型或设备',
     '先确认上次修改已进本次自动化用例 Excel；已经改了而同一句设备输出又出现，就换解释',
     '重新编写要保住原始用例的范围和每一项期望',
-    'submit-plans 会跳过本次排除的原始用例，不用复制或改写文件',
+    '它排除没通过的条目、新开一次脚本编写运行（禁止往已锁定的上一轮运行提交变更）、把通过的自动化用例连同已有的保真判断原样结转',
     '说明设备名字和哪些清理没做，残留没核清之前不上机验证下一份自动化用例 Excel',
     '原始用例要的取值被手册排除时，写原始用例的问题，不写设备的问题',
     '报告存在不意味着未知条目必须提前停止编写',
@@ -257,12 +244,8 @@ test('the client skill dispatches case-compile:compile-* subagents via task-brie
   assert.ok(skill.includes('case-compile:compile-writer'));
   assert.ok(!skill.includes('general-purpose'));
   assert.ok(skill.includes('装进当前主目录的 `skills` 目录'));
-  // Decision 179: runs are opened by code, a refusal is relayed word for word, and the per-case pipeline schedules the
-  // subagents (background, six at once, the next case when one ends) instead of foreground batches of six.
   assert.ok(skill.includes("tools/open-compile.ts' --hub %HUB_URL% --plumb %PLUMB_URL%"));
   assert.ok(skill.includes('“无法编译：…”时把这一行原样告诉使用者，然后停止'));
-  // Decision 183: the lead does not dispatch one by one. It starts the pack's loop script, which asks pipeline.ts what to start,
-  // starts those subagents and asks again when one ends; the lead reads the summary the loop ends with.
   assert.ok(skill.includes('workflow({"script_path":"<技能目录>/workflows/compile-loop.js","args":{"pipeline":"<技能目录>/tools/pipeline.ts","state":"pipeline.json"}})'));
   assert.ok(skill.includes('子代理由编写循环派发，主代理不逐个派 `task`'));
   assert.ok(skill.includes('同时在跑的子代理在 6 个以内，结束一个补一个'));
@@ -298,7 +281,6 @@ test('bundled subagent definitions match single-source role specs and exclude mo
       assert.ok(idx > 0, `${role.agentName}: ${line}`);
       meta.set(line.slice(0, idx).trim(), line.slice(idx + 1).trim());
     }
-    // maxTurns is the client's limit on model requests for one session of the role; a model is still never named.
     assert.deepEqual([...meta.keys()].sort(), ['description', 'maxTurns', 'name', 'sessionPrompt', 'tools'], role.agentName);
     assert.equal(meta.get('sessionPrompt'), 'false', role.agentName);
     assert.equal(meta.get('maxTurns'), String(role.maxTurns), role.agentName);
@@ -363,7 +345,6 @@ test('repository manifest paths directly name ordinary files with their declared
 test('SKILL.md and delivery.md distinguish same-run resubmit from the three start_run rework boundaries', () => {
   const skill = read('SKILL.md');
   const delivery = read('tools/delivery.md');
-  // Decision 179: a plan run, the first or a rework one, is opened by the tool that checks readiness in code.
   assert.ok(skill.includes('open-compile.ts') && skill.includes('--recompose-run'));
   assert.ok(skill.includes('同一 `plan_run` 尚未进入 `merge_run`'), 'must allow same-run resubmit before merge_run');
   assert.ok(skill.includes('rounds_left=0'), 'must name repair_exhausted boundary');
@@ -394,7 +375,6 @@ test('H1/H4/Effort-AB: SKILL.md, recompose/SKILL.md, delivery.md and compile-rec
   assert.match(delivery, /tools\/download-returns\.ts/);
   assert.doesNotMatch(delivery, /(?:^|\n)(?:ssh|telnet|nc)\s/m, 'delivery must consume downloaded returns instead of teaching direct terminal connections');
   assert.match(skill, /第 3 轮.*严禁第 4 轮|最多.*3 轮.*严禁第 4 轮/);
-  // The pipeline tool reads the run's own item file names, so the main session no longer lists them before a dispatch.
   assert.match(skill, /pipeline\.ts' init --recompose-run/);
   assert.match(skill, /"action":\s*"release"/);
   assert.match(skill, /"booking":/);
@@ -412,7 +392,6 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
   const recomposeSkill = read('recompose/SKILL.md');
   const fidelityDoc = read('tools/fidelity.md');
 
-  // Exact file-tool schema guidance across roles (write_file for new/full writes, read_file before edit_file, ls({path}))
   for (const [name, content] of [
     ['compile-recomposer', recomposer],
     ['compile-writer', writer],
@@ -440,7 +419,6 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
     assert.ok(content.includes('<字面文字>') && !content.includes('<正则>'), `${name} must describe grep pattern as literal text`);
   }
 
-  // Execute rules tailored per role: ban on the attributor, exact CLI on recomposer, writer & fidelity
   assert.ok(!recomposer.includes('严禁调用 execute') && recomposer.includes('check-record.ts --file'), 'recomposer runs only the check of its own record');
   assert.ok(attributor.includes('严禁调用'), 'attributor must ban execute even if exposed');
   assert.ok(!writer.includes('严禁调用 execute'), 'writer must keep check-plan.ts execute permission');
@@ -449,18 +427,16 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
   assert.ok(fidelityAgent.includes('check-plan.ts --file'));
   assert.ok(!writer.includes('<技能目录>') && !fidelityAgent.includes('<技能目录>'));
 
-  // fidelity.md aligned with task-brief.ts (removes outdated manual multi-file prompt)
   assert.ok(!fidelityDoc.includes('核对这些自动化用例是否改掉原始用例的场景：<文件路径，逐个列出>'));
   assert.ok(fidelityDoc.includes("task-brief.ts' --role '保真核对'"));
 
-  // P2: recomposer & recompose/SKILL.md teach executable CLI rules + RFC test IP + positive & negative examples
   assert.ok(!recomposer.includes('保持命令树可解析原值'));
   assert.ok(!recomposeSkill.includes('保持 command_tree 可解析的原值'));
   assert.ok(!recomposeSkill.includes('<名字> <IP>'));
   for (const doc of [recomposer, recomposeSkill]) {
     assert.ok(doc.includes('192.0.2.10'), 'must demonstrate RFC 5737 test IP');
-    assert.ok(doc.includes('sdns service ip "web1" 192.0.2.10'), 'must include positive CLI example');
-    assert.ok(doc.includes('sdns listener <arg1:ipv4/ipv6>'), 'must include negative template placeholder example');
+    assert.ok(doc.includes('widget service ip "web1" 192.0.2.10'), 'must include positive CLI example');
+    assert.ok(doc.includes('widget listener <arg1:ipv4/ipv6>'), 'must include negative template placeholder example');
   }
   assert.ok(!recomposer.includes('recompose-record.schema.json'));
 });

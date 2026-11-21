@@ -1,9 +1,3 @@
-// The Hub's checks of a records submission, run on what download-run.ts saved (round 33: check-record said ok, the Hub refused).
-// The Hub builds the input of every check of this pack (checks.json) from the frozen run record, the locked command tree and
-// the submission, then calls the check functions the pack names. This module builds the same input from run.json and
-// knowledge/nodes.jsonl and calls the very functions checks.json names, so what the Hub would refuse is refused here with the
-// same words. It adds no rule of its own: the rules are in those functions. A declared check this module has no wiring for, and
-// a core interpreter (quote@1, which exists only inside the Hub), are reported as not run, never as passed.
 import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,17 +11,12 @@ import { isVerdict } from './generated/vocabulary.ts';
 
 type Row = { [key: string]: any };
 
-/** The pack directory this module belongs to: the one whose checks.json the Hub runs. */
 export const PACK_DIR = fileURLToPath(new URL('../', import.meta.url));
 
 const MAX_KNOWLEDGE_BYTES = 512 * 1024 * 1024;
 
-// ---------------------------------------------------------------------------------------------------- locked command tree
-
-/** The nodes of knowledge/nodes.jsonl by path, as the Hub's run export writes them. */
 export type KnowledgeNodes = ReadonlyMap<string, Row>;
 
-/** Reads the locked tree saved beside run.json, and refuses one that is not the tree of this run's locked root. */
 export async function readKnowledgeNodes(runDir: string, run: Row): Promise<KnowledgeNodes> {
   const file = join(runDir, 'knowledge', 'nodes.jsonl');
   const info = await lstat(file).catch((error: NodeJS.ErrnoException) => (error.code === 'ENOENT' || error.code === 'ENOTDIR' ? null : Promise.reject(error)));
@@ -54,10 +43,6 @@ export async function readKnowledgeNodes(runDir: string, run: Row): Promise<Know
   return new Map(nodes.filter(isRecord).filter((node) => typeof node.path === 'string').map((node) => [node.path as string, node]));
 }
 
-/**
- * The catalog data of a definition as the Hub reads it (hub/knowledge/produce.ts catalogData: catalog-entry@1): the head words, and
- * the overloads, which a definition without any takes as none (a command without arguments). Null when it is not catalog data.
- */
 function catalogData(data: unknown): { words: string[]; signatures: Row[] } | null {
   if (!isRecord(data) || !Array.isArray(data.words) || data.words.length === 0 || data.words.some((word) => typeof word !== 'string' || word.length === 0)) return null;
   const signatures = data.signatures ?? [];
@@ -68,12 +53,6 @@ function catalogData(data: unknown): { words: string[]; signatures: Row[] } | nu
 const SELECTION_ERROR = '目录选择必须声明路径和至多 128 条完整命令，每条至多 8192 字节；拆分计划后重核';
 const UNREADABLE_PATH = '缺锁定目录的所选路径；管理员修复目录读取后原样重交，不用整棵目录代替';
 
-/**
- * The catalog entries the Hub hands the `record` check for one item: its `catalog_select` names a base and complete command
- * lines, and the Hub follows only exact edges of the locked tree from the words of each line and takes the definitions at the
- * nodes it passes (hub/knowledge/catalog-selection.ts). The same walk over the saved nodes, with the same limits and words.
- * Returns the entries or the reason the Hub gives when the selection cannot be read.
- */
 export function selectedCatalog(nodes: KnowledgeNodes, selection: unknown): { entries: Row[] } | { missing: string } {
   if (!isRecord(selection) || typeof selection.base !== 'string' || !Array.isArray(selection.lines) || selection.lines.length > 128
     || selection.lines.some((line) => typeof line !== 'string' || Buffer.byteLength(line) > 8192)) return { missing: SELECTION_ERROR };
@@ -108,7 +87,6 @@ export function selectedCatalog(nodes: KnowledgeNodes, selection: unknown): { en
       selected.set(path + '@' + row.entry, entry);
     }
   }
-  // The view merges the overloads of one head into one entry and lists the heads in order.
   const merged = new Map<string, Row>();
   for (const entry of selected.values()) {
     const words = (entry.words as string[]).map((word) => word.normalize('NFC'));
@@ -121,9 +99,6 @@ export function selectedCatalog(nodes: KnowledgeNodes, selection: unknown): { en
   return { entries: [...merged.values()].sort((a, b) => (head(a) < head(b) ? -1 : head(a) > head(b) ? 1 : 0)) };
 }
 
-// ------------------------------------------------------------------------------------------------- inputs of the Hub's checks
-
-/** The names of the product line the run locked, as its target basis froze them (evaluate.ts productNamesOf). */
 const productNamesOf = (run: Row): string[] => {
   for (const claim of Array.isArray(run.target_basis) ? run.target_basis : []) {
     const data = claim?.statement?.data;
@@ -132,7 +107,6 @@ const productNamesOf = (run: Row): string[] => {
   return [];
 };
 
-/** The facts about a run the checks may use, from the frozen run record alone (evaluate.ts runContextOf, without leases). */
 export function frozenContext(run: Row): Row {
   return {
     run: run.run,
@@ -152,11 +126,6 @@ export function frozenContext(run: Row): Row {
   };
 }
 
-/**
- * The resolved evidence the Hub gives the checks of one item: a row for each distinct reference the slot record quotes. The
- * record the tool builds quotes the case's own original sentences, so each fragment is the node of the frozen item, whose text
- * is the sentences cut from it in order.
- */
 export function frozenEvidence(item: Row, slots: Row): Row[] {
   const parts = new Map<string, Array<{ start: number; text: string }>>();
   for (const atom of Array.isArray(item.fields?.atoms) ? item.fields.atoms : []) {
@@ -176,10 +145,7 @@ export function frozenEvidence(item: Row, slots: Row): Row[] {
   return rows;
 }
 
-// ------------------------------------------------------------------------------------------- what the Hub does with an output
-
 const OUTCOME_KEYS = ['missing', 'exit', 'verdict', 'code', 'statement', 'grounds', 'tier', 'reason', 'item', 'pointer', 'data', 'judgment_sources'];
-/** The part of check-outcome@1 (contracts/src/tables.ts) that decides whether the Hub takes an output at all: strict keys, the three verdicts, a statement, and for an unknown its missing fact and reason. */
 const outcomeShape = (value: unknown): boolean =>
   isRecord(value) && Object.keys(value).every((key) => OUTCOME_KEYS.includes(key))
   && isVerdict(value.verdict) && value.verdict !== 'abstain'
@@ -187,7 +153,6 @@ const outcomeShape = (value: unknown): boolean =>
   && (value.code === undefined || (typeof value.code === 'string' && value.code.length > 0))
   && (value.verdict !== 'unknown' || (value.missing !== undefined && value.reason !== undefined));
 
-/** Why the Hub replaces a pack function's whole output (hub/rules/check.ts outcomeProblems): the structural cases of it. */
 function outputProblem(outcomes: Row[], pack: string): string | undefined {
   for (const [index, outcome] of outcomes.entries()) {
     const at = `第 ${index + 1} 项`;
@@ -203,7 +168,6 @@ function outputProblem(outcomes: Row[], pack: string): string | undefined {
   return undefined;
 }
 
-/** What the Hub makes of a function's output: the output itself, or one unknown naming why it could not take it. */
 export function hubOutcomes(name: string, output: unknown, pack: string): Row[] {
   const refused = (detail: string): Row[] => [{ verdict: 'unknown', reason: 'check_error', missing: detail, statement: detail, grounds: [], tier: 'blocking' }];
   if (!Array.isArray(output) || output.length > 10_000 || !output.every(outcomeShape)) return refused(`包内函数 ${name} 的输出不是 check-outcome@1 数组`);
@@ -213,22 +177,15 @@ export function hubOutcomes(name: string, output: unknown, pack: string): Row[] 
   return output;
 }
 
-// ------------------------------------------------------------------------------------------------------- running the checks
-
 export interface CheckedOutcome {
-  /** The check of checks.json that gave the outcome. */
   check: string;
-  /** The frozen item it is about; null for a run-level check. */
   item: string | null;
   outcome: Row;
 }
 
 export interface LocalChecksResult {
-  /** Ids of the checks run here, in the order checks.json declares them. */
   checks: string[];
-  /** The structure checks of the slots file the Hub runs before any check, as run here. */
   structure: string[];
-  /** The declared checks that were not run, each with the reason. */
   not_run: Array<{ check: string; why: string }>;
   outcomes: CheckedOutcome[];
 }
@@ -236,15 +193,12 @@ export interface LocalChecksResult {
 export interface LocalChecksInput {
   run: Row;
   nodes: KnowledgeNodes;
-  /** The handled items of the submission as the Hub receives them: the item id and its slot record. */
   items: ReadonlyArray<{ item: string; slots: Row }>;
-  /** Whether every frozen item is among `items`, so the run-level checks have their whole subject; else why they have not. */
   complete: true | string;
   packDir?: string;
 }
 
 const subjectItem = (item: Row): Row => ({ id: item.id, label: item.label, location: item.location, fields: item.fields });
-/** Where the model writes what the record keeps at a place: the lite file of submit-records.ts, field by field. */
 const LITE_FIELD: ReadonlyArray<readonly [string, string]> = [
   ['/contract/method', 'method'],
   ['/expectation_slots', 'slots'],
@@ -254,13 +208,8 @@ const LITE_FIELD: ReadonlyArray<readonly [string, string]> = [
   ['/ledgers/concretizations', 'concretizations'],
   ['/unknowns', 'unknowns'],
 ];
-/** What the Hub's sandbox hands a function: the same data after one JSON round trip, without values JSON cannot carry. */
 const wire = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
-/**
- * The functions of this pack's checks.json, by the module and export the declaration names. A pack cannot import a module by a
- * computed name, so each is imported here once; a declaration that names another function has no entry and is reported as not run.
- */
 const WIRED: Readonly<Record<string, (input: any) => unknown>> = {
   'functions/recompose-check.ts#checkRecomposition': checkRecomposition,
   'functions/subject.ts#subject': recordSubject,
@@ -276,15 +225,8 @@ async function call(target: { module: string; export?: string }, input: unknown)
   return await run(wire(input));
 }
 
-/** The functions a declared function check needs (its check, its subject, its catalog selection) that have no wiring here. */
 const unwired = (check: Row): string[] => [check.function, check.subject, check.catalog_select].filter((target) => target !== undefined && wiredFunction(target) === undefined).map(named);
 
-/**
- * Runs the function checks of the pack's checks.json on the submission the way the Hub's evaluation does: an item check once
- * for each handled item with the subject its `subject` declaration builds from the item, its slot record, its evidence, the run
- * context and the selected catalog; a run check once with every item. Whatever the pack declares and is not a function check is
- * reported as not run, with the reason.
- */
 export async function runLocalChecks(input: LocalChecksInput): Promise<LocalChecksResult> {
   const packDir = input.packDir ?? PACK_DIR;
   const declared: Row[] = JSON.parse(await readFile(join(packDir, 'checks.json'), 'utf8')).checks;
@@ -312,8 +254,6 @@ export async function runLocalChecks(input: LocalChecksInput): Promise<LocalChec
     }
   };
 
-  // The Hub refuses a slot record whose data does not fit the pack's slots.schema.json before it runs any check, and runs no check
-  // on that item (evaluate.ts exclude); the same schema is read here.
   const declaredSlots: Row = JSON.parse(await readFile(join(packDir, 'slots.schema.json'), 'utf8')).item ?? {};
   const refused = new Set<string>();
   for (const [key, declaration] of Object.entries(declaredSlots)) {
@@ -355,7 +295,6 @@ export async function runLocalChecks(input: LocalChecksInput): Promise<LocalChec
         let built: Row = raw;
         let catalog: Row[] | undefined;
         if (check.catalog !== undefined) {
-          // evaluate.ts builderInput: a selection that cannot be read leaves no catalog, not complete, with the reason.
           let selected: ReturnType<typeof selectedCatalog>;
           try {
             selected = selectedCatalog(input.nodes, await call(check.catalog_select, raw));
@@ -363,7 +302,6 @@ export async function runLocalChecks(input: LocalChecksInput): Promise<LocalChec
             selected = { missing: UNREADABLE_PATH };
           }
           catalog = 'entries' in selected ? selected.entries : [];
-          // The download carries no declaration of whether the product's catalog is complete: the Hub's own answer is not known.
           built = { ...raw, catalog, catalog_complete: 'entries' in selected, ...('missing' in selected ? { catalog_missing: selected.missing } : {}) };
         }
         const outcomes = await guarded(check, async () => {

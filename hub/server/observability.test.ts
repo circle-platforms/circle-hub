@@ -48,9 +48,7 @@ test('ordinary MCP initialization leads to a bundled, version-pinned skill', asy
   const folder = new URL('../../packs/skill/hub-observability/', import.meta.url);
   const manifest = JSON.parse(readFileSync(new URL('pack.json', folder), 'utf8'));
   const list = await client.call('list_task_packs', { kind: 'skill', pack_id: 'hub-observability' });
-  // Nothing is assigned to this account: the bundled skill is listed all the same, and the head still names the next step.
   assert.match(list.content[0].text ?? '', /^当前账户可用的工作流和技能共 1 个。[^\n]*请联系管理员把该账户加入团队或分配工作流。\nHub 调用观测\n/);
-  // The answer carries the caller's capabilities beside the contract's fields (the published output schema is open).
   const { member_capabilities: _capabilities, ...listed } = list.structuredContent;
   const { packs: [pack] } = ListTaskPacksOutput.parse(listed);
   assert.equal(pack.pack, 'hub-observability@1.0.0');

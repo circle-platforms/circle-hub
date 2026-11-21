@@ -1,6 +1,3 @@
-// A case whose recomposition is bound after the run started is not judged until its record is accepted: every check of its plan is
-// unknown, awaiting_step (no repair round), with the five parts of a refusal (what, where, what was seen, what is allowed, next step).
-// Once accepted, the record laid over the item (SubjectItem.late) is judged exactly as a frozen one. Synthetic inputs only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { checkAuthorStepCoverage, checkContractShape, checkScenarioFidelity } from './checks.ts';

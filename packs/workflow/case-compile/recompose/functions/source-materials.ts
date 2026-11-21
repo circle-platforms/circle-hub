@@ -1,4 +1,3 @@
-// Source material names are presentation; references and SHA-256 remain their identities.
 import { constants } from 'node:fs';
 import { lstat, open, readdir } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
@@ -17,7 +16,6 @@ export interface SourceMaterial {
 }
 const SOURCE_REFERENCE = /^src:([a-f0-9]{64})(?:\/|$)/;
 
-/** A stable per-slot name; dots cannot occur in slot names, so numeric suffixes cannot collide with another slot. */
 export function sourceFileName(slot: string, mediaType: unknown, ordinal = 0): string {
   if (!/^[a-z][a-z0-9_-]*$/.test(slot) || !Number.isSafeInteger(ordinal) || ordinal < 0) failCall('invalid_parameters', '来源槽名或序号不能作为安全文件名', '核对冻结工作流的来源槽声明，使用合法槽名和非负整数序号后重试');
   const extension = mediaType === 'application/json' ? '.json' : mediaType === 'text/plain' ? '.txt' : mediaType === 'text/markdown' ? '.md' : mediaType === 'application/xml' || mediaType === 'text/xml' ? '.xml' : '';
@@ -41,7 +39,6 @@ export function sourceMaterialNames(bindings: readonly Record<string, unknown>[]
   });
 }
 
-/** Reads only ordinary files below the named directory; the manifest cannot grant filesystem access outside it. */
 async function materialBytes(directory: string, file: string): Promise<Buffer> {
   if (isAbsolute(file) || file.includes('\\') || file.split('/').some(part => !part || part === '.' || part === '..')) failCall('invalid_parameters', '来源清单中的文件路径越界或不合法', '重新下载原始资料，使用清单中的工作目录内相对文件指针');
   const root = await lstat(directory);
@@ -59,7 +56,6 @@ async function materialBytes(directory: string, file: string): Promise<Buffer> {
   } finally { await handle.close(); }
 }
 
-/** Both new names and historical SHA filenames are consumed through the recorded pointer, never guessed from labels. */
 export async function readSourceManifest(directory: string): Promise<SourceMaterial[]> {
   const bytes = await materialBytes(directory, 'sources.json');
   let value: unknown;
@@ -75,7 +71,6 @@ export async function readSourceManifest(directory: string): Promise<SourceMater
   return materials;
 }
 
-/** Old fetch-run directories have no manifest and use root-level JSON files; a present but invalid manifest is never bypassed. */
 export async function readSourceBytes(directory: string, slot: string): Promise<Uint8Array> {
   const info = await lstat(join(directory, 'sources.json')).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
   if (info === null) return materialBytes(directory, sourceFileName(slot, 'application/json'));
@@ -87,7 +82,6 @@ export async function readSourceBytes(directory: string, slot: string): Promise<
   return bytes;
 }
 
-/** Validate a new download target without creating or clearing anything. */
 export async function assertEmptySourceOutput(directory: string): Promise<void> {
   const info = await lstat(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
   if (!info) return;

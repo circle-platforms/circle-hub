@@ -1,12 +1,3 @@
-// The layout of one tool answer from blocks: what a renderer shortened itself (an entry's Omission, a field over its own cap)
-// is named in one Chinese note with how to read it (display rule 7: a shortening is marked 部分), and the tail (the trace
-// line) always ends the text, after the note.
-// A tool answer has no length budget (decisions 157 and 158): Circle forwards only the text content of a tool result, keeps
-// an answer above its own limit (80,000 characters in 1.14) in a file and gives the model the path and the start of it, so
-// nothing is lost and how much of it stays in the context is the client's to handle. A list cut to a budget sent the model to
-// entries it could not reach (a manual section of 137 entries showed 23, the other 114 named by untitled references or the
-// console page). `budget` stays for a caller that needs a cap: then a line is never cut, what does not fit is left out whole,
-// and the note names it too.
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 
 /** Something a renderer left out of an entry it shows (the end of a long field, part of a node): named in the note. */
@@ -50,7 +41,6 @@ export interface Block {
 const MAX_PARTS = 12;
 
 export interface FitOptions {
-  /** The most characters of the text, the note and the tail included, counted as String.length. Default: no limit. */
   budget?: number;
   /** Said for a cut block that gives no `more` of its own. */
   fallback?: string;
@@ -255,12 +245,6 @@ function assemble(prepared: readonly Prepared[], filled: Filled, note: string | 
   return lines.join('\n');
 }
 
-/**
- * Lays the blocks out, within the budget when one is given. Everything fits and nothing was shortened: the lines in display
- * order, then the tail, no note. Otherwise blocks are filled by priority, each up to its first entry that does not fit, and
- * ONE note before the tail names what was left out (counts and positions) and what was shortened, and how to read it.
- * Whatever the input, the text is at most `budget` characters and no line is cut.
- */
 export function fit(blocks: readonly Block[], options: FitOptions = {}): Fitted {
   const budget = options.budget ?? Number.POSITIVE_INFINITY;
   const tail = splitLines(options.tail ?? []);
@@ -281,7 +265,6 @@ export function fit(blocks: readonly Block[], options: FitOptions = {}): Fitted 
     reserve = Math.max(reserve + 200, note.length + 1);
   }
   // Only for pathological input (hundreds of blocks): a short fixed note and whatever fits beside it. The note itself is cut
-  // only for a budget shorter than it and the tail (about 70 characters).
   const recovery=options.fallback??leftOut(prepared,fill(prepared,0),undefined).mores[0]??'缺少其余部分的读取入口；请管理员补充可读引用后用 get_nodes 读取';
   const shortRecovery=recovery.length<Math.max(80,budget/2)?recovery:'请管理员补充未显示部分的可读引用，再用 get_nodes 读取';
   const note = `${labelOf('qualifier_mark', 'partial')}：这段回答以 ${budget} 个字符为限，有些内容没有显示。读其余部分：${shortRecovery}`;

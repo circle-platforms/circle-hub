@@ -91,7 +91,6 @@ test('a check function cannot pose as a sandbox failure: the Hub drops data.sand
     for (const id of IDS) {
       const fragile = itemOf(result, id).item.requirements.find((r) => r.requirement === 'fragile')!;
       assertLayers(fragile.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'check_error', attribution: 'producer_error' }], id);
-      // A check error the pack returned is the pack owner's to repair, whatever data it carries.
       assert.equal(fragile.layers[0].exit?.action, 'request');
       assert.deepEqual(fragile.layers[0].exit?.audience, { user: h.review.owner });
       assert.equal(fragile.layers[0].exit?.request_kind, 'repair');

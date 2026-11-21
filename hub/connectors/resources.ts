@@ -4,9 +4,8 @@ import { isAdmin } from '../records/api.ts';
 // force by a resource_config authorization bound to that digest; every change is a new definition and a new decision, and a
 // disable is the revocation of the configuration. Only admins decide; only admins see addresses and plaintext declarations.
 // The definition binds one published system pack version and its content digest (B04 R[1]): `id` is resolved to the version
-// current when the admin decides, and a newer version takes effect only through an update. Credentials use
-// named versions resolved through the vault. The definition records the wire rule; a named version records
-// its storage rule. Updates preserve shared material. Legacy owned entries migrate explicitly, and metadata never reads values.
+// current when the admin decides, and a newer version takes effect only through an update. Updates preserve shared material.
+// Legacy owned entries migrate explicitly, and metadata never reads values.
 import { VariableName, referencesIn, secretNameOf } from '../../contracts/src/variables.ts';
 import { createHash } from 'node:crypto';
 import { EnvironmentSchema, type Environment, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
@@ -353,7 +352,6 @@ export class ResourceRegistry {
     return { ...listing(state, true), credentials };
   }
 
-  /** Admins manage every resource; other valid accounts see assigned resources without addresses. */
   async list(by: Principal): Promise<ResourceListing[]> {
     const viewer = await this.#viewer(by);
     if (viewer === null) return [];

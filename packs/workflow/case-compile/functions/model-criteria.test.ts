@@ -1,7 +1,3 @@
-// The owner's 2026-11-16 decision: for an expectation whose author wrote no literal, the model writes the checkpoint itself
-// (for example: the answer contains a record name) and nothing is reviewed. A block plan states that checkpoint as a typed
-// criterion beside the verbatim quote; it is a model judgment, status unconfirmed, and the device run decides. A flat plan
-// already did this with basis:"model_judgment". Everything here is synthetic.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import TABLE from '../tables/blocks-format.json' with {type:'json'};
@@ -12,25 +8,21 @@ import {labelOf} from './generated/vocabulary.ts';
 import type {PlanSlots} from './slots.ts';
 
 const f=fixture();
-// The author's expectation is a sentence without a literal: the frozen node carries no declaration.
 const SENTENCE='合成应答带有签名记录',LITERAL='SYNTH-SIG',RATIONALE='模型选择应答里的签名记录名作为检查点；这是模型判断，由上机验证裁定';
 const quote=()=>({reference:EXPECTED_REF,text:SENTENCE});
 const nodes=()=>[{reference:EXPECTED_REF,text:SENTENCE}];
 const criterion=(over:Record<string,unknown>={})=>({id:'c_sig',expectation:EXPECTED_REF,quote:quote(),kind:'literal',operator:'abs_found',literal:LITERAL,rationale:RATIONALE,scope_root:BLOCK_ROOT,...over});
-/** A block plan that grounds the sentence on a checkpoint the model wrote itself. */
 function blockPlan(literal=LITERAL,over:Record<string,unknown>={}):PlanSlots{
  const data=plan([{kind:'OBSERVE_ASSERT',id:'observe',call:call(),assertions:[{...assertion('a_sig','observe','abs_found'),literal,quote:quote(),expectation:EXPECTED_REF,criterion:'c_sig'}]}]);
  data.criteria=[criterion({literal,...over})];
  return data;
 }
-/** The same sentence on a flat plan: one command, one expectation naming the model's checkpoint. */
 function flatPlan(text=LITERAL,over:Record<string,unknown>={}):PlanSlots{
  return {bucket:'bed-a',blocks:[],replacements:[],steps:[call()],expects:[{text,quote:quote(),after:1,basis:'model_judgment',rationale:RATIONALE,...over}]} as PlanSlots;
 }
 const check=(data:PlanSlots,extra:Record<string,unknown>={})=>checkExpectedSources(f.subject(data,{expected_nodes:nodes(),...extra}));
 const verdicts=(data:PlanSlots,extra:Record<string,unknown>={})=>check(data,extra).map(row=>row.verdict);
 
-/** What the independent review stage would hand back for an accepted criterion (the shape the stage's own tests use). */
 function review(declaration:Record<string,unknown>,change:(claim:any,run:any)=>void=()=>{}){
  const run={run:'run_00000000000000000000000002',predecessor:'run_00000000000000000000000001',runner:'synthetic-reviewer',pack:TABLE.review_pack.id+'@'+TABLE.review_pack.version,pack_digest:'b'.repeat(64),items:[{id:'criterion',fields:{criterion:declaration,author_run:'run_00000000000000000000000001'}}]};
  const claim={statement:{code:'accept'},warrant:{producer:'model',id:'synthetic-model',independence:'human_non_author'},qualifier:{nature:'judgment'},validity:{status:'valid'}};
@@ -50,7 +42,6 @@ for(const [name,evidence] of [['nothing is bound',undefined],['the Hub froze an 
  const out=check(blockPlan(),evidence===undefined?{}:{criteria_review:evidence});
  assert.deepEqual(out.map(row=>row.verdict),['support'],JSON.stringify(out));
  const row=out[0],data=row.data as {typed_criteria:unknown[];model_criteria:Array<Record<string,unknown>>};
- // the claim is the model's judgment, unconfirmed, and nothing pretends it was reviewed
  assert.deepEqual(data.typed_criteria,[]);assert.equal(data.model_criteria.length,1);
  const judged=data.model_criteria[0];
  assert.deepEqual({criterion:judged.criterion,expectation:judged.expectation,assertion:judged.assertion,basis:judged.basis,literal:judged.literal,reviewed:judged.reviewed,status:judged.status,decided_by:judged.decided_by,conditional_on_judgment:judged.conditional_on_judgment},{criterion:'c_sig',expectation:EXPECTED_REF,assertion:'a_sig',basis:'model_judgment',literal:LITERAL,reviewed:false,status:'未确认',decided_by:labelOf('producer_kind','model'),conditional_on_judgment:true});
@@ -86,7 +77,6 @@ test('the quote still binds the author\'s own expectation word for word',()=>{
   const data=blockPlan();data.blocks[0].assertions[0].quote={reference:EXPECTED_REF,text:value};data.criteria![0].quote={reference:EXPECTED_REF,text:value};
   const out=check(data);assert.ok(out.some(row=>row.verdict==='refute'&&row.code==='case-compile.expect_not_in_quote'),name+': '+JSON.stringify(out));assert.ok(out.every(row=>row.verdict!=='support'),name);
  }
- // another case's node is not this case's expectation
  const elsewhere=blockPlan();assert.ok(check(elsewhere,{expected_nodes:[{reference:EXPECTED_REF+'/other',text:SENTENCE}]}).every(row=>row.verdict!=='support'));
 });
 
@@ -106,9 +96,7 @@ test('a review that is bound is still verified as before: a refusal is not bypas
  assert.deepEqual(half.map(row=>row.verdict),['unknown'],JSON.stringify(half));
  const other=check(blockPlan(),{criteria_review:{result:null,run:review(criterion()).run}});
  assert.deepEqual(other.map(row=>row.verdict),['unknown'],JSON.stringify(other));
- // evidence that is not the frozen pair at all is not "no review" either
  for(const odd of ['x',[],0,true])assert.deepEqual(check(blockPlan(),{criteria_review:odd}).map(row=>row.verdict),['unknown'],JSON.stringify(odd));
- // the refusal tells the writer both ways out: bind the whole review, or bind none and let the model's judgment stand
  for(const row of [...rejected,...half])assert.ok(row.missing!.includes('criteria_review')&&row.missing!.includes('模型判断'),row.missing);
 });
 
@@ -119,12 +107,9 @@ test('flat and block plans agree on the same descriptive expectation',()=>{
   for(const word of [labelOf('expectation_basis','model_judgment'),labelOf('qualifier_mark','conditional_on_judgment')])assert.ok(row.statement.includes(word),word+' / '+row.statement);
   assert.ok(row.judgment_sources!.length>0);assert.equal(row.tier,'blocking');
  }
- // both keep the model's reason and the author's quote beside the checkpoint
  const flatJudged=(flat[0].data as {model_expectations:Array<Record<string,any>>}).model_expectations[0],blockJudged=(block[0].data as {model_criteria:Array<Record<string,any>>}).model_criteria[0];
  assert.equal(flatJudged.rationale,blockJudged.rationale);assert.deepEqual(flatJudged.quote,blockJudged.quote);assert.equal(flatJudged.basis,blockJudged.basis);
- // the lowered block assertion carries the same declaration a flat expectation carries: the model's basis and its own reason
  const lowered=readSlots(blockPlan());assert.ok(lowered.ok);if(lowered.ok){const expect=lowered.slots.expects[0];assert.equal(expect.basis,'model_judgment');assert.equal(expect.rationale,RATIONALE);assert.ok(!expect.rationale!.includes('独立复核'));}
- // the same input changes make both refuse, or both report the same missing fact
  const same:Array<[string,PlanSlots,PlanSlots,Record<string,unknown>]>=[
   ['a quote that is not the author\'s',(()=>{const d=blockPlan();d.blocks[0].assertions[0].quote={reference:EXPECTED_REF,text:'别的句子'};d.criteria![0].quote={reference:EXPECTED_REF,text:'别的句子'};return d;})(),flatPlan(LITERAL,{quote:{reference:EXPECTED_REF,text:'别的句子'}}),{}],
   ['a literal that is not one line',blockPlan('a\nb'),flatPlan('a\nb'),{}],
@@ -137,14 +122,13 @@ test('the lowered assertion states the model\'s own reason, not a pending review
  const data=blockPlan();const parsed=readSlots(data);assert.ok(parsed.ok,JSON.stringify(parsed));if(!parsed.ok)return;
  assert.equal(parsed.slots.expects.length,1);assert.equal(parsed.slots.expects[0].criterion,'c_sig');
  assert.equal(parsed.slots.expects[0].rationale,RATIONALE);
- // an assertion without a criterion keeps no model basis
  const author=plan([{kind:'OBSERVE_ASSERT',id:'observe',call:call(),assertions:[assertion()]}]);const read=readSlots(author);assert.ok(read.ok);if(read.ok){assert.equal(read.slots.expects[0].basis,undefined);assert.equal(read.slots.expects[0].rationale,undefined);}
 });
 
 test('a model-written checkpoint states its reason: a blank rationale is refused in block and flat plans alike',()=>{
  for(const blank of ['',' ','\n\t']){
   const block=blockPlan(LITERAL,{rationale:blank});const read=readSlots(block);
-  if(blank==='')assert.equal(read.ok,false);// the shape already needs a reason
+  if(blank==='')assert.equal(read.ok,false);
   else{assert.equal(read.ok,false,JSON.stringify(blank));if(!read.ok)assert.ok(read.problems.some(problem=>problem.pointer==='/criteria/0/rationale'),JSON.stringify(read.problems));}
   assert.equal(readSlots(flatPlan(LITERAL,{rationale:blank})).ok,false,JSON.stringify(blank));
   const out=check(block);assert.ok(out.every(row=>row.verdict!=='support'),JSON.stringify(blank));

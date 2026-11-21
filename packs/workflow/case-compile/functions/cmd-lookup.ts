@@ -1,21 +1,3 @@
-// Local command lookup over the locked tree of a run download (knowledge/nodes.jsonl). One call answers what a script writer
-// otherwise finds by reading and grepping knowledge/commands.txt and knowledge/manual.txt a window at a time: in round 35 two
-// writers made 135 and 94 calls, most of them such reads, to learn the syntax, parameters and manual examples of a few commands.
-//
-// The reference implementation (InfoTest, lang_query) has two kinds for this. `heads` lists the command heads below a prefix of the
-// command tree. `param` returns the tree's contract of a command and, beside it, the manual as it is: from the command's signature
-// line to the next line that starts with `**` or 80 lines, with a locator, nothing rewritten. This is the same over the data the Hub
-// exports: the definition of the command in the tree, the manual's signature line of it, the manual's own entries from that line to
-// the next command's signature line in the order of the manual's lines, the inverse the product declares for the run, and the
-// manual's example lines. Every entry is shown the way knowledge/*.txt shows it (functions/knowledge-text.ts entryLines): a heading
-// line with the reference to cite and the source lines, then the statement word for word, so a quote copied from an answer is a
-// quote of the entry.
-//
-// Facts by structure only, never by matching words: a command is found by exact words along the tree's edges (the Hub's own walk,
-// functions/catalog-selection.ts); a miss names the next words of the node the words reached, by token prefix, and the heads that use
-// the same words in another order; a manual window is bounded by the manual's own signature lines; an example is a line that starts
-// with the command's words after an optional prompt. Nothing is ranked or guessed, nothing is written, and every answer states its
-// bounds and whether it cut anything.
 import { alternativeLines, inverseLine, readCommandPolicy, within, type CommandPolicy } from './generated/skills/command-tools/command-check/command-policy.ts';
 import { commandTokens } from './generated/skills/command-tools/command-check/grammar.ts';
 import type { LockedTree } from './catalog-selection.ts';
@@ -25,24 +7,17 @@ import { CallFailure, clip, isRecord } from './text.ts';
 type Row = { [key: string]: any };
 type Token = { value: string; quoted: boolean; raw: string };
 
-/** What one answer holds at most. Entries are counted as the text files show them: heading line and statement. */
 export const LOOKUP_BOUNDS = {
-  /** Command heads of one listing. */
   heads: 60,
-  /** Next words of one inventory. */
   nextWords: 60,
   topWords: 200,
-  /** Heads shown for a branch that defines nothing itself. */
   branchHeads: 12,
-  /** Entries and characters of one manual window (the first entry is always shown). */
   windowEntries: 40,
   windowChars: 8000,
-  /** The manual's parameter rows tied to the command that the window does not hold. */
   rowEntries: 12,
   rowChars: 3000,
   examples: 6,
   exampleLines: 8,
-  /** Heads that use the words of a missed query in another order. */
   permutations: 8,
   syntaxChars: 400,
   signatures: 8,
@@ -53,11 +28,9 @@ export interface BlockPosition { file: string; line: number }
 export interface LookupSource {
   tree: LockedTree;
   run: LookupRun;
-  /** Where each node's block starts in the download's text files, by the node's path (blockPositions). */
   blocks?: ReadonlyMap<string, BlockPosition>;
 }
 
-/** The nodes of one text file of the download and the line each block starts at: `# <path>` opens a block. */
 export function blockPositions(file: string, text: string): Map<string, BlockPosition> {
   const found = new Map<string, BlockPosition>();
   const lines = text.split('\n');
@@ -72,7 +45,6 @@ const COMMANDS = '/commands';
 const isCommandsNode = (path: string): boolean => path === COMMANDS || path.startsWith(`${COMMANDS}/`);
 const RETRY = '重新下载本次运行完整的 knowledge/nodes.jsonl，不拼接其他运行的命令树';
 
-/** The tree's own definition of a command: the entry the Hub's checks read (a manual signature carries no overload list). */
 const isDefinition = (entry: Row): boolean => entry.kind === 'definition' && isRecord(entry.data) && Array.isArray(entry.data.signatures);
 const formOf = (entry: Row): unknown => (isRecord(entry.data) ? entry.data.form : undefined);
 const definitionsOf = (node: Row): Row[] => (node.entries as Row[]).filter(isDefinition);
@@ -84,24 +56,15 @@ const childNode = (tree: LockedTree, node: Row, word: string): Row | undefined =
 const syntaxOf = (entry: Row): string => clip(String(entry.statement).split('\n', 1)[0]!, LOOKUP_BOUNDS.syntaxChars);
 const list = (words: readonly string[]): string => words.join('、');
 
-// ----------------------------------------------------------------------------------------------------------------------------
-// What the tree and the manual hold, indexed once per tree.
-
 interface Located { entry: Row; node: Row; at: { source: string; from: number; to: number }; nodeOrder: number; order: number }
 interface HeadRow { words: string[]; node: Row; def: Row }
 interface Index {
   heads: HeadRow[];
-  /** The manual's entries by the source file they stand in, in the order of their lines. */
   manual: Map<string, Located[]>;
-  /** All the manual's entries that stand on lines, in the order of the tree's nodes and, within a node, of their lines. */
   placed: Located[];
-  /** The lines of a source where a command's signature starts: what ends a window. */
   signatures: Map<string, number[]>;
-  /** Signature lines of the manual that the tree has no command for, by the words of the missing command. */
   drift: Map<string, Located[]>;
-  /** Signature lines the producer did not parse into a signature entry: a manual entry that opens with the command in bold and names it as a literal. */
   written: Map<string, Located[]>;
-  /** The manual rows the tree ties to a command, by its words. */
   rows: Map<string, Located[]>;
 }
 const indexes = new WeakMap<LockedTree, Index>();
@@ -150,16 +113,12 @@ function indexOf(tree: LockedTree): Index {
   return index;
 }
 
-// ----------------------------------------------------------------------------------------------------------------------------
-// Words, the walk, and what a miss names.
-
 function tokensOf(text: string, label: string, usage: string): Token[] {
   const tokens = commandTokens(text);
   if (tokens === null) throw new CallFailure('invalid_parameters', `${label} 的值不是一行完整的命令写法（引号没有闭合、含换行或超过 2000 字符）`, `改写成单行，带引号的参数用成对的引号。${usage}`);
   if (tokens.length === 0) throw new CallFailure('invalid_parameters', `${label} 的值是空的`, `写出命令词。${usage}`);
   return tokens;
 }
-/** The words before the first quoted word: only they are looked up, what follows is arguments. */
 const leadingWords = (tokens: readonly Token[]): string[] => {
   const words: string[] = [];
   for (const token of tokens) { if (token.quoted) break; words.push(token.value); }
@@ -167,7 +126,6 @@ const leadingWords = (tokens: readonly Token[]): string[] => {
 };
 
 interface Walk { nodes: Row[]; stopped: string | null }
-/** The nodes the words reach from the top of the commands, by exact edges; `stopped` is the first word that is no edge. */
 function walkWords(tree: LockedTree, words: readonly string[]): Walk {
   const top = tree.nodes.get(COMMANDS);
   if (top === undefined) throw new CallFailure('invalid_parameters', '锁定命令树里没有 /commands 节点', RETRY);
@@ -185,7 +143,6 @@ const deepestHead = (walk: Walk): { node: Row; depth: number } | null => {
   for (let at = walk.nodes.length - 1; at >= 0; at--) if (definitionsOf(walk.nodes[at]!).length > 0) return { node: walk.nodes[at]!, depth: at + 1 };
   return null;
 };
-/** The head at exactly these words, when the tree has one. */
 function headAt(tree: LockedTree, line: string): { node: Row; def: Row } | null {
   const tokens = commandTokens(line);
   if (tokens === null || tokens.length === 0 || tokens.some((token) => token.quoted)) return null;
@@ -203,7 +160,6 @@ function subtreeHeads(tree: LockedTree, node: Row, found: Array<{ node: Row; def
   return found;
 }
 
-/** The next words of a node, with the number of heads below each when `counts` is set, and those that start with what was typed. */
 function nextWordsLines(tree: LockedTree, node: Row, owner: string, options: { typed?: string; counts: boolean }): string[] {
   const names = childNames(node);
   if (names.length === 0) return [];
@@ -217,13 +173,11 @@ function nextWordsLines(tree: LockedTree, node: Row, owner: string, options: { t
   return out;
 }
 
-/** The words of a node that differ from the typed word only in case: the tree does not fold case, and says which word it has. */
 function caseLines(names: readonly string[], typed: string): string[] {
   const same = names.filter((name) => name !== typed && name.toLowerCase() === typed.toLowerCase());
   return same.length === 0 ? [] : [`# 命令词区分大小写，命令树不折叠：这里的词是 ${list(same)}，写的是 ${typed}。`];
 }
 
-/** Heads that use the words of the query in another order, or with at most one more word: a fact of the tree, not a recommendation. */
 function samewordHeads(index: Index, words: readonly string[]): HeadRow[] {
   if (words.length < 2) return [];
   const wanted = new Map<string, number>();
@@ -253,7 +207,6 @@ function missLines(source: LookupSource, index: Index, kind: 'param' | 'heads', 
     const starts = names.filter((name) => name.startsWith(typed));
     out.push(`# 命令树里没有${noun} ${shown}。`);
     out.push(`# 第 1 个词 ${typed} 不是命令树的顶层命令词。以 ${typed} 开头的顶层词：${starts.length ? list(starts.slice(0, LOOKUP_BOUNDS.topWords)) : '无'}。`, ...caseLines(names, typed));
-    // The whole list of top-level words is for a first word that leads nowhere; when the same words stand in another order below, that is the answer.
     if (same.length === 0) out.push(`# 顶层命令词共 ${names.length} 个：${list(names.slice(0, LOOKUP_BOUNDS.topWords))}${names.length > LOOKUP_BOUNDS.topWords ? `（只列前 ${LOOKUP_BOUNDS.topWords} 个）` : ''}。`);
   } else if (walk.stopped === null) {
     const reached = walk.nodes.at(-1)!;
@@ -281,10 +234,6 @@ function missLines(source: LookupSource, index: Index, kind: 'param' | 'heads', 
   return out;
 }
 
-// ----------------------------------------------------------------------------------------------------------------------------
-// Entries as the text files show them.
-
-/** `# <path>` as the text files open a node's block, with where the block starts in them when the download has the text files. */
 function nodeLine(source: LookupSource, node: Row): string {
   const at = source.blocks?.get(String(node.path));
   return `# ${node.path}${at === undefined ? '' : `  （knowledge/${at.file} 第 ${at.line} 行起）`}`;
@@ -292,10 +241,6 @@ function nodeLine(source: LookupSource, node: Row): string {
 function blockLines(source: LookupSource, node: Row, entries: readonly Row[]): string[] {
   return [nodeLine(source, node), ...entries.flatMap((entry) => entryLines(entry as EntryText))];
 }
-/**
- * The line of an entry's heading in the text files: the node's block start plus where the renderer puts the entry. An element of the
- * rendered block is one heading or one statement, and a statement is as many lines as it has line breaks plus one.
- */
 function headingPosition(source: LookupSource, located: Located): BlockPosition | null {
   const at = source.blocks?.get(String(located.node.path));
   if (at === undefined) return null;
@@ -307,7 +252,6 @@ function headingPosition(source: LookupSource, located: Located): BlockPosition 
   }
   return null;
 }
-/** Entries in the order given, each node's line whenever the node changes. */
 function groupedLines(source: LookupSource, entries: readonly Located[]): string[] {
   const out: string[] = [];
   let node: Row | null = null;
@@ -318,7 +262,6 @@ function groupedLines(source: LookupSource, entries: readonly Located[]): string
   return out;
 }
 interface Cut { shown: Located[]; hidden: Located[]; byChars: boolean }
-/** The first entries that fit the bounds, counted as the text files show them; the first is always shown, so an answer about something that exists is never empty. */
 function bounded(entries: readonly Located[], maxEntries: number, maxChars: number): Cut {
   const shown: Located[] = [];
   let chars = 0, byChars = false;
@@ -332,7 +275,6 @@ function bounded(entries: readonly Located[], maxEntries: number, maxChars: numb
   return { shown, hidden: entries.slice(shown.length), byChars };
 }
 const sourceName = (source: string, line: number): string => `源 ${source.slice(0, 12)} 行 ${line}`;
-/** Where the entries left out can be read on; the cut is also recorded for the answer's last line. */
 function leftOut(source: LookupSource, what: string, all: readonly Located[], cut: Cut, cuts: string[]): string[] {
   if (cut.hidden.length === 0) return [];
   const first = cut.hidden[0]!;
@@ -342,9 +284,6 @@ function leftOut(source: LookupSource, what: string, all: readonly Located[], cu
   const where = position === null ? `${sourceName(first.at.source, first.at.from)} 起（在 knowledge/ 里该条所在的节点块里找）` : `knowledge/${position.file} 第 ${position.line} 行起（read_file 的 offset 填这个行号，limit 填 200）`;
   return [`# 没有显示的 ${cut.hidden.length} 条从 ${where}，原文行号接着${sourceName(last.at.source, last.at.to)}。`];
 }
-
-// ----------------------------------------------------------------------------------------------------------------------------
-// The product's declared rules for the command.
 
 function policyLines(source: LookupSource, head: { node: Row; def: Row; words: string[] }): string[] {
   const raw = source.run.command_policy;
@@ -381,7 +320,6 @@ function policyLines(source: LookupSource, head: { node: Row; def: Row; words: s
   return out;
 }
 
-/** What the tree could not read of a parameter, by name: the Hub's check does not hold the value to it. */
 function uncheckedLines(def: Row): string[] {
   const found = new Map<string, string[]>();
   for (const signature of (Array.isArray(def.data.signatures) ? def.data.signatures : []) as Row[]) {
@@ -395,11 +333,7 @@ function uncheckedLines(def: Row): string[] {
   return [...found].map(([name, values]) => `# 参数 ${name} 带有命令树没有解读的约束${values.length ? `（写法 ${values.join('、')}）` : ''}，这一项不由命令树核对。`);
 }
 
-// ----------------------------------------------------------------------------------------------------------------------------
-// Examples: lines of the manual that start with the command.
-
 const PROMPT = /^\s*[\w.-]+(?:\([\w.-]*\))?[#>]\s*/u;
-/** Whether a line of the manual is the command written out: its words first, after an optional prompt, and no word of a longer command next. */
 function startsWithCommand(line: string, words: readonly string[], longer: ReadonlySet<string>): boolean {
   if (!line.includes(words[0]!)) return false;
   const tokens = commandTokens(line.replace(PROMPT, ''));
@@ -408,10 +342,6 @@ function startsWithCommand(line: string, words: readonly string[], longer: Reado
   const next = tokens[words.length];
   return next === undefined || next.quoted || !longer.has(next.value);
 }
-/**
- * An example entry as the text files show it when it is short. A long one (a whole listing of configuration) is shown by the
- * lines in it that start with the command, each as the entry has it, and says so: those lines are not next to each other in it.
- */
 function exampleLines(source: LookupSource, located: Located, words: readonly string[], longer: ReadonlySet<string>): { lines: string[]; long: boolean } {
   const statement = String(located.entry.statement).split('\n');
   const rendered = entryLines(located.entry as EntryText);
@@ -423,12 +353,8 @@ function exampleLines(source: LookupSource, located: Located, words: readonly st
   return { lines: [rendered[0]!, ...matching.slice(0, LOOKUP_BOUNDS.exampleLines), `# （上一条共 ${statement.length} 行，上面只列其中以这条命令开头的 ${count} 行，它们在原文里不一定相邻；全文${where}。）`], long: true };
 }
 
-// ----------------------------------------------------------------------------------------------------------------------------
-// The answers.
-
 const usage = (flag: string, shape: string): string => `写法：${flag} '${shape}'`;
 
-/** `--param`: the definition, the manual's window, the inverse and the examples of the command the words name. */
 export function lookupParam(source: LookupSource, query: string): string {
   const tokens = tokensOf(query, '--param', usage('--param', '<命令词>'));
   const words = leadingWords(tokens);
@@ -471,9 +397,6 @@ export function lookupParam(source: LookupSource, query: string): string {
   if (below > 0) out.push(`# ${head} 之下还有 ${below} 条命令头（下一词 ${list(childNames(found.node).slice(0, 12))}${childNames(found.node).length > 12 ? '…' : ''}）：--heads '${head}' 列出它们的语法行。`);
   out.push(...policyLines(source, { node: found.node, def, words: headWords }));
 
-  // The manual's window: from each signature line of the command to the next command's signature line, in the manual's line order.
-  // A signature line is the tree's signature entry of the command or, where the producer did not parse it, the manual's own entry
-  // that opens with the command in bold and names it as a literal.
   const used = new Set<string>();
   const anchors = [
     ...signatures.flatMap((row) => (row.at === null ? [] : [{ entry: row.entry, at: row.at }])),
@@ -493,7 +416,6 @@ export function lookupParam(source: LookupSource, query: string): string {
     out.push(...leftOut(source, '手册原文窗', window, cut, cuts));
   }
 
-  // The manual's parameter rows the tree ties to this command that the window does not hold.
   const linked = (index.rows.get(head) ?? []).filter((located) => !used.has(String(located.entry.reference)));
   if (linked.length > 0) {
     const cut = bounded(linked, LOOKUP_BOUNDS.rowEntries, LOOKUP_BOUNDS.rowChars);
@@ -503,7 +425,6 @@ export function lookupParam(source: LookupSource, query: string): string {
     out.push(...leftOut(source, '参数说明行', linked, cut, cuts));
   }
 
-  // Example lines of the manual that start with the command, wherever they stand and not already shown.
   const longer = new Set(childNames(found.node));
   const examples = index.placed.filter((located) => !used.has(String(located.entry.reference)) && String(located.entry.statement).split('\n').some((line) => startsWithCommand(line, headWords, longer)));
   if (examples.length === 0) out.push('# 手册里没有以这条命令开头的示例行（窗口之外）。');
@@ -532,7 +453,6 @@ export function lookupParam(source: LookupSource, query: string): string {
   return `${out.join('\n')}\n`;
 }
 
-/** `--heads`: every command head below a prefix, with its syntax line. */
 export function lookupHeads(source: LookupSource, prefix: string): string {
   const tokens = tokensOf(prefix, '--heads', usage('--heads', '<命令词前缀>'));
   if (tokens.some((token) => token.quoted)) throw new CallFailure('invalid_parameters', '--heads 的值只能是命令词，带了引号词（参数）', usage('--heads', '<命令词前缀>'));

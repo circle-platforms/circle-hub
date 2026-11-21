@@ -17,7 +17,7 @@ import { CLIENT_COLUMNS, clientRow } from './connections.ts';
 import { code, href, html, link, liveModule, page, pageLayout, pre, table, type Html } from './html.ts';
 import { circleEntry, originOf, neutralPage, type PageContext, type PageResult } from './context.ts';
 import { registeredActionForm } from './command-form.ts';
-import { count, errorLine, segments } from './components.ts';
+import { errorLine, segments } from './components.ts';
 import { resetRebuildSection } from './reset.ts';
 import { box, button, card, chip, commandLink, commandModal, duration, kv, sectionHead, when, type CommandDialog } from './ui.ts';
 
@@ -135,7 +135,6 @@ function lastUse(tokens: readonly TokenInfo[]): string | null {
   return times.at(-1) ?? null;
 }
 
-/** One credential row for the settings page (C12: vault metadata; no consumers registration). */
 export interface SecretRow {
   name: string;
   by: string;
@@ -153,7 +152,6 @@ export interface Secrets {
   text: CommandRun | null;
 }
 
-/** Vault-side secret metadata (C12); set_by / set_at may be null and must stay「未知」. */
 type VaultSecretMeta = {
   name: string;
   entry: string;
@@ -177,7 +175,6 @@ function whenOrUnknown(at: string | null | undefined): string {
 }
 
 export async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<Secrets> {
-  // Prefer vault listSecrets (C12). Fall back to the older records list without reading consumers.
   const variables = ctx.deps.records.variables as {
     listSecrets?: (by: typeof ctx.principal) => Promise<VaultSecretMeta[]>;
     list?: (by: typeof ctx.principal) => Promise<import('../../records/api.ts').NamedVersion[]>;
@@ -199,7 +196,6 @@ export async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Prom
       }
       return { rows, text: null };
     } catch {
-      // Fall back to the command's own listing below.
     }
   } else if (variables?.list !== undefined) {
     try {
@@ -278,7 +274,6 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
         secret.withdrawn ? chip('已吊销', 'unchecked') : html`<span class="ch-meta">•••••••• 已加密</span>`,
       ];
     });
-    // C12: no「使用者」column — consumers registration is gone; use is only from live resource/executor definitions.
     secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在运行 Hub 的服务器上执行'), '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
   } else if (secrets.text === null) {
     secretBody = errorLine('凭据列表暂不可用');

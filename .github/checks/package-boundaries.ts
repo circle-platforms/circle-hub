@@ -1,7 +1,3 @@
-// Enforces Hub package boundaries on production TypeScript files under hub/: cross-package imports must go through
-// each package's declared entrypoint (api.ts, or index.ts for hub/config) and stay within allowed_dependencies,
-// with explicit shared leaves (hub/ports.ts, hub/listen.ts, contracts/), scoped entrypoint exceptions (hub/telemetry/usage.ts),
-// pack import restrictions, and strict bidirectional reconciliation against exceptions.json.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, posix, relative } from 'node:path';
@@ -90,7 +86,6 @@ export interface BoundaryCheckOptions {
   edges?: PackageEdgesConfig;
   exceptionsPath?: string;
   exceptions?: readonly ExceptionEntry[];
-  /** Require exceptions.json on disk when `exceptions` is not provided in memory; defaults to true. */
   requireExceptionsFile?: boolean;
 }
 
@@ -99,7 +94,6 @@ function normalizePath(file: string): string {
   return slashed.startsWith('./') ? posix.normalize(slashed.slice(2)) : posix.normalize(slashed);
 }
 
-/** Converts a POSIX glob pattern (`**`, `*`, `?`) into an anchored RegExp. */
 export function globToRegExp(pattern: string): RegExp {
   const normalized = normalizePath(pattern);
   let regex = '^';
@@ -168,7 +162,6 @@ function assertStringArrayRecord(value: unknown, label: string): Record<string, 
   return out;
 }
 
-/** Loads and validates a package-edges.json configuration file. */
 export function loadPackageEdges(edgesPath: string): PackageEdgesConfig {
   const raw: unknown = JSON.parse(readFileSync(edgesPath, 'utf8'));
   if (!isObjectRecord(raw)) throw new Error(`${edgesPath}: expected a JSON object`);
@@ -212,7 +205,6 @@ export function loadPackageEdges(edgesPath: string): PackageEdgesConfig {
   };
 }
 
-/** Loads and validates exceptions.json (supports either a top-level array or `{ exceptions: [...] }`). */
 export function loadExceptions(exceptionsPath: string): ExceptionEntry[] {
   const raw: unknown = JSON.parse(readFileSync(exceptionsPath, 'utf8'));
   let items: unknown[];
@@ -251,7 +243,6 @@ function isNamedExportsTypeOnly(decl: ts.ExportDeclaration): boolean {
   return elements.length > 0 && elements.every((element) => element.isTypeOnly);
 }
 
-/** Extracts all static, dynamic-literal, re-export, and type-import module specifiers using the TypeScript AST. */
 export function scanFileImports(file: string, source: string): ExtractedImport[] {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.ES2024, true, ts.ScriptKind.TS);
   const found: ExtractedImport[] = [];
@@ -308,7 +299,6 @@ function recordViolation(
   if (!out.has(key)) out.set(key, violation);
 }
 
-/** Checks a single Hub file's boundaries against package-edges configuration. */
 export function checkFileBoundaries(
   file: string,
   source: string,
@@ -524,7 +514,6 @@ export function checkFileBoundaries(
   };
 }
 
-/** Scans all tracked production TypeScript files under hub/ using git ls-files. */
 export function scanRepositoryBoundaries(
   root: string,
   options: { edgesPath?: string; edges?: PackageEdgesConfig } = {},
@@ -566,7 +555,6 @@ export function scanRepositoryBoundaries(
   };
 }
 
-/** Strictly reconciles live violations against registered exceptions in both directions (unregistered and stale fail). */
 export function reconcileExceptions(
   violations: readonly BoundaryViolation[],
   exceptions: readonly ExceptionEntry[],
@@ -606,7 +594,6 @@ export function reconcileExceptions(
   return problems.sort();
 }
 
-/** Runs the full repository boundary check against package-edges.json and exceptions.json. */
 export function boundaryProblems(root: string, options: BoundaryCheckOptions = {}): string[] {
   const { violations } = scanRepositoryBoundaries(root, options);
 
@@ -629,7 +616,6 @@ export function boundaryProblems(root: string, options: BoundaryCheckOptions = {
   return reconcileExceptions(violations, exceptions, CHECK_NAME);
 }
 
-/** CLI entrypoint: verifies repository boundaries or prints live violations as JSON (`--dump-violations`). */
 export function main(argv: readonly string[], out: (line: string) => void = (line) => console.log(line)): number {
   let root = fileURLToPath(new URL('../../', import.meta.url));
   let dump = false;

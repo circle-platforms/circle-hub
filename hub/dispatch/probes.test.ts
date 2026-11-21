@@ -170,10 +170,8 @@ test('a clean bed passes the residue probes: the headers never count and an empt
   assert.ok(events.some(e => e.body.detail.readonly_verified === true));
   assert.deepEqual((await probeEvents(c, state.job)).filter(e => String(e.body.detail.check).startsWith('residue-')).map(e => [e.body.detail.seat, e.body.detail.check, e.body.detail.state, e.body.detail.matched]), [
     ['synthetic-0', 'residue-1', 'clean', true], ['synthetic-0', 'residue-2', 'clean', true], ['synthetic-1', 'residue-1', 'clean', true], ['synthetic-1', 'residue-2', 'clean', true]]);
-  // Per seat: version, interfaces, then the declared residue commands in order, each bound to the lease.
   assert.deepEqual(reads(c).map(a => [a.seat, a.command]), [0, 1].flatMap(seat => ['inspect version', 'inspect interfaces', 'inspect peers', 'inspect units'].map(command => [seat, command])));
   assert.ok(reads(c).every(a => a.ticket === 'synthetic-ticket'));
-  // A dispatch reads them again, in its own lease, before anything is submitted.
   const dispatched = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(dispatched.outcome, 'effective', JSON.stringify(dispatched));
   assert.equal(reads(c).length, 16, 'the dispatch does not reuse the precheck');
@@ -197,14 +195,12 @@ test('residue on one seat stops the precheck and the dispatch with a statement t
   const events = await c.service.journal.events(state.job);
   assert.ok(events.some(e => e.body.detail.readonly_verified === false));
   assert.equal(JSON.stringify(events.map(e => e.body)).includes('DO_NOT_DISCLOSE_REMOTE_VALUE'), false, 'no journal record holds a device line');
-  // The line is kept where the other probe output is kept: the restricted assessment and the saved original.
   const found = events.find(e => e.body.detail.check === 'residue-1' && e.body.detail.matched === false)!;
   assert.equal(found.body.detail.state, 'residue');
   const [assessment, original] = found.body.inputs;
   const assessed = JSON.parse(new TextDecoder().decode((await c.kit.artifacts.source(c.admin, assessment.slice(4)))!.bytes!));
   assert.deepEqual([assessed.seat, assessed.command, assessed.state, assessed.actual, assessed.expected], ['synthetic-1', 'inspect peers', 'residue', [LEAKED], []]);
   assert.ok(new TextDecoder().decode((await c.kit.artifacts.source(c.admin, original.slice(4), { consumer: 'function' }))!.bytes!).includes('DO_NOT_DISCLOSE_REMOTE_VALUE'));
-  // The dispatch stops at the same finding: nothing is submitted, the lease is given back, no intent is written.
   const dispatched = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(dispatched.outcome, 'not_dispatched'); assert.equal(dispatched.frozen, false);
   assert.deepEqual(dispatched.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-1', 'residue-1']]);
@@ -212,7 +208,6 @@ test('residue on one seat stops the precheck and the dispatch with a statement t
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
   assert.ok(c.calls.includes('close_slot'));
   assert.equal((await c.service.journal.events(dispatched.job)).some(e => e.body.detail.phase === 'intent'), false);
-  // Nothing was submitted and no intent was written, so once the administrator has cleaned the device the same run dispatches.
   dirty = false;
   const again = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(again.outcome, 'effective', JSON.stringify(again));

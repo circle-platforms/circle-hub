@@ -1,14 +1,10 @@
-// Current-schema, offline selection. No previous schema or business-data conversion is supported here.
 import { RESET_DATA_SCOPE } from '../../../contracts/api.ts';
 import { ResourceRecord, ResourceId, ExecutorSource } from '../../../contracts/src/resources.ts';
-import { SCHEMA_REGISTRY } from '../../../contracts/src/index.ts';
-import { SpaceTreeNode } from '../../../contracts/src/spaces.ts';
-import { sha256Hex, canonicalize } from '../../records/api.ts';
+import { sha256Hex } from '../../records/api.ts';
 import { quoteIdentifier, type SqlSession } from '../../platform/api.ts';
 import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordScopes, resourceDefinitionReferences, selectCurrentRecords, type CurrentRecord, type CurrentReference, type RecordSelection } from './selection.ts';
 import { resetScopes, type ResetRequest, type ResetProblem, type ResetCount, type ResetDataScope } from './types.ts';
 
-// Each whole-table choice comes from the current table's responsibility, never its spelling.
 const TABLE_SCOPES: Readonly<Record<string, ResetDataScope>> = {
   users: 'config', tokens: 'config', oauth_clients: 'config', invitations: 'config', user_history: 'config',
   teams: 'config', team_members: 'config', leases: 'config', lease_registrations: 'config', member_deletion_intents: 'config',
@@ -61,7 +57,7 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
   const objectScopes = new Map<string, readonly ResetDataScope[]>(), objectReferences = new Map<string, readonly CurrentReference[]>();
   for (const row of await session.query('SELECT sha256 FROM objects')) {
     objectScopes.set(String(row.sha256), []);
-    objectReferences.set(String(row.sha256), []); // Immutable object bytes are retained; typed containers below add their formal edges.
+    objectReferences.set(String(row.sha256), []);
   }
   const blocked: ResetProblem[] = [];
   for (const [position, record] of records.entries()) {
@@ -73,7 +69,6 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
         const bytes = await readObject(body.bound); if (!bytes || sha256Hex(bytes) !== body.bound) throw new Error();
         const value = JSON.parse(Buffer.from(bytes).toString('utf8'));
         const parsed = ResourceId.safeParse(body.object).success ? ResourceRecord.parse(value) : ExecutorSource.parse(value);
-        const resource = rowObject(parsed);
         if (ResourceId.safeParse(body.object).success) { const edges = resourceDefinitionReferences(parsed); if (edges === null) throw new Error(); objectReferences.set(body.bound, edges); }
       } catch { blocked.push({ table: 'records', row: position + 1, reason: '配置定义的当前模式或对象身份不能核对', nextAction: '恢复当前定义对象后重试；程序不会猜测引用' }); }
     }
@@ -117,7 +112,6 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
   return state;
 }
 
-/** Existing FK constraints are facts. A retained child pointing at a cleared parent blocks before service stop. */
 export async function checkForeignKeySelection(session: SqlSession, state: CurrentResetState): Promise<void> {
   const keys = await session.query(`SELECT c.conrelid::regclass::text AS child,c.confrelid::regclass::text AS parent,
     ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY x(attnum,n) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=x.attnum ORDER BY x.n) AS child_columns,
@@ -138,7 +132,6 @@ export async function checkForeignKeySelection(session: SqlSession, state: Curre
   }
 }
 
-/** Only an owner connection to the offline clone may call this. Runtime grants and the baseline never change. */
 export async function clearOfflineSelection(session: SqlSession, state: CurrentResetState): Promise<void> {
   if (state.blocked.length) throw new Error('当前选择仍有未闭合的引用，不执行清除');
   await session.query('BEGIN');
@@ -152,7 +145,6 @@ export async function clearOfflineSelection(session: SqlSession, state: CurrentR
   } catch { await session.query('ROLLBACK'); throw new Error('离线重建未完成；目标约束或权限拒绝操作，原库未改'); }
 }
 
-/** Check all actual composite foreign keys after constructing the offline destination, without disabling runtime checks. */
 export async function assertCurrentForeignKeys(session: SqlSession): Promise<void> {
   const keys = await session.query(`SELECT child.relname AS child,parent.relname AS parent,
     ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY x(attnum,n) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=x.attnum ORDER BY x.n) AS child_columns,

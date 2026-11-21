@@ -358,9 +358,6 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
       for (const overload of overloads) {
         const summary = attribute(overload.item, 'help_string');
         if (summary !== '') summaries.add(summary);
-        // The access level the tree declares for the command (user_level), by its native name: which prompt accepts the
-        // command is decided by whoever knows the prompts (the runner contract), never from the name here.
-        const level = attribute(overload.item, 'user_level');
         for (const [argumentIndex,args] of overload.argumentLists.entries()) {
           fragments.push({ parser: PARSER, selector: overload.selector });
           if (args.length > MAX_PARAMS) return invalid('参数数量超过完整解析限额',overload.selector,'arguments');
@@ -370,10 +367,9 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
           const expanded = expand(complete, String(fragments.length), where, warnings);
           if (expanded.length === 0) return invalid('联合类型展开超过完整解析限额',overload.selector,'arguments');
           signatures.push(...expanded);
-          for(const signature of expanded)declarations[signature.id!]={selector:overload.argumentSelectors[argumentIndex],parameters:complete.map(param=>({name:param.nativeType,selector:param.selector,native:param.sourceNative})),...(level!==''?{access:{name:level,selector:overload.selector}}:{})};
+          for(const signature of expanded)declarations[signature.id!]={selector:overload.argumentSelectors[argumentIndex],parameters:complete.map(param=>({name:param.nativeType,selector:param.selector,native:param.sourceNative}))};
           lines.push([where, ...complete.map((param) => param.label)].join(' '));
           if (summary !== '') lines.push(`  ${summary}`);
-          if (level !== '') lines.push(`  级别：${level}`);
           for (const param of complete){if (param.description !== undefined) lines.push(`  ${param.name}: ${param.description}`);for(const gap of param.alternatives[0].unchecked_constraints??[])lines.push(`  ${param.name} 约束未核对：${gap.path}；缺失事实：${gap.missing}；下一步：${gap.next_action}`);}
         }
       }
@@ -412,4 +408,4 @@ export default function commandTree(input: unknown): CommandTreeResult {
 }
 
 /** Attach immutable source declarations after the producer receives the original tree digest. */
-export function bindCommandSource(entries:ProducedEntry[],source:string,byPath:DeclarationsByPath={}):ProducedEntry[]{return entries.map(entry=>{const own=entry.path===null?undefined:byPath[entry.path];if(!isRecord(entry.data)||!Array.isArray(entry.data.signatures)||!isRecord(own))return entry;const declarations=own;return {...entry,data:{...entry.data,signatures:(entry.data.signatures as CatalogSignature[]).map(signature=>{const d=declarations[signature.id??''];if(!isRecord(d)||typeof d.selector!=='string'||!Array.isArray(d.parameters))return signature;const parameters=d.parameters;const access=isRecord(d.access)&&typeof d.access.name==='string'&&d.access.name.length>0&&typeof d.access.selector==='string'?{access:{name:d.access.name,declaration:'src:'+source+'/xml@1/'+d.access.selector,grammar:'famx-command-tree@2'}}:{};return {...signature,reference:'src:'+source+'/xml@1/'+d.selector,...access,params:signature.params.map((p,index)=>{const raw=parameters[index];return isRecord(raw)&&raw.native!==false&&typeof raw.name==='string'&&raw.name.length>0&&typeof raw.selector==='string'&&p.type!==undefined?{...p,native_type:{name:raw.name,declaration:'src:'+source+'/xml@1/'+raw.selector,grammar:'famx-command-tree@2'}}:p;})};})}};});}
+export function bindCommandSource(entries:ProducedEntry[],source:string,byPath:DeclarationsByPath={}):ProducedEntry[]{return entries.map(entry=>{const own=entry.path===null?undefined:byPath[entry.path];if(!isRecord(entry.data)||!Array.isArray(entry.data.signatures)||!isRecord(own))return entry;const declarations=own;return {...entry,data:{...entry.data,signatures:(entry.data.signatures as CatalogSignature[]).map(signature=>{const d=declarations[signature.id??''];if(!isRecord(d)||typeof d.selector!=='string'||!Array.isArray(d.parameters))return signature;const parameters=d.parameters;return {...signature,reference:'src:'+source+'/xml@1/'+d.selector,params:signature.params.map((p,index)=>{const raw=parameters[index];return isRecord(raw)&&raw.native!==false&&typeof raw.name==='string'&&raw.name.length>0&&typeof raw.selector==='string'&&p.type!==undefined?{...p,native_type:{name:raw.name,declaration:'src:'+source+'/xml@1/'+raw.selector,grammar:'famx-command-tree@2'}}:p;})};})}};});}

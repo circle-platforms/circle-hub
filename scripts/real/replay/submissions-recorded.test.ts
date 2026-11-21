@@ -1,5 +1,3 @@
-// The export folder a replay reads: its index is checked against every file it names, a validation result is paired with the
-// submission whose digest it carries, and what the export cannot pair is told apart. Synthetic files only.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';

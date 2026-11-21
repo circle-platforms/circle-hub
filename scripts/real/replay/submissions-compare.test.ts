@@ -1,5 +1,3 @@
-// The comparison of a recorded and a replayed validation result: only the listed normalizations are applied, each is counted,
-// and every other difference (down to one word of one message) is reported under its field. Synthetic results only.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { compareResults, describeDiff, groupDiffs, normalizationRules, stable, type Json } from './submissions-compare.ts';

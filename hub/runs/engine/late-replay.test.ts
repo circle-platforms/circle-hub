@@ -1,6 +1,3 @@
-// W06 R[7] (decision 179), replay: an effect replay of an accepted result reads the stage result that result recorded in
-// locks.late, never the stage run's latest, and a recorded overlay digest the recorded references do not give again is an
-// error, not a new result. Synthetic packs, temporary PostgreSQL.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
@@ -24,7 +21,6 @@ test('a replay reads the recorded stage result and refuses an overlay digest it 
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
     const stored = (await w.h.service.getResult(w.h.alice, consume.run))!;
     assert.deepEqual(stored.result.locks.late?.inputs, [{ slot: 'stage', run: stage.run, reference: 'rec:' + first.record }]);
-    // The stage run accepts its second case afterwards; the replay still reads the result the validation used.
     await w.submitStage(stage.run, [ITEM.one, ITEM.two]);
     const deps = { records: w.h.kit, workflows: w.h.workflows, packs: w.h.packs, knowledge: w.h.knowledge, external: w.h.external, sandbox: { requireOsIsolation: false } };
     const input = { run: consume.run, submission: stored.result.submission, result: stored.record, checks: ['aligned'] };
@@ -33,7 +29,6 @@ test('a replay reads the recorded stage result and refuses an overlay digest it 
     assert.equal(byItem.get(ITEM.one)?.verdict, 'support');
     assert.equal(byItem.get(ITEM.two)?.verdict, 'unknown');
     assert.equal(byItem.get(ITEM.two)?.reason, 'awaiting_step');
-    // A stored result whose overlay digest the recorded references do not give again.
     const forged = await putResult(w.h.kit.store, { ...stored.result, locks: { ...stored.result.locks, late: { ...stored.result.locks.late!, refresh: '0'.repeat(64) } } }, new Date().toISOString());
     await assert.rejects(recheckEffectChecks(deps, { ...input, result: forged.digest }), /重放的晚绑定覆盖与记录不符/);
   } finally { await w.close(); }

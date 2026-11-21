@@ -31,7 +31,6 @@ export interface Normalized {
   need: BedNeed;
   bed: string | null;
   addresses: { segment: string; count: number } | null;
-  /** The booking run's id (release, help and read; required there, ignored elsewhere). */
   booking: string | null;
   reason: string;
   devices: string[] | null;
@@ -52,7 +51,7 @@ export interface PlanFailure {
 }
 
 
-export const ACTION_LABEL: Record<Action, string> = { search: '搜索自动化测试环境', facts: '环境事实', help: '问设备所问位置', read: '读设备输出', acquire: '预订自动化测试环境', release: '释放预订', register:'登记自动化测试环境', unregister:'注销自动化测试环境', force_release:'强制释放' };
+export const ACTION_LABEL: Record<Action, string> = { search: '搜索自动化测试环境', facts: '环境事实', help: '问设备命令行', read: '读设备输出', acquire: '预订自动化测试环境', release: '释放预订', register:'登记自动化测试环境', unregister:'注销自动化测试环境', force_release:'强制释放' };
 
 export function isAction(value: unknown): value is Action {
   return typeof value === 'string' && Object.hasOwn(ACTION_LABEL, value);
@@ -383,7 +382,6 @@ export interface HelpPlan {
   conclusion: string;
 }
 
-/** The device of a question or a read among the keys the frozen lease view marks mine: exactly one bed of the lineage holds it, and the inventory still lists it. */
 function heldDevice(beds: ManifestBed[], normalized: Normalized, frozen: FrozenLeases | undefined, words: { code: string; verb: string }): { ok: true; bed: string; key: string; device: string } | { ok: false; failure: PlanFailure } {
   const device = normalized.device ?? '';
   const held = heldKeys(frozen).flatMap((key) => {
@@ -421,7 +419,6 @@ export interface ReadPlan {
   conclusion: string;
 }
 
-/** The read plan: one read-only command line for one device the lineage holds; what the device prints is the Hub's observation, not part of the conclusion. */
 export function readPlan(beds: ManifestBed[], normalized: Normalized, frozen: FrozenLeases | undefined): { ok: true; plan: ReadPlan } | { ok: false; failure: PlanFailure } {
   const held = heldDevice(beds, normalized, frozen, { code: 'test-bed.bad_read', verb: '读' });
   if (!held.ok) return held;

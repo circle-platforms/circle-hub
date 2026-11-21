@@ -140,7 +140,6 @@ test('an unrestored bed keeps the reported pass, attaches the diff, and blocks t
   assert.equal(blocked.outcome, 'not_dispatched');
   assert.match(blocked.missing_fact ?? '', /该床尚未恢复/);
   assert.match(blocked.next_action ?? '', /由合成管理员按 synthetic-clear-addresses 处理后重开/);
-  // a member-safe reason and the named actor travel with the refusal (no device echo line in it)
   assert.match(blocked.member_missing_facts?.[0]?.fact ?? '', /配置或残留不符合本次核对依据.*来源探针 addresses/);
   assert.match(blocked.member_missing_facts?.[0]?.next_action ?? '', /测试环境管理员/);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);

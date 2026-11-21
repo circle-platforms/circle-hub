@@ -1,5 +1,3 @@
-// The delivery directory at the end of a compile run, against a synthetic Hub stub only: a whole-volume dispatch with one
-// failure, then the pass volume dispatched on its own (the final verification).
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -23,26 +21,16 @@ const CASES = ['990000000000000101', '990000000000000102', '990000000000000103',
 const contract = Buffer.from(JSON.stringify(CONTRACT_DOC)), profile = Buffer.from(JSON.stringify(PROFILE_DOC)), inventory = Buffer.from(JSON.stringify(MANIFEST_DOC));
 const log = Buffer.from('合成日志：第 3 步断言没有命中\n');
 
-/** A satisfied plan run over `autoids` under this file's booking and recomposition (testing/plan-run.ts). */
 const planRun = (run: string, autoids: string[], exclude: string[], pause?: string, contractBytes: Uint8Array = contract) => planRunFixture({ run, autoids, exclude, pause, contract: contractBytes, profile, inventory, predecessor: BOOKING, recomposed: RECOMPOSED });
 const plan1 = planRun(PLAN1, CASES.slice(0, 3), [CASES[3]]);
 const plan2 = planRun(PLAN2, [CASES[0], CASES[2]], [CASES[1], CASES[3]]);
-// The knowledge root the plan runs locked, as the Hub gives it in one batch (a head line, then one node a line), with one manual row.
 const ROOT = String(plan1.record.root), ENTRY = `tree:${ROOT}/manual/guide/names@${'1'.repeat(64)}`, MANUAL = '| peer_name | 合成参数说明：特殊字符仅支持“._-”。 |';
 const lockedRoot = (run: string, root: string) => {
   const nodes = [{ path: '/manual/guide/names', children: [], entries: [{ entry: '1'.repeat(64), kind: 'behaviour', statement: MANUAL, reference: ENTRY, data: {} }] }];
   return Buffer.from([{ schema: 'run-knowledge@1', run, root, composition: null, nodes: nodes.length, entries: 1 }, ...nodes].map((line) => JSON.stringify(line)).join('\n') + '\n');
 };
-// The plan run that held CASES[3] before the model left it out of the others.
 const GAP = 'run_01777777777777777777777777', LATER = 'run_01888888888888888888888888', GAP_WORDS = '合成缺失事实：配置命令的逆操作不在锁定树里', SPENT_WORDS = '合成：缺少修复后符合要求的产物（修复轮数用完）';
 type Gap = 'recorded' | 'exhausted' | 'skipped' | 'skipped-spent' | 'shadowed' | 'workbook' | 'unsubmitted' | 'none';
-/**
- * The Hub left the plan of CASES[3] pending on a missing fact with a request (`recorded`), without an accepted plan after the
- * repair rounds (`exhausted`), handed in as skipped while rounds are left (`skipped`) or after the other items of the run used
- * them up (`skipped-spent`), on the missing workbook only (`workbook`), or never accepted a submission (`unsubmitted`). A
- * skipped item is recorded as the Hub records it: skip_reason on the entry, repair_exhausted on the plan slot (which has no
- * rounds of its own) and declared_skip on every other requirement.
- */
 function gapRun(kind: 'recorded' | 'exhausted' | 'skipped' | 'skipped-spent' | 'workbook' | 'unsubmitted', run = GAP) {
   const p = planRun(run, [CASES[3]], []);
   const exit = (request_kind: string) => ({ action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-09T00:00:00.000Z', request_kind });
@@ -64,7 +52,6 @@ function gapRun(kind: 'recorded' | 'exhausted' | 'skipped' | 'skipped-spent' | '
 const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/${k}`, fields: { case_id: autoid, atoms: [{ id: 'a1', kind: 'intent', content: `合成意图 ${k + 1}`, after: [] }, { id: 'a2', kind: 'action', content: '合成动作', after: [] }, { id: 'a3', kind: 'expectation', content: '合成期望', after: ['a2'] }] } })) };
 const job = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, verdicts: string[]) => ({ job: id.repeat(64), verification_run: run, plan_run: plan, items, sha256: sha256(workbook), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}`, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(log)}` } } : {}) })) });
 
-/** A synthetic Hub: the verification runs in `order` (default: every one, in insertion order) stand in the lineage booking → plan run → verification run, each started after the one before. */
 async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = [], gap: Gap = 'recorded', knowledge: 'served' | 'absent' | 'tampered' | 'other-root' = 'served', recomposeRecord: Record<string, unknown> = recomposed, sourceBehavior?: {sha:string; mode:'absent'|'tampered'}) {
   const all: Record<string, unknown[]> = { [WHOLE]: [job('a', WHOLE, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0], CASES[2]], finalWorkbook, finalVerdicts)], ...extraJobs };
   const runsInOrder = order ?? Object.keys(all);
@@ -72,7 +59,6 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
   const plans: Record<string, ReturnType<typeof planRun>> = { [PLAN1]: plan1, [PLAN2]: plan2, ...extraPlans };
   const planOfRun = (run: string) => (jobs[run][0] as { plan_run: string }).plan_run;
   const at = (k: number) => `2026-11-08T0${Math.floor(k / 60)}:${String(k % 60).padStart(2, '0')}:00.000Z`;
-  // The lineage: each plan run under the booking, or (chain) under the verification run before it, as a rework may name either.
   const records: Record<string, Record<string, unknown>> = { [BOOKING]: { run: BOOKING, pack: 'test-bed@1.0.0', started_at: at(0), predecessor: null, parameters: {}, sources: [] } };
   let previous: string | null = null, k = 1;
   for (const run of runsInOrder) {
@@ -94,7 +80,6 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
     previous = run;
   }
   if (gap !== 'none') { const g = gapRun(gap === 'shadowed' ? 'recorded' : gap); records[GAP] = { ...g.plan.record, started_at: '2026-11-08T00:00:30.000Z', predecessor: BOOKING }; if (g.submitted) plans[GAP] = g.plan; }
-  // A later plan run that holds the case but was never answered judged no plan, so the earlier record still stands.
   if (gap === 'shadowed') records[LATER] = { ...gapRun('unsubmitted', LATER).plan.record, started_at: '2026-11-08T00:00:40.000Z', predecessor: BOOKING };
   const successors: Record<string, unknown[]> = {};
   for (const record of Object.values(records)) if (typeof record.predecessor === 'string') (successors[record.predecessor] ??= []).push({ run: record.run, pack: record.pack, started_at: record.started_at, predecessor: record.predecessor, parameters: record.parameters, sources: (record.sources as Array<{ slot: string; reference: string }>).map((s) => ({ slot: s.slot, reference: s.reference })) });
@@ -131,7 +116,6 @@ async function outputOf(run: () => Promise<number>) {
   try { return { code: await run(), stdout: out.join(''), stderr: err.join('') }; } finally { process.stdout.write = stdout; process.stderr.write = stderr; }
 }
 async function notes(cases: Record<string, unknown>) { const dir = await mkdtemp(join(tmpdir(), 'cc-notes-')); const path = join(dir, 'notes.json'); await writeFile(path, JSON.stringify({ cases })); return path; }
-// CASES[1] failed once and closes as a defect candidate quoting its author's expectation and the device verbatim.
 const CANDIDATE = { repro: '合成复现：照第 1 步配置后读第 3 步输出', expected: '合成期望', actual: '第 3 步断言没有命中' };
 const NOTES = { [CASES[1]]: { judged: '合成判断：计划写错', remedy: '合成修法：改计划后重跑', evidence: '第 3 步断言没有命中', defect_candidate: CANDIDATE }, [CASES[3]]: { judged: '合成判断：缺事实', remedy: '合成取舍：等补证' } };
 const run = (h: { url: string }, notesPath: string, out: string, runs = `${WHOLE},${FINAL}`, retry?: Parameters<typeof main>[3], extraArgs: string[] = []) => outputOf(() => main(['--hub', h.url, '--runs', runs, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', out, '--name', '合成批', ...extraArgs], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z'), {sourceCacheDirectory:false,...retry}));
@@ -168,6 +152,7 @@ test('mixed verdicts and absent case notes remain local while workbook identity 
   const partial = await run(mixed, await notes(NOTES), mixedOut);
   assert.equal(partial.code, 1, partial.stderr);
   assert.ok(JSON.parse(partial.stdout).hints.some((hint:{autoid:string})=>hint.autoid===CASES[2]));
+  assert.match(JSON.parse(partial.stdout).message, /^交付目录还缺 \d+ 项（见 hints）：逐条补齐后在新的输出目录重跑 assemble-delivery\.ts，这次的 reply 不作最后回复$/);
   const mixedSummary = JSON.parse(await readFile(join(mixedOut, 'delivery.json'), 'utf8'));
   assert.equal(mixedSummary.pass_volume, null);
   assert.ok(mixedSummary.cases[0].pending.length);
@@ -187,7 +172,6 @@ test('mixed verdicts and absent case notes remain local while workbook identity 
 
 test('a recent pass outside a verified volume leaves case-local pending eligibility and an all-fail dispatch has no pass volume', () => {
   const d = (run: string, items: string[], verdicts: string[]) => ({ run, job: 'j-' + run, plan_run: PLAN1, sha256: 'c'.repeat(64), items, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k] })) });
-  // Run 15's shape: the passes ran together, one was rerun alone and passed; the volume that ships must hold every recent pass.
   const partial = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass']), d(FINAL, [CASES[0]], ['pass'])]);
   assert.deepEqual(partial.pass?.items, [CASES[0]]); assert.ok(partial.cases[2].pending?.length); assert.equal(partial.cases[2].history.at(-1)?.terminal, 'pass');
   const together = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass']), d(FINAL, [CASES[0], CASES[2]], ['pass', 'pass'])]);
@@ -200,7 +184,6 @@ test('a recent pass outside a verified volume leaves case-local pending eligibil
 });
 
 test('cases that last failed in different dispatches go into the unsuccessful volume each with the plan it last ran', async (t) => {
-  // The shape of a real run: one case fails in the whole-volume dispatch, another only after a rework, then the pass volume alone.
   const [REWORK, FINAL2, PLAN3, PLAN4] = ['run_01ffffffffffffffffffffffff', 'run_01gggggggggggggggggggggggg', 'run_01hhhhhhhhhhhhhhhhhhhhhhhh', 'run_01jjjjjjjjjjjjjjjjjjjjjjjj'];
   const plan3 = planRun(PLAN3, [CASES[0], CASES[2]], [CASES[1], CASES[3]]);
   const plan4 = planRun(PLAN4, [CASES[0]], [CASES[1], CASES[2], CASES[3]]);
@@ -248,13 +231,11 @@ test('later verification updates whole-volume eligibility and preserves other re
   const dispatches = [WHOLE, FINAL].map((r, k) => ({ run: r, job: String(k).repeat(64), plan_run: [PLAN1, PLAN2][k], sha256: '0'.repeat(64), items: k ? [CASES[0], CASES[2]] : CASES.slice(0, 3), rows: (k ? [CASES[0], CASES[2]] : CASES.slice(0, 3)).map((item, i) => ({ item, dynamic_terminal: k || i !== 1 ? 'pass' : 'fail' })) }));
   const rerun = { run: 'run_01pppppppppppppppppppppppp', job: '7'.repeat(64), plan_run: PLAN6, sha256: sha256(plan6.workbook), items: [CASES[0], CASES[1]], rows: [{ item: CASES[0], dynamic_terminal: 'fail' }, { item: CASES[1], dynamic_terminal: 'fail' }] };
   const failedAgain = assemble(CASES, [...dispatches, rerun]); assert.equal(failedAgain.pass, null); assert.equal(failedAgain.cases[0].status, 'failed'); assert.ok(failedAgain.cases[2].pending?.length);
-  // A later try that reruns the pass volume, passes it again and fails only the case it added leaves the pass volume standing.
   const retry = { ...rerun, run: 'run_01qqqqqqqqqqqqqqqqqqqqqqqq', items: [CASES[0], CASES[2], CASES[1]], rows: [{ item: CASES[0], dynamic_terminal: 'pass' }, { item: CASES[2], dynamic_terminal: 'pass' }, { item: CASES[1], dynamic_terminal: 'fail' }] };
   const settled = assemble(CASES, [...dispatches, retry]);
   assert.equal(settled.pass?.run, FINAL);
   assert.deepEqual(settled.unsuccessful?.items, [CASES[1]]);
   assert.equal(settled.unsuccessful?.sources[CASES[1]].run, retry.run);
-  // A later volume that passed whole while recent passes stay outside it is not a delivery: they go to the bed together first.
   const extra = { ...retry, run: 'run_01rrrrrrrrrrrrrrrrrrrrrrrr', items: [CASES[1]], rows: [{ item: CASES[1], dynamic_terminal: 'pass' }] };
   const last = assemble(CASES, [...dispatches, retry, extra]); assert.equal(last.pass?.run, extra.run); assert.deepEqual(last.cases.filter(c => c.pending?.length).map(c => c.autoid), [CASES[0], CASES[2]]);
 });
@@ -269,13 +250,12 @@ test('the verification runs the model left out are found in the Hub lineage, and
   assert.deepEqual(printed.runs, [WHOLE, FINAL]);
   assert.deepEqual(printed.added_runs, [WHOLE]);
   const replyLines = printed.reply.split('\n');
-  // what the person asked for: how many cases the document holds, how many succeeded, how many did not and why, and where the workbook is
   assert.deepEqual(replyLines.slice(0, 4), ['原始脑图共 4 条用例：生成成功 2 条，失败 2 条。', `自动化用例 Excel：${join(out,'case.xlsx')}`, '', '失败的 2 条：']);
   assert.equal(replyLines[4], '- 原始用例 990000000000000102 合成用例 102：上机 1 次，原始用例的期望与设备输出不一致（模型的判断，未经确认）。原因：期望“合成期望”，设备实际输出“第 3 步断言没有命中”。');
   assert.match(replyLines[5], /^- 原始用例 990000000000000104 合成意图 4：缺少脚本编写所需的资料，没有上机。原因：缺资料，缺少：.+。模型的分析：合成判断：缺事实。$/);
   assert.deepEqual(replyLines.slice(6), ['', `失败用例的详细说明：${join(out,'unsuccessful_cases.md')}`, `失败用例的 Excel（没有整卷上机验证）：${join(out,'unsuccessful_cases.xlsx')}`, `交付报告：${join(out,'delivery_report.md')}`]);
-  // the cases that succeeded are not listed one by one, and nothing of how the Hub records a result is said
   assert.doesNotMatch(printed.reply, /合成用例 101|合成用例 103|状态未|判断正确|判断错误|决定者|目标自报|设备自报|不升级观察性质|Hub|运行器|下一步/);
+  assert.deepEqual([printed.hints, printed.message], [[], '交付目录已组好：最后回复原样用 reply，不另加表格或逐条重述'], 'the answer names the next step: the reply is the closing answer');
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /原因：缺资料.*下一步：由使用者处理具名请求，期限 2026-11-09 09:00/);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.added_runs, [WHOLE]);
@@ -283,7 +263,6 @@ test('the verification runs the model left out are found in the Hub lineage, and
 });
 
 test('a verification run whose job ended before anything went to the bed is no run of the cases, and the lineage skips it', async (t) => {
-  // Run 16: a Hub fault stopped a job in its pre-dispatch device probe; it ended as not dispatched, and the run was verified again.
   const STUCK = 'run_01ssssssssssssssssssssssss';
   const notSent = { job: 'c'.repeat(64), verification_run: STUCK, plan_run: PLAN2, items: [CASES[0], CASES[2]], sha256: sha256(plan2.workbook), ended: 'done', outcome: 'not_dispatched', frozen: false, result: null, device_return: null, rows: null };
   const h = await hub(undefined, undefined, { [STUCK]: [notSent] }, {}, [WHOLE, STUCK, FINAL]);
@@ -330,7 +309,6 @@ test('a rework whose plan run names the previous verification run as predecessor
 });
 
 test('recorded distinct failed versions have bounded conclusions and invalid defect evidence stays case-local', async (t) => {
-  // InfoTest's closing rules: max_rounds 3 per case, a free-text environment or product judgement is not a terminal credential.
   const [R2, R3, AGAIN, PLAN7, PLAN8] = ['run_01ssssssssssssssssssssssss', 'run_01tttttttttttttttttttttttt', 'run_01vvvvvvvvvvvvvvvvvvvvvvvv', 'run_01wwwwwwwwwwwwwwwwwwwwwwww', 'run_01xxxxxxxxxxxxxxxxxxxxxxxx'];
   const judgedOnly = { ...NOTES, [CASES[1]]: { judged: '合成判断：环境缺前置', remedy: '合成取舍：本轮不返工', evidence: '第 3 步断言没有命中' } };
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
@@ -349,12 +327,10 @@ test('recorded distinct failed versions have bounded conclusions and invalid def
   assert.ok(unquotedSummary.cases[1].pending.some((fact:string)=>fact.includes('期望不是原始用例的原句；设备输出不是最近一次上机验证的原话')));
   assert.match((await run(once, await notes({ ...NOTES, [CASES[1]]: { ...NOTES[CASES[1]], defect_candidate: { repro: '合成复现' } } }), join(dir, 'c'))).stderr, /判断设备的问题时，请只写复现步骤、原始用例期望原句和设备输出三项/);
 
-  // A rerun of the same plan is not another authored round.
   const rerun = await hub(undefined, undefined, { [AGAIN]: [job('g', AGAIN, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])] }, {}, [WHOLE, AGAIN, FINAL]); t.after(rerun.close);
   assert.equal((await run(rerun, await notes(judgedOnly), join(dir, 'd'), `${WHOLE},${AGAIN},${FINAL}`)).code,0);
   assert.ok(JSON.parse(await readFile(join(dir,'d','delivery.json'),'utf8')).cases[1].pending.some((fact:string)=>fact.includes('已记录 1 份不同内容')));
 
-  // Three distinct plans of it failed: it closes as the model not finding a solution, and its judgement is reported as its own account.
   const plan7 = planRun(PLAN7, CASES.slice(0, 3), [CASES[3]], '2'), plan8 = planRun(PLAN8, CASES.slice(0, 3), [CASES[3]], '3');
   const three = await hub(undefined, undefined, { [R2]: [job('h', R2, PLAN7, CASES.slice(0, 3), plan7.workbook, ['pass', 'fail', 'pass'])], [R3]: [job('k', R3, PLAN8, CASES.slice(0, 3), plan8.workbook, ['pass', 'fail', 'pass'])] }, { [PLAN7]: plan7, [PLAN8]: plan8 }, [WHOLE, R2, R3, FINAL]); t.after(three.close);
   const out = join(dir, 'e');
@@ -370,7 +346,6 @@ test('recorded distinct failed versions have bounded conclusions and invalid def
   assert.match(report, /下一步：尚缺具名出口材料.*模型建议单列为未确认。/);
   assert.match(report, /\*\*怎么判断的\*\*（模型的失败分析，未经确认）：合成判断：环境缺前置/);
 
-  // A verbatim defect candidate closes it after one round and is shown as a candidate for arbitration.
   const candidateOut = join(dir, 'f');
   assert.equal((await run(once, await notes(NOTES), candidateOut)).code, 0);
   const candidateReport = await readFile(join(candidateOut, 'unsuccessful_cases.md'), 'utf8');
@@ -378,8 +353,7 @@ test('recorded distinct failed versions have bounded conclusions and invalid def
   assert.match(candidateReport, /模型提出的复现步骤（未确认） 合成复现：照第 1 步配置后读第 3 步输出\n\n原始用例原句，已逐字核对\n```\n合成期望\n```\n\n设备输出，已逐字核对\n```\n第 3 步断言没有命中\n```/);
 });
 
-test('a pass whose device words carry an execution-failure line its assertions do not read is no verdict, as the reference engine reviews passes', async (t) => {
-  // InfoTest batch_tools.py single-case downgrade with the contract's exec_failure_markers, read from the run log of each pass.
+test('a pass whose device words carry an execution-failure line its assertions do not read is no verdict', async (t) => {
   const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
   doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
   const marked = Buffer.from(JSON.stringify(signTypedRuntime(doc)));
@@ -387,12 +361,10 @@ test('a pass whose device words carry an execution-failure line its assertions d
   const plan7 = planRun(PLAN7, CASES.slice(0, 3), [CASES[3]], undefined, marked), plan8 = planRun(PLAN8, [CASES[0], CASES[2]], [CASES[1], CASES[3]], undefined, marked);
   const clean = Buffer.from('seat# configure widget\nseat#\n'), refused = Buffer.from('seat# configure widget\nFailed to run the synthetic command\nseat#\n');
   const read = Buffer.from('seat# configure widget\n健康检查间隔设置成功 Failed to run the synthetic command\nseat#\n');
-  // A pass carries its own run log; a failure keeps the shared log its notes quote word for word.
   const rows = (items: string[], verdicts: string[], logs: Uint8Array[]) => items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], evidence: { log: `src:${sha256(verdicts[k] === 'pass' ? logs[k] : log)}` } }));
   const jobOf = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, r: unknown[]) => ({ ...job(id, run, plan, items, workbook, items.map(() => 'pass')), rows: r });
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
   const notesPath = await notes({ [CASES[1]]: NOTES[CASES[1]], [CASES[3]]: NOTES[CASES[3]] });
-  // The final verification's pass of CASES[2] rests on a refused command: no pass volume; the case goes back to authoring (next test).
   const refusedFinal = await hub(undefined, undefined, {
     [WHOLE2]: [jobOf('m', WHOLE2, PLAN7, CASES.slice(0, 3), plan7.workbook, rows(CASES.slice(0, 3), ['pass', 'fail', 'pass'], [clean, refused, clean]))],
     [FINAL3]: [jobOf('n', FINAL3, PLAN8, [CASES[0], CASES[2]], plan8.workbook, rows([CASES[0], CASES[2]], ['pass', 'pass'], [clean, refused]))],
@@ -402,7 +374,6 @@ test('a pass whose device words carry an execution-failure line its assertions d
   assert.ok(JSON.parse(refusedRun.stdout).hints.some((hint:{autoid:string})=>hint.autoid===CASES[2]));
   const pendingSummary = JSON.parse(await readFile(join(dir, 'a', 'delivery.json'), 'utf8')); assert.equal(pendingSummary.pass_volume, null); assert.equal(pendingSummary.cases[2].dispatches.at(-1).terminal, 'no_verdict'); assert.ok(pendingSummary.cases[2].pending.length);
   assert.match(await readFile(join(dir, 'a', 'delivery_report.md'), 'utf8'), /Failed to run the synthetic command/);
-  // The same line inside the text an assertion of the case reads is exempt; a refused pass in an earlier dispatch is reported.
   const earlier = await hub(undefined, undefined, {
     [WHOLE2]: [jobOf('m', WHOLE2, PLAN7, CASES.slice(0, 3), plan7.workbook, rows(CASES.slice(0, 3), ['pass', 'fail', 'pass'], [clean, clean, refused]))],
     [FINAL3]: [jobOf('n', FINAL3, PLAN8, [CASES[0], CASES[2]], plan8.workbook, rows([CASES[0], CASES[2]], ['pass', 'pass'], [read, clean]))],
@@ -418,7 +389,6 @@ test('a pass whose device words carry an execution-failure line its assertions d
 });
 
 test('an audited device pass remains unknown after three recorded distinct versions', async (t) => {
-  // InfoTest compile_engine/nodes.py author_redispatch_disposition: failed, contradicted and broken-errored share one round cap.
   const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
   doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
   const marked = Buffer.from(JSON.stringify(signTypedRuntime(doc)));
@@ -433,7 +403,6 @@ test('an audited device pass remains unknown after three recorded distinct versi
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
   const note = { [CASES[2]]: { judged: '合成判断：删除后的重复删除报执行失败', remedy: '合成取舍：不再返工', evidence: 'Failed to run the synthetic command' }, [CASES[3]]: NOTES[CASES[3]] };
 
-  // One authored version whose pass was dropped, then the pass volume without it: refused, with the line and what to change.
   const once = await hub(undefined, undefined, { [D1]: [jobOf('p', D1, P1, whole, p1.workbook, rows(whole, all, dropped))], [LAST]: last }, { [P1]: p1, [P4]: p4 }, [D1, LAST], false, [marked, clean, refused]); t.after(once.close);
   const early = await run(once, await notes(note), join(dir, 'a'), `${D1},${LAST}`);
   assert.equal(early.code, 0,early.stderr);
@@ -443,7 +412,6 @@ test('an audited device pass remains unknown after three recorded distinct versi
   assert.equal(earlySummary.cases[2].dispatches[0].dynamic_terminal,'pass');
   assert.match(JSON.parse(early.stdout).reply,/上机 1 次，最后一次运行器报通过，这次结果没有被采用，尚不能交付。/);
 
-  // Three authored versions, one failed and two with a dropped pass: it closes as the model not finding a solution.
   const failedFirst = rows(whole, ['pass', 'pass', 'fail'], dropped);
   const three = await hub(undefined, undefined, { [D1]: [jobOf('p', D1, P1, whole, p1.workbook, failedFirst)], [D2]: [jobOf('q', D2, P2, whole, p2.workbook, rows(whole, all, dropped))], [D3]: [jobOf('r', D3, P3, whole, p3.workbook, rows(whole, all, dropped))], [LAST]: last }, { [P1]: p1, [P2]: p2, [P3]: p3, [P4]: p4 }, [D1, D2, D3, LAST], false, [marked, clean, refused]); t.after(three.close);
   const out = join(dir, 'b');
@@ -470,13 +438,10 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /原始用例 990000000000000104 合成意图 4：缺少脚本编写所需的资料，没有上机。原因：缺资料/);
   assert.ok(report.includes(`**核对结果摘要**：${GAP_WORDS}`));
-  // A later plan run that holds the case but was never answered does not hide the record of the earlier one.
   const shadowed = await hub(undefined, undefined, {}, {}, undefined, false, [], 'shadowed'); t.after(shadowed.close);
   const shadowedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
   assert.equal((await run(shadowed, await notes(NOTES), shadowedOut)).code, 0);
   assert.equal(JSON.parse(await readFile(join(shadowedOut, 'delivery.json'), 'utf8')).cases[3].missing.plan_run, GAP);
-  // The missing workbook of a plan run is no missing fact; a plan run with no accepted submission or none holding the case certifies
-  // nothing; nor does a declared skip, with rounds left or with the run's rounds used up by its other items (run 20).
   for (const gap of ['workbook', 'unsubmitted', 'none', 'skipped', 'skipped-spent'] as const) {
     const g = await hub(undefined, undefined, {}, {}, undefined, false, [], gap); t.after(g.close);
     const refusedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
@@ -566,7 +531,6 @@ test('invalid conflict quotes or unavailable citations remain case-local while w
     assert.equal(caseRow.closing, undefined, name); assert.match(caseRow.pending.join('；'), expected, name);
     assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /模型提出的手册原话.*未取得完整的逐字核对依据/);
   }
-  // A root the Hub cannot give, or gives wrong, is said as that: the claim is not called false for it.
   const broken: Array<['absent' | 'tampered' | 'other-root', RegExp]> = [
     ['absent', /Hub 无法读取脚本编写时使用的手册和命令树，原始用例与手册冲突的判断尚未核对/],
     ['tampered', /手册和命令树与保存的原件不一致，原始用例与手册冲突的判断尚未核对/],
@@ -582,7 +546,6 @@ test('invalid conflict quotes or unavailable citations remain case-local while w
       assert.equal(refused.code, 1, mode); assert.match(refused.stderr, expected, mode); await assert.rejects(readdir(out), `${mode}: nothing was written`);
     }
   }
-  // Nothing is cited, nothing is read: a delivery without the claim never asks the Hub for the root (the stub would answer 404).
   const unread = await hub(undefined, undefined, {}, {}, undefined, false, [], 'recorded', 'absent'); t.after(unread.close);
   const plain = await run(unread, await notes(NOTES), join(dir, 'plain'));
   assert.equal(plain.code, 0, plain.stderr);
@@ -623,7 +586,7 @@ test('assemble-delivery retries 503 Retry-After and ECONNREFUSED on reads and st
   await assert.rejects(readdir(out2), 'nothing written when retry budget exhausted');
 });
 
-test('--scope is refused because delivery scope cannot be narrowed from a local file at delivery time', async (t) => {
+test('a --scope option is refused: the scope of a delivery is the one frozen in the Hub runs', async (t) => {
   const h = await hub();
   t.after(h.close);
   const dir = await mkdtemp(join(tmpdir(), 'cc-scope-refused-'));
@@ -632,7 +595,7 @@ test('--scope is refused because delivery scope cannot be narrowed from a local 
   const out = join(dir, 'out');
   const refused = await run(h, await notes(NOTES), out, `${WHOLE},${FINAL}`, undefined, ['--scope', scopePath]);
   assert.equal(refused.code, 1);
-  assert.match(refused.stderr, /^参数无效：交付时不允许从本地 --scope 文件收窄范围/);
+  assert.match(refused.stderr, /^参数无效：参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次/);
   await assert.rejects(readdir(out));
 });
 
@@ -756,7 +719,6 @@ test('assemble-delivery refuses one scoped run paired with an unscoped run, and 
   assert.match(report, /990000000000000103 合成标题 3/);
   assert.match(report, /990000000000000104 合成标题 4/);
 
-  // In-scope unrun case without closure still blocks delivery even when parameters.scope is active.
   const partialScope = { words: '本次仅交付 101 与 102', cases: [CASES[0], CASES[1]] };
   const scopedSinglePlan = withScope(planRun(PLAN1, [CASES[0]], []), partialScope);
   const unclosed = await hub(
@@ -777,7 +739,6 @@ test('assemble-delivery refuses one scoped run paired with an unscoped run, and 
   const pendingCase = JSON.parse(await readFile(join(outUnclosed, 'delivery.json'), 'utf8')).cases.find((c: { autoid: string }) => c.autoid === CASES[1]);
   assert.ok(pendingCase.pending.length); assert.equal(pendingCase.closing, undefined);
 
-  // Dispatch containing an item outside the anchored scope is also refused.
   const narrowScope = { words: '只交付 101', cases: [CASES[0]] };
   const narrowedPlan = withScope(planRun(PLAN1, [CASES[0]], []), narrowScope);
   const strayDispatch = await hub(
@@ -919,8 +880,6 @@ test('every dispatched workbook digest must match its original plan even outside
 });
 
 test('a verification run the model names that never reached the bed is skipped like a discovered one, and its reason is disclosed', async (t) => {
-  // Run 31: the last verification run was refused before anything was sent (not_dispatched, three times). The model named it in
-  // --runs, as the teaching says ("至少提供最后一次上机验证对应的编号"), and the tool refused the whole delivery without a reason.
   const STUCK = 'run_01ssssssssssssssssssssssss';
   const reason = '该床尚未恢复，不能派发。来源探针 synthetic-probe';
   const next = '由bed-admin按 interactive: 同步节点配置态的清理需人工确认后执行 处理后重开';
@@ -1050,7 +1009,6 @@ test('CLI reads case-bound card decisions without changing frozen scope and leav
 });
 
 test('a delivered case whose plan stands on a checkpoint the model wrote itself says so in the reply, the report and the machine summary', async (t) => {
-  // The Hub recorded the expectation check of CASES[0] as the model's own judgment: a typed criterion no review stood behind.
   const marked = { ...plan2, result: structuredClone(plan2.result) as typeof plan2.result };
   const entry = (marked.result.partitions.delivered as Array<{ item: string; requirements: Array<{ requirement: string; claims: unknown[] }> }>).find((row) => row.item === `case-${CASES[0]}`)!;
   const grounded = entry.requirements.find((row) => row.requirement === 'expected_grounded')!;
@@ -1060,7 +1018,6 @@ test('a delivered case whose plan stands on a checkpoint the model wrote itself 
   const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
   const { code, stdout, stderr } = await run(h, await notes(NOTES), out);
   assert.equal(code, 0, stderr);
-  // the reply counts them in one line and leaves the list to the report; a case that succeeded has no line of its own
   const reply = String(JSON.parse(stdout).reply).split('\n');
   assert.ok(reply.includes('生成成功的用例里有 1 条含模型拟定的检查点（共 1 处），建议复核，逐项见交付报告。'), reply.join('\n'));
   assert.ok(!reply.some((line) => line.includes(`原始用例 ${CASES[0]} `) || line.includes(`原始用例 ${CASES[2]} `)));
@@ -1075,17 +1032,14 @@ test('a delivered case whose plan stands on a checkpoint the model wrote itself 
   assert.equal(summary.cases[2].model_checkpoints, undefined);
 });
 
-// A workbook holds several cases and the runner runs them in one test: an exception in a step ends the whole run, the cases
-// after it never begin, the gateway has neither a result row nor a log for them, and the Hub answers every case of the job
-// with no verdict. A case the run did not reach is no device attempt of its own: the delivery says so and counts nothing.
 const STOPPED = Buffer.from([
   '2026-11-17 07:08:56 #######   step2: 合成分组>合成用例 101',
   '2026-11-17 07:08:58 #######   step9: 按声明的行列结构取一格',
   '2026-11-17 07:09:03 ################# The failed check point num:   0   ####',
   '2026-11-17 07:09:03 ################# The passed check point num:   0   ####',
-  '2026-11-17 07:09:03 >       return invoke(request, logger, check_point)',
-  '2026-11-17 07:09:03 lib/test_xlsx.py:1101: in test_xlsx',
-  '2026-11-17 07:09:03 E       lib.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行',
+  '2026-11-17 07:09:03 >       return invoke(request, logger, checker)',
+  '2026-11-17 07:09:03 runner/workbook_runner.py:101: in run_workbook',
+  '2026-11-17 07:09:03 E       runner.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行',
   '2026-11-17 07:09:03 ######################      FAIL      ####################',
 ].join('\n') + '\n');
 const NOT_COMPLETE = { condition: 'result.complete', pointer: '/complete', declared_pointer: '/complete', resolved: false, present: true, actual_sha256: 'e'.repeat(64), result_definition_sha256: 'f'.repeat(64), missing_fact: '结果完整字段 /complete 尚不为 true，缺完整报告', next_action: '按该指针对照已保存原件：原件未齐时稍后 job resume；不重交' };
@@ -1099,7 +1053,7 @@ const WHY = `同一份自动化用例 Excel 中排在前面的原始用例 ${CAS
 test('the cases a stopped run did not reach are reported as not executed with the reason and the next step, and none of them counts as a device attempt', async (t) => {
   const h = await hub(undefined, undefined, { [WHOLE]: [stoppedWhole()] }, {}, [WHOLE], false, [STOPPED]); t.after(h.close);
   const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-')), out = join(dir, 'out');
-  const note = { ...NOTES, [CASES[0]]: { judged: '合成判断：取格失败，运行器中止了整本', remedy: '合成取舍：改取格条件后重新上机', evidence: 'lib.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行' } };
+  const note = { ...NOTES, [CASES[0]]: { judged: '合成判断：取格失败，运行器中止了整本', remedy: '合成取舍：改取格条件后重新上机', evidence: 'runner.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行' } };
   const { code, stdout, stderr } = await run(h, await notes({ ...note, [CASES[1]]: { judged: '合成说明', remedy: '合成下一步' } }), out, WHOLE);
   assert.equal(code, 0, stderr);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
@@ -1120,7 +1074,6 @@ test('the cases a stopped run did not reach are reported as not executed with th
   assert.ok(JSON.parse(stdout).reply.includes(`原始用例 ${CASES[2]} 合成用例 103：没有在设备上执行，无结论。`));
   assert.doesNotMatch(report, new RegExp(`原始用例 ${CASES[1]}[^\\n]*(稍后 job resume|完整字段)`), 'the Hub advice for a report that is not yet complete does not stand for a case that did not run');
 
-  // It has not been to the device: a round of it cannot be declared, as for a case never dispatched.
   const claimed = await run(h, await notes({ ...note, [CASES[1]]: { judged: '合成说明', remedy: '合成下一步', round: 1 } }), join(dir, 'claimed'), WHOLE);
   assert.equal(claimed.code, 1);
   assert.deepEqual(JSON.parse(claimed.stdout).hints.map((hint: { autoid: string; missing: string }) => [hint.autoid, hint.missing]), [[CASES[1], '本条没有到过设备，不能声明上机轮次']]);

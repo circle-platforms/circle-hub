@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import { bedFacts } from './bed.ts';
 import { renderBedFactsLines } from './authoring-brief.ts';
 
-// Synthetic bed: one device under test with a client segment and a segment nobody else is on.
 const bed = { name: 'synthetic', devices: [
   { name: 'dut0', type: 'load-balancer', ipv4: [{ address: '192.0.2.70', subnet: '192.0.2.0/24', family: 'ipv4' }, { address: '198.51.100.70', subnet: '198.51.100.0/24', family: 'ipv4' }], ipv6: [] },
   { name: 'client1', type: 'client', ipv4: [{ address: '192.0.2.11', subnet: '192.0.2.0/24', family: 'ipv4' }], ipv6: [] },

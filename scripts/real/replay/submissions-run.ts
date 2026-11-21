@@ -1,12 +1,3 @@
-// A replay of recorded validations: which of them are replayed, with what, and what came of each. The recorded side is an
-// export folder (submissions-recorded.ts), the state of the Hub is a data bundle (submissions-bundle.ts), the code under test
-// is the tree this script runs in (its hub/ and packs/), and the comparison is submissions-compare.ts.
-//
-//   faithful   each validation is replayed with the pack version it was made with, as recorded in its run, and the Hub code of
-//              the commit that stored it (the tree this runs in is that commit: --windows names which validations belong to it).
-//              Every validation is expected to come out the same: that is what shows the replay itself is faithful.
-//   candidate  every validation is replayed with the Hub code and the packs of the tree this runs in: the run is bound to the
-//              tree's pack of the same id, and each validation is classified same or changed.
 import { readdir, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { AssembledHub } from '../../../hub/server/assemble/hub.ts';
@@ -19,11 +10,9 @@ import type { RecordedExport, ValidationTask } from './submissions-recorded.ts';
 
 export type Mode = 'faithful' | 'candidate';
 
-/** The Hub release that was running during a stretch of time (UTC). */
 export interface Window {
   commit: string;
   from: string;
-  /** Exclusive; null for the release that is still running. */
   to: string | null;
 }
 
@@ -41,15 +30,12 @@ export interface ValidationOutcome {
   at: string;
   ordinal: number;
   file: string;
-  /** The Hub release (commit) that stored the recorded result, from the windows; null when none were given. */
   release: string | null;
   status: Status;
   reason?: { code: string; message: string };
   comparison?: Comparison;
-  /** Candidate mode: the run was bound to another pack version than the one it was started with. */
   rebound?: { from: string; to: string };
   cached?: boolean;
-  /** The replay's answer when it carried no validation result. */
   answer?: ReplayOutcome['answer'];
   notes: string[];
   misses: ReplayOutcome['misses'];
@@ -58,24 +44,15 @@ export interface ValidationOutcome {
 
 export interface RunConfig {
   mode: Mode;
-  /**
-   * Candidate only. `commit` (the default): every run is bound to the commit's pack of the same id, so a changed pack is what is
-   * tried. `recorded`: the runs keep the packs they were started with and only the Hub code is the commit's.
-   */
   packs?: 'commit' | 'recorded';
   recorded: RecordedExport;
-  /** Without a bundle nothing can be replayed: every validation is reported as such. */
   bundle: Bundle | null;
-  /** The code tree under test (its hub/ is what runs; its packs/ are what a candidate is bound to). */
   repo: string;
-  /** Its commit, for the report. */
   commit: string;
-  /** Faithful: the releases, and with `commit` which validations belong to this tree. Others are left to the tree of their release. */
   windows?: readonly Window[];
   only?: { runs?: readonly string[]; seqs?: readonly number[]; limit?: number };
   limits?: Parameters<typeof ReplaySession.open>[0]['limits'];
   requireOsIsolation?: boolean;
-  /** A scratch PostgreSQL cluster that is already running (tests); otherwise one is started and stopped. */
   postgres?: Parameters<typeof ReplaySession.open>[0]['postgres'];
   log?: (line: string) => void;
 }
@@ -84,9 +61,7 @@ export interface RunReport {
   mode: Mode;
   commit: string;
   outcomes: ValidationOutcome[];
-  /** Validations that belong to another release's tree (faithful) or were not selected. */
   skipped: number;
-  /** Whether each pack a replayed run was started with is reproduced by this tree. */
   packs: PackMatch[];
   notes: string[];
 }
@@ -104,7 +79,6 @@ async function runFacts(recorded: RecordedExport, run: string): Promise<RunFacts
   return body.pack === undefined || body.pack_digest === undefined ? null : { pack: body.pack, pack_digest: body.pack_digest, skills: body.skills ?? [] };
 }
 
-/** Publishes the packs of a tree that the registry does not have yet (by id and version), skills before the rest, as many passes as make progress. */
 export async function publishMissing(hub: AssembledHub, admin: Principal, repo: string, directories: readonly PackDirectory[], log: (line: string) => void): Promise<Map<string, string>> {
   await hub.records.authorizations.grantPublishRight(admin, admin.id, '回放候选提交的任务包');
   const order = ['skill', 'system', 'product', 'workflow'];
@@ -134,7 +108,6 @@ export async function publishMissing(hub: AssembledHub, admin: Principal, repo: 
   return refused;
 }
 
-/** Replays the selected validations of the recorded export and compares each with its record. */
 export async function runReplay(config: RunConfig): Promise<RunReport> {
   const log = config.log ?? (() => {});
   const notes: string[] = [];
@@ -148,7 +121,6 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
     if (foreign || !chosen) skipped += 1;
     else selected.push(task);
   }
-  // Submissions stored and never validated have no result to replay; they are named once, with the tree of their release.
   for (const entry of config.recorded.unvalidated) {
     const window = config.mode === 'faithful' && config.windows !== undefined ? windowOf(config.windows, entry.at) : null;
     const ours = config.mode === 'candidate' || config.windows === undefined || (window !== null && (window.commit.startsWith(config.commit) || config.commit.startsWith(window.commit)));
@@ -163,7 +135,6 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
   });
   const refuse = (task: ValidationTask, code: string, message: string): ValidationOutcome => make(task, { status: 'not_replayable', reason: { code, message } });
 
-  // Which packs each replayed run was started with, and whether this tree reproduces them.
   const facts = new Map<string, RunFacts>();
   for (const run of new Set(limited.map((t) => t.run))) {
     const found = await runFacts(config.recorded, run);
@@ -177,7 +148,6 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
     else notes.push(`${match.pack}：这棵代码树${match.status === 'absent' ? '没有这个版本' : `里这个版本的摘要是 ${String(match.found).slice(0, 12)}，不是记录的 ${match.digest.slice(0, 12)}`}`);
   }
 
-  // A candidate binds each run to the tree's pack of the same id.
   const binds = config.mode === 'candidate' && config.packs !== 'recorded';
   const directories = binds ? await findPackDirectories(config.repo) : [];
   const rebind = new Map<string, { pack: string; pack_digest: string }>();
@@ -288,7 +258,6 @@ export async function runReplay(config: RunConfig): Promise<RunReport> {
   return { mode: config.mode, commit: config.commit, outcomes, skipped, packs, notes };
 }
 
-/** Opens the bundle given on the command line; a folder that is not a bundle is an error, an absent argument is none. */
 export async function openOptionalBundle(dir: string | undefined): Promise<Bundle | null> {
   if (dir === undefined) return null;
   const present = await readdir(dir).then(() => true, () => false);

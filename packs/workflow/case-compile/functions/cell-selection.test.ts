@@ -157,16 +157,14 @@ test('observation or capture unknowns disclose frozen cell capabilities once per
   profile.workbook.template=(profileDocument(contract as Parameters<typeof profileDocument>[0]) as Record<string,any>).workbook.template;
   return {contract,profile};
  };
- // Case A: neither cell_inputs nor cell_methods registered -> single exact DNSSEC disclosure even with multiple observation unknowns.
  const bare=fixture(),noCell=resign(bare,doc=>{doc.runtime.block_model.output_methods=[];doc.runtime.block_model.capture_registers=false;delete doc.runtime.block_model.cell_inputs;delete doc.runtime.block_model.cell_methods;});
  const [bareOutcome]=checkContractShape(bare.subject(positiveBlocks().CAPTURE,noCell));
  assert.equal(bareOutcome?.verdict,'unknown',JSON.stringify(bareOutcome));
  const bareProblems=(bareOutcome as any).data.problems as Array<{pointer:string;message:string;verdict:string}>;
- const dnssecText='本次执行器规则未登记取格（无 cell_inputs / cell_methods）；不要改用 SELECT_CELL 或 input_register 绕过；要单格回填须等维护者发布取格入口后再开新运行';
- assert.equal(bareProblems.filter(p=>p.message===dnssecText).length,1,JSON.stringify(bareProblems));
- assert.ok(bareProblems.some(p=>p.pointer==='/blocks'&&p.verdict==='unknown'&&p.message===dnssecText));
+ const unregisteredText='本次执行器规则未登记取格（无 cell_inputs / cell_methods）；不要改用 SELECT_CELL 或 input_register 绕过；要单格回填须等维护者发布取格入口后再开新运行';
+ assert.equal(bareProblems.filter(p=>p.message===unregisteredText).length,1,JSON.stringify(bareProblems));
+ assert.ok(bareProblems.some(p=>p.pointer==='/blocks'&&p.verdict==='unknown'&&p.message===unregisteredText));
 
- // Case B: cell_inputs and cell_methods registered while capture_registers is missing -> discloses exact registered capabilities once.
  const cell=recipe(),partial=resign(cell,doc=>{doc.runtime.block_model.capture_registers=false;});
  const [partialOutcome]=checkContractShape(cell.subject(cell.slots,partial));
  assert.equal(partialOutcome?.verdict,'unknown',JSON.stringify(partialOutcome));
@@ -175,7 +173,6 @@ test('observation or capture unknowns disclose frozen cell capabilities once per
  assert.ok(partialProblems.some(p=>p.pointer==='/blocks'&&p.message==='本次执行器规则取格登记：cell_inputs=已声明；已登记 cell_methods：device0.table_cell'));
  assert.ok(!partialProblems.some(p=>p.message.includes('无 cell_inputs / cell_methods')));
 
- // Case C (negative): non-observation expectation unknown does not emit cell capability disclosure.
  const noObs=resign(bare,doc=>{doc.runtime.found_times_supported=false;});
  const timesPlan=structuredClone(positiveBlocks().OBSERVE_ASSERT);
  (timesPlan.blocks[0] as Record<string,any>).assertions[0].op='found_times';
@@ -205,7 +202,6 @@ test('checks separate unknown block gaps from downstream refutes instead of bund
  assert.ok(unknownProblems.length>=1&&unknownProblems.every(p=>p.verdict!=='refute'),JSON.stringify(unknownProblems));
  assert.ok(unknownProblems.some(p=>p.message.includes('本次执行器规则未登记取格（无 cell_inputs / cell_methods）')),JSON.stringify(unknownProblems));
 
- // Negative control: disabled block_model still returns unknown early without continuing to commandObligations refutes.
  const disabledProfile=structuredClone(profile);disabledProfile.block_model=false;
  const earlyOutcomes=checkContractShape(bare.subject(mixed,{contract,profile:disabledProfile}));
  assert.equal(earlyOutcomes.length,1,JSON.stringify(earlyOutcomes));

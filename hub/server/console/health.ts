@@ -31,7 +31,6 @@ export interface HealthPageSources {
   writer(): WriterStats | null;
 }
 const GB = 1024 ** 3;
-/** Alert-rules.md thresholds Hub can judge today (N7). */
 const LEASE_HOLD_MS = 24 * 60 * 60 * 1000;
 const BACKUP_STALE_MS = 7 * DAY_MS;
 const DISK_LOW_BYTES = 5 * GB;
@@ -468,8 +467,7 @@ interface AlertHit {
   next: string;
 }
 
-/** Alerts Hub can already judge (alert-rules A1/A8/A9/A10); missing data stays off the list, not green. */
-async function collectAlerts(ctx: PageContext, sources: HealthPageSources | undefined, summary: HealthSummary | null, background: BackgroundTotal[] | null, now: Date): Promise<AlertHit[]> {
+async function collectAlerts(ctx: PageContext, summary: HealthSummary | null, background: BackgroundTotal[] | null, now: Date): Promise<AlertHit[]> {
   const hits: AlertHit[] = [];
   if (ctx.rebuildNeeded) {
     hits.push({ id: 'A10', text: `库结构不兼容，需要重建：${ctx.rebuildNeeded.reason}`, next: '打开 /console/rebuild，按维护流程重建。' });
@@ -477,7 +475,6 @@ async function collectAlerts(ctx: PageContext, sources: HealthPageSources | unde
   try {
     const storage = await storageFacts(ctx);
     if (storage.backups === null) {
-      /* unreadable stays unknown — no alert row */
     } else if (storage.backups.count === 0) {
       hits.push({ id: 'A9', text: '尚无备份', next: '在设置页用备份命令做一份校验过的备份。' });
     } else if (storage.backups.latest_at !== null) {
@@ -486,7 +483,7 @@ async function collectAlerts(ctx: PageContext, sources: HealthPageSources | unde
         hits.push({ id: 'A9', text: `最近备份已超过 7 天（${when(storage.backups.latest_at)}）`, next: '在设置页再做备份。' });
       }
     }
-  } catch { /* storage unread → no backup alert */ }
+  } catch { }
   const disk = summary?.fields.data_free_bytes.current ?? null;
   if (disk !== null && disk < DISK_LOW_BYTES) {
     hits.push({ id: 'A9', text: `数据目录可用空间不足 ${size(DISK_LOW_BYTES)}（现 ${size(disk)}）`, next: '清理磁盘或扩大数据卷后再备份/重置。' });
@@ -515,7 +512,7 @@ async function collectAlerts(ctx: PageContext, sources: HealthPageSources | unde
           next: '核对占用运行是否仍需要；结束后释放租约。本地释放不能代替远端停止执行。',
         });
       }
-    } catch { /* lease unread → no A1 row */ }
+    } catch { }
   }
   return hits;
 }
@@ -560,7 +557,7 @@ export async function healthPage(ctx: PageContext, sources: HealthPageSources | 
   let content: Html;
   if (tab === 'alerts') {
     const background = await read('后台任务', (s) => s.traces.background(by, { since: from.toISOString(), retained }));
-    content = alertsPanel(await collectAlerts(ctx, sources, summary, background, now));
+    content = alertsPanel(await collectAlerts(ctx, summary, background, now));
   } else if (tab === 'resources') {
     const curvePoints = await curveOf();
     const crashes = (await eventsOf())?.filter((event) => event.kind === 'abnormal_exit') ?? [];

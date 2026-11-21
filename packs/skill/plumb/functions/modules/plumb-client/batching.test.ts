@@ -1,5 +1,3 @@
-// How `judgeBatched` and the refusal text behave against a stub that prices a request the way the Plumb gateway does:
-// at most 32 questions, a pair budget shared by all questions of the request, and the gateway's own error shape.
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -15,7 +13,6 @@ interface Seen {
   pairs: number;
 }
 
-/** The pairs one question expands to, as `_compile_and_run_single_judge` counts them for a choice on a noul model. */
 function pairsOf(question: { task?: string; candidates?: Array<{ name: string } | string>; criteria?: unknown }): number {
   if (question.task === 'single_cmd_judge' || question.task === 'steplist_judge' || question.task === 'match') return 1;
   const listed = question.candidates ?? (Array.isArray(question.criteria) ? question.criteria : []);
@@ -76,7 +73,6 @@ after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-/** A coarse-recall step as cmd-select-plumb asks it: candidates plus the none option, as one question per chunk of the recall. */
 function choiceQuestion(candidateCount: number): PlumbBatchQuestion {
   return {
     task: 'choice',

@@ -1,7 +1,3 @@
-// W06 R[6] exception and R[7] (decision 179): a slot declaring from_runs.after_start freezes only which run it binds. start_run
-// checks that run exists, is visible and is a run of the declared workflow, and never asks for an accepted submission; the
-// projection sees { slot, run } in its context and nothing of the run's progress. An explicit rec: binding stays frozen.
-// Synthetic packs (testing/late-packs.ts), temporary PostgreSQL.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';

@@ -1,6 +1,3 @@
-// check-record against the real Hub (round 33): for each of a set of records, what the local check reports is what the Hub's
-// validation of the same submission says. The run engine, registry, record reader and sandboxes are the real ones; the systems
-// and the model are synthetic. The local side reads only what download-run.ts would have saved (run.json, knowledge/nodes.jsonl).
 import assert from 'node:assert/strict';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -20,15 +17,9 @@ import { submissionFor } from './submit-records.ts';
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 
 type Row = { [key: string]: any };
-/** What either side says about one record, in the words the model reads. */
 interface Said { item: string; code: string; message: string }
 const order = (rows: Said[]): Said[] => [...rows].sort((a, b) => (a.item + '\0' + a.code + '\0' + a.message < b.item + '\0' + b.code + '\0' + b.message ? -1 : 1));
 
-/**
- * The Hub's own words for the item's `record` check: its errors, which carry the check's statement and code (evaluate.ts). The
- * Hub refuses a record whose data leaves the pack's schema before any check runs; it words that from the schema library's issues
- * ("... 收到的是未知类型"), which the pack cannot reproduce, so for that refusal both sides are compared at the place they name.
- */
 const SCHEMA = 'SUBMISSION_SCHEMA_VIOLATION';
 const hubSaid = (errors: Row[]): Said[] =>
   order(errors.filter((e) => e.requirement === 'record').map((e) => ({ item: e.item, code: e.code, message: e.code === SCHEMA ? String(e.path).replace(/^\/items\/\d+/, '') : e.message })));
@@ -53,7 +44,6 @@ test('check-record reports what the Hub validation says, for each of a set of re
     h.knowledge.currentRoot = async () => info;
     h.knowledge.rootOfBuild = async () => info;
     h.knowledge.rootInfo = async () => [info];
-    // The locked tree answers a selection as the Hub's knowledge does: the entries along the exact words of the selected lines.
     const view = (entries: Row[]) => createCatalogView(entries, { reference: 'tree:' + build.root + '/commands', complete: true, caseSensitive: true });
     h.knowledge.catalog = async (_root: string, _id: string, selection?: { base: string; lines: string[] }) =>
       view(selection === undefined ? f.catalog.entries : f.catalog.entries.filter((entry: Row) => selection.lines.some((line) => { const tokens = commandTokens(line); return tokens !== null && entry.words.every((word: string, index: number) => tokens[index]?.value === word && !tokens[index].quoted); })));
@@ -73,10 +63,9 @@ test('check-record reports what the Hub validation says, for each of a set of re
     h.external.put(external, { bytes: Buffer.from(map.bytes), mediaType: 'application/json' });
     const tree = (path: string) => `tree:${build.root}/commands/${path}@${'1'.repeat(64)}`;
 
-    // Each scenario is one run with two cases; the files are the lite records the model writes for the first and the second.
     const scenarios: Array<{ name: string; refusedByStructure?: boolean; files: (items: Row[]) => Row[] }> = [
       { name: 'both cite their original sentences by reference', files: ([a, b]) => [{ item: a.id, method: method(a) }, { item: b.id, method: method(b) }] },
-      { name: 'the first cites the original sentences by their words (run 33)', files: ([a, b]) => [{ item: a.id, method: method(a, a.fields.atoms.map((atom: Row) => atom.text)) }, { item: b.id, method: method(b) }] },
+      { name: 'the first cites the original sentences by their words', files: ([a, b]) => [{ item: a.id, method: method(a, a.fields.atoms.map((atom: Row) => atom.text)) }, { item: b.id, method: method(b) }] },
       { name: 'a reference outside the run, and a tree reference of another root', files: ([a, b]) => [{ item: a.id, method: method(a, ['src:' + 'e'.repeat(64) + '/kityminder@1/n/zzz']) }, { item: b.id, method: method(b, [tree('widget/pool/add'), `tree:${'d'.repeat(64)}/commands/widget@${'2'.repeat(64)}`]) }] },
       { name: 'a missing method without a way out, and a missing slot without a proposal', files: ([a, b]) => [{ item: a.id, method: { kind: 'missing', text: '无', sources: [], basis: '无' } }, { item: b.id, method: method(b), slots: [{ atom: b.fields.atoms[1].id, knowledge_location: 'genuinely_missing', evidence: [], proposal: null }] }] },
       { name: 'a parameter change the catalog allows, and a command that was dropped', files: ([a, b]) => [{ item: a.id, method: method(a), adapted: [adapted('a1', ['widget health interval pool1 6'], tree('widget/health/interval'))] }, { item: b.id, method: method(b), adapted: [adapted('a1', [], tree('widget/pool/add'), 'structural_completion')] }] },
@@ -96,7 +85,6 @@ test('check-record reports what the Hub validation says, for each of a set of re
       const frozen = stored.body as Row;
       assert.equal(frozen.items.length, 2, scenario.name);
 
-      // What download-run.ts would have saved, and the files the model writes.
       const dir = join(temp.path, `scenario-${exercised.size}`);
       await mkdir(join(dir, 'run', 'knowledge'), { recursive: true });
       await mkdir(join(dir, 'records'));
@@ -116,12 +104,10 @@ test('check-record reports what the Hub validation says, for each of a set of re
       for (const said of hub) exercised.add(said.code);
       await rm(dir, { recursive: true, force: true });
     }
-    // The run-level `full_set` check ran on both sides and sealed every complete submission.
     for (const row of sealed) {
       assert.equal(row.hub, 'support', row.name);
       assert.ok(row.local?.includes('full_set'), row.name);
     }
-    // The set is not vacuous: the Hub refused with unknowns, with each coded refusal below and with its own check error.
     for (const code of ['missing_input', 'recompose.missing_without_exit', 'recompose.command_syntax', 'recompose.atom_dropped', 'recompose.candidate_signed', SCHEMA])
       assert.ok(exercised.has(code), `no scenario drew ${code} from the Hub; drew ${[...exercised].join(', ')}`);
   } finally {

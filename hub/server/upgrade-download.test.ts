@@ -1,4 +1,3 @@
-// Actual run-export routes and real TCP backpressure: a returned handler is not a finished download.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { request, ServerResponse, type IncomingMessage } from 'node:http';
@@ -14,7 +13,6 @@ import { createApp } from './app.ts';
 
 const RUN = 'run_' + '0'.repeat(26);
 const TOKEN = 'synthetic-export-token';
-// Explicit synthetic service DTO; this HTTP fixture does not construct a records store.
 const RUN_REFERENCE = `rec:${'a'.repeat(64)}`;
 
 async function download(t: TestContext, form: 'run' | 'source', grace: number) {
@@ -55,7 +53,6 @@ async function download(t: TestContext, form: 'run' | 'source', grace: number) {
     headers.resolve(res);
   });
   req.on('error', error => { headers.reject(error); received.reject(error); }); req.end();
-  // Attach the failure branch before closing, so an intentional over-budget cutoff is observed rather than unhandled.
   const outcome = received.promise.then(bytes => ({ bytes }), error => ({ error }));
   await entered.promise;
   release.resolve();

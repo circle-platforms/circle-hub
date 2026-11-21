@@ -96,7 +96,6 @@ export function emptyAction(path: string, text: unknown, params: Record<string, 
   return html`<a class="ch-btn ch-btn--primary" href="${href(path, params)}">${text}</a>`;
 }
 
-/** The one CSRF hidden input; every console POST form uses this (or postForm from components). */
 export function csrfField(csrf: string): Html {
   return html`<input type="hidden" name="csrf" value="${csrf}">`;
 }
@@ -190,7 +189,6 @@ export function secureConsoleResponse(body:Html,policy=CONTENT_SECURITY_POLICY):
  * The ten places (decision 151: skills left the workflows place and the places stand in four groups); only the current
  * place may expand its authorized navigation.
  */
-/** Navigation place keys. The workflows place uses the key `workflows`. */
 export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'workflows' | 'skills' | 'connections' | 'records' | 'team' | 'settings' | 'health';
 /** The name of the skills place. The kind it lists keeps its vocabulary name (pack_kind skill). */
 export const SKILLS_PLACE = '技能';

@@ -1,17 +1,9 @@
-// Console sign-in state: the session cookie holds the console-session token itself (principals.openConsoleSession).
-// Every page re-authenticates that token; a revoked token or a disabled account ends the session at once. Idle time is
-// tracked in memory by token digest only (restart with no row counts as just seen). Absolute lifetime is tokens.expires_at.
-// CSRF is derived from the token (SHA-256 of a fixed label plus the token) and never stored. Login forms carry a one-time
-// nonce the server issued (also in a cookie scoped to the login path).
 import { createHash, randomBytes } from 'node:crypto';
 
 export interface ConsoleSession {
-  /** Same value as the cookie: the console-session token. */
   id: string;
   token: string;
-  /** A proxy HTTPS session cannot be replayed over direct HTTP while this process still remembers the channel. */
   secure: boolean;
-  /** CSRF token of the session's forms (derived from the token). */
   csrf: string;
   /** One response-only confirmation, set after a completed form action. Never carried by a URL. */
   notice?: string;
@@ -21,7 +13,6 @@ export interface ConsoleSession {
 
 export interface SessionLimits {
   idleMs: number;
-  /** Unused: absolute lifetime is tokens.expires_at. Kept so call sites that pass Partial<SessionLimits> still typecheck. */
   absoluteMs: number;
   nonceMs: number;
   maxSessions: number;
@@ -49,18 +40,15 @@ const CSRF_LABEL = 'circle-hub-console-csrf:';
 const secret = (): string => randomBytes(32).toString('base64url');
 const digestOf = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
 
-/** CSRF value derived from the console-session token; render and verify both recompute it. */
 export function csrfOf(token: string): string {
   return createHash('sha256').update(CSRF_LABEL + token, 'utf8').digest('base64url');
 }
 
-/** Opaque id for artifact upload origin (never the bearer token). */
 export function sessionOriginId(token: string): string {
   return digestOf(token);
 }
 
 export class SessionStore {
-  /** Token digest → last activity and the channel it was opened on. */
   readonly #idle = new Map<string, { seen: number; secure: boolean; created: number }>();
   readonly #notices = new Map<string, string>();
   readonly #nonces = new Map<string, { expires: number; secure: boolean }>();
@@ -138,15 +126,12 @@ export class SessionStore {
     const dig = digestOf(token);
     const at = this.#now();
     const prior = this.#idle.get(dig);
-    // Restart: no idle row means just seen (do not kick the browser out). Record it even on peek so idle still runs.
     if (prior === undefined) {
       this.#idle.set(dig, { seen: at, secure, created: at });
       while (this.#idle.size > this.#limits.maxSessions) this.#idle.delete(this.#idle.keys().next().value!);
       return this.#view(token, secure, at, at);
     }
     if (prior.secure !== secure) return null;
-    // Keep the idle row on timeout so a later get/peek is not mistaken for a process restart
-    // (no row → treat as just seen). Logout and open() still clear or replace the row.
     if (at - prior.seen > this.#limits.idleMs) return null;
     if (touch) {
       prior.seen = at;

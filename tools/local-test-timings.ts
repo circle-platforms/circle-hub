@@ -1,5 +1,3 @@
-// Seconds from the synthetic 31f53fb2f0 macOS baseline, used only for local scheduling.
-
 export const LOCAL_UNIT_SECONDS: Readonly<Record<string, number>> = {
   'hub/server/console-knowledge-bounds.test.ts': 214.040610,
   'packs/workflow/case-review-verify/end-to-end.test.ts': 203.097830,

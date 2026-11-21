@@ -21,7 +21,6 @@ export async function inspectReset(context: PlatformContext): Promise<ResetInspe
   return resetInspection(await diagnoseRecordsSchema({ database: { host: postgres.target.socketDir, port: postgres.target.port, database: postgres.target.database, user: postgres.target.user } }));
 }
 
-/** Quote one literal path for POSIX shells; command substitutions remain inert inside single quotes. */
 export function quoteResetDefinitionPath(path: string): string { return "'" + path.replaceAll("'", "'\"'\"'") + "'"; }
 export function resetClearsAccounts(request: ResetRequest): boolean {
   return !request.keepConfig && (request.scopes === 'all' || request.scopes.includes('config'));
@@ -29,7 +28,6 @@ export function resetClearsAccounts(request: ResetRequest): boolean {
 export function freshDefinitionNextAction(path: string): string {
   return ['circle-hub reset --scope all', 'circle-hub init-admin', 'circle-hub apply ' + quoteResetDefinitionPath(path)].join('\n');
 }
-/** All missing capabilities are checked before backup, stopping a service or archiving any database. */
 export function resetRequestProblems(inspection: ResetInspection | undefined, input: ResetRequest, ports: ResetPorts = {}, definitionPath?: string): ResetProblem[] {
   const request = parseResetRequest(input), blocked: ResetProblem[] = [];
   if (request.definitionFile && resetClearsAccounts(request)) return [{ scope: 'config',

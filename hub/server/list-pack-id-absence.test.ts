@@ -1,4 +1,3 @@
-// Exact pack_id empty list → SOURCE_ABSENT / SOURCE_NOT_PERMITTED (brief D4 A). Text rendering is D1.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { packIdAbsenceError } from './tools.ts';

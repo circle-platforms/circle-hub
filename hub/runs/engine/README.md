@@ -731,8 +731,7 @@ a held source is tried once for each request, source and set of evidence it was 
 permits one more try), and the result and the proof of a dispatch job are written once for each state of the job (outcome,
 frozen, ended, result reference, disposition), never for each line its journal gains while it runs. A scheduled round leaves
 a job whose journal grew since its last visit to the observer that is writing it (`MaintenanceMemory.watching`), and takes it
-over once for each length the journal then stands at. Records written under the earlier key, which counted the journal's lines,
-still count. An expired run with no accepted submission gets
+over once for each length the journal then stands at. An expired run with no accepted submission gets
 one append-only Hub delivery containing every frozen item as not-covered/incomplete and a named disposition request.
 A late full submission remains possible. Old runs without deadlines are not assigned invented historical deadlines: a
 named disposition request asks their runner to open a dated successor. The console shows deadline and delivery state.

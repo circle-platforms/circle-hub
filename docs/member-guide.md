@@ -18,35 +18,23 @@ nav_order: 4
 2. 使用管理员给你的 **用户名** 与 **一次性初始密码** 登录。
 3. 首次登录会强制跳转到修改密码页（`/console/password`），设置你自己的登录密码（12 至 256 个字符）。**改密完成后当前登录会话会立刻作废并让初始密码失效**，用你新设的密码再登录一次即可进入控制台。
 
-### 2. 在全新的 Circle 客户端接入 Hub（桌面版 vs 终端版）
+### 2. 在 Circle 中添加 MCP 服务器
 
-Circle 本身没有任何 Hub 专属界面，仅按普通 MCP 服务器接入；实测两种客户端做法不同：
+1. 从 Hub 控制台的个人设置（`/console/settings#mine`）或 `/console/me` 复制「连接新的客户端」卡片里的配置。这里的地址使用部署方提供的协议和端口。
+2. 在桌面版的 MCP 服务器页面添加该连接，或将配置合并到 Circle 数据目录的 `settings.json`。终端运行 `/mcp reload` 读取配置。保留 `placeholders`，供技能的本地工具使用。
+3. 按客户端的 MCP 登录提示打开授权页。下面是使用一次性邀请码授权的步骤。
 
-#### 方式 A — Circle 桌面版（推荐，无需手改配置文件）
-
-1. 若首次启动弹出「新版本说明」，先关闭弹窗；随后打开 Circle 桌面版 **设置 → 能力 → 扩展 → 界面组件**，打开 **启用 Hub 界面**（注意「运行时扩展」页签里另有一个 `启用 hub` 开关，实测只需打开「启用 Hub 界面」并进入扩展详情即可）。
-2. 点开该卡片的 **插件详情**，在「Hub 的 IP 地址」栏填入管理员给的地址（如 `<Hub主机>:<端口>`），点击 **连接**。
-3. Circle 会自动向你的配置写入带 `placeholders` 的 Hub 条目，并在右侧打开 Hub 网页授权流程（见下面「网页授权确认」；此处 3 步为逻辑环节，按页面逐级菜单点击与网页 4 个动作细计共约 12 次界面操作）。
-
-#### 方式 B — Circle 终端版（使用 `/hub` 或编辑 `settings.json` 的 `mcpServers`）
-
-1. 在终端进入你的工作目录启动 Circle，首屏按提示选择信任该工作目录。
-2. 新版 Circle 终端内置支持 `/hub` 连接命令，无需再执行 `/extensions enable hub`：
-   - 直接执行 `/hub <Hub地址>`（例如 `/hub http://<Hub主机>:<端口>` 或 `/hub http://<Hub主机>:<端口>/mcp`），或运行 `/hub` 查看连接说明。
-3. **或在 `settings.json` 的 `mcpServers` 对象中写入 `"Hub"` 条目**：
-   - 现在 Hub 控制台的 **`/console/settings#mine`** 与 **`/console/me`**（「连接新的客户端」卡片）以及管理员建号结果页均已直接提供**完整以 `"Hub"` 为键、`type: "http"` 与 `placeholders` 的 `mcpServers` 片段**，可直接复制写入 `settings.json`（确保运行技能本地工具时 `%HUB_URL%`、`%HUB_TOKEN%` 正确展开；注意按实际协议填写 `http://` 或 `https://`，使用标准 OAuth 授权流程时**切勿手加 `headers`**，带 `headers` 会绕过 OAuth）：
-     ```json
-     {
-       "mcpServers": {
-         "Hub": {
-           "type": "http",
-           "url": "http://<Hub主机>:<端口>/mcp",
-           "placeholders": { "url": "HUB_URL", "token": "HUB_TOKEN" }
-         }
-       }
-     }
-     ```
-4. 执行 `/reload`（或 `/mcp reload`，若配置仍未生效则退出重开一次 Circle 会话）让 Circle 读取配置，再执行 `/mcp` 触发登录与浏览器授权页。
+```json
+{
+  "mcpServers": {
+    "Hub": {
+      "type": "http",
+      "url": "https://hub.example.lan/mcp",
+      "placeholders": { "url": "HUB_URL", "token": "HUB_TOKEN" }
+    }
+  }
+}
+```
 
 #### 网页授权确认（三个确认环节、页面上共 4 次动作，勿被提示误导）
 

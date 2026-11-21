@@ -290,7 +290,6 @@ describe('tool shapes: zod and the published schema agree', () => {
     }
   });
   test('a recursive output object retains extensions at every depth and still checks its members', () => {
-    // Decision 180: a trace step of get_nodes observability holds child steps of its own shape.
     const step = {
       span_id: '00f067aa0ba902b7', parent_span_id: null as string | null, is_root: true, name: 'get_nodes', type: 'span',
       started_at: '2026-11-19T00:00:00.000Z', ended_at: '2026-11-19T00:00:00.010Z', duration_ms: 10 as unknown, level: 'default',
@@ -319,15 +318,11 @@ describe('tool shapes: zod and the published schema agree', () => {
   });
   test('the C7 baseline includes authorized E4 descriptions and run30 T1/T6 and run31 T8 dispatch presentation', () => {
     const hash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
-    // Decision 180 (2026-11-19, commit 27bcc53e4 ported to this line): get_nodes gains the optional observability mode and the
-    // skill_file answer, the instructions name the bundled call observability skill, and text.ts renders both.
     assert.equal(hash(JSON.stringify(published.map(({ name, inputSchema }) => ({ name, inputSchema })))), 'add0560b5800e34133a3347ece40df319269c509805d97db2938f02e9799e727');
     assert.deepEqual(TOOLS.map(({ name, input }) => ({ name, inputSchema: z.toJSONSchema(input, { target: 'draft-2020-12', io: 'input', unrepresentable: 'throw' }) })), published.map(({ name, inputSchema }) => ({ name, inputSchema })));
     assert.equal(hash(JSON.stringify(TOOLS.map(({ name, title, description }) => ({ name, title, description })))), '1cb501e66426544276347082f42c4003cadd4264c5ce3fe291cf7b2fd127b83b');
     assert.equal(hash(SERVER_INSTRUCTIONS), '735c07c7ebbf5df506b7bea6e32b86994c7486c047b77783a29ceb7c81b229a3');
-    // Owner T7/T8 (2026-11-16): run31 preserves unsent reasons; run30 #13 keeps declared refusal evidence; #25 deduplicates replies and #29 names readable choices.
-    // Decision 181 (2026-11-19): a requested device read (run.device_reads) is listed after the help answers, under the one caveat about device output.
-    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), '02fa0bc476639523f225007cda6b7b286ba972ac5fb454a28f4c3a1acfe13177');
+    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), '0aceb8deed42aecb3ba659751fefd72314532b6333300796263a8fa16706bf6e');
   });
   test('a protocol error never needs invented run, lock or digest values (D05 R[3], T03 R[3])', () => {
     const submit = TOOLS.find((t) => t.name === 'submit_result');

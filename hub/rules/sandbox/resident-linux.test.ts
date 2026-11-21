@@ -188,8 +188,6 @@ test('a round that cannot see the tree ends the call only after a second without
 test('a stall of the Hub costs a call one unobserved round, not the call (decision 116)', () => {
   let t = 0;
   const verdict = createResidentVerdict(256, 1, 3, 1_000, () => t);
-  // The Hub's own thread was held for 5 s: no round ran, the last complete measurement is 5 s old, and the round in flight
-  // timed out. That round is one unobserved round, not the evidence of a broken sampler it looked like by the clock alone.
   t = 5_000; assert.equal(verdict(null), undefined, 'the first unobserved round after the stall');
   t += 100; assert.equal(verdict(null), undefined, 'the second');
   t += 100; assert.equal(verdict(null)?.code, 'SANDBOX_UNAVAILABLE', 'the third in a row, and a second since the last complete measurement');
@@ -198,8 +196,6 @@ test('a stall of the Hub costs a call one unobserved round, not the call (decisi
 test('ordinary rounds 100 ms apart need the count and the second together', () => {
   let t = 0;
   const verdict = createResidentVerdict(256, 1, 3, 1_000, () => t);
-  // The third unobserved round in a row comes at 300 ms, when only 300 ms have passed since the last complete measurement:
-  // the count alone does not end the call. The tenth round, at one second, does.
   for (t = 100; t < 1_000; t += 100) assert.equal(verdict(null), undefined, `${t} ms`);
   t = 1_000;
   assert.equal(verdict(null)?.code, 'SANDBOX_UNAVAILABLE', 'the tenth round, a second after the last complete measurement');
@@ -212,7 +208,6 @@ for (const [seen, observation] of [['a complete measurement', 100], ['proof that
     t = 5_000; assert.equal(verdict(null), undefined, 'unobserved round 1');
     t += 100; assert.equal(verdict(null), undefined, 'unobserved round 2');
     t += 100; assert.equal(verdict(observation), undefined, seen);
-    // A whole second passes, so only the count can keep the call alive now. Had the count survived, this would be round 3.
     t += 5_000; assert.equal(verdict(null), undefined, 'unobserved round 1 again');
     t += 100; assert.equal(verdict(null), undefined, 'unobserved round 2 again');
     t += 100; assert.equal(verdict(null)?.code, 'SANDBOX_UNAVAILABLE', 'unobserved round 3 again');

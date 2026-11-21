@@ -1,20 +1,14 @@
-// The structure of one item's slot record, judged against the schema the run froze for it (run.slots.schema, the one start_run
-// hands the model), the way the Hub judges a submission before it runs a single check. The offline plan check calls this so a
-// plan the Hub refuses by shape (a claim without its text, a field the claim does not have, a count, a value of the wrong type)
-// is refused here too. Fail-closed: a schema keyword this reader does not know is reported, never skipped.
 import {isRecord} from './text.ts';
 import {fieldHomes,unknownFieldNote} from './field-homes.ts';
 import {refusalText} from './refusal-form.ts';
 
 export interface SlotRecordProblem { pointer: string; message: string }
-/** A problem while it is being collected. A refusal of unknown fields also carries which fields and which the node has, for the final pass that says where they belong. */
 interface Collected extends SlotRecordProblem { unknown?: { keys: string[]; allowed: string[] } }
 type Node=Record<string,unknown>;
 
 const KNOWN=new Set(['$schema','title','description','type','properties','required','additionalProperties','anyOf','const','enum','items','minItems','maxItems','minLength','maxLength','minimum','maximum','pattern']);
 const shown=(value:unknown):string=>JSON.stringify(value)??String(value);
 const received=(value:unknown):string=>value===undefined?'undefined':value===null?'null':Array.isArray(value)?'数组':typeof value==='string'?'字符串':typeof value==='number'?'数字':typeof value==='boolean'?'布尔值':'对象';
-/** What a schema node asks for, in the words of the Hub's own shape refusals (`"<string>"`, `<number>`, an array or an object). */
 export function renderShape(node:unknown):string{
  if(!isRecord(node))return '<any>';
  if(Array.isArray(node.enum))return node.enum.map(shown).join(' | ');
@@ -30,7 +24,6 @@ export function renderShape(node:unknown):string{
 const leaf=(node:Node):boolean=>!isRecord(node.properties)&&node.type!=='object'&&node.type!=='array';
 
 const ANNOTATION=new Set(['$schema','title','description']);
-/** The alternatives of one node: leaf alternatives are tried as a list; object alternatives are told apart by the constant their kind declares. */
 function alternatives(branches:Node[],value:unknown,at:string,out:Collected[],lead:(text:string)=>string,wrong:(expected:string)=>void):void{
  if(branches.every(leaf)){if(!branches.some(branch=>{const probe:Collected[]=[];walk(branch,value,at,probe,lead);return probe.length===0;}))wrong(renderShape({anyOf:branches}));return;}
  const discriminated=isRecord(value)?branches.find(branch=>isRecord(branch.properties)&&isRecord(branch.properties.kind)&&Object.hasOwn(branch.properties.kind,'const')&&branch.properties.kind.const===value.kind):undefined;
@@ -44,14 +37,12 @@ function alternatives(branches:Node[],value:unknown,at:string,out:Collected[],le
  out.push(...(best??[{pointer:at,message:lead(`${at} 不符合任何一种允许的形状，收到的是${received(value)}`)}]));
 }
 
-/** One value against one node; every problem is reported at its own pointer, in the Hub's wording where the Hub has one. */
 function walk(node:unknown,value:unknown,at:string,out:Collected[],lead:(text:string)=>string):void{
  if(!isRecord(node))return;
  for(const key of Object.keys(node))if(!KNOWN.has(key)){out.push({pointer:at,message:`${at} 的模式用了本地读不懂的关键字 ${key}；重新下载本次运行的完整 run.json，核对不了的部分以 Hub 回执为准`});return;}
  const wrong=(expected:string):void=>{out.push({pointer:at,message:lead(`${at} 要的是${expected}，收到的是${received(value)}`)});};
  if(Array.isArray(node.anyOf)){
   alternatives(node.anyOf.filter(isRecord),value,at,out,lead,wrong);
-  // The other keywords of the node apply as well, as in the claim schema of a requirement that asks for evidence.
   const {anyOf:_alternatives,...rest}=node;
   if(Object.keys(rest).some(key=>!ANNOTATION.has(key)))walk(rest,value,at,out,lead);
   return;
@@ -95,11 +86,6 @@ function walk(node:unknown,value:unknown,at:string,out:Collected[],lead:(text:st
  if(type!==undefined)out.push({pointer:at,message:`${at} 的模式用了本地读不懂的类型 ${shown(type)}；核对不了的部分以 Hub 回执为准`});
 }
 
-/**
- * The problems of an item's `slots` against the item-slot-record schema of the frozen run, at pointers relative to the item file
- * (`/slots/...`). Claims are read in the Hub's order for each claim (its own fields first, then its `data`), but all problems of
- * one record are reported together: the Hub names the claim's fields in one round and its data in the next.
- */
 export function slotRecordProblems(schema:unknown,slots:unknown):SlotRecordProblem[]{
  if(!isRecord(schema)||!isRecord(schema.properties))return [{pointer:'/slots',message:'冻结运行没有槽位模式（run.slots.schema），不能核对槽位记录；重新下载本次运行的完整 run.json，不手写冻结输入'}];
  const declared=Object.keys(schema.properties),out:Collected[]=[];
@@ -118,15 +104,12 @@ export function slotRecordProblems(schema:unknown,slots:unknown):SlotRecordProbl
   for(const [index,statement] of value.entries()){
    const at=`/slots/${key}/${index}`,properties=isRecord(claim.properties)?claim.properties:{};
    const { data:declaredData }=properties as Node;
-   // The claim's own fields first, then its data against the pack's schema; an absent data is judged as {} (as the Hub does).
    walk({...claim,properties,required:(Array.isArray(claim.required)?claim.required:[]).filter(name=>name!=='data')},isRecord(statement)?Object.fromEntries(Object.entries(statement).filter(([name])=>name!=='data')):statement,at,out,plain);
    if(!isRecord(statement)||declaredData===undefined)continue;
    if(statement.data!==undefined&&!isRecord(statement.data))out.push({pointer:`${at}/data`,message:plain(`${at}/data 要的是对象，收到的是${received(statement.data)}`)});
    else walk(declaredData,statement.data??{},`${at}/data`,out,inData);
   }
  }
- // A node that refused a field says what it has, where else the schema declares the name and what the other plan mode writes; the
- // Hub's own words lead, so the Hub's refusal of the same record is a prefix of this one.
  const homes=out.some(row=>row.unknown!==undefined)?fieldHomes(schema):new Map<string,readonly string[]>();
  return out.map(({unknown,...row})=>{
   if(unknown===undefined)return row;

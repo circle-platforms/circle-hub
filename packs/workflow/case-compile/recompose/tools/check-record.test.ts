@@ -9,7 +9,6 @@ import { main } from './check-record.ts';
 
 const PACK_DIR = fileURLToPath(new URL('../', import.meta.url));
 
-/** One lite record of a frozen item: the method cites the item's first original sentence by its reference, as the Hub requires. */
 type Row = { [key: string]: any };
 const lite = (row: Row, method: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
   item: row.id,
@@ -80,7 +79,6 @@ test('check-record supports --help and accepts valid single lite record and dire
 test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing item/method, duplicate item, incomplete run, and symlinks', async () => {
   const root = await mkdtemp(join(tmpdir(), 'rc-check-bad-'));
   try {
-    // 1. Invalid UTF-8 bytes
     const badUtf8 = join(root, 'bad-utf8.json');
     await writeFile(badUtf8, Buffer.from([0x7b, 0xff, 0xfe, 0x7d]));
     const rUtf8 = await runCli(['--file', badUtf8]);
@@ -88,7 +86,6 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
     assert.match(rUtf8.err, /^参数无效：/);
     assert.match(rUtf8.out, /UTF-8/);
 
-    // 2. Broken JSON syntax
     const badJson = join(root, 'broken.json');
     await writeFile(badJson, '{"item": "n/1",', 'utf8');
     const rJson = await runCli(['--file', badJson]);
@@ -96,7 +93,6 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
     assert.match(rJson.err, /^参数无效：/);
     assert.match(rJson.out, /JSON/);
 
-    // 3. Full schema misuse (recompose-record@1 / handling)
     const fullSchema = join(root, 'full.json');
     await writeFile(
       fullSchema,
@@ -112,7 +108,6 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
     assert.equal(rFull.code, 1);
     assert.match(rFull.out, /不得使用完整的 recompose-record@1 结构/);
 
-    // 4. Missing item or missing/bad method or non-array states
     const noItem = join(root, 'no-item.json');
     await writeFile(noItem, JSON.stringify({ method: { kind: 'declared' } }), 'utf8');
     assert.equal((await runCli(['--file', noItem])).code, 1);
@@ -127,7 +122,6 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
     await writeFile(badKind, JSON.stringify({ item: 'n/case1', method: { kind: 'guess' } }), 'utf8');
     assert.equal((await runCli(['--file', badKind])).code, 1);
 
-    // 5. Duplicate item across two files in directory -> category '已被占用'
     const dupDir = join(root, 'dup');
     await mkdir(dupDir);
     const same = { item: 'n/same', method: { kind: 'declared', text: '合成方法', sources: ['ref'], basis: '合成依据' } };
@@ -138,7 +132,6 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
     assert.match(rDup.err, /^已被占用：/);
     assert.match(rDup.err, /n\/same/);
 
-    // 6. --run completeness check rejects missing frozen case
     const runDir = join(root, 'run');
     const frozen = await writeFrozenRun(runDir);
     const oneDir = join(root, 'one');
@@ -148,7 +141,6 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
     assert.equal(rMissingCase.code, 1);
     assert.match(rMissingCase.out, /还有 1 条原始用例没有重组后的用例/);
 
-    // 7. Missing file and symlink refused
     const rMissing = await runCli(['--file', join(root, 'does-not-exist.json')]);
     assert.equal(rMissing.code, 1);
     assert.match(rMissing.err, /^不存在：/);
@@ -163,8 +155,6 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
   }
 });
 
-// The failure of run 33 (round 33): the model cited the original sentences by their words. check-record said ok, the Hub refused
-// every one of them. The local check now runs the Hub's own `record` check on the frozen run, so the refusal comes before submit.
 test('a method source written as the original sentence is refused locally, once for each value, with the Hub check\'s own words', async () => {
   await withFrozenRun(async ({ runDir, recDir, frozen }) => {
     const [first, second] = frozen.items;
@@ -219,7 +209,6 @@ test('a field outside the closed set the pack declares is refused before the Hub
     assert.equal(refused[0].pointer, '/slots/record/0/data/expectation_slots/0/knowledge_location');
     assert.ok(refused[0].message.includes('slots（记录里的 /expectation_slots/0/knowledge_location）：写的是 "has_knowledge"'), refused[0].message);
     assert.ok(refused[0].message.includes('"has_verification_knowledge" | "recomposable_from_elsewhere" | "genuinely_missing"'), refused[0].message);
-    // The Hub still checks the other case, and so does the local check; the whole-run check says why it did not run.
     assert.ok(report.problems.some((problem: Row) => problem.check === 'record' && problem.item === second.id));
     assert.deepEqual(report.hub_checks.not_run.map((row: Row) => row.check), ['quotes', 'full_set']);
   });

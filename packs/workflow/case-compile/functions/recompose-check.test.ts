@@ -33,7 +33,7 @@ test('recompose projection exposes fields.title from the case intent atom when p
   assert.equal(withoutIntent.title, undefined);
 });
 for (const name of ['underdetermined', 'missing-prerequisite'] as const)
-    test(name + ' goes on to the writer with its reason, as in InfoTest (decision 155)', () => { const f = fixture(name); f.record.status = 'complete'; f.record.unknowns = f.record.unknowns ?? []; const result = outcomes(f); assert.ok(!result.some(o => /^用例原句 .* 状态 /.test(o.statement)), JSON.stringify(result)); assert.ok(f.record.sources.states.some((s: any) => s.state !== 'settled')); });
+    test(name + ' goes on to the writer with its reason (decision 155)', () => { const f = fixture(name); f.record.status = 'complete'; f.record.unknowns = f.record.unknowns ?? []; const result = outcomes(f); assert.ok(!result.some(o => /^用例原句 .* 状态 /.test(o.statement)), JSON.stringify(result)); assert.ok(f.record.sources.states.some((s: any) => s.state !== 'settled')); });
 test('conflict between two signed sources refuses completion without choosing a side', () => { const f = fixture('conflict'); assert.ok(outcomes(f).some(o => o.verdict === 'refute' && o.data?.status === 'refused')); });
 for (const [name, mutate, code] of [
     ['quote', (f: any) => f.record.contract.expectation.text = '非原文', 'quote_not_verbatim'],
@@ -59,9 +59,6 @@ test('missing predecessor context and mismatching actual predecessor never synth
 test('all four source states, including settled continuation, require a complete named exit', () => { const f = fixture(); f.record.sources.states[0].exit = null; assert.ok(outcomes(f).some(o => o.code === 'recompose.missing_without_exit')); });
 test('decision 155: a named gap stays in the record for the writer and does not hold the case back', () => { const f = fixture(); f.record.unknowns = [{ missing: '尚未给出前置事实', next_action: '补前置后重交', audience: '编写模型', due: '提交之前' }]; assert.ok(outcomes(f).every(o => o.verdict === 'support')); f.record.unknowns = [{ missing: '只写了缺什么' }] as any; assert.ok(outcomes(f).some(o => o.code === 'recompose.missing_without_exit')); });
 test('unlisted method sources and missing actual declaration fragments cannot acquire authority', () => { const a = fixture(), ref = 'src:' + 'f'.repeat(64); a.record.contract.method.sources = [ref]; a.subject.evidence.push({ reference: ref, resolved: true, text: '存在但未声明' }); assert.ok(outcomes(a).some(o => o.code === 'recompose.candidate_signed')); const b = fixture(); b.subject.evidence = []; assert.ok(outcomes(b).some(o => o.verdict === 'unknown' && o.missing.includes('可读'))); });
-// Round 33: the model cited the original sentences by their words, and the Hub said only that a fragment was missing and that the
-// source maintainers would supply it. The refusal now says where the value is written, what it is, what may stand there and who
-// changes it; one value written in several places is one refusal that names them all.
 test('a reference the record cannot be read by names its place, its value, what may stand there and who changes it', () => {
     const f = fixture();
     const [first] = f.record.atoms;
@@ -86,7 +83,6 @@ test('a reference the record cannot be read by names its place, its value, what 
     assert.ok(outside.missing.includes('method.sources 第 3 项 的值「src:' + 'f'.repeat(64) + '/json@1/p/none」'), outside.missing);
 });
 test('a record that cites its own sentences and the locked tree by reference draws no unreadable-reference refusal', () => {
-    // No product authority is bound (it is optional since decision 155), so no source is judged for signing authority.
     const f = fixture();
     (f.subject as any).authority_run = undefined;
     (f.subject as any).authority_result = undefined;

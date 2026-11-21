@@ -9,6 +9,8 @@ import {
   SCHEMAS_DIR,
   compareJsonSchemas,
   contractSchemaFreezeViolations,
+  reconcileSchemaFreeze,
+  schemaFreezeExceptions,
   schemaFreezeProblems,
 } from './contract-schema-freeze.ts';
 
@@ -48,6 +50,20 @@ describe('contract schema freeze on the repository', () => {
   });
 });
 
+describe('approved breaks in the exception register', () => {
+  const violation = { file: 'contracts/generated/schemas/a.v1.schema.json', path: 'x', kind: 'property-deleted' as const, detail: '删掉了已发布属性 x' };
+  const entry = { check: 'contract-schema-freeze', path: violation.file, what: 'property-deleted: x', reason: 'synthetic', removeWhen: 'synthetic' };
+  it('passes a listed break, fails an unlisted one, a stale entry and a duplicate', () => {
+    const { entries, problems } = schemaFreezeExceptions([entry, { check: 'package-boundaries', path: 'p', what: 'w', reason: 'r', removeWhen: 'C4' }]);
+    assert.deepEqual([entries.length, problems], [1, []]);
+    assert.deepEqual(reconcileSchemaFreeze([violation], entries), []);
+    assert.equal(reconcileSchemaFreeze([violation], []).length, 1);
+    assert.match(reconcileSchemaFreeze([], entries)[0], /已不再发生/);
+    assert.match(reconcileSchemaFreeze([violation], [...entries, ...entries]).join('\n'), /例外重复/);
+    assert.match(schemaFreezeExceptions([{ check: 'contract-schema-freeze', path: violation.file }]).problems[0], /path、what、reason、removeWhen/);
+  });
+});
+
 describe('git baseline resolution with release/* tags', () => {
   it('flags deleted key and optional->required while allowing added optional key and new schema files', () => {
     const root = mkdtempSync(join(tmpdir(), 'contract-schema-freeze-'));
@@ -78,7 +94,6 @@ describe('git baseline resolution with release/* tags', () => {
       gitIn(root, 'commit', '-m', 'Baseline release schemas');
       gitIn(root, 'tag', '-a', 'release/2026-11-14', '-m', 'Synthetic release');
 
-      // Off-branch release tag must not shadow ancestor baseline.
       gitIn(root, 'checkout', '-b', 'other');
       const pathOther = writeSchema(root, 'skill.v1.schema.json', { type: 'object', properties: {}, required: [] });
       gitIn(root, 'add', pathOther);
@@ -87,14 +102,12 @@ describe('git baseline resolution with release/* tags', () => {
 
       gitIn(root, 'checkout', 'main');
 
-      // Adding an optional property + adding a new schema file passes.
       const withOptional = structuredClone(v1Skill);
       (withOptional.properties.parsers.items.properties as Record<string, unknown>).extra_note = { type: 'string' };
       writeSchema(root, 'skill.v1.schema.json', withOptional);
       writeSchema(root, 'new-future.v1.schema.json', { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] });
       assert.deepEqual(schemaFreezeProblems(root), []);
 
-      // Deleting a published property fails.
       const deletedProp = structuredClone(v1Skill);
       delete (deletedProp.properties.parsers.items.properties as Record<string, unknown>).migration_test;
       writeSchema(root, 'skill.v1.schema.json', deletedProp);
@@ -105,7 +118,6 @@ describe('git baseline resolution with release/* tags', () => {
         [['contracts/generated/schemas/skill.v1.schema.json', 'property-deleted', 'parsers[].migration_test']],
       );
 
-      // Turning an optional property required fails.
       const turnedReq = structuredClone(v1Skill);
       turnedReq.properties.parsers.items.required.push('locate');
       writeSchema(root, 'skill.v1.schema.json', turnedReq);
@@ -116,7 +128,6 @@ describe('git baseline resolution with release/* tags', () => {
         [['contracts/generated/schemas/skill.v1.schema.json', 'turned-required', 'parsers[].locate']],
       );
 
-      // Deleting a published schema file fails.
       rmSync(join(root, pathSkill));
       const removedFileCheck = contractSchemaFreezeViolations(root);
       assert.deepEqual(
@@ -179,7 +190,6 @@ describe('compareJsonSchemas value widening and narrowing rules', () => {
         mode: { type: 'string', enum: ['fast', 'full'] },
         limit: { type: 'integer', exclusiveMinimum: 1, maximum: 50 },
         label: { type: 'string', minLength: 1, maxLength: 32, pattern: '^[a-z]+$' },
-        // nullable_text deleted
       },
       required: ['mode', 'limit', 'brand_new_required'],
       additionalProperties: false,

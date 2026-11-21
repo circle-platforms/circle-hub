@@ -1,4 +1,3 @@
-// Call-log query for the records page (K4; U5 retired the JSON twin).
 import type { CallLogLine, Page } from '../../records/api.ts';
 import type { PageContext } from './context.ts';
 import { USER_ID, isoOrUndefined, param } from './params.ts';
@@ -11,13 +10,11 @@ export interface CallLogFilters {
   to?: string | undefined;
   cursor?: string | null;
   limit: number;
-  /** When set, fill a default window ending at `now` (page behaviour). */
   defaultDays?: number;
   now?: number;
 }
 
 export interface CallLogQueryReady {
-  /** null = bad from/to; empty userId means unknown member name. */
   problems: string[];
   from: string | undefined | null;
   to: string | undefined | null;
@@ -30,7 +27,6 @@ export interface CallLogQueryReady {
   limit: number;
 }
 
-/** Resolve member name/id and time bounds the same way for the page and the API. */
 export async function resolveCallLogFilters(ctx: PageContext, input: CallLogFilters): Promise<CallLogQueryReady> {
   const from = isoOrUndefined(input.from);
   const to = isoOrUndefined(input.to);
@@ -40,7 +36,6 @@ export async function resolveCallLogFilters(ctx: PageContext, input: CallLogFilt
   const now = input.now ?? (ctx.deps.now?.() ?? new Date()).getTime();
   let rangeFrom = from ?? undefined;
   let rangeTo = to ?? undefined;
-  // Page default window: fill whichever bound the URL omitted (same as the old records page).
   if (input.defaultDays !== undefined) {
     const beginning = new Date(now);
     beginning.setDate(beginning.getDate() - (input.defaultDays - 1));
@@ -69,7 +64,6 @@ export async function resolveCallLogFilters(ctx: PageContext, input: CallLogFilt
   };
 }
 
-/** Filters taken from the request URL (admin may pass user). */
 export function callLogFiltersFromUrl(ctx: PageContext, limit: number, defaultDays?: number): CallLogFilters {
   return {
     user: ctx.admin ? param(ctx, 'user') : undefined,

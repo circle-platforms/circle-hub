@@ -12,13 +12,6 @@ export function runtimeBlocks(contract:RuntimeContract):Record<string,any>|null{
  return isRecord(runtime.block_model)&&runtime.block_model.schema===TABLE.runtime_schema?runtime.block_model:null;
 }
 export interface AssertionTarget {call:AllowedCall;entry:RuntimeEntry;matching:string}
-/**
- * How the runner method of an expectation without an operator (a flat plan's expects, the default assertion) reads its text. The
- * contract says it where it lists the same method for a literal operator; that row was only read for typed blocks, so a flat
- * expectation went to the same regular-expression method as raw text: "Pool Name: p1" never matched the device's column-aligned
- * "Pool Name:                 p1", four cases of one real run failed on exactly that, and a dot or a bracket in an expectation
- * was read as a pattern. A contract that declares no such row keeps the raw text, as before.
- */
 export function declaredLiteralMatching(contract:RuntimeContract,call:Pick<AllowedCall,'object'|'method'>):string{
  const block=runtimeBlocks(contract),rows=isRecord(block)&&Array.isArray(block.operators)?block.operators:[];
  const row=rows.find((item:any)=>isRecord(item)&&item.object===call.object&&item.method===call.method&&item.expected==='literal');

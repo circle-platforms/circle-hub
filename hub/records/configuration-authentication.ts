@@ -1,4 +1,3 @@
-// Protected authentication rows are copied only inside the reset controller's stopped-write transaction.
 import { z } from 'zod';
 import { UserId, TokenId } from '../../contracts/api.ts';
 import { Sha256 } from '../../contracts/src/common.ts';

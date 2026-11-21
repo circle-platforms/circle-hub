@@ -365,7 +365,6 @@ export const ResolveReferenceOutput = Envelope.extend({
 
 export const SubmitResultInput = Submission;
 export const SubmitResultOutput = Envelope.safeExtend({
-  /** Producer-filled when the checked requirements resolve to exactly one workflow step (CHANGELOG Unreleased: submit_result lead / step_name). */
   step_name: z.string().min(1).refine(value => value.trim().length > 0, 'a name is not whitespace').optional().describe('The declared user-facing step name only when the nonempty set of requirements actually checked by this submission explicitly resolves to one workflow step; absent for missing declarations, multiple steps or an unproven checked scope'),
   record: referenceUriOf('rec').optional().describe('Immutable validation result record reference for machine readers'),
   withdrawn_grounds:z.array(Ground).optional().describe("Live withdrawal qualifier, outside the immutable historical result"),
@@ -395,12 +394,8 @@ export const SubmitResultOutput = Envelope.safeExtend({
   if (Object.entries(derived).some(([key, value]) => counts[key] !== value)) issue(ctx, ['counts'], 'counts are derived from result.partitions (W08 R[0])');
 });
 
-/** Clone output objects without changing shared input or record schemas. */
 function extensibleOutput(schema: z.ZodType): z.ZodType {
   const copies = new Map<z.ZodType, z.ZodType>();
-  // A recursive schema (a trace step with its child steps) reaches itself while its copy is being made: that inner use refers
-  // to the copy lazily. Such a schema and every schema that holds one are copied without the link to their original, with
-  // their metadata copied instead: through the link the JSON Schema of a copy would also carry the original, closed shape.
   const open: z.ZodType[] = [];
   const unlinked = new Set<z.ZodType>();
   const visit = (value: unknown): unknown => {

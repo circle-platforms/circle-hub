@@ -88,7 +88,6 @@ describe('createTestHub', () => {
     assert.ok(run.sources.some((s) => s.role === 'subject' && s.external?.startsWith(`agile:mindmap:${AGILE_DOCUMENT}`)));
     assert.equal(stubs.agile.logins, 1, 'one login with the stored digest');
     const startText = started.content[0].text ?? '';
-    // start_run pending projection lines keep 「，」; conclusions use 「：」(决定 20:32)
     assert.ok(run.items.every(item => startText.includes(`原始用例 ${item.label}，1 个期望结果；状态未知`)));
     assert.ok(run.items.every(item => item.summary === '1 个期望结果'));
     assert.match(String(started.structuredContent.record), /^rec:[0-9a-f]{64}$/);
@@ -196,7 +195,6 @@ describe('createTestHub', () => {
     assert.equal(started.isError, true);
     const errors = started.structuredContent.errors as { code: string; message: string }[];
     assert.deepEqual(errors.map((e) => [e.code, e.message]), [['SOURCE_NOT_PERMITTED', `当前账户未获授权使用工作流「${REVIEW_PACK}」`]]);
-    // content[0] is the reader sentence (total table); content[1] is「供模型引用」+ JSON.
     assert.equal(
       started.content[0]?.text,
       `无权限：当前账户未获授权使用工作流「${REVIEW_PACK}」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。`,

@@ -1,4 +1,3 @@
-// Local observations only. This report grants no use permission and is never an admission or dispatch gate.
 import { isAdmin, isSha256, sha256Hex, type Principal, type User, type RecordsKit } from '../records/api.ts';
 import type { LeaseService } from '../leases/api.ts';
 import type { ExecutorDefinition } from './definition.ts';
@@ -21,7 +20,6 @@ export interface EnvironmentReadinessCheck extends Pick<ReleaseCheck, 'condition
 }
 export interface EnvironmentReadinessExecutor {
   ordinal: number;
-  /** Only the current administrator receives the configuration identity. */
   executor?: string;
   checks: EnvironmentReadinessCheck[];
   occupancy: Array<{ mine: boolean; since: string; until: string | null }> | null;

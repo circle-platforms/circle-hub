@@ -140,7 +140,6 @@ test('the runner exports the jobs of its run, with verdicts only from the dispat
   const journalReaders: string[] = [];
   const service = createRunsService({ parsers: createTestParserRegistry(), records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external, dispatch: { jobs: async (by) => { journalReaders.push(by.role); return [job()]; }, reconcile: async () => job().status } });
   const exported = await service.exportJobs!(h.alice, run.run);
-  // The dispatch service answers a job's status to administrators only: a runner who is none still gets the jobs of its run.
   assert.deepEqual(journalReaders, ['admin'], 'the journal is read as a named administrator, the projection as the runner');
   assert.deepEqual(exported, { run: run.run, jobs: [{ job: id, verification_run: run.run, plan_run: run.run, items: [item], sha256: workbook, ended: 'done', outcome: 'effective', frozen: false, result, device_return: deviceReturn, rows }] });
   assert.ok(!('record' in exported!.jobs[0]), 'the administrative proof stays out');

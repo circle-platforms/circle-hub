@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { environment, decideRaw, parseToolCliDeclaration } from './guard-lib.ts';
+import { environment, decideRaw, decisionOf, parseToolCliDeclaration } from './guard-lib.ts';
 import { writeHome } from './circle-home.ts';
 
 const endpoint = { protocol: 'anthropic' as const, baseUrl: 'https://model.example.invalid', apiKey: 'synthetic', model: 'synthetic', sources: [] };
@@ -18,34 +18,18 @@ test('declared CLI identity and argument type override misleading source and pla
     writeFileSync(file, 'export const readTokenFromStdin = "arbitrary name";\n');
     writeFileSync(join(tools, 'entry.cli.json'), JSON.stringify(cli));
     const env = environment(home, workdir, 'ops-allow.declaration.json');
-    const payload = (command: string) => JSON.stringify({ event: 'before_tool', cwd: workdir, tool_name: 'execute', tool_input: { command } });
-    assert.deepEqual(await decideRaw(env, payload(`node '${file}' --sentence 'a sentence with / and spaces'`)), {});
-    const refused = await decideRaw(env, payload(`node '${file}' --unknown x`));
+    const decide = async (command: string) => decisionOf(await decideRaw(env, JSON.stringify({ hook_event_name: 'PreToolUse', cwd: workdir, tool_name: 'execute', tool_input: { command } })));
+    assert.deepEqual(await decide(`node '${file}' --sentence 'a sentence with / and spaces'`), {});
+    const refused = await decide(`node '${file}' --unknown x`);
     assert.equal(refused.refusal?.category, 'invalid_parameters');
     assert.ok(refused.refusal?.fact); assert.ok(refused.refusal?.next_action);
     const labels = JSON.parse(readFileSync(join(home, 'hooks/ops-allow.declaration.json'), 'utf8')).errorLabels;
     assert.ok(refused.reason?.includes(labels.invalid_parameters));
     const pathCli = { ...cli, options: [{ ...cli.options[0], type: 'path', separator: ',', trimValues: true }] };
     writeFileSync(join(tools, 'entry.cli.json'), JSON.stringify(pathCli));
-    assert.deepEqual(await decideRaw(env, payload(`node '${file}' --sentence 'one.json, two.json'`)), {});
-    const escape = await decideRaw(env, payload(`node '${file}' --sentence 'one.json, ../../outside'`));
+    assert.deepEqual(await decide(`node '${file}' --sentence 'one.json, two.json'`), {});
+    const escape = await decide(`node '${file}' --sentence 'one.json, ../../outside'`);
     assert.equal(escape.decision, 'deny'); assert.equal(escape.refusal?.category, 'permission_denied'); assert.match(escape.refusal?.fact ?? '', /不在工作目录/);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('v1 missing parameter metadata stays unknown while an argument-free call is legal', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'guard-v1-'));
-  try {
-    const home = join(dir, 'home'); const { workdir } = writeHome({ home, profile: 'ops', hubUrl: 'http://127.0.0.1:7420/mcp' }, endpoint, 'synthetic');
-    const tools = join(home, 'skills', 'synthetic', 'tools'); mkdirSync(tools, { recursive: true }); writeFileSync(join(tools, '..', 'SKILL.md'), '# Synthetic\n');
-    const file = join(tools, 'entry.ts'); writeFileSync(file, 'export const f=1;');
-    writeFileSync(join(tools, 'entry.cli.json'), JSON.stringify({ schema: 'tool-cli@1', stdin: [] }));
-    const env = environment(home, workdir, 'ops-allow.declaration.json');
-    const call = (suffix: string) => decideRaw(env, JSON.stringify({ event: 'before_tool', cwd: workdir, tool_name: 'execute', tool_input: { command: `node '${file}'${suffix}` } }));
-    assert.deepEqual(await call(''), {});
-    const denied = await call(' --sentence hello');
-    assert.equal(denied.decision, 'deny'); assert.match(denied.reason ?? '', /参数类型未知.*tool-cli@2/);
-    assert.doesNotMatch(denied.reason ?? '', /没有 --sentence/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -55,6 +39,7 @@ test('machine declarations reject invalid fields, duplicate options and undeclar
     { ...cli, forms: [{ positional: null, pairs: [{ name: 'other', optional: true, placeholder: null }] }] },
     { ...cli, forms: [{ positional: null, pairs: [], extra: true }] },
     { ...cli, stdin: ['literal secret'] },
+    { schema: 'tool-cli@1', stdin: [] },
   ]) assert.throws(() => parseToolCliDeclaration(bad));
   assert.equal(parseToolCliDeclaration(cli).options?.[0]?.type, 'text');
 });
@@ -68,10 +53,10 @@ function releasedToolsFixture() {
     writeFileSync(join(tools, `${name}.cli.json`), readFileSync(new URL(`../../packs/workflow/case-compile/tools/${name}.cli.json`, import.meta.url)));
   }
   const env = environment(home, workdir, 'ops-allow.declaration.json');
-  return { dir, home, workdir, tools, call: (command: string) => decideRaw(env, JSON.stringify({ event: 'before_tool', cwd: workdir, tool_name: 'execute', tool_input: { command } })), close: () => rmSync(dir, { recursive: true, force: true }) };
+  return { dir, home, workdir, tools, call: async (command: string) => decisionOf(await decideRaw(env, JSON.stringify({ hook_event_name: 'PreToolUse', cwd: workdir, tool_name: 'execute', tool_input: { command } }))), close: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-test('workbook CLI allows source-manifest mode without three legacy source overrides', async () => {
+test('workbook CLI allows source-manifest mode without the contract, profile and inventory overrides', async () => {
   const f = releasedToolsFixture();
   try {
     const result = await f.call(`node '${join(f.tools, 'generate-workbook.ts')}' --run inputs --result inputs/result.json --submission inputs/submission.json --out delivery.xlsx`);

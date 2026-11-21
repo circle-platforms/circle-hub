@@ -1,6 +1,3 @@
-// The refresh function of case-compile (workflow.json refresh, ItemRefreshInput -> ItemRefreshOutput): at each evaluation the Hub
-// hands it the latest accepted result of the recompose run bound after the start, and it lays each case's own record over the
-// frozen item, or says what the case waits for. Synthetic inputs shaped as the Hub hands them (testing/late-binding.ts).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import refresh from './refresh.ts';
@@ -36,7 +33,6 @@ test('one case accepted alone: its record is laid over its item, named by its di
   assert.equal(first.late.recomposition.record_sha256, digestOf(records[0]), 'sha256 of the canonical JSON of the record itself');
   assert.equal(first.late.recomposition_waiting, undefined);
   assert.deepEqual(second.late.recomposition_waiting, { run: RECOMPOSE_RUN, result: 'rec:' + 'e'.repeat(64), state: 'pending', item: 'recompose-item-2', autoid: items[1].fields.autoid });
-  // Another case accepted later changes the receipt of the whole result, never the record digest of the first case.
   const later = boundRecord('recomposition_result', 'validation_result', resultBody([recordRow('recompose-item-1', records[0]), recordRow('recompose-item-2', records[1])]), '9'.repeat(64));
   const again = out(refresh(refreshInput(items, runInput, later, context)));
   assert.equal(again.items[0].late.recomposition.record_sha256, first.late.recomposition.record_sha256);
@@ -52,7 +48,6 @@ test('a row absent from the result, an unsatisfied row and a partial record wait
   assert.deepEqual(answer.items.map((row) => row.late.recomposition_waiting?.state), ['unsatisfied', 'partial']);
   const uncovered = out(refresh(refreshInput(items, runInput, boundRecord('recomposition_result', 'validation_result', resultBody([]), 'e'.repeat(64)), context)));
   assert.deepEqual(uncovered.items.map((row) => row.late.recomposition_waiting?.state), ['uncovered', 'uncovered']);
-  // The frozen run record names another recompose run: waiting never makes it right, so the case carries the problem only.
   const otherRun = boundRecord('recomposition_run', 'run', { ...(runInput.model as any).body, run: 'run_01otherrecomposeaaaaaaaaaa' }, 'f'.repeat(64));
   const mismatch = out(refresh(refreshInput(items, otherRun, null, context)));
   for (const row of mismatch.items) {

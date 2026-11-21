@@ -144,7 +144,6 @@ test('a macOS dry run plans init with HTTPS, key, tls and a bundle deploy with t
   assert.match(out, /tls init/);
   assert.match(out, /deploy --bundle \/srv\/synthetic-hub\/runtime\/bundles\/circle-hub-0\.3\.0-darwin-arm64-<commit> --node \/srv\/synthetic-hub\/runtime\/bundles\/circle-hub-0\.3\.0-darwin-arm64-<commit>\/node\/bin\/node/);
   assert.match(out, /https:\/\/127\.0\.0\.1:7443\/console\//);
-  // Dry-run never creates an administrator, so the first-install apply tip stays off (file may also be absent).
   assert.doesNotMatch(out, /部署定义样例：/);
   assert.doesNotMatch(out, /下一步：circle-hub apply/);
   assert.doesNotMatch(out, /useradd|apparmor_parser/, 'no Linux step on macOS');
@@ -165,7 +164,6 @@ test('a Linux dry run plans the service account, lingering, the sandbox tools, t
 });
 
 test('git archive of the commit includes the quickstart deployment definition the installer may print', async () => {
-  // tools/build-bundle.ts archives the whole commit into app/; deploy copies app/ to <data>/current/. No separate copy step.
   const root = fileURLToPath(new URL('../..', import.meta.url));
   const example = fileURLToPath(new URL('../../docs/examples/quickstart-deployment.json', import.meta.url));
   assert.equal(JSON.parse(await readFile(example, 'utf8')).schema, 'deployment@2');
@@ -181,11 +179,9 @@ test('git archive of the commit includes the quickstart deployment definition th
   assert.match(source, /QUICKSTART_DEFINITION="\$\{DATA\}\/current\/docs\/examples\/quickstart-deployment\.json"/);
   assert.match(source, /QUICKSTART_APPLY="\$\{DATA\}\/quickstart-first-apply\.json"/);
   assert.match(source, /QUICKSTART_PACK_DIR="\$\{DATA\}\/current\/packs\/workflow\/test-bed"/);
-  // First install only: generate a ready-to-apply file (live admin + absolute pack dir), print that path.
   assert.match(source, /HUB_INSTALL_ADMIN_CREATED\}" = 1 \] && as_hub test -f "\$\{QUICKSTART_DEFINITION\}" && as_hub test -d "\$\{QUICKSTART_PACK_DIR\}"/);
   assert.match(source, /下一步：circle-hub apply \\"\$\{QUICKSTART_APPLY\}\\"/);
   assert.doesNotMatch(source, /先改样例里的 user/);
-  // macOS PATH tip precedes the apply tip so the printed command is usable.
   assert.ok(source.indexOf('把 ${WRAPPER_DIR} 加进 PATH') < source.indexOf('下一步：circle-hub apply'), 'PATH tip before apply tip');
 });
 

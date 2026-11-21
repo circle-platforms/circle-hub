@@ -168,8 +168,6 @@ test('pages the index by its own continuation until the last page and cross-chec
 
 test('finishes from the facets view when the Hub refuses a continuation page and says so', async t=>{
   const f=fixture(t);
-  // When the Hub refuses an `after` continuation read (e.g., a permission, cursor or snapshot refusal), the key list then
-  // comes from the facets view, and the stopped page is reported instead of being guessed away.
   const shards={ 'synthetic-doc':[id], 'synthetic-other':['c'.repeat(64)], 'synthetic-unplaced':['d'.repeat(64)] };
   const p=paged(f,shards,{keys:3,entries:3},['synthetic-doc']);
   let indexReads=0;

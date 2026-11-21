@@ -188,7 +188,6 @@ export async function publishPlumbSkill(registry: PackRegistry, records: Pick<Te
   }
 }
 
-/** `knowledge` replaces the Hub's fake knowledge port, for a test that needs its own command tree and policy. */
 export async function openHub(postgres: TemporaryPostgres, options: { knowledge?: FakeKnowledge } = {}): Promise<Hub> {
   let clock = Date.parse('2026-10-23T08:00:00.000Z');
   const now = (): Date => new Date(clock++);

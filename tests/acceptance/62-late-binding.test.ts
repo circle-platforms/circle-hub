@@ -1,10 +1,3 @@
-// Acceptance 62 (decision 179; model 83: W06 R[6] exception and R[7], B03 R[0], W08): a run input bound after the start,
-// through the real Hub, its pack registry and the MCP client. A synthetic stage workflow (incremental submissions) records
-// each case; a synthetic consumer workflow binds a stage run after the start and, at every validation, refreshes each item
-// from that run's latest accepted result. The consumer run starts before the stage run accepted anything. With case 1
-// accepted upstream, the consumer's submission is checked on case 1 and leaves case 2 unknown (awaiting_step) without a
-// repair round; once the stage run accepts case 2, the same submission sent again is checked again and both cases are
-// satisfied; GET /run-export/<run>/late shows both. Temporary PostgreSQL, synthetic packs and data only.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -53,19 +46,16 @@ test('a consumer run binds a stage run after the start and follows its accepted 
   assert.equal(stage.out.call_result, 'ok', stage.text);
   const stageRun = stage.out.run!.run;
 
-  // The consumer run starts while the stage run has accepted nothing: only the run is frozen.
   const consume = await client.call('start_run', { pack: 'toy-consume', inputs: { cases: { reference: cases }, stage: { run: stageRun } } });
   assert.equal(consume.out.call_result, 'ok', consume.text);
   const run = consume.out.run!;
   assert.deepEqual(run.late_inputs, [{ slot: 'stage', run: stageRun }]);
   assert.equal(run.sources.some((source) => source.slot === 'stage'), false);
 
-  // Upstream accepts case 1 only.
   const first = await client.call('submit_result', stageSubmission(stageRun, [ITEM.one]));
   assert.equal(first.out.acceptance, 'accepted', first.text);
   const firstRecord = (await hub.hub.runs.getResult(writer.principal, stageRun))!.record;
 
-  // The consumer's submission is checked on case 1 and waits on case 2, with no repair round charged.
   const submission = consumeSubmission(run.run);
   const checked = await client.call('submit_result', submission);
   assert.equal(checked.out.acceptance, 'accepted', checked.text);
@@ -81,7 +71,6 @@ test('a consumer run binds a stage run after the start and follows its accepted 
   const validations = (await actionsOf(hub.records.store, run.run)).filter((action) => action.body.action === 'validate' && (action.body.detail as { submission?: string }).submission === one.submission);
   assert.deepEqual(validations.map((action) => (action.body.detail as { repair?: string[] }).repair), [[]], 'waiting on the stage run is not a repair round');
 
-  // Upstream accepts case 2; the same submission, sent again as it was, is checked again against the new stage result.
   const second = await client.call('submit_result', stageSubmission(stageRun, [ITEM.one, ITEM.two]));
   assert.equal(second.out.acceptance, 'accepted', second.text);
   const secondRecord = (await hub.hub.runs.getResult(writer.principal, stageRun))!.record;
@@ -95,7 +84,6 @@ test('a consumer run binds a stage run after the start and follows its accepted 
   assert.equal(plan(two, ITEM.two).status, 'satisfied');
   assert.equal(two.rounds.used, 0);
 
-  // The late export shows both cases as the stage run's latest accepted result says them.
   const answer = await fetch(`${hub.url}/run-export/${run.run}/late`, { headers: { authorization: `Bearer ${writer.token}` } });
   assert.equal(answer.status, 200, await answer.clone().text());
   const bytes = Buffer.from(await answer.arrayBuffer());
@@ -106,7 +94,6 @@ test('a consumer run binds a stage run after the start and follows its accepted 
   assert.deepEqual(late.items.map((row) => row.id), [ITEM.one, ITEM.two]);
   for (const row of late.items) assert.equal((row.late as { stage?: { status?: string } }).stage?.status, 'satisfied');
 
-  // A run that binds nothing after the start has no late export.
   const none = await fetch(`${hub.url}/run-export/${stageRun}/late`, { headers: { authorization: `Bearer ${writer.token}` } });
   assert.equal(none.status, 404);
   assert.match(await none.text(), /运行没有开运行后再绑定的输入/);

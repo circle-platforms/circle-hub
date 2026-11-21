@@ -14,15 +14,13 @@ import { fetchBytesRetrying, getRetrying, downloadRetryControl, KNOWLEDGE_MAX_BY
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
 import { parsedPlanFile } from './submit-plans.ts';
+import { afterDelivery } from '../functions/next-step.ts';
 
 const OPTIONS = { hub: true, runs: true, notes: true, out: true, recompose: false, name: false } as const;
 function options(argv: string[]): Record<string, string> {
   const values: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i]?.startsWith('--') ? argv[i].slice(2) : '';
-    if (key === 'scope') {
-      failCall('invalid_parameters', '交付时不允许从本地 --scope 文件收窄范围（按范围交付须在开运行时传入 parameters.scope 锚定到 Hub 运行记录）。参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次', '请使用 --hub、--runs、--notes 和 --out 的合法写法重试');
-    }
     if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) failCall('invalid_parameters', '参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次', '请使用 --hub、--runs、--notes 和 --out 的合法写法重试');
     values[key] = argv[i + 1];
   }
@@ -53,13 +51,11 @@ function frozenScopeOf(run: Record<string, unknown>, label: string): FrozenScope
   return { words: raw.words.trim(), cases: [...(raw.cases as string[])] };
 }
 const canonicalScopeKey = (scope: FrozenScope | null): string => (scope === null ? 'null' : JSON.stringify({ words: scope.words, cases: [...scope.cases].sort() }));
-/** A plan run's original of a case: its title and steps with their expectations, as the run froze them. */
 function planOriginal(item: Record<string, unknown>): Original | null {
   const f = item.fields;
   if (!isRecord(f) || typeof f.title !== 'string' || !Array.isArray(f.steps)) return null;
   return { title: f.title, lines: f.steps.filter(isRecord).map((s) => ({ text: String(s.text ?? ''), expected: Array.isArray(s.expected) ? s.expected.map(String) : [] })) };
 }
-/** A recomposition run's original of a case, from its atoms: the intent is the title, each action a line, each expectation under the action it follows. */
 function atomOriginal(item: Record<string, unknown>): { autoid: string; original: Original } | null {
   const f = item.fields;
   if (!isRecord(f) || typeof f.case_id !== 'string' || !Array.isArray(f.atoms)) return null;
@@ -81,20 +77,11 @@ async function emptyOrAbsent(directory: string): Promise<void> {
   if (entries.length) failCall('occupied', `--out 目录里已有 ${entries.slice(0, 3).join('、')}${entries.length > 3 ? ' 等' : ''}，不覆盖；另选一个新目录`, '请检查目录读取权限并选择新的空输出目录');
 }
 
-/** The reference that names a compilation: the recomposition result a plan run is bound to, or else the document it judges. */
-/**
- * What makes two runs one compilation: the recompose run they are bound to. A plan run opened before its recomposition is
- * accepted (decision 179) carries the recompose run's record from its start and the result only later, and its merge run carries
- * both, so the record comes first; a run from before that binding is known by the recomposition result, and one without any by
- * the document. Round 41: with the document as the key of late-bound plan runs, a delivery reached the plan runs of earlier
- * compiles of the same mind map under the same booking and was refused for their older pack version.
- */
 export function lineageKeyOf(sources: unknown): string | null {
   const bound = (slot: string) => { const found = Array.isArray(sources) ? sources.find((s) => isRecord(s) && s.slot === slot && typeof s.reference === 'string') : undefined; return isRecord(found) ? found.reference as string : undefined; };
   return bound('recomposition_run') ?? bound('recomposition_result') ?? bound('subject') ?? null;
 }
 const lineageKey = (run: Record<string, unknown>) => lineageKeyOf(run.sources);
-/** The Hub's run-successors@1 answer for `run`: the runs started from it that the reader may export. */
 function parseSuccessors(value: unknown, run: string): Array<{ run: string; pack: string; started_at: string; parameters: Record<string, unknown>; sources: unknown }> {
   if (!isRecord(value) || value.schema !== 'run-successors@1' || value.run !== run || !Array.isArray(value.successors)) failCall('temporarily_unavailable', `Hub 返回的后续脚本编写和上机验证信息不完整`, '请维护者核对原运行导出协议与完整性后重试');
   return value.successors.map((r) => {
@@ -102,15 +89,8 @@ function parseSuccessors(value: unknown, run: string): Array<{ run: string; pack
     return { run: r.run, pack: r.pack, started_at: r.started_at, parameters: r.parameters, sources: r.sources };
   });
 }
-/**
- * The answer the model gives the person, made here. What they asked for is automated cases in a workbook, so it says how many
- * cases the document holds, how many succeeded and how many did not, where the workbook is, and for each case that did not
- * succeed what happened and why; the rest is in the report. The reference engine closes a batch the same way: a result line,
- * one line for each case that needs attention, the paths.
- */
-export function replyText(out: string, totals: Record<string, number>, files: string[], cases: CaseOutcome[] = [], input?: ReportInput): string {
+export function replyText(out: string, files: string[], cases: CaseOutcome[], input: ReportInput): string {
   const at = (name: string): string => join(out, name);
-  if (!input) return [`共 ${totals.cases} 条原始用例。`, ...files.map((name) => `- ${at(name)}`)].join('\n');
   const others = cases.filter((outcome) => outcome.status !== 'delivered');
   const drafted = cases.filter((outcome) => outcome.status === 'delivered').map((outcome) => input.checkpoints?.[outcome.autoid]?.length ?? 0).filter((count) => count > 0);
   return [
@@ -124,13 +104,6 @@ export function replyText(out: string, totals: Record<string, number>, files: st
   ].join('\n');
 }
 
-/**
- * What the Hub recorded for item `id` in a plan run's latest accepted result, on a requirement of the plan, not the workbook's (a
- * plan run has no workbook yet): pending on a data gap with a request to a named audience (a missing fact), or else no accepted
- * plan after the repair rounds were used up (the result's `rounds` says used is not below max, and the item was handed in as an
- * authored plan). Null for anything else, including a run with no accepted submission and a case handed in as skipped: a
- * declared skip is a written claim, never an authored attempt, however many rounds the other items of the run used.
- */
 export function missingFactOf(exported: unknown, run: string, id: string): MissingFact | null {
   if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== run || !isRecord(exported.result) || exported.result.run !== run || !isRecord(exported.result.partitions)) return null;
   for (const entries of Object.values(exported.result.partitions)) for (const entry of Array.isArray(entries) ? entries : []) {
@@ -138,14 +111,8 @@ export function missingFactOf(exported: unknown, run: string, id: string): Missi
     const basis = caseBasisOf(exported, run, id);
     const dataGaps = basis?.gaps.filter(gap => gap.requirement !== 'workbook_verified' && (gap.attribution === 'data_gap' || gap.reason === 'missing_input') && typeof gap.missing === 'string' && isRecord(gap.exit) && gap.exit.action === 'request') ?? [];
     if (dataGaps.length) return { kind: 'data_gap', plan_run: run, requirement: dataGaps[0].requirement, missing: dataGaps.map(gap => gap.missing).join('；'), gaps: dataGaps.map(gap => ({ missing: gap.missing!, ...(gap.reason ? { reason: gap.reason } : {}), exit: gap.exit })), exit: dataGaps[0].exit, attributions: [...new Set(['data_gap' as const, ...(basis?.attributions ?? [])])] };
-    // "The repair rounds were used up" is the run's own counter, not the reason alone: the Hub marks a requirement that has no
-    // repair rounds of its own (the plan slot) repair_exhausted the first time an item is handed in as skipped, so in run 20 a
-    // case declared skipped once, with every round still unused, already carried that reason.
     const rounds = isRecord(exported.result.rounds) ? exported.result.rounds : null;
     const spent = !!rounds && Number.isSafeInteger(rounds.used) && Number.isSafeInteger(rounds.max) && (rounds.used as number) >= (rounds.max as number);
-    // The counter is the run's, not the item's: in run 20 the other item's repair used a round while this one was declared
-    // skipped in every submission. The Hub's record tells the two apart: a skipped item's entry carries skip_reason and its
-    // other requirements the reason declared_skip.
     const skipped = entry.skip_reason !== undefined || entry.requirements.some((r) => isRecord(r) && Array.isArray(r.layers) && r.layers.some((l) => isRecord(l) && l.reason === 'declared_skip'));
     for (const requirement of spent && !skipped ? entry.requirements : []) {
       if (!isRecord(requirement) || typeof requirement.requirement !== 'string' || requirement.requirement === 'workbook_verified' || requirement.status === 'satisfied' || !Array.isArray(requirement.layers)) continue;
@@ -155,13 +122,11 @@ export function missingFactOf(exported: unknown, run: string, id: string): Missi
   }
   return null;
 }
-/** The slots a round counts: the plan as authored, without the audit verdict it carries (auditing the same plan again is no new round). */
 function withoutAudit(slots: unknown): unknown {
   if (!isRecord(slots)) return slots;
   const strip = (entry: unknown) => (isRecord(entry) && isRecord(entry.data) && Object.hasOwn(entry.data, 'fidelity') ? { ...entry, data: Object.fromEntries(Object.entries(entry.data).filter(([key]) => key !== 'fidelity')) } : entry);
   return { ...slots, ...(slots.plan !== undefined ? { plan: Array.isArray(slots.plan) ? slots.plan.map(strip) : strip(slots.plan) } : {}) };
 }
-/** A case's plan in a plan run, as its digest: the slots the model submitted for it (a rerun of the same plan has the same digest). */
 export function planDigest(plan: RunInputs, autoid: string): string | null {
   const item = (plan.run.items as unknown[] ?? []).find((i) => autoidOf(i) === autoid);
   const id = isRecord(item) ? item.id : undefined;
@@ -170,7 +135,6 @@ export function planDigest(plan: RunInputs, autoid: string): string | null {
 }
 
 class CitationUnavailable extends Error {}
-// A whole knowledge root uses the run download's larger response limit.
 async function knowledgeBatch(origin: string, bearer: string, run: string, retry?: RetryControl): Promise<Uint8Array> {
   let bytes: Uint8Array;
   let digest: string | null;
@@ -214,8 +178,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const args = options(argv);
     const runs = [...new Set(args.runs.split(',').map((v) => v.trim()).filter(Boolean))];
     if (!runs.length || runs.some((run) => !RUN_ID.test(run)) || (args.recompose !== undefined && !RUN_ID.test(args.recompose))) failCall('invalid_parameters', '--runs 请按上机验证的先后顺序填写编号，以逗号分隔；--recompose 请填写用例重组的编号', '请核对运行、范围、产物身份和原始输入，修正后重试');
-    // The notes are model-authored input: a parse failure identifies the file and repair action, as
-    // submit-plans does for a case file (in run 20 the shared reader's answer told the model to export the run's input again).
     const notesValue = parsedPlanFile(`说明文件 ${basename(args.notes)}`, await readSubmittedFileBytes(args.notes, 'notes'));
     await emptyOrAbsent(args.out);
     const origin = parseHubOrigin(args.hub);
@@ -230,14 +192,10 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const unsent: Unsent[] = [];
     for (const run of runs) {
       const jobs = await jobsOf(run);
-      // the same rule as the lineage walk below: a run none of whose jobs went to the bed is no run of the cases; it is disclosed, not refused.
       if (neverReachedBed(run, jobs)) { unsent.push(unsentOf(run, jobs)); continue; }
       given.set(run, settledDispatch(run, jobs));
     }
 
-    // The runs named are where the walk starts, not the whole list: every verification run of the same compilation (plan runs
-    // under the same booking bound to the same recomposition, or the same document without one) is read from the Hub's lineage,
-    // so a dispatch the model left out still counts (decision 162).
     const keys = new Set<string>(), roots = new Set<string>(), started = new Map<string, string>(), planRuns = new Map<string, string>();
     const runOf = async (run: string): Promise<Record<string, unknown>> => {
       const exported = hubDocument(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry));
@@ -248,8 +206,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     for (const d of [...given.values(), ...unsent]) { const key = lineageKey((await planOf(d.plan_run)).run as Record<string, unknown>); if (key) keys.add(key); }
     if (keys.size !== 1) failCall('invalid_parameters', '--runs 中的自动化用例不是来自同一份重组后的用例或原始用例，请只选择这份原始用例的上机验证', '请核对运行、范围、产物身份和原始输入，修正后重试');
     const [key] = keys;
-    // Up: a rework's plan run may name the booking or the verification run before it as predecessor (run 12 did the first, run 14
-    // the second), so the walk climbs while the predecessor is a run of this compilation and starts below the first one that is not.
     for (const d of [...given.values(), ...unsent]) {
       let current = (await planOf(d.plan_run)).run as Record<string, unknown>;
       for (let hops = 0; typeof current.predecessor === 'string' && hops < 200; hops++) {
@@ -258,7 +214,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         current = up!;
       }
     }
-    // Down: every case-compile run of this compilation under those roots; the verification runs among them are the dispatches.
     const queue = [...roots], visited = new Set<string>();
     while (queue.length) {
       const run = queue.shift()!; if (visited.has(run)) continue; visited.add(run);
@@ -273,8 +228,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     for (const run of [...started.keys()].sort((a, b) => (started.get(a)! < started.get(b)! ? -1 : started.get(a)! > started.get(b)! ? 1 : a < b ? -1 : 1))) {
       if (given.has(run)) { dispatches.push(given.get(run)!); continue; }
       const jobs = await jobsOf(run);
-      // Verified but never sent to the bed: no job, or only jobs that ended before anything went out (not_dispatched, as when a
-      // pre-dispatch check failed); like the reference engine, a dispatch that never reached the bed is not a run of the cases.
       if (neverReachedBed(run, jobs)) { if (!unsent.some((u) => u.run === run)) unsent.push(unsentOf(run, jobs)); continue; }
       if (!jobs.some((job) => job.verification_run === run)) continue;
       dispatches.push(settledDispatch(run, jobs)); added.push(run);
@@ -285,8 +238,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     });
     for (const d of [...dispatches, ...unsent]) await planOf(d.plan_run);
 
-    // Every verification run and its plan run must carry the exact same frozen Hub parameters.scope; midway scope changes
-    // require a fresh start_run rather than merging runs from different scopes.
     const scopedRuns: Array<{ run: string; scope: FrozenScope | null; key: string }> = [];
     for (const d of [...dispatches, ...unsent]) {
       const planScope = frozenScopeOf(plans.get(d.plan_run)!.run, d.plan_run);
@@ -313,7 +264,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     }
     const activeScope = scopedRuns[0]?.scope ?? null;
 
-    // The document's cases: the recomposition run's, or else every case, exclusion and frozen out-of-scope entry from plan runs.
     const originals: Record<string, Original> = {}; let population: string[] = [];
     if (args.recompose) {
       const exported = hubDocument(await getRetrying(`${origin}/run-export/${args.recompose}/run`, bearer, retry));
@@ -377,7 +327,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
 
     const inputsOf = (plan: RunInputs) => ({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory });
     const recipesOf = (plan: RunInputs) => satisfiedRecipes(inputsOf(plan));
-    // A dispatch's scope is the generated workbook's scope; rows cannot silently name only part of that file.
     const workbookBindings = new Map<string, { sha256: string; autoids: string[] }>();
     for (const dispatch of [...dispatches, ...unsent]) {
       let binding = workbookBindings.get(dispatch.plan_run);
@@ -390,10 +339,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       if (dispatch.sha256 !== binding.sha256) failCall('temporarily_unavailable', '上机验证工作簿摘要与其脚本编写结果不一致，交付物尚未写入', '请维护者核对派发产物与原脚本编写结果，恢复对应的原始工作簿和记录后重试');
     }
 
-    // The reference engine's pass review (functions/delivery.ts failureLine): a pass whose words carry an execution-failure line
-    // that the case's own assertions do not read is no verdict. The markers are the contract declaration of each dispatch's plan
-    // run; the words are the run log the Hub saved for the row, checked against its digest (the reference engine reads only
-    // the run log of a pass).
     const texts = new Map<string, string | null>();
     const textOf = async (run: string, reference: string): Promise<string | null> => {
       const found = /^src:([0-9a-f]{64})$/.exec(reference); if (!found) return null;
@@ -419,9 +364,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       missing_fact: '缺少已声明执行失败规则所需的完整设备输出，交付资格尚未核验；请从原作业补齐原件后重评',
     } : row) }));
     dispatches.splice(0, dispatches.length, ...audited);
-    // A run that stopped in a case (functions/delivery.ts unexecutedRows): the cases after the one whose log ends in the runner's
-    // exception never began, and the Hub's no verdict for them is no device observation. They are marked here, so that the assembly
-    // keeps them out of the case's attempts; the log of the case that ended the run is read only when cases stand after it.
     const reached = (row: JobRow) => Boolean(row.evidence?.log) || Object.keys(row.evidence?.sessions ?? {}).length > 0;
     for (const [k, d] of dispatches.entries()) {
       const tail = trailingUnreached(d.items, d.rows.map((row) => ({ item: row.item, reached: reached(row) })));
@@ -430,9 +372,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       const found = unexecutedAfter(tail, reference ? await textOf(d.run, reference) : null, (item) => originals[item]?.title);
       if (found.size) dispatches[k] = { ...d, rows: d.rows.map((row) => found.has(row.item) ? { ...row, dynamic_terminal: 'not_run', not_executed: found.get(row.item)! } : row) };
     }
-    // When no dispatch counts as a whole-volume pass, the pass review may be why: the refusal then names the passes it turned
-    // into no verdict and the line that did it (in run 20 the tool only listed the passes that stood, and the model had to find
-    // the missing one and its line by itself).
     const assembly = assemble(inScope, dispatches);
     const undelivered = assembly.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
     const notes = readNotes(notesValue, undelivered);
@@ -440,7 +379,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     if (unissuedPlans.length) {
       const volume = assembly.unsuccessful ?? { items: [], sources: {} };
       for (const outcome of unissuedPlans) {
-        // the dispatch that held the case without reaching it, or else the one that never went out
         const source = outcome.not_executed?.at(-1) ?? unsent.filter(u => u.items.includes(outcome.autoid)).at(-1)!;
         if (!volume.items.includes(outcome.autoid)) volume.items.push(outcome.autoid);
         volume.sources[outcome.autoid] = { plan_run: source.plan_run, run: source.run };
@@ -449,7 +387,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       assembly.unsuccessful = volume;
     }
 
-    // The unsuccessful volume carries the last accepted authored content, even if its verification never reached the bed.
     if (assembly.unsuccessful) {
       const latest = [...planRuns.keys()].sort((a,b) => (planRuns.get(a)! > planRuns.get(b)! ? -1 : planRuns.get(a)! < planRuns.get(b)! ? 1 : a > b ? -1 : 1));
       const selected = new Set<string>();
@@ -482,7 +419,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       outputs.push({ name: 'case.xlsx', bytes }); passFile = { sha256: assembly.pass.sha256 };
     }
     if (assembly.unsuccessful) {
-      // Each case uses its last accepted authored content; actual device observations stay in history separately.
       const { items, sources } = assembly.unsuccessful;
       const recipes = new Map<string, ReturnType<typeof recipesOf>>();
       const selected = items.map((autoid) => {
@@ -506,21 +442,16 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       try { const bytes = await getRetrying(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer, sourceRetry); if (sha256(bytes) !== found[1]) failCall('temporarily_unavailable', '设备输出与保存的原件不一致', '请维护者恢复与原摘要一致的设备输出原件后重试'); logs[outcome.autoid] = { reference: last.log!, job: last.job, text: new TextDecoder('utf-8').decode(bytes) }; }
       catch (error) { if (error instanceof CallFailure) throw error; logs[outcome.autoid] = { reference: last.log!, job: last.job, text: null, withheld: error instanceof HubReplyError && error.status === 403 ? '没有读取这份设备输出的权限' : '没有取得已核验的设备输出原件，缺少来源读取结果' }; }
     }
-    // The reference engine's attribution rule: a case not delivered that went to the bed is explained with the device's own words,
-    // verbatim from its last device output (the runner log or a device session), checked here against the bytes the Hub relays.
     const deviceTexts: Record<string, string[]> = {};
     for (const outcome of assembly.cases.filter((c) => c.status !== 'delivered')) {
       const last = outcome.history.at(-1); if (!last) continue;
       const texts: string[] = []; const logText = logs[outcome.autoid]?.text; if (logText) texts.push(logText);
       for (const reference of Object.values(last.sessions ?? {})) {
         const found = /^src:([0-9a-f]{64})$/.exec(reference); if (!found) continue;
-        try { const bytes = await getRetrying(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer, sourceRetry); if (sha256(bytes) !== found[1]) failCall('temporarily_unavailable', '设备会话原件的字节与摘要不一致', '请维护者恢复与原摘要一致的字节后重试'); texts.push(new TextDecoder('utf-8').decode(bytes)); } catch (error) { if (error instanceof CallFailure) throw error; /* an unreadable session is evidence neither way */ }
+        try { const bytes = await getRetrying(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer, sourceRetry); if (sha256(bytes) !== found[1]) failCall('temporarily_unavailable', '设备会话原件的字节与摘要不一致', '请维护者恢复与原摘要一致的字节后重试'); texts.push(new TextDecoder('utf-8').decode(bytes)); } catch (error) { if (error instanceof CallFailure) throw error; }
       }
       deviceTexts[outcome.autoid] = texts;
     }
-    // The reference engine's closing rules: a case that failed, or whose pass the pass review dropped, is reworked until three
-    // authored versions of it did not pass on the bed, unless it closes earlier as a verbatim product-defect candidate
-    // (closeFailed in functions/delivery.ts). A round is a distinct plan that failed or whose pass was dropped.
     const rounds: Record<string, number> = {};
     for (const outcome of assembly.cases.filter(reworked)) rounds[outcome.autoid] = new Set(outcome.history.filter((h) => h.terminal === 'fail' || h.audit).map((h) => planDigest(plans.get(dispatches[h.ordinal - 1].plan_run)!, outcome.autoid)).filter((digest): digest is string => digest !== null)).size;
     const authored = Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, original.lines.flatMap((line) => line.expected)]));
@@ -529,9 +460,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       ...(await citedStatements(origin, bearer, new Set(Object.values(notes.cases).flatMap((note) => (note.author_conflict ? [note.author_conflict.reference] : []))), [...dispatches, ...unsent].map((d) => d.plan_run), (run) => plans.get(run)?.run.root, sourceRetry)),
     };
     const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts, conflictGround);
-    // The reference engine's exits for a case it could not compile: only what its own checks recorded certifies one. A case never
-    // dispatched is looked up in the latest plan run of this compilation that holds it and has an accepted result: a plan run
-    // opened but never answered judged no plan (closeUnrun in functions/delivery.ts).
     const facts: Record<string, MissingFact> = {};
     const unrun = closed.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
     const bases = new Map<string, NonNullable<ReturnType<typeof caseBasisOf>>>();
@@ -544,17 +472,15 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         for (const holder of latestFirst.filter((run) => itemsOf.get(run)!.some((item) => autoidOf(item) === autoid))) {
           const item = itemsOf.get(holder)!.find((i) => autoidOf(i) === autoid);
           if (!isRecord(item) || typeof item.id !== 'string') continue;
-          if (!answered.has(holder)) { let exported: unknown = null; try { exported = hubDocument(await getRetrying(`${origin}/run-export/${holder}`, bearer, retry)); } catch (error) { if (error instanceof CallFailure) throw error; /* no accepted submission */ } if (exported !== null && (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== holder || !isRecord(exported.result) || exported.result.run !== holder)) failCall('temporarily_unavailable', 'Hub 接受结果不属于所请求的脚本编写运行', '请维护者核对运行身份与接受结果绑定后重试'); answered.set(holder, exported); }
+          if (!answered.has(holder)) { let exported: unknown = null; try { exported = hubDocument(await getRetrying(`${origin}/run-export/${holder}`, bearer, retry)); } catch (error) { if (error instanceof CallFailure) throw error; } if (exported !== null && (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== holder || !isRecord(exported.result) || exported.result.run !== holder)) failCall('temporarily_unavailable', 'Hub 接受结果不属于所请求的脚本编写运行', '请维护者核对运行身份与接受结果绑定后重试'); answered.set(holder, exported); }
           const exported = answered.get(holder);
-          if (!isRecord(exported) || !isRecord(exported.result)) continue; // never answered: no plan was judged there
+          if (!isRecord(exported) || !isRecord(exported.result)) continue;
           const basis = caseBasisOf(exported, holder, item.id); if (basis) bases.set(autoid, basis);
           const fact = missingFactOf(exported, holder, item.id); if (fact) facts[autoid] = fact;
           break;
         }
       }
     }
-    // the plan run's own pending workbook step says nothing about a case that went to the bed: its workbook was verified and dispatched,
-    // whether or not the run reached the case.
     const basisFor = (outcome: { autoid: string; history: unknown[]; not_executed?: unknown[] }) => {
       const found = bases.get(outcome.autoid); if (!found) return undefined;
       if (!outcome.history.length && !outcome.not_executed?.length) return found;
@@ -568,7 +494,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       return problems.length ? { ...outcome, closing: undefined, evidence_unverified: true as const, pending: [...(outcome.pending ?? []), ...problems] } : outcome;
     });
     const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1) ?? unsent.at(-1)!).plan_run)!.run;
-    // The working card supplies verbatim scoped rulings, never a replacement for frozen Hub scope or a prose classifier.
     const userRulings:NonNullable<ReportInput['userRulings']>={};
     if(assembly.cases.some(outcome=>outcome.closing==='author_conflict')){
       const card=await readFile(resolve('scope.md')).catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return null;throw error;});
@@ -582,7 +507,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         }
       }
     }
-    // Checkpoints the model wrote itself are read from the Hub's record of the plan run the case's workbook came from.
     const checkpoints: Record<string, ModelCheckpoint[]> = {};
     for (const outcome of assembly.cases) {
       const planRun = assembly.pass?.items.includes(outcome.autoid) ? assembly.pass.plan_run : assembly.unsuccessful?.sources[outcome.autoid]?.plan_run;
@@ -631,7 +555,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       runs: dispatches.map((d) => d.run),
       added_runs: added,
       hints,
-      reply: replyText(out, assembly.totals, Object.keys(files), assembly.cases, input),
+      reply: replyText(out, Object.keys(files), assembly.cases, input),
+      message: afterDelivery(hints.length),
     }) + '\n');
     return hints.length ? 1 : 0;
   } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }

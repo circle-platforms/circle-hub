@@ -1,7 +1,5 @@
 import { ATTRIBUTION, labelOf } from './generated/vocabulary.ts';
 import { CallFailure } from './text.ts';
-// Single-source declarations for case-compile subagent roles.
-// Both `agents/*.md` and `tools/task-brief.ts` render strictly from these definitions.
 import { renderPrerequisiteLines, renderPriorDeviceHistoryLines, renderBedFactsLines, renderSupplementaryDisclosureLines, type CompileBriefV1 } from './authoring-brief.ts';
 import {
   MAX_TASK_BRIEF_CHARS,
@@ -25,10 +23,8 @@ export interface ResolvedRoleReference {
   readonly label: string;
   readonly relPath: string;
   readonly fullPath: string;
-  /** The file's size in bytes, said beside its path: a reader then knows what opening it costs. */
   readonly size?: number;
 }
-/** A size as a task file says it: "1.4 KB", "75 KB", "4.7 MB". */
 export function sizeWords(bytes: number): string {
   if (bytes < 1024) return `${bytes} 字节`;
   const kb = bytes / 1024;
@@ -45,18 +41,8 @@ export interface SubagentRoleSpec {
   forbiddenTools: readonly string[];
   referenceFiles: readonly RoleReferenceFile[];
   body: string;
-  /** The check the role runs on its own output; `skill` names the sibling skill folder that holds the script when it is not this pack's. */
   localCheck?: { script: string; withBrief: boolean; skill?: string };
-  /** A read-only lookup the role may run beside its check (tools/<script>): the task file prints its command. */
-  /**
-   * The most model requests one session of the role makes; the client ends the session there with what it has written
-   * and the gates judge that. A guard against a session that does not converge, at three to four times the median of the
-   * measured compiles: of 88 sessions in one compile, nine over 40 requests took 45% of the subagents' tokens, and one
-   * writer of 172 requests took 15% alone.
-   */
   maxTurns?: number;
-  /** The command lookup a role is given. `forms: 'commands'` tells only the two forms that answer about commands (a recomposer writes
-   *  no executor calls, so the forms about methods and blocks are not its concern). */
   localLookup?: { script: string; forms?: 'commands' };
 }
 
@@ -74,7 +60,6 @@ export interface TaskBriefInput {
   caseRef: string;
   caseTitle?: string;
   briefPath: string;
-  /** The run directory, the folder that holds run.json: the `--run` of the check, the lookup and task-brief.ts. */
   frozenRunDir?:string;
   outPath: string;
   skillDir: string;
@@ -86,7 +71,6 @@ export interface TaskBriefInput {
   priorRounds?: readonly PriorRoundRecord[];
   streak?: StreakAnalysis;
   unrecordedAttribution?: PriorAttributionItem | null;
-  /** History prose budget; explicit materials and scope are never silently sliced. */
   maxChars?: number;
 }
 
@@ -116,10 +100,6 @@ function toolUsageBoundary(opts: {
   return `工具调用参数精确格式（严格按声明参数名，禁猜字段）：${schemaParts.join('；')}。${execText}`;
 }
 
-/**
- * Single source of truth for Circle subagent prompts (packaged into agents/compile-*.md
- * and composed with scope.md by tools/task-brief.ts at runtime dispatch).
- */
 export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
   {
     key: 'recompose',
@@ -127,12 +107,8 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
     agentName: 'compile-recomposer',
     description:
       '把下载到本地的单条或整批原始用例重组为可交付编写的 JSON 记录（不含测试环境具体 IP），记录缺口与作者-手册不一致。在 recompose 阶段主代理完成下载运行资料后按名派发。',
-    // The recomposer checks its own record before it ends (round 40: five of six returned records failed the local check on
-    // their first try, and one case was stopped after three one-shot attempts).
     localCheck: { script: 'check-record.ts', withBrief: false, skill: 'recompose' },
     maxTurns: 80,
-    // The same lookup the writer has: in two measured compiles a recomposer read or searched knowledge/commands.txt and manual.txt
-    // 26 times a session, a page or a word at a time, and that was a third to a half of what it carried through its session.
     localLookup: { script: 'cmd-lookup.ts', forms: 'commands' },
     tools: ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'grep', 'execute'],
     forbiddenTools: ['question', 'task', 'Hub MCP', 'test-bed', '未列出的其它命令', 'node -e'],
@@ -154,7 +130,7 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
 
 ## 内容铁律
 1. 原文步骤与期望不重写、不删减、不替换作者的被测对象、被测动作或边界条件，也不凭空增设无来源的新测试目标；等价改写或补全须写明 \`equivalence_reason\` 与 \`equivalence_refs\`。
-2. 命令必须在同一构建 \`knowledge/\` 锁定的命令树中完整解析，不用缩写；写入 \`adapted.commands\` 或 \`slots\` 的每条命令都必须是**具体可执行的完整命令行**（按目录 \`words\` 逐词抄写，所有必填 \`<argN:...>\` 与选用的可选 \`[...]\` 参数一律换成合规具体字面值：字符串用双引号如 \`"web1"\`、整数写十进制数、合法关键字/枚举直接写词、未选用的可选 \`[...]\` 直接省略，严禁保留 \`<argN:...>\`、\`[...]\`、\`...\` 或 \`<中文>\`）。若命令语法必填 IP 字段且原句/规则未定具体值，使用 RFC 5737/3849 文档保留地址（如 \`192.0.2.10\` 或 \`2001:db8::1\`）并在 \`unknowns\` 写明按命令语法必填暂用测试保留地址、待脚本编写按测试环境替换。正例：\`sdns service ip "web1" 192.0.2.10\`；反例：\`sdns listener <arg1:ipv4/ipv6> [<arg2:int ...>]\` 或带 \`<源IP>\` 尖括号写法。
+2. 命令必须在同一构建 \`knowledge/\` 锁定的命令树中完整解析，不用缩写；写入 \`adapted.commands\` 或 \`slots\` 的每条命令都必须是**具体可执行的完整命令行**（按目录 \`words\` 逐词抄写，所有必填 \`<argN:...>\` 与选用的可选 \`[...]\` 参数一律换成合规具体字面值：字符串用双引号如 \`"web1"\`、整数写十进制数、合法关键字/枚举直接写词、未选用的可选 \`[...]\` 直接省略，严禁保留 \`<argN:...>\`、\`[...]\`、\`...\` 或 \`<中文>\`）。若命令语法必填 IP 字段且原句/规则未定具体值，使用 RFC 5737/3849 文档保留地址（如 \`192.0.2.10\` 或 \`2001:db8::1\`）并在 \`unknowns\` 写明按命令语法必填暂用测试保留地址、待脚本编写按测试环境替换。正例：\`widget service ip "web1" 192.0.2.10\`；反例：\`widget listener <arg1:ipv4/ipv6> [<arg2:int ...>]\` 或带 \`<源IP>\` 尖括号写法。
 3. 查某条命令的写法（语法、参数类型和范围、手册原文窗与示例、逆操作）可以跑任务文件给出的 \`cmd-lookup.ts --param '<命令词>'\`，一次给全；列某前缀下的命令头用 \`--heads '<前缀>'\`；它答的就是 \`knowledge/commands.txt\`、\`manual.txt\` 里的条目。从 \`knowledge/\`（含同构建手册正文、跨章说明与配置示例；条目前的 \`· 引用 tree:…\` 行是标注、不是原文，引用照抄它，它下面才是原文，标注行带「源 … 行 …」的条目按原文行号排，没有的先后不是手册先后）查全使作者命令成立所需的功能前置（如默认关闭、依赖对象、监听前提、多端本端与对端对称配置），写入 \`states\`（\`missing_prerequisite\` + \`prerequisites\` + \`reason\`）；仅当原始用例明确测“前置不存在/未配置”的反向场景时记明该测试条件而不补成必配前提。
 4. 原始用例要求的取值或写法被同构建手册和命令树明确排除、期望却是成功时（非测非法输入），不问使用者、不照写上机，也不把这一条搁下：按手册和命令树做最小改写，保住作者的被测对象、被测动作和边界（长度、类型、数量不变），\`adapted.action="parameter_change"\`，\`states.reason\` 以“模型决定：”开头写明原句、手册原话与改法并置 \`state="settled"\`，\`concretizations.decided_by="模型"\`、\`value_ref\` 引手册。任务文件或范围里已有使用者对本条的决定时照它做（\`states.reason\` 以“使用者决定：”开头逐字写，\`decided_by="使用者"\`）。不写 \`conflict\`：它要求两个有签发权的来源，原始用例和手册都不是。有多种改法时依次取：与同构建手册和命令树一致、保住作者步骤与边界、已声明执行器能判定、改动最小。
 5. \`adapted.commands\` 与 \`concretizations\` 里的命令只写锁定命令树里的设备命令。作者步骤是在客户端或其他主机上做的动作（发起查询、发请求、抓包等）时，不把它写成命令改写：保留原句，在 \`states\` 写明这一步由脚本编写按执行器规则在哪一类主机上落地。
@@ -185,11 +161,6 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
       { label: '计划本地自检工具', relPath: 'tools/check-plan.ts' },
       { label: '命令查询工具', relPath: 'tools/cmd-lookup.ts' },
     ],
-    // The 参数取值 line states the runner's contract for a value taken from the device: the selected cell goes into the `{}` (or `{0}`)
-    // of the first positional argument of a later command, which the runner replaces whole (lib/test_xlsx.py:698-721,
-    // `_validate_call_placeholders` and `_format_input_placeholder`). This text teaches no usage derived from one feature or case (how
-    // to build a name, which column to pin): InfoTest's worker prompt says the same of itself (main/ist_core/agents/compile-worker.md:51),
-    // and the writer finds those in the manual, the command tree and the executor rules through its lookups.
     body: `本子代理只承担单条自动化用例（plan JSON）的编写与本地只读校验职责，不执行父会话提示词中用例重组、场景保真核对、提交 Hub、生成自动化用例 Excel、环境预订/释放或询问使用者的任何动作。
 
 ## 固定本地执行规则
@@ -300,7 +271,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 
 ## 固定执行规则
 1. 所有文件读取与结果写入均使用工作目录相对路径（\`.\`，禁 \`/tmp\`）与本次任务文件列出的只读技能目录。${toolUsageBoundary({ hasEdit: false, hasGrep: true, hasExecute: false })}
-2. 禁止抄写旧值或编造设备输出：引用的设备报错、命令或手册条款必须逐字复制自本次下载的返回文件与锁定 \`knowledge/\`，并附来源路径或引用。读取单条失败证据时，必须同时检查返还目录下的 \`index.json\`（\`execution_refused\`、\`syntax_rejected\`）、逐条设备会话原始文本（如 \`apv_*.txt\` 等终端交互记录）以及框架日志 \`log.txt\`（\`log.txt\` 只记下发命令与框架层超时/异常，部分 CLI 拒绝只出现在会话记录与 \`index.json\`，且超长会话开头可能被截断，须三者互校）。
+2. 禁止抄写旧值或编造设备输出：引用的设备报错、命令或手册条款必须逐字复制自本次下载的返回文件与锁定 \`knowledge/\`，并附来源路径或引用。读取单条失败证据时，必须同时检查返还目录下的 \`index.json\`（\`execution_refused\`、\`syntax_rejected\`）、逐条设备会话原始文本（每台设备一份的终端交互记录，文件名见 \`index.json\` 的 \`sessions\`）以及框架日志 \`log.txt\`（\`log.txt\` 只记下发命令与框架层超时/异常，部分 CLI 拒绝只出现在会话记录与 \`index.json\`，且超长会话开头可能被截断，须三者互校）。
 
 ## 强制分析层序（对照本次任务文件列出的 \`tools/delivery.md\` 与主技能第 5 节）
 1. 先查 \`syntax_rejected\`（设备用脱字符 \`^\` 指出命令中的词）：此时命令尚未执行，优先核对该命令在当前设备提示符下同构建 \`knowledge/\` 中的完整语法或参数，先修命令写法/下发方法；此时严禁给出 \`defect_candidate\` 或 \`author_conflict\`。
@@ -333,7 +304,6 @@ export function resolveSubagentRole(roleArg: string): SubagentRoleSpec | null {
   return ROLE_ALIAS_MAP.get(roleArg.trim()) ?? null;
 }
 
-/** Renders a bundled `agents/<name>.md` subagent definition file (no `model` or `<技能目录>` placeholder). */
 export function renderAgentDefinition(role: SubagentRoleSpec): string {
   return [
     '---',
@@ -341,8 +311,6 @@ export function renderAgentDefinition(role: SubagentRoleSpec): string {
     `description: ${role.description}`,
     `tools: ${role.tools.join(', ')}`,
     ...(role.maxTurns === undefined ? [] : [`maxTurns: ${role.maxTurns}`]),
-    // The role text says all a session of the role needs. Without this line a client that knows it puts the whole of the
-    // lead's own prompt after the role text, with every request: about seven thousand tokens, eighteen hundred times a compile.
     'sessionPrompt: false',
     '---',
     role.body,
@@ -350,11 +318,6 @@ export function renderAgentDefinition(role: SubagentRoleSpec): string {
   ].join('\n');
 }
 
-/**
- * Renders the per-task inputs for a Circle pack subagent (`case-compile:compile-*`),
- * embedding verified reference file paths inside the skill directory and
- * the verbatim user scope recorded by the main session.
- */
 export function renderTaskBrief(input: TaskBriefInput): string {
   const { role, caseRef, briefPath, outPath, skillDir, scopeText, note, compileBrief } = input;
   const round = input.round ?? compileBrief?.identity.round ?? 1;
@@ -395,7 +358,6 @@ export function renderTaskBrief(input: TaskBriefInput): string {
       fullPath: resolveSkillReferencePath(skillDir, ref.relPath),
     }));
   const checkPlanRef = resolvedReferences.find((ref) => ref.relPath === 'tools/check-plan.ts');
-  // A check of a sibling skill sits beside this pack's folder in an installed home: <skills>/<skill>/tools/<script>.
   const checkSkillDir = role.localCheck?.skill ? `${(skillDir.endsWith('/') ? skillDir.slice(0, -1) : skillDir).replace(/\/[^/]+$/, '')}/${role.localCheck.skill}` : skillDir;
   const checkScriptPath = checkPlanRef?.fullPath ?? (role.localCheck ? resolveSkillReferencePath(checkSkillDir, `tools/${role.localCheck.script}`) : null);
   const check = role.localCheck && checkScriptPath
@@ -465,8 +427,6 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     '## 本次执行',
     `固定职责和工具范围来自包内自动登记的 \`${subagentType}\`（\`${role.agentName}\`）定义；本文件仅提供本次参数与已核对路径。`,
     ...(lookup && role.localLookup?.forms === 'commands' ? ['查命令的写法（语法、参数类型和范围、手册原文窗与示例、逆操作），一次给全；它答的是 knowledge/commands.txt、manual.txt 里这条命令的条目，不用分页读或逐词搜：', `\`${lookup}\``, '把 `--param \'<命令词，可带参数>\'` 换成 `--heads \'<命令词前缀>\'` 列某个前缀下的命令头；只读本次下载，不调 Hub。'] : lookup ? ['查命令的写法（语法、参数类型和范围、手册原文窗与示例、逆操作；不在 knowledge/commands.txt、manual.txt 里逐段 grep 或分页读）：', `\`${lookup}\``, '把 `--param \'<命令词，可带参数>\'` 换成 `--heads \'<命令词前缀>\'` 列某个前缀下的命令头；换成 `--method \'<对象>.<方法>\'` 查某个方法能不能用及怎么写（启用与否和原因、签名、G/H/I 写法、类型化权限、效果预算、取格、座位）；换成 `--methods \'<对象>\'` 列某对象的方法；换成 `--block \'<块种类>\'` 查块种类的必填、可选字段和示例（不在 contract.json、profile.json、slots.schema.json、tables/blocks-format.json 里逐段读这些）；都只读本次下载，不调 Hub。'] : []),
-    // A fact about the tool, not an instruction: in a real run 93 % of the writers' time passed before the plan was first written,
-    // and the check, which answers in seconds, was first run at the very end (one case at minute 104 of 110).
     ...(check ? ['写入后执行自检：', `\`${check}\``, '自检一次只要几秒，可以反复运行；对还没写完的文件，它也逐条指出缺什么、哪里对不上。'] : []),
     '',
   ];

@@ -7,15 +7,6 @@ export interface Problem { capacityExceeded?:boolean; pointer: string; message: 
 export interface RuntimeParameter { name: string; kind: string; required: boolean; redacted: boolean }
 /** The legacy reader verifies signatures only; unknown/raw metadata never becomes typed authority. */
 export interface RuntimeEntry { object: string; method: string; dispatch: string; parameters: RuntimeParameter[]; sourcePointer?: string; authority?: Authority | null }
-/**
- * The identities of the original contract (decision 184). `identity` is the one the gateway pins and a workbook carries in
- * its identity row. A runtime-contract@2 document whose bed pins the interface identity declares it as
- * `original.interface_sha256`: the digest of what a workbook depends on (interfaceForm), which stays the same when only an
- * implementation changes. A document that does not declare it comes from a bed that pins the whole original contract, and
- * `identity` is then `build`. `build` is the canonical identity of the original contract with its source digests, which
- * says which bytes ran; for an original-format document it is the document's own identity. `bytes` is the byte digest of the
- * original file, as recorded by the @2 declaration (null when the document is the original itself).
- */
 export interface PinnedIdentity { identity: string; build: string; bytes: string | null }
 /**
  * The runner's own cleanup (a runtime-contract@2 addition, decision 112): at every case boundary and at the end of a workbook
@@ -37,23 +28,9 @@ export interface RunnerCleanup { source: string; sha256: string; objects: string
  * the locked tree resolves, except these.
  */
 export interface DestructiveCommands { source: string; sha256: string; exact: string[]; prefixes: string[]; segments: string[] }
-/**
- * Lines a device prints when it did not carry out a command (a runtime-contract@2 addition, decision 163). The reference engine
- * keeps them in its domain grammar (exec_failure_markers) and turns a pass whose output carries one into no verdict; the source
- * of the declaration and its digest are declared here. Lines are compared as text, a marker is a part of a line.
- */
 export interface FailureMarkers { source: string; sha256: string; lines: string[] }
-/**
- * Access levels of commands that the prompt a method sends at does not accept (a runtime-contract@2 addition, 2026-11-10). The
- * locked command tree declares an access level for each command by its native name (CatalogSignature.access); which method
- * sends at which prompt is the bed framework's fact, and which level that prompt refuses is declared here with its evidence,
- * row by row. Only refusals with evidence are declared: a level that is not listed for a method is not checked at all. In
- * runs 16 and 19 thirteen commands of one level were typed with the method of the other prompt and answered with a caret;
- * the two cases spent five and three rounds on it.
- */
 export interface RefusedAccess { source: string; sha256: string; rows: Array<{ object: string; method: string; access: string[] }> }
 export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[]; cleanup?: RunnerCleanup; destructive?: DestructiveCommands; failureMarkers?: FailureMarkers; refusedAccess?: RefusedAccess }
-/** The access levels the prompt of this object's method refuses, as the contract declares them; empty when it declares none. */
 export function refusedAccess(contract: RuntimeContract, object: string, method: string): string[] {
   return contract.refusedAccess?.rows.find((row) => row.object === object && row.method === method)?.access ?? [];
 }
@@ -142,14 +119,6 @@ export function stripAdditions(value: Record<string, unknown>): Record<string, u
   out.contract_sha256 = value.original.contract_sha256;
   return out;
 }
-/**
- * What a workbook depends on in an original-format contract: its declared objects, methods, actions and runtime capabilities,
- * without the members that say which bytes implement them: the source digests, the runner's file and digest, the certification
- * and snapshot records, the line a declaration stands on, and which receipts stand behind a certified status (the authority
- * keeps its kind). Only those named members are left out, so a member this form does not know counts. An implementation that changes and leaves every declaration as it was leaves this as it was. The
- * bed-side runtime computes the same form (scripts/real/bed-side/cell_runtime.py interface_form); the lists are in
- * tables/runtime-contract-format.json.
- */
 function declaredItem(item: unknown): unknown {
   if (!isRecord(item)) return item;
   const out: Record<string, unknown> = { ...item };
@@ -353,9 +322,6 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   try { digest = runtimeDigest(value); } catch { /* Precise numeric/key problems were already listed above. */ }
   if (typeof value.contract_sha256 !== 'string' || !SHA.test(value.contract_sha256)) issue('/contract_sha256', '声明的合约摘要无效');
   else if (digest !== value.contract_sha256) issue('/contract_sha256', '重算合约摘要与声明值不一致');
-  // A @2 document must declare the original contract it was built on (canonical identity and byte digest); the @2
-  // additions are a Hub-side deployment declaration whose removal must recover the original contract's identity. It may
-  // also declare the original's interface identity: its gateway then pins that, and it is recomputed here.
   let pinned: PinnedIdentity = { identity: digest, build: digest, bytes: null };
   if (value.schema === 'runtime-contract@2') {
     const original = isRecord(value.original) ? value.original : null;
@@ -369,14 +335,13 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
       pinned = { identity: original.contract_sha256, build: original.contract_sha256, bytes: original.sha256 };
       if (original.interface_sha256 !== undefined) {
         let recomputed = '';
-        try { recomputed = recovered === null ? '' : interfaceDigest(recovered); } catch { /* listed below as a mismatch */ }
+        try { recomputed = recovered === null ? '' : interfaceDigest(recovered); } catch { }
         if (typeof original.interface_sha256 !== 'string' || !SHA.test(original.interface_sha256) || recomputed !== original.interface_sha256) issue('/original/interface_sha256', '声明的接口身份与按原合约重算的不一致');
         else pinned = { identity: original.interface_sha256, build: original.contract_sha256, bytes: original.sha256 };
       }
     }
   }
   if (expected && (expected.digest !== pinned.identity || expected.runtimeVersion !== runtime.minimum_version)) issue('/runtime', '合约身份与运行环境配置的期望值不一致');
-  // A row that names a pair the contract does not enable would never be read: a stale declaration is refused, not ignored.
   for (const [k, row] of (refused?.rows ?? []).entries()) if (!enabled.some((entry) => entry.object === row.object && entry.method === row.method)) issue(`/refused_access/rows/${k}`, '这一行写的对象方法不是合约启用的组合');
   if (problems.length) return { ok: false, problems };
   const contract: RuntimeContract = { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled, ...(cleanup ? { cleanup } : {}), ...(destructive ? { destructive } : {}), ...(failureMarkers ? { failureMarkers } : {}), ...(refused ? { refusedAccess: refused } : {}) };

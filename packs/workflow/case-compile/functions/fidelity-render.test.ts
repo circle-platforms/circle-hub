@@ -27,15 +27,15 @@ test('partitionFidelityBlocks preserves all preconditions and cleanup while hidi
     blocks: [],
     steps: [
       {
-        object: 'apv0',
+        object: 'dut0',
         method: 'cmd_config',
-        args: ['synconfig peer 192.0.2.2'],
+        args: ['widget peer 192.0.2.2'],
         keywords: {},
         description: '内部描述不得泄露给模型',
-        precondition_source: { reference: 'knowledge:manual#synconfig', text: 'Configure peer IP before enabling sync' },
+        precondition_source: { reference: 'knowledge:manual#widget-peer', text: 'Configure peer IP before enabling sync' },
       },
       {
-        object: 'apv0',
+        object: 'dut0',
         method: 'cmd_config',
         args: ['interface eth0', 'ip address 192.0.2.30/24', 'no shutdown'],
         keywords: {},
@@ -43,19 +43,19 @@ test('partitionFidelityBlocks preserves all preconditions and cleanup while hidi
         author_step_refs: ['1', '2'],
       },
       {
-        object: 'apv0',
+        object: 'dut0',
         method: 'cmd_show',
         args: ['show interface eth0'],
         keywords: {},
         author_step_refs: ['3'],
       },
       {
-        object: 'apv0',
+        object: 'dut0',
         method: 'cmd_config',
-        args: ['no synconfig peer 192.0.2.2'],
+        args: ['no widget peer 192.0.2.2'],
         keywords: {},
         cleanup: true,
-        precondition_source: { reference: 'knowledge:manual#synconfig', text: 'Remove peer IP during cleanup' },
+        precondition_source: { reference: 'knowledge:manual#widget-peer', text: 'Remove peer IP during cleanup' },
       },
     ],
     expects: [{ text: '192.0.2.30', quote: { reference: 'r', text: '192.0.2.30' }, after: 3 }],
@@ -81,7 +81,7 @@ test('negative missing-precondition cases NEVER fold away preconditions or clean
     schema: 'recompose-record@1',
     contract: { intent: { text: '验证前置未配置对端地址时下发配置报错' } },
     atoms: [
-      { id: '1', kind: 'action', text: '在未配置 peer 前置的情况下执行 synconfig commit' },
+      { id: '1', kind: 'action', text: '在未配置 peer 前置的情况下执行 widget commit' },
       { id: 'e1', kind: 'expectation', text: 'peer is not configured' },
     ],
     ledgers: { original: [], adapted: [], rebindings: [] },
@@ -91,16 +91,16 @@ test('negative missing-precondition cases NEVER fold away preconditions or clean
     blocks: [],
     steps: [
       {
-        object: 'apv0',
+        object: 'dut0',
         method: 'cmd_config',
-        args: ['synconfig peer 192.0.2.2'],
+        args: ['widget peer 192.0.2.2'],
         keywords: {},
-        precondition_source: { reference: 'knowledge:manual#synconfig', text: 'Configure peer' },
+        precondition_source: { reference: 'knowledge:manual#widget-peer', text: 'Configure peer' },
       },
       {
-        object: 'apv0',
+        object: 'dut0',
         method: 'cmd_config',
-        args: ['synconfig commit'],
+        args: ['widget commit'],
         keywords: {},
       },
     ],
@@ -108,7 +108,6 @@ test('negative missing-precondition cases NEVER fold away preconditions or clean
     replacements: [],
   };
   const brief = fidelityBrief('doc:neg', negRecord, negPlan)!;
-  // Negative-scenario meaning remains a model judgment; no keyword classifier runs.
   const part = partitionFidelityBlocks(brief);
   assert.equal(part.exemptedIndices.size, 0);
   assert.deepEqual(part.candidateBlocks.map((b) => b.index), [1, 2]);
@@ -139,7 +138,6 @@ test('renderFidelityStepState truncates oldest prior steps first, never slices m
   assert.ok(res.estTokensAfter <= FIDELITY_MAX_EST_TOKENS);
   assert.match(res.state, /\[候选命令块\]\nblock\[1\]/);
 
-  // Oversized single command block triggers overBudget rather than cutting mid-block.
   const hugeBrief = fidelityBrief('doc:huge', {
     schema: 'recompose-record@1',
     contract: { intent: { text: '短意图' } },
@@ -161,13 +159,11 @@ test('renderFidelityStepState truncates oldest prior steps first, never slices m
 });
 
 test('Plumb receives all exemption evidence and the authoritative rule without folding claims',()=>{
- const brief=fidelityBrief('doc:synthetic', {...RECORD,sources:{states:[{atom:'1',state:'missing_prerequisite',prerequisites:['manual-only-antecedent'],reason:'registered proof'}]}},{bucket:'bed-1',blocks:[],steps:[{object:'apv0',method:'cmd_config',args:['prepare'],keywords:{},precondition_source:{reference:'knowledge:manual',text:'exact manual antecedent'}}],expects:[],replacements:[]})!;
+ const brief=fidelityBrief('doc:synthetic', {...RECORD,sources:{states:[{atom:'1',state:'missing_prerequisite',prerequisites:['manual-only-antecedent'],reason:'registered proof'}]}},{bucket:'bed-1',blocks:[],steps:[{object:'dut0',method:'cmd_config',args:['prepare'],keywords:{},precondition_source:{reference:'knowledge:manual',text:'exact manual antecedent'}}],expects:[],replacements:[]})!;
  const part=partitionFidelityBlocks(brief),rendered=renderFidelityStepState(brief,0,part);
  assert.deepEqual(part.candidateBlocks,brief.blocks);assert.match(rendered.state,/manual-only-antecedent/);assert.match(rendered.state,/exact manual antecedent/);assert.ok(rendered.state.includes(brief.rules[2]));
  assert.doesNotMatch(rendered.state,/已核验豁免说明/);
 });
-
-/* ---- a long literal that repeats in the command blocks (round 33: 200- and 253-character names in every step) ---- */
 
 const LONG_NAME = ['a'.repeat(63), 'b'.repeat(63), 'c'.repeat(63), 'd'.repeat(61)].join('.');
 const LONG_RECORD = {
@@ -180,20 +176,18 @@ const LONG_RECORD = {
     { id: 'e1', kind: 'expectation', text: '查询返回签名' },
   ],
   ledgers: { original: [], adapted: [], rebindings: [] },
-  sources: { states: [{ atom: '2', state: 'missing_prerequisite', prerequisites: ['feature on（手册原话：该功能默认是禁用的）', 'zone dnssec on 启用签名功能', 'zone host name 配置域名并绑定可解析记录'], reason: '功能默认禁用，签名功能须单独开启；被测域名须先配置为可解析的域名' }] },
+  sources: { states: [{ atom: '2', state: 'missing_prerequisite', prerequisites: ['feature on（手册原话：该功能默认是禁用的）', 'demo signer on 启用签名功能', 'demo host name 配置域名并绑定可解析记录'], reason: '功能默认禁用，签名功能须单独开启；被测域名须先配置为可解析的域名' }] },
 };
-/** `count` command blocks; every third one carries the long name, the others are short and different from each other. */
 function repeatedNameBrief(count: number, literalEvery = 3) {
   const steps = Array.from({ length: count }, (_, i) => ({
     object: 'dut1',
     method: 'cmd_config',
-    args: [i % literalEvery === 0 ? `zone host name "${LONG_NAME}" 60` : `zone feature ${i} on`],
+    args: [i % literalEvery === 0 ? `demo host name "${LONG_NAME}" 60` : `demo feature ${i} on`],
     keywords: {},
     author_step_refs: [String((i % 3) + 1)],
   }));
   return fidelityBrief('doc:long-name', LONG_RECORD, { bucket: 'bed-1', blocks: [], steps, expects: [], replacements: [] })!;
 }
-/** The state as the gateway reads it back: the table dropped, each name written as its literal again. */
 function withLiteralsRestored(state: string, literal: string): string {
   return state.replace(/\n\n\[长字面量对照\][^\n]*\n[^\n]*\n[^\n]*(?=\n\n\[候选命令块\])/u, '').replaceAll('«L1»', literal);
 }
@@ -203,7 +197,7 @@ test('a repeated long literal is written once in a table and named in the blocks
   const part = partitionFidelityBlocks(brief);
   const plain = renderFidelityStepState(brief, 2, part, 1_000_000);
   assert.equal(plain.overBudget, false);
-  assert.ok(plain.estTokensAfter > FIDELITY_MAX_EST_TOKENS, 'the plain state is over the limit, as in round 33');
+  assert.ok(plain.estTokensAfter > FIDELITY_MAX_EST_TOKENS, 'the plain state is over the limit');
 
   const res = renderFidelityStepState(brief, 2, part);
   assert.equal(res.overBudget, false);
@@ -234,11 +228,10 @@ test('a state that fits is left byte for byte as it was, repeated literal or not
 });
 
 test('a state the long literal does not explain stays over budget and says where its tokens go', () => {
-  // 90 different commands and only three lines with the long name: replacing it saves too little.
   const steps = Array.from({ length: 90 }, (_, i) => ({
     object: 'dut1',
     method: 'cmd_config',
-    args: [i % 30 === 0 ? `zone host name "${LONG_NAME}" 60` : `zone feature ${i} on with option ${i * 7} and profile ${i * 13}`],
+    args: [i % 30 === 0 ? `demo host name "${LONG_NAME}" 60` : `demo feature ${i} on with option ${i * 7} and profile ${i * 13}`],
     keywords: {},
     author_step_refs: [String((i % 3) + 1)],
   }));

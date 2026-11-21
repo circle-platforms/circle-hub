@@ -8,11 +8,6 @@ export function isRecord(value: unknown): value is { [key: string]: unknown } {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/**
- * A check subject can hold data full of references that nothing quotes, such as catalog entries. The evaluator reads every
- * reference-like string it finds in a subject, against one budget for all items of a submission, so a whole mind map ran out of
- * it and verification stopped. Such data crosses the subject as text; its content does not change, so a recipe digest stays.
- */
 export function sealed(value: unknown): unknown {
   return value === undefined || value === null ? value : { sealed: JSON.stringify(value) };
 }
@@ -24,13 +19,8 @@ export function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, Math.max(1, max - 1))}…`;
 }
 
-/** Max length per wrapped explanatory prose line (safely below Circle `read_file` 2,000-char line cap). */
 export const PROSE_WRAP_MAX_CHARS = 1_600;
 
-/**
- * Wraps an explanatory Markdown prose bullet (`prefix + body`) so no emitted line exceeds `maxChars`.
- * Never apply to verbatim content blocks (device output, scope quotes, author/manual quotes, fenced blocks).
- */
 export function wrapProseLine(prefix: string, body: string, maxChars: number = PROSE_WRAP_MAX_CHARS): string[] {
   const width = Math.max(40, Math.floor(maxChars));
   const normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -105,12 +95,10 @@ export function markers(synthetic: boolean, identity?: { runtimeVersion: string;
   return `（${basis}${who}；不证明在真实设备上跑得通）`;
 }
 
-/** Parse only this module's complete provenance-tail grammar for display, never the meaning of a fact. */
 export function reportStatement(text: string): string {
   return text.replace(/（(按合成合约核对|按发布的运行器合约核对)；运行时 [^；\r\n]+；身份 [a-f0-9]{12}；不证明在真实设备上跑得通）/gu, '（$1；不证明在真实设备上跑得通）');
 }
 
-/** Local operator time, to the minute; raw timestamps stay in machine records. */
 export function localMinute(date: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${p(date.getMonth()+1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}`;
@@ -131,7 +119,6 @@ export function guarded(run: () => unknown, failure: (message: string) => unknow
 
 export type CallErrorCategory = (typeof CALL_ERROR_CATEGORY_LABEL)[keyof typeof CALL_ERROR_CATEGORY_LABEL];
 export interface CallFailureFields { path?: string; legal_form?: string }
-/** Explicit refusal data. No category or next action is inferred from prose. */
 export class CallFailure extends Error {
   readonly category: CallErrorCode;
   readonly fact: string;
@@ -149,7 +136,6 @@ export function failCall(category: CallErrorCode, fact: string, next_action: str
   throw new CallFailure(category, fact, next_action, fields);
 }
 const sentence = (text: string): string => text.trim().replace(/[。．.!！;；]+$/u, '') + '。';
-/** Only native structured filesystem and connection codes select a recovery action. */
 function nativeFailure(error: unknown): CallFailure | null {
   if (!(error instanceof Error)) return null;
   const fields = error as Error & { code?: unknown; path?: unknown };
@@ -161,33 +147,21 @@ function nativeFailure(error: unknown): CallFailure | null {
   if (typeof code === 'string' && ['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EAI_AGAIN','ENOTFOUND','EHOSTUNREACH','ENETUNREACH','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'].includes(code)) return new CallFailure('temporarily_unavailable', `连接操作失败（${String(code)}）`, '由运行者检查当前连接目标与服务状态后重试同一请求');
   return null;
 }
-/** A null category means no structured refusal classification was established. */
 export interface CallFailureData extends CallFailureFields {
   category: CallErrorCode | null;
   fact: string;
   next_action: string;
 }
-export interface CallFailureOptions { category?: CallErrorCategory; fallbackNextStep?: string }
-export function callFailureData(error: unknown, options?: CallFailureOptions): CallFailureData {
-  let failure = error instanceof CallFailure ? error : nativeFailure(error);
-  if (!failure && options?.category) {
-    const entry = Object.entries(CALL_ERROR_CATEGORY_LABEL).find(([,label]) => label === options.category);
-    if (entry && options.fallbackNextStep) failure = new CallFailure(entry[0] as CallErrorCode, error instanceof Error ? error.message : '调用失败', options.fallbackNextStep);
-  }
+export function callFailureData(error: unknown): CallFailureData {
+  const failure = error instanceof CallFailure ? error : nativeFailure(error);
   return failure ?? { category: null, fact: '调用未完成，缺少结构化错误原因', next_action: '请维护者定位本次拒绝点并补齐错误类别、事实和下一步；不据此改写输入内容或判断业务结论' };
 }
-/** Adapts structured refusal data to the existing CLI wire text. */
-export function formatCallError(error: unknown, options?: CallFailureOptions): string {
-  const failure = callFailureData(error, options);
-  // The legacy CLI label means the caller cannot proceed; null is never a network or transient attribution.
+export function formatCallError(error: unknown): string {
+  const failure = callFailureData(error);
   const category = failure.category ?? 'temporarily_unavailable';
   return labelOf('call_error_category', category) + '：' + sentence(failure.fact) + sentence(failure.next_action) + (failure.path ? `位置：${failure.path}。` : '') + (failure.legal_form ? `合法写法：${failure.legal_form}。` : '');
 }
 
-/**
- * Parses `--name value` CLI pairs against a declared boolean `required` table.
- * Rejects `=` assignments, repeated keys, bare positional arguments, and unknown flags.
- */
 export function parseCliOptions<K extends string>(
   argv: readonly string[],
   options: Record<K, boolean>,
@@ -222,4 +196,3 @@ export function parseCliOptions<K extends string>(
   }
   return values;
 }
-

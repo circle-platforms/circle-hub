@@ -1,7 +1,3 @@
-// What the gate's replay of policy checks says when a check reached no conclusion (decision 116): which check, and the cause its own
-// unknown outcomes name, read from closed fields only; and that a refutation decides first, at both clauses. The refusal leaves out
-// whether a request went out (the caller that records it says so, refusalText). No database: the replay port and the effect rows are
-// the only live parts.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {AllowedEffect} from '../../contracts/src/pack.ts';
@@ -26,7 +22,6 @@ test('the policy rerun names the first check without a conclusion, with its reas
  const failure=await refusal(g.context.policies(row({policy_checks:['first','second','third']})));
  assert.equal(failure.clause,7);assert.equal(failure.code,'PACK_POLICY_DENIED');assert.equal(failure.row,document.effects[0].id);assert.deepEqual(failure.requirements,document.effects[0].release.requirements);
  assert.match(failure.message,/^政策检查 second 没有给出政策结论：1\/1 条结果是未知（缺输入），缺 M2；/);assert.doesNotMatch(failure.message,/third|M3/);
- // The gate's refusal does not claim what became of the request: this boundary also runs before a resend. The caller that records it does.
  assert.match(failure.message,/不是计划、工作簿或包被驳回$/);assert.doesNotMatch(failure.message,/什么都没发出|提交已调用/);assert.equal(failure.no_conclusion,true);
  assert.match(refusalText(failure,false),/不是计划、工作簿或包被驳回；什么都没发出$/);
  assert.match(refusalText(failure,true),/不是计划、工作簿或包被驳回；提交已调用，原请求是否执行须对账$/);assert.doesNotMatch(refusalText(failure,true),/什么都没发出/);
@@ -42,7 +37,6 @@ test('a refutation decides the parameter gate as it decides the policy rerun, wh
   const verdicts=outcomes.map(outcome=>outcome.verdict).join();
   assert.equal(await g.context.parameterPolicy(parameterRow),false,'clause 2: '+verdicts);assert.equal(await g.context.policies(row({policy_checks:['first']})),false,'clause 7: '+verdicts);
  }
- // With no refutation an unknown outcome is no conclusion at both clauses, each under its own number.
  for(const outcomes of [[support,sandbox],[sandbox],[unknown({})],[]]){
   const g=await gate(async()=>({first:outcomes}));
   const parameter=await refusal(g.context.parameterPolicy(parameterRow)),policy=await refusal(g.context.policies(row({policy_checks:['first']})));

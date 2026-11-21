@@ -1,4 +1,3 @@
-// Only cited model choices and flat absence checks select frozen expected nodes for subjects and recipes.
 import {isRecord} from './text.ts';
 export function selectedExpectedNodes(nodes:unknown,data:unknown):unknown{
  if(!isRecord(data)||!Array.isArray(data.expects))return undefined;

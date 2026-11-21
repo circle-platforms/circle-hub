@@ -1,4 +1,3 @@
-// Generic record reads use one policy registry; domain readers supply their own boundary checks.
 import { isKnowledgeContributionSchema } from '../../contracts/src/contributions.ts';
 import { isMemoryRecord } from '../../contracts/src/memory.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
@@ -22,12 +21,8 @@ export const RECORD_ACCESS = {
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 type RecordHeader = Pick<StoredRecord, 'kind' | 'schema' | 'body'>;
 
-/** Both existing reader call shapes resolve through the same implementation. */
-export function runOfRecord(record: RecordHeader): string | null;
-export function runOfRecord(kind: string, body: unknown, schema?: string): string | null;
-export function runOfRecord(record: RecordHeader | string, body?: unknown, schema?: string): string | null {
-  const kind = typeof record === 'string' ? record : record.kind;
-  if (typeof record !== 'string') { body = record.body; schema = record.schema; }
+export function runOfRecord(record: RecordHeader): string | null {
+  const { kind, schema, body } = record;
   const runScoped = Object.hasOwn(RECORD_ACCESS, kind) && RECORD_ACCESS[kind as RecordKind] === 'run';
   if (!runScoped && !(kind === 'claim' && schema === 'hypothesis-set@1') || !object(body)) return null;
   if (typeof body.run === 'string') return body.run;
@@ -37,13 +32,11 @@ export function runOfRecord(record: RecordHeader | string, body?: unknown, schem
 
 export interface RecordVisibilityPorts {
   account(id: string): Promise<User | null>;
-  /** A header only when this caller may read the run, including an explicit read-only share. */
   run(by: Principal, id: string): Promise<RunRecord | null>;
   source(by: Principal, record: SourceArtifact): Promise<boolean>;
   contribution(by: Principal, record: StoredRecord): Promise<boolean>;
   request(by: Principal, run: RunRecord, record: StoredRecord): Promise<boolean>;
   result(by: Principal, run: RunRecord, record: StoredRecord): Promise<boolean>;
-  /** A non-runner's submission must have its verified acceptance receipt and readable grounds. */
   submission(by: Principal, run: RunRecord, record: StoredRecord): Promise<boolean>;
 }
 

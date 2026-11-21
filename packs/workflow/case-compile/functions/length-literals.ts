@@ -1,11 +1,3 @@
-// A literal of a set length (a 253-character domain name, a 64-character name) is not something a model types reliably: in a real
-// run its 253-character domains were 246 to 288 characters long, and the device refused every command that carried one. The
-// reference engine generates such a literal from the author's stated length and checks the length before a workbook is emitted.
-// Here the plan writes a placeholder and the client expands it the same way every time, before the plan leaves the client:
-//   {{domain:N}}  {{domain:N|prefix}}  {{domain:N|prefix|suffix}}  {{name:N}}  {{name:N|prefix}}  {{name:N|prefix|suffix}}
-// A domain name is filled with labels of at most 63 characters (RFC 1035 §2.3.4) so that the whole is exactly N characters; a name
-// is filled without dots. The fixed parts are kept verbatim and the same placeholder always gives the same literal, so a case that
-// names its domain in a command and in an expectation names the same one. Nothing here decides what a case means.
 import { CallFailure, isRecord } from './text.ts';
 
 export const MAX_LABEL = 63;
@@ -19,12 +11,11 @@ export const PLACEHOLDER_FORMS = '{{domain:253}}、{{domain:253|前缀|后缀}} 
 
 export interface Expansion { placeholder: string; literal: string; length: number; labels: number[] | null }
 
-/** Labels of filler whose joined length, dots included, is exactly `total` (at least 1), none longer than MAX_LABEL. */
 function fillerLabels(total: number): string[] {
   const labels: string[] = [];
   let rest = total;
   while (rest > MAX_LABEL) {
-    const take = rest === MAX_LABEL + 1 ? MAX_LABEL - 1 : MAX_LABEL; // never leave an empty last label
+    const take = rest === MAX_LABEL + 1 ? MAX_LABEL - 1 : MAX_LABEL;
     labels.push(LETTERS[labels.length % LETTERS.length].repeat(take));
     rest -= take + 1;
   }
@@ -53,7 +44,6 @@ function expandOne(placeholder: string, kind: string, length: number, prefix: st
   return { placeholder, literal, length, labels };
 }
 
-/** Every placeholder of one string expanded; a string that still names one in another form is refused, never sent half-expanded. */
 export function expandText(text: string): { text: string; expansions: Expansion[] } {
   const expansions: Expansion[] = [];
   const out = text.replace(PLACEHOLDER, (placeholder: string, kind: string, digits: string, rest: string) => {
@@ -66,7 +56,6 @@ export function expandText(text: string): { text: string; expansions: Expansion[
   return { text: out, expansions };
 }
 
-/** A JSON value with every string's placeholders expanded, and the expansions in order of appearance. */
 export function expandValue(value: unknown): { value: unknown; expansions: Expansion[] } {
   const expansions: Expansion[] = [];
   const walk = (v: unknown): unknown => {
@@ -78,7 +67,6 @@ export function expandValue(value: unknown): { value: unknown; expansions: Expan
   return { value: walk(value), expansions };
 }
 
-/** One line per distinct placeholder: what it became, for the model to read back instead of counting. */
 export function describeExpansions(file: string, expansions: Expansion[]): string[] {
   const seen = new Set<string>();
   return expansions.filter((e) => !seen.has(e.placeholder) && seen.add(e.placeholder)).map((e) => `${file}：${e.placeholder} → ${e.length} 字符${e.labels ? `，${e.labels.length} 段，各段 ${e.labels.join('/')}` : ''}`);

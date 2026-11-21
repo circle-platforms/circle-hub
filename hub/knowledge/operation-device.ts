@@ -1,6 +1,5 @@
 // The device and bed an operation record was captured on: its identity, nothing about leases. Beds, devices and their leases
-// belong to the test-bed pack (owner's decision, 2026-10-30): a record says which bed and device it touched and never claims
-// a lease, as InfoTest's probe records name their bed and leave the lease empty.
+// belong to the test-bed pack: a record says which bed and device it touched and never claims a lease.
 import type { RecordStore } from '../records/api.ts';
 import type { KnowledgeRunReadPort } from '../ports.ts';
 import { frozenBeds } from '../../packs/workflow/test-bed/api.ts';

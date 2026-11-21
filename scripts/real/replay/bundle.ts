@@ -226,7 +226,6 @@ export function compile(sessions: SessionRow[], messages: Map<string, Message>, 
     for (const p of jobs.values())
       gaps.push({ fact: '后台任务缺少完成通知', next: '捕获完整任务边界', event: p.result.id, blocking: true });
   }
-  // The schedule is validated independently of the player.
   const indegree = new Map(events.map(e => [e.id, e.dependsOn.length]));
   const children = new Map<string, string[]>();
   for (const e of events)

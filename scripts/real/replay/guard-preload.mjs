@@ -1,6 +1,3 @@
-// Network is never an effect of a replay guard. Child processes and filesystem writes are denied by Node permissions.
-// A read outside the sandbox is denied the same way, and every one is reported on file descriptor 3 (a JSON list of paths) when the
-// process exits, so the comparison knows when a decision depended on something the context did not provide.
 import fs from 'node:fs';
 import net from 'node:net';
 import tls from 'node:tls';
@@ -43,5 +40,5 @@ fs.realpathSync = realpath;
 syncBuiltinESMExports();
 process.on('exit', () => {
   try { fs.writeSync(3, JSON.stringify([...outside].sort())); }
-  catch { /* no side channel: the report stays empty */ }
+  catch { }
 });

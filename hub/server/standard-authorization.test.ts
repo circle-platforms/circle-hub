@@ -1,8 +1,6 @@
 // The MCP standard authorization end to end (decision 125): the official SDK client discovers the Hub's metadata from the
 // 401, registers, is sent to the authorization page, and after the invitation step and the approval exchanges the code
 // for a token it then calls tools with. Also: a signed-in browser approves without an invitation; every refusal of the
-// authorization and token endpoints; the request and code lifetimes; and revocation. One-time console login links are
-// retired (U5; no production caller).
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { request as httpRequest } from 'node:http';

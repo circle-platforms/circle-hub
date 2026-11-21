@@ -16,10 +16,8 @@ function problemLine(problem: PackProblem): string {
   return `- [${problem.rule}] ${where}：${problem.message}（处理：${problem.fix}）`;
 }
 
-/** At most this many changed files are named one by one in a check's comparison with the version in use. */
 const MAX_CHANGE_LINES = 50;
 
-/** A passed check's comparison with the version in use: the versions, then each file added, modified or removed. */
 function changeLines(checked: PublishCheck & { ok: true }): string[] {
   const current = checked.current;
   if (current === null) return [`包 ${checked.manifest.id} 还没有已发布的版本，没有可比较的当前版本`];
@@ -33,11 +31,6 @@ function changeLines(checked: PublishCheck & { ok: true }): string[] {
   return lines;
 }
 
-/**
- * A temporary directory holding pack.json and the files it lists, copied from `source` (which may hold more: tests, a README).
- * A listed path must be a plain file inside `source`; the publish check still verifies every digest and refuses anything
- * the copy lacks. Returns the directory to publish; its parent is the one to remove.
- */
 async function stagePackDirectory(source: string): Promise<string> {
   let manifest: { files?: Array<{ path?: unknown }> };
   try {
@@ -107,11 +100,9 @@ export async function packCommand(session: Session, args: readonly string[]): Pr
         const fix = outcome.problems.some((p) => p.rule === 'publish.no_right') ? `管理员先授予发布权：circle-hub pack grant-publish ${admin.name}` : '按上面每条问题的处理改好后重新发布';
         throw new CliError(`${what}：${outcome.problems.length} 个问题`, fix);
       };
-      // --stage publishes a copy of exactly the files pack.json lists, so a source directory may hold tests and a README.
       const staged = values.stage === true ? await stagePackDirectory(source) : null;
       const options = { answerRequests: values['answer-request'] ?? [] };
       if (values['dry-run'] === true) {
-        // Every check and refusal of publish, nothing stored: what the console's 发布任务包 shows before its 发布 step.
         let checked;
         try {
           checked = await decided(() => hub.registry.check(admin, staged ?? source, options));
@@ -238,4 +229,3 @@ export async function packCommand(session: Session, args: readonly string[]): Pr
       throw new UsageError(`pack 的子命令：${PACK_USAGE}`);
   }
 }
-

@@ -1,7 +1,3 @@
-// Decision 179 (model 83: W06 R[6] exception and R[7], B03 R[0], W08): the contract shapes of an input bound after the start.
-// from_runs.after_start is for one expected source and needs the workflow's refresh function, whose reads name frozen slots
-// only; the run summary freezes the slot and the run (late_inputs), never a result; the run context, the subject item, the
-// refresh input and output, the lock and the late export carry the shapes both sides of the protocol use.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ItemRefreshInput, ItemRefreshOutput, ItemRefreshRef, RunContext, SubjectItem, WorkflowFile, WorkflowInput, schemas } from './pack.ts';
@@ -60,7 +56,6 @@ test('a resolved late input names a complete result record or the missing fact, 
 });
 
 test('the run freezes the slot and the run, the context and the subject item carry the late parts, refresh has its shapes', () => {
-  // RunRecord carries RunSummary's late_inputs.
   assert.ok(RunRecord.safeParse(runRecord).success);
   assert.ok(RunRecord.safeParse({ ...runRecord, late_inputs: [{ slot: 'stage', run: RUN }] }).success, messages(RunRecord.safeParse({ ...runRecord, late_inputs: [{ slot: 'stage', run: RUN }] })).join('\n'));
   assert.ok(RunRecord.safeParse({ ...runRecord, late_inputs: [{ slot: 'stage', run: RUN, defaulted: true }] }).success);

@@ -21,7 +21,6 @@ after(async()=>{if(cluster)await cluster.then(pg=>pg.stop()).catch(()=>{});});
 
 export async function setup(options: { mode?: string; alter?: (name: string, value: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>; onSubmit?: () => Promise<void>; timeout?: number; ttl?: number; extraTools?: string[]; serverVersion?:()=>string; delay?: Record<string,number>; lockedBuild?: string; items?: string[] } = {}) {
   const items = options.items ?? ['synthetic-case'];
-  // One run item per case of the workbook (the dispatch proof wants as many as the workbook has); a single case keeps its name.
   const runItems = items.length === 1 ? ['synthetic-item'] : items.map((_, k) => `synthetic-item-${k + 1}`);
   const clock = { ms: Date.parse('2026-10-23T00:00:00.000Z') };
   const now = () => new Date(clock.ms);

@@ -42,9 +42,7 @@ export interface Projection {
   leaseRequests: LeaseRequest[];
   /** Devices the Hub looks at once the acquire is granted (workflow context observations, decision 112). */
   observe: Array<{ inventory: string; device: string; label: string }>;
-  /** Lines to ask devices the run's lineage holds the lease of, what they expect at the end of each (device help). */
   ask: DeviceHelpTarget[];
-  /** One read-only command line to send to a device the run's lineage holds the lease of, for its own output (device read). */
   read: DeviceReadTarget[];
 }
 

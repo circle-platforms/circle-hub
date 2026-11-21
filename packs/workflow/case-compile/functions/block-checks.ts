@@ -12,13 +12,7 @@ import {readCommandPolicy,within} from './generated/skills/command-tools/command
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 const MAX_LISTED=32;
 const quoted=(value:unknown):string=>JSON.stringify(value)??String(value);
-/** The ids a responder may name: every block whose call returns device text, in plan order. */
 export const observationIds=(slots:PlanSlots):string[]=>slots.steps.flatMap(step=>step.output&&step.id!==undefined?[step.id]:[]);
-/**
- * A responder row names the observation block it answers by that block's id (a saved name or a device is not one). A refusal says
- * the value written, lists this plan's observation ids (a closed set the plan itself defines) and, when the value is the saved name
- * of exactly one observation block, that block's id. It never rewrites the plan.
- */
 export function responderOutputGaps(slots:PlanSlots,seats:readonly string[]=[]):AuthorityGap[]{
  const meta=blockMeta(slots),rows=slots.block_context?.responders;if(!meta||!Array.isArray(rows))return [];
  const ids=observationIds(slots),listed=ids.length?ids.slice(0,MAX_LISTED).join('、')+(ids.length>MAX_LISTED?`…（共 ${ids.length} 个，完整集合见结构化结果）`:''):'没有观察块';
@@ -32,17 +26,10 @@ export function responderOutputGaps(slots:PlanSlots,seats:readonly string[]=[]):
   return [{document:'blocks',pointer:`/block_context/responders/${index}/output`,verdict:'refute' as const,requested_output:value,allowed_output_ids:ids,...(expected!==undefined?{expected_output:expected}:{}),message:`应答者 output 写的是 ${quoted(value)}，它不是本条任何观察块的 id；output 要填产生设备原文的观察块的 id，不是保存名或设备名；本条的观察块 id：${listed}${why}${ref}；不自动改写计划`}];
  });
 }
-/** The ids of the blocks whose call returns device text and that are not earlier than step `position` (from 1), in plan order. */
 const observationsFrom=(slots:PlanSlots,position:number):string[]=>slots.steps.flatMap((step,index)=>step.output&&step.id!==undefined&&index+1>=position?[step.id]:[]);
 const kindOf=(slots:PlanSlots,id:string):string=>String(slots.blocks.find(block=>block.id===id)?.kind);
-/**
- * Why one causal edge is refused, from what the plan itself defines: the edge as written, which end is wrong (an id of no step block,
- * an observation earlier than the step, an end that carries no device text), the ids that exist and the next step. The rule is the
- * one the check always had (an edge runs from an existing step to an observation block not earlier than it); the plan is not rewritten.
- */
 function causalEdgeText(slots:PlanSlots,meta:BlockMeta,link:{from:string;to:string}):string{
  const from=meta.steps.get(link.from),to=meta.steps.get(link.to),faults:string[]=[];
- // An id that is the saved name of a block's output is not an id; the block that owns it is named, as for a responder's output.
  const hint=(value:string):string=>{const saved=meta.registers.get(value);return saved===undefined?'':saved.cell?`；它是块 ${saved.block}（${kindOf(slots,saved.block)}）保存的单格，不是块 id`:`；它是块 ${saved.block} 保存的名字，块 id 是 ${saved.block}`;};
  if(from===undefined)faults.push(`起点 from 写的是 ${quoted(link.from)}，它不是本条任何步骤块的 id${hint(link.from)}`);
  if(to===undefined)faults.push(`终点 to 写的是 ${quoted(link.to)}，它不是本条任何步骤块的 id${hint(link.to)}`);
@@ -62,10 +49,6 @@ function causalEdgeText(slots:PlanSlots,meta:BlockMeta,link:{from:string;to:stri
   next:fromWrong&&toWrong?`from 改成本条的块 id，to 改成上面允许的观察块 id（真正检验这条配置的那一个），${quoteRule}`:fromWrong?`from 改成本条的块 id（上面列出的），to 不变，${quoteRule}`:`to 改成上面允许的观察块 id（真正检验这条配置的那一个），${quoteRule}；边的终点必须是观察，不能指向另一条配置，也不能指向排在起点前面的块`,
  });
 }
-/**
- * Why a configuration block has no causal edge to a later observation: its block id, the edges that start at it and do not count
- * (and why), the observation blocks after it that could carry the edge and the form of the edge to add.
- */
 function missingEdgeText(slots:PlanSlots,meta:BlockMeta,links:Array<{from:string;to:string}>,step:PlanStep,index:number):string{
  const id=String(step.id),later=observationsFrom(slots,index);
  const why=(to:string):string=>{const at=meta.steps.get(to);return at===undefined?'终点不是本条任何步骤块的 id':!slots.steps[at-1]!.output?`终点是 ${kindOf(slots,to)} 块，不是观察块`:'终点排在它前面';};

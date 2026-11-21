@@ -1,24 +1,15 @@
-// The program's word on the commands of a plan, for the tool that asks a model about them. InfoTest judges commands by program only:
-// the command tree of the build decides whether a command exists and whether its parameters have the right count, type, enum and
-// range (emit_xlsx_tool.py command_existence_verdict, vendor_stdlib.py _parameter_contract_error; "the XML is the only authority"),
-// and no model judges a command. Here the same word is the Hub's own command-tree check (commands_catalog of checks.json, the
-// function check-plan runs) on the frozen run and its locked tree, read step by step. Nothing of it is written again.
 import type {LockedTree} from './catalog-selection.ts';
 import {planBoundary} from './plan-boundary.ts';
 import {isRecord} from './text.ts';
 
-/** The one Hub check whose word this is. */
 export const COMMAND_TREE_CHECK='commands_catalog';
 export interface TreeProblem {pointer:string;message:string;verdict?:string;code?:string}
-/** What the check said of a whole plan: whether it ran (and if not why), and every problem it named. */
 export interface CommandTreeCheck {ran:boolean;why?:string;problems:TreeProblem[]}
-/** accepted: the tree resolves the command and names no problem at its step. refused: it names one. undetermined: it ran but could not settle this step. not_run: it did not run. */
 export type TreeStatus='accepted'|'refused'|'undetermined'|'not_run';
 export interface TreeAnswer {status:TreeStatus;reason?:string;problems?:TreeProblem[]}
 
 const clip=(text:string,chars:number):string=>[...text].length>chars?[...text].slice(0,chars).join('')+'…':text;
 
-/** Runs the Hub's command-tree check on one plan item with the inputs of its frozen run. It never throws and never reads a file. */
 export function commandTreeCheck(input:{run:unknown;item:string;slots:unknown;catalog?:LockedTree;catalogProblem?:string}):CommandTreeCheck{
  if(!isRecord(input.run))return {ran:false,why:'没有这次运行冻结的 run.json；命令树核对要用它冻结的合约、环境配置和锁定命令树',problems:[]};
  if(input.catalog===undefined)return {ran:false,why:input.catalogProblem??'缺这次运行冻结根的命令树（knowledge/nodes.jsonl）；没有它命令树核对跑不了',problems:[]};
@@ -32,15 +23,9 @@ export function commandTreeCheck(input:{run:unknown;item:string;slots:unknown;ca
 }
 
 const within=(pointer:string,scope:string):boolean=>pointer===scope||pointer.startsWith(scope+'/');
-/** The block or step a pointer lies in, when it lies in one: /blocks/<n> or /steps/<n>. */
 const holderOf=(pointer:string):string|null=>/^\/(?:blocks|steps)\/\d+(?=\/|$)/u.exec(pointer)?.[0]??null;
-/** The step of a unit: a block's command call lies in the block, so the whole block is its scope. */
 const scopeOf=(pointer:string):string=>pointer.endsWith('/call')?pointer.slice(0,-'/call'.length):pointer;
 
-/**
- * What the check says of one step or block, named by the pointer of its call (`/steps/<n>` or `/blocks/<n>/call`). Accepted only
- * when the check ran and named nothing at this step and nothing that belongs to no step (which could concern any command).
- */
 export function commandTreeAnswer(check:CommandTreeCheck,pointer:string):TreeAnswer{
  if(!check.ran)return {status:'not_run',reason:check.why??'命令树核对没有运行'};
  const scope=scopeOf(pointer),own=check.problems.filter(problem=>within(problem.pointer,scope));
@@ -51,18 +36,10 @@ export function commandTreeAnswer(check:CommandTreeCheck,pointer:string):TreeAns
  return {status:'accepted'};
 }
 
-/** What Plumb said of a command, as the tool reads its answer: pass, review or reject, and the sentence the tool wrote for that. */
-export interface PlumbCall {call:'pass'|'review'|'reject';note:string|null;/** Plumb's probability of the answer "yes", when it gave one. */yes?:number}
+export interface PlumbCall {call:'pass'|'review'|'reject';note:string|null;yes?:number}
 export interface StepJudgment {verdict:'pass'|'review'|'reject';blocked:boolean;review_required:boolean;note?:string;disclosure?:string}
-/** The sentence a step carries when Plumb rejected a command that the tree accepts. */
 export const OVERRIDE_DISCLOSURE='Plumb 判断（未确认）与命令树核对不一致；命令树核对通过，以命令树为准，需人工复核';
 
-/**
- * One verdict out of Plumb's call and the tree's answer: the program decides what it can decide and the model's judgment, which is
- * unconfirmed, only advises. The tree refuses a command: blocked, whatever Plumb said. The tree accepts a command Plumb rejected:
- * review (a person looks), blocked only under --strict-review. Where the tree gave no conclusion (it did not run, or could not
- * settle the step) Plumb alone has spoken and its call stands, as it did before the tree was asked.
- */
 export function judgeStep(plumb:PlumbCall,tree:TreeAnswer,strictReview:boolean):StepJudgment{
  if(tree.status==='refused'){
   const found=tree.problems?.map(problem=>problem.message).join('；')??'';

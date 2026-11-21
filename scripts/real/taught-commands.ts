@@ -1,8 +1,3 @@
-// Shared extraction and instantiation of taught `node` CLI examples from skill/agent markdown.
-// Used by guard-preflight and (when merged) circle-guard regression tests — one grammar for
-// both unquoted legacy docs (`node <技能目录>/tools/…`) and single-quoted docs
-// (`node '<技能目录>/tools/…'`).
-
 export type TaughtKind = 'shell' | 'text' | 'inline';
 
 export interface TaughtCommand {
@@ -10,11 +5,9 @@ export interface TaughtCommand {
   kind: TaughtKind;
   raw: string;
   isMetaTemplate?: boolean;
-  /** Body lines between <<'EOF' and EOF when the taught line opened a heredoc; null if none. */
   heredocLines: string[] | null;
 }
 
-/** Synthetic fills for `<占位符>`; values may contain spaces or non-ASCII (docs wrap them in `'…'`). */
 export const TAUGHT_PLACEHOLDERS: Record<string, string> = {
   '用例重组|脚本编写|保真核对|失败分析': '脚本编写',
   脚本编写编号: 'run_syntheticplan',
@@ -98,12 +91,6 @@ function splitAlternativesOutsideAngles(text: string): string[] {
   return parts;
 }
 
-/**
- * Structurally extracts taught `node` CLI commands from markdown:
- * fenced `sh`/`bash`/`shell` (including same-line `<<'EOF'`), `text` fences with optional
- * `label: ` prefix, and inline backticked `node …` spans.
- * Malformed heredocs remain literal input so the installed guard can reject them.
- */
 export function extractTaughtCommands(markdown: string, sourceLabel: string): TaughtCommand[] {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const out: TaughtCommand[] = [];
@@ -191,11 +178,6 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
   return out;
 }
 
-/**
- * Substitute the authored path placeholder without adding quoting or changing the spelling. `<名字 技能目录>` names a sibling
- * skill installed beside this one (case-compile/SKILL.md runs the recompose skill's download-run.ts), so it binds to the
- * directory of that name next to skillDir.
- */
 export function bindSkillDirectory(command: string, skillDir: string): string {
   const parent = skillDir.replace(/[\\/][^\\/]+[\\/]?$/, '');
   return command.split('<技能目录>').join(skillDir).replace(/<([A-Za-z0-9._-]+) 技能目录>/g, (_whole, name: string) => `${parent}/${name}`);
@@ -210,7 +192,6 @@ function resolvePlaceholderValue(name: string, extra: Record<string, string>): s
 
 function bareToken(value: string): string { return value; }
 
-/** Expands `[optional]` / `<a|b>` / `<占位符>` after the skill directory is already bound. */
 export function expandTaughtPlaceholders(
   command: string,
   extraPlaceholders: Record<string, string> = {},
@@ -252,7 +233,6 @@ export function expandTaughtPlaceholders(
             .map((opt) => form.slice(0, choices[0]!.index) + opt + form.slice(choices[0]!.index! + choices[0]![0]!.length))
         : [form];
     for (const choiceForm of choiceForms) {
-      // Preserve the authored quoting when substituting declared fixture values.
       const substituted = choiceForm
         .replace(/'<([^'<>]+)>'/g, (_whole, name: string) => {
           const value = resolvePlaceholderValue(name, extraPlaceholders);
@@ -260,7 +240,6 @@ export function expandTaughtPlaceholders(
             ? `'${value}'`
             : `'<${name}>'`;
         })
-        // Preserve comma-joined placeholders without adding shell quotes.
         .replace(/<([^<>]+)>,<([^<>]+)>/g, (_whole, left: string, right: string) => {
           const a = resolvePlaceholderValue(left, extraPlaceholders) ?? `<${left}>`;
           const b = resolvePlaceholderValue(right, extraPlaceholders) ?? `<${right}>`;
@@ -280,21 +259,16 @@ export function expandTaughtPlaceholders(
 
 export interface InstantiateOptions {
   skillDir: string;
-  /** Used only to expand abstract meta-templates into a real tool. */
   skillName?: string;
   placeholders?: Record<string, string>;
 }
 
-/**
- * Instantiates one taught command into concrete execute strings (optional-bracket and choice variants).
- */
 export function instantiateTaughtCommand(entry: TaughtCommand, options: InstantiateOptions): string[] {
   let command = entry.raw;
   if (entry.isMetaTemplate) return [];
 
   command = bindSkillDirectory(command, options.skillDir);
   if (command.includes('<技能目录>')) {
-    // Unbound skill dir (e.g. prose that only mentions the placeholder) — not a runnable example.
     return [];
   }
 

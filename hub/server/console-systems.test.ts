@@ -1,7 +1,4 @@
 // 接入业务系统's 尝试连接 and the reads of the last day, over HTTP with the test server and loopback stubs: the trial through
-// the operation's form (system-test / system-test-forget), for administrators only, recording the trial and showing no
-// value of the trial; the 24-hour reads of a system from its read manifests on the connections page and the overview.
-// U5: /console/api/systems* retired — no production caller.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
@@ -187,7 +184,6 @@ describe('尝试连接', () => {
     assert.equal((await form('system-test-forget', badFields, { origin: 'http://192.0.2.99' })).status, 403);
     assert.equal((await form('system-test-forget', badFields, { csrf: 'forged' })).status, 403);
     assert.equal(agile.logins, before, 'no login for any refusal');
-    // Cleared path and "absent" wording: covered by the next form-reset test.
   });
 
   test('a blocked result offers a form reset with re-entered credentials; write failures never claim a clear', async () => {

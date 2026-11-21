@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
-import { cp, readFile, mkdir } from 'node:fs/promises';
+import { cp, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
@@ -102,7 +102,6 @@ test('legacy v1 ciphertext plus authenticated sourced metadata works after an un
     const value = randomBytes(24).toString('base64url');
     const oldEntry = 'secret.demo_key.' + 'a'.repeat(24);
     await source.vault.put(oldEntry, value);
-    // These are synthetic old-format facts, authored in the source database rather than guessed by the reader.
     const legacy = { schema: 'secret@1', name: 'DEMO_KEY', entry: oldEntry, digest_rule: 'plain', length: [...value].length, consumers: [{ definition: 'res_' + '0'.repeat(26), item: 'password', sends_to: 'a'.repeat(64) }] };
     const object = await source.objects.put(Buffer.from(JSON.stringify(legacy)), 'application/json');
     const decision = await source.authorizations.configureResource(sourceAdmin, 'secret:DEMO_KEY', object.sha256, '合成旧版设置');

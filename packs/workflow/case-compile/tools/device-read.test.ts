@@ -1,4 +1,3 @@
-// The device read tool: what it sends, what it keeps of the answer, and that a read that cannot be made is an answer, not a failure.
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';

@@ -21,9 +21,7 @@ export const idOf = (prefix: string) => {
 export const RunId = idOf('run');
 export const UserId = idOf('usr');
 export const TeamId = idOf('tm');
-/** Team-scoped assignment or all enabled accounts, never a direct account grant. */
 export const TeamAssignmentSubject = z.union([TeamId, z.literal('*')]);
-/** Environment resources also allow a direct account assignment. */
 export const ResourceAssignmentSubject = z.union([TeamAssignmentSubject, UserId]);
 export const TokenId = idOf('tok');
 export const RecordId = idOf('rcd');

@@ -1,5 +1,3 @@
-// A read of a booked device on request (decision 181): what is checked before the one line is sent, and how the answer
-// is read. Structure alone decides: no word of the line is compared with any list, and no word of the answer is read.
 import { commandTokens } from '../../contracts/src/command-grammar.ts';
 import { at, type ExecutorDefinition } from './definition.ts';
 
@@ -9,13 +7,6 @@ export type ReadLineCheck = { ok: true; line: string; words: number } | { ok: fa
 
 const refuse = (fact: string, next_action: string): ReadLineCheck => ({ ok: false, fact, next_action });
 
-/**
- * The line of a requested read before it is sent: one complete line of words (the shared command lexer: quotes paired, at
- * most 2000 characters and 320 words), no control character at all, and the whole line of the shape the executor declares
- * for the commands its per-seat read sends (`commandPattern`, probes.command_pattern). The match must span the line from its
- * first character to its last, so a declared shape whose alternatives are not grouped (^a|b$) lets no half line through.
- * What is sent is the words joined by single spaces, and that text is what is held to the shape.
- */
 export function checkReadLine(line: unknown, commandPattern: string): ReadLineCheck {
   if (typeof line !== 'string' || line.trim() === '') return refuse('没有要读的那一行', 'line 写一条只读命令');
   if (/\p{Cc}/u.test(line)) return refuse('这一行里有控制字符（换行、制表、转义等），不发给设备', '去掉控制字符，写成一行普通文字后再读');
@@ -31,7 +22,6 @@ export function checkReadLine(line: unknown, commandPattern: string): ReadLineCh
 
 export type OutputReading = { ok: true; text: string | null } | { ok: false; why: string };
 
-/** The device text at the declared place of the answer, as received: nothing, null or only blanks there is no output; anything that is not text is not shown. */
 export function readOutput(value: unknown, pointer: string): OutputReading {
   const raw = at(value, pointer);
   if (raw !== undefined && raw !== null && typeof raw !== 'string') return { ok: false, why: '目标给出的输出不是文字' };

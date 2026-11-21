@@ -1,8 +1,4 @@
 // Author expectation coverage and quoted, typed judgments. No descriptive-language classification.
-// Where the author wrote a literal it is kept as written. Where the author wrote only a sentence, the model writes the checkpoint
-// itself as a typed criterion beside the verbatim quote (owner, 2026-11-16: the model writes the checkpoint, nothing is reviewed).
-// That is a model judgment, status unconfirmed, and the device run decides; a flat plan states the same with basis model_judgment.
-// A review of the criterion by another account is still accepted when it is bound, and a bound review must then verify.
 import TABLE from '../tables/blocks-format.json' with {type:'json'};
 import {isRecord,type Outcome} from './text.ts';
 import {canonicalJson} from './canonical-json.ts';
@@ -14,9 +10,7 @@ function recordInput(value:unknown,kind:string):Record<string,any>|null{
  if(!isRecord(value)||!isRecord(value.meta)||value.meta.kind!==kind||typeof value.meta.record!=='string'||!isRecord(value.model)||value.model.kind!==kind||!isRecord(value.model.body)||value.external!==null||value.meta.pointer!==undefined)return null;
  return {reference:'rec:'+value.meta.record,body:value.model.body};
 }
-/** A review is in play as soon as either of its two Hub records is bound or the evidence is anything but the frozen empty pair; it is then verified, never set aside. */
 const reviewBound=(evidence:unknown):boolean=>evidence!=null&&!(isRecord(evidence)&&evidence.result==null&&evidence.run==null);
-/** The way out of a refused review is always the same two: make the bound review whole, or bind none and let the model's judgment stand. */
 const OR_NO_REVIEW='或都不绑定复核（criteria_review 与 criteria_review_run），让模型自写的判据作为模型判断（状态未确认）由上机验证裁定';
 export function criterionReviewed(declaration:Record<string,any>,evidence:unknown):{ok:true;data:Record<string,unknown>}|{ok:false;missing:string}{
  const raw=isRecord(evidence)?evidence:{},result=recordInput(raw.result,'validation_result'),snapshot=recordInput(raw.run,'run');
@@ -32,7 +26,6 @@ export function criterionReviewed(declaration:Record<string,any>,evidence:unknow
  return {ok:true,data:{criterion:declaration.id,review:result.reference,review_run:snapshot.reference,reviewer:run.runner,model:claim.warrant.id,conditional_on_judgment:true}};
 }
 const MODEL_BASIS:ExpectationBasis='model_judgment';
-/** The model's own checkpoint for a sentence the author wrote no literal for: its judgment, unconfirmed, never reviewed. */
 function modelCriterion(criterion:Record<string,any>,expect:PlanExpect):Record<string,unknown>{
  return {criterion:criterion.id,expectation:criterion.expectation,assertion:expect.id,basis:MODEL_BASIS,kind:criterion.kind,operator:criterion.operator,
   ...(criterion.literal!==undefined?{literal:criterion.literal}:{}),...(criterion.count!==undefined?{count:criterion.count}:{}),...(criterion.relation!==undefined?{relation:criterion.relation}:{}),

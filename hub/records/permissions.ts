@@ -1,4 +1,3 @@
-// Role checks operate on the current account supplied by the calling permission boundary.
 import type { RunRecord } from '../../contracts/src/run.ts';
 import type { Principal } from './api.ts';
 import { AccessError } from './errors.ts';
@@ -8,7 +7,6 @@ export function isAdmin(principal: Pick<Principal, 'role'>): boolean {
   return principal.role === 'admin';
 }
 
-/** This is ownership visibility, not a read-only share or a resource assignment. */
 export function canSeeRun(principal: Principal, run: Pick<RunRecord, 'runner' | 'host' | 'pack_space'>): boolean {
   if (run.pack_space && run.pack_space !== 'team') return run.runner === principal.id;
   if (isAdmin(principal)) return true;
@@ -23,7 +21,6 @@ export interface MemberEnvironmentCapability {
   enabled: boolean;
   assigned: boolean;
   can_use: boolean;
-  /** null is unknown; [] means no local lease is recorded, never physical idleness. */
   occupancy: Array<{ name: string; since: string; until: string | null; mine: boolean }> | null;
   missing: string[];
 }
@@ -35,7 +32,6 @@ export interface MemberCapabilities {
   skills: MemberPackCapability[];
   connections: MemberConnectionCapability[];
   environments: MemberEnvironmentCapability[];
-  /** Own bookings without a verified executor binding; null means the holding read is unknown. */
   unattributed_holdings: Array<{
     booking_run: string; since: string; until: string | null;
     target: null; assigned: false; can_use: false;
@@ -45,19 +41,15 @@ export interface MemberCapabilities {
   denials: Array<{ reason: string; nextAction: string }>;
 }
 export interface MemberCapabilitySources {
-  /** The existing pack permission boundary, including globally installed generic skills. */
   canUsePack(by: Principal, pack: string): Promise<boolean>;
-  /** Public workflow IDs with a current non-withdrawn publication; never personal directories. */
   publicWorkflowIds(): Promise<readonly string[]>;
   packs(by: Principal): Promise<readonly { id: string; version: string; title: string; kind: import('../../contracts/generated/vocabulary.ts').PackKind; space?: string }[]>;
   connections(by: Principal): Promise<readonly { id: string; name: string; systemPack: string; environment: string; enabled: boolean }[]>;
   personalPackUse(by: Principal, owner: string, pack: string): Promise<boolean>;
-  /** Only already-authorized environments and already-redacted holder names may cross this port. */
   environments(by: Principal): Promise<{ ready: boolean; enforceEnvironmentAssignments?: boolean; items: readonly MemberEnvironmentCapability[]; missing: string | null; nextAction: string | null }>;
   unattributedHoldings(by: Principal): Promise<MemberCapabilities['unattributed_holdings']>;
 }
 
-/** One read-only permission projection; caller and target are reloaded, and hidden candidates never become denials. */
 export async function memberCapabilities(
   records: Pick<import('./api.ts').RecordsKit, 'principals' | 'teams' | 'authorizations' | 'artifacts'>,
   sources: MemberCapabilitySources,
@@ -101,7 +93,7 @@ export async function memberCapabilities(
     for (const connection of await sources.connections(target)) {
       if (!await records.authorizations.canUseResource(target.id, connection.id)) continue;
       if (!connection.enabled) {
-        result.denials.push({ reason: `连接“${connection.name}”已停用`, nextAction: '请管理员核对并启用已分配的连接' });
+        result.denials.push({ reason: `业务系统「${connection.name}」已停用`, nextAction: '请管理员核对并启用已分配的业务系统' });
         continue;
       }
       result.connections.push({ name: connection.name, systemPack: connection.systemPack, environment: connection.environment });
@@ -123,17 +115,14 @@ export async function memberCapabilities(
     result.unattributed_holdings = holdings === null ? null : holdings.map(item => ({
       booking_run: item.booking_run, since: item.since, until: item.until,
       target: item.target, assigned: item.assigned, can_use: item.can_use,
-      // Where assignments are not enforced a booking without one is still usable: the facts stay, the sentence must not say otherwise.
       assignment_reason: !enforced && !item.assigned ? '当前没有分配；这台 Hub 没有启用运行环境分配检查，预订仍由当前账户持有，可以继续用它上机验证' : item.assignment_reason, target_missing: item.target_missing,
     }));
     result.workflows.sort((a, b) => a.ref.localeCompare(b.ref));
     result.skills.sort((a, b) => a.ref.localeCompare(b.ref));
     result.connections.sort((a, b) => a.name.localeCompare(b.name));
-    if (!result.workflows.length) result.denials.push({ reason: '尚无可用的已分配工作流', nextAction: '请管理员把你加入团队并分配工作流，或直接向账户分配工作流' });
+    if (!result.workflows.length) result.denials.push({ reason: '尚无可用的已分配工作流', nextAction: '请管理员把当前账户加入团队并分配工作流，或直接向账户分配工作流' });
     if (!result.skills.length) result.denials.push({ reason: '尚无可用的通用技能', nextAction: '请管理员核对通用技能的安装与使用权限' });
-    if (!result.connections.length) result.denials.push({ reason: '尚无可用的已分配连接', nextAction: '请管理员向你所属团队或全体账户分配所需连接' });
-    // A denial says what stops the member. Without the assignment guard a missing assignment stops nothing: in a real run the model
-    // read this line after an unrelated failure and waited for an administrator who had nothing to grant (round 42, 2026-11-19).
+    if (!result.connections.length) result.denials.push({ reason: '尚无可用的已分配业务系统', nextAction: '请管理员向所属团队或全体账户分配所需业务系统' });
     if (environment.ready && enforced && !result.environments.some(item => item.assigned)) result.denials.push({ reason: '尚无已分配的运行环境', nextAction: '请管理员向账户或所属团队分配运行环境' });
     return result;
   });

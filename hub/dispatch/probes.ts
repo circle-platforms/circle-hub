@@ -29,7 +29,6 @@ export interface SeatEcho { device: string; label: string; values: string[]; ref
 export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledge|undefined,binding:JobBinding,d:ExecutorDefinition,client:RpcClient,context:Record<string,unknown>,journal:Journal,sleep:(ms:number)=>Promise<void>,observed?:(echo:SeatEcho)=>Promise<void>,replay?:Omit<ReplayIdentity,'executor'|'executorDigest'>):Promise<boolean> {
   const spec=d.probes!; const owner=await records.principals.get(binding.user);
   if(!owner || owner.disabled || !d.manifest_sha256)throw new PrecheckFactError('缺少有效探测主体或绑定清单','管理员恢复预订运行的有效主体，核对清单来源及摘要绑定后再采证');
-  // The version answers a booking kept, when this job runs under it with the same leases and executor definition (probe-replay.ts).
   const replayed=replay?await replayBookingVersions(records,owner,{...replay,executor:binding.executor,executorDigest:binding.executor_digest},d):null;
   const reused:{run:string;observed_at:string}[]=[];
   let source;
@@ -70,7 +69,6 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
     for(const alias of await knowledge.builds(context.product))if(alias.base===base)names.add(alias.name);
   }
   let verified=true; const assessments:string[]=[];
-  // One read-only command on one seat: up to three tries, and an explicit refusal ends the whole collection (no repeated device logins).
   const readSeat=async(seat:{seat:string;index:number},key:string,command:string)=>{
     let response:Exchange|undefined;let refused=false;let failedSource:string|undefined;
     for(let attempt=1;attempt<=3;attempt++) {
@@ -81,7 +79,6 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
   };
   probeLoop: for(const seat of spec.seats) {
     for(const [key,check] of Object.entries({version:seat.version,interfaces:seat.interfaces})) {
-      // What the answer says: judged from the answer alone, so that a kept answer is judged as a read one is.
       const judge=(response:Exchange|undefined,refused:boolean)=>{
         let matched=false,actual:string[]=[],expected:string[]=[],reason='回显里没有所需字段';
         try {
@@ -94,7 +91,6 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
         if(!response)reason=refused?'目标明确拒绝或原件无法保存；停止后续设备登录，请负责人核对受限原件和读取配置':'只读应答连续三次不可用；恢复读取后重跑预检';
         return {matched,actual,expected,reason};
       };
-      // A kept answer only spares a read that would confirm: one that does not match is read from the device, which may have been put right since.
       const kept=key==='version'?replayed?.exchanges.get(`${seat.index}.version`):undefined;
       let read:{response?:Exchange;refused:boolean;failedSource?:string}=kept?{response:kept,refused:false}:await readSeat(seat,key,check.command);
       let judged=judge(read.response,read.refused);
@@ -102,7 +98,7 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
       if(reuse && !judged.matched){read=await readSeat(seat,key,check.command);judged=judge(read.response,read.refused);reuse=false;}
       const {response,refused,failedSource}=read;
       const {matched,actual,expected,reason}=judged;
-      if(key==='version'&&response&&observed&&!reuse)try{await observed({device:seat.manifest.device,label:seat.seat,values:actual,reference:response.source});}catch{/* the device's latest observation is a record of what was seen, never what the check rests on */}
+      if(key==='version'&&response&&observed&&!reuse)try{await observed({device:seat.manifest.device,label:seat.seat,values:actual,reference:response.source});}catch{}
       if(reuse&&replayed&&!reused.some(row=>row.run===replayed.run))reused.push({run:replayed.run,observed_at:replayed.observed_at});
       const refs=response?[response.source]:failedSource?[failedSource]:[];
       const unjudged=key==='version' && locked===null;

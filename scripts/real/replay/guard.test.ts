@@ -10,7 +10,6 @@ function scratch() {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'circle-replay-guard-test-')));
   return { dir, evidence: () => { const d = mkdtempSync(join(dir, 'evidence-')); return d; }, close: () => rmSync(dir, { recursive: true, force: true }) };
 }
-/** A recorded prefix a little longer than the mirror base, so the private prefix has room for random characters. */
 const prefixFor = (base: string) => '/' + 'p'.repeat(base.length + 12);
 
 test('the mirror prefix has the length of the recorded one and maps whole directories only', () => {
@@ -139,7 +138,6 @@ test('with a mirror the guard sees the recorded prefix at a private one of equal
     finally {
       sandbox.dispose();
     }
-    // a recorded working folder outside the mirrored prefix cannot exist in the sandbox: the guard gets the sandbox's own work folder
     const other = new GuardSandbox({ files: { 'guard.mjs': 'x' }, mirror: { from, base: s.dir } });
     try {
       assert.equal(other.input({ cwd: '/elsewhere/work' }).cwd, join(other.root, 'work'));

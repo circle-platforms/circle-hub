@@ -1,5 +1,3 @@
-// Read-only console smoke probe: verifies unauthenticated redirects, admin GET access across all console routes,
-// optional member team-isolation and admin-route denial, and login/logout session handling without mutating Hub data.
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
@@ -53,7 +51,6 @@ const LOGIN_COOKIE_NAMES = ['__Secure-circle_hub_login', 'circle_hub_login'] as 
 const SESSION_COOKIE_NAMES = ['__Secure-circle_hub_session', 'circle_hub_session'] as const;
 const WORKFLOW_TITLE = uiLabelOf('pack_kind', 'workflow');
 const SKILLS_TITLE = '技能';
-/** The member home (/console/me) is titled 我能做的事 for the signed-in account, administrators included. */
 const ME_TITLE = '我能做的事';
 
 export type SmokePhase = '未登录' | '管理员' | '普通成员';
@@ -64,7 +61,6 @@ export interface RouteProbeSpec {
   readonly label?: string;
 }
 
-/** Parameterless protected GET routes checked for anonymous 303 redirect and authenticated admin 200 rendering. */
 export const ADMIN_GET_ROUTES: readonly RouteProbeSpec[] = [
   { path: overviewPath(), expectedTitle: '总览' },
   { path: mePath(), expectedTitle: ME_TITLE },
@@ -98,13 +94,11 @@ export const ADMIN_GET_ROUTES: readonly RouteProbeSpec[] = [
   { path: operationsKnowledgePath(), expectedTitle: '导入公共知识' },
 ];
 
-/** Protected GET paths that must redirect to login when visited anonymously (`rebuildPath()` is checked separately via rebuild handler rules). */
 export const PROTECTED_REDIRECT_PATHS: readonly string[] = [
   ...ADMIN_GET_ROUTES.map((route) => route.path),
   '/console/admin/jobs/smoke-probe',
 ];
 
-/** Admin-only pages that an ordinary member must not be able to open (404 neutral response). */
 export const MEMBER_BLOCKED_ADMIN_PATHS: readonly string[] = [
   healthPath(),
   operationsPath(),
@@ -115,7 +109,6 @@ export const MEMBER_BLOCKED_ADMIN_PATHS: readonly string[] = [
   '/console/admin/jobs/smoke-probe',
 ];
 
-/** Common GET pages also checked under the optional ordinary member session (besides team isolation & settings/rebuild checks). */
 export const MEMBER_COMMON_GET_ROUTES: readonly RouteProbeSpec[] = [
   { path: overviewPath(), expectedTitle: '总览' },
   { path: mePath(), expectedTitle: ME_TITLE },
@@ -188,7 +181,6 @@ export interface ConsoleSmokeReport {
 
 const REQUEST_METHOD_GUARD_MSG = '只读冒烟脚本禁止除登录与登出之外的非 GET 请求';
 
-/** Executes a single HTTP/HTTPS request without following redirects; refuses any non-GET except login/logout POST. */
 export const defaultHttpRequester: HttpRequester = ({ url, method, headers, body, ca, timeoutMs }) => {
   if (method !== 'GET' && url.pathname !== loginPath() && url.pathname !== logoutPath()) {
     return Promise.reject(new Error(`${REQUEST_METHOD_GUARD_MSG}: ${method} ${url.pathname}`));
@@ -311,7 +303,6 @@ function redirectPathname(base: URL, location: string | undefined): string | nul
   }
 }
 
-/** Extracts visible team names from `/console/team` / `/console/teams` table links (`/console/team/tm_...`). */
 export function extractTeamNames(body: string): string[] {
   const seen = new Set<string>();
   const pattern = /href="\/console\/team(?:s)?\/(tm_[^"?#"]+)"[^>]*>([^<]+)<\/a>/gi;
@@ -565,7 +556,6 @@ async function signOutAndVerify(
     detail: logoutOk ? '已登出并清除会话 Cookie' : `期望 303 跳转至 ${loginPath()} 且清除 Cookie，实际 HTTP ${logoutRes.status} -> ${logoutTarget ?? '无'}`,
   });
 
-  // Verify old session id is revoked server-side as well.
   const staleJar = cookieHeader(staleCookies);
   const probeRes = await requester({
     url: new URL(overviewPath(), base),
@@ -760,7 +750,6 @@ async function runMemberChecks(
   await signOutAndVerify('普通成员', base, requester, timeoutMs, ca, client, checks);
 }
 
-/** Runs the full read-only console smoke suite and returns per-route results and summary counts. */
 export async function runConsoleSmoke(options: ConsoleSmokeOptions): Promise<ConsoleSmokeReport> {
   const base = normalizeBaseUrl(options.baseUrl);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -781,7 +770,6 @@ export async function runConsoleSmoke(options: ConsoleSmokeOptions): Promise<Con
   return { ok: failed === 0, checks, total: checks.length, passed, failed };
 }
 
-/** Formats one check line and the final summary for operator output. */
 export function formatSmokeLine(check: SmokeCheckResult): string {
   return `[${check.phase}] ${check.method} ${check.path} -> HTTP ${check.status} ${check.ok ? '符合预期' : '不符合预期'}（${check.detail}）`;
 }
@@ -903,7 +891,6 @@ function readTerminalSecret(input: SecretStream, prompt: (text: string) => void,
   });
 }
 
-/** Reads 1 (admin) or 2 (admin, member) passwords from stdin (pipe lines or non-echoing TTY). */
 export async function readPasswordsFromStdin(
   needMember: boolean,
   stream: SecretStream = process.stdin as SecretStream,
@@ -961,7 +948,6 @@ export interface ParsedCliArgs {
   readonly timeoutMs: number;
 }
 
-/** Validates CLI flags; explicitly forbids password options on the command line. */
 export function parseSmokeCliArgs(argv: readonly string[]): ParsedCliArgs {
   for (const arg of argv) {
     if (arg === '--password' || arg.startsWith('--password=') || arg === '--admin-password' || arg.startsWith('--admin-password=') || arg === '--member-password' || arg.startsWith('--member-password=')) {

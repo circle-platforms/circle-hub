@@ -1,4 +1,3 @@
-/** Exact source value declared by the earlier scope bridge; not a prose classifier. */
 export const SCOPE_RULINGS_ORIGIN = 'scope.md';
 
 export function escapeRegExp(s: string): string {
@@ -25,7 +24,6 @@ export function detectCaseHeadingMarkers(headingText: string): string[] {
   return [...new Set(markers)];
 }
 
-/** Exact scope.md declarations only; unknown headings never acquire global or per-case authority. */
 export function extractScopeUserRulings(scopeText: string, caseIds: ReadonlySet<string>, fallbackTarget: string): Array<{target: string; ruling: string}> {
   const result: Array<{target: string; ruling: string}> = [];
   const seen = new Set<string>();

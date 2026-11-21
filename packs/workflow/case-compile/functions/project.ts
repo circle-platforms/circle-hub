@@ -113,9 +113,6 @@ export function projectItems(input: unknown): unknown {
     if (malformed.length) return refusal('autoid_invalid', `整份文档有 ${malformed.length} 个用例的 autoid 不符合配置形状 ${profileRead.profile.workbook.autoid_pattern}：${malformed.slice(0,10).map(shown).join('、')}${malformed.length>10?` 等 ${malformed.length} 个`:''}`, '作者改正或删去这些 autoid 后重新上传文档，再开始新运行（没有 autoid 的用例不编译）；或填 parameters.autoid 只编一条');
   }
   const parents=new Map<number,number>();for(const [index,node] of ((subject.model as any)?.nodes??[]).entries())for(const child of Array.isArray(node?.children)?node.children:[])if(typeof child==='number'&&!parents.has(child))parents.set(child,index);
-  // A case the plans cannot yet bring through may be left out of a new run (parameters.exclude, whole-document runs only); the
-  // plan run and the verification run take the same list, so both select the same cases. Each excluded autoid must name a case
-  // the rule takes, so a mistyped one is refused instead of silently excluding nothing. InfoTest isolates such a case the same way.
   const excludeAsked=parameters.exclude;
   if(excludeAsked!==undefined){
     if(!whole)return refusal('invalid_parameter','exclude 只用于整份文档编译，不能与 autoid 同时填','要编译整份文档时不填 autoid；只编一条时不填 exclude', [], '/parameters/exclude');
@@ -124,8 +121,6 @@ export function projectItems(input: unknown): unknown {
     const unknown=(excludeAsked as string[]).filter(value=>!numbered.has(value));
     if(unknown.length)return refusal('autoid_not_found',`exclude 里的 ${unknown.slice(0,5).join('、')} 在按规则取到的用例里找不到`,'核对文档、case_rule 和 autoid 原文后重新开始运行', [], '/parameters/exclude');
   }
-  // A scoped run freezes {words, cases} onto the Hub run record at start_run so assemble-delivery verifies every run matches
-  // and discloses omitted cases cleanly instead of blocking closure (mutually exclusive with autoid and exclude).
   const scopeAsked = parameters.scope;
   let frozenScope: { words: string; cases: string[] } | null = null;
   let scoped: Set<string> | null = null;
@@ -189,16 +184,10 @@ export function projectItems(input: unknown): unknown {
   const frozenLeases = isRecord(context.leases) ? (context.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
   const sha256 = typeof subject.sha256 === 'string' ? subject.sha256 : '';
   const recompositionRun=slotOf(inputs,'recomposition_run'),recompositionResult=slotOf(inputs,'recomposition_result');
-  // A recomposition result bound by run id is bound after the start (workflow.json from_runs.after_start): the projection sees only
-  // {slot, run} in context.late_inputs, never the result, so the frozen items do not depend on how far the recomposition has come.
-  // Each evaluation the Hub resolves the run's latest accepted result and functions/refresh.ts lays this case's record over the item.
-  // An explicit rec: binding stays frozen and takes the path it always took.
   const lateResult=recompositionResult?undefined:(Array.isArray(context.late_inputs)?context.late_inputs:[]).find((row:unknown):row is {slot:string;run:string}=>isRecord(row)&&row.slot==='recomposition_result'&&typeof row.run==='string');
   const recompositionRequested=!!recompositionRun||!!recompositionResult||!!lateResult||parameters.pipeline==='recomposed';
-  // Decision 155: a whole mind map goes through recomposition, as in InfoTest. Skipping it has to be said out loud.
   if (!recompositionRequested && selected.length > 1 && parameters.pipeline !== 'legacy') return refusal('invalid_parameter', '整份脑图要先走重组：缺重组记录，写手拿不到改写后的步骤和缺口', '先用 recompose 工作流重组这份脑图，再绑定 recomposition_run 和 recomposition_result；确实要跳过时写 parameters.pipeline=legacy，并在最终报告里说明', [], '/parameters/pipeline');
   if (parameters.pipeline === 'recomposed' && selected.length > 1 && (!recompositionRun || (!recompositionResult && !lateResult))) return refusal('invalid_parameter', '整份脑图写了 recomposed，却没有绑定重组记录', '绑定 recomposition_run 和 recomposition_result；还没重组就先用 recompose 工作流', [], '/inputs');
-  // Fail-closed subset check: selected cases for case-compile must stay within the bound recomposition_run's frozen items.
   const recompRunEnv = recompositionRun ? envelope(recompositionRun, 'run') : null;
   if (
     recompRunEnv &&

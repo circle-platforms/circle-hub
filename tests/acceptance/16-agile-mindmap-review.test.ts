@@ -97,7 +97,6 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
   });
 
   test('a long review returns all 95 original case conclusions and the complete result', async () => {
-    // All 95 long case conclusions are returned whole.
     const bigMindmap = {
       root: {
         data: { id: 'root_big', text: '合成超大测试脑图' },
@@ -130,7 +129,6 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
     const bigRun = startAnswer.out.run as RunSummary;
     assert.equal(bigRun.items.length, 95, 'mindmap yields 95 items');
 
-    // Submit a result that skips every item: a long problem list, given whole (decision 158)
     const skipSubmission = {
       run: bigRun.run,
       model: 'test-model',
@@ -144,11 +142,10 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
 
     const submitAnswer = await client.call('submit_result', skipSubmission);
     assert.equal(submitAnswer.isError, false);
-    // No answer is cut to a length: every skipped item is named, and nothing is left out for a budget.
     assert.ok(!submitAnswer.text.includes('个字符为限'), 'nothing left out for a budget');
     const conclusions=submitAnswer.text.split('\n').filter(line=>line.startsWith('原始用例 '));
     assert.equal(conclusions.length,95,'every original case has one conclusion');
-    for (const it of bigRun.items) assert.ok(conclusions.some(line=>line.startsWith(`原始用例 ${it.label}：`) && line.includes('；状态已确认；判断错误；')), `${it.label} is in the answer`); // 决定 20:32 冒号；06:48 程序确定的错误行
+    for (const it of bigRun.items) assert.ok(conclusions.some(line=>line.startsWith(`原始用例 ${it.label}：`) && line.includes('；状态已确认；判断错误；')), `${it.label} is in the answer`);
     const result=resultOf(submitAnswer);
     assert.deepEqual(Object.values(result.partitions).flat().map(item=>item.item).sort(),bigRun.items.map(item=>item.id).sort(),'the complete machine-readable result retains every original item id');
     const counts=submitAnswer.out.counts!;

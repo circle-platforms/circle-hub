@@ -221,7 +221,6 @@ test('a later result voids waiting requests only, once, and a voided request is 
     assert.equal(back.get(request.digest)!.superseded, undefined);
     assert.deepEqual(await service.inspect(request.digest), back.get(request.digest));
   }
-  // A request that waits again takes an answer like any waiting one (the same submission checked again settles it).
   const settled = await sourceRecord('void-settled-again');
   await service.answer(made[2]!.digest, settled);
   await service.answer(made[2]!.digest, settled);

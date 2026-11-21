@@ -1,7 +1,3 @@
-// What a caller is told when a named document input is written wrong (the two refusals of round 30, 14:58:40 and 14:59:00):
-// the first names the documents the caller may read, so that the right name is in the answer that refuses the wrong one, and
-// the second says what is wrong with the way the identity is written, not that the Hub has no resource that reads documents.
-// The same for an administrator and for a member. Synthetic documents and accounts, a real assembled Hub on a temporary database.
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -27,7 +23,6 @@ const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
 const call = { traceId: TRACE, sessionId: null, adminNote: () => {} };
 const body = enc.encode(JSON.stringify({ items: [{ title: '甲', expected: ['乙'] }] }));
 
-/** A Hub with the named documents `names` published, an administrator and a member who may both start the documents workflow. */
 async function world(names: readonly string[]) {
   const kit = await openTestRecords({ postgres });
   const scratch = await mkdtemp(join(tmpdir(), 'circle-hub-docs-'));
@@ -46,7 +41,6 @@ async function world(names: readonly string[]) {
   const other: Principal = { id: otherRecord.id, name: otherRecord.name, role: otherRecord.role };
   for (const who of [admin, member, other]) await kit.authorizations.assign(admin, who.id, DOCS_PACK);
   for (const name of names) await hub.docs.put(admin, name, body, { fileName: `${name}.json` });
-  /** start_run with the one input, the answer's errors and the text a caller of that role reads. */
   const started = async (who: Principal, external: string) => {
     const answer = await hub.runs.startRun(who, { pack: DOCS_PACK, inputs: { spec: { external } } }, call);
     const errors = answer.errors ?? [];
@@ -66,7 +60,6 @@ for (const role of ['member', 'administrator'] as const) {
     assert.deepEqual(wrong.errors.map((e) => [e.code, e.path]), [['SOURCE_ABSENT', '/inputs/spec']]);
     assert.equal(wrong.errors[0]!.message, 'Hub 里没有命名文档 case-contract，当前账户可读的命名文档：synthetic-contract、synthetic-profile、synthetic-topology');
     assert.equal(wrong.text, '不存在：Hub 里没有命名文档 case-contract，当前账户可读的命名文档：synthetic-contract、synthetic-profile、synthetic-topology。核对文档名；该填的名字写在这个工作流的输入说明里（list_task_packs 带 pack_id 读）；命名文档由管理员发布（circle-hub doc put）。');
-    // A name one slip away is the one meant, said as the one meant.
     const slip = await w.started(who, 'doc:doc:synthetic-contrat');
     assert.equal(slip.text, '不存在：Hub 里没有命名文档 synthetic-contrat，当前账户可读的命名文档里最接近的是 synthetic-contract。核对文档名；该填的名字写在这个工作流的输入说明里（list_task_packs 带 pack_id 读）；命名文档由管理员发布（circle-hub doc put）。');
   });
@@ -79,7 +72,6 @@ for (const role of ['member', 'administrator'] as const) {
     assert.equal(wrong.errors[0]!.message, '「@apv」不是命名文档的摘要：@ 后面要写 64 位十六进制摘要，只读当前版本就不写 @ 和后面的部分');
     assert.equal(wrong.text, '参数无效：「@apv」不是命名文档的摘要：@ 后面要写 64 位十六进制摘要，只读当前版本就不写 @ 和后面的部分。照 doc:doc:<名字> 或 doc:doc:<名字>@<64 位摘要> 写。');
     assert.doesNotMatch(wrong.text, /没有能读|资源|circle-hub|连接|暂时不可用/, 'no resource is missing, and no administrator has anything to repair');
-    // The name written in capitals is told apart from the digest, and the name that was meant is named.
     const capitals = await w.started(who, 'doc:doc:Synthetic-Contract');
     assert.deepEqual(capitals.errors.map((e) => e.code), ['SUBMISSION_SCHEMA_VIOLATION']);
     assert.equal(capitals.text, '参数无效：命名文档的名字「Synthetic-Contract」不合法：要写成小写字母开头的字母、数字或连字符，1 到 64 个字符，当前账户可读的命名文档里最接近的是 synthetic-contract。照 doc:doc:<名字> 或 doc:doc:<名字>@<64 位摘要> 写。');

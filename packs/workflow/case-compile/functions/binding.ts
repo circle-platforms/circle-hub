@@ -31,7 +31,6 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string, 
     if (param.redacted) for (const value of values.filter((v) => v.name === param.name)) issue('param_sensitive', value.pointer, '脱敏凭据参数不许出现在计划里');
   }
   for (const v of values) {
-    // A SELECT_CELL block's table and selector fields are judged by the cell-selection rules, not by the policy of ordinary command values.
     const selection = cellSelectionPosition(step, v.pointer, at);
     if (selection !== null) { const problem = cellSelectionValueProblem(selection, v.value); if (problem !== null) issue('param_value', v.pointer, problem); continue; }
     if (typeof v.value === 'number') { if (!Number.isSafeInteger(v.value) || v.value < 0) issue('param_value', v.pointer, '整数关键字必须是安全非负整数'); }
@@ -59,10 +58,6 @@ export function hasSingleLineValue(value: unknown): value is string {
 }
 
 /** POSIX expansions are active outside single quotes; glob and control syntax only outside quotes. */
-/**
- * A host line a declared program may run: a static line whose first word is the program. The words after the declared
- * address prefix are addresses and must parse as one; the caller checks them against the environment. Null for anything else.
- */
 export function hostProgramLine(programs:readonly {program:string;addressPrefix?:string}[]|undefined,line:string,input=false):{addresses:string[];unknown_addresses?:string[]}|null{
   if(!programs?.length||hasShellDynamicSyntax(input?cellSyntax(line):line))return null;
   const words=line.trim().split(/\s+/),declared=programs.find(row=>row.program===words[0]);

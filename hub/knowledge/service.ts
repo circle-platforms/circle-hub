@@ -35,7 +35,6 @@ import { KnowledgeViews } from './views.ts';
 import { withReadCache } from './read-cache.ts';
 
 
-/** Decision 159: a page's entries without any condition information carry none (after the judgments are merged). */
 function withoutEmptyConditions(page: NodesPage | null): NodesPage | null {
   return page === null ? null : { ...page, nodes: page.nodes.map((node) => ({ ...node, entries: node.entries.map(withoutEmptyApplicability) })) };
 }

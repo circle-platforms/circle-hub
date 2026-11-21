@@ -21,7 +21,6 @@ import {
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
-// Build non-exempt test literals dynamically so scanning this test file under git ls-files never self-triggers.
 const quad = (a: number, b: number, c: number, d: number): string => [a, b, c, d].join('.');
 const makeId = (prefix: string, body: string): string => `${prefix}_${body}`;
 const sampleId = (prefix: string, tag = '01'): string => makeId(prefix, tag + 'a'.repeat(26 - tag.length));

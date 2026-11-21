@@ -1,22 +1,14 @@
-/**
- * C14: reader wording when上机验证 is refused at release checks.
- * Judgment (satisfied true/false/null) is unchanged; this module only formats text from checks.
- */
 import type { ReleaseCheck, ReleaseField } from './release-diagnostics.ts';
 
 export interface RefusalTextInput {
   checks: readonly ReleaseCheck[];
   run: string;
   executor: string;
-  /** The run's runner (发起人), not the acting administrator of dispatchAccepted. */
   callerIsAdmin: boolean;
 }
 
-/** How one release condition discloses sides and next steps (generic registry). */
 export interface RefusalConditionSpec {
-  /** Exact condition id, or prefix ending with `.` / known id. */
   condition: string;
-  /** Fixed reader label (must match the check's label when registered for that id). */
   name: string;
   disclose(fields: readonly ReleaseField[], callerIsAdmin: boolean): string;
   nextCaller(input: RefusalTextInput): string;
@@ -25,7 +17,6 @@ export interface RefusalConditionSpec {
 
 const digest12 = (hex: string): string => (hex.length >= 12 ? hex.slice(0, 12) : hex);
 
-/** Prefer plain disclosure; else first 12 of the field digest. Never invent values. */
 function side(field: ReleaseField, which: 'expected' | 'actual'): string {
   const plain = which === 'expected' ? field.expected : field.actual;
   if (typeof plain === 'string' && plain.length > 0) return plain;
@@ -37,7 +28,6 @@ function fieldBy(fields: readonly ReleaseField[], name: string): ReleaseField | 
   return fields.find((row) => row.field === name || row.field.endsWith('/' + name) || row.field.endsWith('.' + name));
 }
 
-/** Identity vs executor declaration: runner values always; declaration only for administrators. */
 function discloseIdentity(fields: readonly ReleaseField[], callerIsAdmin: boolean): string {
   const target = fieldBy(fields, 'target');
   const manifest = fieldBy(fields, 'manifest_sha256') ?? fieldBy(fields, 'manifest');
@@ -84,10 +74,6 @@ function nextGeneric(input: RefusalTextInput): string {
   return '能在自动化用例 Excel 或预订上改的，改正后再发起上机验证；其余请管理员按放行条件逐条对照处理';
 }
 
-/**
- * Registry: one row per known condition id. Unlisted conditions use the generic disclose/next.
- * Quoted names stay the production check labels.
- */
 export const REFUSAL_CONDITIONS: readonly RefusalConditionSpec[] = [
   {
     condition: 'proof.executor_identity',
@@ -135,10 +121,6 @@ function flattenUnique(checks: readonly ReleaseCheck[]): ReleaseCheck[] {
   return out;
 }
 
-/**
- * Builds the refusal reason (without the leading「上机验证没有发出：」).
- * Errors only; unchecked become one summary line. No「已记下」.
- */
 export function formatReleaseRefusal(input: RefusalTextInput): string {
   const checks = flattenUnique(input.checks);
   const errors = checks.filter((check) => check.satisfied === false);
@@ -175,7 +157,6 @@ export function formatReleaseRefusal(input: RefusalTextInput): string {
   ].filter((part) => part.length > 0).join('');
 }
 
-/** True when the note already states a diagnosed refusal (no「原因还没查清」suffix). */
 export function releaseRefusalDiagnosed(message: string): boolean {
   return message.includes('放行条件里有 ') || (message.includes('另有 ') && message.includes('还没有核对'));
 }

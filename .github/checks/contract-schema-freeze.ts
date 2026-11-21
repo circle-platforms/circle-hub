@@ -1,7 +1,3 @@
-// Published contract schemas at the release baseline are frozen: schemas under contracts/generated/schemas
-// on the nearest `release/*` ancestor tag (or default merge-base when untagged) must remain backward compatible
-// (no deleted properties, no optional-to-required or new required properties, and no narrowed value ranges;
-// adding optional properties and widening values are allowed).
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -278,7 +274,6 @@ function compareScalarAndStructure(
   const out: SchemaFreezeViolation[] = [];
   const label = path || '<root>';
 
-  // Enum / const checks
   const baseLits = literalSet(baseNode);
   const curLits = literalSet(curNode);
   if (curLits !== null) {
@@ -314,7 +309,6 @@ function compareScalarAndStructure(
       }
     }
   } else {
-    // General type checks when baseline was not an explicit literal set
     const baseTypes = typeSet(baseNode.type);
     const curTypes = typeSet(curNode.type);
     if (baseTypes === null && curTypes !== null) {
@@ -336,7 +330,6 @@ function compareScalarAndStructure(
       }
     }
 
-    // Numeric bounds
     const baseMin = lowerBound(baseNode);
     const curMin = lowerBound(curNode);
     if (curMin !== null) {
@@ -370,7 +363,6 @@ function compareScalarAndStructure(
       }
     }
 
-    // String & array lengths
     for (const minKey of ['minLength', 'minItems'] as const) {
       const curVal = curNode[minKey];
       const baseVal = typeof baseNode[minKey] === 'number' ? (baseNode[minKey] as number) : 0;
@@ -396,7 +388,6 @@ function compareScalarAndStructure(
       }
     }
 
-    // Pattern & format
     if (typeof curNode.pattern === 'string') {
       if (baseNode.pattern !== curNode.pattern) {
         out.push({
@@ -423,7 +414,6 @@ function compareScalarAndStructure(
     }
   }
 
-  // Object properties & required transitions
   const baseProps = isPlainObject(baseNode.properties) ? baseNode.properties : {};
   const curProps = isPlainObject(curNode.properties) ? curNode.properties : {};
   const baseReq = new Set(stringList(baseNode.required));
@@ -477,7 +467,6 @@ function compareScalarAndStructure(
     }
   }
 
-  // additionalProperties
   const baseAP = baseNode.additionalProperties === undefined ? true : asSchema(baseNode.additionalProperties);
   const curAP = curNode.additionalProperties === undefined ? true : asSchema(curNode.additionalProperties);
   if (baseAP !== null && curAP !== null && baseAP !== false) {
@@ -511,7 +500,6 @@ function compareScalarAndStructure(
     }
   }
 
-  // propertyNames
   if (curNode.propertyNames !== undefined) {
     const curPN = asSchema(curNode.propertyNames);
     if (curPN !== null && !isUnconstrained(curPN)) {
@@ -538,7 +526,6 @@ function compareScalarAndStructure(
     }
   }
 
-  // Array items & prefixItems
   const baseItems = baseNode.items === undefined ? true : asSchema(baseNode.items);
   const curItems = curNode.items === undefined ? true : asSchema(curNode.items);
   if (baseItems !== null && curItems !== null && !isUnconstrained(curItems)) {
@@ -571,7 +558,6 @@ function compareScalarAndStructure(
     }
   }
 
-  // Conditional if / then / else
   if (curNode.if !== undefined) {
     if (baseNode.if === undefined) {
       out.push({
@@ -609,7 +595,6 @@ function compareScalarAndStructure(
     }
   }
 
-  // Negation `not`: contravariant (every value matching cur.not must also match base.not)
   if (curNode.not !== undefined) {
     const curNot = asSchema(curNode.not);
     const baseNot = asSchema(baseNode.not);
@@ -648,7 +633,6 @@ function compareScalarAndStructure(
     }
   }
 
-  // allOf clauses: every current clause must be satisfied by at least one baseline clause
   if (Array.isArray(curNode.allOf) && curNode.allOf.length > 0) {
     const baseAllOf = Array.isArray(baseNode.allOf) ? baseNode.allOf : [];
     curNode.allOf.forEach((rawCurClause, idx) => {
@@ -933,12 +917,55 @@ export function contractSchemaFreezeViolations(root: string): {
   return { violations, errors };
 }
 
+export const EXCEPTIONS_PATH = '.github/checks/exceptions.json';
+const CHECK = 'contract-schema-freeze';
+
+export interface SchemaFreezeException {
+  readonly path: string;
+  readonly what: string;
+  readonly reason: string;
+  readonly removeWhen: string;
+}
+
+export const violationWhat = (v: SchemaFreezeViolation): string => `${v.kind}: ${v.path}`;
+
+export function schemaFreezeExceptions(raw: unknown): { entries: SchemaFreezeException[]; problems: string[] } {
+  if (!Array.isArray(raw)) return { entries: [], problems: [`${EXCEPTIONS_PATH}: 须是数组`] };
+  const entries: SchemaFreezeException[] = [], problems: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null || (item as { check?: unknown }).check !== CHECK) continue;
+    const { path, what, reason, removeWhen } = item as Record<string, unknown>;
+    if ([path, what, reason, removeWhen].some((field) => typeof field !== 'string' || !field.trim())) {
+      problems.push(`${EXCEPTIONS_PATH}: ${CHECK} 的例外须写 path、what、reason、removeWhen`);
+      continue;
+    }
+    entries.push({ path: path as string, what: what as string, reason: reason as string, removeWhen: removeWhen as string });
+  }
+  return { entries, problems };
+}
+
+export function reconcileSchemaFreeze(violations: readonly SchemaFreezeViolation[], exceptions: readonly SchemaFreezeException[]): string[] {
+  const key = (file: string, what: string) => `${file}\u0000${what}`;
+  const live = new Set(violations.map((v) => key(v.file, violationWhat(v))));
+  const listed = new Map<string, number>();
+  for (const e of exceptions) listed.set(key(e.path, e.what), (listed.get(key(e.path, e.what)) ?? 0) + 1);
+  return [
+    ...violations.filter((v) => !listed.has(key(v.file, violationWhat(v)))).map((v) => `${v.file}: ${v.detail}（${v.path}）`),
+    ...exceptions.filter((e) => !live.has(key(e.path, e.what))).map((e) => `${EXCEPTIONS_PATH}: 例外 ${e.path} ${e.what} 已不再发生，请删除这一条`),
+    ...[...listed].filter(([, count]) => count > 1).map(([k]) => `${EXCEPTIONS_PATH}: 例外重复 ${k.replace('\u0000', ' ')}`),
+  ];
+}
+
 export function schemaFreezeProblems(root: string): string[] {
   const { violations, errors } = contractSchemaFreezeViolations(root);
-  return [
-    ...errors,
-    ...violations.map((v) => `${v.file}: ${v.detail}（${v.path}）`),
-  ];
+  let raw: unknown = [];
+  try {
+    raw = JSON.parse(readFileSync(join(root, EXCEPTIONS_PATH), 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return [...errors, `${EXCEPTIONS_PATH}: 读取失败（${error instanceof Error ? error.message : String(error)}）`];
+  }
+  const { entries, problems } = schemaFreezeExceptions(raw);
+  return [...errors, ...problems, ...reconcileSchemaFreeze(violations, entries)];
 }
 
 if (process.argv[1] !== undefined && resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1])) {

@@ -29,7 +29,6 @@ async function stageRecompose(target: string): Promise<void> {
 }
 async function selectRemoteInventory(directory: string, tools: readonly string[]) {
   const path = join(directory, 'pack.json'), manifest = JSON.parse(await readFile(path, 'utf8'));
-  // Component probe only: retain dependencies, but select the explicitly reviewed remote entry points.
   manifest.files = manifest.files.filter((entry: { path: string }) => !entry.path.startsWith('tools/') || tools.includes(entry.path) || tools.some(tool => entry.path === tool.slice(0, -3) + '.cli.json'));
   await writeFile(path, JSON.stringify(manifest));
 }

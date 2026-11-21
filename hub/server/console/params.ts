@@ -1,4 +1,3 @@
-// Shared URL / form query helpers for console pages (K4).
 import type { PageContext } from './context.ts';
 
 export const DAY_MS = 86_400_000;
@@ -11,7 +10,6 @@ export const param = (ctx: PageContext, name: string): string | undefined => {
   return value === null || value === '' ? undefined : value;
 };
 
-/** ISO instant, or undefined when absent, or null when present but not a time. */
 export function isoOrUndefined(value: string | undefined): string | undefined | null {
   if (value === undefined) return undefined;
   const time = Date.parse(value);

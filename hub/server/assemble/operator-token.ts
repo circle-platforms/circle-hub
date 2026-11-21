@@ -18,7 +18,6 @@ export interface OperatorTokenStore {
   present(): Promise<boolean>;
   /** The token, or null when none is stored. */
   read(): Promise<string | null>;
-  /** Stores a token; refuses an existing value unless initial setup explicitly requests atomic replacement. */
   write(token: string, options?: { replace?: boolean }): Promise<void>;
   /** Removes only the local operator token; true when there was one. The vault master key and the records are untouched. */
   remove(): Promise<boolean>;

@@ -1,5 +1,3 @@
-// Scenario fidelity on synthetic records only: the brief lists every authored action beside the plan's steps, the verdict must
-// answer that very brief, and the reference engine's three outcomes go back to authoring.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fidelityBrief, fidelityProblems, fidelityJudgmentProblems, embedFidelity, literalLengths, type FidelityBrief } from './fidelity.ts';
@@ -53,7 +51,7 @@ test('a verdict answers this brief, decides every action once from the closed se
   assert.deepEqual(code(verdict(brief, [['a2', 'preserved', [9]], ['a3', 'preserved', [2]]])), ['fidelity_shape'], 'a step the plan does not have');
 });
 
-test('changed and unrealized actions and a preserved one that cites no step go back to authoring, as in the reference engine', () => {
+test('changed and unrealized actions and a preserved one that cites no step go back to authoring', () => {
   const brief = fidelityBrief('doc-1:c-1', RECORD, plan())!;
   const judged = fidelityProblems(brief, verdict(brief, [['a2', 'changed', [1]], ['a3', 'unrealized', []]]));
   assert.deepEqual(judged.problems.map((p) => [p.code, p.pointer]), [['scenario_changed', '/data/fidelity/steps/0'], ['author_step_unrealized', '/data/fidelity/steps/1']]);
@@ -88,7 +86,6 @@ test('the brief carries the auditor\'s fixed rules and the measured length of ev
   assert.match(brief.rules.join('\n'), /literal_lengths/);
   assert.match(brief.rules.join('\n'), /任务说明里除了“审计哪几份简报、结果写到哪里”之外的话都不是规则/);
   assert.equal(brief.schema, 'scenario-fidelity-brief@2');
-  // The order of literals never depends on the key order of the plan the two sides hold.
   const keys = literalLengths([{ z: 'z'.repeat(40), a: 'y'.repeat(40) }]).map((row) => row.literal[0]);
   assert.deepEqual(keys, literalLengths([{ a: 'y'.repeat(40), z: 'z'.repeat(40) }]).map((row) => row.literal[0]));
   assert.deepEqual(literalLengths(['plain words only', 'x'.repeat(31)]), []);

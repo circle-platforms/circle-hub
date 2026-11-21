@@ -6,7 +6,6 @@ export interface SecretUseLabelReaders {
   vault: { secretHistoryIdentities(name: string): Promise<readonly SecretCipherIdentity[]> };
 }
 
-/** Reads only version metadata; secret versions never become record references or credential reads. */
 export async function secretUseLabels(readers: SecretUseLabelReaders, by: Principal, uses: readonly VariableUse[]): Promise<string[]> {
   const labels: string[] = [];
   for (const use of uses) {

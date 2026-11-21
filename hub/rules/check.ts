@@ -67,10 +67,6 @@ export interface CheckBindings {
    * for the admin log. Outcomes keep only a stable, path-free part.
    */
   onError?: (error: unknown, check: string) => void;
-  /**
-   * W06 R[7] (decision 179): the evaluation reads inputs bound after the start, so a pack function may also say an item waits
-   * for the bound run to accept it (unknown, awaiting_step). Set by the runs engine only for such an evaluation.
-   */
   lateBound?: boolean;
 }
 
@@ -93,7 +89,6 @@ const Outcomes = z.array(CheckOutcomeShape).max(10_000);
  */
 const CHECK_REASONS: readonly Reason[] = ReasonSchema.extract(['check_error', 'timeout', 'missing_input', 'integrity_unproven', 'budget_exhausted', 'output_failed']).options;
 
-/** The wait a check may give in an evaluation with inputs bound after the start (W06 R[7]): the bound run has not accepted the item yet. */
 const LATE_REASONS: readonly Reason[] = [...CHECK_REASONS, ...ReasonSchema.extract(['awaiting_step']).options];
 
 /** Problems with outcomes a pack function returned: verdict shape, reasons, and the code namespace of the pack. */
@@ -114,11 +109,6 @@ function outcomeProblems(outcomes: CheckOutcome[], pack: string, reasons: readon
   return undefined;
 }
 
-/**
- * `data.sandbox` is the Hub's own mark of a sandbox failure (publicDetail here, builderFailure in the evaluation), and a refusal
- * words itself from it. A pack function cannot give it: an outcome it returns loses that key (D05 R[7]: authority comes from
- * structure the Hub wrote, not from what a pack says). The rest of its data stays.
- */
 function withoutSandboxMark(outcomes: CheckOutcome[]): CheckOutcome[] {
   return outcomes.map((o) => (o.data !== undefined && Object.hasOwn(o.data, 'sandbox') ? { ...o, data: Object.fromEntries(Object.entries(o.data).filter(([key]) => key !== 'sandbox')) } : o));
 }

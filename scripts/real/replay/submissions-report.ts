@@ -1,6 +1,3 @@
-// The written result of a replay: summary.json (counts, reasons, normalizations, pack proofs, one line per validation) and
-// details.md (in Chinese: what was replayed, what is not replayable and why, every difference field by field). Several parts
-// (one per release tree of a faithful replay) merge into one report. Pure functions of the parts.
 import { describeDiff, groupDiffs, type AppliedNormalization, type FieldDiff } from './submissions-compare.ts';
 import type { RunReport, ValidationOutcome } from './submissions-run.ts';
 
@@ -9,7 +6,6 @@ export const SUMMARY_SCHEMA = 'replay-summary@1';
 export interface ReportMeta {
   mode: 'faithful' | 'candidate';
   created_at: string;
-  /** The export folder, the bundle folder and the commits, as the caller names them (no secrets in any of them). */
   export_dir: string;
   bundle_dir: string | null;
   note?: string;
@@ -36,7 +32,6 @@ export interface Summary {
   commits: string[];
   totals: { validations: number; same: number; changed: number; not_replayable: number; skipped: number };
   not_replayable_by_reason: Record<string, number>;
-  /** Candidate: the validations whose run kept its pack (the commit's pack is the recorded one) and those that were bound to another version. */
   by_binding: { same_pack: Record<string, number>; rebound: Record<string, number> };
   normalizations: AppliedNormalization[];
   packs: Array<{ commit: string; pack: string; digest: string; status: string; found?: string | null }>;
@@ -47,7 +42,6 @@ export interface Summary {
 const CLIP = 600;
 const clip = (text: string): string => (text.length <= CLIP ? text : `${text.slice(0, CLIP - 1)}…`);
 
-/** Merges the parts of a replay. The normalizations of the parts are added up by rule. */
 export function summarize(parts: readonly RunReport[], meta: ReportMeta): Summary {
   const lines: SummaryLine[] = [];
   const reasons: Record<string, number> = {};
@@ -101,7 +95,6 @@ const REASON_TEXT: Record<string, string> = {
   candidate_pack_refused: '候选的任务包发布被拒',
 };
 
-/** The Chinese report. */
 export function renderDetails(summary: Summary, parts: readonly RunReport[]): string {
   const out: string[] = [];
   const t = summary.totals;

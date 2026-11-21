@@ -1,5 +1,3 @@
-// Console-session cookie vs access-only entries (Boss 19:27 / 19:30): cookie holds the console token; MCP / run-export /
-// local-tools refuse that credential with「无权限」; an access token cannot enter the console as a cookie.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CONSOLE_SESSION_REFUSED } from './access-auth.ts';

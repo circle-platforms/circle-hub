@@ -1,4 +1,3 @@
-// Opportunistic local reuse of already-read immutable bytes. A hit is not a new HTTP response or authorization.
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -10,7 +9,7 @@ const regularDirectory = async (path: string): Promise<boolean> => {
   return !!info && info.isDirectory() && !info.isSymbolicLink() && ownedByUser(info.uid) && (info.mode & 0o077) === 0;
 };
 async function createDirectory(path: string): Promise<boolean> {
-  try { await mkdir(path, { mode: 0o700 }); } catch { /* Existing managed directories are checked below; absent parents disable this optimization. */ }
+  try { await mkdir(path, { mode: 0o700 }); } catch { }
   return regularDirectory(path);
 }
 async function readRegular(path: string, limit: number): Promise<Buffer | null> {
@@ -36,7 +35,6 @@ export interface LocalSourceCache {
   load(): Promise<Uint8Array | null>;
   save(bytes: Uint8Array): Promise<void>;
 }
-/** Exact source route only; mutable run/job/successor responses never enter this cache. */
 export function localSourceCache(url: string, bearer: string, limit: number, directory?: string | false): LocalSourceCache | null {
   if (!directory) return null;
   const parsed = new URL(url);
@@ -70,7 +68,6 @@ export function localSourceCache(url: string, bearer: string, limit: number, dir
           if (!info.isFile() || !ownedByUser(info.uid) || (info.mode & 0o077) !== 0 || info.isSymbolicLink() || info.nlink !== 1) return;
           const existing = await readRegular(file, limit);
           if (existing && sha256(existing) === digest) return;
-          // Only a cache receipt authorizes repair of a corrupt regular entry. User files and links stay untouched.
           if (!await owned()) return;
           const handle = await open(file, constants.O_WRONLY | constants.O_NOFOLLOW);
           try {
@@ -83,7 +80,7 @@ export function localSourceCache(url: string, bearer: string, limit: number, dir
           await writeFile(file, bytes, { flag: 'wx', mode: 0o600 });
           await writeFile(receipt, JSON.stringify({ schema: 'case-source-cache@1', sha256: digest }) + '\n', { flag: 'wx', mode: 0o600 });
         }
-      } catch { /* Cache availability never changes the result of the authenticated source read. */ }
+      } catch { }
     },
   };
 }

@@ -1,5 +1,3 @@
-// The program's own word on the commands of a plan, for the tool that asks a model about them: the command-tree check of the Hub
-// (check commands_catalog, the same function check-plan runs) judged step by step. Synthetic runs only (192.0.2.0/24).
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {assertion,call,fixture,plan as blockPlan,quote as blockQuote} from '../testing/blocks.ts';
@@ -33,7 +31,6 @@ test('a command the tree does not know is refused at its own step with the probl
 });
 
 test('the check is the one check-plan runs: only commands_catalog, on the frozen run and its locked tree',()=>{
- // A bed address the plan check refuses on its own (bed_addresses) is not a refusal of a command by the tree.
  const data=goodData();data.replacements=[{case:'192.0.2.200',bed:'192.0.2.91'}];
  assert.deepEqual(flat(data).problems,[],'another Hub check does not speak for the command tree');
 });
@@ -73,7 +70,6 @@ test('a check that could not run says why and speaks for no step',()=>{
   const check=commandTreeCheck({run,item:'doc:case-1',slots:flatSlots(),catalog:flatTree});
   assert.equal(check.ran,false,JSON.stringify(run)?.slice(0,60));assert.ok(check.why&&check.why.length>6);assert.equal(commandTreeAnswer(check,'/steps/0').status,'not_run');
  }
- // The slot record of the plan does not fit what the run froze: the Hub runs no check then, and neither does this.
  const broken=flatSlots();delete (broken.plan[0] as Record<string,unknown>).text;
  const refused=commandTreeCheck({run:flatRun(),item:'doc:case-1',slots:broken,catalog:flatTree});
  assert.equal(refused.ran,false);assert.match(refused.why!,/槽位/);
@@ -104,7 +100,6 @@ const TREE:Record<string,TreeAnswer>={accepted:{status:'accepted'},refused:{stat
 
 test('the program has the last word on a command: what Plumb says and what the tree says make one verdict, in every combination',()=>{
  for(const strict of [false,true]){
-  // Plumb rejects.
   const overridden=judgeStep({call:'reject',note:NOTE.reject},TREE.accepted!,strict);
   assert.deepEqual([overridden.verdict,overridden.review_required,overridden.blocked],['review',true,strict],'tree accepts: review, blocked only when strict');
   assert.equal(overridden.disclosure,OVERRIDE);assert.equal(overridden.note,'[需人工复核：Plumb 拒绝，命令树核对通过]');
@@ -116,17 +111,14 @@ test('the program has the last word on a command: what Plumb says and what the t
    assert.deepEqual([alone.verdict,alone.review_required,alone.blocked,alone.note],['reject',false,true,NOTE.reject],name+': nothing but Plumb has spoken, so the reject stands as before');
    assert.match(alone.disclosure!,/命令树核对没有给出结论/);assert.ok(alone.disclosure!.includes(TREE[name]!.reason!));
   }
-  // Plumb sends it to review.
   for(const name of ['accepted','undetermined','not_run']){
    const same=judgeStep({call:'review',note:NOTE.review},TREE[name]!,strict);
    assert.deepEqual([same.verdict,same.review_required,same.blocked,same.note,same.disclosure],['review',true,strict,NOTE.review,undefined],name);
   }
-  // Plumb passes.
   for(const name of ['accepted','undetermined','not_run']){
    const same=judgeStep({call:'pass',note:null},TREE[name]!,strict);
    assert.deepEqual([same.verdict,same.review_required,same.blocked,same.note,same.disclosure],['pass',false,false,undefined,undefined],name);
   }
-  // The tree refuses: blocked, whatever Plumb said.
   for(const call of ['pass','review'] as const){
    const refused=judgeStep({call,note:NOTE[call]},TREE.refused!,strict);
    assert.deepEqual([refused.verdict,refused.review_required,refused.blocked],['reject',false,true],call);assert.match(refused.note!,/命令树核对未通过/);

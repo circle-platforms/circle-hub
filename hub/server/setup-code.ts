@@ -63,7 +63,6 @@ export async function removeSetupCode(dataDir: string): Promise<void> {
   await rm(setupCodePath(dataDir), { force: true });
 }
 
-/** Separate file scopes a local maintenance capability to recovery, never first-admin bootstrap. */
 export function rebuildCodePath(dataDir: string): string { return join(dataDir, 'config', 'rebuild-code.json'); }
 export function issueSetupCode(dataDir: string, now: Date = new Date()): Promise<string> { return issueCode(setupCodePath(dataDir), now); }
 export function checkSetupCode(dataDir: string, code: string, now: Date = new Date()): Promise<SetupCodeCheck> { return checkCode(setupCodePath(dataDir), code, now); }

@@ -69,8 +69,6 @@ for(const missing of ['accepted result','replay port','policy result'] as const)
  assert.match(state.missing_fact!,missing==='accepted result'?/受理.*核验事实/:/参数.*政策|参数政策/);assert.match(state.next_action!,missing==='accepted result'?/完成.*核验/:/恢复.*(接口|读取)/);assert.ok(!state.missing_fact!.includes('参数未落'));
  const effects=await c.kit.store.findMany<{boundary:{code:string;row:string};outcome:string}>({kind:'effect',key:'effect.job',values:[state.job]});assert.equal(effects.length,1);assert.equal(effects[0].body.boundary.code,refusal.body.error_code);assert.equal(effects[0].body.boundary.row,row.id);assert.ok(!JSON.stringify(effects).includes('SyntheticPrivatePolicyDetail84'));
 });
-// A policy check that reached no conclusion is worded from its own outcome (V01 R[2], reason and missing; data.sandbox from the Hub
-// only, D05 R[7]), at the parameter gate (clause 2) and at the frozen policy rerun (clause 7), and never as a missing frozen source.
 const unknownOutcome=(extra:Partial<CheckOutcome>):CheckOutcome=>({verdict:'unknown',statement:'合成未知',grounds:[],tier:'blocking',...extra});
 const noConclusionCases={
  sandbox:{outcomes:[unknownOutcome({reason:'check_error',missing:'缺少沙箱进程树完整的内存观测；下一步：沙箱恢复后重核',data:{sandbox:'SANDBOX_UNAVAILABLE',phase:'subject'}})],message:[/沙箱没能运行/,/1\/1 条结果是未知/],absent:[/冻结来源/],fix:/原样重核/},
@@ -86,7 +84,6 @@ for(const clause of [2,7] as const)for(const [cause,expected] of Object.entries(
  assert.equal(refusal.body.error_code,'PACK_POLICY_DENIED');assert.equal(refusal.body.detail.boundary_clause,clause);assert.equal(refusal.body.detail.effect_row,row.id);assert.deepEqual(refusal.body.detail.requirements,row.release.requirements);
  for(const pattern of expected.message)assert.match(state.missing_fact!,pattern);
  for(const pattern of expected.absent)assert.doesNotMatch(state.missing_fact!,pattern);
- // Decision 116: the plan, the workbook and the pack were not rejected, and nothing went out.
  assert.match(state.missing_fact!,/不是计划、工作簿或包被驳回/);assert.match(state.missing_fact!,/什么都没发出/);assert.ok(!state.missing_fact!.includes('参数未落'));
  assert.match(state.next_action!,expected.fix);assert.doesNotMatch(state.next_action!,/冻结来源|按政策表结论修正输入/);
  const effects=await c.kit.store.findMany<{boundary:{clause:number;code:string;row:string};outcome:string}>({kind:'effect',key:'effect.job',values:[state.job]});assert.equal(effects.length,1);assert.deepEqual(effects[0].body.boundary,{clause,code:'PACK_POLICY_DENIED',row:row.id});assert.equal(effects[0].body.outcome,'not_dispatched');
@@ -98,7 +95,6 @@ test('clause 7: a refutation next to an unknown is still the policy refusing, no
  const refusal=(await c.service.journal.events(state.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
  assert.equal(refusal.body.error_code,'PACK_POLICY_DENIED');assert.equal(refusal.body.detail.boundary_clause,7);assert.match(state.missing_fact!,/重核未通过/);assert.doesNotMatch(state.missing_fact!,/缺 X|没有给出/);
 });
-// A refutation decides the row at the parameter gate as it does at the policy rerun: out of range, whatever else has no conclusion.
 const refuted:CheckOutcome={verdict:'refute',code:'synthetic.denied',statement:'合成拒绝',grounds:[],tier:'blocking'};
 const otherUnknowns={
  'missing input':unknownOutcome({reason:'missing_input',missing:'X',data:{}}),

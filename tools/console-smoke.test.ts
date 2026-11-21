@@ -1,5 +1,3 @@
-// Unit tests for tools/console-smoke.ts: verifies complete console route coverage against hub/server/console/routes.ts
-// and console-routes.ts, strict CLI/stdin secret isolation, GET-only enforcement, and full pass/fail scenarios over HTTP.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
@@ -14,7 +12,6 @@ import {
   ADMIN_GET_ROUTES,
   MEMBER_BLOCKED_ADMIN_PATHS,
   MEMBER_COMMON_GET_ROUTES,
-  PROTECTED_REDIRECT_PATHS,
   defaultHttpRequester,
   extractTeamNames,
   formatSmokeLine,
@@ -27,11 +24,9 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const NON_STANDALONE_GET_ROUTES: Readonly<Record<string, string>> = {
-  // Public login / favicon / logout POST are explicitly checked outside ADMIN_GET_ROUTES.
   loginPath: 'checked in unauthenticated and sign-in flows',
   logoutPath: 'POST-only logout action, checked explicitly',
   faviconPath: 'checked in unauthenticated probes',
-  // Parameterized detail, query-required, or interactive setup/OAuth flows.
   runPath: 'requires runId parameter',
   resultPath: 'requires runId parameter',
   workflowPath: 'requires pack id parameter',
@@ -49,7 +44,6 @@ const NON_STANDALONE_GET_ROUTES: Readonly<Record<string, string>> = {
   devicePath: 'OAuth device flow',
   setupPath: 'first-time setup page (409 once admin exists)',
   resetStatusPath: 'requires async reset operation UUID',
-  // Mutating POST routes: explicitly excluded by read-only smoke probe.
   adminDoPath: 'POST-only admin action',
   knowledgeDoPath: 'POST-only knowledge action',
   knowledgeShareBatchPath: 'POST-only batch share action',
@@ -388,14 +382,12 @@ test('runConsoleSmoke passes all unauthenticated, admin, member isolation, and l
   assert.equal(report.failed, 0);
   assert.equal(report.total, report.passed);
 
-  // The member home (/console/me) is probed once in each of the anonymous, administrator and member phases, and passes.
   for (const phase of ['未登录', '管理员', '普通成员'] as const) {
     const home = report.checks.filter((check) => check.phase === phase && check.path === '/console/me');
     assert.equal(home.length, 1, `${phase}: /console/me is probed once`);
     assert.equal(home[0].ok, true, `${phase}: ${home[0].detail}`);
   }
 
-  // Strict read-only enforcement: every POST must be /console/login or /console/logout.
   const nonGet = mock.requests.filter((r) => r.method !== 'GET');
   assert.deepEqual(
     nonGet.map((r) => `${r.method} ${r.url}`),

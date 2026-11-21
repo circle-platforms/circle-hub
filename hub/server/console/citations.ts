@@ -1,8 +1,6 @@
 // A knowledge node's citations and provenance for the console (the interface doc's node detail): how many accepted
 // submissions cited the node or its entries in the last CITATION_DAYS, from the index the runs engine writes as it
 // stores a submission (hub/runs citationIndex), and the source references each entry rests on (the tree reader's
-// grounds). When the window starts before the index, the count is a lower bound and says from when it counts.
-// Called only for a node the reader could read.
 import type { NodeViews } from '../../ports.ts';
 import { citationsIndexedSince, countCitations } from '../../runs/api.ts';
 import type { PageContext } from './context.ts';
@@ -37,7 +35,6 @@ export interface Citations {
   capped: boolean;
   /** When submissions started to be indexed as they are stored: the oldest so indexed; null before any. */
   indexed_since: string | null;
-  /** The count is exact (up to the cap): the index covers the whole window. */
   complete: boolean;
   /** At most MAX_ENTRIES entries, in the node's order. */
   entries: EntryCitation[];

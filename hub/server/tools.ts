@@ -3,7 +3,6 @@ import {knowledgeMessage} from './capacity.ts';
 import {join} from 'node:path';
 import { KnowledgeError } from '../knowledge/api.ts';
 import type { ContributionLayer } from '../knowledge/api.ts';
-// Validate tool answers before sending reader-facing prose and a separate model-reference block.
 import { readFileSync } from 'node:fs';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
@@ -47,7 +46,6 @@ export { describeError, describeInternalError } from './notes.ts';
 
 /** The call context handed to the services: CallContext plus a way to put the real reason of a neutral answer in the admin note. */
 export interface ServerCallContext extends CallContext {
-  /** Cancellation observed at safe read boundaries; writers do not consume it. */
   signal?: AbortSignal;
   /** The real reason behind a neutral answer (absent, forbidden, failed): admins see it in the call log, the caller never does. */
   adminNote(reason: string): void;
@@ -151,7 +149,6 @@ export function pointerOfPath(path: readonly PropertyKey[]): string {
   return path.map((part) => `/${String(part).replaceAll('~', '~0').replaceAll('/', '~1')}`).join('');
 }
 
-/** Default fix only for handwritten violations that omit a custom one; schemaErrors never uses this alone. */
 const ARGUMENT_FIX = '这次按 tools/list 该工具的 inputSchema 改正参数后再调用';
 
 function violation(_tool: ToolName, path: string, message: string, fix = ARGUMENT_FIX): ProtocolError {
@@ -198,13 +195,13 @@ function typeWord(type: unknown): string {
   return '取值';
 }
 
-function receivedWord(issue: z.ZodIssue): string | null {
+function receivedWord(issue: z.core.$ZodIssue): string | null {
   const raw = (issue as { received?: unknown }).received ?? /received (\w+)/.exec(issue.message)?.[1];
   if (raw === 'undefined' || raw === undefined) return null;
   return typeWord(raw);
 }
 
-function shortExpected(schema: Record<string, unknown> | null, issue: z.ZodIssue): string {
+function shortExpected(schema: Record<string, unknown> | null, issue: z.core.$ZodIssue): string {
   if (schema !== null) {
     if (Array.isArray(schema.enum) && schema.enum.length > 0) {
       return `枚举（${schema.enum.map((v) => JSON.stringify(v)).join('、')}）`;
@@ -234,14 +231,12 @@ function isOptionalProperty(root: Record<string, unknown>, path: string): boolea
   return !required.includes(leaf);
 }
 
-/** Independent rule sentence (Boss afternoon): 「规则见 <工具名> 输入格式的 <字段>。」 */
 function ruleRef(tool: ToolName, path: string, _suffix = ''): string {
   const leaf = leafOf(path);
   if (!leaf) return `规则见 ${tool} 输入格式`;
   return `规则见 ${tool} 输入格式的 ${leaf}`;
 }
 
-/** Next-step writing + independent rule sentence (no semicolon after a period). */
 function thisCallFix(writing: string, rule: string): string {
   return `请${writing}。${rule}`;
 }
@@ -275,7 +270,6 @@ function isSchemaObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** Locate a subschema, unwrapping nested anyOf/oneOf/allOf that findSubschema stops on for tool inputs. */
 function locateSubschema(root: Record<string, unknown>, path: string): Record<string, unknown> | null {
   const direct = findSubschema(root, path);
   if (direct !== null) return direct;
@@ -328,7 +322,6 @@ function firstBranch(node: Record<string, unknown>, pick: (branch: Record<string
   return null;
 }
 
-/** Whether a schemaErrors path points at a published inputSchema location (declared field or refused extra key). */
 export function pathInInputSchema(schema: Record<string, unknown>, path: string): boolean {
   if (path === '') return true;
   if (locateSubschema(schema, path) !== null) return true;
@@ -339,7 +332,7 @@ export function pathInInputSchema(schema: Record<string, unknown>, path: string)
   return leaf.length > 0 && !propertyNames(parent).includes(leaf);
 }
 
-function argumentShape(tool: ToolName, path: string, issue: z.ZodIssue, root: Record<string, unknown>, args: unknown): { message: string; fix: string } {
+function argumentShape(tool: ToolName, path: string, issue: z.core.$ZodIssue, root: Record<string, unknown>, args: unknown): { message: string; fix: string } {
   const target = locateSubschema(root, path);
   const parent = locateSubschema(root, parentPointer(path));
 
@@ -585,7 +578,6 @@ function checkReadCancellation(call: ToolCall): void {
   if (call.context.signal?.aborted) throw new McpError(ErrorCode.ConnectionClosed, '请求已取消');
 }
 
-/** Exact pack_id with zero hits: fact+fix only (category added by text renderer); path stays /pack_id. */
 export function packIdAbsenceError(
   packId: string,
   absence: NonNullable<Awaited<ReturnType<NonNullable<WorkflowStore['absence']>>>>,
@@ -615,7 +607,6 @@ export function packIdAbsenceError(
       path: '/pack_id',
     };
   }
-  // unknown | disabled — determined absence; kind unknown → 工作流或技能
   return {
     code: 'SOURCE_ABSENT',
     message: absentPackFact(packId),
@@ -640,12 +631,9 @@ const listTaskPacks: Handler = async (deps, call, args) => {
       (personal ? owner !== null && item.owner === owner.name : item.owner === undefined))) assigned.push(pack);
   }
   checkReadCancellation(call);
-  // The bundled skill is every caller's, whatever is assigned; a registered team pack of the same id and version gives way to it.
   const packs = [...assigned.filter(pack => (pack.space ?? 'team') !== 'team' || pack.pack !== observabilitySkill.pack), observabilitySkill];
   const { kind, pack_id: packId, offset = 0 } = parsed.data;
   const filtered = packs.filter((pack) => (kind === undefined || pack.kind === kind) && (packId === undefined || pack.id === packId));
-  // Exact pack_id and nothing visible: distinguish absent vs unassigned (disclosure-audit D3 / brief D4). The bundled skill is
-  // not in the registry the absence comes from: filtered out by kind, it is an empty list, never "no such pack".
   if (packId !== undefined && packId !== observabilitySkill.id && filtered.length === 0) {
     const absence = await deps.workflows.absence?.(call.principal, packId) ?? null;
     if (absence !== null) {
@@ -1204,7 +1192,6 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
   call.state.errorCode = value.call_result === 'error' ? (value.errors[0]?.code ?? null) : null;
   const role: CallerRole = call.principal.role === 'admin' ? 'admin' : 'user';
   const accountName = call.principal.name;
-  // D3: structured fix and reader text stay in sync for administrators (before D5 appends).
   if (role === 'admin' && Array.isArray(value.errors) && value.errors.length > 0) {
     value = {
       ...value,
@@ -1214,7 +1201,6 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
       }),
     };
   }
-  // D5: escalate repeated refusals into structured fix (and thus reader text).
   if (value.call_result === 'error' && Array.isArray(value.errors) && value.errors.length > 0) {
     const published = PUBLISHED.get(name);
     if (published !== undefined) {
@@ -1229,7 +1215,6 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
             input: definition.input,
             inputSchema: published.inputSchema,
             runId: call.state.runId,
-            // Prefer example JSON for the mode keys the caller used (upload_file file_path vs memory_share).
             visibleValues: args && Object.keys(args).length > 0 ? new Map(Object.entries(args)) : undefined,
           }),
         };

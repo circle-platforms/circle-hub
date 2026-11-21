@@ -17,7 +17,6 @@ for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single
   t.after(() => records.close());
   assert.ok(records.poolStats, 'the real fixture exposes pool statistics');
   assert.equal(records.poolStats().limit, 1, 'the permission and intent kit really has one connection');
-  // Keep the real observation advisory lock on a separate session: it lives for the whole job, not just its intent TX.
   records.store.tryHold=c.kit.store.tryHold.bind(c.kit.store);
   const scope = new AsyncLocalStorage<Transaction>();
   const originalTransaction = records.store.withTransaction.bind(records.store);
@@ -28,7 +27,6 @@ for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single
     const held = scope.getStore();
     if (held && this.pool.options.max === 1 && this.pool.options.database === c.kit.database.database && tx !== held) {
       reborrows++;
-      // Refuse the second lease deterministically instead of waiting for a pool timeout to imply a deadlock.
       throw new Error('a held transaction attempted another client lease');
     }
     const execute = originalQuery<R>;
@@ -40,7 +38,6 @@ for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single
       transactionChecks++;
       assert.equal(tx, scope.getStore(), 'fresh permission query must receive the held outer transaction');
       if (revoke && !revoked) {
-        // The independent fixture connection commits after the intent transaction began, before its fresh read.
         await c.kit.authorizations.unassignResource(c.admin, c.executor.id, c.environmentTeam.id);
         revoked = true;
         const old = requestPermissions(c.owner.id);

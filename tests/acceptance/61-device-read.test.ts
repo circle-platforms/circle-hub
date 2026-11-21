@@ -50,7 +50,6 @@ describe('scenario 61: a writer reads what a booked device prints for a read-onl
     const sha = (await bed.hub.hub.docs.show('bed-topology'))!.sha256;
     const raw = definition(gateway.endpoint);
     const seats = [{ ...probes.seats[0]!, seat: 'afamx0', manifest: { ...probes.seats[0]!.manifest, device: '/beds/0/devices/0' } }];
-    // No premise is certified: the read uses the call, the tool and the command shape of the per-seat version read.
     const declared = ExecutorDefinition.parse({
       ...raw, target: 'bed-a', resources: ['bed/bed-a/afamx0', 'bed/bed-a/client0'], manifest_sha256: sha,
       allowed_tools: [...raw.allowed_tools, 'inspect_seat'],
@@ -101,7 +100,6 @@ describe('scenario 61: a writer reads what a booked device prints for a read-onl
     assert.match(asked.text, /设备输出仅供参考，不能作为原始用例的期望依据。/);
     assert.match(asked.text, /在 bed-a\/afamx0 上读“inspect peers”：设备输出 3 行/);
     assert.match(asked.text, /设备输出\npeers:\nname      address\npeer-1    192\.0\.2\.7(?:\n|$)/);
-    // The run holds it as a claim of the target's report, not as a source.
     const run = (asked.out as { run: ReadRun }).run;
     assert.equal(run.device_reads.length, 1, 'one observation per request');
     const [claim] = run.device_reads;
@@ -128,7 +126,6 @@ describe('scenario 61: a writer reads what a booked device prints for a read-onl
     const other = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'client', count: 1 }] } } });
     assert.equal(other.isError, false, other.text.slice(0, 800));
     const second = (other.out as { run: { run: string } }).run.run;
-    // The second booking holds client0, not afamx0, which the first booking still holds for the same user: its lineage holds only client0.
     const notHeld = await client.call('start_run', { pack: 'test-bed', inputs, predecessor: second, parameters: { action: 'read', booking: second, device: 'afamx0', line: 'inspect peers' } });
     assert.equal(notHeld.isError, true);
     assert.match(JSON.stringify(notHeld.out), /你没有持有设备 afamx0 的预订/);

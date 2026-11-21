@@ -1,6 +1,3 @@
-// The quickstart deployment definition is one shared byte sequence: the checked-in example file and the JSON fences
-// in docs/quickstart.md and docs/quickstart.en.md. The [PG] case applies those exact bytes on a temporary Hub and
-// runs start_run as the assigned account.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -51,7 +48,6 @@ test('[PG] quickstart example apply then start_run facts as the assigned admin a
   });
   t.after(() => hub.close());
 
-  // Definition assigns by exact name "admin"; createTestHub's bootstrap admin is named 管理员.
   const assigned = await hub.createUser('admin');
   const output: string[] = [];
   const session = {

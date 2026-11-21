@@ -51,7 +51,6 @@ export async function personalPackControls(ctx:PageContext,pack:PackListing):Pro
   return {body:html`${body}${retire}`,actions:html`${pack.withdrawn?'':actionLink('#retire-personal-pack','退役…','danger')}${actionLink('#grant-pack','分享…')}${canPublish?actionLink(packPath(pack)+'?'+new URLSearchParams({space:pack.space!,promote:'1'})+'#promote-personal-pack','分享到公共空间…'):html`<span title="没有发布权">${submitButton('分享到公共空间…', { secondary: true, disabled: true })}</span>`}`};
 
 }
-/** Resolve the list or detail path for a personal pack after a POST (skill must not land under workflows). */
 async function personalPackReturn(ctx:PageContext,packId:string,kindHint?:PackKind):Promise<{list:string;detail:string}>{
   const listings=await ctx.deps.packs.list(ctx.principal);
   const found=listings.find(row=>row.id===packId&&row.space===ctx.principal.id)??listings.find(row=>row.id===packId);

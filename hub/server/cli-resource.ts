@@ -1,7 +1,6 @@
 import { teamId } from './cli-team.ts';
 import { isAdmin } from '../records/api.ts';
 import {referencesIn} from '../../contracts/src/variables.ts';
-import { join } from 'node:path';
 import { ENVIRONMENT, isEnvironment, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
 import { type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
 import { WHOLE_HUB, parseStrictJson } from '../records/api.ts';
@@ -41,10 +40,6 @@ async function resourceWarnings(session:Session, record:import('../../contracts/
   }
 }
 
-/**
- * The login column of `resource list`: the state stored in the vault, read fresh by this command (a running server reads it
- * again at its next read that needs the credential, RUNNING_HUB_LOGIN).
- */
 function loginText(status: LoginStatus | null): string {
   if (status === null) return '不用登录';
   let state: string;
@@ -228,9 +223,7 @@ export async function resourceCommand(session: Session, args: readonly string[])
         }
         changes.allow_plaintext = [...kept];
       }
-      const missingLegacy=(previous?.credentials??[]).filter(c=>!c.entry.startsWith('${secret:')&&!c.set&&changes.credentials?.[c.name]);
       const record = await decided(() => hub.connectors.admin.updateResource(admin, positionals[0], changes));
-      for(const item of missingLegacy)session.out(`原值不在密钥库里：接着用 circle-hub secret set --name ${changes.credentials![item.name]} 设置`);
       session.out(`已更新资源 ${record.name}（业务系统接入 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
       if (values['clear-plaintext']) session.out('已清空所有明文放行');
       else if (clearedRoles.length > 0) session.out(`已清掉角色 ${clearedRoles.sort().join('、')} 的明文放行`);
@@ -258,7 +251,6 @@ export async function resourceCommand(session: Session, args: readonly string[])
     case 'read': {
       const { positionals, values } = parse(rest, { events: { type: 'boolean' } }, 3);
       const admin = await session.admin();
-      // Default output is metadata only; --events sends redacted connector diagnostics to stderr for smoke capture.
       const hub = await session.hub(true, values.events !== true);
       const [resource, readName, key] = positionals;
       const described = await decided(() => hub.connectors.admin.describe(admin, resource));
@@ -274,14 +266,11 @@ export async function resourceCommand(session: Session, args: readonly string[])
       const viewer = await session.viewer(values.as);
       if (!isAdmin(viewer)) throw new CliError('只有管理员能列出资源');
       const hub = await session.hub();
-      // The console's listing (ResourceCatalogPort): admins only, with addresses and plaintext declarations.
       const listings = await hub.resources.list(viewer);
       if (listings.length === 0) {
         session.out('还没有资源');
         return 0;
       }
-      // The login column is read from the vault, which needs the master key: asked once for the whole listing, so an
-      // unreadable key costs one refusal, not one per resource.
       const keyProblem = listings.some((resource) => resource.enabled) ? await vaultKeyProblem(hub.records) : null;
       for (const resource of listings) {
         const fields = [resource.name, resource.system_pack, labelOf('environment', resource.environment as Environment), resource.enabled ? '启用' : '停用'];
@@ -308,7 +297,6 @@ export async function resourceCommand(session: Session, args: readonly string[])
     case 'reset-login': {
       const { positionals } = parse(rest, {}, 1);
       const admin = await session.admin();
-      // A reset only removes the vault's session entry, which needs no master key.
       const hub = await session.hub();
       const id = positionals[0];
       if (sub === 'disable') await decided(() => hub.connectors.admin.disable(admin, id));
@@ -324,4 +312,3 @@ export async function resourceCommand(session: Session, args: readonly string[])
       throw new UsageError(`resource 的子命令：${RESOURCE_USAGE}`);
   }
 }
-

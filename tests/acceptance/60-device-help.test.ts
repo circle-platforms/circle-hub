@@ -92,7 +92,6 @@ describe('scenario 60: a writer asks a booked device what it expects', () => {
     assert.match(asked.text, /设备输出仅供参考，不能作为原始用例的期望依据。/);
     assert.match(asked.text, /\n<1-9>   a number\n<cr>(?:\n|$)/);
     assert.match(asked.text, /设备给出说明的最长前缀是“widget set demo”；它后面的词是“5”/);
-    // The run holds them as claims of the target's report, not as a source.
     const run = (asked.out as { run: { run: string; device_help: Array<{ statement: { data?: Record<string, unknown> }; qualifier: { marks: string[]; provenance: string }; grounds: string[] }>; sources: Array<{ reference: string }> } }).run;
     assert.deepEqual(run.device_help.map((c) => c.statement.data?.kind), ['summary', 'position', 'position', 'position']);
     assert.equal(run.device_help[3]!.statement.data?.help, KNOWN['widget set demo']);
@@ -111,7 +110,6 @@ describe('scenario 60: a writer asks a booked device what it expects', () => {
     assert.equal(booked.isError, false, booked.text.slice(0, 800));
     const booking = (booked.out as { run: { run: string } }).run.run;
     called.length = 0;
-    // The booking holds client0, not afamx0, which the first test's booking still holds for the same user: this run's lineage holds only client0.
     const notHeld = await client.call('start_run', { pack: 'test-bed', inputs, predecessor: booking, parameters: { action: 'help', booking, device: 'afamx0', line: 'widget' } });
     assert.equal(notHeld.isError, true);
     assert.match(JSON.stringify(notHeld.out), /你没有持有设备 afamx0 的预订/);

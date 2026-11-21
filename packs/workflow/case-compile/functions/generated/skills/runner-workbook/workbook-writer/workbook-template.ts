@@ -1,21 +1,15 @@
-// The runner's own workbook template, carried by the run's profile. A case workbook is this file with rows filled in, as the
-// reference compiler does: its notes, object and method lists, drop-downs, column widths and defined names stay the template's.
-// Filling edits the worksheet text and keeps every other member's bytes, so the Hub recomputes the same workbook. Node
-// built-ins only; the template itself is data, so this pack names no product.
 import { createHash } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
 import FORMAT from './format.json' with { type: 'json' };
-const isRecord = (value: unknown): value is { [key: string]: unknown } => typeof value === 'object' && value !== null && !Array.isArray(value);
 import { zipStore } from './zip-store.ts';
+const isRecord = (value: unknown): value is { [key: string]: unknown } => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export interface TemplateDoc { sha256: string; xlsx_base64: string }
 export interface TemplateBook { sheet: string; header: string[]; identity_marker: string; range_name: string; template?: TemplateDoc }
 export interface WorkbookTemplate {
   members: ReadonlyArray<{ name: string; bytes: Buffer }>;
   relationships: ReadonlyArray<{ source: string; id: string; type: string; target: string }>;
-  /** The worksheet text, the row of the nine-column header and the last row the template formats. */
   sheet: string; headerRow: number; lastRow: number;
-  /** A1, B1 and C1 as the template holds them. Only the marker in A1 is the template's to say: fillTemplate writes the others. */
   identity: [string, string, string];
 }
 export class TemplateError extends Error { constructor(message: string) { super(message); this.name = 'TemplateError'; } }
@@ -41,7 +35,6 @@ function zipMembers(bytes: Buffer): Array<{ name: string; bytes: Buffer }> {
   return out;
 }
 const decoded = (text: string) => text.replace(/&#(\d+);|&#x([0-9a-fA-F]+);|&(amp|lt|gt|quot|apos);/g, (_, decimal, hex, name) => decimal ? String.fromCodePoint(Number(decimal)) : hex ? String.fromCodePoint(parseInt(hex, 16)) : ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" } as Record<string, string>)[name]);
-/** The texts of one row's inline cells, by column letter. */
 function rowTexts(sheet: string, number: number): Map<string, string> {
   const start = sheet.indexOf(`<row r="${number}"`); if (start < 0) refuse(`运行器模板没有第 ${number} 行`);
   const row = sheet.slice(start, sheet.indexOf('</row>', start)); const out = new Map<string, string>();
@@ -49,7 +42,6 @@ function rowTexts(sheet: string, number: number): Map<string, string> {
   return out;
 }
 const cache = new Map<string, WorkbookTemplate>();
-/** The profile's template, checked against its digest and the book it must serve. */
 export function readTemplate(book: TemplateBook): WorkbookTemplate {
   const doc = book.template;
   if (!isRecord(doc) || typeof doc.sha256 !== 'string' || typeof doc.xlsx_base64 !== 'string') return refuse('运行配置没有运行器模板；管理员把模板写进 runtime-profile 的 workbook.template 后重开运行');
@@ -84,10 +76,6 @@ function filledRow(row: string, values: ReadonlyArray<string | number>, text: Ce
   return out;
 }
 const columnOrder = (a: string, b: string): number => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
-/**
- * The first row with these cells set, by column letter. A cell the row has keeps its place and its style and gets the text
- * (an inline text cell keeps everything else it carries as well); a cell the row lacks is added in column order.
- */
 function firstRowWith(row: string, cells: Record<string, string>, text: CellText): string {
   let out = row;
   for (const [column, value] of Object.entries(cells)) {
@@ -104,7 +92,6 @@ function firstRowWith(row: string, cells: Record<string, string>, text: CellText
   }
   return out;
 }
-/** The workbook: `identity` sets cells of the first row by column letter, `rows` fill the rows below the header in order. */
 export function fillTemplate(template: WorkbookTemplate, identity: Record<string, string>, rows: ReadonlyArray<ReadonlyArray<string | number>>, text: CellText): Uint8Array {
   if (template.headerRow + rows.length > template.lastRow) refuse(`工作簿 ${rows.length} 行超出运行器模板的 ${template.lastRow} 行；把脑图拆成几份分别编译`);
   let sheet = template.sheet;

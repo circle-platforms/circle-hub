@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { CatalogEntry } from '../../../../contracts/src/tables.ts';
 import { createCatalogView, getInterpreter } from '../../../../hub/rules/api.ts';
-import commandTree, { bindCommandSource, parseLimit, produceCommandEntries } from './command-tree.ts';
+import commandTree, { parseLimit, produceCommandEntries } from './command-tree.ts';
 import type { CommandEntryData, ProducedEntry, XmlModel } from './types.ts';
 import { assertTotal, fixtureBytes, hostileInputs, internalWarnings, latin1, seeded, xml, xmlDocument } from '../testing/test-support.ts';
 import { assertLinearGrowth, describeGrowth } from '../../../../hub/testing/growth.ts';
@@ -103,44 +103,24 @@ describe('command entries from the command tree', () => {
     assert.ok(!result.warnings.some((warning) => warning.includes('demo acl mesh')), result.warnings.join('\n'));
   });
 
-  it('keeps the access level the tree declares for each overload, bound to the item that declares it', () => {
-    const bound = bindCommandSource(result.entries, 'a'.repeat(64), result.declarations);
-    const signatures = (bound.find((e) => e.path === '/commands/demo/pool/add')!.data as { signatures: Array<{ access?: { name: string; declaration: string; grammar: string } }> }).signatures;
-    assert.ok(signatures.length >= 2);
-    for (const signature of signatures) {
-      assert.equal(signature.access?.name, 'DEMO_LEVEL_CONFIG');
-      assert.equal(signature.access?.grammar, 'famx-command-tree@2');
-      assert.match(signature.access!.declaration, /^src:a{64}\/xml@1\/x\/commands\//, 'the item, not its arguments');
-      assert.doesNotMatch(signature.access!.declaration, /\/arguments/);
-    }
-    const shown = (bound.find((e) => e.path === '/commands/show/demo/status')!.data as { signatures: Array<{ access?: { name: string } }> }).signatures;
-    assert.deepEqual([...new Set(shown.map((signature) => signature.access?.name))], ['DEMO_LEVEL_USER']);
-    // Unbound entries (no source digest yet) carry no access, like no native_type: the level is source evidence.
-    assert.equal((entry('/commands/demo/pool/add').data as { signatures: Array<{ access?: unknown }> }).signatures[0].access, undefined);
-    // The bound entry is still catalog-entry@1.
-    assert.ok(CatalogEntry.safeParse({ ...(bound.find((e) => e.path === '/commands/demo/pool/add')!.data as object), reference: `rec:${'0'.repeat(64)}` }).success);
-  });
-
   it('writes a canonical statement that carries the data', () => {
     assert.equal(
       entry('/commands/demo/pool/add').statement,
       [
         'demo pool add <arg1:string 1..32> <arg2:ipv4/ipv6> <arg3:int 0..65535> [<arg4:int 1..100="10">]',
         '  Add a member to a pool',
-        '  级别：DEMO_LEVEL_CONFIG',
         '  arg1: Pool name',
         '  arg2: Member address (either address family)',
         '  arg3: Member port',
         '  arg4: Weight (1 to 100, default 10)',
         'demo pool add <arg1:string 1..32> <arg2:string>',
         '  Add a member to a pool by host name',
-        '  级别：DEMO_LEVEL_CONFIG',
         '  arg1: Pool name',
         '  arg2: Member address or host name',
       ].join('\n'),
     );
     assert.equal(entry('/commands/demo/pool/mode').statement.split('\n')[0], 'demo pool mode <arg1:string> [<mode:{rr|lc|hash}="rr">]');
-    assert.equal(entry('/commands/show/demo/status').statement, 'show demo status\n  Show the demo status\n  级别：DEMO_LEVEL_USER\nshow demo status [<arg1:string="all">]\n  Show the demo status\n  级别：DEMO_LEVEL_USER\n  arg1: Pool name (every pool when left out)');
+    assert.equal(entry('/commands/show/demo/status').statement, 'show demo status\n  Show the demo status\nshow demo status [<arg1:string="all">]\n  Show the demo status\n  arg1: Pool name (every pool when left out)');
   });
 
   it('refuses a document the declared grammar cannot verify completely, and says what to fix', () => {

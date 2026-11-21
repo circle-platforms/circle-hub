@@ -73,8 +73,8 @@
     },
     {
       "path": "functions/check-bed.ts",
-      "sha256": "a9eb62e9fc0f2f3000cc3727ccdf020f957e32b20bee9db2a60b8acf263d79a2",
-      "size": 17829
+      "sha256": "c85fce3ee684e32260ab89b9c1748032221d31ee016c774ed82c2fd60e0d5771",
+      "size": 16851
     },
     {
       "path": "functions/common.ts",
@@ -83,8 +83,8 @@
     },
     {
       "path": "functions/conclude.ts",
-      "sha256": "5f60d8aa63ada19acba353edd2fe0bf524e805b80718a08c9b244a838cf16e97",
-      "size": 29397
+      "sha256": "01e865ffdb2c83f0c4ae761e525cd72b6405c3054eed30d149a226239a3dfa70",
+      "size": 28977
     },
     {
       "path": "functions/facts.ts",
@@ -108,8 +108,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "a368c9261dc3be7943288005dd3b44baf92b6176306d233d59b6de2e02932541",
-      "size": 14232
+      "sha256": "fddd77f7db357be796fa954b713c187508de0d79cedad04b1f4727bc31699403",
+      "size": 12903
     },
     {
       "path": "functions/subject.ts",

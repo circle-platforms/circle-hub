@@ -1,5 +1,3 @@
-// A batch of subjects whose outputs together pass the sandbox output limit is halved and built again in batches, down to
-// single subjects, instead of one sandbox per subject. Counted by real isolated invocations, not by duration.
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -18,7 +16,6 @@ before(async () => { postgres = await startPostgres(); });
 after(async () => { await postgres?.stop(); });
 
 test('a subject batch too large for one answer is halved, not left to one sandbox per subject', { skip }, async () => {
-  // Every subject is about 300 KB; four together pass the 1 MiB output limit, two fit.
   const h = await openHarness(postgres, { sandboxLimits: { outputBytes: 1024 * 1024 } });
   const root = await mkdtemp(join(tmpdir(), 'circle-hub-subject-split-'));
   const originalSpawn = childProcess.spawn;
@@ -43,7 +40,7 @@ test('a subject batch too large for one answer is halved, not left to one sandbo
         const end = child.stdin.end;
         child.stdin.end = function (this: NodeJS.WritableStream, chunk: unknown, ...rest: unknown[]) {
           if (typeof chunk === 'string') {
-            try { const request = JSON.parse(chunk); if (request.entry.endsWith('/functions/large-subject.ts')) sizes.push(Array.isArray(request.input) && request.batch === true ? request.input.length : 1); } catch { /* Non-sandbox subprocess. */ }
+            try { const request = JSON.parse(chunk); if (request.entry.endsWith('/functions/large-subject.ts')) sizes.push(Array.isArray(request.input) && request.batch === true ? request.input.length : 1); } catch { }
           }
           return Reflect.apply(end, this, [chunk, ...rest]);
         } as typeof child.stdin.end;

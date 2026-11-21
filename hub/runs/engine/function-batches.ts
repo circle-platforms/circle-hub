@@ -7,7 +7,6 @@ type Call = { target: PackFunctionTarget; input: unknown; limits: Partial<Sandbo
   resolve: (result: SandboxResult) => void; reject: (error: unknown) => void };
 type Group = { ids: string[]; arrived: Set<string>; calls: Map<string, Call>; started: boolean };
 
-/** Split ordered JSON inputs at the serialized array's UTF-8 byte cap; an oversized item stays alone for its own error boundary. */
 export function splitInputBatches<T>(inputs: readonly T[], inputBytes: number): T[][] {
   const batches: T[][] = []; let batch: T[] = []; let bytes = 2;
   for (const input of inputs) {
@@ -23,13 +22,6 @@ export function splitInputBatches<T>(inputs: readonly T[], inputBytes: number): 
   return batches;
 }
 
-// A function whose batch ran out of time is slow per item, and a batch runs its items one after another in one process: six
-// items of three seconds each never fit the time limit of one call, while six calls side by side take three seconds. In a real
-// seventeen-case submission eight such batches each ran to the limit twice (the retry of a wall-clock timeout) before their items
-// were called one by one: 168 of the 299 seconds of the evaluation, and again in the next one (Hub traces of 2026-11-19).
-// So a batch that times out is not tried again (calling its items one by one is its retry), and the function is remembered for
-// a while in this process: its later batches go straight to single calls. What is remembered only chooses between two ways of
-// calling the same pure function under the same limits; it is never an outcome.
 const SLOW_FOR_MS = 60 * 60_000, SLOW_KEPT = 512;
 const slowFunctions = new Map<string, number>();
 const slowKey = (target: PackFunctionTarget): string => `${target.packDir}\n${target.module}\n${target.export ?? 'default'}`;
@@ -44,7 +36,6 @@ function markSlow(target: PackFunctionTarget): void {
   slowFunctions.delete(key); slowFunctions.set(key, Date.now() + SLOW_FOR_MS);
   while (slowFunctions.size > SLOW_KEPT) slowFunctions.delete(slowFunctions.keys().next().value!);
 }
-/** Forgets which functions were slow in a batch (tests). */
 export function forgetSlowFunctions(): void { slowFunctions.clear(); }
 
 export function createFunctionBatches(optionsFor: (check: string, target: PackFunctionTarget, count: number) => SandboxOptions, onCancel?: (error: unknown) => void) {
@@ -71,7 +62,6 @@ export function createFunctionBatches(optionsFor: (check: string, target: PackFu
           } catch (error) {
             if (error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE' && error.detail.reason === 'stopping') { cancel(error); return; }
             if (error instanceof SandboxError && error.code === 'SANDBOX_TIMEOUT') markSlow(batch[0].target);
-            // Aggregate limits, timeout or a violation may concern one item. Re-run only this batch under the original caps.
           }
         }
         await mapLimited(batch, CHECK_PARALLELISM, async call => {

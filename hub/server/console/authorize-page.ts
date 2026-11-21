@@ -17,7 +17,6 @@ import {
   type ConsoleOptions, sendHtml, redirect, anonymous, forbidden, sameOrigin, formOf,
 } from './console-http.ts';
 
-/** The error page of an authorization request the endpoint cannot redirect (hub/server/oauth.ts). */
 export function authorizeRefusal(response: ServerResponse, status: number, message: string): void {
   sendHtml(response, status, refusedPage(message));
 }
@@ -25,8 +24,6 @@ export function authorizeRefusal(response: ServerResponse, status: number, messa
 export async function authorizePage(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[]): Promise<void> {
   const store = options.authorizations;
   const open = rest.length === 1 && store !== undefined ? store.get(rest[0]) : null;
-  // Only the browser that opened the request (it holds the cookie the authorization endpoint set) sees or answers it; to any
-  // other the request does not exist.
   const bound = open !== null && cookiesOf(request).get(secure ? SECURE_AUTHORIZE_COOKIE : AUTHORIZE_COOKIE) === open.browser;
   if (open === null || open.secure !== secure || !bound) {
     request.resume();
@@ -34,7 +31,6 @@ export async function authorizePage(request: IncomingMessage, response: ServerRe
   }
   const principals = options.deps.records.principals;
   const signedIn = session === null ? null : await (principals.authenticateConsoleSession?.(`Bearer ${session.token}`) ?? principals.authenticate(`Bearer ${session.token}`));
-  // The account the page names: the invitation's, else the session's. The approval must name the same one.
   const named = open.invitation !== null ? { id: open.invitation.user, name: open.invitation.name, role: open.invitation.role, via: 'invitation' as const } : signedIn !== null ? { ...signedIn, via: 'session' as const } : null;
   const show = (status: number, error: string | null): void => {
     if (named === null) return sendHtml(response, status, identityPage(open, error));
@@ -61,7 +57,6 @@ export async function authorizePage(request: IncomingMessage, response: ServerRe
   if (form === 'aborted') return void response.destroy();
   if (typeof form === 'string' || form.get('csrf') !== open.csrf) return forbidden(response, '表单已过期或不是本控制台发出的，请在客户端中重新连接');
   const step = form.get('step');
-  // A request is decided once: a second submit (a double click) waits for the first and gets the same answer.
   if (step === 'decide' && open.decision !== null) {
     const decided = await open.decision;
     return 'location' in decided ? go(decided.location) : show(decided.status, decided.error);
@@ -84,8 +79,6 @@ export async function authorizePage(request: IncomingMessage, response: ServerRe
   const decision = form.get('decision');
   if (decision !== 'approve' && decision !== 'deny') return show(400, '请求不正确，请重新选择');
   const to = (params: Record<string, string>): { location: string } => ({ location: responseUri(open.redirectUri, { ...params, state: open.state, iss: open.issuer }) });
-  // A device request is answered at the client's next poll, not by a redirect: the browser stays on this page, which then
-  // says how it was decided.
   const here = { location: `${AUTHORIZE_PAGE}/${open.id}` };
   const deviceGone = { status: 409, error: '设备码已过期或已在其他页面处理：请在客户端中重新连接' };
   const decide = async (): Promise<{ location: string } | { status: number; error: string }> => {
@@ -97,9 +90,7 @@ export async function authorizePage(request: IncomingMessage, response: ServerRe
       return open.device !== null ? here : to({ error: 'access_denied', error_description: 'the request was refused' });
     }
     if (named === null) return { status: 401, error: '请先输入邀请码' };
-    // The account must still be the one the page named: signing in as someone else in another tab changes nothing here.
     if (form.get('account') !== named.id) return { status: 409, error: '页面显示的账号已变化：请核对下面的账号后重新确认连接' };
-    // An invitation is not spent on a device request that can no longer be decided.
     if (open.device !== null && !store!.devicePending(open)) return deviceGone;
     if (named.via === 'invitation' && (await principals.takeInvitation(open.invitation!.id, open.client.id)) === null) {
       open.invitation = null;
@@ -117,18 +108,11 @@ export async function authorizePage(request: IncomingMessage, response: ServerRe
   };
   open.decision = decide();
   const decided = await open.decision;
-  // A refusal of the page (not of the request) lets the person try again.
   if (!('location' in decided)) open.decision = null;
   if ('location' in decided) return go(decided.location);
   return decided.status === 409 && open.invitation === null && named?.via === 'invitation' ? sendHtml(response, 409, identityPage(open, decided.error)) : show(decided.status, decided.error);
 }
 
-/**
- * The device page (RFC 8628 3.3): a person types the user code a client shows. A code of an undecided device request opens
- * an authorization request for it, bound to this browser by the same cookie the authorization endpoint sets, and sends the
- * browser to its authorization page, which names the account and takes the decision. Typed codes count against the
- * sender, right or wrong, so the codes cannot be guessed at speed.
- */
 export async function devicePage(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, secure: boolean): Promise<void> {
   const store = options.authorizations;
   if (store === undefined) {

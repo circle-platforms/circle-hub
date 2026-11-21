@@ -1,9 +1,3 @@
-/**
- * K11 console surfaces for「重置和重建」and「需要重建」.
- * Ordinary mode posts settings preview to `/console/admin/do/reset` (Codex createApp routes it to the
- * rebuild handler with authenticateAdmin + ResetPorts). Incompatible mode uses `/console/rebuild/*`.
- * Status path: `/console/reset/status/<UUID>`. Orchestration/apply/export live on the server bridge.
- */
 import { RESET_ALL_LABEL, RESET_SCOPE, RESET_SCOPE_LABEL, type ResetScope } from '../../../contracts/src/reset.ts';
 import type { RebuildConsoleContext } from '../rebuild-http.ts';
 import type { RebuildNeeded } from '../rebuild-state.ts';
@@ -28,10 +22,8 @@ import type { PageContext, PageResult } from './context.ts';
 export type { RebuildNeeded };
 export type { RebuildConsoleContext };
 
-/** What the administrator types to confirm a destructive reset. */
 export const RESET_CONFIRM_WORD = '重建';
 
-/** Selector values are the generated reset_scope axis (including all); do not append a handwritten literal. */
 export type ResetChoice = ResetScope;
 
 export const RESET_SCOPES: readonly { value: ResetChoice; label: string; clears: string; keeps: string }[] = [
@@ -84,10 +76,6 @@ function scopeHelp(): Html {
   return html`<ul class="ch-meta">${RESET_SCOPES.map((row) => html`<li><b>${row.label}</b>：${row.clears}${row.keeps}</li>`)}</ul>`;
 }
 
-/**
- * Admin-only「重置和重建」card. Posts to `/console/admin/do/reset` (fields Codex rebuild-http accepts:
- * csrf, confirm, scope, keep_config). Response is the preview page with execute controls.
- */
 export function resetRebuildSection(ctx: PageContext): Html {
   if (!ctx.admin) return html``;
   const selected = ctx.url.searchParams.get('reset_scope') ?? 'history';
@@ -236,7 +224,6 @@ ${authorizeForm(context.csrf, context.loginNonce)}
   );
 }
 
-/** Pure rebuild page for the lightweight incompatible-store server; default `ServeOptions.rebuild.render`. */
 export function renderRebuildPage(context: RebuildConsoleContext): string {
   return String(
     page(
@@ -252,7 +239,6 @@ export function renderRebuildPage(context: RebuildConsoleContext): string {
   );
 }
 
-/** Ordinary console adapter when the Hub is still fully assembled. */
 export function needsRebuildPage(ctx: PageContext, needed: RebuildNeeded | null): PageResult {
   const operationId = ctx.url.searchParams.get('operation') ?? undefined;
   const context: RebuildConsoleContext = {

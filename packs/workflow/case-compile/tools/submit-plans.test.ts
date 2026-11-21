@@ -1,4 +1,3 @@
-// A run takes one complete submission; the model writes one file per case. Synthetic Hub stub only.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
@@ -18,10 +17,8 @@ async function plans(files: Record<string, unknown>) {
 }
 let RUN_ITEMS = ['doc:a', 'doc:b'];
 let RUN_RECOMPOSITION: Record<string, unknown> | undefined;
-/** The Hub's run-late@1 answer (GET /run-export/<run>/late); absent: the run binds nothing after its start and the Hub answers 404. */
 let RUN_LATE: Record<string, unknown> | undefined;
 const servers = new Set<ReturnType<typeof createServer>>();
-/** A Hub run that binds nothing after its start answers its late export with 404 (the late overlay is then the frozen item itself). */
 function withoutLate(request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse): boolean {
   if (RUN_LATE !== undefined || request.method !== 'GET' || request.url !== `/run-export/${RUN}/late`) return false;
   response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); response.end('运行没有开运行后再绑定的输入'); return true;
@@ -78,7 +75,7 @@ test('a skipped case passes through as written', async () => {
   assert.deepEqual(await planItems(await plans({ '01.json': skipped })), [skipped]);
 });
 
-test('a case handed in as skipped is answered with the closing rule after the Hub\'s receipt, as the reference engine answers an exit when it is filed', async () => {
+test('a case handed in as skipped is answered with the closing rule after the Hub\'s receipt', async () => {
   const skipped = { item: 'doc:b', handling: 'skipped', reason: '合成理由：环境缺前置' };
   const stub = await hub(said('回执：已受理；未完成 1（修复轮数用完 1）'));
   const result = await run(stub.url, await plans({ '01.json': item('doc:a'), '02.json': skipped }));
@@ -86,7 +83,6 @@ test('a case handed in as skipped is answered with the closing rule after the Hu
   assert.equal(result.code, 0);
   assert.deepEqual(stub.seen[0].body.params.arguments.items, [item('doc:a'), skipped], 'the skip reaches the Hub as written');
   assert.match(result.out, /未完成 1（修复轮数用完 1）\n全文在 .+\n原始用例 990000000000000102 合成用例 2，还没有完成脚本编写，状态未知。原因缺资料，下一步由编写模型按原始用例继续编写；声明跳过不是已核验的不可编写结论；已有具名缺失事实出口时按出口处理，否则继续编写或补齐证据；计数只陈述已记录尝试，不证明失败归因。决定者程序。\n$/);
-  // No skip, no note.
   const plain = await hub(said('受理'));
   assert.doesNotMatch((await run(plain.url, await plans({ '01.json': item('doc:a') }))).out, /还没有完成脚本编写/);
   await plain.close();
@@ -222,7 +218,6 @@ test('local fidelity precheck blocks missing, stale, or malformed data.fidelity 
   RUN_ITEMS = ['doc:a'];
   RUN_RECOMPOSITION = record;
   try {
-    // 1. Missing data.fidelity -> exit 1 locally, 0 POST /mcp requests, prints 3-step instructions
     const missingDir = await plans({ '01.json': { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'p', quotes: [], data: plan }] } } });
     const stubMissing = await hub(said('受理'));
     const resMissing = await run(stubMissing.url, missingDir);
@@ -233,12 +228,10 @@ test('local fidelity precheck blocks missing, stale, or malformed data.fidelity 
     assert.match(resMissing.err, /fidelity-brief\.ts/);
     assert.match(resMissing.err, /\.verdict\.json/);
     assert.match(resMissing.err, /fidelity-apply\.ts/);
-    // The two commands it prints take the run directory as --run, as every tool that reads a run does.
     assert.match(resMissing.err, /fidelity-plumb\.ts --run <脚本编写目录> --plans /);
     assert.match(resMissing.err, /fidelity-apply\.ts --run <脚本编写目录> --plans /);
     assert.doesNotMatch(resMissing.err, /run\.json/);
 
-    // 2. Stale brief_sha256 -> exit 1 locally, 0 POST /mcp requests
     const stalePlan = { ...plan, steps: [{ object: 'Device_0', method: 'cli', args: ['interval 120'], keywords: {} }], fidelity: { brief_sha256: brief.brief_sha256, steps: [{ n: 'A1', verdict: 'preserved', step_indices: [1], rationale: 'ok' }], disclosure: '保住' } };
     const staleDir = await plans({ '01.json': { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'p', quotes: [], data: stalePlan }] } } });
     const stubStale = await hub(said('受理'));
@@ -249,7 +242,6 @@ test('local fidelity precheck blocks missing, stale, or malformed data.fidelity 
     assert.match(resStale.err, /不是这份计划的简报/);
     assert.match(resStale.err, /fidelity-apply\.ts/);
 
-    // 3. Malformed shape -> exit 1 locally, 0 POST /mcp requests
     const badShapePlan = { ...plan, fidelity: { brief_sha256: brief.brief_sha256, steps: [], disclosure: '空步骤' } };
     const shapeDir = await plans({ '01.json': { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'p', quotes: [], data: badShapePlan }] } } });
     const stubShape = await hub(said('受理'));
@@ -259,7 +251,6 @@ test('local fidelity precheck blocks missing, stale, or malformed data.fidelity 
     assert.equal(stubShape.seen.length, 0);
     assert.match(resShape.err, /fidelity-brief\.ts/);
 
-    // 4. Valid matching data.fidelity -> sent to Hub
     const validPlan = { ...plan, fidelity: { brief_sha256: brief.brief_sha256, steps: [{ n: 'A1', verdict: 'preserved', step_indices: [1], rationale: '第 1 步实现' }], disclosure: '已保住' } };
     const validDir = await plans({ '01.json': { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'p', quotes: [], data: validPlan }] } } });
     const stubValid = await hub(said('受理'));
@@ -268,7 +259,6 @@ test('local fidelity precheck blocks missing, stale, or malformed data.fidelity 
     assert.equal(resValid.code, 0, resValid.err);
     assert.equal(stubValid.seen.length, 1);
 
-    // 5. Skipped item -> passes through even without data.fidelity
     const skippedDir = await plans({ '01.json': { item: 'doc:a', handling: 'skipped', reason: '缺执行器声明' } });
     const stubSkipped = await hub(said('受理'));
     const resSkipped = await run(stubSkipped.url, skippedDir);
@@ -285,7 +275,6 @@ test('local fidelity precheck blocks missing, stale, or malformed data.fidelity 
 test('submit_plans retries ONLY on 503 saying 这次调用没有执行, and never retries ambiguous 503, disconnect, timeout, or refused', async (t) => {
   const dir = await plans({ '01.json': item('doc:a'), '02.json': item('doc:b') });
 
-  // 1. Recover when Hub explicitly replies 503 + 这次调用没有执行 (first with Retry-After, second without).
   let recoverPosts = 0;
   const serverRecover = createServer((request, response) => {
     if (withoutLate(request, response)) return;
@@ -312,7 +301,6 @@ test('submit_plans retries ONLY on 503 saying 这次调用没有执行, and neve
   assert.equal(recoverPosts, 3);
   assert.deepEqual(pauses1, [5_000, 2_000]);
 
-  // 2. Exhausting 60s on explicit non-execution 503 reports wait duration and attempts.
   let exhaustPosts = 0;
   const serverExhaust = createServer((request, response) => {
     if (withoutLate(request, response)) return;
@@ -334,7 +322,6 @@ test('submit_plans retries ONLY on 503 saying 这次调用没有执行, and neve
   assert.deepEqual(pauses2, [2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000, 8_000, 6_000]);
   assert.match(exhausted.err, /^暂时不可用：Hub 答复 503：.*这次调用没有执行.*已等待 60 秒并尝试 10 次.*。请.*。$/m);
 
-  // 3. Ambiguous 503, mid-flight socket reset, truncated JSON, TimeoutError, and ECONNREFUSED NEVER retry.
   for (const mode of ['ambiguous-503', 'reset', 'truncated'] as const) {
     let posts = 0;
     const server = createServer((request, response) => {
@@ -418,7 +405,6 @@ test('a record bound after the run started is the one the Hub resolves now: the 
   RUN_RECOMPOSITION = undefined;
   RUN_LATE = { schema: 'run-late@1', run: RUN, run_reference: 'rec:' + 'c'.repeat(64), resolved_at: '2026-11-17T00:00:00.000Z', late: { inputs: [{ slot: 'recomposition_result', run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', reference: 'rec:' + 'd'.repeat(64) }], refresh: 'e'.repeat(64) }, items: [{ id: 'doc:a', late: { recomposition: { record, receipt: 'rec:' + 'd'.repeat(64), late: true, record_sha256: 'f'.repeat(64) } } }] };
   try {
-    // The frozen item has no record; the late overlay has one, so the missing fidelity audit is caught before anything is sent.
     const directory = await plans({ '01.json': { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'p', quotes: [], data: plan }] } } });
     const stub = await hub(said('受理'));
     const result = await run(stub.url, directory);
@@ -426,7 +412,6 @@ test('a record bound after the run started is the one the Hub resolves now: the 
     assert.equal(result.code, 1, result.out);
     assert.equal(stub.seen.length, 0);
     assert.match(result.err, /fidelity-brief\.ts/);
-    // The same plan of a case still waiting for its recomposition has no brief yet: nothing local blocks it and the Hub judges it.
     RUN_LATE = { ...RUN_LATE, items: [{ id: 'doc:a', late: { recomposition_problem: '重组运行还没有已受理提交', recomposition_waiting: { run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', result: null, state: 'no_result', item: null } } }] };
     const waiting = await hub(said('受理'));
     const sent = await run(waiting.url, directory);

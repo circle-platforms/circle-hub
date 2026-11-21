@@ -385,7 +385,6 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     const run = started.out.run as RunSummary;
     const reportItem = reportItemOf(run);
 
-    // Overall verdict and level remain in the machine-readable report.
     assert.deepEqual(reportItem.fields.overall, { verdict: 'PARTIAL', level: 'P4', reference: (await Promise.all([finalReferenceOf(blockE.run,'PARTIAL','P4'),finalReferenceOf(blockF.run,'PARTIAL','P4')])).sort()[0] });
     assert.match(reportItem.summary??'',/^整体结论码 PARTIAL、等级 P4（最差那块的，照抄）；评审表/);
     assert.match(started.text,/评审终稿/);
@@ -403,7 +402,6 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
 
     assert.equal(reportItem.fields.findings,undefined,'the original receipts retain findings without a second text copy');
 
-    // The model uses the structured verdict and level without retranscribing finding references.
     const answer = await client.call('submit_result', {
       run: run.run,
       model: REPORTER,

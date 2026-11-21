@@ -28,7 +28,6 @@ export interface PlayOptions {
   pace?: 'fast' | 'recorded';
   speed?: number;
 }
-// Circle is an operator-selected installed application, not a repository dependency. Dynamic module types are confined here.
 async function moduleAt(app: string, name: string): Promise<any> {
   try { return await import(pathToFileURL(join(app, 'dist', name + '.js')).href); }
   catch { throw new ReplayError('已安装应用缺少可加载的回放接口', 2, { module: name }); }
@@ -71,7 +70,6 @@ export async function play(bundle: Bundle, app: string, options: PlayOptions = {
       call: string;
     }[] = [];
     report.coverage.invocationOrder = invocationOrder;
-    // The calls the Harness actually put to the before_tool hook: a call refused earlier (invalid arguments) never reaches it.
     const hookOrder: {
       session: string;
       call: string;
@@ -244,7 +242,6 @@ export async function play(bundle: Bundle, app: string, options: PlayOptions = {
         });
         const loaded = { hooks: [], errors: [], projectIgnored: false, projectChanged: [] };
         const hooks = new HookRunner(loaded, { workspace: work, home });
-        // Use a real HookRunner object with a recorded, non-executing decision boundary.
         hooks.run = async (request: any) => {
           if (request.event !== 'before_tool')
             return { decision: 'none', reason: '', context: '', outcomes: [], notices: [] };
@@ -252,8 +249,6 @@ export async function play(bundle: Bundle, app: string, options: PlayOptions = {
             throw fatal;
           align(s);
           const p = selectedPair(s, request.toolName, request.toolInput, hooked, tools);
-          // The stand-in tool of a name this build does not own accepts any arguments, so the Harness asks the hook for a call that
-          // Circle refused before any hook in the history. That call has no recorded decision and is not counted as one.
           if (refusedBeforeHook(p.call, p.message))
             return { decision: 'none', reason: '', context: '', outcomes: [], notices: [] };
           hookOrder.push({ session: sid, call: p.call.id });
@@ -298,7 +293,6 @@ export async function play(bundle: Bundle, app: string, options: PlayOptions = {
             return { message: copy, usage: emptyUsage(), usageReported: true };
           }
         };
-        // Approval state is deliberately synthetic: no rule loader can inspect the real workspace.
         const policy = { credentialFiles: [], review: () => ({ verdict: 'ASK', message: '', reason: '', pattern: '', scope: '', warn_delete: false, prefix: [], covered_by: [] }), allowedBySettings: () => true, needsApproval: () => false, tabAlwaysAsks: () => false, mode: () => 'auto', readOnlyCommand: () => false, remember: () => { } };
         const bus = new EventBus(session.id);
         bus.subscribe((event: any) => {

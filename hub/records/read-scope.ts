@@ -8,7 +8,6 @@ interface Variant {methods:Set<PropertyKey>;proxy:object}
 interface Scope {active:boolean;generation:number;version:{current:number;scopes:Set<Scope>};ports:WeakMap<object,Variant[]>;stores:WeakMap<object,RecordStore>;values:WeakMap<object,Map<string,Promise<unknown>>>;clearers:Set<()=>void>;data:ReadValues;verified:Map<string,Array<{parts:readonly string[];value:unknown}>>}
 const scopes=new AsyncLocalStorage<Scope>();
 const retirement=new AsyncLocalStorage<()=>void>();
-/** Permission-only requests also retire their retained facts after an explicit destructive write. */
 export function withReadRetirement<T>(retire:()=>void,read:()=>T):T{
  const parent=retirement.getStore();
  return retirement.run(()=>{parent?.();retire();},read);

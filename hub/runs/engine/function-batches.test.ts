@@ -91,14 +91,12 @@ test('cancelled groups never dispatch when their remaining items finish', async 
 
 test('a batch that runs out of time is not tried twice, and the function is then called one by one', async () => {
   const dir=await realpath(await mkdtemp(join(tmpdir(),'circle-hub-evaluation-batch-')));
-  // The engine's checks retry a wall-clock timeout once; a batch must not, its single calls are its retry.
   const options={requireOsIsolation:await osIsolationAvailable(),retryWallTimeout:true}; const spawn=childProcess.spawn; let launches=0;
   const ids=['a','b','c','d','e','f'], limits={timeoutMs:2500};
   const evaluate=async(module:string)=>{const batches=createFunctionBatches(()=>options);batches.define('probe',ids);
     return Promise.all(ids.map(id=>batches.runner('probe',id)({packDir:dir,module},{id},limits,options)));};
   try {
     forgetSlowFunctions();
-    // Each item takes about 0.7 s: six in one batch pass the 2.5 s limit, one alone does not.
     await writeFile(join(dir,'slow.ts'),'export default input => { const end = Date.now() + 700; while (Date.now() < end); return {id:input.id}; };');
     await writeFile(join(dir,'fast.ts'),'export default input => ({id:input.id});');
     childProcess.spawn=((...args:Parameters<typeof spawn>)=>{if(args[1]?.some(arg=>String(arg).endsWith('/bootstrap.ts')))launches++;return spawn(...args);}) as typeof spawn;

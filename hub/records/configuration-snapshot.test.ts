@@ -1,5 +1,4 @@
 import {createPackRegistry,productPack,writePack,temporaryDirectory} from '../runs/api.ts';
-// Synthetic current-schema reset replay. Protected states are never printed by these tests.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile,writeFile,mkdir } from 'node:fs/promises';

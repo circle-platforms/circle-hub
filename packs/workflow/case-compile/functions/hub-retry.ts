@@ -1,4 +1,3 @@
-// Local tool retry wrappers for Hub HTTP calls without modifying the embedded run-tools skill module.
 import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -39,7 +38,6 @@ export interface RetryControl {
   fetch?: FetchLike;
   maxWaitMs?: number;
   timeoutMs?: number;
-  /** Explicit cache location after a fresh run read; false disables local reuse. */
   sourceCacheDirectory?: string | false;
 }
 
@@ -48,7 +46,6 @@ export const DEFAULT_TIMING: RetryTiming = {
   pause: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
 
-/** 503 reply carrying optional parsed Retry-After duration and concise fact summary. */
 export class TransientHubReplyError extends HubReplyError {
   readonly retryAfterMs: number | null;
   readonly summary: string;
@@ -61,7 +58,6 @@ export class TransientHubReplyError extends HubReplyError {
   }
 }
 
-/** Transient Hub outage or rate-limit rejection that exceeded the configured wait ceiling. */
 export class RetryExhaustedError extends CallFailure {
   readonly status?: number;
   readonly code?: string;
@@ -127,7 +123,6 @@ export function isConnectionRefused(error: unknown, stack = new Set<unknown>()):
     if (directErrorCode(error) === 'ECONNREFUSED') return true;
     const errors = (error as { errors?: unknown }).errors;
     if (Array.isArray(errors) && errors.length > 0) {
-      // Handle Happy Eyeballs AggregateError on localhost (::1 + 127.0.0.1) without treating post-connect errors as refused.
       const allPreConnect = errors.every((inner) => isConnectionRefused(inner, stack) || directErrorCode(inner) === 'EADDRNOTAVAIL');
       const anyRefused = errors.some((inner) => isConnectionRefused(inner, stack));
       if (allPreConnect && anyRefused) return true;
@@ -150,7 +145,6 @@ function sanitizeSnippet(text: string): string {
   return text.trim().replace(/[。\r\n]+/g, '；').slice(0, 300);
 }
 
-/** Parses HTTP Retry-After (non-negative seconds or HTTP-date relative to `nowMs`); returns null when absent or invalid. */
 export function parseRetryAfterMs(header: string | null, nowMs: number): number | null {
   if (!header) return null;
   const trimmed = header.trim();
@@ -193,7 +187,6 @@ function decideRetryWait(
         state.zeroDelayRetries++;
         return { retry: true, waitMs: 0 };
       }
-      // Guard against infinite zero-delay loops by falling through to bounded backoff without resetting zeroDelayRetries.
     } else {
       state.zeroDelayRetries = 0;
       return { retry: true, waitMs: retryAfterMs };
@@ -217,7 +210,6 @@ function readExhaustedMessage(
   return new CallFailure('temporarily_unavailable', `${factSummary}，已等待 ${formatSecondsValue(decision.elapsedMs)} 秒并尝试 ${attempts} 次仍未恢复`, '请等待 Hub 恢复或确认网络可达后用同一命令重试');
 }
 
-/** Single GET attempt without retry; throws `TransientHubReplyError` on 503 with parsed `Retry-After`. */
 export async function fetchBytesOnce(
   url: string,
   bearer: string,
@@ -229,13 +221,11 @@ export async function fetchBytesOnce(
   const nowMs = (options?.timing ?? DEFAULT_TIMING).now();
 
   let reply: Response;
-  let connected = false;
   try {
     reply = await fetchFn(url, {
       headers: { authorization: `Bearer ${bearer}` },
       signal: AbortSignal.timeout(timeoutMs),
     });
-    connected = true;
   } catch (error) {
     if (error instanceof Error && error.name === 'TimeoutError') {
       throw errorWithCode(`Hub ${formatSecondsValue(timeoutMs)} 秒内没有答复`, '请稍后用同一命令重试', 'ETIMEDOUT', error);
@@ -285,12 +275,10 @@ export async function getOnce(
   return (await fetchBytesOnce(url, bearer, MAX_BYTES, options)).bytes;
 }
 
-/** Metadata reads are never cached; each download still authenticates its current run. */
 export function downloadRetryControl(_out: string, control?: RetryControl): RetryControl {
   return { ...control, sourceCacheDirectory: control?.sourceCacheDirectory ?? join(tmpdir(), `circle-hub-source-cache-${process.getuid!()}`) };
 }
 
-/** Retries read-only Hub GETs on HTTP 503 or ECONNREFUSED using Retry-After or 2/4/8s backoff up to 60s total. */
 export async function fetchBytesRetrying(
   url: string,
   bearer: string,
@@ -349,7 +337,6 @@ export async function getRetrying(url: string, bearer: string, control?: RetryCo
   return (await fetchBytesRetrying(url, bearer, MAX_BYTES, control)).bytes;
 }
 
-/** Downloads run.json, items/*, sources/*, and locked knowledge/* using retrying read calls before writing disk. */
 export async function downloadRunRetrying(
   origin: string,
   bearer: string,
@@ -453,10 +440,6 @@ function submitExhaustedMessage(
   return new CallFailure('temporarily_unavailable', `${factSummary}（这次提交没有执行），已等待 ${formatSecondsValue(decision.elapsedMs)} 秒并尝试 ${attempts} 次仍未恢复`, '请待 Hub 恢复后原样重交');
 }
 
-/**
- * Calls MCP `tools/call` (`submit_result`), retrying ONLY when Hub explicitly returns 503 with `"这次调用没有执行"`.
- * On connection refused, mid-connection disconnect, timeout, or ambiguous HTTP failure, never retries automatically.
- */
 export async function submitResultRetrying(
   origin: string,
   bearer: string,
@@ -562,10 +545,6 @@ export async function submitResultRetrying(
   }
 }
 
-/**
- * Reads the bearer token from standard input; returns empty immediately on a TTY
- * so interactive mistakes fail immediately with same-line heredoc guidance instead of hanging.
- */
 export async function readTokenFromStdin(): Promise<string> {
   if (process.stdin.isTTY) return '';
   const chunks: Buffer[] = [];
@@ -573,10 +552,6 @@ export async function readTokenFromStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8').trim();
 }
 
-/**
- * Validates the bearer token from standard input, refusing unexpanded Circle secret placeholders
- * and empty/malformed stdin caused by missing <<'EOF' or inserting a newline before <<'EOF'.
- */
 export async function requireBearerToken(readToken: () => Promise<string> = readTokenFromStdin): Promise<string> {
   const bearer = await readToken();
   const placeholder = /^%([A-Z][A-Z0-9_]*)%$/.exec(bearer);
@@ -599,7 +574,6 @@ export interface SubmittedItemFilesOptions {
   validateItem: (value: unknown, fileName: string) => { [key: string]: unknown };
 }
 
-/** Adds the caller-declared option to a native filesystem refusal without losing its cause. */
 function submittedReadFailure(error: unknown, flag: string, path: string, kind: string): never {
   const failure = callFailureData(error);
   if (failure.category === null) throw error;
@@ -608,7 +582,6 @@ function submittedReadFailure(error: unknown, flag: string, path: string, kind: 
   throw typed;
 }
 
-/** Reads a single regular file up to 16 MiB for a CLI `--<flag>` path without "re-export raw bytes" advice. */
 export async function readSubmittedFileBytes(filePath: string, flag: string): Promise<Buffer> {
   const info = await lstat(filePath).catch(error => submittedReadFailure(error, flag, filePath, '普通文件'));
   if (info.isSymbolicLink() || !info.isFile()) failCall('invalid_parameters', `--${flag} 指定的路径不是普通文件`, `请为 --${flag} 提供工作目录内的普通文件后重试`, { path: filePath });
@@ -618,7 +591,6 @@ export async function readSubmittedFileBytes(filePath: string, flag: string): Pr
   return bytes;
 }
 
-/** Parses UTF-8 JSON bytes for a model-authored submission file, naming `--<flag>` and `<fileName>`. */
 export function parseSubmittedJson(
   flag: string,
   fileName: string,
@@ -639,10 +611,6 @@ export function parseSubmittedJson(
   }
 }
 
-/**
- * Reads and validates every `.json` submission file under `directory` in sorted filename order.
- * Uses caller-declared `--<flag>` and item validator so `--records` errors never report `--plans`.
- */
 export async function readSubmittedItemFiles(
   directory: string,
   options: SubmittedItemFilesOptions,

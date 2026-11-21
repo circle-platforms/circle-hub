@@ -1,6 +1,3 @@
-// The watchdog end to end, through the macOS sampler: there one round is one /bin/ps for every running child (resident.ts),
-// which a test can replace without touching the Hub's code. On Linux the sampler reads /proc, so these tests skip there; the
-// verdict itself is tested without a platform in resident-linux.test.ts.
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
@@ -18,13 +15,8 @@ const MACOS_SAMPLER = { skip: process.platform === 'darwin' ? false : 'the resid
 
 type Spawn = typeof childProcess.spawn;
 
-/** The code and detail of a sandbox error, as the message of an assertion that expected the call to go on. */
 const describe = (error: unknown): string => error instanceof SandboxError ? `${error.code} ${JSON.stringify(error.detail)}` : String(error);
 
-/**
- * Calls a pure function that stays busy for `busyMs`, while `replace` stands in for every /bin/ps the sampler starts (its
- * round number counts from 1 and `real` starts the true command). Resolves with the call's result or error, and every attempt.
- */
 async function callWithSampler(busyMs: number, replace: (round: number, real: Spawn, args: Parameters<Spawn>) => ReturnType<Spawn>) {
   const os = await osIsolationAvailable();
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'circle-hub-function-watchdog-')));
@@ -44,8 +36,6 @@ async function callWithSampler(busyMs: number, replace: (round: number, real: Sp
 
 test('a Hub held for more than a second inside a sampling round does not end a healthy call (decision 116)', MACOS_SAMPLER, async () => {
   const held = await callWithSampler(2_500, (round, real, args) => {
-    // The third round has started and its one-second timeout is armed; the Hub's thread is then held for 1.3 s. When it
-    // is free again that round reports the child unobserved, and the last complete measurement is older than the grace.
     if (round === 3) { const end = Date.now() + 1_300; while (Date.now() < end); }
     return real(...args);
   });
@@ -56,7 +46,6 @@ test('a Hub held for more than a second inside a sampling round does not end a h
 });
 
 test('a sampler that never sees the tree ends the call after five rounds and a second, and the sandbox runs it again', MACOS_SAMPLER, async () => {
-  // `true` prints nothing, so every round is unobserved. The function stays busy for 5 s; the watchdog must end it long before.
   const blind = await callWithSampler(5_000, (_round, real) => real('/usr/bin/true', []));
   assert.ok('error' in blind, 'the call must not complete');
   const error = blind.error;
@@ -66,6 +55,5 @@ test('a sampler that never sees the tree ends the call after five rounds and a s
   assert.equal(error.message, RESIDENT_UNAVAILABLE_MESSAGE);
   assert.equal(blind.attempts.length, 3, 'three attempts, then the failure is given up as it is');
   assert.deepEqual(blind.attempts.map(attempt => attempt.reason), Array(3).fill('resident_observation_unavailable'));
-  // 5 rounds take half a second at 100 ms; the second since the last complete measurement is what keeps the call alive that long.
   assert.ok(blind.attempts.every(attempt => attempt.durationMs >= 1_000), JSON.stringify(blind.attempts.map(attempt => attempt.durationMs)));
 });

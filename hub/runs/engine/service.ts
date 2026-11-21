@@ -44,12 +44,6 @@ function clipped(text: string): string {
  * The engine context of one call: what it logs also goes to the call's admin note, as `<what>: <detail>`, so that a reason
  * reaches the call it belongs to even when two calls share a trace id. A note that cannot be kept never changes an answer.
  */
-/**
- * How long the documents of one engine call stay readable. The cache's own default (two minutes) is the bound of a single read
- * tool; verifying a submission of a whole run reads its quoted fragments for as long as the checks run. The merge of a
- * seventeen-case compile takes 400 to 450 seconds, and one whose quotations were read after the second minute was answered
- * SOURCE_READ_FAILED with a timeout of the operation (2026-11-18, run of round 41, 123 seconds).
- */
 export const ENGINE_CALL_DOCUMENT_MS = 30 * 60_000;
 
 function forCall(ctx: EngineContext, call: CallContext|undefined): EngineContext {
@@ -181,7 +175,6 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
       return withRequestPermissions(ctx.deps.records.artifacts, user, async () => {
         const detail = await withQueryReads(ctx, current => getRun(current, user, run));
         if (!detail || !mayExport(user, detail.run)) return null;
-        // No lock is taken: a submission of this run or of the run it binds proceeds beside the export (W06 R[7]).
         return withDocuments(ctx, undefined, async current => {
           const stored = await runById(current.deps.records.store, run);
           if (stored === null) return null;
@@ -195,8 +188,6 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     },
     exportHistory(user, run, options) {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
-        // The rule of the other exports (getRun answers and the reader is the runner or an administrator), asked without
-        // reading the run's submissions and results: runReadableBy is the visibility getRun answers by (runVisible).
         const stored = await runById(current.deps.records.store, run);
         if (stored === null || !mayExport(user, stored.body) || !await runReadableBy(current, user, stored.body)) return null;
         return exportHistoryOf(current, user, stored, options);

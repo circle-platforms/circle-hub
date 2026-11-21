@@ -1,4 +1,3 @@
-// Synthetic-only setup through the same named-secret boundary as administrator commands.
 import {randomBytes} from 'node:crypto';
 import type {Principal,RecordsKit} from '../../records/api.ts';
 import {ExecutorRegistry} from '../executors.ts';

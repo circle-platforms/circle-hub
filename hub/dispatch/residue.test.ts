@@ -19,7 +19,6 @@ test('a list that prints nothing but its prompt is empty, and the headers of an 
 test('any other line is residue, and the headers and the closing line are left out of it', () => {
   assert.deepEqual(judgeResidue('peers:\nname        address\nunit-b      192.0.2.7\nDEMO#', peers), { state: 'residue', lines: ['unit-b      192.0.2.7'] });
   assert.deepEqual(judgeResidue('unit-a 192.0.2.5\r\nunit-b 192.0.2.6\nDEMO#', units), { state: 'residue', lines: ['unit-a 192.0.2.5', 'unit-b 192.0.2.6'] });
-  // Residue is found even when the answer was cut short: what the device did print is evidence by itself.
   assert.equal(judgeResidue('unit-b 192.0.2.6', units).state, 'residue');
 });
 
@@ -33,7 +32,6 @@ test('a declared failure line says the read failed, whatever else the answer hol
   const unread = (text: string) => assert.deepEqual(judgeResidue(text, peers), { state: 'unread', why: 'device_failure' }, text);
   unread('% rejected: no such command\nDEMO#');
   unread('unit-b 192.0.2.7\n% rejected: no such command\nDEMO#');
-  // Nothing is recognised by wording: without a declared failure line the same text is residue.
   assert.equal(judgeResidue('% rejected: no such command\nDEMO#', units).state, 'residue');
 });
 

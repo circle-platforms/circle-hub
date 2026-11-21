@@ -290,7 +290,6 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     try {
       await running.close();
     } finally {
-      // Assembly cleanup must not skip the caller-owned connections when it fails.
       stopAll();
       try { await closeAssembly?.(); }
       finally {

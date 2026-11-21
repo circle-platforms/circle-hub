@@ -1,7 +1,4 @@
 import type { CallErrorCategory } from '../../contracts/generated/vocabulary.ts';
-// Unified declaration-driven before_tool guard engine for Circle homes (skills & ops profiles).
-// Self-contained standalone Node 24 TypeScript module (copied into `<home>/hooks/guard-lib.ts` with no checkout dependency).
-// Enforces one single command & quoting grammar across docs, ALLOWED.md, and runtime checks: bare `[A-Za-z0-9_./:%=@,+-]+`, safe double-quoted or single-quoted `'...'`.
 import { spawn, execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,7 +59,6 @@ export interface GuardDeclaration {
   };
   skillTool?: string;
   skillRequiresInstalled?: boolean;
-  /** The tool that runs a workflow script: allowed for a script an installed skill ships in its workflows/ folder, nothing else. */
   workflowTool?: string;
   executeTool?: string;
   denyPrefix?: Record<string, string>;
@@ -101,8 +97,6 @@ export interface GuardEnvironment {
 export interface RefusalData { category: CallErrorCategory; fact: string; next_action: string; path?: string; legal_form?: string }
 export interface HookDecision {
   refusal?: RefusalData;
-  decision?: 'allow' | 'deny' | 'ask';
-  reason?: string;
   hookSpecificOutput?: {
     hookEventName: 'PreToolUse';
     permissionDecision: 'allow' | 'deny' | 'ask';
@@ -178,7 +172,6 @@ const listNames = (dir: string, predicate: (name: string) => boolean): string[] 
   }
 };
 
-/** The names a client lists the shipped workflow scripts by: `<skill>:<the name its meta gives>`. */
 const shippedWorkflowNames = (env: GuardEnvironment): string[] =>
   shippedWorkflows(env).flatMap((file) => {
     let head = '';
@@ -187,20 +180,17 @@ const shippedWorkflowNames = (env: GuardEnvironment): string[] =>
     return name ? [`${path.basename(path.dirname(path.dirname(file)))}:${name}`] : [];
   });
 
-/** The workflow scripts the installed skills ship: the regular .js files of each skill's workflows/ folder, by full path. */
 const shippedWorkflows = (env: GuardEnvironment): string[] =>
   !env.skillsRootValid ? [] : listNames(env.skills, (entry) => existsLstat(path.join(env.skills, entry, 'SKILL.md'))).flatMap((skill) => {
     const dir = path.join(env.skills, skill, 'workflows');
     return listNames(dir, (name) => name.endsWith('.js') && fs.lstatSync(path.join(dir, name)).isFile()).map((name) => path.join(dir, name));
   });
 
-const escapeRe = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const clip = (value: unknown, max = 60): string => {
   const text = String(value);
   return text.length > max ? `${text.slice(0, max)}…` : text;
 };
 
-/** Lexical child containment check (no trailing '..' or outside paths). */
 export const inside = (candidate: string, root: string): boolean => {
   const relative = path.relative(root, candidate);
   return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
@@ -216,7 +206,6 @@ const existsLstat = (file: string): boolean => {
   }
 };
 
-/** Fail-closed canonical resolver: resolves deepest existing ancestor via realpathSync.native; existing symlinks whose target fails realpath (dangling links) throw GuardRefusal. */
 export const canonical = (file: string): string => {
   const tail: string[] = [];
   let cursor = path.resolve(file);
@@ -243,7 +232,6 @@ const bestEffortReal = (file: string): string => {
   }
 };
 
-/** Loads session environment, declaration JSON, trusted work folder, and canonical skills root. */
 export function environment(home: string, cwd: string, declarationName = 'guard.declaration.json'): GuardEnvironment {
   const homeRaw = path.resolve(home);
   const homeReal = bestEffortReal(homeRaw);
@@ -288,16 +276,6 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
       addHubUrl(entry.url);
     }
   }
-  for (const entry of unknownList(settings.mcp_servers)) {
-    if (!isRecord(entry) || typeof entry.name !== 'string') continue;
-    const matched =
-      entry.name.toLowerCase() === serverName.toLowerCase() ||
-      (isRecord(entry.placeholders) && entry.placeholders.url === urlVar) ||
-      (typeof entry.url === 'string' && hubs.includes(entry.url));
-    if (!matched) continue;
-    addServerKey(entry.name);
-    addHubUrl(entry.url);
-  }
   const primaryHubServer = configuredServers[0] ?? serverName;
   const hubServers = [...new Set([...configuredServers, serverName])];
 
@@ -322,7 +300,6 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
     try {
       if (new RegExp(siblingPattern).test(path.basename(cwdReal))) work = cwdReal;
     } catch {
-      // Malformed regex stays untrusted.
     }
   }
 
@@ -380,12 +357,6 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
   };
 }
 
-// ---------------------------------------------------------------------------------------------------------------------------------
-// Single command tokenizer: enforces ONE literal-word grammar across docs, ALLOWED.md, and runtime guard.
-// Allowed on line 1: ASCII space/tab separators, bare `[A-Za-z0-9_./:%=@,+-]+`, single-quoted `'[^'\r\n]*'`, and optional trailing
-// single-quoted heredoc `<<'EOF'`. Double-quoted words allow no dollar, backtick or backslash. Rejected: backslash escapes/continuations, unquoted non-ASCII/spaces, `\r`,
-// Unicode whitespace, shell chaining/redirection/expansion/glob metacharacters, or concatenated quotes (`'a'b`).
-
 const META_WORDS = new Map<string, string>([
   [';', '“;”（连接多条命令）'],
   ['&', '“&”（后台或连接命令）'],
@@ -406,7 +377,6 @@ const META_WORDS = new Map<string, string>([
 
 const BARE_TOKEN_CHAR = /^[A-Za-z0-9_./:%=@,+-]$/;
 
-/** Locate shell input operators only outside literal quoted words. */
 function unquotedInputOperator(value: string): number {
   let delimiter: string | null = null;
   for (let i = 0; i < value.length; i++) {
@@ -418,7 +388,6 @@ function unquotedInputOperator(value: string): number {
   return -1;
 }
 
-/** Parses a CLI execute command under the unified literal-word grammar. */
 export function parseCommand(command: string): ParsedCommand {
   const out: ParsedCommand = { words: [], wordSpans: [], syntaxRepairable: true, heredoc: null, lines: 1, problem: null };
   const text = String(command);
@@ -434,7 +403,6 @@ export function parseCommand(command: string): ParsedCommand {
     if (rawLines.at(-1) === '') rawLines.pop();
     const firstLine = rawLines.shift() ?? '';
     const tail = rawLines;
-    // Check explicit here-doc head: `<cmd> <space/tab> <<'DELIM'<optional space/tab>`.
     const unquotedDelim = /^(.*?)[ \t]+<<([A-Za-z_][A-Za-z0-9_.%-]*)[ \t]*$/.exec(firstLine);
     const quotedDelim = unquotedInputOperator(firstLine) >= 0 ? /^(.*?)[ \t]+<<'([A-Za-z_][A-Za-z0-9_]*)'[ \t]*$/.exec(firstLine) : null;
     const badPlaceholderDelim = /^(.*?)[ \t]+<<(%[A-Za-z0-9_]+%)[ \t]*$/.exec(firstLine);
@@ -521,10 +489,6 @@ export function parseCommand(command: string): ParsedCommand {
   return out;
 }
 
-// ---------------------------------------------------------------------------------------------------------------------------------
-// Local tool discovery uses pure-data sibling `<tool>.cli.json` and explicit home declarations.
-// Module and documentation bytes never determine executable identity or argument semantics.
-
 function parsePlaceholderList(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   const out: string[] = [];
@@ -560,14 +524,11 @@ function readToolCliDeclaration(cliPath: string | null): CliDeclaration {
   return parseToolCliDeclaration(parsed);
 }
 export function parseToolCliDeclaration(parsed: unknown): CliDeclaration {
-  if (!isRecord(parsed) || !['tool-cli@1', 'tool-cli@2'].includes(String(parsed.schema))) throw new GuardRefusal('工具的机读 CLI 声明版本不支持', 'temporarily_unavailable');
-  const v2 = parsed.schema === 'tool-cli@2';
-  const keys = v2 ? ['schema', 'stdin', 'subcommands', 'options', 'forms'] : ['schema', 'stdin', 'subcommands'];
-  if (Object.keys(parsed).some(key => !keys.includes(key))) throw new GuardRefusal('工具的机读 CLI 声明含未声明字段', 'temporarily_unavailable');
+  if (!isRecord(parsed) || parsed.schema !== 'tool-cli@2') throw new GuardRefusal('工具的机读 CLI 声明版本不支持', 'temporarily_unavailable');
+  if (Object.keys(parsed).some(key => !['schema', 'stdin', 'subcommands', 'options', 'forms'].includes(key))) throw new GuardRefusal('工具的机读 CLI 声明含未声明字段', 'temporarily_unavailable');
   const stdinLines = parsed.stdin === undefined ? null : parsePlaceholderList(parsed.stdin);
   const subcommandStdin = parsed.subcommands === undefined ? null : parseSubcommandStdinMap(parsed.subcommands);
   if (parsed.stdin !== undefined && stdinLines === null || parsed.subcommands !== undefined && subcommandStdin === null) throw new GuardRefusal('工具的标准输入声明无效', 'temporarily_unavailable');
-  if (!v2) return { stdinLines, subcommandStdin, options: null, forms: [] };
   if (!Array.isArray(parsed.options)) throw new GuardRefusal('tool-cli@2 缺少参数声明', 'temporarily_unavailable');
   const options: ToolOption[] = [];
   const names = new Set<string>();
@@ -588,7 +549,7 @@ export function parseToolCliDeclaration(parsed: unknown): CliDeclaration {
   }
   return { stdinLines, subcommandStdin, options, forms };
 }
-function describeTool(env: GuardEnvironment, base: { id: string; file: string; cliFile: string | null; skill: string | null; subcommands?: string[]; stdin?: string[]; subcommandStdin?: Record<string, string[]> }): DiscoveredTool {
+function describeTool(base: { id: string; file: string; cliFile: string | null; skill: string | null; subcommands?: string[]; stdin?: string[]; subcommandStdin?: Record<string, string[]> }): DiscoveredTool {
   const cli = readToolCliDeclaration(base.cliFile);
   return {
     id: base.id, file: base.file, skill: base.skill,
@@ -610,7 +571,6 @@ function declaredStdinFor(tool: DiscoveredTool, subcommand: string | null): stri
   return tool.stdinLines;
 }
 
-/** Discovers executable local tools inside installed skills (plus declared scripts / optional workdir local-tools), rejecting symlinked files. */
 export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
   const tools: DiscoveredTool[] = [];
   const add = (tool: DiscoveredTool) => {
@@ -647,7 +607,6 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
           }
           if (stat.isSymbolicLink()) continue;
           if (stat.isDirectory()) {
-            // Preserve nested <subpath>/tools/*.ts support (e.g. deep/nested/tools/t.ts), avoiding test/node_modules or sub-skills.
             if (entry !== 'node_modules' && entry !== 'lib' && !fs.existsSync(path.join(full, 'SKILL.md'))) {
               walkToolsDir(full, rel);
             }
@@ -659,7 +618,7 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
           if (!real) continue;
           const cliFile = trySafeFile(`${full.slice(0, -3)}.cli.json`, env.skills, env.skills);
           if (!cliFile) continue;
-          add(describeTool(env, { id: `${skill}/${rel}`, file: real, cliFile, skill }));
+          add(describeTool({ id: `${skill}/${rel}`, file: real, cliFile, skill }));
         }
       };
 
@@ -670,7 +629,7 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
         if (real) {
           const cliFile = real.endsWith('.ts') ? trySafeFile(`${lexical.slice(0, -3)}.cli.json`, env.skills, env.skills) : null;
           add(
-            describeTool(env, {
+            describeTool({
               id: script.path,
               file: real,
               cliFile,
@@ -708,7 +667,7 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
         if (!real) continue;
         const cliFile = trySafeFile(`${lexical.slice(0, -3)}.cli.json`, env.work, env.work);
         if (!cliFile) continue;
-        add(describeTool(env, { id: `local-tools/${pack}/tools/${file}`, file: real, cliFile, skill: null }));
+        add(describeTool({ id: `local-tools/${pack}/tools/${file}`, file: real, cliFile, skill: null }));
       }
     }
   }
@@ -716,10 +675,6 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
   return tools;
 }
 
-// ---------------------------------------------------------------------------------------------------------------------------------
-// Writing canonical commands using the single unified quoting rule (`'...'` single quotes for values/paths with spaces/non-ASCII).
-
-/** Prefer bare safe ASCII or single quotes; a static double-quoted word preserves an apostrophe when needed. */
 export const quote = (value: string): string => {
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
   if (value.includes("'") && !/[\r\n\0"$\x60\\]/.test(value)) return '"' + value + '"';
@@ -783,43 +738,36 @@ export function writeCommand(
   return line;
 }
 
-// ---------------------------------------------------------------------------------------------------------------------------------
-// Refusal formatting & path/glob verification (fusing skillsGuard + ops-allow security boundaries).
+const formatDecision = (decision: 'allow' | 'deny' | 'ask', reason: string, refusal?: RefusalData): HookDecision => ({
+  ...(refusal ? { refusal } : {}),
+  hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision, permissionDecisionReason: reason },
+});
 
-const formatDecision = (
-  decision: 'allow' | 'deny' | 'ask',
-  reason: string,
-  preToolUse: boolean,
-  refusal?: RefusalData,
-): HookDecision =>
-  preToolUse
-    ? {
-        ...(refusal ? { refusal } : {}),
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: decision,
-          permissionDecisionReason: reason,
-        },
-      }
-    : { ...(refusal ? { refusal } : {}), decision, reason };
+export function decisionOf(answer: HookDecision): { refusal?: RefusalData; decision?: 'allow' | 'deny' | 'ask'; reason?: string } {
+  const out = answer.hookSpecificOutput;
+  return {
+    ...(answer.refusal ? { refusal: answer.refusal } : {}),
+    ...(out ? { decision: out.permissionDecision, ...(out.permissionDecisionReason === undefined ? {} : { reason: out.permissionDecisionReason }) } : {}),
+  };
+}
 
 function refuse(
   env: GuardEnvironment,
   fact: string,
   next_action: string,
   category: CallErrorCategory = 'permission_denied',
-  options?: { path?: string; preToolUse?: boolean },
+  options?: { path?: string },
 ): HookDecision {
   const refusal: RefusalData = { category, fact, next_action, ...(options?.path ? { path: options.path } : {}) };
   const label = env.declaration.errorLabels?.[category];
   const reason = label
     ? `${label}：${fact}\n${next_action}\n规则全文：${env.allowedFile}（用 read_file 读）`
     : '守卫缺少生成的错误类别词表；请运行者更新声明后重试';
-  return formatDecision('deny', reason, options?.preToolUse ?? false, label ? refusal : undefined);
+  return formatDecision('deny', reason, label ? refusal : undefined);
 }
 
-const allowed = (env: GuardEnvironment, preToolUse = false): HookDecision =>
-  env.declaration.allowReply === 'explicit' ? formatDecision('allow', '本目录允许的工具', preToolUse) : {};
+const allowed = (env: GuardEnvironment): HookDecision =>
+  env.declaration.allowReply === 'explicit' ? formatDecision('allow', '本目录允许的工具') : {};
 
 const normalizeMcpPart = (name: string): string => name.replace(/[^A-Za-z0-9_-]/g, '_');
 
@@ -997,7 +945,6 @@ function shellHint(env: GuardEnvironment, words: string[], command: string): str
     const reading=available.has('read_file')?'若只需阅读该文件，调用 read_file 并传 file_path；':'';
     return `这次可以这样做：当前没有与 wc 等价的行数、字数或字节计数工具；${reading}如需精确统计，请主代理提供已声明的只读计数工具，再对这次指定文件运行。不要用临时 shell 或人工估数代替精确统计。`;
   }
-  // Only this exact sed address grammar establishes a read-only intent.
   if (first === 'sed' && words.length === 4 && words[1] === '-n' && /^[1-9][0-9]*(?:,[1-9][0-9]*)?p$/.test(words[2])) {
     return available.has('read_file') ? '这次可以这样做：只读查看文件请用 read_file；需要定位文字时使用规则全文里放行的搜索工具。' : unavailableAdvice(env);
   }
@@ -1010,7 +957,6 @@ function shellHint(env: GuardEnvironment, words: string[], command: string): str
   return `这次可以这样做：${first || '这条调用'} 不是已声明的本地执行命令；${available.has('read_file')?'读已知文件用 read_file，':''}${available.has('glob')?'找文件用 glob，':''}${available.has('grep')?'找字面内容用 grep，':''}若这些操作都不能完成这次任务，请向主代理说明具体缺少的工具能力，不改用临时解释器或合并命令。`;
 }
 
-/** Narrow glob subset safe under Circle glob (follow:false): no '..', braces, brackets, extglobs, escapes, or escapes-of-dots. */
 export function safeGlob(value: unknown): boolean {
   if (typeof value !== 'string' || !value.length || /[^A-Za-z0-9_.*\/-]/.test(value)) return false;
   return value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..' && (!segment.includes('**') || segment === '**'));
@@ -1117,9 +1063,6 @@ function globMatches(file: string, pattern: string, cwd: string): boolean {
   return new RegExp(`${expression}$`).test(target);
 }
 
-// ---------------------------------------------------------------------------------------------------------------------------------
-// Delegated per-skill hooks (<skill>/hooks.json before_tool) with strict fail-closed bounds.
-
 function skillDirectoryOf(script: string, skillsRoot: string): string {
   let dir = path.dirname(script);
   while (dir !== skillsRoot) {
@@ -1172,7 +1115,6 @@ async function runDelegatedHook(hook: Record<string, unknown>, raw: string, cwd:
           try {
             child.kill(signal);
           } catch {
-            // Already exited.
           }
         }
       }
@@ -1253,9 +1195,8 @@ async function runDelegatedSkillHooks(
   script: string,
   input: Record<string, unknown>,
   raw: string,
-  preToolUse: boolean,
 ): Promise<HookDecision> {
-  if (!inside(script, env.skills)) return allowed(env, preToolUse);
+  if (!inside(script, env.skills)) return allowed(env);
   const skill = skillDirectoryOf(script, env.skills);
   const file = path.join(skill, 'hooks.json');
   const who = `技能 ${JSON.stringify(path.relative(env.skills, skill) || '.')}`;
@@ -1266,7 +1207,7 @@ async function runDelegatedSkillHooks(
   } catch {
     throw new GuardRefusal(`${who} 的 hooks.json 元数据不可读；${recover}`);
   }
-  if (!present) return allowed(env, preToolUse);
+  if (!present) return allowed(env);
   let real: string;
   try {
     real = canonical(file);
@@ -1331,29 +1272,24 @@ async function runDelegatedSkillHooks(
     }
     matched = true;
   }
-  if (!matched || strictest.decision === 'allow') return allowed(env, preToolUse);
-  if (strictest.decision === 'ask') return formatDecision('ask', strictest.reason, preToolUse);
+  if (!matched || strictest.decision === 'allow') return allowed(env);
+  if (strictest.decision === 'ask') return formatDecision('ask', strictest.reason);
   return refuse(
     env,
     `${strictest.reason}`,
     `这次可以这样做：${recover}`,
     strictest.failed ? 'temporarily_unavailable' : 'permission_denied',
-    { preToolUse },
   );
 }
 
-// ---------------------------------------------------------------------------------------------------------------------------------
-// Core decision tree for execute, files, skill, and declarative rules.
-
 const ALLOWED_EXECUTE_KEYS = new Set(['command', 'background', 'timeout', 'description']);
 
-function notTrusted(env: GuardEnvironment, preToolUse: boolean): HookDecision {
+function notTrusted(env: GuardEnvironment): HookDecision {
   return refuse(
     env,
     `这次会话的工作目录 ${env.cwd} 不在这个配置信任的文件夹里（settings.json 的 trusted_folders），守卫不知道该放行哪个目录。`,
     '这次可以这样做：请使用者把这个文件夹加入信任，或在已信任的工作目录里开会话。',
     'permission_denied',
-    { preToolUse },
   );
 }
 
@@ -1378,7 +1314,6 @@ function preserveHeredoc(parsed: ParsedCommand): string | null {
   return ` <<'${here.delimiter}'\n${here.body.join('\n')}\n${here.delimiter}`;
 }
 
-/** Suggestions bind an exact installed path, never a guessed suffix or whitespace-normalized path. */
 function quoteSplitScript(env: GuardEnvironment, tools: DiscoveredTool[], parsed: ParsedCommand): string | null {
   const span = parsed.wordSpans?.[1], header = parsed.header;
   if (!span || span.quoted || header === undefined || parsed.syntaxRepairable === false) return null;
@@ -1397,7 +1332,6 @@ function quoteSplitScript(env: GuardEnvironment, tools: DiscoveredTool[], parsed
   return `node ${quote(matches[0].file)}${header.slice(matches[0].end)}${tail}`;
 }
 
-/** Only a declared single path value can absorb contiguous unquoted words; original separator bytes stay intact. */
 function quoteSplitPathArguments(tool: DiscoveredTool, parsed: ParsedCommand): string | null {
   const spans=parsed.wordSpans,header=parsed.header;
   if(!spans||header===undefined||parsed.syntaxRepairable===false||!tool.optionsDeclared)return null;
@@ -1511,7 +1445,6 @@ function validateExecuteCommand(
   const problems: string[] = parsed.problem ? [parsed.problem] : [];
   let failureCategory: CallErrorCategory = 'invalid_parameters';
 
-  // Strict lexical & canonical containment for script path (rejects relative paths, '..', '%', non-.ts, symlinks, and APFS case mismatches).
   if (!path.isAbsolute(second) || second.split(/[\\/]/).includes('..') || second.includes('%') || !second.endsWith('.ts')) {
     const hits = scriptCandidates(tools, second);
     let how = installedToolsAdvice(env, tools, hits.length ? { preferred: hits, prefix: '可能是这些已装脚本：' } : undefined);
@@ -1765,9 +1698,8 @@ async function executeDecision(
   env: GuardEnvironment,
   input: Record<string, unknown>,
   raw: string,
-  preToolUse: boolean,
 ): Promise<HookDecision> {
-  if (env.work === null) return notTrusted(env, preToolUse);
+  if (env.work === null) return notTrusted(env);
   const args = input.tool_input as Record<string, unknown>;
   if (
     Object.keys(args).some((key) => !ALLOWED_EXECUTE_KEYS.has(key)) ||
@@ -1780,7 +1712,7 @@ async function executeDecision(
       'execute 参数形状无效；请只用 command、background 和 timeout 的正确类型重新调用。',
       '这次可以这样做：只传入合规的 command、background 和 timeout 字段后重试。',
       'invalid_parameters',
-      { path: '/tool_input/command', preToolUse },
+      { path: '/tool_input/command' },
     );
   }
   if (typeof args.command !== 'string') {
@@ -1789,7 +1721,7 @@ async function executeDecision(
       'execute 缺少 command 文字；请补齐字符串命令后重试。',
       '这次可以这样做：提供完整的单行 node 脚本命令后重试。',
       'invalid_parameters',
-      { path: '/tool_input/command', preToolUse },
+      { path: '/tool_input/command' },
     );
   }
   if (!env.skillsRootValid) {
@@ -1798,7 +1730,7 @@ async function executeDecision(
       `skills 目录根 ${env.skillsRaw} 已改变（是软链接）或缺失。`,
       '这次可以这样做：请集成者恢复专用主目录的真实 skills 目录并核对安装后重试。',
       'invalid_parameters',
-      { path: '/tool_input/command', preToolUse },
+      { path: '/tool_input/command' },
     );
   }
 
@@ -1807,16 +1739,15 @@ async function executeDecision(
   if (!verdict.ok) {
     return refuse(env, verdict.what, verdict.how, verdict.category ?? 'invalid_parameters', {
       path: '/tool_input/command',
-      preToolUse,
     });
   }
   return verdict.physicalScript
-    ? runDelegatedSkillHooks(env, verdict.physicalScript, input, raw, preToolUse)
-    : allowed(env, preToolUse);
+    ? runDelegatedSkillHooks(env, verdict.physicalScript, input, raw)
+    : allowed(env);
 }
 
-function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, preToolUse: boolean): HookDecision {
-  if (env.work === null) return notTrusted(env, preToolUse);
+function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): HookDecision {
+  if (env.work === null) return notTrusted(env);
   const tool = String(input.tool_name);
   const args = input.tool_input as Record<string, unknown>;
   const d = env.declaration;
@@ -1848,7 +1779,6 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
       if (typeof p !== 'string' || !p.length) {
         return refuse(env, `${tool} 含空路径或非文字路径。`, `${how} 补齐后重试。`, 'invalid_parameters', {
           path: '/tool_input',
-          preToolUse,
         });
       }
       paths.push(p);
@@ -1860,14 +1790,12 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
       if (typeof args[key] !== 'string' || !args[key]) {
         return refuse(env, `${tool} 的 ${key} 必须是有效路径文字。`, `${how} 补齐后重试。`, 'invalid_parameters', {
           path: '/tool_input',
-          preToolUse,
         });
       }
       argPaths.push(args[key] as string);
     }
   }
 
-  // Validate glob/grep patterns strictly before walking directories.
   let globRelPattern: string | null = null;
   let globAbsPrefix: string | null = null;
   if (tool === 'glob') {
@@ -1884,7 +1812,7 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
           `glob 的 pattern ${JSON.stringify(clip(rawPattern, 80))} 不符合工作目录相对安全文法（或越出${where}）。`,
           '这次可以这样做：改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不用绝对根外路径、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试。',
           'invalid_parameters',
-          { path: '/tool_input', preToolUse },
+          { path: '/tool_input' },
         );
       }
       globAbsPrefix = canonPrefix;
@@ -1896,7 +1824,7 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
           `glob 的 pattern ${JSON.stringify(clip(rawPattern, 80))} 不符合本主目录的安全文法。`,
           '这次可以这样做：改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不许 .、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试。',
           'invalid_parameters',
-          { path: '/tool_input', preToolUse },
+          { path: '/tool_input' },
         );
       }
       globRelPattern = rawPattern;
@@ -1908,7 +1836,7 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
       `grep 的 glob ${JSON.stringify(clip(args.glob, 80))} 不符合安全文法。`,
       '这次可以这样做：只用 / 分隔的非空相对段（含字母、数字、_、-、.、*，不用 .. 或扩展文法）后重试。',
       'invalid_parameters',
-      { path: '/tool_input', preToolUse },
+      { path: '/tool_input' },
     );
   }
 
@@ -1916,13 +1844,11 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
   if (!allTargets.length && globAbsPrefix === null && !(tool === 'glob' && globRelPattern !== null && paths.length === 0 && argPaths.length === 0 && env.work)) {
     return refuse(env, `${tool} 缺少路径，没有检查目标。`, `这次可以这样做：请填写工作目录内的 path 或 file_path 后重试（当前目录写 .）。`, 'invalid_parameters', {
       path: '/tool_input',
-      preToolUse,
     });
   }
   if (!allTargets.length && globAbsPrefix === null && tool === 'glob' && globRelPattern !== null) {
-    // `glob { pattern: 'records/*.json' }` with omitted `path` and empty `paths` defaults to `env.work`.
     globWithin(env.work, globRelPattern, env.work);
-    return allowed(env, preToolUse);
+    return allowed(env);
   }
 
   for (const p of allTargets) {
@@ -1931,18 +1857,17 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
     try { target = resolvedTarget(env, p, String(input.cwd)); }
     catch (error) {
       if(!isDelete)throw error;
-      return refuse(env,`delete 的目标 ${JSON.stringify(clip(p,100))} 无法核对为工作目录内文件（${error instanceof Error ? error.message : '路径元数据不可用'}）。`,how,'permission_denied',{path:'/tool_input/file_path', preToolUse});
+      return refuse(env,`delete 的目标 ${JSON.stringify(clip(p,100))} 无法核对为工作目录内文件（${error instanceof Error ? error.message : '路径元数据不可用'}）。`,how,'permission_denied',{path:'/tool_input/file_path' });
     }
     if (!isWrite && readable.includes(target)) continue;
     const owningRoot = matchRoot(target);
     if (!owningRoot) {
       return refuse(env, `${tool} 的路径 ${JSON.stringify(clip(p, 100))} 不在${where}里。`, how, 'permission_denied', {
         path: '/tool_input',
-        preToolUse,
       });
     }
     if(isDelete && (target===env.work || existsLstat(target)&&fs.lstatSync(target).isDirectory())) {
-      return refuse(env,`delete 的目标 ${JSON.stringify(clip(p,100))} 是目录；当前只放行文件删除。`,how,'permission_denied',{path:'/tool_input/file_path', preToolUse});
+      return refuse(env,`delete 的目标 ${JSON.stringify(clip(p,100))} 是目录；当前只放行文件删除。`,how,'permission_denied',{path:'/tool_input/file_path' });
     }
     if (tool === 'glob' && globRelPattern !== null) {
       globWithin(globAbsPrefix ?? target, globRelPattern, globAbsPrefix ? matchRoot(globAbsPrefix) ?? owningRoot : owningRoot);
@@ -1952,7 +1877,7 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
     const owningRoot = matchRoot(globAbsPrefix)!;
     globWithin(globAbsPrefix, globRelPattern, owningRoot);
   }
-  return allowed(env, preToolUse);
+  return allowed(env);
 }
 
 function ruleMatches(rule: GuardRule, tool: string, args: Record<string, unknown>, env: GuardEnvironment): boolean {
@@ -1982,7 +1907,6 @@ function ruleMatches(rule: GuardRule, tool: string, args: Record<string, unknown
   return true;
 }
 
-/** Default Circle SQLite subagent check: returns true only when `sessions.parent_id` is non-empty for `id`. */
 export async function defaultIsSubagent(home: string, id: string): Promise<boolean> {
   if (!/^[A-Za-z0-9_.-]{1,80}$/.test(id)) return false;
   const origWarn = process.emitWarning;
@@ -2003,7 +1927,6 @@ export async function defaultIsSubagent(home: string, id: string): Promise<boole
   }
 }
 
-/** Evaluates one Circle `PreToolUse` (or `before_tool`) stdin payload against the loaded environment & declaration. */
 export async function decideRaw(
   env: GuardEnvironment,
   raw: string,
@@ -2015,16 +1938,13 @@ export async function decideRaw(
     input = JSON.parse(raw);
     validJson = true;
   } catch {
-    // Handled fail-closed immediately below.
   }
-  const preToolUse = validJson && isRecord(input) && input.hook_event_name === 'PreToolUse';
   if (env.declarationError) {
     return refuse(
       env,
       `守卫的声明文件读不了（${clip(env.declarationError, 80)}）。`,
       '这次可以这样做：告诉主代理修好声明文件；修好以前所有调用都会被拒。',
       'temporarily_unavailable',
-      { preToolUse },
     );
   }
   if (!validJson) {
@@ -2033,28 +1953,21 @@ export async function decideRaw(
       '守卫读不懂 Circle 交来的调用信息（不是合法 JSON）。',
       '这次可以这样做：请宿主用完整的 PreToolUse JSON 对象重新发起调用。',
       'invalid_parameters',
-      { preToolUse: false },
     );
   }
-  const hasKnownEvent = isRecord(input) && (input.hook_event_name === 'PreToolUse' || input.event === 'before_tool');
-  if (!isRecord(input) || !hasKnownEvent || typeof input.tool_name !== 'string' || !isRecord(input.tool_input)) {
+  if (!isRecord(input) || input.hook_event_name !== 'PreToolUse' || typeof input.tool_name !== 'string' || !isRecord(input.tool_input)) {
     return refuse(
       env,
       '调用信息缺少 PreToolUse、tool_name 或 tool_input 对象。',
       '这次可以这样做：请宿主补齐完整字段后重试。',
       'invalid_parameters',
-      { preToolUse },
     );
   }
   if (input.paths !== undefined && (!Array.isArray(input.paths) || input.paths.some((file) => typeof file !== 'string'))) {
-    return refuse(env, '工具 paths 不是文字路径列表。', '这次可以这样做：请用工作目录内的完整路径重新发起调用。', 'invalid_parameters', {
-      preToolUse,
-    });
+    return refuse(env, '工具 paths 不是文字路径列表。', '这次可以这样做：请用工作目录内的完整路径重新发起调用。', 'invalid_parameters');
   }
   if (typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) {
-    return refuse(env, '调用缺少绝对工作目录 cwd。', '这次可以这样做：请在已信任的专用工作目录重新发起调用。', 'invalid_parameters', {
-      preToolUse,
-    });
+    return refuse(env, '调用缺少绝对工作目录 cwd。', '这次可以这样做：请在已信任的专用工作目录重新发起调用。', 'invalid_parameters');
   }
 
   const tool = input.tool_name;
@@ -2068,16 +1981,15 @@ export async function decideRaw(
     for (const rule of asList(d.rules)) {
       if (!ruleMatches(rule, tool, args, env)) continue;
       if (rule.session === 'subagent' && agentId === '' && !(await isSubagent(session))) continue;
-      return refuse(env, rule.what, rule.how, 'permission_denied', { preToolUse });
+      return refuse(env, rule.what, rule.how, 'permission_denied');
     }
 
     const everyAllowed = Object.values(d.allow ?? {}).flat();
-    // A delete grant never bypasses its workspace-only file boundary.
-    if (tool === 'delete' && (everyAllowed.some(spec => toolMatchesSpec(spec, tool, env)) || asList(d.files?.write).includes(tool))) return filesDecision(env, input, preToolUse);
-    if (everyAllowed.some((spec) => toolMatchesSpec(spec, tool, env))) return allowed(env, preToolUse);
+    if (tool === 'delete' && (everyAllowed.some(spec => toolMatchesSpec(spec, tool, env)) || asList(d.files?.write).includes(tool))) return filesDecision(env, input);
+    if (everyAllowed.some((spec) => toolMatchesSpec(spec, tool, env))) return allowed(env);
 
     if (asList(d.files?.read).includes(tool) || asList(d.files?.write).includes(tool)) {
-      return filesDecision(env, input, preToolUse);
+      return filesDecision(env, input);
     }
 
     if (tool === (d.skillTool ?? 'skill')) {
@@ -2085,74 +1997,58 @@ export async function decideRaw(
       const installed = env.skillsRootValid
         ? listNames(env.skills, (entry) => existsLstat(path.join(env.skills, entry, 'SKILL.md')))
         : [];
-      if (d.skillRequiresInstalled === false && name === '') return allowed(env, preToolUse);
+      if (d.skillRequiresInstalled === false && name === '') return allowed(env);
       return name !== '' && installed.includes(name)
-        ? allowed(env, preToolUse)
+        ? allowed(env)
         : refuse(
             env,
             `skill ${JSON.stringify(clip(name || '（空）'))} 不是已装技能。`,
             `这次可以这样做：已装技能有 ${installed.join('、') || '（没有）'}。`,
             'not_found',
-            { preToolUse },
           );
     }
 
-    // A workflow script starts subagents and runs commands with no model between two steps. Only a script an installed skill
-    // ships runs: one written in the call, saved by name or kept in the work folder would be code the model wrote. Each command
-    // of the script is an execute call decided here like any other, and its subagents' calls are decided as a task's are.
     if (d.workflowTool !== undefined && tool === d.workflowTool) {
       const shipped = shippedWorkflows(env);
       const given = typeof args.script_path === 'string' ? args.script_path : '';
       const names = shippedWorkflowNames(env);
       const named = typeof args.name === 'string' ? args.name : '';
       const other = ['script', 'resume_from_run_id', ...(given !== '' ? ['name'] : ['script_path'])].filter((key) => args[key] !== undefined);
-      // The path as the file system resolves it: the skills root is held resolved, and what runs is the file the path leads to.
       const real = (() => { try { return path.isAbsolute(given) ? fs.realpathSync(given) : ''; } catch { return ''; } })();
-      if (!other.length && real !== '' && shipped.includes(real)) return allowed(env, preToolUse);
-      // By the name the client lists it under: a name with a skill's prefix is that skill's script and no other's.
-      if (!other.length && given === '' && named !== '' && names.includes(named)) return allowed(env, preToolUse);
+      if (!other.length && real !== '' && shipped.includes(real)) return allowed(env);
+      if (!other.length && given === '' && named !== '' && names.includes(named)) return allowed(env);
       return refuse(
         env,
         `${tool} 只运行已装技能自带的工作流脚本${other.length ? `，不带 ${other.join('、')}` : `；${JSON.stringify(clip(given || named || '（空）'))} 不是其中之一`}。`,
         `这次可以这样做：script_path 写 ${shipped.join('、') || '（已装技能里没有工作流脚本）'}${names.length ? `，或者 name 写 ${names.join('、')}` : ''}，其余只写 args。`,
         'permission_denied',
-        { preToolUse },
       );
     }
 
     if (tool === (d.executeTool ?? 'execute')) {
-      return await executeDecision(env, input, raw, preToolUse);
+      return await executeDecision(env, input, raw);
     }
 
     for (const [prefix, why] of Object.entries(d.denyPrefix ?? {})) {
       if (tool.startsWith(prefix)) {
-        return refuse(env, `${tool}。${why}。`, unavailableAdvice(env,tool), 'permission_denied', { preToolUse });
+        return refuse(env, `${tool}。${why}。`, unavailableAdvice(env,tool), 'permission_denied');
       }
     }
 
-    return refuse(env, `${tool || '这个工具'} 不在这个配置放行的工具里。`, unavailableAdvice(env,tool), 'permission_denied', {
-      preToolUse,
-    });
+    return refuse(env, `${tool || '这个工具'} 不在这个配置放行的工具里。`, unavailableAdvice(env,tool), 'permission_denied');
   } catch (error) {
     if (error instanceof GuardRefusal) {
-      return refuse(env, `${error.message}`, '这次可以这样做：按上述核对要求修正路径或安装状态后重试。', error.category, {
-        preToolUse,
-      });
+      return refuse(env, `${error.message}`, '这次可以这样做：按上述核对要求修正路径或安装状态后重试。', error.category);
     }
     return refuse(
       env,
       `守卫自己出错了（${error instanceof Error ? error.message : String(error)}）。`,
       '这次可以这样做：告诉主代理检查守卫配置与安装后重试。',
       'temporarily_unavailable',
-      { preToolUse },
     );
   }
 }
 
-// ---------------------------------------------------------------------------------------------------------------------------------
-// ALLOWED.md generator + schema generator: uses the identical declaration and single-quote rule.
-
-/** Renders ALLOWED.md from the declaration and discovered installed tools. */
 export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/guard-gen.mjs'): string {
   const d = env.declaration;
   const tools = discoverTools(env);
@@ -2246,7 +2142,6 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
   return `${lines.join('\n')}\n`;
 }
 
-/** Builds JSON schemas describing installed single-form tools (for `--schemas`). */
 export function buildToolSchemas(env: GuardEnvironment): unknown[] {
   return discoverTools(env)
     .filter((tool) => !tool.subcommands)

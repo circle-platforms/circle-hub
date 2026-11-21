@@ -1,5 +1,3 @@
-// K05: one batch read of a root's subtrees gives exactly what the paged subtree read gives, node by node, for the same reader.
-// Synthetic catalog and database only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { NodesPage } from '../ports.ts';
@@ -7,10 +5,8 @@ import type { Principal } from '../records/api.ts';
 import { catalogXml, BASE_CATALOG, makeWorld, startPostgres, type World } from './test-support.ts';
 
 type Node = NodesPage['nodes'][number];
-/** What only a page carries: the feeding structure text on the root of a first page and the back-references. */
 const bare = ({ feeding_structure: _structure, backlinks: _backlinks, ...node }: Node & { feeding_structure?: unknown; backlinks?: unknown }): Node => node as Node;
 
-/** Every node under `paths` through the paged read: each page by its cursor, and below the depth limit from the nodes whose children were not reached. */
 async function paged(w: World, root: string, paths: string[], reader: Principal): Promise<Node[] | null> {
   const out = new Map<string, Node>(); let frontier = paths, guard = 0;
   while (frontier.length) {
@@ -22,7 +18,6 @@ async function paged(w: World, root: string, paths: string[], reader: Principal)
         if (page === null) return null;
         for (const node of page.nodes) {
           const seen = out.get(node.path);
-          // A node split over pages comes back once per page with the next slice of its entries.
           out.set(node.path, seen ? { ...seen, entries: [...seen.entries, ...node.entries] } : bare(node));
         }
         cursor = page.next;
@@ -35,14 +30,11 @@ async function paged(w: World, root: string, paths: string[], reader: Principal)
   return [...out.values()];
 }
 const byPath = (nodes: Node[]) => [...nodes].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-// The batch read is the export path and also carries each entry's source fragments (the grounds a reference read gives the same
-// reader; export-fragments.test.ts checks that); the paged read does not. Everything else must be equal node by node.
 const withoutFragments = (nodes: Node[]) => nodes.map((node) => ({ ...node, entries: node.entries.map(({ fragments: _fragments, ...entry }: any) => entry) }));
 const everyEntryHasFragments = (nodes: Node[]) => nodes.every((node) => node.entries.every((entry: any) => Array.isArray(entry.fragments) && entry.fragments.length > 0 && entry.fragments.every((f: unknown) => typeof f === 'string')));
 
 test('the batch read of a root equals the paged read node by node, for the whole root and for one subtree', async (t) => {
   const pg = await startPostgres(); t.after(() => pg.stop());
-  // Three nodes a page: the paged read needs many pages for what the batch read gives at once.
   const w = await makeWorld(pg, { knowledge: { limits: { pageNodes: 3 } } }); t.after(() => w.close());
   w.external.set('site:tree:synthetic-10.6', { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
   const made = await w.knowledge.produceTree({ product: w.product, build: { name: 'Synthetic_10_6_1', family: 'ACME', line: '10.6', base: 'Synthetic_10_6_1', platform: null, built_at: null, released_at: null, sources: { tree: 'site:tree:synthetic-10.6' }, root: null } });
@@ -62,7 +54,6 @@ test('the batch read of a root equals the paged read node by node, for the whole
   const part = await w.knowledge.subtree!({ root, paths: [top] }, w.user);
   assert.deepEqual(byPath(withoutFragments(part!)), byPath((await paged(w, root, [top], w.user))!));
   assert.ok(part!.every((node) => node.path === top || node.path.startsWith(top + '/')));
-  // Overlapping paths give each node once; a path the root does not hold gives nothing.
   assert.equal((await w.knowledge.subtree!({ root, paths: [top, top, '/'] }, w.user))!.length, whole.length);
   assert.deepEqual(await w.knowledge.subtree!({ root, paths: ['/no-such-node'] }, w.user), []);
 });

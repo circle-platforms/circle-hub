@@ -1,4 +1,3 @@
-// The local command lookup (functions/cmd-lookup.ts) over a synthetic locked tree and manual (testing/lookup-fixture.ts).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { lockedTree } from './catalog-selection.ts';
@@ -18,7 +17,6 @@ function sourceOf(from: LookupFixture, options: { policy?: unknown; text?: boole
 const source = sourceOf(fixture);
 
 interface Shown { reference: string; statement: string; source: string | null; lines: string | null; node: string; partial: boolean }
-/** The entries of an answer the way a reader of knowledge/*.txt takes them: a heading line, then the text to the next heading or `# ` line. */
 function shown(answer: string): Shown[] {
   const lines = answer.split('\n');
   const found: Shown[] = [];
@@ -148,13 +146,11 @@ test('param lists the example lines of the manual that start with the command, n
   assert.equal(examples[1]!.statement, 'Demo(config)#orbit beacon add "app2" fast 5\nDemo(config)#show orbit beacon');
   assert.equal(shown(answer).filter((entry) => entry.statement === 'Demo(config)#orbit beacon add "b1" fast 3').length, 1, 'the example of the window is not repeated');
   noLine(answer, '| 配置信标 | *orbit beacon add* _<name> <mode>_ |');
-  // a long entry is shown by its command lines, says so, and says where it is
   const long = examples[2]!;
   assert.equal(long.partial, true);
   assert.equal(long.statement, 'orbit beacon add "x1" fast 1\norbit beacon add "x2" slow 2');
   assert.match(answer, /^# （上一条共 12 行，上面只列其中以这条命令开头的 2 行，它们在原文里不一定相邻；全文在 knowledge\/manual\.txt 第 \d+ 行起。）$/m);
   assert.match(answer, /示例里 1 条长条目只列命令行/);
-  // the line numbers the answer gives are the heading lines of those examples in the text file
   const manual = fixture.files.get('manual.txt')!.toString('utf8').split('\n');
   const where = /这些示例的标注行在 knowledge\/manual\.txt 的第 ([\d、]+) 行/.exec(answer);
   assert.ok(where, answer);
@@ -237,7 +233,6 @@ test('param starts the window at a signature line the producer left in the manua
   const wait = lookupParam(source, 'orbit probe wait');
   assert.deepEqual(shown(wait.split('# 手册里')[0]!.trimEnd()).filter((entry) => entry.node.startsWith('/manual/')).map((entry) => entry.lines), ['610', '611']);
   assert.match(wait, /到同源下一条命令签名行（没有）即这份源文件末尾/);
-  // the window of the command before them ends at the first of them
   assert.ok(!lookupParam(source, 'orbit report remove').includes('探针'));
 });
 

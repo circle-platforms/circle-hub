@@ -2,7 +2,7 @@ import { VaultReadinessError } from './errors.ts';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { randomBytes, createHash } from 'node:crypto';
-import { cp, mkdtemp, readFile, writeFile, readdir, rm, mkdir } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileKeyProvider, FileVault } from './vault.ts';

@@ -1,19 +1,11 @@
-// The comparison of two validation results of one submission (the recorded one and the replayed one), field by field.
-// Pure JSON in, pure JSON out: nothing here reads a file, a database or the Hub. Only the fields listed in NORMALIZATIONS are
-// normalized, and every normalization that was applied is reported with its counts, so a reader can see exactly what was
-// taken out of the comparison. Everything else, down to the wording of one error message, decides `same` or `changed`.
-
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
-/** The top-level groups a difference is filed under. */
 export type DiffField = 'acceptance' | 'errors' | 'partitions' | 'coverage' | 'cross_item' | 'rounds' | 'locks' | 'identity' | 'other';
 
 export interface FieldDiff {
   field: DiffField;
-  /** JSON Pointer-like path into the result; array positions are the position in the recorded (or, for an addition, the replayed) result. */
   path: string;
   kind: 'changed' | 'removed' | 'added';
-  /** A short human label of what sits there (code, item, requirement, layer ...), empty when there is none. */
   label: string;
   recorded?: Json;
   replayed?: Json;
@@ -21,11 +13,8 @@ export interface FieldDiff {
 
 export interface NormalizationRule {
   id: string;
-  /** Why the field cannot be compared, in the words of the report. */
   description: string;
-  /** Whether the rule applies at this path (segments from the root of the result; array positions as `*`). */
   matches(path: readonly string[]): boolean;
-  /** What both sides carry in place of the value. */
   placeholder: string;
 }
 
@@ -43,7 +32,6 @@ export interface Comparison {
 }
 
 export interface CompareOptions {
-  /** The replayed run was bound to another pack version than the recorded one (candidate mode): `locks.pack` and `locks.pack_digest` are the binding itself. */
   rebound?: boolean;
 }
 
@@ -77,7 +65,6 @@ const REBINDING: NormalizationRule[] = [
   },
 ];
 
-/** The normalizations that apply to a comparison, in the order they are listed in the output. */
 export function normalizationRules(options: CompareOptions = {}): readonly NormalizationRule[] {
   return options.rebound === true ? [...NONDETERMINISTIC, ...REBINDING] : NONDETERMINISTIC;
 }
@@ -86,7 +73,6 @@ function isObject(value: unknown): value is { [key: string]: Json } {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** A deep copy of the value with every normalized field replaced by its placeholder; counts per rule go into `counts`. */
 function normalize(value: Json, rules: readonly NormalizationRule[], counts: Map<string, number>, path: string[] = []): Json {
   for (const rule of rules) {
     if (value !== undefined && path.length > 0 && rule.matches(path) && !Array.isArray(value) && !isObject(value)) {
@@ -103,7 +89,6 @@ function normalize(value: Json, rules: readonly NormalizationRule[], counts: Map
   return value;
 }
 
-/** Stable text of a value: object keys sorted, so two equal values are equal strings whatever the key order. */
 export function stable(value: Json): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
   if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stable(value[key])}`).join(',')}}`;
@@ -112,12 +97,10 @@ export function stable(value: Json): string {
 
 const MAX_ALIGNMENT_CELLS = 4_000_000;
 
-/** Pairs of positions (i in a, j in b) of one longest common subsequence of the two lists of stable texts. */
 function align(a: readonly string[], b: readonly string[]): Array<[number, number]> {
   const n = a.length;
   const m = b.length;
   if (n * m > MAX_ALIGNMENT_CELLS) {
-    // Too large to align: compare by position only.
     const pairs: Array<[number, number]> = [];
     for (let i = 0; i < Math.min(n, m); i += 1) if (a[i] === b[i]) pairs.push([i, i]);
     return pairs;
@@ -144,7 +127,6 @@ function align(a: readonly string[], b: readonly string[]): Array<[number, numbe
 
 const LABEL_KEYS = ['code', 'item', 'requirement', 'layer', 'id', 'key', 'name'] as const;
 
-/** What names an object for a reader: the identifying fields it carries, in a fixed order. */
 function labelOf(value: Json | undefined): string {
   if (!isObject(value)) return '';
   const parts: string[] = [];
@@ -180,7 +162,6 @@ const pointer = (path: readonly string[]): string => (path.length === 0 ? '' : `
 
 function walk(recorded: Json | undefined, replayed: Json | undefined, path: string[], out: FieldDiff[], labels: readonly string[] = []): void {
   if (recorded === undefined && replayed === undefined) return;
-  // The identifying fields of every enclosing object, outermost first (item, requirement, layer ...), name the place for a reader.
   const own = labelOf(recorded) || labelOf(replayed);
   const named = own === '' || labels.includes(own) ? labels : [...labels, own];
   const label = named.join(' ');
@@ -210,8 +191,6 @@ function walkArrays(recorded: readonly Json[], replayed: readonly Json[], path: 
   let i = 0;
   let j = 0;
   const flush = (toI: number, toJ: number): void => {
-    // Between two common elements: the unmatched ones of both sides. They sit in the same place, so they are paired in order
-    // (one element that changed); what is left over on either side is a removal or an addition.
     const removed: number[] = [];
     const added: number[] = [];
     for (; i < toI; i += 1) removed.push(i);
@@ -220,7 +199,6 @@ function walkArrays(recorded: readonly Json[], replayed: readonly Json[], path: 
     for (let k = 0; k < paired; k += 1) {
       const before = recorded[removed[k]];
       const after = replayed[added[k]];
-      // Only elements of the same shape are one element that changed; otherwise it is a removal and an addition.
       if ((isObject(before) && isObject(after)) || (Array.isArray(before) && Array.isArray(after))) walk(before, after, [...path, String(removed[k])], out, labels);
       else {
         walk(before, undefined, [...path, String(removed[k])], out, labels);
@@ -238,7 +216,6 @@ function walkArrays(recorded: readonly Json[], replayed: readonly Json[], path: 
   flush(recorded.length, replayed.length);
 }
 
-/** Compares a recorded validation result with a replayed one. Neither argument is changed. */
 export function compareResults(recorded: Json, replayed: Json, options: CompareOptions = {}): Comparison {
   const rules = normalizationRules(options);
   const recordedCounts = new Map<string, number>();
@@ -258,7 +235,6 @@ const CLIP = 240;
 const clip = (text: string): string => (text.length <= CLIP ? text : `${text.slice(0, CLIP - 1)}…`);
 const show = (value: Json | undefined): string => (value === undefined ? '（无）' : clip(typeof value === 'string' ? JSON.stringify(value) : stable(value)));
 
-/** One readable line per difference, in Chinese, for the report. */
 export function describeDiff(diff: FieldDiff): string {
   const where = `${diff.path === '' ? '（整份结果）' : diff.path}${diff.label === '' ? '' : `〔${diff.label}〕`}`;
   switch (diff.kind) {
@@ -271,7 +247,6 @@ export function describeDiff(diff: FieldDiff): string {
   }
 }
 
-/** The differences of a comparison grouped by field, in the fixed order the report lists them. */
 export function groupDiffs(diffs: readonly FieldDiff[]): Array<{ field: DiffField; diffs: FieldDiff[] }> {
   const order: DiffField[] = ['acceptance', 'errors', 'partitions', 'coverage', 'cross_item', 'rounds', 'locks', 'identity', 'other'];
   return order.flatMap((field) => {

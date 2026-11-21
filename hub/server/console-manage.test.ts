@@ -247,7 +247,6 @@ test('the first administrator is created with the setup code; the token shown on
 
 test('the four operation pages carry the management forms of the console, and every management page answers', async () => {
   // Proposal decision 6 (2026-10-31): the console runs four operations; every other one is a command for the Circle.
-  // K3 removed the /console/admin/* page entries; POST /console/admin/do/<action> remains.
   const forms = { member: 'member-add', system: 'system-add', pack: 'pack-stage', knowledge: 'knowledge-sync' } as const;
   for (const [operation, action] of Object.entries(forms)) {
     const page = await send('GET', `/console/operations/${operation}`, { cookie: `circle_hub_session=${session}` });
@@ -255,7 +254,6 @@ test('the four operation pages carry the management forms of the console, and ev
     assert.match(page.body, new RegExp(`action="/console/admin/do/${action}"`), operation);
     csrf = csrfOf(page.body);
   }
-  // K3 removed the /console/admin second page entries; POST /console/admin/do stays. Secrets live under settings.
   assert.equal((await send('GET', '/console/admin', { cookie: `circle_hub_session=${session}` })).status, 404);
   for (const path of ['packs', 'resources', 'secrets', 'knowledge']) {
     assert.equal((await send('GET', `/console/admin/${path}`, { cookie: `circle_hub_session=${session}` })).status, 404, path);
@@ -303,7 +301,6 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   assert.equal((await post('member-add', { name: 'erin', role: 'user', connect: 'password' })).status, 400);
 
   // Connecting a business system adds the resource first, then sets its credential; the value never enters argv.
-  // Default / 先不分配 omits --all and --team (decision 1500: unassigned opens to nobody).
   const noneAdd = await post('system-add', { system_pack: 'synthetic-system', name: '合成系统', environment: 'shared', origins: 'api=https://192.0.2.20', plaintext: '', settings: '', credentials: 'token=DEMO', secret_name_1: 'DEMO', value_1: ' synthetic value ', audience: 'none' });
   assert.equal(noneAdd.status, 200, noneAdd.body);
   assert.match(noneAdd.body, /还没有分配，暂时谁都不能使用/);

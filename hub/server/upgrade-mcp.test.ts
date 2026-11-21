@@ -1,4 +1,3 @@
-// SDK transport replies through real loopback HTTP over synthetic ports, without PostgreSQL.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';

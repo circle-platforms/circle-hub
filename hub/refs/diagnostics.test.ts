@@ -29,7 +29,6 @@ test('recognize reports only the last refusal after every registered candidate r
 test('malformed JSON, XML, XHTML and XLSX uploads return the definite parser reason and fix over MCP', async (t) => {
   const server = await createTestServer(); t.after(() => server.close());
   const client = await server.client(server.admin.token); t.after(() => client.close());
-  // Boss 18:09 / 18:42: without call-log identity facts, do not append escalation (count / example / close).
   for (const [mediaType, text, parser, reason] of vectors) {
     const result = await client.call('upload_file', { file_path: Buffer.from(text).toString('base64'), media_type: mediaType });
     assert.equal(result.isError, true);

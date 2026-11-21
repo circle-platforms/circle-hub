@@ -1,17 +1,14 @@
-// Read-only rendering of EnvironmentReadiness for 连接 → 运行环境. The page never judges, summarizes, or invents links.
 import type { EnvironmentReadiness, EnvironmentReadinessCheck, EnvironmentReadinessExecutor } from '../../dispatch/api.ts';
 import { code, html, type Html } from './html.ts';
 import { technical } from './presentation.ts';
 import { box, callout, chip, when, type Tone } from './ui.ts';
 
-/** Three-state chip from a check's satisfied field; the page does not recompute it. */
 export function readinessSatisfiedChip(satisfied: boolean | null): { text: string; tone: Tone } {
   if (satisfied === true) return { text: '已确认', tone: 'pass' };
   if (satisfied === false) return { text: '错误', tone: 'fail' };
   return { text: '未知', tone: 'unknown' };
 }
 
-/** Unknown and error rows keep the report's missing_fact / next_action verbatim. */
 export function readinessCheckBlock(check: EnvironmentReadinessCheck, enforced?: boolean): Html {
   const allocationCheck=check.condition==='assignment';
   const allocationPreview=allocationCheck&&enforced!==true;
@@ -43,7 +40,6 @@ ${row.baseline_registrations.length ? html`<p class="ch-meta">基线登记元数
 </section>`;
 }
 
-/** One target's readiness report as returned by the port; no page-side verdict. */
 export function readinessReportCard(report: EnvironmentReadiness, enforced?: boolean): Html {
   if (report.target === null) {
     return box(
@@ -60,7 +56,6 @@ ${report.limitations.map((line) => html`<p class="ch-meta">${line}</p>`)}`,
   );
 }
 
-/** Load readiness for each target through the optional port; never invents a report. */
 export async function loadReadinessReports(
   readiness: ((caller: import('../../records/api.ts').Principal, target: string) => Promise<EnvironmentReadiness>) | undefined,
   caller: import('../../records/api.ts').Principal,

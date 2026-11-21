@@ -175,7 +175,6 @@ describe('sign-in', () => {
     const page = await get('/console/runs', `circle_hub_session=${cookieValue(session)}`);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes(user.user.name));
-    // An access token cannot enter the console as a cookie.
     assert.equal((await get('/console/runs', `circle_hub_session=${user.token}`)).status, 303);
   });
 
@@ -270,7 +269,6 @@ describe('pages', () => {
     assert.ok(list.body.includes(run));
     const page = await everyTaskTab(`/console/runs/${run}`, (path) => get(path, session));
     assert.equal(page.status, 200);
-    // New runs always record submission_due (start/fakes). Historical missing-due copy is not tested (RULES §6 / regression rule 0).
     assert.match(page.body, /提交期限/);
     assert.ok(!page.body.includes('旧运行没有记录期限'));
     const [stat, dyn] = [uiLabelOf('layer', 'static'), uiLabelOf('layer', 'dynamic')];
@@ -381,7 +379,6 @@ describe('pages', () => {
       assert.ok(page.body.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
       assert.ok(page.body.includes('&quot;&gt;&lt;img src=x onerror=alert(2)&gt;'));
       const admin = await signIn(server.admin.token);
-      // Default /console/team is collaborative teams; member names live on ?tab=members.
       const adminPage = await get('/console/team?tab=members', admin);
       assert.ok(!adminPage.body.includes('<b>名字</b>') && adminPage.body.includes('&lt;b&gt;名字&lt;/b&gt;'));
     } finally {
@@ -446,7 +443,6 @@ describe('pages', () => {
     const bare = await createTestServer({ postgres, withoutProducts: true });
     try {
       const admin = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(bare.admin.token, bare.port) } });
-      // Product packs use packPath → /console/workflows/<id> (/console/packs paths retired).
       assert.ok(admin.body.includes('/console/workflows/line-a'), 'the product pack id of the catalog');
       const user = await bare.createUser('无产品端口');
       await bare.assign(user.principal, 'review');
@@ -463,7 +459,6 @@ describe('pages', () => {
     const packs = await get('/console/workflows', session);
     assert.ok(packs.body.includes('href="/console/packs/local-review?scope=') || packs.body.includes('href="/console/workflows/local-review?scope='));
     assert.ok(!packs.body.includes('href="/console/packs/review?scope=') && !packs.body.includes('href="/console/workflows/review?scope='), 'an unassigned pack is not listed');
-    // A member with no team sees assignment to the current account, never other assignees' names.
     assert.match(packs.body, /已分配给当前账户/);
     assert.doesNotMatch(packs.body, /分配给(?!当前账户)/);
     const admin = await signIn(server.admin.token);
@@ -498,7 +493,6 @@ describe('pages', () => {
     assert.ok(!admin.body.includes(user.token) && !admin.body.includes(server.admin.token), 'no token value is ever shown');
     for(const row of admin.body.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/g)??[])assert.doesNotMatch(row,/<button|<form|ch-btn/);
     const selected=await get('/console/team/'+user.user.id,session);
-    // Member ops are registered console forms (not Circle command echo).
     assert.match(selected.body, /action="\/console\/admin\/do\/user-disable"/);
     assert.ok(selected.body.includes(`name="user" value="${user.user.id}"`), 'disable form targets the selected member');
     assert.match(selected.body, /停用账户/);
@@ -538,7 +532,6 @@ test('full administrator reasons are escaped in console details and unavailable 
  await server.records.callLog.append({traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:null,runId:null,userId:user.user.id,tool:'submit_result',arguments:{},callResult:'ok',durationMs:1,adminNote:'摘要',adminReasons:['合成完整理由 <script>unsafe</script>']});
  const session=await signIn(server.admin.token);const path=`/console/records?user=${encodeURIComponent(user.user.name)}&tool=submit_result`;
  const calls=await get(path,session);assert.equal(calls.status,200);assert.match(calls.body,/完整理由（1 条）/);assert.match(calls.body,/合成完整理由 &lt;script&gt;unsafe&lt;\/script&gt;/);assert.ok(!calls.body.includes('<script>unsafe</script>'));
- // Members still reach /console/records but only see their own calls; the admin-only note/reasons stay out of the row.
  assert.equal((await get(path,await signIn(user.token))).status,200);
  assert.ok(!(await get(path,await signIn(user.token))).body.includes('完整理由'));
 });

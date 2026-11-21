@@ -1,8 +1,3 @@
-// End to end on the real engine (a temporary PostgreSQL, the published packs, synthetic documents and scripted models): a plan run
-// opened before any case of its recompose run is accepted binds the recomposition result after its start (workflow.json
-// from_runs.after_start). Its plan waits (unknown, awaiting_step) until that case's record is accepted in the recompose run, submitted
-// alone; the same plan, handed in again unchanged, is then judged and satisfied, while the other case keeps waiting. The local check
-// with the run directory's late.json reaches the conclusion the Hub reaches (docs/hub-r4-tasks/t18-late-binding.md, sections 3-5).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
@@ -27,8 +22,6 @@ import { readLate, type RunLate } from './functions/late.ts';
 import { recordSha256 } from './functions/recomposition.ts';
 
 const sha = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
-// The engine side of late binding (contracts, start, submit, evaluate, the late export) is another task of the same design: until it is
-// in this tree, the published case-compile pack is refused at publication for the two new declarations, and this test cannot run.
 const lateSupported = WorkflowFile.safeParse(WORKFLOW).success;
 const skip = !(await osIsolationAvailable()) ? 'no OS network isolation on this machine (sandbox-exec)'
   : !lateSupported ? 'the Hub in this tree does not implement late binding yet (contracts WorkflowFile refuses from_runs.after_start and workflow.refresh); it runs once the T18 engine side (docs/hub-r4-tasks/t18-late-binding.md sections 1-3) is merged'
@@ -40,7 +33,6 @@ test('a plan waits for its case\'s recomposition, then the same plan is satisfie
   let h: Awaited<ReturnType<typeof openHub>> | undefined;
   try {
     h = await openHub(postgres);
-    // The synthetic product, its build and command tree, as the recomposition end-to-end test sets them (recompose/end-to-end.test.ts).
     const f = unitFixture(), build = { name: 'Rel_ORBIT_10_8_0_30', family: 'ORBIT', line: '10.8', base: 'Rel_ORBIT_10_8_0_30', platform: null, built_at: null, released_at: null, sources: {}, root: f.context.root }, info = { root: f.context.root, composition: sha('synthetic composition'), product: 'orbit', build, produced_at: '2026-10-27T00:00:00Z', command_policy: { schema: 'command-policy@1' as const, read_only: ['/commands/show'], inverse_rules: [{ source_prefix: '/commands/widget', inverse_prefix: '/commands/no/widget', leading_parameters: 1 }] } };
     h.knowledge.builds = async () => [build];
     h.knowledge.resolveBuild = async () => build;
@@ -60,7 +52,6 @@ test('a plan waits for its case\'s recomposition, then the same plan is satisfie
     if (!recompose.ok) return;
     await h.registry.assign(h.admin, h.alice.id, recompose.version.id);
     const put = (id: string, bytes: Uint8Array | string) => h!.external.put(id, { bytes: typeof bytes === 'string' ? Buffer.from(bytes) : bytes, mediaType: 'application/json' });
-    // Two cases of one mind map, and the runner documents of the block plans.
     const external = 'agile:mindmap:synthetic-late';
     put(external, JSON.stringify({ root: { data: { id: 'late-root', text: 'ORBIT / COMET synthetic late' }, children: [JSON.parse(fixtureText('author-pass.km.json')).root.children[0], JSON.parse(fixtureText('author-underdetermined.km.json')).root.children[0]] } }));
     const runtime = blockFixture(), rawContract = structuredClone(runtime.contractDoc) as any;
@@ -70,7 +61,6 @@ test('a plan waits for its case\'s recomposition, then the same plan is satisfie
     for (const [name, value] of Object.entries({ contract, profile, inventory: runtime.inventory })) put('doc:doc:late-' + name, JSON.stringify(value));
     const start = { product: 'orbit', build: build.name };
 
-    // The recompose run and, before any of its cases is accepted, the plan run that binds its result after the start.
     const recomposeStart = await h.service.startRunDetailed(h.alice, { ...start, pack: 'recompose', inputs: { subject: { external } }, parameters: { case_depths: [1] } }, call());
     assert.equal(recomposeStart.answer.call_result, 'ok', JSON.stringify(recomposeStart.answer.errors));
     const recomposeRun = recomposeStart.answer.run! as any;
@@ -86,7 +76,6 @@ test('a plan waits for its case\'s recomposition, then the same plan is satisfie
     const frozenRecord = (await h.service.exportRun!(h.alice, planRun.run))!;
     assert.deepEqual((frozenRecord.run as any).late_inputs?.map((row: any) => [row.slot, row.run]), [['recomposition_result', recomposeRun.run]]);
 
-    // Each case's record, written by the scripted recomposer, and a plan of each case written against it before it is accepted.
     const files = recomposeRun.items.map((item: any) => ({ item: item.id, method: { kind: 'recomposed', text: '从作者动作取验证方法', sources: [item.fields.atoms[0].reference], basis: '合成依据' } }));
     const records = recomposeRun.items.map((item: any, index: number) => recordFor(item, files[index], 'scripted-recomposer'));
     const recomposeOf = (planItem: any) => recomposeRun.items.findIndex((item: any) => item.fields.node === planItem.fields.recomposition_late.node);
@@ -96,7 +85,6 @@ test('a plan waits for its case\'s recomposition, then the same plan is satisfie
       const data = blockPlan([{ kind: 'CONFIG', id: 'configure', call: blockCall('widget health interval pool1 5'), author_step_refs: record.atoms.filter((atom: any) => atom.kind === 'action').map((atom: any) => atom.id) }, { kind: 'OBSERVE_ASSERT', id: 'observe', call: blockCall('show health pool1'), assertions: [{ id: 'assert_interval', output: 'observe', op: 'abs_found', literal: 'interval=5', quote, expectation: quote.reference, criterion: criterion.id }] }, { kind: 'CONFIG', id: 'cleanup', cleanup: true, call: blockCall('no widget health interval pool1') }], [{ expectation: quote.reference, status: 'asserted', assertions: ['assert_interval'] }]) as any;
       data.criteria = [criterion];
       data.block_context = { preconditions: [], causal_links: [{ from: 'configure', to: 'observe', quote }], responders: [] };
-      // The receipt is copied before any result exists; the record is named by its own digest, which is what is checked.
       data.recomposition = { receipt: 'rec:' + '0'.repeat(64), record_sha256: recordSha256(record), case_id: record.case.id, slots: [{ slot: 'e1', assertions: ['assert_interval'] }], rebindings: [] };
       return { text: '合成编写消费开运行后受理的重组', quotes: [quote], data };
     };
@@ -112,14 +100,12 @@ test('a plan waits for its case\'s recomposition, then the same plan is satisfie
     }
     assert.deepEqual((before.result as any)?.locks?.late?.inputs?.map((row: any) => [row.slot, row.run, row.reference]), [['recomposition_result', recomposeRun.run, undefined]], 'no accepted result yet, and the lock says so');
 
-    // The first case's record is submitted alone in the recompose run and accepted; the other case's slot stays empty.
     const first = recomposeOf(planRun.items[0]);
     const single = { run: recomposeRun.run, model: 'scripted-recomposer', items: recomposeRun.items.map((item: any, index: number) => index === first ? itemSubmission(item, files[index], 'scripted-recomposer') : { item: item.id, handling: 'handled', slots: { record: [] } }) };
     const recomposed = await h.service.submitResult(h.alice, single as never, call());
     assert.equal(recomposed.acceptance, 'accepted', JSON.stringify(recomposed.errors));
     const recomposeResult = (await h.kit.store.find({ kind: 'validation_result', key: INDEX.resultRun, value: recomposeRun.run, newestFirst: true })).items[0];
 
-    // The same plans, handed in again unchanged: the accepted case is judged now, the other one still waits.
     const after = await submitPlans();
     assert.equal(after.acceptance, 'accepted', JSON.stringify(after.errors));
     const acceptedItem = planRun.items.find((item: any) => recomposeOf(item) === first), waitingItem = planRun.items.find((item: any) => recomposeOf(item) !== first);
@@ -130,7 +116,6 @@ test('a plan waits for its case\'s recomposition, then the same plan is satisfie
     assert.deepEqual(lock?.inputs?.map((row: any) => [row.slot, row.run, row.reference]), [['recomposition_result', recomposeRun.run, 'rec:' + recomposeResult.digest]]);
     assert.match(String(lock?.refresh), /^[0-9a-f]{64}$/);
 
-    // The late export (GET /run-export/<run>/late): the accepted case's record named by its digest, the other case waiting.
     const service = h.service as unknown as { exportLate?: (user: unknown, run: string) => Promise<unknown> };
     assert.equal(typeof service.exportLate, 'function', 'the runs service answers the late export');
     const answered: any = await service.exportLate!(h.alice, planRun.run);
@@ -140,7 +125,6 @@ test('a plan waits for its case\'s recomposition, then the same plan is satisfie
     assert.equal(overlay(acceptedItem.id)?.recomposition?.record_sha256, recordSha256(records[first]));
     assert.ok(overlay(waitingItem.id)?.recomposition_waiting, JSON.stringify(overlay(waitingItem.id)));
 
-    // check-plan with the run download and late.json reaches the Hub's conclusion for both cases.
     const exported = (await h.service.exportRun!(h.alice, planRun.run))!;
     const frozen = JSON.parse(JSON.stringify(exported.run)) as Record<string, unknown>;
     const view = await h.knowledge.catalog(build.root, 'commands@1');
@@ -155,7 +139,6 @@ test('a plan waits for its case\'s recomposition, then the same plan is satisfie
       assert.deepEqual(unique(local.problems.filter((row) => row.code !== 'awaiting_step')), unique(hubSide.checks), `${item.id}: the same problems of the Hub checks`);
       assert.equal(local.ok, hubSide.checks.length === 0 && hubAwaiting.length === 0, `${item.id}: the verdict of the Hub`);
     }
-    // Without late.json the local check cannot judge a late case and says where to get it.
     assert.ok(checkPlanObject('plan.json', planItems[0], frozen, catalog).problems.some((row) => row.pointer === '/run/late.json'));
   } finally {
     await h?.close();

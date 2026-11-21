@@ -8,7 +8,7 @@ import { PLATFORM_COMMAND_METADATA } from '../platform/api.ts';
 import { PERMISSION_ROLE } from '../../contracts/generated/vocabulary.ts';
 import { DEFAULT_ADMIN_NAME } from '../records/api.ts';
 import { DEFAULT_EVENT_LIMIT } from '../health/api.ts';
-import { SERVE_USAGE, SECRET_USAGE, ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, DOC_USAGE, INIT_ADMIN_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
+import { SERVE_USAGE, SECRET_USAGE, ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, INIT_ADMIN_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
 import { packCommand, PACK_USAGE } from './cli-pack.ts';
 import { resourceCommand, RESOURCE_USAGE } from './cli-resource.ts';
 import { knowledgeCommand, KNOWLEDGE_USAGE } from './cli-knowledge.ts';
@@ -29,7 +29,7 @@ const builtins: { name: string; help: string[]; handler: BuiltinHandler; bridge:
   { name: 'token', help: ['  token issue <用户> [--label <标签>] [--raw]    签发令牌，令牌只显示这一次；--raw 时标准输出上只有令牌和换行，确认写到标准错误', '  token revoke <令牌编号>                        撤销令牌（立即生效）', '  token list [<用户>]                           列出令牌（不显示令牌值）'], handler: (args, ctx, options) => import('./cli.ts').then(module => module.tokenCommand(args, ctx, options)), bridge: true },
   { name: 'logs', help: ['  logs export [--from <时间>] [--to <时间>] [--user <用户>] [--tool <工具>] [--run <运行>] [--out <文件>] [--as <管理员>]   导出调用日志（JSON Lines）'], handler: (args, ctx, options) => import('./cli.ts').then(module => module.logsCommand(args, ctx, options)), bridge: false },
   { name: 'local-tools', help: [`  ${LOCAL_TOOLS_USAGE}`], handler: (args, ctx) => localToolsCommand(args, ctx.io), bridge: false },
-  { name: 'setup-code', help: ['  setup-code                                   还没有管理员时，给网页控制台发一个设置码（24 小时内有效，只显示一次），在 /console/setup 用它建第一位管理员'], handler: (args, ctx, options) => import('./cli.ts').then(module => module.setupCodeCommand(args, ctx)), bridge: false },
+  { name: 'setup-code', help: ['  setup-code                                   还没有管理员时，给网页控制台发一个设置码（24 小时内有效，只显示一次），在 /console/setup 用它建第一位管理员'], handler: (args, ctx) => import('./cli.ts').then(module => module.setupCodeCommand(args, ctx)), bridge: false },
   { name: 'run', help: ['  run abandon <运行> --answer-request <摘要> --reason <理由>  管理放弃目标，原效果与冻结不改', `  ${RUN_BATCH_USAGE}  管理员为文件里每个外部对象各开始一次运行（只用于开始时由 Hub 直接算出结果的工作流）`, '  run list [--pack <包>] [--user <用户>] [--state 受理|未受理|进行中] [--since <ISO时间>] [--unknown] [--limit <N>] [--cursor <游标>] [--json] [--as <管理员>]  列出运行（仅管理员；默认 50 条，新到旧，超出给下一页游标）', '  run show <运行> [--json] [--as <管理员>]        显示一次运行'], handler: (args, ctx, options) => import('./cli.ts').then(module => module.runCommand(args, ctx, options)), bridge: false },
   { name: 'health', help: ['  health [--since <时长或时间>] [--json] [--as <管理员>]   资源的当前值和窗口内的最小、最大值（仅管理员；--since 写 30m、6h、7d 或 ISO 时间，默认 1 小时）'], handler: (args, ctx, options) => import('./cli.ts').then(module => module.healthCommand(args, ctx, options)), bridge: false },
   { name: 'crashes', help: [`  crashes [--limit <N>] [--json] [--as <管理员>]   进程的启动、停止和异常退出，异常退出带当时在处理的请求和崩溃报告摘要（仅管理员；默认 ${DEFAULT_EVENT_LIMIT} 条，新到旧）`], handler: (args, ctx, options) => import('./cli.ts').then(module => module.crashesCommand(args, ctx, options)), bridge: false },

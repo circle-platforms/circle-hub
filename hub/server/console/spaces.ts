@@ -29,7 +29,6 @@ import {shareFeedback,NO_TEAM_SHARES} from './feedback.ts';
 const field = inputField;
 function form(ctx: PageContext, action: string, fields: Html, label: string, multipart = false, disabled=false, back?:string): Html {
   const danger = action === 'revoke' || action === 'withdraw';
-  // Editor keeps cancel after submit; postForm always appends the button last.
   if (back) {
     return postForm({
       action: `/console/knowledge/do/${action}`,
@@ -202,7 +201,7 @@ ${filterForm('/console/knowledge/space-diff', html`<input type="hidden" name="sp
   const sources = await spaces.sources(ctx.principal, space);
   const capacity=own?await spaces.usage(ctx.principal):null;
   const folderEntries=await spaces.entries(ctx.principal,version.root,version.body.entries.filter(row=>row.path===path));
-  const originals = card({ title: '原文', hint: space === 'team' ? '供公共知识引用的原文，全体成员可读；上传的原文须由上传人确认为团队来源' : '上传的原文保存在所属私人空间，不自动生成条目；可在客户端中按引用读取后起草，或手动添加带逐字引文的条目' }, html `${table(['文件名', '大小', '被引用', '原文'], await Promise.all(sources.filter(s=>s.path===path).map(async s => {const source=await spaces.source(ctx.principal,s.sha256,undefined,'model',s.artifact);const origin=source?.artifact.body.origin;const name=source?.artifact.body.name??'原文';const count=folderEntries.filter(entry=>entry?.body.grounds.some(g=>g.reference==='src:'+s.sha256)).length;return [name,bytes(s.size),'被 '+count+' 个条目引用',link('/console/knowledge/source','查看原文',{sha256:s.sha256,artifact:s.artifact})];})), {title:`${directoryName(path)} 中还没有原文`,text:'导入的文件保存在这里，供条目逐字引用。'})}${own&&ctx.url.searchParams.get('import')==='1' ? form(ctx, 'import', html `${field('原文文件', html `<input name="archive" type="file" required>`)}${field('所在文件夹', html `<input name="path" value="${path}" required>`)}`, '导入我的知识', true) : ''}`);
+  const originals = card({ title: '原文', hint: space === 'team' ? '供公共知识引用的原文，全体成员可读；上传的原文须由上传人确认为团队来源' : '上传的原文保存在所属私人空间，不自动生成条目；可在客户端中按引用读取后起草，或手动添加带逐字引文的条目' }, html `${table(['文件名', '大小', '被引用', '原文'], await Promise.all(sources.filter(s=>s.path===path).map(async s => {const source=await spaces.source(ctx.principal,s.sha256,undefined,'model',s.artifact);const name=source?.artifact.body.name??'原文';const count=folderEntries.filter(entry=>entry?.body.grounds.some(g=>g.reference==='src:'+s.sha256)).length;return [name,bytes(s.size),'被 '+count+' 个条目引用',link('/console/knowledge/source','查看原文',{sha256:s.sha256,artifact:s.artifact})];})), {title:`${directoryName(path)} 中还没有原文`,text:'导入的文件保存在这里，供条目逐字引用。'})}${own&&ctx.url.searchParams.get('import')==='1' ? form(ctx, 'import', html `${field('原文文件', html `<input name="archive" type="file" required>`)}${field('所在文件夹', html `<input name="path" value="${path}" required>`)}`, '导入我的知识', true) : ''}`);
   const context=knowledgeContext(ctx,uiLabelOf('knowledge_view','knowledge'),directoryName(path),title);
   const listed=nodes.nodes.reduce((sum,node)=>sum+node.entries.length,0);
   const readable=html`<p class="ch-meta" data-folder-count>${tooltip(`本页当前可读条目 ${number(listed)}`,'只统计本页已加载的当前可读条目；条目记录包含所选版本保留的早期版本及撤回记录，不含子文件夹。')}</p>`;

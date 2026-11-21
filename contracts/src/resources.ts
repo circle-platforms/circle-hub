@@ -1064,9 +1064,6 @@ const helpAsk = z.strictObject({
   cleared: pointer.describe('boolean: whether the input line was cleared again; must read true'),
   max_positions: z.number().int().min(1).max(32).default(12),
 });
-// Reading a booked device on request sends one line of the booking owner's choice through the per-seat read above: the same
-// call, the same tool, a line of the same declared shape (command_pattern), its text at the same place (output). The
-// declaration only opts in and bounds what one request shows; it names no tool, no command and no field of its own.
 const deviceRead = z.strictObject({
   max_chars: z.number().int().min(1).max(64000).default(16000).describe('how many characters of the device text one request shows; the whole text stays in the stored original'),
   max_reads: z.literal(1).default(1).describe('lines one request reads: one, fixed; a second line is a second request'),

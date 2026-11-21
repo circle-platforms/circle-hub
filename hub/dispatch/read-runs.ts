@@ -13,8 +13,6 @@ export interface RunJob {
    * 'done' once the job has its terminal record, 'unknown' once its effect is recorded as unresolved and waits for an
    * administrator, null while it runs. */
   ended:'done'|'unknown'|null;
-  /** When the journal recorded that end: the time of the first terminal record, or of the first record that left the effect
-   * unresolved; absent while the job runs, and when that record carries no time. */
   ended_at?:string;
   /** Whether the job ended at the effect boundary before any remote call: its journal records the refusal and no response
    * of the target. A refusal at the final boundary, after the connector session, the precheck and the probes, is not one. */

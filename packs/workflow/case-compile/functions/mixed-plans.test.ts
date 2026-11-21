@@ -1,8 +1,3 @@
-// One workbook for block plans and flat plans together (round 34, 2026-11-17: the Hub refused the merged workbook of two cases, one
-// written as blocks with a cell selection and one as plain steps and expectations, with "必须使用同一种写法"). The runner reads every row
-// alike and H and I are simply empty on a flat row, so nothing forbids the mixture. The generator already wrote each case with its own
-// plan; the independent reader reads each case's rows with that case's own plan too, and every rule of both forms stays in force.
-// Synthetic cases only: the block plan is the cell-selection fixture, the flat plan runs one of its commands.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import check, {readWorkbook, type ReadExecution} from './workbook.ts';
@@ -19,7 +14,6 @@ type Kind = 'block' | 'flat';
 const RUN = 'run_00000000000000000000000000', BUILD = 'SYN-BUILD-A';
 const autoidOf = (k: number) => `SYN-BLOCK-${k + 1}`;
 const itemOf = (k: number) => `doc-1:c-${k + 1}`;
-/** The flat form of a case: ordinary steps and one expectation after a step, no blocks. */
 const flatPlan = (): PlanSlots => ({bucket: 'bed-a', blocks: [], steps: [{object: 'device0', method: 'command', args: ['demo show'], keywords: {}, description: '合成平铺步骤'}], expects: [{text: EXPECTED, quote: {reference: EXPECTED_REF, text: EXPECTED}, after: 1}], replacements: []});
 
 function scenario(kinds: Kind[]) {
@@ -33,7 +27,6 @@ function scenario(kinds: Kind[]) {
 }
 type Scenario = ReturnType<typeof scenario>;
 
-/** The rows of every case, from the plans alone: the first case begins below the description row, and a blank row follows each case. */
 function layout(inputs: GenerationInput[]): number[][] {
   let at = TEMPLATE_HEADER_ROW + 2;
   return inputs.map((input) => {
@@ -42,13 +35,11 @@ function layout(inputs: GenerationInput[]): number[][] {
     const rows = Array.from({length}, (_, i) => at + i); at += length + 1; return rows;
   });
 }
-/** Write one cell of a row the way an edited workbook would hold it (a cell the compact model dropped as empty is added). */
 function put(model: WorkbookModel, number: number, column: string, text: string): WorkbookModel {
   const row = model.sheets[0].rows.find((value) => value.number === number)!; const cell = row.cells.find((value) => value.reference === column + number);
   if (cell) { cell.text = text; cell.type = 'inlineStr'; } else row.cells.push({reference: column + number, type: 'inlineStr', text, style: null, formula: false});
   return model;
 }
-/** What the Hub builds for the check of case k: the frozen plans of the whole run, the case's own resubmitted plan and the compact model of the workbook. */
 function itemInput(s: Scenario, k: number, model: WorkbookModel = compactModel(s.model)) {
   const plans = s.inputs.map((input, j) => ({item: itemOf(j), fields: {autoid: input.fields.autoid, title: input.fields.title, path: input.fields.path, priority: input.fields.priority, steps: input.fields.steps, expected_nodes: input.fields.expected_nodes}, plan: input.slots, command_catalog: input.fields.command_catalog, command_identities: input.fields.command_identities}));
   const own = s.inputs[k];
@@ -73,7 +64,6 @@ for (const kinds of MIXTURES) test(`a block plan with a cell selection and a fla
       assert.deepEqual(own.find((row: ReadExecution) => row.i === 'selected' && row.method !== 'table_cell')!.args, ['demo set {}']);
     }
   }
-  // the order of the cases is part of the identity row: the same rows read against another order are refused
   assert.equal(readWorkbook(s.model, [...s.inputs].reverse()).ok, false, 'another order of the same cases is refused');
 });
 
@@ -89,7 +79,6 @@ test('workbook_verified supports every case of a mixed workbook with the same da
   assert.deepEqual((dispatched[0].data!.parameters as {items: string[]}).items, [autoidOf(0), autoidOf(1)]);
 });
 
-// A flat case keeps its rule in a mixed workbook: E/F/G only, H and I empty. On a row of the block case the same cell would hold a register.
 for (const kinds of [['block', 'flat'], ['flat', 'block']] as Kind[][]) for (const [place, which] of [['step row', 0], ['assertion row', 1]] as const) for (const column of ['H', 'I']) {
   test(`${column} written on the ${place} of a flat case is refused although another case of the workbook is a block plan (${kinds.join(', ')})`, () => {
     const s = scenario(kinds), flat = kinds.indexOf('flat'), row = layout(s.inputs)[flat][which];
@@ -97,14 +86,12 @@ for (const kinds of [['block', 'flat'], ['flat', 'block']] as Kind[][]) for (con
     const read = readWorkbook(s.model, s.inputs);
     assert.equal(read.ok, false);
     if (!read.ok) assert.ok(read.problems.some((problem) => problem.rule === 'execution' && problem.pointer === `/sheets/0/rows/${row - 1}`), JSON.stringify(read.problems));
-    // the Hub's check refuses it too, with the reason of that row and not a verdict on the mixture
     const result = check(itemInput(s, flat, compactModel(s.model)));
     assert.ok(result.length > 0 && result.every((outcome) => outcome.verdict === 'refute' && outcome.code === 'case-compile.workbook_invalid'), JSON.stringify(result));
     assert.ok(result.some((outcome) => outcome.statement.includes('H/I 必须为空')), JSON.stringify(result));
   });
 }
 
-// A block case keeps its rules in a mixed workbook: every register a row reads was saved earlier in the same case.
 const CORRUPTIONS: Record<string, (model: WorkbookModel, rows: number[]) => WorkbookModel> = {
   'a cell selection that reads a register no earlier row saved': (model, rows) => put(model, rows[1], 'I', 'absent'),
   'a cell fill that names a register nobody saved': (model, rows) => put(model, rows[2], 'I', 'absent'),
@@ -125,7 +112,6 @@ for (const kinds of [['block', 'flat'], ['flat', 'block']] as Kind[][]) for (con
 
 test('registers stay inside their case across a flat case between two block cases', () => {
   const s = scenario(['block', 'flat', 'block']), rows = layout(s.inputs);
-  // the third case no longer saves what its cell selection reads; the first case did save it, but a register lives only in its own case
   put(s.model, rows[2][0], 'H', '');
   const read = readWorkbook(s.model, s.inputs);
   assert.equal(read.ok, false);

@@ -609,7 +609,6 @@ test('W06 R[7]: the refresh function is a function entry, and a fact-only workfl
   await refused(workflow(late), 'functions.missing_module', { file: 'workflow.json', field: '/refresh/module' });
   await refused(withFiles(workflow((w) => { late(w); w.refresh.export = 'nope'; }), refresh), 'functions.missing_export', { file: 'workflow.json', field: '/refresh' });
   await refused(withFiles(workflow((w) => { late(w); delete w.refresh; }), refresh), 'workflow.shape');
-  // Only facts: the result is computed at start_run, so nothing could be bound after it.
   const factOnly = editJson<Json>(editJson<Json>(editJson<Json>(withFiles(workflow(late), refresh), 'requirements.json', (f) => {
     f.requirements = f.requirements.filter((r: Json) => r.accepted_producer === 'fact');
   }), 'slots.schema.json', (f) => { f.item = {}; f.run = {}; }), 'checks.json', (f) => { f.checks = f.checks.filter((c: Json) => c.id !== 'codes'); });

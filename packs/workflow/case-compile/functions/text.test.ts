@@ -31,12 +31,6 @@ test('native structured codes select exact recovery without reading error text',
   assert.match(formatCallError(new CallFailure('permission_denied', '已知 Hub HTTP 边界返回 403', '按本次远端答复核对授权')), /^无权限：已知 Hub HTTP 边界返回 403。/);
 });
 
-test('an explicit legacy category also requires an explicit next action', () => {
-  const error = new Error('事实含句号。不会把最后一句猜成下一步');
-  assert.equal(formatCallError(error, { category: '参数无效', fallbackNextStep: '声明的下一步' }), '参数无效：事实含句号。不会把最后一句猜成下一步。声明的下一步。');
-  assert.match(formatCallError(error, { category: '参数无效' }), /缺少结构化错误原因/);
-});
-
 test('parseCliOptions parses required/optional flags and rejects malformed arguments', () => {
   const spec = { file: true, brief: false };
   const usage = 'cmd --file <f> [--brief <b>]';

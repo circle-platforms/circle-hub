@@ -117,14 +117,6 @@
       "type": "text"
     },
     {
-      "name": "ended",
-      "required": false,
-      "kind": "string",
-      "multiple": false,
-      "placeholder": "yes",
-      "type": "text"
-    },
-    {
       "name": "returns",
       "required": false,
       "kind": "string",

@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'case-compile',
-  version: '3.26.3',
+  version: '3.26.4',
   kind: 'workflow',
   dependencies: [{pack:'mindmap-format'},{pack:'workbook-format'}],
   embeds: [{pack:'mindmap-format',version:'1.0.26',module:'case-structure'},{pack:'run-tools',version:'1.0.2',module:'hub-client'},{pack:'runner-workbook',version:'1.0.1',module:'workbook-writer'},{pack:'command-tools',version:'1.1.1',module:'command-check'},{pack:'plumb',version:'1.0.2',module:'plumb-client'}],
@@ -72,7 +72,6 @@ export async function stage(target: string): Promise<string> {
   return target;
 }
 
-/** Compare an installed tree with this reviewed publisher manifest, without importing installed code. */
 export async function verifyInstall(target: string): Promise<{ files: number; sha256: string }> {
   const root = await lstat(target);
   if (!root.isDirectory() || root.isSymbolicLink()) throw new Error('安装目录必须是普通目录');

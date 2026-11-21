@@ -1,5 +1,3 @@
-// A workbook is the runner's template with rows filled in: everything the template holds stays, and the rows read like the
-// reference compiler's. Synthetic template; the real one is a deployment document.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
@@ -83,7 +81,6 @@ test('no template, a wrong digest and too many rows are refused with the next st
   refused((input) => { delete input.profile.workbook.template; }, /没有运行器模板/);
   refused((input) => { input.profile.workbook.template!.sha256 = 'f'.repeat(64); }, /摘要不符/);
   assert.throws(() => fillTemplate(readTemplate(book()), {}, Array.from({ length: TEMPLATE_LAST_ROW }, () => []), (value) => value), TemplateError);
-  // The identity row is the generator's (decision 184): what the template was saved with in B1 and C1 changes nothing.
   const input = generationFixture(); const other = generationFixture(); other.profile = structuredClone(other.profile);
   other.profile.workbook.template = templateDocument(other.profile.workbook, 'another-runtime', 'e'.repeat(64));
   const firstRow = (bytes: Uint8Array) => { const sheet = text(members(bytes)[SHEET]); return ['A', 'B', 'C'].map((column) => new RegExp(`<c r="${column}1"[^>]*><is><t[^>]*>([^<]*)</t>`).exec(sheet)?.[1]); };
@@ -101,16 +98,12 @@ test('the first row\'s cells are set where they stand: text replaced, style kept
     return rowOf(text(unzipSync(made)[SHEET]));
   };
   const cell = (reference: string, value: string, attributes = '') => `<c r="${reference}"${attributes} t="inlineStr"><is><t xml:space="preserve">${value}</t></is></c>`;
-  // An inline text cell keeps its own opening tag and whatever else it carries; only its text changes.
   assert.equal(filled('<row r="1" hidden="1"><c r="A1" t="inlineStr"><is><t>M</t></is></c><c r="B1" s="7" t="inlineStr"><is><t>old</t></is><extLst><ext uri="x"/></extLst></c></row>', { B: 'new & <b>' }),
     '<row r="1" hidden="1"><c r="A1" t="inlineStr"><is><t>M</t></is></c><c r="B1" s="7" t="inlineStr"><is><t xml:space="preserve">new &amp; &lt;b></t></is><extLst><ext uri="x"/></extLst></c></row>');
-  // An empty styled cell and a cell of another type become inline text and keep the style.
   assert.equal(filled('<row r="1"><c r="A1" t="inlineStr"><is><t>M</t></is></c><c r="B1" s="3"/><c r="C1" t="s" s="4"><v>9</v></c></row>', { B: 'b', C: 'c' }),
     `<row r="1"><c r="A1" t="inlineStr"><is><t>M</t></is></c>${cell('B1', 'b', ' s="3"')}${cell('C1', 'c', ' s="4"')}</row>`);
-  // A cell the row lacks goes between its neighbours by column, AA after Z; one beyond the last cell goes last.
   assert.equal(filled('<row r="1"><c r="A1" t="inlineStr"><is><t>M</t></is></c><c r="K1" t="inlineStr"><is><t>k</t></is></c><c r="AB1" t="inlineStr"><is><t>ab</t></is></c></row>', { C: 'c', B: 'b', Z: 'z', AA: 'aa', AC: 'ac' }),
     `<row r="1"><c r="A1" t="inlineStr"><is><t>M</t></is></c>${cell('B1', 'b')}${cell('C1', 'c')}<c r="K1" t="inlineStr"><is><t>k</t></is></c>${cell('Z1', 'z')}${cell('AA1', 'aa')}<c r="AB1" t="inlineStr"><is><t>ab</t></is></c>${cell('AC1', 'ac')}</row>`);
-  // Cells of other rows that share a column letter are not touched.
   const whole = text(unzipSync(fillTemplate(template, { B: 'only-first-row' }, [], (value) => value))[SHEET]);
   assert.equal(whole.split('only-first-row').length - 1, 1);
   assert.equal(whole.slice(whole.indexOf('<row r="2"')), template.sheet.slice(template.sheet.indexOf('<row r="2"')));

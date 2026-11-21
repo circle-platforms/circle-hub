@@ -1,7 +1,6 @@
 import { ExecutorNameBinding, ExecutorStableName, EXECUTOR_NAME_PREFIX, idOf } from '../../contracts/api.ts';
 import { canonicalBytes, isAdmin, parseStrictJson, sha256Hex, WHOLE_HUB, type AuthorizationRecord, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 
-/** Names are separate immutable identity declarations, never an edit of a frozen executor source. */
 export class ExecutorNames {
   readonly records: RecordsKit;
   constructor(records: RecordsKit) { this.records=records; }

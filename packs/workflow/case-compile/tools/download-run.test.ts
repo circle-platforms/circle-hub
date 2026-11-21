@@ -1,5 +1,3 @@
-// Decision 160 step 1: the whole run on local disk before anything is submitted, so the model reads it with file tools instead
-// of one Hub call per item. Synthetic Hub stub only.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -12,7 +10,6 @@ import { loadPriorDeviceHistory } from './authoring-brief.ts';
 import { readSourceManifest } from '../functions/source-materials.ts';
 import { main as recomposeMain } from '../recompose/tools/download-run.ts';
 
-// The tests of the fetch itself run it inside the download; the detached form a real download uses has its own test below.
 const main: typeof importedMain = (argv, token, brief, retry, history) => importedMain(argv, token, brief, { ...retry, sourceCacheDirectory: false }, { inline: true, ...history });
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
@@ -64,7 +61,6 @@ test('a run with nothing submitted yet lands on disk: the record, one file per i
   const h = await hub(); t.after(h.close); const out = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
   const { code, stdout } = await outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN));
   assert.equal(code, 0);
-  // A Hub without the history route (404) leaves the download whole and says the history is unavailable; `written` counts the run's own files.
   assert.deepEqual(JSON.parse(stdout), { run: RUN, out, items: 12, sources: 2, withheld: [sha(secret)], knowledge: null, written: 16, briefs: 0, history: { status: 'unavailable_from_hub', runs: 0, downloaded: 0, file: join(out, 'history.json'), reason: 'Hub 没有历次上机验证的查询接口（答复 404）：这台 Hub 的版本早于这个接口' } });
   const none = JSON.parse(await readFile(join(out, 'history.json'), 'utf8'));
   assert.deepEqual([none.schema, none.run, none.status, none.reason, none.answer, none.returns], ['device-history@1', RUN, 'unavailable', 'Hub 没有历次上机验证的查询接口（答复 404）：这台 Hub 的版本早于这个接口', null, []]);
@@ -116,8 +112,6 @@ test('a directory that already holds something is refused; recompose ships the s
   assert.equal((await readdir(join(fresh, 'items'))).length, 12);
 });
 
-// Model K05 and D06 R[2]: lock the root, fetch the subtree in one batch, verify the references at delivery. The run download
-// brings the locked root with it, as files to read and search locally, for the recomposition stage and the authoring stage alike.
 const ROOT = 'a'.repeat(64), ENTRY = 'e'.repeat(64);
 const knowledgeLines = (run = RUN) => [
   { schema: 'run-knowledge@1', run, root: ROOT, composition: null, nodes: 4, entries: 3 },
@@ -152,15 +146,12 @@ test('the knowledge root the run locked comes with the run as files to read and 
   assert.match(await readFile(join(out, 'knowledge', 'root.txt'), 'utf8'), /^# \/\n  子节点 2 个：widgets、手册 一\n/);
   const index = JSON.parse(await readFile(join(out, 'knowledge', 'index.json'), 'utf8'));
   assert.deepEqual([index.run, index.root, index.nodes, index.entries, index.sha256, index.files.map((f: { file: string }) => f.file)], [RUN, ROOT, 4, 3, sha(bytes), report.knowledge.files]);
-  // The recomposition stage ships the same download, so it gets the same files.
   const other = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
   const second = await outputOf(() => recomposeMain(['--hub', h.url, '--run', RUN, '--out', other], async () => TOKEN));
   assert.equal(second.code, 0, second.stderr);
   assert.deepEqual(await readFile(join(other, 'knowledge', 'widgets.txt')), await readFile(join(out, 'knowledge', 'widgets.txt')));
 });
 
-// The reference implementation builds each writer's brief before the writer starts; here the download does, for every item
-// that carries a recomposition record (tools/authoring-brief.ts has the brief's own tests).
 test('items that carry a recomposition record get their authoring brief with the download', async (t) => {
   const bytes = ndjson(knowledgeLines());
   const withRecord = (item: Record<string, unknown>, index: number) => index % 6 ? item : { ...item, fields: { title: `合成用例 ${index}`, recomposition: { record: { atoms: [], ledgers: { adapted: [{ atom: 'a1', commands: [], equivalence_refs: [`tree:${ROOT}/widgets/health@${ENTRY}`] }] } } } } };
@@ -175,13 +166,11 @@ test('items that carry a recomposition record get their authoring brief with the
   assert.match(brief, /^# 编写简报 06：合成用例 6\n/);
   assert.ok(brief.includes('## 这条用例的计划文件外壳') && brief.includes('"item": "case-6"'), 'and the envelope of that case’s plan file');
   assert.ok(brief.includes(`# /widgets/health\n· 引用 tree:${ROOT}/widgets/health@${ENTRY}\nwidget health interval <seconds:int 1..60>\n  Set the health interval\n  seconds: 合成参数说明\n`), 'the entry the record references, word for word with its reference');
-  // A brief that cannot be written does not undo a download that is already on disk.
   const third = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
   const failed = await outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', third], async () => TOKEN, async () => { throw new Error('合成故障'); }));
   assert.equal(failed.code, 0, failed.stderr);
   assert.deepEqual([JSON.parse(failed.stdout).briefs, JSON.parse(failed.stdout).briefs_note], [0, '脚本编写所需的原始用例和手册未保存。原因合成故障；其余原始资料已下载，请从原始资料继续脚本编写']);
   assert.equal((await readdir(join(third, 'items'))).length, 12);
-  // The recomposition stage's own download writes no briefs: its items are what a record is made from.
   const other = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
   assert.equal((await outputOf(() => recomposeMain(['--hub', h.url, '--run', RUN, '--out', other], async () => TOKEN))).code, 0);
   await assert.rejects(readdir(join(other, 'briefs')));
@@ -267,8 +256,6 @@ test('download-run and recompose download-run reject empty stdin without token w
   }
 });
 
-// A plan run whose recomposition result is bound after its start (workflow.json from_runs.after_start): the download also keeps the
-// Hub's late answer (GET /run-export/<run>/late, run-late@1) as late.json, and the cases already accepted get their brief with it.
 test('a run with a recomposition bound after its start keeps the late answer as late.json and briefs the cases already accepted', async (t) => {
   const bytes = ndjson(knowledgeLines());
   const record = { atoms: [], ledgers: { adapted: [{ atom: 'a1', commands: [], equivalence_refs: [`tree:${ROOT}/widgets/health@${ENTRY}`] }] } };
@@ -292,27 +279,22 @@ test('a run with a recomposition bound after its start keeps the late answer as 
   assert.match(report.late.note, /refresh-late\.ts/);
   assert.deepEqual(await readdir(join(out, 'briefs')), ['00.md'], 'only the case whose record is accepted has a brief; the waiting one gets it from refresh-late');
   assert.ok((await readFile(join(out, 'briefs', '00.md'), 'utf8')).includes(`"record_sha256": "${'f'.repeat(64)}"`), 'the envelope names the record by its digest');
-  // A late answer of another run is refused before anything is written.
   const forged = await hub({ late: { ...late, run: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz' } }); t.after(forged.close);
   const refused = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
   const answer = await outputOf(() => main(['--hub', forged.url, '--run', RUN, '--out', refused], async () => TOKEN));
   assert.equal(answer.code, 1);
   assert.match(answer.stderr, /不是运行 run_01aaaaaaaaaaaaaaaaaaaaaaaa 的 run-late@1 答复/);
   await assert.rejects(readdir(refused), 'nothing was written');
-  // A run that binds nothing after its start has no late route (404): nothing more is written than before.
   const plain = await hub({}); t.after(plain.close);
   const without = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
   assert.equal((await outputOf(() => main(['--hub', plain.url, '--run', RUN, '--out', without], async () => TOKEN))).code, 0);
   await assert.rejects(readFile(join(without, 'late.json')));
 });
 
-// ---------------------------------------------------------------- the earlier device verifications of the document (Hub decision 182)
-
 const V1 = `run_01${'b'.repeat(24)}`, V2 = `run_01${'c'.repeat(24)}`, V3 = `run_01${'d'.repeat(24)}`, P1 = `run_01${'e'.repeat(24)}`;
 const CASE = '990000000000000301';
 const caseLog = (run: string) => Buffer.from(`合成运行日志 ${run}\n`), caseSession = (run: string) => Buffer.from(`seat#widget health interval pool-a 60\nok ${run}\nseat#\n`);
 const jobOf = (run: string) => sha(Buffer.from(`job ${run}`));
-/** A Hub that lists `runs` as earlier verifications of RUN's document and serves the jobs and files of each; `jobs` overrides one run's job listing. */
 function historyRoutes(runs: string[], jobs: Record<string, (response: import('node:http').ServerResponse) => void> = {}, historyAnswer?: (response: import('node:http').ServerResponse) => void): Extra {
   const files = new Map(runs.flatMap((run) => [caseLog(run), caseSession(run)]).map((bytes) => [sha(bytes), bytes]));
   return (url, response) => {
@@ -334,7 +316,6 @@ function historyRoutes(runs: string[], jobs: Record<string, (response: import('n
     return false;
   };
 }
-/** Runs the download from `workdir`, as the lead does: every path it prints and stores is then relative to the working directory. */
 async function fromWorkdir<T>(workdir: string, work: () => Promise<T>): Promise<T> {
   const before = process.cwd();
   process.chdir(workdir);
@@ -362,12 +343,10 @@ test('the first download of a compile asks once for the earlier device verificat
   assert.deepEqual(h.paths.filter((path) => path.includes('/history')), [`/run-export/${RUN}/history?limit=6`]);
   const requests = asked();
 
-  // A second download in the same working directory, as the lead's own call: the history beside it is taken, nothing is asked.
   const second = await fromWorkdir(workdir, () => outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', 'plan-run-again'], async () => TOKEN)));
   assert.equal(second.code, 0, second.stderr);
   assert.deepEqual(JSON.parse(second.stdout).history, { status: 'reused', runs: 2, downloaded: 2, file: join('plan-run-again', 'history.json') });
   assert.deepEqual(JSON.parse(await readFile(join(workdir, 'plan-run-again', 'history.json'), 'utf8')), kept);
-  // The pipeline's call for a reworked round names the compile's history directory: the new run directory gets the same file.
   const reworked = await fromWorkdir(workdir, () => outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', join('rework', 'round-2', 'plan-run'), '--history-reuse', 'history'], async () => TOKEN)));
   assert.equal(reworked.code, 0, reworked.stderr);
   assert.deepEqual(JSON.parse(reworked.stdout).history, { status: 'reused', runs: 2, downloaded: 2, file: join('rework', 'round-2', 'plan-run', 'history.json') });
@@ -387,7 +366,6 @@ test('a reworked round whose compile fetched no history asks for none and says s
   assert.equal(JSON.parse(await readFile(join(workdir, 'rework', 'round-2', 'plan-run', 'history.json'), 'utf8')).status, 'unavailable');
   assert.deepEqual(h.paths.filter((path) => path.includes('/history') || path.endsWith('/jobs')), [], 'the Hub is not asked');
   await assert.rejects(readdir(join(workdir, 'history')));
-  // A compile whose first fetch failed keeps that answer for its reworked rounds, and a later plain download asks again.
   const failing = await hub({}); t.after(failing.close);
   const other = await mkdtemp(join(tmpdir(), 'cc-history-'));
   assert.equal(JSON.parse((await fromWorkdir(other, () => outputOf(() => main(['--hub', failing.url, '--run', RUN, '--out', 'plan-run'], async () => TOKEN)))).stdout).history.status, 'unavailable_from_hub');
@@ -399,8 +377,7 @@ test('a reworked round whose compile fetched no history asks for none and says s
 });
 
 test('a history that does not answer in time, an answer of another shape and returns that cannot be read never fail the download', async (t) => {
-  // The route does not answer within the time the history may take: the run is on disk, the history says why it is not.
-  const silent = await hub({ extra: historyRoutes([V1], {}, () => { /* never answers */ }) }); t.after(silent.close);
+  const silent = await hub({ extra: historyRoutes([V1], {}, () => { }) }); t.after(silent.close);
   const slow = await mkdtemp(join(tmpdir(), 'cc-history-'));
   const timedOut = await fromWorkdir(slow, () => outputOf(() => main(['--hub', silent.url, '--run', RUN, '--out', 'plan-run'], async () => TOKEN, undefined, undefined, { budgetMs: 300 })));
   assert.equal(timedOut.code, 0, timedOut.stderr);
@@ -410,12 +387,10 @@ test('a history that does not answer in time, an answer of another shape and ret
   assert.equal((await readdir(join(slow, 'plan-run', 'items'))).length, 12);
   assert.equal(JSON.parse(await readFile(join(slow, 'plan-run', 'history.json'), 'utf8')).status, 'unavailable');
 
-  // An answer that is not run-history@1 of this run is not taken.
   const odd = await hub({ extra: historyRoutes([V1], {}, (response) => { response.end(JSON.stringify({ schema: 'run-history@1', run: V3, runs: [] })); }) }); t.after(odd.close);
   const strange = JSON.parse((await fromWorkdir(await mkdtemp(join(tmpdir(), 'cc-history-')), () => outputOf(() => main(['--hub', odd.url, '--run', RUN, '--out', 'plan-run'], async () => TOKEN)))).stdout).history;
   assert.deepEqual([strange.status, strange.reason], ['unavailable_from_hub', 'Hub 对历次上机验证的答复不是 run-history@1，没有采用']);
 
-  // Three runs listed: the first is saved, the second cannot be read, the third has no job any more. What was fetched is kept.
   const partial = await hub({ extra: historyRoutes([V1, V2, V3], { [V2]: (response) => { response.statusCode = 500; response.end('合成故障\n'); }, [V3]: (response) => { response.end(JSON.stringify({ schema: 'run-jobs@1', run: V3, jobs: [] })); } }) }); t.after(partial.close);
   const some = await mkdtemp(join(tmpdir(), 'cc-history-'));
   const held = await fromWorkdir(some, () => outputOf(() => main(['--hub', partial.url, '--run', RUN, '--out', 'plan-run'], async () => TOKEN)));
@@ -427,8 +402,7 @@ test('a history that does not answer in time, an answer of another shape and ret
   assert.match(returns[2].reason!, /尚未开始上机验证/);
   assert.deepEqual((await readdir(join(some, 'history'))).sort(), [V1, 'history.json'].sort(), 'a run that could not be read leaves no folder');
 
-  // The time runs out while the returns are read, one run at a time: the first is not finished, the next is not started.
-  const stalled = await hub({ extra: historyRoutes([V1, V2], { [V1]: () => { /* the job listing never answers */ } }) }); t.after(stalled.close);
+  const stalled = await hub({ extra: historyRoutes([V1, V2], { [V1]: () => { } }) }); t.after(stalled.close);
   const spent = await mkdtemp(join(tmpdir(), 'cc-history-'));
   const cut = await fromWorkdir(spent, () => outputOf(() => main(['--hub', stalled.url, '--run', RUN, '--out', 'plan-run'], async () => TOKEN, undefined, undefined, { budgetMs: 1000, parallel: 1 })));
   assert.equal(cut.code, 0, cut.stderr);
@@ -452,10 +426,8 @@ test('a real download does not wait for the history: it starts the fetch, says s
   assert.deepEqual([pending.status, pending.reason, pending.pending], ['unavailable', '下载这个运行时已在后台向 Hub 取历次上机验证，生成这份任务时还没有取完。', { shared: 'history' }]);
   const before = await fromWorkdir(workdir, () => loadPriorDeviceHistory('plan-run', CASE, workdir));
   assert.deepEqual([before.status, before.unavailable_reason], ['unavailable_from_hub', '下载这个运行时已在后台向 Hub 取历次上机验证，生成这份任务时还没有取完。']);
-  // A second download while the fetch is under way starts no second one; its run directory points at the same place.
   const second = await fromWorkdir(workdir, () => outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', 'plan-run-again'], async () => TOKEN, undefined, undefined, { inline: false, start })));
   assert.deepEqual([JSON.parse(second.stdout).history.status, started.length], ['fetching', 1]);
-  // The started fetch: only the history, into the run directory that is already there.
   const fetch = await fromWorkdir(workdir, () => outputOf(() => main(started[0]!.argv, async () => started[0]!.token)));
   assert.equal(fetch.code, 0, fetch.stderr);
   assert.deepEqual(JSON.parse(fetch.stdout), { run: RUN, history: { status: 'fetched', runs: 2, downloaded: 2, file: join('plan-run', 'history.json') } });
@@ -465,7 +437,6 @@ test('a real download does not wait for the history: it starts the fetch, says s
     const after = await fromWorkdir(workdir, () => loadPriorDeviceHistory(directory, CASE, workdir));
     assert.deepEqual([after.status, after.entries.map((entry) => entry.verification_run)], ['available', [V1, V2]], `${directory}: the task reads what the fetch kept`);
   }
-  // A later download beside it takes the kept history at once; a fetch that died leaves a mark that is not believed for ever.
   const third = await fromWorkdir(workdir, () => outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', 'plan-run-third'], async () => TOKEN, undefined, undefined, { inline: false, start })));
   assert.deepEqual([JSON.parse(third.stdout).history.status, started.length], ['reused', 1]);
   const dead = await mkdtemp(join(tmpdir(), 'cc-history-'));
@@ -473,7 +444,6 @@ test('a real download does not wait for the history: it starts the fetch, says s
   await writeFile(join(dead, 'history', 'fetching.json'), JSON.stringify({ run: RUN, started_ms: Date.now() - 10 * 60_000 }));
   const again = await fromWorkdir(dead, () => outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', 'plan-run'], async () => TOKEN, undefined, undefined, { inline: false, start })));
   assert.deepEqual([JSON.parse(again.stdout).history.status, started.length], ['fetching', 2], 'a mark older than the fetch may take is replaced and the fetch started again');
-  // A fetch that cannot be started is said, and the download still succeeds.
   const broken = await mkdtemp(join(tmpdir(), 'cc-history-'));
   const failed = await fromWorkdir(broken, () => outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', 'plan-run'], async () => TOKEN, undefined, undefined, { inline: false, start: () => { throw new Error('synthetic: no process'); } })));
   assert.equal(failed.code, 0, failed.stderr);

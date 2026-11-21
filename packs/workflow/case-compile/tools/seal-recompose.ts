@@ -45,7 +45,6 @@ if (import.meta.main) {
             try { return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)); }
             catch { throw new CallFailure('invalid_parameters', `${argument} 不是完整的 UTF-8 JSON`, '重新导出本次运行对应的完整原始 JSON 文件后重试', { path }); }
         };
-        // --run is the run directory (download-run.ts's output), the folder that holds run.json; the parts are a file.
         const run = readJson(resolveRun(opts.run!).file.lexical, '--run'), parts = readJson(opts.parts!, '--parts');
         if (!Array.isArray(parts))
             throw new CallFailure("invalid_parameters", '请使用原始的用例重组结果', "把 --parts 指向保存原始重组提交的 JSON 数组，而非单条计划或运行导出");

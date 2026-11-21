@@ -211,11 +211,6 @@ export const Partitions = z.strictObject(partitionArrays).superRefine((parts, ct
 });
 export type Partitions = z.infer<typeof Partitions>;
 
-/**
- * One input bound after the start (W06 R[7]) as one evaluation or run export resolved it: the slot, the run frozen at start_run
- * and either the reference to that run's latest accepted submitted validation record read then, or the fact that none was
- * readable. At projection a run context carries the slot and the run only.
- */
 export const LateInputRow = z.strictObject({
   slot: z.string().regex(/^[a-z][a-z0-9_]*$/, 'lowercase letters, digits and underscores'),
   run: RunId,
@@ -224,7 +219,6 @@ export const LateInputRow = z.strictObject({
 }).refine((row) => row.reference === undefined || row.missing === undefined, 'a late input carries a reference or a missing fact, not both');
 export type LateInputRow = z.infer<typeof LateInputRow>;
 
-/** W08: what the inputs bound after the start resolved to in this validation, and the digest of the refresh overlay computed from them. */
 export const LateLocks = z.strictObject({
   inputs: z.array(LateInputRow).min(1),
   refresh: Sha256.nullable().describe('SHA-256 of the RFC 8785 canonical JSON of the refresh output; null when the refresh function gave no usable output'),

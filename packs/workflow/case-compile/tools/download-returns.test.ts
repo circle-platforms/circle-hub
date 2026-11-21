@@ -1,4 +1,3 @@
-// The device's own words on local disk for the delivery notes (decision 164), against a synthetic Hub stub only.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
@@ -26,7 +25,6 @@ async function hub(answer: unknown, served: Uint8Array[], forbidden: Uint8Array[
     if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end(); return; }
     const url = request.url ?? '';
     if (url === `/run-export/${RUN}/jobs`) {
-      // A function answers each read in turn (a job that ends while it is waited for); null stands for the Hub being unavailable once.
       const now = typeof answer === 'function' ? (answer as () => unknown)() : answer;
       if (now === null) { response.statusCode = 503; response.end('稍后\n'); return; }
       response.end(JSON.stringify(now)); return;
@@ -41,7 +39,6 @@ async function hub(answer: unknown, served: Uint8Array[], forbidden: Uint8Array[
   const { port } = server.address() as { port: number };
   return { url: `http://127.0.0.1:${port}/mcp`, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
 }
-/** A clock the test moves: every pause advances it by the time asked for and is recorded. */
 function clock(): Timing & { pauses: number[] } { let at = 0; const pauses: number[] = []; return { pauses, now: () => at, pause: async (ms) => { pauses.push(ms); at += ms; } }; }
 async function run(url: string, out: string, extra: string[] = [], timing?: Timing, retry?: Parameters<typeof main>[3]) {
   const err: string[] = [], outText: string[] = [];
@@ -84,8 +81,6 @@ test('a command the device answered with a lone caret is listed for its row with
 });
 
 test('a pass whose run log carries a declared execution-failure line its assertions do not read is listed as no verdict when the returns are read', async (t) => {
-  // InfoTest tools/device/batch_tools.py downgrades such a pass when it reads the verdict (broken, subtype errored) and the case
-  // goes back to its author; here the model sees it with the returns instead of at the delivery.
   const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
   doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
   const contract = text(JSON.stringify(signTypedRuntime(doc))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
@@ -112,7 +107,6 @@ test('a pass whose run log carries a declared execution-failure line its asserti
   assert.deepEqual([summary.verdicts, summary.pass_review], [{ pass: 3, no_verdict: 1 }, reviewed]);
   assert.deepEqual(await readFile(join(out, 'c'.repeat(12), 'cases', items[1], 'log.txt')), unread, 'the log itself is written word for word');
 
-  // A plan run that cannot be read leaves the passes as the runner reported them and says they were not reviewed.
   const blind = await hub(answer, [deviceReturn, clean, unread, read]); t.after(blind.close);
   const other = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
   const kept = await run(blind.url, other);
@@ -124,9 +118,6 @@ test('a pass whose run log carries a declared execution-failure line its asserti
 });
 
 test('a command the device refused to execute is listed for its row with the session, the prompt and the device’s reply up to the declared line', async (t) => {
-  // The reference hands the next writer the lines of the last run that carry a device CLI error, with the directive that the
-  // fault is in the case's own command sequence (compile_engine/briefs.py execution_failures); the lines are the ones the
-  // plan run's contract declares, the same the pass review reads.
   const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
   doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
   const contract = text(JSON.stringify(signTypedRuntime(doc))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
@@ -142,7 +133,6 @@ test('a command the device refused to execute is listed for its row with the ses
   assert.equal('execution_refused' in index.jobs[0].rows[1], false, 'a row without sessions lists nothing');
   assert.equal(JSON.parse(done.stdout).execution_refused, 1);
 
-  // Without the plan run's contract the declared lines are unknown: nothing is listed, and the returns say so.
   const blind = await hub(jobs(refused), [deviceReturn, log, refused, held]); t.after(blind.close);
   const other = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
   const kept = await run(blind.url, other);
@@ -152,8 +142,6 @@ test('a command the device refused to execute is listed for its row with the ses
   assert.deepEqual(unlisted.jobs[0].rows[0].syntax_rejected, []);
   assert.match(unlisted.pass_review.unread[0], /也未列出被设备拒绝执行的命令$/);
 
-  // Only a literal failure line explicitly published by this contract makes these replies execution refusals.
-  // Generic Error/Failed words and warning lines do not supply an undeclared failure rule.
   const batch2Session = text([
     'seat(config)#widget peer r1 192.0.2.71',
     'Warning: For security consideration, please set a challenge code.',
@@ -235,8 +223,6 @@ test('bytes that do not match their digest, a run never dispatched and a directo
   assert.match((await run(fine.url, used)).stderr, /已有文件/, 'a second download into the same directory is refused');
 });
 
-// The wait is the program's (the reference engine's run tool returns when the bed has finished): started in the background, the
-// tool exits when the job has ended and the client tells the model, which neither sleeps nor repeats the submission.
 const running = () => { const answer = jobs(); return { ...answer, jobs: answer.jobs.map((job) => ({ ...job, ended: null, rows: null, device_return: null })) }; };
 const undispatched = { schema: 'run-jobs@1', run: RUN, jobs: [] };
 
@@ -269,7 +255,6 @@ test('--wait gives up at its limit, and sooner when the run shows no job at all,
   await assert.rejects(readFile(join(dir, 'a', 'index.json')));
   for (const value of ['0', 'abc', '86401', '-5']) assert.match((await run(never.url, join(dir, 'c'), ['--wait', value], clock())).stderr, /--wait 不在允许范围内。填写 1 到 86400 的整数秒数后重试/, value);
   assert.match((await run(never.url, join(dir, 'c'), ['--poll', '1'], clock())).stderr, /参数无效：未知选项 --poll。只允许 --hub/);
-  // Without --wait a run that was never dispatched is refused at once, as before.
   assert.match((await run(none.url, join(dir, 'd'))).stderr, /尚未开始上机验证/);
 });
 
@@ -290,7 +275,6 @@ test('download-returns retries 503 Retry-After and ECONNREFUSED on reads, honors
   assert.deepEqual(t1.pauses, [5_000, 2_000]);
   assert.deepEqual(await readFile(join(out1, 'c'.repeat(12), 'device-return.txt')), deviceReturn);
 
-  // Inside --wait, 503 Retry-After: 5 uses 5_000ms instead of POLL_MS, and if Hub remains unreachable/503 when --wait runs out, error reports waited duration & attempts.
   let pollStep = 0;
   const t2 = clock();
   const out2 = join(await mkdtemp(join(tmpdir(), 'cc-returns-wait-retry-')), 'ok');
@@ -327,13 +311,10 @@ test('run31 not-dispatched downloads expose the outcome, reason and next action 
   assert.deepEqual(index.jobs[0].missing_facts, [{ fact: '合成环境配置未恢复', next_action: '由测试环境管理员恢复后重开' }]);
   const summary = JSON.parse(result.stdout);
   assert.deepEqual(summary.outcomes, { not_dispatched: 1 });
-  assert.match(summary.message, /未发到设备.*不算/);
+  assert.match(summary.message, /^有 1 个上机验证作业没有发到设备，不算一轮上机，也不返工：按 missing_facts 的原因和下一步处理/);
   assert.equal(summary.missing_facts[0].next_action, '由测试环境管理员恢复后重开');
 });
 
-// The answer says what comes next (3.26.2). Rounds 53 and 54 of the acceptance runs ended with every case passed and the
-// lead's own report, without the delivery directory: nothing was left to rework, so the lead never ran the pipeline command
-// whose answer names the closing step, and this tool, whose answer it did read, said nothing about it.
 test('the answer names the next step: the delivery directory when every case passed, the rework when some did not, nothing while a job runs', async (t) => {
   const passed = jobs();
   passed.jobs[0].rows = [{ item: '990000000000000301', dynamic_terminal: 'pass' }, { item: '990000000000000302', dynamic_terminal: 'pass' }] as typeof passed.jobs[0]['rows'];
@@ -354,19 +335,15 @@ test('the answer names the next step: the delivery directory when every case pas
   if (early.code === 0) assert.equal('message' in JSON.parse(early.stdout), false, 'a job still running is no round to conclude');
 });
 
-// A workbook holds several cases and the runner runs them in one test: an exception in a step ends the whole run and the
-// cases after it never begin (InfoTest lib/test_xlsx.py, no per-case guard), so the gateway has no result row and no log for
-// them and the Hub answers every case of the job with the same no verdict ("the report is not complete"). The returns say
-// which cases did not run and why, instead of handing the model a device verdict it cannot act on.
 const stoppedLog = text([
   '2026-11-17 07:08:56 #######   step2: 合成分组>合成用例 301',
   '2026-11-17 07:08:56 192.0.2.10 - sends command in config: widget on',
   '2026-11-17 07:08:58 #######   step9: 按声明的行列结构取一格',
   '2026-11-17 07:09:03 ################# The failed check point num:   0   ####',
   '2026-11-17 07:09:03 ################# The passed check point num:   0   ####',
-  '2026-11-17 07:09:03 >       return invoke(request, logger, check_point)',
-  '2026-11-17 07:09:03 lib/test_xlsx.py:1101: in test_xlsx',
-  '2026-11-17 07:09:03 E       lib.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行',
+  '2026-11-17 07:09:03 >       return invoke(request, logger, checker)',
+  '2026-11-17 07:09:03 runner/workbook_runner.py:101: in run_workbook',
+  '2026-11-17 07:09:03 E       runner.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行',
   '2026-11-17 07:09:03 ######################      FAIL      ####################',
 ].join('\n') + '\n');
 const NOT_COMPLETE = { condition: 'result.complete', pointer: '/complete', declared_pointer: '/complete', resolved: false, present: true, actual_sha256: 'e'.repeat(64), result_definition_sha256: 'f'.repeat(64), missing_fact: '结果完整字段 /complete 尚不为 true，缺完整报告', next_action: '按该指针对照已保存原件：原件未齐时稍后 job resume；不重交' };
@@ -401,8 +378,6 @@ test('the cases after the one whose exception ended the run are listed as not ex
   }
   const summary = JSON.parse(done.stdout);
   assert.deepEqual([summary.verdicts, summary.not_executed], [{ no_verdict: 1, not_run: 2 }, 2]);
-  // The dispatch says once that the run was aborted, where, and what to do: the Hub's own report_check of every row is that the
-  // report is not complete, which is no advice for a report that will never be.
   assert.deepEqual((await read(out)).jobs[0].aborted, {
     by: { item: ITEMS3[0], step: 9 },
     reason: '同一份自动化用例 Excel 中的原始用例 990000000000000301 合成用例 301 在第 9 步出现异常，运行器中止了整本：其后 2 条没有在设备上执行，整份报告因此不完整',

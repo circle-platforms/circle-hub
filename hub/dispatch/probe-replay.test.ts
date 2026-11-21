@@ -1,4 +1,3 @@
-// What a job takes from the booking it runs under: the version answers the booking kept, only while it is the same booking.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { newId } from '../records/api.ts';
@@ -23,7 +22,6 @@ const reads = (c: C, command: 'inspect version' | 'inspect interfaces') => c.end
 const inventoryOf = (c: C): string => c.executor.definition.manifest_sha256!;
 const seatsOf = (c: C) => [0, 1].map((n) => ({ inventory: inventoryOf(c), device: `/devices/${n}`, label: `bed/synthetic-${n}` }));
 
-/** One dispatch of the run, with the reads it made of the devices and what its probes journaled. */
 async function dispatched(c: C) {
   c.endpoint.calls.length = 0; c.calls.length = 0;
   c.clock.ms += 60_000;

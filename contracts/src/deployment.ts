@@ -1,9 +1,8 @@
-// Deployment input reuses the domain schemas; registration is owned by contracts.
 import { z } from 'zod';
 import { PermissionRoleSchema } from '../generated/vocabulary.ts';
 import { PackId, UserId, TeamId, IsoTime, Sha256, idOf } from './common.ts';
 import { ExecutorSource, ResourceId, ResourceRecord, ExactPackRef } from './resources.ts';
-import { SecretReference, VariableName, VariableRecord } from './variables.ts';
+import { SecretReference, VariableRecord } from './variables.ts';
 
 import { ProductId, BuildInfo } from './product.ts';
 import { LeaseRegistrationDetail } from './records.ts';
@@ -92,7 +91,6 @@ export const DeploymentDefinition = z.strictObject({
 });
 export type DeploymentDefinition = z.infer<typeof DeploymentDefinition>;
 
-/** Private maintenance envelope. Its payload is validated by the records owner, never by the public deployment parser. */
 export const ProtectedConfigurationEnvelope = z.strictObject({
   schema: z.literal('protected-deployment@1'),
   createdAt: IsoTime,

@@ -1,18 +1,3 @@
-// A made-up locked tree with a manual, written the way a run download leaves it: knowledge/nodes.jsonl in the shape of the Hub's
-// run export, knowledge/commands.txt and knowledge/manual.txt rendered by the download's own renderer (functions/knowledge-text.ts),
-// run.json beside them. The product is invented (orbit); no real command or manual text is used. Test support only, never pack code.
-//
-// What it holds, and which test needs it:
-//   orbit beacon add / remove      a definition with an enum, a range and a default; a manual signature line, a window of manual
-//                                  entries across two nodes, a parameter row far from the window, examples in another chapter
-//   no orbit beacon add            the prefix rule's inverse of `orbit beacon add`
-//   orbit link, on, off            a command that is also the parent of two commands (examples must not mix them up), a declared pair
-//   orbit probe run / wait         a signature line the producer did not parse (written in bold in a text entry), a declared confirmation, a parameter the tree could not read
-//   orbit sync peer                a command without a manual signature
-//   orbit sync peer / local        a branch that defines nothing itself
-//   orbit report add               a manual window longer than the bound (50 entries), a second chapter's lines inside its line range
-//   orbit bulk w00 … w64           65 heads below one prefix, more than the bound of a heads listing
-//   orbit beacon purge             a manual signature line the tree has no command for (signature_drift)
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -40,15 +25,10 @@ export const LOOKUP_POLICY = {
 export interface LookupFixture {
   run: string;
   root: string;
-  /** The lines of knowledge/nodes.jsonl: the head, then the nodes in path order. */
   rows: Row[];
-  /** Every file of the download's knowledge/ folder, by name (nodes.jsonl, commands.txt, manual.txt, root.txt, index.json). */
   files: Map<string, Buffer>;
-  /** What every entry says, by its reference: the text a tool must show unchanged. */
   statements: Map<string, string>;
-  /** The reference of the entry at `path` whose statement starts with `start`. */
   reference(path: string, start: string): string;
-  /** The run.json of the download. */
   runJson(policy?: unknown): Row;
 }
 
@@ -75,7 +55,6 @@ export function lookupFixture(): LookupFixture {
   };
   const lines = (from: number, to?: number): string => (to === undefined || to === from ? `${from}` : `${from}-${to}`);
 
-  /** A command of the tree: its definition (what the XML says) and, when the manual spells it, the manual's signature line. */
   const command = (words: string[], syntax: string, details: string[], params: Row[], manual?: { statement: string; line: number }, otherForm?: Row[]): void => {
     const node = at(['commands', ...words]);
     const statement = [syntax, ...details].join('\n');
@@ -92,7 +71,6 @@ export function lookupFixture(): LookupFixture {
   at(['commands']);
   at(['manual']);
 
-  // orbit beacon add: an enum, a range, a default, one signature form
   command(['orbit', 'beacon', 'add'], 'orbit beacon add <arg1:string 1..40> <arg2:{fast|slow}> [<arg3:int 1..64="8">]', [
     '  Add a beacon', '  级别：CLI_LEVEL_CONFIG', '  arg1: Beacon name', '  arg2: Beacon mode', '  arg3: Retry count',
   ], [
@@ -103,12 +81,10 @@ export function lookupFixture(): LookupFixture {
   command(['orbit', 'beacon', 'remove'], 'orbit beacon remove <arg1:string 1..40>', ['  Remove a beacon', '  级别：CLI_LEVEL_CONFIG', '  arg1: Beacon name'], [{ name: 'arg1', type: 'string', minLength: 1, maxLength: 40, description: 'Beacon name' }], { statement: 'orbit beacon remove <name>', line: 140 });
   command(['no', 'orbit', 'beacon', 'add'], 'no orbit beacon add <arg1:string 1..40>', ['  Delete a beacon', '  级别：CLI_LEVEL_CONFIG', '  arg1: Beacon name'], [{ name: 'arg1', type: 'string', minLength: 1, maxLength: 40, description: 'Beacon name' }]);
   command(['show', 'orbit', 'beacon'], 'show orbit beacon [<arg1:string>]', ['  Show beacons', '  级别：CLI_LEVEL_USER'], [{ name: 'arg1', type: 'string', optional: true, default: '' }]);
-  // orbit link: a command and the parent of two commands, a declared pair of values
   command(['orbit', 'link'], 'orbit link <arg1:string/ipv4>', ['  Select a link', '  级别：CLI_LEVEL_CONFIG', '  arg1: Link name'], [{ name: 'arg1', type: 'string' }], undefined, [{ name: 'arg1', type: 'ipv4' }]);
   command(['orbit', 'link', 'on'], 'orbit link on', ['  Enable links', '  级别：CLI_LEVEL_CONFIG'], [], { statement: 'orbit link on', line: 200 });
   command(['orbit', 'link', 'off'], 'orbit link off', ['  Disable links', '  级别：CLI_LEVEL_CONFIG'], [], { statement: 'orbit link off', line: 210 });
   command(['orbit', 'probe', 'run'], 'orbit probe run <arg1:string>', ['  Run a probe', '  级别：CLI_LEVEL_CONFIG', '  arg1: Probe name'], [{ name: 'arg1', type: 'string' }]);
-  // orbit sync: a branch that defines nothing itself
   command(['orbit', 'sync', 'peer'], 'orbit sync peer <arg1:string>', ['  Sync to a peer', '  级别：CLI_LEVEL_CONFIG', '  arg1: Peer name'], [{ name: 'arg1', type: 'string' }]);
   command(['orbit', 'sync', 'local'], 'orbit sync local', ['  Sync locally', '  级别：CLI_LEVEL_CONFIG'], []);
   command(['orbit', 'report', 'add'], 'orbit report add <arg1:string>', ['  Add a report', '  级别：CLI_LEVEL_CONFIG', '  arg1: Report name'], [{ name: 'arg1', type: 'string' }], { statement: 'orbit report add <name>', line: 300 });
@@ -117,11 +93,9 @@ export function lookupFixture(): LookupFixture {
     const word = `w${String(i).padStart(2, '0')}`;
     command(['orbit', 'bulk', word], `orbit bulk ${word} <arg1:string>`, [`  Bulk command ${word}`, '  级别：CLI_LEVEL_CONFIG'], [{ name: 'arg1', type: 'string' }]);
   }
-  // a type the tree could not read: the tool says so
   const unchecked = at(['commands', 'orbit', 'probe', 'wait']);
   entry(unchecked, 'definition', 'orbit probe wait <arg1:string>\n  Wait for a probe\n  级别：CLI_LEVEL_CONFIG\n  arg1: Seconds', { words: ['orbit', 'probe', 'wait'], signatures: [{ id: '1', params: [{ name: 'arg1', type: 'string', unchecked_constraints: [{ path: './arguments/arg[1]/@limit', source_value: '[1-x]' }] }], reference: `src:${SOURCE_XML}/xml@1/x/orbit/probe/wait/arguments` }], summary: 'Wait for a probe' }, [`src:${SOURCE_XML}/xml@1/x/orbit/probe/wait`]);
 
-  // the reference manual: one chapter file, windows between command signature lines
   const beacons = ['cli-orbit', '信标管理'];
   text(beacons, SOURCE_CLI, '前一条命令的尾部说明。', 119);
   text(beacons, SOURCE_CLI, '该命令用于创建一个信标。', 121);
@@ -136,7 +110,6 @@ export function lookupFixture(): LookupFixture {
   text(beacons, SOURCE_CLI, 'Demo(config)#orbit link on', 204);
   text(beacons, SOURCE_CLI, '该命令用于关闭链路。', 211);
   row(beacons, '| retries | 重试次数，1 到 64。 |', 50, undefined, { commands: ['orbit beacon add'], name: 'retries' });
-  // two signature lines the producer did not parse into signature entries: the manual's own entry opens with the command in bold
   const probes = ['cli-orbit', '探针管理'];
   text(probes, SOURCE_CLI, '**orbit probe run** *<name>*', 600, undefined, { command_literals: ['orbit probe run'], command_mentions: ['orbit probe run'] });
   text(probes, SOURCE_CLI, '该命令用于运行一个探针。', 601);
@@ -144,11 +117,9 @@ export function lookupFixture(): LookupFixture {
   text(probes, SOURCE_CLI, '**orbit probe wait** *<seconds>*', 610, undefined, { command_literals: ['orbit probe wait'], command_mentions: ['orbit probe wait'] });
   text(probes, SOURCE_CLI, '该命令用于等待一个探针。', 611);
   const reports = ['cli-orbit', '报告管理'];
-  // every seventh entry is two lines long: a line of the text file is not an element of the rendered block
   for (let i = 1; i <= REPORT_ENTRIES; i++) text(reports, SOURCE_CLI, i % 7 === 0 ? `第 ${i} 条说明。\n（续）` : `第 ${i} 条说明。`, 300 + i);
   text(reports, SOURCE_CLI, '该命令用于删除一份报告。', 401);
 
-  // the guide: another chapter file, examples that name the commands
   const guide = ['app-orbit', '配置', '信标示例'];
   text(guide, SOURCE_APP, '下面配置一个信标：', 10);
   text(guide, SOURCE_APP, 'Demo(config)#orbit beacon add "app1" slow', 12);
@@ -165,7 +136,6 @@ export function lookupFixture(): LookupFixture {
     level: node.children.size === 0 ? 'leaf' : node.path === '/' ? 'trunk' : 'branch',
     digest: sha(`node ${node.path}`),
     children: [...node.children].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([name, path]) => ({ name, path, digest: sha(`node ${path}`) })),
-    // The Hub lists a node's entries by kind, statement and digest: not in the manual's order.
     entries: [...node.entries].sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.statement < b.statement ? -1 : a.statement > b.statement ? 1 : a.entry < b.entry ? -1 : 1)),
   }));
   const head = { schema: 'run-knowledge@1', run: LOOKUP_RUN, root: LOOKUP_ROOT, composition: null, nodes: rows.length, entries: rows.reduce((sum, node) => sum + node.entries.length, 0) };
@@ -189,7 +159,6 @@ export function lookupFixture(): LookupFixture {
   };
 }
 
-/** Writes run.json with knowledge/ beside it the way the download tool leaves a run; returns the path of run.json. */
 export async function writeLookupDownload(directory: string, fixture: LookupFixture, options: { policy?: unknown; withText?: boolean } = {}): Promise<string> {
   await mkdir(join(directory, 'knowledge'), { recursive: true });
   for (const [name, bytes] of fixture.files) {

@@ -1,11 +1,9 @@
-// Replacing long literals that repeat verbatim by one name each: what is replaced, what is left alone, and that nothing is lost.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { shortenRepeatedLiterals } from './fidelity-render.ts';
 
 const NAME = ['a'.repeat(63), 'b'.repeat(63), 'c'.repeat(63), 'd'.repeat(61)].join('.');
 const OTHER = 'x'.repeat(120);
-/** Undoes the replacement from the table, as a reader of the state would. */
 function restore(segments: readonly string[], legend: string): string[] {
   const table = [...legend.matchAll(/^(«L\d+») = (\S+)（/gmu)].map((m) => [m[1]!, m[2]!] as const);
   return segments.map((segment) => table.reduce((text, [name, literal]) => text.replaceAll(name, literal), segment));
@@ -15,7 +13,7 @@ test('one name replaces a long literal that repeats verbatim, quoted or not, in 
   const segments = [
     `1. 配置域名 ${NAME} 并查询`,
     `[当前作者步骤 a1]\n查询 ${NAME}`,
-    `block[1] (CONFIG, host=dut1)\n  zone host name "${NAME}" 60\nblock[2] (OBSERVE_ASSERT, host=srv)\n  dig @192.0.2.1 ${NAME} A\n  assert: RRSIG`,
+    `block[1] (CONFIG, host=dut1)\n  demo host name "${NAME}" 60\nblock[2] (OBSERVE_ASSERT, host=srv)\n  probe @192.0.2.1 ${NAME} A\n  assert: SIGNED`,
   ];
   const out = shortenRepeatedLiterals(segments);
   assert.equal(out.substitutions.length, 1);
@@ -26,7 +24,7 @@ test('one name replaces a long literal that repeats verbatim, quoted or not, in 
   assert.deepEqual(out.segments, [
     '1. 配置域名 «L1» 并查询',
     '[当前作者步骤 a1]\n查询 «L1»',
-    'block[1] (CONFIG, host=dut1)\n  zone host name "«L1»" 60\nblock[2] (OBSERVE_ASSERT, host=srv)\n  dig @192.0.2.1 «L1» A\n  assert: RRSIG',
+    'block[1] (CONFIG, host=dut1)\n  demo host name "«L1»" 60\nblock[2] (OBSERVE_ASSERT, host=srv)\n  probe @192.0.2.1 «L1» A\n  assert: SIGNED',
   ]);
   assert.equal(out.legend, `[长字面量对照]\n下面每个名字，在上文和命令块里都代表一个逐字相同的长字面量，原文只在这里写一次：\n«L1» = ${NAME}（共 253 个字符；各段 63、63、63、61）`);
   assert.deepEqual(restore(out.segments, out.legend), segments, 'putting the literals back gives the original text, byte for byte');

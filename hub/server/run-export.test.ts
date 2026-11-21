@@ -101,7 +101,6 @@ test("the runs started from a run come back reduced to their lineage, at the rea
 });
 
 test('the earlier verifications of the run\'s subject come back as the service lists them, bounded by the one query the route takes', async (t) => {
-  // Decision 182 (W06 R[8]).
   const history = (limit: number) => ({ schema: 'run-history@1', run: RUN, subjects: ['toy:mindmap:docq7'], limit, complete: true, runs: [{ run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', started_at: '2026-11-19T02:00:00.000Z', build: 'synthetic-build', jobs: [{ job: 'c'.repeat(64), plan_run: 'run_01cccccccccccccccccccccccc', ended_at: '2026-11-19T03:00:00.000Z', outcome: 'effective', rows: [{ item: 'case-1', dynamic_terminal: 'pass' }] }] }] });
   const d = deps(false) as unknown as { runs: Record<string, unknown> };
   const asked: Array<{ run: string; options: unknown }> = [];
@@ -129,7 +128,6 @@ test('the earlier verifications of the run\'s subject come back as the service l
   assert.equal((await fetch(`${s.origin}/run-export/${RUN}/jobs?limit=3`, { headers: { authorization: 'Bearer runner-token' } })).status, 404, 'no other route takes a query');
   const head = await get('', 'runner-token', 'HEAD');
   assert.deepEqual([head.status, (await head.arrayBuffer()).byteLength], [200, 0]);
-  // A Hub whose run engine does not list a history answers as it does for an unknown address under a run.
   const old = await serve(deps(false)); t.after(old.close);
   assert.equal((await fetch(`${old.origin}/run-export/${RUN}/history`, { headers: { authorization: 'Bearer runner-token' } })).status, 404);
 });
@@ -157,7 +155,6 @@ test("a run's job outputs are found with one listing of its jobs, not one per fi
 });
 
 test('the run\'s locked knowledge root comes as one batch, kept by the process and still asked for each reader\'s permission', async (t) => {
-  // K05: a batch fetch of the subtree the run locked; D06 R[2]: lock the root, fetch the subtree, verify at delivery.
   const ROOT = 'a'.repeat(64), COMPOSITION = 'c'.repeat(64);
   const nodes = [
     { path: '/', reference: `tree:${ROOT}/`, name: '', level: 'trunk', digest: ROOT, children: [{ name: 'widgets', path: '/widgets', digest: 'b'.repeat(64) }], entries: [] },
@@ -181,14 +178,12 @@ test('the run\'s locked knowledge root comes as one batch, kept by the process a
   assert.deepEqual(lines[0], { schema: 'run-knowledge@1', run: RUN, root: ROOT, composition: COMPOSITION, nodes: 2, entries: 1 });
   assert.deepEqual(lines.slice(1), nodes, 'each node as the subtree read gives it, in its order');
   assert.deepEqual(asked, [{ root: ROOT, composition: COMPOSITION, reader: 'u_runner' }], 'the composition the run locked for that root');
-  // A second read of the same root is served from what the process kept, after the reader's permission is asked again.
   const again = await read();
   assert.deepEqual(Buffer.from(await again.arrayBuffer()), body);
   assert.equal(asked.length, 1);
   assert.deepEqual(checked, ['u_runner:aaaa']);
   readable = false;
   assert.equal((await read()).status, 404, 'a reader who lost the permission gets nothing of what is kept');
-  // Other readers and unauthenticated requests are answered as for every export.
   assert.equal((await fetch(`${s.origin}/run-export/${RUN}/knowledge`, { headers: { authorization: 'Bearer other-token' } })).status, 404);
   assert.equal((await fetch(`${s.origin}/run-export/${RUN}/knowledge`)).status, 401);
   assert.equal((await fetch(`${s.origin}/run-export/${RUN}/knowledge/extra`, { headers: { authorization: 'Bearer runner-token' } })).status, 404);

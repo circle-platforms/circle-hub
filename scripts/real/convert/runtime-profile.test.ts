@@ -31,7 +31,6 @@ test('profile check refuses missing extra duplicate roleless and undocumented un
     const bad = structuredClone(profile); mutate(bad); assert.throws(() => checkCoverage(bad, parsed.contract));
   }
   assert.throws(() => checkProfile({ ...profile, runtime: { ...profile.runtime, minimum_version: 'another-runtime' } }, manifest, contract));
-  // A profile holds no copy of the contract's identity (decision 184); one that carries the retired field is refused.
   assert.throws(() => checkProfile({ ...profile, runtime: { ...profile.runtime, contract_sha256: parsed.contract.pinned.identity } }, manifest, contract));
 });
 test('profile drafts never guess parameter semantics or environment mappings', () => {

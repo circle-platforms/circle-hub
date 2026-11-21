@@ -42,7 +42,6 @@ test('plans that share at least two command shapes are offered, the device-judge
   const note = siblingNote(chosen)!;
   assert.match(note, /cases\/01\/plan\/01\.json（相同命令 2 种，已上机通过）、cases\/00\/plan\/00\.json（相同命令 4 种）/);
   assert.match(note, /^供参考：/);
-  // Disclosure only: the note states what exists and asks for nothing.
   assert.doesNotMatch(note, /必须|一定|不要|不得|禁止|严禁|务必|应当|照抄|可以照/);
   assert.equal(siblingNote(chooseSiblings(needed, siblings.slice(2, 3))), undefined, 'one shared shape is not enough to name a plan');
 });

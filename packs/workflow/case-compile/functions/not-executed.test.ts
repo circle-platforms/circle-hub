@@ -1,5 +1,3 @@
-// A workbook holds several cases and the runner runs them in one test: an exception in one case ends the whole run, and the
-// cases after it never begin (InfoTest lib/test_xlsx.py test_xlsx has no per-case guard). Synthetic logs and rows only.
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import * as delivery from './delivery.ts';
@@ -12,7 +10,6 @@ after(() => { if (before === undefined) delete process.env.TZ; else process.env.
 const A = '990000000000000501', B = '990000000000000502', C = '990000000000000503';
 const NEXT = '修正前一条后重新上机；本次不算本条的一次上机';
 const why = (title: string, step: string) => `同一份自动化用例 Excel 中排在前面的原始用例 ${A} ${title} ${step}出现异常，运行器中止了整本，本条没有在设备上执行`;
-/** The runner's log of a case whose step raised: the framework's closing block, then pytest's report of the exception (InfoTest conftest.py report.longreprtext, check_point.py close()). */
 const aborted = [
   '2026-11-17 07:08:56 ***********************    case discription    ***********************',
   '2026-11-17 07:08:56 #######   step2: 合成分组>合成用例 501',
@@ -24,18 +21,17 @@ const aborted = [
   '2026-11-17 07:09:03 #',
   '2026-11-17 07:09:03 ################# The passed check point num:   0   ####',
   '2026-11-17 07:09:03 #',
-  '2026-11-17 07:09:03 request = <FixtureRequest for <Function test_xlsx[case.xlsx]>>',
+  '2026-11-17 07:09:03 request = <Request for <Function run_book[case.xlsx]>>',
   '2026-11-17 07:09:03 ',
-  '2026-11-17 07:09:03     def test_xlsx(request, logger, check_point):',
-  '2026-11-17 07:09:03 >       return invoke(request, logger, check_point)',
+  '2026-11-17 07:09:03     def run_book(request, logger, checks):',
+  '2026-11-17 07:09:03 >       return invoke(request, logger, checks)',
   '2026-11-17 07:09:03 ',
-  '2026-11-17 07:09:03 lib/test_xlsx.py:1101: in test_xlsx',
-  '2026-11-17 07:09:03 E       lib.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行',
+  '2026-11-17 07:09:03 runner/book.py:1101: in run_book',
+  '2026-11-17 07:09:03 E       runner.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行',
   '2026-11-17 07:09:03 E       设备原话：',
   '2026-11-17 07:09:03 ######################      FAIL      ####################',
   '2026-11-17 07:09:03 #',
 ].join('\n') + '\n';
-/** A case that failed a check point and the run went on: the same FAIL banner, no exception. */
 const failedCheck = [
   '2026-11-17 07:08:56 #######   step2: 合成分组>合成用例 501',
   '2026-11-17 07:08:58 #######   step3: 合成断言',
@@ -67,7 +63,6 @@ test('the cases after the last case the run reached are not executed when that c
   assert.equal(delivery.unexecutedRows([A, B], [reach(A, aborted.replace(/#######\s+step\d+:.*\n/g, '')), reach(B, null)], titles).get(B)?.reason, why('合成用例 501', ''), 'no step known: the sentence leaves the step out');
   assert.equal(delivery.unexecutedRows([A, B, C], [reach(A, plain), reach(B, aborted), reach(C, null)], titles).get(C)?.by.item, B, 'the case that ended it is the last one reached');
 
-  // A run that reached every case, or whose last reached case shows no exception, proves nothing about the others.
   assert.equal(delivery.unexecutedRows([A, B], [reach(A, aborted), reach(B, plain)], titles).size, 0, 'both have logs: unchanged');
   assert.equal(delivery.unexecutedRows([A, B], [reach(A, failedCheck), reach(B, null)], titles).size, 0, 'a failed check point does not stop the run');
   assert.equal(delivery.unexecutedRows([A, B], [reach(A, plain), reach(B, null)], titles).size, 0);
@@ -75,7 +70,6 @@ test('the cases after the last case the run reached are not executed when that c
   assert.equal(delivery.unexecutedRows([A, B], [reach(A, null, true), reach(B, null)], titles).size, 0, 'the last reached case has no log text to read');
   assert.equal(delivery.unexecutedRows([A], [reach(A, aborted)], titles).size, 0, 'nothing after it');
   assert.equal(delivery.unexecutedRows([A, B], [reach(A, null), reach(B, null)], titles).size, 0, 'nothing reached: not a stopped run');
-  // The order is the workbook's, not the order the rows happen to be listed in.
   assert.deepEqual([...delivery.unexecutedRows([A, B], [reach(B, null), reach(A, aborted)], titles).keys()], [B]);
 });
 
@@ -118,14 +112,12 @@ test('the real run of that case later is its first attempt, and the not-executed
   const two = delivery.assemble([A, B], [first(), later]).cases[1];
   assert.deepEqual([two.status, two.history.length, two.history[0].ordinal, two.history[0].terminal], ['failed', 1, 2, 'fail'], 'one attempt, the second dispatch');
   assert.deepEqual(two.not_executed?.map((n) => n.ordinal), [1]);
-  // an earlier dispatch where B and C passed whole stays the pass volume when a later dispatch held them without reaching them
   const whole = dispatch('d0', [B, C], [{ item: B, dynamic_terminal: 'pass' }, { item: C, dynamic_terminal: 'pass' }]);
   const stopped = dispatch('d1', [A, B, C], [{ item: A, dynamic_terminal: 'no_verdict', evidence: { log: `src:${'1'.repeat(64)}` } }, { item: B, dynamic_terminal: 'not_run', not_executed: notExecuted() }, { item: C, dynamic_terminal: 'not_run', not_executed: notExecuted() }]);
   const kept = delivery.assemble([A, B, C], [whole, stopped]);
   assert.deepEqual([kept.pass?.run, kept.pass?.items], ['d0', [B, C]]);
   assert.deepEqual(kept.totals, { cases: 3, delivered: 2, failed: 0, unsettled: 1, unrun: 0 });
   assert.deepEqual(kept.cases[1].not_executed?.map((n) => n.ordinal), [2]);
-  // a later dispatch that did run the case and did not pass it is another matter
   const failedLater = dispatch('d1', [A, B, C], [{ item: A, dynamic_terminal: 'no_verdict', evidence: { log: `src:${'1'.repeat(64)}` } }, { item: B, dynamic_terminal: 'fail' }, { item: C, dynamic_terminal: 'not_run', not_executed: notExecuted() }]);
   assert.equal(delivery.assemble([A, B, C], [whole, failedLater]).pass, null);
 });
@@ -146,7 +138,6 @@ test('the report says the case was not executed, why, and what to do, and does n
   assert.equal(text, `原始用例 ${B} 合成用例 502：没有在设备上执行，无结论。原因：${why('合成用例 501', '在第 9 步')}。下一步：${NEXT}。`);
   assert.doesNotMatch(text, /运行器报|上机 \d+ 次|job resume|完整字段/);
   assert.equal(delivery.timeline(settled, false), `第 1 次未执行：${why('合成用例 501', '在第 9 步')}。`);
-  // when the case also ran on the device in another dispatch, the line lists both and counts one
   const later = dispatch('d2', [B], [{ item: B, dynamic_terminal: 'fail', evidence: { log: `src:${'2'.repeat(64)}` } }]);
   const ran = delivery.assemble([A, B], [first(), later]).cases[1];
   assert.equal(delivery.timeline(ran, false), `第 1 次未执行：${why('合成用例 501', '在第 9 步')}；第 2 次上机验证：未通过。`);

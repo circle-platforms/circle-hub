@@ -311,8 +311,6 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
     const prior=[...actions].reverse().find(a=>a.body.detail.reconciled_job===job.job);
     const finalized=job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon');
     const uncertain=!finalized&&(job.status.frozen||job.status.outcome==='unknown'||job.status.outcome==='read_back_mismatch'||job.status.outcome==='issued');
-    // A job whose journal grew since the last visit has an observer that is writing it: taking it over would only find that out,
-    // and be marked as an attempt for that length of the journal. A round asks again when the journal stands still.
     const growing=watching?.get(job.job)!==undefined&&watching.get(job.job)!==job.status.events;
     if(watching){if(uncertain)watching.set(job.job,job.status.events);else watching.delete(job.job);}
     if(!uncertain||growing||prior?.body.detail.events_after===job.status.events)continue;
@@ -324,8 +322,8 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
   }
   jobs=await ctx.deps.dispatch.jobs(by,run.run,reading);
   for(const job of jobs){
-    const requestSnapshot=dispatchState([job]),earlier=dispatchSnapshot([job]);
-    let observed=actions.find(a=>a.body.detail.dispatch_request_snapshot===requestSnapshot||a.body.detail.dispatch_request_snapshot===earlier);
+    const requestSnapshot=dispatchState([job]);
+    let observed=actions.find(a=>a.body.detail.dispatch_request_snapshot===requestSnapshot);
     if(!observed){
       const at=ctx.now().toISOString();
       // Journal intent records contain operational secrets. Their references stay behind an administrator-only artifact.
@@ -334,9 +332,9 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
     }
     if((job.status.frozen||job.status.outcome==='unknown'||job.status.outcome==='read_back_mismatch')&&!(job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon')))await putRequest(ctx,{run:run.run,job:job.job,kind:'disposition',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:observed.digest,code:'integrity_unproven',...(job.verification_run===run.run?{item:job.verification_item}:{}),missing:'作业 '+job.job+' 的原效果结局尚未证明；管理员记录保留核对所需事实',next_action:'管理员用 circle-hub job resume '+job.job+' 核对原请求和原作业；仍无结论时重证基线，以本运行为 predecessor 重跑，原效果和冻结/解除记录不改写，不重交原请求'});
   }
-  if(await abandonDecision(ctx,run.run)){for(const request of await requestRecords(ctx,run.run)){const job=jobs.find(j=>j.job===request.job);if(request.answered_by===null&&job&&(!job.status.frozen&&job.status.outcome!=='unknown'&&job.status.outcome!=='read_back_mismatch'&&job.status.outcome!=='issued'||job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon'))){const witness=(await actionsOf(ctx.deps.records.store,run.run)).find(a=>a.body.detail.dispatch_request_snapshot===dispatchState([job])||a.body.detail.dispatch_request_snapshot===dispatchSnapshot([job]));if(witness)await answerRequest(ctx,request.record,witness.digest);}}return;}
-  const signature=dispatchState(jobs),earlierSignature=dispatchSnapshot(jobs);
-  if(actions.some(a=>a.body.detail.dispatch_snapshot===signature||a.body.detail.dispatch_snapshot===earlierSignature))return;
+  if(await abandonDecision(ctx,run.run)){for(const request of await requestRecords(ctx,run.run)){const job=jobs.find(j=>j.job===request.job);if(request.answered_by===null&&job&&(!job.status.frozen&&job.status.outcome!=='unknown'&&job.status.outcome!=='read_back_mismatch'&&job.status.outcome!=='issued'||job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon'))){const witness=(await actionsOf(ctx.deps.records.store,run.run)).find(a=>a.body.detail.dispatch_request_snapshot===dispatchState([job]));if(witness)await answerRequest(ctx,request.record,witness.digest);}}return;}
+  const signature=dispatchState(jobs);
+  if(actions.some(a=>a.body.detail.dispatch_snapshot===signature))return;
   await ctx.lock(`submit:${run.run}`,async()=>{
     // A result is written from the jobs of this moment: a job reserved since the pass's reading is seen by the next pass.
     if(reading&&dispatchState(await ctx.deps.dispatch!.jobs(by,run.run))!==signature)return;
@@ -361,18 +359,8 @@ async function legacyResultRequests(ctx:EngineContext,stored:StoredRecord<RunRec
 }
 
 
-/**
- * What a result and a request depend on in a job: its state and the references it holds, never how many journal lines the job
- * has. A job in flight writes lines of its own every few seconds; keyed by them every round would write another result of
- * the same content, and the summary of it. The state is a function of safe status fields only, never remote error text or
- * lease material.
- */
 function dispatchState(jobs:import('../../dispatch/api.ts').RunJob[]):string{
   return digestOf(jobs.map(j=>({job:j.job,verification_run:j.verification_run,plan_run:j.plan_run,verification_item:j.verification_item,items:j.items,sha256:j.sha256,outcome:j.status.outcome,frozen:j.status.frozen,ended:j.ended,result:j.status.result??null,disposition:j.status.disposition??null,decided_by:j.status.decided_by??null,decided_at:j.status.decided_at??null})));
-}
-/** The key the records written before a state was keyed by: the job state with the journal's length. A record under it still counts as written. */
-function dispatchSnapshot(jobs:import('../../dispatch/api.ts').RunJob[]):string{
-  return digestOf(jobs.map(j=>({job:j.job,verification_run:j.verification_run,plan_run:j.plan_run,verification_item:j.verification_item,items:j.items,sha256:j.sha256,outcome:j.status.outcome,frozen:j.status.frozen,events:j.status.events,result:j.status.result??null,disposition:j.status.disposition??null,decided_by:j.status.decided_by??null,decided_at:j.status.decided_at??null})));
 }
 
 /** Replay the same frozen work, with its recorded observer, after trusted transient parent exhaustion. */

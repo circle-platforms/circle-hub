@@ -7,7 +7,6 @@ import { allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendTex
 import { createRebuildHandler, type RebuildHttpOptions } from './rebuild-http.ts';
 import { parseTarget } from './app.ts';
 
-/** A maintenance-only listener. No RecordsKit, telemetry, background work or ordinary console router is created. */
 export async function createRebuildApp(config: HubConfig, options: Omit<RebuildHttpOptions, 'originAllowed'> & { tls?: AppOptions['tls'] }): Promise<HubApp> {
   const hosts = new Set<string>(), origins = new Set<string>();
   const handle = createRebuildHandler({ ...options, originAllowed: request => originAllowed(request, origins) });

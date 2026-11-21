@@ -55,7 +55,6 @@ export interface DispatchOptions {
   redactor?:Redactor;
   knowledge?: BuildKnowledge;
   records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot' | 'withMutationLock'>; runs: VerificationPort;
-  /** Explicit staged policy switch. Only true enables the new environment-assignment guard. */
   enforceEnvironmentAssignments?: boolean;
   environmentAccess?: { canUse(actor: Principal, executor: string): Promise<boolean>; permission(actor: Principal, executor: string, tx: Transaction): Promise<boolean> };
   workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
@@ -67,11 +66,9 @@ interface BookingDiagnosis {
   coverage_complete:boolean|null;
   required_resources:number;
   missing_resources:number|null;
-  /** A count of distinct declared device pointers, not an observation of actual devices. */
   declared_device_count:number|null;
 }
-export interface JobStatus { call_error_category?:CallErrorCategory|null; submission_verified?:boolean; booking?:BookingDiagnosis; error_code?:ActionBody['error_code']; member_missing_facts?:Array<{fact:string;next_action:string}>;/** The source holding what the target returned, word for word: see deviceReturn. */device_return?:string;/** The request id of the submit intent (issue 142): what the Hub asks the target about when no answer came. */request_id?:string;/** The stage at which the target refused, as the target names it, when the refusal is certified. */rejection_stage?:string;/** Ended before the submit was called: nothing was sent, and the cause may pass. */not_sent?:boolean;report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
-/** One piece of what the target returned for a row; text is null when the credential scan holds it back. */
+export interface JobStatus { call_error_category?:CallErrorCategory|null; submission_verified?:boolean; booking?:BookingDiagnosis; error_code?:ActionBody['error_code']; member_missing_facts?:Array<{fact:string;next_action:string}>;device_return?:string;request_id?:string;rejection_stage?:string;not_sent?:boolean;report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
 interface ReturnedPiece {name:string;text:string|null;}
 interface ExecutionReadback {continuity:boolean;drift?:boolean;lease_interrupted?:boolean;intent:string}
 const operationDefinition = (d:ExecutorDefinition) => ({target:d.target,endpoint:d.endpoint,ca:d.ca,resources:[...d.resources].sort(),manifest_sha256:d.manifest_sha256,actor_header:d.actor?.header.toLowerCase() ?? null,slot:d.proof.slot,payload_argument:d.payload_argument,submit:{tool:d.calls.submit.tool,arguments:d.calls.submit.arguments}});
@@ -132,11 +129,9 @@ export class AlreadyDispatchedError extends Error {
   readonly ended: boolean;
   constructor(job: string, ended: boolean, message: string) { super(message); this.job = job; this.ended = ended; }
 }
-/** All applicable release checks from one explanation (rows that apply plus top-level checks). */
 function releaseChecksOf(explanation: { checks: ReleaseCheck[]; rows: Array<{ applicable: boolean; checks: ReleaseCheck[] }> }): ReleaseCheck[] {
   return [...explanation.checks, ...explanation.rows.filter((row) => row.applicable).flatMap((row) => row.checks)];
 }
-/** Labels for the operator log only (may include unchecked); reader wording uses formatReleaseRefusal. */
 function unmetReleaseLabels(explanation: { checks: ReleaseCheck[]; rows: Array<{ applicable: boolean; checks: ReleaseCheck[] }> }): string[] {
   return [...new Set(releaseChecksOf(explanation).filter((check) => check.satisfied !== true).map((check) => check.label))];
 }
@@ -433,10 +428,6 @@ export class DispatchService {
    * hub_template job itself for the runner's run; a named administrator stays responsible for an unknown outcome. Exactly one
    * enabled executor of the run's pack must release; none or several start nothing and say why. The byte and budget guards of
    * dispatch refuse a repeat, so an accepted submission dispatches at most once. */
-  /**
-   * The Hub's own dispatch of an accepted run for its runner (decision 105). Refusal wording (C14) lists only conditions
-   * judged错误, discloses expectation/actual per the registry, and never claims「已记下」without an admin-visible record.
-   */
   async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; member_missing_facts?:Array<{fact:string;next_action:string}>; call_error_category?:CallErrorCategory|null; checks?: ReleaseCheck[]; error_code?:BoundaryFailure['code']; outcome?:EffectOutcome }> {
     const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
     if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
@@ -665,7 +656,6 @@ export class DispatchService {
           if(!rule.resend||this.now().getTime()>=retryDeadline||!pulse.held()||!await this.certified(binding,d,session,'retry_safety')||rule.window&&!await this.certified(binding,d,session,'window_resend'))throw error;
           try{await readBeforeState();}catch{await this.journal.append(binding,'retry_refused','dispatch','completed',{missing_fact:'丢回复后前状态不再匹配或读不到；原请求是否执行须对账',next_action:'自动只读原请求记录，不把重发前提失败当作未执行'});throw error;}
           const retryBoundary=await checkEffectBoundary({...finalBoundary,budget:async row=>{const used=await finalBoundary.budget(row);return {count:used.count-1,duration_ms:used.duration_ms-d.max_run_ms};}});
-          // The first submit was already invoked: a refusal without a conclusion says that, never that nothing went out (decision 116).
           if(!retryBoundary.ok||retryBoundary.checked!==9){const failure=retryBoundary.ok?incompleteEffectBoundary(retryBoundary):retryBoundary;await this.journal.append(binding,'retry_refused','dispatch','completed',{missing_fact:refusalText(failure,true),next_action:failure.fix},[]);throw error;}
           await this.journal.append(binding,'resend','dispatch','completed',{outcome:'issued',request_id:context.request_id,intent_key:key,possibly_duplicated:rule.mark==='possible_duplicate',retry_once:true});
           if(!pulse.held()||this.now().getTime()>=retryDeadline)throw error;
@@ -715,13 +705,11 @@ export class DispatchService {
       return await this.status(by, binding.job);
     } finally { await stop(); await unlockObservation?.(); }
   }
-  /** The scheduler administrator authorizes orchestration, never the runner's environment use. */
   private async environmentUseFailure(userId:string,executor:string,tx?:Transaction):Promise<BoundaryFailure|null> {
     if(this.options.enforceEnvironmentAssignments!==true)return null;
     if(!this.options.environmentAccess)return deny(1,'SOURCE_UNAVAILABLE','环境使用权限检查未装配，尚不能核对；请管理员恢复检查接线');
     try {
       if (tx) {
-        // Config is already locked and its bound digest checked in this transaction. The guard reloads account and grants.
         if (typeof this.options.environmentAccess.permission !== 'function') return deny(1,'SOURCE_UNAVAILABLE','事务内环境权限读取未装配；不能派发，请管理员恢复接线');
         const allowed=await this.options.environmentAccess.permission({id:userId,name:'',role:'user'},executor,tx);
         return allowed?null:deny(1,'SOURCE_NOT_PERMITTED','运行发起账户没有本测试环境的使用权限；请管理员明确分配后重新核验');
@@ -746,7 +734,6 @@ export class DispatchService {
       }catch{adminReleaseMissing=true;}
     }
     if(!(await this.journal.events(binding.job)).length)await this.journal.append(binding,'reservation','dispatch','completed',{binding,read_only:true});
-    // The event records submit_invoked false, so a refusal without a conclusion may say that nothing went out (decision 116).
     const said=refusalText(failure,false);
     const bookingNext='先预订整个测试环境，再从脚本编写开始新的运行，并重新核验脚本合并';
     const memberFacts=facts.booking?[{fact:facts.booking.coverage_complete===false?(facts.call_error_category==='occupied'?`测试环境 ${facts.booking.target} 有资源由其他运行持有；`:expiredBooking?'当前账户的原预订已过期；':'')+`本运行没有覆盖测试环境 ${facts.booking.target} 的完整预订，缺少 ${facts.booking.missing_resources} 项所需资源（共 ${facts.booking.required_resources} 项）`:`测试环境 ${facts.booking.target} 的本运行预订覆盖尚未核对`,
@@ -1085,15 +1072,6 @@ export class DispatchService {
   }
 
   private context(binding: JobBinding): Record<string, unknown> { return { ...binding.context, job: binding.job, user: binding.user, actor: binding.acting_by ?? binding.initiated_by, build_base:binding.input?.build_base ?? binding.context?.build_base, product:binding.input?.product ?? binding.context?.product, root:binding.input?.root ?? binding.context?.root, target: binding.input?.target ?? binding.context?.target, build: binding.input?.build ?? binding.context?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.context?.seats ?? (binding.resources.length ? binding.resources.length : undefined), manifest_sha256: binding.input?.manifest_sha256 ?? binding.context?.manifest_sha256 }; }
-  /**
-   * Where the evidence of every row is, at the result's declared pointers, each piece saved on its own and readable by the
-   * runner: the log of every row, and the per-device sessions of a row that did not pass. The reference engine reviews a pass
-   * by its run log alone (it downgrades a pass whose log shows a command the device refused) and fetches device sessions only
-   * for failures, so a passing row keeps its log, kept out of the device return the model reads. Rows that did not pass also
-   * go into that device return (the reference compile skill hands the model the failed checks and the session dumps of every
-   * non-pass case to attribute the failure). The raw report stays readable by functions only; a session the credential scan
-   * holds back leaves the other sessions and the verdicts readable.
-   */
   private async rowEvidence(binding: JobBinding, d: ExecutorDefinition, response: { value: unknown; source: string }, items: readonly string[]): Promise<{ found: Map<string, { log?: string; sessions?: Record<string, string> }>; returned: Map<string, ReturnedPiece[]> }> {
     const found = new Map<string, { log?: string; sessions?: Record<string, string> }>(), returned = new Map<string, ReturnedPiece[]>();
     if (!d.result.log && !d.result.sessions) return { found, returned };
@@ -1124,13 +1102,6 @@ export class DispatchService {
   private saveText(binding: JobBinding, source: string, text: string, name: string) {
     return this.options.records.artifacts.ingest({ bytes: new TextEncoder().encode(text), mediaType: 'text/plain; charset=utf-8', origin: { generated: { generator: 'dispatch@1', inputs: [source] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false }, name });
   }
-  /**
-   * What the target returned, in one text for the runner: every row's verdict, then the log and device sessions of each row
-   * that did not pass, word for word. Judging them is the reader's work, so nothing here picks, groups or interprets them
-   * (the reference engine passes device output through whole, with no keyword digest). Only two things touch the text: a
-   * piece the credential scan holds back is named and not quoted, so one hit leaves the rest readable, and a piece several
-   * rows share is written once.
-   */
   private async deviceReturn(binding: JobBinding, source: string, rows: ReadonlyArray<{ item: string; dynamic_terminal: DynamicTerminal }>, returned: ReadonlyMap<string, readonly ReturnedPiece[]>): Promise<string | undefined> {
     const label = (row: { dynamic_terminal: DynamicTerminal }) => labelOf('dynamic_terminal', row.dynamic_terminal);
     const lines = [`作业 ${binding.job} 的设备返回。逐条结论：`, ...rows.map(row => `${row.item}：${label(row)}`)];
@@ -1144,7 +1115,7 @@ export class DispatchService {
       lines.push('', head, piece.text);
     }
     try { return `src:${(await this.saveText(binding, source, lines.join('\n'), 'device-return.txt')).body.sha256}`; }
-    catch (error) { try { this.options.adminLog?.({ traceId: null, run: binding.input?.run ?? binding.run ?? null, what: 'device return ' + binding.job, detail: error instanceof Error ? error.message : String(error) }); } catch { /* logging never stalls the job */ } return undefined; }
+    catch (error) { try { this.options.adminLog?.({ traceId: null, run: binding.input?.run ?? binding.run ?? null, what: 'device return ' + binding.job, detail: error instanceof Error ? error.message : String(error) }); } catch { } return undefined; }
   }
   private session(binding: JobBinding, d: ExecutorDefinition, secret: string): RpcClient {
     return new RpcClient(d, secret, `${binding.user}/${binding.job}`, async (bytes, status, operation, complete = true, metadata) => {
@@ -1219,11 +1190,6 @@ export class DispatchService {
     const observed = d.manifest_sha256 ? (echo: SeatEcho) => this.recordObservation({ inventory: d.manifest_sha256!, ...echo, run: null, job: binding.job, executor: binding.executor, product: d.precheck_context?.product }).then(() => undefined) : undefined;
     return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep,observed,await this.bookingReplay(binding,d));
   }
-  /**
-   * What lets a job read again the version answers its booking kept (probe-replay.ts): the runs it continues, and the leases of
-   * the executor's resources as they are held now. None for a read that is no job's (the administrator's precheck) and when a
-   * lease is not held now; the job then reads every seat itself.
-   */
   private async bookingReplay(binding: JobBinding, d: ExecutorDefinition): Promise<{ ancestors: readonly string[]; leases: string } | undefined> {
     if (!binding.input) return undefined;
     try {
@@ -1257,7 +1223,6 @@ export class DispatchService {
       saveText: this.saveText.bind(this),
     };
   }
-  /** Stores one device observation whole, found again newest first by its inventory and device pointer (decision 112). */
   async recordObservation(input: deviceOperations.ObservationInput): Promise<DeviceObservation> { return deviceOperations.recordObservation.call(this.deviceContext(), input); }
 
   /** The newest observation of every version-probe seat of every enabled executor (decision 112); a seat never looked at is absent. */
@@ -1275,7 +1240,6 @@ export class DispatchService {
 
   private async askDevice(by: Principal, run: string, target: DeviceHelpTarget): Promise<DeviceHelpResult> { return deviceOperations.askDevice.call(this.deviceContext(), by, run, target); }
 
-  // The executor has one gateway lease, so concurrent writers must wait their turn.
   private async queued<T>(executor: string, work: () => Promise<T>): Promise<T> {
     const before = this.#asking.get(executor) ?? Promise.resolve();
     let done!: () => void;
@@ -1288,12 +1252,6 @@ export class DispatchService {
 
   private async askSeat(by: Principal, run: string, registered: RegisteredExecutor, seat: NonNullable<ExecutorDefinition['probes']>['seats'][number], target: DeviceHelpTarget, asked: AskedLine): Promise<DeviceHelpResult> { return deviceOperations.askSeat.call(this.deviceContext(), by, run, registered, seat, target, asked); }
 
-  /**
-   * Reads booked devices on request (decision 181): each target is one line of the booking owner's choice, sent through the
-   * executor's declared per-seat read when the executor opted in (probes.read) and the whole line has the declared command
-   * shape. Never throws: what could not be read is said in the result's `missing`. Reads and questions of one executor
-   * share its queue, because it has one gateway lease.
-   */
   async readDevices(by: Principal, run: string, targets: ReadonlyArray<DeviceReadTarget>): Promise<DeviceReadResult[]> { return deviceOperations.readDevices.call(this.deviceContext(), by, run, targets); }
 
   private async readDevice(by: Principal, run: string, target: DeviceReadTarget): Promise<DeviceReadResult> { return deviceOperations.readDevice.call(this.deviceContext(), by, run, target); }
@@ -1329,12 +1287,9 @@ export class DispatchService {
   private async noteBed(binding: JobBinding, when: 'pre' | 'post', bed: string, reads: readonly BedRead[], differences: BedReport['differences']): Promise<Record<string, Canonical>> { return bedOperations.noteBed.call(this.bedContext(), binding, when, bed, reads, differences); }
   private async openBedHold(bed: string): Promise<{ job: string; pre: Record<string, Canonical>; pre_reads?: BedRead[] } | null> { return bedOperations.openBedHold.call(this.bedContext(), bed); }
 
-  /** Latest bed_hold for this executor. An open row is the hold an administrator can clear; a later clear hides it. */
   private async latestExecutorHold(executor: string): Promise<{ job: string; bed: string; state: string } | null> { return bedOperations.latestExecutorHold.call(this.bedContext(), executor); }
 
-  /** Append a clear for the executor's open bed hold. Does not rewrite the open record. */
   async clearBedHold(by: Principal, executor: string, reason: string): Promise<{ cleared: false } | { cleared: true; job: string; bed: string }> { return bedOperations.clearBedHold.call(this.bedContext(), by, executor, reason); }
-  /** Pre-dispatch bed gate. A residue, an open recovery diff, or a missing probe refuses before any intent. */
   private async gateBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<void> { return bedOperations.gateBed.call(this.bedContext(), binding, d, client, context); }
   /** An effective complete already sealed this job. A later finish must not release the lease or append another conclusion. */
   private async effectivelyComplete(job: string): Promise<boolean> { return bedOperations.effectivelyComplete.call(this.bedContext(), job); }
@@ -1611,7 +1566,6 @@ export class DispatchService {
       origin: { generated: { generator: 'dispatch@1', inputs: [`src:${input.sha256}`] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false } });
     await this.journal.append(binding, 'result', 'read_back', 'completed', { reference: `src:${artifact.body.sha256}`, items: Array.isArray(projected) ? projected.length : 0 });
     await this.release(binding, client, remote);
-    // Round readbacks already recorded their effects. A job summary must not reclassify the last intent's effect.
     await this.journal.append({...binding,input:null,run:input.run}, 'complete', 'read_back', 'completed', { done: true, outcome: events.some(event => event.body.detail.phase === 'intent') ? 'effective' : 'not_dispatched', ...(refusal?{public_reason:'前轮已执行，后轮未开始：'+refusal.failure.message,member_missing_facts:[{fact:refusalFact,next_action:refusalNext}],next_action:`circle-hub job status ${binding.job}`} : sentence ? { public_reason: sentence } : {}) });
     return this.status(by, binding.job);
   }

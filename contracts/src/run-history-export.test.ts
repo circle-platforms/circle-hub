@@ -1,4 +1,3 @@
-// Decision 182 (model 86: W06 R[8]): the contract shape of GET /run-export/<run>/history.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DYNAMIC_TERMINAL, EFFECT_OUTCOME } from '../generated/vocabulary.ts';

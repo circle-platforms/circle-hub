@@ -16,7 +16,6 @@ import { bedsOf } from './test-support.ts';
 import { interfaceDigest, runtimeDigest, stripAdditions, contractCanonical } from './runtime-contract.ts';
 import { readFileSync } from 'node:fs';
 /** The shipped runtime-contract@2 example, with the pause method gaining a required `result` the executor provides. */
-/** The example profile with a synthetic template made for this contract. */
 function withTemplate(doc: unknown, contract: { runtimeVersion: string; pinned: { identity: string } }) {
   const profile = doc as { workbook: Parameters<typeof templateDocument>[0] & { template?: unknown } };
   return { ...profile, workbook: { ...profile.workbook, template: templateDocument(profile.workbook, contract.runtimeVersion, contract.pinned.identity) } };
@@ -112,8 +111,6 @@ test('the identity row carries the pinned original identity of a runtime-contrac
   const model = readWorkbookModel(recognize(createDefaultRegistry(), generateWorkbook(input), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')!.document.model)!;
   assert.equal(model.sheets[0].rows[0].cells.find((c) => c.reference === 'C1')?.text, parsed.contract.pinned.identity);
 });
-// Decision 184: the identity row is the generator's to write, from the contract the run locked. A contract whose bed pins the
-// interface identity declares it, and that is what C1 carries; the template may have been saved for any other contract.
 test('the identity row is written from the locked contract: the declared interface identity and the runtime, whatever the template was saved with', () => {
   const contractDoc = JSON.parse(readFileSync(new URL('../examples/runtime-contract-v2.json', import.meta.url), 'utf8')) as Record<string, unknown> & { original: Record<string, unknown> };
   const declared = interfaceDigest(stripAdditions(contractDoc)!);
@@ -132,10 +129,8 @@ test('the identity row is written from the locked contract: the declared interfa
   const model = readWorkbookModel(recognize(createDefaultRegistry(), bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')!.document.model)!;
   const first = (column: string) => model.sheets[0].rows[0].cells.find((c) => c.reference === column + '1')?.text;
   assert.deepEqual([first('B'), first('C')], [parsed.contract.runtimeVersion, declared]);
-  // One cell each: the template's own B1 and C1 are replaced where they stand, not written a second time.
   const sheet = Buffer.from(unzipSync(bytes)['xl/worksheets/sheet1.xml']).toString('utf8');
   assert.deepEqual([sheet.split('<c r="B1"').length - 1, sheet.split('<c r="C1"').length - 1, sheet.includes('e'.repeat(64)), sheet.includes('another-runtime')], [1, 1, false, false]);
-  // A template saved for this very contract gives the same identity row (the recipe cell differs: it binds the profile's bytes).
   const fresh = parseProfile(withTemplate(profileDoc, parsed.contract), parsed.contract, bedsOf()); assert.ok(fresh.ok); if (!fresh.ok) return;
   const again = readWorkbookModel(recognize(createDefaultRegistry(), generateWorkbook({ ...input, profile: fresh.profile }), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')!.document.model)!;
   assert.deepEqual(['A', 'B', 'C'].map((column) => again.sheets[0].rows[0].cells.find((c) => c.reference === column + '1')?.text), ['A', 'B', 'C'].map(first));

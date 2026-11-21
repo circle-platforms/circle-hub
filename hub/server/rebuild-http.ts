@@ -49,10 +49,8 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const secureRequest = (request: IncomingMessage) => 'encrypted' in request.socket && request.socket.encrypted === true;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-/** Restricted reset-only authorization. No database account, administrator token or ordinary console session is created. */
 export function createRebuildHandler(options: RebuildHttpOptions) {
   const sessions = new SessionStore(() => (options.now?.() ?? new Date()).getTime());
-  /** Keyed by session.id (cookie value): SessionStore returns a fresh view each get(). */
   const actions = new Map<string, Action>();
   let redemption = Promise.resolve();
   const identities = new Map<string, string>();
@@ -154,7 +152,7 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
     try { accepted = await action.launching; }
     catch (error) { action.launching = undefined; throw error; }
     action.operationId = accepted.operationId;
-    if (response.destroyed || request.aborted) return;
+    if (response.destroyed) return;
     let closed = false;
     response.once('close', () => { closed = true; });
     response.once('finish', () => {

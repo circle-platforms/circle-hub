@@ -11,7 +11,6 @@ import {addressKey} from './manifest.ts';
 const Type=schema(TYPE),Role=schema(ROLE),Address=schema(ADDRESS),Identity=schema(IDENTITY);
 export interface ValueType {declaration:DeclaredParameterType;address_kind?:string;values?:string[];literal?:string;minimum?:number;maximum?:number;minLength?:number;maxLength?:number;pattern?:string}
 export interface RoleDeclaration {source:string;bed_member?:boolean}
-/** A host program the contract lets a plan run with its own arguments; addressPrefix marks the arguments that are addresses. */
 export interface HostProgram {program:string;addressPrefix?:string}
 export interface Effect {id:string;source:string;roles:string[];budget:number;commands?:CommandIdentity[];command_scope?:string[];allowed_literals:string[];allowed_programs?:HostProgram[];command_roles:Array<{signature:string;position:number;role:string}>}
 export interface Authority {source:string;parameters:Record<string,{type:ValueType;role:string}>;roles:Record<string,RoleDeclaration>;effects:Effect[]}

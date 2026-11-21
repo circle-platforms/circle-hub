@@ -158,7 +158,6 @@ export class FileVault implements Vault {
     catch { throw new VaultError('认证元数据写入未完成；请核对主密钥、目录和容量'); }
   }
 
-  /** Authenticates sourced non-value facts without modifying original value ciphertext or assigning a new setter. */
   async writeSecretMetadata(input: SecretMetadataFile): Promise<void> {
     const parsed = SecretMetadataFile.safeParse(input);
     if (!parsed.success) throw new VaultError('密钥元数据缺少可核对的名字、版本、当前标记或密文身份');
@@ -337,18 +336,18 @@ export class FileVault implements Vault {
           const actual = await readVerifiedFile(this.#path(entry), MAX_SEALED_BYTES);
           observedNewPublication = createHash('sha256').update(actual.bytes).digest('hex') === newCipherIdentity;
         }
-      } catch { /* Rollback below checks the original bytes independently. */ }
+      } catch { }
       if (metadataWriteCompleted && observedNewPublication) {
-        try { await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: false, published: true, ...receipt }), { mode: 0o600 }); } catch { /* The original pending receipt remains. */ }
+        try { await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: false, published: true, ...receipt }), { mode: 0o600 }); } catch { }
         throw new VaultError(`新值与认证元数据已发布，但归档收据完成标记未写成；原件保留于 ${directory}，本次未完成审计，不得视为成功`);
       }
       const originalMetadata = planned.find(file => file.folder === 'metadata');
       if (!originalMetadata || moved.includes(originalMetadata)) {
-        try { await activeMetadata.remove(logical); } catch { /* The final identity checks decide whether recovery succeeded. */ }
+        try { await activeMetadata.remove(logical); } catch { }
       }
-      try { await this.remove(entry); } catch { /* Check actual absence below, not the await result. */ }
+      try { await this.remove(entry); } catch { }
       for (const file of [...moved].reverse()) {
-        try { await this.#move(file.destination, file.source); } catch { /* Check every original identity below. */ }
+        try { await this.#move(file.destination, file.source); } catch { }
       }
       let restored = true;
       for (const file of planned) {
@@ -513,10 +512,6 @@ export class FileVault implements Vault {
       .sort();
   }
 
-  /**
-   * Authenticate every active entry without writing key-check or revealing names or values. Writers must be stopped while this
-   * runs: metadata checks detect changes during the scan, but cannot freeze an unrelated process after the last check.
-   */
   async verify(): Promise<VaultVerification> {
     const result: VaultVerification = { checked: 0, failed: 0, unknown: false };
     let key: Buffer | undefined;

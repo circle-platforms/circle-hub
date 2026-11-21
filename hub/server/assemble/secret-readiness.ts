@@ -1,6 +1,5 @@
 import { VaultReadinessError, type VaultReadinessIssue } from '../../records/api.ts';
 
-/** Only the typed availability failure is degraded. The connector retains its independent per-read hard gate. */
 export async function primeStartupSecrets(
   connectors: { primeSecrets(): Promise<void> }, notices: string[], log: (line: string) => void,
 ): Promise<readonly VaultReadinessIssue[]> {

@@ -110,7 +110,6 @@ async function setupWorkspace() {
     JSON.stringify({ ...common, run: TARGET_RUN, parameters: { exclude: ['100000000000000003'] }, items }, null, 2),
   );
 
-  // c1: valid plan + valid fidelity + matching .brief.json + .verdict.json
   const p1 = makePlanWithFidelity('doc:c1', RECORD_A);
   const p1Bytes = Buffer.from(JSON.stringify(p1.plan, null, 2) + '\n');
   await writeFile(join(sourcePlans, '00.json'), p1Bytes);
@@ -119,20 +118,16 @@ async function setupWorkspace() {
   await writeFile(b1Path, JSON.stringify(p1.brief, null, 2) + '\n');
   await writeFile(v1Path, JSON.stringify(VERDICT_A, null, 2) + '\n');
 
-  // c2: to be reworked via --rework
   const p2 = makePlanWithFidelity('doc:c2', RECORD_A);
   await writeFile(join(sourcePlans, '01.json'), JSON.stringify(p2.plan, null, 2) + '\n');
 
-  // c3: excluded by targetRun.parameters.exclude
   const p3 = makePlanWithFidelity('doc:c3', RECORD_A);
   await writeFile(join(sourcePlans, '02.json'), JSON.stringify(p3.plan, null, 2) + '\n');
 
-  // c4: valid plan but stale/tampered brief_sha256 in data.fidelity -> must strip fidelity & mark needs_recheck
   const p4 = makePlanWithFidelity('doc:c4', RECORD_A);
   (p4.plan.slots.plan[0].data.fidelity as Record<string, unknown>).brief_sha256 = 'f'.repeat(64);
   await writeFile(join(sourcePlans, '03.json'), JSON.stringify(p4.plan, null, 2) + '\n');
 
-  // c5: target spec changed (wait to override in targetRun when needed)
   return { root, sourceDir, targetDir, sourcePlans, targetPlans, sourceBriefs, targetBriefs, p1, p1Bytes };
 }
 
@@ -159,7 +154,6 @@ test('carry-plans selectively carries verified unchanged plans and fidelity arti
     assert.deepEqual(out.skipped.excluded, ['100000000000000003']);
     assert.deepEqual(out.needs_recheck, ['plans2/03.json']);
 
-    // c1 carried byte-for-byte with verified SHA-256 and reused fidelity + brief + verdict
     assert.equal(out.carried.length, 2);
     const c1Entry = out.carried.find((c: Record<string, unknown>) => c.item === 'doc:c1');
     assert.ok(c1Entry);
@@ -170,7 +164,6 @@ test('carry-plans selectively carries verified unchanged plans and fidelity arti
     assert.equal(c1Entry.verdict_verified, true);
     assert.deepEqual(await readFile(join(w.targetPlans, '00.json')), w.p1Bytes);
 
-    // c4 carried with stale fidelity stripped and listed in needs_recheck
     const c4Entry = out.carried.find((c: Record<string, unknown>) => c.item === 'doc:c4');
     assert.ok(c4Entry);
     assert.equal(c4Entry.fidelity, 'stripped');
@@ -179,9 +172,7 @@ test('carry-plans selectively carries verified unchanged plans and fidelity arti
     assert.equal(c4Disk.slots.plan[0].data.fidelity, undefined, 'stale fidelity must be stripped');
     assert.equal(c4Entry.sha256, shaHex(await readFile(join(w.targetPlans, '03.json'))));
 
-    // Reworked & excluded files must NOT be written into targetPlans
     assert.deepEqual((await readdir(w.targetPlans)).sort(), ['00.json', '03.json']);
-    // Brief & verdict carried only for c1
     const briefFiles = (await readdir(w.targetBriefs)).sort();
     assert.equal(briefFiles.length, 2);
     assert.ok(briefFiles.some((n) => n.endsWith('.brief.json')));
@@ -197,7 +188,6 @@ test('carry-plans fails closed on mismatched build/root/sources, changed item sp
   const prevCwd = process.cwd();
   process.chdir(w.root);
   try {
-    // 1. Mismatched build refuses and writes nothing
     const run2BadBuild = JSON.parse(await readFile(join(w.targetDir, 'run.json'), 'utf8'));
     run2BadBuild.build = 'Rel_ORBIT_2';
     await writeFile(join(w.targetDir, 'run.json'), JSON.stringify(run2BadBuild));
@@ -206,7 +196,6 @@ test('carry-plans fails closed on mismatched build/root/sources, changed item sp
     assert.match(badBuild.stderr, /build|构建/);
     await assert.rejects(readdir(join(w.root, 'plans_bad_build')));
 
-    // Restore valid target run.json, test mismatched product, root, and mismatched source digest
     run2BadBuild.build = 'Rel_ORBIT_1';
     run2BadBuild.product = 'other-product';
     await writeFile(join(w.targetDir, 'run.json'), JSON.stringify(run2BadBuild));
@@ -224,7 +213,6 @@ test('carry-plans fails closed on mismatched build/root/sources, changed item sp
     await writeFile(join(w.targetDir, 'run.json'), JSON.stringify(run2BadBuild));
     assert.equal((await runCli(['--source', 'run1', '--target', 'run2', '--source-plans', 'plans1', '--plans', 'plans_bad_src'])).code, 1);
 
-    // 2. Scope filtering & changed recomposition spec skip cleanly without copying stale plan
     run2BadBuild.sources = makeSources();
     run2BadBuild.parameters = { scope: { words: '只要 1 号', cases: ['100000000000000001', '100000000000000004'] } };
     run2BadBuild.items[3].fields.recomposition = { record: { ...RECORD_A, atoms: [...RECORD_A.atoms, { id: 'a3', kind: 'action', text: '新增动作' }] } };
@@ -236,12 +224,10 @@ test('carry-plans fails closed on mismatched build/root/sources, changed item sp
     assert.ok(scopedOut.skipped.out_of_scope.includes('100000000000000002'));
     assert.deepEqual((await readdir(join(w.root, 'plans_scoped'))).sort(), ['00.json']);
 
-    // 3. Destination collision fails closed without overwriting
     const collision = await runCli(['--source', 'run1', '--target', 'run2', '--source-plans', 'plans1', '--plans', 'plans_scoped']);
     assert.equal(collision.code, 1);
     assert.match(collision.stderr, /^已被占用：.*已存在/);
 
-    // 4. Symlink in source-plans & path escape rejected
     await symlink(join(w.sourcePlans, '00.json'), join(w.sourcePlans, 'link.json'));
     const symRes = await runCli(['--source', 'run1', '--target', 'run2', '--source-plans', 'plans1', '--plans', 'plans_sym']);
     assert.equal(symRes.code, 1);
@@ -252,7 +238,6 @@ test('carry-plans fails closed on mismatched build/root/sources, changed item sp
     assert.equal(escapeRes.code, 1);
     assert.match(escapeRes.stderr, /超出当前工作目录/);
 
-    // 5. Post-write SHA verification mismatch refuses cleanly
     const tamperedIo: CarryIo = {
       readBack: async () => Buffer.from('tampered'),
     };

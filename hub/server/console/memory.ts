@@ -20,7 +20,6 @@ import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 const location=(parameters:Record<string,string|undefined>={})=>'/console/knowledge?'+new URLSearchParams({view:'memory',...Object.fromEntries(Object.entries(parameters).filter((pair):pair is [string,string]=>pair[1]!==undefined))});
 function form(ctx: PageContext, action: string, fields: Html, label: string, disabled = false, danger = false, back?: string): Html {
   const isDanger = danger || action === 'revoke';
-  // Editor keeps cancel after submit; postForm always appends the button last.
   if (back) {
     return postForm({
       action: `/console/knowledge/do/memory-${action}`,

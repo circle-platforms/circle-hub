@@ -1,6 +1,4 @@
 import {withoutNonces} from './console/testing-security.ts';
-// Search and a knowledge node's citations on the console, over HTTP with the fake services and real records.
-// U5: /console/api/search and /console/api/knowledge/node retired — call searchHub / tree page instead of JSON.
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { after, before, describe, test } from 'node:test';

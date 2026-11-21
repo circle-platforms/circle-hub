@@ -1,9 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readBody } from '../http.ts';
 import { errorLine } from './components.ts';
-import { html, page } from './html.ts';
+import { page } from './html.ts';
 import { ACTIONS, isPackStep, runAction, type Form } from './manage.ts';
-// Side effect: team and reset ACTIONS register into manage.ACTIONS before HTML /console/admin/do runs.
 import './team-actions.ts';
 import './reset-actions.ts';
 import { UPLOAD_REFERENCE_ACTIONS, type RegisteredActionName } from './command-form.ts';
@@ -18,7 +17,6 @@ import {
   type ConsoleOptions, ACTION_FORM_LIMIT, sendHtml, forbidden, sameOrigin, formOf, fields,
 } from './console-http.ts';
 
-/** One management action: an administrator's session, this console's origin and its CSRF token, then the command. */
 export async function action(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, ctx: PageContext, session: ConsoleSession, name: string): Promise<PageResult | null> {
   if (!sameOrigin(request, options.ownOrigins())) {
     request.resume();
@@ -29,7 +27,6 @@ export async function action(request: IncomingMessage, response: ServerResponse,
     request.resume();
     return neutralPage(ctx);
   }
-  // The connection trial and its targeted stop reset run in this process, without a command or a saved configuration.
   if (!isPackStep(name) && !Object.hasOwn(ACTIONS, name) && name !== 'system-test' && name !== 'system-test-forget') {
     request.resume();
     return neutralPage(ctx);
@@ -38,7 +35,6 @@ export async function action(request: IncomingMessage, response: ServerResponse,
   let upload: Buffer | undefined;
   let uploadName = 'upload.bin';
   const needsUpload = name === 'pack-stage' || UPLOAD_REFERENCE_ACTIONS.has(name as RegisteredActionName);
-  // The check of 发布任务包 and environment registration take an uploaded file; other actions are plain forms.
   if (needsUpload) {
     const boundary = boundaryOf(request.headers['content-type']);
     if (boundary === null) {

@@ -1,9 +1,3 @@
-// Enforces that the input schemas of the six MCP tools stay backward compatible against a
-// frozen baseline: a declared field is never removed, never changes type, never turns from
-// optional into required, and no new required field appears. Adding an optional field is
-// allowed. The comparison is structural (parsed JSON), never textual. Update the baseline
-// only with an approved contract change:
-//   node .github/checks/tool-input-stability.ts --update-baseline
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -1,4 +1,3 @@
-// Member-visible environment assignments and booking admission; source identities stay inside the Hub.
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import { isAdmin, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 import type { LeaseService } from '../leases/api.ts';
@@ -103,7 +102,6 @@ export class MemberEnvironments {
     return out;
   }
 
-  /** A lease key is not an executor binding; never infer a target for an unassigned booking. */
   async unattributedHoldings(actor: Principal): Promise<UnattributedHolding[] | null> {
     try {
       if (!this.records.artifacts.capturePermissionSnapshot) return null;

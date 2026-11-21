@@ -2,7 +2,6 @@
 // (1) every document's a and b copies; (2) the c copies (one per outermost case); (3) the d, e and f copies built
 // from phase (2)'s answers, written into the work directory and uploaded there. Every reply carries at most `batch`
 // hub_upload_file calls, one hub_start_run per batch of documents. Answers are matched without trusting order:
-// uploads by the machine result's src:<sha256>, runs by its item ids upload-<12 hex> with the batch's count. A
 // refused upload or start, or a summary that cannot be read in full, is recorded as unknown with its fixed reason
 // and never counts as agreement. A request after the start with no tool results (Circle compacting the
 // conversation) gets one line of text; nothing restarts or advances, and the compaction check fails.
@@ -30,8 +29,6 @@ export interface GapCircleGold {
   maxCases: number;
   batch: number;
 }
-
-// ---------------------------------------------------------------- reading the Hub's machine result
 
 const MACHINE_MARKER = '\n供模型引用\n';
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -342,7 +339,6 @@ export default function scenario(gold: GapCircleGold): Scenario {
       }
       pendingGetNodes = null;
     }
-    // Truncated summaries: read the full text first (one mcp__hub__get_nodes per reply keeps the flow simple).
     const [truncatedKey, reference] = [...truncated.entries()][0] ?? [];
     if (truncatedKey !== undefined && reference !== undefined) {
       truncated.delete(truncatedKey);

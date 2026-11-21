@@ -1,11 +1,10 @@
 import { archiveResetDatabase, createResetDatabase } from '../../platform/api.ts';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DEFAULT_LIMITS } from '../../config/index.ts';
 import { migrateRecords, FileVault } from '../../records/api.ts';
 import { VariableName } from '../../../contracts/src/variables.ts';
-import { CODE_ROOT, agentFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from '../../platform/api.ts';
+import { agentFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from '../../platform/api.ts';
 import { exists, sha256File, withLock, writeFileAtomic } from '../../platform/api.ts';
 import { guardSignals } from '../../platform/api.ts';
 import { portOccupied, waitForHealth } from '../../platform/api.ts';
@@ -17,7 +16,7 @@ import { inspectCurrentState, clearOfflineSelection, assertCurrentForeignKeys, t
 import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordScopes, type CurrentRecord } from './selection.ts';
 import { inspectReset, resetRequestProblems } from './inspection.ts';
 import { runReset, ResetFailure, type ResetHost } from './operation.ts';
-import { parseResetRequest, RESET_DATA_SCOPE, type ResetInspection, type ResetPlan, type ResetPorts, type ResetProblem, type ResetRequest, type ResetReport, type ResetCount, type ResetDataScope } from './types.ts';
+import { parseResetRequest, RESET_DATA_SCOPE, type ResetPlan, type ResetPorts, type ResetProblem, type ResetRequest, type ResetReport, type ResetCount, type ResetDataScope } from './types.ts';
 
 export class ResetBlocked extends Error {
   readonly problems: readonly ResetProblem[];
@@ -25,7 +24,6 @@ export class ResetBlocked extends Error {
 }
 export interface ResetExecutionOptions extends ResetPorts { hostTransform?: (host: ResetHost) => ResetHost; }
 
-/** Logical records per confirmed scope; shared records may occur in multiple scope rows. No table-state rows are added. */
 export interface ResetRecordTally {
   countsUnit: 'records';
   counts: readonly ResetCount[];
@@ -90,7 +88,6 @@ export async function previewReset(context: PlatformContext, input: ResetRequest
   const request = parseResetRequest(input), inspection = await inspectReset(context);
   const blocked = resetRequestProblems(inspection, request, ports, definitionHelpPath(context, request));
   const counts = RESET_DATA_SCOPE.map(scope => ({ scope, retained: 0, cleared: null as number | null }));
-  // All means no business record survives. Incompatible or unknown shapes must not require a business reader.
   if (request.scopes === 'all' || blocked.length) return { request, inspection, counts, blocked, countsUnit: 'records', unclassifiedRetainedRecords: null };
   const state = await currentState(context, request);
   return { request, inspection, ...resetRecordTally(state.records, new Set(state.selection.cleared)), blocked: state.blocked.map(problem => ({ ...problem, name: problem.name && /^[0-9a-f]{64}$/.test(problem.name) ? undefined : problem.name })) };
@@ -112,7 +109,6 @@ async function vaultNotices(context: PlatformContext): Promise<ResetProblem[]> {
 
 export async function resetData(context: PlatformContext, input: ResetRequest, ports: ResetExecutionOptions = {}): Promise<CountedResetReport> {
   const request = parseResetRequest(input);
-  // Reject account-clearing + definition before lock files, recovery, backup or service operations.
   const immediate = resetRequestProblems(undefined, request, ports, definitionHelpPath(context, request));
   if (immediate.length) throw new ResetBlocked(immediate);
   return withLock(platformLockPath(context), async () => {
@@ -124,7 +120,7 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
     const resultPath = join(context.layout.logs, 'reset-' + id + '.json');
     const snapshot = request.keepConfig ? join(context.layout.root, 'private-config-snapshots', id + '.json') : undefined;
     let observedTally: ResetRecordTally | undefined;
-    let inspection: ResetInspection | undefined, state: CurrentResetState | undefined, plan: ResetPlan | undefined;
+    let state: CurrentResetState | undefined, plan: ResetPlan | undefined;
     let backup: ResetBackup | undefined, wasRunning = false, wasLoaded = false, archived = false, created = false;
     let originalOid = '';
     let originals: ProtectedFile[] = [], notices: ResetProblem[] = [], definitionPath: string | undefined;
@@ -148,14 +144,14 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
       async inspect() {
         checkpoint();
         await recoverPendingReset(context);
-        plan = await previewReset(context, request, ports); inspection = plan.inspection;
+        plan = await previewReset(context, request, ports);
         if (plan.blocked.length) throw new ResetBlocked(plan.blocked);
         if (request.definitionFile) {
           definitionPath = definitionHelpPath(context, request);
           try {
             if (/^src:[0-9a-f]{64}$/.test(request.definitionFile)) {
               if ((await sha256File(definitionPath!)).sha256 !== request.definitionFile.slice(4)) throw new Error();
-            } else await readFile(definitionPath!); // U1 alone interprets the definition; this only verifies readability.
+            } else await readFile(definitionPath!);
           } catch {
             definitionProblem = new ResetBlocked([{ reason: '定义文件无法读取或上传对象身份不符', nextAction: '核对定义文件 ' + request.definitionFile + ' 后重试；未读取或输出文件内容' }]);
             throw definitionProblem;
@@ -171,7 +167,6 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
       async stop() {
         checkpoint(); await save(); await agent.stop();
         if ((await agent.status()).running || await portOccupied(settings.port)) throw new Error('原服务仍运行，不能归档数据');
-        // Re-select after stopping. Writes committed after the earlier backup are retained by the later archive clone.
         if (request.scopes !== 'all') { state = await currentState(context, request); if (state.blocked.length) throw new ResetBlocked(state.blocked); }
         await assertProtectedFiles(context.layout, originals);
       },
@@ -196,7 +191,6 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
       },
       async restoreConfiguration() {
         checkpoint();
-        // A selective clone already keeps config byte-for-byte; protected restore is used exactly once on a fresh baseline.
         if (snapshot && request.scopes === 'all') await ports.restoreConfiguration!(snapshot);
         if (definitionPath) await ports.applyDefinition!(definitionPath);
         await assertProtectedFiles(context.layout, originals);
@@ -211,7 +205,6 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
           const [retained] = await session.query('SELECT count(*)::text AS n FROM records WHERE digest=ANY($1::text[])', [state!.selection.retained]);
           if (Number(retained!.n) !== state!.selection.retained.length) throw new Error('未选记录的保留计数不符');
         });
-        // Recount the actual restored current database. Scope totals contain records only, not authentication/table row totals.
         observedTally = resetRecordTally((await currentState(context, request)).records);
         await assertProtectedFiles(context.layout, originals);
         await maintenance(session => session.query(`GRANT CONNECT ON DATABASE ${quoteIdentifier(database)} TO ${quoteIdentifier(postgres.application.user)}`).then(() => {}));

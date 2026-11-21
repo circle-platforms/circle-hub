@@ -62,7 +62,6 @@ async function comparison(guard: string) {
   const b = inspectBundle(f.bundle);
   const contexts: GuardContextInput = { schema: 'circle-replay-guard-context@1', cases: [...b.pairs.values()].map(p => ({ session: p.session, call: p.call.id, input: { event: 'before_tool', tool_name: p.call.name, tool_input: p.call.args }, entry: 'guard.mjs', files: { 'guard.mjs': '// source fixture' }, baseline: p.denied ? { decision: 'deny', reason: p.denied.reason! } : { decision: 'none', reason: '' }, provenance: 'scripted' })) };
   writeFileSync(join(f.dir, 'contexts.json'), JSON.stringify(contexts));
-  // Capture explicit operator/scripted state separately; it is never guessed from the current Home.
   const bundle = join(f.dir, 'guard-bundle');
   capture({ home: f.home, session: 's0', app: f.app, out: bundle, guardContext: join(f.dir, 'contexts.json') });
   const file = join(f.dir, 'candidate.mjs');

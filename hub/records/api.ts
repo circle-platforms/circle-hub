@@ -1,4 +1,3 @@
-export type { EnvironmentUpgradeSnapshot, EnvironmentUpgradePlan, EnvironmentUpgradeGrant } from './environment-upgrade-types.ts';
 export { exportConfigurationSnapshot, validateConfigurationSnapshot, restoreConfigurationSnapshot } from './configuration-snapshot.ts';
 export type { ConfigurationSnapshot, ConfigurationClosure, ConfigurationObject, ConfigurationPackage, ConfigurationAuthentication } from './configuration-snapshot-types.ts';
 import type { SecretCipherIdentity } from '../../contracts/src/variables.ts';
@@ -197,7 +196,6 @@ export interface Principals {
   clientsMany?(clientIds:readonly string[]):Promise<Map<string,OAuthClient>>;
   /** Live access Bearer only, excluding console sessions; metadata comes from the server's token binding. */
   authenticateAccessToken?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
-  /** Console cookie Bearer only; access tokens are refused. */
   authenticateConsoleSession?(authorization:string|null|undefined):Promise<Principal|null>;
   /** Internal authentication also supports the console's bounded password-session credential. */
   authenticate(authorization: string | null | undefined): Promise<Principal | null>;
@@ -683,7 +681,6 @@ export interface VaultSecretWriteResult extends VaultSecretMetadata {
   readonly archive?: VaultArchiveReceipt;
 }
 export interface VaultSecretWrite {
-  /** Used only for in-vault disclosure checks, never persisted in value metadata or archive receipts. */
   reason?: string;
   name: string;
   value: string;
@@ -698,9 +695,7 @@ export interface Vault {
   initKey(): Promise<void>;
   putSecret(input: VaultSecretWrite): Promise<VaultSecretWriteResult>;
   secretMetadata(name: string): Promise<VaultSecretMetadata | null>;
-  /** Authenticated identity only; does not open value ciphertext. Null when absent or revoked. */
   secretIdentity(name: string): Promise<SecretCipherIdentity | null>;
-  /** Metadata-only identities newest first; absent ciphertext identities are not fabricated. */
   secretHistoryIdentities(name: string): Promise<SecretCipherIdentity[]>;
   secretHistory(name: string): Promise<VaultSecretMetadata[]>;
   secretNames(): Promise<string[]>;
@@ -973,21 +968,13 @@ export interface CallLogQuery extends PageQuery {
   to?: string;
 }
 
-/**
- * Read-only count of recent error lines for refusal escalation (D5).
- * Boss 18:09: sameness requires an identity fact (field path / object key / request digest), not only account+tool+code.
- */
 export interface CallLogErrorCountQuery {
   userId: string;
   tool: string;
   errorCode: string;
-  /** Inclusive lower bound on `at` (ISO-8601). */
   since: string;
-  /** 参数无效: same JSON-pointer field path (stored on the call log once Codex records it). */
   path?: string;
-  /** Other call-error categories: same object id/name the refusal named. */
   objectKey?: string;
-  /** Same request digest when path/object are absent but the body is comparable. */
   requestDigest?: string;
 }
 
@@ -1002,10 +989,6 @@ export interface CallLog {
    * on every query (a disabled account sees nothing, a demoted admin only their own calls). Newest first by default.
    */
   query(principal: Principal, query?: CallLogQuery): Promise<Page<CallLogLine>>;
-  /**
-   * How many `call_result='error'` lines this account already has for the tool and error code at or after `since`.
-   * Used before the current call is appended (occurrence = count + 1). Optional on fakes.
-   */
   countRecentErrors?(query: CallLogErrorCountQuery): Promise<number>;
   /** The initialize declaration of this account, token and Hub-issued Mcp-Session-Id; null when the session declared none. */
   declaredClient?(userId:string,mcpSession:string|null,tokenId:string|null):Promise<{name:string;version:string|null}|null>;

@@ -24,7 +24,6 @@ export function observabilitySkillFile(path = 'SKILL.md') {
   return file ? { pack: observabilitySkill.pack, ...file } : null;
 }
 
-// Project diagnostics explicitly. Parameters, notes and status text can hold private material.
 export function observedCall(line: CallLogLine) {
   const { at, user, session, tool, run, trace_id, span_id, call_result, error_code, acceptance, duration_ms } = line;
   return { at, user, session, tool, run, trace_id, span_id, call_result, error_code, acceptance, duration_ms };

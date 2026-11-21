@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { writeHome } from './circle-home.ts';
-import { decideRaw, environment } from './guard-lib.ts';
+import { decideRaw, decisionOf, environment } from './guard-lib.ts';
 import { renderAgentDefinition, resolveSubagentRole } from '../../packs/workflow/case-compile/functions/subagent-roles.ts';
 
 function fixture(stdinOnly=false) {
@@ -21,7 +21,7 @@ function fixture(stdinOnly=false) {
     {name:'out',required:true,kind:'string',multiple:false,placeholder:'<目标路径>',type:'path'},
   ]}));
   const env = environment(home,workdir,'ops-allow.declaration.json');
-  const call = (tool_name:string, tool_input:Record<string,unknown>) => decideRaw(env,JSON.stringify({event:'before_tool',cwd:workdir,tool_name,tool_input}));
+  const call = async (tool_name:string, tool_input:Record<string,unknown>) => decisionOf(await decideRaw(env,JSON.stringify({hook_event_name:'PreToolUse',cwd:workdir,tool_name,tool_input})));
   return {file,tools,workdir,call,close:()=>rmSync(root,{recursive:true,force:true})};
 }
 test('T1b #10 token heredoc authority comes from the declaration, independent of reader names and counts', async()=>{

@@ -1,6 +1,3 @@
-// Internal library helpers for building authoring briefs (`briefs/<index>.md`) and single-case structured `compile-brief@1` context:
-// `tools/download-run.ts` calls `writeBriefs`, and `tools/task-brief.ts` calls `loadRunStructuredContext` / `buildSingleCaseStructuredBrief`.
-// It reads local files only, decides nothing, and never overwrites an existing brief file.
 import { realpathSync } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -40,14 +37,12 @@ import {
 
 const parsed = (name: string, text: string): unknown => { try { return JSON.parse(text); } catch { throw new CallFailure("invalid_parameters", `${name} 不是完整的 JSON`, "重新下载该运行对应的完整 JSON 原件，再按原文件名生成简报"); } };
 
-/** The command forms and the parameter a manual row states, when the entry's data carries them whole. */
 const parameterOf = (data: unknown): { parameter?: { commands: string[]; name: string } } => {
   const stated = isRecord(data) && isRecord(data.parameter) ? data.parameter : null;
   if (!stated || typeof stated.name !== 'string' || !stated.name || !Array.isArray(stated.commands) || !stated.commands.length || !stated.commands.every((command) => typeof command === 'string' && command)) return {};
   return { parameter: { commands: stated.commands as string[], name: stated.name } };
 };
 
-/** The knowledge root a run download wrote: every node by canonical path, and the line each node's block starts at in the text files. Null when the run brought no root. */
 export async function readKnowledge(directory: string): Promise<BriefKnowledge | null> {
   let raw: string;
   try { raw = await readFile(join(directory, 'knowledge', 'nodes.jsonl'), 'utf8'); } catch (error) { if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return null; throw error; }
@@ -70,7 +65,6 @@ export async function readKnowledge(directory: string): Promise<BriefKnowledge |
   const lines: BriefKnowledge['lines'] = new Map();
   for (const file of (await readdir(join(directory, 'knowledge'))).filter((name) => name.endsWith('.txt')).sort()) {
     const text = (await readFile(join(directory, 'knowledge', file), 'utf8')).split('\n');
-    // A block starts at `# <path of a node>` and runs to the blank line before the next one; the first such line is the block.
     const starts: Array<{ path: string; at: number }> = [];
     text.forEach((value, at) => { if (value.startsWith('# /')) { const path = canonicalPath(value.slice(2)); if (nodes.has(path)) starts.push({ path, at }); } });
     starts.forEach((start, order) => {
@@ -84,20 +78,16 @@ export async function readKnowledge(directory: string): Promise<BriefKnowledge |
 }
 
 export interface BriefReport { briefs: number; kept: number; without_record: number }
-/** Writes `briefs/<index>.md` for every item of the directory that carries a recomposition record; a brief already there is left as it is. */
 export async function writeBriefs(directory: string): Promise<BriefReport> {
   const report: BriefReport = { briefs: 0, kept: 0, without_record: 0 };
   const knowledge = await readKnowledge(directory);
   if (!knowledge) return report;
   const run = parsed('run.json', await readFile(join(directory, 'run.json'), 'utf8'));
   const policy = policyOf(isRecord(run) ? run.command_policy : null);
-  // The bed a plan's bucket must name is the one the run's bound profile selects.
   const groups = isRecord(run) && Array.isArray(run.groups) ? run.groups.filter(isRecord) : [];
   const bed = groups.map((group) => (isRecord(group.profile) && typeof group.profile.bed === 'string' ? group.profile.bed : null)).find((value) => value !== null) ?? null;
   const runnerCleanup = (await loadOptionalBoundSources(directory, bed)).runnerCleanup;
   const present = new Set(await readdir(join(directory, 'briefs')).catch(() => [] as string[]));
-  // A case whose recomposition is bound after the run started has its record in late.json once it is accepted (functions/late.ts):
-  // its brief is written then, by tools/refresh-late.ts, and a case still waiting is counted without a record.
   const late = readLateFile(directory, isRecord(run) && typeof run.run === 'string' ? run.run : undefined);
   for (const name of (await readdir(join(directory, 'items'))).filter((value) => /^\d+\.json$/.test(value)).sort()) {
     const index = name.slice(0, -'.json'.length);
@@ -107,9 +97,6 @@ export async function writeBriefs(directory: string): Promise<BriefReport> {
     if (present.has(`${index}.md`)) { report.kept++; continue; }
     await mkdir(join(directory, 'briefs'), { recursive: true, mode: 0o700 });
     await writeFile(join(directory, 'briefs', `${index}.md`), Buffer.from(brief.text), { flag: 'wx', mode: 0o600 });
-    // The case's own recomposition record beside its brief, taken at the same moment as the receipt in the brief's plan shell: in a real
-    // run eighteen writers opened late.json (every case's record, 300 KB) eighty-four times to find their own, and two of them stopped
-    // over its receipt, which changes whenever another case is accepted and is never compared.
     await mkdir(join(directory, RECORDS_DIRECTORY), { recursive: true, mode: 0o700 });
     await writeFile(join(directory, RECORDS_DIRECTORY, `${index}.json`), Buffer.from(JSON.stringify(recompositionOf(item) ?? null, null, 2) + '\n'), { flag: 'w', mode: 0o600 });
     report.briefs++;
@@ -117,7 +104,6 @@ export async function writeBriefs(directory: string): Promise<BriefReport> {
   return report;
 }
 
-/** What the downloaded returns of one earlier verification run hold for the case `autoid`: its rows of index.json, with paths from the working directory. */
 async function localCaseReturns(root: string, dir: string, autoid: string): Promise<{ rows: LocalCaseReturn[]; missing?: string }> {
   const base = resolve(root, dir);
   if (!isInsideRoot(base, root)) return { rows: [], missing: `设备输出的目录 ${dir} 不在工作目录里` };
@@ -134,8 +120,6 @@ async function localCaseReturns(root: string, dir: string, autoid: string): Prom
         const text = await readFile(resolve(root, path), 'utf8').catch(() => null);
         if (text !== null) commands = (commands ?? 0) + sessionCommandCount(text);
       }
-      // A row that passed: what its log shows each step sent is disclosed in the brief itself (a path alone was not opened by
-      // any of sixteen writers in the first compile that listed them).
       const logPath = here(row.log);
       const logText = row.verdict === 'pass' && logPath ? await readFile(resolve(root, logPath), 'utf8').catch(() => null) : null;
       rows.push({
@@ -150,11 +134,6 @@ async function localCaseReturns(root: string, dir: string, autoid: string): Prom
   return { rows };
 }
 
-/**
- * The earlier device verifications of the case `autoid`, from the history.json a download of the run wrote into `directory`
- * (tools/download-run.ts) and the returns it names under the working directory. It reads local files only and decides nothing:
- * no file, an unreadable one or a fetch that did not succeed is said as unavailable with its reason.
- */
 export async function loadPriorDeviceHistory(directory: string, autoid: string, cwd: string = process.cwd()): Promise<PriorDeviceHistory> {
   let raw: string;
   try { raw = await readFile(join(directory, HISTORY_FILE), 'utf8'); } catch { return unavailableHistory(PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON); }
@@ -163,11 +142,10 @@ export async function loadPriorDeviceHistory(directory: string, autoid: string, 
   if (file === null) return unavailableHistory(`运行目录里的 ${HISTORY_FILE} 读不出来（不是 device-history@1）。`);
   if (!autoid) return unavailableHistory('这一条用例没有 autoid，对不上此前上机的报告行。');
   const root = realpathSync(cwd);
-  // The download did not wait for the fetch it started: what the fetch has kept since, in the compile's history directory, is read now.
   if (file.status !== 'fetched' && file.pending) {
     const kept = resolve(root, file.pending.shared, HISTORY_FILE);
     if (isInsideRoot(kept, root)) {
-      try { const since = parseDeviceHistory(JSON.parse(await readFile(kept, 'utf8'))); if (since && !since.pending) file = since; } catch { /* Not there yet: the pending file says so. */ }
+      try { const since = parseDeviceHistory(JSON.parse(await readFile(kept, 'utf8'))); if (since && !since.pending) file = since; } catch { }
     }
   }
   const held = new Map<string, { rows: LocalCaseReturn[]; missing?: string }>();
@@ -209,7 +187,6 @@ export interface RunStructuredContext {
   triggerTypes: string[];
   failureMarkers: string[];
   runnerCleanup: RunnerCleanup | null;
-  /** The run directory's late.json (functions/late.ts): the records bound after the run started that the Hub has accepted so far. */
   late?: RunLate | null;
 }
 
@@ -280,10 +257,6 @@ async function loadOptionalBoundSources(
   };
 }
 
-/**
- * Loads shared run metadata, frozen knowledge, bed facts, and failure markers once for a downloaded run directory.
- * Reusable by `task-brief.ts` for single-case in-memory `compile-brief@1` generation without touching sibling items.
- */
 export async function loadRunStructuredContext(directory: string): Promise<RunStructuredContext | null> {
   const knowledge = await readKnowledge(directory);
   if (!knowledge) return null;
@@ -319,7 +292,6 @@ export async function loadRunStructuredContext(directory: string): Promise<RunSt
   };
 }
 
-/** Reads optional pre-selected Plumb command candidates under `<runDir>/plumb/cmd_candidates/<index>.json`, preserving model-unconfirmed status. */
 export async function loadPlumbCandidates(
   directory: string,
   index: string,
@@ -385,7 +357,6 @@ export async function loadPlumbCandidates(
   return undefined;
 }
 
-/** Builds an in-memory `compile-brief@1` for ONE case item using an already loaded `RunStructuredContext`. */
 export function buildSingleCaseStructuredBrief(params: {
   ctx: RunStructuredContext;
   item: unknown;
@@ -398,7 +369,6 @@ export function buildSingleCaseStructuredBrief(params: {
   unrecordedAttribution?: PriorAttributionItem | null;
   scopeText?: string;
   plumbCandidates?: PlumbBriefCandidates;
-  /** From loadPriorDeviceHistory for this case; without it the brief says the history is unavailable. */
   priorDeviceHistory?: PriorDeviceHistory;
 }): CompileBriefV1 | null {
   const mode: CompileBriefMode = params.mode ?? (params.round > 1 ? 'rework_device' : 'initial');
@@ -428,10 +398,6 @@ export function buildSingleCaseStructuredBrief(params: {
   });
 }
 
-/**
- * Generates versioned structured `compile-brief@1` JSON and round-scoped Markdown (`briefs/<index>.round-<n>.json` & `.md`),
- * leaving earlier round briefs untouched and injecting `bedFacts`, `prerequisites`, `prior_device_history`, and `round_history`.
- */
 export async function writeStructuredBriefs(options: WriteStructuredBriefsOptions): Promise<StructuredBriefReport> {
   const cwd = resolveCwdRoots(options.cwd);
   const runResolved = resolveRunDirectory(options.runDir, cwd);

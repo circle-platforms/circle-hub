@@ -276,7 +276,6 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       assert.deepEqual(downloaded, bytes(value), `${slot} keeps its exact authored source bytes`);
       assert.equal(matches[0].reference, `src:${sha256Hex(downloaded)}`);
     }
-    // Owner T7 / run30 #9: the generator resolves verified source pointers, without legacy filename overrides.
     const argv = ['run', 'result', 'submission'].flatMap(name => [`--${name}`, name === 'run' ? directory : join(directory, `${name}.json`)]);
     const output = join(directory, 'case.xlsx');
     const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
@@ -309,7 +308,6 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.equal(v.result?.acceptance, 'accepted', JSON.stringify(v.result?.errors));
     const note: DispatchNote | undefined = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
     assert.match(note.text, /^不存在：.*预订/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
-    // Members get the authorized environment and missing count; administrators retain exact resource keys.
     const held = new Set((await bed.hub.leases.view('bed/')).entries.map(e => e.key));
     const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
     assert.ok(missing.length > 0);

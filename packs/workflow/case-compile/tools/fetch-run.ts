@@ -20,7 +20,6 @@ import { assertEmptySourceOutput, sourceMaterialNames, type SourceMaterial } fro
 
 const SLOTS = ['contract', 'profile', 'inventory'] as const;
 export interface RunInputs { run: Record<string, unknown>; result: Record<string, unknown>; submission: Record<string, unknown>; originals: Record<typeof SLOTS[number], Uint8Array>; run_reference?: string; accepted_result_reference?: string | null; materials?: SourceMaterial[] }
-/** The run, its latest accepted result and submission, and the run's bound contract, profile and inventory, each checked. */
 export async function fetchRunInputs(origin: string, bearer: string, run: string, retry?: RetryControl): Promise<RunInputs> {
   const raw = await getRetrying(`${origin}/run-export/${run}`, bearer, retry);
   let exported: unknown;

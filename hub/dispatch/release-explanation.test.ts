@@ -39,7 +39,6 @@ test('explain-release is an admin-only read with no storage writes, vault key, r
  try{
   assert.equal(await jobCommand(session,['explain-release','--run',c.run,'--executor',c.executor.id]),0);
   assert.ok(output.some(line=>line.includes('release.parameters.sha256')));assert.ok(output.some(line=>line.includes('release.artifact')));assert.ok(output.some(line=>line.includes('只读诊断')));
-  // C14: matching identity sides may appear as plain expected/actual; run ids and non-identity originals stay out.
   assert.ok(output.some(line=>line.includes('"expected":"synthetic-bed"')&&line.includes('"actual":"synthetic-bed"')));
   assert.ok(!output.join('\n').includes(c.run));
   assert.equal(c.calls.length,0);

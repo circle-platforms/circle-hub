@@ -24,14 +24,13 @@ test('personal runs remain private to their runner, including against administra
   assert.equal(canSeeRun(alice, run), true);
 });
 
-test('both run extraction call shapes enforce the received-submission schema', () => {
+test('run extraction enforces the received-submission schema', () => {
   const received = record('submission', { received: { run: run.run } }, 'submission-received@1');
   assert.equal(runOfRecord(received), run.run);
-  assert.equal(runOfRecord(received.kind, received.body, received.schema), run.run);
-  assert.equal(runOfRecord('submission', received.body, 'unrelated@1'), null);
-  assert.equal(runOfRecord('authorization', { run: run.run }), null);
-  assert.equal(runOfRecord('claim', { run: run.run }, 'hypothesis-set@1'), run.run);
-  assert.equal(runOfRecord('submission', { run: run.run, received: { run: 'other' } }, 'submission-received@1'), run.run);
+  assert.equal(runOfRecord(record('submission', received.body, 'unrelated@1')), null);
+  assert.equal(runOfRecord(record('authorization', { run: run.run })), null);
+  assert.equal(runOfRecord(record('claim', { run: run.run }, 'hypothesis-set@1')), run.run);
+  assert.equal(runOfRecord(record('submission', { run: run.run, received: { run: 'other' } }, 'submission-received@1')), run.run);
 });
 
 test('the current stored account decides, with disabled and deleted accounts refused', async () => {

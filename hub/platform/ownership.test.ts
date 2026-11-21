@@ -49,7 +49,6 @@ async function tamperingStatements(session: SqlSession): Promise<string[]> {
       updateProbe = [`UPDATE ${table} SET ${quoted} = ${quoted}`];
     }
     out.push(
-      // Team and lease tables are mutable projections, not the append-only authorization history.
       ...(['lease_registrations', 'oauth_clients', 'trace_spans', 'resource_samples', 'process_events', 'team_members'].includes(table) ? [] : [`DELETE FROM ${table}`]),
       ...updateProbe,
       `TRUNCATE ${table}`,

@@ -3,7 +3,6 @@ import { ZodError } from 'zod';
 import type { HubConfig } from '../config/index.ts';
 import type { RebuildResetBridge } from './rebuild-http.ts';
 
-/** Uses the server's fixed reset worker with ResetPorts (apply/export); never runs resetData in the serving process. */
 export async function createPlatformRebuildBridge(config: HubConfig, env: NodeJS.ProcessEnv): Promise<RebuildResetBridge> {
   const platform = await import('../platform/api.ts');
   const reset = await import('./reset/types.ts');

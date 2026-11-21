@@ -1,6 +1,3 @@
-// Decision 179 (W06 R[7]): GET /run-export/<run>/late answers run-late@1 from the runs service's exportLate, for the runner
-// and administrators only, with a content digest; a run that binds nothing after the start answers 404 and says so; the route
-// never goes through exportRun (which would wait for a submission of the run). Synthetic deps only.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';

@@ -1,24 +1,5 @@
 // Decision 104: a client generates its artifacts from its own run without an administrator export, independently authorized on
-// every request with the same token as MCP. GET /run-export/<run>/run answers the run alone. GET /run-export/<run> answers the run, its latest accepted result and that result's
 // submission as stored (runner and administrators only); GET /run-export/<run>/sources/<sha256> answers the original bytes of one
-// source bound to that run, at the reader's readable tier. Decision 160 (relay): GET /run-export/<run>/jobs answers the jobs the
-// run was dispatched in with each item's verdict, and the sources route also answers what those jobs returned (the result
-// projection, the device return, each failed item's log and sessions), at the reader's readable tier. Decision 162: GET
-// /run-export/<run>/successors answers the runs started with that run as predecessor that the reader may export, reduced to
-// pack, start, parameters and bound references, so a client tool walks a lineage instead of trusting a list of runs.
-// Decision 179 (W06 R[7]): GET /run-export/<run>/late answers run-late@1, the inputs the run binds after the start resolved now
-// for the runner and the overlay of each item the workflow's refresh function computed from them, as an evaluation now would;
-// nothing is stored and no submission lock is taken. A run that binds nothing after the start answers 404 and says so.
-// Decision 182 (W06 R[8]): GET /run-export/<run>/history answers run-history@1, the earlier runs that verified the same subject
-// on a target and that the reader may export (the rule of every route here, asked of each run listed), newest first, at most
-// eight; `?limit=<1-8>` lowers that and is the only query any route here takes. Recorded facts only: the run, its locked build,
-// and for each job that took effect the plan run, when its journal ended and each report row's item and verdict. A run nothing
-// earlier verified answers an empty list.
-// K05 and D06 R[2] (lock the root, fetch the subtree, verify the references at delivery): GET /run-export/<run>/knowledge answers
-// the product root the run locked as one batch, every node to the leaves as a subtree read shows it to this reader, one JSON
-// line each after a head line. The client keeps it by its digest and reads it locally; in run 21 a model read the same
-// immutable root through 126 paged calls, 97 of them command-tree subtrees. Each entry also carries its source `fragments` (what a
-// reference read gives as `grounds`): the tree records no document order, so that is where a client finds an entry's place in its source.
 import { performance } from 'node:perf_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { RunId } from '../../contracts/src/common.ts';
@@ -36,15 +17,8 @@ const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
 const CONSOLE_REFUSED = Buffer.from(CONSOLE_SESSION_REFUSED + '\n');
 export function runExportTarget(target: string | undefined): boolean { return /^(?:http:\/\/[^/]+)?\/run-export(?:[\/\\%]|$)/i.test(target ?? ''); }
 
-/** Runs whose produced digests one process keeps. */
 const PRODUCED_RUNS = 64;
-/** The digests each run's jobs returned, by the runs service that listed them. What a job returned is only appended, so a
- * digest found once stays found: a client that downloads every log and session of a run lists its jobs once, not once per
- * file (run 16 downloaded 80 files of one run, each reading every dispatch reservation of the Hub again). A digest not found
- * lists the jobs again, since a job may have ended since. */
 const producedBy = new WeakMap<object, Map<string, Set<string>>>();
-/** What one of the run's jobs returned, when sha names it: read at the reader's own tier, as any source of theirs. The caller
- * has already checked that the reader may export the run. */
 async function jobOutput(deps: ServerDeps, principal: Principal, run: string, sha: string) {
   let runs = producedBy.get(deps.runs);
   if (!runs) producedBy.set(deps.runs, runs = new Map());
@@ -62,21 +36,17 @@ async function jobOutput(deps: ServerDeps, principal: Principal, run: string, sh
   return runs.get(run)?.has(sha) ? deps.records.artifacts.source(principal, sha) : null;
 }
 
-/** Roots whose batch read one process keeps: under a digest the content does not change (K05 R[0]). */
 const KNOWLEDGE_KEPT = 2;
 const knowledgeKept = new WeakMap<object, Map<string, { body: Buffer; nodes: number; entries: number }>>();
-/** The product root the run locked, as one batch for this reader; null when the run locked none or the reader may not read it. */
 async function lockedKnowledge(deps: ServerDeps, principal: Principal, run: { run: string; root?: string | null; target_basis?: ReadonlyArray<{ statement: { data?: Record<string, unknown> | null } }> }): Promise<Buffer | null> {
   const root = run.root;
   if (typeof root !== 'string' || !deps.knowledge?.subtree) return null;
-  // The composition the run locked for this root, chosen as a subtree read of the run chooses it.
   const ids = (run.target_basis ?? []).flatMap((claim) => { const data = claim.statement.data; return data && data.root === root && typeof data.composition === 'string' ? [data.composition] : []; });
   const composition = new Set(ids).size === 1 ? ids[0] : null;
   let kept = knowledgeKept.get(deps.knowledge);
   if (!kept) knowledgeKept.set(deps.knowledge, kept = new Map());
   const key = `${root}\u0000${composition ?? ''}`;
   let found = kept.get(key);
-  // What is kept is the same for every reader of the root; whether this reader may read the root is asked every time.
   const mayRead = deps.knowledge.treeReader().hasRoot;
   if (found && mayRead) { if (!(await mayRead(root, { user: principal.id, role: principal.role }))) return null; }
   else {
@@ -93,7 +63,6 @@ async function lockedKnowledge(deps: ServerDeps, principal: Principal, run: { ru
 
 export async function handleRunExport(request: IncomingMessage, response: ServerResponse, deps: ServerDeps, log: (line: string) => void): Promise<void> {
   const started = performance.now(); const raw = (request.url ?? '').replace(/^http:\/\/[^/]+/i, '');
-  // The history route alone takes a query, and only `limit`; `limit` is null when the query is anything else.
   const queried = /^([^?#]*\/history)\?(.*)$/.exec(raw);
   const path = queried ? queried[1] : raw;
   const limit = queried ? (/^limit=([1-8])$/.exec(queried[2])?.[1] ?? null) : undefined;
@@ -143,7 +112,6 @@ export async function handleRunExport(request: IncomingMessage, response: Server
         if (batch) { status = 200; bytes = batch; note = '运行锁定的知识根'; headers['content-type'] = 'application/x-ndjson; charset=utf-8'; headers['content-digest'] = digestHeader(bytes); headers.etag = `"${sha256Hex(bytes)}"`; }
         else note = '运行没有锁定知识根，或读者读不到它';
       } else if (exported && sha === null) {
-        // The run alone, before anything is accepted: a client tool needs the frozen items to prepare the first submission.
         if (runOnly) { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run_reference: exported.run_reference, run: exported.run })); note = '运行'; headers['content-type'] = 'application/json'; }
         else if (!exported.result || exported.submission === null) { status = 409; bytes = Buffer.from('这个运行还没有已受理的提交；按回执改正并重交，被受理后再导出\n'); note = '没有已受理结果'; }
         else { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run_reference: exported.run_reference, accepted_result_reference: exported.accepted_result_reference, run: exported.run, result: exported.result, submission: exported.submission })); note = '运行与已受理结果'; headers['content-type'] = 'application/json'; headers['content-digest'] = digestHeader(bytes); }

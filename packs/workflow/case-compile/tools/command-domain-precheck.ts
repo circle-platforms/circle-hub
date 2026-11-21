@@ -1,4 +1,3 @@
-// Offline disclosure report. This entry point never creates a network/device reader.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -19,7 +18,6 @@ export async function main(argv: string[], out: (line: string) => void = console
     if (!options.has('--input') || !options.has('--out')) failCall('invalid_parameters', '缺少 --input 或 --out', '补齐两个必填选项', { legal_form: USAGE });
     const cwd = resolveCwdRoots(cwdPath), input = resolveExistingFileInsideCwd(cwd, options.get('--input')!, '--input');
     const target = resolveInsideCwd(cwd, options.get('--out')!, '--out');
-    // Real materials and reports never become repository fixtures by accident.
     let existing = dirname(target.canonical);
     while (!existsSync(existing)) existing = dirname(existing);
     let ancestor = realpathSync(existing);

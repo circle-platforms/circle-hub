@@ -1,9 +1,3 @@
-// Why a replacement source is refused, in the shared form of a refusal (functions/refusal-form.ts), and where the address comes from
-// when the plan's frozen recomposition record holds it. The rule is not here: only an address the locked tree parses out of the
-// author's own commands may be replaced (checks.ts, decision 115). Round 37: all three writers wrote the documentation address that
-// the recompose step puts into its adapted commands when the author left an address undetermined (192.0.2.10, 2001:db8::1, ...)
-// as the source of a replacement, were refused with the rule alone, and found by trial that the bed address goes into the step.
-// This module only reads; it decides nothing and rewrites nothing.
 import { addressKey, addressValue } from './manifest.ts';
 import { compileGrammar, commandIdentity } from './generated/skills/command-tools/command-check/grammar.ts';
 import { commandDefinitions } from './command-obligations.ts';
@@ -11,7 +5,6 @@ import { identityOf } from './typed-contract.ts';
 import { isRecord } from './text.ts';
 import { PLAN_DATA, refusalText, shownValue } from './refusal-form.ts';
 
-/** RFC 5737 (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) and RFC 3849 (2001:db8::/32): the addresses the recompose rule writes when the author left one undetermined. */
 export function isDocumentationAddress(text: string): boolean {
   const v4 = addressValue('ipv4', text);
   if (v4 !== null) return [0xc0000200n, 0xc6336400n, 0xcb007100n].some((base) => v4 >> 8n === base >> 8n);
@@ -20,21 +13,14 @@ export function isDocumentationAddress(text: string): boolean {
 }
 
 export interface RecordPlace {
-  /** An address parameter of an adapted command, read by the locked tree; or inside a sentence of the record, found by the value as written. */
   how: 'command' | 'sentence';
-  /** Where it sits, as a JSON Pointer into the frozen recomposition record. */
   at: string;
-  /** The author step of the adapted row (command). */
   atom?: string;
-  /** What the record's own notes call a sentence ("unknowns 第 2 条"). */
   label?: string;
-  /** The command line (command), or the words around the address (sentence). */
   text: string;
-  /** command: the line with this address written as the bed address, when that is one. */
   fixed?: string;
 }
 
-/** The address as one token: not the start, the end or the middle of a longer address or word (192.0.2.1 is not in 192.0.2.10). */
 function token(address: string): RegExp {
   const v6 = address.includes(':'), escaped = address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return v6 ? new RegExp(`(?<![0-9A-Fa-f:])${escaped}(?![0-9A-Fa-f:])`, 'gi') : new RegExp(`(?<![0-9A-Za-z.])${escaped}(?![0-9A-Za-z]|\\.[0-9])`, 'g');
@@ -45,12 +31,6 @@ function excerpt(text: string, index: number, length: number): string {
   return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
 }
 
-/**
- * Where the recomposition record holds `source`: first as an address parameter of an adapted command (each command read by the
- * locked tree, compared by address value, so 2001:0DB8::1 is 2001:db8::1), then, apart, in the sentences the record keeps beside
- * them (unknowns, the concretizations, the prerequisites of the states) by the value as the writer wrote it, whole-token only.
- * Nothing is looked for by shape: the address is the one the writer named.
- */
 export function recordPlaces(record: unknown, catalog: unknown, source: string, bed: string): RecordPlace[] {
   const key = addressKey(source);
   if (key === null || !isRecord(record)) return [];
@@ -86,12 +66,6 @@ export function recordPlaces(record: unknown, catalog: unknown, source: string, 
   return places;
 }
 
-/**
- * The text of the refusal of one replacement row whose source is no address of the author's commands. `allowed` are the addresses
- * the rule accepts as a source, as their texts. The plan's `replacements` row is shown as written; the next step is the correct
- * form, which names the bed address of the row and, when the record holds the address in an adapted command, that command with
- * the bed address in its place.
- */
 export function replacementSourceText(input: { replacement: { case: string; bed: string }; index: number; allowed: readonly string[]; record: unknown; catalog: unknown }): string {
   const { replacement, index, allowed } = input, source = replacement.case, bed = replacement.bed;
   const places = recordPlaces(input.record, input.catalog, source, bed);

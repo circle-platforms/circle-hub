@@ -1,10 +1,4 @@
 import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
-// The whole run on local disk before anything is written for it (decision 160, step 1): run.json, one file per frozen item and
-// the original bytes of every bound source, each checked against its digest, so the model reads them with its own file tools
-// instead of one Hub call per item. It reads the run alone, so it works right after start_run; it decides nothing.
-//   node <skill directory>/tools/download-run.ts --hub %HUB_URL% --run <run id> --out <directory> <<'EOF'
-//   %HUB_TOKEN%
-//   EOF
 import { realpathSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';

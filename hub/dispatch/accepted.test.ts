@@ -44,7 +44,6 @@ test('without an enabled administrator, or when the release does not hold, the H
   c.detail.latest!.result.errors.push({ code: 'SOURCE_UNAVAILABLE', message: 'synthetic' });
   const held = await c.service.dispatchAccepted(c.run);
   assert.equal(held.started, false); assert.match(held.reason ?? '', /放行条件里有/);
-  // The release check that does not hold is named by its fixed label; non-admin runner gets no CLI.
   assert.match(held.reason ?? '', /核验结果没有未消除错误/); assert.doesNotMatch(held.reason ?? '', /circle-hub|job dispatch|已记下|原样重交/);
   assert.equal(c.calls.includes('send_blob'), false);
 });
@@ -92,7 +91,7 @@ test('the runner note names no administrator command in any job state', () => {
     { ended: 'done', status: status({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, missing_fact: '合成：缺归属认证' }), expect: /部分条目没有判定/ },
   ];
   for (const row of rows) {
-    const note = runnerNote({ job, boundary_refused: row.boundary_refused ?? false, ended: row.ended, status: row.status }, 'admin-1');
+    const note = runnerNote({ job, boundary_refused: row.boundary_refused ?? false, ended: row.ended, status: row.status });
     assert.match(note.text, row.expect); assert.doesNotMatch(JSON.stringify(note), /circle-hub|job resume|job dispose|synthetic-intent:1|admin-1/);
   }
 });
@@ -100,10 +99,10 @@ test('the runner note names no administrator command in any job state', () => {
 test('before anything is sent the reference is called the pre-dispatch checks, never the results of the cases (decision 116)', () => {
   const job = 'a'.repeat(64);
   const status = (extra: Record<string, unknown>) => ({ job, phase: 'device_probe', outcome: 'not_dispatched', frozen: false, events: 3, result: `src:${'c'.repeat(64)}`, ...extra }) as unknown as JobStatus;
-  const early = runnerNote({ job, boundary_refused: false, ended: null, status: status({}) }, 'admin-1').text;
+  const early = runnerNote({ job, boundary_refused: false, ended: null, status: status({}) }).text;
   assert.match(early, /上机验证前核对的结论 src:c{64}（逐台设备的版本和接口核对，不是用例在设备上的结果：用例还没有发到设备）/);
   assert.doesNotMatch(early, /结果引用|逐条结论/);
-  const done = runnerNote({ job, boundary_refused: false, ended: 'done', status: status({ outcome: 'effective', phase: 'done' }) }, 'admin-1').text;
+  const done = runnerNote({ job, boundary_refused: false, ended: 'done', status: status({ outcome: 'effective', phase: 'done' }) }).text;
   assert.match(done, /结果引用 src:c{64}（每个派发条目一行/);
 });
 
@@ -152,7 +151,7 @@ const verdictStatus = (extra: Record<string, unknown>) => ({ job: verdictJob, ph
 
 test('a finished job points at the device return and judges nothing itself; the note fits the schema a connected client caches', () => {
   const returned = `src:${'c'.repeat(64)}`;
-  const note = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, device_return: returned }) }, 'admin-1');
+  const note = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, device_return: returned }) });
   assert.ok(note.text.includes(`设备返回 ${returned}`)); assert.match(note.text, /读设备返回，读完再判断/);
   assert.ok(note.text.length <= MAX_NOTE_TEXT);
   assert.deepEqual(SubmitResultOutput.shape.dispatch.safeParse([{job:note.job,result:note.result,text:note.text}]).error?.issues ?? [], []);
@@ -161,16 +160,14 @@ test('a finished job points at the device return and judges nothing itself; the 
 });
 
 test('the pre-dispatch reference is no device return, and an older job without one keeps the old answer', () => {
-  const before = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'not_dispatched', result: `src:${'b'.repeat(64)}`, device_return: `src:${'c'.repeat(64)}` }) }, 'admin-1');
+  const before = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'not_dispatched', result: `src:${'b'.repeat(64)}`, device_return: `src:${'c'.repeat(64)}` }) });
   assert.doesNotMatch(before.text, /设备返回/); assert.match(before.text, /上机验证前核对的结论/);
-  const older = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}` }) }, 'admin-1');
+  const older = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}` }) });
   assert.match(older.text, /读结果引用看逐条结论/);
 });
 
 type Attempted = Awaited<ReturnType<C['service']['dispatchAccepted']>>;
 test('a repeat reads the attempt still running instead of starting another, and gets the refusal that came after the answer', async (t) => {
-  // As on the bed host: the release checks outlast the wait, so the first answer says the check still runs and the refusal
-  // (the bytes went out in an earlier job) settles afterwards; it must reach a repeat, never only the operator's log.
   const c = await setup(); t.after(() => c.close());
   let release: (value: Attempted) => void = () => {}; let started = 0;
   c.service.dispatchAccepted = () => { started++; return new Promise<Attempted>((resolve) => { release = resolve; }); };
@@ -232,7 +229,6 @@ for (const [mode, reason] of [['busy', /目标拒绝了提交之前的调用（�
     // A submission that is not ready only reads: it starts nothing.
     const read = await acceptedDispatch(c.kit, c.service, c.run, false);
     assert.equal(read.length, 2); assert.equal(read[1].not_sent,true); assert.match(read[1].next_action!,/核对|恢复/); assert.doesNotMatch(read[1].next_action!,/circle-hub/);
-    // The two jobs ended the same way and read the same to the runner: the notes stay two, one per job, and the answer's text says it once.
     assert.notEqual(read[0].job, read[1].job); assert.equal(read[0].text, read[1].text);
     const { toolText } = await import('../server/text.ts');
     const text = toolText('submit_result', { call_result: 'ok', acceptance: 'accepted', errors: [], dispatch: read, trace: 'a'.repeat(32) } as never);

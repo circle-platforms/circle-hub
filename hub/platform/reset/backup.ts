@@ -1,4 +1,3 @@
-// Native PostgreSQL backup and verification. No business shape, migration SQL or previous-release reader is loaded.
 import { randomUUID } from 'node:crypto';
 import { mkdir, chmod, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -14,7 +13,6 @@ export interface ResetBackup { directory: string; tables: readonly TableSummary[
 async function summaries(session: SqlSession): Promise<TableSummary[]> {
   const known = await summarizeTables(session);
   const all = await session.query("SELECT n.nspname AS schema,c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='r' AND n.nspname<>'information_schema' AND n.nspname NOT LIKE 'pg\\_%' ORDER BY 1,2");
-  // summarizeTables omits expiring diagnostics for scheduled backups. A reset's native archive includes every table.
   const skipped = all.filter(row => !known.some(table => table.schema === row.schema && table.table === row.name));
   for (const row of skipped) {
     const table = `${quoteIdentifier(String(row.schema))}.${quoteIdentifier(String(row.name))}`;
@@ -24,7 +22,6 @@ async function summaries(session: SqlSession): Promise<TableSummary[]> {
   return known.sort((a, b) => a.schema.localeCompare(b.schema) || a.table.localeCompare(b.table));
 }
 
-/** Restores the dump into a disposable database and compares snapshot counts/digests before accepting the backup. */
 export async function nativeResetBackup(context: PlatformContext, postgres: PostgresControl): Promise<ResetBackup> {
   await assertApplicationRole(postgres, '重置前备份，');
   const id = randomUUID(), partial = join(context.layout.backups, '.reset-' + id), directory = join(context.layout.backups, 'reset-' + id);
@@ -66,7 +63,6 @@ export async function nativeResetBackup(context: PlatformContext, postgres: Post
       }
     }
     files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
-    // The public restore compares the standard (non-diagnostic) table set. The native trial above also checks diagnostics.
     const manifest = BackupManifest.parse({ schema: BACKUP_SCHEMA, created_at: context.now().toISOString(), label: 'reset',
       database: { name: postgres.target.database, server_version: String(version!.text), dump_tool: dumpTool,
         tables: standardTables, application_role: { name: postgres.application.user, privileges } }, files });

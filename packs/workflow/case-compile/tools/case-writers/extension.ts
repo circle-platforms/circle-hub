@@ -1,4 +1,3 @@
-// The client starts one writer per case; the Hub keeps every content check.
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -227,7 +226,6 @@ export async function writeCasePlans(options: { args: Arguments; runWriter: RunW
   const before = await stamps(args.plansDirectory);
   const plan = planFanOut({ cases, only: args.only, notes: args.notes, plansDirectory: args.plansDirectory, existing: new Set(before.keys()), fileOfItem: await plansByItem(args.plansDirectory, before.keys()) });
   if (plan.problems.length) throw new FanOutProblem(plan.problems.join('\n'));
-  // A file that is already there is the last round's plan. A writer that leaves it byte for byte as it was has not written.
   const earlier = new Map<string, string>();
   for (const value of plan.planned) if (value.exists) earlier.set(value.file, sha256(await readFile(value.path)));
   const where = { runDirectory: args.runDirectory, skillDirectory: args.skillDirectory };
@@ -293,7 +291,6 @@ const NO_TASK_TOOL = '暂时不可用：没有取到客户端的 task 工具（�
 export function register(api: ExtensionApi): void {
   let task: TaskTool | null = null;
   api.registerSubagent({ name: WRITER_NAME, description: WRITER_DESCRIPTION, system_prompt: WRITER_SYSTEM_PROMPT }, [...WRITER_TOOLS]);
-  // The harness hands every model request the live tool list; the one named `task` is what starts a subagent.
   api.registerMiddleware(async (request, next) => {
     const found = request.tools?.find((tool) => tool.name === 'task');
     if (found !== undefined && typeof found.run === 'function') task = found as TaskTool;

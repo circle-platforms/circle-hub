@@ -1,4 +1,3 @@
-// PostgreSQL primitives only. The server owns schema migration, data selection, authorization and recovery.
 import type { PostgresControl } from '../postgres.ts';
 import { PlatformError } from '../errors.ts';
 import { quoteIdentifier, withSession } from '../sql.ts';
@@ -18,9 +17,6 @@ function destination(value: string): string {
   return quoted;
 }
 
-/** Blocks new connections, ends existing backends and preserves the database under its archive name; never deletes it.
- * Statements may have committed before a failure. The server must recover by the saved original database identity.
- */
 export async function archiveResetDatabase(control: ResetDatabaseControl, database: string, archive: string): Promise<void> {
   const source = destination(database), target = destination(archive);
   if (database === archive) throw new PlatformError('原数据库与归档数据库不能同名');
@@ -35,9 +31,6 @@ export async function archiveResetDatabase(control: ResetDatabaseControl, databa
   }
 }
 
-/** Creates a private empty database from template0, or a generic clone of the caller's explicit template.
- * Does not inspect business tables, create roles, run migrations or grant a runtime application access.
- */
 export async function createResetDatabase(control: ResetDatabaseControl, database: string, options: CreateResetDatabaseOptions = {}): Promise<void> {
   const target = destination(database), owner = identifier(control.target.user);
   const templateName = options.template ?? 'template0', template = identifier(templateName);

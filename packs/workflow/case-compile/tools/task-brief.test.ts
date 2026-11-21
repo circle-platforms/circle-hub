@@ -69,7 +69,6 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
     assert.ok(!writerBrief.includes(writerRole.body));
     assert.ok(writerBrief.includes('本轮补充：先查前置配置'));
 
-    // Also accepts English keys, agent names, and pack-qualified names identically.
     const writerByKey = await buildTaskBrief({
       role: 'plan',
       caseRef: 'case-101',
@@ -82,13 +81,11 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
     assert.equal(writerByKey, writerBrief);
     assert.equal(resolveSubagentRole('case-compile:compile-writer')?.key, 'plan');
     assert.equal(subagentTypeFor(writerRole), 'case-compile:compile-writer');
-    // Legacy alias `写计划` is rejected; callers must use `脚本编写` (or `plan` / `compile-writer`).
     assert.equal(resolveSubagentRole('写计划'), null);
     assert.equal(resolveSubagentRole('脚本编写')?.stageLabel, '脚本编写');
     assert.ok(!writerBrief.includes('写计划'));
     assert.equal(renderAgentDefinition(writerRole).includes('<技能目录>'), false);
 
-    // Attributor brief points to index.json, session transcripts, and log.txt.
     const attrBrief = await buildTaskBrief({
       role: '失败分析',
       caseRef: 'case-102',
@@ -99,7 +96,7 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
     });
     assert.ok(attrBrief.includes('compile-attributor'));
     assert.ok(attrBrief.includes('index.json'));
-    assert.ok(SUBAGENT_ROLES.find(role => role.key === 'attribute')!.body.includes('apv_*.txt'));
+    assert.ok(SUBAGENT_ROLES.find(role => role.key === 'attribute')!.body.includes('文件名见 `index.json` 的 `sessions`'), 'the device sessions are found by the index, not by a product file name');
     assert.ok(SUBAGENT_ROLES.find(role => role.key === 'attribute')!.body.includes('log.txt'));
     assert.ok(SUBAGENT_ROLES.find(role => role.key === 'attribute')!.forbiddenTools.includes('execute'));
   } finally {
@@ -116,7 +113,6 @@ test('task-brief rejects missing, header-only, oversized, binary, or escaping sc
     await mkdir(workDir);
     await mkdir(outsideDir);
 
-    // Missing default scope.md
     await assert.rejects(
       buildTaskBrief({
         role: 'recompose',
@@ -129,7 +125,6 @@ test('task-brief rejects missing, header-only, oversized, binary, or escaping sc
       /不存在：找不到 --scope 文件 scope\.md/,
     );
 
-    // Empty / header-only scope.md
     await writeFile(join(workDir, 'scope.md'), '# 本轮范围\n\n## 备注\n   \n', 'utf8');
     await assert.rejects(
       buildTaskBrief({
@@ -143,7 +138,6 @@ test('task-brief rejects missing, header-only, oversized, binary, or escaping sc
       /为空或只有标题/,
     );
 
-    // Oversized (> 16384 bytes) scope.md
     await writeFile(join(workDir, 'scope.md'), 'a'.repeat(16_385), 'utf8');
     await assert.rejects(
       buildTaskBrief({
@@ -157,7 +151,6 @@ test('task-brief rejects missing, header-only, oversized, binary, or escaping sc
       /超过 16384 字节上限/,
     );
 
-    // NUL byte in scope
     await writeFile(join(workDir, 'bad-scope.md'), Buffer.from('scope\0text', 'utf8'));
     await assert.rejects(
       buildTaskBrief({
@@ -172,7 +165,6 @@ test('task-brief rejects missing, header-only, oversized, binary, or escaping sc
       /包含空字节/,
     );
 
-    // Symlink scope file rejected even inside cwd
     await writeFile(join(workDir, 'real-scope.md'), '全部 3 条用例', 'utf8');
     await symlink(join(workDir, 'real-scope.md'), join(workDir, 'link-scope.md'));
     await assert.rejects(
@@ -188,7 +180,6 @@ test('task-brief rejects missing, header-only, oversized, binary, or escaping sc
       /不能是符号链接/,
     );
 
-    // Path escapes rejected on --scope, --brief, --out
     await writeFile(join(outsideDir, 'outside-scope.md'), 'x', 'utf8');
     await assert.rejects(
       buildTaskBrief({
@@ -273,7 +264,6 @@ test('staged task-brief CLI resolves installed skill dir from import.meta.url an
     assert.ok(!taskContent.includes('<技能目录>'));
     assert.ok(taskContent.includes(`node '${packDir}/tools/check-plan.ts' --file 'audit/case-201.abcdef12.verdict.json' --brief 'audit/case-201.abcdef12.brief.json'`));
 
-    // Invalid option format exits non-zero with formatted stderr.
     const errChunks: string[] = [];
     const stderrWrite = process.stderr.write.bind(process.stderr);
     process.stderr.write = ((chunk: string | Uint8Array) => {
@@ -338,8 +328,6 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
     await writeFile(join(workDir, 'plans-r1', '00.json'), JSON.stringify(planDoc('widget init-alpha', 'show widget v1')));
     await writeFile(join(workDir, 'plans-r2', '00.json'), JSON.stringify(planDoc('widget init-beta', 'show widget v1')));
 
-    // Round 1 returns: truncated session missing step 1 (`widget init-alpha`) while retaining step 2 refusal;
-    // Round 2 returns: same `show widget v1` execution refusal so consecutive streak = 2 on Round 3.
     const makeReturns = async (dirName: string, runId: string, omitStep1: boolean) => {
       const base = join(workDir, dirName);
       const caseDir = join(base, 'd'.repeat(12), 'cases', CASE);
@@ -393,7 +381,6 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
       }),
     );
 
-    // Round 2 checks missing truncated step disclosure
     const r2Brief = await buildTaskBrief({
       role: '脚本编写',
       caseRef: CASE,
@@ -413,7 +400,6 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
     assert.ok(r2Brief.includes('SOME_GATE'));
     assert.ok(!r2Brief.includes('forbidden other cmd') && !r2Brief.includes('OTHER_CODE'));
 
-    // Round 3 staged CLI run checks consecutive same-error streak, R1->R2 diff, and hypothesis marker
     const r3Cli = spawnSync(
       process.execPath,
       [
@@ -458,8 +444,6 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
     assert.ok(r3TaskText.includes('先建对象再查询'));
     assert.ok(!r3TaskText.includes('另一个用例的归因'));
 
-    // With --run, a case named by its autoid takes its item id from the run's own items, so a prior plan that names the item
-    // id is this case's plan even when the brief is not the run's own briefs/NN.md (a device log, say).
     await writeLookupDownload(join(workDir, 'run'), lookupFixture());
     const byRun = await buildTaskBrief({
       role: '失败分析',
@@ -475,11 +459,9 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
     });
     assert.ok(byRun.includes('当前轮次：第 2 轮'));
     assert.ok(byRun.includes('widget init-beta'));
-    // The attributor's task says the build the run locked, so that one word is not looked for in a run record of megabytes.
     assert.match(byRun, /## 本次运行锁定的构建\n`Rel_ORBIT_1`（orbit 1\.0）：运行记录 run\.json 里的 `build` 就是这一项，核对设备返回的版本时对它。/);
     assert.ok(!r3TaskText.includes('本次运行锁定的构建'), 'a writer is not told it');
 
-    // Round 2 without prior history fails closed
     await assert.rejects(
       buildTaskBrief({
         role: '脚本编写',
@@ -493,7 +475,6 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
       /禁止无历史重派/,
     );
 
-    // Blind fidelity role rejects history flags & --run
     await assert.rejects(
       buildTaskBrief({
         role: '保真核对',
@@ -528,7 +509,6 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     await mkdir(join(workDir, 'run', 'knowledge'), { recursive: true });
     await mkdir(join(workDir, 'run', 'sources'), { recursive: true });
 
-    // D9: scope.md with global text + CASE_A section (with subheading) + CASE_B section
     await writeFile(
       join(workDir, 'scope.md'),
       [
@@ -547,7 +527,6 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
       'utf8',
     );
 
-    // Unified single-case run setup (ONLY case 00 exists cleanly; sibling 01 has NO prior plan at all)
     const itemA = {
       id: 'doc-4:c-1',
       fields: {
@@ -592,7 +571,6 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
       build: '1.0.0-b1',
       groups: [{ kind: 'case-compile', profile: { bed: 'bed-a' } }],
     }));
-    // Contract declares custom failure marker `CUSTOM_MARKER_FAIL` -> forwarded by task-brief.ts without authoring-brief --round!
     const contractWithMarker = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
     contractWithMarker.exec_failure_markers = {
       source: 'runner-exec-markers.py',
@@ -604,7 +582,6 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
       { slot: 'contract', file: 'sources/contract.json', reference: 'src:' + createHash('sha256').update(await readFile(join(workDir, 'run', 'sources', 'contract.json'))).digest('hex') },
     ]));
 
-    // D3: reject whole-batch submission.json and wrong-shape answer/notes files
     await writeFile(join(workDir, 'submission.json'), JSON.stringify({ items: [{ item: CASE_A }] }));
     await writeFile(
       join(workDir, 'ans-multiline.txt'),
@@ -656,7 +633,6 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
       /submission\.json/,
     );
 
-    // D6: --round 2 with ONLY unrecorded notes works without fabricating `第 1 轮`
     const r2OnlyNote = await buildTaskBrief({
       role: '脚本编写',
       caseRef: CASE_A,
@@ -669,14 +645,11 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     });
     assert.ok(r2OnlyNote.includes('最近一次失败分析（轮次未记录）'));
     assert.ok(!r2OnlyNote.includes('### 上一轮（第 1 轮）'));
-    // D9: scope isolated strictly to CASE_A + global
     assert.ok(r2OnlyNote.includes('所有用例均须从同构建手册查清语法'));
     assert.ok(r2OnlyNote.includes('A 要求校验 RSA 状态'));
     assert.ok(!r2OnlyNote.includes('B 专属秘密'));
-    // D8: single-case in-memory compile-brief@1 automatically injected even without authoring-brief --round!
     assert.ok(r2OnlyNote.includes('本轮结构化简报摘要与前置披露（来自 compile-brief@1）'));
 
-    // D1 & D8: round 3 via unified task-brief.ts with multi-line 1.2MB answer & contract failure marker across r1+r2
     const mkPlanFile = (rel: string, arg: string) => writeFile(join(workDir, rel), JSON.stringify({
       item: CASE_A,
       handling: 'handled',
@@ -723,7 +696,6 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     assert.ok(r3Unified.length < 80_000, `D1: multi-line 1.2MB answer must not bloat brief (got ${r3Unified.length})`);
     assert.ok(r3Unified.includes('INVALID_PARAM'));
     assert.ok(r3Unified.includes('本次已核验的来源文件'));
-    // The sources of the run are listed with their sizes, and the run record's own size is said when it is on disk.
     const sourcesListed = r3Unified.slice(r3Unified.indexOf('## 本次已核验的来源文件'));
     const sourceRows = sourcesListed.split('\n').filter((row) => row.startsWith('{') && /"path":"/.test(row));
     assert.ok(sourceRows.length > 0);
@@ -734,7 +706,6 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     assert.ok(r3Unified.includes('连续 2 轮命中同类错误'), 'D8: contract failure_markers loaded via task-brief.ts drove streak detection');
     assert.ok(r3Unified.includes('最后一次机会') && !r3Unified.includes('FINAL attempt'));
 
-    // D9: recompose with `--case all` keeps all sections
     const recAll = await buildTaskBrief({
       role: '用例重组',
       caseRef: 'all',
@@ -745,7 +716,6 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     });
     assert.ok(recAll.includes('A 要求校验 RSA 状态') && recAll.includes('B 专属秘密'));
 
-    // D9: reject scope file containing only other cases' sections and zero global content
     await writeFile(join(workDir, 'scope-other-only.md'), `# 使用者原话\n\n## ${CASE_B}（仅B）\n只写B的内容\n`, 'utf8');
     await assert.rejects(
       buildTaskBrief({
@@ -933,7 +903,6 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
     const diskLines = onDisk.slice(0, -1).split('\n');
     assert.equal(diskLines.length, written.lineCount);
 
-    // Explanatory prose bullets were wrapped so every emitted prose segment stays <= PROSE_WRAP_MAX_CHARS.
     for (const prefix of ['- 本轮补充：', '- 失败分析结论（未确认）：', '- 建议下一步：']) {
       const idx = diskLines.findIndex((line) => line.startsWith(prefix));
       assert.ok(idx >= 0, `missing ${prefix}`);
@@ -942,7 +911,6 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
       assert.ok(diskLines[idx + 1]!.length <= PROSE_WRAP_MAX_CHARS);
     }
 
-    // Verbatim lines (> 1800 chars) were NEVER split or mutated anywhere, and header line numbers match exact shifted 1-based lines.
     assert.ok(written.longLines.length >= 3, `longLines=${JSON.stringify(written.longLines)} briefLen=${written.brief.length}`);
     for (const [label, expectedVerbatim] of [
       ['scope', longScopeLine],
@@ -959,7 +927,6 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
       assert.ok(onDisk.includes(`- 第 ${exactIdx + 1} 行（${expectedVerbatim.length} 字符）`));
     }
 
-    // Short stdout dispatch notice stays compact and leaks zero case content or long verbatim chunks.
     assert.ok(written.dispatchPrompt.length <= 500, `dispatchPrompt too long: ${written.dispatchPrompt.length}`);
     assert.ok(!written.dispatchPrompt.includes("已知缺陷"));
     assert.ok(written.dispatchPrompt.includes('subagent_type="case-compile:compile-writer"'));
@@ -974,7 +941,6 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
     assert.ok(!written.dispatchPrompt.includes('解解解'));
     assert.ok(!written.dispatchPrompt.includes('XXXX'));
 
-    // Reject invalid --task-file arguments (.json extension, collision with input/out, symlink).
     await assert.rejects(
       () => writeTaskBrief({
         role: '脚本编写',
@@ -1013,7 +979,6 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
       /符号链接/,
     );
 
-    // CLI subprocess with --task-file prints short notice on stdout and writes full file on disk.
     const toolPath = join(packDir, 'tools', 'task-brief.ts');
     const cli = spawnSync(
       process.execPath,
@@ -1097,7 +1062,7 @@ test('task-brief dispatches named roles using workspace paths and supports batch
   }
 });
 
-test('req1 & req2: authoring, recomposition, fidelity, and attribution rules align with InfoTest without unqualified blockers', async () => {
+test('authoring, recomposition, fidelity and attribution rules allow sourced preconditions, drop falsified hypotheses and keep the missing-data cause narrow', async () => {
   const skill = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
   const recomposeSkill = await readFile(new URL('../recompose/SKILL.md', import.meta.url), 'utf8');
   const deliveryDoc = await readFile(new URL('./delivery.md', import.meta.url), 'utf8');
@@ -1108,7 +1073,6 @@ test('req1 & req2: authoring, recomposition, fidelity, and attribution rules ali
   const fidelity = roleByKey('fidelity');
   const attributor = roleByKey('attribute');
 
-  // Positive Req 1: adapted is not a whitelist; sourced prerequisites + inverse cleanups must be added without altering negative tests.
   assert.ok(skill.length <= 9630, `SKILL.md length ${skill.length} exceeds 9630`);
   assert.ok(writer.includes('adapted` 与原始步骤只是等价动作描述，不是步骤白名单') && writer.includes('precondition_source'));
   assert.ok(writer.includes('sources.states') && writer.includes('原始用例明确要测“前置不存在/未配置”的反向场景时保留该无配置前提'));
@@ -1117,13 +1081,11 @@ test('req1 & req2: authoring, recomposition, fidelity, and attribution rules ali
   assert.ok(fidelity.includes('mechanical.exemptions') && fidelity.includes('added_precondition') && fidelity.includes('无 `mechanical.exemptions` 依据'));
   assert.ok(fidelityDoc.includes('added_precondition'));
 
-  // Negative Req 1: unqualified legacy phrase must not reappear in authoring/recompose prompts or skills.
   for (const [label, text] of [['compile-writer', writer], ['SKILL.md', skill]] as const) {
     assert.equal(text.includes(['作者没写的对象或动作','不自己加'].join('')), false, `${label} still has unqualified blocker`);
     assert.equal(text.includes('不能加原始用例没写的对象或动作'), false, `${label} still has unqualified blocker`);
   }
 
-  // Positive Req 2: repeated same error falsifies prior direction; device-named missing + manual/example hypothesis must be tried; 缺资料 only when no source supports any hypothesis.
   for (const [label, text] of [['compile-attributor', attributor], ['delivery.md', deliveryDoc], ['SKILL.md', skill]] as const) {
     assert.ok(text.includes('证伪上一轮假设') || text.includes('证伪上轮假设') || text.includes('假设已证伪'), `${label} missing falsification rule`);
     assert.ok(text.includes('缺资料'), `${label} missing 缺资料 narrow rule`);
@@ -1139,7 +1101,7 @@ test('req1 & req2: authoring, recomposition, fidelity, and attribution rules ali
   assert.ok(deliveryDoc.includes('即使“剩一次机会”也必须继续修改重测'));
   assert.ok(deliveryDoc.includes('轮次已用完时不开第 4 轮'));
   assert.ok(!writer.includes('130 条') && !recomposeSkill.includes('130 条'));
-  assert.ok(recomposeSkill.includes('运行器清配置并在收尾末尾执行 `write memory` 存盘') || recomposeSkill.includes('运行器清配置并在收尾末尾执行 \\`write memory\\` 存盘'));
+  assert.ok(recomposeSkill.includes('收尾命令含存盘，也由该规则声明'));
 });
 
 
@@ -1164,43 +1126,36 @@ test('the writer is taught the command lookup: its task file prints the command 
 
     const given = { caseRef: 'case-101', briefPath: 'briefs/01.md', outPath: 'plans/01.json', cwd: workDir, packRoot: packDir };
     const withRun = await buildTaskBrief({ ...given, role: '脚本编写', runDir: 'plan-run' });
-    // The lookup and the check below it take the run directory as --run, the same value task-brief.ts itself took; no printed command names its run.json.
     const lookup = `node '${packDir}/tools/cmd-lookup.ts' --run '${workDir}/plan-run' --param '<命令词，可带参数>'`;
     assert.ok(withRun.includes(`\`${lookup}\``), withRun);
     assert.ok(withRun.includes(`\`node '${packDir}/tools/check-plan.ts' --file 'plans/01.json' --run '${workDir}/plan-run'\``), 'the check takes the run directory too');
     assert.ok(!/--run '[^']*run\.json'/.test(withRun), 'no printed command passes the run.json file');
     assert.ok(new RegExp(`命令查询工具（\`tools/cmd-lookup\\.ts\`，[0-9.]+ (KB|MB|字节)）：${packDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/tools/cmd-lookup\\.ts`).test(withRun), 'each reference is listed with its size');
-    // The field outline comes before the schema it is generated from, and each says how large it is: the schema is several times the outline.
     const listed = (name: string) => { const row = new RegExp('（`' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '`，([0-9.]+) (KB|MB)）').exec(withRun); assert.ok(row, name); return Number(row![1]) * (row![2] === 'MB' ? 1024 : 1); };
     assert.ok(withRun.indexOf('`tools/plan-fields.md`') < withRun.indexOf('`slots.schema.json`'));
     assert.ok(listed('slots.schema.json') > 4 * listed('tools/plan-fields.md'));
     assert.ok(withRun.includes('--heads \'<命令词前缀>\''));
     assert.ok(withRun.includes('不在 knowledge/commands.txt、manual.txt 里逐段 grep 或分页读'));
-    // The task file also tells the three forms that answer from the executor rules and the block format, each as the swap of --param.
     for (const form of ["`--method '<对象>.<方法>'` 查某个方法能不能用及怎么写", "`--methods '<对象>'` 列某对象的方法", "`--block '<块种类>'` 查块种类的必填、可选字段和示例"]) assert.ok(withRun.includes(form), form);
     assert.ok(withRun.includes('不在 contract.json、profile.json、slots.schema.json、tables/blocks-format.json 里逐段读'));
     assert.ok(withRun.indexOf(lookup) < withRun.indexOf('写入后执行自检'), 'the lookup is told before the check');
     assert.ok(withRun.includes(`node '${packDir}/tools/check-plan.ts' --file`), 'the check is still told');
 
-    // Without a frozen run the file still prints the form, with the place the run directory is to be named.
     const bare = await buildTaskBrief({ ...given, role: '脚本编写' });
     assert.ok(bare.includes(`node '${packDir}/tools/cmd-lookup.ts' --run '<运行目录>' --param`));
     assert.ok(!bare.includes('<下载目录>/run.json'));
 
-    // The role text names the tool in its one allowed form of execute and in its rule on reading the knowledge.
     const writer = renderAgentDefinition(SUBAGENT_ROLES.find((role) => role.key === 'plan')!);
     assert.ok(writer.includes('`check-plan.ts --file` 自检，和 `cmd-lookup.ts` 查询（`--param`/`--heads` 查命令写法，`--method`/`--methods`/`--block` 查执行器规则与块字段）'));
     assert.ok(writer.includes("先跑任务文件给出的 `cmd-lookup.ts --param '<命令词>'`，一次给全"));
     assert.ok(writer.includes("查某个对象.方法能不能用及怎么写（启用与否和原因、签名、G/H/I 写法、类型化权限与允许的程序和字面命令、效果预算、取格、座位）用 `--method '<对象>.<方法>'`，列某对象的方法用 `--methods '<对象>'`，查块种类的必填、可选字段和示例用 `--block '<块种类>'`"));
     assert.ok(writer.includes('不在 `knowledge/commands.txt`、`manual.txt`、`contract.json`、`profile.json`、`slots.schema.json`、`tables/blocks-format.json` 里逐段 grep 或分页读'));
 
-    // Each role has a limit on model requests: the client reads it from the agent file, and the task says it as a fact.
     for (const [key, turns] of [['recompose', 80], ['plan', 100], ['fidelity', 25], ['attribute', 60]] as const) {
       const spec = SUBAGENT_ROLES.find((role) => role.key === key)!;
       assert.match(renderAgentDefinition(spec), new RegExp(`^---\\nname: ${spec.agentName}\\ndescription: [^\\n]+\\ntools: [^\\n]+\\nmaxTurns: ${turns}\\nsessionPrompt: false\\n---\\n`));
       assert.ok(renderTaskBrief({ role: spec, caseRef: 'case-101', briefPath: 'briefs/01.md', outPath: 'out.json', skillDir: packDir, scopeText: '范围' }).includes(`- 本会话的模型请求上限：${turns} 次；用完时会话以已写入的文件结束。`), key);
     }
-    // The recomposer has the two forms that answer about commands, and nothing about executor methods or blocks.
     const recomposer = SUBAGENT_ROLES.find((role) => role.key === 'recompose')!;
     const recomposerRole = renderAgentDefinition(recomposer);
     assert.ok(recomposerRole.includes('只有两种：`check-record.ts --file` 自检，和 `cmd-lookup.ts` 查询（`--param`/`--heads` 查命令写法）'));
@@ -1231,16 +1186,13 @@ test('--run means one thing in task-brief.ts and cmd-lookup.ts: the run director
     await writeLookupDownload(join(workDir, 'plan-run'), lookupFixture());
     const given = { caseRef: 'case-101', briefPath: 'briefs/01.md', outPath: 'plans/01.json', cwd: workDir, packRoot: packDir, role: '脚本编写' };
 
-    // The directory is accepted by both.
     assert.ok((await buildTaskBrief({ ...given, runDir: 'plan-run' })).includes('命令查询工具'));
     let out = '', err = '';
     assert.equal(await lookupMain(['--run', 'plan-run', '--param', 'orbit beacon add'], { out: (text) => { out += text; }, err: (text) => { err += text; }, cwd: workDir }), 0, err);
     assert.match(out, /^# 命令 orbit beacon add/);
 
-    // The run.json file is refused by both with the same fact and the same one-line correct form (the same resolver).
     const refused = await buildTaskBrief({ ...given, runDir: 'plan-run/run.json' }).then(() => null, (error: unknown) => error);
     assert.ok(refused instanceof CallFailure && /^--run plan-run\/run\.json 不是普通目录/.test(refused.fact), String(refused));
-    // task-brief.ts answers with the one-line correct form too, from the one resolver the tools share.
     const form = "合法写法：--run '<运行目录>'（放 run.json 的目录，不是 run.json 文件）。";
     assert.ok(formatCallError(refused).endsWith(form), formatCallError(refused));
     const fact = refused.fact.replace(/^参数无效：/, '').replace(/[。.]+$/, '');
@@ -1249,7 +1201,6 @@ test('--run means one thing in task-brief.ts and cmd-lookup.ts: the run director
     assert.equal(out, '');
     assert.ok(err.startsWith(`参数无效：${fact}。`), err);
     assert.ok(err.trimEnd().endsWith(form), err);
-    // As a program: one line on stderr, nothing written.
     const cli = spawnSync(process.execPath, [fileURLToPath(new URL('./task-brief.ts', import.meta.url)), '--role', '脚本编写', '--case', 'case-101', '--brief', 'briefs/01.md', '--out', 'plans/01.json', '--task-file', 'tasks/01.md', '--run', 'plan-run/run.json'], { cwd: workDir, encoding: 'utf8', env: { NODE_NO_WARNINGS: '1' } });
     assert.equal(cli.status, 1, cli.stdout);
     assert.ok(cli.stderr.startsWith('参数无效：--run plan-run/run.json 不是普通目录。'), cli.stderr);

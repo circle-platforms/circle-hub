@@ -52,7 +52,6 @@ test('repository production modules under hub/ and contracts/src/ match core-nam
     return;
   }
 
-  // Standalone mode without .github/checks/exceptions.json must fail rather than silently skipping.
   const strictProblems = coreNamesNoPackProblems(ROOT);
   assert.ok(strictProblems.length >= 2);
   assert.equal(strictProblems[0], `${DEFAULT_EXCEPTIONS_PATH}: exceptions file is missing`);
@@ -173,7 +172,6 @@ test('comments, internal ./packs modules, console routes, case mismatches, bound
       ].join('\n'),
     },
     { file: 'contracts/src/clean.ts', source: "export const kind = 'workflow';\n" },
-    // All non-production and out-of-scope files must be ignored even when referencing pack ids/paths.
     { file: 'contracts/generated/shared-interfaces.ts', source: "export const id = 'alpha-flow';\n" },
     { file: 'packs/workflow/alpha-flow/functions/index.ts', source: "export const id = 'alpha-flow';\n" },
     { file: 'hub/runs/sample.test.ts', source: "import '../../packs/workflow/alpha-flow/api.ts';\nexport const id = 'alpha-flow';\n" },
@@ -210,7 +208,6 @@ test('strict bidirectional exception verification catches missing, stale, duplic
     git('add', '.');
     git('commit', '-m', 'Add synthetic core pack references');
 
-    // Absent exceptions.json fails in default standalone mode.
     const missingFileProblems = coreNamesNoPackProblems(root);
     assert.equal(missingFileProblems.length, 3);
     assert.equal(missingFileProblems[0], `${DEFAULT_EXCEPTIONS_PATH}: exceptions file is missing`);
@@ -223,16 +220,13 @@ test('strict bidirectional exception verification catches missing, stale, duplic
     writeRepoFile(root, '.github/checks/exceptions.json', JSON.stringify(validEntries, null, 2));
     assert.deepEqual(coreNamesNoPackProblems(root), []);
 
-    // Custom exceptionsPath (relative and absolute) also works.
     const customRel = '.github/checks/custom-exceptions.json';
     writeRepoFile(root, customRel, JSON.stringify(validEntries, null, 2));
     assert.deepEqual(coreNamesNoPackProblems(root, { exceptionsPath: customRel }), []);
     assert.deepEqual(coreNamesNoPackProblems(root, { exceptionsPath: join(root, customRel) }), []);
 
-    // Missing one live hit fails.
     assert.equal(coreNamesNoPackProblems(root, { exceptions: validEntries.slice(0, 2) }).length, 1);
 
-    // Stale exception fails when code no longer hits.
     const withStale: CheckException[] = [
       ...validEntries,
       { check: CORE_NAMES_CHECK, path: 'hub/runs/fixed.ts', what: 'sample-flow', reason: 'already removed', removeWhen: 'C6' },
@@ -241,18 +235,15 @@ test('strict bidirectional exception verification catches missing, stale, duplic
     assert.equal(staleProblems.length, 1);
     assert.match(staleProblems[0], /^hub\/runs\/fixed\.ts: stale core-names-no-pack exception/);
 
-    // Duplicate exception fails.
     const dupProblems = coreNamesNoPackProblems(root, { exceptions: [...validEntries, validEntries[1]] });
     assert.equal(dupProblems.length, 1);
     assert.match(dupProblems[0], /^hub\/runs\/use\.ts: duplicate core-names-no-pack exception/);
 
-    // Incomplete exception entry fails.
     const badProblems = coreNamesNoPackProblems(root, {
       exceptions: [{ check: CORE_NAMES_CHECK, path: 'hub/runs/use.ts', what: 'sample-flow', reason: '  ', removeWhen: 'C6' }],
     });
     assert.ok(badProblems.some((p) => p.includes('must have non-empty string path, what, reason and removeWhen')));
 
-    // Invalid JSON file fails cleanly.
     writeRepoFile(root, '.github/checks/exceptions.json', '{not-json');
     const jsonProblems = coreNamesNoPackProblems(root);
     assert.equal(jsonProblems.length, 1);

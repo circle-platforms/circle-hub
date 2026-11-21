@@ -77,7 +77,6 @@ test('one check asks about a source file once for a reader, whatever parts of it
  const grounds=Array.from({length:120},(_,n)=>`src:${sha}/kityminder@1/n/${String(n).padStart(12,'0')}`);
  assert.equal(await groundsReadableBy(ctx,run,null,alice,{references:grounds}),true);
  assert.equal(listed,1,'120 grounds in one file are one question');
- // The set of an admission is shared by its checks; another reader is another question; nothing is kept without the set.
  const proven=new Set<string>();
  listed=0;
  assert.equal(await groundsReadableBy(ctx,run,null,alice,{references:grounds.slice(0,3),proven}),true);
@@ -87,7 +86,6 @@ test('one check asks about a source file once for a reader, whatever parts of it
  assert.equal(listed,2,'what one reader may read says nothing about another');
  assert.equal(await groundsReadableBy(ctx,run,null,alice,{references:grounds}),true);
  assert.equal(listed,3,'a check without the set starts from nothing');
- // A no is never kept: it is asked again each time, and a yes kept earlier in a set does not outlive that set.
  allowed=false;listed=0;
  const refused=new Set<string>();
  assert.equal(await groundsReadableBy(ctx,run,null,alice,{references:grounds,proven:refused}),false);

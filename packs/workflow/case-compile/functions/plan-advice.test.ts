@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { addressesOf, planAdvice } from './plan-advice.ts';
 
-// A synthetic tree: one feature with a switch and a nested switch, one feature without.
 const TREE = new Set(['/commands/alpha/on', '/commands/alpha/off', '/commands/alpha/listen', '/commands/alpha/sub/enable', '/commands/alpha/sub/disable', '/commands/alpha/sub/key', '/commands/beta/listen']);
 const base = { has: (path: string) => TREE.has(path), pairs: [['on', 'off'], ['enable', 'disable']] as Array<[string, string]> };
 
@@ -40,7 +39,6 @@ test('an address no device command of the case configured is named, and the plan
   const advice = planAdvice({ ...base, device: ['alpha on', 'alpha listen 192.0.2.71'], other: ['probe name @192.0.2.70', 'probe @2001:db8::70 name'] });
   assert.equal(advice.length, 2);
   assert.match(advice[0], /192\.0\.2\.70；本条的设备命令里没有出现这个地址/);
-  // Disclosure only: what the plan holds and one fact about the runner, no instruction.
   for (const line of advice) assert.doesNotMatch(line, /必须|一定|不要|不得|禁止|务必|应当|先在|再交|不用改|加上|设置开关/);
   assert.match(advice[1], /2001:db8::70/);
 });

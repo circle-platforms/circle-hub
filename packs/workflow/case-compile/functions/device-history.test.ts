@@ -1,4 +1,3 @@
-// The earlier device verifications of a case as a brief discloses them (functions/device-history.ts). Synthetic runs, commands and replies only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { PRIOR_DEVICE_HISTORY_DISCLAIMER, renderPriorDeviceHistoryLines } from './authoring-brief.ts';
@@ -9,12 +8,10 @@ import {
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', CASE = '990000000000000301', OTHER = '990000000000000302';
 const runId = (n: number) => `run_01${String(n).padStart(24, '0')}`;
 const job = (n: number) => n.toString(16).padStart(2, '0').repeat(32);
-/** A run the Hub lists: one job that ended at hour `n`, with a row for each given case. */
 const listed = (n: number, rows: Record<string, string> | null, build: string | null = 'synthetic-build-7'): HistoryRun =>
   ({ run: runId(n), started_at: `2026-11-1${n}T00:00:00.000Z`, build, jobs: [{ job: job(n), plan_run: runId(n + 40), ended_at: `2026-11-1${n}T01:00:00.000Z`, outcome: 'effective', rows: rows === null ? null : Object.entries(rows).map(([item, dynamic_terminal]) => ({ item, dynamic_terminal })) }] });
 const fetched = (runs: HistoryRun[], returns: DeviceHistoryFile['returns'] = runs.map((run) => ({ run: run.run, dir: `history/${run.run}` }))): DeviceHistoryFile =>
   ({ schema: DEVICE_HISTORY_SCHEMA, run: RUN, fetched_at: '2026-11-20T00:00:00.000Z', status: 'fetched', answer: { schema: 'run-history@1', run: RUN, subjects: ['toy:mindmap:docq7'], limit: 6, complete: true, runs }, returns, elapsed_ms: 1200 });
-/** What the returns on disk hold for the case in the job of run `n`. */
 const local = (n: number, verdict: string, extra: Partial<LocalCaseReturn> = {}): LocalCaseReturn => {
   const folder = `history/${runId(n)}/${job(n).slice(0, 12)}/cases/${CASE}`;
   return { job: job(n), plan_run: runId(n + 40), verdict, log: `${folder}/log.txt`, sessions: [`${folder}/dev-a.txt`, `${folder}/dev-b.txt`], device_commands: 17, execution_refused: [], syntax_rejected: [], ...extra };
@@ -35,7 +32,7 @@ test('the Hub answer is taken only as run-history@1 of the run asked about', () 
 });
 
 test('the commands a session shows are the lines typed at a device prompt', () => {
-  const session = ['seat#configure terminal', 'seat(config)#widget health interval pool-a 60', 'ok', 'seat(config)#', 'seat(config)#exit', 'not a prompt line', 'seat#show widget name', 'pool-a   60', 'seat#'].join('\r\n');
+  const session = ['seat#widget enter', 'seat(config)#widget health interval pool-a 60', 'ok', 'seat(config)#', 'seat(config)#widget leave', 'not a prompt line', 'seat#show widget name', 'pool-a   60', 'seat#'].join('\r\n');
   assert.equal(sessionCommandCount(session), 4, 'a bare prompt and the device\'s own lines are no command');
   assert.equal(sessionCommandCount(''), 0);
   assert.equal(sessionCommandCount(`seat#${'x'.repeat(40)}\u001b[K redrawn`), 1, 'an echo the terminal redrew is still one command');
@@ -79,7 +76,6 @@ test('an entry states recorded facts; the newest passing one comes first, then n
   assert.ok(joined.includes(`· [上机 ${runId(1)} | 计划 ${runId(41)} | 构建未记录 | 结束 2026-11-11T01:00:00.000Z | 结论 not_run（未运行）] 这次上机的设备输出没有下载到本地`), joined);
   for (const word of WORDS) assert.ok(!text.includes(word), `the lines disclose and give no instruction: ${word}`);
 
-  // Eight verifications of the case: six entries, the passing one first although it is the oldest.
   const many = fetched(Array.from({ length: 8 }, (_, k) => listed(8 - k, { [CASE]: k === 7 ? 'pass' : 'fail' })));
   const six = priorDeviceHistory(many, CASE, none, '合成');
   assert.equal(six.entries.length, HISTORY_MAX_ENTRIES);

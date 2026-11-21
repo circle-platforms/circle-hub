@@ -1,5 +1,3 @@
-// A conclusion that rests on a checkpoint the model wrote itself is shown as the model's judgment, not reviewed, decided by
-// the device run (owner, 2026-11-16), in words a reader of the delivery follows (owner, 2026-11-21). The checkpoints are read from the Hub's own record of the expected_grounded check.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {fixture,plan,call,assertion,EXPECTED_REF,BLOCK_ROOT} from '../testing/blocks.ts';
@@ -9,7 +7,6 @@ import {replyText} from '../tools/assemble-delivery.ts';
 
 const SENTENCE='合成应答带有签名记录',LITERAL='SYNTH-SIG',RATIONALE='模型选择应答里的签名记录名作为检查点；这是模型判断，由上机验证裁定';
 const f=fixture();
-/** The Hub's own check outcome for a block plan the model grounded itself, wrapped as the plan run's recorded result. */
 function recordedResult(item:string,literal=LITERAL){
  const quote={reference:EXPECTED_REF,text:SENTENCE};
  const data=plan([{kind:'OBSERVE_ASSERT',id:'observe',call:call(),assertions:[{...assertion('a_sig','observe','abs_found'),literal,quote,expectation:EXPECTED_REF,criterion:'c_sig'}]}]);
@@ -35,11 +32,9 @@ test('the checkpoints of a flat model_judgment expectation are read the same way
  assert.deepEqual(modelCheckpointsOf(result('contract_shape','support'),'i'),[]);
  assert.deepEqual(modelCheckpointsOf(result('expected_grounded','unknown'),'i'),[]);
  assert.deepEqual(modelCheckpointsOf({partitions:{delivered:[{item:'i',requirements:[{requirement:'expected_grounded',claims:[claim('support',{model_criteria:[{quote:{text:'x'},rationale:5}]})]}]}]}},'i'),[]);
- // an absence check that also declares a model basis keeps the author's own words and is not listed
  const absent={model_expectations:[{index:0,op:'not_found',text:'record-a',quote:{reference:'src:'+'a'.repeat(64)+'/x',text:'删除后查询不再包含记录'},after:3,basis:'model_judgment',rationale:'配置过的名字'}]};
  assert.deepEqual(modelCheckpointsOf({partitions:{delivered:[{item:'i',requirements:[{requirement:'expected_grounded',claims:[claim('support',absent)]}]}]}},'i'),[]);
  assert.deepEqual(modelCheckpointsOf(null,'i'),[]);assert.deepEqual(modelCheckpointsOf({partitions:[]},'i'),[]);
- // a count states how often the text has to appear
  const counted=modelCheckpointsOf({partitions:{delivered:[{item:'i',requirements:[{requirement:'expected_grounded',claims:[claim('support',{model_criteria:[{quote:{text:'记录出现两次'},literal:'row',count:2,rationale:'次数检查点'}]})]}]}]}},'i');
  assert.deepEqual(counted,[{expectation:'记录出现两次',literal:'row',count:2,rationale:'次数检查点'}]);
 });
@@ -53,15 +48,14 @@ test('a delivered case with a model-written checkpoint says so: drafted by the m
  const report=deliveryReport(input({checkpoints}));
  assert.match(report,/模型拟定的检查点：原始用例的这些期望没有给出具体取值，检查点由模型拟定，是模型的判断，未经独立复核；上机验证的结果只说明这些检查点是否命中，不说明期望已被确认。/);
  assert.ok(report.includes(`- 期望「${SENTENCE}」：检查点「${LITERAL}」。模型的理由：${RATIONALE}`),report);
- // a case without such a checkpoint is reported exactly as before
  assert.equal(deliveryReport(input({checkpoints:{}})),deliveryReport(input()));assert.doesNotMatch(deliveryReport(input()),/模型拟定/);
 });
 
 test('the closing reply carries the sentence beside the case it belongs to',()=>{
  const checkpoints={a:modelCheckpointsOf(recordedResult('item-1'),'item-1')};
- const reply=replyText('/out',{cases:1},['case.xlsx'],[delivered],input({checkpoints}));
+ const reply=replyText('/out',['case.xlsx'],[delivered],input({checkpoints}));
  assert.ok(reply.includes('生成成功的用例里有 1 条含模型拟定的检查点（共 1 处），建议复核，逐项见交付报告。'),reply);
- assert.ok(!replyText('/out',{cases:1},['case.xlsx'],[delivered],input()).includes('模型拟定'));
+ assert.ok(!replyText('/out',['case.xlsx'],[delivered],input()).includes('模型拟定'));
 });
 
 test('a case that failed on the bed lists its model-written checkpoints too, so the error is not read as the device\'s',()=>{

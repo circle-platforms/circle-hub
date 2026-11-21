@@ -1,10 +1,8 @@
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
-// Synthetic answers retain their structured data while reader-facing text uses the agreed vocabulary.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, describe, test } from 'node:test';
 import { z } from 'zod';
-import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import { RunSummary, type ItemProjection, type PackSummary, type SlotSchema } from '../../contracts/src/run.ts';
@@ -19,12 +17,12 @@ import {
   SubmitResultOutput,
   UploadFileOutput,
 } from '../../contracts/src/tools.ts';
-import { ValidationResult, partitionCountsOf, type ItemResult, type Partitions, type RequirementResult } from '../../contracts/src/validation.ts';
+import { ValidationResult, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import type { LoadedWorkflow } from '../ports.ts';
 import { canonicalJson, recordDigest, resolveReference, type RecordRead } from '../refs/api.ts';
 import { slotSchemaOf } from '../runs/engine/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
-import { cursorPosition, fallbackText, modelReferencesText, pageCursor, pageCursorProblem, startRunExample, submitExample, toolText, type TextContext } from './text.ts';
+import { fallbackText, modelReferencesText, pageCursor, pageCursorProblem, startRunExample, submitExample, toolText, type TextContext } from './text.ts';
 
 // ---------------------------------------------------------------- synthetic answers, checked against the contracts
 
@@ -293,22 +291,6 @@ function callsIn(text: string): z.infer<typeof GetNodesInput>[] {
   return out;
 }
 
-/** Every page of a reference's content, following the cursors the notes give (the server pages). */
-function pages(reference: string, text: string, first: string | null = null): string[] {
-  const out: string[] = [];
-  let cursor = first;
-  for (let i = 0; i < 3000; i++) {
-    const page = toolText('get_nodes', contentAnswer(reference, text), { ...PAGING, cursor });
-    out.push(page);
-    const call = nextCall(page, '下一页：');
-    if (call === null) return out;
-    assert.equal(call.reference, reference);
-    assert.ok(call.cursor !== undefined && cursorPosition(reference, call.cursor) !== null);
-    cursor = call.cursor ?? null;
-  }
-  throw new Error('paging did not end');
-}
-
 /** The content lines a page of a source shows: between the 原文 line (and a 接上页 line) and the note or the trace. */
 function shownSource(page: string): string[] {
   const lines = linesOf(page);
@@ -316,18 +298,6 @@ function shownSource(page: string): string[] {
   if (lines[at]?.startsWith('（接上页：')) at++;
   const end = lines.length - (NOTE.test(lines.at(-1) ?? '') ? 1 : 0);
   return lines.slice(at, end);
-}
-
-/** Checks that pages of a source show `text` verbatim, each continuing where the last stopped, and together all of it. */
-function reassembles(all: readonly string[], text: string): void {
-  let at = 0;
-  for (const page of all) {
-    const shown = shownSource(page).join('\n');
-    assert.ok(text.startsWith(shown, at), `a page continues at ${at}: ${shown.slice(0, 60)}`);
-    at += shown.length;
-    if (text[at] === '\n') at++;
-  }
-  assert.equal(at, text.length, 'the pages read the text exactly once, to its end');
 }
 
 /** A reader of sources and records in memory, as hub/refs resolves them for the server. */
@@ -364,7 +334,6 @@ async function follow(context: ReturnType<typeof memory>, reference: string, mar
   throw new Error('reading did not end');
 }
 
-/** No answer is cut to a length (decisions 157 and 158): nothing is left out for want of room. */
 function withinBudget(text: string, what: string): void {
   assert.doesNotMatch(text, /个字符为限/, `${what}: nothing is left out for a budget`);
 }
@@ -475,7 +444,6 @@ const list=items(62),result=resultOf(list,{production:true});const answer=startA
 // ---------------------------------------------------------------- submit_result
 
 describe('submit_result text', () => {
-  // Lead-form cases: c257ec306a briefly dropped the surrounding text-next submit tests; c155957c4a restored them with neutral-lead asserts.
   test('lead sentence uses step_name when present, else the neutral form (CHANGELOG Unreleased: submit_result lead / step_name)', () => {
     const accepted = submitAnswer(resultOf(items(1)));
     assert.equal(toolText('submit_result', accepted).split('\n')[0], '核对已完成。');
@@ -493,24 +461,24 @@ describe('submit_result text', () => {
     assert.equal(SubmitResultOutput.safeParse({ ...accepted, step_name: '   ' }).success, false);
   });
 
-  test('recompose acceptance: title from fields, no repeated slot judgment or quote lines, no evidence restating quotes', () => {
-const list=[{...items(1)[0],fields:{case_id:'980000000000061064',title:'合成用例：长域名解析正常'},label:'980000000000061064'}];
-const quoteA='引文 “合成用例：长域名解析正常” 与所引片段逐字一致';
-const quoteB='引文 “解析正确返回地址” 与所引片段逐字一致';
-const check='重组结构和原文全集已核对；原文、改写、具体取值、重新绑定四类记录已核对；来源状态与缺口是模型判断，交给脚本编写';
-const result=resultWith({delivered:[{item:list[0].id,label:list[0].label,location:list[0].location,requirements:[{requirement:'record',layers:[{layer:'static',terminal:'judgment'}],status:'satisfied',claims:[
- claim(list[0].id,'record','模型的重组判断'),
- claim(list[0].id,'record','模型的重组判断'),
- {...fact(list[0].id,'record',check),warrant:{producer:'function',id:'recompose-check@1'}},
- fact(list[0].id,'record',quoteA),
- fact(list[0].id,'record',quoteB),
- fact(list[0].id,'record',quoteA),
+  test('an accepted item: title from fields, a repeated statement or quote said once, no evidence restating quotes', () => {
+const list=[{...items(1)[0],fields:{case_id:'900000000000000001',title:'合成用例：示例标题'},label:'900000000000000001'}];
+const quoteA='引文 “合成用例：示例标题” 与所引片段逐字一致';
+const quoteB='引文 “合成期望结果” 与所引片段逐字一致';
+const check='合成结构与原文已核对';
+const result=resultWith({delivered:[{item:list[0].id,label:list[0].label,location:list[0].location,requirements:[{requirement:'synthetic',layers:[{layer:'static',terminal:'judgment'}],status:'satisfied',claims:[
+ claim(list[0].id,'synthetic','合成判断'),
+ claim(list[0].id,'synthetic','合成判断'),
+ {...fact(list[0].id,'synthetic',check),warrant:{producer:'function',id:'synthetic-check@1'}},
+ fact(list[0].id,'synthetic',quoteA),
+ fact(list[0].id,'synthetic',quoteB),
+ fact(list[0].id,'synthetic',quoteA),
 ]}]}]});
 const text=toolText('submit_result',submitAnswer(result),{items:list});
-assert.match(text,/原始用例 980000000000061064 合成用例：长域名解析正常：重组结构和原文全集已核对；原文、改写、具体取值、重新绑定四类记录已核对；来源状态与缺口是模型判断，交给脚本编写；引文 “合成用例：长域名解析正常” 与所引片段逐字一致；引文 “解析正确返回地址” 与所引片段逐字一致；状态未确认；判断正确；决定者/);
-assert.equal(text.split('模型的重组判断').length-1,0);
+assert.match(text,/原始用例 900000000000000001 合成用例：示例标题：合成判断；合成结构与原文已核对；引文 “合成用例：示例标题” 与所引片段逐字一致；引文 “合成期望结果” 与所引片段逐字一致；状态未确认；判断正确；决定者/);
+assert.equal(text.split('合成判断').length-1,1);
 assert.equal(text.split(quoteA).length-1,1);
-assert.doesNotMatch(text,/证据|标题未知|四账|编写阶段/);
+assert.doesNotMatch(text,/证据|标题未知/);
 });
 
   for (const n of SIZES) {
@@ -795,7 +763,6 @@ const run=runOf(items(1));run.criterion_changes=[{item:run.items[0].id,criterion
 });
 
 test('submit_result keeps the three dispatch outcomes distinct under reader wording', () => {
-  // Non-call-error dispatch notes keep the conclusion chain; five-category prose must not (Boss 15:02).
   const result = resultOf(items(1));
   const base = submitAnswer(result);
   const notSent = toolText('submit_result', SubmitResultOutput.parse({
@@ -867,7 +834,6 @@ test('jobs whose notes read the same are said once with how many, the others sta
 });
 
 test('dispatch call-error prose keeps category form and restores member release next steps', () => {
-  // Extra DispatchNote fields survive production extensibleOutput; unit calls pass them without SubmitResultOutput.parse.
   const base = submitAnswer(resultOf(items(1)));
   const occupied = toolText('submit_result', {
     ...base,
@@ -968,13 +934,13 @@ test('booking rewrite does not wipe occupied or expired call-error categories', 
   assert.doesNotMatch(expiredLine, /脚本合并正确|没有带着测试环境的预订|状态已确认|判断错误|决定者程序/);
 });
 
-test('booking no-command devices stay one plain line; in-flight and Excel rows skip reason words (Boss 20:53)', () => {
+test('booking no-command devices stay one plain line; an in-flight row skips reason words; a pack that names the next step gets no second one', () => {
   const at = '2026-11-14T09:35:00.000Z';
-  const list = [{ ...items(1)[0], fields: { case_id: '980000000000061064', title: '合成用例：长域名解析正常' } }];
+  const list = [{ ...items(1)[0], fields: { case_id: '900000000000000001', title: '合成用例：示例标题' } }];
   const run = runOf(list);
   run.device_observations = [
     {
-      statement: { text: 'apv0 装的是 Toy', data: { label: 'apv0', build: 'Toy', inventory: H('e'), device: '/d/0' } },
+      statement: { text: 'demo0 装的是 Toy', data: { label: 'demo0', build: 'Toy', inventory: H('e'), device: '/d/0' } },
       qualifier: { nature: 'fact', provenance: 'observed', marks: [], collected_at: at },
       grounds: [`src:${H('d')}`],
       warrant: { producer: 'function', id: 'dispatch.version_probe@1' },
@@ -982,7 +948,7 @@ test('booking no-command devices stay one plain line; in-flight and Excel rows s
     },
     {
       statement: {
-        text: 'clientc、clientd、cliente、console、routera、routerb、server213、server231、server232 共 9 台不接收命令，未读取构建版本',
+        text: 'client-a、client-b、client-c、console、router-a、router-b、server-a、server-b、server-c 共 9 台不接收命令，未读取构建版本',
         data: { missing: 'x', kind: 'no_command_devices' },
       },
       qualifier: { nature: 'fact', provenance: 'projected', marks: [], collected_at: at },
@@ -992,8 +958,8 @@ test('booking no-command devices stay one plain line; in-flight and Excel rows s
     },
   ];
   const booking = toolText('start_run', startAnswer(run));
-  assert.match(booking, /测试环境 apv0，构建 Toy，读取时间 \d{2}-\d{2} \d{2}:\d{2}（UTC[+-]\d+(?::\d{2})?）；状态已确认；决定者程序/);
-  assert.match(booking, /^clientc、clientd、cliente、console、routera、routerb、server213、server231、server232 共 9 台不接收命令，未读取构建版本$/m);
+  assert.match(booking, /测试环境 demo0，构建 Toy，读取时间 \d{2}-\d{2} \d{2}:\d{2}（UTC[+-]\d+(?::\d{2})?）；状态已确认；决定者程序/);
+  assert.match(booking, /^client-a、client-b、client-c、console、router-a、router-b、server-a、server-b、server-c 共 9 台不接收命令，未读取构建版本$/m);
   assert.doesNotMatch(booking, /不接收命令.*状态未知|没有绑定同一份清单/);
 
   const inFlightItem: ItemResult = {
@@ -1009,30 +975,30 @@ test('booking no-command devices stay one plain line; in-flight and Excel rows s
     }],
   };
   const inFlight = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [inFlightItem] })), { items: list });
-  assert.match(inFlight, /^原始用例 980000000000061064 合成用例：长域名解析正常：上机验证还在进行，还没有设备输出；状态未知；下一步由模型在上机验证结束后读取设备输出；决定者程序$/m);
+  assert.match(inFlight, /^原始用例 900000000000000001 合成用例：示例标题：上机验证还在进行，还没有设备输出；状态未知；下一步由模型在上机验证结束后读取设备输出；决定者程序$/m);
   assert.doesNotMatch(inFlight, /原因缺资料|原因还没查清|下一步使用者/);
 
-  const excelItem: ItemResult = {
+  const namedNextItem: ItemResult = {
     item: list[0].id,
     label: list[0].label,
     location: list[0].location,
     reason: 'missing_input',
     requirements: [{
-      requirement: 'workbook_verified',
+      requirement: 'synthetic_artifact',
       status: 'pending',
       layers: [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }],
       claims: [{
-        statement: { text: '缺自动化用例 Excel', verdict: 'unknown', reason: 'missing_input' },
+        statement: { text: '缺少合成产物。下一步由模型生成并上传合成产物', verdict: 'unknown', reason: 'missing_input' },
         qualifier: { nature: 'unknown', provenance: 'projected', marks: [] },
         grounds: [],
-        warrant: { producer: 'function', id: 'case-compile.workbook@1' },
+        warrant: { producer: 'function', id: 'synthetic.artifact@1' },
         validity: { status: 'valid', bound: [], premises: [] },
       }],
     }],
   };
-  const excel = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [excelItem] })), { items: list });
-  assert.match(excel, /^原始用例 980000000000061064 合成用例：长域名解析正常：还没有确认结论；状态未知；下一步由模型生成并上传自动化用例 Excel 后重新交给 Hub 检查；决定者程序$/m);
-  assert.doesNotMatch(excel, /原因缺资料|下一步使用者补齐资料/);
+  const namedNext = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [namedNextItem] })), { items: list });
+  assert.match(namedNext, /^原始用例 900000000000000001 合成用例：示例标题：缺少合成产物。下一步由模型生成并上传合成产物；状态未知；原因缺资料；决定者程序$/m);
+  assert.doesNotMatch(namedNext, /下一步使用者/);
 
   const started = toolText('submit_result', SubmitResultOutput.parse({
     ...submitAnswer(resultOf(items(1))),
@@ -1041,13 +1007,11 @@ test('booking no-command devices stay one plain line; in-flight and Excel rows s
   assert.match(started, /^Hub 已按工作流的规定自动开始上机验证；下一步由模型稍后把这次脚本合并原样再交一次，读取进展；上机验证结束后，同样的答复里带设备输出的引用$/m);
   assert.doesNotMatch(started, /任务包|状态未知；原因还没查清；下一步由使用者继续读取设备输出/);
 
-  // An administrator's note of a job in progress carries the provisional outcome "not dispatched": it is told as in progress.
-  // The note as the dispatch package hands it to the text layer (its outcome and facts are not part of the public answer shape).
   const running = toolText('submit_result', {
     ...SubmitResultOutput.parse(submitAnswer(resultOf(items(1)))),
     dispatch: [{ job: 'a'.repeat(64), outcome: 'not_dispatched', frozen: false, missing_facts: [], next_action: `circle-hub job status ${'a'.repeat(64)}`, text: `作业 ${'a'.repeat(64)}：进行中（阶段 request_identity）；未发出；下一步：circle-hub job status ${'a'.repeat(64)}` }],
   } as never, { items: items(1) });
-  assert.match(running, /^上机验证还在进行；下一步由模型稍后把这次脚本合并原样再交一次，读取进展$/m);
+  assert.match(running, /^上机验证还在进行；下一步由模型稍后把这次提交原样再交一次，读取进展$/m);
   assert.doesNotMatch(running, /未取得可读取的未派发原因|上机验证未发出/);
 });
 
@@ -1091,7 +1055,6 @@ test('recompose refusal preserves producer facts and guidance with verbatim grou
   assert.match(text, /参数无效：来源状态缺完整 action\/object\/owner\/due 出口；写明缺的事实、由谁在何时补，再重交/);
   assert.doesNotMatch(text, /再重交。写明缺的事实/);
 
-  // Near-identical facts must NOT merge (only verbatim equality).
   const near = toolText('submit_result', submitAnswer(ValidationResult.parse({
     ...refused,
     errors: [
@@ -1102,7 +1065,6 @@ test('recompose refusal preserves producer facts and guidance with verbatim grou
   assert.doesNotMatch(near, /（×/);
   assert.equal(linesOf(near).filter((line) => line.startsWith('- ')).length, 2);
 
-  // Accepted unknown record gap: name the missing fact; next actor is the model.
   const unknownItem: ItemResult = {
     item: list[0].id,
     label: list[0].label,
@@ -1132,7 +1094,6 @@ test('recompose refusal preserves producer facts and guidance with verbatim grou
   assert.match(acceptedUnknown, /改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产；状态未知；原因缺资料；下一步由模型改正重组记录后重交/);
   assert.doesNotMatch(acceptedUnknown, /还没有确认结论/);
 
-  // Pack-marked determined error (data.determination === 'error'): render as 判断错误, not 状态未知 (Boss 06:48 b).
   const determinedItem: ItemResult = {
     item: list[0].id,
     label: list[0].label,
@@ -1162,7 +1123,6 @@ test('recompose refusal preserves producer facts and guidance with verbatim grou
 });
 
 test('a job that was not sent says the Hub reason and the named next step, never "设备输出已取回"', () => {
-  // Run 31: the pre-dispatch check conclusion (`result`) of a job the bed gate refused was read as the device's return.
   const base = submitAnswer(resultOf(items(1)));
   const reason = '该床尚未恢复，不能派发。来源探针 synthetic-probe';
   const step = '由bed-admin按声明的清理方法处理后重开；确认当前状态是干净的才清除占用';
@@ -1237,6 +1197,5 @@ test('a requested device read shows the device words as received under one cavea
   assert.doesNotMatch(missing, /判断错误|状态已确认/, 'an unknown is neither a failure nor a success');
   const shown = lines.slice(indexOf(lines, (line) => line === '设备输出仅供参考，不能作为原始用例的期望依据。')).join('\n');
   assert.doesNotMatch(shown, /[0-9a-f]{64}|src:|dispatch\.device_read/, 'no digest, reference or rule id in what the reader is told');
-  // A run that read nothing says nothing about device output.
   assert.doesNotMatch(toolText('start_run', startAnswer(runOf(items(1)))), /设备输出/);
 });

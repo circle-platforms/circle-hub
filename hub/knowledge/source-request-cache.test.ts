@@ -1,4 +1,3 @@
-// Request-local source reuse must preserve the deciding capture, consumer and current request's permissions.
 import assert from 'node:assert/strict';
 import { after, before, test, type TestContext } from 'node:test';
 import { artifactShareKey, newId, withReadScope, withRequestPermissions, type ArtifactSource, type IngestInput, type Principal } from '../records/api.ts';
@@ -17,7 +16,6 @@ async function fixture(t: TestContext) {
   const admin = (await kit.principals.bootstrapAdmin('synthetic-admin')).user;
   const owner = await kit.principals.createUser(admin, 'synthetic-owner');
   const other = await kit.principals.createUser(admin, 'synthetic-other');
-  // Only the records port is used by source(); no product, external reader or production pipeline is involved.
   const context: Pick<KnowledgeContext, 'records'> = { records: kit };
   const spaces = new KnowledgeSpaces(context as KnowledgeContext, { read: async () => null, readEntry: async () => null });
   const capture = (by: Principal, session: string, bytes = Buffer.from('合成同字节来源，权限由每份捕获独立决定。'), readTier: NonNullable<IngestInput['readTier']> = 'model_readable', shareable = false) =>
@@ -303,7 +301,6 @@ for (const { name, change } of uncacheable) test(`a source with ${name} is reche
   const source = await w.kit.artifacts.source(w.owner, w.artifact.body.sha256, { record: w.artifact.digest });
   assert.ok(source?.bytes);
   let calls = 0;
-  // Inject current port outcomes only; no altered scan, acceptance or old record is persisted.
   t.mock.method(w.kit.artifacts, 'source', async () => ({ ...change(source), note: `合成第${++calls}次取值` }));
   await withRequestPermissions(w.kit.artifacts, w.owner, async () => {
     const read = () => w.spaces.source(w.owner, w.artifact.body.sha256, undefined, 'model', w.artifact.digest);

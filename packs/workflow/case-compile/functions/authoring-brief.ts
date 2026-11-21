@@ -1,27 +1,3 @@
-// The authoring brief of a case: the entries of the locked tree its writer would otherwise look up one model round trip at a
-// time. With the knowledge root on local disk a search costs nothing, but each search is still a reply of the model: in run 22
-// the six plan writers spent 78% of their model time in 208 replies that only searched (the commands their case's
-// recomposition record already names, the inverses and read-only forms of those commands, their siblings), and every rework
-// round starts a fresh writer that searches again. The reference implementation does this before a writer starts: its engine
-// builds each case's brief in code (compile_engine/briefs.py build_brief) and binds the recompose stage's command grounding to
-// it, and the writer's rule is to read that first and query only what it does not carry (agents/compile-worker.md, "Reuse
-// sealed recompose grounding before querying").
-//
-// Facts only, taken by structure and never by matching words: the tree references the record carries, the command lines its
-// rewrites and the author's own lines spell (followed word by word down the tree), the inverse rules and read-only prefixes
-// the product declares (command-policy@1, the same rule the cleanup check applies), and the tree's own parents and children.
-// Nothing here is a judgement and nothing here is plan content.
-//
-// The brief ends with the envelope of the case's plan file. The Hub takes a plan as one statement in a list, {text, quotes,
-// data}, and only `data` is described by slots.schema.json; the one place that shows the whole shape is
-// examples/submit-result.json, which the skill text never names. So a writer learnt the shape from a refusal: run 21's first
-// submission had 162 schema violations, and in run 22 the main session's hand-written template put the plan slot as an object
-// with `bucket` outside `data`, which fourteen plans copied (fourteen refusals; its `bucket` was the words of the skill
-// sentence instead of the bed the run's profile selects). The reference engine hands its writer the envelope's field-level
-// schema (lang_query docs blocks_schema, section mechanical_case_envelope). The envelope here carries only identities of the
-// frozen item: its id, its expected sentences with their references, the bed of the run's profile, the recomposition receipt,
-// the case id and the expectation slots. What a writer writes is left empty, and empty is refused, so an unfilled envelope
-// cannot pass as a plan.
 import { recompositionOf, recompositionRecordOf } from './late.ts';
 import { createHash } from 'node:crypto';
 import type { BedFacts } from './bed.ts';
@@ -34,28 +10,20 @@ import {
   consecutiveRepeatedGateCodes,
   INLINE_TAIL_CHARS,
   MAX_ANOMALY_LINES,
-  MAX_ROUNDS,
   renderPriorRoundsMarkdown,
   type PriorAttributionItem,
   type PriorRoundRecord,
   type StreakAnalysis,
 } from './rework-history.ts';
+import { MAX_ROUNDS } from './delivery.ts';
 import { isRecord, wrapProseLine, CallFailure } from './text.ts';
 import { SCOPE_RULINGS_ORIGIN } from './scope.ts';
 
-/** `parameter` is on a manual table row that states one parameter of a command: the command forms the manual spells and the parameter's name (the product's producer records both from the row's place in the manual). */
 export interface BriefNode { path: string; children: Array<{ name: string; path: string }>; entries: Array<{ kind?: string; statement: string; reference: string; applicability?: string; fragments?: string[]; parameter?: { commands: string[]; name: string } }> }
 export interface BriefPolicy { inverse_rules: Array<{ source_prefix: string; inverse_prefix: string; leading_parameters?: number }>; inverse_alternatives: string[][]; read_only: string[] }
 export interface BriefParameter { name: string; statement: string; reference: string }
-/** The locked root as the run download wrote it: its nodes by canonical path, where each node's block starts in the text files, and the manual's parameter rows by the words of the command they state. */
 export interface BriefKnowledge { root: string; nodes: Map<string, BriefNode>; lines: Map<string, { file: string; line: number; count: number }>; parameters?: Map<string, BriefParameter[]> }
 
-/**
- * The manual's statement of each parameter, by the words of the command it belongs to: the value domain in the vendor's
- * own words, which the reference hands its writer beside the tree's argument contract (lang_query kind=param: "the XML
- * side gives position/type/optional/help, the manual side gives the value domain in the vendor's own words"). A row is
- * listed once per command form, in the order the root holds it.
- */
 export function parameterRows(nodes: Iterable<BriefNode>): Map<string, BriefParameter[]> {
   const out = new Map<string, BriefParameter[]>();
   for (const node of nodes) for (const entry of node.entries) {
@@ -69,21 +37,17 @@ export function parameterRows(nodes: Iterable<BriefNode>): Map<string, BriefPara
   return out;
 }
 
-/** Commands hang below this node in a locked tree (the catalog's paths, as the recomposition check builds them). */
 const COMMANDS = '/commands';
-/** How many siblings a command lists, and how large a block of another node may be to be quoted whole. */
 const SIBLINGS = 40, QUOTED_BYTES = 3000, QUOTED_BLOCKS = 4;
 
 const segments = (path: string): string[] => path.split('/').slice(1);
 const decoded = (segment: string): string => { try { return decodeURIComponent(segment); } catch { return segment; } };
-/** One spelling of a path: references encode a space, the text files do not, and a slash inside a name stays encoded in both. */
 export const canonicalPath = (path: string): string => '/' + segments(path).map((segment) => encodeURIComponent(decoded(segment))).join('/');
 const within = (path: string, prefix: string): boolean => path === prefix || path.startsWith(prefix + '/');
 const words = (path: string): string => segments(path).slice(1).map(decoded).join(' ');
 
 const WHOLE = /^tree:([0-9a-f]{64})(\/[^@]*)(?:@[0-9a-f]{64})?$/;
 const QUOTED = /tree:([0-9a-f]{64})(\/[^@\s"]+)@[0-9a-f]{64}/g;
-/** Every path of the locked root a value's strings reference: a string that is a reference, or one written out with its entry inside a sentence. */
 export function referencedPaths(value: unknown, root: string): string[] {
   const found = new Set<string>();
   const visit = (current: unknown): void => {
@@ -98,7 +62,6 @@ export function referencedPaths(value: unknown, root: string): string[] {
   return [...found];
 }
 
-/** The command a line names: its words followed down the tree from the command node, as far as they are node names; a node that defines nothing is no command. */
 export function commandPath(knowledge: BriefKnowledge, line: string): string | null {
   const top = knowledge.nodes.get(COMMANDS);
   if (!top) return null;
@@ -112,7 +75,6 @@ export function commandPath(knowledge: BriefKnowledge, line: string): string | n
   return node.entries.length && node !== top ? canonicalPath(node.path) : null;
 }
 
-/** The product's inverse of a command: the rule with the longest source prefix, when it is the only one of that length (the cleanup check's rule). */
 export function inverseOf(policy: BriefPolicy, path: string): { path: string; rule: BriefPolicy['inverse_rules'][number] } | null {
   const matches = policy.inverse_rules.filter((rule) => within(path, canonicalPath(rule.source_prefix))).sort((a, b) => segments(b.source_prefix).length - segments(a.source_prefix).length);
   const rule = matches[0];
@@ -120,12 +82,6 @@ export function inverseOf(policy: BriefPolicy, path: string): { path: string; ru
   return { path: canonicalPath(rule.inverse_prefix) + path.slice(canonicalPath(rule.source_prefix).length), rule };
 }
 
-/**
- * The sibling a declared pair of inverse values names: the command's last word is one member and the same parent holds a
- * command under the other (`… on` and `… off`). The cleanup check asks this before the prefix rules; the other form of a
- * declared pair, an enumerated argument of one signature, is not in the text of the tree and is left to the rule stated in
- * the brief's head.
- */
 export function pairedSibling(policy: BriefPolicy, knowledge: BriefKnowledge, path: string): { pair: string[]; node: BriefNode } | null {
   const parts = segments(path), leaf = decoded(parts.at(-1) ?? '');
   const pair = policy.inverse_alternatives.find((members) => members.length === 2 && members.includes(leaf));
@@ -142,17 +98,11 @@ export function policyOf(value: unknown): BriefPolicy | null {
   return { inverse_rules: rules, inverse_alternatives: pairs, read_only: value.read_only.filter((prefix): prefix is string => typeof prefix === 'string') };
 }
 
-/** A node as the run download writes it into the text files (knowledge-text.ts nodeLines, the same function): a heading line per entry, then its statement byte for byte. */
 export function nodeBlock(node: BriefNode): string[] {
   return nodeLines(node.path, node.children.map((child) => child.name), node.entries);
 }
 const syntaxLine = (node: BriefNode): string | null => (node.entries.find((entry) => entry.kind === 'definition') ?? node.entries[0])?.statement.split('\n', 1)[0] ?? null;
 
-/**
- * The command the same words lead to below a read-only prefix: the deepest node that exists there along the command's own
- * words, when that node defines a command. A branch that only lists children is not one (below a statistics prefix the words
- * of a configuration command end at the module's branch, which says nothing about that command).
- */
 function readOnlyForm(knowledge: BriefKnowledge, prefix: string, path: string): BriefNode | null {
   const base = segments(path), under = segments(prefix);
   if (under[0] !== base[0]) return null;
@@ -163,10 +113,6 @@ function readOnlyForm(knowledge: BriefKnowledge, prefix: string, path: string): 
   return null;
 }
 
-/**
- * The envelope of a case's plan file with the identities of its frozen item filled in, or null when the item has no id. The
- * statement's text, the steps, the expectations and each slot's assertions are the writer's and stay empty.
- */
 export function planEnvelope(item: unknown, bed: string | null): Record<string, unknown> | null {
   const fields = isRecord(item) && isRecord(item.fields) ? item.fields : null;
   if (!isRecord(item) || typeof item.id !== 'string' || !fields) return null;
@@ -182,7 +128,6 @@ export function planEnvelope(item: unknown, bed: string | null): Record<string, 
       text: '', quotes,
       data: {
         bucket: bed ?? '', blocks: [], replacements: [], steps: [], expects: [],
-        // A record bound after the run started is checked by its own digest (record_sha256), the receipt being only disclosed.
         ...(record ? { recomposition: { receipt: typeof recomposition!.receipt === 'string' ? recomposition!.receipt : '', ...(recomposition!.late === true && typeof recomposition!.record_sha256 === 'string' ? { record_sha256: recomposition!.record_sha256 } : {}), case_id: caseId, slots, rebindings: [] } } : {}),
       },
     }] },
@@ -190,11 +135,6 @@ export function planEnvelope(item: unknown, bed: string | null): Record<string, 
 }
 
 export interface AuthoringBrief { text: string; commands: string[]; others: string[]; missing: string[] }
-/**
- * The brief of one frozen item of a plan run, or null when the item carries no recomposition record. `commands` are the tree
- * paths of the commands the record names, `others` the other nodes it references, `missing` the referenced paths the locked
- * root does not hold.
- */
 function collectKnowledgeSets(
   recomposition: Record<string, unknown>,
   record: Record<string, unknown>,
@@ -252,7 +192,6 @@ function runnerCleanupRuleNote(cleanup: RunnerCleanup, hit: RunnerCleanupBriefHi
   return `清配对象 ${cleanup.objects.join('、')} 命中规则 ${hit.rule + 1}${hit.line !== null ? `（${cleanup.source} 第 ${hit.line} 行）` : ''}，前缀“${hit.prefix}”${clearsText}${tailText}`;
 }
 
-/** Where the download keeps each case's own recomposition record (`<index>.json`), beside `briefs/`. */
 export const RECORDS_DIRECTORY = 'records';
 export function authoringBrief(item: unknown, index: string, knowledge: BriefKnowledge, policy: BriefPolicy | null, bed: string | null = null, runnerCleanup: RunnerCleanup | null = null): AuthoringBrief | null {
   const fields = isRecord(item) && isRecord(item.fields) ? item.fields : null;
@@ -277,7 +216,6 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
     '设备生成的值，在本条先保存设备输出，按表格列和选行条件取一格；后续命令用 {} 引用它。',
     '数据行按声明的字面分隔符和列数识别；取不到（零行、多行，或取出的值不合取值规则）时不猜值、不用上一次的输出：这条用例判为不通过，日志里带位置和设备原话，本条里会带上这一格的设备命令不再发出，其它步骤和其它用例照常执行。设备对同一个对象输出多行时（一个对象对应多个文件或多条记录），只按其中一列取等值会选中多行。',
   ];
-  // The order is the cleanup check's own (functions/command-obligations.ts, alternativeInverses then inverse_rules).
   if (policy) out.push(`产品声明的命令规则（run.json 的 command_policy）：只读前缀 ${policy.read_only.join('、') || '无'}；互逆取值 ${policy.inverse_alternatives.map((pair) => pair.join('/')).join('、') || '无'}。`
     + (policy.inverse_alternatives.length ? '核验认逆操作的顺序：命令的枚举参数取了互逆取值之一时，逆操作是同一条命令取另一个值；命令的末词是互逆取值之一、同级又有另一个取值的命令时，逆操作是那条同级命令；都不是时按前缀规则。' : ''));
   else out.push('run.json 里没有产品声明的命令规则（command_policy），下面不列逆操作和只读命令。');
@@ -349,23 +287,18 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
 
 export const COMPILE_BRIEF_SCHEMA = 'compile-brief@1';
 export const COMPILE_BRIEF_MAX_BYTES = 512 * 1024;
-/** Stated once above the entries: what they are and what they are not. Disclosure only (owner, 2026-11-19): no instruction to use them. */
 export const PRIOR_DEVICE_HISTORY_DISCLAIMER =
   '以下是同一条原始用例此前上机的记录：别的计划在当时的构建上跑出来的设备原话，只说明设备当时怎么回答，不是本次期望值的依据。';
-/** Why a brief shows no history when the run directory holds no history.json: the download that wrote it asked the Hub for none. */
 export const PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON =
   '运行目录里没有 history.json：下载这次运行时没有向 Hub 取历次上机验证的记录。';
-/** What a row's verdict word reads as, in the vocabulary's own label; a word outside the axis is shown as it is. */
 const priorVerdictLabel = (verdict: string): string => (DYNAMIC_TERMINAL as readonly string[]).includes(verdict) ? `（${labelOf('dynamic_terminal', verdict as DynamicTerminal)}）` : '';
 export const PREREQ_SCAN_REASON =
   '当前简报未从重组记录与产品目录提取到前置；这不证明没有其他前置。编写前仍须核对 knowledge/manual.txt 同构建功能章、配置示例与前置条件。';
 export const PREREQ_PARTIAL_RECOMPOSE_REASON = '已从用例重组记录（record.sources.states）提取如下已知前置；当前简报未提取产品目录前置，这不证明没有其他跨章节前置，仍须核对同构建手册正文、示例与前置条件。';
-/** Disclosed when the recompose record is present but `sources.states` is missing or not a list. */
 export const PREREQ_STATES_UNREADABLE_REASON =
   '读不到重组记录的 sources.states（预期是数组）；不能据此断定没有前置。请核对重组返回的记录形状后再开编写。';
 export const RECOMPOSE_STATES_ORIGIN = 'record.sources.states' as const;
 
-/** Formats an entry from `recompose-record@1` `unknowns[]` without falling back to raw JSON when structured fields exist. */
 export function formatRecomposeUnknown(u: unknown): string {
   if (typeof u === 'string') return u;
   if (!isRecord(u)) return '';
@@ -535,24 +468,18 @@ export interface CompileBriefV1 {
     disclaimer: string;
     match_key: 'autoid';
     max_entries: 6;
-    /** One per earlier device job whose report holds this case (functions/device-history.ts): recorded facts, no judgment. */
     entries: Array<{
       verification_run: string;
       plan_run: string | null;
       build: string | null;
       ended_at: string | null;
       verdict: string;
-      /** The case's run log and session files of that job, relative to the working directory; none when they are not on disk. */
       log: string | null;
       sessions: string[];
-      /** How many commands the sessions show typed at a device prompt; null when no session file is on disk. */
       device_commands: number | null;
-      /** The commands the device refused, by their beginning and the device's reply, both cut; `total` counts them all. */
       execution_refused: { total: number; shown: Array<{ command: string; reply: string }> };
-      /** For the newest run that passed: what its log shows each step sent, in order, each by its beginning ("who（mode）：command"). */
       passed_commands?: { total: number; shown: string[] };
       syntax_rejected: { total: number; shown: Array<{ command: string; token?: string }> };
-      /** Why the files are not here, when they are not. */
       files_missing?: string;
     }>;
   };
@@ -639,7 +566,6 @@ export interface BuildCompileBriefInput {
   scopeRulings?: ReadonlyArray<{target: string; ruling: string}>;
   scopeRulingsSource?: string;
   plumbCandidates?: PlumbBriefCandidates;
-  /** The earlier device verifications of this case, as tools/authoring-brief.ts read them from the run directory; unavailable when absent. */
   priorDeviceHistory?: CompileBriefV1['prior_device_history'];
   createdAt?: string;
 }
@@ -654,7 +580,6 @@ const KNOWN_TOP_KEYS = new Set([
   'round_history',
 ]);
 
-/** Extracts verbatim original atoms from an item JSON in the exact order Hub froze them. */
 export function extractOriginalAtoms(item: unknown): CompileBriefAtom[] {
   if (!isRecord(item) || !isRecord(item.fields)) return [];
   const rec = recompositionRecordOf(item) ?? null;
@@ -669,13 +594,11 @@ export function extractOriginalAtoms(item: unknown): CompileBriefAtom[] {
   return [];
 }
 
-/** Computes SHA-256 over the canonical JSON serialization of a brief excluding `brief_sha256`. */
 export function computeCompileBriefSha256(brief: Omit<CompileBriefV1, 'brief_sha256'> & { brief_sha256?: string }): string {
   const { brief_sha256: _ignored, ...rest } = brief;
   return createHash('sha256').update(canonicalJson(rest), 'utf8').digest('hex');
 }
 
-/** Builds a structured `compile-brief@1` JSON document with verbatim atoms, bed facts, and bounded round history. */
 export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1 | null {
   const fields = isRecord(input.item) && isRecord(input.item.fields) ? input.item.fields : null;
   const recomposition = fields ? recompositionOf(input.item) ?? null : null;
@@ -821,11 +744,6 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
       text: typeof slot.text === 'string' ? slot.text : '',
     }));
 
-  // Prerequisites and user rulings live on record.sources.states (recompose-record@1):
-  // submit-records writes that array; recompose/SKILL says a settled ruling's reason starts with
-  // 「使用者决定：」; recompose-adjudication only validates separate decision review items and sets
-  // sources.states[].adjudicated_by to a rec: digest — it never writes record.adjudication.states
-  // (that key is absent from recompose-record@1 and from all plan*-run items in work-ops-run29).
   const sources = isRecord(record.sources) ? record.sources : null;
   const statesReadable = sources !== null && Array.isArray(sources.states);
   const statesSource: unknown[] = sources !== null && Array.isArray(sources.states) ? sources.states : [];
@@ -875,11 +793,6 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
   const latestDevice = [...priorRounds].reverse().find((r) => r.deviceEvidence)?.deviceEvidence ?? null;
   const latestAttribution: PriorAttributionItem | null = [...priorRounds].reverse().find((r) => r.attribution)?.attribution ?? null;
 
-  // InfoTest provenance:
-  // - `compile_engine/briefs.py:2982-2985`: final-attempt warning rendered in Chinese (no bare English "FINAL attempt").
-  // - `compile_engine/remedies.py:39-42`: `vary_form` triggers only when `disposition === 'frozen'`.
-  // - `compile_engine/briefs.py:2681-2690` & `compile_engine/rejection_history.py:3-40`: `structural_rejection_disclosure` triggers only on two consecutive unaccepted gate refusals with the same code.
-  // - `compile_engine/briefs.py:2792-2820`: recompile device failures report diagnostics without auto-setting `vary_form_required`.
   const directives: string[] = [];
   if (streak.finalAttempt) {
     directives.push(`最后一次机会（第 ${round}/${attemptLimit} 轮）：已达本案重试上限，务必核对全部前置与期望实现。`);
@@ -1051,7 +964,6 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
   };
 }
 
-/** Deterministic offline checks for `compile-brief@1` before handing a brief to a writer subagent. */
 export function validateCompileBrief(value: unknown, expectedItem?: unknown): { ok: boolean; problems: string[] } {
   const problems: string[] = [];
   if (!isRecord(value)) return { ok: false, problems: ['简报不是 JSON 对象'] };
@@ -1231,7 +1143,6 @@ function mergeScopeRulings(existing: CompileBriefV1['task']['user_rulings'], rul
   return result;
 }
 
-/** Derive current instructions without modifying the sealed brief file or recomposition record. */
 export function withScopeUserRulings(brief: CompileBriefV1, rulings: ReadonlyArray<{target:string;ruling:string}>, source = SCOPE_RULINGS_ORIGIN): CompileBriefV1 {
   const result = structuredClone(brief);
   const targets = new Set([brief.identity.item_id, brief.identity.autoid, brief.materials.original_case.recomposition.case_id]);
@@ -1240,9 +1151,7 @@ export function withScopeUserRulings(brief: CompileBriefV1, rulings: ReadonlyArr
   return result;
 }
 
-/** Renders prerequisite scan status plus every extracted item from `from_recompose_states`, catalog, and ancestor hints. */
 export function renderPrerequisiteLines(prereqs: CompileBriefV1['materials']['prerequisites']): string[] {
-  // Presence is established by structured entries, never by an older prose summary.
   const explanation = prereqs.status === 'recompose_states_unreadable' ? PREREQ_STATES_UNREADABLE_REASON
     : prereqs.from_product_catalog.length ? `已从产品目录提取 ${prereqs.from_product_catalog.length} 条前置；仍须核对同构建手册正文与示例。`
     : prereqs.from_recompose_states.length ? PREREQ_PARTIAL_RECOMPOSE_REASON : PREREQ_SCAN_REASON;
@@ -1265,10 +1174,6 @@ export function renderPrerequisiteLines(prereqs: CompileBriefV1['materials']['pr
   return out;
 }
 
-/**
- * The lines of a task that disclose the earlier device verifications of the case, for each of the three states. They state what
- * was recorded and where the files are; they give no instruction (owner, 2026-11-19: disclosure, not directive).
- */
 export function renderPriorDeviceHistoryLines(
   priorHistory: CompileBriefV1['prior_device_history'],
   opts: { prefixKey?: string } = {},
@@ -1305,7 +1210,6 @@ export function renderPriorDeviceHistoryLines(
     const parts: string[] = [];
     if (entry.log) parts.push(`运行日志 ${entry.log}`);
     if (entry.sessions.length) {
-      // The sessions of a case sit in one folder (beside its log): the folder once, then the file names.
       const folder = folderOf(entry.sessions[0]!), together = entry.sessions.every((path) => folderOf(path) === folder);
       parts.push(together ? `设备会话 ${entry.sessions.length} 份，在 ${folder}：${entry.sessions.map(nameOf).join('、')}` : `设备会话 ${entry.sessions.join('、')}`);
     }
@@ -1327,7 +1231,6 @@ export function renderPriorDeviceHistoryLines(
   return out;
 }
 
-/** Renders test-bed topology, device-scoped roles (`device@address`), unknowns, triggers, forbidden pairs, and failure markers. */
 export function renderBedFactsLines(
   bf: CompileBriefV1['materials']['bed_facts'],
   opts: { heading?: boolean } = {},
@@ -1354,8 +1257,6 @@ export function renderBedFactsLines(
     out.push(
       ...wrapProseLine(
         '  · 监听候选（listeners；括号里是同网段能直接向它发起访问的主机）：',
-        // The hosts of each candidate's own segment are computed with the bed facts and were never shown: in two real runs writers
-        // spent a sixth of their thinking working out from the list of segments which host reaches which address.
         bf.listeners.map((l) => `${l.device}@${l.address}${Array.isArray(l.triggers) && l.triggers.length > 0 ? `（${l.triggers.map((t) => `${t.device}@${t.address}`).join('、')}）` : ''}`).join('；') || '无',
       ),
     );
@@ -1392,7 +1293,6 @@ export function renderBedFactsLines(
   return out;
 }
 
-/** Renders recomposition unresolved unknowns, equivalence notes, run exclusions, and missing knowledge paths. */
 export function renderSupplementaryDisclosureLines(brief: CompileBriefV1): string[] {
   const out: string[] = [];
   const { unresolved_unknowns: unknowns, equivalence_notes: eqNotes } = brief.materials.original_case.recomposition;
@@ -1422,7 +1322,6 @@ export function renderSupplementaryDisclosureLines(brief: CompileBriefV1): strin
   return out;
 }
 
-/** Renders a `compile-brief@1` object into deterministic Markdown (static materials + per-round history). */
 export function renderCompileBriefMd(brief: CompileBriefV1): string {
   const { identity, task, materials, prior_device_history: priorHistory, round_history: roundHistory } = brief;
   const out: string[] = [
@@ -1512,4 +1411,3 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
   }
   return out.join('\n') + '\n';
 }
-

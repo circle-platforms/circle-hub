@@ -1,12 +1,8 @@
-// The module hub-client of run-tools: what a client-side tool of any workflow does around a Hub run. It reads files, takes the
-// token from standard input, fetches a run's export and sends one submission. It decides nothing and reads no environment
-// variable: every check stays in the Hub. Node built-ins only, as local tools require.
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const MAX_BYTES = 16 * 1024 * 1024;
-/** A run's knowledge root comes whole: tens of megabytes for a product line's command tree and manuals. */
 const KNOWLEDGE_MAX_BYTES = 256 * 1024 * 1024;
 const TIMEOUT_MS = 120_000;
 const SUBMIT_TIMEOUT_MS = 300_000;
@@ -33,11 +29,8 @@ export async function tokenFromStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8').trim();
 }
 
-/** The Hub answered with an HTTP error status; the message is the one every caller already shows. */
 export class HubReplyError extends Error { readonly status: number; constructor(status: number, message: string) { super(message); this.name = 'HubReplyError'; this.status = status; } }
 
-// A failure to reach the Hub is reported as what it is, never as a malformed answer (a submission that never arrived is told apart
-// from one whose results could not be read).
 async function fetchBytes(url: string, bearer: string, limit: number): Promise<{ bytes: Uint8Array; digest: string | null }> {
   let reply: Response; let bytes: Uint8Array;
   try {
@@ -50,7 +43,6 @@ async function fetchBytes(url: string, bearer: string, limit: number): Promise<{
   }
   if (!reply.ok) throw new HubReplyError(reply.status, `Hub 答复 ${reply.status}：${new TextDecoder().decode(bytes).trim().slice(0, 300)}`);
   if (bytes.length > limit) throw new Error(`Hub 答复超过 ${Math.floor(limit / (1024 * 1024))} MiB 上限`);
-  // content-digest: sha-256=:<base64>: (RFC 9530), as the Hub's export routes send it.
   const digest = /^sha-256=:([A-Za-z0-9+/=]+):$/.exec(reply.headers.get('content-digest') ?? '');
   return { bytes, digest: digest ? Buffer.from(digest[1], 'base64').toString('hex') : null };
 }
@@ -61,14 +53,6 @@ const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\
 
 const SAFE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
 export interface RunKnowledge { root: string; composition: string | null; nodes: number; entries: number; sha256: string; files: string[] }
-/**
- * The files of a run's knowledge root, from the Hub's one batch (GET /run-export/<run>/knowledge: a head line, then one node a
- * line as a subtree read gives it): `knowledge/nodes.jsonl` is the answer byte for byte; one text file per top-level node of
- * the root (`knowledge/<name>.txt`) holds every node below it as a block for reading and searching: `# <path>`, the names of
- * its children, then each entry's statement as the Hub holds it, word for word, followed by its reference (the one to cite)
- * and its conditions when it declares any; `knowledge/index.json` lists the root, the counts and the files. The root is
- * immutable, so nothing here goes stale during the run.
- */
 export function knowledgeFiles(bytes: Uint8Array, run: string): { outputs: Array<{ name: string; bytes: Uint8Array }>; knowledge: RunKnowledge } {
   let lines: unknown[];
   try { lines = new TextDecoder('utf-8', { fatal: true }).decode(bytes).split('\n').filter((line) => line.length > 0).map((line) => JSON.parse(line)); }
@@ -101,18 +85,6 @@ export function knowledgeFiles(bytes: Uint8Array, run: string): { outputs: Array
   return { outputs, knowledge };
 }
 
-/**
- * A run on local disk, so a model reads it with its own file tools instead of one Hub call per item: `run.json` (the run record,
- * indented so a file reader goes line by line), `items/<index>.json` (one frozen item each, the index of `#/items/<index>`),
- * `sources/<sha256>` (the original bytes of every source the run binds, each checked against its digest) and `sources.json`
- * (each binding: slot, role, reference, label, media type, file). A source the reader's tier gives no bytes for is listed as
- * withheld, never guessed. Everything is fetched and checked before anything is written; the directory must be new or empty.
- * It reads the run alone, so it works before anything is submitted; it decides nothing about the content. A run that locked a
- * product knowledge root gets that root too, fetched in one batch and written under `knowledge/` (knowledgeFiles): the design
- * has three knowledge interactions for a run (lock the root, fetch the subtree, verify the references at delivery), and under
- * a digest the content does not change, so it is read locally instead of page by page from the Hub. `knowledge` is null
- * when the run locked no root, the reader may not read it, or the Hub has no such route.
- */
 export async function downloadRun(origin: string, bearer: string, run: string, out: string): Promise<{ run: string; out: string; items: number; sources: number; withheld: string[]; knowledge: RunKnowledge | null; files: Record<string, string> }> {
   let exported: unknown;
   try { exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await get(`${origin}/run-export/${run}/run`, bearer))); }
@@ -158,17 +130,14 @@ export async function downloadRun(origin: string, bearer: string, run: string, o
   return { run, out, items: items.length, sources: [...fetched.values()].filter((state) => state === 'file').length, withheld, knowledge, files };
 }
 
-/** The token from standard input, refused when it is Circle's placeholder or plainly no token. */
 export async function bearerFrom(readToken: () => Promise<string>): Promise<string> {
   const bearer = await readToken();
-  // Circle hands a secret it does not store over as its literal placeholder: that is no token, and it is never sent.
   const placeholder = /^%([A-Z][A-Z0-9_]*)%$/.exec(bearer);
   if (placeholder) throw new Error(`Circle 里没有存密钥 ${placeholder[1]}（标准输入收到的是原样的占位符），什么都没有发出；所有者用 /secrets ${placeholder[1]} 存入 Hub 令牌后重跑`);
   if (!/^[\x21-\x7e]{8,4096}$/.test(bearer)) throw new Error("标准输入里没有令牌；在命令末尾写 <<'EOF'，下一行写 %HUB_TOKEN%，再一行写 EOF，令牌不写进参数");
   return bearer;
 }
 
-/** The origin of --hub; only http and https are accepted. */
 export function hubOrigin(value: string): string {
   try { const url = new URL(value); if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(); return url.origin; }
   catch { throw new Error('--hub 必须是 Hub 的 http 或 https 地址（与 MCP 条目同一台）'); }
@@ -176,7 +145,6 @@ export function hubOrigin(value: string): string {
 
 export const RUN_ID = /^run_[a-z0-9]+$/;
 
-/** The case files of a directory in name order; one file is one item of the submission, exactly as written. */
 export async function itemFiles(directory: string, shape: (value: { [key: string]: unknown }) => { [key: string]: unknown } = (value) => value): Promise<Array<{ [key: string]: unknown }>> {
   let names: string[];
   try { names = (await readdir(directory)).filter((name) => name.endsWith('.json')).sort(); } catch { throw new Error(`读不到 --plans 目录 ${directory}`); }
@@ -194,7 +162,6 @@ export async function itemFiles(directory: string, shape: (value: { [key: string
   return items;
 }
 
-/** One submit_result call. The answer comes back as text, with whether the tool reported a failure. */
 export async function submitResult(origin: string, bearer: string, submission: unknown): Promise<{ text: string; failed: boolean }> {
   let reply: Response; let body: string;
   try {

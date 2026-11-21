@@ -1,15 +1,6 @@
-/**
- * Typed path constructors for every console page. Pages and navigation build links from these;
- * tests that assert addresses keep string literals so the constants stay checked.
- * Workflow list/detail: /console/workflows[/<id>]. Skills: /console/skills[/<id>].
- * /console/packs page paths are retired. Under /console/api only stream stays (U5); login-links and
- * /console/login/<code> are retired. /console/results and POST /console/admin/do/* remain today.
- */
-
 const enc = (segment: string): string => encodeURIComponent(segment);
 
 export const overviewPath = (): string => '/console/overview';
-/** Member capability home（我能做的事）; administrators may add ?user= for view-as. */
 export const mePath = (): string => '/console/me';
 export const searchPath = (): string => '/console/search';
 
@@ -43,18 +34,14 @@ export const knowledgeDownloadPath = (): string => '/console/knowledge/download'
 export const connectionsPath = (): string => '/console/connections';
 export const recordsPath = (): string => '/console/records';
 export const teamPath = (memberId?: string): string => (memberId === undefined ? '/console/team' : `/console/team/${enc(memberId)}`);
-/** Collaborative teams (K6); distinct from /console/team member pages so tm_ ids never collide with user ids. */
 export const teamsPath = (): string => '/console/teams';
 export const teamDetailPath = (teamId: string): string => `/console/teams/${enc(teamId)}`;
 export const settingsPath = (): string => '/console/settings';
-/** Dedicated page when the store shape does not match this binary (K11). */
 export const rebuildPath = (): string => '/console/rebuild';
-/** Maintenance authorize / preview / execute (interfaces-reset.md; rebuild-http.ts). */
 export const rebuildAuthorizePath = (): string => '/console/rebuild/authorize';
 export const rebuildPreviewPath = (): string => '/console/rebuild/preview';
 export const rebuildExecutePath = (): string => '/console/rebuild/execute';
 export const rebuildNewActionPath = (): string => '/console/rebuild/new-action';
-/** Unique status path (interfaces-reset 17:40 / Codex createApp): `/console/reset/status/<UUID>`. */
 export const resetStatusPath = (operationId: string): string => `/console/reset/status/${enc(operationId)}`;
 export const healthPath = (): string => '/console/health';
 

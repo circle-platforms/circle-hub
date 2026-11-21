@@ -1,8 +1,3 @@
-// Post-write authored command verifier using Plumb single_cmd_judge / steplist_judge (@1800) with fail-closed gates.
-// Plumb's judgment is unconfirmed and advises; the program decides what it can. InfoTest judges commands by program only (the
-// build's command tree decides whether a command exists and whether its parameters are right) and writes one line per block
-// (desc) that says what the block does. So the intent a command is asked about is the step's own description line, and a
-// command that Plumb rejects but the Hub's own command-tree check accepts is reviewed by a person, not blocked.
 import { realpathSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -47,7 +42,6 @@ import type { LockedTree } from '../functions/catalog-selection.ts';
 
 const USAGE =
   'node <技能目录>/tools/cmd-verify-plumb.ts (--file <plan.json> | --plans <plansDir>) (--run <runDir> | --knowledge <knowledgeDir>) [--item <item.json>] [--context-mode <state|node>] [--base-url <url>] [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--out <report.json>] [--key-stdin]';
-/** What the tool does with Plumb's answer; printed by --help, after the usage line. */
 const RULES = [
   'Plumb 的判断是未确认的模型判断，只作参考；命令对不对由命令树核对说了算（Hub 的 commands_catalog 检查，同 check-plan.ts，在 --run 目录的 run.json 与 knowledge/nodes.jsonl 上本地重算）。',
   '- 命令树核对通过而 Plumb 拒绝：标需人工复核（review_required），带 Plumb 的概率，不阻断，退出码 0；加 --strict-review 才阻断。',
@@ -101,10 +95,8 @@ interface ExtractedCommandUnit {
   state?: string;
   node?: PlumbMindmapNode;
   intent: StepIntent;
-  /** What the command-tree check of the Hub says of this command, from the run's frozen inputs. */
   tree: TreeAnswer;
   cleanup: boolean;
-  /** A state that carries fewer of the earlier steps than the last one given; null when only the step itself is left. */
   shorter?: () => string | null;
 }
 
@@ -166,7 +158,6 @@ async function loadItemsById(runDir?: string, itemFile?: string): Promise<Map<st
       if (isRecord(raw) && typeof raw.id === 'string') byId.set(raw.id, raw);
     }
   } catch {
-    // Optional when validating standalone plans against --knowledge.
   }
   return byId;
 }
@@ -194,25 +185,14 @@ function stepCommandGroups(
   return step.args.filter((a): a is string => typeof a === 'string' && a.trim().length > 0);
 }
 
-/** Where the intent line of a step comes from; a closed set, written into the report. */
 type IntentSource = 'description' | 'case_title' | 'step_number';
 
 interface StepIntent {
   text: string;
   source: IntentSource;
-  /** Said in the report when the line is not the one the writer wrote for the step; absent when it is. */
   disclosure?: string;
 }
 
-/**
- * The intent line of one step: what the step is for, which is what Plumb is asked the command to serve. It is the step's own
- * one-line description, as InfoTest's compile model writes one per block (desc) and the flat steps always had; a block and a flat
- * step are treated alike. A step without one gets the case title, and the report says so. The mind-map step at the same
- * position is not borrowed (a block plan has no such position: the n-th block says nothing about which mind-map step it serves,
- * and in round 34 that wrong line made Plumb reject commands the Hub accepted), and neither are the texts of the author steps a
- * step names in author_step_refs (a summary of what the author wrote is not what this step does: it raised the rejects of the
- * same plans from 2 to 13).
- */
 function stepIntentOf(fields: Record<string, unknown>, step: PlanStep, stepIdx: number): StepIntent {
   const own = typeof step.description === 'string' ? step.description.trim() : '';
   if (own) return { text: own, source: 'description' };
@@ -245,10 +225,8 @@ function extractUnitsForPlan(params: {
   itemRecord?: Record<string, unknown>;
   contextMode: 'state' | 'node';
   productLine: string;
-  /** The frozen run (run.json) and its locked command tree, when the run directory holds them. */
   frozenRun: Record<string, unknown> | null;
   commandTree: LockedTree | undefined;
-  /** Why the run's tree could not be read, when it exists but is unusable. */
   treeProblem?: string;
 }): VerifiedCasePlan {
   const expanded = expandValue(params.planObj).value;
@@ -284,7 +262,6 @@ function extractUnitsForPlan(params: {
   const fields = params.itemRecord && isRecord(params.itemRecord.fields) ? params.itemRecord.fields : {};
   const caseTitle = typeof fields.title === 'string' ? fields.title : '';
   const itemId = String(params.planObj.item ?? '');
-  // The command-tree check of the Hub on this plan, once: the same function check-plan runs, on the frozen run and its tree.
   const treeCheck = commandTreeCheck({ run: params.frozenRun, item: itemId, slots: expanded.slots, ...(params.commandTree !== undefined ? { catalog: params.commandTree } : {}), ...(params.treeProblem !== undefined ? { catalogProblem: params.treeProblem } : {}) });
   const executedSoFar: string[] = [];
   const units: ExtractedCommandUnit[] = [];
@@ -334,9 +311,6 @@ function extractUnitsForPlan(params: {
         if (rendered.overBudget) {
           overBudgetList.push(`${params.file}:${pointer}(${rendered.estTokensAfter} tokens)`);
         }
-        // The budget above is an estimate by characters. The judging service counts with its own tokens and refuses an input
-        // it would have to cut (long unbroken names count for far more there). The step can then be asked again with fewer
-        // of the earlier steps: each call leaves out the oldest until the state is a fifth shorter, down to the step alone.
         const earlier = [...executedSoFar];
         const alone = currentStepSection.trim();
         let given = rendered.state;
@@ -407,7 +381,6 @@ export async function runCmdVerifyPlumb(
     const strictReview = parsed.flags.get('--strict-review') === true;
     const outPath = strOpt('--out');
 
-    // --run is the run directory, as for every tool that reads a run: the run.json file is refused with the one-line correct form.
     const runDir = runArg ? resolveRunDirectory(runArg).lexical : undefined;
     const ctx = runDir ? await loadRunStructuredContext(runDir) : null;
     const knowledge = ctx?.knowledge ?? await readKnowledge(resolve(knowledgeArg ?? runArg!));
@@ -417,7 +390,6 @@ export async function runCmdVerifyPlumb(
 
     let rawPolicy: BriefPolicy | null = ctx?.policy ?? null;
     let rawPolicyObj: unknown = null;
-    // The frozen run and its locked tree, which the command-tree check of the Hub needs; absent they leave that check not run.
     let frozenRun: Record<string, unknown> | null = null;
     let commandTree: LockedTree | undefined;
     let treeProblem: string | undefined;
@@ -430,7 +402,6 @@ export async function runCmdVerifyPlumb(
           rawPolicy = rawPolicy ?? policyOf(runObj.command_policy);
         }
       } catch {
-        // Standalone tests may omit run.json when using --knowledge.
       }
       if (frozenRun) {
         try {
@@ -510,16 +481,12 @@ export async function runCmdVerifyPlumb(
     }
 
     const answers = new Map<string, ReturnType<typeof normalizeJudgeAnswer>>();
-    /** Steps the judging service refuses for their length with none of the earlier steps, and questions it took only with fewer of them. */
     const tooLongAlone: string[] = [];
     const shortened = new Set<string>();
     let modelVersion: string | null = null;
     const totalQ = Object.keys(singleQuestions).length + Object.keys(listQuestions).length;
     if (totalQ > 0) {
       const client = await createCasePlumbClient(extractPlumbCliOptions(parsed.flags), io);
-      // The judging service refuses a request in which one input is longer than it reads (413), without saying which. Each
-      // question is then asked by itself, and one it still refuses is asked again with fewer of the earlier steps. A step it
-      // refuses with nothing but itself is named to the writer: that one is the plan's to shorten.
       const refusedForLength = (error: unknown): boolean => isRecord(error) && (error.status === 413 || error.code === 'request_too_large');
       const ask = async (task: 'single_cmd_judge' | 'steplist_judge', questions: Record<string, PlumbBatchQuestion>) => {
         try { return await client.judgeBatched({ task, questions }); } catch (error) { if (!refusedForLength(error)) throw error; }
@@ -579,7 +546,6 @@ export async function runCmdVerifyPlumb(
       );
     }
     const blockedItems: string[] = [];
-    // Why steps are blocked, to tell the writer what to do about each kind.
     const causes = { tree: 0, plumb: 0, strict: 0 };
     let reviewRequiredCount = 0;
     const results = activeCases.map((c, caseIdx) => {
@@ -590,7 +556,6 @@ export async function runCmdVerifyPlumb(
         const lowerChoice = norm.choice.trim().toLowerCase();
         const isMismatch = norm.match === 0 || lowerChoice === 'no' || lowerChoice === '否';
 
-        // What Plumb said of the command, unconfirmed; then the command tree's word, which decides where it can.
         const yes = norm.probabilities?.yes ?? norm.probabilities?.['是'];
         const said = typeof yes === 'number' ? { yes } : {};
         const plumb: PlumbCall =

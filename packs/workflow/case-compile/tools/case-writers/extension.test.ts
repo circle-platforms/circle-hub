@@ -34,7 +34,6 @@ function stubApi(options: { workspace: string; settings?: Json }) {
   return { api, registered, statuses, close: () => controller.abort() };
 }
 
-/** A run directory as tools/download-run.ts leaves it (items/ and briefs/), a skill directory and nothing in the plans directory. */
 async function workspace(cases: Array<{ id: string | null; title?: string; brief: string | null }>) {
   const root = await mkdtemp(join(tmpdir(), 'case-writers-'));
   await mkdir(join(root, 'run', 'items'), { recursive: true }); await mkdir(join(root, 'run', 'briefs'), { recursive: true });
@@ -51,7 +50,6 @@ const planOf = (item: string, text = '合成自动化用例') => JSON.stringify(
 const pathOf = (message: string): string => /^要写的文件：(.+?)。/m.exec(message)?.[1] ?? '';
 const indexOf = (message: string): string => /^脚本编写 (\d+)：/.exec(message)?.[1] ?? '';
 
-/** The client's task tool as a test double: each call is one writer, `behave` decides what it does, `gate` holds all of them. */
 function stubTask(behave: (index: string, message: string, context: ToolContextLike) => Promise<string>, gate?: Promise<void>) {
   const calls: Array<{ index: string; args: Json; context: ToolContextLike }> = [];
   let inFlight = 0, most = 0;
@@ -67,12 +65,10 @@ function stubTask(behave: (index: string, message: string, context: ToolContextL
   return { tool, calls, most: () => most };
 }
 
-/** Lets the event loop turn until `count` writers have started: reading the run directory takes a few turns of it. */
 async function untilStarted(task: { calls: unknown[] }, count: number): Promise<void> {
   for (let turn = 0; turn < 10_000 && task.calls.length < count; turn++) await later();
 }
 
-/** Hands the tool a model request that carries the task tool, as the harness does before every model call. */
 async function seen(registered: ReturnType<typeof stubApi>['registered'], tool: TaskTool): Promise<void> {
   const [middleware] = registered.middleware;
   await middleware!.handler({ tools: [{ name: 'read_file' }, tool] }, async () => 'model answer');
@@ -225,8 +221,6 @@ test('only starts the cases asked for, and a rework is told the earlier plan is 
   } finally { await w.remove(); }
 });
 
-// tools/submit-plans.ts reads one directory over every run and refuses two files for one item; a plan a person or an earlier tool
-// named differently is the item's file, and a second one would be refused at the submission.
 test('an item whose plan file exists under another name keeps that file, and two files for one item stop the call', async () => {
   const w = await workspace([{ id: 'doc:c-0', brief: '简报甲' }, { id: 'doc:c-1', brief: '简报乙' }]);
   try {
@@ -329,8 +323,6 @@ test('a run in which no case has a brief starts nothing and lists every case', a
   } finally { await w.remove(); }
 });
 
-// The folder is copied into a Circle home by itself (a symbolic link to a folder is skipped), so what it imports must be in it;
-// and a file it imports is not read again by /reload, so it imports no file at all.
 test('the extension folder is self-contained: it imports only Node built-in modules', async () => {
   const sources = (await readdir(HERE)).filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'));
   assert.deepEqual(sources, ['extension.ts']);

@@ -145,35 +145,20 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
         else out.push(support(id,at,plan.fields.conclusion,item.location,plan.fields));
         continue;
       }
-      if (isAction(action) && action === 'help') {
-        const asked = helpPlan(manifest.beds, { action: frozen.action, need: frozen.need, bed: frozen.bed, addresses: frozen.addresses, booking: frozen.booking, reason: frozen.reason, devices: frozen.devices, device: frozen.device, line: frozen.line, mode: frozen.mode }, frozen.leases);
-        const code = 'test-bed.help_mismatch';
-        if (!asked.ok) {
-          out.push(refute(id, at, code, `按冻结内容重算问设备失败：${asked.failure.message}`, item.location, { failure: asked.failure.code }));
-          continue;
-        }
-        const plan = asked.plan;
-        const expected: Record<string, unknown> = { booking: plan.booking, bed: plan.bed, device: plan.device, line: plan.line, mode: plan.mode, key: plan.key, conclusion: plan.conclusion };
-        const diff = differing(fields as Record<string, unknown>, expected, Object.keys(expected));
-        if (diff.length > 0) {
-          out.push(refute(id, at, code, `问 ${plan.bed}/${plan.device} 的结论与冻结的清单或租约视图不符（${diff.join('、')}）`, item.location, { differing: diff }));
-          continue;
-        }
-        out.push(support(id, at, plan.conclusion, item.location, expected));
-        continue;
-      }
-      if (isAction(action) && action === 'read') {
-        const planned = readPlan(manifest.beds, { action: frozen.action, need: frozen.need, bed: frozen.bed, addresses: frozen.addresses, booking: frozen.booking, reason: frozen.reason, devices: frozen.devices, device: frozen.device, line: frozen.line, mode: frozen.mode }, frozen.leases);
-        const code = 'test-bed.read_mismatch';
+      if (isAction(action) && (action === 'help' || action === 'read')) {
+        const normalized = { action: frozen.action, need: frozen.need, bed: frozen.bed, addresses: frozen.addresses, booking: frozen.booking, reason: frozen.reason, devices: frozen.devices, device: frozen.device, line: frozen.line, mode: frozen.mode };
+        const planned = action === 'help' ? helpPlan(manifest.beds, normalized, frozen.leases) : readPlan(manifest.beds, normalized, frozen.leases);
+        const code = action === 'help' ? 'test-bed.help_mismatch' : 'test-bed.read_mismatch';
+        const verb = action === 'help' ? '问' : '读';
         if (!planned.ok) {
-          out.push(refute(id, at, code, `按冻结内容重算读设备失败：${planned.failure.message}`, item.location, { failure: planned.failure.code }));
+          out.push(refute(id, at, code, `按冻结内容重算${verb}设备失败：${planned.failure.message}`, item.location, { failure: planned.failure.code }));
           continue;
         }
         const plan = planned.plan;
-        const expected: Record<string, unknown> = { booking: plan.booking, bed: plan.bed, device: plan.device, line: plan.line, key: plan.key, conclusion: plan.conclusion };
+        const expected: Record<string, unknown> = { booking: plan.booking, bed: plan.bed, device: plan.device, line: plan.line, ...('mode' in plan ? { mode: plan.mode } : {}), key: plan.key, conclusion: plan.conclusion };
         const diff = differing(fields as Record<string, unknown>, expected, Object.keys(expected));
         if (diff.length > 0) {
-          out.push(refute(id, at, code, `读 ${plan.bed}/${plan.device} 的结论与冻结的清单或租约视图不符（${diff.join('、')}）`, item.location, { differing: diff }));
+          out.push(refute(id, at, code, `${verb} ${plan.bed}/${plan.device} 的结论与冻结的清单或租约视图不符（${diff.join('、')}）`, item.location, { differing: diff }));
           continue;
         }
         out.push(support(id, at, plan.conclusion, item.location, expected));

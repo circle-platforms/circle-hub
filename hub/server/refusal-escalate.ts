@@ -1,7 +1,3 @@
-// D5: escalate repeated refusals (Boss afternoon 1114).
-// Count: same caller + tool + error code (参数无效 also field path); with a run → same run; without → last hour.
-// Tier 1 = D1/D2 sentence unchanged; tier 2 adds count + schema-checked JSON; tier 3+ adds category closing line.
-// No「替代路径」; no「按工具的输入模式改正这个参数后再调用」.
 import type { z } from 'zod';
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import type { CallLog } from '../records/api.ts';
@@ -15,20 +11,12 @@ import {
 export { isPackScopedCode } from './error-reasons.ts';
 
 export const ESCALATION_WINDOW_MS = 60 * 60 * 1000;
-/** Versioned component deciding the repeated-call recommendation, independent of the error claim warrant. */
 export const REFUSAL_ESCALATION_WARRANT = 'refusal-escalate@1';
-/** Declared producer identity only; refusal prose does not establish escalation. */
 export function isEscalatedError(error: ProtocolError): boolean {
   return error.recommendation_warrant === REFUSAL_ESCALATION_WARRANT;
 }
 
 
-/**
- * Codes that never escalate (Boss 12:45 / 18:09):
- * - SOURCE_UNAVAILABLE: neutral unknown, not a five-category call error
- * - Hub-internal failures and cancellation
- * SOURCE_RETRYABLE is 暂时不可用 (a category); it escalates only when identity facts exist (Boss 18:09).
- */
 const SKIP_CODES = new Set([
   'SOURCE_UNAVAILABLE',
   'INTERNAL_ERROR',
@@ -39,17 +27,12 @@ const SKIP_CODES = new Set([
   'REQUEST_CANCELED',
 ]);
 
-/** Facts that prove two refusals are the same call (Boss 18:09). */
 export type EscalationIdentity = {
   path?: string;
   objectKey?: string;
   requestDigest?: string;
 };
 
-/**
- * Identity required before any count: 参数无效 → field path; other categories → object or request digest.
- * No coarse「这个工具第 N 次参数无效」.
- */
 export function escalationIdentityOf(
   errorCode: string,
   parts: { path?: string | null; objectKey?: string | null; requestDigest?: string | null },
@@ -67,11 +50,9 @@ export function escalationIdentityOf(
   return null;
 }
 
-/** Whole-tool submit_result examples are useless for nested field-path refusals (Boss 17:58 F3). */
 const USELESS_WHOLE_TOOL_EXAMPLE_PATH = /^\/items(\/|$)/;
 const EXAMPLE_JSON_MAX_CHARS = 800;
 
-/** True when a schema example would not help correct this field-path refusal. */
 export function exampleUsefulForPath(path: string | null | undefined, exampleJson: string | null): boolean {
   if (exampleJson === null) return false;
   if (exampleJson.length > EXAMPLE_JSON_MAX_CHARS) return false;
@@ -82,23 +63,17 @@ export function exampleUsefulForPath(path: string | null | undefined, exampleJso
 export type EscalationTier = 1 | 2 | 3;
 
 export interface EscalationParts {
-  /** This call's occurrence: prior matching call_logs + 1. */
   occurrence: number;
   tier: EscalationTier;
-  /** 「这是一小时内第 N 次同样的错误」或参数无效无 path 时的工具级计数句 */
   countLabel: string;
-  /** JSON text of a schema-checked example, or null when none is available. */
   exampleJson: string | null;
-  /** Category closing line for tier 3+ (no「替代路径」). */
   categoryClose: string | null;
-  /** Suffix sentences appended after the base next step (independent sentences). */
   fixSuffix: string | null;
 }
 
 export function countsTowardEscalation(code: string | null | undefined): boolean {
   if (typeof code !== 'string' || code.length === 0) return false;
   if (SKIP_CODES.has(code)) return false;
-  // Only the five call-error categories escalate; unavailable / conclusion / unmapped do not.
   const presentation = errorPresentationOf(code);
   if (presentation.kind === 'unavailable') return false;
   if (callErrorCategoryOf(code) === null) return false;
@@ -111,7 +86,6 @@ export function escalationTier(occurrence: number): EscalationTier {
   return 3;
 }
 
-/** Count sentence once Hub proved the same call (Boss 18:09); no coarse tool-level wording. */
 export function countLabelOf(occurrence: number): string {
   return `这是一小时内第 ${occurrence} 次同样的错误`;
 }
@@ -120,7 +94,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Chinese angle-bracket placeholder; never the letter "x". */
 function stringPlaceholder(schema: Record<string, unknown>): string {
   if (schema.contentEncoding === 'base64' || (typeof schema.pattern === 'string' && schema.pattern.includes('A-Za-z0-9+/'))) {
     return 'YQ==';
@@ -132,10 +105,6 @@ function stringPlaceholder(schema: Record<string, unknown>): string {
   return '<取值>';
 }
 
-/**
- * Build one candidate value from a JSON Schema fragment: prefer `examples` / `const` / `enum` / `default`,
- * then required properties. Never a handwritten tool→example table. Never the letter "x" as a copyable stub.
- */
 export function candidateFromInputSchema(schema: unknown, visibleValues?: ReadonlyMap<string, unknown>): unknown {
   if (!isRecord(schema)) return undefined;
   if (Array.isArray(schema.examples) && schema.examples.length > 0) return schema.examples[0];
@@ -211,10 +180,6 @@ export function examplePassesInput(
   return input.safeParse(example).success;
 }
 
-/**
- * A schema-checked example for a core tool parameter refusal.
- * `visibleValues` supplies caller-visible real values (e.g. first workflow id from list_task_packs).
- */
 export function checkedExampleFromInputSchema(
   inputSchema: Record<string, unknown>,
   input: z.ZodType,
@@ -222,8 +187,6 @@ export function checkedExampleFromInputSchema(
 ): string | null {
   const base = candidateFromInputSchema(inputSchema, visibleValues);
   const refined = refineCandidates(inputSchema, base, visibleValues);
-  // Prefer the mode the caller actually used (e.g. file_path on upload_file, not memory_share).
-  // Schema placeholders for those keys — do not paste refused bytes into「完整的正确写法」.
   const hintKeys = visibleValues && visibleValues.size > 0 ? [...visibleValues.keys()] : [];
   const preferredPlaceholders: unknown[] = [];
   if (hintKeys.length > 0 && isRecord(inputSchema.properties)) {
@@ -258,7 +221,6 @@ export function checkedPackDeclaredExample(declared: unknown, input: z.ZodType):
   return examplePassesInput(declared, input) ? JSON.stringify(declared) : null;
 }
 
-/** Closing sentence by call-error category (tier 3+). */
 export function categoryCloseOf(category: CallErrorCategory | null, retryAfterSeconds?: number): string | null {
   if (category === null) return null;
   switch (category) {
@@ -294,7 +256,6 @@ export function buildEscalation(options: {
   const sentences: string[] = [countLabel];
   if (exampleJson !== null) sentences.push(`经输入格式核验的示例（需替换占位值）：${exampleJson}`);
   let categoryClose: string | null = null;
-  // Without an example, the 参数无效 close ("请按上面的输入格式示例核对并替换占位值") must not be appended (Boss 17:58 F3).
   if (tier >= 3 && !(options.category === '参数无效' && exampleJson === null)) {
     categoryClose = categoryCloseOf(options.category ?? null, options.retryAfterSeconds);
     if (categoryClose !== null) sentences.push(categoryClose);
@@ -309,7 +270,6 @@ export function buildEscalation(options: {
   };
 }
 
-/** Category word for a known call-refusal code; null when unmapped. */
 export function categoryOfCallError(code: string): CallErrorCategory | null {
   return callErrorCategoryOf(code);
 }
@@ -340,7 +300,6 @@ export function formatCategoryCallError(options: {
 export function withEscalatedFix(error: ProtocolError, parts: EscalationParts): ProtocolError {
   if (parts.fixSuffix === null || isEscalatedError(error)) return error;
   const base = typeof error.fix === 'string' && error.fix.length > 0 ? error.fix : '缺少本次拒绝的具体下一步，请维护者补齐后按原请求核对';
-  // Independent sentences: base already ends with 。 or we add one, then escalation sentences.
   const head = /[。！？]$/.test(base.trim()) ? base.trim() : `${base.trim()}。`;
   return { ...error, recommendation_warrant: REFUSAL_ESCALATION_WARRANT, fix: `${head}${parts.fixSuffix}。` };
 }
@@ -350,7 +309,6 @@ export async function occurrenceOf(options: {
   userId: string | null | undefined;
   tool: string;
   errorCode: string;
-  /** When set, count only within this run (Boss afternoon). */
   runId?: string | null;
   path?: string | null;
   objectKey?: string | null;
@@ -366,7 +324,6 @@ export async function occurrenceOf(options: {
     objectKey: options.objectKey,
     requestDigest: options.requestDigest,
   });
-  // Boss 18:09: without a sameness fact, do not count and do not append.
   if (identity === null) return null;
   const now = options.now ?? new Date();
   const since = new Date(now.getTime() - ESCALATION_WINDOW_MS).toISOString();
@@ -385,7 +342,6 @@ export async function occurrenceOf(options: {
     since,
     ...identity,
   };
-  // Call through the object so PgCallLog keeps its private #db (do not extract the method).
   const prior = await callLog.countRecentErrors(query);
   return prior + 1;
 }
@@ -398,10 +354,8 @@ export async function escalateProtocolErrors(options: {
   input: z.ZodType;
   inputSchema: Record<string, unknown>;
   packDeclaredExample?: unknown;
-  /** Caller-visible values for object fields in the example JSON. */
   visibleValues?: ReadonlyMap<string, unknown>;
   runId?: string | null;
-  /** Optional object key / request digest when the caller already computed sameness facts. */
   objectKey?: string | null;
   requestDigest?: string | null;
   now?: Date;
@@ -427,7 +381,6 @@ export async function escalateProtocolErrors(options: {
       continue;
     }
     const category = callErrorCategoryOf(error.code);
-    // Belt-and-suspenders: never escalate when the code has no call-error category.
     if (category === null || errorPresentationOf(error.code).kind === 'unavailable') {
       out.push(error);
       continue;

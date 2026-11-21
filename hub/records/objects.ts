@@ -1,6 +1,4 @@
 import type {PgPersonalPayloads} from './personal-payloads.ts';
-// Content-addressed bytes under <root>/ab/<sha256> (adapted from the earlier knowledge object store): atomic write through a
-// hard link, read-only files and verification on read. Personal bytes use removable scoped PostgreSQL payloads.
 import { createHash, randomBytes } from 'node:crypto';
 import { link, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';

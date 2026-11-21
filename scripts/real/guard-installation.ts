@@ -1,4 +1,3 @@
-// Guard-only maintenance. Never reads environment files, credentials, secrets or session stores.
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, readdirSync, renameSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,7 +43,6 @@ export function bundleHashes(bundle: GuardBundle): Record<string, string> {
 }
 
 function write(home: string, rel: string, content: string): void {
-  // Reject symlinked parents and destinations before replacing a managed file.
   const parts = rel.split('/');
   let parent = home;
   for (const part of parts.slice(0, -1)) {
@@ -63,7 +61,6 @@ export function recordInstallation(home: string, profile: Receipt['profile'], bu
 }
 
 function checkedBaseline(home: string, profile: Receipt['profile'], expected: Record<string, string>, baseline?: string): { prior: Receipt; actual: Record<string, string> } {
-  // A caller-provided baseline is an operator-reviewed manifest, never a snapshot silently adopted from the target.
   const raw = baseline === undefined ? regular(home, RECEIPT).toString() : readFileSync(baseline, 'utf8');
   let prior: Receipt;
   try { prior = JSON.parse(raw) as Receipt; } catch { throw new Error('安装回执不是有效 JSON，请核对集成者提供的原版本回执'); }
@@ -77,7 +74,6 @@ function checkedBaseline(home: string, profile: Receipt['profile'], expected: Re
   return { prior, actual };
 }
 
-/** Validate the reviewed installed generation without modifying it. */
 export function assertInstallationBaseline(home: string, profile: Receipt['profile'], bundle: GuardBundle, baseline?: string): void {
   checkedBaseline(home, profile, {...bundleHashes(bundle), 'hooks/ALLOWED.md': ''}, baseline);
 }
@@ -95,7 +91,6 @@ export function maintainInstallation(
     if (regular(home, 'hooks/ALLOWED.md').toString() !== allowed) throw new Error('规则全文需要重新生成；请运行 guard update');
     return;
   }
-  // Validate all inputs before writing. A partial update leaves the old receipt and fails verification.
   for (const [file, content] of Object.entries(bundle)) write(home, file, content);
   write(home, 'hooks/ALLOWED.md', allowed);
   recordInstallation(home, profile, bundle);

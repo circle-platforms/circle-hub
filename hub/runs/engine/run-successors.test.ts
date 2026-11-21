@@ -1,5 +1,3 @@
-// The run lineage a client tool walks (decision 162): the runs started from a run, reduced to pack, start, parameters and bound
-// references, at the reader's own visibility. Synthetic packs and documents only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { startPostgres } from '../../testing/postgres.ts';

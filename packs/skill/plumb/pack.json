@@ -4,12 +4,12 @@
   "version": "1.0.2",
   "kind": "skill",
   "title": "Plumb 判断客户端",
-  "description": "客户端侧 Plumb 推理网关与状态客户端，仅提供受 TLS 与主机锁定约束的只读/判别工具及内嵌客户端模块，不代 Hub 调用模型。",
+  "description": "在客户端查 Plumb 推理网关的模型与就绪状态、唤醒后端或提交判别题时使用；工具受 TLS 与主机锁定约束，另有供工作流内嵌的客户端模块，不代 Hub 调用模型。",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "4810c71a79fca935a7a621dbe7925a1fb8ad1bf8b511c65a2f8ccdc1bbe960f8",
-      "size": 2117
+      "sha256": "959e504648bd9a45b5ca6173ab8588485a38ae42e93924357fe63cffe4066e61",
+      "size": 2380
     },
     {
       "path": "examples/choice-node.json",
@@ -28,33 +28,33 @@
     },
     {
       "path": "functions/modules/plumb-client/cache.ts",
-      "sha256": "5b698207d89a940d75edd783f455724adca3cc53914153a95fc531cdac1e8d57",
-      "size": 3287
+      "sha256": "e83c2d3f6dfbf6b1cdf8e929de19c5afbc1a069efe068f6cb5a2b51663256f84",
+      "size": 3217
     },
     {
       "path": "functions/modules/plumb-client/client.ts",
-      "sha256": "447955030c5ff3be36b6c4f5187f2c6f91b5ae024ebaa24b490619e108032aa3",
-      "size": 44818
+      "sha256": "03c171e85d95883be5480aadb60c43f96651a9a59bd8c4b1b904b5a0a9b3e910",
+      "size": 43246
     },
     {
       "path": "functions/modules/plumb-client/gateway-limits.ts",
-      "sha256": "fd2d2ac1add990b969aea2876c8209502445b948e0ee3460a48dfc661026ca0c",
-      "size": 8192
+      "sha256": "f5052093c0b727170bfcaaa8fbcf2597e0bf3f49f4a15a6d5e77ca6447204bbc",
+      "size": 4978
     },
     {
       "path": "functions/modules/plumb-client/index.ts",
-      "sha256": "f1693b282afdb4a24a749e3c397003b31a791077345f386b0352dec7602fc911",
-      "size": 215
+      "sha256": "ceb4bc2275c6f5a1d0c36bf7fb6808279cbd59ba0656177cffff43bf5254355b",
+      "size": 151
     },
     {
       "path": "functions/modules/plumb-client/redact.ts",
-      "sha256": "1883422b0a604274eb40ab610869df6b50e52184864e6d567130ff4e72119cf4",
-      "size": 4341
+      "sha256": "62d3a661afa44cf4d42dc4976099cfdbf938243bc856dc4753ebfc13ba328c4b",
+      "size": 3597
     },
     {
       "path": "functions/modules/plumb-client/types.ts",
-      "sha256": "a8aaf9a8cd0fd4f493d66d39b98d4689bf381a2762f6de4d07d4e44045c79006",
-      "size": 6489
+      "sha256": "e73ce4270d6b735aeff9bd6991ade75a90b42d508930f937fc48bc3ebe869d54",
+      "size": 6396
     },
     {
       "path": "skill.json",
@@ -68,8 +68,8 @@
     },
     {
       "path": "tools/plumb.ts",
-      "sha256": "8ec57f00ba811aba25994010342cafd23c793221efb717df1350f5a58d382da2",
-      "size": 16358
+      "sha256": "1756011fb6dedbcab7f4ad07be6c2701ea67167e13af99f6700bfbebc94482c2",
+      "size": 15784
     }
   ]
 }

@@ -1,6 +1,5 @@
 import { WHOLE_HUB } from '../../records/api.ts';
 import { labelOf } from '../../../contracts/generated/vocabulary.ts';
-// Assembly insurance of the owner decision of 2026-10-22: the assembled Hub builds no placement client, a knowledge sync of a product whose producer declared its path-less entries
 // placeable makes no outbound call to the judgment service (every recorded call goes to a loopback stub), the entries
 // stay at the root marked unplaced and the production records placement.spans 0.
 import assert from 'node:assert/strict';

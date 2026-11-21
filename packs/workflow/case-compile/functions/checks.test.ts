@@ -72,7 +72,7 @@ test('checkCommandsKnown also separates downstream command refutes from block ob
 
 test('precondition_source on flat steps passes readSlots and flows into quoteSubject for Hub verbatim check, while invalid shapes refute', () => {
   const valid = goodData();
-  const manualQuote = { reference: 'knowledge:manual#synconfig-pair', text: 'Configure synconfig peer and challenge on both devices' };
+  const manualQuote = { reference: 'knowledge:manual#widget-pair', text: 'Configure widget peer and challenge on both devices' };
   (valid.steps[0] as unknown as Record<string, unknown>).precondition_source = manualQuote;
   const parsed = readSlots(valid);
   assert.equal(parsed.ok, true, JSON.stringify(parsed));
@@ -89,9 +89,8 @@ test('precondition_source on flat steps passes readSlots and flows into quoteSub
   assert.ok(out.quotes.some((q) => q.reference === QUOTE.reference && q.text === QUOTE.text), 'retains expectation quote');
   assert.ok(out.quotes.some((q) => q.reference === manualQuote.reference && q.text === manualQuote.text), 'routes step precondition_source into quote@1');
 
-  // Negative: empty quote text or unknown extra key is rejected as slots_invalid before submission.
   const badEmpty = goodData();
-  (badEmpty.steps[0] as unknown as Record<string, unknown>).precondition_source = { reference: 'knowledge:manual#synconfig-pair', text: '' };
+  (badEmpty.steps[0] as unknown as Record<string, unknown>).precondition_source = { reference: 'knowledge:manual#widget-pair', text: '' };
   assert.equal(readSlots(badEmpty).ok, false);
   const badQuote = quoteSubject({
     catalog: COMMAND_CATALOG.entries,
@@ -103,6 +102,6 @@ test('precondition_source on flat steps passes readSlots and flows into quoteSub
   assert.ok(badQuote.blocked?.some((b) => b.code === 'case-compile.slots_invalid' && b.pointer.includes('/precondition_source')), JSON.stringify(badQuote));
 
   const badExtra = goodData();
-  (badExtra.steps[0] as unknown as Record<string, unknown>).precondition_source = { reference: 'knowledge:manual#synconfig-pair', text: 'ok', extra: 1 };
+  (badExtra.steps[0] as unknown as Record<string, unknown>).precondition_source = { reference: 'knowledge:manual#widget-pair', text: 'ok', extra: 1 };
   assert.equal(readSlots(badExtra).ok, false);
 });

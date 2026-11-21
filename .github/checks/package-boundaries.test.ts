@@ -44,8 +44,6 @@ test('repository production boundaries match package-edges.json and exceptions.j
     return;
   }
 
-  // Before exceptions.json lands on this branch, strict mode must fail on the missing manifest
-  // while the underlying AST scan remains deterministic and preserves documented leaf exceptions.
   const strict = boundaryProblems(ROOT);
   assert.equal(strict.length, 1);
   assert.match(strict[0]!, /^missing exceptions manifest: \.github\/checks\/exceptions\.json/);
@@ -365,7 +363,6 @@ test('repository scan respects excluded patterns and strict exceptions.json load
     );
     assert.deepEqual(boundaryProblems(dir), []);
 
-    // Also verify top-level JSON array format and CLI main().
     writeFileSync(
       exceptionsFile,
       JSON.stringify([
@@ -384,7 +381,6 @@ test('repository scan respects excluded patterns and strict exceptions.json load
     assert.equal(main(['--root', dir], (line) => lines.push(line)), 0);
     assert.deepEqual(lines, []);
 
-    // Unregistered violation makes CLI fail with exit code 1.
     writeFileSync(exceptionsFile, '[]', 'utf8');
     const errLines: string[] = [];
     assert.equal(main(['--root', dir], (line) => errLines.push(line)), 1);

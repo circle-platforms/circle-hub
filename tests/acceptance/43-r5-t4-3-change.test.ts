@@ -115,7 +115,6 @@ test('scenario 43: T4-3 records a declared device on its booked bed and rejects 
     }],
   };
   await world.bed.hub.hub.docs.put(world.bed.hub.admin.principal, 'operation-device-bed', new TextEncoder().encode(JSON.stringify(inventory)), { fileName: 'operation-device-bed.json' });
-  // This catalog declaration authorizes booking only; it creates no device observation.
   const catalog = await addSyntheticExecutor(world.bed.hub.records, world.bed.hub.hub.dispatch!.registry, world.bed.hub.admin.principal, {
     ...definition('http://127.0.0.1:1/mcp'), target: 'bench-a',
     manifest_sha256: (await world.bed.hub.hub.docs.show('operation-device-bed'))!.sha256,

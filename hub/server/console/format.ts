@@ -19,10 +19,6 @@ export function relativeTime(iso:string|null|undefined,now=new Date()):string{
  return d.getFullYear()===now.getFullYear()?`${pad(d.getMonth()+1)}-${pad(d.getDate())}`:`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 }
 export function time(iso:string|null|undefined,now=new Date()):Html{return html`<time class="nowrap ch-time"${iso?html` datetime="${iso}" title="${hoverTime(iso)}"`:''}>${relativeTime(iso,now)}</time>`;}
-/**
- * Clock time to the minute in the reader's zone: the server only emits the instant; the console script fills HH:MM
- * from `datetime` (Boss 20:32). Without script the ISO minute stays visible and unambiguous.
- */
 export function localMinute(iso:string|null|undefined):Html{
  if(!iso)return html`未记录`;
  const d=new Date(iso);if(!Number.isFinite(d.getTime()))return html`${iso}`;

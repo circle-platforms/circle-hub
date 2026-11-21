@@ -1,5 +1,3 @@
-// The slot-record rule offline against the Hub's own structure rule (slotProblems of the core) on the same records: every problem
-// the Hub names is named here at the same pointer; where the Hub's words are specific they are the same words.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {slotProblems} from '../../../../hub/runs/engine/slots.ts';
@@ -36,7 +34,6 @@ test('the offline slot-record rule names what the Hub core names, at the same po
   const hubRows=hub.map(problem=>({pointer:(problem.path??'').replace('/items/0',''),message:String(problem.message).replaceAll('/items/0','')})),local=slotRecordProblems(schema,value);
   assert.deepEqual(local.map(row=>row.pointer).sort(),hubRows.map(row=>row.pointer).sort(),label);
   if(words==='same')assert.deepEqual(local.map(row=>[row.pointer,row.message]).sort(),hubRows.map(row=>[row.pointer,row.message]).sort(),label);
-  // A node that refuses a field adds what it has and where the field belongs after the Hub's words (unknown-field-refusals.test.ts).
   if(words==='lead')for(const row of local){const hubRow=hubRows.find(candidate=>candidate.pointer===row.pointer);assert.ok(hubRow&&row.message.startsWith(hubRow.message),label+': '+row.message);}
  }
 });
@@ -64,8 +61,6 @@ test('the claim shell and the data are reported together, where the Hub names th
  assert.deepEqual(hub.map(problem=>problem.path).sort(),['/items/0/slots/plan/0/text'],'the Hub stops at the claim shell');
 });
 
-// A requirement that asks for evidence adds alternatives next to the claim's own fields (the Hub's claim schema for such a pack);
-// both apply, and an alternative that only names required fields is read as an object.
 const evidence={type:'object',properties:{plan:{type:'array',minItems:1,items:{type:'object',additionalProperties:false,required:['text'],properties:{text:{type:'string',minLength:1},grounds:{type:'array',items:{type:'string'}},quotes:{type:'array',items:{type:'string'}}},anyOf:[{required:['grounds'],properties:{grounds:{minItems:1}}},{required:['quotes'],properties:{quotes:{minItems:1}}}]}}}};
 test('alternatives apply together with the claim fields they sit beside',()=>{
  assert.deepEqual(slotRecordProblems(evidence,{plan:[{text:'x',quotes:['q']}]}),[]);

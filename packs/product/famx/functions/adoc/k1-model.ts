@@ -1,4 +1,4 @@
-import {parameterHeading,signatureOf} from './structure.ts';
+import {signatureOf} from './structure.ts';
 import type {InlineNode} from './inline.ts';
 // The adoc-to-K1 mapping (task kb-adoc item 4): the expanded model becomes the markdown@1 shape — sections from the
 // `=` levels of the source (a `[discrete]` heading is a block, not a section; `=======` lines are reported upstream
@@ -57,8 +57,6 @@ export function citesExample(model: AdocModel, selector: string): boolean {
 export interface RowCite {
   authored?:boolean;
   inline?:InlineNode[];
-  /** The row's cells as the mapped line spells them, in the engine's order: the first is what the row is about. */
-  cells?: string[];
   range: [number, number];
   cite: Citation;
 }
@@ -74,8 +72,6 @@ export interface AdocBlock extends MarkdownBlock {
   cite: Citation;
   inline?:InlineNode[];
   structuralSignature?:ReturnType<typeof signatureOf>;
-  /** The command and parameter names this paragraph declares for the table under it, when it is shaped as one. */
-  parameterHeading?:ReturnType<typeof parameterHeading>;
   sourceGroup?:number;
   paragraphCites?:Citation[];
   rowCites?: RowCite[];
@@ -330,7 +326,6 @@ function tableOf(block: Block, digestOf: (file: string) => string, blank: (file:
   const lines = [headerLine, rowOf(Array.from({ length: cells }, () => '---')), ...body.map((row) => rowOf(row.cells))];
   const cites: Array<Citation | null> = [headerCite, null, ...body.map((row) => row.cite)];
   const inlineRows=[cited?header!.inline:[],[],...body.map(row=>row.inline)];
-  const cellRows = [cited ? header!.cells : [], [], ...body.map((row) => row.cells)];
   const text = lines.join('\n');
   // The byte ranges of the lines of this text, as K1's lineRanges computes them: [start of the line, offset of its
   // line break or of the end of the text].
@@ -341,7 +336,7 @@ function tableOf(block: Block, digestOf: (file: string) => string, blank: (file:
   for (let i = 0; i <= text.length; i++) {
     if (i === text.length || text.charCodeAt(i) === 0x0a) {
       const one = cites[line];
-      if (one !== null && one !== undefined) rowCites.push({ range: [offsets[start], offsets[i]], cite: one,inline:inlineRows[line],authored:line!==0||cited, cells: cellRows[line] });
+      if (one !== null && one !== undefined) rowCites.push({ range: [offsets[start], offsets[i]], cite: one,inline:inlineRows[line],authored:line!==0||cited });
       start = i + 1;
       line++;
     }
@@ -533,7 +528,7 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     const first=!emitted.has(block);emitted.add(block);
     blocks.push({
       kind,sourceGroup:sourceGroups.get(block),
-      inline:first?block.inline:[],structuralSignature:!first||block.example?null:signatureOf(block),parameterHeading:!first||block.example?null:parameterHeading(block),
+      inline:first?block.inline:[],structuralSignature:!first||block.example?null:signatureOf(block),
       ...(first&&block.origins.length>1?{paragraphCites:block.origins.map(citationOf)}:{}),
       section,
       index,
