@@ -331,6 +331,29 @@ test('run31 not-dispatched downloads expose the outcome, reason and next action 
   assert.equal(summary.missing_facts[0].next_action, '由测试环境管理员恢复后重开');
 });
 
+// The answer says what comes next (3.26.2). Rounds 53 and 54 of the acceptance runs ended with every case passed and the
+// lead's own report, without the delivery directory: nothing was left to rework, so the lead never ran the pipeline command
+// whose answer names the closing step, and this tool, whose answer it did read, said nothing about it.
+test('the answer names the next step: the delivery directory when every case passed, the rework when some did not, nothing while a job runs', async (t) => {
+  const passed = jobs();
+  passed.jobs[0].rows = [{ item: '990000000000000301', dynamic_terminal: 'pass' }, { item: '990000000000000302', dynamic_terminal: 'pass' }] as typeof passed.jobs[0]['rows'];
+  const h = await hub(passed, [deviceReturn]); t.after(h.close);
+  const done = await run(h.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
+  assert.equal(done.code, 0, done.stderr);
+  assert.equal(JSON.parse(done.stdout).message, '这一轮上机 2 条全部通过，没有要返工的：按 tools/delivery.md 第 5 节组交付目录（assemble-delivery.ts），最后回复用它给的回复');
+
+  const mixed = await hub(jobs(), [deviceReturn, log, session, held]); t.after(mixed.close);
+  const some = await run(mixed.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
+  assert.equal(some.code, 0, some.stderr);
+  assert.equal(JSON.parse(some.stdout).message, '这一轮上机 2 条里 1 条没有通过：逐条分析后跑 pipeline.ts rework（SKILL.md 第 5 节）');
+
+  const running = jobs();
+  Object.assign(running.jobs[0], { ended: null, outcome: 'unknown', rows: null, device_return: null });
+  const live = await hub(running, []); t.after(live.close);
+  const early = await run(live.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
+  if (early.code === 0) assert.equal('message' in JSON.parse(early.stdout), false, 'a job still running is no round to conclude');
+});
+
 // A workbook holds several cases and the runner runs them in one test: an exception in a step ends the whole run and the
 // cases after it never begin (InfoTest lib/test_xlsx.py, no per-case guard), so the gateway has no result row and no log for
 // them and the Hub answers every case of the job with the same no verdict ("the report is not complete"). The returns say

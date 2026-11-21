@@ -219,7 +219,16 @@ export async function downloadReturns(input: { origin: string; bearer: string; r
     for (const job of jobs) outcomes[job.outcome] = (outcomes[job.outcome] ?? 0) + 1;
     const unsent = jobs.filter(job => job.outcome === 'not_dispatched');
     const missing = unsent.flatMap(job => job.missing_facts ?? []);
-    return { outcomes, missing_facts: missing, ...(unsent.length ? { message: `有 ${unsent.length} 个上机验证作业未发到设备，不算一次上机验证；请先按 missing_facts 的原因与下一步处理，不用重交读取进展` } : {}), run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, ...(unreached ? { not_executed: unreached } : {}), ...(aborted ? { aborted } : {}), pass_review: passReview };
+    // What comes next, said where the caller reads the outcome. A round in which every case passed leaves nothing to rework, so
+    // the caller never asks the pipeline for its closing words: twice a compile ended on the caller's own report, without the
+    // delivery directory.
+    const total = Object.values(verdicts).reduce((sum, count) => sum + count, 0), passed = verdicts.pass ?? 0;
+    const ended = jobs.length > 0 && jobs.every((job) => job.ended === 'done');
+    const next = unsent.length ? `有 ${unsent.length} 个上机验证作业未发到设备，不算一次上机验证；请先按 missing_facts 的原因与下一步处理，不用重交读取进展`
+      : !ended || total === 0 ? null
+      : passed === total ? `这一轮上机 ${total} 条全部通过，没有要返工的：按 tools/delivery.md 第 5 节组交付目录（assemble-delivery.ts），最后回复用它给的回复`
+      : `这一轮上机 ${total} 条里 ${total - passed} 条没有通过：逐条分析后跑 pipeline.ts rework（SKILL.md 第 5 节）`;
+    return { outcomes, missing_facts: missing, ...(next ? { message: next } : {}), run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, ...(unreached ? { not_executed: unreached } : {}), ...(aborted ? { aborted } : {}), pass_review: passReview };
 }
 
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, timing: Timing = REAL_TIME, retry?: Omit<RetryControl, 'timing'>): Promise<number> {

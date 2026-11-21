@@ -127,7 +127,7 @@ node '<技能目录>/tools/download-returns.ts' --hub %HUB_URL% --run '<合并�
 EOF
 ```
 
-tools/delivery.md 带 `--wait 3600` 的下载**必须 `background` 启动、不给 `timeout`**（前台上限 600 秒会拒收，后台的 `timeout` 到点即结束作业），等后台通知不 `sleep`；超时未完不写盘并退出 1，按同命令续等。设备只经 Hub 或 `test-bed` 到达，严禁终端工具直连（`terminal_connect`/`telnet`/`ssh`）。有失败不停在报告、不问使用者，直接按下节返工；不释放 `test-bed` 预订（返工可复用）；仅使用者要求或收尾时发 `{"pack":"test-bed","inputs":{"inventory":{"external":"doc:doc:bed-topology"}},"predecessor":"<预订号>","parameters":{"action":"release","booking":"<同一预订号>"}}`。
+tools/delivery.md 带 `--wait 3600` 的下载**必须 `background` 启动、不给 `timeout`**（前台上限 600 秒会拒收，后台的 `timeout` 到点即结束作业），等后台通知不 `sleep`；超时未完不写盘并退出 1，按同命令续等。全部通过即按 tools/delivery.md 第 5 节组交付目录。设备只经 Hub 或 `test-bed` 到达，严禁终端工具直连（`terminal_connect`/`telnet`/`ssh`）。有失败不停在报告、不问使用者，直接按下节返工；不释放 `test-bed` 预订（返工可复用）；仅使用者要求或收尾时发 `{"pack":"test-bed","inputs":{"inventory":{"external":"doc:doc:bed-topology"}},"predecessor":"<预订号>","parameters":{"action":"release","booking":"<同一预订号>"}}`。
 
 ## 5. 失败分析
 
