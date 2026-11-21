@@ -9,6 +9,14 @@ test('README lists both cross-package needs under the ownership section and all 
   for (const check of checks.checks) assert.ok(readme.includes('| `' + check.id + '` |'), check.id);
 });
 
+test('the skill says when it applies, keeps the evidence steps of section 2 together and addresses no reader in the second person', () => {
+  const skill = readFileSync(new URL('./SKILL.md', import.meta.url), 'utf8');
+  assert.match(skill, /^---\nname: defect-to-case\ndescription: [^\n]*时使用[^\n]*\n---\n/);
+  const section = skill.split('## 2. ')[1]!.split('\n## ')[0]!;
+  assert.deepEqual([...section.matchAll(/^(\d)\. /gm)].map((match) => match[1]), ['0', '1', '2', '3']);
+  assert.ok(!skill.includes('你'));
+});
+
 test('the dynamic dedup declaration documents engine reads and bounded recovery', () => {
   const readme = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
   const skill = readFileSync(new URL('./SKILL.md', import.meta.url), 'utf8');

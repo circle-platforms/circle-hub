@@ -17,7 +17,7 @@ export const IDENTITY = {
   version: '3.26.4',
   kind: 'workflow',
   dependencies: [{pack:'mindmap-format'},{pack:'workbook-format'}],
-  embeds: [{pack:'mindmap-format',version:'1.0.26',module:'case-structure'},{pack:'run-tools',version:'1.0.2',module:'hub-client'},{pack:'runner-workbook',version:'1.0.1',module:'workbook-writer'},{pack:'command-tools',version:'1.1.1',module:'command-check'},{pack:'plumb',version:'1.0.2',module:'plumb-client'}],
+  embeds: [{pack:'mindmap-format',version:'1.0.27',module:'case-structure'},{pack:'run-tools',version:'1.0.3',module:'hub-client'},{pack:'runner-workbook',version:'1.0.2',module:'workbook-writer'},{pack:'command-tools',version:'1.1.2',module:'command-check'},{pack:'plumb',version:'1.0.3',module:'plumb-client'}],
   title: '用例编译',
   description: '把一整份测试脑图编译成自动化用例 Excel 工作簿，再交给自动化测试环境执行；需要这份脑图在敏捷平台上的文档号。每个用例的第一行写着它在脑图里的层级（AAA>BBB>CCC），方便人工对照原文。工作簿由客户端生成，Hub 只逐行核对并重算，不生成内容、不调用模型；核对通过不证明在真实设备上跑得通',
 } as const;

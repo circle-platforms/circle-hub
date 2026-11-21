@@ -115,7 +115,7 @@ function typeName(type: unknown): string {
   return String(type ?? '未知类型');
 }
 
-function receivedTypeName(issue: z.ZodIssue): string {
+function receivedTypeName(issue: z.core.$ZodIssue): string {
   const raw = (issue as { received?: unknown }).received ?? /received (\w+)/.exec(issue.message)?.[1];
   return typeName(raw);
 }
@@ -317,7 +317,7 @@ export function renderExpected(schema: Record<string, unknown>): string {
   return renderShape(schema);
 }
 
-export function specificFix(path: string, issue: z.ZodIssue, schema?: Record<string, unknown>): { message: string; fix: string } | null {
+export function specificFix(path: string, issue: z.core.$ZodIssue, schema?: Record<string, unknown>): { message: string; fix: string } | null {
   const received = receivedTypeName(issue);
   const targetSchema = findSubschema(schema, path);
 

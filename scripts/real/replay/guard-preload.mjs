@@ -40,5 +40,5 @@ fs.realpathSync = realpath;
 syncBuiltinESMExports();
 process.on('exit', () => {
   try { fs.writeSync(3, JSON.stringify([...outside].sort())); }
-  catch { }
+  catch { /* no side channel: the report stays empty */ }
 });

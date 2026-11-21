@@ -629,7 +629,7 @@ function conclusionStatements(texts: readonly string[]): string[] {
   return [...new Set(texts.filter((text) => text.length > 0))];
 }
 
-function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
+function itemConclusion(item: ItemResult, original: ItemProjection | undefined, dispatchRunning = false): string {
   const pending = item.requirements.some(requirement => requirement.status === 'pending' || requirement.unsatisfied_reason === 'independence_unknown');
   const wrong = item.requirements.filter(requirement => requirement.status === 'unsatisfied' && requirement.unsatisfied_reason === 'outcome_mismatch');
   const claims = item.requirements.flatMap(requirement => requirement.claims);
@@ -649,9 +649,7 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
       .map((claim) => claim.statement.text);
     return [...fromLayers, ...fromClaims];
   }).filter((text) => text.length > 0))];
-  const concreteGap = layers.some((layer) => (layer.reason !== undefined && layer.reason !== 'awaiting_step') || layer.attribution !== undefined);
-  const inFlight = unknown && !partial && !concreteGap
-    && layers.some((layer) => layer.layer === 'dynamic' && layer.reason === 'awaiting_step');
+  const inFlight = unknown && !partial && dispatchRunning && layers.length > 0 && layers.every((layer) => layer.layer === 'dynamic');
   const statement = determined
     ? conclusionStatements([
       ...wrong.map((requirement) => messageOf(requirement)).filter((text): text is string => Boolean(text)),
@@ -687,9 +685,9 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
   return parts.join('；');
 }
 
-function resultConclusions(result: ValidationResult, originals: readonly ItemProjection[] = []): string[] {
+function resultConclusions(result: ValidationResult, originals: readonly ItemProjection[] = [], dispatchRunning = false): string[] {
   const items = new Map(originals.map(item => [item.id, item]));
-  const conclusions = itemsOf(result.partitions).map(({ item }) => itemConclusion(item, items.get(item.item)));
+  const conclusions = itemsOf(result.partitions).map(({ item }) => itemConclusion(item, items.get(item.item), dispatchRunning));
   return result.acceptance === 'accepted' && conclusions.length === 0 ? ['没有需要核对的原始用例。'] : conclusions;
 }
 
@@ -884,6 +882,7 @@ function splitCallErrorProse(message: string): { category: string; fact: string;
 
 function dispatchNoteLine(note: DispatchNote): string {
   const message = note.text;
+  if (note.ended === null) return message;
   const callError = CATEGORY_HEAD.test(message.trim());
 
   if (
@@ -895,7 +894,8 @@ function dispatchNoteLine(note: DispatchNote): string {
   ) {
     const count = note.booking.declared_device_count;
     const devices = typeof count === 'number' && Number.isInteger(count) && count >= 0 ? `共 ${count} 台设备` : '设备数量尚未核对';
-    return `提交已核对正确（已确认）；本次没有上机验证，因为这次运行没有带着测试环境的预订；测试环境：${note.booking.target}（${devices}）；下一步：先预订整个测试环境，再带着预订重新开始运行。`;
+    const next = noteNext(note);
+    return `核验正确（已确认）；本次没有上机验证，因为这次运行没有带着测试环境的预订；测试环境：${note.booking.target}（${devices}）${next ? `；下一步：${next}` : ''}。`;
   }
   const notRun = note.outcome === 'not_dispatched' || note.outcome === 'target_rejected' || note.outcome === 'proven_not_executed';
   if (note.result !== undefined && !notRun) {
@@ -906,19 +906,6 @@ function dispatchNoteLine(note: DispatchNote): string {
     const parts = splitCallErrorProse(message);
     if (parts === null) return message;
     return callErrorLine(parts.category, parts.fact, parts.next.length > 0 ? parts.next : noteNext(note));
-  }
-
-  if (
-    message.includes('下一步由模型稍后把这次脚本合并原样再交一次，读取进展')
-    || /已按工作流的规定自动开始上机验证/.test(message)
-    || message.includes('正在做上机验证前的核对')
-    || (message.includes('上机验证还在进行') && !message.includes('上机验证结果未知'))
-  ) {
-    return message;
-  }
-
-  if (/：进行中（阶段 [^）]+）/.test(message) && !note.missing_facts?.length && note.frozen !== true) {
-    return '上机验证还在进行；下一步由模型稍后把这次提交原样再交一次，读取进展';
   }
 
   if (message.includes('上机验证结果未知') || /不要重交，也不要另开/.test(message)) {
@@ -954,10 +941,11 @@ function submitLead(v: Pick<SubmitOut, 'acceptance' | 'step_name'>): string {
 }
 
 function submitText(v: SubmitOut, context: TextContext): string {
+  const notes: readonly DispatchNote[] = v.dispatch ?? [];
   const lines = [submitLead(v)];
   const represented = new Set(v.acceptance === 'accepted' && v.result !== undefined ? itemsOf(v.result.partitions).map(({ item }) => item.item) : []);
   if (v.acceptance === 'accepted' && v.result !== undefined) {
-    lines.push(...resultConclusions(v.result, context.items));
+    lines.push(...resultConclusions(v.result, context.items, notes.some((note) => note.ended === null)));
     lines.push(...v.result.cross_item.map(claimLine));
   }
   if (v.result?.contributions) {
@@ -968,7 +956,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
       lines.push(`${original ? caseName(original, original.label) : '资料未保存'}，${rejected.reason}；状态已确认；判断错误；原因缺资料；下一步由使用者补齐资料。`);
     }
   }
-  lines.push(...sayOnce((v.dispatch ?? []).map((note) => dispatchNoteLine(note))));
+  lines.push(...sayOnce(notes.map(dispatchNoteLine)));
   lines.push(...submitErrorBlocks(v.errors, context, represented));
   return lines.join('\n');
 }

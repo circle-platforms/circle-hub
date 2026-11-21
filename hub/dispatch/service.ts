@@ -8,7 +8,7 @@ import { reportOutcome, runStop } from './report-outcome.ts';
 import { REPORT_READ_ATTEMPTS, REPORT_READ_WINDOW_MS, reportPending, reportReadDelay, trustedStatus } from './report-read.ts';
 import { releaseDigest, releaseField, releaseFailure, type ReleaseCheck } from './release-diagnostics.ts';
 import { formatReleaseRefusal } from './refusal-text.ts';
-import { readConditionFact } from './reasons.ts';
+import { BOOKING_NEXT, readConditionFact } from './reasons.ts';
 import type { AdminLogEntry } from '../runs/api.ts';
 import { RETRY_RULES } from './retry-policy.ts';
 import { prepareEffectGate, EffectBoundaryError } from './effect-gate.ts';
@@ -94,8 +94,7 @@ function precheckUnjudged(events:readonly Event[]):NonNullable<JobStatus['unjudg
     return [];
   });
 }
-/** The physical resources a run's lineage does not hold for the whole dispatch window; the refusal names them (the reference compile skill reports a
- * failed bed check as it is). */
+/** The physical resources a run's lineage does not hold for the whole dispatch window; the refusal names them. */
 class LeaseCoverageError extends Error {
   missing: string[];
   occupied: boolean;
@@ -234,7 +233,7 @@ export class DispatchService {
     try{
       const {missing}=await this.coverage(proof.input.ancestors,proof.input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);
       const fields=[releaseField('lease.resources.uncovered',0,missing.length,missing.length===0)];
-      return missing.length===0?{condition,label,satisfied:true,fields}:{condition,label,satisfied:false,fields,missing_fact:`缺少覆盖派发窗口的同血缘有效租约：${[...new Set(missing)].join('、')}`,next_action:'先预订整个自动化测试环境（全部资源键），再从脚本编写开始新的运行，并重新核验脚本合并；不要只预订部分设备'};
+      return missing.length===0?{condition,label,satisfied:true,fields}:{condition,label,satisfied:false,fields,missing_fact:`缺少覆盖派发窗口的同血缘有效租约：${[...new Set(missing)].join('、')}`,next_action:'先预订整个自动化测试环境（全部资源键），再带着预订重新开始运行；不要只预订部分设备'};
     }catch(error){return {condition,label,satisfied:null,fields:[releaseField('exception',undefined,error instanceof Error?{name:error.name}:error,null)],missing_fact:'读不到租约持有记录，无法判断租约是否覆盖',next_action:'管理员恢复租约表的可读性后重跑 job explain-release'};}
   }
   async list(by:Principal,executor:string):Promise<JobStatus[]> {
@@ -656,6 +655,7 @@ export class DispatchService {
           if(!rule.resend||this.now().getTime()>=retryDeadline||!pulse.held()||!await this.certified(binding,d,session,'retry_safety')||rule.window&&!await this.certified(binding,d,session,'window_resend'))throw error;
           try{await readBeforeState();}catch{await this.journal.append(binding,'retry_refused','dispatch','completed',{missing_fact:'丢回复后前状态不再匹配或读不到；原请求是否执行须对账',next_action:'自动只读原请求记录，不把重发前提失败当作未执行'});throw error;}
           const retryBoundary=await checkEffectBoundary({...finalBoundary,budget:async row=>{const used=await finalBoundary.budget(row);return {count:used.count-1,duration_ms:used.duration_ms-d.max_run_ms};}});
+          // The first submit was already invoked, so a refusal without a conclusion never says nothing went out (decision 116).
           if(!retryBoundary.ok||retryBoundary.checked!==9){const failure=retryBoundary.ok?incompleteEffectBoundary(retryBoundary):retryBoundary;await this.journal.append(binding,'retry_refused','dispatch','completed',{missing_fact:refusalText(failure,true),next_action:failure.fix},[]);throw error;}
           await this.journal.append(binding,'resend','dispatch','completed',{outcome:'issued',request_id:context.request_id,intent_key:key,possibly_duplicated:rule.mark==='possible_duplicate',retry_once:true});
           if(!pulse.held()||this.now().getTime()>=retryDeadline)throw error;
@@ -734,12 +734,12 @@ export class DispatchService {
       }catch{adminReleaseMissing=true;}
     }
     if(!(await this.journal.events(binding.job)).length)await this.journal.append(binding,'reservation','dispatch','completed',{binding,read_only:true});
+    // The event records submit_invoked false, so a refusal without a conclusion may say nothing went out (decision 116).
     const said=refusalText(failure,false);
-    const bookingNext='先预订整个测试环境，再从脚本编写开始新的运行，并重新核验脚本合并';
     const memberFacts=facts.booking?[{fact:facts.booking.coverage_complete===false?(facts.call_error_category==='occupied'?`测试环境 ${facts.booking.target} 有资源由其他运行持有；`:expiredBooking?'当前账户的原预订已过期；':'')+`本运行没有覆盖测试环境 ${facts.booking.target} 的完整预订，缺少 ${facts.booking.missing_resources} 项所需资源（共 ${facts.booking.required_resources} 项）`:`测试环境 ${facts.booking.target} 的本运行预订覆盖尚未核对`,
-      next_action:facts.booking.coverage_complete===false?bookingNext:'联系管理员恢复预订记录读取后重新核对覆盖范围；当前不能派发'}]:undefined;
+      next_action:facts.booking.coverage_complete===false?BOOKING_NEXT:'联系管理员恢复预订记录读取后重新核对覆盖范围；当前不能派发'}]:undefined;
 
-    await this.journal.append(binding,'boundary_refused','dispatch','error',{done:true,outcome:'not_dispatched',submit_invoked:false,boundary_clause:failure.clause,effect_row:failure.row??null,requirements:failure.requirements??[],public_reason:said,missing_fact:said,...facts,...(failure.no_conclusion?{call_error_category:null}:{}),...(memberFacts?{member_missing_facts:memberFacts}:failure.no_conclusion?{member_missing_facts:failure.member_missing_facts??[{fact:'冻结包的政策或参数检查尚未给出结论',next_action:'请管理员核对该检查声明的输入与执行记录，补齐前提后重新核对'}]}:failure.code==='SOURCE_NOT_PERMITTED'?{member_missing_facts:[{fact:failure.message,next_action:'联系管理员核对本测试环境的有效分配及账户状态后重新核验'}]}:failure.code==='SOURCE_UNAVAILABLE'?{member_missing_facts:[{fact:'本次测试环境的使用权限尚未核对，缺少可读取的核对事实',next_action:'联系管理员恢复环境权限检查接线或读取能力后重新核验；当前不能派发'}]}:{}),next_action:facts.booking?(facts.booking.coverage_complete===false?bookingNext:'恢复预订记录的读取能力后重新核对覆盖范围；当前不能派发'):failure.fix,...(adminReleaseSha?{admin_release_sha256:adminReleaseSha}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{})},[],undefined,undefined,failure.code);
+    await this.journal.append(binding,'boundary_refused','dispatch','error',{done:true,outcome:'not_dispatched',submit_invoked:false,boundary_clause:failure.clause,effect_row:failure.row??null,requirements:failure.requirements??[],public_reason:said,missing_fact:said,...facts,...(failure.no_conclusion?{call_error_category:null}:{}),...(memberFacts?{member_missing_facts:memberFacts}:failure.no_conclusion?{member_missing_facts:failure.member_missing_facts??[{fact:'冻结包的政策或参数检查尚未给出结论',next_action:'请管理员核对该检查声明的输入与执行记录，补齐前提后重新核对'}]}:failure.code==='SOURCE_NOT_PERMITTED'?{member_missing_facts:[{fact:failure.message,next_action:'联系管理员核对本测试环境的有效分配及账户状态后重新核验'}]}:failure.code==='SOURCE_UNAVAILABLE'?{member_missing_facts:[{fact:'本次测试环境的使用权限尚未核对，缺少可读取的核对事实',next_action:'联系管理员恢复环境权限检查接线或读取能力后重新核验；当前不能派发'}]}:{}),next_action:facts.booking?(facts.booking.coverage_complete===false?BOOKING_NEXT:'恢复预订记录的读取能力后重新核对覆盖范围；当前不能派发'):failure.fix,...(adminReleaseSha?{admin_release_sha256:adminReleaseSha}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{})},[],undefined,undefined,failure.code);
     return this.status(by,binding.job);
   }
 

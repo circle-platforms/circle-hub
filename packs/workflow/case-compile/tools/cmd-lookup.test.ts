@@ -11,6 +11,7 @@ import { CallFailure } from '../functions/text.ts';
 import BLOCKS from '../tables/blocks-format.json' with { type: 'json' };
 import { contractFixture, hostLiterals, writeContractDownload, type DownloadOptions } from '../testing/contract-lookup-fixture.ts';
 import { lookupFixture, writeLookupDownload } from '../testing/lookup-fixture.ts';
+import { foreignCommands, shownCommands } from '../testing/shown-commands.ts';
 import { main } from './cmd-lookup.ts';
 import { resolveCwdRoots, resolveExistingDirInsideCwd } from './workspace-path.ts';
 
@@ -234,17 +235,17 @@ test('--method of an old download without the source manifest reads the root-lev
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('what the writer\'s lookups print for every block kind and for the methods of an object names no product command and no output layout (round 37, owner\'s rule)', async () => {
+test('every device command the writer\'s lookups print for a block kind or for the methods of an object is a command of the synthetic command trees of these tests', async () => {
   const { dir, run: runDir } = await contractDownload();
   try {
-    const product = [/\bsdns\b/i, /synconfig/i, /dnssec/i, /\bha (on|off|link|unit|group)\b/i, /clear ha/i, /write mem/i, /lib\/apv/, /\bksk\b/, /\bzsk\b/, /RSASHA/i, /keypub/i, /\+005\+/, /zone\.example/, /\.key\b/, /\.private\b/, /Statistics Summary/, /HA 等/, /2048/];
     const answers: Array<[string, string]> = [];
     for (const kind of BLOCKS.kinds) answers.push([`--block ${kind.kind}`, (await run(['--run', runDir, '--block', kind.kind], dir)).stdout]);
     answers.push(['--block block_context', (await run(['--run', runDir, '--block', 'block_context'], dir)).stdout]);
     answers.push(['--methods widget-seat', (await run(['--run', runDir, '--methods', 'widget-seat'], dir)).stdout]);
     answers.push(['--method widget-seat.configure', (await run(['--run', runDir, '--method', 'widget-seat.configure'], dir)).stdout]);
     assert.ok(answers.every(([, text]) => text.length > 0));
-    for (const [label, text] of answers) for (const word of product) assert.ok(!word.test(text), `${label}: ${word}`);
+    assert.ok(answers.reduce((count, [, text]) => count + shownCommands(text).length, 0) > 0, 'the answers show device commands');
+    for (const [label, text] of answers) assert.deepEqual(foreignCommands(text), [], label);
     const cell = answers.find(([label]) => label === '--block SELECT_CELL')![1];
     assert.ok(cell.split('\n').some((line) => line.startsWith('{"kind":"SELECT_CELL"') && line.includes('"separator":"|"') && line.includes('"value":"node-a"')), 'the sample is a name|state|count table');
   } finally { await rm(dir, { recursive: true, force: true }); }

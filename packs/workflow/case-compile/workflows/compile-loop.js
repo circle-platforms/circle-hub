@@ -17,7 +17,9 @@ async function ask(words, label) {
   const ran = await execute(`${tool} ${words} ${services}`, { timeout: 600, label })
   const output = String(ran.output ?? '')
   const line = output.split('\n').map((text) => text.trim()).findLast((text) => text.startsWith('{'))
-  if (ran.code === 0 && line !== undefined) return JSON.parse(line)
+  if (ran.code === 0 && line !== undefined) {
+    try { return JSON.parse(line) } catch {}
+  }
   throw new Error(`pipeline.ts ${label} 没有完成（退出码 ${ran.code}）：${output.slice(-800)}`)
 }
 

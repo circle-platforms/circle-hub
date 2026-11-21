@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { publishedBaseline } from './pack-version.ts';
+import { resolvePublishedBaseline, type PublishedBaseline } from './pack-version.ts';
 
 export const SCHEMAS_DIR = 'contracts/generated/schemas';
 
@@ -852,29 +853,39 @@ export function compareJsonSchemas(
   return comparePair(ctx, baseRoot, '#', curRoot, '#', '');
 }
 
+export interface SchemaFreezeBaseline {
+  readonly release: boolean;
+  readonly sha256: ReadonlyMap<string, string>;
+}
+
 export function contractSchemaFreezeViolations(root: string): {
   violations: SchemaFreezeViolation[];
   errors: string[];
+  baselineShapes: SchemaFreezeBaseline;
 } {
-  let baseline: string;
+  let published: PublishedBaseline;
   try {
-    baseline = publishedBaseline(root);
+    published = resolvePublishedBaseline(root);
   } catch (error) {
     return {
       violations: [],
       errors: [error instanceof Error ? error.message : String(error)],
+      baselineShapes: { release: false, sha256: new Map() },
     };
   }
+  const baseline = published.commit;
+  const sha256 = new Map<string, string>();
+  const baselineShapes: SchemaFreezeBaseline = { release: published.release, sha256 };
 
   const listed = git(root, ['ls-tree', '-r', '-z', '--name-only', baseline, '--', SCHEMAS_DIR]);
   if (listed === null) {
-    return { violations: [], errors: [`git ls-tree 失败（基线 ${baseline.slice(0, 12)}）`] };
+    return { violations: [], errors: [`git ls-tree 失败（基线 ${baseline.slice(0, 12)}）`], baselineShapes };
   }
   const schemaPaths = listed
     .split('\0')
     .filter((entry) => entry.endsWith('.json'))
     .sort();
-  if (schemaPaths.length === 0) return { violations: [], errors: [] };
+  if (schemaPaths.length === 0) return { violations: [], errors: [], baselineShapes };
 
   const violations: SchemaFreezeViolation[] = [];
   const errors: string[] = [];
@@ -884,6 +895,7 @@ export function contractSchemaFreezeViolations(root: string): {
       errors.push(`${schemaPath}: 基线 ${baseline.slice(0, 12)} 读取失败`);
       continue;
     }
+    sha256.set(schemaPath, createHash('sha256').update(baseText).digest('hex'));
     let curText: string;
     try {
       curText = readFileSync(join(root, schemaPath), 'utf8');
@@ -914,7 +926,7 @@ export function contractSchemaFreezeViolations(root: string): {
     }
     violations.push(...compareJsonSchemas(baseJson, curJson, schemaPath));
   }
-  return { violations, errors };
+  return { violations, errors, baselineShapes };
 }
 
 export const EXCEPTIONS_PATH = '.github/checks/exceptions.json';
@@ -923,6 +935,7 @@ const CHECK = 'contract-schema-freeze';
 export interface SchemaFreezeException {
   readonly path: string;
   readonly what: string;
+  readonly baseSha256: string;
   readonly reason: string;
   readonly removeWhen: string;
 }
@@ -934,30 +947,49 @@ export function schemaFreezeExceptions(raw: unknown): { entries: SchemaFreezeExc
   const entries: SchemaFreezeException[] = [], problems: string[] = [];
   for (const item of raw) {
     if (typeof item !== 'object' || item === null || (item as { check?: unknown }).check !== CHECK) continue;
-    const { path, what, reason, removeWhen } = item as Record<string, unknown>;
-    if ([path, what, reason, removeWhen].some((field) => typeof field !== 'string' || !field.trim())) {
-      problems.push(`${EXCEPTIONS_PATH}: ${CHECK} 的例外须写 path、what、reason、removeWhen`);
+    const { path, what, baseSha256, reason, removeWhen } = item as Record<string, unknown>;
+    if ([path, what, baseSha256, reason, removeWhen].some((field) => typeof field !== 'string' || !field.trim())) {
+      problems.push(`${EXCEPTIONS_PATH}: ${CHECK} 的例外须写 path、what、baseSha256、reason、removeWhen`);
       continue;
     }
-    entries.push({ path: path as string, what: what as string, reason: reason as string, removeWhen: removeWhen as string });
+    if (!/^[0-9a-f]{64}$/.test(baseSha256 as string)) {
+      problems.push(`${EXCEPTIONS_PATH}: 例外 ${path} ${what} 的 baseSha256 须是批准时基线形状文件的 sha256（64 位小写十六进制）`);
+      continue;
+    }
+    entries.push({
+      path: path as string,
+      what: what as string,
+      baseSha256: baseSha256 as string,
+      reason: reason as string,
+      removeWhen: removeWhen as string,
+    });
   }
   return { entries, problems };
 }
 
-export function reconcileSchemaFreeze(violations: readonly SchemaFreezeViolation[], exceptions: readonly SchemaFreezeException[]): string[] {
+export function reconcileSchemaFreeze(
+  violations: readonly SchemaFreezeViolation[],
+  exceptions: readonly SchemaFreezeException[],
+  baselineShapes: SchemaFreezeBaseline,
+): string[] {
   const key = (file: string, what: string) => `${file}\u0000${what}`;
   const live = new Set(violations.map((v) => key(v.file, violationWhat(v))));
+  const applies = (e: SchemaFreezeException) => baselineShapes.sha256.get(e.path) === e.baseSha256;
+  const approved = new Set(exceptions.filter(applies).map((e) => key(e.path, e.what)));
   const listed = new Map<string, number>();
   for (const e of exceptions) listed.set(key(e.path, e.what), (listed.get(key(e.path, e.what)) ?? 0) + 1);
   return [
-    ...violations.filter((v) => !listed.has(key(v.file, violationWhat(v)))).map((v) => `${v.file}: ${v.detail}（${v.path}）`),
-    ...exceptions.filter((e) => !live.has(key(e.path, e.what))).map((e) => `${EXCEPTIONS_PATH}: 例外 ${e.path} ${e.what} 已不再发生，请删除这一条`),
+    ...violations.filter((v) => !approved.has(key(v.file, violationWhat(v)))).map((v) => `${v.file}: ${v.detail}（${v.path}）`),
+    ...exceptions.filter((e) => applies(e) && !live.has(key(e.path, e.what))).map((e) => `${EXCEPTIONS_PATH}: 例外 ${e.path} ${e.what} 已不再发生，请删除这一条`),
+    ...(baselineShapes.release
+      ? exceptions.filter((e) => !applies(e)).map((e) => `${EXCEPTIONS_PATH}: 例外 ${e.path} ${e.what} 批准时的基线形状与发布基线不同，已不适用，请删除这一条`)
+      : []),
     ...[...listed].filter(([, count]) => count > 1).map(([k]) => `${EXCEPTIONS_PATH}: 例外重复 ${k.replace('\u0000', ' ')}`),
   ];
 }
 
 export function schemaFreezeProblems(root: string): string[] {
-  const { violations, errors } = contractSchemaFreezeViolations(root);
+  const { violations, errors, baselineShapes } = contractSchemaFreezeViolations(root);
   let raw: unknown = [];
   try {
     raw = JSON.parse(readFileSync(join(root, EXCEPTIONS_PATH), 'utf8'));
@@ -965,7 +997,7 @@ export function schemaFreezeProblems(root: string): string[] {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return [...errors, `${EXCEPTIONS_PATH}: 读取失败（${error instanceof Error ? error.message : String(error)}）`];
   }
   const { entries, problems } = schemaFreezeExceptions(raw);
-  return [...errors, ...problems, ...reconcileSchemaFreeze(violations, entries)];
+  return [...errors, ...problems, ...reconcileSchemaFreeze(violations, entries, baselineShapes)];
 }
 
 if (process.argv[1] !== undefined && resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1])) {

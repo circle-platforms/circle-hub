@@ -175,7 +175,7 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
   const row = (n: number, stage: string, attempts: { recompose: number; write: number }, extra: Record<string, unknown> = {}) => ({ k: k(n), autoid: autoid(n), title: `合成用例 ${k(n)}`, recompose: { index: k(n), item: `n/r${k(n)}` }, plan: { index: k(n), item: `doc:${k(n)}` }, stage, attempts, ...extra });
   const state = (cases: unknown[]) => JSON.stringify({ schema: 'compile-pipeline@1', width: 6, max_attempts: 3, model: 'synthetic-model', recompose_run: RUN_ID, plan_run: RUN_ID_2, recompose_dir: 'recompose-run', plan_dir: 'plan-run', records_dir: 'records', cases });
   const STOPPED = '脚本编写 3 次仍未通过：合成停下原因';
-  const dirs = { init: join(base, 'init'), resume: join(base, 'resume'), next: join(base, 'next'), status: join(base, 'status'), collect: join(base, 'collect'), retry: join(base, 'retry'), rework: join(base, 'rework') };
+  const dirs = { init: join(base, 'init'), resume: join(base, 'resume'), next: join(base, 'next'), status: join(base, 'status'), collect: join(base, 'collect'), retry: join(base, 'retry'), rework: join(base, 'rework'), reopen: join(base, 'reopen') };
   for (const run of ['recompose-run', 'plan-run']) await mkdir(join(dirs.init, run, 'items'), { recursive: true });
   await writeFile(join(dirs.init, 'recompose-run', 'items', '00.json'), JSON.stringify({ id: 'n/r00', fields: { case_id: autoid(0), node: 'n/00' } }));
   await writeFile(join(dirs.init, 'plan-run', 'items', '00.json'), JSON.stringify({ id: 'doc:00', fields: { autoid: autoid(0), title: '合成用例 00' }, location: { selector: 'n/00' } }));
@@ -196,12 +196,15 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
   await writeFile(join(dirs.rework, 'pipeline.json'), state([row(0, 'ready', { recompose: 1, write: 1 })]));
   await writeFile(join(dirs.rework, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: RUN_ID, recompose_run: RUN_ID, recompose_record: 'rec:' + 'a'.repeat(64), plan_run: RUN_ID_2 }));
   await writeFile(join(dirs.rework, 'returns-1', 'index.json'), JSON.stringify({ schema: 'device-returns@1', jobs: [{ outcome: 'not_dispatched', missing_facts: [{ fact: '合成原因' }], rows: [] }] }));
+  await mkdir(dirs.reopen, { recursive: true });
+  await writeFile(join(dirs.reopen, 'pipeline.json'), state([row(0, 'stopped', { recompose: 1, write: 3 }, { stopped: STOPPED, retried: RUN_ID_2 })]));
+  await cp(join(dirs.rework, 'open-compile.json'), join(dirs.reopen, 'open-compile.json'));
   const line = (value: unknown) => JSON.stringify(value) + '\n';
   return [
     { argv: ['init', '--recompose-run', 'recompose-run', '--plan-run', 'plan-run', '--open', 'open-compile.json', '--model', 'synthetic-model', '--state', 'pipeline.json'], cwd: dirs.init, subcommand: 'init', stdinValues: [], complete: { status: 0, stderr: '' } },
     {
       argv: ['next', '--state', 'pipeline.json', '--finished', '编写 00', '--hub', 'https://hub.example.invalid/mcp', '--plumb', 'https://plumb.example.invalid'], cwd: dirs.next, subcommand: 'next', stdinValues: ['synthetic-hub-token', 'synthetic-plumb-key'],
-      complete: { status: 0, stdout: line({ actions: [], running: [], ready: [], stopped: [{ label: `00 ${autoid(0)}`, reason: '脚本编写 3 次仍未通过：没有写出 cases/00/plan/00.json' }], queued: 0, all_done: true, message: '全部 1 条走完流水线：0 条计划就绪，1 条停下（见 stopped）。下一步：每条停下的先跑一次 pipeline.ts retry（--note \'模型决定：<针对停下原因的改法>\'），再照第 0 节启动编写循环（workflows/compile-loop.js）；retry 后又停下的照实写进报告' }), stderr: '' },
+      complete: { status: 0, stdout: line({ actions: [], running: [], ready: [], stopped: [{ label: `00 ${autoid(0)}`, reason: '脚本编写 3 次仍未通过：没有写出 cases/00/plan/00.json' }], queued: 0, all_done: true, message: '全部 1 条走完流水线：0 条计划就绪，1 条停下（见 stopped）。下一步：stopped 里没标 retried 的每条先跑一次 pipeline.ts retry（--note \'模型决定：<针对停下原因的改法>\'），再照第 0 节启动编写循环（workflows/compile-loop.js）' }), stderr: '' },
       empty: { status: 1, stdout: '流水线工具没有完成：标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%\n', stderr: '' },
     },
     {
@@ -220,7 +223,12 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
     { argv: ['retry', '--state', 'pipeline.json', '--case', '00', '--note', '合成决定：按手册改写'], cwd: dirs.retry, subcommand: 'retry', stdinValues: [], complete: { status: 0, stderr: '' } },
     {
       argv: ['rework', '--state', 'pipeline.json', '--open', 'open-compile.json', '--returns', 'returns-1', '--hub', 'https://hub.example.invalid/mcp', '--plumb', 'https://plumb.example.invalid'], cwd: dirs.rework, subcommand: 'rework', stdinValues: ['synthetic-hub-token', 'synthetic-plumb-key'],
-      complete: { status: 1, stdout: '流水线工具没有完成：returns-1 里没有一轮上机的结果：这次上机没有发到设备（合成原因），不算一轮上机，也不返工：按 missing_facts 的原因和下一步处理，原因消除后用同一份计划重跑合并工具（open-merge.ts），不为读进展重交计划\n', stderr: '' },
+      complete: { status: 1, stdout: '流水线工具没有完成：returns-1 里没有一轮上机的结果：这次上机没有发到设备（合成原因），不算一轮上机，也不返工：按 missing_facts 的原因和下一步处理；Hub 要原样重交时，用合并时的计划目录和模型对这次脚本合并运行再跑一次 submit-plans.ts，再下载回传；不重跑合并工具，也不为读进展重交计划\n', stderr: '' },
+      empty: { status: 1, stdout: '流水线工具没有完成：标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%\n', stderr: '' },
+    },
+    {
+      argv: ['reopen', '--state', 'pipeline.json', '--open', 'open-compile.json', '--hub', 'https://hub.example.invalid/mcp', '--plumb', 'https://plumb.example.invalid'], cwd: dirs.reopen, subcommand: 'reopen', stdinValues: ['synthetic-hub-token', 'synthetic-plumb-key'],
+      complete: { status: 0, stdout: line({ running: [], ready: [], stopped: [], queued: 0, all_done: true, excluded: [{ label: `00 ${autoid(0)}`, reason: `retry 后仍停下：${STOPPED}` }], to_start: [], message: 'retry 后又停下的 1 条（00）不进这次编译，没有就绪的计划可以合并：这次编译没有自动化用例 Excel，也不上机验证；最后回复写原始用例共几条、生成成功 0 条，逐条写停下的原因' }), stderr: '' },
       empty: { status: 1, stdout: '流水线工具没有完成：标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%\n', stderr: '' },
     },
   ];

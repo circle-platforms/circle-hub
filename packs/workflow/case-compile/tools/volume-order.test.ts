@@ -12,7 +12,7 @@ import { assemble, deliveryReport, type ReportInput } from '../functions/deliver
 import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { MANIFEST_DOC } from '../functions/test-support.ts';
 import { coreModel } from '../testing/workbook-model.ts';
-import { AUTOIDS, BOOT, ROOT, contractDoc, profileDoc, recipe } from '../testing/channels.ts';
+import { AUTOIDS, ROOT, contractDoc, profileDoc, recipe } from '../testing/channels.ts';
 
 const [A, B, C] = AUTOIDS;
 const SHOW = 'show pool', STORE = 'demo store file backup', BOOT_ON = 'demo mirror boot on', RELOAD = 'demo reload file backup';

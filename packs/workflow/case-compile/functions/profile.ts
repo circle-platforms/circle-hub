@@ -76,6 +76,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   }
   const runtime = isRecord(value.runtime) ? value.runtime : {};
   if (runtime.minimum_version !== contract.runtimeVersion) issue('/runtime/minimum_version', '运行时版本与合约不符');
+  for (const key of Object.keys(runtime)) if (key !== 'minimum_version') issue(`/runtime/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`, '多余字段；运行时一节只写 minimum_version');
   if (!Number.isSafeInteger(value.device_count) || (value.device_count as number) < 1) issue('/device_count', '缺少只读预检的正整数设备数');
   const bed = beds.find((v) => v.name === value.bed);
   if (!bed) issue('/bed', '配置的自动化测试环境不在清单里');

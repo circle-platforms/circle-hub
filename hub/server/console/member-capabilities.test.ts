@@ -111,12 +111,14 @@ test('occupied without assignment shows 已无分配; assigned occupancy does no
   assert.match(revoked, /不限时长/);
   assert.doesNotMatch(revoked, /到何时未知/);
 
-  const assignedEnvs = [{
+  const assignedEnvs: MemberCapabilities['environments'] = [{
     name: '合成实验室',
+    enabled: true,
     assigned: true,
     can_use: true,
-    occupancy: { since: '2026-11-09T02:00:00.000Z', until: '2026-11-09T03:00:00.000Z', mine: true },
-  }] as unknown as MemberCapabilities['environments'];
+    occupancy: [{ name: '合成成员甲', since: '2026-11-09T02:00:00.000Z', until: '2026-11-09T03:00:00.000Z', mine: true }],
+    missing: [],
+  }];
   const assigned = renderMemberCapabilities(sample({
     environmentAccess: { enforced: true, ready: true, missing: null, nextAction: null },
     environments: assignedEnvs,
@@ -133,7 +135,7 @@ test('unassigned member sees empty team guidance', async () => {
       skills: [],
       connections: [],
       denials: [
-        { reason: '尚无可用的已分配工作流', nextAction: '请管理员把你加入团队并分配工作流，或直接向账户分配工作流' },
+        { reason: '尚无可用的已分配工作流', nextAction: '请管理员把当前账户加入团队并分配工作流，或直接向账户分配工作流' },
       ],
     }),
   }));

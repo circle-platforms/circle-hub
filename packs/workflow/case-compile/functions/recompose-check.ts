@@ -213,6 +213,7 @@ function diagnoseSignatureMismatch(
         why: `改写 ${atomId} 的第 ${cmdIdx + 1} 条命令「${line}」在已匹配命令 ${matchedPath} 后参数或数量不合法（词元 #${failIdx}：「${failTok}」），${requirementText}（见已匹配命令 ${matchedPath} 的签名）`,
     };
 }
+const RECORD_FIX = '由模型改正重组记录后重交';
 function diagnoseAdaptedCommand(grammar: CommandGrammar, entriesCount: number, catalogComplete: boolean, atomId: string, cmdIdx: number, line: string): AdaptedCommandDiagnosis {
     if (entriesCount === 0)
         return { kind: 'unknown', missing: '改写后的命令没有锁定目录的完整语法身份', owner: '产品包作者' };
@@ -252,7 +253,7 @@ function diagnoseAdaptedCommand(grammar: CommandGrammar, entriesCount: number, c
 export function recomposeOut(verdict: string, statement: string, extra: any = {}) { return { verdict, statement, grounds: [], tier: 'blocking', ...extra }; }
 export function checkRecomposition(input: any): any[] {
     const s = input.subject ?? {}, fields = s.fields ?? {}, record = s.data, ctx = s.context ?? {}, atoms: AuthorAtom[] = fields.atoms ?? [], out: any[] = [];
-    const unknown = (missing: string, owner = '重组模型与产品包作者', at = '/record') => { const full = missing + '；等待' + owner + '在重新提交之前补事实并重产'; out.push(recomposeOut('unknown', full, { reason: 'missing_input', missing: full, pointer: at, data: { missing_fact: missing, next_action: '补事实并重产', owner, due: '重新提交之前' } })); };
+    const unknown = (missing: string, owner = '重组模型与产品包作者', at = '/record', next?: string) => { const full = missing + '；等待' + owner + '在重新提交之前补事实并重产' + (next ? '。下一步' + next : ''); out.push(recomposeOut('unknown', full, { reason: 'missing_input', missing: full, pointer: at, data: { missing_fact: missing, next_action: next ?? '补事实并重产', owner, due: '重新提交之前' } })); };
     const bad = (key: string, why: string, at: any = '/record', data: any = {}) => { if (typeof at !== 'string') {
         data = { ...at, ...data };
         at = '/record';
@@ -471,12 +472,12 @@ export function checkRecomposition(input: any): any[] {
                 continue;
             }
             if (diagnosis.kind === 'unknown') {
-                unknown(diagnosis.missing, diagnosis.owner, cmdPointer);
+                unknown(diagnosis.missing, diagnosis.owner, cmdPointer, RECORD_FIX);
                 continue;
             }
             const id = identity(line);
             if (!id) {
-                unknown('改写后的命令没有锁定目录的完整语法身份', '产品包作者', cmdPointer);
+                unknown('改写后的命令没有锁定目录的完整语法身份', '产品包作者', cmdPointer, RECORD_FIX);
                 continue;
             }
             actualCommands.push({ atom: adapted.atom, identity: id });

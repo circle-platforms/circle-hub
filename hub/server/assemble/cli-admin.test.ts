@@ -1202,6 +1202,31 @@ describe('resource and secret', () => {
     assert.equal((await admin.run(['resource', 'update', 'res_00000000000000000000000000', '--name', '丙'])).code, 1, 'an unknown resource');
   });
 
+  test('an update that names a secret for an owned credential entry the vault never held says how to set its value', async () => {
+    const admin = await setup();
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    await expectOk(admin, ['pack', 'publish', packs.agile]);
+    const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '甲', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username', 'password')]);
+    const id = resourceIdFromAdded(added);
+    await withKit(admin, async (kit) => {
+      const { canonicalBytes } = await import('../../records/api.ts');
+      const bound = (await kit.authorizations.resourceConfig(id))?.body.bound;
+      const bytes = await kit.objects.get(String(bound));
+      assert.ok(bytes, 'the current definition is stored');
+      const current = JSON.parse(Buffer.from(bytes).toString('utf8'));
+      const legacy = { ...current, credentials: { ...current.credentials, username: `connector.${id}.username` } };
+      const object = await kit.objects.put(canonicalBytes(legacy), 'application/json');
+      const by = (await kit.principals.list()).find((user) => user.role === 'admin');
+      assert.ok(by);
+      await kit.authorizations.configureResource(by, id, object.sha256, 'DEMO_LEGACY');
+    });
+    const updated = await expectOk(admin, ['resource', 'update', id, '--credential', 'username=DEMO_RENAMED_USER']);
+    assert.match(updated.text, /原值不在密钥库里：接着用 circle-hub secret set --name DEMO_RENAMED_USER 设置/);
+    assert.match(updated.text, /已更新资源 甲/);
+    const again = await expectOk(admin, ['resource', 'update', id, '--credential', 'password=DEMO_RENAMED_PASSWORD']);
+    assert.doesNotMatch(again.text, /原值不在密钥库里/, 'a credential that already names a secret is not an owned entry');
+  });
+
   test('resource update origins prunes stale allow-plaintext entries with notification, clear-plaintext, and validates plaintext matching', async () => {
     const admin = await setup();
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);

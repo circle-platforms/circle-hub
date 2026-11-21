@@ -216,9 +216,13 @@ describe('scenario 1: a normal review', () => {
       const name = `原始用例 ${typeof id === 'string' || typeof id === 'number' ? `${id} ` : ''}${item.label}`;
       const line = lines[index];
       assert.ok(line.startsWith(name + '：'), line);
-      assert.match(line, /；原因[^；]+/);
-      assert.match(line, /下一步[^；]+/);
-      assert.match(line, /；决定者[^；]+$/);
+      const rest = line.slice(name.length + 1);
+      if (rest.slice(0, rest.indexOf('；状态')).includes('下一步')) {
+        assert.match(rest, /；状态.+；原因[^；]+(?:；.+)?；决定者[^；]+$/, line);
+        assert.doesNotMatch(rest, /；原因[^；]+；下一步/, 'a next step the line already states is not said again');
+      } else {
+        assert.match(rest, /；原因[^；]+；下一步.+；决定者[^；]+$/, line);
+      }
       if (line.includes('；判断错误；')) {
         assert.match(line, /；状态已确认；判断错误；/);
       } else {

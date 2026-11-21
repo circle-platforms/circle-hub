@@ -7,7 +7,6 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { main as importedMain } from './download-run.ts';
 import { loadPriorDeviceHistory } from './authoring-brief.ts';
-import { readSourceManifest } from '../functions/source-materials.ts';
 import { main as recomposeMain } from '../recompose/tools/download-run.ts';
 
 const main: typeof importedMain = (argv, token, brief, retry, history) => importedMain(argv, token, brief, { ...retry, sourceCacheDirectory: false }, { inline: true, ...history });

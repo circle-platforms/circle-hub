@@ -29,20 +29,6 @@ import { briefFile, planCases, verdictFile, type PlanCase } from './fidelity-bri
 const USAGE =
   'node <技能目录>/tools/fidelity-plumb.ts --run <运行目录> --plans <plansDir> --briefs <briefsDir> --base-url <url> [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--out <summary.json>] [--key-stdin]';
 
-const OPTIONS: Record<string, boolean> = {
-  run: true,
-  plans: true,
-  briefs: true,
-  'base-url': true,
-  model: false,
-  'ca-file': false,
-  'ca-sha256': false,
-  'cache-dir': false,
-  'audit-out': false,
-  out: false,
-};
-const BOOLEAN_OPTIONS = ['strict-review', 'key-stdin', 'no-cache', 'allow-insecure-http'] as const;
-
 const VALUE_FLAGS = new Set(['--run', '--plans', '--briefs', '--out', ...SHARED_PLUMB_VALUE_FLAGS]);
 const BOOL_FLAGS = new Set(['--strict-review', ...SHARED_PLUMB_BOOL_FLAGS]);
 

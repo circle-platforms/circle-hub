@@ -336,18 +336,18 @@ export class FileVault implements Vault {
           const actual = await readVerifiedFile(this.#path(entry), MAX_SEALED_BYTES);
           observedNewPublication = createHash('sha256').update(actual.bytes).digest('hex') === newCipherIdentity;
         }
-      } catch { }
+      } catch { /* The rollback below checks the original bytes itself. */ }
       if (metadataWriteCompleted && observedNewPublication) {
-        try { await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: false, published: true, ...receipt }), { mode: 0o600 }); } catch { }
+        try { await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: false, published: true, ...receipt }), { mode: 0o600 }); } catch { /* The original pending receipt remains. */ }
         throw new VaultError(`新值与认证元数据已发布，但归档收据完成标记未写成；原件保留于 ${directory}，本次未完成审计，不得视为成功`);
       }
       const originalMetadata = planned.find(file => file.folder === 'metadata');
       if (!originalMetadata || moved.includes(originalMetadata)) {
-        try { await activeMetadata.remove(logical); } catch { }
+        try { await activeMetadata.remove(logical); } catch { /* The final identity checks decide whether recovery succeeded. */ }
       }
-      try { await this.remove(entry); } catch { }
+      try { await this.remove(entry); } catch { /* Absence is checked below, not the result of the call. */ }
       for (const file of [...moved].reverse()) {
-        try { await this.#move(file.destination, file.source); } catch { }
+        try { await this.#move(file.destination, file.source); } catch { /* Every original identity is checked below. */ }
       }
       let restored = true;
       for (const file of planned) {
@@ -512,6 +512,7 @@ export class FileVault implements Vault {
       .sort();
   }
 
+  /** Writers must be stopped while this runs: its metadata checks see changes during the scan but cannot freeze another process. */
   async verify(): Promise<VaultVerification> {
     const result: VaultVerification = { checked: 0, failed: 0, unknown: false };
     let key: Buffer | undefined;

@@ -22,7 +22,7 @@
                 "priority": 2,
                 "negative": false,
                 "expects_refutation": false,
-                "preconditions": ["SLB服务正常运行"],
+                "preconditions": ["widget 服务正常运行"],
                 "steps": [
                   {
                     "text": "执行配置健康检查间隔命令",

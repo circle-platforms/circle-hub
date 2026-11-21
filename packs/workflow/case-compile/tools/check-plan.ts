@@ -23,7 +23,7 @@ import { describeExpansions, expandValue } from '../functions/length-literals.ts
 import { isItemHandling, ITEM_HANDLING, type ItemHandling } from '../functions/generated/vocabulary.ts';
 import { readSlots, type PlanSlots } from '../functions/slots.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
+import { isRecord, parseCliOptions } from '../functions/text.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 import { resolveRun } from './workspace-path.ts';
 import { LATE_FILE, readLateFile, recompositionRecordOf, type RunLate } from '../functions/late.ts';

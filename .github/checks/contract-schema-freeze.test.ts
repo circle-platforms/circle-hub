@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+  EXCEPTIONS_PATH,
   SCHEMAS_DIR,
   compareJsonSchemas,
   contractSchemaFreezeViolations,
@@ -52,15 +54,74 @@ describe('contract schema freeze on the repository', () => {
 
 describe('approved breaks in the exception register', () => {
   const violation = { file: 'contracts/generated/schemas/a.v1.schema.json', path: 'x', kind: 'property-deleted' as const, detail: '删掉了已发布属性 x' };
-  const entry = { check: 'contract-schema-freeze', path: violation.file, what: 'property-deleted: x', reason: 'synthetic', removeWhen: 'synthetic' };
+  const approvedShape = 'a'.repeat(64);
+  const entry = { check: 'contract-schema-freeze', path: violation.file, what: 'property-deleted: x', baseSha256: approvedShape, reason: 'synthetic', removeWhen: 'synthetic' };
+  const approvedBaseline = { release: false, sha256: new Map([[violation.file, approvedShape]]) };
+  const laterBaseline = { release: false, sha256: new Map([[violation.file, 'b'.repeat(64)]]) };
+
   it('passes a listed break, fails an unlisted one, a stale entry and a duplicate', () => {
     const { entries, problems } = schemaFreezeExceptions([entry, { check: 'package-boundaries', path: 'p', what: 'w', reason: 'r', removeWhen: 'C4' }]);
     assert.deepEqual([entries.length, problems], [1, []]);
-    assert.deepEqual(reconcileSchemaFreeze([violation], entries), []);
-    assert.equal(reconcileSchemaFreeze([violation], []).length, 1);
-    assert.match(reconcileSchemaFreeze([], entries)[0], /已不再发生/);
-    assert.match(reconcileSchemaFreeze([violation], [...entries, ...entries]).join('\n'), /例外重复/);
-    assert.match(schemaFreezeExceptions([{ check: 'contract-schema-freeze', path: violation.file }]).problems[0], /path、what、reason、removeWhen/);
+    assert.deepEqual(reconcileSchemaFreeze([violation], entries, approvedBaseline), []);
+    assert.equal(reconcileSchemaFreeze([violation], [], approvedBaseline).length, 1);
+    assert.match(reconcileSchemaFreeze([], entries, approvedBaseline)[0], /已不再发生/);
+    assert.match(reconcileSchemaFreeze([violation], [...entries, ...entries], approvedBaseline).join('\n'), /例外重复/);
+    assert.match(schemaFreezeExceptions([{ check: 'contract-schema-freeze', path: violation.file }]).problems[0], /path、what、baseSha256、reason、removeWhen/);
+    assert.match(schemaFreezeExceptions([{ ...entry, baseSha256: undefined }]).problems[0], /baseSha256/);
+    assert.match(schemaFreezeExceptions([{ ...entry, baseSha256: 'A'.repeat(64) }]).problems[0], /64 位小写十六进制/);
+  });
+
+  it('ignores an entry approved against another baseline shape, and reports it once the baseline is a release', () => {
+    const { entries } = schemaFreezeExceptions([entry]);
+    assert.deepEqual(reconcileSchemaFreeze([], entries, laterBaseline), []);
+    assert.deepEqual(reconcileSchemaFreeze([], entries, { release: false, sha256: new Map() }), []);
+    assert.deepEqual(
+      reconcileSchemaFreeze([violation], entries, laterBaseline),
+      [`${violation.file}: ${violation.detail}（${violation.path}）`],
+    );
+    const atRelease = reconcileSchemaFreeze([], entries, { ...laterBaseline, release: true });
+    assert.equal(atRelease.length, 1);
+    assert.match(atRelease[0], /与发布基线不同/);
+    assert.deepEqual(reconcileSchemaFreeze([violation], entries, { ...approvedBaseline, release: true }), []);
+  });
+});
+
+describe('an approved break across its merge and the first release', () => {
+  it('passes on the change and after it merges, and asks to clear the entry at the first release', () => {
+    const root = mkdtempSync(join(tmpdir(), 'contract-schema-freeze-'));
+    try {
+      gitIn(root, 'init', '-b', 'main');
+      const published = writeSchema(root, 'item.v1.schema.json', {
+        type: 'object',
+        properties: { id: { type: 'string' }, note: { type: 'string' } },
+        required: ['id'],
+      });
+      gitIn(root, 'add', published);
+      gitIn(root, 'commit', '-m', 'Publish the item shape');
+      const baseSha256 = createHash('sha256').update(readFileSync(join(root, published))).digest('hex');
+
+      gitIn(root, 'checkout', '-b', 'change');
+      writeSchema(root, 'item.v1.schema.json', { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] });
+      mkdirSync(dirname(join(root, EXCEPTIONS_PATH)), { recursive: true });
+      writeFileSync(
+        join(root, EXCEPTIONS_PATH),
+        `${JSON.stringify([{ check: 'contract-schema-freeze', path: published, what: 'property-deleted: note', baseSha256, reason: 'synthetic', removeWhen: 'first release/* tag' }], null, 2)}\n`,
+      );
+      gitIn(root, 'add', published, EXCEPTIONS_PATH);
+      gitIn(root, 'commit', '-m', 'Drop the note');
+      assert.deepEqual(schemaFreezeProblems(root), []);
+
+      gitIn(root, 'checkout', 'main');
+      gitIn(root, 'merge', '--ff-only', 'change');
+      assert.deepEqual(schemaFreezeProblems(root), []);
+
+      gitIn(root, 'tag', '-a', 'release/2026-12-01', '-m', 'Synthetic release');
+      const atRelease = schemaFreezeProblems(root);
+      assert.equal(atRelease.length, 1);
+      assert.match(atRelease[0], /例外 contracts\/generated\/schemas\/item\.v1\.schema\.json property-deleted: note 批准时的基线形状与发布基线不同/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

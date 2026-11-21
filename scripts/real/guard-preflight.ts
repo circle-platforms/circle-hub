@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, lstatSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { discoverTools, environment, quote, writeCommand, type DiscoveredTool, type GuardEnvironment } from './guard-lib.ts';
 import { extractTaughtCommands, instantiateTaughtCommand } from './taught-commands.ts';
+import { PACK_ID as TASK_FILE_SKILL, SUBAGENT_ROLES, renderTaskBrief } from '../../packs/workflow/case-compile/functions/subagent-roles.ts';
 
 export type Verdict = 'allow' | 'deny' | 'ask' | 'error';
 export type CaseKind = 'check' | 'declaration-limit';
@@ -284,6 +285,29 @@ function docAllowCommands(env: GuardEnvironment): Array<{ name: string; command:
   return out;
 }
 
+function taskFileAllowCommands(env: GuardEnvironment): Array<{ name: string; command: string }> {
+  const skillDir = join(env.skills, TASK_FILE_SKILL);
+  if (!env.skillsRootValid || !existsSync(join(skillDir, 'SKILL.md'))) return [];
+  const out: Array<{ name: string; command: string }> = [];
+  for (const role of SUBAGENT_ROLES) {
+    const taskFile = renderTaskBrief({
+      role,
+      caseRef: 'case_1',
+      briefPath: 'briefs dir/case 01.md',
+      outPath: 'plans dir/case 01.json',
+      skillDir,
+      frozenRunDir: join(env.cwd, 'run dir'),
+      scopeText: '合成范围',
+    });
+    for (const taught of extractTaughtCommands(taskFile, `${TASK_FILE_SKILL} 任务文件`)) {
+      for (const command of instantiateTaughtCommand(taught, { skillDir })) {
+        out.push({ name: `任务文件（${role.stageLabel}）: ${command.replaceAll(`${env.skills}/`, '').slice(0, 100)}`, command });
+      }
+    }
+  }
+  return out;
+}
+
 export interface HookCase {
   name: string;
   kind: CaseKind;
@@ -352,7 +376,7 @@ export function fixedDenyCases(guard: InstalledGuard): HookCase[] {
 function buildCases(env: GuardEnvironment): HookCase[] {
   const seen = new Set<string>();
   const out: HookCase[] = [];
-  for (const item of [...standardAllowCommands(env), ...docAllowCommands(env)]) {
+  for (const item of [...standardAllowCommands(env), ...docAllowCommands(env), ...taskFileAllowCommands(env)]) {
     if (seen.has(item.command)) continue;
     seen.add(item.command);
     const limited = isDeclarationLimitedCommand(env, item.command);

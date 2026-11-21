@@ -184,7 +184,7 @@ function runnerCleanupMatch(cleanup: RunnerCleanup | null | undefined, cmdWords:
 function runnerCleanupSummaryText(cleanup: RunnerCleanup): string {
   const tailText = cleanup.order?.tail.length ? `；以下动作放收尾末尾：${cleanup.order.tail.join('、')}` : '';
   const beforeText = cleanup.order?.before.length ? `；顺序约束：${cleanup.order.before.map(([a, b]) => `${a} 先于 ${b}`).join('、')}` : '';
-  return `执行器自动清理（${cleanup.source}@${cleanup.sha256.slice(0, 12)}）：对清配对象 ${cleanup.objects.join('、')}，自第 2 条用例开始前及整本关闭连接时按 cmd_config 发过的命令行逐条比前缀、第一条命中即用（共 ${cleanup.rules.length} 条规则${tailText}${beforeText}）。已声明枚举或同级命令互逆取值的配置仍须先在 cleanup:true 写同设备逆操作，再交运行器清除，不能以自动清理替代互逆状态转换。未命中规则或不在清配对象列表上的设备改动仍须在 cleanup:true 手写同设备逆序逆操作；运行器自己的收尾清除或保存命令禁止写入 cleanup:true（需在用例中执行时只写进 main）。`;
+  return `执行器自动清理（${cleanup.source}@${cleanup.sha256.slice(0, 12)}）：对清配对象 ${cleanup.objects.join('、')}，自第 2 条用例开始前及整本关闭连接时按已发出的配置命令行逐条比前缀、第一条命中即用（共 ${cleanup.rules.length} 条规则${tailText}${beforeText}）。已声明枚举或同级命令互逆取值的配置仍须先在 cleanup:true 写同设备逆操作，再交运行器清除，不能以自动清理替代互逆状态转换。未命中规则或不在清配对象列表上的设备改动仍须在 cleanup:true 手写同设备逆序逆操作；运行器自己的收尾清除或保存命令禁止写入 cleanup:true（需在用例中执行时只写进 main）。`;
 }
 function runnerCleanupRuleNote(cleanup: RunnerCleanup, hit: RunnerCleanupBriefHit): string {
   const clearsText = hit.clears?.length ? `，触发清理命令 ${hit.clears.map((c) => `“${c}”`).join('、')}` : '';
@@ -1380,7 +1380,7 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
     const tailText = rc.order?.tail.length ? `；以下动作放收尾末尾：${rc.order.tail.join('、')}` : '';
     const beforeText = rc.order?.before.length ? `；顺序约束：${rc.order.before.map(([a, b]) => `${a} 先于 ${b}`).join('、')}` : '';
     out.push(
-      `- 执行器自动清理（${rc.source}@${rc.sha256.slice(0, 12)}）：对清配对象 ${rc.objects.join('、')}，自第 2 条用例开始前及整本关闭连接时按 cmd_config 命令行逐条比前缀、第一条命中即用（共 ${rc.rule_count} 条规则${tailText}${beforeText}）；未命中规则或不在清配对象上的设备改动仍须在 cleanup:true 手写同设备逆序逆操作，运行器自己的收尾清除或保存命令禁止写入 cleanup:true（需在用例中执行时只写进 main）。`,
+      `- 执行器自动清理（${rc.source}@${rc.sha256.slice(0, 12)}）：对清配对象 ${rc.objects.join('、')}，自第 2 条用例开始前及整本关闭连接时按已发出的配置命令行逐条比前缀、第一条命中即用（共 ${rc.rule_count} 条规则${tailText}${beforeText}）；未命中规则或不在清配对象上的设备改动仍须在 cleanup:true 手写同设备逆序逆操作，运行器自己的收尾清除或保存命令禁止写入 cleanup:true（需在用例中执行时只写进 main）。`,
     );
   }
   for (const cmd of materials.commands_and_manual.named_commands) {

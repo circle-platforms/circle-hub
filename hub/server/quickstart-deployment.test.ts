@@ -22,7 +22,7 @@ test('quickstart example parses as deployment@2 and matches both quickstart doc 
   const parsed = parseDeployment(JSON.parse(fileText));
   assert.equal(parsed.schema, 'deployment@2');
   assert.equal(parsed.packs.length, 1);
-  assert.equal(parsed.packs[0]?.ref, 'test-bed@1.4.0');
+  assert.equal(parsed.packs[0]?.ref, 'test-bed@1.4.1');
   assert.equal(parsed.packs[0]?.directory, '../../packs/workflow/test-bed');
   assert.deepEqual(parsed.workflowAssignments, [{ pack: 'test-bed', user: 'admin' }]);
   assert.deepEqual(parsed.knowledgeSync, []);

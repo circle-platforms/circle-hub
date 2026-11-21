@@ -163,6 +163,14 @@ test('when only a gate that waits for a service is left the script looks again a
   assert.deepEqual(started, ['重组 00', '编写 00']);
 });
 
+test('a pipeline answer whose last line is not whole JSON ends the script with the tail of the output', async () => {
+  const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor as new (...names: string[]) => (...values: unknown[]) => Promise<unknown>;
+  const body = new AsyncFunction('agent', 'execute', 'args', 'log', 'phase', SOURCE.replace(/^export const meta = /, 'const meta = '));
+  const never = () => { throw new Error('nothing is to run'); };
+  const execute = async () => ({ code: 0, output: '合成输出\n{"actions":[' });
+  await assert.rejects(body(never, execute, { pipeline: PIPELINE, state: 'pipeline.json' }, never, never), /pipeline\.ts resume 没有完成（退出码 0）：合成输出\n\{"actions":\[/);
+});
+
 test('a path the command line cannot carry is refused before anything runs', async () => {
   const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor as new (...names: string[]) => (...values: unknown[]) => Promise<unknown>;
   const body = new AsyncFunction('agent', 'execute', 'args', 'log', 'phase', SOURCE.replace(/^export const meta = /, 'const meta = '));

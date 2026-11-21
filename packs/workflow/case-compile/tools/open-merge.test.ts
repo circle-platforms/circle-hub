@@ -22,7 +22,7 @@ async function world() {
   await writeFile(join(dir, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01bookingbookingbooking0', recompose_run: RECOMPOSE, recompose_record: 'rec:' + 'a'.repeat(64), plan_run: PLAN }));
   return dir;
 }
-function tools(dir: string, answers: { plan: string; merge: string }, overrides: Partial<Record<string, ToolRun>> = {}) {
+function tools(answers: { plan: string; merge: string }, overrides: Partial<Record<string, ToolRun>> = {}) {
   const calls: Array<{ tool: string; args: string[]; stdin?: string }> = [];
   let n = 0;
   const run: RunTool = async (_skill, tool, args, stdin) => {
@@ -68,7 +68,7 @@ const STARTED = said({ call_result: 'ok', record: 'rec:' + 'c'.repeat(64), run: 
 
 test('the merge goes through in one command: plans, workbook, upload as a workbook, the merge run with the plan run\'s own inputs, plans again', async () => {
   const dir = await world();
-  const t = tools(dir, { plan: answerOf(ROWS('pending')), merge: answerOf(ROWS('satisfied')) });
+  const t = tools({ plan: answerOf(ROWS('pending')), merge: answerOf(ROWS('satisfied')) });
   const h = hub({ upload_file: UPLOADED, start_run: STARTED });
   const result = await run(dir, h.connect, t.run);
   assert.equal(result.code, 0, result.out);
@@ -93,35 +93,38 @@ test('plans that do not cover every case of the compile are not submitted at all
   const dir = await world();
   await writeFile(join(dir, 'open-compile.json'), JSON.stringify({ ...JSON.parse(await readFile(join(dir, 'open-compile.json'), 'utf8')), items: 3 }));
   await writeFile(join(dir, 'plans', '00.json'), '{}'); await writeFile(join(dir, 'plans', '02.json'), '{}'); await writeFile(join(dir, 'plans', 'answer-1.txt'), '合成');
-  const t = tools(dir, { plan: '', merge: '' });
+  const t = tools({ plan: '', merge: '' });
   const h = hub({});
   const result = await run(dir, h.connect, t.run);
   assert.equal(result.code, 1);
-  assert.match(result.out, /^合并不了：plans 里有 2 份计划，这次编译有 3 条，没有提交。缺的条目先用 pipeline\.ts status 看它停在哪、用 pipeline\.ts retry 重做（不删收拢好的计划，不写跳过声明）/);
+  assert.match(result.out, /^合并不了：plans 里有 2 份计划，这次编译有 3 条，没有提交。缺的条目先用 pipeline\.ts status 看它停在哪，照它的 message 办（不删收拢好的计划，不写跳过声明）/);
   assert.deepEqual([t.calls.length, h.calls.length, existsSync(join(dir, 'merge'))], [0, 0, false]);
 });
 
 test('a plan the Hub does not hold right stops the merge before any workbook is made, with the case and the Hub\'s words', async () => {
   const dir = await world();
-  const t = tools(dir, { plan: answerOf(ROWS('pending', 'unsatisfied', '命令不在锁定命令树里：合成原话')), merge: '' });
+  const t = tools({ plan: answerOf(ROWS('pending', 'unsatisfied', '命令不在锁定命令树里：合成原话')), merge: '' });
   const h = hub({});
   const result = await run(dir, h.connect, t.run);
   assert.equal(result.code, 1);
-  assert.match(result.out, /^合并不了：Hub 没有判正确的计划有 1 条，不能合并；按下面每条的原话改（pipeline\.ts retry --case <序号> --note '<Hub 的原话>'）/);
+  assert.match(result.out, /^合并不了：Hub 没有判正确的计划有 1 条，不能合并；按下面每条的 item 和原话改（pipeline\.ts retry --case '<item>' --note '<Hub 的原话>'）/);
   assert.deepEqual(JSON.parse(result.out.split('\n')[1]!), { cases: [{ item: 'doc:2', requirement: 'commands_known', words: '命令不在锁定命令树里：合成原话' }] });
   assert.deepEqual([t.calls.map((c) => c.tool), h.calls.length, existsSync(join(dir, 'merge'))], [['submit-plans.ts'], 0, false]);
 });
 
 test('a workbook the Hub stored as other bytes, a merge run that does not open and a merge the Hub does not hold right are each refused in their own words', async () => {
   let dir = await world();
-  let result = await run(dir, hub({ upload_file: said({ call_result: 'ok', reference: 'src:' + '9'.repeat(64) }) }).connect, tools(dir, { plan: answerOf(ROWS('pending')), merge: '' }).run);
+  let result = await run(dir, hub({ upload_file: said({ call_result: 'ok', reference: 'src:' + '9'.repeat(64) }) }).connect, tools({ plan: answerOf(ROWS('pending')), merge: '' }).run);
   assert.match(result.out, new RegExp(`^合并不了：自动化用例 Excel 没有传上去：Hub 记下的是 src:9{64}，本地生成的是 src:${DIGEST}`));
   dir = await world();
-  result = await run(dir, hub({ upload_file: UPLOADED, start_run: said({ call_result: 'error', errors: [{ code: 'SUBMISSION_SCHEMA_VIOLATION', message: '合成：输入槽不对', path: '/inputs/workbook', fix: '按槽位改' }] }, true) }).connect, tools(dir, { plan: answerOf(ROWS('pending')), merge: '' }).run);
+  result = await run(dir, hub({ upload_file: UPLOADED, start_run: said({ call_result: 'error', errors: [{ code: 'SUBMISSION_SCHEMA_VIOLATION', message: '合成：输入槽不对', path: '/inputs/workbook', fix: '按槽位改' }] }, true) }).connect, tools({ plan: answerOf(ROWS('pending')), merge: '' }).run);
   assert.match(result.out, /^合并不了：脚本合并运行开不起来：合成：输入槽不对（位置 \/inputs\/workbook）；下一步：按槽位改/);
   dir = await world();
-  result = await run(dir, hub({ upload_file: UPLOADED, start_run: STARTED }).connect, tools(dir, { plan: answerOf(ROWS('pending')), merge: answerOf(ROWS('unsatisfied')) }).run);
-  assert.match(result.out, new RegExp(`^合并不了：脚本合并运行 ${MERGE} 里 Hub 没有判正确的有 2 条`));
+  result = await run(dir, hub({ upload_file: UPLOADED, start_run: STARTED }).connect, tools({ plan: answerOf(ROWS('pending')), merge: answerOf(ROWS('unsatisfied')) }).run);
+  assert.match(result.out, new RegExp(`^合并不了：脚本合并运行 ${MERGE} 里 Hub 没有判正确的有 2 条；脚本编写运行 ${PLAN} 已被这次脚本合并运行取代，不能再交，也不重跑合并工具：跑 pipeline\\.ts reopen --open 'open-compile\\.json' --refused 'merge/refused\\.json'`));
+  assert.doesNotMatch(result.out, /再跑合并工具/, 'the plan run went into the merge run, so a second merge of it is refused');
+  const refused = JSON.parse(await readFile(join(dir, 'merge', 'refused.json'), 'utf8'));
+  assert.deepEqual([refused.plan_run, refused.merge_run, refused.cases.map((row: { item: string }) => row.item)], [PLAN, MERGE, ['doc:1', 'doc:2']]);
   assert.equal(result.code, 1);
 });
 

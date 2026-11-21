@@ -1,6 +1,6 @@
 ---
 name: knowledge-contribution
-description: 客户端本地解读的事实回注：Hub 按锁定根核对原文和归位，不改变原文或根。Use when integrating local observations, procedures or pitfalls back into the knowledge layer.
+description: 客户端已决定把本地解读的观察、步骤或常见误区作为事实回注到知识层时使用：Hub 按锁定根核对原文和归位，不改变原文或根。
 ---
 
 # 知识回注
@@ -28,7 +28,7 @@ description: 客户端本地解读的事实回注：Hub 按锁定根核对原文
 5. 和已有条目矛盾时用 `contradicts` 记下双方，不要判哪边为真。需要撤回时由管理员追加撤回，不要改旧记录。
 6. 这三类对产品读者可见，但读不到原件的人看不到条目。它们的等级按决定 73 是声明，不拿去当核验、评分或放行的证据。
 
-客户端实现位于 `tools/operation-capture`，安装说明见其 SKILL.md 和本包 README。必须先由用户为本会话开启共享；未加载技能或未开启时不采集。独立令牌文件权限为 0600，不能使用模型自报的出处或版本代替。客户端目前只支持 macOS 和 Linux。
+客户端实现位于 `tools/operation-capture`，安装说明见其 SKILL.md。必须先由用户为本会话开启共享；未加载技能或未开启时不采集。独立令牌文件权限为 0600，不能使用模型自报的出处或版本代替。客户端目前只支持 macOS 和 Linux。
 
 回注入层不改树、不改根摘要。原文和关系只提供可追溯根据，Hub 的确定性核验不证明整合陈述的语义为真。
 

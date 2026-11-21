@@ -4,7 +4,7 @@ type Row = Record<string, unknown>;
 
 const DELIVER = '按 tools/delivery.md 第 5 节组交付目录（assemble-delivery.ts），最后回复用它给的回复';
 const LOOP = '照第 0 节启动编写循环（workflows/compile-loop.js）';
-const NOT_A_ROUND = '不算一轮上机，也不返工：按 missing_facts 的原因和下一步处理，原因消除后用同一份计划重跑合并工具（open-merge.ts），不为读进展重交计划';
+const NOT_A_ROUND = '不算一轮上机，也不返工：按 missing_facts 的原因和下一步处理；Hub 要原样重交时，用合并时的计划目录和模型对这次脚本合并运行再跑一次 submit-plans.ts，再下载回传；不重跑合并工具，也不为读进展重交计划';
 const MERGE_AGAIN = '全部就绪后重新 collect 到新目录再跑合并工具';
 
 export function deliver(undelivered = 0): string {
@@ -18,30 +18,30 @@ export function culprits(rows: Iterable<Row>): Set<string> {
 }
 export const unjudged = (row: Row): boolean => row.verdict === 'not_run' || (isRecord(row.report_check) && row.report_check.resolved === false);
 export const failed = (row: Row, blamed: ReadonlySet<string>): boolean => row.verdict !== 'pass' && (blamed.has(String(row.item)) || !unjudged(row));
+export const ranJob = <T extends { rows?: unknown }>(jobs: readonly T[]): T | undefined => jobs.filter((job) => Array.isArray(job.rows) && job.rows.length > 0).at(-1);
 
-export function nothingToRework(total: number, open: number): string {
-  return open
-    ? `这一轮上机 ${total} 条里 ${open} 条的报告不完整、还没有结论，其余通过，没有要返工的：${deliver(open)}`
-    : `这一轮上机 ${total} 条全部通过，没有要返工的：${deliver()}`;
-}
+export const allPassed = (total: number, undelivered = 0): string => `这一轮上机 ${total} 条全部通过，没有要返工的：${deliver(undelivered)}`;
 
 export function afterRound(round: { unsent: number; ended: boolean; rows: readonly Row[] }): string | null {
-  if (round.unsent) return `有 ${round.unsent} 个上机验证作业没有发到设备，${NOT_A_ROUND}`;
-  if (!round.ended || !round.rows.length) return null;
+  if (!round.rows.length) return round.unsent ? `有 ${round.unsent} 个上机验证作业没有发到设备，${NOT_A_ROUND}` : null;
+  if (!round.ended) return null;
   const blamed = culprits(round.rows), total = round.rows.length;
   const wrong = round.rows.filter((row) => failed(row, blamed)).length, open = round.rows.filter((row) => row.verdict !== 'pass').length - wrong;
   if (wrong) return `这一轮上机 ${total} 条里 ${wrong} 条没有通过：逐条分析后跑 pipeline.ts rework（SKILL.md 第 5 节）`;
-  if (open) return `这一轮上机 ${total} 条里 ${open} 条的报告不完整、还没有结论：跑 pipeline.ts rework（SKILL.md 第 5 节），照它的 message 办`;
-  return nothingToRework(total, 0);
+  if (open) return `这一轮上机 ${total} 条里 ${open} 条的报告不完整、还没有结论${open < total ? `，其余 ${total - open} 条通过` : ''}：跑 pipeline.ts rework（SKILL.md 第 5 节），这 ${open} 条不进交付卷，照它的 message 办`;
+  return allPassed(total);
 }
 
 export const notDispatched = (why: string): string => `这次上机没有发到设备${why ? `（${why}）` : ''}，${NOT_A_ROUND}`;
 
-export interface Progress { cases: number; toStart: number; running: number; queued: number; ready: number; stopped: number; excluded: number; waiting: string[]; allDone: boolean; open?: string }
+export interface Progress { cases: number; toStart: number; running: number; queued: number; ready: number; stopped: number; retried: number; excluded: number; waiting: string[]; allDone: boolean; open?: string }
 export function progress(p: Progress): string {
-  const next = p.stopped
-    ? `每条停下的先跑一次 pipeline.ts retry（--note '模型决定：<针对停下原因的改法>'），再${LOOP}；retry 后又停下的照实写进报告`
-    : `pipeline.ts collect 收拢到新目录，再后台跑合并工具 open-merge.ts（${p.open ? `--open 写 ${p.open}，` : ''}SKILL.md 第 3 节）`;
+  const open = p.open ? `--open 写 ${p.open}，` : '';
+  const next = p.stopped > p.retried
+    ? `stopped 里没标 retried 的每条先跑一次 pipeline.ts retry（--note '模型决定：<针对停下原因的改法>'），再${LOOP}`
+    : p.stopped
+      ? `retry 后又停下的 ${p.stopped} 条不进这次编译：跑 pipeline.ts reopen（${open}SKILL.md 第 0 节），照它的 message 办，停下的原因照实写进报告`
+      : `pipeline.ts collect 收拢到新目录，再后台跑合并工具 open-merge.ts（${open}SKILL.md 第 3 节）`;
   return [
     p.waiting.length ? `${p.waiting.join('、')} 的关口在等服务恢复（见 waiting），不占次数也不重派：过几分钟再${LOOP}，它从状态接着做` : '',
     p.allDone
@@ -53,8 +53,12 @@ export const toStart = (count: number): string => `待派的 ${count} 个由编�
 
 export const reworkOpened = (o: { round: number; run: string; open: string; carried: number; reworked: number; status: string }): string =>
   `第 ${o.round} 轮返工：新开脚本编写运行 ${o.run}（${o.open}），${o.carried} 条通过的已结转，${o.reworked} 条没通过的带着上一轮计划和设备回传重新派编写。${o.status}`;
-export const volumeOpened = (o: { n: number; run: string; open: string; out: string[]; carried: number; regated: number; status: string }): string =>
-  `第 ${o.n} 次交付卷：${o.out.length} 条没有通过的不进卷（${o.out.join('、')}），${o.carried} 条已原样结转到新开的脚本编写运行 ${o.run}（${o.open}）${o.regated ? `，${o.regated} 条重新过关口` : ''}。${o.status}`;
+export const reopened = (o: { run: string; open: string; carried: number; regated: number; rewritten: number; out: string[]; status: string }): string =>
+  `新开脚本编写运行 ${o.run}（${o.open}）：${o.carried} 条就绪的计划已原样结转${o.regated ? `，${o.regated} 条重新过关口` : ''}${o.rewritten ? `，${o.rewritten} 条带着 Hub 的原话重新派编写` : ''}${o.out.length ? `；retry 后又停下的 ${o.out.length} 条不进这次编译（${o.out.join('、')}）` : ''}。${o.status}`;
+export const nothingReady = (out: string[]): string =>
+  `retry 后又停下的 ${out.length} 条（${out.join('、')}）不进这次编译，没有就绪的计划可以合并：这次编译没有自动化用例 Excel，也不上机验证；最后回复写原始用例共几条、生成成功 0 条，逐条写停下的原因`;
+export const volumeOpened = (o: { n: number; run: string; open: string; out: string[]; unsettled: boolean; carried: number; regated: number; status: string }): string =>
+  `第 ${o.n} 次交付卷：${o.out.length} 条${o.unsettled ? '报告不完整、没有结论' : '没有通过'}的不进卷（${o.out.join('、')}），${o.carried} 条已原样结转到新开的脚本编写运行 ${o.run}（${o.open}）${o.regated ? `，${o.regated} 条重新过关口` : ''}。${o.status}`;
 export const volumePassed = (members: number, outside: number): string => `交付卷整体通过：${members} 条在同一次上机里逐条正确。${deliver(outside)}`;
 export const volumesUsed = (n: number, notPassed: string[], undelivered: number): string =>
   `第 ${n} 次交付卷仍有 ${notPassed.length} 条没有通过（${notPassed.join('、')}），上机到此为止：没有整体核验通过的交付卷。${deliver(undelivered)}`;
@@ -65,8 +69,10 @@ export const volumeClosed = (passed: boolean, undelivered: number): string =>
 export const mergePassed = (mergeRun: string): string =>
   `Hub 接着发上机作业。下一步：后台跑 download-returns.ts --run ${mergeRun} --out <新目录> --wait 3600（SKILL.md 第 4 节），等它结束的通知`;
 export const plansMissing = (cases: number): string =>
-  `缺的条目先用 pipeline.ts status 看它停在哪、用 pipeline.ts retry 重做（不删收拢好的计划，不写跳过声明），${cases} 条${MERGE_AGAIN}`;
-export const retryNamed = `按下面每条的原话改（pipeline.ts retry --case <序号> --note '<Hub 的原话>'），${MERGE_AGAIN}`;
+  `缺的条目先用 pipeline.ts status 看它停在哪，照它的 message 办（不删收拢好的计划，不写跳过声明），${cases} 条${MERGE_AGAIN}`;
+export const retryNamed = `按下面每条的 item 和原话改（pipeline.ts retry --case '<item>' --note '<Hub 的原话>'），${MERGE_AGAIN}`;
+export const mergeRefused = (planRun: string, open: string, refused: string): string =>
+  `脚本编写运行 ${planRun} 已被这次脚本合并运行取代，不能再交，也不重跑合并工具：跑 pipeline.ts reopen --open '${open}' --refused '${refused}'（SKILL.md 第 3 节），它新开脚本编写运行、结转其余就绪的计划、带着 Hub 的原话重派被拒的条目，照它的 message 办`;
 
 export const afterDelivery = (hints: number): string =>
   hints ? `交付目录还缺 ${hints} 项（见 hints）：逐条补齐后在新的输出目录重跑 assemble-delivery.ts，这次的 reply 不作最后回复` : '交付目录已组好：最后回复原样用 reply，不另加表格或逐条重述';

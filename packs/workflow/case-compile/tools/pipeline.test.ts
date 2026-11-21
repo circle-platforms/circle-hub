@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { collect, forLead, initState, next, recordStatus, resume, retry, rework, type Gates, type PipelineState, type RunTool, type ToolRun } from './pipeline.ts';
+import { collect, forLead, initState, next, recordStatus, reopen, resume, retry, rework, summary, type Gates, type PipelineState, type RunTool, type ToolRun } from './pipeline.ts';
 
 const ok = (stdout = '{"ok":true}'): ToolRun => ({ code: 0, stdout, stderr: '' });
 const bad = (stderr: string): ToolRun => ({ code: 1, stdout: '', stderr });
@@ -107,7 +107,7 @@ test('init pairs the cases of a compile run that binds its recomposition after t
 
 test('a recomposed case is checked, submitted alone and, once the Hub accepts it, goes to a writer in the slot its recomposer left', async () => {
   await world(7);
-  const t = tools((tool, args) => tool === 'submit-records.ts' ? accepted('n/r00') : undefined);
+  const t = tools((tool) => tool === 'submit-records.ts' ? accepted('n/r00') : undefined);
   const state: PipelineState = await initState('recompose-run', 'plan-run', OPEN, 'synthetic-model');
   for (const c of state.cases.slice(0, 6)) { c.stage = 'recomposing'; c.attempts.recompose = 1; }
   await writeFile(join('records', '00.json'), '{}');
@@ -138,7 +138,7 @@ async function readWorld(onStart: (line: string, out: string) => void) {
   for (const c of state.cases.slice(0, 6)) { c.stage = 'recomposing'; c.attempts.recompose = 1; }
   await writeFile(join('records', '00.json'), '{}');
   const noteOf = () => { const task = t.calls.filter((c) => c.tool === 'case-compile/task-brief.ts').at(-1)!; return task.args.includes('--note') ? task.args[task.args.indexOf('--note') + 1]! : null; };
-  const again = async (g: Parameters<typeof retry>[3]) => { state.cases[0]!.stage = 'stopped'; state.cases[0]!.stopped = '脚本编写 5 次仍未通过：合成'; await retry(state, '00', '模型决定：合成', g); return noteOf(); };
+  const again = async (g: Parameters<typeof retry>[3]) => { state.cases[0]!.stage = 'stopped'; state.cases[0]!.stopped = '脚本编写 5 次仍未通过：合成'; delete state.cases[0]!.retried; await retry(state, '00', '模型决定：合成', g); return noteOf(); };
   return { state, run, calls: t.calls, started, start, noteOf, again };
 }
 test('before a case is written the booked device is asked, without waiting, for each read-only command of its brief that needs no parameter, and the task says where the outputs are', async () => {
@@ -309,7 +309,7 @@ test('retry starts a stopped case again with the user\'s decision in every later
 
 test('a case Plumb cannot judge goes to a blind fidelity review and is ready once its verdict is merged', async () => {
   await world(1);
-  const t = tools((tool, args) => {
+  const t = tools((tool) => {
     if (tool === 'fidelity-plumb.ts') { return bad('参数无效：1 条自动化用例的保真核对题面超过 Plumb 的 2400 token 上限'); }
     return undefined;
   });
@@ -577,10 +577,84 @@ test('a job that was not dispatched is no device round; a round all cases passed
   const all = await rework(passed.state, OPENED, 'returns-1', undefined, gates(passed.t.run));
   assert.deepEqual([all.actions.length, all.reworked, passed.t.calls.length, passed.state.plan_run], [0, [], 0, OPEN.plan_run]);
   assert.match(all.message, /^这一轮上机 3 条全部通过，没有要返工的：按 tools\/delivery\.md 第 5 节组交付目录（assemble-delivery\.ts），最后回复用它给的回复$/, 'the closing step is named');
-  const open = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'no_verdict', report_check: { resolved: false } }, { item: c, verdict: 'pass' }]);
-  const incomplete = await rework(open.state, OPENED, 'returns-1', undefined, gates(open.t.run));
-  assert.deepEqual([incomplete.reworked, open.t.calls.length], [[], 0]);
-  assert.match(incomplete.message, /^这一轮上机 3 条里 1 条的报告不完整、还没有结论，其余通过，没有要返工的：为没有交付的 1 条照实写说明（tools\/delivery\.md 第 3 节），再按 tools\/delivery\.md 第 5 节组交付目录/, 'a report that is not complete is said as such, not as a pass');
+});
+
+test('a round with no failure but incomplete reports opens the delivery volume without them, and the cases that passed are verified again as one workbook', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'no_verdict', report_check: { resolved: false } }, { item: c, verdict: 'not_run', not_executed: { aborted_by: { item: a, step: 2 } }, report_check: { resolved: false } }]);
+  const [a, b, c] = state.cases.map((row) => row.autoid);
+  const step = await rework(state, OPENED, 'returns-1', undefined, gates(t.run));
+  assert.deepEqual([step.reworked, step.carried, step.actions.length, state.volume, state.plan_run], [[], ['00'], 0, { n: 1 }, NEXT_PLAN]);
+  assert.match(step.message, /^第 1 次交付卷：2 条报告不完整、没有结论的不进卷（01、02），1 条已原样结转到新开的脚本编写运行 run_01planplanplanplanplan01（deliver-1\/open-compile\.json）。全部 3 条走完流水线：1 条计划就绪，2 条不进交付卷（见 excluded）。下一步：pipeline\.ts collect /);
+  assert.deepEqual(state.cases.map((row) => [row.stage, row.excluded]), [['ready', undefined], ['excluded', '上机第 1 轮的报告不完整、没有结论（判定 no_verdict）'], ['excluded', '上机第 1 轮的报告不完整、没有结论（判定 not_run）']]);
+  const opened = t.calls.find((call) => call.tool === 'case-compile/open-compile.ts')!.args;
+  assert.equal(opened[opened.indexOf('--exclude') + 1], [b, c].join(','), 'the cases without a verdict are left out of the new run');
+  assert.deepEqual(state.cases.map((row) => row.device_rounds ?? 0), [1, 0, 0], 'a case without a verdict used no device round');
+  await returned('returns-2', [{ item: a, verdict: 'pass' }]);
+  const verified = await rework(state, { ...OPENED, plan_run: NEXT_PLAN }, 'returns-2', undefined, gates(t.run));
+  assert.match(verified.message, /^交付卷整体通过：1 条在同一次上机里逐条正确。为没有交付的 2 条照实写说明（tools\/delivery\.md 第 3 节）/, 'what is not delivered is counted');
+});
+
+test('a case that stops again after its one retry leaves this compile: reopen opens a plan run without it, carries the others, and later tasks read their brief where the new run put it', async () => {
+  const { state, t } = await afterDevice(() => []);
+  state.open = 'open-compile.json';
+  const [a, b, c] = state.cases.map((row) => row.autoid);
+  const run: RunTool = async (skill, tool, args, stdin) => {
+    const done = await t.run(skill, tool, args, stdin);
+    if (tool === 'download-run.ts') { const out = args[args.indexOf('--out') + 1]!; mkdirSync(join(out, 'items'), { recursive: true }); [state.cases[0]!, state.cases[2]!].forEach((row, n) => writeFileSync(join(out, 'items', `0${n}.json`), JSON.stringify({ id: row.plan.item }))); }
+    return done;
+  };
+  const s = state.cases[1]!;
+  s.stage = 'stopped'; s.attempts = { recompose: 1, write: 5 }; s.stopped = '脚本编写 5 次仍未通过：合成原因';
+  assert.match(summary(state, []).message, /下一步：stopped 里没标 retried 的每条先跑一次 pipeline\.ts retry/);
+  await assert.rejects(reopen(state, OPENED, undefined, gates(run)), /01 停下后还没有 retry 过：先各跑一次 pipeline\.ts retry/);
+  assert.deepEqual((await retry(state, '01', '模型决定：合成改法', gates(run))).actions.map((x) => x.label), ['编写 01']);
+  s.stage = 'stopped'; s.stopped = '脚本编写 5 次仍未通过：合成第二次';
+  const told = summary(state, []);
+  assert.deepEqual(told.stopped, [{ label: `01 ${b}`, reason: '脚本编写 5 次仍未通过：合成第二次', retried: true }]);
+  assert.match(told.message, /下一步：retry 后又停下的 1 条不进这次编译：跑 pipeline\.ts reopen（--open 写 open-compile\.json，SKILL\.md 第 0 节），照它的 message 办，停下的原因照实写进报告$/);
+  await assert.rejects(retry(state, '01', '模型决定：再来', gates(run)), /01 在这次脚本编写运行里 retry 过一次又停下，不再 retry/);
+  const step = await reopen(state, OPENED, undefined, gates(run));
+  assert.match(step.message, /^新开脚本编写运行 run_01planplanplanplanplan01（reopen-1\/open-compile\.json）：2 条就绪的计划已原样结转；retry 后又停下的 1 条不进这次编译（01）。全部 3 条走完流水线：2 条计划就绪，1 条不进交付卷（见 excluded）。下一步：pipeline\.ts collect 收拢到新目录，再后台跑合并工具 open-merge\.ts（--open 写 reopen-1\/open-compile\.json，SKILL\.md 第 3 节）$/);
+  assert.deepEqual([state.plan_run, state.open, s.stage, s.excluded], [NEXT_PLAN, join('reopen-1', 'open-compile.json'), 'excluded', 'retry 后仍停下：脚本编写 5 次仍未通过：合成第二次']);
+  const opened = t.calls.find((call) => call.tool === 'case-compile/open-compile.ts')!.args;
+  assert.equal(opened[opened.indexOf('--exclude') + 1], b);
+  const carry = t.calls.find((call) => call.tool === 'case-compile/carry-plans.ts')!.args;
+  assert.deepEqual(carry, ['--source', 'plan-run', '--target', join('reopen-1', 'plan-run'), '--plans', join('reopen-1', 'carried'), '--source-plans', join('reopen-1', 'source-plans'), '--exclude', b]);
+  assert.deepEqual(state.cases.map((row) => row.run_index), [undefined, undefined, '01'], 'the run without 01 holds 02 at its second place');
+  const collected = await collect(state, 'plans-reopened');
+  assert.deepEqual([readdirSync('plans-reopened').sort(), collected.excluded], [['00.json', '02.json'], [{ autoid: b, reason: 'retry 后仍停下：脚本编写 5 次仍未通过：合成第二次' }]]);
+  await returned('returns-2', [{ item: a, verdict: 'pass' }, { item: c, verdict: 'fail' }]);
+  const again = await rework(state, { ...OPENED, plan_run: NEXT_PLAN }, 'returns-2', undefined, gates(run));
+  assert.deepEqual(again.reworked, ['02']);
+  const reopened = t.calls.filter((call) => call.tool === 'case-compile/open-compile.ts').at(-1)!.args;
+  assert.equal(reopened[reopened.indexOf('--exclude') + 1], b, 'a later round keeps the case out');
+  const task = t.calls.filter((call) => call.tool === 'case-compile/task-brief.ts').at(-1)!.args;
+  assert.deepEqual([task[task.indexOf('--brief') + 1], task[task.indexOf('--out') + 1]], [join('rework-2', 'plan-run', 'briefs', '01.md'), join('cases', '02', 'plan', '02.json')]);
+  await assert.rejects(retry(state, '01', '模型决定：再写一次', gates(run)), /01 不在交付卷里（retry 后仍停下：/);
+});
+
+test('a merge the Hub refuses in the merge run is reopened by code: a new plan run, the other plans carried, the refused ones written again with the Hub words', async () => {
+  const { state, t } = await afterDevice(() => []);
+  state.open = 'open-compile.json';
+  const b = state.cases[1]!.autoid;
+  await writeFile('refused.json', JSON.stringify({ schema: 'merge-refused@1', plan_run: OPEN.plan_run, merge_run: 'run_01mergemergemergemerge0', cases: [{ item: 'doc:01', requirement: 'workbook_verified', words: '合成：工作簿第 3 行和计划不一致' }] }));
+  await writeFile('refused-other.json', JSON.stringify({ plan_run: 'run_01otherotherotherother0', cases: [{ item: 'doc:01', words: '合成' }] }));
+  await assert.rejects(reopen(structuredClone(state), OPENED, 'refused-other.json', gates(t.run)), /不是这一轮合并写的（它的脚本编写运行应是 run_01planplanplanplanplan00）/);
+  const busy = structuredClone(state); busy.cases[0]!.stage = 'writing';
+  await assert.rejects(reopen(busy, OPENED, 'refused.json', gates(t.run)), /还有 1 条没走完流水线（00）/);
+  assert.equal(t.calls.length, 0, 'nothing is opened before the state allows it');
+  const step = await reopen(state, OPENED, 'refused.json', gates(t.run));
+  assert.deepEqual([step.actions.map((x) => x.label), state.plan_run, state.open, state.cases.map((row) => row.stage)], [['编写 01'], NEXT_PLAN, join('reopen-1', 'open-compile.json'), ['ready', 'writing', 'ready']]);
+  assert.match(step.message, /^新开脚本编写运行 run_01planplanplanplanplan01（reopen-1\/open-compile\.json）：2 条就绪的计划已原样结转，1 条带着 Hub 的原话重新派编写。待派 1 个子代理/);
+  const opened = t.calls.find((call) => call.tool === 'case-compile/open-compile.ts')!.args;
+  assert.equal(opened.includes('--exclude'), false);
+  const carry = t.calls.find((call) => call.tool === 'case-compile/carry-plans.ts')!.args;
+  assert.deepEqual(carry.slice(-2), ['--rework', b]);
+  const task = t.calls.filter((call) => call.tool === 'case-compile/task-brief.ts').at(-1)!.args;
+  assert.deepEqual([task[task.indexOf('--note') + 1], task[task.indexOf('--brief') + 1]], ['重做这一条的依据：Hub 在脚本合并运行里的原话：合成：工作簿第 3 行和计划不一致', join('reopen-1', 'plan-run', 'briefs', '01.md')]);
+  await writeFile(join('cases', '01', 'plan', '01.json'), '{"plan":"01 again"}');
+  const written = await next(state, '编写 01', gates(t.run));
+  assert.match(written.message, /下一步：pipeline\.ts collect 收拢到新目录，再后台跑合并工具 open-merge\.ts（--open 写 reopen-1\/open-compile\.json，SKILL\.md 第 3 节）$/);
 });
 
 test('a case that used its last round leaves the delivery volume, which is opened by code: the others are carried as they are, collected alone and verified as one workbook', async () => {

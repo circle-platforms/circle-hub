@@ -26,9 +26,9 @@ node '<技能目录>/tools/open-compile.ts' --hub %HUB_URL% --plumb %PLUMB_URL% 
 EOF
 ```
 
-输出第一行是“就绪：…”就往下走；是“无法编译：…”时把这一行原样告诉使用者，然后停止，不分析、不提问、不换参数重试。部分用例加 `--scope '<范围文件>'`（`{"words":"<范围原话>","cases":[...]}`）；返工加 `--recompose-run` 与 `--recompose-record` 沿用重组。重组运行和脚本编写运行只经此工具开，`start_run` 只开 test-bed 和脚本合并运行。
+输出第一行是“就绪：…”就往下走；是“无法编译：…”时把这一行原样告诉使用者，然后停止，不分析、不提问、不换参数重试。部分用例加 `--scope '<范围文件>'`（`{"words":"<范围原话>","cases":[...]}`）；返工加 `--recompose-run` 与 `--recompose-record` 沿用重组。重组运行和脚本编写运行只经此工具开，`start_run` 只开 test-bed。
 
-就绪后下载两个运行，开流水线：
+就绪后下载两个运行（`<recompose 技能目录>` 是与 `<技能目录>` 同在 `skills` 目录下的 `recompose`），开流水线：
 
 ```sh
 node '<recompose 技能目录>/tools/download-run.ts' --hub %HUB_URL% --run '<用例重组编号>' --out 'recompose-run' <<'EOF'
@@ -46,7 +46,7 @@ node '<技能目录>/tools/pipeline.ts' init --recompose-run 'recompose-run' --p
 workflow({"script_path":"<技能目录>/workflows/compile-loop.js","args":{"pipeline":"<技能目录>/tools/pipeline.ts","state":"pipeline.json"}})
 ```
 
-每条用例独立推进：重组 → 自检 → 提交并确认受理 → 编写 → 计划自检 → 命令核验 → 场景保真审计。重组受理后立即开始编写。关口都由 `pipeline.ts` 跑，结论看汇总，主代理不自己判断；同时在跑的子代理在 6 个以内，结束一个补一个。循环结束照汇总的 `message` 办：`stopped` 的每条先 `pipeline.ts retry --state 'pipeline.json' --case <序号> --note '模型决定：<针对停下原因的改法>'` 一次再启动循环，再停下的写进报告，不写停轮结论；`all_done` 且没有停下的进第 3 节。汇总有 `waiting`、`interrupted` 或循环报错就再启动一次，它从状态接着做。看进度用 `pipeline.ts status`。
+每条用例独立推进：重组 → 自检 → 提交并确认受理 → 编写 → 计划自检 → 命令核验 → 场景保真审计。重组受理后立即开始编写。关口都由 `pipeline.ts` 跑，结论看汇总，主代理不自己判断；同时在跑的子代理在 6 个以内，结束一个补一个。循环结束照汇总的 `message` 办：`stopped` 里没标 `retried` 的各先 `pipeline.ts retry --state 'pipeline.json' --case <序号> --note '模型决定：<针对停下原因的改法>'` 一次再启动循环；retry 后又停下的由 `pipeline.ts reopen` 排除出这次编译（新开脚本编写运行，结转其余就绪的计划），原因写进报告，不写停轮结论；`all_done` 且没有停下的进第 3 节。汇总有 `waiting`、`interrupted` 或循环报错就再启动一次，它从状态接着做。看进度用 `pipeline.ts status`。
 
 ## 1. 用例重组
 
@@ -83,12 +83,12 @@ node '<技能目录>/tools/download-run.ts' --hub %HUB_URL% --run '<脚本编写
 EOF
 ```
 
-各计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检为 `ok: true` 后再合并。**同运行重交与重开边界**：同一 `plan_run` 尚未进入 `merge_run`、无在途上机、`scope`/`exclude`/`inputs` 未变且 `rounds_left>0` 时，可直接重交当前 `plan_run`（复用未改计划与 `data.fidelity`）；仅 `rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时才 `start_run` 新开（上机返工 `predecessor` 填原预订号并用 `carry-plans.ts` 结转，见 `tools/delivery.md`）并重生成上传与新开合并；禁止把改过的计划直接交进 `merge_run`。新开脚本编写运行一律用第 0 节的 `open-compile.ts`。
+各计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检为 `ok: true` 后再合并。**同运行重交与重开边界**：同一 `plan_run` 尚未进入 `merge_run`、无在途上机、`scope`/`exclude`/`inputs` 未变且 `rounds_left>0` 时，可直接重交当前 `plan_run`（复用未改计划与 `data.fidelity`）；仅 `rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时才经 `open-compile.ts` 新开：上机返工由 `pipeline.ts rework`、合并被拒或排除停下的由 `pipeline.ts reopen` 新开并用 `carry-plans.ts` 结转（见 `tools/delivery.md`），之后重新收拢、合并；`scope`/`inputs` 变化按第 0 节重开；禁止把改过的计划直接交进 `merge_run`。
 返工的脚本编写由 `pipeline.ts rework` 带着前几轮的计划、设备回传和失败分析派发；主代理自己派 `失败分析` 时同样经 `task-brief.ts --round <n> --task-file <文件>` 传同案的 `--prior-plans`/`--prior-returns`/`--prior-answers`/`--prior-notes`（多轮按 `1..n-1` 英文逗号分隔、缺轮写 `-`），禁手写摘要、传整批 `submission.json` 或跨用例拼接；`保真核对` 严格盲审，只传 `.brief.json`。
 
 ## 3. 脚本合并
 
-流水线已对每条用例跑过下面的命令核验和 Plumb 场景保真审计（缺审、过期或格式错在本地拦截，不占修复次数）；`all_done` 后先收拢就绪的计划，再提交给 Hub：`node '<技能目录>/tools/pipeline.ts' collect --state 'pipeline.json' --out 'plans'`，提交、生成工作簿和合并都用收拢后的 `plans` 目录。collect 输出的 `reviewed` 写进最终报告。收拢后不改 `plans`、不写跳过声明；对就绪条目有异议用 `retry` 送回。收拢后**后台**跑合并工具（约 10 分钟）：交计划、生成并上传 Excel、开脚本合并运行并提交都由它做，输出“合并通过：…”时照它的下一步进第 4 节；“合并不了：…”按它点名的条目和原话 `pipeline.ts retry`，就绪后重新 collect 到新目录再跑。命令核验以命令树为准：命令树核对不过的必改；Plumb 拒绝而命令树核对通过的只标需人工复核，不阻断。按说明改错并自动重交，最多重交 2 次；重改计划后重跑审计；不要把 Hub 已接收当全部正确。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）。
+流水线已对每条用例跑过下面的命令核验和 Plumb 场景保真审计（缺审、过期或格式错在本地拦截，不占修复次数）；`all_done` 后先收拢就绪的计划，再提交给 Hub：`node '<技能目录>/tools/pipeline.ts' collect --state 'pipeline.json' --out 'plans'`，提交、生成工作簿和合并都用收拢后的 `plans` 目录。collect 输出的 `reviewed` 写进最终报告。收拢后不改 `plans`、不写跳过声明；对就绪条目有异议用 `retry` 送回。收拢后**后台**跑合并工具（约 10 分钟）：交计划、生成并上传 Excel、开脚本合并运行并提交都由它做，输出“合并通过：…”时照它的下一步进第 4 节；“合并不了：…”照它的下一步办（脚本合并运行已开出时先 `pipeline.ts reopen`，不再交旧的脚本编写运行）。命令核验以命令树为准：命令树核对不过的必改；Plumb 拒绝而命令树核对通过的只标需人工复核，不阻断。按说明改错并自动重交，最多重交 2 次；重改计划后重跑审计；不要把 Hub 已接收当全部正确。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）。
 
 ```sh
 node '<技能目录>/tools/open-merge.ts' --hub %HUB_URL% --open 'open-compile.json' --plans 'plans' --model '<模型>' --out '<新目录>' <<'EOF'
@@ -110,11 +110,11 @@ node '<技能目录>/tools/download-returns.ts' --hub %HUB_URL% --run '<合并�
 EOF
 ```
 
-tools/delivery.md 带 `--wait 3600` 的下载**必须 `background` 启动、不给 `timeout`**（前台上限 600 秒会拒收，后台的 `timeout` 到点即结束作业），等后台通知不 `sleep`；超时未完不写盘并退出 1，按同命令续等。结束后照它的 `message` 办：全部通过就按 tools/delivery.md 第 5 节组交付目录，有没通过的进下节。设备只经 Hub 或 `test-bed` 到达，严禁终端工具直连（`terminal_connect`/`telnet`/`ssh`）。有失败不停在报告、不问使用者，直接按下节返工；不释放 `test-bed` 预订（返工可复用）；仅使用者要求或收尾时发 `{"pack":"test-bed","inputs":{"inventory":{"external":"doc:doc:bed-topology"}},"predecessor":"<预订号>","parameters":{"action":"release","booking":"<同一预订号>"}}`。
+带 `--wait 3600` 的下载按 tools/delivery.md 第 1 节后台启动，等结束通知。结束后照它的 `message` 办：全部通过就按 tools/delivery.md 第 5 节组交付目录，有没通过或报告不完整的进下节。设备只经 Hub 或 `test-bed` 到达，严禁终端工具直连（`terminal_connect`/`telnet`/`ssh`）。有失败不停在报告、不问使用者，直接按下节返工；不释放 `test-bed` 预订（返工可复用）；仅使用者要求时发 `{"pack":"test-bed","inputs":{"inventory":{"external":"doc:doc:bed-topology"}},"predecessor":"<预订号>","parameters":{"action":"release","booking":"<同一预订号>"}}`。
 
 ## 5. 失败分析
 
-每条原始用例最多编写并上机 3 轮，严禁第 4 轮；第 3 轮仍未写对即停止上机验证，仍跑一次下面的 rework。完整读 `index.json`（含 `execution_refused`、`syntax_rejected`）、逐条会话与 `log.txt` 互校（可用 `tools/task-brief.ts --role '失败分析' --round <n>` 写盘派只读子代理，在 `notes.json` 记 `"round"` 且不改计划）后再写原因与下一步。先核版本一致、配置生效与手册及示例前置（含对端配对）是否漏写，查多案同症共因。上轮改过再跑仍出同句设备报错即证伪上轮假设，必须换向；设备点出所缺且手册/示例支持未试假设时，尚有轮次就必须下一轮先试，不得以“缺资料”或“剩一次机会”为由不试；轮次用完不开第 4 轮，按收尾规矩写结论（没有结构化归因时原因写还没查清），把未试的假设和试法写进下一步，交使用者决定（无任何来源支持才归“缺资料”）。返工（只改失败案）：分析后跑下面的命令（`--returns` 写本轮回传目录，`--open` 写这一轮的 open 文件，即 `pipeline.json` 的 `open`）：它新开运行、结转通过的、重派没过的，3 轮用完则改开交付卷（只结转通过的）；照它的 `message` 办，有待派的就照第 0 节启动循环。回传“没有发出”不算一轮，原因消除后用同一份计划重跑合并。
+每条原始用例最多编写并上机 3 轮，严禁第 4 轮；第 3 轮仍未写对即停止上机验证，仍跑一次下面的 rework。完整读 `index.json`（含 `execution_refused`、`syntax_rejected`）、逐条会话与 `log.txt` 互校（可用 `tools/task-brief.ts --role '失败分析' --round <n>` 写盘派只读子代理，在 `notes/<序号>.json` 记 `"round"` 且不改计划）后再写原因与下一步。先核版本一致、配置生效与手册及示例前置（含对端配对）是否漏写；多条用例同一报错时可能同因。上轮改过再跑仍出同句设备报错即证伪上轮假设，必须换向；设备点出所缺且手册/示例支持未试假设时，尚有轮次就必须下一轮先试，不得以“缺资料”或“剩一次机会”为由不试；轮次用完不开第 4 轮，按收尾规矩写结论（没有结构化归因时原因写还没查清），把未试的假设和试法写进下一步，交使用者决定（无任何来源支持才归“缺资料”）。返工（只改失败案）：分析后跑下面的命令（`--returns` 写本轮回传目录，`--open` 写这一轮的 open 文件，即 `pipeline.json` 的 `open`）：它新开运行、结转通过的、重派没过的，3 轮用完或只剩报告不完整的则改开交付卷（只结转通过的）；照它的 `message` 办，有待派的就照第 0 节启动循环。回传“没有发出”不算一轮，照它的 `message` 办，不重跑合并工具。
 
 ```sh
 node '<技能目录>/tools/pipeline.ts' rework --state 'pipeline.json' --open 'open-compile.json' --returns '<新目录>' --notes 'notes' --hub %HUB_URL% --plumb %PLUMB_URL% <<'EOF'

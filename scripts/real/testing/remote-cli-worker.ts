@@ -43,7 +43,7 @@ process.once('message', (configuration: Configuration) => {
         try {
           const rpc = JSON.parse(body);
           valid = rpc.jsonrpc === '2.0' && rpc.method === 'tools/call' && rpc.params?.name === 'submit_result' && rpc.params.arguments?.run === configuration.run && Array.isArray(rpc.params.arguments.items) && rpc.params.arguments.items.length === 1;
-        } catch { }
+        } catch { /* an unreadable call is refused below */ }
         if (!valid) { response.writeHead(400); response.end(); return; }
       }
       response.writeHead(route?.status ?? 404, { 'content-type': route?.contentType ?? 'application/json' });

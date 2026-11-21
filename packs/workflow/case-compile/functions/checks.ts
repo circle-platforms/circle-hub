@@ -111,7 +111,7 @@ function runnerCleanupText(contract: RuntimeContract, covered: readonly RunnerCo
   const pinned = c.pinned ? '原合约的源文件摘要表记了同一摘要' : '原合约的源文件摘要表里没有这个文件，摘要只是 Hub 侧声明，跳转机上的字节未核对';
   const tailText = c.order?.tail.length ? `；${c.order.tail.map((t) => `“${t}”`).join('、')} 放在收尾末尾` : '';
   const beforeText = c.order?.before.length ? `；顺序约束：${c.order.before.map(([a, b]) => `“${a}”先于“${b}”`).join('、')}` : '';
-  return `；其中 ${covered.length} 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 ${c.source}@${c.sha256.slice(0, 12)}：自第 2 条用例开始前及整本关闭连接时，按清配对象（${c.objects.join('、')}）上 cmd_config 发出的命令行逐条比前缀、第一条命中即用${tailText}${beforeText}；${pinned}）：${listed}${covered.length > 5 ? ` 等 ${covered.length} 条` : ''}`;
+  return `；其中 ${covered.length} 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 ${c.source}@${c.sha256.slice(0, 12)}：自第 2 条用例开始前及整本关闭连接时，按清配对象（${c.objects.join('、')}）上发出的配置命令行逐条比前缀、第一条命中即用${tailText}${beforeText}；${pinned}）：${listed}${covered.length > 5 ? ` 等 ${covered.length} 条` : ''}`;
 }
 /** How device commands are authorised (decision 114): by the locked command tree except the declared destructive commands. */
 function destructiveText(contract: RuntimeContract): string {

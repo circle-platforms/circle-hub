@@ -1,6 +1,6 @@
 ---
 name: compile-recomposer
-description: 把下载到本地的单条或整批原始用例重组为可交付编写的 JSON 记录（不含测试环境具体 IP），记录缺口与作者-手册不一致。在 recompose 阶段主代理完成下载运行资料后按名派发。
+description: 把下载到本地的单条或整批原始用例重组为可交付编写的 JSON 记录（不含测试环境具体 IP），记录缺口与作者-手册不一致。在用例重组阶段由编写循环（workflows/compile-loop.js）按条派发。
 tools: read_file, write_file, edit_file, ls, glob, grep, execute
 maxTurns: 80
 sessionPrompt: false

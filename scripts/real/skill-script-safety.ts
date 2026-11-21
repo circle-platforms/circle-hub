@@ -15,11 +15,59 @@ export interface CallReview {
   date: string;
   reason: string;
 }
-export interface ScriptIssue { file: string; line: number; operation: string; reason: string }
+export interface ScriptIssue { file: string; line: number; operation: string; reason: string; call?: string; snippetSha256?: string }
 export interface ScriptAudit { files: number; issues: ScriptIssue[]; reviewed: CallReview[] }
 
 /** Only this source fragment was reviewed; no filesystem operation is exempt as a whole. */
 export const REVIEWED_SKILL_CALLS: readonly CallReview[] = [{
+  file: 'packs/workflow/case-compile/tools/download-run.ts',
+  operation: 'node:child_process.spawn', call: "spawn(process.execPath, [fileURLToPath(import.meta.url), ...argv], { detached: true, stdio: ['pipe', 'ignore', 'ignore'] })",
+  snippetSha256: 'd2890cc44046984363d4ffc72b500de01521879fc23ab465d97d6e832f1d6e56',
+  reviewer: 'Claude', date: '2026-11-22',
+  reason: '用当前 Node 在后台重跑本脚本自身（同一文件、同一参数），令牌只从标准输入传入，输出丢弃；不经 shell，不运行别的程序。',
+}, {
+  file: 'packs/workflow/case-compile/tools/open-compile.ts',
+  operation: 'node:child_process.spawn', call: "spawn(process.execPath, [tool, 'status', '--base-url', url, '--key-stdin'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 60_000 })",
+  snippetSha256: '3e2ea7fa609b993728b03e0ac467a52d80cb67f7ae1d6de5e46747db5941f6ec',
+  reviewer: 'Claude', date: '2026-11-22',
+  reason: '用当前 Node 运行已装 plumb 技能的 tools/plumb.ts，子命令固定为 status，地址来自开编译的 --plumb 参数，密钥只从标准输入传入，60 秒超时；不经 shell。',
+}, {
+  file: 'packs/workflow/case-compile/tools/pipeline.ts',
+  operation: 'node:child_process.spawn', call: "spawn(process.execPath, [join(skillsRoot, skill, 'tools', tool), ...args], { stdio: ['pipe', 'pipe', 'pipe'] })",
+  snippetSha256: 'fa5afc83cc2f2cd64aedbdf44691b04df9e7d7e4075862ec7680f2a0320b6942',
+  reviewer: 'Claude', date: '2026-11-22',
+  reason: '用当前 Node 运行已装技能 tools 目录里的脚本；调用方只传字面的技能名（case-compile、recompose、plumb）和脚本名，这些脚本都在各自技能包的清单扫描里；令牌和密钥只从标准输入传入，不经 shell。',
+}, {
+  file: 'packs/workflow/case-compile/tools/pipeline.ts',
+  operation: 'node:child_process.spawn', call: "spawn(process.execPath, [join(skillsRoot, skill, 'tools', tool), ...args], { detached: true, stdio: ['pipe', 'ignore', 'ignore'] })",
+  snippetSha256: 'b8632e9b13fde309a37fef6713693333698f04b6866f2b0750bff225bd99f851',
+  reviewer: 'Claude', date: '2026-11-22',
+  reason: '用当前 Node 在后台运行已装技能 tools 目录里的脚本，输出丢弃；调用方只传字面的技能名和脚本名（现为 case-compile 的 device-read.ts），令牌只从标准输入传入，不经 shell。',
+}, {
+  file: 'packs/workflow/case-compile/tools/pipeline.ts',
+  operation: 'rename', call: "rename(audits, join('cases', c.k, `audit-${c.attempts.write}-${Date.now()}`))",
+  snippetSha256: '9b54d5045e735a3e3a55dc314df7220a25f690b72fcc049901e330712e9317a9',
+  reviewer: 'Claude', date: '2026-11-22',
+  reason: '把运行目录下 cases/<两位序号>/audit 改名为同一父目录下的 audit-<次数>-<毫秒>，留存上一版审计；源和目标都是流水线自己建的相对路径，不创建链接，失败即略过。',
+}, {
+  file: 'packs/workflow/case-compile/tools/pipeline.ts',
+  operation: 'rename', call: "rename(join(audits, name), join(audits, name.replace(/\\.verdict\\.json$/, '.plumb-review.json')))",
+  snippetSha256: '4d7056959d7c14000dc1cee69fc9357d12e6278a650a187b329cc494af1bda83',
+  reviewer: 'Claude', date: '2026-11-22',
+  reason: '在同一审计目录里把列出的 *.verdict.json 改名为 *.plumb-review.json；只换文件名后缀，不出目录，不创建链接。',
+}, {
+  file: 'packs/workflow/case-compile/tools/pipeline.ts',
+  operation: 'rename', call: 'rename(temporary, path)',
+  snippetSha256: '5b381a45e52fa260c191fef328eb46c5da4c425da14314d07a6f4ce7a6e0b533',
+  reviewer: 'Claude', date: '2026-11-22',
+  reason: '状态文件原子替换：同目录的临时文件刚由本方法写入，rename 只替换目标文件，不能创建链接。',
+}, {
+  file: 'packs/workflow/case-compile/tools/refresh-late.ts',
+  operation: 'rename', call: 'rename(staged, target)',
+  snippetSha256: '79411553b8a7a0d246b1675da7ae2137bc60233f25676695ce8d44bb602ddcd6',
+  reviewer: 'Claude', date: '2026-11-22',
+  reason: '临时文件由本方法用 wx 新建为普通文件，rename 只作同目录文件原子替换，失败时删除临时文件；不能创建链接。',
+}, {
   file: 'packs/workflow/knowledge-contribution/tools/jev/lib/local.ts',
   operation: 'rename', call: 'rename(temp,file)',
   snippetSha256: 'dc941d04ec92bda8153e6a625b5e427ee2ca266a07e3cca8fb069d3025bda418',
@@ -54,7 +102,7 @@ export function scanSkillScripts(files: ReadonlyMap<string, string>, reviews: re
   });
   const checker = program.getTypeChecker(); const issues: ScriptIssue[] = [], approved: CallReview[] = [];
   const reviewUses = new Map<CallReview, number>();
-  const add = (file: string, source: ts.SourceFile, node: ts.Node, operation: string, reason: string) => issues.push({ file, line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, operation, reason });
+  const add = (file: string, source: ts.SourceFile, node: ts.Node, operation: string, reason: string, site?: { call: string; snippetSha256: string }) => issues.push({ file, line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, operation, reason, ...site });
   for (const [file] of files) {
     const source = sources.get(resolve(virtual, file))!;
     const literal = (node: ts.Expression | undefined, seen = new Set<ts.Node>()): string | null => {
@@ -117,9 +165,15 @@ export function scanSkillScripts(files: ReadonlyMap<string, string>, reviews: re
       if (name !== null && name.startsWith('.') && (name.endsWith('.json') || sources.has(resolve(virtual, file, '..', name)))) return;
       add(file, source, node, 'import', '代码依赖不在已核对的清单内或模块名是动态值；请使用清单内自包含脚本并重新检查');
     };
+    const requireReview = (node: ts.CallExpression | ts.NewExpression, operation: string, reason: string) => {
+      const call = node.getText(source), snippetSha256 = digest(callSnippet(source, node));
+      const review = reviews.find(row => row.file === file && row.operation === operation && row.call === call && row.snippetSha256 === snippetSha256 && row.reviewer && /^\d{4}-\d{2}-\d{2}$/.test(row.date) && row.reason);
+      if (review) { reviewUses.set(review, (reviewUses.get(review) ?? 0) + 1); approved.push(review); }
+      else add(file, source, node, operation, reason, { call, snippetSha256 });
+    };
     for (const diagnostic of program.getSyntacticDiagnostics(source)) issues.push({ file, line: source.getLineAndCharacterOfPosition(diagnostic.start ?? 0).line + 1, operation: 'parse', reason: '源码未能完整静态解析；请修正发布源码后重新检查' });
     const visit = (node: ts.Node): void => {
-      if (ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly) {
+      if (ts.isImportDeclaration(node) && node.importClause?.phaseModifier !== ts.SyntaxKind.TypeKeyword) {
         const bindings = node.importClause?.namedBindings;
         if (!(bindings && ts.isNamedImports(bindings) && bindings.elements.length > 0 && bindings.elements.every(value => value.isTypeOnly))) dependency(node, ts.isStringLiteral(node.moduleSpecifier) ? node.moduleSpecifier.text : null);
       }
@@ -131,12 +185,11 @@ export function scanSkillScripts(files: ReadonlyMap<string, string>, reviews: re
         const name = origin(node.expression), operation = mutation(name);
         if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || name === '@require' || name === 'node:process.getBuiltinModule')) dependency(node, literal(node.arguments[0]));
         if (operation && !((operation === 'cp' || operation === 'cpSync') && copyDereferences(node))) {
-          const call = node.getText(source), snippetSha256 = digest(callSnippet(source, node));
-          const review = reviews.find(row => row.file === file && row.operation === operation && row.call === call && row.snippetSha256 === snippetSha256 && row.reviewer && /^\d{4}-\d{2}-\d{2}$/.test(row.date) && row.reason);
-          if (review) { reviewUses.set(review, (reviewUses.get(review) ?? 0) + 1); approved.push(review); }
-          else add(file, source, node, operation, '此调用能创建链接或改名目录；请集成者逐调用点复核源码片段后决定，不按函数名整体放行');
-        } else if (name.startsWith('node:child_process.') || name.startsWith('node:vm.') || name.startsWith('node:wasi.') || name.startsWith('node:worker_threads.') || name.startsWith('node:cluster.') || name.split('.').includes('constructor') || dynamicEntrypoints.has(name)) {
-          add(file, source, node, name, '动态代码、原生入口或子进程未被本检查覆盖；请改为清单内可静态核对的实现，或交集成者补核对');
+          requireReview(node, operation, '此调用能创建链接或改名目录；请集成者逐调用点复核源码片段后决定，不按函数名整体放行');
+        } else if (name.startsWith('node:child_process.')) {
+          requireReview(node, name, '子进程运行的程序不在本检查范围内；请集成者逐调用点复核源码片段后决定，不按函数名整体放行');
+        } else if (name.startsWith('node:vm.') || name.startsWith('node:wasi.') || name.startsWith('node:worker_threads.') || name.startsWith('node:cluster.') || name.split('.').includes('constructor') || dynamicEntrypoints.has(name)) {
+          add(file, source, node, name, '动态代码或原生入口未被本检查覆盖；请改为清单内可静态核对的实现');
         } else if (name.startsWith('node:fs') && name.includes('<dynamic>')) add(file, source, node, name, '不能静态核对动态文件系统调用；请使用明确的接口后重跑检查');
       }
       if (ts.isIdentifier(node) || ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
@@ -283,7 +336,7 @@ if (import.meta.main) {
     for (const directory of directories) {
       const audit = scanSkillPack(directory);
       process.stdout.write(`静态检查：脚本 ${audit.files}；逐调用点复核 ${audit.reviewed.length}；未通过 ${audit.issues.length}\n`);
-      for (const issue of audit.issues) process.stdout.write(`${issue.file}:${issue.line} ${issue.operation}：${issue.reason}\n`);
+      for (const issue of audit.issues) process.stdout.write(`${issue.file}:${issue.line} ${issue.operation}：${issue.reason}${issue.snippetSha256 ? `（调用 ${issue.call}；片段摘要 ${issue.snippetSha256}）` : ''}\n`);
       failed ||= audit.issues.length > 0;
     }
     if (failed) process.exitCode = 1;

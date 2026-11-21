@@ -5,9 +5,9 @@ description: 在客户端用 Jev 做是否、单选或打分判断，记录版�
 
 Jev 只判断，不写字。分类、“两段是不是说同一件事”用 ask；排序给每项一道 score 题，按期望等级排，只作本次任务产出，不回注。不要用它写内容、抽字段、计数、挑设备命令、定期望值，也不要把概率当事实。
 
-技能安装在 `circle-home-skills` 任务的 `scripts/real/circle-home.ts --profile skills` 创建的上机和技能用 Circle 主目录的 `skills/jev/`；下文“技能目录”指这个已安装的 jev 目录。不要装到 `--profile review` 的评审主目录：那里只许六个 Hub 工具和 write_todos，连技能加载也被拒绝。集成者负责准备主目录及数据目录钩子，放行技能工具和 execute 运行已安装的 `jev.ts`，并在主目录自己的 hooks.json 中再次执行技能的 before_tool 钩子。
+技能装在允许加载技能、运行技能工具的 Circle 主目录的 `skills/jev/`；下文“技能目录”指这个已安装的 jev 目录。只放行 Hub 工具、不加载技能的主目录用不了它。主目录由集成者准备：放行技能工具和 execute 运行已安装的 `jev.ts`，并在主目录自己的 hooks.json 里再执行一次技能的 before_tool 钩子。
 
-所有者在这个 skills 主目录用 `/secrets JEV_API_KEY`、`/secrets HUB_TOKEN` 存密钥，设置普通变量 JEV_MODEL（确切版本）、HUB_URL（Hub MCP 地址）。脚本不读客户端文件、环境密钥或钥匙串。密钥和变量不借用评审主目录；技能钩子不能越过主目录的硬拒绝。
+所有者在这个主目录用 `/secrets JEV_API_KEY`、`/secrets HUB_TOKEN` 存密钥，设置普通变量 JEV_MODEL（确切版本）、HUB_URL（Hub MCP 地址）。脚本不读客户端文件、环境密钥或钥匙串。密钥和变量不借用别的主目录；技能钩子不能越过主目录的硬拒绝。
 
 用 Node 24 运行，密钥仅从标准输入进，命令里只写客户端占位符（%NAME%，由客户端在执行时展开，%JEV_API_KEY%/%HUB_TOKEN% 是密钥名不是值）：
 
@@ -18,7 +18,7 @@ node '<技能目录>/jev.ts' ask --hub %HUB_URL% --model '%JEV_MODEL%' --input a
 EOF
 ```
 
-ask.json 形状见 [合成输入](examples/ask.json)。pieces 只给 id 和从 Hub 照抄的 tree: 条目或 src: 片段引用；questions 用 noul、choice 或 score，每题必须用 `pieces` 显式声明它判断的片段 id（取自本次 pieces 列表）：缺声明、声明为空或声明了列表外的 id 都是结构问题，整批不发，回报里写明缺的事实和下一步，不会退回“把全部片段都发给这道题”。instructions 里的反引号只给服务商的模型读，技能不从题目文字里找片段；instructions 最多 2000 字，选项说明最多 160 字。问题与说明也会外发，不能夹带用例、缺陷或其他受限原文绕过限制。
+ask.json 形状见 [合成输入](examples/ask.json)。pieces 只给 id 和从 Hub 照抄的 tree: 条目或 src: 片段引用；questions 用 noul（是否题）、choice（单选）或 score（打分），每题必须用 `pieces` 显式声明它判断的片段 id（取自本次 pieces 列表）：缺声明、声明为空或声明了列表外的 id 都是结构问题，整批不发，回报里写明缺的事实和下一步，不会退回“把全部片段都发给这道题”。instructions 里的反引号只给服务商的模型读，技能不从题目文字里找片段；instructions 最多 2000 字，选项说明最多 160 字。问题与说明也会外发，不能夹带用例、缺陷或其他受限原文绕过限制。
 
 默认只发 Hub 读到的定义、行为原文和题目。用例、缺陷、观察或 src 只有本次明确 `--send case`（对应种类码，也可重复 --send；src 用 `--send src`）才加入，技能钩子仅在技能加载后生效；主目录自己的钩子还会再次执行技能的 before_tool 钩子，未加载技能、直接执行时也由它拦住 --send。该主目录由集成者准备。不能用 --send 绕过读取档位。子节点选项说明始终只来自定义或行为，不取用例标题等文字。种类码以 generated.json 为准。
 

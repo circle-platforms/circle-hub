@@ -20,6 +20,13 @@ test('profile lists all independent problems in one refusal', () => {
   const raw = profileDocument(); raw.seats[0].device = 'missing'; raw.runtime.minimum_version = 'another-runtime'; raw.allowed[0].parameters.line = 'missing';
   const result = parseProfile(raw, contract, bedsOf()); assert.equal(result.ok, false); if (!result.ok) assert.ok(result.problems.length >= 3);
 });
+test('a runtime key the profile shape does not define is refused with its pointer', () => {
+  const raw = profileDocument() as unknown as { runtime: Record<string, unknown> };
+  raw.runtime.contract_sha256 = contract.pinned.identity;
+  raw.runtime['a/b'] = 'x';
+  const result = parseProfile(raw, contract, bedsOf()); assert.equal(result.ok, false);
+  if (!result.ok) assert.deepEqual(result.problems.map((p) => p.pointer), ['/runtime/contract_sha256', '/runtime/a~1b']);
+});
 test('a signature name matching an object prototype member retains its declared role', () => {
   const raw = runtimeDocument(); raw.entries[0].signature.parameters[0].name = '__proto__'; raw.entries[0].signature.required[0] = '__proto__';
   const signed = { ...raw, contract_sha256: '' }; signed.contract_sha256 = runtimeDigest(signed);

@@ -18,6 +18,7 @@ import { openBed, type Bed } from './testing/bed.ts';
 import { baseDocument, bytesOf, outlineDocument, renamed, shuffled, withCase, withoutCategory, witnessCase, type DocumentSpec } from './testing/mindmap.ts';
 import { bind, isFailure, projectionInput, sha256 } from './testing/support.ts';
 import { projectDocuments } from './functions/project.ts';
+import manifest from './pack.json' with { type: 'json' };
 
 const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
 const skip = (await osIsolationAvailable()) ? false : 'operating-system isolation for pack functions (sandbox-exec) is not available here';
@@ -60,14 +61,14 @@ describe('publication', { skip }, () => {
     const outcome = bed.publication;
     assert.ok(outcome.ok, JSON.stringify(!outcome.ok && outcome.problems, null, 1));
     assert.equal(outcome.created, true);
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.2.24', 'workflow', false]);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.2.25', 'workflow', false]);
     assert.deepEqual([outcome.report.samples.total, outcome.report.samples.passed, outcome.report.unsampled], [15, 15, []]);
     assert.deepEqual(outcome.report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]), [['coverage', 2, 4, ['author_samples_only']], ['command_coverage', 2, 5, ['author_samples_only']], ['tag_declarations', 1, 1, ['author_samples_only']]]);
     const store = createWorkflowStore(bed.registry);
     const summaries = await store.summaries(bed.runner);
-    assert.deepEqual(summaries.map(row=>row.pack).sort(),[`mindmap-format@${await repositorySkillVersion('mindmap-format')}`,'template-gap@1.2.24'].sort());
+    assert.deepEqual(summaries.map(row=>row.pack).sort(),[`mindmap-format@${await repositorySkillVersion('mindmap-format')}`,`template-gap@${manifest.version}`].sort());
     const summary = summaries.find(row=>row.id==='template-gap')!;
-    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.2.24', 'workflow', ['Synthetic Template', 'MEADOW']]);
+    assert.deepEqual([summary.pack, summary.kind, summary.products], [`template-gap@${manifest.version}`, 'workflow', ['Synthetic Template', 'MEADOW']]);
     assert.deepEqual(summary.inputs.map((i) => [i.slot, i.role, i.many, i.required]), [['documents', 'subject', true, true], ['case_index', 'expected', false, false]]);
     assert.deepEqual(summary.requirements.map((r) => [r.key, r.accepted_producer, r.layers, r.done_rule, r.repair_rounds]), [['coverage', 'judgment', ['static'], 'bookkeeping', 0], ['command_coverage', 'fact', ['static'], 'bookkeeping', 0], ['tag_declarations', 'fact', ['static'], 'bookkeeping', 0]]);
     assert.deepEqual((await store.summaries(bed.stranger)).map(row=>row.pack), [`mindmap-format@${await repositorySkillVersion('mindmap-format')}`]);
@@ -166,7 +167,7 @@ describe('a production run', { skip }, () => {
     assert.equal(view?.submissions.length, 1);
     assert.deepEqual(view?.latest?.result, submitted.result);
 
-    const warrant = ['fact', 'projected', 'function', 'template-gap.coverage@1.2.24'] as const;
+    const warrant = ['fact', 'projected', 'function', `template-gap.coverage@${manifest.version}`] as const;
     const satisfied = (item: string): void => {
       const { partition, result: r } = requirementOf(result, item);
       assert.deepEqual([partition, r.requirement, r.layers, r.status], ['delivered', 'coverage', [{ layer: 'static', terminal: 'judgment' }], 'satisfied'], item);

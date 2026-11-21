@@ -50,23 +50,6 @@ const RULES = [
   '- 步骤意图取这一步（块或顺序步骤）自己写的 description；没写就用用例标题，并在这一步的 disclosure 里说明，不借脑图里同位置的步骤，也不用作者步骤的摘要。',
 ].join('\n');
 
-const OPTIONS: Record<string, boolean> = {
-  file: false,
-  plans: false,
-  run: false,
-  knowledge: false,
-  item: false,
-  'context-mode': false,
-  'base-url': true,
-  model: false,
-  'ca-file': false,
-  'ca-sha256': false,
-  'cache-dir': false,
-  'audit-out': false,
-  out: false,
-};
-const BOOLEAN_OPTIONS = ['strict-review', 'key-stdin', 'no-cache', 'allow-insecure-http'] as const;
-
 const VALUE_FLAGS = new Set([
   '--file',
   '--plans',

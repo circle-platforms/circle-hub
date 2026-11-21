@@ -155,7 +155,7 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
       join(runDir, 'run.json'),
       JSON.stringify({
         run: RUN,
-        product: 'synth-apv',
+        product: 'famx',
         version: '1.0.0',
         build: '1.0.0-build1',
         command_policy: { schema: 'command-policy@1', read_only: [], inverse_alternatives: [], inverse_rules: [{ source_prefix: '/commands', inverse_prefix: '/commands/no' }] },

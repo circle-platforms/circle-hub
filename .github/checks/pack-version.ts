@@ -94,7 +94,12 @@ function defaultBranchRef(root: string, headRev: string): string {
   throw new Error('cannot determine published baseline: no release/* tag or default branch found');
 }
 
-export function publishedBaseline(root: string, head = 'HEAD'): string {
+export interface PublishedBaseline {
+  readonly commit: string;
+  readonly release: boolean;
+}
+
+export function resolvePublishedBaseline(root: string, head = 'HEAD'): PublishedBaseline {
   const headRev = git(root, ['rev-parse', '--verify', `${head}^{commit}`])?.trim();
   if (!headRev) throw new Error(`cannot resolve commit ${head}`);
   const shallow = shallowBoundaries(root);
@@ -113,7 +118,7 @@ export function publishedBaseline(root: string, head = 'HEAD'): string {
         }
       }
     }
-    return taggedCommit;
+    return { commit: taggedCommit, release: true };
   }
   if (shallow !== null) {
     const reachable = git(root, ['rev-list', headRev])?.trim().split('\n').filter(Boolean) ?? [];
@@ -128,7 +133,11 @@ export function publishedBaseline(root: string, head = 'HEAD'): string {
   if (!mergeBase) {
     throw new Error(`cannot determine published baseline: ${headRev.slice(0, 12)} shares no common ancestor with ${defaultRef}`);
   }
-  return mergeBase;
+  return { commit: mergeBase, release: false };
+}
+
+export function publishedBaseline(root: string, head = 'HEAD'): string {
+  return resolvePublishedBaseline(root, head).commit;
 }
 
 function blob(root: string, spec: string): string | null {

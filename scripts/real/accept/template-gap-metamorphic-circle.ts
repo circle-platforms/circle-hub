@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import type { Turn } from '../scripted-model.ts';
 import { type Scenario } from '../lib/accept.ts';
 import type { Check, ReportSection } from '../lib/report.ts';
-import { caseCountOf, typeNamesInCase, expectedMissing, outerCaseKeysOf as outerCaseIdsOf, planCopies, premiseOf, typeNamePresent, type MindTree, type TemplateCategory, type SkipReason } from '../gold/gap-metamorphic.ts';
+import { caseCountOf, typeNamesInCase, expectedMissing, outerCaseKeysOf as outerCaseIdsOf, planCopies, premiseOf, type MindTree, type TemplateCategory, type SkipReason } from '../gold/gap-metamorphic.ts';
 import { readCategories } from '../gold/gap-metamorphic.ts';
 import { contentHeader } from './content-header.ts';
 
@@ -190,9 +190,6 @@ export default function scenario(gold: GapCircleGold): Scenario {
   let fatal: { key: string; run: number; item: number } | null = null;
   const halted = () => `核对停止：第 ${fatal!.run} 次运行，第 ${fatal!.item} 项摘要缺少可识别全文引用；下一步修复读取解析后重跑`;
 
-  const pendingOf = (tree: MindTree, seed: string): { tree: MindTree; name: string } => ({ tree, name: '' });
-  void pendingOf;
-
   const plans = trees.map((tree, d) => planCopies(tree, `doc${d + 1}`, { categories, singleMisses: new Map() }));
   const singleCounts = plans.map((plan, document) => new Map(outerIds[document]!.map((key, at) => [key, caseCountOf(plan.c[at]!)])));
   const copyPremise = (tree: MindTree, contains: ReadonlyArray<{ document: number; caseId: string }>) => {
@@ -276,8 +273,6 @@ export default function scenario(gold: GapCircleGold): Scenario {
     }
     queue = list;
   };
-
-  const allPending = (): Pending[] => queue;
 
   const respond = (turn: Turn): Array<{ tool: string; input: Record<string, unknown> } | { text: string }> => {
     if (fatal) return [{ text: halted() }];
@@ -391,12 +386,9 @@ export default function scenario(gold: GapCircleGold): Scenario {
   let pendingGetNodes: { key: string; reference: string } | null = null;
   let phaseRunsQueued = 0;
 
-  void allPending;
-
   let categoryScores: Array<{ key: string; expected: Set<string>; actual: Set<string> }> = [];
   let scoredKeys = new Map<string, boolean>();
   let checkFindings: Array<{ document: number; caseId: string; runKey: string; why: string }> = [];
-  let phaseThreeMap = new Map<string, Array<{ document: number; caseId: string }>>();
   const check = (turns: import('../lib/accept.ts').LoggedTurn[]): Check[] => {
     void turns; scoredKeys = new Map(); notDoneChecks.clear();
     const verdict = (name: string, ok: boolean, expected: string, actual: string): Check => ({ area, name, expected, actual, ok });
@@ -410,7 +402,6 @@ export default function scenario(gold: GapCircleGold): Scenario {
       if (attempted.has(key)) findings.push({ document, caseId, runKey: key, why: unknown.get(key) ?? (answer ? `数出 ${answer.caseCount} 个，独立计数为 ${countExpected(key)} 个` : '缺少完整条目结果') });
       return undefined;
     };
-    phaseThreeMap = new Map([...attempted].filter(([, copy]) => ['d','e','f'].includes(copy.kind)).map(([key, copy]) => [key, [...copy.contains]]));
     for (const [key, answer] of answerOf) {
       const copy = attempted.get(key); if (!copy || unknown.has(key)) continue;
       let expected: Set<string>;

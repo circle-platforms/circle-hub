@@ -47,8 +47,20 @@ test('a review pins file call and whole function bytes and cannot approve anothe
   for (const changed of [source.replace("'a.tmp'","'b.tmp'"),source.replace("rename(temp,'a')","rename(temp,'b')"),source.replace("await rename(temp,'a')","await rename(temp,'a');await rename(temp,'a')"),source.replace('rename(temp,','symlink(temp,')]) assert.ok(audit(changed,[review]).issues.length>0);
   assert.ok(scanSkillScripts(new Map([['other.ts',source]]),[review]).issues.length>0);
 });
+test('a child process passes only as an exact reviewed call site, and an unreviewed one names its call and digest', () => {
+  const source = `import {spawn,execFile} from 'node:child_process';function run(tool){return spawn(process.execPath,[tool],{stdio:'pipe'});}`;
+  const call = "spawn(process.execPath,[tool],{stdio:'pipe'})";
+  const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true); let snippet = '';
+  const visit = (node: ts.Node) => { if (ts.isCallExpression(node) && node.expression.getText(parsed) === 'spawn') snippet = callSnippet(parsed, node); ts.forEachChild(node, visit); }; visit(parsed);
+  const unreviewed = audit(source).issues;
+  assert.deepEqual(unreviewed.map(v => [v.operation, v.call, v.snippetSha256]), [['node:child_process.spawn', call, sha(snippet)]]);
+  const review: CallReview = { file, operation: 'node:child_process.spawn', call, snippetSha256: sha(snippet), reviewer: '合成复核人', date: '2026-11-22', reason: '合成子进程复核' };
+  assert.deepEqual(audit(source, [review]).issues, []); assert.equal(audit(source, [review]).reviewed.length, 1);
+  for (const changed of [source.replace('[tool]', "[tool,'--more']"), source.replace('return spawn(', 'return execFile('), source.replace('{stdio:', "{shell:true,stdio:")]) assert.ok(audit(changed, [review]).issues.length > 0, changed);
+  assert.ok(audit(`import {exec} from 'node:child_process'; run(exec);`, [review]).issues.length > 0);
+});
 test('the original Jev atomic file replacement review retains its dated reason', () => {
-  assert.equal(REVIEWED_SKILL_CALLS.length,2);const reviewed=REVIEWED_SKILL_CALLS[0];
+  assert.equal(REVIEWED_SKILL_CALLS.length,10);const reviewed=REVIEWED_SKILL_CALLS.find(row=>row.file==='packs/workflow/knowledge-contribution/tools/jev/lib/local.ts');assert.ok(reviewed);
   assert.equal(reviewed.file,'packs/workflow/knowledge-contribution/tools/jev/lib/local.ts');assert.equal(reviewed.operation,'rename');assert.equal(reviewed.call,'rename(temp,file)');assert.equal(reviewed.reviewer,'集成者');assert.match(reviewed.date,/^\d{4}-\d{2}-\d{2}$/);assert.match(reviewed.reason,/普通文件.*目录/);assert.match(reviewed.snippetSha256,/^[a-f0-9]{64}$/);
 });
 test('the stale-owner recovery review pins its actual function without approving changed paths or extra calls', () => {

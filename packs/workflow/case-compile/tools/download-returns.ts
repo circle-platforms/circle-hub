@@ -20,7 +20,7 @@ import { CallFailure, failCall, isRecord, parseCliOptions } from '../functions/t
 import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
 import { fetchRunInputs } from './fetch-run.ts';
 import { passReviewInputs } from './generate-workbook.ts';
-import { afterRound } from '../functions/next-step.ts';
+import { afterRound, ranJob } from '../functions/next-step.ts';
 
 const SOURCE = /^src:([0-9a-f]{64})$/;
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/;
@@ -195,7 +195,7 @@ export async function downloadReturns(input: { origin: string; bearer: string; r
     for (const job of jobs) outcomes[job.outcome] = (outcomes[job.outcome] ?? 0) + 1;
     const unsent = jobs.filter(job => job.outcome === 'not_dispatched');
     const missing = unsent.flatMap(job => job.missing_facts ?? []);
-    const ran = index.filter((job) => (job.rows as unknown[]).length).at(-1);
+    const ran = ranJob(index);
     const next = afterRound({ unsent: unsent.length, ended: jobs.every((job) => job.ended === 'done'), rows: (ran?.rows ?? []) as Array<Record<string, unknown>> });
     return { outcomes, missing_facts: missing, ...(next ? { message: next } : {}), run: args.run, out: resolve(args.out), jobs: jobs.length, ended: jobs.map((job) => job.ended ?? 'running'), verdicts, files: outputs.length, withheld, syntax_rejected: refused, execution_refused: unexecuted, ...(unreached ? { not_executed: unreached } : {}), ...(aborted ? { aborted } : {}), pass_review: passReview };
 }

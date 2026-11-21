@@ -1,6 +1,7 @@
 import { sha256Hex, type RecordsKit } from '../records/api.ts';
 import type { JobStatus } from './service.ts';
 import type { RunJob } from './read-runs.ts';
+import { releaseNextStep } from './refusal-text.ts';
 
 export interface DispatchMissingFact { fact: string; next_action: string }
 export interface DispatchDiagnostics {
@@ -17,6 +18,7 @@ export interface DispatchDiagnostics {
 }
 const object = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 const clip = (value: string): string => value.slice(0, 800);
+export const BOOKING_NEXT = '先预订整个测试环境，再带着预订重新开始运行';
 
 export async function reportMissingFacts(records: Pick<RecordsKit, 'objects'>, job: RunJob, admin: boolean): Promise<Pick<DispatchDiagnostics, 'no_verdict' | 'missing_facts'>> {
   const reference = job.status.result;
@@ -44,9 +46,10 @@ export async function reportMissingFacts(records: Pick<RecordsKit, 'objects'>, j
 }
 
 export function releaseMissingFacts(checks: NonNullable<JobStatus['admin_release']>): DispatchMissingFact[] {
-  return checks.filter(check=>check.satisfied!==true).map(check=>check.condition==='proof.executor_identity'
-    ? {fact:`核对项目“${check.label}”：本次核验的目标或清单摘要与当前执行器声明不一致`,next_action:'联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验'}
-    : {fact:check.satisfied===null?`核对项目“${check.label}”缺少前置事实，尚未核对`:`核对项目“${check.label}”尚未满足`,next_action:'核对本次预订和核验结果；联系管理员查看具体放行条件后重新核验'}).slice(0,16);
+  return checks.filter(check=>check.satisfied!==true).map(check=>({
+    fact:check.satisfied===null?`核对项目“${check.label}”缺少前置事实，尚未核对`:check.condition==='proof.executor_identity'?`核对项目“${check.label}”：本次核验的目标或清单摘要与当前执行器声明不一致`:`核对项目“${check.label}”尚未满足`,
+    next_action:releaseNextStep(check,{callerIsAdmin:false}),
+  })).filter((fact,index,all)=>all.findIndex(other=>other.fact===fact.fact&&other.next_action===fact.next_action)===index).slice(0,16);
 }
 
 export function readConditionFact(condition: {pointer:string;operator:string}): DispatchMissingFact {
@@ -58,7 +61,7 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
   const { status } = job;
   const uncertain = status.frozen || job.ended === 'unknown' || status.outcome === 'unknown';
   const next = uncertain ? admin ? `circle-hub job resume ${job.job}；只读核对原作业，不重新发送` : '目标可能已经执行；不要重交或另开运行重发，联系管理员核对；之后原样重交原提交只读进展'
-    : status.booking?.coverage_complete===false?'先预订整个测试环境，再从脚本编写开始新的运行，并重新核验脚本合并'
+    : status.booking?.coverage_complete===false?BOOKING_NEXT
     : status.booking?.coverage_complete===null?(admin?'恢复预订记录读取后重新核对覆盖范围；当前不能派发':'联系管理员恢复预订记录读取后重新核对覆盖范围；当前不能派发')
     : status.report_pending ? admin ? `circle-hub job resume ${job.job}；只读补取原报告，不重新发送` : '原样重交原提交读取报告进展；不要重新发送作业'
     : status.outcome === 'not_dispatched' ? admin ? `circle-hub job status ${job.job}` : job.boundary_refused || status.not_sent ? '按缺失条件核对预订或联系管理员处理，再原样重交原提交' : '联系管理员核对本次未派发原因；不要绕过当前运行的派发保护'

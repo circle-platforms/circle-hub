@@ -89,12 +89,12 @@ const NEXT_BY_CODE: Record<string, NextRow> = {
     admin: () => '请重新取得游标后再调用',
   },
   EFFECT_CONTENT_UNVERIFIED: {
-    member: '请先完成脚本合并',
-    admin: () => '请先完成脚本合并后再上机验证',
+    member: '请先完成核验',
+    admin: () => '请先完成核验后再上机验证',
   },
   EFFECT_RELEASE_UNMET: {
-    member: '请先完成对应的脚本合并，判断正确后再上机验证',
-    admin: () => '请先完成对应的脚本合并，判断正确后再上机验证',
+    member: '请先完成对应的核验，判断正确后再上机验证',
+    admin: () => '请先完成对应的核验，判断正确后再上机验证',
   },
   TEAM_PARSER_REQUIRED: {
     member: '请联系管理员为团队安装对应的解析器，或改用团队已支持的格式后重试',

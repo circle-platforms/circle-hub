@@ -9,7 +9,7 @@ import { parseHubOrigin } from '../functions/client-cli.ts';
 import { isRecord, parseCliOptions } from '../functions/text.ts';
 import { hubTools, readStdinLines, refusalWords, type CallTool, type ToolAnswer } from './open-compile.ts';
 import { hubAnswer, spawnTool, words, type RunTool } from './pipeline.ts';
-import { mergePassed, plansMissing, retryNamed } from '../functions/next-step.ts';
+import { mergePassed, mergeRefused, plansMissing, retryNamed } from '../functions/next-step.ts';
 
 const USAGE = "open-merge.ts --hub <MCP地址> --open <open-compile.json> --plans <收拢的计划目录> --model <模型> --out <新目录>";
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -62,7 +62,7 @@ function inputOf(sources: Array<Record<string, unknown>>, slot: string): Record<
   throw new MergeRefused(`脚本编写运行的输入槽 ${slot} 没有外部名字也没有引用`);
 }
 
-export async function openMerge(call: CallTool, tools: RunTool, options: { hub: string; open: Record<string, unknown>; plans: string; model: string; out: string; token: string }): Promise<Merged> {
+export async function openMerge(call: CallTool, tools: RunTool, options: { hub: string; open: Record<string, unknown>; openFile: string; plans: string; model: string; out: string; token: string }): Promise<Merged> {
   const { open } = options;
   const planRun = String(open.plan_run ?? ''), recomposeRun = String(open.recompose_run ?? '');
   if (!RUN_ID.test(planRun) || !RUN_ID.test(recomposeRun) || typeof open.product !== 'string' || typeof open.build !== 'string') throw new MergeRefused('--open 不是 open-compile.ts 写的文件（缺 plan_run、recompose_run、product 或 build）');
@@ -96,7 +96,11 @@ export async function openMerge(call: CallTool, tools: RunTool, options: { hub: 
   const mergeRun = runOf(started);
   if (started.failed || !mergeRun) throw new MergeRefused(`脚本合并运行开不起来：${refusalWords(started)}`);
   const merged = unsatisfied(await submit(tools, options.hub, mergeRun, options.model, options.plans, options.token, `脚本合并运行 ${mergeRun} 的计划`));
-  if (merged.rows.length) throw new MergeRefused(`脚本合并运行 ${mergeRun} 里 Hub 没有判正确的有 ${new Set(merged.rows.map((row) => row.item)).size} 条；${retryNamed}`, merged.rows);
+  if (merged.rows.length) {
+    const refused = join(options.out, 'refused.json');
+    await writeFile(refused, JSON.stringify({ schema: 'merge-refused@1', plan_run: planRun, merge_run: mergeRun, cases: merged.rows }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    throw new MergeRefused(`脚本合并运行 ${mergeRun} 里 Hub 没有判正确的有 ${new Set(merged.rows.map((row) => row.item)).size} 条；${mergeRefused(planRun, options.openFile, refused)}`, merged.rows);
+  }
   return { planRun, mergeRun, workbook: reference, xlsx, items: merged.items };
 }
 
@@ -111,7 +115,7 @@ export async function main(argv: string[], readStdin: () => Promise<string[]> = 
     const origin = parseHubOrigin(args.hub);
     const lines = await readStdin();
     const token = await requireBearerToken(async () => lines[0] ?? '');
-    const merged = await openMerge(connect(origin, token), tools ?? spawnTool(skillsRoot), { hub: args.hub, open, plans: args.plans, model: args.model, out: args.out, token });
+    const merged = await openMerge(connect(origin, token), tools ?? spawnTool(skillsRoot), { hub: args.hub, open, openFile: args.open, plans: args.plans, model: args.model, out: args.out, token });
     const record = { schema: 'open-merge@1', plan_run: merged.planRun, merge_run: merged.mergeRun, workbook: merged.workbook, xlsx: merged.xlsx, items: merged.items };
     await writeFile(join(args.out, 'open-merge.json'), JSON.stringify(record, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     process.stdout.write(`合并通过：脚本合并运行 ${merged.mergeRun}，${merged.items} 条全部正确，Excel 在 ${merged.xlsx}（${merged.workbook}）。${mergePassed(merged.mergeRun)}\n${JSON.stringify(record)}\n`);

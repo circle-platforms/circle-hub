@@ -1135,10 +1135,11 @@ export function extractCaseDeviceEvidence(params: {
         if (!matchedAnyPlanCmd) {
           const otherPromptedCmds: string[] = [];
           for (const rawLines of sessionRawLines.values()) {
-            const typed = rawLines.map(inspectSessionLine).filter((info) => info.promptMatched);
-            typed.forEach((info, at) => {
-              const switchesMode = at + 1 < typed.length && typed[at + 1]!.prompt !== info.prompt;
-              if (info.body.length >= 3 && !switchesMode && !ownMark(info.body).runner_own) otherPromptedCmds.push(info.body);
+            const typed = rawLines.flatMap((raw, at) => { const info = inspectSessionLine(raw); return info.promptMatched ? [{ info, at }] : []; });
+            typed.forEach(({ info, at }, k) => {
+              const next = typed[k + 1];
+              const leavesMode = next ? next.info.prompt !== info.prompt : !rawLines.slice(at + 1).some((line) => line.trim());
+              if (info.body.length >= 3 && !leavesMode && !ownMark(info.body).runner_own) otherPromptedCmds.push(info.body);
             });
           }
           if (otherPromptedCmds.length > 0) {

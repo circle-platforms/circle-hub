@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "plumb",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "kind": "skill",
   "title": "Plumb 判断客户端",
   "description": "在客户端查 Plumb 推理网关的模型与就绪状态、唤醒后端或提交判别题时使用；工具受 TLS 与主机锁定约束，另有供工作流内嵌的客户端模块，不代 Hub 调用模型。",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "959e504648bd9a45b5ca6173ab8588485a38ae42e93924357fe63cffe4066e61",
-      "size": 2380
+      "sha256": "53f8934fd9e6982862ae6aaa6adfd57b1f1299b13603fc31bbb7f19ade3fd4f0",
+      "size": 2649
     },
     {
       "path": "examples/choice-node.json",

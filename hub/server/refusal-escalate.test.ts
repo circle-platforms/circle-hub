@@ -53,7 +53,7 @@ test('SOURCE_UNAVAILABLE, internal and cancel codes do not escalate; SOURCE_RETR
   assert.equal(countsTowardEscalation('SOURCE_NOT_PERMITTED'), true);
 });
 
-test('escalationIdentityOf: 参数无效 needs path; others need object or request digest (Boss 18:09)', () => {
+test('escalationIdentityOf: 参数无效 needs path; others need object or request digest', () => {
   assert.equal(escalationIdentityOf('SUBMISSION_SCHEMA_VIOLATION', {}), null);
   assert.deepEqual(escalationIdentityOf('SUBMISSION_SCHEMA_VIOLATION', { path: '/pack' }), { path: '/pack' });
   assert.equal(escalationIdentityOf('SOURCE_RETRYABLE', {}), null);
@@ -65,7 +65,7 @@ test('escalationIdentityOf: 参数无效 needs path; others need object or reque
   });
 });
 
-test('without identity facts, occurrence is null and escalate appends nothing (Boss 18:09 tonight)', async () => {
+test('without identity facts, occurrence is null and escalate appends nothing', async () => {
   let called = 0;
   const callLog = {
     countRecentErrors: async () => {
@@ -101,7 +101,7 @@ test('without identity facts, occurrence is null and escalate appends nothing (B
   assert.equal(called, 0);
 });
 
-test('with synthetic identity facts, 2nd/3rd escalate; /items omits useless whole-tool example (Boss 18:09)', async () => {
+test('with synthetic identity facts, 2nd/3rd escalate; /items omits useless whole-tool example', async () => {
   const priors = new Map<string, number>();
   const callLog = {
     countRecentErrors: async (query: { path?: string; objectKey?: string; requestDigest?: string; errorCode: string }) => {

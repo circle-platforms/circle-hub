@@ -194,7 +194,7 @@ test('preflight detects a stale installed stdin declaration', () => {
   const dir = scratch('stale');
   try {
     const home = makeHome(dir, 'ops', 'home');
-    const declaration = join(home, 'skills/case-compile/tools/submit-plans.cli.json');
+    const declaration = join(home, 'skills/case-compile/tools/open-merge.cli.json');
     const prior = JSON.parse(readFileSync(declaration, 'utf8'));
     assert.ok(prior.stdin.length > 0);
     prior.stdin = [];
@@ -206,6 +206,33 @@ test('preflight detects a stale installed stdin declaration', () => {
     assert.equal(preflightMain(['--home', home], line => lines.push(line)), 1);
     assert.match(lines.join('\n'), /不符/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('preflight checks the commands the task files hand to subagents', () => {
+  const dir = scratch('task-files');
+  try {
+    const home = makeHome(dir, 'skills', join('带 空格', 'home'));
+    const fresh = runPreflight(home);
+    assert.equal(fresh.ok, true, fresh.mismatches.map((m) => `${m.name} ${m.reason ?? ''}`).join('\n'));
+    const taskFileCases = fresh.results.filter((r) => r.name.startsWith('任务文件'));
+    for (const script of ['case-compile/tools/check-plan.ts', 'case-compile/tools/cmd-lookup.ts', 'recompose/tools/check-record.ts']) {
+      assert.ok(taskFileCases.some((r) => r.name.includes(script) && r.want === 'allow' && r.ok), `${script}: ${taskFileCases.map((r) => r.name).join('; ')}`);
+    }
+
+    const declaration = join(home, 'skills/case-compile/tools/check-plan.cli.json');
+    const prior = JSON.parse(readFileSync(declaration, 'utf8')) as { options: Array<{ name: string }>; forms: Array<{ pairs: Array<{ name: string }> }> };
+    prior.options = prior.options.filter((option) => option.name !== 'run');
+    prior.forms = prior.forms.map((form) => ({ ...form, pairs: form.pairs.filter((pair) => pair.name !== 'run') }));
+    writeFileSync(declaration, JSON.stringify(prior));
+    const stale = runPreflight(home);
+    assert.equal(stale.ok, false);
+    assert.ok(
+      stale.mismatches.some((m) => m.name.startsWith('任务文件') && m.name.includes('check-plan.ts') && m.want === 'allow' && m.got === 'deny'),
+      stale.mismatches.map((m) => m.name).join('\n'),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('refresh-guards dry-run changes nothing; --apply updates guards and keeps settings', () => {

@@ -1194,7 +1194,6 @@ async function runDelegatedSkillHooks(
   env: GuardEnvironment,
   script: string,
   input: Record<string, unknown>,
-  raw: string,
 ): Promise<HookDecision> {
   if (!inside(script, env.skills)) return allowed(env);
   const skill = skillDirectoryOf(script, env.skills);
@@ -1262,7 +1261,7 @@ async function runDelegatedSkillHooks(
       throw new GuardRefusal(`${identity} 的匹配检查未完成；${error instanceof GuardRefusal ? error.message : recover}`);
     }
     if (!selected) continue;
-    const delegatedInput = input.event === 'before_tool' ? raw : JSON.stringify({ ...input, event: 'before_tool' });
+    const delegatedInput = JSON.stringify({ ...input, event: 'before_tool' });
     const outcome = await runDelegatedHook(hook, delegatedInput, String(input.cwd));
     outcome.reason = `${identity}：${outcome.reason}`;
     if (!matched || (outcome.decision === 'deny' && strictest.decision !== 'deny') || (outcome.decision === 'ask' && strictest.decision === 'allow')) {
@@ -1697,7 +1696,6 @@ function validateExecuteCommand(
 async function executeDecision(
   env: GuardEnvironment,
   input: Record<string, unknown>,
-  raw: string,
 ): Promise<HookDecision> {
   if (env.work === null) return notTrusted(env);
   const args = input.tool_input as Record<string, unknown>;
@@ -1742,7 +1740,7 @@ async function executeDecision(
     });
   }
   return verdict.physicalScript
-    ? runDelegatedSkillHooks(env, verdict.physicalScript, input, raw)
+    ? runDelegatedSkillHooks(env, verdict.physicalScript, input)
     : allowed(env);
 }
 
@@ -2026,7 +2024,7 @@ export async function decideRaw(
     }
 
     if (tool === (d.executeTool ?? 'execute')) {
-      return await executeDecision(env, input, raw);
+      return await executeDecision(env, input);
     }
 
     for (const [prefix, why] of Object.entries(d.denyPrefix ?? {})) {

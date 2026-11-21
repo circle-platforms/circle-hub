@@ -18,7 +18,7 @@ test('model 82 registers exactly five D05 categories and every protocol row supp
   }
 });
 
-test('Boss prerequisite and lease corrections override earlier classifications without guessing ambiguous codes', () => {
+test('prerequisite and lease corrections override earlier classifications without guessing ambiguous codes', () => {
   for (const code of ['EFFECT_CONTENT_UNVERIFIED', 'EFFECT_RELEASE_UNMET', 'LEASE_EXPIRED', 'FENCING_STALE', 'TEAM_PARSER_REQUIRED', 'SYNC_MODE_LOCAL', 'RUN_SUPERSEDED']) assert.equal(callErrorCategory(code), 'not_found', code);
   assert.equal(callErrorCategory('RUN_SUPERSEDED', true), 'not_found', 'a known protocol category is not overridden by a package flag');
   assert.equal(callErrorCategory('IDEMPOTENCY_MISMATCH'), 'invalid_parameters');
@@ -41,7 +41,7 @@ test('unknown and review codes stay unknown unless the caller explicitly identif
 });
 
 test('one formatter uses generated labels and caller facts rather than interpreting message content', () => {
-  assert.equal(formatCallError('not_found', '这次运行还没有判断为正确的脚本合并结果', '请先完成脚本合并'), '不存在：这次运行还没有判断为正确的脚本合并结果。请先完成脚本合并。');
+  assert.equal(formatCallError('not_found', '这次运行还没有判断为正确的核验结果', '请先完成核验'), '不存在：这次运行还没有判断为正确的核验结果。请先完成核验。');
   assert.equal(formatCallError('occupied', '测试环境正由其他成员持有。', '请等待占用结束后重交。'), '已被占用：测试环境正由其他成员持有。请等待占用结束后重交。');
   assert.equal(formatCallError('permission_denied', ' 事实句含“已被占用”，但本次结构判定为无权限。 ', ' 请管理员核对分配。 '), '无权限：事实句含“已被占用”，但本次结构判定为无权限。请管理员核对分配。');
   assert.equal(callErrorCategory('LEASE_UNAVAILABLE'), null);

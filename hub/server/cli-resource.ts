@@ -223,7 +223,9 @@ export async function resourceCommand(session: Session, args: readonly string[])
         }
         changes.allow_plaintext = [...kept];
       }
+      const notInVault=(previous?.credentials??[]).filter(c=>!c.entry.startsWith('${secret:')&&!c.set&&changes.credentials?.[c.name]);
       const record = await decided(() => hub.connectors.admin.updateResource(admin, positionals[0], changes));
+      for(const item of notInVault)session.out(`原值不在密钥库里：接着用 circle-hub secret set --name ${changes.credentials![item.name]} 设置`);
       session.out(`已更新资源 ${record.name}（业务系统接入 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
       if (values['clear-plaintext']) session.out('已清空所有明文放行');
       else if (clearedRoles.length > 0) session.out(`已清掉角色 ${clearedRoles.sort().join('、')} 的明文放行`);

@@ -17,6 +17,10 @@
     "rework": [
       "%HUB_TOKEN%",
       "%PLUMB_API_KEY%"
+    ],
+    "reopen": [
+      "%HUB_TOKEN%",
+      "%PLUMB_API_KEY%"
     ]
   },
   "options": [
@@ -130,6 +134,14 @@
       "kind": "string",
       "multiple": false,
       "placeholder": "notes",
+      "type": "path"
+    },
+    {
+      "name": "refused",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<合并工具写的 refused.json>",
       "type": "path"
     },
     {

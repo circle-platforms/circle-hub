@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "runner-workbook",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "kind": "skill",
   "title": "运行器工作簿",
   "description": "读写自动化运行器的用例工作簿：填运行器模板、确定性打包、G 列语法、回读模型。工作流内嵌使用，不判断内容",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "15cfe6339c24f483187f71811c55eceeaaf8f9dae979af3987050156d4040395",
-      "size": 306
+      "sha256": "92521873c064087b1ac322ce548664bb16c0be307a9c4d71e37002cd9f97da77",
+      "size": 524
     },
     {
       "path": "functions/modules/workbook-writer/format.json",

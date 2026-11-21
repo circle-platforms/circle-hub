@@ -45,6 +45,7 @@ export class Session {
   constructor(ctx: CliContext, options: AdminCommandOptions) {
     this.ctx = ctx;
     this.options = options;
+    // Taken out of the environment, so no child process this command starts (a pack function, a tool) inherits the token.
     this.envToken = takeEnvironmentToken(ctx.io.env);
   }
 

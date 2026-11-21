@@ -2,7 +2,7 @@
 // samples cover the check in both polarities, and the staged pack passes the registry's validation and publish check
 // (offline; publish.test.ts publishes it for real).
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,7 +24,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.4.0', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.4.1', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/project.ts') && files.includes('functions/check-bed.ts') && files.includes('samples/negative/acquire-mismatch.json') && files.includes('samples/negative/help-mismatch.json') && files.includes('samples/positive/help-support.json') && files.includes('samples/negative/read-mismatch.json') && files.includes('samples/positive/read-support.json') && files.includes('examples/start-run-read.json') && files.includes('examples/bed-topology.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -107,5 +107,21 @@ describe('the release guidance in SKILL.md', () => {
     assert.match(skill, /"predecessor":/);
     assert.match(skill, /"inventory":\s*\{\s*"external":\s*"doc:doc:bed-topology"\s*\}/);
     assert.match(skill, /严禁.*终端|不要用终端工具|telnet/i);
+  });
+
+  it('leaves the time of release to the user or the workflow that holds the booking, and names the reason the lease command needs', () => {
+    const skill = text('SKILL.md');
+    assert.match(skill, /^---\nname: test-bed\ndescription: [^\n]*时使用[^\n]*\n---\n/);
+    assert.match(skill, /什么时候释放由使用者决定，或按使用这份预订的工作流的规定/);
+    assert.doesNotMatch(skill, /终态以后释放|下一个用例再占/);
+    assert.match(skill, /`lease unregister <前缀> --reason <理由>`/);
+  });
+
+  it('ships an example only for an action the skill teaches', () => {
+    const taught = new Set([...text('SKILL.md').matchAll(/^- `([a-z_]+)`：/gm)].map((match) => match[1]));
+    for (const name of readdirSync(join(PACK_DIR, 'examples')).filter((file) => file.startsWith('start-run-'))) {
+      const action = (json(`examples/${name}`) as { arguments: { parameters: { action: string } } }).arguments.parameters.action;
+      assert.ok(taught.has(action), `${name}: ${action}`);
+    }
   });
 });

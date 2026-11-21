@@ -333,6 +333,21 @@ test('the answer names the next step: the delivery directory when every case pas
   const live = await hub(running, []); t.after(live.close);
   const early = await run(live.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
   if (early.code === 0) assert.equal('message' in JSON.parse(early.stdout), false, 'a job still running is no round to conclude');
+
+  const incomplete = jobs();
+  incomplete.jobs[0].rows = [{ item: '990000000000000301', dynamic_terminal: 'no_verdict', report_check: { resolved: false } }, { item: '990000000000000302', dynamic_terminal: 'pass' }] as typeof incomplete.jobs[0]['rows'];
+  const partial = await hub(incomplete, [deviceReturn]); t.after(partial.close);
+  const open = await run(partial.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
+  assert.equal(open.code, 0, open.stderr);
+  assert.equal(JSON.parse(open.stdout).message, '这一轮上机 2 条里 1 条的报告不完整、还没有结论，其余 1 条通过：跑 pipeline.ts rework（SKILL.md 第 5 节），这 1 条不进交付卷，照它的 message 办');
+
+  const resent = jobs();
+  resent.jobs[0].rows = [{ item: '990000000000000301', dynamic_terminal: 'pass' }, { item: '990000000000000302', dynamic_terminal: 'pass' }] as typeof resent.jobs[0]['rows'];
+  resent.jobs.unshift({ ...resent.jobs[0], job: 'e'.repeat(64), outcome: 'not_dispatched', rows: null, device_return: null, missing_facts: [{ fact: '合成：预订没有覆盖整个测试环境', next_action: '补齐预订后原样重交原提交' }] } as unknown as typeof resent.jobs[0]);
+  const later = await hub(resent, [deviceReturn]); t.after(later.close);
+  const ran = await run(later.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
+  assert.equal(ran.code, 0, ran.stderr);
+  assert.equal(JSON.parse(ran.stdout).message, '这一轮上机 2 条全部通过，没有要返工的：按 tools/delivery.md 第 5 节组交付目录（assemble-delivery.ts），最后回复用它给的回复', 'a job not dispatched before the one that ran is no reason to call the round not dispatched');
 });
 
 const stoppedLog = text([

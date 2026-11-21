@@ -37,7 +37,7 @@ test('a configuration command a runner rule covers needs no inverse, and the con
   assert.deepEqual(verdicts(checkCommandsKnown(value)), ['support'], JSON.stringify(checkCommandsKnown(value)));
   const [shape] = checkContractShape(value);
   assert.equal(shape?.verdict, 'support', JSON.stringify(shape));
-  assert.match(shape!.statement, /其中 1 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 fixture\/runner-cleanup-rules@cccccccccccc：自第 2 条用例开始前及整本关闭连接时，按清配对象（widget-seat）上 cmd_config 发出的命令行逐条比前缀、第一条命中即用；原合约的源文件摘要表里没有这个文件，摘要只是 Hub 侧声明，跳转机上的字节未核对）/);
+  assert.match(shape!.statement, /其中 1 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 fixture\/runner-cleanup-rules@cccccccccccc：自第 2 条用例开始前及整本关闭连接时，按清配对象（widget-seat）上发出的配置命令行逐条比前缀、第一条命中即用；原合约的源文件摘要表里没有这个文件，摘要只是 Hub 侧声明，跳转机上的字节未核对）/);
   assert.match(shape!.statement, /widget-seat 的“demo pool add one 10”（规则 2，fixture\/runner-cleanup-rules 第 9 行，前缀“demo pool”）/);
   const data = (shape as { data?: { runner_cleanup?: { pinned: boolean; covered: unknown[] } } }).data;
   assert.equal(data?.runner_cleanup?.pinned, false);

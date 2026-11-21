@@ -109,6 +109,7 @@ function outcomeProblems(outcomes: CheckOutcome[], pack: string, reasons: readon
   return undefined;
 }
 
+/** data.sandbox is the Hub's own mark of a sandbox failure; a pack function cannot give it (D05 R[7]). */
 function withoutSandboxMark(outcomes: CheckOutcome[]): CheckOutcome[] {
   return outcomes.map((o) => (o.data !== undefined && Object.hasOwn(o.data, 'sandbox') ? { ...o, data: Object.fromEntries(Object.entries(o.data).filter(([key]) => key !== 'sandbox')) } : o));
 }

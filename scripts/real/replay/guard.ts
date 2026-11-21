@@ -24,7 +24,7 @@ const MIN_RANDOM = 8;
 export function mirrorBase(requested?: string): string {
   const candidates = requested ? [requested] : ['/tmp', tmpdir()];
   for (const candidate of candidates) {
-    try { return realpathSync(candidate); } catch { }
+    try { return realpathSync(candidate); } catch { /* try the next candidate */ }
   }
   throw new ReplayError('没有可用的临时目录来建立等长镜像前缀', 2);
 }
@@ -185,7 +185,7 @@ export function runGuard(sandbox: GuardSandbox, entry: string, input: Record<str
         const value = JSON.parse(Buffer.concat(side).toString() || '[]');
         outside = Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
       }
-      catch { }
+      catch { /* a report that did not arrive whole counts as none */ }
       const forbidden = err.includes('REPLAY_NETWORK_BLOCKED') || /ERR_ACCESS_DENIED[\s\S]*(?:FileSystemWrite|ChildProcess|WorkerThreads)/.test(err);
       writePrivate(evidence, 'stdout.txt', out);
       writePrivate(evidence, 'stderr.txt', err);

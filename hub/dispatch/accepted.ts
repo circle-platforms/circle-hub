@@ -14,7 +14,7 @@ import { toolLocalMinute } from '../telemetry/api.ts';
 import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, type DispatchDiagnostics } from './reasons.ts';
 export type { DispatchMissingFact, DispatchDiagnostics } from './reasons.ts';
 
-export interface DispatchNote extends Partial<DispatchDiagnostics> { run?: string; job?: string; executor?: string; result?: string; text: string }
+export interface DispatchNote extends Partial<DispatchDiagnostics> { run?: string; job?: string; executor?: string; result?: string; ended?: RunJob['ended']; text: string }
 /** How long an accepted submission waits for the job to be reserved before it answers that the release check still runs. */
 export const RESERVE_WAIT_MS = 60_000;
 /** The answer's limits (submit_result output schema): at most 16 notes, each at most 800 characters. */
@@ -45,7 +45,7 @@ function capped(notes: Noted[], run: string): DispatchNote[] {
   const kept = notes.slice(-(MAX_NOTES - 1));
   return [{ run, text: `这个运行另有 ${notes.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...whole(kept)];
 }
-const REREAD = '下一步由模型稍后把这次脚本合并原样再交一次，读取进展';
+const REREAD = '下一步由模型稍后原样重交，读取进展';
 
 async function activeAdmin(records: Pick<RecordsKit, 'principals'>) {
   return (await records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
@@ -89,7 +89,7 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   const open = attemptsOf(service);
   const jobs = await readRunJobs(records, service, admin, run, { unbound: true });
   // Every job of the run ended without an effect that could repeat (see `retriable`): a repeat of the ready submission
-  // tries again, as the reference compile skill resubmits a workbook its gateway refused. Any other job is only read.
+  // tries again. Any other job is only read.
   const retry = ready && jobs.length > 0 && jobs.every(retriable);
   if (jobs.length && !retry) { open.delete(run); return capped(await Promise.all(jobs.map(job => jobNote(service, job, false, administrative))),run); }
   if (!ready) return [];
@@ -102,9 +102,9 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
     await Promise.race([attempt.woken, new Promise<void>((resolve) => { timer = setTimeout(resolve, wait); })]);
     clearTimeout(timer);
   }
-  if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return answer([{ job, ...(administrative ? { executor } : {}), text: clip(`Hub ${earlier.length ? '已再次' : '已'}按工作流的规定自动开始上机验证；${REREAD}；上机验证结束后，同样的答复里带设备输出的引用`) }]); }
+  if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return answer([{ job, ...(administrative ? { executor } : {}), ended: null, text: clip(`Hub ${earlier.length ? '已再次' : '已'}按工作流的规定自动开始上机验证；${REREAD}；上机验证结束后，同样的答复里带设备输出的引用`) }]); }
   const settled = attempt.settled;
-  if (!settled) return answer([{ text: `Hub 正在做上机验证前的核对；${REREAD}` }]);
+  if (!settled) return answer([{ ended: null, text: `Hub 正在做上机验证前的核对；${REREAD}` }]);
   if (attempt.uncertain || settled.outcome==='unknown') { const next=administrative?`circle-hub run show ${run} --json`:'不要重新发送或另开运行；联系管理员只读核对原作业';return answer([{outcome:'unknown',missing_facts:[{fact:'本次调用未取得可核对的派发记录',next_action:next}],next_action:next,text:clip(`上机验证状态尚未确认；不要重新发送或另开运行；下一步：${next}`)}]); }
   open.delete(run);
   // A dispatch that ended before any reservation was refused at the effect boundary (for example without a lease covering
@@ -119,7 +119,7 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   const missing = !administrative ? settled.member_missing_facts ?? (settled.checks ? releaseMissingFacts(settled.checks) : []) : [];
   const facts = missing.length ? missing : [{fact:settled.error_code==='SOURCE_NOT_PERMITTED'?'运行发起账户没有可采用的测试环境使用授权；请核对有效分配及账户状态':settled.error_code==='SOURCE_UNAVAILABLE'?'本次环境权限尚未核对，缺少可读取的核对事实；请恢复权限检查接线或读取能力':administrative ? clip(settled.reason ?? '上机验证前核对没有通过') : '上机前的放行条件尚未满足，未取得可采用的派发结果',next_action:'核对本次预订和核验结果；需要管理员处理的，联系管理员核对'}];
   const category=invocationCategory(settled);
-  const fact=facts.map(row=>row.fact).join('；'),next=facts.map(row=>row.next_action).join('；');
+  const fact=facts.map(row=>row.fact).join('；'),next=[...new Set(facts.map(row=>row.next_action))].join('；');
   return answer([{ ...(administrative && settled.executor ? { executor: settled.executor } : {}), outcome:'not_dispatched', ...(settled.error_code?{error_code:settled.error_code}:{}), missing_facts:facts,next_action:next,text:clip(category?formatCallError(category,fact,next):'上机验证没有发出：'+fact) }]);
 }
 
@@ -132,7 +132,7 @@ export async function runInFlight(records: Pick<RecordsKit, 'store' | 'principal
   return running.length ? { jobs: running.map((job) => job.job), notes: capped(await Promise.all(running.map(job => jobNote(service, job, false, administrative))),run) } : null;
 }
 
-const NO_MORE = '这次上机验证不会再做上机验证：能在自动化用例、自动化用例 Excel 或预订上改的，改好后重新开始上机验证；其余等管理员处理';
+const NO_MORE = '这次运行不会再上机验证：能在产物或预订上改的，改好后开始新的运行；其余等管理员处理';
 const RETRY = '原样重交，Hub 会再试一次';
 
 /**
@@ -171,7 +171,6 @@ function nextStep(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>): s
   return status.device_return ? '读设备返回，读完再判断' : '读结果引用看逐条结论';
 }
 
-/** A failed bed check is reported as it is, the way the reference compile skill reports its environment check before a run. */
 function details(status: JobStatus): string[] {
   const parts = (status.failed_checks ?? []).map((check) => `未通过的核对 ${[check.step, check.seat, check.check].filter(Boolean).join(' ')}：${check.missing_fact}`);
   if (status.failed_conditions?.length) parts.push(`未满足的条件：${status.failed_conditions.map((c) => `${c.pointer} ${c.operator}`).join('、')}`);
@@ -213,9 +212,9 @@ export function runnerNoted(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boun
   if (administrative && status.reason) parts.push(`原因：${status.reason}`);
   if (administrative) parts.push(...details(status));
   else if (diagnostics.missing_facts.length) parts.push(diagnostics.missing_facts.map(fact => fact.fact).join('；'));
-  const next = administrative ? diagnostics.next_action : job.ended==='unknown'||status.frozen||status.outcome==='unknown' ? nextStep(job) : diagnostics.missing_facts.length && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? diagnostics.missing_facts.map(fact=>fact.next_action).join('；') : nextStep(job);
+  const next = administrative ? (job.ended === null && !status.frozen && !diagnostics.missing_facts.length ? nextStep(job) : diagnostics.next_action) : job.ended==='unknown'||status.frozen||status.outcome==='unknown' ? nextStep(job) : diagnostics.missing_facts.length && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? diagnostics.missing_facts.map(fact=>fact.next_action).join('；') : nextStep(job);
   const action = retried ? '这次重交 Hub 已再试，见后面的条目'+(!administrative && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? `；${next}` : '') : next;
   const category = job.ended==='done'&&status.outcome==='not_dispatched'&&!status.frozen ? invocationCategory(status) : null;
   const told = (step: string) => clip(category?formatCallError(category,parts.join('；'),step):[...parts,`下一步：${step}`].join('；'));
-  return { job: job.job, ...(status.result ? { result: status.result } : {}), ...diagnostics, text: told(action), next: action, pointed: told(category?'下一步同上':'同上') };
+  return { job: job.job, ended: job.ended, ...(status.result ? { result: status.result } : {}), ...diagnostics, text: told(action), next: action, pointed: told(category?'下一步同上':'同上') };
 }

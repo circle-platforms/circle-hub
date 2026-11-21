@@ -1,7 +1,7 @@
 // Checks of the docs package against the repository: see docs-rules.ts for what each rule means.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, statSync, lstatSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { trackedSourcePaths } from './tracked-source.ts';
 import { join } from 'node:path';

@@ -7,12 +7,14 @@ export interface RefusalTextInput {
   callerIsAdmin: boolean;
 }
 
+type NextInput = Pick<RefusalTextInput, 'callerIsAdmin'> & Partial<Pick<RefusalTextInput, 'run' | 'executor'>>;
+
 export interface RefusalConditionSpec {
   condition: string;
   name: string;
   disclose(fields: readonly ReleaseField[], callerIsAdmin: boolean): string;
-  nextCaller(input: RefusalTextInput): string;
-  nextAdmin(input: RefusalTextInput): string;
+  nextCaller(input: NextInput): string;
+  nextAdmin(input: NextInput): string;
 }
 
 const digest12 = (hex: string): string => (hex.length >= 12 ? hex.slice(0, 12) : hex);
@@ -34,44 +36,40 @@ function discloseIdentity(fields: readonly ReleaseField[], callerIsAdmin: boolea
   const actualTarget = target ? side(target, 'actual') : '未知';
   const actualManifest = manifest ? side(manifest, 'actual') : '未知';
   if (!callerIsAdmin) {
-    return `这次脚本合并核对的是：测试环境 ${actualTarget}，清单 ${actualManifest}，和执行器声明的不一样`;
+    return `这次核验的是：测试环境 ${actualTarget}，清单 ${actualManifest}，和执行器声明的不一样`;
   }
   const expectedTarget = target ? side(target, 'expected') : '未知';
   const expectedManifest = manifest ? side(manifest, 'expected') : '未知';
-  return `执行器声明的是：测试环境 ${expectedTarget}，清单 ${expectedManifest}。这次脚本合并核对的是：测试环境 ${actualTarget}，清单 ${actualManifest}`;
+  return `执行器声明的是：测试环境 ${expectedTarget}，清单 ${expectedManifest}。这次核验的是：测试环境 ${actualTarget}，清单 ${actualManifest}`;
 }
 
 function discloseGeneric(fields: readonly ReleaseField[], callerIsAdmin: boolean): string {
   const mismatched = fields.filter((row) => row.matches === false);
   if (mismatched.length === 0) return '程序已判定为错误';
-  if (!callerIsAdmin) return '这次脚本合并核对的值与放行所需不一致';
+  if (!callerIsAdmin) return '这次核验的值与放行所需不一致';
   return mismatched.map((row) => `${row.field} 执行器或放行所需摘要 ${digest12(row.expected_sha256)}，这次核对摘要 ${digest12(row.actual_sha256)}`).join('；');
 }
 
-function explainCommand(input: RefusalTextInput): string {
-  return `circle-hub job explain-release --run ${input.run} --executor ${input.executor}`;
+function withExplain(input: NextInput, body: string): string {
+  return input.callerIsAdmin && input.run && input.executor ? `${body}。逐条对照：circle-hub job explain-release --run ${input.run} --executor ${input.executor}` : body;
 }
 
-function withExplain(input: RefusalTextInput, body: string): string {
-  return input.callerIsAdmin ? `${body}。逐条对照：${explainCommand(input)}` : body;
-}
-
-function nextIdentity(input: RefusalTextInput): string {
+function nextIdentity(input: NextInput): string {
   if (input.callerIsAdmin) {
-    return withExplain(input, '按执行器声明的测试环境和清单重新做脚本编写和脚本合并，再发起上机验证；或者登记一个和这次核对一致的执行器');
+    return withExplain(input, '按执行器声明的测试环境和清单重新开始运行并重新核验，再发起上机验证；或者登记一个和这次核验一致的执行器');
   }
-  return '先确认预订的是哪个测试环境，用它对应的运行环境配置重新做脚本编写和脚本合并，再发起上机验证；预订和配置都没错时，请管理员核对执行器的声明';
+  return '先确认预订的是哪个测试环境，用它对应的运行环境配置重新开始运行并重新核验，再发起上机验证；预订和配置都没错时，请管理员核对执行器的声明';
 }
 
-function nextResultErrors(input: RefusalTextInput): string {
-  return withExplain(input, '按脚本合并返回的错误逐条改正，脚本合并正确后再发起上机验证');
+function nextResultErrors(input: NextInput): string {
+  return withExplain(input, '按核验返回的错误逐条改正，核验正确后再发起上机验证');
 }
 
-function nextGeneric(input: RefusalTextInput): string {
+function nextGeneric(input: NextInput): string {
   if (input.callerIsAdmin) {
     return withExplain(input, '按上面的错误补齐后，再发起上机验证');
   }
-  return '能在自动化用例 Excel 或预订上改的，改正后再发起上机验证；其余请管理员按放行条件逐条对照处理';
+  return '能在产物或预订上改的，改正后再发起上机验证；其余请管理员按放行条件逐条对照处理';
 }
 
 export const REFUSAL_CONDITIONS: readonly RefusalConditionSpec[] = [
@@ -85,7 +83,7 @@ export const REFUSAL_CONDITIONS: readonly RefusalConditionSpec[] = [
   {
     condition: 'result.errors',
     name: '核验结果没有未消除错误',
-    disclose: () => '脚本合并的结果里还有错误',
+    disclose: () => '这次核验返回的错误还没有改正',
     nextCaller: nextResultErrors,
     nextAdmin: nextResultErrors,
   },
@@ -107,6 +105,16 @@ export const REFUSAL_CONDITIONS: readonly RefusalConditionSpec[] = [
 
 function specFor(condition: string): RefusalConditionSpec | undefined {
   return REFUSAL_CONDITIONS.find((row) => condition === row.condition || (row.condition.endsWith('.') && condition.startsWith(row.condition)));
+}
+
+export function releaseNextStep(check: Pick<ReleaseCheck, 'condition' | 'satisfied'>, input: NextInput): string {
+  if (check.satisfied === null) {
+    return input.callerIsAdmin
+      ? withExplain(input, '补齐缺失事实后再发起上机验证')
+      : '请管理员补齐缺失事实并查看放行条件逐条对照；当前账户先不要再发起这次上机验证';
+  }
+  const spec = specFor(check.condition);
+  return (input.callerIsAdmin ? spec?.nextAdmin : spec?.nextCaller)?.(input) ?? nextGeneric(input);
 }
 
 function flattenUnique(checks: readonly ReleaseCheck[]): ReleaseCheck[] {
@@ -131,10 +139,7 @@ export function formatReleaseRefusal(input: RefusalTextInput): string {
   if (errors.length === 0) {
     const missing = unchecked.map((check) => check.missing_fact).filter((text): text is string => typeof text === 'string' && text.length > 0);
     const what = missing[0] ?? '放行条件还不能判定';
-    const next = input.callerIsAdmin
-      ? withExplain(input, '补齐缺失事实后再发起上机验证')
-      : '请管理员补齐缺失事实并查看放行条件逐条对照；当前账户先不要再发起这次上机验证';
-    return `${what}；现在可以做：${next}；原因还没查清`;
+    return `${what}；现在可以做：${releaseNextStep(unchecked[0], input)}；原因还没查清`;
   }
   const errorLines = errors.map((check) => {
     const spec = specFor(check.condition);
@@ -146,14 +151,11 @@ export function formatReleaseRefusal(input: RefusalTextInput): string {
     unchecked.length === 0
       ? ''
       : `另有 ${unchecked.length} 条因为上面的错误还没有核对。`;
-  const first = errors[0];
-  const firstSpec = specFor(first.condition);
-  const next = (input.callerIsAdmin ? firstSpec?.nextAdmin : firstSpec?.nextCaller)?.(input) ?? nextGeneric(input);
   return [
     `放行条件里有 ${errors.length} 条错误。`,
     errorLines.join(''),
     uncheckedLine,
-    `现在可以做：${next}`,
+    `现在可以做：${releaseNextStep(errors[0], input)}`,
   ].filter((part) => part.length > 0).join('');
 }
 

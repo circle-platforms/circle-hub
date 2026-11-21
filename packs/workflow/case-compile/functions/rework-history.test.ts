@@ -522,6 +522,8 @@ test('the commands a runner types by itself, a mode switch or one its log shows 
     priorPlan: plan,
   });
   assert.ok(extractCaseDeviceEvidence(given('demo#widget enter\ndemo(config)#widget leave\ndemo#\n', null)), 'a line after which the prompt changes switched the mode');
+  assert.ok(extractCaseDeviceEvidence(given('demo#widget enter\ndemo(config)#exit\n', null)), 'a last line after which the session ends left it');
+  assert.throws(() => extractCaseDeviceEvidence(given('demo#widget wipe all\nok\n', null)), /不属于同一次运行（未截断设备会话未命中任何计划命令，却执行了“widget wipe all”等其他命令）/, 'a last command that printed output is still a command of the session');
   const log = ['2026-01-01 00:00:01 192.0.2.10 - sends command in config: widget wipe all', '2026-01-01 00:00:02 #######   step1: 合成步骤一', '2026-01-01 00:00:02 192.0.2.10 - sends command in config: widget setup-early'].join('\n');
   assert.ok(extractCaseDeviceEvidence(given('demo#widget wipe all\nok\ndemo#\n', log)), 'the log shows the runner sent it before the first step');
   assert.throws(() => extractCaseDeviceEvidence(given('demo#widget wipe all\nok\ndemo#\n', null)), /不属于同一次运行（未截断设备会话未命中任何计划命令，却执行了“widget wipe all”等其他命令）/, 'without the log nothing says the runner sent it');

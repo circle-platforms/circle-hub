@@ -1,0 +1,38 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "source",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<原件>",
+      "type": "path"
+    },
+    {
+      "name": "model",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<模型文件>",
+      "type": "path"
+    },
+    {
+      "name": "candidates",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<候选>",
+      "type": "path"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<结果>",
+      "type": "path"
+    }
+  ]
+}

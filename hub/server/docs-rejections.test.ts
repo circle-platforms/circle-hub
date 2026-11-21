@@ -67,10 +67,10 @@ for (const role of ['member', 'administrator'] as const) {
   test(`${role}: an identity written with something after @ that is no digest is told so, not refused for a missing resource`, async (t) => {
     const w = await world(NAMES); t.after(() => w.close());
     const who = role === 'member' ? w.member : w.admin;
-    const wrong = await w.started(who, 'doc:doc:synthetic-contract@apv');
+    const wrong = await w.started(who, 'doc:doc:synthetic-contract@draft');
     assert.deepEqual(wrong.errors.map((e) => [e.code, e.path]), [['SUBMISSION_SCHEMA_VIOLATION', '/inputs/spec']]);
-    assert.equal(wrong.errors[0]!.message, '「@apv」不是命名文档的摘要：@ 后面要写 64 位十六进制摘要，只读当前版本就不写 @ 和后面的部分');
-    assert.equal(wrong.text, '参数无效：「@apv」不是命名文档的摘要：@ 后面要写 64 位十六进制摘要，只读当前版本就不写 @ 和后面的部分。照 doc:doc:<名字> 或 doc:doc:<名字>@<64 位摘要> 写。');
+    assert.equal(wrong.errors[0]!.message, '「@draft」不是命名文档的摘要：@ 后面要写 64 位十六进制摘要，只读当前版本就不写 @ 和后面的部分');
+    assert.equal(wrong.text, '参数无效：「@draft」不是命名文档的摘要：@ 后面要写 64 位十六进制摘要，只读当前版本就不写 @ 和后面的部分。照 doc:doc:<名字> 或 doc:doc:<名字>@<64 位摘要> 写。');
     assert.doesNotMatch(wrong.text, /没有能读|资源|circle-hub|连接|暂时不可用/, 'no resource is missing, and no administrator has anything to repair');
     const capitals = await w.started(who, 'doc:doc:Synthetic-Contract');
     assert.deepEqual(capitals.errors.map((e) => e.code), ['SUBMISSION_SCHEMA_VIOLATION']);
@@ -101,7 +101,7 @@ test('with no named document published the refusal names none, and the type is r
   const w = await world([]); t.after(() => w.close());
   const wrong = await w.started(w.member, 'doc:doc:case-contract');
   assert.equal(wrong.errors[0]!.message, 'Hub 里没有命名文档 case-contract');
-  assert.equal(await w.hub.docs.reader.accepts('doc:doc:synthetic-contract@apv'), true, 'the Hub reads this type: what is wrong with the identity is the read’s to say');
+  assert.equal(await w.hub.docs.reader.accepts('doc:doc:synthetic-contract@draft'), true, 'the Hub reads this type: what is wrong with the identity is the read’s to say');
   assert.equal(await w.hub.docs.reader.accepts('doc:other:x'), false);
 });
 

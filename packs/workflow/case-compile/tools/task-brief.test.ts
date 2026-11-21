@@ -566,7 +566,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     await writeFile(join(workDir, 'run', 'knowledge', 'manual.txt'), '');
     await writeFile(join(workDir, 'run', 'run.json'), JSON.stringify({
       run: 'run_01cccccccccccccccccccccccc',
-      product: 'synth-apv',
+      product: 'famx',
       version: '1.0.0',
       build: '1.0.0-b1',
       groups: [{ kind: 'case-compile', profile: { bed: 'bed-a' } }],
@@ -659,7 +659,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     await mkPlanFile('p2.json', 'b');
     const mkCustomMarkerRet = async (dir: string, runId: string, cmd: string) => {
       await mkdir(join(workDir, dir, 'cases', CASE_A), { recursive: true });
-      await writeFile(join(workDir, dir, 'cases', CASE_A, 'dut0.txt'), `apv#${cmd}\nok\napv#\n`);
+      await writeFile(join(workDir, dir, 'cases', CASE_A, 'dut0.txt'), `demo#${cmd}\nok\ndemo#\n`);
       await writeFile(join(workDir, dir, 'cases', CASE_A, 'log.txt'), `${cmd} done\nCUSTOM_MARKER_FAIL id: 901\n`);
       await writeFile(join(workDir, dir, 'index.json'), JSON.stringify({
         schema: 'device-returns@1',

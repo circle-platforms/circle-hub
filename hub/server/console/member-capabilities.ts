@@ -1,4 +1,4 @@
-import type { MemberCapabilities } from '../../records/api.ts';
+import type { MemberCapabilities, MemberEnvironmentCapability } from '../../records/api.ts';
 import { AccessError } from '../../records/api.ts';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { emptyBlock, definitions, html, href, link, page, pageLayout, table, type Html } from './html.ts';
@@ -9,16 +9,7 @@ import { mePath } from './routes.ts';
 const EMPTY_TEAM = '请管理员把当前账户加入团队';
 export const NO_ASSIGNMENT_LABEL = '已无分配';
 
-type OccupancyRow = { since: string; until: string | null; mine: boolean; name?: string; holder?: string };
-
-type EnvironmentRow = {
-  name: string;
-  assigned?: boolean;
-  can_use?: boolean;
-  canUse?: boolean;
-  occupancy: MemberCapabilities['environments'][number]['occupancy'] | OccupancyRow[] | null;
-  missing?: readonly string[];
-};
+type OccupancyRow = NonNullable<MemberEnvironmentCapability['occupancy']>[number];
 
 function occupancyUntil(until: string | null): Html {
   return until ? when(until) : html`不限时长`;
@@ -27,32 +18,24 @@ function occupancyUntil(until: string | null): Html {
 function occupancyLine(row: OccupancyRow): Html {
   const until = occupancyUntil(row.until);
   if (row.mine) return html`本人占用 · 自 ${when(row.since)} · ${until}`;
-  const who = row.name ?? row.holder ?? '其他成员';
-  return html`被${who}的运行占用 · 自 ${when(row.since)} · ${until}`;
+  return html`被${row.name}的运行占用 · 自 ${when(row.since)} · ${until}`;
 }
 
-function occupancyText(occupancy: EnvironmentRow['occupancy']): Html {
+function occupancyText(occupancy: MemberEnvironmentCapability['occupancy']): Html {
   if (occupancy === null) return html`未知（空租约不代表物理空闲）`;
-  if (Array.isArray(occupancy)) {
-    if (occupancy.length === 0) return html`本地无租约（不代表物理空闲）`;
-    return html`${occupancy.map((row, index) => html`${index > 0 ? html`<br>` : ''}${occupancyLine(row)}`)}`;
-  }
-  return occupancyLine(occupancy);
+  if (occupancy.length === 0) return html`本地无租约（不代表物理空闲）`;
+  return html`${occupancy.map((row, index) => html`${index > 0 ? html`<br>` : ''}${occupancyLine(row)}`)}`;
 }
 
-export function environmentIsOccupied(occupancy: EnvironmentRow['occupancy']): boolean {
-  if (occupancy === null) return false;
-  if (Array.isArray(occupancy)) return occupancy.length > 0;
-  return true;
+export function environmentIsOccupied(occupancy: MemberEnvironmentCapability['occupancy']): boolean {
+  return occupancy !== null && occupancy.length > 0;
 }
 
-export function environmentLacksAssignment(item: EnvironmentRow): boolean {
-  if (item.assigned === false) return true;
-  if (item.can_use === false || item.canUse === false) return true;
-  return (item.missing ?? []).some((line) => line.includes(NO_ASSIGNMENT_LABEL) || line.includes('占着但已无分配'));
+export function environmentLacksAssignment(item: Pick<MemberEnvironmentCapability, 'assigned' | 'can_use' | 'missing'>): boolean {
+  return !item.assigned || !item.can_use || item.missing.some((line) => line.includes(NO_ASSIGNMENT_LABEL));
 }
 
-function occupancyCell(item: EnvironmentRow, enforced: boolean): Html {
+function occupancyCell(item: MemberEnvironmentCapability, enforced: boolean): Html {
   const text = occupancyText(item.occupancy);
   if (enforced && environmentIsOccupied(item.occupancy) && environmentLacksAssignment(item)) {
     return html`${text} ${chip(NO_ASSIGNMENT_LABEL, 'unchecked')}`;
@@ -82,24 +65,9 @@ function packRows(items: MemberCapabilities['workflows']): unknown[][] {
   ]);
 }
 
-function alignConnectionDenial(row: { reason: string; nextAction: string }): { reason: string; nextAction: string } {
-  let { reason, nextAction } = row;
-  if (reason === '尚无可用的已分配连接') {
-    reason = '尚无可用的已分配业务系统';
-    nextAction = '请管理员向所属团队或全体账户分配所需业务系统';
-  }
-  if (reason.startsWith('连接“') && reason.endsWith('”已停用')) {
-    reason = `业务系统「${reason.slice(3, -4)}」已停用`;
-    nextAction = '请管理员核对并启用已分配的业务系统';
-  }
-  nextAction = nextAction.replaceAll('向你所属', '向所属').replaceAll('把你加入', '把当前账户加入');
-  return { reason, nextAction };
-}
-
 function displayDenials(rows: MemberCapabilities['denials']): Html {
   if (rows.length === 0) return html`<p class="ch-meta">暂无已披露的限制。</p>`;
-  const aligned = rows.map(alignConnectionDenial);
-  return table(['原因', '下一步'], aligned.map((row) => [row.reason, row.nextAction]));
+  return table(['原因', '下一步'], rows.map((row) => [row.reason, row.nextAction]));
 }
 
 function environmentSection(view: MemberCapabilities): Html {
@@ -118,7 +86,7 @@ function environmentSection(view: MemberCapabilities): Html {
     { title: '测试环境', hint: access.enforced === true ? undefined : '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断' },
     table(
       ['名称', '占用'],
-      view.environments.map((item) => [item.name, occupancyCell(item as EnvironmentRow, access.enforced === true)]),
+      view.environments.map((item) => [item.name, occupancyCell(item, access.enforced === true)]),
       { title: '当前没有已核对可占用的测试环境', text: '这只反映已核对的分配与本地租约，不证明物理空闲或无权。' },
     ),
   );

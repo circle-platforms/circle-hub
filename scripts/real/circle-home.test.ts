@@ -9,6 +9,7 @@ import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, PLUMB_KEY_SECRET, SERVER_NAME, TOKEN
 import { parseEnvText } from './lib/env-file.ts';
 import { extractTaughtCommands, instantiateTaughtCommand } from './taught-commands.ts';
 import { decisionOf, parseCommand } from './guard-lib.ts';
+import { SUBAGENT_ROLES, renderTaskBrief } from '../../packs/workflow/case-compile/functions/subagent-roles.ts';
 
 // Invented content: section names follow the owner's file layout, every value is made up.
 const ENV = [
@@ -612,7 +613,7 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
         {
           name: 'case-compile',
           dir: fileURLToPath(new URL('../../packs/workflow/case-compile/', import.meta.url)),
-          expectedScripts: ['assemble-delivery.ts', 'carry-plans.ts', 'check-plan.ts', 'cmd-select-plumb.ts', 'download-returns.ts', 'download-run.ts', 'fetch-run.ts', 'fidelity-apply.ts', 'fidelity-brief.ts', 'fidelity-plumb.ts', 'generate-workbook.ts', 'normalize-mindmap.ts', 'open-compile.ts', 'open-merge.ts', 'pipeline.ts', 'submit-plans.ts', 'task-brief.ts'],
+          expectedScripts: ['assemble-delivery.ts', 'download-returns.ts', 'download-run.ts', 'normalize-mindmap.ts', 'open-compile.ts', 'open-merge.ts', 'pipeline.ts', 'task-brief.ts'],
         },
         {
           name: 'recompose',
@@ -696,6 +697,19 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
           assert.ok(seenScripts.has(script), `${pack.name}: missing parsed usage for tools/${script}`);
         }
       }
+
+      const caseCompileSkill = join(home, 'skills', 'case-compile');
+      const taskFileScripts = new Set<string>();
+      for (const role of SUBAGENT_ROLES) {
+        const taskFile = renderTaskBrief({ role, caseRef: 'case-01', briefPath: 'briefs/0.md', outPath: 'plans/0.json', skillDir: caseCompileSkill, frozenRunDir: join(written.workdir, 'case-compile-run'), scopeText: '合成范围' });
+        for (const usage of extractTaughtCommands(taskFile, `case-compile 任务文件（${role.stageLabel}）`)) {
+          for (const command of instantiateTaughtCommand(usage, { skillDir: caseCompileSkill })) {
+            taskFileScripts.add((parseCommand(command).words[1] ?? '').split('/').slice(-3).join('/'));
+            expectAllowed(decide(command), `${label} ${usage.source}: ${command}`);
+          }
+        }
+      }
+      assert.deepEqual([...taskFileScripts].sort(), ['case-compile/tools/check-plan.ts', 'case-compile/tools/cmd-lookup.ts', 'recompose/tools/check-record.ts']);
 
       const jevDir = fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/tools/jev/', import.meta.url));
       const jevSkill = join(home, 'skills', 'jev');

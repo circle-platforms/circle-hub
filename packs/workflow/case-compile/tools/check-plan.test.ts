@@ -359,14 +359,14 @@ test('check-plan accepts valid precondition_source on flat steps and rejects mal
                 blocks: [],
                 steps: [
                   {
-                    object: 'apv0',
+                    object: 'dut0',
                     method: 'cmd_config',
-                    args: ['synconfig peer 192.0.2.2'],
+                    args: ['widget peer 192.0.2.2'],
                     keywords: {},
                     description: '根据手册示例补齐本端对端地址',
                     precondition_source: {
-                      reference: 'knowledge:manual#synconfig',
-                      text: 'Configure peer IP on both nodes before running synconfig',
+                      reference: 'knowledge:manual#widget-peer',
+                      text: 'Configure the peer address on both nodes before running widget peer',
                     },
                   },
                 ],
@@ -385,7 +385,7 @@ test('check-plan accepts valid precondition_source on flat steps and rejects mal
 
     const invalidPath = join(dir, 'invalid.json');
     const badJson = JSON.parse(await readFile(validPath, 'utf8'));
-    badJson.slots.plan[0].data.steps[0].precondition_source = { reference: 'knowledge:manual#synconfig', text: '' };
+    badJson.slots.plan[0].data.steps[0].precondition_source = { reference: 'knowledge:manual#widget-peer', text: '' };
     await writeFile(invalidPath, JSON.stringify(badJson));
     const invalidRes = await runCli(['--file', invalidPath]);
     assert.equal(invalidRes.code, 1);

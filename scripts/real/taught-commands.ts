@@ -55,6 +55,7 @@ export const TAUGHT_PLACEHOLDERS: Record<string, string> = {
   范围文件: 'scope.md',
   结构简报JSON: 'briefs dir/brief 01.json',
   计划或判断JSON: 'plans dir/plan 01.json',
+  '命令词，可带参数': 'widget show',
   计划JSON相对路径: 'plans dir/plan 01.json',
   目标计划相对路径: 'plans dir/plan 01.json',
   verdict相对路径: 'audit dir/case_1.12345678.verdict.json',

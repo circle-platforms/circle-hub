@@ -1193,6 +1193,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/read-manifest.v1.schema.json",
     "what": "property-deleted: variables[].at",
+    "baseSha256": "7040680d3ddf3876e994b8869c3a90cc6df7ae53eb402a864aaa9dc6da69d4f6",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1200,6 +1201,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/read-manifest.v1.schema.json",
     "what": "property-deleted: variables[].name",
+    "baseSha256": "7040680d3ddf3876e994b8869c3a90cc6df7ae53eb402a864aaa9dc6da69d4f6",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1207,6 +1209,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/read-manifest.v1.schema.json",
     "what": "property-deleted: variables[].decision",
+    "baseSha256": "7040680d3ddf3876e994b8869c3a90cc6df7ae53eb402a864aaa9dc6da69d4f6",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1214,6 +1217,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/read-manifest.v1.schema.json",
     "what": "required-added: variables[].kind",
+    "baseSha256": "7040680d3ddf3876e994b8869c3a90cc6df7ae53eb402a864aaa9dc6da69d4f6",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1221,6 +1225,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/secret.v1.schema.json",
     "what": "value-narrowed: entry",
+    "baseSha256": "e257e5cc9c1400a03e1b16868d05ec02318df45c1fc7563fbe2dddddebbdc46c",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1228,6 +1233,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/secret.v1.schema.json",
     "what": "property-deleted: consumers",
+    "baseSha256": "e257e5cc9c1400a03e1b16868d05ec02318df45c1fc7563fbe2dddddebbdc46c",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1235,6 +1241,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/secret.v1.schema.json",
     "what": "required-added: version",
+    "baseSha256": "e257e5cc9c1400a03e1b16868d05ec02318df45c1fc7563fbe2dddddebbdc46c",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1242,6 +1249,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/secret.v1.schema.json",
     "what": "required-added: set_by",
+    "baseSha256": "e257e5cc9c1400a03e1b16868d05ec02318df45c1fc7563fbe2dddddebbdc46c",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1249,6 +1257,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/secret.v1.schema.json",
     "what": "required-added: set_at",
+    "baseSha256": "e257e5cc9c1400a03e1b16868d05ec02318df45c1fc7563fbe2dddddebbdc46c",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1256,6 +1265,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/secret.v1.schema.json",
     "what": "required-added: revoked",
+    "baseSha256": "e257e5cc9c1400a03e1b16868d05ec02318df45c1fc7563fbe2dddddebbdc46c",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1263,6 +1273,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/tree_root.v1.schema.json",
     "what": "property-deleted: variables[].at",
+    "baseSha256": "10c6568c353bae30672a9a20645801189b47ad722a027caef27004238819f0f7",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1270,6 +1281,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/tree_root.v1.schema.json",
     "what": "property-deleted: variables[].name",
+    "baseSha256": "10c6568c353bae30672a9a20645801189b47ad722a027caef27004238819f0f7",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1277,6 +1289,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/tree_root.v1.schema.json",
     "what": "property-deleted: variables[].decision",
+    "baseSha256": "10c6568c353bae30672a9a20645801189b47ad722a027caef27004238819f0f7",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   },
@@ -1284,6 +1297,7 @@
     "check": "contract-schema-freeze",
     "path": "contracts/generated/schemas/tree_root.v1.schema.json",
     "what": "required-added: variables[].kind",
+    "baseSha256": "10c6568c353bae30672a9a20645801189b47ad722a027caef27004238819f0f7",
     "reason": "Owner decision 2026-11-21: no backward compatibility before the first release. No release/* tag exists, so the baseline is the merge-base with main, and this line changes the shape on purpose.",
     "removeWhen": "first release/* tag"
   }

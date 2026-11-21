@@ -22,17 +22,17 @@ interface SyntheticEntry { kind: 'behaviour' | 'definition'; statement: string; 
 interface SyntheticNode { path: string; children: string[]; entries: SyntheticEntry[] }
 
 const PARAGRAPH = [
-  '在设备中，SDNS动态域名负责处理A、AAAA、CNAME、MX和DNSKEY类型的DNS解析请求，如果请求的动态域名不存在或者请求为动态域名的其他类型，则交给全域名解析功能负责处理。',
-  '使用全域名解析功能前需要启用SDNS功能（通过命令“**sdns on**”）。',
+  '在设备中，widget 服务负责处理甲、乙、丙三类合成请求，如果请求的对象不存在或者请求为该对象的其他类型，则交给默认处理功能负责处理。',
+  '使用默认处理功能前需要启用 widget 功能（通过命令“**widget on**”）。',
   ...Array.from({ length: 24 }, (_, i) => `第${i + 1}条说明：合成手册句，用来把这一段拉长到一千字以上，包含 ASCII 词 weight、policy、pool，也包含全角标点“”（）；以及星号 * 与下划线 _name_。`),
 ].join('');
 
 const EXAMPLE = [
-  'sdns dnssec keygen www.example.com zsk',
-  'sdns dnssec keygen www.example.com ksk',
-  'show sdns dnssec keygen',
-  'sdns dnssec keypub www.example.com zsk\n"Kwww.example.com.+005+00942+zsk+RSASHA1+1024"',
-  'sdns dnssec zonesig www.example.com',
+  'widget key make www.example.test beta',
+  'widget key make www.example.test alpha',
+  'show widget key',
+  'widget key publish www.example.test beta\n"www.example.test-beta-00942"',
+  'widget key sign www.example.test',
 ];
 
 const SOURCE = 'ab'.repeat(32), OTHER_SOURCE = 'cd'.repeat(32);
@@ -58,7 +58,7 @@ const NODES: SyntheticNode[] = [
   { path: '/manual/guide/sequence', children: [], entries: SEQUENCE },
   { path: '/manual/guide/overview', children: [], entries: [
     { kind: 'behaviour', statement: PARAGRAPH },
-    { kind: 'behaviour', statement: '* 动态DNS ACL规则\n\n系统会在功能开启后生成动态规则（通过“ddos dns on”启用）。\n\n* 第二段\n\n    缩进的代码行 --option "value"' },
+    { kind: 'behaviour', statement: '* 动态 ACL 规则\n\n系统会在功能开启后生成动态规则（通过“widget guard on”启用）。\n\n* 第二段\n\n    缩进的代码行 --option "value"' },
     { kind: 'behaviour', statement: '(none) | “quoted” | **bold** | `code` | <angle> | [square] | {curly}' },
   ] },
 ];

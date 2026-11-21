@@ -125,7 +125,8 @@ export function recordFor(item: Row, file: Row, model: string): Row {
 
 export function itemSubmission(item: Row, file: Row, model: string): Row {
   const data = recordFor(item, file, model);
-  return { item: item.id, handling: 'handled', slots: { record: [{ text: '模型的重组判断', quotes: data.atoms.map((a: Row) => ({ reference: a.quote_ref, text: a.text })), data }] } };
+  const method = typeof data.contract.method?.text === 'string' ? data.contract.method.text.trim() : '';
+  return { item: item.id, handling: 'handled', slots: { record: [{ text: method ? `验证方法：${method}` : '没有写出验证方法', quotes: data.atoms.map((a: Row) => ({ reference: a.quote_ref, text: a.text })), data }] } };
 }
 
 export function submissionFor(run: Row, files: Row[], model: string, partial = false): Row {

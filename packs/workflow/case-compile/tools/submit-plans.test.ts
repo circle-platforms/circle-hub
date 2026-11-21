@@ -139,7 +139,7 @@ test('a long answer is kept whole in a file beside the plans and shown clipped',
 });
 
 test('a length placeholder is expanded, written back to its file and sent as written back; a malformed one stops the submission', async () => {
-  const withDomain = { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'a', quotes: [], data: { steps: [{ args: ['sdns host name "{{domain:253}}" 60'] }, { args: ['dig {{domain:253}} A'] }] } }] } };
+  const withDomain = { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'a', quotes: [], data: { steps: [{ args: ['widget host name "{{domain:253}}" 60'] }, { args: ['probe {{domain:253}} A'] }] } }] } };
   const directory = await plans({ '01.json': withDomain, '02.json': item('doc:b') });
   const stub = await hub(said('受理'));
   const result = await run(stub.url, directory);
@@ -150,7 +150,7 @@ test('a length placeholder is expanded, written back to its file and sent as wri
   const literal = /"([^"]+)"/.exec(config)![1];
   assert.equal(literal.length, 253);
   assert.ok(literal.split('.').every((label: string) => label.length <= 63));
-  assert.equal(query, `dig ${literal} A`);
+  assert.equal(query, `probe ${literal} A`);
   assert.deepEqual(stub.seen[0].body.params.arguments.items[0], written);
   assert.match(result.out, /01\.json：\{\{domain:253\}\} → 253 字符，4 段，各段 63\/63\/63\/61/);
   assert.equal(JSON.parse(await readFile(join(directory, '02.json'), 'utf8')).item, 'doc:b');

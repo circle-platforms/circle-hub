@@ -1322,7 +1322,7 @@ nav_order: 3
     - 原因：Claude Code 2.1.277 起，工作目录及其上级都没有 CLAUDE.md 时才读 AGENTS.md。本仓库原来有 CLAUDE.md，有约束力的 AGENTS.md 因此不会自动加载；circle 和 circle-packs 只有 AGENTS.md，已经按这种方式加载。
     - 并进的内容见任务页。命令清单原样保留作速查，和 Verification 一节有重叠；其余 AGENTS.md 已有的条文不再重复；“Git and commits”一节与 circle-packs 相同，没有改。
     - 不进仓库的：hook、按路径加载的规则和插件开关，放在开发者本机的 Claude Code 设置里。
-    - 并入我们线时（2026-11-21）：并进 AGENTS.md 的内容按我们线当时的 CLAUDE.md 取，即十五个包及其依赖方向和职责、没有 references 两项的命令清单、读取失败规则的现行写法；我们线已经没有 `foundation/` 和 `references/` 目录，主线并进的那两条不带过来。可擦除语法的具体禁项、类型化错误码和包函数是纯模块三处照主线并进。
+    - 并入我们线时（2026-11-21）：并进 AGENTS.md 的内容按我们线当时的 CLAUDE.md 取，即十五个包及其依赖方向和职责、读取失败规则的现行写法；可擦除语法的具体禁项、类型化错误码和包函数是纯模块三处照主线并进。整合 PR 照主线恢复了 `foundation/`、`references/` 和核对它们的检查，所以命令清单带 references 的两项，来源一节照主线保留冻结的 Circle 源基线。
 
 ## 2026-11-21 编译流程整合
 

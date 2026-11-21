@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "command-tools",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "kind": "skill",
   "title": "命令工具",
   "description": "按命令树逐词解析命令、由产品规则推出逆命令。工作流内嵌使用，不写命令",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "b0af122e3f62f8096b1a429f4ca8a15177cc5bc868c5b1df04976f4b591ec6f9",
-      "size": 302
+      "sha256": "5bc64917dbd0cd126c27df1b1c0b264745942b95f62a8adede34a111dc67663a",
+      "size": 504
     },
     {
       "path": "functions/modules/command-check/command-policy.ts",

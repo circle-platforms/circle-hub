@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { canonicalBytes, sha256Hex } from '../records/api.ts';
-import { reportMissingFacts, statusDiagnostics } from './reasons.ts';
+import { BOOKING_NEXT, releaseMissingFacts, reportMissingFacts, statusDiagnostics } from './reasons.ts';
 import { runnerNote } from './accepted.ts';
 import type { RunJob } from './read-runs.ts';
 
@@ -104,10 +104,29 @@ test('the shared classification does not infer occupancy from LEASE_UNAVAILABLE 
 });
 
 test('missing prerequisites and expired bookings use not_found while confirmed other-holder conflicts use occupied',()=>{
-  const missing=job({error_code:'EFFECT_CONTENT_UNVERIFIED',member_missing_facts:[{fact:'这次运行缺少判断为正确的脚本合并结果',next_action:'先完成脚本合并'}]});
-  assert.match(runnerNote(missing).text,/^不存在：.*缺少.*脚本合并结果/);
+  const missing=job({error_code:'EFFECT_CONTENT_UNVERIFIED',member_missing_facts:[{fact:'这次运行缺少判断为正确的核验结果',next_action:'先完成核验'}]});
+  assert.match(runnerNote(missing).text,/^不存在：.*缺少.*核验结果/);
   const expired=job({error_code:'LEASE_EXPIRED',member_missing_facts:[{fact:'原预订已经过期，缺少当前有效预订',next_action:'重新预订后核验'}]});
   assert.match(runnerNote(expired).text,/^不存在：.*过期/);
   const occupied=job({error_code:'LEASE_UNAVAILABLE',call_error_category:'occupied',member_missing_facts:[{fact:'测试环境由另一运行持有',next_action:'等该运行释放后原样重试'}]});
   assert.match(runnerNote(occupied).text,/^已被占用：.*另一运行持有/);
+});
+
+test('a member refused at a release check reads the next step of that check, not a call to the administrator',()=>{
+  const identity={condition:'proof.executor_identity',label:'核验目标与清单等于执行器声明',satisfied:false,fields:[]};
+  const unchecked={condition:'release.parameters.keys',label:'派发参数字段集合与核验事实一致',satisfied:null,fields:[]};
+  const [mismatch,waiting]=releaseMissingFacts([identity,unchecked,{...identity,condition:'result.errors',label:'核验结果没有未消除错误',satisfied:true}]);
+  assert.equal(mismatch.fact,'核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致');
+  assert.match(mismatch.next_action,/^先确认预订的是哪个测试环境，用它对应的运行环境配置重新开始运行并重新核验/);
+  assert.equal(waiting.fact,'核对项目“派发参数字段集合与核验事实一致”缺少前置事实，尚未核对');
+  assert.match(waiting.next_action,/^请管理员补齐缺失事实/);
+  const shown=statusDiagnostics(job({admin_release:[identity]}),false);
+  assert.deepEqual(shown.missing_facts,[mismatch]);
+  assert.doesNotMatch(JSON.stringify(shown),/联系管理员核对当前环境的清单绑定|circle-hub|脚本合并|脚本编写/);
+});
+
+test('a run without the whole booking is told to book it and start the run again, in one wording',()=>{
+  const diagnosed=statusDiagnostics(job({booking:{target:'合成环境',coverage_complete:false,required_resources:2,missing_resources:2,declared_device_count:2}}),false);
+  assert.equal(diagnosed.next_action,BOOKING_NEXT);
+  assert.doesNotMatch(BOOKING_NEXT,/脚本合并|脚本编写/);
 });

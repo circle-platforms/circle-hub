@@ -5,7 +5,7 @@ import { readdir, readFile, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { openTestRecords } from '../testing/records.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
-import { newId, type RecordsKit } from './api.ts';
+import { newId } from './api.ts';
 let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });
 after(() => postgres?.stop());

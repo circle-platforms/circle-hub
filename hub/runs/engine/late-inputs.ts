@@ -32,6 +32,7 @@ export function lateSlotsOf(workflow: Pick<LoadedWorkflow, 'workflow'>): Set<str
   return new Set(workflow.workflow.inputs.filter((slot) => slot.from_runs?.after_start === true).map((slot) => slot.slot));
 }
 
+/** A replay recomputes from the references a stored result recorded in locks.late, never from the latest accepted result. */
 export function lateFromLocks(late: LateLocks | undefined): LateEvaluation | undefined {
   return late === undefined ? undefined : { inputs: late.inputs.map((row) => ({ ...row })), expect: late.refresh };
 }

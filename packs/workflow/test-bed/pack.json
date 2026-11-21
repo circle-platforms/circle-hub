@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "test-bed",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "kind": "workflow",
   "title": "自动化测试环境",
   "description": "读管理员发布的自动化测试环境清单（命名文档），按需求搜索自动化测试环境（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订自动化测试环境（租约键 bed/<自动化测试环境>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "ca2c4ae720e92a3486325f8c8b6c624308532cd89cbe706cbbead80e7a6b8d6c",
-      "size": 5416
+      "sha256": "564ecd64bb9c0397d5a1975d7c3652e1d6cb4f3bc1d8b0ce6b6fca44eda53c18",
+      "size": 5760
     },
     {
       "path": "checks.json",
@@ -25,11 +25,6 @@
       "path": "examples/start-run-acquire.json",
       "sha256": "c9cfc838911c1ebcb4abcf29067b68d9d711563867bfbb2a196cf4626a538dc2",
       "size": 707
-    },
-    {
-      "path": "examples/start-run-extend.json",
-      "sha256": "51302e9ecf40aeb171087a8be04d4d4342638905cd2e508d8b645f60088009af",
-      "size": 758
     },
     {
       "path": "examples/start-run-facts.json",

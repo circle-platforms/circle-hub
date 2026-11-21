@@ -38,21 +38,6 @@ import { resolveRunDirectory } from './workspace-path.ts';
 const USAGE =
   'node <技能目录>/tools/cmd-select-plumb.ts --run <runDir> [--out-dir <dir>] [--item <id|index>] [--limit <1..40>] [--base-url <url>] [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--out <summary.json>] [--key-stdin]';
 
-const OPTIONS: Record<string, boolean> = {
-  run: true,
-  'base-url': true,
-  'out-dir': false,
-  item: false,
-  limit: false,
-  model: false,
-  'ca-file': false,
-  'ca-sha256': false,
-  'cache-dir': false,
-  'audit-out': false,
-  out: false,
-};
-const BOOLEAN_OPTIONS = ['strict-review', 'key-stdin', 'no-cache', 'allow-insecure-http'] as const;
-
 const VALUE_FLAGS = new Set(['--run', '--out-dir', '--item', '--limit', '--out', ...SHARED_PLUMB_VALUE_FLAGS]);
 const BOOL_FLAGS = new Set(['--strict-review', ...SHARED_PLUMB_BOOL_FLAGS]);
 

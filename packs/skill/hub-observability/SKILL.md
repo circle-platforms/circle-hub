@@ -1,6 +1,6 @@
 ---
 name: hub-observability
-description: Inspect Circle Hub session calls, MCP tool usage, failures, latency, and resource use through the authenticated Hub connection. Use when asked what a Hub session called or where a Hub request spent time.
+description: 使用者问某个 Hub 会话调用了什么、哪次失败、慢在哪或用了多少资源时使用：经已登录的 Hub 连接查会话调用、工具使用、失败、耗时和资源用量。
 ---
 
 # Hub 调用观测

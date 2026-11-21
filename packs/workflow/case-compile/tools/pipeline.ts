@@ -8,7 +8,7 @@ import { isRecord, parseCliOptions } from '../functions/text.ts';
 import { chooseSiblings, neededShapes, planCommandLines, siblingNote, type SiblingPlan } from '../functions/sibling-reference.ts';
 import { deviceReadNote, readableLines, readFileName, READ_LINES_PER_CASE, READS_DIRECTORY } from '../functions/device-read-lines.ts';
 import { HISTORY_DIRECTORY } from '../functions/device-history.ts';
-import { culprits, failed as failedRow, notDispatched, nothingPassed, nothingToRework, progress, reworkOpened, toStart, unjudged, volumeClosed, volumeOpened, volumePassed, volumesUsed } from '../functions/next-step.ts';
+import { allPassed, culprits, failed as failedRow, notDispatched, nothingPassed, nothingReady, progress, ranJob, reopened, reworkOpened, toStart, unjudged, volumeClosed, volumeOpened, volumePassed, volumesUsed } from '../functions/next-step.ts';
 
 export type Stage = 'queued' | 'recomposing' | 'accepted' | 'writing' | 'auditing' | 'ready' | 'stopped' | 'excluded';
 export interface CaseState {
@@ -19,6 +19,8 @@ export interface CaseState {
   device_passed?: boolean;
   record_accepted?: boolean; regated?: boolean;
   decision?: string;
+  retried?: string;
+  run_index?: string;
   carry?: string;
   device_rounds?: number;
   prior?: Array<{ plans: string; returns: string; notes?: string }>;
@@ -40,7 +42,7 @@ export interface PipelineState {
 }
 export interface Action { label: string; subagent_type: string; description: string }
 export interface Step {
-  actions: Action[]; running: string[]; ready: string[]; stopped: Array<{ label: string; reason: string }>; queued: number; all_done: boolean; message: string;
+  actions: Action[]; running: string[]; ready: string[]; stopped: Array<{ label: string; reason: string; retried?: true }>; queued: number; all_done: boolean; message: string;
   waiting?: Array<{ label: string; reason: string }>;
   excluded?: Array<{ label: string; reason: string }>;
 }
@@ -162,7 +164,7 @@ async function dispatchWrite(state: PipelineState, c: CaseState, gates: Pick<Gat
   const prior = c.prior ?? [];
   const history = prior.length ? ['--round', String(prior.length + 1), '--prior-plans', prior.map((p) => p.plans).join(','), '--prior-returns', prior.map((p) => p.returns).join(','), ...(prior.every((p) => p.notes) ? ['--prior-notes', prior.map((p) => p.notes!).join(',')] : [])] : [];
   const task = join('tasks', 'write', prior.length ? `${c.k}-r${prior.length + 1}-${c.attempts.write}.md` : `${c.k}-${c.attempts.write}.md`);
-  const brief = await gates.run('case-compile', 'task-brief.ts', ['--role', '脚本编写', '--case', c.autoid, '--brief', join(state.plan_dir, 'briefs', `${c.plan.index}.md`), '--out', join('cases', c.k, 'plan', `${c.plan.index}.json`), '--task-file', task, '--run', state.plan_dir, ...history, ...(note ? ['--note', note] : [])]);
+  const brief = await gates.run('case-compile', 'task-brief.ts', ['--role', '脚本编写', '--case', c.autoid, '--brief', join(state.plan_dir, 'briefs', `${runIndex(c)}.md`), '--out', join('cases', c.k, 'plan', `${c.plan.index}.json`), '--task-file', task, '--run', state.plan_dir, ...history, ...(note ? ['--note', note] : [])]);
   if (brief.code !== 0) throw new Error(`生成编写任务失败（${c.autoid}）：${words(brief)}`);
   return (c.action = { label: label('write', c.k), subagent_type: WRITER, description: brief.stdout.trim() });
 }
@@ -170,7 +172,7 @@ const READS_PER_COMPILE = 40, READ_WAIT_MS = 180_000, READ_MISSES_END = 3;
 async function deviceReadReference(state: PipelineState, c: CaseState, gates: Pick<Gates, 'run'> & Partial<Gates>): Promise<string | undefined> {
   const reads = state.device_reads;
   if (!reads) return undefined;
-  const brief = await readFile(join(state.plan_dir, 'briefs', `${c.plan.index}.md`), 'utf8').catch(() => null);
+  const brief = await readFile(join(state.plan_dir, 'briefs', `${runIndex(c)}.md`), 'utf8').catch(() => null);
   if (brief === null) return undefined;
   const now = Date.now(), asked = reads.asked ?? (reads.asked = {});
   const overdue = Object.values(asked).filter((at) => now - at > READ_WAIT_MS).length;
@@ -195,10 +197,10 @@ async function deviceReadReference(state: PipelineState, c: CaseState, gates: Pi
 }
 async function siblingReference(state: PipelineState, c: CaseState): Promise<string | undefined> {
   const text = (path: string) => readFile(path, 'utf8').catch(() => null);
-  const brief = await text(join(state.plan_dir, 'briefs', `${c.plan.index}.md`));
+  const brief = await text(join(state.plan_dir, 'briefs', `${runIndex(c)}.md`));
   if (brief === null) return undefined;
   let record: unknown = null;
-  try { record = JSON.parse((await text(join(state.plan_dir, 'records', `${c.plan.index}.json`))) ?? 'null'); } catch { record = null; }
+  try { record = JSON.parse((await text(join(state.plan_dir, 'records', `${runIndex(c)}.json`))) ?? 'null'); } catch { record = null; }
   const needed = neededShapes(brief, record);
   if (needed.size === 0) return undefined;
   const siblings: SiblingPlan[] = [];
@@ -215,6 +217,7 @@ const noteFor = (c: CaseState, note?: string) => {
   const decision = c.decision ? (/^(模型|使用者)决定[：:]/.test(c.decision) ? c.decision : `重做这一条的依据：${c.decision}`) : '';
   return [decision, failed].filter(Boolean).join('；').slice(0, 2 * NOTE_CHARS) || undefined;
 };
+const runIndex = (c: CaseState) => c.run_index ?? c.plan.index;
 function stop(c: CaseState, reason: string) { c.stage = 'stopped'; c.stopped = reason.slice(0, NOTE_CHARS); delete c.pending; }
 export const unavailable = (run: ToolRun) => run.code !== 0 && /暂时不可用/.test(`${run.stderr}\n${run.stdout}`);
 function wait(c: CaseState, reason: string): null { c.pending = reason.slice(0, NOTE_CHARS); return null; }
@@ -227,6 +230,7 @@ async function plumbGate(g: Gates, tool: string, args: string[]): Promise<ToolRu
   return g.run('case-compile', tool, args, `${g.plumbKey}\n`);
 }
 
+// submit-records prints only the start of the Hub's answer and names the file that holds all of it.
 export async function hubAnswer(sent: ToolRun): Promise<Record<string, unknown> | null> {
   const named = /全文在 (.+?\.txt)/.exec(sent.stdout);
   if (named && existsSync(named[1]!)) { const whole = envelopeIn(await readFile(named[1]!, 'utf8')); if (whole) return whole; }
@@ -256,6 +260,7 @@ async function latestAnswer(state: PipelineState): Promise<Record<string, unknow
 }
 
 const submitDir = (state: PipelineState) => `${state.records_dir.replace(/\/+$/, '')}-submit`;
+// The records the Hub held satisfied, kept as the bytes it judged: a late recomposer may rewrite records/<index>.json.
 const acceptedDir = (state: PipelineState) => `${state.records_dir.replace(/\/+$/, '')}-accepted`;
 async function keepAccepted(state: PipelineState, c: CaseState): Promise<void> {
   const name = `${c.recompose.index}.json`, kept = join(acceptedDir(state), name);
@@ -314,12 +319,12 @@ async function recomposeEnded(state: PipelineState, c: CaseState, g: Gates, fini
 }
 
 async function toWriter(state: PipelineState, c: CaseState, g: Pick<Gates, 'run'> & Partial<Gates>): Promise<Action | null> {
-  if (!existsSync(join(state.plan_dir, 'briefs', `${c.plan.index}.md`))) {
+  if (!existsSync(join(state.plan_dir, 'briefs', `${runIndex(c)}.md`))) {
     c.stage = 'accepted';
     if (!g.hub || !g.token) return null;
     const refreshed = await g.run('case-compile', 'refresh-late.ts', ['--hub', g.hub, '--run', state.plan_run, '--dir', state.plan_dir], `${g.token}\n`);
     if (unavailable(refreshed)) return wait(c, `Hub 暂时取不到这一条的重组结果：${words(refreshed)}`);
-    if (refreshed.code !== 0 || !existsSync(join(state.plan_dir, 'briefs', `${c.plan.index}.md`))) { stop(c, `重组已被 Hub 受理，但脚本编写运行刷新不到这一条：${words(refreshed) || '没有写出编写简报'}`); return null; }
+    if (refreshed.code !== 0 || !existsSync(join(state.plan_dir, 'briefs', `${runIndex(c)}.md`))) { stop(c, `重组已被 Hub 受理，但脚本编写运行刷新不到这一条：${words(refreshed) || '没有写出编写简报'}`); return null; }
   }
   return dispatchWrite(state, c, g);
 }
@@ -337,7 +342,7 @@ async function writeEnded(state: PipelineState, c: CaseState, g: Gates, finished
   const audited = await plumbGate(g, 'fidelity-plumb.ts', ['--run', state.plan_dir, '--plans', plans, '--briefs', audits, '--base-url', g.plumb, '--key-stdin']);
   if (unavailable(audited)) return wait(c, `场景保真审计暂时做不了：${words(audited)}`);
   if (audited.code !== 0) {
-    if ((await pendingBriefs(audits)).length) return dispatchAudit(state, c, g);
+    if ((await pendingBriefs(audits)).length) return dispatchAudit(c, g);
     if (/^参数无效/.test(words(audited))) return again(`场景保真审计做不了：${words(audited)}`);
     stop(c, `场景保真审计没有做完（Plumb）：${words(audited)}`); return null;
   }
@@ -349,7 +354,7 @@ async function pendingBriefs(audits: string): Promise<string[]> {
   return names.filter((n) => n.endsWith('.brief.json') && !names.includes(n.replace(/\.brief\.json$/, '.verdict.json'))).sort();
 }
 
-async function dispatchAudit(state: PipelineState, c: CaseState, g: Pick<Gates, 'run'>): Promise<Action> {
+async function dispatchAudit(c: CaseState, g: Pick<Gates, 'run'>): Promise<Action> {
   const audits = join('cases', c.k, 'audit'), brief = (await pendingBriefs(audits))[0]!;
   c.stage = 'auditing'; c.audits = (c.audits ?? 0) + 1; delete c.pending;
   const task = join('tasks', 'audit', `${c.k}-${c.attempts.write}-${c.audits}.md`);
@@ -382,9 +387,9 @@ async function auditApplied(state: PipelineState, c: CaseState, g: Pick<Gates, '
   const plans = join('cases', c.k, 'plan'), plan = join(plans, `${c.plan.index}.json`), audits = join('cases', c.k, 'audit');
   const again = async (reason: string) => c.attempts.write >= state.max_attempts ? (stop(c, `脚本编写 ${c.attempts.write} 次仍未通过：${reason}`), null) : dispatchWrite(state, c, g, `上一次没有通过：${reason}`);
   if ((await pendingBriefs(audits)).length) {
-    if (!afterAudit) return dispatchAudit(state, c, g);
+    if (!afterAudit) return dispatchAudit(c, g);
     if ((c.audits ?? 0) >= state.max_attempts) { stop(c, `保真盲审 ${c.audits} 次都没有写出判断`); return null; }
-    return dispatchAudit(state, c, g);
+    return dispatchAudit(c, g);
   }
   const applied = await g.run('case-compile', 'fidelity-apply.ts', ['--run', state.plan_dir, '--plans', plans, '--briefs', audits]);
   if (applied.code !== 0) return again(`场景保真审计没有通过：${words(applied)}`);
@@ -394,7 +399,7 @@ async function auditApplied(state: PipelineState, c: CaseState, g: Pick<Gates, '
     if (unsure.length && (c.audits ?? 0) < state.max_attempts) {
       for (const name of unsure) await rename(join(audits, name), join(audits, name.replace(/\.verdict\.json$/, '.plumb-review.json')));
       (c.review ??= []).push(`场景保真：第 ${c.attempts.write} 版计划里有 Plumb 拿不准、标为“待人工复核”的步骤；本次无人值守，改由独立盲审给出结论（Plumb 的原判断保存在 ${join(audits, unsure[0]!.replace(/\.verdict\.json$/, '.plumb-review.json'))}）`);
-      return dispatchAudit(state, c, g);
+      return dispatchAudit(c, g);
     }
   }
   if (refused) return again(`场景保真审计没有通过：${refused}。落实作者前置状态句的每条前置命令都要带 precondition_source（手册逐字引文）并挂在那条作者步骤上，保真核对才按有来源的前置豁免`);
@@ -436,12 +441,12 @@ async function fill(state: PipelineState, g: Pick<Gates, 'run'> & Partial<Gates>
 export function summary(state: PipelineState, actions: Action[]): Step {
   const running = state.cases.filter((c) => RUNNING.includes(c.stage)).map((c) => label(c.stage === 'recomposing' ? 'recompose' : c.stage === 'writing' ? 'write' : 'audit', c.k));
   const ready = state.cases.filter((c) => c.stage === 'ready').map((c) => c.k);
-  const stopped = state.cases.filter((c) => c.stage === 'stopped').map((c) => ({ label: `${c.k} ${c.autoid}`, reason: c.stopped ?? '' }));
+  const stopped = state.cases.filter((c) => c.stage === 'stopped').map((c) => ({ label: `${c.k} ${c.autoid}`, reason: c.stopped ?? '', ...(c.retried === state.plan_run ? { retried: true as const } : {}) }));
   const queued = state.cases.filter((c) => c.stage === 'queued' || c.stage === 'accepted').length;
   const excluded = state.cases.filter((c) => c.stage === 'excluded').map((c) => ({ label: `${c.k} ${c.autoid}`, reason: c.excluded ?? '' }));
   const allDone = !running.length && !queued && !actions.length;
   const waiting = state.cases.filter((c) => c.pending && c.stage !== 'stopped' && c.stage !== 'ready').map((c) => ({ label: c.stage === 'accepted' ? c.k : label(c.stage === 'recomposing' ? 'recompose' : c.stage === 'writing' ? 'write' : 'audit', c.k), reason: c.pending! }));
-  const message = progress({ cases: state.cases.length, toStart: actions.length, running: running.length, queued, ready: ready.length, stopped: stopped.length, excluded: excluded.length, waiting: waiting.map((w) => w.label), allDone, ...(state.open ? { open: state.open } : {}) });
+  const message = progress({ cases: state.cases.length, toStart: actions.length, running: running.length, queued, ready: ready.length, stopped: stopped.length, retried: stopped.filter((row) => row.retried).length, excluded: excluded.length, waiting: waiting.map((w) => w.label), allDone, ...(state.open ? { open: state.open } : {}) });
   return { actions, running, ready, stopped, queued, all_done: allDone, message, ...(waiting.length ? { waiting } : {}), ...(excluded.length ? { excluded } : {}) };
 }
 
@@ -491,10 +496,11 @@ export function forLead(step: Step): Omit<Step, 'actions'> & { to_start: string[
 }
 
 export async function retry(state: PipelineState, which: string, decision: string, g: Pick<Gates, 'run'> & Partial<Gates>): Promise<Step> {
-  const c = state.cases.find((row) => row.k === which.trim() || row.autoid === which.trim());
-  if (!c) throw new Error(`--case 写 status 里的序号或 autoid（看到 ${which.slice(0, 40)}）`);
+  const key = which.trim(), c = state.cases.find((row) => row.k === key || row.autoid === key || row.plan.item === key);
+  if (!c) throw new Error(`--case 写 status 里的序号、autoid 或 Hub 答复里的 item（看到 ${which.slice(0, 40)}）`);
   if (c.stage === 'excluded') throw new Error(`${c.k} 不在交付卷里（${c.excluded ?? '没有通过上机'}），不再重写；它照实进报告`);
   if (c.stage !== 'stopped' && c.stage !== 'ready') throw new Error(`${c.k} 现在是 ${c.stage}，子代理还在做；只有停下的和已就绪的条目能 retry`);
+  if (c.stage === 'stopped' && c.retried === state.plan_run) throw new Error(`${c.k} 在这次脚本编写运行里 retry 过一次又停下，不再 retry：等其余的走完，照汇总的 message 跑 pipeline.ts reopen 把它排除出这次编译，停下的原因照实写进报告`);
   if (!decision.trim()) throw new Error('--note 写对这一条的决定或 Hub 退回它的原话');
   if (c.stage === 'ready') {
     c.decision = decision.trim().slice(0, NOTE_CHARS); c.stage = 'accepted'; c.attempts.write = 0; delete c.ready_sha256; delete c.pending;
@@ -503,7 +509,7 @@ export async function retry(state: PipelineState, which: string, decision: strin
     return summary(state, again);
   }
   const atAudit = (c.stopped ?? '').startsWith('场景保真审计没有做完') && existsSync(join('cases', c.k, 'plan', `${c.plan.index}.json`));
-  c.decision = decision.trim().slice(0, NOTE_CHARS); c.carry = c.stopped; delete c.stopped; c.regated = false;
+  c.decision = decision.trim().slice(0, NOTE_CHARS); c.carry = c.stopped; delete c.stopped; c.regated = false; c.retried = state.plan_run;
   const actions: Action[] = [];
   if (atAudit) {
     const action = await auditApplied(state, c, g, false);
@@ -524,7 +530,7 @@ async function deviceRows(returnsDir: string): Promise<Map<string, Record<string
   let index: unknown;
   try { index = JSON.parse(await readFile(join(returnsDir, 'index.json'), 'utf8')); } catch { throw new Error(`--returns ${returnsDir} 里没有 index.json；写 download-returns.ts 存回传的那个目录`); }
   const jobs = isRecord(index) && Array.isArray(index.jobs) ? index.jobs.filter(isRecord) : [];
-  const ran = jobs.filter((job) => Array.isArray(job.rows) && job.rows.length).at(-1);
+  const ran = ranJob(jobs);
   if (!ran) {
     const last = jobs.at(-1);
     const why = last && Array.isArray(last.missing_facts) ? last.missing_facts.filter(isRecord).map((f) => String(f.fact ?? '')).filter(Boolean).join('；') : '';
@@ -554,9 +560,19 @@ async function carryPlans(state: PipelineState, base: string, planDir: string, w
   return new Map((manifest.carried ?? []).map((row) => [String(row.autoid), row]));
 }
 
-function switchRun(state: PipelineState, target: string, planDir: string, openFile: string): void {
+async function switchRun(state: PipelineState, target: string, planDir: string, openFile: string): Promise<void> {
   (state.plan_history ??= []).push({ run: state.plan_run, dir: state.plan_dir });
   state.plan_run = target; state.plan_dir = planDir; state.open = openFile;
+  const at = new Map((await itemFiles(planDir).catch((): Array<{ index: string; value: Record<string, unknown> }> => [])).map((row) => [String(row.value.id), row.index]));
+  for (const c of state.cases) {
+    const index = at.get(c.plan.item);
+    if (index === undefined || index === c.plan.index) delete c.run_index; else c.run_index = index;
+  }
+}
+
+function checkOpen(state: PipelineState, open: Record<string, unknown>): void {
+  if (open.plan_run !== state.plan_run) throw new Error(`--open 写这一轮用的 open-compile 文件（它的脚本编写运行应是 ${state.plan_run}）；新的那个由本工具开`);
+  for (const field of ['subject', 'product', 'build', 'booking', 'recompose_run', 'recompose_record']) if (typeof open[field] !== 'string' || !open[field]) throw new Error(`--open 不是 open-compile.ts 写的文件（缺 ${field}）`);
 }
 
 async function takeCarried(state: PipelineState, cases: CaseState[], carriedBy: Carried, g: Gates, actions: Action[]): Promise<{ carried: string[]; regated: number }> {
@@ -575,7 +591,7 @@ async function takeCarried(state: PipelineState, cases: CaseState[], carriedBy: 
 
 const exclude = (c: CaseState, why: string) => { c.stage = 'excluded'; c.excluded = why; delete c.pending; };
 
-async function openVolume(state: PipelineState, open: Record<string, unknown>, inPlay: CaseState[], out: CaseState[], why: (c: CaseState) => string, g: Gates, done: (message: string) => Reworked): Promise<Reworked> {
+async function openVolume(state: PipelineState, open: Record<string, unknown>, inPlay: CaseState[], out: CaseState[], why: (c: CaseState) => string, g: Gates, done: (message: string) => Reworked, unsettled = false): Promise<Reworked> {
   const members = inPlay.filter((c) => !out.includes(c));
   if (!members.length) { for (const c of out) exclude(c, why(c)); return done(nothingPassed(state.cases.length)); }
   const n = (state.volume?.n ?? 0) + 1, base = `deliver-${n}`;
@@ -592,13 +608,13 @@ async function openVolume(state: PipelineState, open: Record<string, unknown>, i
     await rm(base, { recursive: true, force: true });
     throw error;
   }
-  switchRun(state, opened.target, opened.planDir, opened.openFile);
+  await switchRun(state, opened.target, opened.planDir, opened.openFile);
   state.volume = { n };
   for (const c of out) exclude(c, why(c));
   const actions: Action[] = [];
   const { carried, regated } = await takeCarried(state, members, carriedBy, g, actions);
   const step = summary(state, actions);
-  return { ...step, message: volumeOpened({ n, run: opened.target, open: opened.openFile, out: out.map((c) => c.k), carried: carried.length, regated, status: step.message }), round: n, carried, reworked: [], gave_up: out.filter((c) => c.gave_up).map((c) => ({ label: `${c.k} ${c.autoid}`, reason: c.gave_up! })) };
+  return { ...step, message: volumeOpened({ n, run: opened.target, open: opened.openFile, out: out.map((c) => c.k), unsettled, carried: carried.length, regated, status: step.message }), round: n, carried, reworked: [], gave_up: out.filter((c) => c.gave_up).map((c) => ({ label: `${c.k} ${c.autoid}`, reason: c.gave_up! })) };
 }
 
 export async function rework(state: PipelineState, open: Record<string, unknown>, returnsDir: string, notesDir: string | undefined, g: Gates): Promise<Reworked> {
@@ -606,8 +622,7 @@ export async function rework(state: PipelineState, open: Record<string, unknown>
   const unfinished = inPlay.filter((c) => c.stage !== 'ready');
   if (unfinished.length) throw new Error(`还有 ${unfinished.length} 条不是就绪（${unfinished.map((c) => c.k).join('、')}）；返工在一轮上机回来之后做`);
   if (state.volume?.result) throw new Error(volumeClosed(state.volume.result === 'passed', state.volume.result === 'passed' ? state.cases.length - inPlay.length : state.cases.length));
-  if (open.plan_run !== state.plan_run) throw new Error(`--open 写这一轮用的 open-compile 文件（它的脚本编写运行应是 ${state.plan_run}）；新的那个由本工具开`);
-  for (const field of ['subject', 'product', 'build', 'booking', 'recompose_run', 'recompose_record']) if (typeof open[field] !== 'string' || !open[field]) throw new Error(`--open 不是 open-compile.ts 写的文件（缺 ${field}）`);
+  checkOpen(state, open);
   const rows = await deviceRows(returnsDir);
   const blamed = culprits(rows.values());
   const failed: CaseState[] = [];
@@ -628,9 +643,13 @@ export async function rework(state: PipelineState, open: Record<string, unknown>
     if (!notPassed.length) { state.volume.result = 'passed'; return done(volumePassed(inPlay.length, state.cases.length - inPlay.length)); }
     if (state.volume.n >= MAX_VOLUMES) { state.volume.result = 'failed'; return done(volumesUsed(state.volume.n, notPassed.map((c) => c.k), state.cases.length)); }
     const out = failed.length ? failed : notPassed, verified = state.volume.n;
-    return openVolume(state, open, inPlay, out, (c) => `交付卷第 ${verified} 次上机没有通过（判定 ${verdictOf(c)}）`, g, done);
+    return openVolume(state, open, inPlay, out, (c) => `交付卷第 ${verified} 次上机${failed.length ? '没有通过' : '的报告不完整、没有结论'}（判定 ${verdictOf(c)}）`, g, done, !failed.length);
   }
-  if (!failed.length) return done(nothingToRework(inPlay.length, inPlay.filter((c) => verdictOf(c) !== 'pass').length));
+  if (!failed.length) {
+    const unsettled = inPlay.filter((c) => verdictOf(c) !== 'pass');
+    if (!unsettled.length) return done(allPassed(inPlay.length, state.cases.length - inPlay.length));
+    return openVolume(state, open, inPlay, unsettled, (c) => `上机第 ${round - 1} 轮的报告不完整、没有结论（判定 ${verdictOf(c)}）`, g, done, true);
+  }
   if (gaveUp.length) return openVolume(state, open, inPlay, failed, (c) => c.gave_up ?? `上机第 ${c.device_rounds} 轮没有通过（判定 ${verdictOf(c)}），同一轮已有条目用完 ${MAX_DEVICE_ROUNDS} 轮，不再开返工轮`, g, done);
   const base = `rework-${round}`, priorPlans = join(base, 'prior-plans');
   if (existsSync(base)) throw new Error(`${base} 已经存在：第 ${round} 轮返工已经开过，照 pipeline.ts status 的 message 接着做`);
@@ -638,7 +657,7 @@ export async function rework(state: PipelineState, open: Record<string, unknown>
   const noticed = new Map<CaseState, string[]>();
   let opened: { target: string; planDir: string; openFile: string }, carriedBy: Carried;
   try {
-    opened = await newPlanRun(state, open, base, [], '新的脚本编写运行', g);
+    opened = await newPlanRun(state, open, base, state.cases.filter((c) => c.stage === 'excluded').map((c) => c.autoid), '新的脚本编写运行', g);
     await mkdir(join(base, 'source-plans'), { recursive: true }); await mkdir(priorPlans, { recursive: true });
     for (const c of inPlay) {
       const kept = join('cases', c.k, 'ready', `${c.plan.index}.json`);
@@ -651,7 +670,7 @@ export async function rework(state: PipelineState, open: Record<string, unknown>
     }
     carriedBy = await carryPlans(state, base, opened.planDir, ['--rework', failed.map((c) => c.autoid).join(',')], g);
   } catch (error) { await rm(base, { recursive: true, force: true }); throw error; }
-  switchRun(state, opened.target, opened.planDir, opened.openFile);
+  await switchRun(state, opened.target, opened.planDir, opened.openFile);
   for (const c of failed) {
     const notes = notesDir && existsSync(join(notesDir, `${c.plan.index}.json`)) ? notesDir : undefined;
     (c.prior ??= []).push({ plans: priorPlans, returns: returnsDir, ...(notes ? { notes } : {}) });
@@ -664,6 +683,52 @@ export async function rework(state: PipelineState, open: Record<string, unknown>
   await fill(state, g, actions, (c, error) => stop(c, `第 ${round} 轮的编写任务没有生成：${error instanceof Error ? error.message : String(error)}`));
   const step = summary(state, actions);
   return { ...step, message: reworkOpened({ round, run: opened.target, open: opened.openFile, carried: carried.length, reworked: failed.length, status: step.message }), round, carried, reworked: failed.map((c) => c.k), gave_up: [] };
+}
+
+async function refusedCases(state: PipelineState, path: string): Promise<Map<CaseState, string>> {
+  let value: unknown;
+  try { value = await readJson(path); } catch { throw new Error(`--refused ${path} 读不出 JSON；写合并工具在它的输出目录里写的 refused.json`); }
+  if (!isRecord(value) || value.plan_run !== state.plan_run || !Array.isArray(value.cases)) throw new Error(`--refused ${path} 不是这一轮合并写的（它的脚本编写运行应是 ${state.plan_run}）`);
+  const named = new Map<CaseState, string>();
+  for (const row of value.cases.filter(isRecord)) {
+    const c = state.cases.find((x) => x.plan.item === String(row.item));
+    if (!c || c.stage !== 'ready') throw new Error(`--refused 里的条目 ${String(row.item)}${c ? ` 现在是 ${c.stage}，不是就绪的` : ' 不在这次编译里'}`);
+    named.set(c, [named.get(c), String(row.words ?? '')].filter(Boolean).join('；'));
+  }
+  if (!named.size) throw new Error(`--refused ${path} 里没有被拒的条目`);
+  return named;
+}
+
+export async function reopen(state: PipelineState, open: Record<string, unknown>, refusedFile: string | undefined, g: Gates): Promise<Step> {
+  if (state.volume?.result) throw new Error(volumeClosed(state.volume.result === 'passed', state.volume.result === 'passed' ? state.cases.filter((c) => c.stage === 'excluded').length : state.cases.length));
+  checkOpen(state, open);
+  const busy = state.cases.filter((c) => c.stage !== 'ready' && c.stage !== 'stopped' && c.stage !== 'excluded');
+  if (busy.length) throw new Error(`还有 ${busy.length} 条没走完流水线（${busy.map((c) => c.k).join('、')}）；等它们结束再新开`);
+  const untried = state.cases.filter((c) => c.stage === 'stopped' && c.retried !== state.plan_run);
+  if (untried.length) throw new Error(`${untried.map((c) => c.k).join('、')} 停下后还没有 retry 过：先各跑一次 pipeline.ts retry，再启动编写循环`);
+  const refused = refusedFile === undefined ? new Map<CaseState, string>() : await refusedCases(state, refusedFile);
+  const out = state.cases.filter((c) => c.stage === 'stopped'), members = state.cases.filter((c) => c.stage === 'ready');
+  const why = (c: CaseState) => `retry 后仍停下：${c.stopped ?? ''}`.slice(0, NOTE_CHARS);
+  if (!members.length) { for (const c of out) exclude(c, why(c)); return { ...summary(state, []), message: nothingReady(out.map((c) => c.k)) }; }
+  let n = 1;
+  while (existsSync(`reopen-${n}`)) n++;
+  const base = `reopen-${n}`, excluded = [...state.cases.filter((c) => c.stage === 'excluded'), ...out].map((c) => c.autoid);
+  await mkdir(base, { recursive: true });
+  let opened: { target: string; planDir: string; openFile: string }, carriedBy: Carried;
+  try {
+    opened = await newPlanRun(state, open, base, excluded, '新的脚本编写运行', g);
+    await mkdir(join(base, 'source-plans'), { recursive: true });
+    for (const c of members) await copyFile(join('cases', c.k, 'ready', `${c.plan.index}.json`), join(base, 'source-plans', `${c.plan.index}.json`));
+    carriedBy = await carryPlans(state, base, opened.planDir, [...(excluded.length ? ['--exclude', excluded.join(',')] : []), ...(refused.size ? ['--rework', [...refused.keys()].map((c) => c.autoid).join(',')] : [])], g);
+  } catch (error) { await rm(base, { recursive: true, force: true }); throw error; }
+  await switchRun(state, opened.target, opened.planDir, opened.openFile);
+  for (const c of out) exclude(c, why(c));
+  for (const [c, words] of refused) { c.decision = `Hub 在脚本合并运行里的原话：${words}`.slice(0, NOTE_CHARS); c.stage = 'accepted'; c.attempts.write = 0; delete c.ready_sha256; delete c.pending; }
+  const actions: Action[] = [];
+  const { carried, regated } = await takeCarried(state, members.filter((c) => !refused.has(c)), carriedBy, g, actions);
+  await fill(state, g, actions, (c, error) => stop(c, `新开运行后的编写任务没有生成：${error instanceof Error ? error.message : String(error)}`));
+  const step = summary(state, actions);
+  return { ...step, message: reopened({ run: opened.target, open: opened.openFile, carried: carried.length, regated, rewritten: refused.size, out: out.map((c) => c.k), status: step.message }) };
 }
 
 export async function collect(state: PipelineState, out: string): Promise<{ copied: number; stopped: Array<{ autoid: string; reason: string }>; not_done: string[]; reviewed?: Array<{ autoid: string; notes: string[] }>; excluded?: Array<{ autoid: string; reason: string }> }> {
@@ -756,7 +821,17 @@ export async function main(argv: string[], readStdin = readStdinLines, run?: Run
       process.stdout.write(JSON.stringify(forLead(step)) + '\n');
       return 0;
     }
-    throw new Error('子命令只有 init、resume、next、status、collect、retry、rework');
+    if (command === 'reopen') {
+      const a = parseCliOptions(rest, { state: true, open: true, refused: false, hub: true, plumb: true }, "pipeline.ts reopen --state <文件> --open <这一轮的 open-compile 文件> [--refused <合并工具写的 refused.json>] --hub <MCP地址> --plumb <Plumb地址>") as Record<string, string>;
+      const [token, plumbKey] = await readStdin();
+      if (!token || !plumbKey) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+      const state = (await readJson(a.state)) as PipelineState;
+      const step = await reopen(state, (await readJson(a.open)) as Record<string, unknown>, a.refused, { run: tools, hub: a.hub, plumb: a.plumb, token, plumbKey, start: starts });
+      await saveState(a.state, state);
+      process.stdout.write(JSON.stringify(forLead(step)) + '\n');
+      return 0;
+    }
+    throw new Error('子命令只有 init、resume、next、status、collect、retry、rework、reopen');
   } catch (error) {
     process.stdout.write(`流水线工具没有完成：${error instanceof Error ? error.message : String(error)}\n`);
     return 1;

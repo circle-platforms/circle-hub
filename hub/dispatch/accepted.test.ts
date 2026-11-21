@@ -61,7 +61,7 @@ test('a refusal at the final boundary, after the target was reached, is read and
   const reached = c.calls.length;
   const again = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.equal(again.length, 1, JSON.stringify(again)); assert.equal(again[0].job, first.job, 'the refused job is read, no new job');
-  assert.match(again[0].text, /不会再做上机验证/); assert.doesNotMatch(again[0].text, /circle-hub/);
+  assert.match(again[0].text, /不会再上机验证/); assert.doesNotMatch(again[0].text, /circle-hub/);
   assert.equal(c.calls.length, reached, 'a repeat does not reach the target again');
 });
 
@@ -81,7 +81,7 @@ test('the runner note names no administrator command in any job state', () => {
   const rows: Array<{ ended: 'done' | 'unknown' | null; boundary_refused?: boolean; status: JobStatus; expect: RegExp }> = [
     { ended: null, status: status({}), expect: /还在进行/ },
     { ended: 'unknown', status: status({ frozen: true, request_id: 'synthetic-intent:1' }), expect: /上机验证结果未知.*不要重交.*管理员处置/ },
-    { ended: 'done', status: status({ outcome: 'not_dispatched', reason: '合成：缺整个自动化测试环境的租约' }), expect: /不会再做上机验证/ },
+    { ended: 'done', status: status({ outcome: 'not_dispatched', reason: '合成：缺整个自动化测试环境的租约' }), expect: /不会再上机验证/ },
     { ended: 'done', boundary_refused: true, status: status({ outcome: 'not_dispatched', reason: '合成：缺整个自动化测试环境的租约' }), expect: /Hub 会再试一次/ },
     { ended: 'done', status: status({ outcome: 'not_dispatched', not_sent: true, reason: '合成：目标没有给出租约' }), expect: /未发出.*缺少可供成员读取的具体原因.*什么都没有发到目标.*Hub 会再试一次/ },
     { ended: 'done', status: status({ outcome: 'target_rejected', rejection_stage: 'admission' }), expect: /目标拒绝.*目标在“admission”阶段拒绝.*修正后原样重交，Hub 会再试一次/ },
@@ -136,7 +136,8 @@ test('the accepted answer reports the reserved job, then a repeat reads its prog
   assert.deepEqual(await acceptedDispatch(c.kit, c.service, c.run, false), []);
   const reserved = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.equal(reserved.length, 1, JSON.stringify(reserved)); assert.ok(reserved[0].job); assert.match(reserved[0].text, /已按工作流的规定自动开始上机验证/);
-  assert.match(reserved[0].text, /下一步由模型稍后把这次脚本合并原样再交一次，读取进展/);
+  assert.match(reserved[0].text, /下一步由模型稍后原样重交，读取进展/);
+  assert.equal(reserved[0].ended, null, 'a reserved job has not ended');
   assert.doesNotMatch(reserved[0].text, /任务包|状态未知|原因还没查清/);
   const [job] = await settled(c);
   const progress = await acceptedDispatch(c.kit, c.service, c.run, true);
@@ -320,6 +321,9 @@ test('members see a stale manifest binding as a distinct release prerequisite wi
   const c=await setup({mode:'manifest'});t.after(()=>c.close());
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
   assert.equal(note.outcome,'not_dispatched');assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('清单摘要')));
+  assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('执行器声明不一致')&&fact.next_action.startsWith('先确认预订的是哪个测试环境')),JSON.stringify(note.missing_facts));
+  assert.equal(new Set(note.missing_facts?.map(fact=>fact.fact+fact.next_action)).size,note.missing_facts?.length,'each fact once');
+  assert.doesNotMatch(note.text,/联系管理员核对当前环境的清单绑定/);
   assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub|192\.0\.2\./);
   assert.equal(c.calls.includes('send_blob'),false);
 });
@@ -425,7 +429,7 @@ test('a verified submission without booking reports authorized environment facts
   assert.equal(note.booking?.required_resources,c.executor.definition.resources.length);
   assert.equal(note.booking?.missing_resources,c.executor.definition.resources.length);
   assert.equal(note.booking?.declared_device_count,c.executor.definition.probes!.seats.length);
-  assert.match(note.next_action!,/先预订整个.*脚本编写/);
+  assert.match(note.next_action!,/^先预订整个测试环境，再带着预订重新开始运行/);
   for(const key of c.executor.definition.resources)assert.ok(!JSON.stringify(note).includes(key));
   assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|原因.*未查清/);
   assert.equal(c.calls.length,0);

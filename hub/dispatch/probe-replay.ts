@@ -6,6 +6,7 @@ import { digestOfValue } from './journal.ts';
 import { rpcResponse, toolContent } from './observations.ts';
 import type { Exchange } from './transport.ts';
 
+// A job under the booking's leases, executor definition and inventory rereads the booking's version answers; what a job may change is read for every job.
 export const BOOKING_PROBE_KEY = 'dispatch.booking_probe';
 export const bookingProbeKey = (run: string, executor: string, inventory: string, device: string): string => `${run}:${executor}:${inventory}#${device}`;
 

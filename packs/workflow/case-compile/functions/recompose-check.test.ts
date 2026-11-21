@@ -159,6 +159,10 @@ test('adapted catalog and syntax errors emit repairable recompose.command_syntax
   const uncheckedOut = outcomes(unchecked);
   assert.ok(!uncheckedOut.some(o => o.code === 'recompose.command_syntax'), JSON.stringify(uncheckedOut));
   assert.ok(uncheckedOut.some(o => o.verdict === 'unknown' && o.data?.owner === '产品包作者'), JSON.stringify(uncheckedOut));
+  const commandGap = uncheckedOut.find(o => o.verdict === 'unknown' && o.pointer === '/record/ledgers/adapted/0/commands/0');
+  assert.ok(commandGap, JSON.stringify(uncheckedOut));
+  assert.match(commandGap.statement, /。下一步由模型改正重组记录后重交$/, 'the pack names who acts next, so the reader is not sent to the user');
+  assert.equal(commandGap.data?.next_action, '由模型改正重组记录后重交');
 
   const emptyCatalog = fixture();
   emptyCatalog.subject.catalog = { root: 'b'.repeat(64), entries: [] };

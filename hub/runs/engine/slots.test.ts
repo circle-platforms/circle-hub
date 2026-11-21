@@ -222,7 +222,7 @@ test('specificFix renders expected shape dynamically from synthetic slot schema 
     expected: 'object',
     path: ['custom_entries', 0],
     message: 'Invalid input: expected object, received string',
-  } as unknown as z.ZodIssue;
+  } as unknown as z.core.$ZodIssue;
   const objFix = specificFix('/items/0/slots/custom_slot/0/custom_entries/0', objIssue, syntheticSchema);
   assert.deepEqual(objFix, {
     message: '/items/0/slots/custom_slot/0/custom_entries/0 要的是对象 {"widget_name": "<string>", "is_enabled"?: <boolean>}，收到的是字符串',
@@ -235,7 +235,7 @@ test('specificFix renders expected shape dynamically from synthetic slot schema 
     expected: 'array',
     path: ['custom_entries'],
     message: 'Invalid input: expected array, received string',
-  } as unknown as z.ZodIssue;
+  } as unknown as z.core.$ZodIssue;
   const arrFix = specificFix('/items/0/slots/custom_slot/0/custom_entries', arrIssue, syntheticSchema);
   assert.deepEqual(arrFix, {
     message: '/items/0/slots/custom_slot/0/custom_entries 要的是数组 [{"widget_name": "<string>", "is_enabled"?: <boolean>}]，收到的是字符串',
@@ -273,7 +273,7 @@ test('specificFix renders expected shape dynamically from synthetic slot schema 
     expected: 'object',
     path: ['commands', 0],
     message: 'Invalid input: expected object, received string',
-  } as unknown as z.ZodIssue;
+  } as unknown as z.core.$ZodIssue;
   const cmdFix = specificFix('/items/0/slots/cases/0/commands/0', cmdIssue, realCommandsSchema);
   assert.deepEqual(cmdFix, {
     message: '/items/0/slots/cases/0/commands/0 要的是对象 {"command": "<string>", "present"?: <boolean>}，收到的是字符串',
@@ -286,7 +286,7 @@ test('specificFix renders expected shape dynamically from synthetic slot schema 
     expected: 'number',
     path: ['unknown_path'],
     message: 'Invalid input: expected number, received string',
-  } as unknown as z.ZodIssue;
+  } as unknown as z.core.$ZodIssue;
   const fallbackFix = specificFix('/items/0/slots/unknown_path', fallbackIssue, realCommandsSchema);
   assert.deepEqual(fallbackFix, {
     message: '/items/0/slots/unknown_path 要的是数字，收到的是字符串',

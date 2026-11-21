@@ -11,7 +11,8 @@ import { parseProfile } from './functions/profile.ts';
 import { parseManifest } from './functions/manifest.ts';
 import { renderAgentDefinition, renderTaskBrief, SUBAGENT_ROLES } from './functions/subagent-roles.ts';
 import { RUN_DIRECTORY_FORM } from './tools/workspace-path.ts';
-import { cellTemplate } from './functions/cell-selection.ts';
+import { foreignCommands, shownCommands } from './testing/shown-commands.ts';
+import { ATTRIBUTION, PRODUCER_KIND, labelOf } from './functions/generated/vocabulary.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
@@ -117,10 +118,10 @@ test('the writer is told to write one Chinese line per block, and the skill says
   const block = json('slots.schema.json').item.plan.data.properties.blocks.items.anyOf[0].properties.description;
   assert.equal(block.type, 'string'); assert.match(block.description, /不是抄作者步骤/);
 });
-test('the writer text and the block declarations teach no usage derived from one feature or case: no key-name paragraph, no pre-clean line, no column-pinning advice, and the runner contract for a cell value in one generic sentence (round 37, owner\'s rule)', () => {
+test('the writer text and the block declarations teach no usage derived from one feature or case, and the runner contract for a cell value is one generic sentence', () => {
   const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
   const caseDerived = [
-    '取名字的一段', '设备生成的往往只是名字的一段', '只取这一段', 'Kzone', 'RSASHA1', 'ksk', '.private', '逐列钉死', '长度、后缀各一列', '1024.key', 'where 6',
+    '取名字的一段', '设备生成的往往只是名字的一段', '只取这一段', '逐列钉死', '长度、后缀各一列',
     '设备上可能残留同名配置时', '先用产品声明的逆操作清掉再配置', '本身不需要再配清理，被它清掉的配置命令自己的清理照旧',
   ];
   for (const [file, text] of [['subagent-roles.ts body', role.body], ['agents/compile-writer.md', writer]] as Array<[string, string]>)
@@ -128,25 +129,28 @@ test('the writer text and the block declarations teach no usage derived from one
   const table = json('tables/blocks-format.json');
   for (const name of ['input_register', 'column', 'select']) assert.equal(table.fields[name].description, undefined, name);
   for (const file of ['tables/blocks-format.json', 'tables/block-plan.schema.json', 'slots.schema.json'])
-    for (const phrase of ['ksk', 'RSASHA1', 'keypub', 'Kzone', '取名字的一段', 'host, algorithm, type, size, suffix', 'between known words']) assert.ok(!read(file).includes(phrase), `${file}: ${phrase}`);
+    for (const phrase of ['取名字的一段', 'between known words']) assert.ok(!read(file).includes(phrase), `${file}: ${phrase}`);
   const contract = '只有设备执行时才产生的值，要在同一条自动化用例里先取出再用，取出的单格写进后面命令的 `{}`，运行器把它整个替换进去，`{}` 可以在引号里；手册允许指定名字时，由生成器指定';
   assert.ok(role.body.includes(contract) && writer.includes(contract), 'the one sentence of the runner contract');
   for (const phrase of ['写进命令的每个值都要在手册对该参数的说明之内，包括长度、允许的字符、范围和可选值', '不写死设备生成的名字，不从上一次上机验证的设备输出抄值，也不沿用设备上已有的东西']) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
 });
-test('nothing the writer reads names a product command or an output layout: no product command words in the role, the skill, the tool documents, the declarations, the samples and the examples, and the cleanup rules are stated by the contract (round 37, owner\'s rule)', () => {
+test('every device command the roles, the skills, the tool documents, the declarations, the samples and the examples show is a command of the synthetic command trees of these tests, and the cleanup rules are stated by the contract', () => {
   const writer = read('agents/compile-writer.md'), role = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
-  const product = [/\bsdns\b/i, /synconfig/i, /dnssec/i, /\bha (on|off|link|unit|group)\b/i, /clear ha/i, /write mem/i, /lib\/apv/, /\bksk\b/, /\bzsk\b/, /RSASHA/i, /keypub/i, /\+005\+/, /zone\.example/, /\.key\b/, /\.private\b/, /Statistics Summary/, /HA 等/];
   const files = [
-    'SKILL.md', 'tools/delivery.md', 'tools/fidelity.md', 'tables/blocks-format.json', 'tables/block-plan.schema.json', 'slots.schema.json',
-    ...['positive', 'negative'].flatMap((kind) => readdirSync(join(PACK_DIR, 'samples', kind)).filter((name) => name.startsWith('typed-block-')).map((name) => `samples/${kind}/${name}`)),
+    'SKILL.md', 'recompose/SKILL.md', ...readdirSync(join(PACK_DIR, 'tools')).filter((name) => name.endsWith('.md')).map((name) => `tools/${name}`),
+    ...readdirSync(join(PACK_DIR, 'agents')).map((name) => `agents/${name}`),
+    'tables/blocks-format.json', 'tables/block-plan.schema.json', 'slots.schema.json',
+    ...['positive', 'negative'].flatMap((kind) => readdirSync(join(PACK_DIR, 'samples', kind)).map((name) => `samples/${kind}/${name}`)),
     ...readdirSync(join(PACK_DIR, 'examples')).map((name) => `examples/${name}`),
   ];
-  for (const [file, text] of [['subagent-roles.ts body', role.body], ['agents/compile-writer.md', writer], ...files.map((file) => [file, read(file)] as [string, string])] as Array<[string, string]>)
-    for (const word of product) assert.ok(!word.test(text), `${file}: ${word}`);
-  assert.ok(!/SDNS Query/.test(read('functions/authoring-brief.ts')), 'the writer\'s brief carries no output line of one product either');
+  const texts: Array<[string, string]> = [...SUBAGENT_ROLES.map((spec) => [`${spec.key} role`, spec.body] as [string, string]), ...files.map((file) => [file, read(file)] as [string, string])];
+  assert.ok(texts.reduce((count, [, text]) => count + shownCommands(text).length, 0) > 0, 'the files show device commands');
+  for (const [file, text] of texts) assert.deepEqual(foreignCommands(text), [], file);
+  assert.deepEqual(foreignCommands('先配 `gizmo mode on` 再查看'), ['gizmo mode on'], 'a command in prose that no synthetic tree has is found');
+  assert.deepEqual(foreignCommands(JSON.stringify({ blocks: [{ call: { object: 'ORBIT_0', method: 'command', args: ['gizmo mode on'] } }] })), ['gizmo mode on'], 'and one in a block call');
   for (const phrase of [
     '产品声明了互逆取值的开关（`command_policy`）：按声明在同设备的 `cleanup:true` 配对写出逆操作，完成关闭后才交运行器的整体清除，不能只依赖整体清除',
-    '运行器自动清理（`contract.cleanup`，对清配对象经 `cmd_config` 发出的匹配命令，前缀规则和收尾命令由合约声明）',
+    '运行器自动清理（对 `contract.cleanup` 声明的清配对象发出、命中其前缀规则的配置命令，收尾命令也由合约声明）',
     '存盘等运行器收尾命令禁写 cleanup:true',
     '命中 `contract.cleanup` 声明的自动清理或收尾命令时禁写 `cleanup: true`',
   ]) assert.ok(role.body.includes(phrase) && writer.includes(phrase), phrase);
@@ -235,6 +239,24 @@ test('the recompose skill rewrites an author step the manual excludes by the man
     'concretizations.decided_by="模型"',
     '不用 conflict: 它要求两个有签发权的来源，原始用例和手册都不是',
   ]) assert.ok(recompose.includes(phrase), phrase);
+});
+
+test('the recompose skill and the attributor name conclusions, causes and deciders by the labels of the generated vocabulary', () => {
+  const recompose = read('recompose/SKILL.md'), attributor = read('agents/compile-attributor.md');
+  const conclusions = (['pass', 'fail', 'no_verdict'] as const).map((code) => labelOf('dynamic_terminal', code));
+  assert.ok(recompose.includes(`结论只用${conclusions.join('、')}`), 'recompose conclusions');
+  assert.ok(recompose.includes(`原因只用生成词表的归因标签：${ATTRIBUTION.map((code) => labelOf('attribution', code)).join('、')}`), 'recompose causes');
+  assert.ok(recompose.includes(`决定者用${PRODUCER_KIND.map((code) => labelOf('producer_kind', code)).join('、')}`), 'recompose deciders');
+  assert.ok(attributor.includes(`写出结论（只用${conclusions[0]}、${conclusions[1]}或${conclusions[2]}）`), 'attributor conclusions');
+  for (const text of [recompose, attributor]) assert.ok(!text.includes('正确/错误') && !text.includes('判断只用正确或错误'));
+});
+
+test('the recompose skill leaves opening, checking and submitting to the case-compile tools, and submits a self-check whose remaining problems are all unknown, as the pipeline does', () => {
+  const recompose = read('recompose/SKILL.md');
+  assert.ok(recompose.includes('在 case-compile 里，开运行由 `open-compile.ts` 做，每条用例的重组任务、自检和提交由 `pipeline.ts` 派发和执行'));
+  assert.ok(recompose.includes('输出 `ok=true`，或剩下的问题全是 `"verdict":"unknown"`（本地读不到的引用，交 Hub 判定）时才提交'));
+  assert.ok(!recompose.includes('inputs.recomposition_run') && !recompose.includes('inputs.recomposition_result'), 'case-compile runs are opened by open-compile.ts only');
+  assert.match(recompose, /^---\nname: recompose\ndescription: [^\n]*时使用/);
 });
 
 test('the client skill dispatches case-compile:compile-* subagents via task-brief and scope.md while role specs keep writer rules', () => {

@@ -145,7 +145,7 @@ test('a brief whose history has another shape is refused by its check, in words 
     const problemsOf = (history: unknown) => { const checked = validateCompileBrief({ ...brief, prior_device_history: history }, item(CASE)); return checked.ok ? [] : checked.problems.filter((problem) => problem.includes('prior_device_history')); };
     const base = brief.prior_device_history;
     assert.deepEqual(problemsOf({ ...base, status: 'available' }), ['prior_device_history.status 为 available 时 entries 至少一条，其余状态 entries 为空']);
-    assert.deepEqual(problemsOf({ ...base, status: 'none_found', entries: [{ verification_run: V1, verdict: 'pass', apv_cmds: ['widget on'] }] }), ['prior_device_history.status 为 available 时 entries 至少一条，其余状态 entries 为空', 'prior_device_history.entries[0] 的形状不对：要有 verification_run、verdict、log、sessions、device_commands、execution_refused 和 syntax_rejected']);
+    assert.deepEqual(problemsOf({ ...base, status: 'none_found', entries: [{ verification_run: V1, verdict: 'pass', device_cmds: ['widget on'] }] }), ['prior_device_history.status 为 available 时 entries 至少一条，其余状态 entries 为空', 'prior_device_history.entries[0] 的形状不对：要有 verification_run、verdict、log、sessions、device_commands、execution_refused 和 syntax_rejected']);
     assert.deepEqual(problemsOf({ ...base, disclaimer: '合成：照旧记录写' }), ['prior_device_history.disclaimer 不是这个版本的说明句']);
     assert.deepEqual(problemsOf({ ...base, match_key: 'title' }), ['prior_device_history.match_key 只能是 autoid']);
     assert.deepEqual(problemsOf({ ...base, status: 'guessed' }), ['prior_device_history.status 只能是 unavailable_from_hub、none_found 或 available']);

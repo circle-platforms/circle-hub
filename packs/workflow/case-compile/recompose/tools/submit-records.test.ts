@@ -48,6 +48,15 @@ test('a submission covers every frozen case, and only those', () => {
   assert.equal(sent.items[0].slots.record[0].quotes.length, 3);
 });
 
+test('the record claim says the verification method the record gives, never a placeholder', () => {
+  const run = { run: 'run_x', items: [item('one')] };
+  const [given] = submissionFor(run, [{ item: 'one', method }], 'scripted').items;
+  assert.equal(given.slots.record[0].text, '验证方法：合成方法');
+  const [none] = submissionFor(run, [{ item: 'one', method: { ...method, kind: 'missing', text: null } }], 'scripted').items;
+  assert.equal(none.slots.record[0].text, '没有写出验证方法');
+  assert.doesNotMatch(JSON.stringify([given, none].map((entry) => entry.slots.record[0].text)), /重组判断/);
+});
+
 test("a user's ruling stays in the fields the file already has: the atom's state reason, the adapted step and who decided the value", () => {
   const ruling = '用户裁定：以手册为准，改成手册允许的写法';
   const record = recordFor(item(), {

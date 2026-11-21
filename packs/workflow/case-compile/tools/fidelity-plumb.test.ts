@@ -274,7 +274,7 @@ async function addCase(w: { runPath: string; plans: string }, base: string, comm
             { id: '3', kind: 'action', text: '客户端带验证查询' },
           ],
           ledgers: { original: [], adapted: [], rebindings: [] },
-          sources: { states: [{ atom: '2', state: 'missing_prerequisite', prerequisites: ['feature on（手册原话：该功能默认是禁用的）', 'zone dnssec on 启用签名功能'], reason: '功能默认禁用，签名功能须单独开启' }] },
+          sources: { states: [{ atom: '2', state: 'missing_prerequisite', prerequisites: ['feature on（手册原话：该功能默认是禁用的）', 'widget signing on 启用签名功能'], reason: '功能默认禁用，签名功能须单独开启' }] },
         },
       },
     },

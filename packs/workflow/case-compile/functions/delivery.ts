@@ -139,6 +139,7 @@ export function auditPasses(dispatches: readonly Dispatch[], hits: ReadonlyMap<s
 export const auditKey = (run: string, item: string): string => `${run}\u0000${item}`;
 
 export const LOG_STAMP = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+/;
+// The runner's exception report (pytest's) marks the source line that raised with ">" and the exception text with "E".
 const FAILING_SOURCE = /^>\s{3,}\S/, EXCEPTION_TEXT = /^E\s{3,}\S/;
 const STEP_LINE = /^#{2,}\s+step(\d+):/;
 export interface RunnerAbort { step: number | null }

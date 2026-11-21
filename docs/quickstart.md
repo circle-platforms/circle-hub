@@ -59,7 +59,7 @@ mkdir -p "$CIRCLE_HUB_DATA_DIR"
   "schema": "deployment@2",
   "packs": [
     {
-      "ref": "test-bed@1.4.0",
+      "ref": "test-bed@1.4.1",
       "directory": "../../packs/workflow/test-bed"
     }
   ],

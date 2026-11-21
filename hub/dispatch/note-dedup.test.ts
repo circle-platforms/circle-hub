@@ -30,7 +30,7 @@ test('jobs that end with different results and give the same next step say it on
 test('a next step that differs is kept in full, and a note that is not a job note is left alone', () => {
   const effective = runnerNoted(finished('a'));
   const refused = runnerNoted(finished('b', { outcome: 'target_rejected', rejection_stage: 'admission', result: undefined }));
-  const plain = { text: 'Hub 正在做上机验证前的核对；下一步由模型稍后把这次脚本合并原样再交一次，读取进展' };
+  const plain = { text: 'Hub 正在做上机验证前的核对；下一步由模型稍后原样重交，读取进展' };
   const consolidated = consolidateDispatchNotes([effective, refused, plain]);
   assert.deepEqual(consolidated.map((note) => note.text), [effective.text, refused.text, plain.text]);
 });

@@ -128,23 +128,23 @@ test('fidelityBrief populates added_precondition exemptions from sources.states,
       governing: [],
       candidates: [],
       states: [
-        { atom: 'a2', state: 'missing_prerequisite', reason: '手册要求本端与对端均需先配置 peer', prerequisites: ['配置 apv0 synconfig peer', '配置 apv0 synconfig challenge'] },
+        { atom: 'a2', state: 'missing_prerequisite', reason: '手册要求本端与对端均需先配置 peer', prerequisites: ['配置 dut0 widget peer', '配置 dut0 widget challenge'] },
         { atom: 'a3', state: 'settled', reason: '已确定', prerequisites: [] },
       ],
     },
   };
   const plan = structuredClone(goodData());
   (plan.steps[0] as unknown as Record<string, unknown>).description = '编写自述：不应出现在 brief 中';
-  (plan.steps[0] as unknown as Record<string, unknown>).precondition_source = { reference: 'knowledge:manual#synconfig-ex1', text: 'Example: configure peer and challenge on local and peer APV' };
+  (plan.steps[0] as unknown as Record<string, unknown>).precondition_source = { reference: 'knowledge:manual#widget-peer-ex1', text: 'Example: configure peer and challenge on the local and the peer device' };
   const briefSourced = fidelityBrief('doc-1:c-1', recWithStates, plan)!;
   assert.equal(briefSourced.mechanical.exemptions.length, 2);
   assert.equal(briefSourced.mechanical.exemptions[0]!.kind, 'added_precondition');
   assert.equal(briefSourced.mechanical.exemptions[0]!.origin, 'record.sources.states');
-  assert.deepEqual(briefSourced.mechanical.exemptions[0]!.prerequisites, ['配置 apv0 synconfig peer', '配置 apv0 synconfig challenge']);
+  assert.deepEqual(briefSourced.mechanical.exemptions[0]!.prerequisites, ['配置 dut0 widget peer', '配置 dut0 widget challenge']);
   assert.equal(briefSourced.mechanical.exemptions[1]!.kind, 'added_precondition');
   assert.equal(briefSourced.mechanical.exemptions[1]!.origin, 'plan.precondition_source');
   assert.deepEqual(briefSourced.mechanical.exemptions[1]!.step_indices, [1]);
-  assert.equal(briefSourced.mechanical.exemptions[1]!.reference, 'knowledge:manual#synconfig-ex1');
+  assert.equal(briefSourced.mechanical.exemptions[1]!.reference, 'knowledge:manual#widget-peer-ex1');
   assert.ok(briefSourced.mechanical.note.includes('mechanical.exemptions 列出了 2 条前置步骤豁免依据'));
   assert.ok(briefSourced.rules.some((r) => r.includes('added_precondition') && r.includes('recomposition.adapted 不是步骤白名单') && r.includes('前置不存在')));
   assert.equal(JSON.stringify(briefSourced.blocks).includes('编写自述'), false, 'step.description never leaks to fidelity audit');
@@ -152,15 +152,15 @@ test('fidelityBrief populates added_precondition exemptions from sources.states,
   const blockPlanData = {
     bucket: 'bed-1',
     blocks: [
-      { id: 'prep_peer', kind: 'CONFIG', call: { object: 'apv0', method: 'cmd_config', args: ['synconfig peer 192.0.2.2'], keywords: {} }, description: '隐藏描述' },
-      { id: 'main_step', kind: 'CONFIG', call: { object: 'apv1', method: 'cmd_config', args: ['synconfig peer 192.0.2.1'], keywords: {} } },
+      { id: 'prep_peer', kind: 'CONFIG', call: { object: 'dut0', method: 'cmd_config', args: ['widget peer 192.0.2.2'], keywords: {} }, description: '隐藏描述' },
+      { id: 'main_step', kind: 'CONFIG', call: { object: 'dut1', method: 'cmd_config', args: ['widget peer 192.0.2.1'], keywords: {} } },
     ],
     steps: [],
     expects: [],
     replacements: [],
     block_context: {
       preconditions: [
-        { id: 'p1', state: 'present', for: 'main_step', established_by: ['prep_peer'], quote: { reference: 'knowledge:manual#synconfig-peer', text: 'Both peers must declare synconfig peer' } },
+        { id: 'p1', state: 'present', for: 'main_step', established_by: ['prep_peer'], quote: { reference: 'knowledge:manual#widget-peer', text: 'Both peers must declare widget peer' } },
         { id: 'p2', state: 'absent', for: 'main_step', established_by: [], quote: { reference: 'knowledge:manual#missing', text: 'ignored when absent' } },
       ],
       causal_links: [],

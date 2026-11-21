@@ -1092,7 +1092,7 @@ const base = z.strictObject({
   schema: z.literal('executor@1'), id: z.string().regex(/^exe_[0-9a-hjkmnp-tv-z]{26}$/).optional(), enabled: z.boolean().default(true),
   environment:EnvironmentSchema.optional(),
   retry_safety: RetrySafetySchema.default('unsafe'),
-  target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.string().url().max(2048), ca: z.string().max(65536),
+  target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.url().max(2048), ca: z.string().max(65536),
   premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional(),read_only:certificate.optional().describe('the target\'s help tool never presses Enter on the asked line and always clears it (D02 R[4]: read-only enforced by the target); certified per target version'),retry_safety:certificate.optional(),conditional_write:certificate.optional(),window_resend:certificate.extend({window_ms:z.number().int().min(1).max(86400000000)}).optional() }).default({}),
   actor: z.strictObject({ header: z.string().regex(/^[A-Za-z][A-Za-z0-9-]{0,127}$/).refine(h => !h.toLowerCase().startsWith('mcp-') && !['authorization', 'cookie', 'host', 'content-length', 'content-type', 'accept', 'mcp-session-id', 'mcp-protocol-version'].includes(h.toLowerCase())), pattern: z.string().min(1).max(500).refine(p => { try { new RegExp(p); return p.startsWith('^') && p.endsWith('$'); } catch { return false; } }), max_length: z.number().int().min(1).max(512) }).optional(),
   limitations: z.array(z.string().min(1).max(1000)).max(50).default([]),

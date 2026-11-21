@@ -349,7 +349,7 @@ and reads the shared vectors; ordinary rules table matching retains its original
 
 ## Independent gold quotation alignment
 
-`compile-check.ts` checkVerbatimQuote and expected-text containment independently use exact contiguous substring
+`compile-check.ts` checkVerbatimQuote independently uses exact contiguous substring
 matching from `scripts/real/gold/quote-widths.ts`, with no Hub or pack imports. Empty, whitespace-only and ill-formed
 quotes are rejected. Missing exported source bytes still produce the existing unknown receipt; unavailable evidence
 never passes.
@@ -365,10 +365,10 @@ file versions below scripts/real/gold before this follow-up), plus quotation-rel
 
 | Snapshot | Implementation / caller | Current rule and integration action |
 | --- | --- | --- |
-| Current branch | `scripts/real/gold/compile-check.ts`: checkVerbatimQuote and compileCheck expected-text containment (`case-compile.expect_not_in_quote`) | Both use exact contiguous matching without whitespace normalization. Pack-specific changes are outside this core task. |
+| Current branch | `scripts/real/gold/compile-check.ts`: checkVerbatimQuote | Exact contiguous matching without whitespace normalization. Pack-specific changes are outside this core task. |
 | `gold-d2c` at `49e5f13c` | `scripts/real/gold/quotes.ts`: quoteMatches; judgeQuote/quotesReport; called by `scripts/real/accept/defect-to-case-compare.ts` and its batch driver | Unicode White_Space collapses to one space; Chinese hard wraps still differ. After merge, independently align it with decision 37 and run the shared vectors. |
 | `gold-review` at `e41dafd6`, `gold-catalog` at `c50ecb72` | `scripts/real/lib/inject.ts`: noWhiteSpace and the contradict_manual quotation precondition | Deletes all whitespace, including Latin word boundaries. This is an injection guard, not a gold verdict; after merge, have its owner align the guard where it promises a verbatim quotation. |
-| Other local branch snapshots carrying `scripts/real/gold/compile-check.ts` | checkVerbatimQuote and compileCheck expected-text containment | Same old generic checkVerbatimQuote implementation, not an additional independent rule. Preserve this branch's generic quotation fix when merging; no other branch was edited. |
+| Other local branch snapshots carrying `scripts/real/gold/compile-check.ts` | checkVerbatimQuote | Same old generic checkVerbatimQuote implementation, not an additional independent rule. Preserve this branch's generic quotation fix when merging; no other branch was edited. |
 | `gold-catalog` at `c50ecb72` | `scripts/real/gold/catalog-marks.ts`: quoteFromCase | Command excerpt matching uses NFKC, case folding and token/argument boundaries. It is not the generic verbatim quotation rule; do not replace its command semantics with decision 37. |
 
 The older defect-to-case comparison in this branch reports Hub grounding claims rather than independently matching

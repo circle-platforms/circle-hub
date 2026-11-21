@@ -54,7 +54,7 @@ Full file (must match `docs/examples/quickstart-deployment.json` byte-for-byte):
   "schema": "deployment@2",
   "packs": [
     {
-      "ref": "test-bed@1.4.0",
+      "ref": "test-bed@1.4.1",
       "directory": "../../packs/workflow/test-bed"
     }
   ],
