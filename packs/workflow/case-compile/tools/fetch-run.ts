@@ -8,79 +8,75 @@
 //   %HUB_TOKEN%
 //   EOF
 import { realpathSync } from 'node:fs';
-import { lstat, mkdir, rm } from 'node:fs/promises';
+import { lstat, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isRecord } from '../functions/text.ts';
-import { argumentsOf, writeNew, sha256 } from './files.ts';
+import { isRecord, failCall, parseCliOptions } from '../functions/text.ts';
+import { RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
+import { getRetrying, downloadRetryControl, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
+
+import { assertEmptySourceOutput, sourceMaterialNames, type SourceMaterial } from '../functions/source-materials.ts';
 
 const SLOTS = ['contract', 'profile', 'inventory'] as const;
-const MAX_BYTES = 16 * 1024 * 1024;
-const TIMEOUT_MS = 120_000;
-
-async function tokenFromStdin(): Promise<string> {
-  const chunks: Buffer[] = []; for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString('utf8').trim();
-}
-// A failure to reach the Hub is reported as what it is, never as a malformed answer (a submission that never arrived is told apart
-// from one whose results could not be read).
-async function get(url: string, bearer: string): Promise<Uint8Array> {
-  let reply: Response; let bytes: Uint8Array;
-  try {
-    reply = await fetch(url, { headers: { authorization: `Bearer ${bearer}` }, signal: AbortSignal.timeout(TIMEOUT_MS) });
-    bytes = new Uint8Array(await reply.arrayBuffer());
-  } catch (error) {
-    if (error instanceof Error && error.name === 'TimeoutError') throw new Error(`Hub ${TIMEOUT_MS / 1000} 秒内没有答复；稍后用同一命令重取`);
-    const cause = error instanceof Error ? (error.cause as { code?: unknown } | undefined)?.code ?? error.message : '未知原因';
-    throw new Error(`Hub 不可达（${String(cause).slice(0, 120)}）；核对 --hub 是 MCP 条目的地址、网络可达后重取`);
+export interface RunInputs { run: Record<string, unknown>; result: Record<string, unknown>; submission: Record<string, unknown>; originals: Record<typeof SLOTS[number], Uint8Array>; run_reference?: string; accepted_result_reference?: string | null; materials?: SourceMaterial[] }
+/** The run, its latest accepted result and submission, and the run's bound contract, profile and inventory, each checked. */
+export async function fetchRunInputs(origin: string, bearer: string, run: string, retry?: RetryControl): Promise<RunInputs> {
+  const raw = await getRetrying(`${origin}/run-export/${run}`, bearer, retry);
+  let exported: unknown;
+  try { exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw)); } catch { failCall('invalid_parameters', 'Hub 返回的原始用例和自动化用例无法读取', '重新获取完整 UTF-8 JSON 导出并核对协议后重试'); }
+  if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || !isRecord(exported.result) || !isRecord(exported.submission)) failCall('invalid_parameters', 'Hub 返回的原始用例和自动化用例不完整', '重新获取完整 run-export@1 导出并核对所需字段后重试');
+  if (exported.run.run !== run || exported.result.run !== run || exported.submission.run !== run) failCall('invalid_parameters', 'Hub 返回的原始用例、自动化用例或核对结果不属于本次脚本编写，文件尚未保存', '核对指定运行与导出身份后重新下载');
+  const sources = Array.isArray(exported.run.sources) ? exported.run.sources : [];
+  const bindings = sources.filter(isRecord);
+  const names = sourceMaterialNames(bindings);
+  const originals = {} as RunInputs['originals'];
+  const materials: SourceMaterial[] = [];
+  for (const slot of SLOTS) {
+    const bound = sources.filter((value) => isRecord(value) && value.slot === slot);
+    const match = bound.length === 1 && isRecord(bound[0]) ? /^src:([0-9a-f]{64})$/.exec(String(bound[0].reference)) : null;
+    if (!match) failCall('invalid_parameters', `来源槽 ${slot} 没有唯一绑定原件`, '核对当前运行的来源绑定，补齐该槽唯一的 src 引用后重试');
+    const bytes = await getRetrying(`${origin}/run-export/${run}/sources/${match[1]}`, bearer, retry);
+    if (sha256(bytes) !== match[1]) failCall('invalid_parameters', `来源槽 ${slot} 的字节与脚本编写时的原件不一致，文件尚未保存`, '恢复与运行绑定摘要一致的原件后重新下载');
+    originals[slot] = bytes;
+    const source = bound[0] as Record<string, unknown>;
+    materials.push({ slot, role: typeof source.role === 'string' ? source.role : null, reference: String(source.reference), label: typeof source.label === 'string' ? source.label : null, media_type: typeof source.media_type === 'string' ? source.media_type : null, file: names[bindings.indexOf(source)], sha256: match[1] });
   }
-  if (!reply.ok) throw new Error(`Hub 答复 ${reply.status}：${new TextDecoder().decode(bytes).trim().slice(0, 300)}`);
-  if (bytes.length > MAX_BYTES) throw new Error('Hub 答复超过 16 MiB 上限');
-  return bytes;
+  const run_reference = typeof exported.run_reference === 'string' && exported.run_reference ? exported.run_reference : undefined;
+  const accepted_result_reference = typeof exported.accepted_result_reference === 'string' && exported.accepted_result_reference ? exported.accepted_result_reference : exported.accepted_result_reference === null ? null : undefined;
+  return { materials, run: exported.run, result: exported.result, submission: exported.submission, originals, ...(run_reference !== undefined ? { run_reference } : {}), ...(accepted_result_reference !== undefined ? { accepted_result_reference } : {}) };
 }
-
-export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin): Promise<number> {
+export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, retry?: RetryControl): Promise<number> {
   try {
-    const args = argumentsOf(argv, ['hub', 'run', 'out']);
-    if (!/^run_[a-z0-9]+$/.test(args.run)) throw new Error('--run 必须是运行编号');
-    let origin: string; try { const url = new URL(args.hub); if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(); origin = url.origin; } catch { throw new Error('--hub 必须是 Hub 的 http 或 https 地址（与 MCP 条目同一台）'); }
-    const bearer = await readToken();
-    // Circle hands a secret it does not store over as its literal placeholder: that is no token, and it is never sent.
-    const placeholder = /^%([A-Z][A-Z0-9_]*)%$/.exec(bearer);
-    if (placeholder) throw new Error(`Circle 里没有存密钥 ${placeholder[1]}（标准输入收到的是原样的占位符），什么都没有发出；所有者用 /secrets ${placeholder[1]} 存入 Hub 令牌后重跑`);
-    if (!/^[\x21-\x7e]{8,4096}$/.test(bearer)) throw new Error("标准输入里没有令牌；在命令末尾写 <<'EOF'，下一行写 %HUB_TOKEN%，再一行写 EOF，令牌不写进参数");
-    let exported: unknown;
-    try { exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await get(`${origin}/run-export/${args.run}`, bearer))); } catch (error) { if (error instanceof Error && error.message.startsWith('Hub ')) throw error; throw new Error('Hub 的运行导出不是完整的 UTF-8 JSON'); }
-    if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || !isRecord(exported.result) || !isRecord(exported.submission)) throw new Error('Hub 的运行导出不合式');
-    if (exported.run.run !== args.run || exported.result.run !== args.run || exported.submission.run !== args.run) throw new Error(`Hub 导出的运行、结果或提交不属于 --run 指定的 ${args.run}，什么都没有写入；核对运行号后重取`);
-    const sources = Array.isArray(exported.run.sources) ? exported.run.sources : [];
-    const wanted = SLOTS.map((slot) => {
-      const bound = sources.filter((value) => isRecord(value) && value.slot === slot);
-      const match = bound.length === 1 && isRecord(bound[0]) ? /^src:([0-9a-f]{64})$/.exec(String(bound[0].reference)) : null;
-      if (!match) throw new Error(`运行没有唯一绑定的 ${slot} 原件`);
-      return { slot, sha: match[1] };
-    });
+    const args = parseCliOptions(argv, { hub: true, run: true, out: true }, 'fetch-run.ts --hub <MCP地址> --run <运行编号> --out <新的空目录>') as Record<string, string>;
+    if (!RUN_ID.test(args.run)) failCall('invalid_parameters', '--run 不是声明格式的运行编号', '请使用本次用例重组或脚本编写的编号后重试');
+    const origin = parseHubOrigin(args.hub);
+    await assertEmptySourceOutput(args.out);
+    const bearer = await requireBearerToken(readToken);
     // Every original is fetched and checked before anything is written, and a failed write removes what this call wrote, so
     // a failure never leaves part of the inputs behind.
+    const fetched = await fetchRunInputs(origin, bearer, args.run, downloadRetryControl(args.out, retry));
+    const hasRefs = fetched.run_reference !== undefined || fetched.accepted_result_reference !== undefined;
+    const refDoc = hasRefs ? { schema: 'run-references@1', run: args.run, ...(fetched.run_reference !== undefined ? { run_reference: fetched.run_reference } : {}), ...(fetched.accepted_result_reference !== undefined ? { accepted_result_reference: fetched.accepted_result_reference } : {}) } : null;
     const outputs: Array<{ name: string; bytes: Uint8Array }> = [
-      { name: 'run.json', bytes: Buffer.from(JSON.stringify(exported.run)) },
-      { name: 'result.json', bytes: Buffer.from(JSON.stringify(exported.result)) },
-      { name: 'submission.json', bytes: Buffer.from(JSON.stringify(exported.submission)) },
+      { name: 'run.json', bytes: Buffer.from(JSON.stringify(fetched.run)) },
+      { name: 'result.json', bytes: Buffer.from(JSON.stringify(fetched.result)) },
+      { name: 'submission.json', bytes: Buffer.from(JSON.stringify(fetched.submission)) },
+      ...new Map((fetched.materials ?? []).map(material => [material.file!, { name: material.file!, bytes: fetched.originals[material.slot as typeof SLOTS[number]] }])).values(),
+      { name: 'sources.json', bytes: Buffer.from(JSON.stringify(fetched.materials, null, 2) + '\n') },
+      ...(refDoc ? [{ name: 'references.json', bytes: Buffer.from(JSON.stringify(refDoc, null, 2) + '\n') }] : []),
     ];
-    for (const { slot, sha } of wanted) {
-      const bytes = await get(`${origin}/run-export/${args.run}/sources/${sha}`, bearer);
-      if (sha256(bytes) !== sha) throw new Error(`${slot} 原件摘要与运行绑定不符，什么都没有写入`);
-      outputs.push({ name: `${slot}.json`, bytes });
-    }
     await mkdir(args.out, { recursive: true, mode: 0o700 });
+
     const taken: string[] = [];
     for (const { name } of outputs) if (await lstat(join(args.out, name)).then(() => true, () => false)) taken.push(name);
-    if (taken.length) throw new Error(`--out 目录里已有 ${taken.join('、')}，不覆盖；另选一个新目录重取`);
+    if (taken.length) failCall('occupied', '输出目录在下载期间出现了已有文件', '另选新的空目录重新下载，不覆盖已有资料', { path: args.out, legal_form: '--out <新的空目录>' });
+    await mkdir(join(args.out, 'sources'), { mode: 0o700 });
     const files: Record<string, string> = {}; const written: string[] = [];
     try {
-      for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); }
+      for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }); written.push(path); files[name] = sha256(bytes); }
     } catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
-    process.stdout.write(JSON.stringify({ run: args.run, files }) + '\n'); return 0;
-  } catch (error) { process.stderr.write(`取件失败：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+    process.stdout.write(JSON.stringify({ run: args.run, ...(fetched.run_reference !== undefined ? { run_reference: fetched.run_reference } : {}), ...(fetched.accepted_result_reference !== undefined ? { accepted_result_reference: fetched.accepted_result_reference } : {}), files }) + '\n'); return 0;
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

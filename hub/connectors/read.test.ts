@@ -386,7 +386,8 @@ test('a static header credential: sent as declared to the roles that carry it, r
   assert.equal(w.dav.requests[before].headers['x-api-key'], 'Bearer k3y-Synthetic-0042');
   assert.equal(await syntheticStoredCredential(w.k.records,keyed,'token'), 'k3y-Synthetic-0042', 'a plain credential is kept as given');
   await w.k.connectors.admin.updateResource(w.k.admin, keyed.id, { allow_plaintext: [] });
-  failure(await w.k.connectors.reader.read('manual:file:spec/widget-list.md', w.ctx), /CREDENTIAL_MISSING/);
+  assert.equal(await syntheticStoredCredential(w.k.records, keyed, 'token'), 'k3y-Synthetic-0042', 'changing transport policy does not remove the named secret');
+  failure(await w.k.connectors.reader.read('manual:file:spec/widget-list.md', w.ctx), /PLAINTEXT_REFUSED/);
   assert.equal(w.dav.requests.length, before + 1, 'refused before any request');
   assert.ok(!JSON.stringify(w.k.log).includes('k3y-Synthetic-0042'));
 });
@@ -579,15 +580,21 @@ test('a resource moved to another system is not served from the trees cached for
   fixture.trees['7714'][0].label = '030：生产系统的项目';
   const other = await startAgileStub(fixture);
   t.after(() => other.close());
+  const oldTokens = [...w.agile.tokens];
+  const username = await syntheticStoredCredential(w.k.records, w.resources.agile, 'username');
+  const password = await syntheticStoredCredential(w.k.records, w.resources.agile, 'password');
   await w.k.connectors.admin.updateResource(w.k.admin, w.resources.agile.id, {
     environment: 'production',
     origins: { 'agile-oauth': other.origin, 'agile-api': other.origin },
     allow_plaintext: [other.origin],
   });
-  assert.equal((await w.k.connectors.reader.read(`agile:mindmap:${DOC}`,w.ctx)).ok,false,'new destination requires renewed enrollment');
-  assert.equal(other.requests.length,0);
-  await setSyntheticCredentials(w.k.records,w.k.connectors,w.k.admin,w.resources.agile.id,{username:'reader',password:PASSWORD});
+  assert.equal((await w.k.connectors.admin.loginStatus(w.k.admin, w.resources.agile.id))?.token, false);
   const moved = success(await w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx));
+  assert.equal(other.logins, 1, 'the new resource origin logs in with the existing named credentials');
+  assert.equal(other.requests[0].path, '/oauth/login/');
+  assert.ok(other.requests.every(request => !oldTokens.includes(request.headers.authorization ?? '')), 'old tokens never reach the new origin');
+  assert.equal(await syntheticStoredCredential(w.k.records, w.resources.agile, 'username'), username);
+  assert.equal(await syntheticStoredCredential(w.k.records, w.resources.agile, 'password'), password);
   assert.equal(other.count('/agile/get_child_node_task/'), 1, 'the tree is read from the new system');
   const meta = JSON.parse((await bytesOf(w, moved.artifacts[2].artifact)).toString('utf8')) as { folders: string[] };
   assert.equal(meta.folders[1], '030：生产系统的项目');

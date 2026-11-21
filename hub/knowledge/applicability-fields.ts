@@ -5,7 +5,8 @@ import type {ApplicabilityFields,KnowledgeContributionPageView} from '../../cont
 import {canonicalize,sha256Hex} from '../records/api.ts';
 const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 export function applicabilityFields(data:Record<string,unknown>,value:Applicability|null):ApplicabilityFields {
- const marker=object(data.applicability_state)&&data.applicability_state.schema==='applicability-state@1'?data.applicability_state:null;
+ // Decision 159: an entry without a marker and without a value declares nothing (the empty marker is not stored).
+ const marker=object(data.applicability_state)&&data.applicability_state.schema==='applicability-state@1'?data.applicability_state:value===null&&data.applicability_state===undefined?{declaration_status:'undeclared',declared_fields:[]}:null;
  const known=marker&&isDeclarationStatus(marker.declaration_status)&&Array.isArray(marker.declared_fields)&&marker.declared_fields.every(f=>(APPLICABILITY_FIELD as readonly unknown[]).includes(f));
  return Object.fromEntries(APPLICABILITY_FIELD.map(field=>[field,{declaration_status:known?(marker!.declared_fields as string[]).includes(field)?'declared':'undeclared':null,judgment_status:'unjudged',declaration_value:known?value?.[field]??null:null,judgments:[],conflicted:Array.isArray(marker?.conflicted_fields)&&marker!.conflicted_fields.includes(field),...(known?{}:{...(value?.[field]===undefined?{}:{legacy_value:value[field]}),missing:'结构化声明出处尚未核验'}),next_action:'按需由作者补结构声明，或在 knowledge-contribution 运行提交本条目的条件主张及逐字引文'}])) as unknown as ApplicabilityFields;
 }
@@ -28,4 +29,15 @@ export function applyApplicabilityJudgments(entry:{entry:string;applicability_fi
   fields[field].conflicted ||= values.size>1;
   if(!complete||unread)fields[field].missing='本节点回注尚未完全核读；下一步按 next 续读或由管理员恢复保留来源，再逐字段核对';
  }
+}
+
+/**
+ * K02 F[6] and R[2] (decision 159): an entry none of whose fields is declared, judged, in conflict or still being read
+ * carries no condition at all. Called once the judgments of the contribution layer are in (applyApplicabilityJudgments).
+ */
+export function withoutEmptyApplicability<T extends {applicability?:string;applicability_fields?:ApplicabilityFields;applicability_context?:unknown}>(entry:T):T{
+ const fields=entry.applicability_fields;
+ if(fields&&Object.values(fields).some(f=>f.declaration_status==='declared'||f.judgment_status==='judged'||f.conflicted||f.missing!==undefined||f.legacy_value!==undefined))return entry;
+ const {applicability_fields:_fields,applicability_context:_context,...rest}=entry;
+ return rest as T;
 }

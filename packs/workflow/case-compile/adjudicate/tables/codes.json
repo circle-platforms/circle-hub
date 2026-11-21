@@ -4,7 +4,7 @@
     {
       "code": "recompose-adjudication.form",
       "when": "裁定形状不符",
-      "fix": "裁定模型按原子补完整判断、引文和出口"
+      "fix": "裁定模型按用例原句补完整判断、引文和出口"
     }
   ],
   "refusals": [],

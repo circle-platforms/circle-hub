@@ -1,0 +1,45 @@
+{
+  "schema": "pack@1",
+  "id": "runner-workbook",
+  "version": "1.0.1",
+  "kind": "skill",
+  "title": "运行器工作簿",
+  "description": "读写自动化运行器的用例工作簿：填运行器模板、确定性打包、G 列语法、回读模型。工作流内嵌使用，不判断内容",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "15cfe6339c24f483187f71811c55eceeaaf8f9dae979af3987050156d4040395",
+      "size": 306
+    },
+    {
+      "path": "functions/modules/workbook-writer/format.json",
+      "sha256": "e59decb7bd04641d8afa28d707311e6142b878147721c808ffdb9ce77933492c",
+      "size": 84
+    },
+    {
+      "path": "functions/modules/workbook-writer/g-syntax.ts",
+      "sha256": "cdfb1c16f1fc2e2673f9243dbdc558028ebfdb8afa17523cf65e1d2f596aa1ba",
+      "size": 6326
+    },
+    {
+      "path": "functions/modules/workbook-writer/workbook-template.ts",
+      "sha256": "f98b235ecbfb129a8b6742c25d8da6ef3f2c9918fd6e0e8d252e24bb1b0a0a41",
+      "size": 10584
+    },
+    {
+      "path": "functions/modules/workbook-writer/xlsx-model.ts",
+      "sha256": "7f4375955a3364c6b3912a6147f19c535c516e5b2a1453da849f8cf0f27d17ed",
+      "size": 3155
+    },
+    {
+      "path": "functions/modules/workbook-writer/zip-store.ts",
+      "sha256": "613fcb81036e6991ab907de8193a5a91d7a601fdfe839d981e2d2a437dda4e96",
+      "size": 2351
+    },
+    {
+      "path": "skill.json",
+      "sha256": "b5f0b6da341a60902b0e63de88041bc7d535b70ce2f62e99dd985792fe2b66c9",
+      "size": 253
+    }
+  ]
+}

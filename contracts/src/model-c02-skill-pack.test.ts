@@ -21,3 +21,16 @@ test('model 45: the generic skill pack is written into C02 and T01, and the core
  // The kind was in the vocabulary already; only the prose lacked it.
  assert.ok((PACK_KIND as readonly string[]).includes('skill'));assert.equal(labelOf('pack_kind','skill'),'通用技能包');
 });
+
+
+test('decision 172 separates current implementation from the approved ownership direction',()=>{
+ const c02=element('C02');
+ assert.ok(c02.rules.some((rule:string)=>['对内容无感','对谁都一样','只有在 Hub 上才做得到','三问都答是'].every(text=>rule.includes(text))));
+ const migrating=model.elements.filter((entry:{id:string;group:string})=>entry.id==='T03'||entry.group==='判定与终态'||entry.group==='知识');
+ assert.equal(migrating.length,14);
+ for(const entry of migrating){
+  assert.ok(entry.rules.some((rule:string)=>rule.includes('当前保留在 Hub')&&rule.includes('决定 172')&&(rule.includes('迁出尚未完成')||rule.includes('不宣称迁出已经完成'))),entry.id);
+  const notes=Object.entries(entry).filter(([key])=>/^changes/.test(key)).flatMap(([,value])=>value as string[]);
+  assert.ok(notes.some(note=>note.includes('Boss 2026-11-13 按所有者授权批准 C9')),entry.id);
+ }
+});

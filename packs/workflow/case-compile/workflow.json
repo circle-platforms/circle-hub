@@ -55,7 +55,7 @@
     {
       "slot": "plan_result",
       "role": "expected",
-      "description": "绑定 workbook 时写计划运行号（与 plan_run 相同）；Hub 换成该计划运行最近一次受理的结果，冻结全部用例已受理的计划和命令目录回执，每个用例按它们重算整份工作簿。多于一个用例时必填",
+      "description": "绑定 workbook 时脚本编写运行号（与 plan_run 相同）；Hub 换成该计划运行最近一次受理的结果，冻结全部用例已受理的计划和命令目录回执，每个用例按它们重算整份工作簿。多于一个用例时必填",
       "accepts": [
         "application/json"
       ],
@@ -78,7 +78,7 @@
     {
       "slot": "criteria_review",
       "role": "expected",
-      "description": "类型化判据复核的已受理 Hub 结果，仅真实 record meta 有效",
+      "description": "可选。类型化判据复核的已受理 Hub 结果，仅真实 record meta 有效；不绑定时，模型自写的类型化判据按模型判断处理（状态未确认），由上机验证裁定",
       "accepts": [
         "application/json"
       ],
@@ -91,7 +91,7 @@
     {
       "slot": "criteria_review_run",
       "role": "expected",
-      "description": "该复核的完整 Hub 运行快照 rec:，核实际前驱与声明运行",
+      "description": "可选，与 criteria_review 同绑或都不绑。该复核的完整 Hub 运行快照 rec:，核实际前驱与声明运行",
       "accepts": [
         "application/json"
       ],
@@ -101,7 +101,7 @@
     {
       "slot": "recomposition_run",
       "role": "expected",
-      "description": "独立重组阶段的完整 Hub 记录；不接受上传自述",
+      "description": "重组运行的完整 Hub 记录：写 start_run 答复里的运行记录 rec:；不接受上传自述",
       "accepts": [
         "application/json"
       ],
@@ -111,12 +111,16 @@
     {
       "slot": "recomposition_result",
       "role": "expected",
-      "description": "独立重组阶段的完整 Hub 记录；不接受上传自述",
+      "description": "写重组运行号；开运行只认运行，每次核对取它最近一次受理的结果。整份脑图的每个用例按来源和节点取自己的记录；某条用例还没受理时它的计划先不核对，等它单条提交并被受理后原样重交",
       "accepts": [
         "application/json"
       ],
       "required": false,
-      "many": false
+      "many": false,
+      "from_runs": {
+        "pack": "recompose",
+        "after_start": true
+      }
     }
   ],
   "parameters": [
@@ -143,6 +147,51 @@
       }
     },
     {
+      "name": "exclude",
+      "description": "整份文档编译时先不编译的 autoid 列表（按原始文字匹配，每个都要是按规则取到的用例，找不到拒绝开始运行；不与 autoid 同用）。用于某些用例暂时过不了、其余要先出簿：计划运行与核验运行填同一列表，最终报告要写明排除了哪些、缺什么、下一步",
+      "required": false,
+      "schema": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 64,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    {
+      "name": "scope",
+      "description": "按范围编译时必传，开运行时冻结进运行记录（不可与 exclude 或 autoid 同用）：{\"words\":\"<范围原话>\",\"cases\":[\"<autoid>\",...]}。脚本编写运行与脚本合并运行须传相同 scope；组交付时只从 Hub 读取并逐运行核对一致，未纳入用例按原句披露、不阻塞其余用例；中途改范围须用 start_run 重开运行",
+      "required": false,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "words",
+          "cases"
+        ],
+        "properties": {
+          "words": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "cases": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "plan_run",
       "description": "绑定 workbook 时必填：已满足的计划运行号，作为说明行来源；同时作 predecessor，二者一致由派发核对",
       "required": false,
@@ -154,7 +203,7 @@
     },
     {
       "name": "pipeline",
-      "description": "Explicit recomposed pipeline, legacy remains compatible",
+      "description": "recomposed 走重组；legacy 明说跳过重组，整份脑图不绑定重组记录时必须写，最终报告要说明",
       "required": false,
       "schema": {
         "type": "string",
@@ -176,6 +225,12 @@
   "subject": "subject",
   "projection": {
     "module": "functions/project.ts"
+  },
+  "refresh": {
+    "module": "functions/refresh.ts",
+    "reads": [
+      "recomposition_run"
+    ]
   },
   "leases": {
     "prefix": "bed/",

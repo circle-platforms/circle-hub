@@ -13,6 +13,9 @@ export interface RunJob {
    * 'done' once the job has its terminal record, 'unknown' once its effect is recorded as unresolved and waits for an
    * administrator, null while it runs. */
   ended:'done'|'unknown'|null;
+  /** When the journal recorded that end: the time of the first terminal record, or of the first record that left the effect
+   * unresolved; absent while the job runs, and when that record carries no time. */
+  ended_at?:string;
   /** Whether the job ended at the effect boundary before any remote call: its journal records the refusal and no response
    * of the target. A refusal at the final boundary, after the connector session, the precheck and the probes, is not one. */
   boundary_refused:boolean;
@@ -88,11 +91,13 @@ export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick
     }
     const proof=history[status.events-1];
     if(!proof)throw new IntegrityError('派发状态缺少对应的追加记录前缀');
-    const ended=prefix.some(e=>e.body.detail.done===true)?'done':prefix.some(e=>e.body.detail.phase==='unknown')?'unknown':null;
+    const terminal=prefix.find(e=>e.body.detail.done===true)??prefix.find(e=>e.body.detail.phase==='unknown');
+    const ended=terminal?(terminal.body.detail.done===true?'done':'unknown'):null;
+    const ended_at=terminal&&IsoTime.safeParse(terminal.body.ended_at).success?terminal.body.ended_at:undefined;
     const refusal=prefix.findIndex(e=>e.body.detail.phase==='boundary_refused');
     const boundary_refused=refusal>=0&&!prefix.slice(0,refusal).some(e=>remoteResponse(e.body.detail.phase));
     const bound=input?{verification_run:input.run,plan_run:input.plan_run,verification_item:input.item,items:[...input.items],sha256:input.sha256}:{verification_run:run,plan_run:'',verification_item:'',items:[],sha256:''};
-    out.push({job,record:proof.digest,...bound,status,ended,boundary_refused,...(executors.has(job)?{executor:executors.get(job)!}:{}),...(management_exit?{management_exit}:{})});
+    out.push({job,record:proof.digest,...bound,status,ended,...(ended_at?{ended_at}:{}),boundary_refused,...(executors.has(job)?{executor:executors.get(job)!}:{}),...(management_exit?{management_exit}:{})});
   }
   return out;
 }

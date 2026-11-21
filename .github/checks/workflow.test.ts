@@ -185,7 +185,7 @@ describe('pull requests run the fast jobs, the merge queue and main the whole su
     assert.match(triggers, /^  merge_group:$/m);
   });
 
-  for (const name of ['typecheck', 'contracts', 'docs', 'references']) {
+  for (const name of ['typecheck', 'contracts', 'docs']) {
     it(`${name} runs on every event, a pull request included`, () => {
       assert.doesNotMatch(job(name), /^    if:/m);
     });

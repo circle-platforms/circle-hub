@@ -1,11 +1,14 @@
 import {contributionSlots} from './slot-schema.ts';
 // Generates everything that must not be written by hand from the cause model:
-//   contracts/generated/vocabulary.ts   the one set of enumerations, with Chinese labels and zod enums
-//   contracts/generated/protocol.ts     protocol and core violation codes, reference forms, record kinds, pack file names
-//   contracts/generated/tools.json      the six MCP tools with JSON Schemas and derived annotations
-//   contracts/generated/schemas/*.json  JSON Schema of every registered record and pack-file shape
+//   contracts/generated/vocabulary.ts      the one set of enumerations, with Chinese labels and zod enums
+//   contracts/generated/protocol-codes.ts  machine tables: protocol and core violation code lists, categories, interpreters, record kinds, pack file names
+//   contracts/generated/protocol.ts        human sentences and display layout, re-exporting protocol-codes.ts for compatibility
+//   contracts/generated/tools.json         the six MCP tools with JSON Schemas and derived annotations
+//   contracts/generated/schemas/*.json     JSON Schema of every registered record and pack-file shape
 //   packs/.../functions/generated/vocabulary.ts  package-local runtime snapshots of the axes each pack uses
+//   packs/skill/*-format/functions/generated/protocol.ts  declared subset of protocol code names per format skill pack
 //   packs/product/famx/functions/generated/adoc-directory.ts  package-local copy of the adoc-format skill's directory
+//   packs/.../functions/generated/skills/<skill>/<module>/  the skill modules a pack's pack.json embeds (T01 R[6])
 //     walk (packs/skill/adoc-format/functions/directory.ts), since a sandboxed pack function reads only its own files
 // Usage: node tools/gen-contracts.ts [--check]
 //   without options it writes the files that changed and removes stale ones; --check writes nothing and lists every
@@ -17,10 +20,11 @@ import {contributionSlots} from './slot-schema.ts';
 // partly written file and two runs never interleave.
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { registerHooks } from 'node:module';
-import { basename, dirname, join, relative } from 'node:path';
+import { basename, dirname, join, posix, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
+import ts from 'typescript';
 
 /** `ui`: the interface term of the console when it differs from the model's label (the console shows only it). */
 type Value = { code: string; label: string; ui?: string };
@@ -31,7 +35,7 @@ type Model = {
   vocabulary: Axis[];
   formatProposals: {
     references: { scheme: string; form: string; example?: string; note?: string }[];
-    protocolCodes: { code: string; when: string; fix: string }[];
+    protocolCodes: { code: string; when: string; fix: string; callErrorCategory: string | null }[];
     recordKinds: string[];
     packFiles: { path: string; content: string; elements: string[] }[];
     displayOrder: string[];
@@ -78,9 +82,12 @@ export class WriteError extends Error {
 export const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const GENERATED_DIR = 'contracts/generated';
 /** Runtime vocabulary snapshots shipped inside sandboxed packs. Only these model axes belong to each target. */
-interface PackVocabularyTarget { axes: readonly string[]; labels?: boolean; resourceTags?: boolean }
+interface PackVocabularyTarget { axes: readonly string[]; labels?: boolean; resourceTags?: boolean; uiLabels?: boolean }
 export const PACK_VOCABULARY_TARGETS: Readonly<Record<string, PackVocabularyTarget>> = {
-  'packs/workflow/case-compile/functions/generated/vocabulary.ts': {axes:['expectation_basis','qualifier_mark'],labels:true},
+  'packs/workflow/case-compile/authority/functions/generated/vocabulary.ts': {axes:['call_error_category'],labels:true},
+  'packs/workflow/case-compile/recompose/functions/generated/vocabulary.ts': {axes:['call_error_category','verdict'],labels:true},
+  'packs/workflow/case-compile/adjudicate/functions/generated/vocabulary.ts': {axes:['call_error_category'],labels:true},
+  'packs/workflow/case-compile/functions/generated/vocabulary.ts': {axes:['expectation_basis','qualifier_mark','dynamic_terminal','acceptance','item_handling','attribution','exit_action','producer_kind','call_error_category','target'],labels:true,uiLabels:true},
   'packs/workflow/quality-board/functions/generated/vocabulary.ts': { axes: ['knowledge_count','declaration_status','judgment_status'], labels: true, resourceTags: true },
   'packs/product/famx/functions/generated/vocabulary.ts': { axes: ['applicability_field','declaration_status','judgment_status','type_declaration_status','command_parse_status','reason','release_status'], labels: true, resourceTags: true },
   'packs/workflow/case-review/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
@@ -157,7 +164,7 @@ export function packVocabularyFiles(root: string = REPO_ROOT): Record<string, st
       out.push(`export type ${type} = (typeof ${constant})[number];\n`);
       if (!target.labels && name === 'change_kind') out.push(`export const ${constant}_LABEL: Readonly<Record<${type}, string>> = ${JSON.stringify(Object.fromEntries(axis.values.map(v => [v.code, v.label])))};\n`);
       if (target.labels) {
-        out.push(`export const ${constant}_LABEL = { ${axis.values.map(v => `${q(v.code)}: ${q(v.label)}`).join(', ')} } as const satisfies Record<${type}, string>;\n`);
+        out.push(`export const ${constant}_LABEL = { ${axis.values.map(v => `${q(v.code)}: ${q(target.uiLabels ? (v.ui ?? v.label) : v.label)}`).join(', ')} } as const satisfies Record<${type}, string>;\n`);
         out.push(`export function is${type}(value: unknown): value is ${type} { return typeof value === 'string' && (${constant} as readonly string[]).includes(value); }\n`);
       }
     }
@@ -284,6 +291,9 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
     const vocab = isRecord(axis) ? list(axis.values).map((v) => (isRecord(v) ? String(v.code) : '')) : [];
     if (vocab.join() !== schemes.join()) p.push(`${M}: formatProposals.references schemes [${schemes}] must equal the reference_scheme axis [${vocab}] in order`);
     const protocol: string[] = [];
+    const callErrorAxis = list(model.vocabulary).find(a => isRecord(a) && a.axis === 'call_error_category');
+    if (!isRecord(callErrorAxis)) p.push(`${M}: call_error_category vocabulary axis is required`);
+    const callErrorCategories = new Set(isRecord(callErrorAxis) ? list(callErrorAxis.values).map(v => isRecord(v) ? v.code : undefined) : []);
     list(f.protocolCodes).forEach((c, i) => {
       const at = `${M}: formatProposals.protocolCodes[${i}]`;
       if (!isRecord(c)) {
@@ -293,6 +303,7 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
       if (typeof c.code !== 'string' || !PROTOCOL_CODE.test(c.code)) p.push(`${at}: code ${JSON.stringify(c.code)} must be UPPER_SNAKE_CASE`);
       if (!isText(c.when) || !CJK.test(c.when)) p.push(`${at} (${String(c.code)}): when must be Chinese text`);
       if (!isText(c.fix) || !CJK.test(c.fix)) p.push(`${at} (${String(c.code)}): fix must be Chinese text`);
+      if (!Object.hasOwn(c, 'callErrorCategory') || c.callErrorCategory !== null && !callErrorCategories.has(c.callErrorCategory)) p.push(`${at} (${String(c.code)}): callErrorCategory must explicitly be null or a call_error_category value`);
       protocol.push(String(c.code));
     });
     if (protocol.length === 0) p.push(`${M}: formatProposals.protocolCodes must be a non-empty array`);
@@ -337,8 +348,8 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
   return p;
 }
 
-/** Names the generator itself declares in vocabulary.ts and protocol.ts; index.ts re-exports both with export *. */
-const FIXED_VALUES = ['AXES', 'LABELS', 'labelOf', 'axisLabel', 'UI_LABELS', 'uiLabelOf', 'axisUiLabel', 'z', 'PROTOCOL_CODES', 'CORE_VIOLATION_CODES', 'REFERENCE_FORMS', 'RECORD_KINDS', 'PACK_FILE_PATHS', 'DISPLAY_ORDER', 'MODEL_VERSION'];
+/** Names the generator itself declares in vocabulary.ts and protocol-codes.ts/protocol.ts; index.ts re-exports both with export *. */
+const FIXED_VALUES = ['AXES', 'LABELS', 'labelOf', 'axisLabel', 'UI_LABELS', 'uiLabelOf', 'axisUiLabel', 'z', 'PROTOCOL_CODES', 'PROTOCOL_CODE_NAMES', 'isProtocolCode', 'CORE_VIOLATION_CODES', 'CORE_VIOLATION_CODE_NAMES', 'CORE_VIOLATION_CODE_INTERPRETERS', 'isCoreViolationCode', 'REFERENCE_FORMS', 'RECORD_KINDS', 'PACK_FILE_PATHS', 'DISPLAY_ORDER', 'MODEL_VERSION', 'CALL_ERROR_CATEGORY_BY_CODE', 'callErrorCategory', 'formatCallError'];
 const FIXED_TYPES = ['AxisName', 'AxisValues', 'ProtocolCode', 'CoreViolationCode', 'RecordKind'];
 
 /** Names the vocabulary module declares; two axes must never render to the same name, nor to a fixed one. */
@@ -403,21 +414,72 @@ function renderVocabulary(model: Model): string {
   return out.join('\n');
 }
 
-function renderProtocol(model: Model, codes: Codes): string {
+function renderProtocolCodes(model: Model, codes: Codes): string {
   const out: string[] = [HEADER];
+  out.push("import type { CallErrorCategory } from './vocabulary.ts';\n");
   const f = model.formatProposals;
-  out.push('export const PROTOCOL_CODES = {');
-  for (const c of f.protocolCodes) out.push(`  ${c.code}: { when: ${q(c.when)}, fix: ${q(c.fix)} },`);
-  out.push('} as const;\n', 'export type ProtocolCode = keyof typeof PROTOCOL_CODES;\n');
-  out.push('export const CORE_VIOLATION_CODES = {');
-  for (const c of codes.codes) out.push(`  ${q(c.code)}: { interpreter: ${q(c.interpreter)}, when: ${q(c.when)}, fix: ${q(c.fix)} },`);
-  out.push('} as const;\n', 'export type CoreViolationCode = keyof typeof CORE_VIOLATION_CODES;\n');
-  out.push(`export const REFERENCE_FORMS = {${f.references.map((r) => `\n  ${r.scheme}: ${q(r.form)}`).join(',')}\n} as const;\n`);
+  out.push(`export const PROTOCOL_CODE_NAMES = [${f.protocolCodes.map((c) => q(c.code)).join(', ')}] as const;`);
+  out.push('export type ProtocolCode = (typeof PROTOCOL_CODE_NAMES)[number];\n');
+  out.push(`export function isProtocolCode(value: unknown): value is ProtocolCode {
+  return (PROTOCOL_CODE_NAMES as readonly unknown[]).includes(value);
+}\n`);
+  out.push('export const CALL_ERROR_CATEGORY_BY_CODE = {');
+  for (const c of f.protocolCodes) out.push(`  ${c.code}: ${c.callErrorCategory === null ? 'null' : q(c.callErrorCategory)},`);
+  out.push('} as const satisfies Record<ProtocolCode, CallErrorCategory | null>;\n');
+  out.push(`/** Only the caller can identify a package invocation refusal; unknown and review codes stay unclassified. */
+export function callErrorCategory(code: string, packageCode = false): CallErrorCategory | null {
+  if (Object.hasOwn(CALL_ERROR_CATEGORY_BY_CODE, code)) return CALL_ERROR_CATEGORY_BY_CODE[code as ProtocolCode];
+  if (code.startsWith('core.')) return null;
+  return packageCode === true ? 'invalid_parameters' : null;
+}\n`);
+  out.push(`export const CORE_VIOLATION_CODE_NAMES = [${codes.codes.map((c) => q(c.code)).join(', ')}] as const;`);
+  out.push('export type CoreViolationCode = (typeof CORE_VIOLATION_CODE_NAMES)[number];\n');
+  out.push('export const CORE_VIOLATION_CODE_INTERPRETERS = {');
+  for (const c of codes.codes) out.push(`  ${q(c.code)}: ${q(c.interpreter)},`);
+  out.push('} as const satisfies Record<CoreViolationCode, string>;\n');
+  out.push(`export function isCoreViolationCode(value: unknown): value is CoreViolationCode {
+  return (CORE_VIOLATION_CODE_NAMES as readonly unknown[]).includes(value);
+}\n`);
   out.push(`export const RECORD_KINDS = [${f.recordKinds.map(q).join(', ')}] as const;`);
   out.push('export type RecordKind = (typeof RECORD_KINDS)[number];\n');
   out.push(`export const PACK_FILE_PATHS = [${f.packFiles.map((x) => q(x.path)).join(', ')}] as const;\n`);
-  out.push(`export const DISPLAY_ORDER = [${f.displayOrder.map(q).join(', ')}] as const;\n`);
   out.push(`export const MODEL_VERSION = ${model.version};\n`);
+  return out.join('\n');
+}
+
+function renderProtocol(model: Model, codes: Codes): string {
+  const out: string[] = [HEADER];
+  out.push("import { labelOf, type CallErrorCategory } from './vocabulary.ts';");
+  out.push("import type { CoreViolationCode, ProtocolCode } from './protocol-codes.ts';\n");
+  out.push(`export {
+  PROTOCOL_CODE_NAMES,
+  type ProtocolCode,
+  isProtocolCode,
+  CALL_ERROR_CATEGORY_BY_CODE,
+  callErrorCategory,
+  CORE_VIOLATION_CODE_NAMES,
+  type CoreViolationCode,
+  CORE_VIOLATION_CODE_INTERPRETERS,
+  isCoreViolationCode,
+  RECORD_KINDS,
+  type RecordKind,
+  PACK_FILE_PATHS,
+  MODEL_VERSION,
+} from './protocol-codes.ts';\n`);
+  const f = model.formatProposals;
+  out.push('export const PROTOCOL_CODES = {');
+  for (const c of f.protocolCodes) out.push(`  ${c.code}: { when: ${q(c.when)}, fix: ${q(c.fix)} },`);
+  out.push('} as const satisfies Record<ProtocolCode, { readonly when: string; readonly fix: string }>;\n');
+  out.push(`/** Formats caller-supplied facts and actions; never classifies a message or invents missing facts. */
+export function formatCallError(category: CallErrorCategory, fact: string, nextAction: string): string {
+  const sentence = (text: string): string => text.trim().replace(/[。.!！?？]+$/u, '') + '。';
+  return labelOf('call_error_category', category) + '：' + sentence(fact) + sentence(nextAction);
+}\n`);
+  out.push('export const CORE_VIOLATION_CODES = {');
+  for (const c of codes.codes) out.push(`  ${q(c.code)}: { interpreter: ${q(c.interpreter)}, when: ${q(c.when)}, fix: ${q(c.fix)} },`);
+  out.push('} as const satisfies Record<CoreViolationCode, { readonly interpreter: string; readonly when: string; readonly fix: string }>;\n');
+  out.push(`export const REFERENCE_FORMS = {${f.references.map((r) => `\n  ${r.scheme}: ${q(r.form)}`).join(',')}\n} as const;\n`);
+  out.push(`export const DISPLAY_ORDER = [${f.displayOrder.map(q).join(', ')}] as const;\n`);
   return out.join('\n');
 }
 
@@ -668,6 +730,7 @@ export async function generate(root: string = REPO_ROOT): Promise<Record<string,
   if (problems.length > 0) throw new ContractsError(problems);
   const files: Record<string, string> = {
     'vocabulary.ts': renderVocabulary(model as Model),
+    'protocol-codes.ts': renderProtocolCodes(model as Model, codes as Codes),
     'protocol.ts': renderProtocol(model as Model, codes as Codes),
   };
   const shared = renderSharedInterfaces(model);
@@ -761,6 +824,69 @@ function firstDifference(expected: string, actual: string): number {
 }
 
 /** Every missing, out-of-date or stale file under contracts/generated, sorted; empty when the directory matches. */
+// The same two folders as contracts/src/skills.ts, which this tool cannot import: it writes what that file's imports read.
+const SKILL_MODULES_DIR = 'functions/modules/';
+const EMBEDDED_SKILLS_DIR = 'functions/generated/skills/';
+
+/** Every pack directory under packs/, by its pack.json. Pack data folders are not searched. */
+function packDirectories(root: string, relative = 'packs', depth = 0): string[] {
+  const out: string[] = [];
+  if (existsSync(join(root, relative, 'pack.json'))) out.push(relative);
+  if (depth >= 4) return out;
+  for (const entry of readdirSync(join(root, relative), { withFileTypes: true })) {
+    if (entry.isDirectory() && !['functions', 'tools', 'tables', 'samples', 'examples', 'testing', 'policies', 'node_modules'].includes(entry.name)) out.push(...packDirectories(root, `${relative}/${entry.name}`, depth + 1));
+  }
+  return out;
+}
+
+const filesUnder = (dir: string, relative = ''): string[] => readdirSync(join(dir, relative), { withFileTypes: true }).flatMap((entry) => {
+  const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
+  return entry.isDirectory() ? filesUnder(dir, path) : entry.isFile() ? [path] : [];
+});
+
+/** A module is copied as a folder, so no import may leave it: a relative path out of the folder would break in the copy. */
+function moduleEscapes(name: string, text: string): string[] {
+  const out: string[] = [];
+  for (const match of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.[^'"]+)['"]/g)) {
+    const depth = posix.normalize(posix.join(posix.dirname(name), match[1]));
+    if (depth.startsWith('..')) out.push(`${name} imports ${match[1]}, outside its module`);
+  }
+  return out;
+}
+
+/** T01 R[6]: the module files each pack's pack.json embeds, from the skill sources. Tests stay in the skill. */
+export function embeddedPackFiles(root: string, generated: Record<string, string> = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  const problems: string[] = [];
+  for (const consumer of packDirectories(root)) {
+    const manifest = JSON.parse(readFileSync(join(root, consumer, 'pack.json'), 'utf8')) as { embeds?: Array<{ pack: string; version: string; module: string }> };
+    for (const row of manifest.embeds ?? []) {
+      const skillDir = `packs/skill/${row.pack}`;
+      const moduleDir = join(root, skillDir, SKILL_MODULES_DIR, row.module);
+      if (!existsSync(moduleDir)) { problems.push(`${consumer}/pack.json embeds ${row.pack}/${row.module}, which has no folder ${skillDir}/${SKILL_MODULES_DIR}${row.module}`); continue; }
+      const version = (JSON.parse(readFileSync(join(root, skillDir, 'pack.json'), 'utf8')) as { version: string }).version;
+      if (version !== row.version) problems.push(`${consumer}/pack.json embeds ${row.pack}@${row.version}, the skill is at ${version}`);
+      const prefix = `${skillDir}/${SKILL_MODULES_DIR}${row.module}/`;
+      const names = new Set([...filesUnder(moduleDir), ...Object.keys(generated).filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length))]);
+      for (const name of [...names].filter((path) => !path.endsWith('.test.ts')).sort()) {
+        const text = generated[`${skillDir}/${SKILL_MODULES_DIR}${row.module}/${name}`] ?? readFileSync(join(moduleDir, name), 'utf8');
+        problems.push(...moduleEscapes(name, text).map((problem) => `${skillDir}: ${problem}`));
+        out[`${consumer}/${EMBEDDED_SKILLS_DIR}${row.pack}/${row.module}/${name}`] = text;
+      }
+    }
+  }
+  if (problems.length > 0) throw new ContractsError(problems);
+  return out;
+}
+
+/** Files on disk in the embedded folders of the packs, generated earlier; those no pack.json names any more are stale. */
+function embeddedOnDisk(root: string): string[] {
+  return packDirectories(root).flatMap((consumer) => {
+    const dir = join(root, consumer, EMBEDDED_SKILLS_DIR);
+    return existsSync(dir) ? filesUnder(dir).map((name) => `${consumer}/${EMBEDDED_SKILLS_DIR}${name}`) : [];
+  });
+}
+
 export function drift(root: string, files: Record<string, string>, packFiles: Record<string, string> = {}): string[] {
   const dir = join(canonical(root), GENERATED_DIR);
   const out: string[] = [];
@@ -781,6 +907,8 @@ export function drift(root: string, files: Record<string, string>, packFiles: Re
       if (actual !== expected) out.push(`out of date: ${name} (first difference at line ${firstDifference(expected, actual)})`);
     }
   }
+  // Only a caller that passes the pack files can tell what is stale; generate() alone knows no pack file.
+  if (Object.keys(packFiles).length > 0) for (const name of embeddedOnDisk(canonical(root))) if (!(name in packFiles)) out.push(`stale: ${name}`);
   return out;
 }
 
@@ -817,6 +945,11 @@ export function write(root: string, files: Record<string, string>, packFiles: Re
       if (d !== dir && readdirSync(d).length === 0) rmdirSync(d);
     };
     prune(dir);
+    for (const name of embeddedOnDisk(canonical(root))) {
+      if (name in packFiles) continue;
+      rmSync(join(canonical(root), name), { force: true });
+      removed.push(name);
+    }
     for (const [name, expected] of Object.entries(packFiles)) {
       const path = join(canonical(root), name);
       if (existsSync(path) && readFileSync(path, 'utf8') === expected) { unchanged++; continue; }
@@ -831,6 +964,105 @@ export function write(root: string, files: Record<string, string>, packFiles: Re
 }
 
 const USAGE = 'usage: node tools/gen-contracts.ts [--check]\n  --check  write nothing; list every missing, out-of-date or stale contract file and every package vocabulary snapshot';
+
+/** Protocol codes mirrored into each format skill pack; generated subset files contain only these names and type. */
+export const SKILL_PROTOCOL_TARGETS: Readonly<Record<string, readonly string[]>> = {
+  'packs/skill/mindmap-format': ['SOURCE_UNPARSEABLE', 'REFERENCE_UNRESOLVED'],
+  'packs/skill/workbook-format': ['SOURCE_UNPARSEABLE', 'REFERENCE_UNRESOLVED'],
+  'packs/skill/xml-format': ['SOURCE_UNPARSEABLE', 'REFERENCE_UNRESOLVED'],
+  'packs/skill/html-format': ['SOURCE_UNPARSEABLE', 'REFERENCE_UNRESOLVED'],
+};
+
+const CODE_LIKE = /^[A-Z][A-Z0-9_]+$/;
+
+function propertyKeyName(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)) return name.text;
+  return undefined;
+}
+
+function stringLiteralText(node: ts.Expression): string | undefined {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  return undefined;
+}
+
+function tsFilesUnder(dir: string, skipDirNames: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!skipDirNames.has(entry.name)) out.push(...tsFilesUnder(full, skipDirNames));
+      continue;
+    }
+    if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) out.push(full);
+  }
+  return out;
+}
+
+/** Validates format-pack protocol subsets and fails if any pack throws or references a code outside its subset. */
+export function validateSkillProtocolUsage(root: string, model: Model): string[] {
+  const registered = new Set(model.formatProposals.protocolCodes.map((c) => c.code));
+  const problems: string[] = [];
+  for (const [packDir, subset] of Object.entries(SKILL_PROTOCOL_TARGETS)) {
+    for (const code of subset) {
+      if (!registered.has(code)) problems.push(`${packDir}: declared subset code ${code} is missing from contracts/model.json`);
+    }
+    const allowed = new Set(subset);
+    const functionsDir = join(root, packDir, 'functions');
+    if (!existsSync(functionsDir)) continue;
+    for (const filePath of tsFilesUnder(functionsDir, new Set(['generated', 'node_modules'])).sort()) {
+      const rel = relative(root, filePath).split('\\').join('/');
+      const source = ts.createSourceFile(filePath, readFileSync(filePath, 'utf8'), ts.ScriptTarget.Latest, true);
+      const report = (node: ts.Node, message: string): void => {
+        const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
+        problems.push(`${rel}:${line + 1}: ${message}`);
+      };
+      const visit = (node: ts.Node): void => {
+        if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+          if (registered.has(node.text) && !allowed.has(node.text)) {
+            report(node, `protocol code ${node.text} is outside ${packDir}'s SKILL_PROTOCOL_TARGETS subset (${subset.join(', ')})`);
+          }
+        } else if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'PROTOCOL_CODES') {
+          if (CODE_LIKE.test(node.name.text) && !allowed.has(node.name.text)) {
+            report(node, `PROTOCOL_CODES.${node.name.text} is outside ${packDir}'s SKILL_PROTOCOL_TARGETS subset (${subset.join(', ')})`);
+          }
+        } else if (ts.isElementAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'PROTOCOL_CODES' && node.argumentExpression !== undefined) {
+          const key = stringLiteralText(node.argumentExpression);
+          if (key !== undefined && !allowed.has(key)) {
+            report(node, `PROTOCOL_CODES[${JSON.stringify(key)}] is outside ${packDir}'s SKILL_PROTOCOL_TARGETS subset (${subset.join(', ')})`);
+          }
+        } else if ((ts.isPropertyDeclaration(node) || ts.isPropertyAssignment(node)) && propertyKeyName(node.name) === 'code' && node.initializer !== undefined) {
+          const val = stringLiteralText(node.initializer);
+          if (val !== undefined && CODE_LIKE.test(val) && !allowed.has(val)) {
+            report(node, `code ${val} is outside ${packDir}'s SKILL_PROTOCOL_TARGETS subset (${subset.join(', ')})`);
+          }
+        } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(node.left) && node.left.name.text === 'code') {
+          const val = stringLiteralText(node.right);
+          if (val !== undefined && CODE_LIKE.test(val) && !allowed.has(val)) {
+            report(node, `code ${val} is outside ${packDir}'s SKILL_PROTOCOL_TARGETS subset (${subset.join(', ')})`);
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+    }
+  }
+  return problems;
+}
+
+function renderSkillProtocolSubset(codes: readonly string[]): string {
+  const lines = codes.map((c) => `  ${q(c)},`).join('\n');
+  return `${HEADER}export const PROTOCOL_CODES = [\n${lines}\n] as const;\n\nexport type ProtocolCode = (typeof PROTOCOL_CODES)[number];\n`;
+}
+
+export function skillProtocolFiles(root: string, model: Model): Record<string, string> {
+  const problems = validateSkillProtocolUsage(root, model);
+  if (problems.length > 0) throw new ContractsError(problems);
+  const out: Record<string, string> = {};
+  for (const [packDir, subset] of Object.entries(SKILL_PROTOCOL_TARGETS)) {
+    out[`${packDir}/functions/generated/protocol.ts`] = renderSkillProtocolSubset(subset);
+  }
+  return out;
+}
 
 export async function main(args: string[], root: string = REPO_ROOT): Promise<number> {
   const unknown = args.filter((a) => a !== '--check' && a !== '--help' && a !== '-h');
@@ -866,19 +1098,32 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
   }
   const expectationSlots='packs/workflow/case-compile/slots.schema.json';
   if(existsSync(join(root,expectationSlots))){const schema=JSON.parse(readFileSync(join(root,expectationSlots),'utf8'));const model=JSON.parse(readFileSync(join(root,'contracts/model.json'),'utf8'));const axis=model.vocabulary.find((axis:{axis:string})=>axis.axis==='expectation_basis');if(axis&&schema.item?.plan?.data?.properties?.expects?.items?.properties?.basis){schema.item.plan.data.properties.expects.items.properties.basis.enum=axis.values.map((value:{code:string})=>value.code);packFiles[expectationSlots]=JSON.stringify(schema,null,2)+'\n';}}
-  const skillProtocolModel=JSON.parse(readFileSync(join(root,'contracts/model.json'),'utf8')) as Model;
-  const protocolContent=HEADER+'export const PROTOCOL_CODES = '+JSON.stringify(Object.fromEntries(skillProtocolModel.formatProposals.protocolCodes.map(code=>[code.code,{when:code.when,fix:code.fix}])),null,2)+' as const;\nexport type ProtocolCode = keyof typeof PROTOCOL_CODES;\n';
-  packFiles['packs/skill/mindmap-format/functions/generated/protocol.ts']=protocolContent;
-  packFiles['packs/skill/workbook-format/functions/generated/protocol.ts']=protocolContent;
-  packFiles['packs/skill/xml-format/functions/generated/protocol.ts']=protocolContent;
-  packFiles['packs/skill/html-format/functions/generated/protocol.ts']=protocolContent;
-  if(files['command-grammar.ts'])for(const pack of ['packs/product/famx','packs/workflow/case-compile'])packFiles[pack+'/functions/generated/command-grammar.ts']=files['command-grammar.ts'].replaceAll("from '../src/tables.ts'","from '../../../../../contracts/src/tables.ts'").replaceAll("from './vocabulary.ts'","from '../../../../../contracts/generated/vocabulary.ts'").replaceAll("import('./shared-interfaces.ts')","import('../../../../../contracts/generated/shared-interfaces.ts')");
+  try {
+    const skillProtocolModel = JSON.parse(readFileSync(join(root, 'contracts/model.json'), 'utf8')) as Model;
+    Object.assign(packFiles, skillProtocolFiles(root, skillProtocolModel));
+  } catch (error) {
+    if (!(error instanceof ContractsError)) throw error;
+    console.error(`cannot generate protocol subsets (${error.problems.length} problem${error.problems.length > 1 ? 's' : ''}):`);
+    for (const problem of error.problems) console.error(`  ${problem}`);
+    return 2;
+  }
+  if(files['command-grammar.ts'])for(const pack of ['packs/product/famx'])packFiles[pack+'/functions/generated/command-grammar.ts']=files['command-grammar.ts'].replaceAll("from '../src/tables.ts'","from '../../../../../contracts/src/tables.ts'").replaceAll("from './vocabulary.ts'","from '../../../../../contracts/generated/vocabulary.ts'").replaceAll("import('./shared-interfaces.ts')","import('../../../../../contracts/generated/shared-interfaces.ts')");
+  // The module copy has no way back to contracts/ (a module folder is self-contained), so it names the types loosely; the source
+  // in contracts/src is where they are checked.
+  if(files['command-grammar.ts'])packFiles['packs/skill/command-tools/functions/modules/command-check/grammar.ts']='// @ts-nocheck\n'+files['command-grammar.ts'].replace("import type {CatalogParam,CatalogSignature} from '../src/tables.ts';\n","type CatalogParam = any;\ntype CatalogSignature = any;\n").replace("import type {CommandParseStatus} from './vocabulary.ts';\n","type CommandParseStatus = any;\n").replace(/import\('\.\/shared-interfaces\.ts'\)\.\w+/g,'any');
   const adocDirectory=join(root,'packs/skill/adoc-format/functions/directory.ts');
   if(existsSync(adocDirectory))packFiles['packs/product/famx/functions/generated/adoc-directory.ts']='// Generated by tools/gen-contracts.ts from packs/skill/adoc-format/functions/directory.ts; do not edit\n'+readFileSync(adocDirectory,'utf8');
   if(files['schemas/contribution-input.v1.schema.json']){
     const schema=JSON.parse(files['schemas/contribution-input.v1.schema.json']);
     const model=JSON.parse(readFileSync(join(root,'contracts/model.json'),'utf8'));const kinds=model.vocabulary.find((axis:{axis:string})=>axis.axis==='document_output_kind').values;
     packFiles['packs/workflow/knowledge-contribution/slots.schema.json']=JSON.stringify(contributionSlots(schema,kinds),null,2)+'\n';
+  }
+  try { Object.assign(packFiles, embeddedPackFiles(root, packFiles)); }
+  catch (error) {
+    if (!(error instanceof ContractsError)) throw error;
+    console.error(`cannot embed skill modules (${error.problems.length} problem${error.problems.length > 1 ? 's' : ''}):`);
+    for (const problem of error.problems) console.error(`  ${problem}`);
+    return 2;
   }
   const count = Object.keys(files).length + Object.keys(packFiles).length;
   if (args.includes('--check')) {

@@ -123,8 +123,8 @@ describe('scenario 44: T5-1 synthetic WebUI originals and operation integration'
     const feeding = FedProcedureSchema.parse(view.contribution.feeding);
     assert.equal(feeding.device, 'edge-web');
     assert.equal(feeding.bed, 'bench-web');
-    assert.match(view.note ?? '', /设备 edge-web（台架 bench-web）/);
+    assert.match(view.note ?? '', /测试环境 edge-web，bench-web/);
     const page = await world.client.call('get_nodes', { root: world.root, paths: [path], depth: 0 });
-    assert.match(page.text, /设备 edge-web（台架 bench-web）/);
+    assert.match(page.text, /测试环境 edge-web，bench-web/);
   });
 });

@@ -6,7 +6,7 @@
 
 | 文件 | 内容与职责 |
 | --- | --- |
-| `workflow.json` | 声明输入插槽：`defects`（主体角色，必填，多项，绑定 `plm:bug`）、`indexed_cases`（期望角色，必填，绑定不带 `only` 的完整命令索引）及 `manual`（期望角色，可选，绑定 `manual:cli:<版本线>`）；Hub 从解析出的命令身份计算读取键并在同一修订重绑索引；参数 `max_cases`（默认 6）与 `priority`（默认 2）；绑定命令目录 `commands@1` |
+| `workflow.json` | 声明输入插槽：`defects`（主体角色，必填，多项，绑定 `plm:bug`）、`indexed_cases`（期望角色，必填，绑定不带 `only` 的完整命令索引）及 `manual`（期望角色，可选，绑定 `manual:cli:<版本线>`）；Hub 从解析出的命令身份计算读取键并在同一修订重新绑定索引；参数 `max_cases`（默认 6）与 `priority`（默认 2）；绑定命令目录 `commands@1` |
 | `requirements.json` | 声明六项条目级要求：`cases`（用例起草）、`shape`（用例结构）、`commands`（命令与参数）、`grounded`（期望结果依据）、`not_duplicate`（用例去重）和 `fixed_status`（原始结构的已修复状态） |
 | `checks.json` | 声明九项检查：结构、命令目录、预期反驳、逐字引文、来源范围、期望文字、结构去重、完整签名成员关系和原始已修复状态 |
 | `slots.schema.json` | 声明条目插槽 `cases`：包含起草用例的结构模式（标题、优先级、正反向、预期反驳、前置条件、步骤与命令行、期望结果与逐字引文、标签） |
@@ -21,7 +21,7 @@
 
 ## 版本说明
 
-- **1.6.6**：重复主张的计数身份是条目 `item`、要求项 `not_duplicate`、代码 `defect-to-case.duplicate_case` 和 `data.duplicate_of.reference`，规则版本 `defect-to-case.duplicate_claim_identity@1`。主张 statement 的措辞不参与计数。是否判重仍是既有的命令头集合、正反向和规范化标题；命令路径、参数和期望引文身份的结构键尚未接入。
+- **1.6.6**：重复主张的计数身份是条目 `item`、要求项 `not_duplicate`、代码 `defect-to-case.duplicate_case` 和 `data.duplicate_of.reference`，规则版本 `defect-to-case.duplicate_claim_identity@1`。主张 statement 的措辞不参与计数。是否判重仍是既有的命令名集合、正反向和规范化标题；命令路径、参数和期望引文身份的结构键尚未接入。
 - **1.6.0**：期望文字必须是其引文的非空逐字片段，只折叠空白；改写为阻断违规 `defect-to-case.expect_not_in_quote`，计入最多两轮修复。引文来源受配置修复字段和可选同版本线手册限制；样例采用 PLM 真实字段结构；公开标题规范化规则，查重要求项只承诺实际执行的标题比较。
 - **1.5.3**：逐份草稿报告；已见重复照样驳回。仅将依赖不全覆盖的“没有重复”记为带补取出口的未知，保留跳过文档的数量。
 - **1.5.2**：视图未截断、未跳过时，没返回的请求键确定没有用例。
@@ -30,9 +30,9 @@
   - 紧凑索引逐字段优先读取视图的 `only` 和 `cut_keys`，与绑定 URI 或条目数量冲突时以字段为准，空数组同样有效。仅缺失字段沿用旧视图的 URI / 每键 2000 条上限推断，并在 `notes` 写明“按 URI 和上限推断”；存在但形状无效的字段不回退，也不证明完整。
   - `cut_keys: []` 不再把恰好 2000 条误判为截断；明确截断的键即使少于 2000 条，未见重复仍记未知，已见重复仍驳回。
 - **1.4.0**：
-  - 查重的命令比较改为按命令头：草稿每条命令行先按锁定构建的命令目录解析出命令头（词序列里最长的、在目录里存在的前缀），收窄范围判定和按命令集合分桶都按命令头集合算。此前拿整条命令行（带参数）去和索引的命令路径键比，两边永远对不上，收窄判定把每条草稿都记未知、分桶也永远落空。
-  - `checks.json` 的 `duplicate_check` 声明 `catalog: "commands@1"`，检查函数照 `hub/rules/check.ts` 的 `catalogEntries` 写法拿到目录条目。解析不出命令头的行，命令检查本来就会驳回；查重把这条草稿记未知并写明原因。
-  - 不收窄时，草稿用的命令头在索引里没有任何条目就能断定不重复；收窄时命令头不在 `only` 里照旧记未知。
+  - 查重的命令比较改为按命令名：草稿每条命令行先按锁定构建的命令目录解析出命令名（词序列里最长的、在目录里存在的前缀），收窄范围判定和按命令集合分桶都按命令名集合算。此前拿整条命令行（带参数）去和索引的命令路径键比，两边永远对不上，收窄判定把每条草稿都记未知、分桶也永远落空。
+  - `checks.json` 的 `duplicate_check` 声明 `catalog: "commands@1"`，检查函数照 `hub/rules/check.ts` 的 `catalogEntries` 写法拿到目录条目。解析不出命令名的行，命令检查本来就会驳回；查重把这条草稿记未知并写明原因。
+  - 不收窄时，草稿用的命令名在索引里没有任何条目就能断定不重复；收窄时命令名不在 `only` 里照旧记未知。
   - `SKILL.md` 写准：每个期望结果的 quote 必须照抄进本条用例主张顶层的 `quotes`；只写在期望结果数据里的引文会被记成「没有绑定到本次运行」的未知（核心缺口，另有任务修）。
 - **1.3.0**：
   - 查重绑定收窄到草稿要用的命令：`indexed_cases` 的 URI 带 `only=<命令路径>` 与 `fields=commands,document,node,title,negative,case_structure`；草稿的命令集合与 `only` 相交才判得出来，不相交记未知。去掉 `expected.ts` 自动绑定的不带 `fields` 的同一索引。紧凑索引按条目的 `commands` 字段算命令集合。
@@ -147,7 +147,7 @@ PLM 部署设置有两项。`settings.bug_fix_field` 由系统包在缺陷 `cont
 
 ## 检查时按草稿命令收窄读取
 
-`duplicate_check.reads.narrow` 已接入核心通用接口：`slot: indexed_cases` 固定已绑定输入，`key_path: /read_keys` 从主体取键，`into: /indexed_cases` 接收新视图，`max_keys: 100`、`max_entries: 5000`、`max_bytes: 1048576` 限定读取，`rebind: true` 用这些键替换已绑定的 only。主体构造器从目录里最长命令头的 CommandIdentity 完整路径取键，模型声明的 read_keys 不参与。引擎按已绑定视图的同一修订重读，字段范围不变，并把请求键、上限、返回来源、提供方清单和缺失事实写入运行的读取清单；每项检查结果指向该清单。
+`duplicate_check.reads.narrow` 已接入核心通用接口：`slot: indexed_cases` 固定已绑定输入，`key_path: /read_keys` 从主体取键，`into: /indexed_cases` 接收新视图，`max_keys: 100`、`max_entries: 5000`、`max_bytes: 1048576` 限定读取，`rebind: true` 用这些键替换已绑定的 only。主体构造器从目录里最长命令名的 CommandIdentity 完整路径取键，模型声明的 read_keys 不参与。引擎按已绑定视图的同一修订重读，字段范围不变，并把请求键、上限、返回来源、提供方清单和缺失事实写入运行的读取清单；每项检查结果指向该清单。
 
 推荐开始运行时绑定带 `fields=commands,document,node,title,negative,case_structure` 的索引。预先写上的 only（包括 only=user 这种空视图）不再挡住这些命令路径。收窄结果在同一修订上完整、且这些命令没有用例时，结论是范围内没有重复。跳过、截断或超限仍是未知；可见的重复仍驳回。完全不可读时不调用检查函数。索引修订已不可取或永久跳过文档时，应补建并绑定新修订重开运行。
 

@@ -328,8 +328,8 @@ describe('trace gold generator', () => {
     ].join('\n');
 
     const turns: LoggedTurn[] = [
-      { index: 0, toolResults: [], tools: ['hub_start_run'] },
-      { index: 1, toolResults: [{ id: 'r1', text: startRunText, isError: false }], tools: ['hub_get_nodes'] },
+      { index: 0, toolResults: [], tools: ['mcp__hub__start_run'] },
+      { index: 1, toolResults: [{ id: 'r1', text: startRunText, isError: false }], tools: ['mcp__hub__get_nodes'] },
       { index: 2, toolResults: [{ id: 'r2', text: fullResultText, isError: false }], tools: [] },
     ];
 

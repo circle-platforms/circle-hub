@@ -1,4 +1,4 @@
-import {technicalCode,stat,facts} from './presentation.ts';
+import {technicalCode} from './presentation.ts';
 // Search for the console (the interface doc's GET /search?q): matches among the tasks, task packs, knowledge (product
 // lines, their builds and version lines, a tree path in the current roots), records (call-log lines) and, for
 // administrators, members, each with the visibility of its own page. Bounded: the query is at most SEARCH_MAX_QUERY
@@ -11,8 +11,11 @@ import { packPath } from './pack-display.ts';
 import { code, html, link, page, table } from './html.ts';
 import { byId, shownVersion } from './packs.ts';
 import { spaceSearch } from './spaces.ts';
-import { readableLines, type PageContext, type PageResult } from './pages.ts';
+import type { PageContext, PageResult } from './context.ts';
+import { readableLines } from './pages.ts';
+import { RUN_ID, USER_ID } from './params.ts';
 import { TOOL_LABELS, packTitles, taskTitle } from './tasks.ts';
+import { filterForm } from './components.ts';
 import { card, sectionHead, when } from './ui.ts';
 
 export const SEARCH_MAX_QUERY = 100;
@@ -22,8 +25,6 @@ const RUN_PAGE = 100;
 const CALLS_SCANNED = 300;
 const MAX_LINES = 20;
 const MAX_ROOTS = 20;
-const RUN_ID = /^run_[0-9a-z]{26}$/;
-const USER_ID = /^usr_[0-9a-z]{26}$/;
 
 export interface TaskHit { run: string; title: string; pack: string; product: string | null; started_at: string; runner: string | null }
 export interface PackHit { space?:string;id: string; title: string; kind: PackKind; kind_label: string }
@@ -159,7 +160,7 @@ export async function searchPage(ctx: PageContext): Promise<PageResult> {
   const spaceKnowledge=await spaceSearch(ctx);
   const results = await searchHub(ctx, raw);
   const chrome = ctx.chrome('搜索', results.q === '' ? { hint: '在任务、工作流、知识库与记录中查找' } : { sub: `“${results.q}”的查找结果` });
-  const form = html`<form class="ch-actions" data-filters method="get" action="/console/search"><label>关键词 <input name="q" value="${results.q}" maxlength="${SEARCH_MAX_QUERY}" required></label><button class="ch-btn ch-btn--secondary" type="submit">搜索</button></form>`;
+  const form = filterForm('/console/search', html`<label>关键词 <input name="q" value="${results.q}" maxlength="${SEARCH_MAX_QUERY}" required></label>`, '搜索');
   if (results.q === '') return { status: 200, body: page(chrome, html`${spaceKnowledge}${card(null, html`${form}`)}`) };
   const partial = (yes: boolean, what: string) => (yes ? html`<p class="ch-meta">${what}</p>` : '');
   const knowledgeRow = (hit: KnowledgeHit) => {
@@ -167,7 +168,7 @@ export async function searchPage(ctx: PageContext): Promise<PageResult> {
     if (hit.kind === 'build') return ['构建', link('/console/knowledge/product', hit.build, { id: hit.product, line: hit.line }), `${hit.product} · 版本线 ${hit.line}`];
     return ['条目', link('/console/knowledge/tree', hit.path, { root: hit.root, path: hit.path }), `${hit.product} · 版本线 ${hit.line} 的当前版本`];
   };
-  const records = ctx.admin ? '/console/admin/calls' : '/console/records';
+  const records = '/console/records';
   const body = html`${spaceKnowledge}${card(null, form)}
 ${sectionHead('任务', `${results.tasks.length} 个`)}
 ${card(null, html`${table(['任务', uiLabelOf('pack_kind', 'workflow'), '执行人', '开始'], results.tasks.map((hit) => [link(`/console/runs/${hit.run}`, hit.title), technicalCode(hit.pack), hit.runner ?? '未记录', when(hit.started_at)]), '没有匹配的任务')}${partial(results.partial.tasks, `仅查找了最近的 ${RUNS_SCANNED} 个任务，或匹配多于 ${SEARCH_MAX_HITS} 个；可能还有其他匹配。`)}`)}

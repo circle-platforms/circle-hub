@@ -16,9 +16,12 @@ export interface FunctionAttempt {
   reason?: string;
 }
 
+// resident_observation_unavailable: the watchdog could not see the child's whole process tree, which says nothing about the
+// function; a pack function has no side effects, so V03 R[11] (a sandbox that is unavailable for a moment is retried a bounded
+// number of times) applies to it as to the other transient failures.
 export function transientFunctionFailure(error: unknown): error is SandboxError {
   return error instanceof SandboxError && (error.code === 'SANDBOX_TIMEOUT'
-    || (error.code === 'SANDBOX_UNAVAILABLE' && ['queue_full', 'stopping', 'spawn_failed'].includes(String(error.detail.reason))));
+    || (error.code === 'SANDBOX_UNAVAILABLE' && ['queue_full', 'stopping', 'spawn_failed', 'resident_observation_unavailable'].includes(String(error.detail.reason))));
 }
 
 export async function retryFunction<T>(execute: () => Promise<T>, timeoutMs: number, observe?: (attempt: FunctionAttempt) => void, options: { retryWallTimeout?: boolean } = {}): Promise<T> {

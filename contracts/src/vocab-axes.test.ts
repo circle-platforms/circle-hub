@@ -44,9 +44,9 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
   vocabulary: Array<{ axis: string; label: string; owner: string; values: Array<{ code: string; label: string }> }>;
 };
 
-test('model version is 49 and the generated vocabulary covers every declared axis', () => {
-  assert.equal(model.version,49);
-  assert.equal(MODEL_VERSION,49);
+test('the generated vocabulary matches the current model revision and covers every declared axis', () => {
+  assert.ok(model.version>=51);
+  assert.equal(MODEL_VERSION,model.version);
   assert.equal(model.vocabulary.length, Object.keys(AXES).length);
 });
 
@@ -169,7 +169,7 @@ test('contracts schemas integrate with the generated schemas seamlessly', () => 
   assert.ok(!RequirementTemplate.safeParse({ ...reqBase, target: 'invalid' }).success);
 
   // CheckEntry.applies accepts item and run, rejects others
-  const checkBase = {
+  const checkBase = { tier: 'blocking',
     id: 'c',
     interpreter: 'structure@1',
     table: 'tables/s.json',

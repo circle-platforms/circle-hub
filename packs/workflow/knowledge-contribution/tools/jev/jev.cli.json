@@ -1,0 +1,379 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "subcommands": {
+    "ask": [
+      "%JEV_API_KEY%",
+      "%HUB_TOKEN%"
+    ],
+    "calibrate": [
+      "%JEV_API_KEY%",
+      "%HUB_TOKEN%"
+    ],
+    "place": [
+      "%JEV_API_KEY%",
+      "%HUB_TOKEN%"
+    ],
+    "lock": [
+      "%HUB_TOKEN%"
+    ],
+    "submit": [
+      "%HUB_TOKEN%"
+    ]
+  },
+  "options": [
+    {
+      "name": "hub",
+      "type": "hub",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "model",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "out",
+      "type": "path",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "base-url",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "input",
+      "type": "path",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "root",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "under",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "pieces",
+      "type": "path",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "from",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "limit",
+      "type": "int",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "dry-run",
+      "type": "text",
+      "required": false,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "product",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "build",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "proposals",
+      "type": "path",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "skip",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": true,
+      "placeholder": null
+    },
+    {
+      "name": "send",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": true,
+      "placeholder": null
+    },
+    {
+      "name": "timeout-ms",
+      "type": "int",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    }
+  ],
+  "forms": [
+    {
+      "positional": "ask",
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "model",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "input",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "base-url",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "send",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "timeout-ms",
+          "placeholder": null,
+          "optional": true
+        }
+      ]
+    },
+    {
+      "positional": "calibrate",
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "model",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "root",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "under",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "limit",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "dry-run",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "base-url",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "send",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "timeout-ms",
+          "placeholder": null,
+          "optional": true
+        }
+      ]
+    },
+    {
+      "positional": "place",
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "model",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "root",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "under",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "from",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "pieces",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "limit",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "base-url",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "send",
+          "placeholder": null,
+          "optional": true
+        },
+        {
+          "name": "timeout-ms",
+          "placeholder": null,
+          "optional": true
+        }
+      ]
+    },
+    {
+      "positional": "lock",
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "product",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "build",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": null,
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": "submit",
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "proposals",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "product",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "build",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "skip",
+          "placeholder": null,
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

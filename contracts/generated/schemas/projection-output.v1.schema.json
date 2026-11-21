@@ -493,6 +493,108 @@
             ],
             "additionalProperties": false
           }
+        },
+        "ask": {
+          "description": "lines to ask devices this run's lineage holds the lease of, what they expect at the end of each (the Hub types the line after a question mark and never presses Enter; the executor declares how); only for a workflow that declares leases",
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "inventory": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "device": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "line": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "mode": {
+                "description": "the level to ask at, from the closed set the executor declares; absent when it declares none",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "keys": {
+                "minItems": 1,
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              }
+            },
+            "required": [
+              "inventory",
+              "device",
+              "label",
+              "line",
+              "keys"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "read": {
+          "description": "one read-only command line to send to a device this run's lineage holds the lease of, for the device's own output (the executor declares the shape of a line it sends and where the text is; one line per run); only for a workflow that declares leases",
+          "maxItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "inventory": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "device": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "line": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "keys": {
+                "minItems": 1,
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              }
+            },
+            "required": [
+              "inventory",
+              "device",
+              "label",
+              "line",
+              "keys"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

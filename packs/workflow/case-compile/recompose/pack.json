@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose",
-  "version": "1.0.3",
+  "version": "1.3.1",
   "kind": "workflow",
   "title": "recompose",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -10,11 +10,28 @@
       "pack": "mindmap-format"
     }
   ],
+  "embeds": [
+    {
+      "pack": "mindmap-format",
+      "version": "1.0.26",
+      "module": "case-structure"
+    },
+    {
+      "pack": "run-tools",
+      "version": "1.0.2",
+      "module": "hub-client"
+    },
+    {
+      "pack": "command-tools",
+      "version": "1.1.1",
+      "module": "command-check"
+    }
+  ],
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "2daa5c014f49f5ad35b7bdd370f5ff5209113f605c227815f7488e324e344dee",
-      "size": 142
+      "sha256": "6934273c669c2e4ef10350f55e26794f46a95a80846bfe543e8a0ebc84ab906b",
+      "size": 11971
     },
     {
       "path": "checks.json",
@@ -23,33 +40,83 @@
     },
     {
       "path": "functions/canonical-json.ts",
-      "sha256": "1205f7e664f147172a57cb55e31f4f38f85f935f47a8bfdd0e62b5fa8d913d16",
-      "size": 958
+      "sha256": "7b6ed816a84b9cc987dec0523309eb7348e0d172c78e33f6cfa9bcfee07d9e9c",
+      "size": 1489
     },
     {
-      "path": "functions/compile-structure.ts",
-      "sha256": "449511eb624e0bca749f194cef1ebdfcc2b8bf7671e74b6d584486c14705774f",
-      "size": 13117
+      "path": "functions/client-cli.ts",
+      "sha256": "8edf9ceed67141245a7b91f7f209a13511e7c6fa98c9865ae4317ed4e33b1672",
+      "size": 2492
     },
     {
-      "path": "functions/generated/command-grammar.ts",
-      "sha256": "46b7682f92a2ad54586840d263e459c8d463f2d833c0556e01290f8018d60237",
-      "size": 11844
+      "path": "functions/generated/skills/command-tools/command-check/command-policy.ts",
+      "sha256": "b7b6536765335065c5930c434a512b43d84d21171a22e619c25630c96a4f60ca",
+      "size": 11716
+    },
+    {
+      "path": "functions/generated/skills/command-tools/command-check/grammar.ts",
+      "sha256": "2dd2b0f59cbdb827737d1c61bf1056f7e2bb1135b1d28b91cce5af737e2939b7",
+      "size": 11347
+    },
+    {
+      "path": "functions/generated/skills/command-tools/command-check/value-domain.ts",
+      "sha256": "5b5d4cfe103931868f74b93e64b332d9dcde565d6148a5bd2ea7ce5b999f3a93",
+      "size": 20716
+    },
+    {
+      "path": "functions/generated/skills/mindmap-format/case-structure/index.ts",
+      "sha256": "cda38095f6ebf28363c002c09894fd9e88a0531102c97fca592ac6d24df46f5f",
+      "size": 14816
+    },
+    {
+      "path": "functions/generated/skills/mindmap-format/case-structure/policy.json",
+      "sha256": "682de39ce35c104f24cb11f814c079b676d67947a3578a4cef17c7e1c7ba041e",
+      "size": 678
+    },
+    {
+      "path": "functions/generated/skills/run-tools/hub-client/index.ts",
+      "sha256": "9711937aa8567929cf96e2af7336eda73e567893b1d9230e72f00e707cd3e8c4",
+      "size": 18728
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "4bb9f01326c96684003b2b30718d93110a76569efa0c2a3986d0eba737deb8e2",
+      "size": 1591
+    },
+    {
+      "path": "functions/hub-retry.ts",
+      "sha256": "7a0f40ce6423a13b3e9b29c17b9fbd03738ed0c4751d44871af80fb941cae2d2",
+      "size": 32697
+    },
+    {
+      "path": "functions/knowledge-text.ts",
+      "sha256": "9e79532c33e0d7a90c8623c3e8bfc7287e70983dc7eb3ad0323586a6fd8c0928",
+      "size": 9133
+    },
+    {
+      "path": "functions/local-checks.ts",
+      "sha256": "e9aaf4faad42ca49a5f7df3cc023f7e36170f1ecbd8361f6efa678978d376859",
+      "size": 25224
     },
     {
       "path": "functions/project.ts",
-      "sha256": "891d11739e69e6df9ceb14f610bc363b2c76953a30d9a2737b9d96577b6d0e77",
-      "size": 1832
+      "sha256": "e8505643e6333acd0fdef27c5e8f47ee20dd900e4fc3f027c6971c4397e23e5c",
+      "size": 4783
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "c6ccb66bb6d7f99123a37c3a1353750733be63237907cae3a34a3823419b411a",
-      "size": 23067
+      "sha256": "a65fb41d94ae8b7177e59b3e4f1789baab22286d63bd454a88591bafdb44de03",
+      "size": 39288
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "f1c0a6f4ce9834daf7dd664f93525c143d7e399250eddfa3f9ec3b784181472c",
-      "size": 4185
+      "sha256": "148beab293804c3ba18abd42eba741d53fdd8572293b05d0fe6419b85230ecef",
+      "size": 4663
+    },
+    {
+      "path": "functions/record-shape.ts",
+      "sha256": "1929e55b5481f7a4cbb6e0bf4042425b47c67f233aee283bc4fa6b2cfad9fd32",
+      "size": 6314
     },
     {
       "path": "functions/schema.ts",
@@ -62,19 +129,29 @@
       "size": 1742
     },
     {
+      "path": "functions/source-cache.ts",
+      "sha256": "779ebc7957170bf77cbcb3e424f6d47115d7a803c56319219ed80273104dbeee",
+      "size": 4807
+    },
+    {
+      "path": "functions/source-materials.ts",
+      "sha256": "28db7f139565290d6e623fb5fe196c0b89b48ba830fe618ef962c58bab18d17f",
+      "size": 7382
+    },
+    {
       "path": "functions/subject.ts",
       "sha256": "7ec23bf8d26202e1cd92181a249d8b43739eadaf6fd29f10f54a152217d1e2e6",
       "size": 2039
     },
     {
       "path": "functions/text.ts",
-      "sha256": "3e9e1753b14522c6d6b6d9387e38a3f9555af0c37d70d3aa3b5b867896044de5",
-      "size": 2771
+      "sha256": "83ab0f967ec94f112e1563b333b27481dd20bec3329834b2031cf773f64092f8",
+      "size": 12384
     },
     {
       "path": "requirements.json",
-      "sha256": "51dc29071554842c8ab5ff399958c16b61675c2e151b5863954cc479751b392a",
-      "size": 1736
+      "sha256": "fb903be4370a5cbff727073eba12c66b920858da17aeeb0808ad9b0cc930b2ad",
+      "size": 1859
     },
     {
       "path": "samples/negative/full_set.json",
@@ -88,7 +165,7 @@
     },
     {
       "path": "samples/negative/record.json",
-      "sha256": "074aae0cca2aa0fa16beed0a4d64b3ea93f316e9d74b785efa1659d6770d228a",
+      "sha256": "e84c5adcfe5432d283ab89b415d799c0ec39c58adf031be72700871ec2ced8fb",
       "size": 28861
     },
     {
@@ -103,7 +180,7 @@
     },
     {
       "path": "samples/positive/record.json",
-      "sha256": "36c6429204b7ede48e7b7ccd62aad9d62f61403f080a627cbdfd53d4a7215646",
+      "sha256": "0e9d1b15a789dbef504d06618630ab16b857d007188bfda88f1bcf7631beedbe",
       "size": 28927
     },
     {
@@ -113,13 +190,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "a89f0017bc5b526e2cfdedbb1250d617624cad022b727bef8730a96fdb8061cd",
-      "size": 1603
-    },
-    {
-      "path": "tables/compile-structure.json",
-      "sha256": "d6ed96abebf56a8bdb4cd684982b457905b0ac864b13d92736d3c7a689833923",
-      "size": 617
+      "sha256": "138cf234095170d7616d9d44fb60c843415500f2794de4e5c8845dd677929fd1",
+      "size": 1609
     },
     {
       "path": "tables/quotes.json",
@@ -128,8 +200,8 @@
     },
     {
       "path": "tables/recompose-codes.json",
-      "sha256": "f1c3a4d47ce1fde2421c18f2228ac7083fbee33f10cbcd71ddac8c0bc1c0304e",
-      "size": 1428
+      "sha256": "a2161cc837f84e258a472fe78b27e847b2e5a5ca4861c356265de691ab55903b",
+      "size": 1714
     },
     {
       "path": "tables/recompose-format.json",
@@ -142,9 +214,39 @@
       "size": 18407
     },
     {
+      "path": "tools/check-record.cli.json",
+      "sha256": "1b829dd9d3623fffe2100343b843e1ed9ba24c6bd69b587215e418ac1ec769dc",
+      "size": 1047
+    },
+    {
+      "path": "tools/check-record.ts",
+      "sha256": "93f5774982be52ea4b2efcfaf4d617559e86da173fff79223fcd7ed217210e1a",
+      "size": 14934
+    },
+    {
+      "path": "tools/download-run.cli.json",
+      "sha256": "d9f95d1a2740a249ce9fdb7da9c5fa39cc745a99b6ab407a27a4b7bfa92a73e4",
+      "size": 1410
+    },
+    {
+      "path": "tools/download-run.ts",
+      "sha256": "ffc7570d68246366ea80ae2ce5102fd43e00dc7fc8c3026964d7ed82df79a401",
+      "size": 3229
+    },
+    {
+      "path": "tools/submit-records.cli.json",
+      "sha256": "1b7c9fe2366283c658456a91fb647c2cdef23c400d40b136a165438a52c458d2",
+      "size": 2219
+    },
+    {
+      "path": "tools/submit-records.ts",
+      "sha256": "dec81e2ae0359888e10998b6f6b37dea42ace828233aa6e4c8d0a5c6d99f5ede",
+      "size": 15815
+    },
+    {
       "path": "workflow.json",
-      "sha256": "de2fcabe9dc4c18d1168f8fff6339db1930828996799c6a5dd35eb089ebcf35f",
-      "size": 2429
+      "sha256": "9effa4d037ed2e0963956db1b57dc7fe7e0d0fea552954097742f1c59f23212d",
+      "size": 3214
     }
   ]
 }

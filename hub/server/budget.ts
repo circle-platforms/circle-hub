@@ -1,18 +1,13 @@
-// The text budget of one tool answer. Measured on the real Circle client 1.10 with a scripted model: Circle forwards only the
-// text content of a tool result (structuredContent never reaches the model) and concatenates its text blocks; an answer of
-// about 49,000 characters reached the model whole, one of about 61,000 was replaced by "Tool output is too large to include
-// here" and could not be used; a CJK character counts as one. So every answer is laid out from blocks within TEXT_BUDGET:
-// a line is never cut here, what does not fit is left out whole, and one Chinese note names what was left out and how to
-// read it (display rule 7: a truncation is marked 部分). What a renderer shortened itself (an entry's Omission) is named in the
-// same note. The tail (the trace line) always ends the text, after the note.
+// The layout of one tool answer from blocks: what a renderer shortened itself (an entry's Omission, a field over its own cap)
+// is named in one Chinese note with how to read it (display rule 7: a shortening is marked 部分), and the tail (the trace
+// line) always ends the text, after the note.
+// A tool answer has no length budget (decisions 157 and 158): Circle forwards only the text content of a tool result, keeps
+// an answer above its own limit (80,000 characters in 1.14) in a file and gives the model the path and the start of it, so
+// nothing is lost and how much of it stays in the context is the client's to handle. A list cut to a budget sent the model to
+// entries it could not reach (a manual section of 137 entries showed 23, the other 114 named by untitled references or the
+// console page). `budget` stays for a caller that needs a cap: then a line is never cut, what does not fit is left out whole,
+// and the note names it too.
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
-
-/**
- * The most characters the text of one tool answer has, the note and the tail included. Well below the ~49,000 the client
- * delivered, so that the client's own framing and a client with a smaller limit still fit. Counted as String.length (UTF-16
- * code units): never less than the characters a client counts (an astral character counts twice).
- */
-export const TEXT_BUDGET = 30_000;
 
 /** Something a renderer left out of an entry it shows (the end of a long field, part of a node): named in the note. */
 export interface Omission {
@@ -55,6 +50,7 @@ export interface Block {
 const MAX_PARTS = 12;
 
 export interface FitOptions {
+  /** The most characters of the text, the note and the tail included, counted as String.length. Default: no limit. */
   budget?: number;
   /** Said for a cut block that gives no `more` of its own. */
   fallback?: string;
@@ -238,39 +234,6 @@ function leftOut(prepared: readonly Prepared[], filled: Filled, fallback: string
   return { dropped, shortened, mores };
 }
 
-/**
- * A list split so that its first part (up to `cap` characters, whole entries) keeps the list's priority and the rest yields
- * to other blocks: `[first, rest]` with the rest numbered on and shown only after the first part is shown whole. `index` is
- * where the first part will stand among the blocks given to fit, so that the rest can name it. The rest never comes before
- * the first part: its priority is at least the list's.
- */
-export function softCap(block: Block & { entries: readonly Entry[] }, cap: number, restPriority: number, index: number): [Block, Block] {
-  let size = 0;
-  let n = 0;
-  while (n < block.entries.length) {
-    const entry = block.entries[n];
-    const lines = splitLines(typeof entry === 'string' ? [entry] : isClipped(entry) ? entry.lines : (entry as readonly string[]));
-    if (n > 0 && size + sizeOf(lines) > cap) break;
-    size += sizeOf(lines);
-    n++;
-  }
-  const more = block.more;
-  const first = block.first ?? 1;
-  return [
-    { ...block, entries: block.entries.slice(0, n) },
-    {
-      ...block,
-      head: [],
-      omitted: [],
-      entries: block.entries.slice(n),
-      priority: Math.max(restPriority, block.priority),
-      first: first + n,
-      after: index,
-      ...(more ? { more: (from: number) => more(n + from) } : {}),
-    },
-  ];
-}
-
 /** The one note: what the budget left out says the budget, what a field cap shortened says the cap (the answer itself was within the budget). */
 function noteOf(dropped: readonly string[], shortened: readonly string[], mores: readonly string[], budget: number): string {
   const said = [
@@ -293,13 +256,13 @@ function assemble(prepared: readonly Prepared[], filled: Filled, note: string | 
 }
 
 /**
- * Lays the blocks out within the budget. Everything fits and nothing was shortened: the lines in display order, then the
- * tail, no note. Otherwise blocks are filled by priority, each up to its first entry that does not fit, and ONE note before
- * the tail names what was left out (counts and positions) and what was shortened, and how to read it. Whatever the input,
- * the text is at most `budget` characters and no line is cut.
+ * Lays the blocks out, within the budget when one is given. Everything fits and nothing was shortened: the lines in display
+ * order, then the tail, no note. Otherwise blocks are filled by priority, each up to its first entry that does not fit, and
+ * ONE note before the tail names what was left out (counts and positions) and what was shortened, and how to read it.
+ * Whatever the input, the text is at most `budget` characters and no line is cut.
  */
 export function fit(blocks: readonly Block[], options: FitOptions = {}): Fitted {
-  const budget = options.budget ?? TEXT_BUDGET;
+  const budget = options.budget ?? Number.POSITIVE_INFINITY;
   const tail = splitLines(options.tail ?? []);
   const tailSize = sizeOf(tail);
   const prepared = blocks.map(prepare);
@@ -318,7 +281,7 @@ export function fit(blocks: readonly Block[], options: FitOptions = {}): Fitted 
     reserve = Math.max(reserve + 200, note.length + 1);
   }
   // Only for pathological input (hundreds of blocks): a short fixed note and whatever fits beside it. The note itself is cut
-  // only for a budget shorter than it and the tail (about 70 characters), never for TEXT_BUDGET.
+  // only for a budget shorter than it and the tail (about 70 characters).
   const recovery=options.fallback??leftOut(prepared,fill(prepared,0),undefined).mores[0]??'缺少其余部分的读取入口；请管理员补充可读引用后用 get_nodes 读取';
   const shortRecovery=recovery.length<Math.max(80,budget/2)?recovery:'请管理员补充未显示部分的可读引用，再用 get_nodes 读取';
   const note = `${labelOf('qualifier_mark', 'partial')}：这段回答以 ${budget} 个字符为限，有些内容没有显示。读其余部分：${shortRecovery}`;

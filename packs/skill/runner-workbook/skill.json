@@ -1,0 +1,11 @@
+{
+  "schema": "skill@1",
+  "parsers": [],
+  "modules": [
+    {
+      "id": "workbook-writer",
+      "title": "运行器工作簿读写",
+      "family": "这个运行器的用例工作簿：对所有产品通用，不对任意 Excel 通用"
+    }
+  ]
+}

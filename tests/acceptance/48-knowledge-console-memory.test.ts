@@ -98,9 +98,9 @@ test('knowledge batch previews stop honestly and confirmation rechecks a withdra
  const current=(await hub.hub.knowledge.spaces!.current(owner.user.id))!;
  const params=new URLSearchParams({root:current.root,path:verified.path,selected_entry:verified.entry,team_path:'/共享/认证'});
  params.append('selected_entry',second.entry);
- const before=await hub.records.store.watermark!(),preview=await browser.get('/console/knowledge/share-batch?'+params);
- assert.equal(preview.status,200,preview.body);assert.match(preview.body,/确认分享到团队/);assert.equal(await hub.records.store.watermark!(),before);
- assert.doesNotMatch(preview.body,/<button[^>]+disabled[^>]*>确认分享到团队/);
+  const before=await hub.records.store.watermark!(),preview=await browser.get('/console/knowledge/share-batch?'+params);
+  assert.equal(preview.status,200,preview.body);assert.match(preview.body,/确认分享到公共空间/);assert.equal(await hub.records.store.watermark!(),before);
+  assert.doesNotMatch(preview.body,/<button[^>]+disabled[^>]*>确认分享到公共空间/);
  await hub.hub.knowledge.spaces!.withdraw(owner.principal,verified.entry,owner.user.id);
  params.set('csrf',csrf(preview.body));
  const confirmed=await browser.send('/console/knowledge/do/share-batch',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',origin:'http://127.0.0.1:'+browser.port},body:params.toString()});
@@ -111,19 +111,22 @@ test('knowledge batch previews stop honestly and confirmation rechecks a withdra
 });
 
 test('workflow grants reuse the dialog, hide unavailable team publication and expose no personal external actions', {skip},async()=>{
- const detail=await browser.get('/console/packs/'+pack+'?space='+owner.user.id);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);
- const listing=await browser.get('/console/packs?scope=personal');assert.match(listing.body,new RegExp('href="/console/packs/'+pack+'\\?space='+owner.user.id));
- const team=await browser.get('/console/packs?scope=team');assert.match(team.body,/<span data-pack-audience>团队<\/span>/);assert.doesNotMatch(team.body,/<span data-pack-audience>(?:本人及|合成控制台作者)/);
- const adminTeam=await adminBrowser.get('/console/packs?scope=team');assert.match(adminTeam.body,/<span data-pack-audience>合成控制台作者/);
- assert.match(detail.body,/<button[^>]+disabled[^>]+title="没有发布权/);assert.doesNotMatch(detail.body,/name="(?:leases|dispatch|system|named_document)"|cmd-pack-assign/);
- const preview=await browser.post('/console/packs/do/grant',{csrf:csrf(detail.body),pack,audience:'member',member:reader.user.name,preview_grant:'1'});assert.equal(preview.status,303);
- const checked=await browser.get(String(preview.headers.location));assert.equal(checked.status,200,checked.body);
- assert.equal((checked.body.match(/name="member"/g)??[]).length,1);assert.match(checked.body,/name="member"[^>]*value="合成控制台接收人"/);
- assert.equal((await hub.hub.registry.personal!.grants(owner.principal,pack)).length,0);
- const granted=await browser.post('/console/packs/do/grant',{csrf:csrf(checked.body),pack,audience:'member',member:reader.user.name});assert.equal(granted.status,303,granted.body);
- const visible=await received.get('/console/packs?scope=shared');assert.match(visible.body,/来自 合成控制台作者/);assert.match(visible.body,new RegExp(pack));
- const revoke=await browser.post('/console/packs/do/revoke',{csrf:csrf(detail.body),pack,audience:'member',member_id:reader.user.id});assert.equal(revoke.status,303,revoke.body);
- assert.doesNotMatch((await received.get('/console/packs?scope=shared')).body,new RegExp(pack));
+  // /console/packs page paths are retired; personal workflows live under /console/workflows (routes.ts).
+  const detail=await browser.get('/console/workflows/'+pack+'?space='+owner.user.id);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);
+  const listing=await browser.get('/console/workflows?scope=personal');assert.match(listing.body,new RegExp('href="/console/workflows/'+pack+'\\?space='+owner.user.id));
+  // A member who is in no team sees 已分配给当前账户 for a personally granted team workflow, never 公共空间 or other assignees.
+  const team=await browser.get('/console/workflows?scope=team');assert.match(team.body,/<span data-pack-audience>已分配给当前账户（合成控制台作者）<\/span>/);assert.doesNotMatch(team.body,/<span data-pack-audience>(?:尚未指定成员|本人及)/);
+  const adminTeam=await adminBrowser.get('/console/workflows?scope=team');assert.match(adminTeam.body,/<span data-pack-audience>合成控制台作者/);
+  // No publish right: title sits on the wrapping span; the button itself is disabled (personal-packs.ts).
+  assert.match(detail.body,/<span title="没有发布权"><button[^>]+disabled/);assert.doesNotMatch(detail.body,/name="(?:leases|dispatch|system|named_document)"|cmd-pack-assign/);
+  const preview=await browser.post('/console/workflows/do/grant',{csrf:csrf(detail.body),pack,audience:'member',member:reader.user.name,preview_grant:'1'});assert.equal(preview.status,303);
+  const checked=await browser.get(String(preview.headers.location));assert.equal(checked.status,200,checked.body);
+  assert.equal((checked.body.match(/name="member"/g)??[]).length,1);assert.match(checked.body,/name="member"[^>]*value="合成控制台接收人"/);
+  assert.equal((await hub.hub.registry.personal!.grants(owner.principal,pack)).length,0);
+  const granted=await browser.post('/console/workflows/do/grant',{csrf:csrf(checked.body),pack,audience:'member',member:reader.user.name});assert.equal(granted.status,303,granted.body);
+  const visible=await received.get('/console/workflows?scope=shared');assert.match(visible.body,/来自 合成控制台作者/);assert.match(visible.body,new RegExp(pack));
+  const revoke=await browser.post('/console/workflows/do/revoke',{csrf:csrf(detail.body),pack,audience:'member',member_id:reader.user.id});assert.equal(revoke.status,303,revoke.body);
+  assert.doesNotMatch((await received.get('/console/workflows?scope=shared')).body,new RegExp(pack));
 });
 
 let memoryDocument:string,memoryVersion:string;
@@ -185,7 +188,7 @@ test('entry inspectors keep counts with labels and one ordered action row; openi
  assert.equal(reply.status,200,reply.body);
  assert.match(reply.body,/<h2 class="ch-section-label"[^>]*>来源 · 1<\/h2>/);
  const foot=/<footer class="ch-inspector-actions">([\s\S]*?)<\/footer>/.exec(reply.body)?.[1]??'';
- assert.match(foot,/ch-btn--ghost[^>]*>知识版本记录<\/a>[\s\S]*ch-btn--danger[^>]*>撤回…<\/a>[\s\S]*ch-btn--secondary[^>]*>分享到团队…<\/a>[\s\S]*ch-btn--primary[^>]*>编辑<\/a>/);
+  assert.match(foot,/ch-btn--ghost[^>]*>知识版本记录<\/a>[\s\S]*ch-btn--danger[^>]*>撤回…<\/a>[\s\S]*ch-btn--secondary[^>]*>分享到公共空间…<\/a>[\s\S]*ch-btn--primary[^>]*>编辑<\/a>/);
  assert.doesNotMatch(foot,/<details|<summary|<form/);
  assert.match(reply.body,/<div class="ch-dialog" id="withdraw-entry"[\s\S]*action="\/console\/knowledge\/do\/withdraw"/);
  const confirmation=await browser.get(path+'#withdraw-entry');assert.equal(confirmation.status,200);

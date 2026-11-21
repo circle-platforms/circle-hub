@@ -221,6 +221,12 @@ test('a later result voids waiting requests only, once, and a voided request is 
     assert.equal(back.get(request.digest)!.superseded, undefined);
     assert.deepEqual(await service.inspect(request.digest), back.get(request.digest));
   }
+  // A request that waits again takes an answer like any waiting one (the same submission checked again settles it).
+  const settled = await sourceRecord('void-settled-again');
+  await service.answer(made[2]!.digest, settled);
+  await service.answer(made[2]!.digest, settled);
+  assert.equal((await service.inspect(made[2]!.digest))!.answered_by, settled);
+  await assert.rejects(service.answer(made[2]!.digest, answer), ConflictError, 'and that answer is not overwritten');
   assert.equal(await service.supersede([made[1]!.digest], later), 1, 'and it can be voided again');
   assert.equal((await service.inspect(made[1]!.digest))!.superseded, true);
   await assert.rejects(service.reinstate([made[1]!.digest], 'f'.repeat(64)), /恢复来源记录不存在/);

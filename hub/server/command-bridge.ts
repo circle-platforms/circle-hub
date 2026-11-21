@@ -5,9 +5,9 @@
 // reaches `secret set` through the command's readSecret option, never through argv or the environment. Each invocation
 // opens and closes its own records, like a CLI process. Platform commands (backup, restore, deploy, …) stop the server
 // and are refused here: they stay on the command line.
-import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import type { AssemblyModule, CliCommand } from './api.ts';
 import { OPERATOR_TOKEN_VARIABLE } from './assemble/operator-token.ts';
+import { parseCommandParameters } from './command-parameters.ts';
 
 export interface CommandRun {
   /** The command's exit code: 0 ok, 1 refused or failed, 2 usage. */
@@ -27,25 +27,8 @@ export interface CommandBridge {
   run(argv: readonly string[], input: CommandInput): Promise<CommandRun>;
 }
 
-/** The `circle-hub` commands the console may run, with what each manages there (the CLI's command names). */
-interface BridgedCommandDescriptions {
-  readonly user: string;
-  readonly token: string;
-  readonly pack: string;
-  readonly resource: string;
-  readonly secret: string;
-  readonly knowledge: string;
-}
-const BRIDGED_COMMAND_DESCRIPTIONS: BridgedCommandDescriptions = {
-  user: '用户',
-  token: '令牌',
-  pack: uiLabelOf('pack_kind', 'workflow'),
-  resource: '资源',
-  secret: '密钥',
-  knowledge: '知识同步',
-};
-/** Every other first word is refused before anything is loaded. */
-export const BRIDGED_COMMANDS: ReadonlySet<string> = new Set(Object.keys(BRIDGED_COMMAND_DESCRIPTIONS));
+export { BRIDGED_COMMANDS } from './command-registry.ts';
+import { BRIDGED_COMMANDS } from './command-registry.ts';
 
 type CliMain = (argv: readonly string[], overrides: Record<string, unknown>) => Promise<number>;
 
@@ -66,7 +49,17 @@ export function createCommandBridge(options: BridgeOptions): CommandBridge {
     async run(argv, input) {
       const stdout: string[] = [];
       const stderr: string[] = [];
+      // Reset is handled by the authenticated HTTP launch/finish/ACK path, never by synchronous CLI dispatch.
+      if (argv[0] === 'reset') return { code: 2, stdout, stderr: ['请使用控制台重建预览和确认入口；不能在服务进程同步执行 reset'] };
       if (argv.length === 0 || !BRIDGED_COMMANDS.has(argv[0])) return { code: 2, stdout, stderr: ['控制台不执行这个命令'] };
+      const uploadCommand = argv[0] === 'executor' && (argv[1] === 'add' || argv[1] === 'update') ? `executor.${argv[1]}` as const : argv[0] === 'doc' && argv[1] === 'put' ? 'doc.put' : null;
+      if (uploadCommand !== null) {
+        try {
+          const parsed = parseCommandParameters(uploadCommand, argv.slice(2));
+          const requiredPositionals = uploadCommand === 'executor.add' ? 0 : 1;
+          if (parsed.values.reference === undefined || parsed.positionals.length !== requiredPositionals) throw new Error();
+        } catch { return { code: 2, stdout, stderr: ['控制台登记只接受上传原件的 --reference 引用，不接受服务器文件路径'] }; }
+      }
       // Imported here, not at the top: the CLI imports serve, and serve builds the app that holds this bridge.
       const main = options.main ?? ((await import('./cli.ts')).main as unknown as CliMain);
       const loadAssembly = options.assembly ?? (() => import('./assemble.ts') as Promise<AssemblyModule>);

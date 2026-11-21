@@ -1,6 +1,6 @@
 import {goodData,subjectOf,CONTRACT_DOC} from '../functions/test-support.ts';
 import {runtimeDigest} from '../functions/runtime-contract.ts';
-import {compileGrammar} from '../functions/generated/command-grammar.ts';
+import {compileGrammar} from '../functions/generated/skills/command-tools/command-check/grammar.ts';
 export const ROOT='a'.repeat(64);
 export const policy={schema:'command-policy@1',read_only:['/commands/show'],inverse_rules:[{source_prefix:'/commands/demo/pool',inverse_prefix:'/commands/no/demo/pool',leading_parameters:1}]};
 const specs=[{words:['demo','pool','add'],types:['string','int']},{words:['no','demo','pool','add'],types:['string']},{words:['show','pool'],types:['string']},{words:['demo','poolish','add'],types:['string','int']}];

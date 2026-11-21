@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {checkEffectBoundary,type BoundaryContext} from './boundary.ts';
+import {checkEffectBoundary,deny,EffectBoundaryError,refusalText,unconcluded,type BoundaryContext} from './boundary.ts';
 import type {AllowedEffect} from '../../contracts/src/pack.ts';
 import type {VerifiedInput} from './proof.ts';
 const row={id:'checked',resource_kind:'executor',action:'submit',effect_class:'job',trigger:'hub_template',parameters:{policy:'policies/synthetic.json',check:'checked'},release:{requirements:['verified'],artifact:'verified'},budget:{count:1,duration_ms:1000},deadline_ms:10000,optional:false,policy_checks:['checked']} as AllowedEffect;
@@ -24,5 +24,23 @@ test('a policy recheck that reached no conclusion is not reported as a refusal o
  const {ctx}=context();ctx.policies=async()=>'unknown';
  const result=await checkEffectBoundary(ctx);assert.ok(!result.ok);assert.equal(result.code,'PACK_POLICY_DENIED');
  assert.match(result.message,/有检查没出结论/);assert.match(result.message,/不是计划、工作簿或包被驳回/);assert.doesNotMatch(result.message,/请修正/);
- ctx.policies=async()=>false;const refused=await checkEffectBoundary(ctx);assert.ok(!refused.ok);assert.match(refused.message,/重核未通过；请修正后重核/);
+ // It leaves out what became of the request (this boundary also runs before a resend) and asks for no change of the plan or the pack.
+ assert.equal(result.clause,7);assert.equal(result.no_conclusion,true);assert.doesNotMatch(result.message,/什么都没发出|原样重交/);assert.doesNotMatch(result.fix,/修正输入|原样重交/);
+ assert.match(refusalText(result,false),/不是计划、工作簿或包被驳回；什么都没发出$/);assert.doesNotMatch(refusalText(result,true),/什么都没发出/);
+ ctx.policies=async()=>false;const refused=await checkEffectBoundary(ctx);assert.ok(!refused.ok);assert.match(refused.message,/重核未通过；请修正后重核/);assert.equal(refused.no_conclusion,undefined);
+});
+test('a refusal without a conclusion says what became of the request only as its caller knows it: nothing before a send, the invoked submit before a resend',()=>{
+ const none=unconcluded(7,'政策检查 synthetic 没有给出政策结论','synthetic fix',row);
+ assert.equal(none.clause,7);assert.equal(none.code,'PACK_POLICY_DENIED');assert.equal(none.fix,'synthetic fix');assert.equal(none.row,row.id);assert.deepEqual(none.requirements,row.release.requirements);assert.equal(none.no_conclusion,true);
+ assert.equal(none.message,'政策检查 synthetic 没有给出政策结论；不是计划、工作簿或包被驳回');
+ assert.equal(refusalText(none,false),`${none.message}；什么都没发出`);
+ assert.equal(refusalText(none,true),`${none.message}；提交已调用，原请求是否执行须对账`);
+ const ordinary=deny(7,'PACK_POLICY_DENIED','synthetic refusal',row);
+ assert.equal(refusalText(ordinary,false),'synthetic refusal');assert.equal(refusalText(ordinary,true),'synthetic refusal');
+});
+test('a policy recheck that throws a boundary refusal is returned as it is; any other exception stays private',async()=>{
+ const {ctx}=context();ctx.policies=async()=>{throw new EffectBoundaryError({...deny(7,'PACK_POLICY_DENIED','synthetic cause',row),fix:'synthetic fix'});};
+ const named=await checkEffectBoundary(ctx);assert.ok(!named.ok);assert.equal(named.clause,7);assert.equal(named.code,'PACK_POLICY_DENIED');assert.equal(named.message,'synthetic cause');assert.equal(named.fix,'synthetic fix');assert.equal(named.row,row.id);assert.deepEqual(named.requirements,row.release.requirements);
+ ctx.policies=async()=>{throw new Error('SyntheticPrivatePolicyDetail84');};
+ const other=await checkEffectBoundary(ctx);assert.ok(!other.ok);assert.equal(other.clause,7);assert.equal(other.code,'PACK_POLICY_DENIED');assert.match(other.message,/政策重核没有完整结论/);assert.ok(!other.message.includes('SyntheticPrivatePolicyDetail84'));
 });

@@ -8,12 +8,15 @@ import { TASK_RESULT, uiLabelOf, type TaskResult } from '../../../contracts/gene
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { step } from '../../telemetry/api.ts';
 import { html, table, link, liveModule, page, pageLayout, type Html } from './html.ts';
-import { readableLines, type PageContext, type PageResult } from './pages.ts';
+import type { PageContext, PageResult } from './context.ts';
+import { readableLines } from './pages.ts';
 import { taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, waitingRequests, type TaskRow } from './tasks.ts';
 import { sizeText, storageFacts } from './settings.ts';
 import { readsText, systemReads } from './trial.ts';
-import { box, count, kpi, tile, when } from './ui.ts';
+import { box, kpi, tile, when } from './ui.ts';
+import { count, segments } from './components.ts';
+import { rebuildNeededBanner } from './reset.ts';
 
 export const PERIODS = [7, 14, 30] as const;
 export const RECENT_LIMIT = 120;
@@ -24,6 +27,37 @@ export const startOfDay = (time: number): number => {
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 };
+
+/** Load for the overview page (K4; U5 retired the JSON twin). */
+export interface OverviewWindow {
+  days: number;
+  now: number;
+  since: number;
+  runs: RunRecordView[];
+  more: boolean;
+  tasks: TaskRow[];
+}
+
+export async function loadOverviewWindow(ctx: PageContext, days: number): Promise<OverviewWindow> {
+  const now = (ctx.deps.now?.() ?? new Date()).getTime();
+  const since = startOfDay(now - (days - 1) * DAY);
+  const { runs, more } = await runsSince(ctx, since, RECENT_LIMIT);
+  const tasks = await loadTasks(ctx, runs);
+  return { days, now, since, runs, more, tasks };
+}
+
+/** One bucket per day in the window, oldest first. */
+export function overviewDayBuckets(tasks: readonly TaskRow[], days: number, now: number): { start: number; end: number; inDay: TaskRow[] }[] {
+  return Array.from({ length: days }, (_, i) => {
+    const start = startOfDay(now - (days - 1 - i) * DAY);
+    const end = i + 1 < days ? startOfDay(now - (days - 2 - i) * DAY) : Infinity;
+    const inDay = tasks.filter((task) => {
+      const t = Date.parse(task.run.started_at);
+      return t >= start && t < end;
+    });
+    return { start, end, inDay };
+  });
+}
 
 /** The runs that started since `since`, newest first, at most `limit`; `more` when the window holds others. */
 export async function runsSince(ctx: PageContext, since: number, limit: number): Promise<{ runs: RunRecordView[]; more: boolean }> {
@@ -75,13 +109,12 @@ export function blockers(tasks: readonly TaskRow[]): { label: string; value: num
 }
 
 export async function overviewPage(ctx: PageContext): Promise<PageResult> {
-  const now = (ctx.deps.now?.() ?? new Date()).getTime();
   const raw = Number(ctx.url.searchParams.get('days') ?? '7');
   const days = (PERIODS as readonly number[]).includes(raw) ? raw : 7;
-  const since = startOfDay(now - (days - 1) * DAY);
-  const [{ runs, more }, titles] = await Promise.all([step('list-runs', () => runsSince(ctx, since, RECENT_LIMIT)), packTitles(ctx)]);
-  const tasks = await step('load-tasks', () => loadTasks(ctx, runs));
-  const today=tasks;
+  const [{ more, tasks, now, since }, titles] = await Promise.all([
+    step('list-runs', () => loadOverviewWindow(ctx, days)),
+    packTitles(ctx),
+  ]);
   const settled = tasks.filter((task) => task.result !== null && task.result !== 'awaiting');
   const passed = settled.filter((task) => task.result === 'passed').length;
   const pending = tasks.reduce((n, task) => n + task.pending, 0);
@@ -93,24 +126,21 @@ export async function overviewPage(ctx: PageContext): Promise<PageResult> {
   for (const request of requests) if (request.run) perRun.set(request.run, (perRun.get(request.run) ?? 0) + 1);
   // The four figures of the page; each says what it counts, and the first leads to the list it counts.
   const kpis = html`<section class="ch-tiles" data-overview-kpis>
-${tile(kpi('任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个${awaiting > 0 ? ` · ${uiLabelOf('task_result', 'awaiting')} ${count(awaiting)}` : ''}`, state: 'info' }), '/console/runs', '查看任务列表')}
+${tile(kpi('任务', count(tasks.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个${awaiting > 0 ? ` · ${uiLabelOf('task_result', 'awaiting')} ${count(awaiting)}` : ''}`, state: 'info' }), '/console/runs', '查看任务列表')}
 ${tile(kpi(uiLabelOf('task_result', 'passed'), settled.length === 0 ? '暂无数据' : count(passed), { unit: settled.length === 0 ? '' : `/ ${count(settled.length)}`, note: `已有结果的 ${count(settled.length)} 个任务中 ${count(passed)} 个`, state: settled.length===0?'idle':'ok' }))}
 ${tile(kpi('未决项', count(pending), { unit: '项', hint: '已交付结果中尚无结论的要求项', state: pending > 0 ? 'unknown' : 'idle', ...(pending > 0 ? { tone: 'unk' as const } : {}) }))}
 ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.length), { unit: '条', hint: '在接收人的客户端中处理', ...(kinds > 0 ? { note: `内容相同的归并后 ${count(kinds)} 类` } : {}), state: requests.length > 0 ? 'warn' : 'idle' }))}
 </section>`;
   // Each day's results: a column per day stacked by task result, the held result only while one exists.
-  const dayStarts = Array.from({ length: days }, (_, i) => startOfDay(now - (days - 1 - i) * DAY));
   const shown = TASK_RESULT.filter((result) => result !== 'held' || tasks.some((task) => task.result === 'held'));
-  const columns = dayStarts.map((start, i) => {
-    const end = i + 1 < dayStarts.length ? dayStarts[i + 1] : Infinity;
-    const inDay = tasks.filter((task) => { const t = Date.parse(task.run.started_at); return t >= start && t < end; });
+  const columns = overviewDayBuckets(tasks, days, now).map(({ start, inDay }) => {
     const d = new Date(start);
     return { label: `${d.getMonth() + 1}/${d.getDate()}`, parts: shown.map((result) => inDay.filter((task) => task.result === result).length), all: inDay.length, unread: inDay.filter((task) => task.result === null).length };
   });
   const daily=chart('每日任务数量',columns.map((column)=>({label:column.label,values:[column.all]})),[{label:'任务',column:'任务数',unit:'个任务'}],'bar',scope);
   const resultsTable=html`<details class="ch-tableview"><summary>按结果以表格查看</summary>${table(['日期',...shown.map(result=>uiLabelOf('task_result',result)),'结果暂不可用'],columns.map((column)=>[column.label,...column.parts,column.unread]))}</details>`;
   const checks=checkCounts(tasks),checkTotal=checks.reduce((sum,item)=>sum+item.value,0);
-  const checkCard=box({title:'检查项结果',meta:`共 ${count(checkTotal)} 项`,hint:scope+'全部结果中的检查项；等待判定中不计入通过，未知与检查未完成单独统计，不计入未通过。'},parts(checks.map(item=>({label:item.label,value:item.value,className:item.fill})),'检查项结果分布'));
+  const checkCard=box({title:'检查项结果',meta:`共 ${count(checkTotal)} 项`,hint:scope+'全部结果中的检查项；等待判定中不计入正确，未知与检查未完成单独统计，不计入错误。'},parts(checks.map(item=>({label:item.label,value:item.value,className:item.fill})),'检查项结果分布'));
   const stuck=blockers(tasks);
   const stuckCard=stuck.length?box({title:'主要阻塞原因',hint:scope+'被退回或未完成的条目，按原因汇总'},comparisons('主要阻塞原因',stuck,undefined,{rows:'原因',column:'条目数',unit:'个条目'})):html``;
   const { resources, reads } = await step('read-systems', async () => {
@@ -138,7 +168,7 @@ ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.len
     });
     state = box({ title: '知识库', meta: '当前快照', hint: '按产品线统计，成员可读分配给自己的工作流所绑定的产品线。', tail: link('/console/knowledge', '打开知识库') }, html`<div class="ch-stats">${kpi('产品线',lines.length)}${kpi('已有知识的产品线',current)}</div>`);
   }
-  const periods = html`<nav class="ch-seg" aria-label="时间范围">${PERIODS.map((n) => html`<a${n === days ? html` aria-current="page"` : ''} href="/console/overview?days=${n}">${n} 天</a>`)}</nav>`;
+  const periods = segments('时间范围', PERIODS.map((n) => ({ href: `/console/overview?days=${n}`, label: `${n} 天`, current: n === days })));
   const waiting=new Set(requests.map(request=>request.run));
   // First what waits for someone (a request or an undecided requirement), then what is not finished, then the rest; newest first within each.
   const attention=(task:TaskRow)=>waiting.has(task.run.run)||task.pending>0?0:task.result!=='passed'&&task.result!=='abandoned'?1:2;
@@ -149,10 +179,11 @@ ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.len
     const who=task.run.runner?await ctx.userName(task.run.runner):uiLabelOf('execution_host',task.run.host);
     rows.push(html`<a class="ch-row" href="${'/console/runs/'+task.run.run}"><span class="ch-row-body"><b>${taskTitle(task.run,titles)}</b> <span class="ch-meta">${who} · ${when(task.run.started_at)}</span></span> <span class="ch-row-end">${task.result===null?html`<span class="ch-meta">结果暂不可用</span>`:taskChip(task.result)}${owing(task)?html` <span class="ch-meta">${owing(task)}</span>`:''}</span></a>`);
   }
-  const taskList=html`<section class="ch-section" data-overview-tasks>${box({title:'需要处理',meta:scope,hint:'优先列出有等待回应中的请求、未决项或尚未完成的任务，最多 8 个'},recent.length?html`<div class="ch-list">${rows}</div>`:html`<section class="ch-empty"><h3 class="ch-empty-title">所选时段没有任务</h3><p class="ch-empty-text">在客户端中运行工作流后，这里显示任务。</p>${link('/console/packs','查看工作流')}</section>`,{flush:recent.length>0,...(recent.length?{foot:link('/console/runs','查看全部任务')}:{})})}</section>`;
+  const taskList=html`<section class="ch-section" data-overview-tasks>${box({title:'需要处理',meta:scope,hint:'优先列出有等待回应中的请求、未决项或尚未完成的任务，最多 8 个'},recent.length?html`<div class="ch-list">${rows}</div>`:html`<section class="ch-empty"><h3 class="ch-empty-title">所选时段没有任务</h3><p class="ch-empty-text">在客户端中运行工作流后，这里显示任务。</p>${link('/console/workflows','查看工作流')}</section>`,{flush:recent.length>0,...(recent.length?{foot:link('/console/runs','查看全部任务')}:{})})}</section>`;
   // One question per page (decision 151): what needs attention. The figures first, the tasks beside their statistics; no
   // folded sections and nothing that is only planned.
-  const body = html`${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
+  const rebuild = ctx.rebuildNeeded ? rebuildNeededBanner(ctx.rebuildNeeded) : '';
+  const body = html`${rebuild}${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
 <div class="ch-board">${liveModule('overview-priority', ['task.updated','request.updated'],taskList)}
 <div class="ch-stack" data-overview-side>${liveModule('overview-results', ['task.updated'], html`<div class="ch-stack">${checkCard}${box({title:'每日任务',meta:scope},html`${daily}${resultsTable}`)}${stuckCard}</div>`)}
 ${liveModule('overview-state', ['task.updated', 'system.added', 'system.status', 'knowledge.published'], html`<div class="ch-stack">${systems}${state}</div>`)}</div></div>`;

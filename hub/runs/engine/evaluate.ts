@@ -20,16 +20,17 @@ import type { LoadedWorkflow } from '../../ports.ts';
 import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext, type Unresolved } from '../../refs/api.ts';
-import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
+import { SandboxError, callPackFunction, callPackFunctionBatch, DEFAULT_LIMITS, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { mapLimited, receivedDigest } from './util.ts';
 import { getInterpreter } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, sourceCoverage, rootDigest, statementOf, strongestRole } from './claims.ts';
-import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
+import { CHECK_SANDBOX, ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead, type ReadFailureReason } from './retry-read.ts';
 import { narrowSubjectRead, type NarrowReadResult } from './narrow-reads.ts';
 import { putAction } from './store.ts';
-import { createFunctionBatches } from './function-batches.ts';
+import { refreshItems, resolveLateInputs, type LateEvaluation, type LateOverlay } from './late-inputs.ts';
+import { createFunctionBatches, splitInputBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
 import { declarationGroundsRefusal } from '../../knowledge/declaration-grade.ts';
@@ -87,6 +88,11 @@ export interface EvaluationInput {
   exclude?: ReadonlySet<string>;
   /** Hub admission policy facts, kept on the declared item requirement rather than whole-submission errors. */
   admission?: {requirement:string;outcomes:ReadonlyMap<string,CheckOutcome[]>};
+  /**
+   * Inputs bound after the start (W06 R[7]) as the caller resolved them; a replay passes the rows a stored result recorded with
+   * its refresh digest. Absent for a run that froze none; for one that did, the evaluation resolves them itself.
+   */
+  late?: LateEvaluation;
 }
 
 /** The same production evaluation inputs are used at startup and before an effect replay. */
@@ -124,6 +130,11 @@ export interface Evaluation {
   uncovered: Set<string>;
   retryAttempts: Array<Record<string, unknown>>;
   parentObservedSuccess:boolean;
+  /**
+   * W06 R[7], W02 R[6]: requirements whose only problems in this evaluation wait on an input bound after the start (an unknown
+   * awaiting_step, or no usable refresh overlay); they are not a repair round. Empty when the run binds nothing after the start.
+   */
+  waiting: Set<string>;
 }
 
 type Slots = Record<string, unknown> | null;
@@ -229,7 +240,15 @@ export function runContextOf(run: RunRecord): RunContext {
     ...(run.builds !== undefined ? { builds: run.builds } : {}),
     ...(run.lease_context !== undefined ? { leases: contextLeasesOf(run) } : {}),
     ...(run.observation_context !== undefined ? { observations: run.observation_context } : {}),
+    ...(run.late_inputs !== undefined ? { late_inputs: run.late_inputs.map((row) => ({ slot: row.slot, run: row.run })) } : {}),
   };
+}
+
+/** The context checks and the refresh function see: the frozen run context with the frozen skills and accepted criteria. */
+export async function checkContextOf(ctx: EngineContext, run: RunRecord): Promise<RunContext> {
+  const skills = ctx.parsers.skills ?? run.skills;
+  const criteria = await frozenCriteria(ctx, run.accepted_criteria ?? []);
+  return { ...runContextOf(run), ...(skills ? { skills: [...skills] } : {}), ...(criteria.length ? { accepted_criteria: criteria } : {}) };
 }
 
 /** The lease view the checks see: the frozen pre-projection view, every row the run's own operations named marked
@@ -313,7 +332,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const itemIds = new Set(items.map((it) => it.id));
   const criterionBound=(run.accepted_criteria??[]).flatMap(change=>[rootDigest(change.declaration),rootDigest(change.review)]).filter((digest):digest is string=>digest!==null);
   const skills=ctx.parsers.skills??run.skills;
-  const baseBound = [run.pack_digest,...(ctx.parsers.bindingRecords??(ctx.parsers.bindingRecord?[ctx.parsers.bindingRecord]:[])), ...(skills??[]).map(skill=>skill.digest),...(run.root !== undefined ? [run.root] : []),...criterionBound];
+  const baseBound = [run.pack_digest,...(skills??[]).map(skill=>skill.digest),...(run.root !== undefined ? [run.root] : []),...criterionBound];
   const itemDigests = items.map((it) => it.digest).filter((d): d is string => d !== undefined);
   const entries = new Map<string, { index: number; entry: Submission['items'][number] }>();
   submission?.items.forEach((entry, index) => entries.set(entry.item, { index, entry }));
@@ -343,7 +362,10 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
     return input.exact?.items.get(id)?.slots ?? slotsOf(id);
   };
   const evidenceOf = (id: string): ItemEvidence => input.carried.get(id)?.evidence ?? input.exact?.items.get(id) ?? emptyEvidence();
-  const subjectItem = (it: ItemProjection): SubjectItem => ({ id: it.id, label: it.label, location: it.location, fields: it.fields });
+  // The refresh overlay of this evaluation (W06 R[7]), set once the inputs bound after the start are resolved below.
+  let overlay: LateOverlay | null = null;
+  const lateOf = (id: string): { late?: Record<string, unknown> } => (overlay !== null && overlay.items.has(id) ? { late: overlay.items.get(id)! } : {});
+  const subjectItem = (it: ItemProjection): SubjectItem => ({ id: it.id, label: it.label, location: it.location, fields: it.fields, ...lateOf(it.id) });
 
   // ---- the catalogs the checks consult, by catalog id
   const views = new Map<string, CatalogView | null>();
@@ -391,6 +413,29 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   }
 
   if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;const observed=new Map<string,Promise<unknown>>();resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable'){const captures=run.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha&&binding.artifact;});for(const capture of captures.length?captures:[undefined]){const meta=capture?.meta_artifact?await ctx.deps.records.store.get<any>(capture.meta_artifact):null;const key=sha+'\0'+(capture?.artifact??'');let observation=observed.get(key);if(!observation){observation=ctx.deps.knowledge.feeding!.observeSourceBounded(principalOf(reader),sha,{sourceRecord:capture?.artifact,readManifest:capture?.read_manifest,metaRecord:capture?.meta_artifact,metaSource:meta?.kind==='source_artifact'?meta.body.sha256:undefined,composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version});observed.set(key,observation);}await observation;}}return value;}};}
+  // Inputs bound after the start (W06 R[7]): one refresh call per evaluation, as the runner may read the bound results now. A
+  // replay checks that the recorded references give the recorded overlay again; the references bind the claims (validity.bound).
+  const late: LateEvaluation | undefined = input.late ?? (run.late_inputs?.length ? { inputs: (await resolveLateInputs(ctx, run)) ?? [] } : undefined);
+  if (late !== undefined) {
+    context.late_inputs = late.inputs;
+    overlay = await refreshItems(ctx, run, workflow, late.inputs, { reader: resolveCtx.reader, context, sandbox: sandboxFor('refresh', workflow.workflow.refresh?.module), traceId: input.traceId });
+    if (late.expect !== undefined && overlay.refresh !== late.expect) throw new Error(`重放的晚绑定覆盖与记录不符：记录的覆盖摘要是 ${late.expect ?? '无'}，按记录的引用重算得到 ${overlay.refresh ?? '无'}；请核对冻结的任务包和所引结果记录后重核`);
+    for (const row of late.inputs) if (row.reference !== undefined) baseBound.push(row.reference.slice('rec:'.length));
+  }
+  const lateFailed = overlay !== null && overlay.refresh === null;
+  // Every (item, check) is unknown when the refresh function gave nothing usable; the Hub computed nothing, so no round is charged.
+  const refreshFailures = new Set<CheckOutcome>();
+  const refreshFailureOf = (check: CheckEntry): CheckOutcome => {
+    const failure = builderFailure(check, overlay?.failure);
+    const outcome: CheckOutcome = {
+      ...failure,
+      missing: `检查 ${check.id} 用到的开运行后再绑定的前序结果覆盖值；下一步：原样重交，Hub 重新取前序结果并重算`,
+      statement: `未知（工作流的刷新函数这次没有给出可用的覆盖值，检查 ${check.id} 没有运行）`,
+      data: { ...failure.data, phase: 'refresh', module: workflow.workflow.refresh?.module ?? null },
+    };
+    refreshFailures.add(outcome);
+    return outcome;
+  };
   const readBudget=new CheckReadBudget();
   const readReference=(reference:string,ref:Parameters<typeof resolveReference>[0])=>readBudget.read(reference,()=>resolveReference(ref,resolveCtx));
   const boundSourceCache = new Map<string, Promise<{ resolved: boolean; text: string | null; byteLength?: number; reason?: ReadFailureReason }>>();
@@ -512,7 +557,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
           return { text: r.text, why: 'bound' };
         };
         // Share the boundary's scope, including predecessor results and the ban on standalone entries.
-        const scope = await (fragmentScope ??= buildScope(ctx, run, workflow, principalOf(resolveCtx.reader), 'function', retryAttempts));
+        const scope = await (fragmentScope ??= buildScope(ctx, run, workflow, principalOf(resolveCtx.reader), 'function', retryAttempts, late?.inputs));
         if (ref.scheme === 'entry') return { why: 'entry_unaddressed' };
         if (scopeProblem(ref, scope) !== null) return { why: 'not_bound' };
         let result: Awaited<ReturnType<typeof resolveReference>>;
@@ -646,7 +691,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
         ...(check.basis !== undefined ? { basis: check.basis } : {}),
         catalogEntries: check.function !== undefined && check.catalog !== undefined,
         ...(check.reads !== undefined ? { reads: check.reads } : {}),
-        ...(ctx.deps.sandboxLimits !== undefined ? { limits: ctx.deps.sandboxLimits } : {}),
+        limits: { ...CHECK_SANDBOX, ...ctx.deps.sandboxLimits },
       },
       {
         table,
@@ -658,6 +703,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
         sources: gradedSourceView(texts),
         unreadSources,
         sandbox: sandboxFor('check', check.function?.module, item),
+        ...(late !== undefined ? { lateBound: true } : {}),
         ...(item !== undefined && check.function !== undefined ? { functionRunner: functionBatches.runner(check.id, item) } : {}),
         onError,
       },
@@ -690,6 +736,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       isObject(subjectInput) && isObject(subjectInput.item) && typeof subjectInput.item.id === 'string' ? subjectInput.item.id : undefined))).output;
   });
   const buildSubject = async (subjectFor: ReturnType<typeof createSubjectBuilder>, check: CheckEntry, builderInput: unknown, fallback: () => unknown): Promise<{ subject: unknown } | { failure: CheckOutcome }> => {
+    if (lateFailed) return { failure: refreshFailureOf(check) };
     if (check.subject === undefined) return { subject: fallback() };
     try {
       const subject = await subjectFor({ packDir: workflow.pack.directory, module: check.subject.module, export: check.subject.export }, builderInput);
@@ -772,7 +819,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       const item = items.find(it=>it.id===sample.item);
       if (!item) continue; // The submission boundary refuses nonexistent sample items.
       const itemInput=await builderInput(item, checks.get(`@runtime.${index}`)!);
-      const subject={item:item.id,label:item.label,location:item.location,fields:item.fields,slots:itemInput.slots,evidence:itemInput.evidence};
+      const subject={item:item.id,label:item.label,location:item.location,fields:item.fields,slots:itemInput.slots,evidence:itemInput.evidence,...lateOf(item.id)};
       const texts=evidenceOf(item.id).texts;
       await warmQuoted([subject,declared.table],MAX_CHECK_READ_BYTES,texts);
       const outcome=await callCheck(checks.get(`@runtime.${index}`)!,subject,texts,item.id);
@@ -806,7 +853,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   for (const check of perItem) {
     const ids = items.filter(it => eligible(check, it.id)).map(it => it.id);
     if (check.function) functionBatches.define(check.id, ids);
-    if (!check.subject) continue;
+    if (!check.subject || lateFailed) continue;
     const target = { packDir: workflow.pack.directory, module: check.subject.module, export: check.subject.export };
     const identity = JSON.stringify([target.module, target.export ?? 'default']);
     const group = builders.get(identity) ?? { target, entries: new Map<string, unknown>() }; builders.set(identity, group);
@@ -814,17 +861,28 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       const value = await builderInput(it, check); group.entries.set(subjectKey(target, JSON.stringify(value)), value);
     }
   }
-  for (const group of builders.values()) {
+  builderGroups: for (const group of builders.values()) {
     if (group.entries.size < 2) continue;
-    try {
-      const values = [...group.entries.values()];
-      const result = await callPackFunctionBatch(group.target, values, ctx.deps.sandboxLimits,
-        sandboxFor('subject_batch', group.target.module, undefined, { items: values.length, export: group.target.export ?? 'default' }));
-      const keys = [...group.entries.keys()]; for (const [index, value] of result.entries()) prepared.set(keys[index], value);
-    } catch (error) {
-      if (error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE' && error.detail.reason === 'stopping') {
-        functionBatches.cancel(error); break;
-      } else onError(error, `${group.target.module} subject batch; using individual calls`);
+    const entries = [...group.entries];
+    // The inputs are split by size before the call; the outputs can only be measured by it. A batch whose outputs together pass the
+    // output limit is halved and tried again, down to single subjects, instead of leaving every one of its subjects to a sandbox
+    // of its own: the eight subject groups of a seventeen-case submission each failed whole and cost 136 single calls (traces of
+    // 2026-11-19).
+    const batches = [...splitInputBatches(entries, ctx.deps.sandboxLimits?.inputBytes ?? DEFAULT_LIMITS.inputBytes)];
+    while (batches.length) {
+      const batch = batches.shift()!;
+      try {
+        const result = await callPackFunctionBatch(group.target, batch.map(([, value]) => value), ctx.deps.sandboxLimits,
+          sandboxFor('subject_batch', group.target.module, undefined, { items: batch.length, export: group.target.export ?? 'default' }));
+        for (const [index, value] of result.entries()) prepared.set(batch[index][0], value);
+      } catch (error) {
+        if (error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE' && error.detail.reason === 'stopping') {
+          functionBatches.cancel(error); break builderGroups;
+        } else if (error instanceof SandboxError && error.code === 'SANDBOX_OUTPUT_TOO_LARGE' && error.detail.scope === 'batch' && batch.length > 1) {
+          const half = Math.ceil(batch.length / 2);
+          batches.unshift(batch.slice(0, half), batch.slice(half));
+        } else onError(error, `${group.target.module} subject batch; using individual calls`);
+      }
     }
   }
   try {
@@ -836,7 +894,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
           const itemInput = await builderInput(it, check);
           const built = await buildSubject(itemSubjects, check, itemInput, () => ({
             item: it.id, label: it.label, location: it.location, fields: it.fields,
-            slots: itemInput.slots, evidence: itemInput.evidence,
+            slots: itemInput.slots, evidence: itemInput.evidence, ...lateOf(it.id),
           }));
           const outcomes = 'failure' in built ? [built.failure] : await callCheck(check, built.subject, ev.texts, it.id);
           let byItem = itemOutcomes.get(check.id);
@@ -903,6 +961,9 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const errors: ProtocolError[] = [];
   const problems = new Set<string>();
   const uncovered = new Set<string>();
+  // Requirements with a problem that is not a wait on an input bound after the start (see Evaluation.waiting).
+  const firm = new Set<string>();
+  const isWait = (o: CheckOutcome): boolean => late !== undefined && o.verdict === 'unknown' && (o.reason === 'awaiting_step' || refreshFailures.has(o));
   const partitionInputs: PartitionInput[] = [];
   const required = new Set(itemTemplates.filter((t) => t.required).map((t) => t.key));
   const roundsLeftOf = (t: RequirementTemplate): number => Math.max(0, repairRounds(t) - (input.roundsUsed.get(t.key) ?? 0));
@@ -1054,7 +1115,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
         errors.push({
           code: r.outcome.outcome.code ?? r.outcome.outcome.reason ?? 'check_error',
           message: r.outcome.outcome.missing ?? r.outcome.outcome.statement,
-          fix: runtimeCatalogGaps.get(r.outcome.check)?.next_action ?? (r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交'),
+          fix: runtimeCatalogGaps.get(r.outcome.check)?.next_action ?? (r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '', workflow) ?? '按陈述改正后重交'),
           ...(path !== undefined ? { path } : {}),
           item: it.id,
           requirement: t.key,
@@ -1062,6 +1123,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
         });
         if (r.action === 'repair') {
           problems.add(t.key);
+          if (!isWait(r.outcome.outcome)) firm.add(t.key);
           const runner=run.runner??run.configurer;
           if(path&&runner){
             const wait=bindRecovery({layer:'static',terminal:'incomplete',reason:'awaiting_step'},{runner,owner:runner,administrator:runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),location:`${it.id} / ${t.key}`});
@@ -1071,6 +1133,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       }
       for (const outcome of outcomes.filter(o => o.outcome.verdict === 'unknown')) {
         problems.add(t.key);
+        if (!isWait(outcome.outcome)) firm.add(t.key);
         if (routed.routed.some(r => r.outcome === outcome)) continue;
         const check=checks.get(outcome.check);
         errors.push({code:outcome.outcome.reason??'check_error',message:outcome.outcome.missing??outcome.outcome.statement,item:it.id,requirement:t.key,path:check?submissionPointer(it.id,check,outcome.outcome.pointer)??'/items':'/items',rounds_left:roundsLeftOf(t),fix:runtimeCatalogGaps.get(outcome.check)?.next_action??'补齐点名的事实后重交；不能补齐的按具名请求处理'});
@@ -1078,6 +1141,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       if (submission!==null&&(handling === 'skipped' || handling === 'not_covered') && (isJudgment(t) || artifactRequirements.has(t.key))) {
         handlingErrorRecorded=true;
         problems.add(t.key);
+        firm.add(t.key);
         const reason=entry?.entry.handling==='skipped'?entry.entry.reason:'没有提交这个条目的处理声明';
         errors.push({code:roundsLeftOf(t)===0?'repair_exhausted':handling==='skipped'?'declared_skip':'not_covered',message:`条目 ${it.id}：${reason}`,item:it.id,requirement:t.key,path:entry?pointerOf('items',entry.index):'/items',rounds_left:roundsLeftOf(t),fix:'用 submit_result 对同一运行重交完整提交；完整的新提交仍可取代本次结果'});
       }
@@ -1085,7 +1149,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       if (routed.action === 'reject' && rejection === null) rejection = routed.lead?.outcome.code ?? null;
     }
     if(entry?.entry.handling==='skipped'&&!handlingErrorRecorded){
-      for(const template of itemTemplates)problems.add(template.key);
+      for(const template of itemTemplates){problems.add(template.key);firm.add(template.key);}
       errors.push({code:'declared_skip',message:`条目 ${it.id} 声明跳过：${entry.entry.reason}；Hub 已照常核对目标事实`,item:it.id,path:pointerOf('items',entry.index),rounds_left:Math.max(0,...itemTemplates.map(roundsLeftOf)),fix:'处理声明不改变 Hub 的目标事实；完整的新提交仍可替代'});
     }
     waitForRepairs(results,waitingRepairs);
@@ -1120,7 +1184,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const crossBound = [...baseBound, ...itemDigests];
   const cross: Claim[] = [];
   for(const {check,index} of unruledChecks)cross.push(judgmentClaim({
-    requirement:check.requirement,pointer:pointerOf('checks',index),text:`要求项 ${check.requirement} 的 ${check.interpreter} 判定形状未裁定；由包作者在下一版台账裁定`,
+    requirement:check.requirement,pointer:pointerOf('checks',index),text:`要求项 ${check.requirement} 的 ${check.interpreter} 判定形状未裁定；由包作者在下一版的裁定清单里裁定`,
     data:{requirement:check.requirement,interpreter:check.interpreter},model:submission!.model,
     marks:['decision_shape_unruled'],grounds:[],resolutions:[],bound:[...crossBound,input.submissionDigest,receivedDigest(run).digest],
   }));
@@ -1207,11 +1271,12 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       complete: examined === items.length,
       examined,
       total: items.length,
-      ...((submission !== null && hasItemJudgments)||ctx.parsers.bindingDisclosure ? {note:[...(submission!==null&&hasItemJudgments?[`提交处理了 ${handled} 个条目，共 ${items.length} 个`]:[]),...(ctx.parsers.bindingDisclosure?[ctx.parsers.bindingDisclosure]:[])].join('；')} : {}),
+      ...(submission !== null && hasItemJudgments ? {note:`提交处理了 ${handled} 个条目，共 ${items.length} 个`} : {}),
     },
-    locks: { ...(skills?{skills:[...skills]}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
+    locks: { ...(late !== undefined ? { late: { inputs: late.inputs, refresh: overlay?.refresh ?? null } } : {}), ...(skills?{skills:[...skills]}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: input.traceId,
   };
   attachParentRecovery(result,retryAttempts,ctx.now());
-  return { result, errors, problems, uncovered, retryAttempts,parentObservedSuccess, runtimeAdmission };
+  const waiting = new Set(late === undefined ? [] : [...problems].filter((key) => !firm.has(key) && !uncovered.has(key)));
+  return { result, errors, problems, uncovered, retryAttempts,parentObservedSuccess, runtimeAdmission, waiting };
 }

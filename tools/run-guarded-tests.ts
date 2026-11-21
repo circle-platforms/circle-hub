@@ -108,7 +108,6 @@ export const GUARDED_MEASURED_SECONDS: Readonly<Record<string, number>> = {
   'packs/workflow/regression-scope/production.test.ts': 12,
   'packs/workflow/template-gap/engine.test.ts': 161,
   'packs/workflow/traceability/production.test.ts': 15,
-  'scripts/real/accept/export-build-inputs.test.ts': 75,
   'tests/acceptance/28-device-run.test.ts': 133,
   'tests/acceptance/28-jev-skill.test.ts': 163,
   'tests/acceptance/30-shared-results.test.ts': 39,

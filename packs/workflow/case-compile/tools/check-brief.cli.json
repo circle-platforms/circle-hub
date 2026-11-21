@@ -1,0 +1,39 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "file",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<brief.round-n.json或目录>",
+      "type": "path"
+    },
+    {
+      "name": "item",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<原始条目JSON>",
+      "type": "path"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "file",
+          "placeholder": "<brief.round-n.json或目录>",
+          "optional": false
+        },
+        {
+          "name": "item",
+          "placeholder": "<原始条目JSON>",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

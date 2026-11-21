@@ -7,7 +7,7 @@ import type { z } from 'zod';
 import type { EntryKind, PackKind, RequestKind, ExitAction } from '../contracts/generated/vocabulary.ts';
 import type { PathChange } from '../contracts/src/views.ts';
 import type { Coverage } from '../contracts/src/common.ts';
-import type { ChecksFile, LedgerFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
+import type { ChecksFile, LedgerFile, KnowledgeFile, SkillDeclaration, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
 import type { PackSummary } from '../contracts/src/run.ts';
 import type { ProductDeclaration, KnownBuild } from '../contracts/src/product.ts';
 import type { ProtocolError } from '../contracts/src/common.ts';
@@ -15,11 +15,54 @@ import type { RunRecord, RunRecordView } from '../contracts/src/run.ts';
 import type { PackContextView, ResolveReferenceInput, ResolveReferenceOutput, StartRunInput, StartRunOutput, SubmitResultOutput, GetNodesOutput } from '../contracts/src/tools.ts';
 import type { ValidationResult } from '../contracts/src/validation.ts';
 import type { Acceptance } from '../contracts/generated/vocabulary.ts';
-import type { Page, Principal, SourceArtifact } from './records/api.ts';
+import type { Page, Principal, SourceArtifact, RecordStore, StoredRecord } from './records/api.ts';
 import type { TreeReader } from './refs/api.ts';
 import type { CatalogView } from './rules/api.ts';
 
 // ---------------------------------------------------------------- packs (provided by runs)
+
+/** Run facts consumed by knowledge without importing the run engine. */
+export interface KnowledgeRunReadPort {
+  runById(store: RecordStore, id: string): Promise<StoredRecord<RunRecord> | null>;
+  canViewRun(user: Principal, run: RunRecord, store: RecordStore): Promise<boolean>;
+}
+
+/** Pack bytes and the existing schema compiler consumed by knowledge. */
+export interface KnowledgePackReadPort {
+  readPackDirectory(directory: string): Promise<
+    | { ok: true; pack: { digest: string; manifest: Pick<PackManifest, 'id' | 'version' | 'kind'>; files: Array<{ path: string; bytes: Uint8Array }> } }
+    | { ok: false }
+  >;
+  packSchema(json: Record<string, unknown>): { ok: true; schema: z.ZodType } | { ok: false; problem: string };
+}
+
+/** The published identity and dependencies needed by generic skill parsers. */
+export interface SkillPackInfo {
+  id: string;
+  version: string;
+  digest: string;
+  space?: string;
+  kind: PackKind;
+  manifest: Pick<PackManifest, 'dependencies'>;
+}
+
+export interface OpenedSkillPack {
+  info: SkillPackInfo;
+  handle: { directory: string };
+  declarations: { kind: 'skill'; skill: SkillDeclaration } | { kind: Exclude<PackKind, 'skill'> };
+}
+
+/** Read-only parser access; publishing and authorization remain with the provider. */
+export interface SkillParserRegistryPort {
+  installedSkills(): Promise<OpenedSkillPack[]>;
+  open(digest: string): Promise<OpenedSkillPack | null>;
+  personal?: {
+    open(space: string, digest: string): Promise<OpenedSkillPack | null>;
+    resolve(principal: Principal, space: string, ref: string): Promise<SkillPackInfo | null>;
+    skills(principal: Principal): Promise<OpenedSkillPack[]>;
+    mayUse(principal: Principal, space: string, pack: string): Promise<boolean>;
+  };
+}
 
 /** A published pack version, extracted into a read-only directory that pack functions run in. */
 export interface PackHandle {
@@ -150,7 +193,7 @@ export type ExternalRead =
 /** What a reader of the system is told of an object held for review (D05 R[3]): that it exists, and when that was read. */
 
 /** A caller-input problem of a read, with the claim fields its answer carries (D05 R[8]): grounds, qualifier, the missing fact. */
-export type InputError = { code?:ProtocolCode; message: string; fix: string } & Pick<ProtocolError, 'grounds' | 'warrant' | 'provenance' | 'collected_at' | 'coverage' | 'missing' | 'hypotheses'>;
+export type InputError = { code?:ProtocolCode; message: string; fix: string } & Pick<ProtocolError, 'grounds' | 'warrant' | 'provenance' | 'collected_at' | 'coverage' | 'missing' | 'hypotheses' | 'options' | 'options_coverage'>;
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
@@ -230,6 +273,27 @@ export interface RunStatistics {
  blockers:Array<{code?:string;reason?:import('../contracts/generated/vocabulary.ts').Reason;count:number}>;
 }
 
+/** One dispatch job of a run as its runner may download it: what was dispatched, how it ended and each item's verdict. */
+/** A run started from another, reduced to what places it in a lineage: its pack, start, parameters and bound references. */
+export interface ExportedSuccessor { run: string; pack: string; started_at: string; predecessor: string | null; parameters: Record<string, unknown>; sources: Array<{ slot: string | null; reference: string }> }
+export interface ExportedJob {
+  job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean;
+  /** for a job that did not go out (not sent, refused by the target, proven not executed): the Hub's own reason and named next step, in the reader's form (an administrator's, or the member-safe one). */
+  missing_facts?: Array<{ fact: string; next_action: string }>; next_action?: string;
+  member_missing_facts?: Array<{ fact: string; next_action: string }>;
+  /** The result projection and the word-for-word device return, as references; null when the job has none (yet). */
+  result: string | null; device_return: string | null;
+  /** Null until the result projection is the dispatch service's own and covers every item of the job exactly once. */
+  rows: Array<{
+    item: string; dynamic_terminal: import('../contracts/generated/vocabulary.ts').DynamicTerminal;
+    qualifier?: { nature: import('../contracts/generated/vocabulary.ts').Nature; marks: import('../contracts/generated/vocabulary.ts').QualifierMark[] };
+    accepted_as_fact?: false; missing_facts?: string[]; missing_fact?: string; next_action?: string;
+    code?: string; judgment_premises?: import('../contracts/src/claim.ts').Claim[];
+    report_check?: { condition: string; pointer: string; declared_pointer: string; resolved: boolean; present: boolean; actual_sha256: string; result_definition_sha256: string; mapped_terminal?: import('../contracts/generated/vocabulary.ts').DynamicTerminal; missing_fact?: string; next_action?: string };
+    evidence?: { log?: string; sessions?: Record<string, string> };
+  }> | null;
+}
+
 export interface RunsService {
   abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;
   /** The requests the user may see, of one run or of all; `waiting` leaves out, and does not read, the answered and the voided ones. */
@@ -250,9 +314,21 @@ export interface RunsService {
   /** Recheck an individual immutable result against current run and ground permissions. */
   resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;
   requestReadable?(user:Principal,request:import('./requests/api.ts').RequestBody):Promise<boolean>;
-  /** Decision 104: what a client needs to generate from its own run without an administrator export: the run, its latest
-   * accepted result and that result's submission as stored. Only the runner and administrators; null when absent or forbidden. */
-  exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; result: ValidationResult | null; submission: unknown | null } | null>;
+  /** Decision 104: the run, its newest accepted submitted result and that submission, with their stored record references.
+   * Uses the same reusable-result selection as start_run. Only the runner and administrators; null when absent or forbidden. */
+  exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; run_reference: string; accepted_result_reference: string | null; result: ValidationResult | null; submission: unknown | null } | null>;
+  /** Decision 160 (relay): the jobs the run was dispatched in, each item's verdict from the checked result projection and the
+   * references of what the target returned; same readers as exportRun. */
+  exportJobs?(user: Principal, run: string): Promise<{ run: string; jobs: ExportedJob[] } | null>;
+  /** The runs started with `run` as predecessor that the reader may export, as the run lineage a client tool walks (decision 162). */
+  exportSuccessors?(user: Principal, run: string): Promise<{ run: string; successors: ExportedSuccessor[] } | null>;
+  /** W06 R[8] (decision 182): the earlier runs that verified the same subject on a target and that the reader may export, newest
+   * first, at most `limit` (RUN_HISTORY_MAX_RUNS when absent), as recorded facts (run-history@1); same readers as exportRun for
+   * the run asked about and for every run listed. Null when the run is absent or forbidden; an empty list when nothing matches. */
+  exportHistory?(user: Principal, run: string, options?: { limit?: number }): Promise<import('../contracts/src/run.ts').RunHistoryExport | null>;
+  /** W06 R[7] (decision 179): the inputs bound after the start resolved now and the refresh overlay of each item (run-late@1),
+   * nothing stored; same readers as exportRun. Null when absent or forbidden; `no_late` when the run binds nothing after the start. */
+  exportLate?(user: Principal, run: string): Promise<{ ok: true; body: import('../contracts/src/run.ts').RunLateExport } | { ok: false; reason: 'no_late' } | null>;
   /** Own runs for a user, every run for an admin, newest first. */
   /** `requests: false` leaves out requests, overdue_requests and open_runs, which read every request the user may see. */
   listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null; requests?: boolean }): Promise<RunListing>;
@@ -282,14 +358,24 @@ export interface PackListing {
   samples: Record<string, number>;
   /** User ids the pack is assigned to; filled for admins only. */
   assigned_to?: string[];
+  /** Team assignments, disclosed only to administrators. */
+  assigned_teams?: string[];
+  /** Skill modules the pack carries, checked against the published skill at publication (T01 R[6]). */
+  embeds?: import('../contracts/src/pack.ts').EmbeddedModule[];
+  /** Installed skills a run locks for their parsers. */
+  dependencies?: import('../contracts/src/pack.ts').SkillDependency[];
 }
 
 /** Provided by runs-packs. A user lists the packs assigned to them; an admin lists every pack. */
 export interface PackCatalogPort {
   list(user: Principal): Promise<PackListing[]>;
+  /** What a published skill version declares, for the console; null when it is not a published skill. */
+  skillDeclaration?(id: string, version: string): Promise<{ parsers: number; modules: import('../contracts/src/pack.ts').SkillModule[] } | null>;
 }
 
 export interface ResourceListing {
+  /** Effective audience sources, disclosed only to administrators. */
+  assigned?: { teams: string[]; all: boolean };
   /** A broken bound profile, admins only; absence is never silently treated as disabled. */
   binding_error?:{code:string;message:string;fix:string};
   id: string;
@@ -303,7 +389,7 @@ export interface ResourceListing {
   allow_plaintext?: string[];
 }
 
-/** Provided by connectors. Admins only: any other principal gets an empty list. */
+/** Provided by connectors. Enabled members see assigned resources without connection addresses; admins see the catalog. */
 export interface ResourceCatalogPort {
   list(user: Principal): Promise<ResourceListing[]>;
 }
@@ -415,6 +501,12 @@ export interface KnowledgePort {
   treeReader(lock?: { composition?: string | null; compositions?: string[] } | null): TreeReader;
   /** Absent and forbidden give the same null (D05 R[3]). */
   getNodes(query: NodesQuery, reader: Principal): Promise<NodesPage | null>;
+  /**
+   * K05: every node under the given paths of a product root, to the leaves, as getNodes shows each for the same root and
+   * composition, without paging and without the layers that change after the root. Null where getNodes answers null, for
+   * an empty scope and for a root that is a knowledge space (read by its own interface).
+   */
+  subtree?(query: { root: string; paths?: readonly string[]; composition?: string | null }, reader: Principal): Promise<NodeViews | null>;
   diffRoots(from: string, to: string): Promise<RootDiff | null>;
   /**
    * Paths whose own entries of `kinds` differ between the roots: added (only in `to`), removed (only in `from`) or modified,

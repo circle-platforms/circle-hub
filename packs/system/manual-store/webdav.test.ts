@@ -189,6 +189,7 @@ describe('reads through the connectors', () => {
     kit = await openSystemKit(postgres, ['manual-store']);
     dav = await startWebDavStub(manualStoreFiles());
     main = (await kit.connectors.admin.addResource(kit.admin, { system_pack: 'manual-store', name: '合成手册库', environment: 'test', origins: { 'manual-store': dav.origin } })).id;
+    await kit.records.authorizations.grant(kit.admin, { permission: 'resource_assign', subject: '*', object: main });
     // A store whose spec listing also links a file on another host, a file outside the folder and a name with a ';'.
     const files: Record<string, string> = { '/spec/信标组权重.md': '# 信标组权重\n\n组内信标继承权重。\n' };
     odd = await startStub((request) => {
@@ -203,6 +204,7 @@ describe('reads through the connectors', () => {
     // One enabled resource per external type: the second store is enabled only for its own test.
     await kit.connectors.admin.disable(kit.admin, main);
     mixed = (await kit.connectors.admin.addResource(kit.admin, { system_pack: 'manual-store', name: '链接混杂的手册库', environment: 'test', origins: { 'manual-store': odd.origin } })).id;
+    await kit.records.authorizations.grant(kit.admin, { permission: 'resource_assign', subject: '*', object: mixed });
     await kit.connectors.admin.disable(kit.admin, mixed);
     await kit.connectors.admin.enable(kit.admin, main);
   });

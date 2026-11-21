@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 // Team history has an independent quota; private purge cycles never release retained team bytes.
 import assert from 'node:assert/strict';
 import {test,before,after} from 'node:test';
@@ -32,7 +33,7 @@ test('three purge/resume cycles cannot reset the independent team quota or leave
  await spaces.setCapacity(w.admin,'team',2*1024**2);assert.equal((await spaces.share(w.user,last!.input)).status,'merged');assert.equal((await spaces.current('team'))!.body.entries.length,2);
 });
 test('independent sharing instances cannot jointly overrun one team allowance',async t=>{
- const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,a=await ready(w,w.user,'first',1,300),b=await ready(w,w.outsider,'second',1,300),other=createKnowledge({records:w.kit,packs:w.packs,external:w.external,parsers:createTestParserRegistry()}).spaces!;
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,a=await ready(w,w.user,'first',1,300),b=await ready(w,w.outsider,'second',1,300),other=createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,records:w.kit,packs:w.packs,external:w.external,parsers:createTestParserRegistry()}).spaces!;
  await spaces.setCapacity(w.admin,'team',500*1024);const results=await Promise.allSettled([spaces.share(w.user,a.input),other.share(w.outsider,b.input)]);
  assert.equal(results.filter(r=>r.status==='fulfilled'&&r.value.status==='merged').length,1);assert.equal(results.filter(r=>r.status==='rejected'&&r.reason.code==='SPACE_CAPACITY_EXCEEDED').length,1);assert.ok((await spaces.usage(w.admin,'team')).used<=500*1024);
 });

@@ -25,13 +25,13 @@ test('a fresh review client starts from the predecessor without copying a receip
   const defaults=[{slot:'draft',predecessor:initial.run,reference:'rec:'+expected.record}];
   assert.deepEqual(started.out.run.input_defaults,defaults);
   assert.equal(started.out.run.sources.find(s=>s.slot==='draft')!.reference,defaults[0].reference);
-  assert.ok(started.text.includes(`draft 按前驱 ${initial.run} 的已受理结果 ${defaults[0].reference} 绑定`));
+  assert.doesNotMatch(started.text,/draft 按前驱|run_|rec:/);
   const listed=await verifier.call('list_task_packs',{});
   assert.deepEqual(listed.out.packs.find(p=>p.id==='case-review-verify')!.inputs.find(i=>i.slot==='draft')!.default_from_predecessor,{pack:'case-review'});
   const stored=(await bed.hub.records.store.find<{input_defaults:unknown}>({kind:'run',key:INDEX.runId,value:started.out.run.run,limit:1})).items[0];
   assert.deepEqual(stored.body.input_defaults,defaults);
   const read=await verifier.call('get_nodes',{reference:'rec:'+stored.digest+'#/input_defaults'});
-  assert.equal(read.isError,false,read.text);assert.ok(read.text.includes(expected.record));
+  assert.equal(read.isError,false,read.text);assert.deepEqual(JSON.parse(read.out.content!.text!),defaults);
   const explicit=await verifier.call('start_run',{...input,inputs:{...input.inputs,draft:{reference:defaults[0].reference}}});
   assert.equal(explicit.out.call_result,'ok',explicit.text);assert.equal(explicit.out.run!.input_defaults,undefined);
   const invalid=await verifier.call('start_run',{...input,inputs:{...input.inputs,draft:{reference:'rec:'+rejected.digest}}});

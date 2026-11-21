@@ -9,6 +9,9 @@
 // scripts/diagnostics/seed-lists-repro.test.ts against the original module, then deduplicated.
 // trees.json holds, per production fixture of testing/production.ts, the tree root digest, the composition's entry
 // digests and the bound sources the same harness produced at that commit.
+// Decision 159 (model 44) drops a producer's empty condition marker when an entry is produced, so trees.json was
+// produced again: without that one change in hub/knowledge/digest.ts the same harness still gives the trees of 63e15782
+// exactly (6 of 7 entries per fixture changed, the sources did not).
 import {createHash} from 'node:crypto';
 import {mkdir,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';

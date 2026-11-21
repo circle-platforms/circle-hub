@@ -4,7 +4,6 @@ import {ProductDeclaration,Applicability} from '../../contracts/src/product.ts';
 import type {ContributionInput,KnowledgeContributionBody} from '../../contracts/src/contributions.ts';
 import type {RootSource} from '../../contracts/src/knowledge.ts';
 import {parseReference} from '../refs/api.ts';
-import {readPackDirectory} from '../runs/api.ts';
 import {callPackFunction} from '../rules/api.ts';
 import {canonicalize,type Principal} from '../records/api.ts';
 import type {KnowledgeContext} from './context.ts';
@@ -29,7 +28,7 @@ export async function admitApplicability(context:KnowledgeContext,reading:TreeRe
  const marker=object(data?.applicability_state)?data.applicability_state:null;
  if(!content||!data)return missing('目标条目的原始内容');
  const producer=composition.body.producer,pack=await context.packs.pack(`${producer.pack}@${producer.version}`);if(!pack||pack.digest!==producer.digest)return missing('原生产器包版本及其完整性');
- const loaded=await readPackDirectory(pack.directory);if(!loaded.ok||loaded.pack.digest!==producer.digest)return missing('与原组成一致的已核验产品包');
+ const loaded=await context.packReads.readPackDirectory(pack.directory);if(!loaded.ok||loaded.pack.digest!==producer.digest)return missing('与原组成一致的已核验产品包');
  const file=loaded.pack.files.find(file=>file.path==='product.json');if(!file)return missing('原产品声明');
  const product=ProductDeclaration.safeParse(JSON.parse(Buffer.from(file.bytes).toString('utf8')));if(!product.success||!product.data.applicability)return missing('原包没有声明条件语法和闭集来源');
  const policy=product.data.applicability,snapshot=composition.body.applicability_context,inventory=composition.body.known_builds;
@@ -54,7 +53,7 @@ export async function admitApplicability(context:KnowledgeContext,reading:TreeRe
   const allowed=snapshot.closed_sets[claim.field];if(!allowed)return missing('该字段没有冻结的部署闭集');
   if(names.some(name=>typeof name!=='string'||!name.trim().length||!allowed.includes(name)))return invalid('条件值不等于部署闭集的精确成员');
   if(claim.field==='components'&&checked.data.components?.with?.some(name=>checked.data.components?.without?.includes(name)))return invalid('部件 with/without 同时声明同一成员');
-  const variable=policy.closed_sets[claim.field];declarations.push(...(composition.body.variables??[]).filter(use=>use.name===variable).map(use=>use.decision));
+  const variable=policy.closed_sets[claim.field];declarations.push(...(composition.body.variables??[]).flatMap(use=>use.kind==='var'&&use.name===variable?[use.decision]:[]));
  }
  const evidence=claim.evidence,id=evidence.identity;
  if(input.source.quote!==evidence.text||!source.sources.includes(id.source_sha256))return invalid('引文文字或原件摘要与已核来源不一致');

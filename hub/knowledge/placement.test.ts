@@ -124,7 +124,7 @@ describe('placement by the typed-judgment model', () => {
     // The note is shown with the entry: placement only moves it.
     const node = await w.knowledge.getNodes({ root: result.root as string, paths: ['/commands/system/reboot'], depth: 0 }, w.user);
     const manual = node?.nodes[0].entries.find((e) => typeof e.data?.section === 'string');
-    assert.equal(manual?.applicability, `未声明；归类判断：Jev@${SCRIPTED_MODEL}，p=0.97，只影响位置`);
+    assert.equal(manual?.applicability, `归类判断：Jev@${SCRIPTED_MODEL}，p=0.97，只影响位置`, 'the note alone: nothing is said of undeclared conditions (decision 159)');
   });
 
   test('an unchanged input reuses the recorded judgments: producing again asks nothing and gives the same root', async (t) => {

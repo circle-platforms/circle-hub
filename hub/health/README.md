@@ -87,8 +87,8 @@ the value (I/O wait on macOS), the first sample of a delta. Never 0. `failed_rea
    trace after authentication, and the tool once the body is parsed. So a request is one entry, however far it got: a crash
    while parsing a huge body shows `POST /mcp` and the caller.
 8. **A name is a route, never a value.** `hub/server/request-entry.ts` keeps a path up to its first segment that is not a plain
-   lowercase word, at most three segments, never the query: `/console/login/<secret>` (a console login link carries its secret in
-   the path) is `GET /console/login`. A tool name is logged only if it passes the call log's own rule.
+   lowercase word, at most three segments, never the query: `/console/login/<segment>` (an extra path segment under login)
+   is `GET /console/login`. A tool name is logged only if it passes the call log's own rule.
 9. **Live console streams are not requests.** A stream stays open as long as a page does and does no work of its own; it is
    counted in `console_streams` and left out of the log and of `requests_in_flight`.
 10. **An MCP session is open until DELETE or 15 minutes of silence.** The endpoint is stateless and a client may just go away, so

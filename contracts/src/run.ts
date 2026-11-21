@@ -10,6 +10,8 @@ import {
   AcceptedProducerSchema,
   AggregationSchema,
   DoneRuleSchema,
+  DynamicTerminalSchema,
+  EffectOutcomeSchema,
   ExecutionHostSchema,
   LayerSchema,
   LeaseOpSchema,
@@ -21,6 +23,7 @@ import { Claim } from './claim.ts';
 import { Coverage, Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
 import { ContextBuild, ContextKeySchema, DeviceObservation, IndexBindingDefault, LeaseContextRow, LeaseRegistrationRow, PredecessorInputDefault, RunResultSource } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
+import { LateLocks } from './validation.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
 export const InputBinding = z.union([
@@ -178,6 +181,14 @@ export const RunSummary = z.strictObject({
     .array(Claim)
     .optional()
     .describe('what each device behind the leases this run acquired showed when the booking was granted: one observed claim per probed device, the build its version probe echoed, the probe output as ground; absent when the workflow did not ask for observations'),
+  device_help: z
+    .array(Claim)
+    .optional()
+    .describe('what the devices answered when this run asked them what they expect at the end of a line it was given: per line one claim stating the positions the Hub asked, then one observed claim per position with the device\'s own words (data.help) and the stored answer as ground; or an unknown claim naming what is missing when nothing was asked; absent when the run asked nothing'),
+  device_reads: z
+    .array(Claim)
+    .optional()
+    .describe('what a device printed when this run had one read-only command line sent to it: per request one observed claim with the line (data.line), the device (data.device) and the device\'s own words (data.output), the stored answer as ground; or an unknown claim naming what is missing and the next step when the line was not sent or no answer can be shown; the words are no source of the run and no basis of an expected value; absent when the run read nothing'),
   unversioned_root: Sha256.optional().describe('product-wide knowledge root locked for this run'),
   root: Sha256.optional().describe('knowledge root locked for this run'),
   sources: z.array(SourceBinding).describe('every source bound to the run besides the knowledge root: inputs and the expected sources the pack bound'),
@@ -188,6 +199,12 @@ export const RunSummary = z.strictObject({
   instructions: z.string().describe('the pack procedure, plain text'),
   instructions_digest: Sha256,
   predecessor: RunId.optional(),
+  late_inputs: z.array(z.strictObject({
+    slot: z.string().min(1),
+    run: RunId,
+    defaulted: z.literal(true).optional().describe('present when the Hub found the run in the predecessor lineage; absent when the caller named it'),
+  })).min(1).refine(rows=>new Set(rows.map(row=>row.slot)).size===rows.length,'one row per slot').optional()
+    .describe('Inputs bound after the start (W06 R[7], F[5]): the slot and the run frozen at start_run, never a result reference; each evaluation reads that run\u2019s latest accepted result again. Absent when the workflow declares none'),
   input_defaults: z.array(InputDefault).min(1).refine(rows=>new Set(rows.map(row=>`${row.slot}\0${row.reference}`)).size===rows.length,'defaulted bindings are unique').optional().describe('Hub-selected input defaults frozen at start_run; absent on explicit or historical bindings'),
   session: z.string().optional().describe('client session id observed from the request header'),
   model_identity: ModelIdentitySchema.optional().describe('Explicit client declaration at start; a submission from the same observed session can reuse it'),
@@ -279,3 +296,47 @@ export const NewRunRecord=RunRecord.safeExtend({submission_due:IsoTime}).refine(
 export type RunRecord = z.infer<typeof RunRecord>;
 /** Derived read view: historical originals stay unchanged. */
 export type RunRecordView = RunRecord & {requirements:RequirementSummary[];criterion_changes?:z.infer<typeof CriterionNotice>[]};
+
+/**
+ * GET /run-export/<run>/late (run-late@1, W06 R[7]): the inputs bound after the start resolved for the reader now, by the same
+ * reading an evaluation does, and the per-item overlay the workflow's refresh function computed from them. Nothing is stored.
+ */
+export const RunLateExport = z.strictObject({
+  schema: z.literal('run-late@1'),
+  run: RunId,
+  run_reference: referenceUriOf('rec'),
+  resolved_at: IsoTime,
+  late: LateLocks.describe('as an evaluation now would record it in locks.late'),
+  items: z.array(z.strictObject({ id: ItemId, late: z.record(z.string(), z.unknown()) })).describe('the overlay of each item the refresh function returned, in the run\u2019s item order; empty when it gave no usable output (late.refresh null)'),
+});
+export type RunLateExport = z.infer<typeof RunLateExport>;
+
+/** Runs one GET /run-export/<run>/history answer lists at most; the `limit` query parameter may lower it. */
+export const RUN_HISTORY_MAX_RUNS = 8;
+
+/**
+ * GET /run-export/<run>/history (run-history@1, W06 R[8]): the earlier runs that verified the same subject on a target and that
+ * the reader may export, newest first, reduced to recorded facts: the run, its locked build, and for each job that took effect
+ * the plan run it verified, when its journal ended and each report row's item and verdict. Nothing is judged and nothing is stored.
+ */
+export const RunHistoryExport = z.strictObject({
+  schema: z.literal('run-history@1'),
+  run: RunId,
+  subjects: z.array(z.string().min(1)).describe('what names the subject of the run across runs: for each source bound with the role subject, its external object identity without the revision, or the reference of bytes bound directly; empty when the run has no subject source'),
+  limit: z.number().int().min(1).max(RUN_HISTORY_MAX_RUNS).describe('the most runs this answer lists'),
+  complete: z.boolean().describe('false when the bounded scan ended before every dispatched run was looked at and fewer than limit runs were found: older verifications may exist'),
+  runs: z.array(z.strictObject({
+    run: RunId.describe('the run the jobs were dispatched for (the verification run)'),
+    started_at: IsoTime,
+    build: z.string().nullable().describe('the build the run locked; null when it locked none'),
+    jobs: z.array(z.strictObject({
+      job: Sha256,
+      plan_run: RunId.nullable().describe('the run whose plan the job verified; null when the job records none'),
+      ended_at: IsoTime.nullable().describe('when the journal recorded the end of the job; null when that record carries no time'),
+      outcome: EffectOutcomeSchema,
+      rows: z.array(z.strictObject({ item: z.string().min(1), dynamic_terminal: DynamicTerminalSchema })).nullable()
+        .describe('each report row\u2019s item and verdict, from the same checked projection the jobs export reads at the reader\u2019s tier; null when that projection cannot be shown to this reader'),
+    })).min(1).describe('the jobs of the run that ended and took effect, in journal order'),
+  })).describe('newest first by the end of the latest job'),
+});
+export type RunHistoryExport = z.infer<typeof RunHistoryExport>;

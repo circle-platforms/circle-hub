@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { after, before, describe, test } from 'node:test';
 import { uiLabelOf, type EnvironmentState } from '../../contracts/generated/vocabulary.ts';
-import type { EnvironmentCalls, EnvironmentFacts } from '../dispatch/api.ts';
+import type { EnvironmentCalls, EnvironmentFacts, EnvironmentReadiness } from '../dispatch/api.ts';
 import type { DispatchView, ExecutorView, JobView } from './api.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
@@ -33,17 +33,45 @@ environments[0].calls_24h = calls;
 environments[1].calls_24h = { ...calls, executor: id(2), calls: 0, median_ms: null, slowest_ms: null, last_at: null };
 environments[2].calls_24h = { ...calls, executor: id(3), partial: true };
 const jobsByRun = new Map<string, JobView[]>();
+const readinessByTarget = new Map<string, EnvironmentReadiness>();
+const readinessCalls: Array<[string, string]> = [];
+const instant = '2026-11-14T00:00:00.000Z';
+function blockedReadiness(target: string, executor?: string): EnvironmentReadiness {
+  return {
+    target,
+    observed_at: instant,
+    executors: [{
+      ordinal: 1,
+      ...(executor === undefined ? {} : { executor }),
+      checks: [
+        { condition: 'manifest', label: '清单原件可读且摘要一致', satisfied: false, observed_at: instant, references: [], missing_fact: '受权读取的原件字节与登记摘要不一致', next_action: '请管理员核对该项声明与可读依据后重读' },
+        { condition: 'baseline.0', label: '基线登记（第 1 项）', satisfied: false, observed_at: instant, references: [], missing_fact: '该声明探针没有基线登记', next_action: '请管理员按声明探针登记基线后重读；本报告不进行现场比较' },
+        { condition: 'evidence.0.0', label: '认证证据原件（第 1 组，第 1 项）', satisfied: null, observed_at: instant, references: [], missing_fact: '原件未取得；不存在、无权或读取策略未放行均不能当作已核对', next_action: '请管理员核对该项声明与可读依据后重读' },
+      ],
+      occupancy: [],
+      baseline_registrations: [],
+    }],
+    limitations: ['仅本地只读观察，未连接网关或设备，未读取秘密值，不是预订或上机许可'],
+  };
+}
 const view: DispatchView = {
   executors: async (by) => {
     if (by.role !== 'admin') throw new Error('只有启用中的管理员能操作执行器和作业');
     return environments;
   },
   jobs: async (_by, run) => jobsByRun.get(run) ?? [],
+  readiness: async (by, target) => {
+    readinessCalls.push([by.id, target]);
+    const found = readinessByTarget.get(target);
+    if (found) return found;
+    throw new Error('private://secret-host/password');
+  },
 };
 
 before(async () => {
   server = await createTestServer();
   server.deps.dispatch = view;
+  readinessByTarget.set('合成运行环境甲', blockedReadiness('合成运行环境甲', id(1)));
 });
 after(async () => {
   await server?.close();
@@ -104,20 +132,20 @@ describe('runtime environments', () => {
     assert.match(rowOf(page, '合成运行环境己'), /暂不可用/);
     assert.match(rowOf(page, '合成运行环境甲'), new RegExp(`/console/runs/${RUN}`), 'the latest dispatch leads to its task');
     assert.match(rowOf(page, '合成运行环境乙'), /使用中/);
-    assert.match(rowOf(page, '合成运行环境乙'), new RegExp(`作业 ${job(2).slice(0, 12)}（效果结局：已发出）`));
+    assert.match(rowOf(page, '合成运行环境乙'), new RegExp(`执行 ${job(2).slice(0, 12)}（效果结局：已发出）`));
     assert.match(rowOf(page, '合成运行环境乙'), /未上报/, 'a session that reported no version');
-    assert.match(rowOf(page, '合成运行环境乙'), /尚无派发/);
+    assert.match(rowOf(page, '合成运行环境乙'), /尚无执行/);
     assert.match(rowOf(page, '合成运行环境丙'), /已冻结/);
-    assert.match(rowOf(page, '合成运行环境丙'), /派发结果未确认，等待处置中/);
+    assert.match(rowOf(page, '合成运行环境丙'), /结果未确认，等待处置中/);
     assert.equal(rowOf(page, '合成运行环境丙').match(/>未知</g)?.length, 2, 'a version and a latest dispatch not read are unknown, not none');
-    assert.doesNotMatch(rowOf(page, '合成运行环境丙'), /未上报|尚无派发/);
+    assert.doesNotMatch(rowOf(page, '合成运行环境丙'), /未上报|尚无执行/);
     assert.doesNotMatch(rowOf(page, '合成运行环境丙'), /<button|ch-btn|<form/);
     const frozen=(await send('/console/connections?environment='+id(3),{headers:{cookie:await signIn(server.admin.token)}})).body;
-    assert.match(frozen,/处置派发结果/);
+    assert.match(frozen,/处置执行结果/);
     assert.match(frozen, new RegExp(`circle-hub job status ${job(3)}`), 'the disposition starts from the job status on the command line');
     assert.match(frozen, new RegExp(`href="/console/runs/${RUN}">查看任务`), 'and its task is one link away');
     assert.match(rowOf(page, '合成运行环境丁'), /已冻结/);
-    assert.match(rowOf(page, '合成运行环境丁'), new RegExp(`作业 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`));
+    assert.match(rowOf(page, '合成运行环境丁'), new RegExp(`执行 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`));
     const held=(await send('/console/connections?environment='+id(4),{headers:{cookie:await signIn(server.admin.token)}})).body;
     assert.match(held,/确认已恢复/);
     assert.match(held, new RegExp(`circle-hub bed hold clear ${id(4)}`), 'the dialog gives the command for the administrator');
@@ -132,22 +160,63 @@ describe('runtime environments', () => {
   });
 
   test('the interface gives the derived state beside the facts; members get the neutral answer', async () => {
-    const body = JSON.parse((await send('/console/api/environments', { headers: { cookie: await signIn(server.admin.token) } })).body);
-    assert.equal(body.wired, true);
-    assert.deepEqual(body.environments.map((e: { status: string }) => e.status), ['available', 'in_use', 'frozen', 'frozen', 'deactivated', 'unknown', 'unknown']);
-    assert.deepEqual(body.environments.map((e: { status: EnvironmentState; status_label: string }) => e.status_label === uiLabelOf('environment_state', e.status)), Array(7).fill(true), 'each status comes with its interface term');
-    const unknown = body.environments.find((e: { id: string }) => e.id === id(6));
-    assert.equal(unknown.state, null, 'not read');
-    assert.deepEqual(unknown.status_detail, ['占用与冻结状态暂不可读']);
-    assert.equal(body.environments[0].state.reported_version, 'gateway 2.4.1');
-    assert.deepEqual(body.environments[0].calls_24h, { ...calls, results_label: { completed: '完成', error: '报错', unknown: '未知' } });
-    assert.equal(body.environments[5].calls_24h, null, 'missing statistics stay unknown');
-    assert.deepEqual(body.environments[2].state.known, { occupancy: true, latest: false, version: false });
-    assert.deepEqual(body.environments[3].status_detail, [`作业 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`]);
-    assert.deepEqual(body.environments[6].status_detail, ['占用该运行环境的作业暂不可读']);
-    const refused = await send('/console/api/environments', { headers: { cookie: await signIn((await member()).token) } });
-    assert.equal(refused.status, 404);
-    assert.equal(JSON.parse(refused.body).code, 'SOURCE_UNAVAILABLE');
+    // U5: /console/api/environments retired — the connections page carries the same facts; retired path is unavailable.
+    const page = (await send('/console/connections?tab=environments', { headers: { cookie: await signIn(server.admin.token) } })).body;
+    for (const [target, label] of [
+      ['合成运行环境甲', uiLabelOf('environment_state', 'available' as EnvironmentState)],
+      ['合成运行环境乙', uiLabelOf('environment_state', 'in_use' as EnvironmentState)],
+      ['合成运行环境丙', uiLabelOf('environment_state', 'frozen' as EnvironmentState)],
+      ['合成运行环境丁', uiLabelOf('environment_state', 'frozen' as EnvironmentState)],
+      ['合成运行环境戊', uiLabelOf('environment_state', 'deactivated' as EnvironmentState)],
+      ['合成运行环境己', uiLabelOf('environment_state', 'unknown' as EnvironmentState)],
+      ['合成运行环境庚', uiLabelOf('environment_state', 'unknown' as EnvironmentState)],
+    ] as const) assert.match(rowOf(page, target), new RegExp(label));
+    assert.match(rowOf(page, '合成运行环境甲'), /gateway 2\.4\.1/);
+    assert.match(rowOf(page, '合成运行环境甲'), /3 次.+中位 120 毫秒/);
+    assert.match(rowOf(page, '合成运行环境己'), /暂不可用/);
+    assert.match(rowOf(page, '合成运行环境丁'), new RegExp(`执行 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`));
+    assert.match(rowOf(page, '合成运行环境庚'), /占用该运行环境的作业暂不可读/);
+    const memberPage = await send('/console/connections?tab=environments', { headers: { cookie: await signIn((await member()).token) } });
+    assert.equal(memberPage.status, 200);
+    assert.doesNotMatch(memberPage.body, /gateway 2\.4\.1|192\.0\.2\.10/);
+    assert.match(memberPage.body, /只读就绪报告|尚无已分配的运行环境|只读报告未知/);
+    const retired = await send('/console/api/environments', { headers: { cookie: await signIn(server.admin.token) } });
+    assert.equal(retired.status, 404);
+    assert.equal(JSON.parse(retired.body).code, 'SOURCE_UNAVAILABLE');
+  });
+
+  test('readiness reports show blocked manifest baseline and evidence checks without inventing links or secrets', async () => {
+    readinessCalls.length = 0;
+    const page = (await send('/console/connections?tab=environments', { headers: { cookie: await signIn(server.admin.token) } })).body;
+    assert.match(page, /data-environment-readiness/);
+    assert.match(page, /data-condition="manifest"/);
+    assert.match(page, /清单原件可读且摘要一致/);
+    assert.match(page, /受权读取的原件字节与登记摘要不一致/);
+    assert.match(page, /data-condition="baseline\.0"/);
+    assert.match(page, /该声明探针没有基线登记/);
+    assert.match(page, /data-condition="evidence\.0\.0"/);
+    assert.match(page, /原件未取得/);
+    assert.match(page, /exe_0{25}1/);
+    assert.ok(readinessCalls.some((call) => call[1] === '合成运行环境甲'));
+    assert.doesNotMatch(page, /href="[^"]*src:/);
+    assert.doesNotMatch(page, /private:\/\/|password=|secret-host/i);
+  });
+
+  test('unwired readiness stays unknown on the environments tab', async () => {
+    const previous = view.readiness;
+    delete view.readiness;
+    const page = (await send('/console/connections?tab=environments', { headers: { cookie: await signIn(server.admin.token) } })).body;
+    assert.match(page, /只读报告未知/);
+    assert.match(page, /报告尚未接线/);
+    view.readiness = previous;
+  });
+
+  test('failed readiness reads stay unknown and never echo private exception text', async () => {
+    readinessByTarget.clear();
+    const page = (await send('/console/connections?tab=environments', { headers: { cookie: await signIn(server.admin.token) } })).body;
+    assert.match(page, /只读报告未知/);
+    assert.doesNotMatch(page, /private:\/\/secret-host\/password|secret-host|password/);
+    readinessByTarget.set('合成运行环境甲', blockedReadiness('合成运行环境甲', id(1)));
   });
 
   test('a task names the environment of its dispatch step and the state it is in', async () => {
@@ -166,7 +235,7 @@ describe('runtime environments', () => {
     // The dispatch step is part of the execution process, the 过程 tab of the task page (decision 151).
     const page = (await send(`/console/runs/${run}?tab=process`, { headers: { cookie: await signIn(server.admin.token) } })).body;
     assert.match(page, /运行环境 合成运行环境丙（当前已冻结） · 运行环境已冻结，不可重发/);
-    assert.match(page, /运行环境 合成运行环境乙（当前使用中） · 等待派发结果中，不可重发/);
+    assert.match(page, /运行环境 合成运行环境乙（当前使用中） · 等待执行结果中，不可重发/);
     assert.equal(page.split('以表格查看')[1].match(/运行环境 合成运行环境/g)?.length, 2, 'a job whose reservation names no environment names none');
   });
 });

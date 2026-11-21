@@ -1,4 +1,4 @@
-# 编码代理说明只用 AGENTS.md（决定 162）
+# 编码代理说明只用 AGENTS.md（决定 185，主线上编号 162）
 
 所有者 2026-11-19 在对话里选“合并为只使用 AGENTS.md”。Claude Code 2.1.277 起，工作目录及其上级都没有 CLAUDE.md 时才读 AGENTS.md；本仓库原来有 CLAUDE.md，有约束力的 AGENTS.md 因此不会自动加载。circle 和 circle-packs 只有 AGENTS.md，已经按这种方式加载。
 
@@ -6,7 +6,7 @@
 
 - `AGENTS.md`
 - `CLAUDE.md`（删去）
-- `docs/hub-r4-progress.md`（决定 162）
+- `docs/hub-r4-progress.md`（决定 185）
 - `docs/hub-r4-tasks/agents-md-only.md`（本页）
 
 ## 并进 AGENTS.md 的内容

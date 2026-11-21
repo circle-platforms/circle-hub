@@ -320,5 +320,5 @@ test('two credentials set in one call: the stop ends once both are stored, and t
     { username: 'reader', password: passwordDigest(PASSWORD) },
     { username: 'reader2', password: passwordDigest(CHANGED) },
   ]);
-  assert.deepEqual((await k.records.variables.list(k.admin)).map(v=>v.version),[2,2],'each named credential has two versions');
+  assert.deepEqual((await k.records.variables.listSecrets(k.admin)).map(v=>v.version),[2,2],'each named credential has two versions');
 });

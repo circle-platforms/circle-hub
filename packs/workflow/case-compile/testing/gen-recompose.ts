@@ -21,7 +21,7 @@ write('tables/recompose-sources.schema.json', { ...record.properties.sources, ti
 write('tables/recompose-sources.schema.json', { ...record.properties.sources, title: T.sources });
 const governingProduct = obj({ ...gov.properties, applies_to: obj({ lines: array(str, 1), all_builds: { type: 'boolean' }, builds: array(str) }, ['lines']), constraints: array(obj({ field: str, values: array(scalar) })) }, ['kind', 'ref', 'version', 'authority', 'applies_to']);
 write('tables/recompose-product.schema.json', obj({ schema: { const: T.product }, adjudication_owner: str, governing: array(governingProduct), declarations: array(obj({ ref: str, role: choice(T.declaration_roles), path: str }, ['ref', 'role'])), parameters: array(obj({ path: str, position: { type: 'integer', minimum: 0 }, type: str, minimum: { type: 'number' }, maximum: { type: 'number' }, role: str, load_bearing: { type: 'boolean' } }, ['path', 'position', 'role', 'load_bearing'])), values: array(obj({ slot: str, ref: str, values: array(scalar), path: str, position: { type: 'integer', minimum: 0 } }, ['slot', 'ref'])) }));
-const codeRows = [['quote_not_verbatim', '意图/期望不是原件逐字子串，或引用指不到', '重组者按原件补正确引用后重交；不改作者原文'], ['missing_without_exit', '真实欠缺却没有具名出口', '写明缺的事实、由谁在何时补，再重交'], ['candidate_signed', '用检索候选当签发依据', '换成产品包声明的规范来源，或把它记为 underdetermined'], ['prerequisite_as_conflict', '把缺前置记成冲突', '改记 missing_prerequisite，交编写阶段补齐'], ['unmarked_load_bearing', '承载语义的适配未标 load_bearing', '标注并给等价条件；不标则该适配不生效'], ['bound_to_bed', '重组产物里出现具体自动化测试环境事实', '移到编写/计划阶段的重绑定账'], ['atom_dropped', '作者原子/命令出现次数在适配后减少', '缺失次数留作义务，补回或写明作者同意删除的引用']];
+const codeRows = [['quote_not_verbatim', '意图/期望不是原件逐字子串，或引用指不到', '重组者按原件补正确引用后重交；不改作者原文'], ['missing_without_exit', '真实欠缺却没有具名出口', '写明缺的事实、由谁在何时补，再重交'], ['candidate_signed', '用检索候选当签发依据', '换成产品包声明的规范来源，或把它记为 underdetermined'], ['prerequisite_as_conflict', '把缺前置记成冲突', '改记 missing_prerequisite，交编写阶段补齐'], ['unmarked_load_bearing', '承载语义的改写未标 load_bearing', '标注并给等价条件；不标则该改写不生效'], ['bound_to_bed', '重组产物里出现具体自动化测试环境事实', '移到编写/计划阶段的用例参数替换'], ['atom_dropped', '用例原句/命令出现次数在改写后减少', '缺失次数留作义务，补回或写明作者同意删除的引用'], ['command_syntax', '改写后的命令未匹配锁定命令目录、含未替换语法占位符或参数不符合声明签名', '按锁定命令目录填写完整可执行命令或 {{slot:...}} 模板占位后重交']];
 write('tables/recompose-codes.json', { schema: 'recompose.codes@1', violations: codeRows.map(([id, when, fix]) => ({ code: 'recompose.' + id, when, fix })), refusals: [], warnings: [] });
 const copy = (folder: string, files: string[]) => { for (const file of files) {
     const target = new URL(folder + '/' + file, base);
@@ -36,9 +36,9 @@ const copy = (folder: string, files: string[]) => { for (const file of files) {
     writeFileSync(target, text);
 } };
 for (const folder of ['authority', 'recompose', 'adjudicate'])
-    copy(folder, ['functions/text.ts', 'functions/canonical-json.ts', 'functions/schema.ts', 'functions/compile-structure.ts', 'functions/recompose-evidence.ts', 'tables/compile-structure.json', 'tables/recompose-format.json']);
+    copy(folder, ['functions/text.ts', 'functions/canonical-json.ts', 'functions/schema.ts', 'functions/recompose-evidence.ts', 'tables/recompose-format.json']);
 copy('authority', ['functions/recompose-authority.ts', 'tables/recompose-product.schema.json']);
-copy('recompose', ['functions/recompose-check.ts', 'tables/recompose-record.schema.json', 'tables/recompose-codes.json', 'functions/generated/command-grammar.ts']);
+copy('recompose', ['functions/client-cli.ts', 'functions/source-cache.ts', 'functions/source-materials.ts', 'functions/hub-retry.ts', 'functions/knowledge-text.ts', 'functions/recompose-check.ts', 'tables/recompose-record.schema.json', 'tables/recompose-codes.json']);
 write('adjudicate/tables/decision.schema.json', obj({ atom: str, state: choice(T.states), load_bearing: { type: 'boolean' }, bed_independent: { type: 'boolean' }, reason: str }));
 if (import.meta.main)
     console.log('recompose local schemas and shared stage files generated');

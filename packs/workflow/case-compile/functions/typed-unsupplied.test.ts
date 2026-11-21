@@ -29,7 +29,6 @@ function signed(typed: boolean) {
   const profileDoc = structuredClone(PROFILE_DOC) as Record<string, any>;
   const allowed = (profileDoc.allowed as Array<Record<string, unknown>>).find((call) => call.method === 'configure')!;
   allowed.unsupplied = ['label', 'note'];
-  profileDoc.runtime.contract_sha256 = contractDoc.original.contract_sha256;
   return { contractDoc, profileDoc };
 }
 

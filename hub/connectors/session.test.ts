@@ -51,6 +51,7 @@ function memoryVault(delays: number[] = []): MemoryVault {
   const entries = new Map<string, string>();
   const faults: MemoryVault['faults'] = { put: null, get: false, remove: false };
   let puts = 0;
+  const namedSecretNotUsed = async (): Promise<never> => { throw new Error('named secrets are outside this session fixture'); };
   return {
     entries,
     faults,
@@ -58,6 +59,15 @@ function memoryVault(delays: number[] = []): MemoryVault {
       return puts;
     },
     async initKey() {},
+    putSecret: namedSecretNotUsed,
+    secretMetadata: namedSecretNotUsed,
+    secretIdentity: namedSecretNotUsed,
+    secretHistory: namedSecretNotUsed,
+    secretHistoryIdentities: namedSecretNotUsed,
+    secretNames: namedSecretNotUsed,
+    readSecret: namedSecretNotUsed,
+    recentSecrets: namedSecretNotUsed,
+    unsetSecret: namedSecretNotUsed,
     async put(name, value) {
       const delay = delays[puts] ?? 0;
       puts += 1;

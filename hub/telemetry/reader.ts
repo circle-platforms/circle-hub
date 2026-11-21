@@ -4,7 +4,7 @@
 // member reading a shared id sees their own rows of it and no others.
 import { TRACE_ORIGIN, type Environment, type StepLevel, type StepType, type TraceOrigin } from '../../contracts/generated/vocabulary.ts';
 import type { Principal } from '../records/api.ts';
-import { iso, normalizeTime, pageLimit, type Database, type Row } from '../records/db.ts';
+import { iso, normalizeTime, pageLimit, type Database, type Row } from '../records/api.ts';
 import { BACKGROUND_STEPS, type BackgroundStep, type UsageName } from './names.ts';
 import type { Usage } from './usage.ts';
 
@@ -246,15 +246,19 @@ export class TraceReader {
   }
 
   /** One trace's step tree with its usage, or null when it does not exist or the reader may not see it. */
-  async show(principal: Principal, traceId: string): Promise<TraceDetail | null> {
+  async show(principal: Principal, traceId: string, query: { origin?: TraceOrigin; limit?: number } = {}): Promise<TraceDetail | null> {
     if (typeof traceId !== 'string' || !TRACE.test(traceId)) return null;
     const viewer = await this.#viewer(principal);
     if (viewer === null) return null;
-    const values: unknown[] = [traceId, MAX_SHOWN_STEPS + 1];
-    if (!viewer.admin) values.push(viewer.id);
-    const rows = (await this.#db.query(`SELECT ${COLUMNS} FROM trace_spans WHERE trace_id = $1 ${viewer.admin ? '' : 'AND user_id = $3'} ORDER BY started_at, ended_at DESC LIMIT $2`, values)).rows;
+    const limit = query.limit === undefined ? MAX_SHOWN_STEPS : pageLimit(query.limit);
+    const values: unknown[] = [traceId, limit + 1];
+    const conditions = ['trace_id = $1'];
+    if (!viewer.admin) conditions.push(`user_id = $${values.push(viewer.id)}`);
+    if (query.origin !== undefined) conditions.push(`origin = $${values.push(query.origin)}`);
+    const rows = (await this.#db.query(`SELECT ${COLUMNS} FROM trace_spans WHERE ${conditions.join(' AND ')}
+      ORDER BY started_at, ended_at DESC, span_id LIMIT $2`, values)).rows;
     if (rows.length === 0) return null;
-    return { trace_id: traceId, roots: treeOf(rows.slice(0, MAX_SHOWN_STEPS).map(stepOf)), truncated: rows.length > MAX_SHOWN_STEPS };
+    return { trace_id: traceId, roots: treeOf(rows.slice(0, limit).map(stepOf)), truncated: rows.length > limit };
   }
 
   /**

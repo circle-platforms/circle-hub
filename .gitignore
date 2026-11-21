@@ -17,3 +17,6 @@ docs/.jekyll-cache/
 docs/.jekyll-metadata
 docs/.bundle/
 docs/vendor/
+
+# Local source bytes must never enter Git.
+.hub-cache/

@@ -9,6 +9,21 @@ import type { LiveEventName } from './live.ts';
 import { LIVE_SCRIPT } from './script.ts';
 import { THEME_BOOTSTRAP } from './theme.ts';
 import {CONSOLE_CSS,CONSOLE_THEME,CONSOLE_LIVE} from './assets.ts';
+import { count } from './numbers.ts';
+import {
+  connectionsPath,
+  healthPath,
+  knowledgePath,
+  logoutPath,
+  overviewPath,
+  recordsPath,
+  runsPath,
+  searchPath,
+  settingsPath,
+  skillsPath,
+  teamPath,
+  workflowsPath,
+} from './routes.ts';
 
 /** Markup that is already safe: produced by `html` or a constant of this module. */
 export class Html {
@@ -81,10 +96,15 @@ export function emptyAction(path: string, text: unknown, params: Record<string, 
   return html`<a class="ch-btn ch-btn--primary" href="${href(path, params)}">${text}</a>`;
 }
 
+/** The one CSRF hidden input; every console POST form uses this (or postForm from components). */
+export function csrfField(csrf: string): Html {
+  return html`<input type="hidden" name="csrf" value="${csrf}">`;
+}
+
 export function table(headers: readonly (string|Html)[], rows: readonly unknown[][], empty: string | EmptyState = '没有记录', cls?: string, selection?: {selected?:number;hrefs?:readonly string[]}): Html {
   if (rows.length === 0) return emptyBlock(empty);
   return html`<div class="ch-table-wrap" tabindex="0" role="region" aria-label="表格"><table class="ch-table"${cls === undefined ? '' : html` data-view="${cls}"`}><thead><tr>${headers.map((h,i) => html`<th scope="col"${rows.some(row=>typeof row[i]==='number')?html` class="num"`:''}>${h}</th>`)}</tr></thead><tbody>${rows.map(
-    (row,i) => html`<tr${selection?.selected===i?html` class="is-selected" aria-selected="true"`:''}${selection?.hrefs?.[i]?html` data-row-href="${selection.hrefs[i]}"`:''}>${row.map((cell) => html`<td${typeof cell==='number'?html` class="num"`:''}>${typeof cell==='number'?cell.toLocaleString('en-US'):cell}</td>`)}</tr>`,
+    (row,i) => html`<tr${selection?.selected===i?html` class="is-selected" aria-selected="true"`:''}${selection?.hrefs?.[i]?html` data-row-href="${selection.hrefs[i]}"`:''}>${row.map((cell) => html`<td${typeof cell==='number'?html` class="num"`:''}>${typeof cell==='number'?count(cell):cell}</td>`)}</tr>`,
   )}</tbody></table></div>`;
 }
 
@@ -170,7 +190,8 @@ export function secureConsoleResponse(body:Html,policy=CONTENT_SECURITY_POLICY):
  * The ten places (decision 151: skills left the workflows place and the places stand in four groups); only the current
  * place may expand its authorized navigation.
  */
-export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'skills' | 'connections' | 'records' | 'team' | 'settings' | 'health';
+/** Navigation place keys. The workflows place uses the key `workflows`. */
+export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'workflows' | 'skills' | 'connections' | 'records' | 'team' | 'settings' | 'health';
 /** The name of the skills place. The kind it lists keeps its vocabulary name (pack_kind skill). */
 export const SKILLS_PLACE = '技能';
 
@@ -242,16 +263,16 @@ export function icon(name: keyof typeof ICONS, cls = 'ico'): Html {
 }
 
 const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = [
-  ['overview', '总览', '/console/overview', 'home'],
-  ['tasks', '任务', '/console/runs', 'review'],
-  ['knowledge', '知识库', '/console/knowledge', 'book'],
-  ['packs', uiLabelOf('pack_kind', 'workflow'), '/console/packs', 'pack'],
-  ['skills', SKILLS_PLACE, '/console/skills', 'skill'],
-  ['connections', '连接', '/console/connections', 'sys'],
-  ['team', '团队', '/console/team', 'users'],
-  ['records', '记录', '/console/records', 'rec'],
-  ['settings', '设置', '/console/settings', 'gear'],
-  ['health', '运行状况', '/console/health', 'flow'],
+  ['overview', '总览', overviewPath(), 'home'],
+  ['tasks', '任务', runsPath(), 'review'],
+  ['knowledge', '知识库', knowledgePath(), 'book'],
+  ['workflows', uiLabelOf('pack_kind', 'workflow'), workflowsPath(), 'pack'],
+  ['skills', SKILLS_PLACE, skillsPath(), 'skill'],
+  ['connections', '连接', connectionsPath(), 'sys'],
+  ['team', '团队', teamPath(), 'users'],
+  ['records', '记录', recordsPath(), 'rec'],
+  ['settings', '设置', settingsPath(), 'gear'],
+  ['health', '运行状况', healthPath(), 'flow'],
 ];
 
 /** The first place of each later group: the overview, the work, the team and its connections, the Hub itself. A line separates the groups. */
@@ -292,9 +313,9 @@ export function page(chrome: PageChrome, body: unknown): Html {
 <nav class="ch-nav" aria-label="主导航">
 <input class="ch-visually-hidden" type="checkbox" id="console-navigation-toggle" data-navigation-toggle aria-controls="console-navigation-links" aria-label="展开导航">
 <div class="ch-brand">${logo()}<span>circle-hub</span><label class="ch-icon-btn" for="console-navigation-toggle" title="展开导航" aria-label="展开导航">${icon('menu')}</label></div>
-<form role="search" method="get" action="/console/search"><label class="ch-input">${icon('search')}<input id="console-search" type="search" name="q" maxlength="100" placeholder="搜索" aria-label="搜索"><span class="ch-kbd" aria-hidden="true">⌘K</span></label></form>
+<form role="search" method="get" action="${searchPath()}"><label class="ch-input">${icon('search')}<input id="console-search" type="search" name="q" maxlength="100" placeholder="搜索" aria-label="搜索"><span class="ch-kbd" aria-hidden="true">⌘K</span></label></form>
 <div class="ch-nav-list" id="console-navigation-links">${nav}</div>
-<div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span data-evidence title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
+<div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span data-evidence title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="${logoutPath()}">${csrfField(chrome.csrf ?? '')}<button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
 </nav>
 <main class="ch-pane" id="console-main" tabindex="-1">${top}<div class="ch-section" data-area-content>${content}</div></main>
 ${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail ? html`<h1 class="ch-visually-hidden ch-detail-heading">${heading}</h1>` : ''}${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? html`${notice}${state}` : ''}${inspector}</aside>` : ''}
@@ -310,13 +331,13 @@ function themeSwitch(): Html {
 }
 
 function areaClass(active?: NavKey): string {
-  return active === 'knowledge' ? 'area-knowledge' : active === 'packs' || active === 'skills' ? 'area-workflow' : active === 'tasks' ? 'area-task' : '';
+  return active === 'knowledge' ? 'area-knowledge' : active === 'workflows' || active === 'skills' ? 'area-workflow' : active === 'tasks' ? 'area-task' : '';
 }
 
 /** Detail pages without a directory projection still offer scope links, without inventing counts or a selected scope. */
 function scopeNavigation(active: NavKey): Html {
-  if (active !== 'knowledge' && active !== 'packs' && active !== 'skills') return html``;
-  const base = active === 'knowledge' ? '/console/knowledge' : active === 'skills' ? '/console/skills' : '/console/packs';
+  if (active !== 'knowledge' && active !== 'workflows' && active !== 'skills') return html``;
+  const base = active === 'knowledge' ? knowledgePath() : active === 'skills' ? skillsPath() : workflowsPath();
   const values = KnowledgeSearchScopeSchema.enum;
   return html`<div class="ch-nav-sub" aria-label="空间">${[values.all, values.personal, values.shared, values.team].map((scope) => link(base, uiLabelOf('knowledge_search_scope', scope), {scope}))}</div>`;
 }

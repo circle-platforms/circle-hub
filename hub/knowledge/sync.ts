@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
 import {resolveProductVariables,sameVariableUses,productionVariableUses} from './variables.ts';
 import {emptyScopeNote} from './empty-scope.ts';
-import type {VariableUse} from '../../contracts/src/variables.ts';
+import type {OrdinaryVariableUse} from '../../contracts/src/variables.ts';
 import { BuildInfo, SyncPlanOutput, expandTemplate } from '../../contracts/src/product.ts';
 import type { SyncPlanInput } from '../../contracts/src/product.ts';
 import type { ProductHandle } from '../ports.ts';
@@ -169,7 +169,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     report.error = '产品包没有声明 sync，无法同步';
     return finish();
   }
-  const resolved=await resolveProductVariables(product,context.records.variables,by,dryRun,{plan:{...DEFAULT_SANDBOX.plan,...context.sandbox.plan},producer:{...DEFAULT_SANDBOX.producer,...context.sandbox.producer}});
+  const resolved=await resolveProductVariables(context.packReads,product,context.records.variables,by,dryRun,{plan:{...DEFAULT_SANDBOX.plan,...context.sandbox.plan},producer:{...DEFAULT_SANDBOX.producer,...context.sandbox.producer}});
   if('problems' in resolved){report.error=resolved.problems.join('；');return finish();}
   product=resolved.product;
   report.variables=resolved.versions;
@@ -468,7 +468,7 @@ async function processOwnTree(
   context: KnowledgeContext,
   product: ProductHandle,
   build: BuildInfo | null,
-  options: { variables:VariableUse[]; listingDigest:string; sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number; planBuilds?: readonly string[] },
+  options: { variables:OrdinaryVariableUse[]; listingDigest:string; sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number; planBuilds?: readonly string[] },
   scope?: BuildInfo['sources']
 ): Promise<SyncBuildReport> {
   options={...options,variables:productionVariableUses(product,build===null,options.variables)};
@@ -517,7 +517,7 @@ async function processOwnTree(
     if(changed===null){
       const composition=existing.detail.composition ? await context.store.composition(existing.detail.composition) : null;
       if(!sameVariableUses(composition?.variables??[],options.variables)){
-        const before=new Map((composition?.variables??[]).map(v=>[v.name,v.decision]));
+        const before=new Map((composition?.variables??[]).filter((v):v is OrdinaryVariableUse=>v.kind==='var').map(v=>[v.name,v.decision]));
         const notes:string[]=[];
         for(const use of options.variables){
           if(before.get(use.name)===use.decision)continue;
@@ -680,7 +680,7 @@ async function runPlan(context: KnowledgeContext, product: ProductHandle, input:
 /** The parse action of one plan round: the pages read so far as inputs, what the plan answered. */
 async function writePlanAction(
   context: KnowledgeContext,
-  input: { sync: string; product: string; round: number; fresh: number; pages: string[]; output: PlanAnswer | null; reason: string | null; startedAt: string; read: Record<string, SyncRead>; variables:VariableUse[] },
+  input: { sync: string; product: string; round: number; fresh: number; pages: string[]; output: PlanAnswer | null; reason: string | null; startedAt: string; read: Record<string, SyncRead>; variables:OrdinaryVariableUse[] },
 ): Promise<string> {
   const body: ActionBody = {
     action: ACTION.parse,

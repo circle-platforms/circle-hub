@@ -1,12 +1,11 @@
 // A knowledge node's citations and provenance for the console (the interface doc's node detail): how many accepted
 // submissions cited the node or its entries in the last CITATION_DAYS, from the index the runs engine writes as it
 // stores a submission (hub/runs citationIndex), and the source references each entry rests on (the tree reader's
-// grounds). Submissions stored before citations were indexed count once the runs engine's backfill has indexed them all
-// (hub/runs backfillCitations); until then, when the window starts before the index, the count is a lower bound and says
-// from when it counts. Called only for a node the reader could read.
+// grounds). When the window starts before the index, the count is a lower bound and says from when it counts.
+// Called only for a node the reader could read.
 import type { NodeViews } from '../../ports.ts';
-import { citationsComplete, citationsIndexedSince, countCitations } from '../../runs/api.ts';
-import type { PageContext } from './pages.ts';
+import { citationsIndexedSince, countCitations } from '../../runs/api.ts';
+import type { PageContext } from './context.ts';
 import { when } from './ui.ts';
 
 export const CITATION_DAYS = 30;
@@ -38,7 +37,7 @@ export interface Citations {
   capped: boolean;
   /** When submissions started to be indexed as they are stored: the oldest so indexed; null before any. */
   indexed_since: string | null;
-  /** The count is exact (up to the cap): the index covers the whole window, or every submission once the backfill ended. */
+  /** The count is exact (up to the cap): the index covers the whole window. */
   complete: boolean;
   /** At most MAX_ENTRIES entries, in the node's order. */
   entries: EntryCitation[];
@@ -70,14 +69,13 @@ export async function nodeCitations(ctx: PageContext, root: string, node: NodeVi
     entries.push({ entry: entry.entry, count: counted.count, capped: counted.capped, grounds: grounds === null ? null : grounds.slice(0, MAX_GROUNDS), grounds_truncated: grounds !== null && grounds.length > MAX_GROUNDS });
   }
   const indexedSince = await citationsIndexedSince(store);
-  const backfilled = await citationsComplete(store);
   return {
     days: CITATION_DAYS,
     since,
     count: total.count,
     capped: total.capped,
     indexed_since: indexedSince,
-    complete: backfilled || (indexedSince !== null && indexedSince <= since),
+    complete: indexedSince !== null && indexedSince <= since,
     entries,
     entries_truncated: node.entries.length > shown.length,
   };
@@ -93,8 +91,8 @@ export function countText(citations: Pick<Citations, 'complete'>, count: number,
 export function citationsLine(citations: Citations): string {
   const count = countText(citations, citations.count, citations.capped);
   const head = `近 ${citations.days} 天被引用${citations.complete ? ` ${count}` : count}`;
-  if (citations.complete) return `${head}（按引用该节点或其条目的已受理提交计）`;
+  if (citations.complete) return `${head}（按引用该节点或其条目的核对正确的提交计）`;
   return citations.indexed_since === null
-    ? `近 ${citations.days} 天被引用：暂无统计（引用自本功能启用后受理的提交起统计）`
+    ? `近 ${citations.days} 天被引用：暂无统计（引用自本功能启用后核对正确的提交起统计）`
     : `${head}（引用自 ${when(citations.indexed_since)} 起统计，更早的提交未计入）`;
 }

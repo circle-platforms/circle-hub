@@ -41,8 +41,7 @@ test('a second synthetic product uses the same block rules with independently de
  for(const object of raw.objects)if(object.e==='ORBIT_0')object.e='API_TARGET';for(const entry of raw.entries)if(entry.e==='ORBIT_0')entry.e='API_TARGET';
  for(const row of raw.runtime.block_model.output_methods)if(row.object==='ORBIT_0')row.object='API_TARGET';for(const row of raw.runtime.block_model.restore_methods)if(row.object==='ORBIT_0')row.object='API_TARGET';
  raw.effects.command.command_scope=['/commands/GET'];for(const row of profile.allowed)if(row.object==='ORBIT_0')row.object='API_TARGET';profile.seats[0].object='API_TARGET';for(const device of inventory.beds[0].devices)if(device.product)device.product='lumen-api';
- const contract=signTypedRuntime(raw);profile.runtime.contract_sha256=contract.original.contract_sha256;
- catalog.entries=[{...catalog.entries[0],words:['GET','/health'],reference:'tree:'+catalog.root+'/commands/GET/%2Fhealth'}];catalog.policy.read_only=['/commands/GET'];catalog.policy.inverse_rules=[];
+ const contract=signTypedRuntime(raw); catalog.entries=[{...catalog.entries[0],words:['GET','/health'],reference:'tree:'+catalog.root+'/commands/GET/%2Fhealth'}];catalog.policy.read_only=['/commands/GET'];catalog.policy.inverse_rules=[];
  const data=positiveBlocks().OBSERVE_ASSERT;data.blocks[0].call={object:'API_TARGET',method:'command',args:['GET /health'],keywords:{}};
  assert.ok(checkContractShape(f.subject(data,{contract,profile,manifest:inventory,command_catalog:catalog})).every(row=>row.verdict==='support'));
 });

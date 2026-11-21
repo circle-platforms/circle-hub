@@ -138,7 +138,9 @@ catalog?, sources?, context, packDir?, sourceTexts?, sandbox?, onError? })`. Exa
   `queue_full`) as `budget_exhausted`, everything else as `check_error`. Outcome data keeps only a stable, path-free part:
   `data.sandbox` (the code), `data.module` (pack-relative) and `reason`, `limit`, `stream`, `phase` when present. Messages,
   stacks, timings, specifiers and captured output reach only `onError(error, check)`, for the admin log; an error that is
-  neither a SandboxError nor an invalid call (TypeError, RangeError) is reported without its message.
+  neither a SandboxError nor an invalid call (TypeError, RangeError) is reported without its message. `data.sandbox` is the
+  Hub's own mark (the dispatch refusal words itself from it, D05 R[7]), so a pack function cannot give it: `runCheck` drops
+  that key from the data of the outcomes a function returns and leaves the rest of the data as it is.
 
 ### Sandbox (C03 R[0])
 
@@ -211,21 +213,32 @@ Layers, outermost first:
 
 Errors (`SandboxError.code`): `SANDBOX_TIMEOUT` (`detail.limit` `time` or `cpu`), `SANDBOX_OUTPUT_TOO_LARGE`,
 `SANDBOX_VIOLATION` (`detail.what`, or `detail.limit = memory`, or `detail.reason` for the scan), `SANDBOX_UNAVAILABLE`
-(`detail.reason` `os_isolation`, `cpu_limit`, `spawn_failed`, `queue_full`, `stopping`), `FUNCTION_THREW` (`detail.reason`
-`output_not_json`, `never_settled`, `process_exit`, or the error's name, message, stack), `FUNCTION_NOT_FOUND` (also `pack_unreadable`
-when the pack directory cannot be read during the scan), `IMPORT_NOT_DECLARED`. Invalid calls (input not JSON, input too
-large, bad limits) throw `TypeError` or `RangeError`. Defaults: 10 s, 256 MB, 8 MiB output, 64 KiB kept per log stream, 32 MiB
-input; maxima 120 s, 4 GB, 64 MiB, 1 MiB, 128 MiB.
+(`detail.reason` `os_isolation`, `cpu_limit`, `spawn_failed`, `queue_full`, `stopping`, `resident_observation_unavailable`),
+`FUNCTION_THREW` (`detail.reason` `output_not_json`, `never_settled`, `process_exit`, or the error's name, message, stack),
+`FUNCTION_NOT_FOUND` (also `pack_unreadable` when the pack directory cannot be read during the scan), `IMPORT_NOT_DECLARED`.
+Invalid calls (input not JSON, input too large, bad limits) throw `TypeError` or `RangeError`. Defaults: 10 s, 256 MB, 8 MiB
+output, 64 KiB kept per log stream, 32 MiB input; maxima 120 s, 4 GB, 64 MiB, 1 MiB, 128 MiB.
 
 Memory is enforced on the resident size rather than by V8's heap limit, because V8 aborts on heap exhaustion and macOS then
 writes a crash report (observed); the heap limit is set far above as a backstop. Linux sums the supervisor and descendants
 of all its threads. A changing thread set is retried at most 12 times; an inaccessible or persistently unstable process tree,
-missing RSS, a failed sampler or a sampler that does not answer within one second ends the call as `SANDBOX_UNAVAILABLE` with
-the missing observation and the administrator's next step. It is never presented as a measured memory overrun. One round
-that cannot see the whole tree does not end the call by itself: that takes a second in which no round has measured it, the
-time a stalled sampler already has. While Node starts, its thread set keeps changing, and on a loaded machine that outlasted
-one round's retries and ended healthy calls (#96). A pack function cannot start threads or processes, so this adds no way to
-evade the watchdog, and a measured overrun still ends the call at once.
+missing RSS, a failed sampler or a sampler that does not answer within one second leaves that round unobserved, which is
+never presented as a measured memory overrun. One unobserved round does not end the call. The call ends as
+`SANDBOX_UNAVAILABLE` (reason `resident_observation_unavailable`), with the missing observation and the administrator's next
+step, only when both hold: 5 rounds in a row were unobserved (`UNOBSERVED_STOP_ROUNDS`, decision 116) and no round has
+measured the whole tree for a second (`UNOBSERVED_GRACE_MS`, #96). A complete measurement, or proof that the process has
+exited, clears the count, and a measured overrun still ends the call at once.
+
+Why both. While Node starts, its thread set keeps changing, and on a loaded machine that outlasted one round's retries and
+ended healthy calls (#96): hence the second. The second alone took a busy Hub for a broken sampler. When the Hub's main
+thread is held for a second or more, no round runs, and the round in flight times out for every running call together; the
+first unobserved round after the stall then found a stale last measurement and ended the call (seen on a server that was
+otherwise idle). Only rounds that reported are counted, so a stall costs a call at most one round: hence the count. The
+price is that a really broken sampler is noticed after 5 rounds and a second: the same second as before while rounds are
+100 ms apart, about 5 s when each round runs into the sampler's one-second timeout. In that window the only memory bounds
+are V8's heap limit (default 1280 MB, off-heap memory not included) and the function's wall-clock limit; ulimit covers CPU
+time only. A pack function cannot start threads or processes, so neither condition adds a way to evade the watchdog. The
+sandbox runs a call that ended this way again, like its other transient failures (Bounded transient function retries).
 
 With `HUB_SANDBOX_DIAGNOSTICS=1` in the Hub's environment, every attempt that ends `SANDBOX_UNAVAILABLE` also writes one
 line to stderr, `hub sandbox unavailable: <detail as JSON>`, and the error is rethrown unchanged. The detail is the Hub's own
@@ -355,8 +368,9 @@ partition. Other model/submission-only reasons remain invalid as check outcomes.
 
 ## Bounded transient function retries
 
-callPackFunction retries startup SANDBOX_UNAVAILABLE with queue_full, stopping or spawn_failed; engine callers alone
-opt in to one wall-clock SANDBOX_TIMEOUT retry. CPU-limit timeouts are never retried.
+callPackFunction retries startup SANDBOX_UNAVAILABLE with queue_full, stopping or spawn_failed, and the one that ends a
+call whose process tree the watchdog could not see (resident_observation_unavailable, see Sandbox; V03 R[11]); engine
+callers alone opt in to one wall-clock SANDBOX_TIMEOUT retry. CPU-limit timeouts are never retried.
 There are at most three attempts, with 50 and 100 ms backoff. Every attempt keeps the caller's resolved timeout and
 resource caps; no global limit is raised. Function defects, output limits, violations and missing OS isolation do not
 retry. The parent-only onAttempt observer receives fixed codes, durations and backoff, never arguments or output.

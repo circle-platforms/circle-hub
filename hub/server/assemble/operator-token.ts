@@ -18,8 +18,8 @@ export interface OperatorTokenStore {
   present(): Promise<boolean>;
   /** The token, or null when none is stored. */
   read(): Promise<string | null>;
-  /** Stores a token; refuses when one is stored already. */
-  write(token: string): Promise<void>;
+  /** Stores a token; refuses an existing value unless initial setup explicitly requests atomic replacement. */
+  write(token: string, options?: { replace?: boolean }): Promise<void>;
   /** Removes only the local operator token; true when there was one. The vault master key and the records are untouched. */
   remove(): Promise<boolean>;
 }
@@ -95,10 +95,10 @@ export function fileOperatorTokens(root: string, service: string): OperatorToken
       const copy = Buffer.from(bytes);
       try { return copy.toString('base64url'); } finally { bytes.fill(0); copy.fill(0); }
     }),
-    async write(token: string) {
+    async write(token: string, options: { replace?: boolean } = {}) {
       const bytes = tokenBytes(token);
       if (bytes === null) throw new Error('这个令牌不是 Hub 签发的格式，不能保存');
-      try { await about(() => store.write(bytes)); } finally { bytes.fill(0); }
+      try { await about(() => store.write(bytes, options)); } finally { bytes.fill(0); }
     },
   };
 }
@@ -114,9 +114,9 @@ export function memoryOperatorTokens(initial: string | null = null, where = '内
     async read() {
       return state.value;
     },
-    async write(token: string) {
+    async write(token: string, options: { replace?: boolean } = {}) {
       if (tokenBytes(token) === null) throw new Error('这个令牌不是 Hub 签发的格式，不能保存');
-      if (state.value !== null) throw new Error(`${where}里已经有操作令牌，不覆盖`);
+      if (state.value !== null && !options.replace) throw new Error(`${where}里已经有操作令牌，不覆盖`);
       state.value = token;
     },
     async remove() {

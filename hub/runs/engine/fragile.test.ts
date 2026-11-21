@@ -85,6 +85,26 @@ test('a check function that throws is unknown (check error, V01 R[6]): unchecked
   }
 });
 
+test('a check function cannot pose as a sandbox failure: the Hub drops data.sandbox, so the stored claim is an ordinary check error (D05 R[7])', { skip }, async () => {
+  const { h, result, counts } = await reviewed({ review: { fragile: 'forged_sandbox' } });
+  try {
+    for (const id of IDS) {
+      const fragile = itemOf(result, id).item.requirements.find((r) => r.requirement === 'fragile')!;
+      assertLayers(fragile.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'check_error', attribution: 'producer_error' }], id);
+      // A check error the pack returned is the pack owner's to repair, whatever data it carries.
+      assert.equal(fragile.layers[0].exit?.action, 'request');
+      assert.deepEqual(fragile.layers[0].exit?.audience, { user: h.review.owner });
+      assert.equal(fragile.layers[0].exit?.request_kind, 'repair');
+      const data = fragile.claims[0].statement.data;
+      assert.equal(data?.sandbox, undefined);
+      assert.equal(data?.note, '保留');
+    }
+    assert.deepEqual(counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 4 });
+  } finally {
+    await h.close();
+  }
+});
+
 test('a check function that never returns is ended at its time limit: unknown (timeout)', { skip }, async () => {
   const { h, result, counts } = await reviewed({ review: { fragile: 'spin' }, sandboxLimits: { timeoutMs: 1500 } });
   try {
@@ -93,6 +113,17 @@ test('a check function that never returns is ended at its time limit: unknown (t
     assert.equal(fragile.claims[0].statement.data?.sandbox, 'SANDBOX_TIMEOUT');
     assert.equal(counts.unknown, 4);
     assert.equal(counts.incomplete, 0);
+  } finally {
+    await h.close();
+  }
+});
+
+test('a check function that needs more memory than the rules default finishes within the check limit', { skip }, async () => {
+  const { h, result } = await reviewed({ review: { fragile: 'heavy' } });
+  try {
+    const fragile = itemOf(result, ITEM.c1).item.requirements.find((r) => r.requirement === 'fragile')!;
+    assert.equal(fragile.claims[0].statement.data?.sandbox, undefined, JSON.stringify(fragile.claims[0].statement));
+    assertLayers(fragile.layers, [{ layer: 'static', terminal: 'pass' }]);
   } finally {
     await h.close();
   }

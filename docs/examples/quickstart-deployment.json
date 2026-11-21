@@ -1,0 +1,26 @@
+{
+  "schema": "deployment@2",
+  "packs": [
+    {
+      "ref": "test-bed@1.4.0",
+      "directory": "../../packs/workflow/test-bed"
+    }
+  ],
+  "workflowAssignments": [
+    {
+      "pack": "test-bed",
+      "user": "admin"
+    }
+  ],
+  "documents": [
+    {
+      "name": "bed-topology",
+      "sha256": "65b61e85e8f94afd36035cead54ef6cd29c579089aee3056ad387192af8cc45a",
+      "size": 1228,
+      "bytesBase64": "ewogICJzY2hlbWEiOiAidGVzdC1iZWQtbWFuaWZlc3RAMSIsCiAgImJlZHMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogImJlZC1hIiwKICAgICAgImRldmljZXMiOiBbCiAgICAgICAgeyAibmFtZSI6ICJhZmFteDAiLCAidHlwZSI6ICJsb2FkLWJhbGFuY2VyIiwgInByb2R1Y3QiOiAiZmFteCIsICJpcHY0IjogWyIxOTIuMC4yLjEwLzI2IiwgIjE5Mi4wLjIuNzQvMjYiXSwgImlwdjYiOiBbIjIwMDE6ZGI4OjE6OjEwLzY0Il0sICJpbnN0YWxsZWQiOiB7ICJidWlsZCI6ICJSZWxfRkFNWF8xMF82XzFfOCIgfSB9LAogICAgICAgIHsgIm5hbWUiOiAicm91dGVyMCIsICJ0eXBlIjogInJvdXRlciIsICJpcHY0IjogWyIxOTIuMC4yLjEvMjYiXSwgImlwdjYiOiBbXSB9LAogICAgICAgIHsgIm5hbWUiOiAiY2xpZW50MCIsICJ0eXBlIjogImNsaWVudCIsICJpcHY0IjogWyIxOTIuMC4yLjgwLzI2Il0sICJpcHY2IjogW10gfSwKICAgICAgICB7ICJuYW1lIjogInNlcnZlcjAiLCAidHlwZSI6ICJzZXJ2ZXIiLCAiaXB2NCI6IFsiMTkyLjAuMi45MC8yNiJdLCAiaXB2NiI6IFtdIH0sCiAgICAgICAgeyAibmFtZSI6ICJjb25zb2xlMCIsICJ0eXBlIjogImNvbnNvbGUiLCAiaXB2NCI6IFsiMTkyLjAuMi4xNDAvMjYiXSwgImlwdjYiOiBbXSB9CiAgICAgIF0sCiAgICAgICJzZXJ2aWNlcyI6IFt7ICJob3N0IjogInNlcnZlcjAiLCAiaXAiOiAiMTkyLjAuMi45MCIsICJwcm90byI6ICJ0Y3AiLCAicG9ydCI6IDgwIH1dLAogICAgICAicmVzZXJ2ZWQiOiBbIjE5Mi4wLjIuMS0xOTIuMC4yLjkiLCAiMTkyLjAuMi42NS0xOTIuMC4yLjY5Il0KICAgIH0sCiAgICB7CiAgICAgICJuYW1lIjogImJlZC1iIiwKICAgICAgImRldmljZXMiOiBbCiAgICAgICAgeyAibmFtZSI6ICJhZmFteDEiLCAidHlwZSI6ICJsb2FkLWJhbGFuY2VyIiwgInByb2R1Y3QiOiAiZmFteSIsICJpcHY0IjogWyIxOTIuMC4yLjEzMC8yNiIsICIxOTIuMC4yLjE5NC8yNiJdLCAiaXB2NiI6IFtdLCAiaW5zdGFsbGVkIjogeyAiYnVpbGQiOiAiUmVsX0ZBTVlfMTBfNl8xXzgiLCAiYmFzZSI6ICJSZWxfRkFNWF8xMF82XzFfOCIgfSB9LAogICAgICAgIHsgIm5hbWUiOiAiY2xpZW50MSIsICJ0eXBlIjogImNsaWVudCIsICJpcHY0IjogWyIxOTIuMC4yLjE1MC8yNiJdLCAiaXB2NiI6IFtdIH0KICAgICAgXSwKICAgICAgInNlcnZpY2VzIjogW10sCiAgICAgICJyZXNlcnZlZCI6IFtdCiAgICB9CiAgXQp9Cg==",
+      "mediaType": "application/json",
+      "fileName": "bed-topology.json"
+    }
+  ],
+  "knowledgeSync": []
+}

@@ -15,6 +15,7 @@ import { KnowledgeStructureSchema } from '../../../contracts/src/feeding.ts';
 import { SlotClaim, type ResolvedEvidence } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import type { CriterionChange, Submission } from '../../../contracts/src/submission.ts';
+import type { LateInputRow } from '../../../contracts/src/validation.ts';
 import { canonicalize, sha256Hex, type Principal } from '../../records/api.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
 import {
@@ -76,7 +77,7 @@ export function recordBytes(record: { kind: string; schema: string; provenance: 
 }
 
 /** The scope of a run for one reader. `consumer` decides what text a reader is given (functions for the boundary, model for previews). */
-export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: LoadedWorkflow, reader: Principal, consumer: Extract<ProducerKind, 'function' | 'model'>, attempts: Array<Record<string, unknown>> = []): Promise<RunScope> {
+export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: LoadedWorkflow, reader: Principal, consumer: Extract<ProducerKind, 'function' | 'model'>, attempts: Array<Record<string, unknown>> = [], late?: readonly LateInputRow[]): Promise<RunScope> {
   const { store, artifacts } = ctx.deps.records;
   const readScope = async <T>(reference: string, read: () => Promise<T>): Promise<T> => {
     try {
@@ -139,6 +140,12 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
     }
   }
   if (run.predecessor !== undefined) for (const result of await readScope(`run:${run.predecessor}`, () => resultsOf(store, run.predecessor!))) if (!records.has(result.digest)) records.set(result.digest, null);
+  // W06 R[7]: the result an input bound after the start resolved to in this validation is citable, in the role of its slot.
+  for (const row of late ?? []) {
+    if (row.reference === undefined) continue;
+    const digest = row.reference.slice('rec:'.length);
+    if (!records.has(digest)) records.set(digest, workflow.workflow.inputs.find((slot) => slot.slot === row.slot)?.role ?? null);
+  }
   const catalogs: CatalogView[] = [];
   if (run.root !== undefined) {
     const selective=new Set(workflow.checks.filter(c=>c.catalog_select).map(c=>c.catalog));

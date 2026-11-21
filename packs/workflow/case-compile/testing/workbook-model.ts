@@ -1,8 +1,8 @@
 import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 import { recognize, parserKey } from '../../../../hub/refs/api.ts';
 import { unzipSync } from 'fflate';
-import { readWorkbookModel, type WorkbookModel } from '../functions/xlsx-model.ts';
-import { zipStore } from '../functions/zip-store.ts';
+import { readWorkbookModel, type WorkbookModel } from '../functions/generated/skills/runner-workbook/workbook-writer/xlsx-model.ts';
+import { zipStore } from '../functions/generated/skills/runner-workbook/workbook-writer/zip-store.ts';
 import { generateWorkbook, GENERATOR } from '../functions/generate.ts';
 import { generationFixture } from './workbook.ts';
 import { CONTRACT_DOC, PROFILE_DOC, MANIFEST_DOC, subjectOf } from '../functions/test-support.ts';

@@ -47,6 +47,24 @@ test('a written pack reads back with every file, and its digest is the SHA-256 o
   }
 });
 
+test('an optional agent definition is retained as a manifest-verified pack file', async () => {
+  const spec = workflowPack();
+  const path = `agents/${spec.id}-writer.md`;
+  const content = `---\nname: ${spec.id}-writer\ndescription: Synthetic writer\ntools: []\n---\nFollow the package instructions.\n`;
+  spec.files[path] = content;
+  const written = await writePack(join(temp.path, `p${++n}`), spec);
+  const read = await readPackDirectory(written.dir);
+  assert.ok(read.ok, JSON.stringify(!read.ok && read.problems));
+  const stored = read.pack.files.find(file=>file.path===path);
+  assert.ok(stored);
+  assert.equal(Buffer.from(stored.bytes).toString('utf8'), content);
+  assert.equal(stored.sha256, sha256Hex(Buffer.from(content)));
+  assert.equal(stored.size, Buffer.byteLength(content));
+  await corruptByte(written.dir, path, {offset:content.length-2});
+  const index = written.manifest.files.findIndex(file=>file.path===path);
+  has(await readPackDirectory(written.dir), 'manifest.digest_mismatch', {field:`/files/${index}/sha256`});
+});
+
 test('the formatting of pack.json does not change the digest; its content does', async () => {
   const written = await fresh();
   await writeManifest(written.dir, JSON.stringify(written.manifest));

@@ -30,19 +30,19 @@ test('model 47: the masking dictionary replaces what its rules match in a busine
  assert.ok(b02.fields[6].startsWith('遮盖：只在业务系统的应答被遮盖字典替换过时有'));
  assert.ok(b02.rules[4].includes('遮盖字典见 R[11]')&&!b02.rules[4].includes('尚未实施'));
  assert.equal(b02.changes47.length,1);
- // The dictionary is put in force by a resource configuration: no new permission kind, record kind or protocol code.
+ // The dictionary is put in force by resource_config; resource_assign is the later team allocation decision.
  assert.ok(rule.includes('由一条资源配置决定生效'));
  const kinds=model.vocabulary.find((axis:{axis:string})=>axis.axis==='permission_kind').values.map((value:{code:string})=>value.code);
- assert.deepEqual(kinds,['publish','assign','publish_right','resource_config','share']);
+ assert.deepEqual(kinds,['publish','assign','publish_right','resource_config','share','resource_assign']);
 });
 
-test('model 49: the review, acceptance and withdrawal of credential findings are gone; old holds stay, old acceptances stand, a re-read is the way out (decision 161)',()=>{
- assert.ok(model.version>=49);assert.equal(MODEL_VERSION,model.version);
+test('model 51: the review, acceptance and withdrawal of credential findings are gone; old holds stay, old acceptances stand, a re-read is the way out (decision 161)',()=>{
+ assert.ok(model.version>=51);assert.equal(MODEL_VERSION,model.version);
  const element=(id:string)=>model.elements.find((e:{id:string})=>e.id===id);
  const b02=element('B02'),rule:string=b02.rules[4];
  for(const part of ['也不放开','只有管理员能取出原件（circle-hub original export）','仍按那次接受读','既不放开旧记录，也不撤回旧的接受','核看、接受和撤回都已去掉','按原对象重新读取','引用旧记录的运行结果保持原样','决定 161'])assert.ok(rule.includes(part),part);
  assert.ok(!b02.rules[6].includes('管理员对普通来源的接受')&&b02.rules[6].includes('此前对普通来源记下的接受'));
- assert.equal(b02.changes49.length,1);
+ assert.equal(b02.changes51.length,1);
  // No element, display rule or code still offers the review or a new acceptance.
  const c04:string=element('C04').rules[6],d05:string=element('D05').rules[3],r02:string=element('R02').rules[0],v03:string=element('V03').rules[12];
  assert.ok(c04.includes('没有核看、接受和撤回的通道')&&!c04.includes('等待核看'));
@@ -50,5 +50,5 @@ test('model 49: the review, acceptance and withdrawal of credential findings are
  assert.ok(!r02.includes('内容待核看')&&!model.displayRules[9].rule.includes('内容待核看'));
  assert.ok(v03.includes('不再等管理员接受')&&!v03.includes('缺的是管理员对这份来源的接受'));
  assert.ok(PROTOCOL_CODES.SOURCE_PENDING_REVIEW.when.startsWith('此前存下的观察')&&PROTOCOL_CODES.SOURCE_PENDING_REVIEW.fix.startsWith('按原对象重新读取'));
- for(const id of ['B02','C04','D05','R02','V03'])assert.equal(element(id).changes49.length,1,id);
+ for(const id of ['B02','C04','D05','R02','V03'])assert.equal(element(id).changes51.length,1,id);
 });

@@ -1,10 +1,10 @@
 // Deployment references are accepted only in explicitly designated expected-value positions.
-import {VariableValue,referencesIn,resolve,VariableInputError,type VariableUse} from '../../contracts/src/variables.ts';
+import {VariableValue,referencesIn,resolve,VariableInputError,type OrdinaryVariableUse} from '../../contracts/src/variables.ts';
 import {ExecutorDefinition,at} from './definition.ts';
 import {canonicalBytes,type RecordsKit,type VariableSnapshot} from '../records/api.ts';
 export {ExecutorSource,checkedExecutorReferences as checkedReferences} from '../../contracts/src/resources.ts';
 import {ExecutorSource,checkedExecutorReferences as checkedReferences} from '../../contracts/src/resources.ts';
-export async function resolveExecutor(records:RecordsKit,source:ExecutorSource,snapshot?:VariableSnapshot):Promise<{definition:ExecutorDefinition;variables:VariableUse[]}> {
+export async function resolveExecutor(records:RecordsKit,source:ExecutorSource,snapshot?:VariableSnapshot):Promise<{definition:ExecutorDefinition;variables:OrdinaryVariableUse[]}> {
  checkedReferences(source);
  const ordinary={...source};delete ordinary.credential;
  const resolved=await records.variables.resolveVariables(ordinary,source.id??'executor',snapshot);

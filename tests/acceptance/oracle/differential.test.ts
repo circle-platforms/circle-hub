@@ -213,9 +213,11 @@ interface ItemPlan {
 
 interface Plan {
   seed: number;
-  /** Submissions already validated on this run, as choice 10 counts them. */
+  /** Distinct other submissions charged before this evaluation (owner run30 #4). */
   roundsUsed: number;
   chargedRounds?:Record<string,number>;
+  repairHistory?: RunDescription['repairHistory'];
+  statement?: string;
   items: ItemPlan[];
   judge: { session: string; model: string; model_identity?: { model_id: string; model_family_id: string } };
   author: { session: string; model: string; model_identity?: { model_id: string; model_family_id: string } } | null;
@@ -285,6 +287,7 @@ function referenceOf(plan: Plan): Expected {
     checks: SPECS.flatMap((spec) => (spec.check === undefined ? [] : [{ id: spec.check.id, judges: spec.check.judges, tier: spec.check.tier }])),
     roundsUsed: plan.roundsUsed,
     ...(plan.chargedRounds?{chargedRounds:plan.chargedRounds}:{}),
+    ...(plan.repairHistory ? { repairHistory: plan.repairHistory } : {}),
     author: plan.author,
   };
   const submission: SubmissionDescription = {
@@ -324,7 +327,7 @@ function submissionOf(run: RunSummary, plan: Plan): Record<string, unknown> {
     const slots: Record<string, unknown[]> = {};
     for (const spec of SPECS) {
       if (spec.check === undefined || spec.runLevel) continue;
-      slots[spec.key] = [{ text: '合成检查', data: { outcomes: item.outcomes[spec.key] } }];
+      slots[spec.key] = [{ text: plan.statement ?? '合成检查', data: { outcomes: item.outcomes[spec.key] } }];
     }
     items.push({ item: item.id, handling: 'handled', slots });
   }
@@ -594,20 +597,26 @@ test('random submissions and the revised fixed branches agree with the independe
   assert.equal(laterWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'indep')?.status, 'unsatisfied');
 
   // A repeated transitional body is rechecked without another charge. Subject refutations stay known violations;
-  // the prior unresolved dynamic work contributes one charged round. Record-unknown handling retains the refutation.
+  // owner run30 #4 / T7 excludes its own earlier identity, so that recheck has zero other charged bodies.
+  // A genuinely changed body then sees A once; repeating A or B still sees the other one once. Subject and record-unknown refutations stay known.
   const roundSeed = SEED + 200;
   const roundOutcomes = { ...supportOutcomes, short: [{ verdict: 'refute' as const, code: HIT, tier: 'blocking' as const }], recorded: [{ verdict: 'refute' as const, code: HIT, tier: 'blocking' as const }] };
   const roundItems = handledItems(roundOutcomes);
   const roundRun = await start(roundItems);
-  const roundPlan = (roundsUsed: number): Plan => ({ seed: roundSeed, roundsUsed,chargedRounds:{bare:roundsUsed,closed:roundsUsed,both:roundsUsed,dyn:roundsUsed}, items: roundItems, judge, author: null, defects: [] });
-  await acceptedView(roundPlan(0), roundRun);
-  const roundEngine = await acceptedView(roundPlan(1), roundRun);
-  const roundWant = referenceOf(roundPlan(1));
+  const roundPlan = (current: string, earlier: string[], statement = '合成检查'): Plan => ({
+    seed: roundSeed, roundsUsed: 0, statement, items: roundItems, judge, author: null, defects: [],
+    repairHistory: { current, earlier: earlier.map(submission => ({ submission, requirements: ['bare', 'closed', 'both', 'dyn'] })) },
+  });
+  const originalPlan = roundPlan('A', []), repeatedPlan = roundPlan('A', ['A']);
+  assert.deepEqual(submissionOf(roundRun, originalPlan), submissionOf(roundRun, repeatedPlan), 'the repeat submits the identical body');
+  await acceptedView(originalPlan, roundRun);
+  const roundEngine = await acceptedView(repeatedPlan, roundRun);
+  const roundWant = referenceOf(repeatedPlan);
   const engineShort = shownLayer(roundEngine, 'i1', 'short');
   const wantShort = roundWant.items.find((item) => item.item === 'i1')?.requirements.find((requirement) => requirement.requirement === 'short');
-  assert.equal(roundEngine.rounds.used, 1);
+  assert.equal(roundEngine.rounds.used, 0);
   assert.equal(engineShort.layer?.terminal, 'violation');
-  assert.equal(roundWant.rounds.used, 1);
+  assert.equal(roundWant.rounds.used, 0);
   assert.equal(wantShort?.layers[0]?.terminal, 'violation');
   assert.equal(wantShort?.layers[0]?.attribution, 'author_input');
   const engineRecorded = shownLayer(roundEngine, 'i1', 'recorded');
@@ -618,6 +627,21 @@ test('random submissions and the revised fixed branches agree with the independe
   assert.equal(wantRecorded?.layers[0]?.terminal, 'violation');
   assert.equal(wantRecorded?.layers[0]?.attribution, 'unattributed');
   assert.equal(wantRecorded?.status, 'unsatisfied');
+
+  const changedPlan = roundPlan('B', ['A', 'A'], '合成修订检查');
+  assert.notDeepEqual(submissionOf(roundRun, originalPlan), submissionOf(roundRun, changedPlan), 'B changes authored content');
+  const changedEngine = await acceptedView(changedPlan, roundRun);
+  assert.equal(changedEngine.rounds.used, 1, 'A counts once despite repeated observations');
+  assert.equal(referenceOf(changedPlan).rounds.used, 1);
+  await agree(changedPlan, roundRun);
+  const oldAgain = roundPlan('A', ['A', 'A', 'B']);
+  const newAgain = roundPlan('B', ['A', 'A', 'B', 'B'], '合成修订检查');
+  for (const plan of [oldAgain, newAgain]) {
+    const view = await acceptedView(plan, roundRun);
+    assert.equal(view.rounds.used, 1, 'the other body still counts, never the current body');
+    assert.equal(referenceOf(plan).rounds.used, 1);
+    await agree(plan, roundRun);
+  }
 
   // Seed 20261223 (SEED + 201): check tier is mandatory on publication; a check without one is a defect at runtime.
   // 1. Publication refusal: a pack check without declared tier is refused with checks.tier_missing; adding tier is accepted.

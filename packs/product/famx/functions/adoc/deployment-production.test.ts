@@ -1,3 +1,4 @@
+import { runById, canViewRun, readPackDirectory, packSchema } from '../../../../../hub/runs/api.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../../../../../hub/testing/parsers.ts';
 // Real Hub knowledge transactions and sandbox functions; all source bytes and variables are synthetic.
 import assert from 'node:assert/strict';
@@ -43,7 +44,7 @@ test('changing one family reuses the other production and a failed complete grou
  const build:BuildInfo={name:'Rel_FAMX-ZX-U_10_8_1_901',base:'Rel_FAMX-ZX-U_10_8_1_901',family:'FAMX',line:'10.8.1',platform:'zx-u',built_at:null,released_at:'2026-01-01T00:00:00.000Z',sources:{tree:'site:tree:demo'}};
  const read:any={[rootId]:{ok:true,parser:'json@1',model:meta},[childId]:{ok:true,parser:'json@1',model:child}};
  addAdocSources(build,{adoc:{FAMX:{root:'synthetic/{line}'},FAMY:{root:'synthetic/{line}'}}},read,()=>assert.fail('complete metadata'),[]);
- const knowledge=createKnowledge({records,parsers:createDefaultRegistry(),packs,external,admin,sandbox:{requireOsIsolation:false}});
+ const knowledge=createKnowledge({ runReads: { runById, canViewRun }, packReads: { readPackDirectory, packSchema },records,parsers:createDefaultRegistry(),packs,external,admin,sandbox:{requireOsIsolation:false}});
  const sync=()=>knowledge.syncProduct(product,{options:{build},maxAgeSeconds:0,recheck:true});
  const first=await sync();assert.equal(first.counts.produced,1,JSON.stringify(first.builds));
  const a=await knowledge.store.composition(first.builds[0].composition!);assert.ok(a);

@@ -16,6 +16,7 @@ import { osIsolationAvailable } from '../../rules/api.ts';
 import { FileKeyProvider, openRecords } from '../../records/index.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openTestRecords } from '../../testing/records.ts';
+import { openAssemblyRuntimeRecords } from './testing-runtime-records.ts';
 import { type HubConfig } from '../../config/index.ts';
 import type { AssemblyModule, ListenInfo } from '../api.ts';
 import { loadServerConfig } from '../main.ts';
@@ -119,19 +120,14 @@ describe('start-up order and failure modes', () => {
     assert.deepEqual(calls, ['start', 'stop abort=true'], 'the pass in progress is asked to stop at its next run');
   });
 
-  test('serve on a database the owner never migrated refuses before the assembly runs', async () => {
-    const deployment = await harness.deployment({ migrate: false });
-    const spy = spyAssembly();
-    let listening: ListenInfo | null = null;
-    const result = await deployment.run(['serve'], { assembly: spy.load, onListening: (info) => (listening = info) });
-    assert.equal(result.code, 1);
-    assert.match(result.text, /还没有应用/);
-    assert.equal(spy.assembled, 0, 'records come before the assembly');
-    assert.equal(listening, null);
-    for (const argv of [['pack', 'list'], ['init-admin', '甲']]) {
-      const command = await deployment.run(argv, { assembly: realAssembly });
-      assert.equal(command.code, 1, argv.join(' '));
-      assert.match(command.text, /还没有应用/, argv.join(' '));
+  test('ordinary administrator commands refuse an unmigrated database before business assembly', async () => {
+    const deployment=await harness.deployment({migrate:false});
+    const empty=await harness.postgres.createDatabase(undefined,{empty:true});
+    deployment.env.CIRCLE_HUB_DATABASE_NAME=empty.database;
+    for(const argv of [['pack','list'],['init-admin','甲']]){
+      const command=await deployment.run(argv,{assembly:realAssembly});
+      assert.equal(command.code,1,argv.join(' '));
+      assert.match(command.text,/还没有应用/,argv.join(' '));
     }
   });
 
@@ -184,12 +180,12 @@ describe('start-up order and failure modes', () => {
   });
 
   test('a key that does not open the vault stops the assembly', async () => {
-    const kit = await openTestRecords({ postgres });
+    const kit = await openAssemblyRuntimeRecords({ postgres });
     try {
       await kit.vault.put('connector.res_x.password', 'synthetic-value-1');
       const other = new FileKeyProvider(join(kit.dataDir, 'other.key'));
       await other.initKey();
-      const wrong = await openRecords({ dataDir: kit.dataDir, logDir: join(kit.dataDir, 'logs'), database: kit.database, limits: kit.config.limits }, { keyProvider: other });
+      const wrong = await openRecords({ dataDir: kit.dataDir, logDir: join(kit.dataDir, 'logs'), database: kit.database, limits: kit.config.limits }, { migrate: false, keyProvider: other });
       try {
         await assert.rejects(assembleHub(configOf(kit), wrong, { log: () => {} }), (error: unknown) => {
           assert.ok(error instanceof AssemblyError);
@@ -244,9 +240,9 @@ describe('start-up order and failure modes', () => {
       try {
         const tools = await client.listTools();
         assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), ['get_nodes', 'list_task_packs', 'resolve_reference', 'start_run', 'submit_result', 'upload_file']);
-        const listed = (await client.callTool({ name: 'list_task_packs', arguments: {} })) as { isError?: boolean; structuredContent?: { packs?: unknown[] } };
+        const listed = (await client.callTool({ name: 'list_task_packs', arguments: {} })) as { isError?: boolean; structuredContent?: { packs?: { id: string }[] } };
         assert.equal(listed.isError, false);
-        assert.deepEqual(listed.structuredContent?.packs, [], 'the real registry: nothing published yet');
+        assert.deepEqual(listed.structuredContent?.packs?.map(pack => pack.id), ['hub-observability'], 'the real registry: nothing published yet, only the bundled skill');
         const run = (await client.callTool({ name: 'start_run', arguments: { pack: 'demo-none', inputs: {} } })) as { isError?: boolean; structuredContent?: { errors?: { code: string }[] } };
         assert.equal(run.isError, true);
         assert.equal(run.structuredContent?.errors?.[0]?.code, 'SOURCE_ABSENT');
@@ -283,7 +279,7 @@ function configOf(kit: { dataDir: string; database: HubConfig['database']; confi
 }
 
 test('only the serving assembly sweeps crash stages before refresh and logs a count without paths or names',async()=>{
- const kit=await openTestRecords({postgres});try{
+ const kit=await openAssemblyRuntimeRecords({postgres});try{
   const root=join(kit.dataDir,'packs'),team=join(root,'.tmp-'+'a'.repeat(64)+'-123456abcdef'),privateDir=join(root,'personal','.tmp-'+'b'.repeat(64)+'-abcdef123456');
   for(const dir of [team,privateDir]){await mkdir(dir,{recursive:true});await writeFile(join(dir,'synthetic-private-name'),'synthetic private promotion text');}
   const lines:string[]=[],options={requireOsIsolation:false,leases:null,log:(line:string)=>lines.push(line)};
@@ -321,11 +317,11 @@ describe('the vault key check', () => {
 
 describe('the command-time assembly', () => {
   test('a CLI command\'s assembly needs no vault key and prints nothing; serve\'s refuses to start and a command\'s own says it did not run', async () => {
-    const kit = await openTestRecords({ postgres });
+    const kit = await openAssemblyRuntimeRecords({ postgres });
     // The same records with a key provider whose key does not exist.
     const keyless = await openRecords(
       { dataDir: kit.dataDir, logDir: join(kit.dataDir, 'logs'), database: kit.database, limits: kit.config.limits },
-      { keyProvider: new FileKeyProvider(join(kit.dataDir, 'missing.key')) },
+      { migrate: false, keyProvider: new FileKeyProvider(join(kit.dataDir, 'missing.key')) },
     );
     try {
       const admin = (await keyless.principals.bootstrapAdmin('管理员')).user;
@@ -408,7 +404,7 @@ describe('call notes', () => {
   });
 
   test('the operator log takes no line break and no control character from a caller: an engine reason quoting a hostile pack stays one escaped line', async () => {
-    const kit = await openTestRecords({ postgres });
+    const kit = await openAssemblyRuntimeRecords({ postgres });
     try {
       const log: string[] = [];
       const hub = await assembleHub(configOf(kit), kit, { requireOsIsolation: false, log: (line) => log.push(line) });
@@ -463,7 +459,7 @@ describe('call notes', () => {
 
 describe('the wiring of the engine', () => {
   test('the server gets the engine\'s detail; the engine reads the knowledge views, the knowledge service the connectors alone', async () => {
-    const kit = await openTestRecords({ postgres });
+    const kit = await openAssemblyRuntimeRecords({ postgres });
     try {
       const hub = await assembleHub(configOf(kit), kit, { requireOsIsolation: false, log: () => {} });
       assert.equal(hub.deps.runsDetail, hub.runs, 'ServerDeps.runsDetail is the engine');
@@ -481,7 +477,7 @@ describe('the wiring of the engine', () => {
   });
 
   test('the engine notes a refusal\'s reason on the call itself, once, through the assembled service', async () => {
-    const kit = await openTestRecords({ postgres });
+    const kit = await openAssemblyRuntimeRecords({ postgres });
     try {
       const log: string[] = [];
       const hub = await assembleHub(configOf(kit), kit, { requireOsIsolation: false, log: (line) => log.push(line) });

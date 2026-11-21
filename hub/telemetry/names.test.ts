@@ -4,8 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { PERSONAL_SYNC_CAPABILITY_ROUTES, PERSONAL_SYNC_HTTP_ROUTES } from '../../contracts/src/sync.ts';
 import { TOOLS } from '../../contracts/src/tools.ts';
-import { PLATFORM_COMMANDS } from '../platform/api.ts';
-import { adminCommands } from '../server/cli-admin.ts';
+import { COMMAND_METADATA } from '../server/command-registry.ts';
 import { ACCOUNTED_USAGE, STEP_NAMES, USAGE_NAMES, commandStep, consoleStep, isUsageName, mcpStep, syncStep } from './names.ts';
 
 test('step names are unique lowercase words with no room for a dynamic value', () => {
@@ -34,8 +33,10 @@ test('every tool has its own root name; what a client writes never becomes a nam
 });
 
 test('every command of the CLI has its own root name; an unknown one does not', () => {
-  const commands = [...PLATFORM_COMMANDS, ...adminCommands().map((command) => command.name), 'user', 'token', 'logs', 'run', 'local-tools', 'setup-code'];
+  const commands = COMMAND_METADATA.map((command) => command.name);
   for (const command of commands) assert.equal(commandStep(command), `run-${command}`, command);
+  const roots = STEP_NAMES.filter(name => name.startsWith('run-') && name !== 'run-command' && commandStep(name.slice(4)) === name);
+  assert.deepEqual(roots.sort(), commands.map(command => `run-${command}`).sort(), 'only registered CLI commands own command roots');
   assert.equal(commandStep('no-such-command'), 'run-command');
   assert.equal(commandStep('check'), 'run-command', 'an inner step is not a command');
 });

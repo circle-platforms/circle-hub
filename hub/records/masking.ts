@@ -1,3 +1,4 @@
+import { isAdmin } from './permissions.ts';
 // The masking dictionary's store (B02 R[11], decision 159, issue 194 step two). Like a resource or a named variable, the
 // dictionary is content-addressed canonical JSON in the object store, put in force by a resource-configuration decision
 // bound to its digest: every change is a new definition and a new decision, the history is the chain of decisions, and no
@@ -36,7 +37,7 @@ export class MaskingRules {
 
   async #admin(by: Principal): Promise<void> {
     const actual = await this.#p.principals.get(by.id);
-    if (!actual || actual.disabled || actual.role !== 'admin') throw new AccessError('只有管理员可以查看或修改遮盖字典');
+    if (!actual || actual.disabled || !isAdmin(actual)) throw new AccessError('只有管理员可以查看或修改遮盖字典');
   }
 
   async #read(): Promise<MaskingState> {

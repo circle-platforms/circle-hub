@@ -8,12 +8,13 @@ import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgre
 import { osIsolationAvailable } from '../../hub/rules/api.ts';
 import { recognize } from '../../hub/refs/api.ts';
 import { sha256Hex, type ActionBody } from '../../hub/records/api.ts';
-import { ExecutorDefinition, readRunJobs, type JobStatus } from '../../hub/dispatch/api.ts';
+import { ExecutorDefinition, readRunJobs, type JobStatus, type DispatchNote } from '../../hub/dispatch/api.ts';
 import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
 import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DOC as BASE_MANIFEST, goodData } from '../../packs/workflow/case-compile/functions/test-support.ts';
+import { templateDocument } from '../../packs/workflow/case-compile/testing/template.ts';
 import { runtimeDigest, stripAdditions, contractCanonical } from '../../packs/workflow/case-compile/functions/runtime-contract.ts';
-import {compileGrammar, commandIdentity} from '../../packs/workflow/case-compile/functions/generated/command-grammar.ts';
+import {compileGrammar, commandIdentity} from '../../packs/workflow/case-compile/functions/generated/skills/command-tools/command-check/grammar.ts';
 import { entry } from '../../packs/workflow/case-compile/testing/runtime.ts';
 import { satisfiedRecipe } from '../../packs/workflow/case-compile/tools/generate-workbook.ts';
 import { generateWorkbook } from '../../packs/workflow/case-compile/functions/generate.ts';
@@ -41,7 +42,7 @@ CONTRACT_DOC.original = {contract_sha256:String(recovered.contract_sha256),sha25
 CONTRACT_DOC.contract_sha256 = runtimeDigest(CONTRACT_DOC);
 // Keep both address families in the single interface list used by declared per-device probes.
 const MANIFEST_DOC={...BASE_MANIFEST,beds:BASE_MANIFEST.beds.map(bed=>({...bed,devices:bed.devices.map(device=>({...device,interfaces:[...device.ipv4,...device.ipv6]}))}))};
-const PROFILE_DOC = { ...BASE_PROFILE, device_count:MANIFEST_DOC.beds[0].devices.length, runtime: { ...BASE_PROFILE.runtime, contract_sha256: CONTRACT_DOC.original.contract_sha256 }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' }, reviewed: true }] };
+const PROFILE_DOC = { ...BASE_PROFILE, device_count:MANIFEST_DOC.beds[0].devices.length, runtime: { ...BASE_PROFILE.runtime }, workbook: { ...BASE_PROFILE.workbook, template: templateDocument(BASE_PROFILE.workbook, BASE_PROFILE.runtime.minimum_version, CONTRACT_DOC.original.contract_sha256) }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' }, reviewed: true }] };
 const skip = await osIsolationAvailable() ? false : 'sandbox-exec absent: real isolated pack execution unavailable';
 const ids = ['990000000000000041', '990000000000000042'];
 const line = 'widget health interval pool-a 60';
@@ -116,7 +117,7 @@ async function plan(booked: string, index = 0, repair = false) {
   const directory = await mkdtemp(join(staged, 'client-generator-'));
   const artifacts = { run: bytes(started), result: bytes(accepted!), submission: bytes(sent), contract: bytes(CONTRACT_DOC), profile: bytes(PROFILE_DOC), inventory: bytes(MANIFEST_DOC) };
   const argv: string[] = [];
-  for (const [name, contents] of Object.entries(artifacts)) { const file = join(directory, `${name}.json`); await writeFile(file, contents, { mode: 0o600 }); argv.push(`--${name}`, file); }
+  for (const [name, contents] of Object.entries(artifacts)) { const file = join(directory, `${name}.json`); await writeFile(file, contents, { mode: 0o600 }); argv.push(`--${name}`, name === 'run' ? directory : file); }
   const output = join(directory, 'case.xlsx');
   // Execute the published tools/ entry, not a source-directory shortcut or Hub generation.
   const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
@@ -143,7 +144,7 @@ async function verify(p: Awaited<ReturnType<typeof plan>>, index = 0, changed = 
 // The job the Hub dispatched for an accepted verification run. It runs on after the answer, so it is read, as the runner's
 // repeated submission reads it, until the journal records its end (never inferred from the name of the last phase).
 async function settled(v: { run: string; result: z.infer<typeof SubmitResultOutput> | null }): Promise<JobStatus> {
-  const note = v.result?.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(v.result?.dispatch)); assert.match(note.text, /已按任务包的效果行派发作业/);
+  const note = v.result?.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(v.result?.dispatch)); assert.match(note.text, /已按工作流的规定自动开始上机验证/);
   let read: unknown;
   for (let i = 0; i < 600; i++) {
     const job = (await readRunJobs(bed.hub.records, dispatch(), bed.hub.admin.principal, v.run)).find(row => row.job === note.job); read = job;
@@ -219,6 +220,7 @@ before(async () => {
       seats:MANIFEST_DOC.beds[0].devices.map((device,index)=>({seat:device.name,index,manifest:{device:`/beds/0/devices/${index}`,addresses:'/interfaces',address:''},version:{command:'inspect version',pattern:'^version: (?<value>.+)$'},interfaces:{command:'inspect interfaces',pattern:'^address: (?<value>.+)$'}}))},
     result:{...raw.result,request_id:'/request'},proof:{...raw.proof,package:'case-compile',slot:'workbook',warrant_id:`case-compile.workbook_verified@${CASE_COMPILE_PACK.version}`} });
   executor = (await addSyntheticExecutor(bed.hub.records,dispatch().registry,bed.hub.admin.principal,configured,'synthetic-dispatch-key')).id;
+  await bed.hub.records.authorizations.assignResource(bed.hub.admin.principal,executor,bed.reviewer.principal.id);
 });
 after(async () => { await client?.close(); await endpoint?.close(); await opened?.close(); await postgres?.stop(); if (staged) await rm(staged, { recursive: true, force: true }); });
 
@@ -240,7 +242,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       const report = await resultReport(state); assert.equal(report.rows[0].reported_terminal, 'pass'); assert.equal(report.rows[0].dynamic_terminal, 'no_verdict'); assert.ok(report.rows[0].limits.includes('未排除本地操作'));
       // Like the task id the reference compile skill prints: repeating the same submission reads this job and its result, it never dispatches again.
       const count = submissions; const again = (await client.call('submit_result', v.sent!)).out;
-      assert.equal(again.dispatch?.length, 1); assert.equal(again.dispatch![0].job, job); assert.equal(again.dispatch![0].result, state.result); assert.equal(submissions, count);
+      assert.equal(again.dispatch?.length, 1); assert.match(again.dispatch![0].text, /设备返回 src:[a-f0-9]{64}/); assert.equal(again.dispatch![0].job, job); assert.equal(again.dispatch![0].result, state.result); assert.equal(submissions, count);
       const read = await client.call('get_nodes', { reference: state.result }); assert.equal(read.isError, false);
       const stored = await bed.hub.hub.runs.getRun(bed.reviewer.principal, p.run); assert.equal(stored!.run.predecessor, booked); await release(booked);
     }
@@ -254,7 +256,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     aliasEcho = true;
     const booked = await booking(); const before = submissions;
     const scope = { pack: 'case-compile', product: bed.product.names[0], build: bed.site.RELEASED };
-    const whole = await start({ ...scope, predecessor: booked, inputs: startInputs(), parameters: {} });
+    const whole = await start({ ...scope, predecessor: booked, inputs: startInputs(), parameters: { pipeline: 'legacy' } });
     const planRun = whole.run!.run; const items = whole.run!.items.map(item => item.id);
     assert.equal(items.length, ids.length, 'every textual-autoid case of the document is an item');
     const planned = (await client.call('submit_result', { run: planRun, model: 'synthetic-scripted-model', items: items.map((item, index) => planItem(index, item)) })).out;
@@ -265,12 +267,22 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const directory = await mkdtemp(join(staged, 'whole-mindmap-'));
     const fetching = promisify(execFile)(process.execPath, [join(staged, 'case-compile/tools/fetch-run.ts'), '--hub', bed.hub.mcpUrl, '--run', planRun, '--out', directory], { encoding: 'utf8' });
     fetching.child.stdin!.end(bed.reviewer.token); await fetching;
-    const argv = ['run', 'result', 'submission', 'contract', 'profile', 'inventory'].flatMap(name => [`--${name}`, join(directory, `${name}.json`)]);
+    const sources = JSON.parse(await readFile(join(directory, 'sources.json'), 'utf8')) as Array<{ slot: string; file: string; reference: string }>;
+    for (const [slot, value] of [['contract', CONTRACT_DOC], ['profile', PROFILE_DOC], ['inventory', MANIFEST_DOC]] as const) {
+      const matches = sources.filter(source => source.slot === slot);
+      assert.equal(matches.length, 1, `one frozen source pointer for ${slot}`);
+      assert.ok(matches[0].file.startsWith('sources/'), 'the downloaded manifest supplies the filename');
+      const downloaded = await readFile(join(directory, matches[0].file));
+      assert.deepEqual(downloaded, bytes(value), `${slot} keeps its exact authored source bytes`);
+      assert.equal(matches[0].reference, `src:${sha256Hex(downloaded)}`);
+    }
+    // Owner T7 / run30 #9: the generator resolves verified source pointers, without legacy filename overrides.
+    const argv = ['run', 'result', 'submission'].flatMap(name => [`--${name}`, name === 'run' ? directory : join(directory, `${name}.json`)]);
     const output = join(directory, 'case.xlsx');
     const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
     const payload = await readFile(output); assert.equal(receipt.sha256, sha256Hex(payload));
     const ref = await client.upload(payload, 'synthetic-whole.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    const verification = await start({ ...scope, predecessor: planRun, parameters: { plan_run: planRun }, inputs: { ...startInputs(), workbook: { reference: ref }, plan_result: { run: planRun } } });
+    const verification = await start({ ...scope, predecessor: planRun, parameters: { plan_run: planRun, pipeline: 'legacy' }, inputs: { ...startInputs(), workbook: { reference: ref }, plan_result: { run: planRun } } });
     const sent = { run: verification.run!.run, model: 'synthetic-scripted-model', items: verification.run!.items.map((item, index) => planItem(index, item.id)) };
     const result = (await client.call('submit_result', sent)).out;
     assert.equal(result.acceptance, 'accepted', JSON.stringify(result.errors));
@@ -281,6 +293,8 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.deepEqual(latest.ids, ids); assert.deepEqual(latest.payload, payload);
     const report = await resultReport(state);
     assert.deepEqual(report.rows.map((row: { item: string }) => row.item), ids, 'one verdict row per case of the workbook');
+    const returned = await client.call('get_nodes', { reference: state.device_return }); assert.equal(returned.isError, false, JSON.stringify(returned));
+    for (const id of ids) assert.ok(JSON.stringify(returned).includes(`${id}：`), 'the device return says each case, so an answer need not send the runner through the whole report');
     for (const row of report.rows) assert.equal(row.reported_terminal, 'pass');
     const again = (await client.call('submit_result', sent)).out; assert.equal(again.dispatch?.[0]?.job, state.job); assert.equal(submissions, before + 1);
     aliasEcho = false;
@@ -293,17 +307,25 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.ok((await bed.hub.leases.view('bed/')).entries.length > 0);
     const before = submissions; const v = await verify(await plan(partial));
     assert.equal(v.result?.acceptance, 'accepted', JSON.stringify(v.result?.errors));
-    const note = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
-    assert.match(note.text, /^Hub 没有派发：.*租约/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
-    // Like the reference compile skill's failed bed check, the refusal names what is missing: every device key of the bed the run did not book.
+    const note: DispatchNote | undefined = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
+    assert.match(note.text, /^不存在：.*预订/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+    // Members get the authorized environment and missing count; administrators retain exact resource keys.
     const held = new Set((await bed.hub.leases.view('bed/')).entries.map(e => e.key));
     const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
-    assert.ok(missing.length > 0); for (const key of missing) assert.ok(note.text.includes(key), `${key} named: ${note.text}`);
+    assert.ok(missing.length > 0);
+    assert.equal(note.booking?.missing_resources,missing.length);
+    assert.equal(note.booking?.target,'bed-a');
+    assert.ok(note.text.includes('bed-a'),note.text);
+    assert.match(note.text,new RegExp(`缺少 ${missing.length} 项`));
+    for (const key of missing) assert.equal(note.text.includes(key),false,`member does not receive ${key}`);
+    const explanation=await dispatch().explainRelease(bed.hub.admin.principal,v.run,executor);
+    for (const key of missing) assert.ok(explanation.lease_coverage?.missing_fact?.includes(key),`administrator receives ${key}`);
+    assert.equal(note.text.includes(note.job!),false);assert.doesNotMatch(note.text,/boundary_refused/);
     // Nothing was sent, so repeating the ready submission checks the boundary again (as the reference compile skill resubmits a refused workbook).
     // The answer that tries again says first what the refused job came to (issue 142), then what the new attempt came to.
     const [earlier, again] = (await client.call('submit_result', v.sent!)).out.dispatch ?? [];
-    assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /未发出；原因：.*租约.*这次重交 Hub 已再试/);
-    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^Hub 没有派发：.*租约/);
+    assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /^不存在：.*未发出.*预订.*这次重交 Hub 已再试/);
+    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^不存在：.*预订/);
     assert.equal(submissions, before);
     await release(partial);
   });
@@ -313,7 +335,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     // An older workflow port has no effects declaration; all source and result fixtures remain the real run's. It is in place
     // before the verification run is submitted, which is when the Hub would dispatch it (decision 105).
     const legacy=()=>{workflows.byDigest=async digest=>{const workflow=await read(digest);if(!workflow)return workflow;return {...workflow,readJson:async path=>{const value=await workflow.readJson(path);if(path!=='requirements.json')return value;const {effects,...legacy}=value as Record<string,unknown>;return legacy;}};};};
-    try{const v=await verify(p,0,false,legacy);assert.ok((v.result?.dispatch??[]).every(note=>/^Hub 没有派发/.test(note.text)),JSON.stringify(v.result?.dispatch));assert.equal(submissions,before,'the accepted submission dispatched nothing');
+    try{const v=await verify(p,0,false,legacy);assert.ok((v.result?.dispatch??[]).every(note=>/^上机验证没有发出/.test(note.text)),JSON.stringify(v.result?.dispatch));assert.equal(submissions,before,'the accepted submission dispatched nothing');
       const state=await dispatch().dispatch(bed.hub.admin.principal,v.run,executor);assert.equal(state.outcome,'not_dispatched');const event=(await dispatch().journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;assert.equal(event.body.error_code,'EFFECT_NOT_ALLOWED');assert.equal(event.body.detail.boundary_clause,1);assert.equal(submissions,before);}
     finally{workflows.byDigest=read;await release(booked);}
   });
@@ -349,7 +371,8 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       assert.deepEqual(state.failed_conditions, [{ pointer: '/seats', operator: 'at_least' }], JSON.stringify(state));
       const text = (await client.call('submit_result', v.sent!)).out.dispatch?.[0]?.text ?? '';
       assert.match(text, /已结束/); assert.doesNotMatch(text, /还在进行/);
-      assert.match(text, /未满足的条件：\/seats at_least/); for (const check of state.failed_checks ?? []) assert.ok(text.includes(check.missing_fact), text);
+      assert.match(text, /核对项目 \/seats.*至少数量/);assert.match(text,/请管理员/);
+      assert.equal(text.includes(state.job),false);assert.doesNotMatch(text,/boundary_refused|circle-hub/);
       assert.equal(submissions, before);
     }
     finally { mismatch = false; await release(booked); }
@@ -366,7 +389,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.equal((await dispatch().status(bed.hub.admin.principal,frozen.job)).frozen,true,'a new budget refusal never unfreezes the original effect');
     const whileFrozen=await verify(await plan(booked,1),1);
     // While the first effect is unresolved the Hub dispatches nothing for the next case and says why in the runner's answer.
-    assert.ok(!whileFrozen.result?.dispatch?.some(note=>note.job),JSON.stringify(whileFrozen.result?.dispatch));assert.match(String(whileFrozen.result?.dispatch?.[0]?.text),/没有派发/);
+    assert.ok(!whileFrozen.result?.dispatch?.some(note=>note.job),JSON.stringify(whileFrozen.result?.dispatch));assert.match(String(whileFrozen.result?.dispatch?.[0]?.text),/上机验证没有发出|没有发出/);
     await assert.rejects(dispatch().dispatch(bed.hub.admin.principal,whileFrozen.run,executor),/冻结|占用/);
     assert.equal(submissions,before+1);
     assert.deepEqual(latest.ids, [ids[0]], 'the next authored case has not been dispatched');

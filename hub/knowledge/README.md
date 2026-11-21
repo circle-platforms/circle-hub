@@ -11,7 +11,7 @@ Requests opened before stay in the records as they are.
 verify each exact quotation, recursively check source eligibility, compare only team content, then scan content and
 complete original bytes for credentials. Personal-credential reads and unsigned uploads are refused. Personal-entry
 dependencies must already have a team counterpart, so a merge never leaves a team entry dependent on private read rights.
-Deduplication includes team history and the caller-readable legacy product mounts; inaccessible product mounts and other
+Deduplication includes team history and the caller-readable product mounts; inaccessible product mounts and other
 people's personal spaces are not an existence oracle. Original capture authority and phase-2 read-tier rules stay intact.
 
 Success appends a team entry, source aliases, a new immutable version and a `knowledge_share` receipt in one transaction;
@@ -37,7 +37,7 @@ content, metadata and grantable originals; personal-credential sources cannot be
 
 Reads recheck the enabled account and current path grants, including old versions and search pages. Administrators have
 no default access to personal content. Grant path comparison is segment-based, and raw space records cannot bypass it.
-`getNodes` and the tree reader understand both space and legacy roots. Runs lock team and initiator roots; both the actual
+`getNodes` and the tree reader understand both space and product roots. Runs lock team and initiator roots; both the actual
 reader and initiator must remain authorized, and a later owner/team version is outside that run. Citation counts for
 personal entries are owner-only and use a separate owner-scoped index rather than the team content count.
 
@@ -106,6 +106,30 @@ first column except in the row that says otherwise: at 64 MiB the build stopped 
 The time of a build is PostgreSQL's, GIN above all: in both columns the database takes about nine tenths of it, so on this
 machine fewer statements do not make a build much shorter. What changed is who waits. The production trace of the same work, one
 statement per row against a slower disk, was 268.9 s inside one request.
+
+## Teams, team spaces and withheld text (model 42, decisions 150 and 151)
+
+Model 42 changes two things in this package. The code does neither yet: the commits that follow do, and until then what
+the sections above and below say is what the code does.
+
+**One space for each team** (K01 DEF, R[4], R[9], R[13], R[15]; K02 R[6]; R01 R[13]). The team space is no longer one space
+for the Hub: every team has its own, and the id of a team is the id of its space. The team `team` is the space that exists
+today, so no record moves, and a request that names no team means `team`. The readers and writers of a team space are the
+members of that team and the administrators. A share, a memory share and a withdrawal of a team entry check the membership
+inside the committing transaction, in a fixed order with a change of the membership (R01 R[6]). A reader who is not a member
+is told that the team space exists and that they may not read it, or that it does not exist when the team is not registered
+(D05 R[3]); a memory list and a search answer such a reader with an empty set of the same shape. The product catalog keeps
+its product lines and version trees; the same registration is mounted in every team space, and its readers are still decided by
+the product line.
+
+**Text that rests on a source without acceptance** (K02 R[8], B02 R[4], D05 R[3]). A tree read stops giving the text of an
+entry when the effective read tier of any source its fragments come from is `retain_only`, whatever took the acceptance
+away: the source's own was withdrawn, the one of its resource was, or one of them lapsed. The entry stays listed with its
+path, kind, reference and digest; its text and data read 没有权限阅读; a reference read answers `retain_only` and not
+readable; the knowledge views and the search do not list it, and a node page and a view that lack entries mark their
+coverage partial. The catalog and the digest of an entry do not change. It holds for every reader, administrators
+included, and ends with the next read after an acceptance is made again. Today a tree read gives the text of an entry
+without looking at the read tier of its sources.
 
 ## Uploader attribution (decision 140, block one)
 
@@ -374,8 +398,10 @@ catalogs, grounds and provenance.
     overlapping paths cost nothing extra); a page ends at 100 nodes or about 2 MiB counted over statements, canonical data and child
     lists; a node whose entries do not fit is split over pages (the cursor carries the entry to start at, the note says
     so); a cursor is bound to its query and must point inside the walk (a forged offset is refused like an absent root);
-    coverage is complete only on the last page, missing paths in the note. Entries show their applicability text (未声明
-    when undeclared) followed by the placement note when the model placed them. The `TreeReader` gives the entry
+    coverage is complete only on the last page, missing paths in the note. Entries show their applicability text
+    followed by the placement note when the model placed them. An entry none of whose condition fields is declared,
+    judged, in conflict or still being read carries no applicability, field states or admission context at all
+    (decision 159); the empty condition marker a producer writes is dropped when the entry is produced (`entryContentOf`). The `TreeReader` gives the entry
     statement (or a node's statements) with grounds from the version composition and premises naming it: bound to a
     composition (`treeReader({ composition })`, the RootInfo.composition a run locked) from that one alone; unbound, from
     every composition of the root, each also listed with its build under `validity.compositions`. `hasRoot` lets
@@ -1776,3 +1802,11 @@ the last page decides. A pack that opts in must say the unknown entries as unkno
 the view's notes name, and must not count them as zero or fail on them. In a facet view `total` counts only the entries in the
 lists, so `total + unknown_entries` is the population of the root for the query. Impact and links views do not carry the fields
 and keep the refusal.
+
+### Run and pack read dependencies
+
+`createKnowledge` requires `runReads: KnowledgeRunReadPort` and `packReads: KnowledgePackReadPort`, both declared in
+`hub/ports.ts`. The server supplies the existing run lookup, visibility check, verified pack directory reader and schema
+compiler; knowledge has no default implementation and no production import from runs. Tests inject the same implementations
+explicitly through `testing/read-ports.ts`. The two workflow test-bed imports remain pending a declared pack capability;
+moving those imports into assembly alone would not remove that dependency.
