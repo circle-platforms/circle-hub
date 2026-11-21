@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.26.0",
+  "version": "3.26.1",
   "kind": "workflow",
   "dependencies": [
     {
@@ -138,8 +138,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "66b8234263be4e1d5b8e67cda240ef84fa0a3b42ba1d479f7ead54e37408fbc2",
-      "size": 91723
+      "sha256": "05ddf39881e59128e2ff8aa6c735a8129e0a5e46c8f653d2aa6895d96da7d3de",
+      "size": 91817
     },
     {
       "path": "functions/bed.ts",
@@ -398,8 +398,8 @@
     },
     {
       "path": "functions/generated/vocabulary.ts",
-      "sha256": "503341d6e899d52c0db6869459e88ac88760ae770957262a6a5506f22299f632",
-      "size": 6638
+      "sha256": "63ee8b2bc7d01ff4a14eacc6bc064c6e6c7f3c9447ceadf9d5b2d34cc690d6c8",
+      "size": 7024
     },
     {
       "path": "functions/hub-retry.ts",
@@ -523,8 +523,8 @@
     },
     {
       "path": "functions/schema-outline.ts",
-      "sha256": "82b8da68081003e66b1e2a07a8da695334bf56b0d37776e23a87db72451afe02",
-      "size": 7344
+      "sha256": "f7daf9fff263a27e71642941fdf46971c8c781bd8b24f00bfe10dd94e40dd233",
+      "size": 7373
     },
     {
       "path": "functions/schema.ts",
@@ -688,7 +688,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "51d8b78add18ab5848761663ef3b732d5ddca726689c23f7ce2218997079e1a3",
+      "sha256": "13fe03f89dd8a2349d78b3b180f0f0db33a9a263209fc8515872cbd2082a58ab",
       "size": 202559
     },
     {
@@ -733,7 +733,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "623f25662fae26dd5f4a9f52975b7d02a6a3442dcda36550ffacb4f749d5f417",
+      "sha256": "0bbbfddb4634eb03618712f370b69b4d4bd31a5657a7fcae3c3f28d41ec0dc4f",
       "size": 202563
     },
     {
@@ -823,7 +823,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "b58ded1135c67b91e56cf94bd9ac3c185ac79a84659a7bea7b8af108c2146e94",
+      "sha256": "6b263c8b48b130767be216de7c695fae6b5c4330d30def5ed6281d21d7d76a20",
       "size": 202513
     },
     {
@@ -868,7 +868,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "926e4e75ed6dfbdf378664774bc6097e4186b082b05bddc81e0e2d717b18b99a",
+      "sha256": "cd0974b0b20aabad5c5d2bd59ccf0e6cf601c8cfa41439efe342dce875534c66",
       "size": 202517
     },
     {
@@ -968,7 +968,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "9cb60b96b6063198ba668f9eaf0792d1a040e6eee8323878a00632a1e60887ff",
+      "sha256": "68278beee405385e5cb70d4c6b48bfb352d68d849113463f8bb262625f019234",
       "size": 406
     },
     {

@@ -75,7 +75,7 @@ test('an entry states recorded facts; the newest passing one comes first, then n
   assert.ok(text.includes(`- 同用例历史上机记录（available，共 4 条，按 autoid 对）：${PRIOR_DEVICE_HISTORY_DISCLAIMER.slice(0, 20)}`));
   assert.ok(text.replace(/\n\s*/g, '').includes(PRIOR_DEVICE_HISTORY_DISCLAIMER));
   const joined = text.replace(/\n {2,}/g, '');
-  assert.ok(joined.includes(`· [上机 ${runId(5)} | 计划 ${runId(45)} | 构建 synthetic-build-7 | 结束 2026-11-15T01:00:00.000Z | 结论 fail（失败）] 运行日志 history/${runId(5)}/${job(5).slice(0, 12)}/cases/${CASE}/log.txt；设备会话 2 份，在 history/${runId(5)}/${job(5).slice(0, 12)}/cases/${CASE}/：dev-a.txt、dev-b.txt；会话里发给设备的命令 17 条（命令原文在日志和会话里）；设备拒绝执行 1 条：“widget health interval pool-a 600” 设备答 “Value out of range / Failed to run the synthetic command”；设备没有解析 1 条：“widget sync to peer-b”（停在 sync）`), joined);
+  assert.ok(joined.includes(`· [上机 ${runId(5)} | 计划 ${runId(45)} | 构建 synthetic-build-7 | 结束 2026-11-15T01:00:00.000Z | 结论 fail（未通过）] 运行日志 history/${runId(5)}/${job(5).slice(0, 12)}/cases/${CASE}/log.txt；设备会话 2 份，在 history/${runId(5)}/${job(5).slice(0, 12)}/cases/${CASE}/：dev-a.txt、dev-b.txt；会话里发给设备的命令 17 条（命令原文在日志和会话里）；设备拒绝执行 1 条：“widget health interval pool-a 600” 设备答 “Value out of range / Failed to run the synthetic command”；设备没有解析 1 条：“widget sync to peer-b”（停在 sync）`), joined);
   assert.ok(joined.includes(`· [上机 ${runId(1)} | 计划 ${runId(41)} | 构建未记录 | 结束 2026-11-11T01:00:00.000Z | 结论 not_run（未运行）] 这次上机的设备输出没有下载到本地`), joined);
   for (const word of WORDS) assert.ok(!text.includes(word), `the lines disclose and give no instruction: ${word}`);
 

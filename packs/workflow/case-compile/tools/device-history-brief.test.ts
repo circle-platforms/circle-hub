@@ -103,8 +103,8 @@ test('a case verified before gets its entries in the brief and in the writer\'s 
     assert.deepEqual(lines, [
       '- 同用例历史上机记录（available，共 3 条，按 autoid 对）：以下是同一条原始用例此前上机的记录：别的计划在当时的构建上跑出来的设备原话，只说明设备当时怎么回答，不是本次期望值的依据。',
       `  · [上机 ${V2} | 计划 ${P2} | 构建 synthetic-build-7 | 结束 2026-11-18T01:30:00.000Z | 结论 pass（通过）] 运行日志 ${folder2}/log.txt；设备会话 1 份，在 ${folder2}/：dev-a.txt；会话里发给设备的命令 4 条（命令原文在日志和会话里）`,
-      `  · [上机 ${V1} | 计划 ${P1} | 构建 synthetic-build-7 | 结束 2026-11-19T01:30:00.000Z | 结论 fail（失败）] 运行日志 ${folder1}/log.txt；设备会话 2 份，在 ${folder1}/：dev-a.txt、dev-b.txt；会话里发给设备的命令 5 条（命令原文在日志和会话里）；设备拒绝执行 1 条：“widget record add ${'n'.repeat(62)}…” 设备答 “The synthetic record cannot coexist with another record type / Failed to run the synthetic command”；设备没有解析 1 条：“widget sync to seat”（停在 sync）`,
-      `  · [上机 ${V3} | 计划 ${P2} | 构建 synthetic-build-7 | 结束 2026-11-17T01:30:00.000Z | 结论 fail（失败）] 这次上机的设备输出没有下载到本地：取上机历史的总时限 240 秒已到，这一次的设备输出没有下载`,
+      `  · [上机 ${V1} | 计划 ${P1} | 构建 synthetic-build-7 | 结束 2026-11-19T01:30:00.000Z | 结论 fail（未通过）] 运行日志 ${folder1}/log.txt；设备会话 2 份，在 ${folder1}/：dev-a.txt、dev-b.txt；会话里发给设备的命令 5 条（命令原文在日志和会话里）；设备拒绝执行 1 条：“widget record add ${'n'.repeat(62)}…” 设备答 “The synthetic record cannot coexist with another record type / Failed to run the synthetic command”；设备没有解析 1 条：“widget sync to seat”（停在 sync）`,
+      `  · [上机 ${V3} | 计划 ${P2} | 构建 synthetic-build-7 | 结束 2026-11-17T01:30:00.000Z | 结论 fail（未通过）] 这次上机的设备输出没有下载到本地：取上机历史的总时限 240 秒已到，这一次的设备输出没有下载`,
     ]);
     for (const text of [lines.join('\n'), JSON.stringify(prior)]) { assert.ok(!text.includes(NAME), 'the 253-character name is in the log and the session, not in the brief'); for (const word of WORDS) assert.ok(!text.includes(word), word); }
     assert.ok(Buffer.byteLength(JSON.stringify(prior)) < 4000 && Buffer.byteLength(lines.join('\n')) < 3000, 'three entries stay small');

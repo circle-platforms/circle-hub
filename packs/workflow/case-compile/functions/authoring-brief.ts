@@ -28,6 +28,7 @@ import type { BedFacts } from './bed.ts';
 import type { RunnerCleanup } from './runtime-contract.ts';
 import { canonicalJson } from './canonical-json.ts';
 import { entryLines, nodeLines } from './knowledge-text.ts';
+import { DYNAMIC_TERMINAL, labelOf, type DynamicTerminal } from './generated/vocabulary.ts';
 import {
   analyzeRoundHistory,
   consecutiveRepeatedGateCodes,
@@ -354,8 +355,8 @@ export const PRIOR_DEVICE_HISTORY_DISCLAIMER =
 /** Why a brief shows no history when the run directory holds no history.json: the download that wrote it asked the Hub for none. */
 export const PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON =
   '运行目录里没有 history.json：下载这次运行时没有向 Hub 取历次上机验证的记录。';
-/** What a row's verdict word reads as; a word outside the list is shown as it is. */
-const PRIOR_VERDICT_LABELS: Record<string, string> = { pass: '通过', fail: '失败', no_verdict: '无判定', not_run: '未运行', incomplete: '未完成' };
+/** What a row's verdict word reads as, in the vocabulary's own label; a word outside the axis is shown as it is. */
+const priorVerdictLabel = (verdict: string): string => (DYNAMIC_TERMINAL as readonly string[]).includes(verdict) ? `（${labelOf('dynamic_terminal', verdict as DynamicTerminal)}）` : '';
 export const PREREQ_SCAN_REASON =
   '当前简报未从重组记录与产品目录提取到前置；这不证明没有其他前置。编写前仍须核对 knowledge/manual.txt 同构建功能章、配置示例与前置条件。';
 export const PREREQ_PARTIAL_RECOMPOSE_REASON = '已从用例重组记录（record.sources.states）提取如下已知前置；当前简报未提取产品目录前置，这不证明没有其他跨章节前置，仍须核对同构建手册正文、示例与前置条件。';
@@ -1299,7 +1300,7 @@ export function renderPriorDeviceHistoryLines(
       entry.plan_run ? `计划 ${entry.plan_run}` : '计划未记录',
       entry.build ? `构建 ${entry.build}` : '构建未记录',
       entry.ended_at ? `结束 ${entry.ended_at}` : '结束时刻未记录',
-      `结论 ${entry.verdict}${PRIOR_VERDICT_LABELS[entry.verdict] ? `（${PRIOR_VERDICT_LABELS[entry.verdict]}）` : ''}`,
+      `结论 ${entry.verdict}${priorVerdictLabel(entry.verdict)}`,
     ].join(' | ');
     const parts: string[] = [];
     if (entry.log) parts.push(`运行日志 ${entry.log}`);

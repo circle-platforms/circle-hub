@@ -829,7 +829,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.26.0"
+      "generator": "case-compile@3.26.1"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -964,14 +964,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.26.0",
+                    "text": "case-compile@3.26.1",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "ffe024423eeaae8ab83b3d64ef474ffc88bd8aae203d7c065ecbc857ad4968f6",
+                    "text": "94eb38fa7627ce168ed7c8a9b08c03ed0c10892d6dc16f812eef90fd6c795e04",
                     "formula": false,
                     "style": null
                   }
@@ -1173,7 +1173,7 @@
                   {
                     "reference": "D7",
                     "type": "inlineStr",
-                    "text": "Author         : case-compile@3.26.0\n计划运行 run_00000000000000000000000000；构建 Fixture_Build_A",
+                    "text": "Author         : case-compile@3.26.1\n计划运行 run_00000000000000000000000000；构建 Fixture_Build_A",
                     "formula": false,
                     "style": 5
                   },

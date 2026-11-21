@@ -87,7 +87,7 @@ export const PACK_VOCABULARY_TARGETS: Readonly<Record<string, PackVocabularyTarg
   'packs/workflow/case-compile/authority/functions/generated/vocabulary.ts': {axes:['call_error_category'],labels:true},
   'packs/workflow/case-compile/recompose/functions/generated/vocabulary.ts': {axes:['call_error_category','verdict'],labels:true},
   'packs/workflow/case-compile/adjudicate/functions/generated/vocabulary.ts': {axes:['call_error_category'],labels:true},
-  'packs/workflow/case-compile/functions/generated/vocabulary.ts': {axes:['expectation_basis','qualifier_mark','dynamic_terminal','acceptance','item_handling','attribution','exit_action','producer_kind','call_error_category'],labels:true,uiLabels:true},
+  'packs/workflow/case-compile/functions/generated/vocabulary.ts': {axes:['expectation_basis','qualifier_mark','dynamic_terminal','acceptance','item_handling','attribution','exit_action','producer_kind','call_error_category','target'],labels:true,uiLabels:true},
   'packs/workflow/quality-board/functions/generated/vocabulary.ts': { axes: ['knowledge_count','declaration_status','judgment_status'], labels: true, resourceTags: true },
   'packs/product/famx/functions/generated/vocabulary.ts': { axes: ['applicability_field','declaration_status','judgment_status','type_declaration_status','command_parse_status','reason','release_status'], labels: true, resourceTags: true },
   'packs/workflow/case-review/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},

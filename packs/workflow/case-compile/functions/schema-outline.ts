@@ -5,6 +5,7 @@
 // the outline holds the same fields and rules in about a sixth of the text. It adds nothing and decides nothing — whatever it
 // cannot express it leaves to the schema, which stays the authority (`slots.schema.json`); the pack ships the outline as tools/plan-fields.md and a test keeps the two in step.
 import { isRecord } from './text.ts';
+import { TARGET, labelOf } from './generated/vocabulary.ts';
 
 const scalar = (schema: Record<string, unknown>): string => {
   if ('const' in schema) return `固定为 ${JSON.stringify(schema.const)}`;
@@ -83,12 +84,12 @@ export function schemaOutline(schema: unknown, path = 'data'): string[] {
 export function slotsOutline(slots: unknown): string {
   const out: string[] = ['# 计划字段一览（由 slots.schema.json 生成；带 * 的是必填；“—”后面是 schema 对这个字段的说明）', ''];
   if (!isRecord(slots)) return out.join('\n') + '\n';
-  for (const scope of ['item', 'run'] as const) {
+  for (const scope of TARGET) {
     const group = slots[scope];
     if (!isRecord(group)) continue;
     for (const [name, slot] of Object.entries(group)) {
       if (!isRecord(slot)) continue;
-      out.push(`## ${scope === 'item' ? '条目' : '运行'}的 ${name} 槽：${slot.min ?? 0} 到 ${slot.max ?? '任意多'} 条陈述；陈述的 data：`);
+      out.push(`## ${labelOf('target', scope)}的 ${name} 槽：${slot.min ?? 0} 到 ${slot.max ?? '任意多'} 条陈述；陈述的 data：`);
       out.push(...schemaOutline(slot.data, `${name}.data`), '');
     }
   }
