@@ -650,8 +650,8 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
     return [...fromLayers, ...fromClaims];
   }).filter((text) => text.length > 0))];
   const concreteGap = layers.some((layer) => (layer.reason !== undefined && layer.reason !== 'awaiting_step') || layer.attribution !== undefined);
-  const inFlight = unknown && !determined && !partial && !concreteGap
-    && (pending || item.requirements.length === 0 || layers.some((layer) => layer.reason === 'awaiting_step' || layer.terminal === 'incomplete' || isUnknownTerminal(layer)));
+  const inFlight = unknown && !partial && !concreteGap
+    && layers.some((layer) => layer.layer === 'dynamic' && layer.reason === 'awaiting_step');
   const statement = determined
     ? conclusionStatements([
       ...wrong.map((requirement) => messageOf(requirement)).filter((text): text is string => Boolean(text)),
@@ -672,9 +672,13 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
     if (!statedNext) parts.push('下一步由模型改正');
   } else if (unknown) {
     parts.push(`原因${partial ? USER_REASON.data_gap : [...new Set(layers.map(userReason))].join('、') || USER_REASON.unattributed}`);
-    const next = partial ? ['使用者补齐资料后重新交给 Hub 检查'] : [...new Set(layers.filter((layer) => layer.exit !== undefined || !statedNext).map(userNextStep))];
-    if (next.length > 0) parts.push(`下一步${next.join('；')}`);
-    else if (!statedNext) parts.push('下一步使用者核对资料后重新交给 Hub 检查');
+    if (!statedNext) {
+      const exits = layers.filter((layer) => layer.exit !== undefined).map(userNextStep);
+      const next = exits.length > 0 ? exits : [
+        partial ? '使用者补齐资料后重新交给 Hub 检查' : userNextStep({}),
+      ];
+      parts.push(`下一步${conclusionStatements(next).join('；')}`);
+    }
   }
   const quotes = [...new Set(claims.flatMap(claim => claim.resolutions?.filter(value => !value.references.includes(value.text)).map(value => value.text) ?? []))].filter((text) => !statement.includes(text));
   if (quotes.length) parts.push(`证据${quotes.join('；')}`);

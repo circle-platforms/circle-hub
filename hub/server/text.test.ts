@@ -833,7 +833,7 @@ test('jobs whose notes read the same are said once with how many, the others sta
   assert.ok(alone.some((line) => line.includes('目标没有给出租约')) && !alone.some((line) => line.includes('（×')), 'one job is not counted');
 });
 
-test('dispatch call-error prose keeps category form and restores member release next steps', () => {
+test('dispatch call errors keep the category and the recorded release next steps', () => {
   const base = submitAnswer(resultOf(items(1)));
   const occupied = toolText('submit_result', {
     ...base,
@@ -859,23 +859,22 @@ test('dispatch call-error prose keeps category form and restores member release 
   const memberLine = linesOf(memberRelease).find((line) => line.startsWith('不存在：')) ?? '';
   assert.equal(
     memberLine,
-    '不存在：核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致。先确认预订的是哪个测试环境，用它对应的运行环境配置重新做脚本编写和脚本合并，再发起上机验证；预订和配置都没错时，请管理员核对执行器的声明。',
+    '不存在：核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致。联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验。',
   );
-  assert.doesNotMatch(memberLine, /联系管理员核对当前环境的清单绑定|状态已确认|判断错误|决定者程序/);
+  assert.doesNotMatch(memberLine, /状态已确认|判断错误|决定者程序/);
 
   const adminRelease = toolText('submit_result', {
     ...base,
     dispatch: [{
-      text: '不存在：核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致。联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验。',
+      text: '不存在：本次核验的目标或清单摘要与当前执行器声明不一致',
       outcome: 'not_dispatched',
       error_code: 'EFFECT_RELEASE_UNMET',
       executor: 'exe_01syntheticrefusal0000000001',
-      missing_facts: [{ fact: '核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致', next_action: '联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验' }],
+      missing_facts: [{ fact: '核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致', next_action: '用 circle-hub job explain-release --run run_00000000000000000000000000 --executor exe_01syntheticrefusal0000000001 核对执行器声明' }],
     }],
   }, { items: items(1), caller: { role: 'admin', name: '合成管理员' } });
   const adminLine = linesOf(adminRelease).find((line) => line.startsWith('不存在：')) ?? '';
-  assert.match(adminLine, /按执行器声明的测试环境和清单重新做脚本编写和脚本合并/);
-  assert.match(adminLine, /circle-hub job explain-release --executor exe_01syntheticrefusal0000000001/);
+  assert.match(adminLine, /circle-hub job explain-release --run run_00000000000000000000000000 --executor exe_01syntheticrefusal0000000001/);
   assert.doesNotMatch(adminLine, /先确认预订|状态已确认|判断错误|决定者程序/);
 
   const legacyIdentity = toolText('submit_result', {
@@ -887,17 +886,17 @@ test('dispatch call-error prose keeps category form and restores member release 
     }],
   }, { items: items(1), caller: { role: 'user' } });
   const legacyLine = linesOf(legacyIdentity).find((line) => line.includes('上机验证没有发出')) ?? '';
-  assert.match(legacyLine, /现在可以做：先确认预订的是哪个测试环境/);
+  assert.match(legacyLine, /下一步：联系管理员核对当前环境的清单绑定/);
   assert.match(legacyLine, /状态已确认；判断错误/);
 });
 
 test('known missing booking keeps a verified merge separate from an unsent job', () => {
   const base = submitAnswer(resultOf(items(1)));
   const text = toolText('submit_result', { ...base, dispatch: [{ text: 'diagnostic with private keys', outcome: 'not_dispatched', frozen: false, submission_verified: true, booking: { target: '合成实验室', coverage_complete: false, required_resources: 11, missing_resources: 11, declared_device_count: 11 } }] }, { items: items(1) });
-  assert.match(text, /脚本合并正确（已确认）/);
+  assert.match(text, /提交已核对正确（已确认）/);
   assert.match(text, /这次运行没有带着测试环境的预订/);
   assert.match(text, /合成实验室（共 11 台设备）/);
-  assert.match(text, /先预订整个测试环境，再从脚本编写重开/);
+  assert.match(text, /先预订整个测试环境，再带着预订重新开始运行/);
   assert.doesNotMatch(text, /原因还没查清|diagnostic with private keys/);
 });
 
@@ -978,6 +977,24 @@ test('booking no-command devices stay one plain line; an in-flight row skips rea
   assert.match(inFlight, /^原始用例 900000000000000001 合成用例：示例标题：上机验证还在进行，还没有设备输出；状态未知；下一步由模型在上机验证结束后读取设备输出；决定者程序$/m);
   assert.doesNotMatch(inFlight, /原因缺资料|原因还没查清|下一步使用者/);
 
+  const staticReview: ItemResult = {
+    item: list[0].id,
+    label: list[0].label,
+    location: list[0].location,
+    requirements: [{
+      requirement: 'expected_quality',
+      status: 'pending',
+      layers: [{ layer: 'static', terminal: 'unchecked', reason: 'awaiting_step' }],
+      claims: [],
+    }],
+  };
+  const pendingReview = toolText('submit_result', submitAnswer(resultWith({
+    delivered: [staticReview], rejected: [], quarantined: [], incomplete: [],
+  })), { items: list });
+  const pendingCase = pendingReview.split('\n').find((line) => line.startsWith('原始用例 ')) ?? '';
+  assert.match(pendingCase, /状态未知；原因.+；下一步/);
+  assert.doesNotMatch(pendingCase, /上机验证|判断正确|判断错误/);
+
   const namedNextItem: ItemResult = {
     item: list[0].id,
     label: list[0].label,
@@ -997,7 +1014,7 @@ test('booking no-command devices stay one plain line; an in-flight row skips rea
     }],
   };
   const namedNext = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [namedNextItem] })), { items: list });
-  assert.match(namedNext, /^原始用例 900000000000000001 合成用例：示例标题：缺少合成产物。下一步由模型生成并上传合成产物；状态未知；原因缺资料；决定者程序$/m);
+  assert.match(namedNext, /^原始用例 900000000000000001 合成用例：示例标题：合成条目缺少完整观察；缺少合成产物。下一步由模型生成并上传合成产物；状态未知；原因缺资料；决定者程序$/m);
   assert.doesNotMatch(namedNext, /下一步使用者/);
 
   const started = toolText('submit_result', SubmitResultOutput.parse({
@@ -1091,7 +1108,7 @@ test('recompose refusal preserves producer facts and guidance with verbatim grou
     }],
   };
   const acceptedUnknown = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [unknownItem] })), { items: list });
-  assert.match(acceptedUnknown, /改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产；状态未知；原因缺资料；下一步由模型改正重组记录后重交/);
+  assert.match(acceptedUnknown, /改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产；状态未知；原因缺资料；下一步使用者补齐资料/);
   assert.doesNotMatch(acceptedUnknown, /还没有确认结论/);
 
   const determinedItem: ItemResult = {
@@ -1118,7 +1135,7 @@ test('recompose refusal preserves producer facts and guidance with verbatim grou
     }],
   };
   const determined = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [determinedItem] })), { items: list });
-  assert.match(determined, /改写后的命令没有锁定目录的完整语法身份；状态已确认；判断错误；原因生产者错误；下一步由模型改正重组记录后重交/);
+  assert.match(determined, /改写后的命令没有锁定目录的完整语法身份；状态已确认；判断错误；原因生产者错误；下一步由模型改正；决定者程序/);
   assert.doesNotMatch(determined, /状态未知；原因缺资料/);
 });
 

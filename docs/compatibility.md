@@ -101,3 +101,4 @@
 - 2026-11-21：控制台与团队（相对 main）：工作流页面在 `/console/workflows`，通用技能在 `/console/skills`，团队在 `/console/team` 与 `/console/teams`，需要重建时有 `/console/rebuild` 和设置里的重置一节；`/console/packs` 和第二处 `/console/admin` 页面、控制台 JSON 接口（只留 `GET /console/api/stream`）和一次性登录链接已移除。团队（`tm_` 编号）是工作流、业务系统资源和测试环境的分配对象：权限取账户所在各团队与直接分配的并集，没有分配的业务系统资源对任何账户（包括管理员）都不可读，删团队逐条追加撤销、不取消已冻结的运行或远端作业，成员只看得到自己所在团队的名字；团队暂不设各自的知识空间或记忆。
 - 2026-11-21：检查、CI 与仓库（相对 main）：`Docs and CI checks` 取完整历史运行，新增包边界与依赖环、核心代码不写包名、不留兼容路径、固定文档集、已发布 schema 与工具输入向后兼容、每个测试文件属于一个测试集、地址与内部编号这几项检查；`npm run test:unit` 不再包括 `scripts/` 下的测试，新增 `npm run test:quick`；Dependabot 配置已移除。
 - 2026-11-21：编译流水线由客户端工作流接收子代理完成信号，`pipeline.ts next` 直接处理该标签的结果；工具参数去掉 `--ended`。Circle 1.18.1 主线可连接 Hub 的 MCP 接口；运行编译工作流需客户端支持脚本 `execute()` 和定义文件的 `sessionPrompt`。冻结的 Circle 源基线继续由 `verify:references` 核对。
+- 2026-11-21：`submit_result` 回执只在动态核验等待下一步时说明上机验证仍在进行。静态判断仍待补齐时保留「状态未知」，给出缺少的事实和下一步。来源已经写明下一步时沿用它。
