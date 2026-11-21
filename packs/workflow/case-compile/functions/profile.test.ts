@@ -6,19 +6,24 @@ import { parseProfile } from './profile.ts';
 import { bedsOf } from './test-support.ts';
 const read = parseRuntimeContract(runtimeDocument()); if (!read.ok) throw new Error('fixture');
 const contract = read.contract;
-test('profile binds runtime identity, workbook literals, seats and allowed parameter roles', () => {
+test('profile binds the runtime version, workbook literals, seats and allowed parameter roles', () => {
   const result = parseProfile(profileDocument(), contract, bedsOf()); assert.equal(result.ok, true, JSON.stringify(result));
 });
 for (const [name, mutate] of Object.entries({
-  identity: (v: any) => { v.runtime.contract_sha256 = 'b'.repeat(64); }, seat: (v: any) => { v.seats[0].device = 'absent'; }, host: (v: any) => { v.hosts[0].device = 'absent'; },
+  version: (v: any) => { v.runtime.minimum_version = 'another-runtime'; }, 'retired digest': (v: any) => { v.runtime.contract_sha256 = contract.pinned.identity; }, seat: (v: any) => { v.seats[0].device = 'absent'; }, host: (v: any) => { v.hosts[0].device = 'absent'; },
   allowed: (v: any) => { v.allowed[0].method = 'hidden'; }, role: (v: any) => { v.allowed[0].parameters.line = 'unknown-role'; },
   ordinal: (v: any) => { v.seats[0].ordinal = -1; }, header: (v: any) => { v.workbook.header.pop(); }, pattern: (v: any) => { v.workbook.autoid_pattern = '['; }, synthetic: (v: any) => { delete v.synthetic; },
 })) test(`whole-profile refusal with pointer: ${name}`, () => {
   const raw = profileDocument(); mutate(raw); const result = parseProfile(raw, contract, bedsOf()); assert.equal(result.ok, false); if (!result.ok) assert.ok(result.problems.every((p) => p.pointer.startsWith('/') && p.fix.length));
 });
 test('profile lists all independent problems in one refusal', () => {
-  const raw = profileDocument(); raw.seats[0].device = 'missing'; raw.runtime.contract_sha256 = 'b'.repeat(64); raw.allowed[0].parameters.line = 'missing';
+  const raw = profileDocument(); raw.seats[0].device = 'missing'; raw.runtime.minimum_version = 'another-runtime'; raw.allowed[0].parameters.line = 'missing';
   const result = parseProfile(raw, contract, bedsOf()); assert.equal(result.ok, false); if (!result.ok) assert.ok(result.problems.length >= 3);
+});
+test('the contract digest a profile used to carry is refused even when it is the right one, with the pointer and what to do', () => {
+  const raw = profileDocument() as unknown as { runtime: Record<string, unknown> }; raw.runtime.contract_sha256 = contract.pinned.identity;
+  const result = parseProfile(raw, contract, bedsOf()); assert.equal(result.ok, false);
+  if (!result.ok) assert.deepEqual(result.problems, [{ pointer: '/runtime/contract_sha256', message: '配置里的合约摘要已退役：工作簿的身份行由生成器按运行锁定的运行器合约写，配置不再存它的副本', fix: '请管理员删除该字段后重新发布这份配置' }]);
 });
 test('a signature name matching an object prototype member retains its declared role', () => {
   const raw = runtimeDocument(); raw.entries[0].signature.parameters[0].name = '__proto__'; raw.entries[0].signature.required[0] = '__proto__';

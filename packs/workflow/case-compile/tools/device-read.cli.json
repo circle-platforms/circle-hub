@@ -1,0 +1,106 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [
+    "%HUB_TOKEN%"
+  ],
+  "options": [
+    {
+      "name": "hub",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%HUB_URL%",
+      "type": "hub"
+    },
+    {
+      "name": "booking",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<test-bed 预订号>",
+      "type": "run"
+    },
+    {
+      "name": "device",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<设备名>",
+      "type": "text"
+    },
+    {
+      "name": "line",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<只读命令>",
+      "type": "text"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新文件>",
+      "type": "path"
+    },
+    {
+      "name": "bed",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<测试环境名>",
+      "type": "text"
+    },
+    {
+      "name": "inventory",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<doc:doc:名字>",
+      "type": "text"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "booking",
+          "placeholder": "<test-bed 预订号>",
+          "optional": false
+        },
+        {
+          "name": "device",
+          "placeholder": "<设备名>",
+          "optional": false
+        },
+        {
+          "name": "line",
+          "placeholder": "<只读命令>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<新文件>",
+          "optional": false
+        },
+        {
+          "name": "bed",
+          "placeholder": "<测试环境名>",
+          "optional": true
+        },
+        {
+          "name": "inventory",
+          "placeholder": "<doc:doc:名字>",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

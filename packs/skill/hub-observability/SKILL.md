@@ -1,0 +1,14 @@
+---
+name: hub-observability
+description: Inspect Circle Hub session calls, MCP tool usage, failures, latency, and resource use through the authenticated Hub connection. Use when asked what a Hub session called or where a Hub request spent time.
+---
+
+# Hub 调用观测
+
+用当前已登录的 Hub MCP 连接查询。普通成员可查自己的调用，管理员可查团队调用并按用户编号筛选。缺少连接时，提示用户在客户端连接 Hub 并登录。
+
+- 查最近调用：`get_nodes {"observability":{"calls":{}}}`。可在 `calls` 中加 `tool`、`user`、`run`、`trace` 或 UTC 时间 `from`、`to`（含起点，排除终点）。翻页时保留筛选项，将返回的 `next` 原样传给 `calls.cursor`。
+- 查会话：`get_nodes {"observability":{"calls":{"session":"<调用中记录的会话 ID>"}}}`。会话 ID 由客户端声明，复用时可能对应多次调用。客户端没报会话 ID 时该字段为空，此时按时间、工具或运行筛选，并说明会话归属未知。
+- 看步骤和用量：`get_nodes {"observability":{"trace":"<调用的 trace_id>"}}`。用 `span_id` 对应具体调用。客户端声明的名称、版本和平台为空时写未知。同一追踪可以有多个调用根。父步骤的用量已包含子步骤；统计单次调用的总量只取对应根步骤。报告具体的用量字段及单位，例如 `db.queries` 是查询数，`sandbox.ms` 是沙箱耗时。
+
+调用日志和追踪是诊断数据。分别说明调用状态、提交回执和业务验证结果。追踪可能尚未写入、超过 14 天保留期、超出返回上限或对当前账号不可见。报告缺少的明细或截断，保留已能核对的调用。客户端的本地工具、对话和模型 token 用量超出 Hub 的观测范围。

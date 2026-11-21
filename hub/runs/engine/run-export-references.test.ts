@@ -1,0 +1,57 @@
+import assert from 'node:assert/strict';
+import {after,before,test} from 'node:test';
+import {accepted,partitions,runRecord} from '../../../contracts/src/fixtures.ts';
+import {ValidationResult} from '../../../contracts/src/validation.ts';
+import {RunRecord} from '../../../contracts/src/run.ts';
+import {digestOf} from '../../records/api.ts';
+import {openTestRecords,type TestRecordsKit} from '../../testing/records.ts';
+import {startPostgres,type TemporaryPostgres} from '../../testing/postgres.ts';
+import {createRunsService} from './service.ts';
+import {protocolError} from './errors.ts';
+import {putRun,putAction,putResult,putSubmission} from './store.ts';
+
+let pg:TemporaryPostgres,kit:TestRecordsKit;
+before(async()=>{pg=await startPostgres();kit=await openTestRecords({postgres:pg});});
+after(async()=>{await kit?.close();await pg?.stop();});
+
+test('export references name the stored run and reusable submitted result despite newer rejected, production and system results',async()=>{
+  const admin=(await kit.principals.bootstrapAdmin('合成管理员')).user;
+  const alice=await kit.principals.createUser(admin,'合成运行者');
+  const bob=await kit.principals.createUser(admin,'合成分享读者');
+  const at='2026-10-24T00:00:00.000Z';
+  const run=RunRecord.parse({...runRecord,sources:[],target_basis:[],items:[],runner:alice.id,version:'10.6',build:'rel_demo_10_6_1',started_at:at,submission_due:'2026-10-26T00:00:00.000Z'});
+  const stored=await putRun(kit.store,run,at);
+  const service=createRunsService({records:kit,workflows:{} as never,packs:{} as never,knowledge:{} as never,external:{} as never});
+  const empty=await service.exportRun!(alice,run.run);
+  assert.equal(empty?.run_reference,'rec:'+stored.digest);
+  assert.equal(empty?.accepted_result_reference,null);
+  assert.equal(empty?.result,null);
+  const submit=async(n:number)=>{
+    const body={run:run.run,model:'synthetic',items:[],sequence:n},digest=digestOf(body);
+    await putSubmission(kit.store,{run:run.run,digest,body,parses:true,createdAt:at});
+    const result=await putResult(kit.store,ValidationResult.parse({...accepted,partitions:partitions({}),cross_item:[],run:run.run,submission:digest}),at);
+    return {body,result};
+  };
+  await submit(1);
+  const expected=await submit(2);
+  const rejectedBody={run:run.run,model:'synthetic',items:[],sequence:3};
+  await putSubmission(kit.store,{run:run.run,digest:digestOf(rejectedBody),body:rejectedBody,parses:true,createdAt:at});
+  await putResult(kit.store,{...expected.result.body,acceptance:'not_accepted',errors:[protocolError('SUBMISSION_SCHEMA_VIOLATION','合成未受理提交')],submission:digestOf(rejectedBody)},at);
+  await putResult(kit.store,{...expected.result.body,submission:stored.digest},at);
+  const input={run:run.run,synthetic_system_delivery:true};
+  const action=await putAction(kit.store,{action:'validate',run:run.run,inputs:[],startedAt:at,endedAt:at,acceptance:null,codes:[],detail:{input}});
+  const system=await putResult(kit.store,{...expected.result.body,submission:digestOf(input),system_input:'rec:'+action.digest},at);
+  assert.equal((await service.getRun(alice,run.run))?.latest?.record,system.digest,'the system result is actually newer');
+  await putResult(kit.store,{...expected.result.body,submission:'f'.repeat(64)},at);
+  const exported=await service.exportRun!(alice,run.run);
+  assert.equal(exported?.run_reference,'rec:'+stored.digest);
+  assert.equal(exported?.accepted_result_reference,'rec:'+expected.result.digest);
+  assert.deepEqual(exported?.result,expected.result.body);
+  assert.deepEqual(exported?.submission,expected.body);
+  assert.notEqual(exported?.accepted_result_reference,'rec:'+digestOf(expected.result.body),'record identity is not a body hash');
+  assert.deepEqual(await service.exportRun!(admin,run.run),exported);
+  await kit.authorizations.share(admin,run.run,[bob.id]);
+  assert.ok(await service.getRun(bob,run.run),'a shared reader can see the run');
+  assert.equal(await service.exportRun!(bob,run.run),null,'sharing does not widen export authorization');
+  assert.equal(await service.exportRun!(alice,'run_'+'0'.repeat(26)),null);
+});

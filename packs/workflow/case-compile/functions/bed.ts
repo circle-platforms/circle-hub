@@ -131,6 +131,26 @@ export function readAddress(bed: ManifestBed, leases: readonly LeaseRow[], now: 
  * Whether the address falls in a device-interface subnet that has no trigger device.
  * Compared by the numeric value and the interface prefix, not by the address text.
  */
+/**
+ * Whether a listed host reaches an address on a declared segment: one of its interfaces of the same family shares the address's
+ * network at that interface's prefix (its own address included). The inventory declares interfaces and no routes, so this is
+ * the reference engine's executor path test (InfoTest env_facts.py executor_path_verdict) without the route branch. null when the
+ * host is not in the inventory or the text is not an address.
+ */
+export function hostReaches(bed: ManifestBed, deviceName: string, address: string): boolean | null {
+  const device = bed.devices.find((d) => d.name === deviceName);
+  const v4 = addressValue('ipv4', address); const v6 = v4 === null ? addressValue('ipv6', address) : null;
+  if (!device || (v4 === null && v6 === null)) return null;
+  const family = v4 === null ? 'ipv6' : 'ipv4'; const value = (v4 ?? v6) as bigint; const bits = family === 'ipv4' ? 32n : 128n;
+  return [...device.ipv4, ...device.ipv6].some((iface) => iface.family === family && (iface.value >> (bits - BigInt(iface.prefix))) === (value >> (bits - BigInt(iface.prefix))));
+}
+
+/** A listed host's interface addresses with their prefixes, for a refusal to name. */
+export function interfacesOf(bed: ManifestBed, deviceName: string): string[] {
+  const device = bed.devices.find((d) => d.name === deviceName);
+  return device ? [...device.ipv4, ...device.ipv6].map((iface) => `${iface.address}/${iface.prefix}`) : [];
+}
+
 export function inBlindSegment(bed: ManifestBed, address: string, triggerTypes: ReadonlySet<string> = TRIGGER_TYPES): boolean {
   const v4 = addressValue('ipv4', address);
   const v6 = v4 === null ? addressValue('ipv6', address) : null;

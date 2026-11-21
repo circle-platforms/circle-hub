@@ -1,0 +1,327 @@
+diff --git a/contracts/model.json b/contracts/model.json
+index 2b1a21ea69..b1706a6a26 100644
+--- a/contracts/model.json
++++ b/contracts/model.json
+@@ -4368,0 +4369,7 @@
++   {
++    "path": "hooks.json",
++    "content": "技能自己的钩子文件，和 SKILL.md 同目录，由支持技能钩子的客户端执行，Hub 只分发不执行",
++    "elements": [
++     "T01"
++    ]
++   },
+diff --git a/contracts/src/pack.test.ts b/contracts/src/pack.test.ts
+index 899fef6bb2..f48aa5fd8b 100644
+--- a/contracts/src/pack.test.ts
++++ b/contracts/src/pack.test.ts
+@@ -11,0 +12,3 @@ import {
++  SKILL_HOOKS_FILE,
++  SKILL_HOOK_COMMAND_MAX,
++  SkillHooksFile,
+@@ -15,0 +19 @@ import {
++  mayShipSkillHooks,
+@@ -73,0 +78,35 @@ test('pack paths stay inside the places packs keep files', () => {
++test('the hook file sits at the pack root beside SKILL.md and nothing can live under it', () => {
++  assert.equal(packPathProblem(SKILL_HOOKS_FILE), null);
++  assert.equal(packPathProblem('tools/synthetic-skill/hooks.json'), null);
++  assert.notEqual(packPathProblem(`${SKILL_HOOKS_FILE}/x`), null);
++  assert.notEqual(packPathProblem(`functions/../${SKILL_HOOKS_FILE}`), null);
++});
++
++test('only the pack kinds that require a SKILL.md can ship a hook file', () => {
++  assert.deepEqual(Object.keys(REQUIRED_FILES).map((kind) => [kind, mayShipSkillHooks(kind as keyof typeof REQUIRED_FILES)]), [['product', false], ['workflow', true], ['system', false], ['skill', true]]);
++});
++
++test('a hook file is version 1 with known events and a command in each entry, the way a client reads it', () => {
++  const entry = { name: 'synthetic guard', command: 'node --version', tools: 'question', timeout_ms: 5000 };
++  assert.ok(SkillHooksFile.safeParse({ version: 1, hooks: {} }).success, 'a file with no hook is a file');
++  assert.ok(SkillHooksFile.safeParse({ version: 1, hooks: { session_start: [{ command: 'x' }], before_tool: [entry], after_tool: [], before_stop: [entry], permission_request: [entry] } }).success);
++  assert.ok(SkillHooksFile.safeParse({ version: 1, hooks: { before_tool: [{ command: 'x'.repeat(SKILL_HOOK_COMMAND_MAX) }] } }).success);
++  const refused = (value: unknown, path: (string | number)[], why: string) => {
++    const result = SkillHooksFile.safeParse(value);
++    assert.equal(result.success, false, why);
++    assert.ok(result.error?.issues.some((issue) => JSON.stringify(issue.path) === JSON.stringify(path)), `${why}: ${JSON.stringify(result.error?.issues.map((issue) => issue.path))}`);
++  };
++  refused({ hooks: {} }, ['version'], 'the version is written');
++  refused({ version: 2, hooks: {} }, ['version'], 'a client skips a file of another version');
++  refused({ version: 1 }, ['hooks'], 'a misspelled or missing hooks object arms nothing');
++  refused({ version: 1, hooks: [] }, ['hooks'], 'hooks is an object');
++  refused({ version: 1, hooks: { before_tools: [entry] } }, ['hooks'], 'an event the client does not know is ignored by it');
++  refused({ version: 1, hooks: { before_tool: entry } }, ['hooks', 'before_tool'], 'an event holds a list');
++  refused({ version: 1, hooks: { before_tool: ['node --version'] } }, ['hooks', 'before_tool', 0], 'an entry is an object');
++  refused({ version: 1, hooks: { before_tool: [{ name: 'no command' }] } }, ['hooks', 'before_tool', 0, 'command'], 'an entry without a command is dropped by the client');
++  refused({ version: 1, hooks: { before_tool: [{ command: '  ' }] } }, ['hooks', 'before_tool', 0, 'command'], 'a blank command is dropped');
++  refused({ version: 1, hooks: { before_tool: [{ command: 'x'.repeat(SKILL_HOOK_COMMAND_MAX + 1) }] } }, ['hooks', 'before_tool', 0, 'command'], 'a command over the limit is dropped');
++  refused({ version: 1, hooks: { session_start: [{ command: 'a\0b' }] } }, ['hooks', 'session_start', 0, 'command'], 'a command with NUL is dropped');
++  refused({ version: 1, hooks: { before_tool: [entry, { command: 7 }] } }, ['hooks', 'before_tool', 1, 'command'], 'a command is text');
++});
++
+diff --git a/contracts/src/pack.ts b/contracts/src/pack.ts
+index 2e29948f1d..4a810ee602 100644
+--- a/contracts/src/pack.ts
++++ b/contracts/src/pack.ts
+@@ -138,0 +139,31 @@ export type PackManifest = z.infer<typeof PackManifest>;
++
++
++export const SKILL_HOOKS_FILE = 'hooks.json';
++
++
++export function mayShipSkillHooks(kind: PackKind): boolean {
++  return (REQUIRED_FILES[kind] as readonly string[]).includes('SKILL.md');
++}
++
++
++export const SKILL_HOOK_COMMAND_MAX = 4000;
++const SkillHook = z.object({
++  command: z
++    .string()
++    .max(SKILL_HOOK_COMMAND_MAX)
++    .refine((v) => v.trim() !== '', 'a hook has a command')
++    .refine((v) => !v.includes('\0'), 'a command has no NUL character'),
++});
++const SkillHookList = z.array(SkillHook).optional();
++export const SkillHooksFile = z.object({
++  version: z.literal(1),
++  hooks: z.strictObject({
++    before_tool: SkillHookList,
++    after_tool: SkillHookList,
++    before_stop: SkillHookList,
++    session_start: SkillHookList,
++    permission_request: SkillHookList,
++  }),
++});
++export type SkillHooksFile = z.infer<typeof SkillHooksFile>;
++
+diff --git a/hub/runs/packs/README.md b/hub/runs/packs/README.md
+index 70d5aad79b..8a190366ce 100644
+--- a/hub/runs/packs/README.md
++++ b/hub/runs/packs/README.md
+@@ -84 +84 @@ first (`*.shape` rules; the detail of a zod issue is the contract's English mess
+-| `directory.*`, `manifest.*` | no links (symbolic, or a file with more than one hard link: `directory.hardlink`) or special files (also a link where a listed file should be), directories only where packs keep files, legal paths (`packPathProblem`), no two paths that differ only in case at some level (`manifest.case_collision`: one name on a case-insensitive volume), every listed file present once with its size and SHA-256, nothing unlisted, size caps (over the total or the count cap nothing is read), a canonical version spelling and `id@x.y.z` at most 100 characters (`manifest.version`), declaration files of the pack's own kind only |
++| `directory.*`, `manifest.*` | no links (symbolic, or a file with more than one hard link: `directory.hardlink`) or special files (also a link where a listed file should be), directories only where packs keep files, legal paths (`packPathProblem`), no two paths that differ only in case at some level (`manifest.case_collision`: one name on a case-insensitive volume), every listed file present once with its size and SHA-256, nothing unlisted, size caps (over the total or the count cap nothing is read), a canonical version spelling and `id@x.y.z` at most 100 characters (`manifest.version`), declaration files of the pack's own kind only, and a `hooks.json` only in a pack whose kind requires a SKILL.md (`manifest.foreign_file`: workflow and skill packs; a product or system pack has no skill folder beside which a client could read it) |
+@@ -99,0 +100 @@ first (`*.shape` rules; the detail of a zod issue is the contract's English mess
++| `hooks.shape` | every `hooks.json` of a pack (the hook file of a skill folder: at the root of a workflow or skill pack, beside its SKILL.md, or in a skill folder nested under `tools/`) is read as the client reads it, because the client leaves a hook that does not fit unarmed and only says so in a notice: `version` is 1, `hooks` is an object whose keys are events the client knows (`before_tool`, `after_tool`, `before_stop`, `session_start`, `permission_request`), each a list of entries with a `command` that is text, not blank, without NUL and at most 4,000 characters (`SkillHooksFile`). Nothing else of an entry is judged. The Hub only distributes the file under the pack digest and never runs it |
+@@ -295,0 +297,2 @@ test file (`hub/testing/postgres.ts`) for the registry and port tests, and run p
++包根的 `hooks.json` 是技能自己的钩子文件，只有带 SKILL.md 的工作流包和通用技能包可以带（模型的包文件清单列着它；产品包和系统包没有 SKILL.md，带了按 `manifest.foreign_file` 拒绝）。发布时只按 `hooks.shape` 核对结构，随包按原字节下发，不经 `tools/` 扫描；装进客户端时按清单路径落在 SKILL.md 旁边。Hub 不执行它：支持技能钩子的客户端在会话载入这个技能之后才执行，其他客户端把它当作一个普通文件。它在包号覆盖的清单里，`get_nodes` 的 `pack` 加 `file: 'hooks.json'` 可以读到全文。
++
+diff --git a/hub/runs/packs/validate.test.ts b/hub/runs/packs/validate.test.ts
+index 05bbf87b00..3993dd989c 100644
+--- a/hub/runs/packs/validate.test.ts
++++ b/hub/runs/packs/validate.test.ts
+@@ -1,0 +2 @@ import assert from 'node:assert/strict';
++import { createHash } from 'node:crypto';
+@@ -5,2 +6,2 @@ import { readPackDirectory } from './directory.ts';
+-import { editJson, productPack, systemPack, temporaryDirectory, withFiles, workflowPack, writePack, type PackDescription } from './testing/builder.ts';
+-import type { PackProblem, PackValidation } from './types.ts';
++import { bytesOf, editJson, productPack, systemPack, temporaryDirectory, withFiles, workflowPack, writePack, type FileContent, type PackDescription } from './testing/builder.ts';
++import type { PackDirectory, PackProblem, PackValidation } from './types.ts';
+@@ -18 +19,9 @@ type Json = Record<string, any>;
+-async function validated(pack: PackDescription): Promise<PackValidation> {
++
++function withHookFile(pack: PackDirectory, hooks: FileContent): PackDirectory {
++  const bytes = bytesOf(hooks);
++  const entry = { path: 'hooks.json', sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.byteLength };
++  const files = [...pack.manifest.files, entry].sort((a, b) => (a.path < b.path ? -1 : 1));
++  return { ...pack, manifest: { ...pack.manifest, files }, files: [...pack.files, { ...entry, bytes }] };
++}
++
++async function validated(pack: PackDescription, hooks?: FileContent): Promise<PackValidation> {
+@@ -22 +31 @@ async function validated(pack: PackDescription): Promise<PackValidation> {
+-  return validatePack(read.pack);
++  return validatePack(hooks === undefined ? read.pack : withHookFile(read.pack, hooks));
+@@ -25,2 +34,2 @@ async function validated(pack: PackDescription): Promise<PackValidation> {
+-async function refused(pack: PackDescription, rule: string, where: { file?: string; field?: string } = {}): Promise<PackProblem> {
+-  const result = await validated(pack);
++async function refused(pack: PackDescription, rule: string, where: { file?: string; field?: string } = {}, hooks?: FileContent): Promise<PackProblem> {
++  const result = await validated(pack, hooks);
+@@ -36,2 +45,2 @@ async function refused(pack: PackDescription, rule: string, where: { file?: stri
+-async function accepted(pack: PackDescription): Promise<PackValidation & { ok: true }> {
+-  const result = await validated(pack);
++async function accepted(pack: PackDescription, hooks?: FileContent): Promise<PackValidation & { ok: true }> {
++  const result = await validated(pack, hooks);
+@@ -294,0 +304,22 @@ test('versions have one spelling, and each kind keeps to its own declaration fil
++test('a hook file beside SKILL.md is read as the client reads it, and only a pack with a SKILL.md may carry one', async () => {
++  const hooks = { version: 1, hooks: { session_start: [{ name: '合成记录', command: 'node --version' }], before_tool: [{ name: '合成守卫', tools: 'question', command: 'node --version' }] } };
++  const skill: PackDescription = { id: 'synthetic-hook-skill', version: '1.0.0', kind: 'skill', title: '合成钩子技能', description: '合成步骤', files: { 'SKILL.md': '# 合成技能\n\n合成步骤。\n', 'skill.json': { schema: 'skill@1', parsers: [] } } };
++  assert.equal((await accepted(base, hooks)).pack.declarations.kind, 'workflow');
++  assert.equal((await accepted(skill, hooks)).pack.declarations.kind, 'skill');
++  for (const pack of [productPack(), systemPack()]) {
++    const stray = await refused(pack, 'manifest.foreign_file', { file: 'pack.json' }, hooks);
++    assert.match(stray.message, /hooks\.json.*没有 SKILL\.md/);
++    assert.match(stray.field ?? '', /^\/files\/\d+\/path$/);
++  }
++  await refused(base, 'hooks.shape', { file: 'hooks.json', field: '/version' }, { ...hooks, version: 2 });
++  await refused(base, 'hooks.shape', { file: 'hooks.json', field: '/hooks' }, { version: 1, hooks: { before_tools: [] } });
++  await refused(base, 'hooks.shape', { file: 'hooks.json', field: '/hooks/before_tool/0/command' }, { version: 1, hooks: { before_tool: [{ name: '合成，没有命令' }] } });
++  await refused(base, 'hooks.shape', { file: 'hooks.json', field: '/hooks/before_tool/0/command' }, { version: 1, hooks: { before_tool: [{ command: 'x'.repeat(4001) }] } });
++  await refused(base, 'file.json', { file: 'hooks.json' }, '{ not json');
++  const nested = (value: unknown): PackDescription => withFiles(base, { 'tools/synthetic-skill/SKILL.md': '# 合成技能\n', 'tools/synthetic-skill/hooks.json': value as Json });
++  await accepted(nested(hooks));
++  await accepted(withFiles(productPack(), { 'tools/synthetic-skill/hooks.json': hooks }));
++  await refused(nested({ version: 1, hooks: { before_tool: [{ tools: 'question' }] } }), 'hooks.shape', { file: 'tools/synthetic-skill/hooks.json', field: '/hooks/before_tool/0/command' });
++  await accepted(base);
++});
++
+diff --git a/hub/runs/packs/validate.ts b/hub/runs/packs/validate.ts
+index 44ba78e673..47bc250881 100644
+--- a/hub/runs/packs/validate.ts
++++ b/hub/runs/packs/validate.ts
+@@ -12,0 +13 @@ import {
++  mayShipSkillHooks,
+@@ -15,0 +17,2 @@ import {
++  SKILL_HOOKS_FILE,
++  SkillHooksFile,
+@@ -637,0 +641,10 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
++  for (const [i, file] of manifest.files.entries()) {
++    if (file.path !== SKILL_HOOKS_FILE && !file.path.endsWith(`/${SKILL_HOOKS_FILE}`)) continue;
++    if (file.path === SKILL_HOOKS_FILE && !mayShipSkillHooks(manifest.kind)) {
++      c.add(
++        problem('manifest.foreign_file', 'pack.json', `${SKILL_HOOKS_FILE} 是放在 SKILL.md 旁边的技能钩子文件，${labelOf('pack_kind', manifest.kind)}没有 SKILL.md，客户端读不到它`, `删掉 ${SKILL_HOOKS_FILE}，或者把它放进带 SKILL.md 的${labelOf('pack_kind', 'workflow')}或${labelOf('pack_kind', 'skill')}`, {
++          field: pointerOf(['files', i, 'path']),
++        }),
++      );
++    } else c.parse('hooks.shape', file.path, SkillHooksFile, '技能钩子文件（版本 1）');
++  }
+diff --git a/hub/server/README.md b/hub/server/README.md
+index 76c4fbf6a9..194bbda483 100644
+--- a/hub/server/README.md
++++ b/hub/server/README.md
+@@ -1036 +1036 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
+-客户端中立契约（任何 MCP 客户端同样适用，不只 Circle）：`list_task_packs` 的每个包带 `digest`，带 `tools/` 的包还带 `local_tools`（文件清单和钉到 id@version、包号的安装命令，不带令牌）；`start_run` 的回答为本次冻结的版本重复同一披露。没有 `circle-hub` CLI 的客户端按同一协议直连本出口：`GET /local-tools/<包>@<版本>` 取规范清单、核对包号，再逐文件取原字节、核对大小与 SHA-256，全部通过才改名落盘。建议安装根用通用的技能目录 `~/.agents/skills/<包>/`（保留清单相对路径，含 SKILL.md 与 pack.json），Circle 与 DeepSeek Harness 都读这个目录。包规程里的 `%HUB_URL%` 是 Hub 的 MCP 端点基址、`%HUB_TOKEN%` 是 Bearer 令牌：客户端在本地工具执行时展开，模型只写名字，令牌的值不进模型参数、结果、日志或 Git；没有这两个占位符的客户端用自己的等价机制。本地工具是包作者发布的代码，Hub 只做静态扫描不是沙箱，客户端安装与执行前由人审阅并放行。本地跑出来的结果只是“客户端预览”，算数的是 Hub 的重算核验；产物生成所需的在运行、已受理结果、原样提交和绑定原件字节走 `/run-export/<运行>`（决定 104）。支持 macOS 和 Linux，Windows 不做。
++客户端中立契约（任何 MCP 客户端同样适用，不只 Circle）：`list_task_packs` 的每个包带 `digest`，带 `tools/` 的包还带 `local_tools`（文件清单和钉到 id@version、包号的安装命令，不带令牌）；`start_run` 的回答为本次冻结的版本重复同一披露。没有 `circle-hub` CLI 的客户端按同一协议直连本出口：`GET /local-tools/<包>@<版本>` 取规范清单、核对包号，再逐文件取原字节、核对大小与 SHA-256，全部通过才改名落盘。建议安装根用通用的技能目录 `~/.agents/skills/<包>/`（保留清单相对路径，含 SKILL.md 与 pack.json），Circle 与 DeepSeek Harness 都读这个目录。包根的 `hooks.json`（可选的技能钩子文件）同样保留路径，落在 SKILL.md 旁边：Hub 不执行它，支持技能钩子的客户端在会话载入这个技能之后才执行，其余客户端把它当作一个普通文件；它是包作者发布的代码，和本地工具一样，由人在安装前审阅：据 Circle 1.14 的 docs/hooks.md，装在用户级技能目录里的这份文件在会话载入技能后直接执行，不再单独询问批准；装在项目技能目录里的要先信任文件夹并批准这份文件的字节。包规程里的 `%HUB_URL%` 是 Hub 的 MCP 端点基址、`%HUB_TOKEN%` 是 Bearer 令牌：客户端在本地工具执行时展开，模型只写名字，令牌的值不进模型参数、结果、日志或 Git；没有这两个占位符的客户端用自己的等价机制。本地工具是包作者发布的代码，Hub 只做静态扫描不是沙箱，客户端安装与执行前由人审阅并放行。本地跑出来的结果只是“客户端预览”，算数的是 Hub 的重算核验；产物生成所需的在运行、已受理结果、原样提交和绑定原件字节走 `/run-export/<运行>`（决定 104）。支持 macOS 和 Linux，Windows 不做。
+diff --git a/hub/server/cli-local-tools.test.ts b/hub/server/cli-local-tools.test.ts
+index 44527415a6..df8e803417 100644
+--- a/hub/server/cli-local-tools.test.ts
++++ b/hub/server/cli-local-tools.test.ts
+@@ -33,0 +34,17 @@ test('install writes only fully verified original files and canonical manifest a
++test('a hook file listed at the pack root is installed beside SKILL.md with the published bytes', async () => {
++  const hooked = 'synthetic-hooked@1.0.0';
++  const hooks = { version: 1, hooks: { before_tool: [{ name: 'synthetic guard', tools: 'question', command: 'node --version' }] } };
++  const pack = await writePack(join(root, 'hooked-source'), withFiles(workflowPack({ id: 'synthetic-hooked', version: '1.0.0' }), { 'tools/task.ts': 'export {};\n', 'hooks.json': hooks }));
++  await writeFile(join(pack.dir, 'pack.json'), canonicalBytes(pack.manifest));
++  const deps = { config: { host: '127.0.0.1', port: 0, limits: { maxRequestBytes: 1024 } }, records: { principals: { authenticate: async (v: string) => v === `Bearer ${token}` ? { id: 'synthetic-user', name: 'synthetic', role: 'user' } : null }, callLog: { append: async () => {} } }, workflows: { forUser: async (_user: unknown, named: string) => named === hooked ? { manifest: pack.manifest, pack: { digest: pack.digest, directory: pack.dir } } : null } } as unknown as ServerDeps;
++  const second = createApp(deps, { codeRoot: root, log: () => {} });
++  try {
++    const hub = (await second.listen()).url; const into = join(root, 'hooked-installed'); const output = io();
++    const code = await localToolsCommand(['install', hooked, '--digest', pack.digest, '--into', into, '--hub', hub], output, { input: Readable.from([token + '\n']) });
++    assert.equal(code, 0, output.err.join('\n'));
++    const target = join(into, hooked); const names = await readdir(target);
++    assert.ok(names.includes('hooks.json') && names.includes('SKILL.md'), names.join(','));
++    assert.deepEqual(await readFile(join(target, 'hooks.json')), await readFile(join(pack.dir, 'hooks.json')));
++    const checked = await verifyLocalTools(target, pack.digest); assert.equal(checked.ok, true); assert.equal(checked.files, pack.manifest.files.length);
++  } finally { await second.close(); }
++});
+diff --git a/packs/workflow/case-compile/hooks.json b/packs/workflow/case-compile/hooks.json
+new file mode 100644
+index 0000000000..4147f21152
+--- /dev/null
++++ b/packs/workflow/case-compile/hooks.json
+@@ -0,0 +1,18 @@
++{
++  "version": 1,
++  "hooks": {
++    "session_start": [
++      {
++        "name": "用例编译：记下主会话",
++        "command": "node --input-type=module -e 'import{readFileSync,mkdirSync,appendFileSync}from\"node:fs\";import{join}from\"node:path\";import{tmpdir}from\"node:os\";import{createHash}from\"node:crypto\";try{const v=JSON.parse(readFileSync(0,\"utf8\"));const id=String(v?.session_id??\"\");if(v?.event===\"session_start\"&&/^[A-Za-z0-9_.-]{1,80}$/.test(id)&&typeof v.cwd===\"string\"){const d=join(tmpdir(),\"circle-case-compile-lead\");mkdirSync(d,{recursive:true,mode:0o700});appendFileSync(join(d,createHash(\"sha256\").update(v.cwd).digest(\"hex\").slice(0,32)+\".txt\"),id+\"\\n\",{mode:0o600});}}catch{}'"
++      }
++    ],
++    "before_tool": [
++      {
++        "name": "用例编译：子代理不问用户",
++        "tools": "question",
++        "command": "node --input-type=module -e 'import{readFileSync}from\"node:fs\";import{join}from\"node:path\";import{tmpdir}from\"node:os\";import{createHash}from\"node:crypto\";let out=\"{}\";try{const v=JSON.parse(readFileSync(0,\"utf8\"));if(v?.event===\"before_tool\"&&v.tool_name===\"question\"&&typeof v.cwd===\"string\"){let leads=null;try{leads=readFileSync(join(tmpdir(),\"circle-case-compile-lead\",createHash(\"sha256\").update(v.cwd).digest(\"hex\").slice(0,32)+\".txt\"),\"utf8\").split(\"\\n\").filter(Boolean)}catch{}if(leads&&leads.length&&!leads.includes(String(v.session_id??\"\")))out=JSON.stringify({decision:\"deny\",reason:\"子代理不向用户提问：这类问题用户答不了，要你自己按资料定。能在锁定命令树、手册、运行器合约、条目和编写简报里查到的，查了就定，并在给主代理的报告里写明你定了什么、依据在哪一行；任务说明里的写法和这些资料对不上时，以资料为准，同样在报告里说明。资料里确实没有的，把缺的事实和你建议的处理写进报告，交回派给你任务的主代理。\"});}}catch{}console.log(out);'"
++      }
++    ]
++  }
++}
+diff --git a/packs/workflow/case-compile/pack-files.ts b/packs/workflow/case-compile/pack-files.ts
+index 2363412420..27ac1bcfde 100644
+--- a/packs/workflow/case-compile/pack-files.ts
++++ b/packs/workflow/case-compile/pack-files.ts
+@@ -25,2 +25,2 @@ export const IDENTITY = {
+-/** Top-level declaration files and the folders whose files belong to the pack. */
+-const TOP = ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'];
++
++const TOP = ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md', 'hooks.json'];
+diff --git a/packs/workflow/case-compile/pack.json b/packs/workflow/case-compile/pack.json
+index 7f04fe3469..35f32b55a0 100644
+--- a/packs/workflow/case-compile/pack.json
++++ b/packs/workflow/case-compile/pack.json
+@@ -353,0 +354,5 @@
++    {
++      "path": "hooks.json",
++      "sha256": "137ed722614de9e941b060110ab2eab45139429c0f41f099f28371a8acc228f8",
++      "size": 2040
++    },
+diff --git a/packs/workflow/case-compile/pack.test.ts b/packs/workflow/case-compile/pack.test.ts
+index 5e462813a1..6cf1ff4b39 100644
+--- a/packs/workflow/case-compile/pack.test.ts
++++ b/packs/workflow/case-compile/pack.test.ts
+@@ -2,2 +2,4 @@ import assert from 'node:assert/strict';
+-import { readFileSync, readdirSync, lstatSync } from 'node:fs';
+-import { join } from 'node:path';
++import { spawnSync } from 'node:child_process';
++import { mkdtempSync, readFileSync, readdirSync, lstatSync, rmSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { delimiter, dirname, join } from 'node:path';
+@@ -7,2 +9,2 @@ import {createHash} from 'node:crypto';
+-import { PackManifest, WorkflowFile, RequirementsFile, SlotsFile } from '../../../contracts/src/pack.ts';
+-import { computeManifest, packFiles, PACK_DIR } from './pack-files.ts';
++import { PackManifest, SkillHooksFile, WorkflowFile, RequirementsFile, SlotsFile } from '../../../contracts/src/pack.ts';
++import { computeManifest, packFiles, stage, PACK_DIR } from './pack-files.ts';
+@@ -87,0 +90,54 @@ test('the client skill says when the user is asked and that a subagent never ask
++test('the hook file is listed at the pack root and a staged pack carries it beside SKILL.md, byte for byte', async () => {
++  const listed = (await computeManifest()).files.map((entry) => entry.path);
++  assert.ok(listed.includes('hooks.json') && listed.includes('SKILL.md'));
++  assert.ok(!listed.some((path) => path.endsWith('/hooks.json')), 'one hook file, at the root');
++  const target = mkdtempSync(join(tmpdir(), 'cc-stage-'));
++  try {
++    await stage(target);
++    const folder = readdirSync(target);
++    assert.ok(folder.includes('hooks.json') && folder.includes('SKILL.md'), folder.join(','));
++    assert.deepEqual(readFileSync(join(target, 'hooks.json')), readFileSync(join(PACK_DIR, 'hooks.json')));
++  } finally {
++    rmSync(target, { recursive: true, force: true });
++  }
++});
++
++test('the skill ships its own hook file, and it refuses a question from a session that is not a lead of its workspace, and nothing else', () => {
++  const file = JSON.parse(read('hooks.json')) as { version: number; hooks: Record<string, Array<{ name: string; tools?: string; command: string }>> };
++  assert.ok(SkillHooksFile.safeParse(file).success, 'the Hub reads the file as the client does when the pack is published');
++  assert.equal(file.version, 1);
++  assert.deepEqual(Object.keys(file.hooks).sort(), ['before_tool', 'session_start']);
++  const [start] = file.hooks.session_start, [ask] = file.hooks.before_tool;
++  assert.equal(file.hooks.session_start.length + file.hooks.before_tool.length, 2);
++  assert.equal(ask.tools, 'question');
++  const notes = mkdtempSync(join(tmpdir(), 'cc-hooks-'));
++  try {
++    const env = { ...process.env, TMPDIR: notes, PATH: `${dirname(process.execPath)}${delimiter}${process.env.PATH ?? ''}` };
++    const call = (command: string, input: unknown) => spawnSync(command, { shell: true, input: typeof input === 'string' ? input : JSON.stringify(input), encoding: 'utf8', env });
++    const asked = (session: string, cwd: string, tool = 'question') => {
++      const done = call(ask.command, { event: 'before_tool', session_id: session, cwd, tool_name: tool, tool_input: {} });
++      assert.equal(done.status, 0, done.stderr);
++      return JSON.parse(done.stdout);
++    };
++    assert.deepEqual(asked('sub-1', '/synthetic/work-a'), {});
++    assert.equal(call(start.command, { event: 'session_start', session_id: 'lead-1', cwd: '/synthetic/work-a' }).status, 0);
++    assert.deepEqual(asked('lead-1', '/synthetic/work-a'), {}, 'the session that loaded the skill asks');
++    const refused = asked('sub-1', '/synthetic/work-a');
++    assert.equal(refused.decision, 'deny');
++    assert.match(refused.reason, /^子代理不向用户提问：.*交回派给你任务的主代理。$/);
++    assert.deepEqual(asked('sub-1', '/synthetic/work-a', 'read_file'), {}, 'only the question tool');
++    assert.deepEqual(asked('sub-1', '/synthetic/work-b'), {}, 'another workspace has its own note');
++    assert.equal(call(start.command, { event: 'session_start', session_id: 'lead-2', cwd: '/synthetic/work-a' }).status, 0);
++    assert.equal(call(start.command, { event: 'session_start', session_id: '../x', cwd: '/synthetic/work-a' }).status, 0);
++    assert.deepEqual([asked('lead-2', '/synthetic/work-a'), asked('../x', '/synthetic/work-a').decision], [{}, 'deny']);
++    for (const input of ['not json', {}, { event: 'before_tool', tool_name: 'question' }]) {
++      const done = call(ask.command, input);
++      assert.equal(done.status, 0);
++      assert.deepEqual(JSON.parse(done.stdout), {});
++    }
++    for (const hook of [start, ask]) assert.ok(hook.command.length <= 4000 && !hook.command.includes('\n'), hook.name);
++  } finally {
++    rmSync(notes, { recursive: true, force: true });
++  }
++});
++

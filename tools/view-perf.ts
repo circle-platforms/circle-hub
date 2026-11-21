@@ -17,6 +17,7 @@ import {createTestParserRegistry as createDefaultRegistry} from '../hub/testing/
 import { createKnowledge } from '../hub/knowledge/service.ts';
 import { createKnowledgeReader, PART_MAX_BYTES, SCHEMAS } from '../hub/knowledge/api.ts';
 import { FakePacks, FakeExternal, makeWorld, startPostgres, mindMap, casesProducer, DEFAULT_PRODUCERS, catalogXml } from '../hub/knowledge/test-support.ts';
+import { runById, canViewRun, readPackDirectory, packSchema } from '../hub/runs/api.ts';
 
 // Production and the cold read share one clock. produced_at and a clarification deadline are fixed-width, so a live clock keeps the byte length and changes the digest.
 const FROZEN = '2026-01-06T00:00:00.000Z';
@@ -121,7 +122,8 @@ async function worker(input: Input): Promise<void> {
   const now = () => new Date(input.now);
   const kit = await openRecords(input.config, { migrate: false, keyProvider: new FileKeyProvider(input.keyPath), now, onCredentialScan:pressure?checkPressure:undefined });
   const packs = new FakePacks(); packs.add(input.product); packs.readers.set(input.principal.id, new Set([input.product.id]));
-  const knowledge = createKnowledge({ records: kit, packs, external: new FakeExternal(kit), parsers: createDefaultRegistry(), clock: now });
+  const knowledgeOptions = { runReads: { runById, canViewRun }, packReads: { readPackDirectory, packSchema }, records: kit, packs, external: new FakeExternal(kit), parsers: createDefaultRegistry(), clock: now };
+  const knowledge = createKnowledge(knowledgeOptions);
   const sql: ViewPerfResult['sql'] = {}; let queries = 0;
   const original = pg.Client.prototype.query;
   pg.Client.prototype.query = function (this: pg.Client, ...args: unknown[]) {

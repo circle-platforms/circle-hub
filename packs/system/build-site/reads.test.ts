@@ -76,6 +76,7 @@ describe('reads through the connectors', () => {
     kit = await openSystemKit(postgres, ['build-site']);
     site = await startBuildSiteStub(buildSiteFiles());
     resource = (await kit.connectors.admin.addResource(kit.admin, { system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${site.origin}${BASE_PATH}` }, settings: { index_page: 'index.html' } })).id;
+    await kit.records.authorizations.grant(kit.admin, { permission: 'resource_assign', subject: '*', object: resource });
   });
   after(async () => {
     await site?.close();

@@ -3,7 +3,7 @@ import type { KnowledgeEntryCounts } from '../../contracts/src/views.ts';
 import {knowledgeSourceLoader} from './sources.ts';
 import {resolveProductVariables,productionVariableUses} from './variables.ts';
 import {emptyScopeNote} from './empty-scope.ts';
-import type {VariableUse} from '../../contracts/src/variables.ts';
+import type {OrdinaryVariableUse} from '../../contracts/src/variables.ts';
 // Producing the root of one build (K01, K02, K04): read each declared source through the external reader in an admin
 // context, parse it with the core parser for its media type, run each producer function in the sandbox (a list slot in
 // batches, memoized), validate its output, verify every entry (kind, storable text, fragments, path), place what code could
@@ -89,7 +89,7 @@ const MAX_REASON_TEXT = 2000;
 const ENTRY_KINDS_TEXT = ENTRY_KIND.map((kind) => `${kind} ${labelOf('entry_kind', kind)}`).join('、');
 
 export interface ProduceInput {
-  variables?:VariableUse[];
+  variables?:OrdinaryVariableUse[];
   product: ProductHandle;
   build: KnownBuild | null;
   scope?: BuildInfo['sources'];
@@ -523,7 +523,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   });
 
   if(input.variables===undefined){
-    const resolved=await resolveProductVariables(product,context.records.variables,by,false,{plan:context.sandbox.plan,producer:context.sandbox.producer});
+    const resolved=await resolveProductVariables(context.packReads,product,context.records.variables,by,false,{plan:context.sandbox.plan,producer:context.sandbox.producer});
     if('problems' in resolved)return result({reason:resolved.problems.join('；')});
     product=resolved.product;
     input={...input,product,variables:resolved.uses,loader:input.loader??knowledgeSourceLoader(context,by,'knowledge production',resolved.snapshot)};

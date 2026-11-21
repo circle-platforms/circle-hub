@@ -24,9 +24,9 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.2.18', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.4.0', 'workflow']);
     const files = await packFiles();
-    assert.ok(files.includes('functions/project.ts') && files.includes('functions/check-bed.ts') && files.includes('samples/negative/acquire-mismatch.json') && files.includes('examples/bed-topology.json'));
+    assert.ok(files.includes('functions/project.ts') && files.includes('functions/check-bed.ts') && files.includes('samples/negative/acquire-mismatch.json') && files.includes('samples/negative/help-mismatch.json') && files.includes('samples/positive/help-support.json') && files.includes('samples/negative/read-mismatch.json') && files.includes('samples/positive/read-support.json') && files.includes('examples/start-run-read.json') && files.includes('examples/bed-topology.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
   });
 
@@ -40,7 +40,7 @@ describe('the pack files', () => {
     assert.deepEqual(workflow.leases, { prefix: 'bed/' }, 'the reservation has no expiry cap');
     assert.deepEqual(
       workflow.parameters.map((p) => p.name),
-      ['action', 'need', 'bed', 'hours', 'booking', 'addresses', 'devices', 'reason'],
+      ['action', 'need', 'bed', 'hours', 'booking', 'addresses', 'devices', 'device', 'line', 'mode', 'reason'],
     );
     assert.deepEqual([workflow.subject, workflow.projection], ['inventory', { module: 'functions/project.ts' }]);
     const requirements = RequirementsFile.parse(json('requirements.json')).requirements;
@@ -58,7 +58,7 @@ describe('the pack files', () => {
   it('has positive and negative samples of the bed check, all in the publish-check shapes and passing the check', async () => {
     const { bedOutcomes } = await import('./functions/check-bed.ts');
     const samples = (PackManifest.parse(json('pack.json')).files.map((f) => f.path).filter((p) => p.startsWith('samples/'))).map((path) => ({ path, sample: PackSample.parse(json(path)) }));
-    assert.ok(samples.length >= 12);
+    assert.ok(samples.length >= 14);
     for (const { path, sample } of samples) {
       assert.equal(sample.check, 'bed', path);
       const outcomes = bedOutcomes(sample.subject);
@@ -91,10 +91,21 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
     const report = await runPublishCheck({ pack: validation.pack, packDir: dir });
     assert.deepEqual(report.failures, [], JSON.stringify(report.failures, null, 1));
     assert.deepEqual(report.unsampled, []);
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [16, 16, 0]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [20, 20, 0]);
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.tier, c.positive, c.negative, c.marks]),
-      [['bed', 'advisory', 8, 8, ['author_samples_only']]],
+      [['bed', 'advisory', 10, 10, ['author_samples_only']]],
     );
+  });
+});
+
+describe('Effort-AB guidance in test-bed/SKILL.md', () => {
+  it('includes a copy-paste release template with booking and predecessor and forbids direct terminal connections', () => {
+    const skill = text('SKILL.md');
+    assert.match(skill, /"action":\s*"release"/);
+    assert.match(skill, /"booking":/);
+    assert.match(skill, /"predecessor":/);
+    assert.match(skill, /"inventory":\s*\{\s*"external":\s*"doc:doc:bed-topology"\s*\}/);
+    assert.match(skill, /严禁.*终端|不要用终端工具|telnet/i);
   });
 });

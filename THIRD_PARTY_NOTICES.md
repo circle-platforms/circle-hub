@@ -4,9 +4,9 @@ The project's own code, documentation, synthetic samples and interface assets ar
 
 ## The shared Circle baseline
 
-`foundation/circle` comes from the public Circle commit `9d23c09a0f8de2f71920b32b23db9af6c9a41100`. Its bytes, its [MIT license](foundation/circle/LICENSE) and its [third-party notices](foundation/circle/THIRD_PARTY_NOTICES.md) are kept as they were.
+Code adapted from the Circle baseline derives from the public [Circle repository](https://github.com/qingshanfeihu/circle) at commit `9d23c09a0f8de2f71920b32b23db9af6c9a41100` (previously mirrored locally under `foundation/circle`, removed from the working tree on 2026-11-13). Its [MIT license](https://github.com/qingshanfeihu/circle/blob/9d23c09a0f8de2f71920b32b23db9af6c9a41100/LICENSE) and [third-party notices](https://github.com/qingshanfeihu/circle/blob/9d23c09a0f8de2f71920b32b23db9af6c9a41100/THIRD_PARTY_NOTICES.md) remain in effect for adapted and historical content.
 
-The compressed model catalogs in its `src/data/` contain metadata derived from models.dev; the original MIT notice and copyright are in the third-party notices named above. Keep that notice when adopting or distributing this content.
+The compressed model catalogs in `src/data/` of that upstream baseline (and earlier Git history) contain metadata derived from models.dev; the original MIT notice and copyright are in the third-party notices linked above. Keep that notice when adopting or distributing that content.
 
 Circle's earlier Git history is kept as well. The licenses and notices of each historical version belong to their source; the current root files do not replace them.
 
@@ -24,14 +24,14 @@ The engine is used under the MIT License. Its complete license and copyright not
 
 ## Dependencies and the actual artifacts
 
-The root package's current direct dependencies are `@modelcontextprotocol/sdk@1.32.1`, `pg@8.23.1`, `zod@4.6.5`, `exceljs@4.4.0`, `fflate@0.8.3`, `read-excel-file@9.3.12` and `parse5@8.0.1`, each used under the MIT license of its published package, `saxes@5.0.1` under its ISC license, and `typescript@5.9.3` under the Apache License 2.0. Development dependencies are `embedded-postgres@18.4.0-beta.17` (MIT) and type declarations (MIT). The actual PostgreSQL binaries and their upstream components follow their own licenses, which the wrapper's MIT license does not replace.
+The root package's current direct dependencies are `@modelcontextprotocol/sdk@1.32.2`, `pg@8.23.1`, `zod@4.6.7`, `exceljs@4.4.0`, `fflate@0.8.3`, `read-excel-file@9.3.14` and `parse5@8.1.0`, each used under the MIT license of its published package, `saxes@6.0.0` under its ISC license, and `typescript@6.0.3` under the Apache License 2.0. Development dependencies are `embedded-postgres@18.4.0-beta.17` (MIT) and type declarations (MIT). The actual PostgreSQL binaries and their upstream components follow their own licenses, which the wrapper's MIT license does not replace.
 
 Exact versions, download integrity and transitive dependencies are in the root `package-lock.json`. ExcelJS's uuid dependency is pinned by an override to `11.1.1`, which supports the same CommonJS v4 API and fixes the out-of-bounds advisory that npm audit reported; the lockfile currently has no reported vulnerability. A composition check describes the dependencies of this moment and promises nothing about future advisories. No `node_modules` and no server artifact is included.
 
-The historical lockfiles of the shared baseline and of the reference packages still record their original dependencies; they are not used by the Hub's entry points.
+The historical lockfiles of the shared baseline and of the reference packages in earlier Git history recorded their original dependencies; they were removed from the working tree and are not used by the Hub's entry points.
 
-When adopting a module, check the dependencies actually used, and ship the corresponding licenses and notices with the artifact. Special cases in the current lockfiles are jszip's license choice, pako's MIT/Zlib, lightningcss's MPL-2.0 and caniuse-lite's CC-BY-4.0. None of them can be turned into the project's license.
+When adopting a module, check the dependencies actually used, and ship the corresponding licenses and notices with the artifact. Special cases in the current root `package-lock.json` are `jszip@3.10.2`'s license choice (`MIT OR GPL-3.0-or-later`) and `pako@1.0.11`'s `MIT AND Zlib` (both pulled transitively by `exceljs@4.4.0`); historical reference lockfiles removed from the working tree also recorded `lightningcss`'s `MPL-2.0`, `caniuse-lite`'s `CC-BY-4.0`, and `unionfs@4.6.0` (whose lockfile lacked a license field while its npm tarball contained an Unlicense LICENSE). None of them can be turned into the project's license.
 
-No license basis was found in the original npm package or metadata of `buffers@0.1.1`; the chain-v05 that depends on it is kept as a reference only. Obtain a basis or replace it before adopting and distributing that dependency. `unionfs@4.6.0` lacks a license field in the lockfile, but the original npm package contains an Unlicense LICENSE.
+No license field or `LICENSE` file is present in the npm metadata, lockfile entry or installed files of `buffers@0.1.1`, which is an active transitive dependency of the root package (`exceljs@4.4.0` -> `unzipper@0.10.14` -> `binary@0.3.0` -> `buffers@0.1.1`), rather than being limited to the removed reference packages. Obtain a license basis or replace or remove that dependency path before distributing an artifact that bundles `exceljs@4.4.0`.
 
-This page is not a file-by-file notice list of every dependency. The first software release needs a composition and notice list generated from the actual artifact. The sources, the scope that was checked and the remaining release requirements are in the [open-source readiness record](docs/open-source-readiness.md).
+This page is not a file-by-file notice list of every dependency. The first software release needs a composition and notice list generated from the actual artifact.

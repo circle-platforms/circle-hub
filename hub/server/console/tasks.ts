@@ -1,5 +1,6 @@
 import {timeline,comparisons} from './charts.ts';
 import {technicalCode} from './presentation.ts';
+import { count } from './numbers.ts';
 // The tasks of the console (the design canvas's 任务 board): a run with the result display rule 20 derives, its head and the
 // waterfall of what happened, built only from what the Hub recorded: the call log lines of the run (each bar is the Hub's
 // time on one call; the gap before a submission is Circle's own time, which the Hub does not observe), the Hub's checks of
@@ -13,9 +14,9 @@ import type { RunDetail, RunRequestView, RunStatistics } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
 import {runStatistics} from '../../runs/api.ts';
 import { code, html, link, type Html } from './html.ts';
-import { TASK_DOT, TASK_FILL, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
-import { card, kpi, chip, dot, duration, when, fullTime, clock, type DotState } from './ui.ts';
-import type { PageContext } from './pages.ts';
+import { TASK_DOT, TASK_FILL, confirmationChip, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
+import { card, kpi, chip, dot, duration, when, fullTime, clock, localMinute, type DotState } from './ui.ts';
+import type { PageContext } from './context.ts';
 import { environmentState } from './connections.ts';
 
 export interface TaskRow {
@@ -24,6 +25,8 @@ export interface TaskRow {
   statistics: RunStatistics | null;
   result: TaskResult | null;
   pending: number;
+  /** Latest tool-call instant for the run, else started_at; used when the chip is 未知 / awaiting. */
+  lastActivityAt?: string;
 }
 
 /** The detail of each run, to derive its result; a run that cannot be read is listed without one. */
@@ -70,9 +73,13 @@ export function taskTitle(run: Pick<RunRecordView, 'pack'|'pack_space'>, titles:
   return titles.get(`${run.pack_space??'team'}/${run.pack}`) ?? ((!run.pack_space||run.pack_space==='team')?titles.get(run.pack):undefined) ?? '工作流名称暂不可读';
 }
 
-export function resultCell(row: Pick<TaskRow, 'result' | 'pending'>): Html {
-  if (row.result === null) return chip('结果暂不可用', 'unchecked');
-  return html`${taskChip(row.result)}${row.result === 'delivered_pending' && row.pending > 0 ? html` ${chip(`${row.pending} 项未决`, 'unknown')}` : ''}`;
+export function resultCell(row: Pick<TaskRow, 'result' | 'pending' | 'lastActivityAt'>): Html {
+  // N7: visible status is only 未确认 / 已确认 / 未知; task_result stays in the chip title.
+  // Awaiting: keep the chip; say there is no submission yet and when the run last moved (Boss 20:32).
+  const awaiting = row.result === 'awaiting' && row.lastActivityAt
+    ? html` <span class="ch-meta">还没有提交结果（最近一次活动 ${localMinute(row.lastActivityAt)}）</span>`
+    : '';
+  return html`${confirmationChip(row.result, row.pending)}${row.result === 'delivered_pending' && row.pending > 0 ? html` ${chip(`${row.pending} 项未决`, 'unknown')}` : ''}${awaiting}`;
 }
 
 // ---------------------------------------------------------------- the head of one task
@@ -222,7 +229,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
     const many = group.rows.length > 1;
     steps.push({
       name: uiLabelOf('request_kind', group.kind),
-      sub: `接收人 ${audience} · ${many ? `${group.rows.length.toLocaleString('en-US')} 条 · 最早期限` : '期限'} ${fullTime(dues[0])} · ${uiLabelOf('request_status', group.state)}`,
+      sub: `接收人 ${audience} · ${many ? `${count(group.rows.length)} 条 · 最早期限` : '期限'} ${fullTime(dues[0])} · ${uiLabelOf('request_status', group.state)}`,
       fill: open ? 'fill-wait' : 'fill-pass',
       dot: open ? (group.state === 'overdue' ? 'down' : 'warn') : 'ok',
       start: Math.min(first, last),
@@ -248,12 +255,13 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
         // A job that holds its environment without an open disposition request has not been declared unconfirmed: its
         // result has not arrived yet (D03 R[1], R[7]: the target is frozen with the disposition request).
         const held = environment?.state?.holding?.find((holder) => holder.job === job.job);
-        if (job.frozen) parts.push(held !== undefined && !held.frozen ? '等待派发结果中，不可重发' : '运行环境已冻结，不可重发');
+        if (job.frozen) parts.push(held !== undefined && !held.frozen ? '等待执行结果中，不可重发' : '运行环境已冻结，不可重发');
         if (job.disposition !== undefined) parts.push(`处置：${uiLabelOf('disposition', job.disposition)}`);
-        steps.push({ name: '派发到运行环境', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
+        // Admin-only timeline step (ctx.admin above): use 运行环境, same rule as other admin-only pages.
+        steps.push({ name: '在运行环境上执行', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
       }
     } catch {
-      steps.push({ name: '派发到运行环境', sub: '派发记录暂不可用', fill: 'fill-unchecked', dot: 'idle', start: resultAt ?? Date.parse(run.started_at), end: resultAt ?? Date.parse(run.started_at), point: true, depth: 0, dur: '' });
+      steps.push({ name: '在运行环境上执行', sub: '执行记录暂不可用', fill: 'fill-unchecked', dot: 'idle', start: resultAt ?? Date.parse(run.started_at), end: resultAt ?? Date.parse(run.started_at), point: true, depth: 0, dur: '' });
     }
   }
 
@@ -286,7 +294,7 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
   const waiting = steps.filter((s) => s.open === true).reduce((sum, s) => sum + (s.count ?? 1), 0);
   const total = calls.length === 0 ? null : Date.parse([...calls].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0].at) - Math.min(...calls.map((c) => Date.parse(c.at) - c.duration_ms));
   const summary=html`<div class="ch-stats">${kpi('工具调用',toolCalls)}${kpi('条目',detail.run.items.length)}${kpi('未决项',pending)}${kpi(uiLabelOf('request_status','waiting'),waiting)}${kpi('从第一次调用到最后一次',total===null?'暂无数据':duration(total))}</div>`;
-  const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；调用间空档未由 Hub 观测，不代表客户端计算耗时或执行位置。等待回应中的右端是当前截至时间。派发标记按提交时间（缺失时按任务起点）定位，不表示派发完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
+  const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；调用间空档未由 Hub 观测，不代表客户端计算耗时或执行位置。等待回应中的右端是当前截至时间。执行标记按核对时间（缺失时按任务起点）定位，不表示执行完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
   const slow=[...calls].sort((a,b)=>b.duration_ms-a.duration_ms).slice(0,3);
   const longest=slow.length?comparisons('耗时最长的调用',slow.map(line=>({label:toolName(line.tool),value:line.duration_ms})),undefined,{rows:'调用',column:'耗时（毫秒）',unit:'毫秒'}):'';
   return html`${process}${longest === '' ? '' : html`<div>${longest}</div>`}`;

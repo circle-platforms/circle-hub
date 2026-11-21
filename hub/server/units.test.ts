@@ -20,7 +20,7 @@ import { parseTarget } from './app.ts';
 import { SYMBOL, cellText, claimFields, terminalKind, terminalSymbol, terminalText } from './claims.ts';
 import { CONTENT_SECURITY_POLICY, escapeHtml, href, html, liveModule, page, THEME_SCRIPT_HASH } from './console/html.ts';
 import { LIVE_SCRIPT } from './console/script.ts';
-import { SessionStore, cookie } from './console/session.ts';
+import { SessionStore, cookie, csrfOf } from './console/session.ts';
 import { BodyBudget, REFERRER_POLICY, allowedHosts, isLoopbackOrigin } from './http.ts';
 import { MAX_ADMIN_NOTE, clipNote, describeError, describeInternalError, cleanStack, sanitizeStackLine } from './notes.ts';
 import { runOfRecord } from './readers.ts';
@@ -127,7 +127,7 @@ test('loopback origins and the Host values the server answers to', () => {
   assert.ok(allowedHosts('127.0.0.1', 80).has('localhost'));
 });
 
-test('console sessions: nonces are used once and expire; sessions expire idle and absolutely; cookies are HttpOnly and SameSite=Strict', () => {
+test('console sessions: cookie is the token; CSRF is derived; idle is by digest; restart with no prior seen still works', () => {
   let now = 1_000_000;
   const store = new SessionStore(() => now, { idleMs: 1000, absoluteMs: 5000, nonceMs: 100, maxSessions: 2, maxNonces: 2 });
   const nonce = store.issueNonce();
@@ -139,22 +139,34 @@ test('console sessions: nonces are used once and expire; sessions expire idle an
   const [a, b, c] = [store.issueNonce(), store.issueNonce(), store.issueNonce()];
   assert.ok(!store.takeNonce(a) && store.takeNonce(b) && store.takeNonce(c), 'the oldest nonce is dropped beyond the limit');
   const session = store.open('token-a');
-  assert.equal(store.get(session.id)?.token, 'token-a');
+  assert.equal(session.id, 'token-a');
+  assert.equal(session.token, 'token-a');
+  assert.equal(session.csrf, csrfOf('token-a'));
+  assert.equal(store.get(session.token)?.token, 'token-a');
   now += 999;
-  assert.ok(store.get(session.id), 'still within the idle limit');
+  assert.ok(store.get(session.token), 'still within the idle limit');
   now += 1001;
-  assert.equal(store.get(session.id), null, 'idle too long');
+  assert.equal(store.get(session.token), null, 'idle too long');
   const kept = store.open('token-b');
   for (let i = 0; i < 5; i++) {
     now += 900;
-    assert.ok(store.get(kept.id), `used every 900 ms: still open after ${(i + 1) * 900} ms`);
+    assert.ok(store.get(kept.token), `used every 900 ms: still open after ${(i + 1) * 900} ms`);
   }
-  now += 900;
-  assert.equal(store.get(kept.id), null, 'the absolute limit ends a session in use');
-  const first = store.open('1');
+  // Absolute lifetime is tokens.expires_at, not SessionStore.
+  assert.ok(store.get(kept.token), 'idle activity keeps the in-memory row; absolute expiry is the token record');
+  store.open('1');
   store.open('2');
   store.open('3');
-  assert.equal(store.get(first.id), null, 'the oldest session is dropped beyond the limit');
+  // Cap drops the oldest idle row; a later get recreates it as "just seen" (same as Hub restart).
+  assert.ok(store.get('1'), 'a dropped row is re-admitted as just seen');
+  // Fresh store: no prior seen → still a valid view (Hub restart), then idle applies.
+  const restarted = new SessionStore(() => now, { idleMs: 1000 });
+  const again = restarted.get('token-after-restart');
+  assert.ok(again);
+  assert.equal(again.token, 'token-after-restart');
+  assert.equal(again.csrf, csrfOf('token-after-restart'));
+  now += 1001;
+  assert.equal(restarted.get('token-after-restart'), null, 'idle after the post-restart first look');
   assert.equal(cookie('n', 'v', '/console'), 'n=v; Path=/console; HttpOnly; SameSite=Strict');
   assert.equal(cookie('n', '', '/console', 0), 'n=; Path=/console; HttpOnly; SameSite=Strict; Max-Age=0');
 });
@@ -212,13 +224,18 @@ test('the counts line tells a declared skip from an item the submission did not 
 
 test('schema issues become protocol errors with JSON Pointers; an unknown key points at the key', () => {
   assert.equal(pointerOfPath(['a/b', 'c~d', 0]), '/a~1b/c~0d/0');
-  const unknown = ListTaskPacksInput.safeParse({ knd: 'x', 'a/b': 1 });
+  const unknownArgs = { knd: 'x', 'a/b': 1 };
+  const unknown = ListTaskPacksInput.safeParse(unknownArgs);
   assert.ok(!unknown.success);
-  assert.deepEqual(schemaErrors('list_task_packs', unknown.error).map((e) => e.path).sort(), ['/a~1b', '/knd']);
-  const nested = StartRunInput.safeParse({ pack: 'p', inputs: { s: { reference: 'nope' } } });
+  const unknownErrors = schemaErrors('list_task_packs', unknown.error, unknownArgs);
+  assert.deepEqual(unknownErrors.map((e) => e.path).sort(), ['/a~1b', '/knd']);
+  assert.ok(unknownErrors.every((e) => e.fix && e.fix !== '按工具的输入模式改正这个参数后再调用'));
+  const nestedArgs = { pack: 'p', inputs: { s: { reference: 'nope' } } };
+  const nested = StartRunInput.safeParse(nestedArgs);
   assert.ok(!nested.success);
-  const errors = schemaErrors('start_run', nested.error);
-  assert.ok(errors.every((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION' && e.fix && e.message.startsWith('参数不符合 start_run 的输入模式')));
+  const errors = schemaErrors('start_run', nested.error, nestedArgs);
+  assert.ok(errors.every((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION' && e.fix && e.message.startsWith('参数无效：')));
+  assert.ok(errors.every((e) => e.fix !== '按工具的输入模式改正这个参数后再调用' && !/undefined/i.test(`${e.message}${e.fix}`)));
   assert.ok(errors.some((e) => e.path?.startsWith('/inputs/s')));
 });
 

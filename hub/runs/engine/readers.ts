@@ -1,6 +1,4 @@
-import {isMemoryRecord} from '../../../contracts/src/memory.ts';
 import type { ContributionLayer } from '../../knowledge/api.ts';
-import { isKnowledgeContributionSchema } from '../../../contracts/src/contributions.ts';
 // Visibility (R02) and the readers hub/refs resolves references with. Owners see their runs; admins see team runs;
 // a run the Hub executes itself is shown to admins only (W06 R[3]). Records reach a reader only through the run they belong
 // to; absent and forbidden give the same null.
@@ -8,19 +6,13 @@ import type { ProducerKind } from '../../../contracts/generated/vocabulary.ts';
 import {parseReference} from '../../refs/api.ts';
 import type {SourceBinding} from '../../../contracts/src/run.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
-import { disclosedExistence, recordExistence, requestRead, runIsSharedWith } from '../../records/api.ts';
-import type { Artifacts, Principal, RecordStore } from '../../records/api.ts';
+import { disclosedExistence, recordExistence, requestRead, runIsSharedWith, canSeeRun, mayReadRecord } from '../../records/api.ts';
+import type { Artifacts, Principal, RecordStore, RecordsKit, Principals } from '../../records/api.ts';
 import type { ReaderIdentity, RecordReader, SourceReader } from '../../refs/api.ts';
 import { step } from '../../telemetry/api.ts';
-import { SCHEMAS, runById, actionOfSubmission } from './store.ts';
-import { isObject } from './util.ts';
+import { runById, actionOfSubmission } from './store.ts';
 
-export function canSeeRun(user: Principal, run: Pick<RunRecord, 'runner' | 'host' | 'pack_space'>): boolean {
-  if (run.pack_space&&run.pack_space!=='team')return run.runner===user.id;
-  if (user.role === 'admin') return true;
-  if (run.host === 'hub') return false;
-  return run.runner !== undefined && run.runner === user.id;
-}
+export {canSeeRun,runOfRecord} from '../../records/api.ts';
 
 /** Read-only sharing never changes canSeeRun, the submission and lineage guard. */
 export async function canViewRun(user: Principal, run: RunRecord, store: RecordStore): Promise<boolean> {
@@ -58,42 +50,26 @@ export function sourceReader(artifacts: Artifacts, consumer: ProducerKind,bindin
   };
 }
 
-/**
- * The run a stored record belongs to, when it is one of the engine's kinds. A submission names the run it was stored for at
- * its top level: the engine stores arguments only after finding the run their `run` names, so raw arguments always carry it
- * there, whatever else they hold. Only the engine's own wrapper of arguments canonical JSON cannot carry (store.ts,
- * VerbatimObjectBody) has no top-level `run`; it names the run inside `received`.
- */
-export function runOfRecord(record: { kind: string; schema: string; body: unknown }): string | null {
-  const { kind, schema, body } = record;
-  if (!isObject(body)) return null;
-  if (!(kind==='claim'&&schema==='hypothesis-set@1') && kind !== 'run' && kind !== 'validation_result' && kind !== 'submission' && kind !== 'action' && kind !== 'request') return null;
-  if (typeof body.run === 'string') return body.run;
-  if (kind === 'submission' && schema === SCHEMAS.received && isObject(body.received) && typeof body.received.run === 'string') return body.received.run;
-  return null;
-}
-
 /** Records for reference resolution: run, submission, validation result and action records through their run; contributions through their product. */
-export function recordReader(store: RecordStore, contributions?: Pick<ContributionLayer, 'read'>,readRun?:(by:Principal,run:RunRecord)=>Promise<boolean>,readResult?:(by:Principal,run:RunRecord,result:unknown)=>Promise<boolean>,readRequest?:(by:Principal,request:unknown)=>Promise<boolean>,readSubmission?:(by:Principal,run:RunRecord,digest:string)=>Promise<boolean>): RecordReader {
+export function recordReader(kit: Pick<RecordsKit, 'store' | 'artifacts'> & {principals:Pick<Principals,'get'>}, contributions?: Pick<ContributionLayer, 'read'>,readRun?:(by:Principal,run:RunRecord)=>Promise<boolean>,readResult?:(by:Principal,run:RunRecord,result:unknown)=>Promise<boolean>,readRequest?:(by:Principal,request:unknown)=>Promise<boolean>,readSubmission?:(by:Principal,run:RunRecord,digest:string)=>Promise<boolean>): RecordReader {
+  const {store}=kit;
   return {
     async read(digest, reader) {
       const record = await store.get(digest);
       if (record === null) return null;
-      if(isMemoryRecord(record)||record.kind.startsWith('knowledge_space_')||record.kind==='knowledge_share'||record.kind.startsWith('personal_pack_'))return null;
-      if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema)||record.schema==='claim@1'&&isObject(record.body)&&isObject(record.body.statement)&&isObject(record.body.statement.data)&&record.body.statement.data.feeding!==undefined)) {
-        if ((await contributions?.read(digest, principalOf(reader))) == null) return null;
-      } else if (reader.role !== 'admin'||runOfRecord(record)!==null) {
-        const run = runOfRecord(record);
-        if (run === null) return null;
-        const owner = record.kind === 'run' ? (record.body as RunRecord) : (await runById(store, run))?.body;
-        if (owner === undefined || !await (readRun?readRun(principalOf(reader),owner):canViewRun(principalOf(reader), owner, store))) return null;
-        if(record.kind==='validation_result'&&readResult&&!await readResult(principalOf(reader),owner,record.body))return null;
-        if(record.kind==='request'&&readRequest&&!await readRequest(principalOf(reader),record.body))return null;
-        if(record.kind==='submission'&&owner.runner!==reader.user&&(await actionOfSubmission(store,record.digest))?.body.acceptance!=='accepted')return null;
-        if(record.kind==='submission'&&owner.runner!==reader.user&&readSubmission&&!await readSubmission(principalOf(reader),owner,record.digest))return null;
-        if (!canSeeRun(principalOf(reader),owner)&&(record.kind==='request'||record.kind==='claim'&&record.schema==='hypothesis-set@1'))return null;
-        if (!canSeeRun(principalOf(reader), owner) && record.kind === 'validation_result' && (!isObject(record.body) || record.body.acceptance !== 'accepted')) return null;
-      }
+      const allowed=await mayReadRecord(principalOf(reader),record,{
+        account:id=>kit.principals.get(id),
+        run:async(by,id)=>{
+          const run=(await runById(store,id))?.body;
+          return run && await (readRun?readRun(by,run):canViewRun(by,run,store)) ? run : null;
+        },
+        source:(by,source)=>kit.artifacts.canRead(by,source),
+        contribution:async(by,row)=>(await contributions?.read(row.digest,by))!=null,
+        request:async(by,_run,row)=>readRequest?readRequest(by,row.body):true,
+        result:async(by,run,row)=>readResult?readResult(by,run,row.body):true,
+        submission:async(by,run,row)=>(await actionOfSubmission(store,row.digest))?.body.acceptance==='accepted' && (!readSubmission || await readSubmission(by,run,row.digest)),
+      });
+      if(!allowed)return null;
       return { kind: record.kind, schema: record.schema, provenance: record.provenance, created_at: record.created_at, body: record.body };
     },
     async exists(digest) {

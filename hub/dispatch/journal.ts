@@ -5,7 +5,7 @@ import type { ActionKind, ActionResult } from '../../contracts/generated/vocabul
 import { newId, sha256Hex, canonicalBytes } from '../records/api.ts';
 import type { HolderSnapshot } from '../leases/api.ts';
 import type { VerifiedInput } from './proof.ts';
-export interface JobBinding { run?:string; job: string; initiated_by: string; acting_by?: string; executor: string; executor_digest: string; executor_source_digest?:string; variables?:import('../../contracts/src/variables.ts').VariableUse[]; target_key: string; scope?: {target:string;origin:string}; input: VerifiedInput | null; user: string; resources: string[]; fences?: HolderSnapshot[]; context?: Record<string, unknown>; }
+export interface JobBinding { run?:string; job: string; initiated_by: string; acting_by?: string; executor: string; executor_digest: string; executor_source_digest?:string; variables?:import('../../contracts/src/variables.ts').OrdinaryVariableUse[]; target_key: string; scope?: {target:string;origin:string}; input: VerifiedInput | null; user: string; resources: string[]; fences?: HolderSnapshot[]; context?: Record<string, unknown>; }
 export type Event = StoredRecord<ActionBody>;
 export class Journal {
   readonly records: RecordsKit;
@@ -88,7 +88,7 @@ export class Journal {
   }
   async binding(job: string): Promise<JobBinding> {
     const event = (await this.events(job)).find(e => e.body.detail.phase === 'reservation');
-    if (!event) throw new Error('作业对你不可用');
+    if (!event) throw new Error('作业对当前账户不可用');
     return event.body.detail.binding as unknown as JobBinding;
   }
 }

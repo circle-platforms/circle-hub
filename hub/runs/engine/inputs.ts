@@ -11,7 +11,7 @@ import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { BoundInput, WorkflowInput } from '../../../contracts/src/pack.ts';
 import { ExternalObjectId } from '../../../contracts/src/reference.ts';
 import type { InputBinding, SourceBinding } from '../../../contracts/src/run.ts';
-import { disclosedExistence, recordExistence, type Principal, type VariableSnapshot } from '../../records/api.ts';
+import { disclosedExistence, recordExistence, sha256Hex, type Principal, type VariableSnapshot } from '../../records/api.ts';
 import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
 import { ReferenceSyntaxError, parseReference, parserKey, recognizeAsync, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -68,6 +68,24 @@ export function withRevision(id: string, revision: string | null): string {
 
 const VIEW_ID_FIX = '照该输入槽说明里的写法逐字填视图标识：knowledge:<视图>:<产品>:<构建>?<参数>=<取值>；错误里点名的参数必须写上，取值不要自己编；改好后重新开始运行';
 
+/** The meta of a Hub record bound as an input (B03 R[4]): the same for a rec: binding at start_run and a result bound after the start. */
+function recordMeta(digest: string, record: { kind: string; schema: string; created_at: string }, pointer: string | undefined, source: string): Record<string, unknown> {
+  return { record: digest, kind: record.kind, schema: record.schema, created_at: record.created_at, ...(pointer !== undefined ? { pointer } : {}), source };
+}
+
+/**
+ * A whole Hub record as the workflow functions receive an input bound to it (B03 R[4]): its canonical JSON parsed by the core
+ * parser for application/json, with the meta an explicit rec: binding gets. Nothing is stored. Null when no parser reads it.
+ */
+export async function recordInput(ctx: EngineContext, slot: string, digest: string, record: { kind: string; schema: string; provenance: string; created_at: string; body: unknown }): Promise<BoundInput | null> {
+  const bytes = recordBytes(record, undefined);
+  if (bytes === null) return null;
+  const parsed = await recognizeAsync(ctx.parsers, bytes, 'application/json');
+  if (parsed === null) return null;
+  const sha256 = sha256Hex(bytes);
+  return { slot, external: null, sha256, media_type: 'application/json', parser: parserKey(parsed.parser), model: parsed.document.model, meta: recordMeta(digest, record, undefined, sha256) };
+}
+
 export async function bindInputs(
   ctx: EngineContext,
   user: Principal,
@@ -80,6 +98,8 @@ export async function bindInputs(
   variables?:VariableSnapshot,
   unversioned?: ExternalReadContext['unversioned'],
   feeding?:import('../../knowledge/feeding.ts').FeedingScope&{feeding_offset?:ExternalReadContext['feeding_offset']},
+  /** Slots bound after the start (W06 R[7]): start_run froze only their run, so a required one counts as given. */
+  late: ReadonlySet<string> = new Set(),
 ): Promise<BoundSource[]> {
   const { artifacts, store } = ctx.deps.records;
   const errors: ProtocolError[] = [];
@@ -225,7 +245,7 @@ export async function bindInputs(
         sha256: artifact.body.sha256,
         binding: { reference, media_type: 'application/json', label: `${record.kind} ${ref.record.slice(0, 12)}` },
         external: null,
-        meta: { record: ref.record, kind: record.kind, schema: record.schema, created_at: record.created_at, ...(ref.pointer !== undefined ? { pointer: ref.pointer } : {}), source: artifact.body.sha256 },
+        meta: recordMeta(ref.record, record, ref.pointer, artifact.body.sha256),
         record: { digest: ref.record, run },
       };
     }
@@ -337,7 +357,7 @@ export async function bindInputs(
     const given = inputs[slot.slot];
     const list = given === undefined ? [] : Array.isArray(given) ? given : [given];
     if (list.length === 0) {
-      if (slot.required) schemaError(`/inputs/${slot.slot}`, `缺少必需的输入 ${slot.slot}：${slot.description}`, slot.from_runs?`在 inputs.${slot.slot} 给出 ${slot.from_runs.pack} 的运行编号，或给出 predecessor 由其血缘缺省；也可以直接给出已受理结果的 rec:`:slot.default_from_predecessor?.slot!==undefined?`在 predecessor 中给出 ${slot.default_from_predecessor.pack} 的运行编号，或在 inputs.${slot.slot} 给出与前驱冻结输入相同的对象`:slot.default_from_predecessor?`在 predecessor 中给出 ${slot.default_from_predecessor.pack} 的运行编号，或在 inputs.${slot.slot} 显式给出有权读取的完整 rec: 结果引用`:`在 inputs.${slot.slot} 里给出 upload_file 的引用或外部对象`);
+      if (slot.required && !late.has(slot.slot)) schemaError(`/inputs/${slot.slot}`, `缺少必需的输入 ${slot.slot}：${slot.description}`, slot.from_runs?`在 inputs.${slot.slot} 给出 ${slot.from_runs.pack} 的运行编号，或给出 predecessor 由其血缘缺省；也可以直接给出已受理结果的 rec:`:slot.default_from_predecessor?.slot!==undefined?`在 predecessor 中给出 ${slot.default_from_predecessor.pack} 的运行编号，或在 inputs.${slot.slot} 给出与前驱冻结输入相同的对象`:slot.default_from_predecessor?`在 predecessor 中给出 ${slot.default_from_predecessor.pack} 的运行编号，或在 inputs.${slot.slot} 显式给出有权读取的完整 rec: 结果引用`:`在 inputs.${slot.slot} 里给出 upload_file 的引用或外部对象`);
       continue;
     }
     if (!slot.many && list.length > 1) {

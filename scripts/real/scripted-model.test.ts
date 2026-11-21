@@ -14,10 +14,10 @@ const parseSse = (text: string) =>
 test('a turn counts the assistant replies and extracts the last tool results as text', () => {
   const turn = turnOf({
     system: 'S',
-    tools: [{ name: 'hub_echo' }],
+    tools: [{ name: 'mcp__hub__echo' }],
     messages: [
       { role: 'user', content: 'start' },
-      { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'hub_echo', input: {} }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'mcp__hub__echo', input: {} }] },
       { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'echo: ping' }] }, { type: 'tool_result', tool_use_id: 't2', content: 'plain', is_error: true }] },
     ],
   });
@@ -30,13 +30,13 @@ test('a turn counts the assistant replies and extracts the last tool results as 
 });
 
 test('the stream has the Anthropic event order, text before tool use, and stop reason tool_use', () => {
-  const events = parseSse(streamOf(blocksOf([{ text: '好的' }, { tool: 'hub_echo', input: { text: 'ping' } }]), 'm'));
+  const events = parseSse(streamOf(blocksOf([{ text: '好的' }, { tool: 'mcp__hub__echo', input: { text: 'ping' } }]), 'm'));
   assert.deepEqual(
     events.map((e) => e.event),
     ['message_start', 'content_block_start', 'content_block_delta', 'content_block_stop', 'content_block_start', 'content_block_delta', 'content_block_stop', 'message_delta', 'message_stop'],
   );
   assert.equal(events[2].data.delta.text, '好的');
-  assert.equal(events[4].data.content_block.name, 'hub_echo');
+  assert.equal(events[4].data.content_block.name, 'mcp__hub__echo');
   assert.deepEqual(JSON.parse(events[5].data.delta.partial_json), { text: 'ping' });
   assert.equal(events[7].data.delta.stop_reason, 'tool_use');
   assert.equal(parseSse(streamOf(blocksOf([{ text: 'x' }]), 'm')).at(-2)?.data.delta.stop_reason, 'end_turn');
@@ -46,7 +46,7 @@ test('the server answers streaming and plain requests with the scripted reply an
   const seen: string[] = [];
   const respond: Respond = (turn) => {
     seen.push(turn.toolResults.map((r) => r.text).join('|') || '(none)');
-    return turn.index === 0 ? [{ tool: 'hub_echo', input: { text: 'ping' } }] : [{ text: '完成' }];
+    return turn.index === 0 ? [{ tool: 'mcp__hub__echo', input: { text: 'ping' } }] : [{ text: '完成' }];
   };
   const server = createScriptedModel({ respond, model: 'scripted-x' });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -55,7 +55,7 @@ test('the server answers streaming and plain requests with the scripted reply an
   try {
     const first = await (await call({ model: 'm', stream: false, messages: [{ role: 'user', content: 'go' }] })).json();
     assert.equal(first.stop_reason, 'tool_use');
-    assert.equal(first.content[0].name, 'hub_echo');
+    assert.equal(first.content[0].name, 'mcp__hub__echo');
     const second = await (
       await call({
         model: 'm',

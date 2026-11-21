@@ -20,6 +20,12 @@ initiator and current-reader grants on every use, outside the immutable-content 
 outside the locked scope; currently granted personal content remains addressable. An administrator's other personal
 permissions never enlarge the initiator's scope. Raw space records are not an alternative route around path grants.
 
+Model 42 (decision 150) gives every team a space: `knowledge_spaces.team` stays the root of the team space with the id
+`team`, the only one today, and the roots of the other teams the initiator belongs to go into a record-only `team_spaces`
+member, written only when the initiator belongs to a team other than `team` (the record of an initiator who is in `team`
+alone stays as it is), so that a run reads the team spaces its initiator belonged to when it started. This is not
+implemented yet: until the commits that keep a space for each team land, a run locks the one team root.
+
 The citation index classifies space roots before indexing accepted submissions. Personal entries use an owner-scoped key;
 equal content cannot enter the team entry count through a private reference. The same classification applies during
 background backfill. Existing legacy node/entry counts and their limits stay compatible.
@@ -585,9 +591,11 @@ cannot poison the next case. Owned load workers have a watchdog and are always t
 
 Batches never span evaluations, users, pack versions, modules or check declarations. A pure module is loaded once in its
 isolated process and each eligible input is invoked and serialized independently, with per-item diagnostics and errors.
-All namespace, tier, output and source checks still run through runCheck. OS/permission/import policy, memory, time,
-input/output and global child-slot caps stay unchanged. Boundary violations invalidate the physical batch; aggregate
-limits, timeout or violation trigger bounded individual fallback under the old caps, so one bad item cannot hide others.
+Ordered subject and check inputs are split into consecutive batches whose serialized JSON arrays fit the call's UTF-8
+input-byte cap; an oversized item remains alone and keeps its individual error boundary. All namespace, tier, output and
+source checks still run through runCheck. OS/permission/import policy, memory, time, input/output and global child-slot
+caps stay unchanged. Boundary violations invalidate the physical batch; aggregate limits, timeout or violation trigger
+bounded individual fallback for that batch under the old caps, so one bad item cannot hide others.
 Stopping/cancellation is never revived by fallback. Ordinary per-item throws remain per-item outcomes. Skipped checks and
 failed subject construction explicitly complete their collector slot to avoid deadlock. The parent may stage item calls
 concurrently, but only the existing bounded sandbox pool executes children, and fallback uses CHECK_PARALLELISM.
@@ -718,7 +726,13 @@ requests are looked at again when an `authorization` or `source_artifact` record
 availability is decided from. An authorization that lapses by its `expires_at` leaves no record: if that alone changes which
 record of a source decides, the next full pass sees it. Work a round took in stays in memory until it is done, so a round that
 stops or fails leaves it to the next one. A visit is recorded before it runs and is not repeated after a failure until
-something happens to the run, as before. An expired run with no accepted submission gets
+something happens to the run, as before. A round writes nothing about a state it has already written about: the recovery of
+a held source is tried once for each request, source and set of evidence it was made from (a new authorization or capture
+permits one more try), and the result and the proof of a dispatch job are written once for each state of the job (outcome,
+frozen, ended, result reference, disposition), never for each line its journal gains while it runs. A scheduled round leaves
+a job whose journal grew since its last visit to the observer that is writing it (`MaintenanceMemory.watching`), and takes it
+over once for each length the journal then stands at. Records written under the earlier key, which counted the journal's lines,
+still count. An expired run with no accepted submission gets
 one append-only Hub delivery containing every frozen item as not-covered/incomplete and a named disposition request.
 A late full submission remains possible. Old runs without deadlines are not assigned invented historical deadlines: a
 named disposition request asks their runner to open a dated successor. The console shows deadline and delivery state.
@@ -1135,3 +1149,10 @@ and stored run bytes stay unchanged.
 ## Run visibility without history (B1)
 
 `runVisible(user, run)` answers whether `getRun` would answer for the run: it applies the same run-visibility rule (`visibleRun`: the account is enabled, the reader may view the run, and the run's grounds are readable) and reads neither submissions, results, requests nor withdrawal state. The console live stream asks it for every run event instead of reading the full detail once per subscriber and run; an engine without the port keeps the old `getRun(...) !== null` answer. The port keeps no verdict of its own (the stream's 30-second verdict cache is unchanged), so a revoked share is seen by the next question. It does not shorten the detail page, the export or the summary reads.
+
+T8：run-jobs@1 的未派发作业导出可选 missing_facts/next_action，并在已记录时保留 member_missing_facts；管理员与成员分别按现有权限取得原因。既有 outcome、逐条判定、来源身份和设备自报限定不改变。
+
+
+T9（2026-11-16）：startFresh 已确认前序对调用者可见后，输入绑定或投影拒绝附本工作流同名输入槽的前序冻结身份（外部身份保留摘要）。仅披露已有事实，不增加缺省绑定或跨工作流推断；前序不可见时不读取或披露来源。
+
+决定 182（2026-11-20，模型 W06 R[8]）：`exportHistory(user, run, {limit})`（`run-history.ts`）列出同一被判对象此前在目标上的核验。被判对象的身份是运行里角色为 `subject` 的来源的外部标识去掉修订号，直接绑定的字节取引用。被问的运行和每个列出的运行都按运行导出的既有规则判断（`runReadableBy` 且 `mayExport`：运行者或管理员）；`mayExport` 现在是五个导出共用的一个函数，规则没有变。查找从派发的预订记录出发（读一次，交给每次读作业），最新的先看，按 32 个一批读运行记录，列满或看过 512 个为止；只列 `ended` 为 `done` 且效果结局为 `effective` 的作业，行取作业导出所用的同一份经核对的投影，读不到为 `null`。不写记录，不调模型。同时修正 `exportedJobs`：作业日志由具名管理员读（派发服务只向管理员答作业状态；2026-11-15 起读者不是管理员时这里会抛错，`/run-export/<运行>/jobs` 答 500），投影和缺失原因仍按读者自己的层级和身份给。

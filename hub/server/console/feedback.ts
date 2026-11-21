@@ -4,7 +4,7 @@ import { emptyAction } from './html.ts';
 import { KnowledgeGranteeSchema, isKnowledgeGrantAction, uiLabelOf, type KnowledgeShareStatus, type KnowledgeView } from '../../../contracts/generated/vocabulary.ts';
 
 /** The empty list of shares to the team, the same wherever it appears. */
-export const NO_TEAM_SHARES = { title: '还没有分享到团队的内容', text: '我的已验证条目分享到团队后，每次检查的结果列在这里。', action: emptyAction('/console/knowledge', '打开我的知识', { scope: 'personal' }) };
+export const NO_TEAM_SHARES = { title: '还没有分享到公共空间的内容', text: '我的已验证条目分享到公共空间后，每次检查的结果列在这里。', action: emptyAction('/console/knowledge', '打开我的知识', { scope: 'personal' }) };
 
 type Values = { get(key: string): string | null | undefined };
 
@@ -12,8 +12,8 @@ type Values = { get(key: string): string | null | undefined };
 export function shareFeedback(receipts: readonly { status: KnowledgeShareStatus }[]): string {
   const merged = receipts.filter((receipt) => receipt.status === 'merged').length, rejected = receipts.length - merged;
   const refused = `${uiLabelOf('knowledge_share_status', 'rejected')} ${rejected} 条`;
-  if (rejected === 0) return `已分享到团队 · ${merged} 条`;
-  return merged === 0 ? `未分享到团队 · ${refused}` : `已分享到团队 · ${merged} 条；${refused}`;
+  if (rejected === 0) return `已分享到公共空间 · ${merged} 条`;
+  return merged === 0 ? `未分享到公共空间 · ${refused}` : `已分享到公共空间 · ${merged} 条；${refused}`;
 }
 
 const lastName = (path: string | null | undefined): string => (path ?? '').split('/').filter(Boolean).at(-1) ?? '';

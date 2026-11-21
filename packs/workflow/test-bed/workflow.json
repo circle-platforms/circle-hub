@@ -15,13 +15,15 @@
   "parameters": [
     {
       "name": "action",
-      "description": "search：搜索；facts：环境事实；acquire：不限时预订；release：由预订谱系释放；register：把清单自动化测试环境登记到自己名下；unregister：带理由注销；force_release：主人带理由强制释放。extend 是已移除的请求，只作明确拒绝",
+      "description": "search：搜索；facts：环境事实；help：向自己预订的设备问某条命令行各个位置的说明（不按回车、不执行）；read：在自己预订的设备上读一条只读命令的输出（一次一行）；acquire：不限时预订；release：由预订谱系释放；register：把清单自动化测试环境登记到自己名下；unregister：带理由注销；force_release：主人带理由强制释放。extend 是已移除的请求，只作明确拒绝",
       "required": false,
       "schema": {
         "type": "string",
         "enum": [
           "search",
           "facts",
+          "help",
+          "read",
           "acquire",
           "release",
           "register",
@@ -72,7 +74,7 @@
     },
     {
       "name": "booking",
-      "description": "release 必填：原预订运行号；predecessor 写同一个运行，Hub 核对同用户谱系",
+      "description": "release、help 和 read 必填：原预订运行号；predecessor 写同一个运行，Hub 核对同用户谱系",
       "required": false,
       "schema": {
         "type": "string",
@@ -98,6 +100,36 @@
           "type": "string"
         },
         "minItems": 1
+      }
+    },
+    {
+      "name": "device",
+      "description": "help 和 read 必填：要问或要读的设备在清单里的名字（要是你预订的设备）",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    {
+      "name": "line",
+      "description": "help 必填：要问的命令行，不带问号。Hub 从整行起，再从最长的前缀往短的，逐个前缀在设备上问“这里该写什么”，不按回车、不执行；设备回了说明的最长前缀就是停下的地方。read 必填：一条只读命令，一次一行；整行符合管理员在执行器里声明的命令形状才会发给设备，设备的输出原样返回",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    },
+    {
+      "name": "mode",
+      "description": "help 可选：在设备的哪一级问；取值由管理员在执行器里声明，没声明就不写。read 不带",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
       }
     },
     {

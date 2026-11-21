@@ -1,0 +1,92 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [
+    "%HUB_TOKEN%"
+  ],
+  "options": [
+    {
+      "name": "hub",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%HUB_URL%",
+      "type": "hub"
+    },
+    {
+      "name": "run",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<合并或上机编号>",
+      "type": "run"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>",
+      "type": "path"
+    },
+    {
+      "name": "wait",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "3600",
+      "type": "int"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": "<合并或上机编号>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<新目录>",
+          "optional": false
+        },
+        {
+          "name": "wait",
+          "placeholder": "3600",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": "<脚本合并编号>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<新目录>",
+          "optional": false
+        },
+        {
+          "name": "wait",
+          "placeholder": "3600",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}

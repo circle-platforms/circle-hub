@@ -8,7 +8,7 @@ import { ACTION_RESULT, isEnvironment, uiLabelOf } from '../../../contracts/gene
 import { ConnectorError, readStatistics, type ReadStatistics, type SystemTrialInput, type SystemTrialReport, type SystemTrialForget } from '../../connectors/api.ts';
 import { html, table, type Html } from './html.ts';
 import { FormError, credentialValues, pairs, word, type Form } from './manage.ts';
-import type { PageContext } from './pages.ts';
+import type { PageContext } from './context.ts';
 import { exactSize } from './knowledge-display.ts';
 import { card, chip, duration } from './ui.ts';
 

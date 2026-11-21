@@ -1,0 +1,110 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [
+    "%HUB_TOKEN%"
+  ],
+  "options": [
+    {
+      "name": "hub",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%HUB_URL%",
+      "type": "hub"
+    },
+    {
+      "name": "run",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<用例重组编号>",
+      "type": "run"
+    },
+    {
+      "name": "model",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<模型>",
+      "type": "text"
+    },
+    {
+      "name": "records",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<重组后的用例目录>",
+      "type": "path"
+    },
+    {
+      "name": "partial",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "yes",
+      "type": "text"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": "<用例重组编号>",
+          "optional": false
+        },
+        {
+          "name": "model",
+          "placeholder": "<模型>",
+          "optional": false
+        },
+        {
+          "name": "records",
+          "placeholder": "<重组后的用例目录>",
+          "optional": false
+        },
+        {
+          "name": "partial",
+          "placeholder": "yes",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": "<run id>",
+          "optional": false
+        },
+        {
+          "name": "model",
+          "placeholder": "<model>",
+          "optional": false
+        },
+        {
+          "name": "records",
+          "placeholder": "<directory>",
+          "optional": false
+        },
+        {
+          "name": "partial",
+          "placeholder": "yes",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

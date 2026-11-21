@@ -93,7 +93,7 @@ export default function scenario(gold: BoardGold): Scenario {
     name: 'quality-board',
     area,
     prompt: `请对构建 ${gold.build} 出用例质量看板。`,
-    respond: (turn) => pagedRespond(turn, pager, () => [{ tool: 'hub_start_run', input: { pack, inputs: {
+    respond: (turn) => pagedRespond(turn, pager, () => [{ tool: 'mcp__hub__start_run', input: { pack, inputs: {
       facets: gold.types ? [
         { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,has_expected,vague_expected,negative` },
         { external: `knowledge:facets:${gold.product}:${gold.build}?kind=case&by=line,module,tags` },

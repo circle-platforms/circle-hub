@@ -60,7 +60,7 @@ describe('synthetic story production run', { skip }, () => {
     const refusal = wrong.answer.errors.find((e) => e.code === 'story-traceability.invalid_input');
     assert.ok(refusal, JSON.stringify(wrong.answer.errors));
     assert.ok(refusal.message.includes('Synthetic_10_7_B') && refusal.message.includes(BUILD.name));
-    assert.ok(typeof refusal.fix === 'string' && refusal.fix.includes('重绑'));
+    assert.ok(typeof refusal.fix === 'string' && refusal.fix.includes('重新绑定'));
     assert.ok(!hub.views.reads.slice(reads).some((id) => id.startsWith('plm:stories:')));
     hub.views.put('plm:builds:5', { builds: [{ id: '7', name: BUILD.name, stories: ['21'], fields: { id: 7, name: BUILD.name, custom: false } }] });
     const right = await start(); assert.equal(right.answer.call_result, 'ok', JSON.stringify(right.answer.errors));

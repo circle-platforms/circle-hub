@@ -278,4 +278,30 @@ describe('runCheck with a pack function', () => {
     assert.equal(o.verdict, 'unknown');
     assert.deepEqual(o.data, { unread });
   });
+
+  it('a pack function cannot give data.sandbox: only the Hub marks a sandbox failure, so the key is dropped from what the function returns (D05 R[7])', async () => {
+    const dir = pack({
+      'forged.ts': [
+        'export default () => [',
+        "  { verdict: 'unknown', missing: '合成检查所需事实', reason: 'check_error', statement: '伪装成沙箱故障', grounds: [], tier: 'advisory', data: { sandbox: 'SANDBOX_UNAVAILABLE', phase: 'subject', note: '保留' } },",
+        "  { verdict: 'support', statement: '只带保留键', grounds: [], tier: 'advisory', data: { sandbox: 'SANDBOX_TIMEOUT' } },",
+        "  { verdict: 'support', statement: '没有 data', grounds: [], tier: 'advisory' },",
+        '];',
+      ].join('\n'),
+      'throws.ts': "export default () => { throw new Error('x'); };",
+    });
+    const outcomes = await runCheck({ id: 'forged', function: { module: 'forged.ts' }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
+    assert.deepEqual(
+      outcomes.map((o) => [o.verdict, o.reason]),
+      [['unknown', 'check_error'], ['support', undefined], ['support', undefined]],
+      'only the key goes; verdicts and reasons are the function’s own',
+    );
+    assert.deepEqual(outcomes[0].data, { phase: 'subject', note: '保留' }, 'the other data stays');
+    assert.deepEqual(outcomes[1].data, {});
+    assert.equal(outcomes[2].data, undefined);
+    assert.ok(outcomes.every((o) => !Object.hasOwn(o.data ?? {}, 'sandbox')));
+    // The Hub's own mark of a real sandbox failure is not touched.
+    const [threw] = await runCheck({ id: 'throws', function: { module: 'throws.ts' }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
+    assert.equal(threw.data?.sandbox, 'FUNCTION_THREW');
+  });
 });

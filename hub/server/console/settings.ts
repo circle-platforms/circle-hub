@@ -1,5 +1,5 @@
 import {tooltip} from './presentation.ts';
-import {stat,facts,technicalCode,technical} from './presentation.ts';
+import {facts,technicalCode,technical} from './presentation.ts';
 // 设置 (the design canvas's Admin board): members and the Circles connected with their tokens, credentials and the Hub's
 // state for administrators; a member sees their own Circles and the Hub's state. The console runs only adding a member
 // (proposal decision 6 of 2026-10-31); disabling, disconnecting, issuing a spare login token and changing a credential are
@@ -15,32 +15,14 @@ import { commands } from './commands.ts';
 import { connectedClients, clientLabel } from './circles.ts';
 import { CLIENT_COLUMNS, clientRow } from './connections.ts';
 import { code, href, html, link, liveModule, page, pageLayout, pre, table, type Html } from './html.ts';
-import { neutralPage, type PageContext, type PageResult } from './pages.ts';
+import { circleEntry, originOf, neutralPage, type PageContext, type PageResult } from './context.ts';
+import { registeredActionForm } from './command-form.ts';
+import { count, errorLine, segments } from './components.ts';
+import { resetRebuildSection } from './reset.ts';
 import { box, button, card, chip, commandLink, commandModal, duration, kv, sectionHead, when, type CommandDialog } from './ui.ts';
 
-/** What the console knows about the process serving it, for the Hub's state. */
-export interface HubFacts {
-  /** The release this process serves (release.json), null without one. */
-  release: string | null;
-  startedAt: Date;
-  /** PEM of the built-in HTTPS server certificate, null when HTTPS is off. */
-  certificate: string | null;
-}
-
-/** The Circle entry of this Hub (the `mcp_servers` block of Circle's settings), with the token as a secret reference. */
-/**
- * The Circle settings entry for this Hub: without headers for the MCP standard authorization (the client opens the
- * authorization page in a browser), or with the token kept as a Circle secret for a client without it.
- */
-export function circleEntry(origin: string, token = true): string {
-  const entry = { name: 'circle-hub', url: `${origin}/mcp`, transport: 'streamable_http' };
-  return JSON.stringify({ mcp_servers: [token ? { ...entry, headers: { Authorization: 'Bearer ${secret:CIRCLE_HUB_TOKEN}' } } : entry] }, null, 2);
-}
-
-/** The origin a browser reached this console on: the scheme of the channel and the Host it sent. */
-export function originOf(ctx: PageContext): string {
-  return ctx.origin ?? `${ctx.secure ? 'https' : 'http'}://${ctx.url.host}`;
-}
+export type { HubFacts } from './context.ts';
+export { circleEntry, originOf } from './context.ts';
 
 export function certificateFacts(pem: string | null, now: number): { fingerprint: string; daysLeft: number; validTo: string } | null {
   if (pem === null) return null;
@@ -153,27 +135,86 @@ function lastUse(tokens: readonly TokenInfo[]): string | null {
   return times.at(-1) ?? null;
 }
 
+/** One credential row for the settings page (C12: vault metadata; no consumers registration). */
+export interface SecretRow {
+  name: string;
+  by: string;
+  at: string;
+  withdrawn: boolean;
+  version: number | null;
+  digestRule: string | null;
+  length: number | null;
+  entry: string | null;
+}
+
 export interface Secrets {
-  rows: { name: string; consumers: string[]; uses: { definition: string; item: string }[]; by: string; at: string; withdrawn: boolean }[] | null;
+  rows: SecretRow[] | null;
   /** The text of `secret list` when the records have no variables port (or it failed). */
   text: CommandRun | null;
 }
 
+/** Vault-side secret metadata (C12); set_by / set_at may be null and must stay「未知」. */
+type VaultSecretMeta = {
+  name: string;
+  entry: string;
+  version: number;
+  digest_rule: string;
+  length: number;
+  set_by: string | null;
+  set_at: string | null;
+  revoked: boolean;
+};
+
+const UNKNOWN = '未知';
+
+async function whoSet(ctx: PageContext, id: string | null | undefined): Promise<string> {
+  if (id === null || id === undefined || id === '') return UNKNOWN;
+  return ctx.userName(id);
+}
+
+function whenOrUnknown(at: string | null | undefined): string {
+  return at === null || at === undefined || at === '' ? UNKNOWN : at;
+}
+
 export async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<Secrets> {
-  const variables = ctx.deps.records.variables as { list?: (by: typeof ctx.principal) => Promise<import('../../records/api.ts').NamedVersion[]> } | undefined;
-  if (variables?.list !== undefined) {
+  // Prefer vault listSecrets (C12). Fall back to the older records list without reading consumers.
+  const variables = ctx.deps.records.variables as {
+    listSecrets?: (by: typeof ctx.principal) => Promise<VaultSecretMeta[]>;
+    list?: (by: typeof ctx.principal) => Promise<import('../../records/api.ts').NamedVersion[]>;
+  } | undefined;
+  if (variables?.listSecrets !== undefined) {
     try {
-      const rows = [];
+      const rows: SecretRow[] = [];
+      for (const meta of await variables.listSecrets(ctx.principal)) {
+        rows.push({
+          name: meta.name,
+          by: await whoSet(ctx, meta.set_by),
+          at: whenOrUnknown(meta.set_at),
+          withdrawn: meta.revoked,
+          version: meta.version,
+          digestRule: meta.digest_rule,
+          length: meta.length,
+          entry: meta.entry,
+        });
+      }
+      return { rows, text: null };
+    } catch {
+      // Fall back to the command's own listing below.
+    }
+  } else if (variables?.list !== undefined) {
+    try {
+      const rows: SecretRow[] = [];
       for (const named of await variables.list(ctx.principal)) {
         if (named.kind !== 'secret') continue;
-        const definition = named.definition as { consumers?: { definition: string; item: string }[] } | null;
         rows.push({
           name: named.name,
-          consumers: (definition?.consumers ?? []).map((consumer) => `${consumer.definition} · ${consumer.item}`),
-          uses: definition?.consumers ?? [],
-          by: await ctx.userName(named.decision.body.decided_by),
-          at: named.decision.body.decided_at,
+          by: await whoSet(ctx, named.decision.body.decided_by),
+          at: whenOrUnknown(named.decision.body.decided_at),
           withdrawn: named.decision.body.revoked,
+          version: named.version,
+          digestRule: null,
+          length: null,
+          entry: null,
         });
       }
       return { rows, text: null };
@@ -201,7 +242,7 @@ async function maskingCard(ctx: PageContext, dialogs: CommandDialog[]): Promise<
     dialogs.push(...removals);
     body = table(['规则', '替换成', '模式', '操作'], state.rules.map((rule, index) => [rule.name, maskPlaceholder(rule.label), html`${code(rule.pattern)}${rule.ignore_case ? html` <span class="ch-meta">不区分大小写</span>` : ''}`, commandLink(removals[index], '删除…', 'ch-btn ch-btn--sm ch-btn--ghost')]), { title: '还没有遮盖规则', text: '业务系统的内容原样保存。添加规则后，命中的密码、密钥等片段在保存前被替换。' });
   } catch {
-    body = html`<p class="error">遮盖字典暂不可用</p>`;
+    body = errorLine('遮盖字典暂不可用');
   }
   return html`<section id="masking">${box({ title: '遮盖字典', hint, tail: commandLink(set, '添加规则…', 'ch-btn ch-btn--sm ch-btn--secondary') }, body, { flush: true })}</section>`;
 }
@@ -211,8 +252,11 @@ export async function settingsPage(ctx: PageContext, run: ((argv: string[]) => P
 }
 
 /** The two tabs of the settings page (decision 151, step 8): the first is the reader's own list, the second the Hub's state. */
-function settingsTabs(first: string, hub: boolean, count?: number): Html {
-  return html`<nav class="ch-seg" aria-label="设置内容" data-settings-tabs><a href="/console/settings"${hub ? '' : html` aria-current="page"`}>${first}${count === undefined ? '' : html` <span class="ch-count">${count.toLocaleString('en-US')}</span>`}</a><a href="${href('/console/settings', { tab: 'hub' })}"${hub ? html` aria-current="page"` : ''}>Hub 状态</a></nav>`;
+function settingsTabs(first: string, hub: boolean, total?: number): Html {
+  return segments('设置内容', [
+    { href: '/console/settings', label: first, count: total, current: !hub },
+    { href: href('/console/settings', { tab: 'hub' }), label: 'Hub 状态', current: hub },
+  ], 'data-settings-tabs');
 }
 
 async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<PageResult> {
@@ -221,10 +265,6 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   const secretName=ctx.url.searchParams.get('secret'),selectedSecret=secrets.rows?.find(secret=>secret.name===secretName);
   if(secretName&&!selectedSecret)return neutralPage(ctx);
   const hub = !selectedSecret && ctx.url.searchParams.get('tab') === 'hub';
-  // A credential says which system uses it by the system's name; the system's identifier stays in the pane's technical details.
-  const systems = new Map<string, string>();
-  if (!hub && secrets.rows?.some((secret) => secret.uses.length > 0)) try { for (const resource of await ctx.deps.resources.list(ctx.principal)) systems.set(resource.id, resource.name); } catch { /* The identifiers are shown instead. */ }
-  const use = (consumer: { definition: string; item: string }) => `${systems.get(consumer.definition) ?? consumer.definition} · ${consumer.item}`;
   let secretBody: Html;
   if (secrets.rows !== null) {
     const rows = secrets.rows.map((secret) => {
@@ -233,15 +273,15 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
       if (!secret.withdrawn&&secret.name===secretName) dialogs.push(set, unset);
       return [
         link('/console/settings',secret.name,{secret:secret.name}),
-        secret.uses.length === 0 ? '未被使用' : html`${secret.uses.map((consumer) => html`<div>${use(consumer)}</div>`)}`,
-        secret.by, when(secret.at),
+        secret.by,
+        secret.at === UNKNOWN ? UNKNOWN : when(secret.at),
         secret.withdrawn ? chip('已吊销', 'unchecked') : html`<span class="ch-meta">•••••••• 已加密</span>`,
-
       ];
     });
-    secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在运行 Hub 的服务器上执行'), '用于', '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
+    // C12: no「使用者」column — consumers registration is gone; use is only from live resource/executor definitions.
+    secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在运行 Hub 的服务器上执行'), '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
   } else if (secrets.text === null) {
-    secretBody = html`<p class="error">凭据列表暂不可用</p>`;
+    secretBody = errorLine('凭据列表暂不可用');
   } else if (secrets.text.code === 0) {
     secretBody = secrets.text.stdout.length > 0 ? pre(secrets.text.stdout.join('\n')) : html`<p class="empty">尚无凭据：接入业务系统时设置</p>`;
   } else {
@@ -252,19 +292,32 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   // The host operations and their dialogs are the Hub tab's; the credential tab carries no dialog nothing on it opens.
   const stopping = [commands.backup(), commands.restore(), commands.tlsIssue()];
   if (hub) dialogs.push(...stopping);
+  const setSecret = hub || selectedSecret ? '' : card(
+    { title: '设置凭据', hint: '不必先有资源或执行器引用这个名字；内容只进密钥库，不进命令参数和页面。' },
+    registeredActionForm('secret-set', ctx.csrf ?? '', '设置', { primary: true }),
+  );
   const content = hub
     ? html`${await hubState(ctx)}
-${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`
-    : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>${masking ?? ''}`;
+${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}
+${resetRebuildSection(ctx)}`
+    : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>${setSecret}${masking ?? ''}`;
   const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', hub, secrets.rows?.length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'secrets'}">${content}</div>
 ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}</div>`;
+  const inspectorFacts: Array<readonly [string, string | Html]> = selectedSecret ? [
+    ['内容', selectedSecret.withdrawn ? '已吊销' : '已加密'],
+    ['设置人', selectedSecret.by],
+    ['更新时间', selectedSecret.at === UNKNOWN ? UNKNOWN : when(selectedSecret.at)],
+    ...(selectedSecret.version === null ? [] : [['版本', String(selectedSecret.version)] as const]),
+    ...(selectedSecret.digestRule === null ? [] : [['摘要规则', selectedSecret.digestRule] as const]),
+    ...(selectedSecret.length === null ? [] : [['长度', String(selectedSecret.length)] as const]),
+  ] : [];
   return {
     status: 200,
     body: page(ctx.chrome('设置', {
       active: 'settings',
       hint: '凭据与 Hub 状态；需人工处理的事项在运行 Hub 的服务器上完成',
 
-    }),pageLayout(body,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.uses.map(use).join('、')||'未被使用'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}${selectedSecret.uses.length?technical(html`${selectedSecret.uses.map(consumer=>html`<div>${code(consumer.definition)}</div>`)}`):''}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:null})),
+    }),pageLayout(body,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts(inspectorFacts)}${selectedSecret.entry?technical(html`<div>${code(selectedSecret.entry)}</div>`):''}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:null})),
   };
 }
 
@@ -275,7 +328,7 @@ async function memberSettings(ctx: PageContext): Promise<PageResult> {
   const rows = clients.map(client => [...clientRow(client, clientLabel(client)), '由管理员断开']);
   const content = hub ? await hubState(ctx) : html`<section class="ch-section" data-columns="2" id="mine">
 ${liveModule('my-circles', ['member.connected'], card({ title: ctx.principal.name, lead: html`<span class="ch-avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的客户端', undefined, undefined, undefined, '每台设备上的客户端独立连接；名称和版本照客户端报的写；断开由管理员执行')}${table([...CLIENT_COLUMNS,'操作'], rows, { title: '尚无已连接的客户端', text: '按“连接新的客户端”的配置连接后，客户端列在这里。' })}`))}
-${card({ title: '连接新的客户端', meta: 'MCP 标准连接确认',hint:'下面是 mcp_servers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。浏览器确认身份后允许连接；其他设备可使用管理员签发的邀请码。' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx), false)}</code></pre>`)}
+${card({ title: '连接新的客户端', meta: 'MCP 标准连接确认',hint:'下面是 mcpServers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。浏览器确认身份后允许连接；其他设备可使用管理员签发的邀请码。' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx), false)}</code></pre>`)}
 </section>`;
   const body = html`<div class="ch-stack" data-settings>${settingsTabs('我的客户端', hub, tokens.filter(token => token.revoked_at === null).length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'mine'}">${content}</div></div>`;
   return { status: 200, body: page(ctx.chrome('设置', { active: 'settings', hint: '我的客户端与 Hub 状态',  }),pageLayout(body,{inspector:null})) };

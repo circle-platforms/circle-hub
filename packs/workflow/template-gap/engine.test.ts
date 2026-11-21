@@ -60,14 +60,14 @@ describe('publication', { skip }, () => {
     const outcome = bed.publication;
     assert.ok(outcome.ok, JSON.stringify(!outcome.ok && outcome.problems, null, 1));
     assert.equal(outcome.created, true);
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.2.22', 'workflow', false]);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.2.24', 'workflow', false]);
     assert.deepEqual([outcome.report.samples.total, outcome.report.samples.passed, outcome.report.unsampled], [15, 15, []]);
     assert.deepEqual(outcome.report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]), [['coverage', 2, 4, ['author_samples_only']], ['command_coverage', 2, 5, ['author_samples_only']], ['tag_declarations', 1, 1, ['author_samples_only']]]);
     const store = createWorkflowStore(bed.registry);
     const summaries = await store.summaries(bed.runner);
-    assert.deepEqual(summaries.map(row=>row.pack).sort(),[`mindmap-format@${await repositorySkillVersion('mindmap-format')}`,'template-gap@1.2.22'].sort());
+    assert.deepEqual(summaries.map(row=>row.pack).sort(),[`mindmap-format@${await repositorySkillVersion('mindmap-format')}`,'template-gap@1.2.24'].sort());
     const summary = summaries.find(row=>row.id==='template-gap')!;
-    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.2.22', 'workflow', ['Synthetic Template', 'MEADOW']]);
+    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.2.24', 'workflow', ['Synthetic Template', 'MEADOW']]);
     assert.deepEqual(summary.inputs.map((i) => [i.slot, i.role, i.many, i.required]), [['documents', 'subject', true, true], ['case_index', 'expected', false, false]]);
     assert.deepEqual(summary.requirements.map((r) => [r.key, r.accepted_producer, r.layers, r.done_rule, r.repair_rounds]), [['coverage', 'judgment', ['static'], 'bookkeeping', 0], ['command_coverage', 'fact', ['static'], 'bookkeeping', 0], ['tag_declarations', 'fact', ['static'], 'bookkeeping', 0]]);
     assert.deepEqual((await store.summaries(bed.stranger)).map(row=>row.pack), [`mindmap-format@${await repositorySkillVersion('mindmap-format')}`]);
@@ -166,7 +166,7 @@ describe('a production run', { skip }, () => {
     assert.equal(view?.submissions.length, 1);
     assert.deepEqual(view?.latest?.result, submitted.result);
 
-    const warrant = ['fact', 'projected', 'function', 'template-gap.coverage@1.2.22'] as const;
+    const warrant = ['fact', 'projected', 'function', 'template-gap.coverage@1.2.24'] as const;
     const satisfied = (item: string): void => {
       const { partition, result: r } = requirementOf(result, item);
       assert.deepEqual([partition, r.requirement, r.layers, r.status], ['delivered', 'coverage', [{ layer: 'static', terminal: 'judgment' }], 'satisfied'], item);
@@ -412,10 +412,14 @@ it('locks the command catalog and judges both requirements over agile documents 
   assert.equal(detail.answer.run!.root, ROOT);
   assert.match(detail.answer.run!.items.find(item => item.id === ids[3])!.summary ?? '', /文档不在完整索引里.*构建.*重跑/);
   const answer = await judged(detail);
-  // 六份文档的逐用例引用超过一次核验 256 个来源的预算。提交拒绝，不把没读到的部分当成通过。
-  assert.equal(answer.acceptance, 'not_accepted', JSON.stringify(answer.errors));
-  assert.equal(answer.errors[0]?.code, 'SOURCE_READ_FAILED');
-  assert.match(answer.errors[0]?.message ?? '', /256 个来源/);
+  // The six documents fit the 1024-reference budget of the locked baseline.
+  assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
+  const combined = Object.values(ValidationResult.parse(answer.result).partitions).flat();
+  assert.equal(combined.length, 6);
+  assert.deepEqual(combined.map(item => item.item).sort(), detail.answer.run!.items.map(item => item.id).sort());
+  for (const item of combined) for (const requirement of ['coverage', 'command_coverage']) {
+    assert.ok(item.requirements.some(row => row.requirement === requirement), `${item.item} ${requirement}`);
+  }
   const one = async (id: string, source: DocumentSpec, entries: ReturnType<typeof assignedCases>) => {
     const view = indexView(entries, [id]);
     const external = bindIndex(view).external!;

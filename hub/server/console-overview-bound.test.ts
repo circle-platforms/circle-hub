@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { runRecord } from '../../contracts/src/fixtures.ts';
 import type { ServerDeps } from './api.ts';
 import { overviewPage } from './console/overview.ts';
-import type { PageContext } from './console/pages.ts';
+import type { PageContext } from './console/context.ts';
 
 const NOW = new Date('2026-11-04T08:00:00.000Z');
 const RECENT = 12;

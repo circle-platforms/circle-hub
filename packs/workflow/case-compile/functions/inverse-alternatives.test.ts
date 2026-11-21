@@ -53,10 +53,10 @@ test('the no-prefix rules keep working beside the alternatives: demo pool add cl
 });
 
 import {commandObligations} from './command-obligations.ts';
-import {readCommandPolicy} from './command-policy.ts';
+import {readCommandPolicy} from './generated/skills/command-tools/command-check/command-policy.ts';
 import type {PlanSlots} from './slots.ts';
-import type {CommandDefinition} from './generated/command-grammar.ts';
-import type {CommandPolicy} from './command-policy.ts';
+import type {CommandDefinition} from './generated/skills/command-tools/command-check/grammar.ts';
+import type {CommandPolicy} from './generated/skills/command-tools/command-check/command-policy.ts';
 type TestCatalog={root:string;entries:Array<{words:string[];reference:string;signatures:Array<CommandDefinition['signatures'][number]>}>;policy:CommandPolicy};
 const catalogOf=(value:ReturnType<typeof fixture>)=>value.subject.command_catalog as TestCatalog;
 const obligations=(value:ReturnType<typeof fixture>)=>{

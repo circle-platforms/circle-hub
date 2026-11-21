@@ -7,7 +7,35 @@ export const QUALIFIER_MARK = ['target_reported', 'report_for_dispatch', 'local_
 export type QualifierMark = (typeof QUALIFIER_MARK)[number];
 export const QUALIFIER_MARK_LABEL = { 'target_reported': '目标自报', 'report_for_dispatch': '目标对本次派发的报告', 'local_ops_not_excluded': '未排除本地操作', 'human_intervention': '有人工干预', 'discrimination_not_established': '判别力未建立', 'semantics_unasserted': '语义未断言', 'unverified_submission': '未经平台验证', 'client_preview': '客户端预览', 'model_relay': '模型转述，未经校验', 'no_reuse': '无复用', 'author_samples_only': '仅作者样例', 'conditional_on_judgment': '以判断为前提', 'independence_declared': '独立性为客户端声明', 'not_realtime': '非实时', 'partial': '部分', 'intermittent': '间歇', 'decision_shape_unruled': '判定形状未裁定', 'legacy_keyword_rules': '旧规则（关键词）', 'possible_credentials': '可能含凭据' } as const satisfies Record<QualifierMark, string>;
 export function isQualifierMark(value: unknown): value is QualifierMark { return typeof value === 'string' && (QUALIFIER_MARK as readonly string[]).includes(value); }
-export interface AxisValues { expectation_basis: ExpectationBasis; qualifier_mark: QualifierMark; }
+export const DYNAMIC_TERMINAL = ['pass', 'fail', 'no_verdict', 'not_run', 'incomplete'] as const;
+export type DynamicTerminal = (typeof DYNAMIC_TERMINAL)[number];
+export const DYNAMIC_TERMINAL_LABEL = { 'pass': '通过', 'fail': '未通过', 'no_verdict': '无结论', 'not_run': '未运行', 'incomplete': '检查未完成' } as const satisfies Record<DynamicTerminal, string>;
+export function isDynamicTerminal(value: unknown): value is DynamicTerminal { return typeof value === 'string' && (DYNAMIC_TERMINAL as readonly string[]).includes(value); }
+export const ACCEPTANCE = ['accepted', 'not_accepted'] as const;
+export type Acceptance = (typeof ACCEPTANCE)[number];
+export const ACCEPTANCE_LABEL = { 'accepted': '已受理', 'not_accepted': '未受理' } as const satisfies Record<Acceptance, string>;
+export function isAcceptance(value: unknown): value is Acceptance { return typeof value === 'string' && (ACCEPTANCE as readonly string[]).includes(value); }
+export const ITEM_HANDLING = ['handled', 'skipped'] as const;
+export type ItemHandling = (typeof ITEM_HANDLING)[number];
+export const ITEM_HANDLING_LABEL = { 'handled': '已处理', 'skipped': '跳过' } as const satisfies Record<ItemHandling, string>;
+export function isItemHandling(value: unknown): value is ItemHandling { return typeof value === 'string' && (ITEM_HANDLING as readonly string[]).includes(value); }
+export const ATTRIBUTION = ['data_gap', 'author_input', 'producer_error', 'transient', 'target_side', 'unattributed'] as const;
+export type Attribution = (typeof ATTRIBUTION)[number];
+export const ATTRIBUTION_LABEL = { 'data_gap': '缺资料', 'author_input': '原始用例的问题', 'producer_error': '生产者错误', 'transient': '临时故障', 'target_side': '目标侧', 'unattributed': '还没查清' } as const satisfies Record<Attribution, string>;
+export function isAttribution(value: unknown): value is Attribution { return typeof value === 'string' && (ATTRIBUTION as readonly string[]).includes(value); }
+export const EXIT_ACTION = ['reread', 'reconcile', 'observe', 'request', 'rerun', 'reevaluate'] as const;
+export type ExitAction = (typeof EXIT_ACTION)[number];
+export const EXIT_ACTION_LABEL = { 'reread': '重读', 'reconcile': '核对', 'observe': '观察', 'request': '发请求', 'rerun': '新修订重跑', 'reevaluate': '重评' } as const satisfies Record<ExitAction, string>;
+export function isExitAction(value: unknown): value is ExitAction { return typeof value === 'string' && (EXIT_ACTION as readonly string[]).includes(value); }
+export const PRODUCER_KIND = ['function', 'model', 'human'] as const;
+export type ProducerKind = (typeof PRODUCER_KIND)[number];
+export const PRODUCER_KIND_LABEL = { 'function': '程序', 'model': '模型', 'human': '使用者' } as const satisfies Record<ProducerKind, string>;
+export function isProducerKind(value: unknown): value is ProducerKind { return typeof value === 'string' && (PRODUCER_KIND as readonly string[]).includes(value); }
+export const CALL_ERROR_CATEGORY = ['invalid_parameters', 'permission_denied', 'not_found', 'occupied', 'temporarily_unavailable'] as const;
+export type CallErrorCategory = (typeof CALL_ERROR_CATEGORY)[number];
+export const CALL_ERROR_CATEGORY_LABEL = { 'invalid_parameters': '参数无效', 'permission_denied': '无权限', 'not_found': '不存在', 'occupied': '已被占用', 'temporarily_unavailable': '暂时不可用' } as const satisfies Record<CallErrorCategory, string>;
+export function isCallErrorCategory(value: unknown): value is CallErrorCategory { return typeof value === 'string' && (CALL_ERROR_CATEGORY as readonly string[]).includes(value); }
+export interface AxisValues { expectation_basis: ExpectationBasis; qualifier_mark: QualifierMark; dynamic_terminal: DynamicTerminal; acceptance: Acceptance; item_handling: ItemHandling; attribution: Attribution; exit_action: ExitAction; producer_kind: ProducerKind; call_error_category: CallErrorCategory; }
 export type AxisName = keyof AxisValues;
-const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { expectation_basis: EXPECTATION_BASIS_LABEL, qualifier_mark: QUALIFIER_MARK_LABEL };
+const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { expectation_basis: EXPECTATION_BASIS_LABEL, qualifier_mark: QUALIFIER_MARK_LABEL, dynamic_terminal: DYNAMIC_TERMINAL_LABEL, acceptance: ACCEPTANCE_LABEL, item_handling: ITEM_HANDLING_LABEL, attribution: ATTRIBUTION_LABEL, exit_action: EXIT_ACTION_LABEL, producer_kind: PRODUCER_KIND_LABEL, call_error_category: CALL_ERROR_CATEGORY_LABEL };
 export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }

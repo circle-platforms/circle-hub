@@ -6,50 +6,13 @@ import { test } from 'node:test';
 import { MIGRATIONS, migrationChecksum } from './migrations.ts';
 
 const APPLIED = [
-  {
-    "version": 1,
-    "name": "records",
-    "sha256": "a4eaed1871bad919990538adb5bf4b3abb2af20ed2b347c745df84981f95ebb0"
-  },
-  {
-    "version": 2,
-    "name": "leases",
-    "sha256": "fe77184d95212c1d0ba2291028aeeec2de36ce54c362bafee2859d173046aa3d"
-  },
-  {
-    "version": 3,
-    "name": "record_keys",
-    "sha256": "309e57b14819d63582f79e6389b927d0963321295349ff24c502065aab375f95"
-  },
-  {
-    "version": 4,
-    "name": "unbounded_leases",
-    "sha256": "a4f5df47218a6ee345b197427397960f2c6f56a8b4cc14d52be53fdefa724d03"
-  },
-  {
-    "version": 5,
-    "name": "lease_registrations",
-    "sha256": "c767dbfba4950fd0285202406e24f878ba78fc92d5c4d8b0f65ec01922fd5d54"
-  },
-  {
-    "version": 6,
-    "name": "call_reasons",
-    "sha256": "c97e6d42f43ad8b9cb977122d37b744ab83dd344aa720f7c05f9a6079f55f895"
-  },
-  {
-    "version": 7,
-    "name": "standard_authorization",
-    "sha256": "54268ed191e63bcd5bc9faab8ef0b1dd853d2460d50b341f805d46a75d4a9c92"
-  }
-, {"version":8,"name":"console_passwords","sha256":"62d4b17a5d48e35c8a65349293f6b7c7bc842b9e456b715f0489ea04de1b6f8f"}
-, {"version":14,"name":"personal_payloads","sha256":"ee019b2d2e54e3330232c0f7f91849e12dfd41d86d26398360ef896249fc1f85"}
-, {"version":15,"name":"personal_sync_transport","sha256":"135eac2292f43623edcf81a9822a6dcf6ead28a3c6db96c153f6eaf6598c3947"}
+  { version: 1, name: 'baseline', sha256: '95e22210e2340c8898e0eda032870c00b449edbd082ac0c7ad141c7d54931e27' },
 ];
 
 test('the applied migration source file keeps its reviewed bytes', () => {
   // An append requires reviewing this file digest; the per-migration SQL snapshots below stay fixed.
   const bytes = readFileSync(new URL('./migrations.ts', import.meta.url));
-  assert.equal(createHash('sha256').update(bytes).digest('hex'), '3b746d0b858c8c150a5a4396e4a1f5142bd426af5ecda446f327083e8c78a322');
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), '4abb6aac2bc85142fd2fe704105f337d726972ed4c523007253c46b3fbb2c505');
 });
 
 test('every applied SQL migration retains its identity and exact bytes', () => {

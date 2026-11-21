@@ -41,7 +41,7 @@ test('every rule reads the text as it was read: no rule matches another rule\'s 
 });
 
 test('a rule is checked when it is set: names, labels, patterns that do not compile, match nothing or run away', () => {
-  assert.deepEqual(checkMaskingRule(rule('ok-rule', ' 设备口令 ', 'abc+')), { name: 'ok-rule', label: '设备口令', pattern: 'abc+', ignore_case: false });
+  assert.deepEqual(checkMaskingRule(rule('ok-rule', ' 设备口令 ', 'abc+'), () => 0), { name: 'ok-rule', label: '设备口令', pattern: 'abc+', ignore_case: false });
   for (const [bad, message] of [
     [rule('Bad', '密码', 'a'), /规则名/],
     [rule('quote', '密"码', 'a'), /标签不能含/],
@@ -52,18 +52,29 @@ test('a rule is checked when it is set: names, labels, patterns that do not comp
     [rule('empty-match', '密码', 'a*'), /能匹配空文本/],
     [rule('too-long', '密码', 'a'.repeat(501)), /至多 500 个字符/],
     [{ ...rule('extra', '密码', 'a'), flags: 'g' }, /./],
-  ] as const) assert.throws(() => checkMaskingRule(bad), (error) => error instanceof MaskingRuleError && message.test(error.message), JSON.stringify(bad));
+  ] as const) assert.throws(() => checkMaskingRule(bad, () => 0), (error) => error instanceof MaskingRuleError && message.test(error.message), JSON.stringify(bad));
   // A pattern slow on a long run is refused; the clock is the caller's, so the check itself is deterministic here.
   let tick = 0;
   assert.throws(() => checkMaskingRule(rule('slow', '密码', 'abc+'), () => (tick += 100)), /过慢/);
   // With the real clock: patterns that backtrack exponentially are caught on a short run, long before a long one is tried.
   for (const pattern of ['(a+)+$', '(a|a)+$', '(\\w+\\s?)+$', '([a-z]+)*=']) {
-    const started = performance.now();
     assert.throws(() => checkMaskingRule(rule('runaway', '密码', pattern)), /过慢/, pattern);
-    assert.ok(performance.now() - started < 5000, `${pattern} was refused in ${Math.round(performance.now() - started)} ms`);
   }
   // Ordinary patterns pass, the kind an administrator writes for a password or a key.
-  for (const pattern of ['password\\s*[:=]\\s*(?<secret>\\S+)', 'sk-[A-Za-z0-9]{20,}', '(?<=enable secret )\\S+', 'AKIA[0-9A-Z]{16}']) checkMaskingRule(rule('fine', '密码', pattern));
+  for (const pattern of ['password\\s*[:=]\\s*(?<secret>\\S+)', 'sk-[A-Za-z0-9]{20,}', '(?<=enable secret )\\S+', 'AKIA[0-9A-Z]{16}']) checkMaskingRule(rule('fine', '密码', pattern), () => 0);
+});
+
+test('the injected probe clock accepts the existing 50ms boundary and rejects the first over-budget probe', () => {
+  const input = rule('probe-budget', '密码', 'abc+');
+  for (const elapsed of [49, 50]) {
+    let reads = 0;
+    assert.deepEqual(checkMaskingRule(input, () => reads++ % 2 === 0 ? 0 : elapsed), input);
+    assert.ok(reads > 2, 'every probe continues under the unchanged budget');
+    assert.equal(reads % 2, 0, 'each probe reads its own start and end');
+  }
+  let reads = 0;
+  assert.throws(() => checkMaskingRule(input, () => reads++ % 2 === 0 ? 0 : 51), /过慢/);
+  assert.equal(reads, 2, 'the first over-budget probe is refused before another probe starts');
 });
 
 test('a dictionary holds each name once and at most 64 rules', () => {

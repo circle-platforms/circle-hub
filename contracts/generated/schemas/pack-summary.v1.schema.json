@@ -114,6 +114,10 @@
               "pack": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              },
+              "after_start": {
+                "description": "true: start_run freezes the run id only; every evaluation and run export re-resolves its latest accepted submitted validation record, passes it to workflow.refresh and records the reference in locks.late. An explicit rec: binding stays frozen",
+                "type": "boolean"
               }
             },
             "required": [

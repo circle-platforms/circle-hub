@@ -1,0 +1,211 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [
+    "%HUB_TOKEN%",
+    "%PLUMB_API_KEY%"
+  ],
+  "options": [
+    {
+      "name": "hub",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%HUB_URL%",
+      "type": "hub"
+    },
+    {
+      "name": "plumb",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%PLUMB_URL%",
+      "type": "plumb"
+    },
+    {
+      "name": "subject",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<脑图外部标识>",
+      "type": "text"
+    },
+    {
+      "name": "product",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<产品>",
+      "type": "text"
+    },
+    {
+      "name": "build",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<构建>",
+      "type": "text"
+    },
+    {
+      "name": "booking",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<test-bed 预订号>",
+      "type": "run"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新文件>",
+      "type": "path"
+    },
+    {
+      "name": "version",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<版本线>",
+      "type": "text"
+    },
+    {
+      "name": "scope",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<范围文件>",
+      "type": "path"
+    },
+    {
+      "name": "exclude",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<autoid,...>",
+      "type": "text"
+    },
+    {
+      "name": "contract",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<doc:doc:名字>",
+      "type": "text"
+    },
+    {
+      "name": "inventory",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<doc:doc:名字>",
+      "type": "text"
+    },
+    {
+      "name": "profile",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<doc:doc:名字>",
+      "type": "text"
+    },
+    {
+      "name": "recompose-run",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<重组运行编号>",
+      "type": "run"
+    },
+    {
+      "name": "recompose-record",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<rec:引用>",
+      "type": "text"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "plumb",
+          "placeholder": "%PLUMB_URL%",
+          "optional": false
+        },
+        {
+          "name": "subject",
+          "placeholder": "<脑图外部标识>",
+          "optional": false
+        },
+        {
+          "name": "product",
+          "placeholder": "<产品>",
+          "optional": false
+        },
+        {
+          "name": "build",
+          "placeholder": "<构建>",
+          "optional": false
+        },
+        {
+          "name": "booking",
+          "placeholder": "<test-bed 预订号>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<新文件>",
+          "optional": false
+        },
+        {
+          "name": "version",
+          "placeholder": "<版本线>",
+          "optional": true
+        },
+        {
+          "name": "scope",
+          "placeholder": "<范围文件>",
+          "optional": true
+        },
+        {
+          "name": "exclude",
+          "placeholder": "<autoid,...>",
+          "optional": true
+        },
+        {
+          "name": "contract",
+          "placeholder": "<doc:doc:名字>",
+          "optional": true
+        },
+        {
+          "name": "inventory",
+          "placeholder": "<doc:doc:名字>",
+          "optional": true
+        },
+        {
+          "name": "profile",
+          "placeholder": "<doc:doc:名字>",
+          "optional": true
+        },
+        {
+          "name": "recompose-run",
+          "placeholder": "<重组运行编号>",
+          "optional": true
+        },
+        {
+          "name": "recompose-record",
+          "placeholder": "<rec:引用>",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

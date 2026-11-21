@@ -680,3 +680,16 @@ Decision 138 step 3 registers CIRCLE_HUB_SYNC_MAX_BATCH_BYTES in the platform se
 adds ten scoped transport tables; ownership covers every table and preserves the restricted personal_spaces grants.
 The backup regression also restores a staged sync object with its session and idempotent receipt. Runtime collection
 uses an owner-defined function with a pinned search path, without direct DELETE grants on payloads or the object catalog.
+
+
+### Shared command registration
+
+`api.ts` exports `PLATFORM_COMMAND_METADATA` (`name`, `summary`, `bridge`, `step`) and
+`platformCommands(io, overrides?)`, which binds those entries to `run(args)` functions. Arguments exclude the command
+name. Constructing the factory does not create a context or read deployment settings; execution uses the same
+configuration checks and exit codes as `runPlatformCommand`. All platform commands retain `bridge: false`.
+The server consumes these exports without maintaining another platform command list. The platform imports no server code.
+
+## Reset primitives (2026-11-13)
+
+Under the owner's 18:40 layer decision, `circle-hub reset` belongs to the server package. Platform exposes `nativeResetBackup`, `archiveResetDatabase` and `createResetDatabase` as schema-independent database operations. Record classification, migrations, configuration export/apply, operation recovery and reset-worker authorization live in `hub/server/reset`; platform neither imports records/config nor forwards the reset command to an upper layer.

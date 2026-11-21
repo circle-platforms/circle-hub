@@ -14,11 +14,11 @@ import traceability, { extractStatementCaseIds, type TraceGold } from './traceab
 
 const turnsOf = (texts: string[]): LoggedTurn[] => {
   return [
-    { index: 0, toolResults: [], tools: ['hub_start_run'] },
+    { index: 0, toolResults: [], tools: ['mcp__hub__start_run'] },
     ...texts.map((text, i) => ({
       index: i + 1,
       toolResults: [{ id: `r${i + 1}`, text, isError: false }],
-      tools: i < texts.length - 1 ? ['hub_get_nodes'] : [],
+      tools: i < texts.length - 1 ? ['mcp__hub__get_nodes'] : [],
     })),
   ];
 };
@@ -372,14 +372,14 @@ describe('traceability scenario respond flow', () => {
     toolResults: text ? [{ id: 'r', text, isError: false }] : [],
   });
 
-  test('calls hub_get_nodes on turn 1 using rec reference from start_run answer', async () => {
+  test('calls mcp__hub__get_nodes on turn 1 using rec reference from start_run answer', async () => {
     const reply0 = await scenario.respond(makeTurn(0));
-    assert.ok(Array.isArray(reply0) && 'tool' in reply0[0] && reply0[0].tool === 'hub_start_run');
+    assert.ok(Array.isArray(reply0) && 'tool' in reply0[0] && reply0[0].tool === 'mcp__hub__start_run');
 
     const reply1 = await scenario.respond(
       makeTurn(1, '完整结果 rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'),
     );
-    assert.deepEqual(reply1, [{ tool: 'hub_get_nodes', input: { reference: 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' } }]);
+    assert.deepEqual(reply1, [{ tool: 'mcp__hub__get_nodes', input: { reference: 'rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' } }]);
   });
 });
 

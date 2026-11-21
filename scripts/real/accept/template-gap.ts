@@ -29,7 +29,7 @@ export default function scenario(gold: GapGold): Scenario {
     prompt: `请按团队模板检查敏捷平台上的测试脑图 ${gold.document} 缺哪些类别。`,
     respond: (turn) =>
       turn.index === 0
-        ? [{ tool: 'hub_start_run', input: { pack, ...(gold.product ? { product: gold.product } : {}), ...(bindIndex ? { build: gold.build } : {}), inputs: {
+        ? [{ tool: 'mcp__hub__start_run', input: { pack, ...(gold.product ? { product: gold.product } : {}), ...(bindIndex ? { build: gold.build } : {}), inputs: {
           documents: { external: `agile:mindmap:${gold.document}` },
           ...(bindIndex ? { case_index: { external: `knowledge:index:${gold.product}:${gold.build}?kind=case&key=document&only=${encodeURIComponent(gold.document)}&fields=document,node,commands,title,path_labels` } } : {}),
         } } }]

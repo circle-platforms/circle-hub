@@ -126,3 +126,10 @@ test('a completed read cannot be used after the shared deadline even if the even
   await assert.rejects(result,{code:'SANDBOX_TIMEOUT'});
   cache.dispose!();
 });
+
+test('a document cache refuses reads after its operation time', async () => {
+  const short = createDocumentCache(4, undefined, 20), doc = document(10);
+  short.set('one', doc.value);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.throws(() => short.get('one'), { code: 'SANDBOX_TIMEOUT' });
+});

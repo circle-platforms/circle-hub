@@ -51,6 +51,26 @@
       "code": "test-bed.force_release_mismatch",
       "when": "结论和冻结内容不符",
       "fix": "按冻结内容重算"
+    },
+    {
+      "code": "test-bed.bad_help",
+      "when": "问设备缺 device 或 line，或设备名在不止一个自动化测试环境里",
+      "fix": "device 写你预订的设备名，line 写要问的命令行；设备名有重复时写上 bed"
+    },
+    {
+      "code": "test-bed.help_mismatch",
+      "when": "结论和冻结的清单或租约视图不符",
+      "fix": "按冻结内容重算"
+    },
+    {
+      "code": "test-bed.bad_read",
+      "when": "读设备缺 device 或 line、带了 mode，或设备名在不止一个自动化测试环境里",
+      "fix": "device 写你预订的设备名，line 写一条只读命令，不带 mode；设备名有重复时写上 bed"
+    },
+    {
+      "code": "test-bed.read_mismatch",
+      "when": "结论和冻结的清单或租约视图不符",
+      "fix": "按冻结内容重算"
     }
   ]
 }

@@ -1,3 +1,5 @@
+import { createKnowledge } from '../../../knowledge/api.ts';
+import { runById, canViewRun, readPackDirectory, packSchema } from '../../api.ts';
 import type { RunsEngineDeps } from '../deps.ts';
 import {createTestParserRegistry} from '../../../testing/parsers.ts';
 import type { PermissionRole } from '../../../../contracts/generated/vocabulary.ts';
@@ -34,6 +36,8 @@ export interface HarnessOptions {
   /** Wire the lease service into the engine (a workflow that declares leases needs it). */
   leases?: boolean;
   leaseJobs?: (keys: readonly string[]) => Promise<Array<{key:string;job:string}>>;
+  /** Supplied explicitly by environment tests; leases alone never grant permission. */
+  environmentAccess?: RunsEngineDeps['environmentAccess'];
   /** The device observations port (decision 112): the newest observations and a look at booked devices. */
   observations?: RunsEngineDeps['observations'];
 }
@@ -102,8 +106,13 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     for (const pack of ['toy-review', 'toy-verify', 'toy-locate']) workflows.assign(alice.id, pack);
     const packs = new FakePacks();
     await packs.install(dir);
-    const knowledge = new FakeKnowledge();
     const external = new FakeExternal(kit.artifacts);
+    const spaces = createKnowledge({
+      records: kit, packs, external, parsers: options.parsers ?? createTestParserRegistry(), admin, clock: now,
+      runReads: { runById, canViewRun }, packReads: { readPackDirectory, packSchema },
+      sandbox: options.sandbox ?? { requireOsIsolation: await osIsolationAvailable() },
+    }).spaces;
+    const knowledge = new FakeKnowledge(spaces);
     external.put('toy:mindmap:docq7', { bytes: toyMap(standardDocument()), mediaType: 'application/json', meta: { title: '分区浇灌用例', document: 'docq7' } });
     external.put('toy:story:4021', { bytes: new TextEncoder().encode('# 需求 4021\n\n分区编号 1 到 8，每次浇灌 1 到 120 分钟。\n'), mediaType: 'text/markdown', meta: { title: '需求 4021 分区浇灌' } });
     external.put('toy:manual:zone', {
@@ -124,6 +133,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
       external,
       now,
       ...(leases !== null ? { leases, leaseJobs: options.leaseJobs ?? (async () => []) } : {}),
+      ...(options.environmentAccess !== undefined ? { environmentAccess: options.environmentAccess } : {}),
       ...(options.observations !== undefined ? { observations: options.observations } : {}),
       ...(options.sandboxLimits !== undefined ? { sandboxLimits: options.sandboxLimits } : {}),
       ...(options.clientKeyWindowMs !== undefined ? { clientKeyWindowMs: options.clientKeyWindowMs } : {}),

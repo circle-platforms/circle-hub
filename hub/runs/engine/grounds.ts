@@ -37,7 +37,7 @@ export async function groundsAudience(ctx:EngineContext,run:RunRecord,value:Vali
   const grounds=resultGrounds(value,run);if(!grounds.length)return null;
   if(!ctx.deps.records.principals?.list)return {code:'RESULT_GROUNDS_UNREADABLE',message:PROTOCOL_CODES.RESULT_GROUNDS_UNREADABLE.when,fix:PROTOCOL_CODES.RESULT_GROUNDS_UNREADABLE.fix};
   const provisional=options.recorded?null:await submissionByDigest(ctx.deps.records.store,run.run,value.submission);
-  const permissionOptions={pending:options.pending,...(provisional?{provisionalSubmission:provisional.digest}:{})};
+  const permissionOptions={pending:options.pending,...(provisional?{provisionalSubmission:provisional.digest}:{}),proven:new Set<string>()};
   const submitter=options.submitter??await ctx.deps.records.principals.get(run.runner??run.configurer??'');
   const diagnostic=new Set(options.recorded?value.unavailable_references??[]:[]);
   const claims=[...value.cross_item,...Object.values(value.partitions).flatMap(items=>items.flatMap(item=>item.requirements.flatMap(requirement=>requirement.claims)))];
@@ -63,9 +63,29 @@ export async function groundsAudience(ctx:EngineContext,run:RunRecord,value:Vali
  * Whether `by` may read every ground `value` names within `run`. `references` gives those grounds when the caller already
  * holds them (a result's summary lists them, in the order the result gives them); `value` is then not looked at.
  */
-export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:unknown,by:Principal,options:{pending?:boolean;trustedResult?:boolean;provisionalSubmission?:string;unavailableReferences?:readonly string[];references?:readonly string[]}={}):Promise<boolean>{
-  const documents=createDocumentCache(8);
+export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:unknown,by:Principal,options:{pending?:boolean;trustedResult?:boolean;provisionalSubmission?:string;unavailableReferences?:readonly string[];references?:readonly string[];proven?:Set<string>}={}):Promise<boolean>{
+  // The parsed documents of the call are shared: a parsed document is not an authorization (every resolution reads the source as
+  // its own reader before it looks at the cache), and one result names the same few sources a hundred times. With a cache of its
+  // own per check, admitting the result of a seventeen-case submission re-read the same documents for every ground and every
+  // reader: about 30 000 queries and 100 seconds after the checks had ended (traces of 2026-11-19).
+  // Only a cache made here is disposed here: disposing the call's own would end its use for the rest of the call.
+  const own=ctx.documents===undefined,documents=ctx.documents??createDocumentCache(8);
+  // What this reader was already found able to read is not asked again in the same check, nor in the same admission when the
+  // caller passes its set (groundsAudience). Only a yes is kept: it holds for the reference whatever path led to it (a reference
+  // met again below itself is refused before this is looked at), while a no may be the cut of a cycle. The answer for a source
+  // file does not depend on the part of it a reference selects, so it is kept by the file. In a real seventeen-case submission
+  // one admission asked about 104 grounds for every reader with about 20 000 queries, nearly all of them the same few sources
+  // (Hub traces of 2026-11-19). Nothing is kept past the call that made the set.
+  const proven=options.proven??new Set<string>();
   const check=async(reference:string,seen:Set<string>,depth:number,atRun=run,pending=options.pending===true,inheritedInput=false):Promise<boolean>=>{
+    if(depth>64||seen.has(reference))return false;
+    const key=[by.id,reference,atRun.run,pending,inheritedInput].join('\n');
+    if(proven.has(key))return true;
+    const readable=await checkOnce(reference,seen,depth,atRun,pending,inheritedInput);
+    if(readable)proven.add(key);
+    return readable;
+  };
+  const checkOnce=async(reference:string,seen:Set<string>,depth:number,atRun:RunRecord,pending:boolean,inheritedInput:boolean):Promise<boolean>=>{
     if(depth>64||seen.has(reference))return false;seen.add(reference);
     const spaces=ctx.deps.knowledge?.spaces,legacy=sourceReader(ctx.deps.records.artifacts,'function',atRun.sources);
     const identity=identityOf(by,pending?undefined:atRun.run);
@@ -93,6 +113,8 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
       if(tree)return (await tree.read(ref.root,ref.path,ref.entry??null,identity))!==null;
     }
     if(ref.scheme==='src'){
+      const sourceKey=['src',by.id,ref.sha256,atRun.run,pending,inheritedInput].join('\n');
+      if(proven.has(sourceKey))return true;
       const pins=[...new Set(atRun.sources.filter(binding=>{const source=parseReference(binding.reference);return source.scheme==='src'&&source.sha256===ref.sha256&&binding.artifact;}).map(binding=>binding.artifact!))];
       for(const capture of pins.length?pins:[undefined]){
         const candidates=capture?[await ctx.deps.records.store.get<import('../../records/api.ts').SourceArtifactBody>(capture)]:await ctx.deps.records.artifacts.records(ref.sha256);
@@ -105,12 +127,13 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
         if(!readable&&!pins.length&&atRun.run!==run.run){const outer=new Set(seen);outer.delete(reference);readable=await check(reference,outer,depth+1,run,options.pending===true);}
         if(!readable)return false;
       }
+      proven.add(sourceKey);
       return true;
     }
     let parser=ctx.parsers;
 
     const attempts:Array<Record<string,unknown>>=[];
-    const read=()=>resolveReference(reference,{reader:identity,parsers:parser,documents,trees:ctx.deps.knowledge?.treeReader(),records:recordReader(ctx.deps.records.store,ctx.deps.knowledge?.layers?.contributions),sources:{read:async(hash,reader)=>{
+    const read=()=>resolveReference(reference,{reader:identity,parsers:parser,documents,trees:ctx.deps.knowledge?.treeReader(),records:recordReader(ctx.deps.records,ctx.deps.knowledge?.layers?.contributions),sources:{read:async(hash,reader)=>{
       const pins=[...new Set(atRun.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===hash&&binding.artifact;}).map(binding=>binding.artifact!))];
       if(pins.length){
         let selected:Awaited<ReturnType<typeof ctx.deps.records.artifacts.source>>=null;
@@ -128,7 +151,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
     }},consumer:'function'});
     if(ref.scheme==='rec'){
       // A missing JSON pointer is an exact-validator diagnostic, not a different permission to its parent record.
-      if(!await recordReader(ctx.deps.records.store,ctx.deps.knowledge?.layers?.contributions).read(ref.record,identity)){
+      if(!await recordReader(ctx.deps.records,ctx.deps.knowledge?.layers?.contributions).read(ref.record,identity)){
         const record=await ctx.deps.records.store.get<any>(ref.record);
         const currentSamples=record?.kind==='submission'&&record.digest===options.provisionalSubmission&&/^\/checks\/[0-9]+\/samples$/.test(ref.pointer??'');
         const candidateAction=pending&&record?.kind==='action'&&record.body.run===atRun.run;
@@ -168,7 +191,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
     return true;
   };
   const diagnostic=new Set(options.trustedResult?(value as ValidationResult).unavailable_references??[]:options.unavailableReferences??[]);
-  try{for(const reference of (options.references??resultGrounds(value,run)).filter(reference=>!diagnostic.has(reference)))if(!await check(reference,new Set(),0))return false;return true;}finally{documents.dispose?.();}
+  try{for(const reference of (options.references??resultGrounds(value,run)).filter(reference=>!diagnostic.has(reference)))if(!await check(reference,new Set(),0))return false;return true;}finally{if(own)documents.dispose?.();}
 }
 
 /** A workflow grant never lends the initiator's private input data to another reader. */
@@ -231,7 +254,7 @@ async function issuedReadable(ctx:EngineContext,by:Principal,request:{run:string
 /** Every record-to-input and exact-value path uses the same current views as direct record reads. */
 export function guardedRecords(ctx:EngineContext):RecordReader{
   const {store,artifacts}=ctx.deps.records;
-  const base=recordReader(store,ctx.deps.knowledge?.layers?.contributions,(by,run)=>runReadableBy(ctx,by,run),(by,run,value)=>resultReadableBy(ctx,run,value as ValidationResult,by),(by,value)=>requestReadable(ctx,by,value as RequestBody),(by,run,digest)=>groundsReadableBy(ctx,run,'rec:'+digest,by));
+  const base=recordReader(ctx.deps.records,ctx.deps.knowledge?.layers?.contributions,(by,run)=>runReadableBy(ctx,by,run),(by,run,value)=>resultReadableBy(ctx,run,value as ValidationResult,by),(by,value)=>requestReadable(ctx,by,value as RequestBody),(by,run,digest)=>groundsReadableBy(ctx,run,'rec:'+digest,by));
   return {read:async(digest,reader)=>{
     const record=await store.get(digest);
     if(record?.kind==='source_artifact'&&!await artifacts.canRead(principalOf(reader),record as import('../../records/api.ts').SourceArtifact))return null;

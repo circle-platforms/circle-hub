@@ -5,6 +5,7 @@ import { isRecord } from './text.ts';
 import { runtimeMethod, sourceDocument, type RuntimeContract, type RuntimeEntry, type Problem } from './runtime-contract.ts';
 import { readAuthority } from './typed-contract.ts';
 import type { ManifestBed } from './manifest.ts';
+import { readTemplate, TemplateError } from './generated/skills/runner-workbook/workbook-writer/workbook-template.ts';
 export interface AllowedCall { reviewed?:boolean; object: string; method: string; parameters: Record<string, string>; unsupplied?: string[] }
 export interface RuntimeProfile {
   block_model?:boolean;
@@ -15,7 +16,7 @@ export interface RuntimeProfile {
   bed: string;
   device_count: number;
   fold_newlines: Array<{ object: string; method: string }>;
-  workbook: { sheet: string; header: string[]; identity_marker: string; range_name: string; closing_row: string[]; autoid_pattern: string };
+  workbook: { sheet: string; header: string[]; identity_marker: string; range_name: string; closing_row: string[]; autoid_pattern: string; template?: { sha256: string; xlsx_base64: string } };
   seats: Array<{ object: string; device: string; ordinal: number }>;
   hosts: Array<{ object: string; method: string; device: string; ordinal?:number }>;
   allowed: AllowedCall[];
@@ -34,6 +35,47 @@ function neverSupplied(raw: Record<string, unknown>, method: RuntimeEntry | null
   if (names.some((name) => { const param = method?.parameters.find((item) => item.name === name); return !param || param.required || Object.hasOwn(listed, name); })) return { names: [], problem: 'unsupplied 含必需、签名外或已定角色的参数' };
   return { names: names as string[], problem: null };
 }
+/** The automation test beds the caller's lineage holds device leases on, from the frozen lease view (keys bed/<bed>/<device>). */
+export function bookedBeds(leases: unknown): string[] {
+  const entries = isRecord(leases) && Array.isArray(leases.entries) ? leases.entries : [];
+  const beds = new Set<string>();
+  for (const entry of entries) {
+    if (!isRecord(entry) || entry.mine !== true || typeof entry.key !== 'string') continue;
+    const parts = entry.key.split('/');
+    if (parts.length === 3 && parts[0] === 'bed' && parts[1] !== '' && parts[2] !== '') beds.add(parts[1]!);
+  }
+  return [...beds].sort();
+}
+/**
+ * A runtime profile describes one automation test bed: bound to a run whose lineage booked another bed, the plans would be
+ * written for devices the run cannot reach. Null when the lineage books no bed (a plan-only run) or books the profile's own.
+ */
+export function bookingProblem(value: unknown, leases: unknown): Problem | null {
+  const booked = bookedBeds(leases);
+  if (!booked.length || !isRecord(value) || typeof value.bed !== 'string' || booked.includes(value.bed)) return null;
+  return {
+    pointer: '/bed',
+    message: `运行环境配置属于自动化测试环境 ${value.bed}，本谱系预订的是 ${booked.join('、')}`,
+    fix: `绑定属于 ${booked.join('、')} 的运行环境配置命名文档；缺省名 doc:doc:runtime-profile 指向哪一份由管理员发布时决定，属于别的测试环境时请管理员把 ${booked[0]} 的配置发布到这个名字，或改为预订 ${value.bed}`,
+  };
+}
+/**
+ * A workbook template that cannot be read was refused only when the workbook was generated, after every plan had been written.
+ * The start of a run asks this, so that such a profile refuses the start. The template's identity row is not compared with
+ * anything (decision 184): the generator writes the runtime and the contract identity from the contract the run locked, so a
+ * profile holds no copy of them and stays as it is when the runner's files change.
+ */
+export function templateProblem(value: unknown): Problem | null {
+  const workbook = isRecord(value) && isRecord(value.workbook) ? value.workbook : null;
+  if (workbook === null || workbook.template === undefined) return null;
+  try {
+    readTemplate(workbook as unknown as RuntimeProfile['workbook']);
+    return null;
+  } catch (error) {
+    if (!(error instanceof TemplateError)) throw error;
+    return { pointer: '/workbook/template', message: error.message, fix: '请管理员换成能读出的运行器模板后重新发布这份配置' };
+  }
+}
 export function parseProfile(value: unknown, contract: RuntimeContract, beds: readonly ManifestBed[]): ParsedProfile {
   const problems: Problem[] = [];
   const issue = (pointer: string, message: string) => problems.push({ pointer, message, fix: '管理员按 runtime-profile@1 形状核对配置、启用合约及自动化测试环境清单，重新发布后开始新运行' });
@@ -45,7 +87,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   }
   const runtime = isRecord(value.runtime) ? value.runtime : {};
   if (runtime.minimum_version !== contract.runtimeVersion) issue('/runtime/minimum_version', '运行时版本与合约不符');
-  if (runtime.contract_sha256 !== contract.pinned.identity) issue('/runtime/contract_sha256', '期望合约摘要与网关钉住的原合约身份不符');
+  if (runtime.contract_sha256 !== undefined) problems.push({ pointer: '/runtime/contract_sha256', message: '配置里的合约摘要已退役：工作簿的身份行由生成器按运行锁定的运行器合约写，配置不再存它的副本', fix: '请管理员删除该字段后重新发布这份配置' });
   if (!Number.isSafeInteger(value.device_count) || (value.device_count as number) < 1) issue('/device_count', '缺少只读预检的正整数设备数');
   const bed = beds.find((v) => v.name === value.bed);
   if (!bed) issue('/bed', '配置的自动化测试环境不在清单里');
@@ -55,7 +97,8 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   if (header.length !== FORMAT.header_columns || header.some((v) => !oneLine(v)) || new Set(header).size !== header.length) issue('/workbook/header', '表头必须是九个不同的非空单行文字');
   const closing = Array.isArray(workbook.closing_row) ? workbook.closing_row : [];
   if (closing.length !== FORMAT.header_columns || closing.some((v) => typeof v !== 'string' || v !== '' && !oneLine(v)) || !closing.some((v) => v !== '')) issue('/workbook/closing_row', '收尾行必须是九格文字，至少一格非空');
-  if(closing.slice(4).some(v=>v!=='')||closing[2]!==''&&(typeof closing[2]!=='string'||!/^[0-9]+$/.test(closing[2])||!Number.isSafeInteger(Number(closing[2]))||Number(closing[2])===1))problems.push({pointer:'/workbook/closing_row',message:'收尾行 E–I 必须为空，C 只能为空或不等于 1 的安全非负整数',fix:'管理员按 runtime-profile@1 修正收尾行后重新发布'});
+  if(closing[2]!==''&&(typeof closing[2]!=='string'||!/^[0-9]+$/.test(closing[2])||!Number.isSafeInteger(Number(closing[2]))||Number(closing[2])===1))problems.push({pointer:'/workbook/closing_row',message:'收尾行的 C 只能为空或不等于 1 的安全非负整数',fix:'管理员按 runtime-profile@1 修正收尾行后重新发布'});
+  if(workbook.template!==undefined&&(!isRecord(workbook.template)||typeof workbook.template.sha256!=='string'||!/^[a-f0-9]{64}$/.test(workbook.template.sha256)||typeof workbook.template.xlsx_base64!=='string'||!workbook.template.xlsx_base64))issue('/workbook/template','运行器模板要写成 {sha256, xlsx_base64}');
   if (typeof workbook.autoid_pattern === 'string') {
     try { if (!workbook.autoid_pattern.startsWith('^') || !workbook.autoid_pattern.endsWith('$') || workbook.autoid_pattern.length > 200) throw new Error(); new RegExp(workbook.autoid_pattern, 'u'); } catch { issue('/workbook/autoid_pattern', '用例号形状必须是有首尾锚点的正则表达式，至多 200 字符'); }
   }
@@ -128,7 +171,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   if(value.block_model!==undefined&&typeof value.block_model!=='boolean')issue('/block_model','block_model 必须是显式布尔声明');
   const assertions = allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));
   const document=sourceDocument(contract),runnerRuntime=isRecord(document?.runtime)?document.runtime:{},block=isRecord(runnerRuntime.block_model)?runnerRuntime.block_model:{},defaultCall=isRecord(block.default_assertion)?block.default_assertion:{};
-  const defaults=value.block_model===true?assertions.filter(call=>call.object===defaultCall.object&&call.method===defaultCall.method):assertions;
+  const defaults=value.block_model===true||assertions.length>1&&isRecord(block.default_assertion)?assertions.filter(call=>call.object===defaultCall.object&&call.method===defaultCall.method):assertions;
   if (defaults.length !== 1) issue('/allowed', '必须配置唯一的字面断言组合，供生成器从 expects 产生断言');
   for (const call of assertions) {
     const names = Object.keys(call.parameters).filter((name) => call.parameters[name] === 'literal_assertion');

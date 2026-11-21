@@ -586,24 +586,48 @@ const status: Handler = async (args, context, io) => {
   return 0;
 };
 
-const HANDLERS: Record<string, Handler> = {
-  init,
-  db,
-  key,
-  service,
-  backup,
-  restore,
-  deploy: deployCommand,
-  rollback: rollbackCommand,
-  rehearse: rehearseCommand,
-  status,
-  tls,
-};
+interface PlatformCommandDefinition {
+  readonly name: string;
+  readonly summary: string;
+  readonly bridge: false;
+  readonly step: `run-${string}`;
+  readonly handler: Handler;
+}
 
-export const PLATFORM_COMMANDS: readonly string[] = Object.keys(HANDLERS);
+const COMMANDS = [
+  { name: 'init', summary: '初始化数据根和部署设置', handler: init },
+  { name: 'db', summary: '管理本机 PostgreSQL', handler: db },
+  { name: 'key', summary: '管理密钥库主密钥', handler: key },
+  { name: 'service', summary: '管理用户服务', handler: service },
+  { name: 'backup', summary: '备份数据和设置', handler: backup },
+  { name: 'restore', summary: '恢复备份到空的数据根', handler: restore },
+  { name: 'deploy', summary: '部署提交或发布包', handler: deployCommand },
+  { name: 'rollback', summary: '恢复上一版及其部署前备份', handler: rollbackCommand },
+  { name: 'rehearse', summary: '演练备份、销毁和恢复', handler: rehearseCommand },
+  { name: 'status', summary: '汇总运行状态', handler: status },
+  { name: 'tls', summary: '管理内置 HTTPS 证书', handler: tls },
+].map((command): PlatformCommandDefinition => ({ ...command, bridge: false, step: `run-${command.name}` }));
+
+export type PlatformCommandMetadata = Omit<PlatformCommandDefinition, 'handler'>;
+
+export interface PlatformCommand extends PlatformCommandMetadata {
+  /** Arguments exclude the command name. Uses the same checks and exit codes as the platform CLI. */
+  run(args: readonly string[]): Promise<number>;
+}
+
+export const PLATFORM_COMMAND_METADATA: readonly PlatformCommandMetadata[] = COMMANDS.map(({ handler, ...metadata }) => metadata);
+export const PLATFORM_COMMANDS: readonly string[] = PLATFORM_COMMAND_METADATA.map(({ name }) => name);
 
 export function isPlatformCommand(name: string | undefined): boolean {
-  return name !== undefined && Object.hasOwn(HANDLERS, name);
+  return COMMANDS.some((command) => command.name === name);
+}
+
+/** Binds command execution without starting services, creating a context or reading deployment settings. */
+export function platformCommands(io: PlatformIo, overrides: Partial<PlatformContext> = {}): readonly PlatformCommand[] {
+  return PLATFORM_COMMAND_METADATA.map((metadata) => ({
+    ...metadata,
+    run: (args) => runPlatformCommand([metadata.name, ...args], io, overrides),
+  }));
 }
 
 /** Runs one platform command; returns the exit code (0 ok, 1 failure, 2 usage, 3 not running for status commands). */
@@ -615,7 +639,7 @@ export async function runPlatformCommand(argv: readonly string[], io: PlatformIo
       io.stdout(usage(overrides.platform));
       return command === undefined ? 2 : 0;
     }
-    const handler = isPlatformCommand(command) ? HANDLERS[command] : undefined;
+    const handler = COMMANDS.find((entry) => entry.name === command)?.handler;
     if (!handler) throw new UsageError(`未知命令：${command}${command === 'serve' ? '（serve 由服务器包提供，这份代码里没有 hub/server/cli.ts）' : ''}`);
     // A misspelled data root or port variable would silently act on the defaults.
     assertKnownHubVariables(io.env, io.allowVariables);

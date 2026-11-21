@@ -12,7 +12,6 @@ import { createTestHub, type TestHub } from '../../hub/server/testing-real.ts';
 import { connect, type McpClient } from './support/mcp.ts';
 import { openConsole } from './support/console.ts';
 import { testConsoleCredentials } from '../../hub/server/testing.ts';
-import { labelOf } from '../../contracts/generated/vocabulary.ts';
 
 let hub:TestHub,dir:string,owner:Awaited<ReturnType<TestHub['createUser']>>,other:typeof owner;
 let client:McpClient,reader:McpClient,admin:McpClient;
@@ -33,7 +32,7 @@ test('MCP sharing merges a verified entry, saves refusal receipts and lets its s
   assert.equal(saved.isError,false,saved.text);const entry=saved.out.personal_entry!;
   const submit={root:entry.root,path:'/submitted',entry:entry.entry};
   const shared=await client.call('upload_file',{share_entry:submit});assert.equal(shared.isError,false,shared.text);assert.equal(shared.out.share?.status,'merged');
-  assert.ok(shared.out.share?.reference);assert.match(shared.text,/个人原条目保留/);
+  assert.ok(shared.out.share?.reference);assert.match(shared.text,/个人资料保留/);
   assert.equal((await reader.call('get_nodes',{reference:shared.out.share!.reference!})).isError,false);
   assert.equal((await client.call('get_nodes',{reference:entry.reference})).isError,false);
   const duplicate=await client.call('upload_file',{share_entry:submit});assert.equal(duplicate.out.share?.code,'SHARE_DUPLICATE');assert.equal(duplicate.isError,true);
@@ -87,7 +86,7 @@ test('personal workflow runs freeze the namespace and require grounds readable b
   const rebound=await reader.call('start_run',{pack:packId,pack_space:owner.user.id,inputs:{target:{reference:resultReference}}});
   assert.equal(rebound.out.errors[0]?.code,'SOURCE_UNAVAILABLE',rebound.text);assert.equal(rebound.out.run,undefined,'a record input cannot copy a result whose basis is no longer readable');
   await spaces.grant(owner.principal,{path:'/basis',audience:'member',member:other.user.id});
-  const repaired=await client.call('submit_result',submission);assert.equal(repaired.out.acceptance,'accepted',repaired.text);assert.equal(repaired.out.result?.trace,accepted.out.result?.trace,'the unchanged accepted receipt survives a temporary grant revocation');assert.ok(repaired.text.includes(resultReference));
+  const repaired=await client.call('submit_result',submission);assert.equal(repaired.out.acceptance,'accepted',repaired.text);assert.equal(repaired.out.result?.trace,accepted.out.result?.trace,'the unchanged accepted receipt survives a temporary grant revocation');assert.equal(repaired.out.record,resultReference);
   assert.equal((await reader.call('get_nodes',{reference:resultReference})).isError,false);
   assert.equal((await reader.call('get_nodes',{reference:acceptedRaw})).isError,false,'restoring the grant restores the same immutable raw record');
   await hub.hub.registry.personal!.grant(owner.principal,packId,{audience:'member',member:other.user.id,revoke:true});
@@ -107,34 +106,34 @@ test('withdrawal qualifies an immutable accepted result and rejects a new submis
   const detail=await hub.hub.runs.getRun(owner.principal,privateRun);assert.ok(detail?.latest);const digest=detail.latest.record;
   await spaces.withdraw(owner.principal,ref.entry!);
   const current=await hub.hub.runs.getRun(owner.principal,privateRun);assert.ok(current?.grounds_withdrawn?.includes(personalEntry));assert.equal(current?.latest?.record,digest);
-  const read=await client.call('get_nodes',{reference:resultReference});assert.equal(read.isError,false,read.text);assert.ok(read.text.includes(labelOf('validity_status','grounds_withdrawn')));
+  const read=await client.call('get_nodes',{reference:resultReference});assert.equal(read.isError,false,read.text);assert.match(read.text,/证据已撤回，当前结论状态未知/);assert.match(read.text,/以下是当时保存的结论/);assert.deepEqual(read.out.content?.structure?.grounds_withdrawn,[personalEntry]);
   const submit=await client.call('submit_result',{run:privateRun,model:'synthetic-scripted@1',items:[],cross_item:[{nature:'judgment',code:'level',rank:'a',statement:'合成撤回后重交',grounds:[personalEntry]}]});assert.equal(submit.out.errors[0]?.code,'GROUNDS_WITHDRAWN',submit.text);
 });
 
 test('console owner stages and publishes a generic skill, controls grants and cannot promote without the team publish right',async()=>{
   const spec:PackDescription={id:'synthetic-personal-steps',version:'1.0.0',kind:'skill',title:'合成通用做法',description:'合成个人步骤',files:{'SKILL.md':'# 合成通用做法\n按合成步骤执行。','skill.json':{schema:'skill@1',parsers:[]}}};
   const written=await writePack(join(dir,'skill'),spec);const files:Record<string,Uint8Array>={};for(const path of ['pack.json',...written.manifest.files.map(row=>row.path)])files[path]=await readFile(join(written.dir,path));
-  const ownConsole=await openConsole(hub,owner.token),otherConsole=await openConsole(hub,other.token);const home=await ownConsole.get('/console/packs/-/publish');assert.equal(home.status,200,home.body);const nonce=csrf(home.body);
+  const ownConsole=await openConsole(hub,owner.token),otherConsole=await openConsole(hub,other.token);const home=await ownConsole.get('/console/workflows/-/publish');assert.equal(home.status,200,home.body);const nonce=csrf(home.body);
   const boundary='synthetic-personal-pack';const body=Buffer.concat([Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="csrf"\r\n\r\n${nonce}\r\n--${boundary}\r\nContent-Disposition: form-data; name="archive"; filename="synthetic.zip"\r\nContent-Type: application/zip\r\n\r\n`),Buffer.from(zipSync(files)),Buffer.from(`\r\n--${boundary}--\r\n`)]);
-  const staged=await new Promise<Awaited<ReturnType<typeof ownConsole.get>>>((resolve,reject)=>{import('node:http').then(({request})=>{const req=request({host:'127.0.0.1',port:hub.port,path:'/console/packs/do/stage',method:'POST',headers:{cookie:'circle_hub_session='+ownConsole.sessionCookie,origin:'http://127.0.0.1:'+hub.port,'content-type':'multipart/form-data; boundary='+boundary}},res=>{const chunks:Buffer[]=[];res.on('data',chunk=>chunks.push(chunk));res.on('end',()=>resolve({status:res.statusCode!,headers:res.headers,body:Buffer.concat(chunks).toString()}));});req.on('error',reject);req.end(body);}).catch(reject);});
-  assert.equal(staged.status,303,staged.body);const waiting=await ownConsole.get('/console/packs/-/publish'),stage=/stage=([^"&]+)/.exec(waiting.body)?.[1];assert.ok(stage,waiting.body);
+  const staged=await new Promise<Awaited<ReturnType<typeof ownConsole.get>>>((resolve,reject)=>{import('node:http').then(({request})=>{const req=request({host:'127.0.0.1',port:hub.port,path:'/console/workflows/do/stage',method:'POST',headers:{cookie:'circle_hub_session='+ownConsole.sessionCookie,origin:'http://127.0.0.1:'+hub.port,'content-type':'multipart/form-data; boundary='+boundary}},res=>{const chunks:Buffer[]=[];res.on('data',chunk=>chunks.push(chunk));res.on('end',()=>resolve({status:res.statusCode!,headers:res.headers,body:Buffer.concat(chunks).toString()}));});req.on('error',reject);req.end(body);}).catch(reject);});
+  assert.equal(staged.status,303,staged.body);const waiting=await ownConsole.get('/console/workflows/-/publish'),stage=/stage=([^"&]+)/.exec(waiting.body)?.[1];assert.ok(stage,waiting.body);
   assert.doesNotMatch(waiting.body.slice(waiting.body.indexOf('<table')),/<tr[^>]*>[^<]*<form/);
-  const selectedStage=await ownConsole.get('/console/packs/-/publish?stage='+stage);assert.match(selectedStage.body,/name="stage" value="[^"]+"/);
+  const selectedStage=await ownConsole.get('/console/workflows/-/publish?stage='+stage);assert.match(selectedStage.body,/name="stage" value="[^"]+"/);
   assert.match(waiting.body,/<div class="ch-toast" role="status" data-toast-success/);assert.doesNotMatch(selectedStage.body,/<div class="ch-toast" role="status" data-toast-success/,'confirmation is consumed once, never inferred from a URL');
-  const outsider=await otherConsole.get('/console/packs/-/publish');assert.equal((await otherConsole.post('/console/packs/do/publish',{csrf:csrf(outsider.body),stage})).status,400);
-  assert.equal((await ownConsole.post('/console/packs/do/publish',{csrf:nonce,stage})).status,303);
-  const detailUrl='/console/packs/'+spec.id+'?space='+owner.user.id;const detail=await ownConsole.get(detailUrl);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);assert.match(detail.body,/>分享…<\/a>/);assert.match(detail.body,/分享到团队/);
+  const outsider=await otherConsole.get('/console/workflows/-/publish');assert.equal((await otherConsole.post('/console/workflows/do/publish',{csrf:csrf(outsider.body),stage})).status,400);
+  assert.equal((await ownConsole.post('/console/workflows/do/publish',{csrf:nonce,stage})).status,303);
+  const detailUrl='/console/skills/'+spec.id+'?space='+owner.user.id;const detail=await ownConsole.get(detailUrl);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);assert.match(detail.body,/>分享…<\/a>/);assert.match(detail.body,/分享到公共空间/);
   assert.equal((await otherConsole.get(detailUrl)).status,404);
-  const previewReply=await ownConsole.send('/console/packs/do/grant',{method:'POST',headers:{origin:'http://127.0.0.1:'+hub.port,'content-type':'application/x-www-form-urlencoded','circle-hub-form':'enhanced'},body:new URLSearchParams({csrf:nonce,pack:spec.id,audience:'administrators',preview_grant:'1'}).toString()});
+  const previewReply=await ownConsole.send('/console/workflows/do/grant',{method:'POST',headers:{origin:'http://127.0.0.1:'+hub.port,'content-type':'application/x-www-form-urlencoded','circle-hub-form':'enhanced'},body:new URLSearchParams({csrf:nonce,pack:spec.id,audience:'administrators',preview_grant:'1'}).toString()});
   assert.equal(previewReply.status,200,previewReply.body);assert.match(JSON.parse(previewReply.body).location,/#grant-pack$/);assert.equal((await hub.hub.registry.personal!.grants(owner.principal,spec.id)).length,0,'enhanced preview preserves its Dialog destination and creates no grant');
 
-  assert.equal((await ownConsole.post('/console/packs/do/grant',{csrf:'invalid',pack:spec.id,audience:'member',member:other.user.name})).status,403);
-  assert.equal((await ownConsole.send('/console/packs/do/grant',{method:'POST',headers:{origin:'http://192.0.2.1','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf:nonce,pack:spec.id,audience:'member',member:other.user.name}).toString()})).status,403);
-  assert.equal((await ownConsole.post('/console/packs/do/grant',{csrf:nonce,pack:spec.id,audience:'member',member:other.user.name})).status,303);assert.equal((await otherConsole.get(detailUrl)).status,200);
+  assert.equal((await ownConsole.post('/console/workflows/do/grant',{csrf:'invalid',pack:spec.id,audience:'member',member:other.user.name})).status,403);
+  assert.equal((await ownConsole.send('/console/workflows/do/grant',{method:'POST',headers:{origin:'http://192.0.2.1','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf:nonce,pack:spec.id,audience:'member',member:other.user.name}).toString()})).status,403);
+  assert.equal((await ownConsole.post('/console/workflows/do/grant',{csrf:nonce,pack:spec.id,audience:'member',member:other.user.name})).status,303);assert.equal((await otherConsole.get(detailUrl)).status,200);
   const readable=await reader.call('get_nodes',{pack:spec.id,pack_space:owner.user.id});assert.equal(readable.isError,false,readable.text);assert.match(readable.text,/合成通用做法/);
-  assert.equal((await ownConsole.post('/console/packs/do/promote',{csrf:nonce,pack:spec.id,version:spec.version})).status,400);
+  assert.equal((await ownConsole.post('/console/workflows/do/promote',{csrf:nonce,pack:spec.id,version:spec.version})).status,400);
   await hub.records.authorizations.grantPublishRight(hub.admin.principal,owner.user.id);
-  assert.equal((await ownConsole.post('/console/packs/do/promote',{csrf:nonce,pack:spec.id,version:spec.version})).status,303);
+  assert.equal((await ownConsole.post('/console/workflows/do/promote',{csrf:nonce,pack:spec.id,version:spec.version})).status,303);
   assert.ok(await hub.hub.registry.resolve(spec.id));assert.ok(await hub.hub.registry.personal!.resolve(owner.principal,owner.user.id,spec.id));
   const workflowPromoted=await hub.hub.registry.personal!.promote(owner.principal,packId);assert.ok(workflowPromoted.ok,JSON.stringify(workflowPromoted));
   await hub.assignPack(owner.principal,packId);await hub.assignPack(other.principal,packId);
@@ -216,7 +215,7 @@ test('shared revisions use the selected team directory through MCP and password-
   const body={kind:'observation',statement:'合成共享修订第一版',path:'/revision-personal',grounds:[{reference:'src:'+source.body.sha256,quotation:'每次三项'}]};
   const first=(await client.call('upload_file',{personal_entry:body})).out.personal_entry!;
   const shared=await client.call('upload_file',{share_entry:{root:first.root,path:body.path,entry:first.entry,team_path:'/revision-team/first'}});
-  assert.equal(shared.isError,false,shared.text);assert.equal(shared.out.share?.target_path,'/revision-team/first');assert.ok(shared.text.includes('/revision-team/first'));
+  assert.equal(shared.isError,false,shared.text);assert.equal(shared.out.share?.target_path,'/revision-team/first');assert.equal(shared.out.share?.reference,`tree:${shared.out.share?.team_root}/revision-team/first@${first.entry}`);
   const changed=(await client.call('upload_file',{personal_entry:{...body,statement:'合成共享修订第二版',replaces:first.entry}})).out.personal_entry!;
   const browser=await openConsole(hub,owner.token);
   const page=await browser.get('/console/knowledge/space?'+new URLSearchParams({space:owner.user.id,root:changed.root,path:body.path,entry:changed.entry,share:'1'}));
@@ -226,8 +225,8 @@ test('shared revisions use the selected team directory through MCP and password-
   assert.equal(merged.status,303,merged.body);
   const team=(await spaces.current('team'))!,current=await spaces.entry(other.principal,team.root,'/revision-team/second',changed.entry);
   assert.equal(current?.body.replaces,first.entry);assert.equal(current?.body.shared_from?.path,body.path);
-  assert.match((await reader.call('get_nodes',{reference:shared.out.share!.reference!})).text,/被取代/);
-  const history=await browser.get('/console/knowledge/submissions');assert.equal(history.status,200,history.body);assert.match(history.body,/团队文件夹/);assert.ok(history.body.includes('revision-team › second'));assert.ok(history.body.includes('path=%2Frevision-team%2Fsecond'));
+  const previous=await reader.call('get_nodes',{reference:shared.out.share!.reference!});assert.match(previous.text,/资料已有新版本/);assert.equal(previous.out.content?.structure?.entry_status,'superseded');
+  const history=await browser.get('/console/knowledge/submissions');assert.equal(history.status,200,history.body);assert.match(history.body,/公共空间文件夹/);assert.ok(history.body.includes('revision-team › second'));assert.ok(history.body.includes('path=%2Frevision-team%2Fsecond'));
 });
 
 test('rejected raw submissions never disclose copied private quotations through direct records or record inputs',async()=>{
@@ -241,7 +240,7 @@ test('rejected raw submissions never disclose copied private quotations through 
   const refused=await client.call('submit_result',{run:run.run,model:'synthetic-scripted@1',items:[],cross_item:[{nature:'judgment',code:'level',rank:'a',statement:privateQuote,grounds:[reference]}]});
   assert.equal(refused.out.errors[0]?.code,'RESULT_GROUNDS_UNREADABLE',refused.text);
   const detail=await hub.hub.runs.getRun(owner.principal,run.run);assert.ok(detail?.submissions.length);const raw='rec:'+detail.submissions[0].record;
-  const own=await client.call('get_nodes',{reference:raw});assert.equal(own.isError,false,own.text);assert.ok(own.text.includes(privateQuote),'the received raw submission is preserved for its submitter');
+  const own=await client.call('get_nodes',{reference:raw});assert.equal(own.isError,false,own.text);assert.ok(own.out.content?.text?.includes(privateQuote),'the received raw submission is preserved for its submitter');
   for(const actor of [reader,admin]){
     const denied=await actor.call('get_nodes',{reference:raw}),missing=await actor.call('get_nodes',{reference:'rec:'+'e'.repeat(64)});
     assert.equal(denied.isError,true,denied.text);assert.equal(denied.out.errors?.[0]?.code,'SOURCE_UNAVAILABLE');assert.equal(missing.out.errors?.[0]?.code,'SOURCE_ABSENT');assert.ok(!denied.text.includes(privateQuote));
@@ -298,10 +297,11 @@ test('a readable copy of equal bytes never grants a frozen capture label and an 
   await spaces.grant(other.principal,{path:'/capture-copy',audience:'member',member:owner.user.id});
   await spaces.grant(other.principal,{path:'/capture-copy',audience:'administrators'});
   const detail=await hub.hub.runs.getRun(owner.principal,run.run);assert.ok(detail);
-  const {feeding_offset:_offset,...snapshot}=detail.run,legacyId=newId('run');
-  const legacy=RunRecord.parse({...snapshot,run:legacyId,sources:[{...snapshot.sources[0],artifact:copy.digest,label:'synthetic-authorized-copy.json',slot:'same-byte-copy'},...snapshot.sources]});
-  await hub.records.store.put({kind:'run',schema:'run@1',provenance:'observed',body:legacy,index:[{key:'runs.id',value:legacyId}]});
-  for(const by of [other.principal,hub.admin.principal])for(const id of [run.run,legacyId])assert.equal(await hub.hub.runs.getRun(by,id),null,'every frozen capture is checked, even when a readable equal-byte capture is first');
+  const snapshot={...detail.run,run:newId('run')};
+  if(snapshot.feeding_offset)snapshot.feeding_offset={...snapshot.feeding_offset,run:snapshot.run};
+  const counterexample=RunRecord.parse({...snapshot,sources:[{...snapshot.sources[0],artifact:copy.digest,label:'synthetic-authorized-copy.json',slot:'same-byte-copy'},...snapshot.sources]});
+  await hub.records.store.put({kind:'run',schema:'run@1',provenance:'observed',body:counterexample,index:[{key:'runs.id',value:counterexample.run}]});
+  for(const by of [other.principal,hub.admin.principal])for(const id of [run.run,counterexample.run])assert.equal(await hub.hub.runs.getRun(by,id),null,'every frozen capture is checked, even when a readable equal-byte capture is first');
 
   await spaces.grant(owner.principal,{path:'/capture-original',audience:'member',member:other.user.id});
   await hub.hub.registry.personal!.grant(owner.principal,packId,{audience:'member',member:other.user.id});

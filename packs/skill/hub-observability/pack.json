@@ -1,0 +1,20 @@
+{
+  "schema": "pack@1",
+  "id": "hub-observability",
+  "version": "1.0.0",
+  "kind": "skill",
+  "title": "Hub 调用观测",
+  "description": "按账号读取 Hub 会话调用、工具使用和追踪用量",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "b95491ae7b5e8d80c5a81d1f298a14c40f12904a4e0ec37aa784d9dfd65619cd",
+      "size": 1790
+    },
+    {
+      "path": "skill.json",
+      "sha256": "ebf8f7540a86dc38c618b30490d7d336a7aedc2cb45655919d58e998eb8fffd2",
+      "size": 34
+    }
+  ]
+}

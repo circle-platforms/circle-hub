@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // Regression tests for the findings of the milestone 2 review of this package, one scenario per finding: a list producer
 // broken for every document, failures that are not memoized, too many documents skipped or isolated, a document that times
@@ -298,7 +299,7 @@ describe('the memo key covers what the function receives (finding: build and bat
     assert.equal(cases.length, 4);
     for (const entry of cases) {
       assert.deepEqual([entry.data?.line, entry.data?.build], ['1.3', C]);
-      assert.match(entry.applicability, /构建 Rel_ACME_1_3_20/);
+      assert.match(entry.applicability ?? "", /构建 Rel_ACME_1_3_20/);
     }
     // Produced alone, in a database without stored outputs, the build has the same root.
     const fresh = await world(t, producers, { pack: { functions: { 'reading.ts': READING } } });
@@ -468,7 +469,7 @@ describe('the byte cap of a batch (finding: documents past the cap skipped, ever
         return typeof value === 'function' ? value.bind(target) : value;
       },
     });
-    const knowledge = createKnowledge({
+    const knowledge = createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,
       records: { store: kit.store, artifacts, pointers: kit.pointers, principals: kit.principals, objects },
       parsers: createDefaultRegistry(),
       packs: w.packs,

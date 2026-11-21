@@ -3,7 +3,7 @@
 // values are synthetic.
 import { goodData, subjectOf, CONTRACT_DOC } from '../functions/test-support.ts';
 import { runtimeDigest } from '../functions/runtime-contract.ts';
-import { compileGrammar } from '../functions/generated/command-grammar.ts';
+import { compileGrammar } from '../functions/generated/skills/command-tools/command-check/grammar.ts';
 
 export const ROOT = 'b'.repeat(64);
 export const policy = {

@@ -78,8 +78,8 @@ describe('scenario 42: T4-2 and T6 operation evidence through the capture hook a
     const samePage = await world.client.call('get_nodes', { root: world.root, paths: [target.path], depth: 0 });
     assert.equal(samePage.isError, false, samePage.text);
     assert.ok(samePage.out.nodes?.[0]?.contributions?.some(row => row.record === record));
-    assert.match(samePage.text, /客户端捕获/);
-    assert.match(samePage.text, /依据 声明/);
+    assert.match(samePage.text, /合成只读排障已记录；状态未确认/);
+    assert.match(samePage.text, /决定者模型/);
     const outsideArtifact = await capturedArtifact(world, outsideCapture.event);
     assert.equal(outsideArtifact.body.provenance_type, 'client_captured');
     // The quote-alteration counterexample is exercised by scenario 37 against this same real Hub.
@@ -189,7 +189,7 @@ describe('scenario 42: T4-2 and T6 operation evidence through the capture hook a
     assert.equal(both.isError, false, both.text);
     assert.deepEqual(both.out.nodes?.[0]?.entries, baseline.out.nodes?.[0]?.entries, 'the original tree is not adjudicated or rewritten');
     for (const endpoint of [observationRecord, record]) assert.ok(both.out.nodes?.[0]?.contributions?.some(row => row.record === endpoint));
-    assert.match(both.text, /矛盾已标记，两边都留，不裁决/);
+    assert.match(both.text, /两份资料的说法有冲突；状态未知/);
     assert.doesNotMatch(both.text, /裁决为/);
 
     const feedingRecord = beforeBody.feeding_record;

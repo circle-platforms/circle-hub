@@ -37,7 +37,7 @@ const failed=(value:Awaited<ReturnType<typeof replay>>)=>value.s.check(value.tur
 describe('unlimited test-bed scenario',()=>{
  test('searches without hours, verifies three legacy refusals, acquires without TTL and releases from the booking lineage',async()=>{
   const value=await replay();assert.deepEqual(failed(value),[]);
-  const starts=value.replies.flat().filter(block=>'tool'in block&&block.tool==='hub_start_run').map(block=>(block as {input:any}).input);
+  const starts=value.replies.flat().filter(block=>'tool'in block&&block.tool==='mcp__hub__start_run').map(block=>(block as {input:any}).input);
   assert.deepEqual(starts.map(input=>input.parameters),[
    {action:'search',need:gold.need},
    {action:'search',need:gold.need,hours:2},
@@ -86,9 +86,9 @@ describe('unlimited test-bed scenario',()=>{
  test('reads search pagination before probing or booking and never treats a capped page as complete',async()=>{
   const s=scenario(gold);await s.respond(turn(0));await s.respond(turn(1,responses()[0]));
   const more=`\n下一页：get_nodes {"reference":"${reference('a')}","cursor":"next"}`;
-  const reply=await s.respond(turn(2,{text:searchPage+more}));assert.deepEqual(reply,[{tool:'hub_get_nodes',input:{reference:reference('a'),cursor:'next'}}]);
+  const reply=await s.respond(turn(2,{text:searchPage+more}));assert.deepEqual(reply,[{tool:'mcp__hub__get_nodes',input:{reference:reference('a'),cursor:'next'}}]);
   for(let index=3;index<=5;index++)await s.respond(turn(index,{text:searchPage+more}));
-  const logs:LoggedTurn[]=[{index:0,toolResults:[],tools:['hub_start_run']},...Array.from({length:5},(_,i)=>({index:i+1,toolResults:[{id:'r',text:i===0?responses()[0].text:searchPage+more,isError:false}],tools:[]}))];
+  const logs:LoggedTurn[]=[{index:0,toolResults:[],tools:['mcp__hub__start_run']},...Array.from({length:5},(_,i)=>({index:i+1,toolResults:[{id:'r',text:i===0?responses()[0].text:searchPage+more,isError:false}],tools:[]}))];
   assert.ok(s.check(logs).some(check=>!check.ok));
  });
  test('an unrelated pagination reference stops the flow and fails instead of reading it',async()=>{
@@ -99,12 +99,12 @@ describe('unlimited test-bed scenario',()=>{
  test('a failed extend probe or acquire-page read still triggers release of the known booking',async()=>{
   for(const at of [5,6]){const values=responses();values[at]={text:'出错：SOURCE_UNAVAILABLE',error:true};const value=await replay(values);
    assert.ok(failed(value).length);
-   const releases=value.replies.flat().filter(block=>'tool'in block&&block.tool==='hub_start_run'&&(block.input as any).parameters.action==='release');
+   const releases=value.replies.flat().filter(block=>'tool'in block&&block.tool==='mcp__hub__start_run'&&(block.input as any).parameters.action==='release');
    assert.equal(releases.length,1);assert.equal((releases[0] as {input:any}).input.predecessor,BOOKING);
   }
  });
  test('an unregistered ownership gold adds no registration or forced-release action',async()=>{
-  const value=await replay();const actions=value.replies.flat().filter(block=>'tool'in block&&block.tool==='hub_start_run').map(block=>(block as {input:any}).input.parameters.action);
+  const value=await replay();const actions=value.replies.flat().filter(block=>'tool'in block&&block.tool==='mcp__hub__start_run').map(block=>(block as {input:any}).input.parameters.action);
   assert.ok(!actions.some(action=>['register','unregister','force_release'].includes(action)));
  });
  test('a new scenario instance can independently grade the logged transcript',async()=>{

@@ -1,0 +1,139 @@
+{
+  "format_version": 1,
+  "status": "proposal-awaiting-boss",
+  "scope": "production hub packages; type and value imports both counted",
+  "entrypoints": {
+    "config": "hub/config/index.ts",
+    "records": "hub/records/api.ts",
+    "telemetry": "hub/telemetry/api.ts",
+    "rules": "hub/rules/api.ts",
+    "refs": "hub/refs/api.ts",
+    "connectors": "hub/connectors/api.ts",
+    "knowledge": "hub/knowledge/api.ts",
+    "dispatch": "hub/dispatch/api.ts",
+    "runs": "hub/runs/api.ts",
+    "server": "hub/server/api.ts",
+    "health": "hub/health/api.ts",
+    "jev": "hub/jev/api.ts",
+    "leases": "hub/leases/api.ts",
+    "requests": "hub/requests/api.ts",
+    "platform": "hub/platform/api.ts"
+  },
+  "allowed_dependencies": {
+    "config": [],
+    "records": [
+      "config"
+    ],
+    "telemetry": [
+      "config",
+      "records"
+    ],
+    "rules": [
+      "telemetry"
+    ],
+    "refs": [
+      "records",
+      "rules",
+      "telemetry"
+    ],
+    "connectors": [
+      "records",
+      "refs",
+      "rules",
+      "telemetry"
+    ],
+    "knowledge": [
+      "connectors",
+      "jev",
+      "records",
+      "refs",
+      "rules",
+      "telemetry"
+    ],
+    "dispatch": [
+      "connectors",
+      "leases",
+      "records",
+      "refs",
+      "telemetry"
+    ],
+    "runs": [
+      "connectors",
+      "dispatch",
+      "knowledge",
+      "leases",
+      "records",
+      "refs",
+      "requests",
+      "rules",
+      "telemetry"
+    ],
+    "server": [
+      "config",
+      "connectors",
+      "dispatch",
+      "health",
+      "knowledge",
+      "leases",
+      "platform",
+      "records",
+      "refs",
+      "requests",
+      "rules",
+      "runs",
+      "telemetry"
+    ],
+    "health": [
+      "records"
+    ],
+    "jev": [
+      "records"
+    ],
+    "leases": [
+      "config",
+      "records"
+    ],
+    "requests": [
+      "records"
+    ],
+    "platform": []
+  },
+  "shared_interfaces": [
+    "hub/ports.ts"
+  ],
+  "shared_pure_modules": [
+    "hub/listen.ts"
+  ],
+  "entrypoint_exceptions": [
+    {
+      "target": "hub/telemetry/usage.ts",
+      "allowed_importers": [
+        "records",
+        "refs",
+        "rules"
+      ],
+      "reason": "docs/hub-r4-architecture.md:47 documented leaf (Node, types, and telemetry/names.ts only); packages above records must import hub/telemetry/api.ts. Note: records -> telemetry remains disallowed by allowed_dependencies until the usage context moves out of telemetry."
+    }
+  ],
+  "leaf_prefixes": [
+    "contracts/"
+  ],
+  "excluded": [
+    "**/*.test.ts",
+    "**/testing/**",
+    "**/testing*.ts",
+    "**/test-*.ts",
+    "**/fixtures/**",
+    "**/*-support.ts",
+    "**/fakes.ts",
+    "hub/testing/**",
+    "hub/server/linux-listen-vm.ts"
+  ],
+  "pack_exceptions": [
+    {
+      "file": "hub/knowledge/directory-sources.ts",
+      "import": "packs/skill/adoc-format/api.ts",
+      "reason": "C02 R[3] permits generic skill public API with package/version/module identity recorded"
+    }
+  ]
+}

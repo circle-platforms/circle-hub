@@ -24,6 +24,7 @@ import {
   type Site,
 } from './docs-rules.ts';
 import { SYNC_SPEC_PAGE, TABLE_BEGIN, TABLE_END, syncErrorTableProblems, withSyncErrorTable } from '../../tools/gen-sync-error-table.ts';
+import { docSetProblems } from './doc-set.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
@@ -102,8 +103,8 @@ describe('links the docs site can serve', () => {
   it('finds the current published pages and leaves out the records', () => {
     assert.ok(CURRENT_PAGES.includes('docs/index.md'));
     assert.ok(CURRENT_PAGES.includes('docs/design/generic-model.md'));
-    assert.ok(!CURRENT_PAGES.includes('docs/server-s2-progress.md'), 'historical pages keep their original links');
     assert.ok(!PUBLISHED_PAGES.includes('docs/README.md'), 'docs/README.md is the GitHub index and not on the site');
+    assert.deepEqual(docSetProblems(ROOT), []);
   });
 
   for (const page of CURRENT_PAGES) {
@@ -192,7 +193,7 @@ describe('recorded decisions name their source', () => {
 
 // Git's inventory covers code, tests, ops, dot-directories and extensionless text without scanning dependencies or build output.
 const TRACKED_TEXT = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0')
-  .filter((path) => path && !path.startsWith('foundation/') && !path.startsWith('references/'))
+  .filter(Boolean)
   .flatMap((path) => {
     let byteDigest: string | undefined;
     const text = trackedFileText(join(ROOT, path), bytes => { byteDigest = createHash('sha256').update(bytes).digest('hex'); });
@@ -338,11 +339,10 @@ describe('no machine paths in repository text', () => {
     assert.ok(localPathProblems(file, text + '\n/' + 'Users/operator/project', digest).length > 0);
   });
 
-  it('covers docs, root Markdown, CI, code and tests without reading the frozen archives', () => {
+  it('covers docs, root Markdown, CI, code and tests', () => {
     for (const path of ['AGENTS.md', 'docs/index.md', '.github/workflows/checks.yml', 'hub/server/units.test.ts', 'scripts/real/gold/regression-doc.test.ts', 'tests/acceptance/26-review-report.test.ts']) {
       assert.ok(TRACKED_TEXT.some((entry) => entry.path === path), path);
     }
-    assert.ok(TRACKED_TEXT.every(({ path }) => !/^(foundation|references)\//.test(path)));
   });
 
   it('no tracked text has an unapproved machine path', () => {
@@ -372,19 +372,15 @@ describe('no protected build names in repository text', () => {
     }
   });
 
-  it('accepts other lines, dotted labels, placeholders and the frozen archives', () => {
+  it('accepts other lines, dotted labels and placeholders', () => {
     for (const name of [ ['Rel', 'Sample', '10', '6', '0'].join('_'), ['Beta', 'Sample', '11', '0', '0'].join('_'), '10.6.2', 'Rel_<family>_<line>_<build>' ]) {
       assert.deepEqual(buildNameProblems('ops/sample.txt', name), []);
     }
     const protectedName = ['Rel', 'Sample', '10', '0', '0'].join('_');
-    for (const file of ['foundation/sample.txt', 'references/sample.txt']) {
-      assert.deepEqual(buildNameProblems(file, protectedName), []);
-      assert.deepEqual(localPathProblems(file, '/' + 'root/work'), []);
-    }
     assert.equal(buildNameProblems('hub/sample.ts', protectedName).length, 1);
   });
 
-  it('no tracked text outside the frozen archives has a protected build name', () => {
+  it('no tracked text has a protected build name', () => {
     assert.deepEqual(TRACKED_TEXT.flatMap(({ path, text }) => buildNameProblems(path, text)), []);
   });
 });

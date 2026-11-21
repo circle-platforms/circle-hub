@@ -17,8 +17,8 @@ const FACET_SOURCE = `src:${'a'.repeat(64)}`;
 const facetValue = (count = 0) => ({ schema: 'facet-view@1', product: 'synthetic', build: { build: 'Later', root: 'b'.repeat(64) }, kind: 'case', by: ['commands'], rows: count ? [{ values: { commands: null }, count }] : [], total: count, truncated: false, skipped: 0, notes: [] });
 const sourceResult = (value: unknown) => `内容 ${FACET_SOURCE}：模型可读\n原文（${JSON.stringify(value).length} 个字符）：\n${JSON.stringify(value)}\n追踪 synthetic`;
 const turnsOf = (result: string, count = 0): LoggedTurn[] => [
-  { index: 0, toolResults: [], tools: ['hub_start_run'] },
-  { index: 1, toolResults: [{ id: 'r1', text: `${result}\n- 线索 ${FACET_SOURCE}（输入 facets）`, isError: false }], tools: ['hub_get_nodes'] },
+  { index: 0, toolResults: [], tools: ['mcp__hub__start_run'] },
+  { index: 1, toolResults: [{ id: 'r1', text: `${result}\n- 线索 ${FACET_SOURCE}（输入 facets）`, isError: false }], tools: ['mcp__hub__get_nodes'] },
   { index: 2, toolResults: [{ id: 'r2', text: sourceResult(facetValue(count)), isError: false }], tools: [] },
 ];
 
@@ -46,9 +46,9 @@ describe('regression-scope scenario', () => {
   const scenario = regressionScope(gold);
   test('starts the run with the impact view of the build pair on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:famx:Rel_FAMX_10_6_1_56..Rel_FAMX_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1' }, facets: { external: 'knowledge:facets:famx:Rel_FAMX_10_6_1_57?kind=case&by=commands' } } } },
+      { tool: 'mcp__hub__start_run', input: { pack: 'regression-scope', inputs: { impact: { external: 'knowledge:impact:famx:Rel_FAMX_10_6_1_56..Rel_FAMX_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1' }, facets: { external: 'knowledge:facets:famx:Rel_FAMX_10_6_1_57?kind=case&by=commands' } } } },
     ]);
-    assert.deepEqual(scenario.respond({ ...turn(1), toolResults: turnsOf('运行 run_synthetic')[1].toolResults }), [{ tool: 'hub_get_nodes', input: { reference: FACET_SOURCE } }]);
+    assert.deepEqual(scenario.respond({ ...turn(1), toolResults: turnsOf('运行 run_synthetic')[1].toolResults }), [{ tool: 'mcp__hub__get_nodes', input: { reference: FACET_SOURCE } }]);
     assert.deepEqual(scenario.respond({ ...turn(2), toolResults: turnsOf('运行 run_synthetic')[2].toolResults }), [{ text: '对比完成。' }]);
   });
   test('holds on a Hub-shaped answer and fails on a wrong path set or a stray case', () => {
@@ -78,7 +78,7 @@ describe('maintenance-sweep scenario', () => {
   const scenario = maintenanceSweep(gold);
   test('starts the run on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:famx:Rel_FAMX_10_6_1_56..Rel_FAMX_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1' }, facets: { external: 'knowledge:facets:famx:Rel_FAMX_10_6_1_56?kind=case&by=commands' } } } },
+      { tool: 'mcp__hub__start_run', input: { pack: 'maintenance-sweep', inputs: { impact: { external: 'knowledge:impact:famx:Rel_FAMX_10_6_1_56..Rel_FAMX_10_6_1_57?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1' }, facets: { external: 'knowledge:facets:famx:Rel_FAMX_10_6_1_56?kind=case&by=commands' } } } },
     ]);
   });
   test('holds when removed and changed cases sit on their paths with their marks', () => {
@@ -108,7 +108,7 @@ describe('traceability scenario', () => {
   test('starts the run with both index views on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
       {
-        tool: 'hub_start_run',
+        tool: 'mcp__hub__start_run',
         input: {
           pack: 'traceability',
           inputs: {
@@ -147,7 +147,7 @@ describe('quality-board scenario', () => {
 
   test('starts the run with the facet view on turn 0', () => {
     assert.deepEqual(scenario.respond(turn(0)), [
-      { tool: 'hub_start_run', input: { pack: 'quality-board', inputs: { facets: { external: 'knowledge:facets:famx:Rel_FAMX_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' } } } },
+      { tool: 'mcp__hub__start_run', input: { pack: 'quality-board', inputs: { facets: { external: 'knowledge:facets:famx:Rel_FAMX_10_6_1_57?kind=case&by=line,module,has_expected,vague_expected,negative' } } } },
     ]);
   });
 
@@ -193,19 +193,19 @@ describe('product line unbinding in start_run inputs', () => {
     for (const s of scenarios) {
       const calls = (await s.respond(turn(0))) as Array<{ tool?: string; input?: Record<string, unknown> }>;
       assert.equal(calls.length, 1);
-      assert.equal(calls[0].tool, 'hub_start_run');
+      assert.equal(calls[0].tool, 'mcp__hub__start_run');
       assert.ok(calls[0].input !== null && typeof calls[0].input === 'object');
       assert.equal(
         Object.hasOwn(calls[0].input, 'product'),
         false,
-        `${s.name} 的 hub_start_run 输入不应包含 product`,
+        `${s.name} 的 mcp__hub__start_run 输入不应包含 product`,
       );
     }
   });
 });
 
 describe('unversioned pack names in start_run inputs', () => {
-  test('所有 scripts/real/accept 下场景里 hub_start_run 的 pack 都不带 @ 版本', async () => {
+  test('所有 scripts/real/accept 下场景里 mcp__hub__start_run 的 pack 都不带 @ 版本', async () => {
     // 1. Static scan: scan all scenario source files in scripts/real/accept
     const dir = import.meta.dirname;
     const scenarioFiles = fs
@@ -236,7 +236,7 @@ describe('unversioned pack names in start_run inputs', () => {
     for (const s of allScenarios) {
       const calls = (await s.respond(turn(0))) as Array<{ tool?: string; input?: Record<string, unknown> }>;
       assert.equal(calls.length, 1);
-      assert.equal(calls[0].tool, 'hub_start_run');
+      assert.equal(calls[0].tool, 'mcp__hub__start_run');
       assert.ok(calls[0].input !== null && typeof calls[0].input === 'object');
       const pack = calls[0].input.pack;
       if (typeof pack !== 'string') {
@@ -261,7 +261,7 @@ for (const [name, make] of [
   ['maintenance-sweep', () => maintenanceSweep({ product: 'synthetic', earlier: 'Earlier', later: 'Later', cases: [], caseCommandsUnplaced: 4 })],
 ] as const) test(`${name} must read bound facets and compare with independent count`, () => {
   const scenario = make();
-  assert.deepEqual(scenario.respond({ ...turn(1), toolResults: turnsOf('运行 run_synthetic')[1].toolResults }), [{ tool: 'hub_get_nodes', input: { reference: FACET_SOURCE } }]);
+  assert.deepEqual(scenario.respond({ ...turn(1), toolResults: turnsOf('运行 run_synthetic')[1].toolResults }), [{ tool: 'mcp__hub__get_nodes', input: { reference: FACET_SOURCE } }]);
   const check = (count: number) => scenario.check(turnsOf('运行 run_synthetic', count)).find((c) => c.name === '分面未归位数与独立抽取相符')!;
   assert.equal(check(4).ok, true); assert.equal(check(7).ok, false); assert.deepEqual([check(4).expected, check(4).actual], ['4', '4']);
   assert.equal(scenario.check(turnsOf('运行 run_synthetic').slice(0, 2)).find((c) => c.name === '分面未归位数与独立抽取相符')?.ok, false);
@@ -286,8 +286,8 @@ test('facet source pagination is followed and reassembled before comparing', () 
   const page2 = `内容 ${FACET_SOURCE}：模型可读\n原文（共 ${value.length} 个字符、1 行），从第 1 行的第 ${split + 1} 个字符起：\n（接上页：第 1 行的前 ${split} 个字符在上一页）\n${value.slice(split)}\n追踪 synthetic`;
   const read = facetReader();
   read({ ...turn(1), toolResults: turnsOf('运行 run_synthetic')[1].toolResults }, '完成');
-  assert.deepEqual(read({ ...turn(2), toolResults: [{ id: 'page1', text: page1, isError: false }] }, '完成'), [{ tool: 'hub_get_nodes', input: { reference: FACET_SOURCE, cursor: 'next-synthetic' } }]);
-  const logs = [...turnsOf('运行 run_synthetic').slice(0, 2), { index: 2, toolResults: [{ id: 'page1', text: page1, isError: false }], tools: ['hub_get_nodes'] }];
+  assert.deepEqual(read({ ...turn(2), toolResults: [{ id: 'page1', text: page1, isError: false }] }, '完成'), [{ tool: 'mcp__hub__get_nodes', input: { reference: FACET_SOURCE, cursor: 'next-synthetic' } }]);
+  const logs = [...turnsOf('运行 run_synthetic').slice(0, 2), { index: 2, toolResults: [{ id: 'page1', text: page1, isError: false }], tools: ['mcp__hub__get_nodes'] }];
   assert.equal(facetCountCheck('synthetic', 4, logs).ok, false);
   logs.push({ index: 3, toolResults: [{ id: 'page2', text: page2, isError: false }], tools: [] });
   assert.equal(facetCountCheck('synthetic', 4, logs).ok, true);
@@ -321,12 +321,12 @@ test('a quality-board item-2 gold binds only the 1.0.1 facets slot (placement wa
   const { default: qualityBoard } = await import('./quality-board.ts');
   const scenario = qualityBoard({ product: 'famx', build: 'Synthetic_10_7_Z' });
   const reply = (await scenario.respond(turn(0))) as Array<{ tool?: string; input?: { inputs?: Record<string, unknown> } }>;
-  const start = reply.find((r) => r.tool === 'hub_start_run');
+  const start = reply.find((r) => r.tool === 'mcp__hub__start_run');
   assert.ok(start !== undefined);
   assert.deepEqual(Object.keys(start.input!.inputs ?? {}).sort(), ['facets'], 'no placement before items 3 and 4 are published');
   const withTypes = qualityBoard({ product: 'famx', build: 'Synthetic_10_7_Z', types: true });
   const reply2 = (await withTypes.respond(turn(0))) as Array<{ tool?: string; input?: { inputs?: Record<string, unknown> } }>;
-  const start2 = reply2.find((r) => r.tool === 'hub_start_run');
+  const start2 = reply2.find((r) => r.tool === 'mcp__hub__start_run');
   assert.deepEqual(Object.keys(start2!.input!.inputs ?? {}).sort(), ['facets', 'placement']);
 });
 
@@ -369,7 +369,7 @@ test('a gold with placement but no types still binds both facets and placement (
   const { default: qualityBoard } = await import('./quality-board.ts');
   const scenario = qualityBoard({ product: 'famx', build: 'Synthetic_10_7_Z', placement: true, unplaced: 0 });
   const reply = (await scenario.respond(turn(0))) as Array<{ tool?: string; input?: { inputs?: Record<string, unknown> } }>;
-  const start = reply.find((r) => r.tool === 'hub_start_run');
+  const start = reply.find((r) => r.tool === 'mcp__hub__start_run');
   assert.ok(start !== undefined);
   assert.deepEqual(Object.keys(start.input!.inputs ?? {}).sort(), ['facets', 'placement'], 'quality-board 1.1.0 requires the placement slot');
 });

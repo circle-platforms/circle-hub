@@ -1,3 +1,4 @@
+import { isAdmin } from './permissions.ts';
 // Call log (B08): one line per MCP call, as a `call_log@1` record, a typed row for queries and a line in
 // <log dir>/calls-YYYY-MM-DD.jsonl (UTC date). Arguments are reduced to the digest and size of their canonical JSON before
 // anything is written, plus a preview only when the server gives one it redacted by the tool schema (B08 F[7]). Every call
@@ -6,7 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ActionKindSchema, isAcceptance, isCallResult } from '../../contracts/generated/vocabulary.ts';
+import { ActionKindSchema, isAcceptance, isCallResult, isPermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { CallLog, CallLogEntry, CallLogInput, CallLogLine, CallLogQuery, Page, Principal, RecordStore } from './api.ts';
 import { canonicalize } from './canonical.ts';
 import { RECORD_SCHEMAS } from './constants.ts';
@@ -238,11 +239,43 @@ export class PgCallLog implements CallLog {
     return row?.schema === CLIENT_DECLARATION_SCHEMA && row.body.user === userId ? { ...row.body.client, at: row.body.at } : null;
   }
 
+  async countRecentErrors(query: {
+    userId: string;
+    tool: string;
+    errorCode: string;
+    since: string;
+    path?: string;
+    objectKey?: string;
+    requestDigest?: string;
+  }): Promise<number> {
+    if (typeof query.userId !== 'string' || !USER_ID.test(query.userId)) throw new TypeError('userId is not an account id');
+    if (typeof query.tool !== 'string' || !TOOL.test(query.tool)) throw new TypeError('tool must be a tool name or protocol method');
+    if (typeof query.errorCode !== 'string' || !ERROR_CODE.test(query.errorCode)) throw new TypeError('errorCode is not a code');
+    const since = normalizeTime(query.since, 'since');
+    // Boss 18:09: without stored path / object / request digest, a coarse count would claim false sameness.
+    // Codex records those facts on append and filters here; until then identity queries count as zero priors.
+    if (
+      (typeof query.path === 'string' && query.path.length > 0) ||
+      (typeof query.objectKey === 'string' && query.objectKey.length > 0) ||
+      (typeof query.requestDigest === 'string' && query.requestDigest.length > 0)
+    ) {
+      return 0;
+    }
+    const rows = (
+      await this.#db.query(
+        `SELECT COUNT(*)::bigint AS n FROM call_logs
+          WHERE user_id = $1 AND tool = $2 AND error_code = $3 AND call_result = 'error' AND at >= $4`,
+        [query.userId, query.tool, query.errorCode, since],
+      )
+    ).rows;
+    return Number(rows[0]?.n ?? 0);
+  }
+
   async query(principal: Principal, query: CallLogQuery = {}): Promise<Page<CallLogLine>> {
     // The stored account decides, not the Principal a session kept: a demoted admin sees only their own calls.
     const viewer = await this.#viewer(principal);
     if (viewer === null) return { items: [], next: null };
-    const admin = viewer.role === 'admin';
+    const admin = isAdmin(viewer);
     const limit = pageLimit(query.limit);
     const after = decodeCursor(query.cursor);
     const descending = query.newestFirst ?? true;
@@ -259,6 +292,7 @@ export class PgCallLog implements CallLog {
     } else if (query.userId !== undefined) {
       add('c.user_id = ?', query.userId);
     }
+    if (query.sessionId !== undefined) add('c.session_id = ?', query.sessionId);
     if (query.tool !== undefined) add('c.tool = ?', query.tool);
     if (query.runId !== undefined) add('c.run_id = ?', query.runId);
     if (query.traceId !== undefined) {
@@ -356,11 +390,13 @@ export class PgCallLog implements CallLog {
     }
   }
 
-  async #viewer(principal: Principal): Promise<{ id: string; role: string } | null> {
+  async #viewer(principal: Principal): Promise<Pick<Principal, 'id' | 'role'> | null> {
     const id = typeof principal?.id === 'string' && USER_ID.test(principal.id) ? principal.id : null;
     if (id === null) return null;
     const row = (await this.#db.query('SELECT id, role, disabled FROM users WHERE id = $1', [id])).rows[0];
-    return row === undefined || row.disabled === true ? null : { id: String(row.id), role: String(row.role) };
+    if (row === undefined || row.disabled === true) return null;
+    if (!isPermissionRole(row.role)) throw new IntegrityError('用户角色不在词表里');
+    return { id: String(row.id), role: row.role };
   }
 }
 

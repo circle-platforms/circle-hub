@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
-import { ChecksFile, PackManifest, PublishableRequirementsFile, RequirementsFile, SlotsFile, WorkflowFile } from '../../../contracts/src/pack.ts';
+import { ChecksFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../../../contracts/src/pack.ts';
 import { readPackDirectory, runPublishCheck, validatePack } from '../../../hub/runs/api.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { PACK_DIR, computeManifest, manifestText, packFiles, stage } from './pack-files.ts';
@@ -48,7 +48,7 @@ describe('the source-read pack files', () => {
     assert.equal(requirements.schema, 'requirements@1');
     assert.deepEqual(requirements.requirements, []);
 
-    const publishable = PublishableRequirementsFile.parse(json('requirements.json'));
+    const publishable = RequirementsFile.parse(json('requirements.json'));
     assert.deepEqual(publishable.requirements, []);
 
     const checks = ChecksFile.parse(json('checks.json'));

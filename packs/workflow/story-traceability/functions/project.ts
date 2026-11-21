@@ -78,7 +78,7 @@ export function projectItems(input: unknown): unknown {
     if (!isRecord(build)) return fail(`PLM 构建列表未包含规范化编号 ${buildId}`, '请用户确认构建编号，或直接提供需求编号');
     if (typeof build.name !== 'string' || build.name.trim() === '') return fail(`PLM 构建记录 ${buildId} 缺少原始 name，无法证明它对应构建 ${view.build} 和知识根 ${view.root}`, '重新读取保留记录原始 name 的 PLM 构建列表，选中与 cases 用例视图对应的记录，或直接提供需求编号');
     if (isRecord(build.fields) && Object.hasOwn(build.fields, 'name') && build.fields.name !== build.name) return fail(`PLM 构建记录 ${buildId} 的 name 与原始标量字段矛盾`, '重新读取一致的 PLM 构建记录并绑定对应的 cases 用例视图');
-    if (!sameBuild(build.name, view, input.context)) return fail(`PLM 构建记录 ${buildId} 的 name ${build.name} 未证明与用例视图构建 ${view.build}、知识根 ${view.root} 相同`, '下一步重绑与所选 PLM 原始 name 同名的 cases 用例视图，再重开运行；当前没有只读别名查询接口，不猜跨名称族对应关系');
+    if (!sameBuild(build.name, view, input.context)) return fail(`PLM 构建记录 ${buildId} 的 name ${build.name} 未证明与用例视图构建 ${view.build}、知识根 ${view.root} 相同`, '下一步重新绑定与所选 PLM 原始 name 同名的 cases 用例视图，再重开运行；当前没有只读别名查询接口，不猜跨名称族对应关系');
     selectedBuild = { id: buildId, name: build.name, reference: `src:${source.sha256}/json@1/p/builds/${at}`, case_build: view.build, case_root: view.root };
 
     if (!Array.isArray(build.stories)) return fail(`构建记录 ${buildId} 未提供可用的需求编号数组；${typeof build.scope_note === 'string' ? build.scope_note : '当前投影未说明原始字段名或配置'}`, '请管理员核对 settings.build_story_field 和构建记录原件，或向用户索取需求编号');

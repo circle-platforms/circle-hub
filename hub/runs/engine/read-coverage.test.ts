@@ -37,7 +37,7 @@ test('external input coverage is frozen and passed to item, run and projection f
   const binding=detail.answer.run!.sources.find(s=>s.slot==='map')!;assert.deepEqual(binding.coverage,coverage);
   const stored=await h.service.getRun(h.alice,detail.answer.run!.run);assert.deepEqual(stored!.run.sources.find(s=>s.slot==='map')!.coverage,coverage);
   const result=detail.production!.result;
-  assert.match(toolText('start_run',{...detail.answer,trace:result.trace},{production:result}),/读取覆盖.*不完整/);
+  assert.match(toolText('start_run',{...detail.answer,trace:result.trace},{production:result}),/原始用例或资料尚未读全；状态未知；原因缺资料；下一步由使用者补齐资料/);
   const facts=[...Object.values(result.partitions).flat().flatMap(i=>i.requirements.flatMap(r=>r.claims)),...result.cross_item].filter(c=>c.warrant.producer==='function');
   assert.ok(facts.length>1);assert.ok(result.cross_item.some(c=>c.pointer==='/groups/0'));
   for(const fact of facts){assert.ok(fact.qualifier.marks.includes('partial'),fact.warrant.id);assert.deepEqual(fact.qualifier.coverage,coverage);}

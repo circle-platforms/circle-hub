@@ -9,6 +9,7 @@ import {
   ProjectionOutput,
   REQUIRED_FILES,
   RequirementsFile,
+  SkillDeclaration,
   SlotClaim,
   SlotsFile,
   WorkflowFile,
@@ -54,6 +55,14 @@ test('a manifest parses and names what is wrong with a bad one', () => {
   assert.ok(!dup.success && dup.error.issues.some((i) => /twice/.test(i.message)));
   assert.ok(!PackManifest.safeParse({ ...manifest, files: [...manifest.files, file('pack.json')] }).success, 'pack.json is not in its own manifest');
   assert.ok(!PackManifest.safeParse({ ...manifest, owner: 'x' }).success, 'unknown keys are refused');
+});
+
+test('agent definitions are optional manifest files under the declared agents directory', () => {
+  const path = 'agents/sample-review-writer.md';
+  assert.equal(packPathProblem(path), null);
+  assert.ok(PackManifest.safeParse({ ...manifest, files: [...manifest.files, file(path)].sort((a,b)=>a.path<b.path?-1:1) }).success);
+  assert.ok(PackManifest.safeParse(manifest).success, 'packs without agents keep their existing shape');
+  for (const invalid of ['agents', 'agents/../outside.md', 'agents/.hidden.md', '/agents/sample-review-writer.md', 'agent/sample-review-writer.md']) assert.notEqual(packPathProblem(invalid), null, invalid);
 });
 
 test('every pack kind has required files that are legal pack paths', () => {
@@ -185,4 +194,21 @@ test('a knowledge facets or index input may declare that unknown entries are dis
   }
   assert.ok(!WorkflowInput.safeParse({ ...base, accepts: ['knowledge:facets'], unknown_entries: 'accept' }).success, 'one value is defined');
   assert.ok(WorkflowInput.safeParse({ ...base, accepts: ['knowledge:facets'] }).success, 'absent keeps the refusal of every truncated last page');
+});
+
+test('SkillDeclaration accepts both published v1 parsers with optional migration_test and current declarations without it', () => {
+  const parser = {
+    parser: 'html@1',
+    media_types: ['text/html'],
+    limits: { maxBytes: 1024, maxDepth: 64, maxNodes: 1000 },
+    function: { module: 'functions/parse.ts', export: 'default' },
+  };
+  assert.ok(SkillDeclaration.safeParse({ schema: 'skill@1', parsers: [parser] }).success);
+  assert.ok(
+    SkillDeclaration.safeParse({
+      schema: 'skill@1',
+      parsers: [{ ...parser, migration_test: 'html-format migration equivalence across repository documents' }],
+    }).success,
+  );
+  assert.ok(!SkillDeclaration.safeParse({ schema: 'skill@1', parsers: [{ ...parser, unexpected_key: 'x' }] }).success);
 });

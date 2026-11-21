@@ -18,8 +18,14 @@
       "locate": {
         "module": "functions/parse.ts",
         "export": "locate"
-      },
-      "migration_test": "mindmap-format migration equivalence across repository documents"
+      }
+    }
+  ],
+  "modules": [
+    {
+      "id": "case-structure",
+      "title": "脑图用例读取",
+      "family": "KityMinder 测试脑图：按树位置和声明字段读出用例、前置、动作和期望"
     }
   ]
 }

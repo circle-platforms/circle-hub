@@ -12,6 +12,12 @@ import { ExternalObjectId, TreePath } from './reference.ts';
 
 /** Product-authored command structure; no word/prose classification or mutable runtime lookup. */
 const CommandPrefix=TreePath.refine(path=>path==='/commands'||path.startsWith('/commands/'),'a locked command-tree prefix');
+const PolicyCommand=z.strictObject({
+ prefix:CommandPrefix,
+ with_parameter:z.number().int().min(0).max(255).optional().describe('Counts only a command written with the parameter at this zero-based position of its signature, for an optional parameter that changes what the command does when it is given; absent: the prefix alone decides'),
+});
+const PolicyId=z.string().regex(/^[a-z][a-z0-9_]{0,39}$/,'lowercase letters, digits and underscores');
+const PolicySource=z.string().min(1).max(400).regex(/^[^\r\n]+$/,'one line').describe('The statement of the product documentation the declaration rests on; the Hub quotes it when it refuses or reorders');
 export const CommandPolicy=z.strictObject({
  schema:z.literal('command-policy@1'),
  read_only:z.array(CommandPrefix).max(64),
@@ -22,6 +28,25 @@ export const CommandPolicy=z.strictObject({
   prompt:z.string().min(1).max(64).regex(/^\S(?:.*\S)?$/).describe('The text the device shows when it asks for the confirmation; the runner waits for it instead of the command prompt'),
   answer:z.string().min(1).max(16).regex(/^\S+$/).describe('The single word that confirms; sent as the next device line'),
  })).max(16).optional().describe('Commands under these prefixes ask the device user to confirm: the command waits for the declared prompt and the very next line on the same device is the declared answer, which is dialogue, not a command'),
+ persistence_channels:z.array(z.strictObject({
+  id:PolicyId,
+  commands:z.array(PolicyCommand).min(1).max(64),
+  source:PolicySource,
+ })).max(16).optional().describe('Places where a command leaves state that survives the per-case cleanup of the runner (the device\'s disk, the peer unit\'s saved configuration): a case holding a command of any declared channel runs after the other cases of its volume'),
+ forbidden_combinations:z.array(z.strictObject({
+  id:PolicyId,
+  side_a:z.array(PolicyCommand).min(1).max(64),
+  side_b:z.array(PolicyCommand).min(1).max(64),
+  source:PolicySource,
+ })).max(16).optional().describe('Pairs of command sets the product documentation forbids on one device together: a volume holding a command of side A and a command of side B, in one case or in two, is refused'),
+}).superRefine((policy,ctx)=>{
+ for(const key of ['persistence_channels','forbidden_combinations'] as const){
+  const seen=new Set<string>();
+  for(const [index,row] of (policy[key]??[]).entries()){
+   if(seen.has(row.id))ctx.addIssue({code:'custom',path:[key,index,'id'],message:`${row.id} is declared twice`});
+   seen.add(row.id);
+  }
+ }
 });
 export type CommandPolicy=z.infer<typeof CommandPolicy>;
 

@@ -1,0 +1,152 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "subcommands": {
+    "init": [],
+    "resume": [
+      "%HUB_TOKEN%",
+      "%PLUMB_API_KEY%"
+    ],
+    "next": [
+      "%HUB_TOKEN%",
+      "%PLUMB_API_KEY%"
+    ],
+    "status": [],
+    "collect": [],
+    "retry": [],
+    "rework": [
+      "%HUB_TOKEN%",
+      "%PLUMB_API_KEY%"
+    ]
+  },
+  "options": [
+    {
+      "name": "recompose-run",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "recompose-run",
+      "type": "path"
+    },
+    {
+      "name": "plan-run",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "plan-run",
+      "type": "path"
+    },
+    {
+      "name": "open",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "open-compile.json",
+      "type": "path"
+    },
+    {
+      "name": "model",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<模型>",
+      "type": "text"
+    },
+    {
+      "name": "state",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "pipeline.json",
+      "type": "path"
+    },
+    {
+      "name": "width",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "6",
+      "type": "int"
+    },
+    {
+      "name": "finished",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<标签>",
+      "type": "text"
+    },
+    {
+      "name": "hub",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%HUB_URL%",
+      "type": "hub"
+    },
+    {
+      "name": "plumb",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%PLUMB_URL%",
+      "type": "plumb"
+    },
+    {
+      "name": "out",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "plans",
+      "type": "path"
+    },
+    {
+      "name": "case",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<序号>",
+      "type": "text"
+    },
+    {
+      "name": "note",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<使用者的决定>",
+      "type": "text"
+    },
+    {
+      "name": "ended",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "yes",
+      "type": "text"
+    },
+    {
+      "name": "returns",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<回传目录>",
+      "type": "path"
+    },
+    {
+      "name": "notes",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "notes",
+      "type": "path"
+    },
+    {
+      "name": "pause",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "60",
+      "type": "int"
+    }
+  ]
+}

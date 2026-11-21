@@ -1,10 +1,11 @@
+import { isAdmin } from '../records/api.ts';
 // Resource administration (D01 R[6], D07 resources, B04 resource configuration). A resource is a deployment instance of a
 // system pack: its definition (resource@1) is stored as content-addressed canonical JSON in the object store and put in
 // force by a resource_config authorization bound to that digest; every change is a new definition and a new decision, and a
 // disable is the revocation of the configuration. Only admins decide; only admins see addresses and plaintext declarations.
 // The definition binds one published system pack version and its content digest (B04 R[1]): `id` is resolved to the version
 // current when the admin decides, and a newer version takes effect only through an update. Credentials use
-// named versions enrolled for this resource and destination. The definition records the wire rule; a named version records
+// named versions resolved through the vault. The definition records the wire rule; a named version records
 // its storage rule. Updates preserve shared material. Legacy owned entries migrate explicitly, and metadata never reads values.
 import { VariableName, referencesIn, secretNameOf } from '../../contracts/src/variables.ts';
 import { createHash } from 'node:crypto';
@@ -67,7 +68,6 @@ export interface CredentialDescription {
   set: boolean;
   version?: number;
   length?: number;
-  registered?: boolean;
 }
 
 /** One resource as admins see it: the admins' listing row (addresses included) and every credential its definition declares, by name. */
@@ -258,40 +258,32 @@ export class ResourceRegistry {
       bound.profile,
     );
     const migrating = Object.keys(record.credentials).filter(name => current.credentials[name] === credentialEntry(id,name) && secretNameOf(record.credentials[name]));
-    if (migrating.length && (canonicalBytes(current.origins).toString() !== canonicalBytes(record.origins).toString() || canonicalBytes(current.allow_plaintext).toString() !== canonicalBytes(record.allow_plaintext).toString()))
-      throw new ConnectorError('RESOURCE_INVALID','迁移凭据和改地址须分开做：先迁移，再改地址并重新输入密钥');
     const writes: SecretWrite[] = [];
-    const expectedSecrets=new Map<string,string|null>();
     for (const item of migrating) {
       const value = await this.#o.vault.getText(current.credentials[item]);
       if (value === null) continue;
       const name = secretNameOf(record.credentials[item])!;
-      const previous = (await this.#o.variables.list(by)).find(v => v.kind === 'secret' && v.name === name && v.definition !== null);
-      expectedSecrets.set(name,previous?.decision.digest??null);
-      let consumers = [resourceConsumer(record,item)];
+      const previous = await this.#o.vault.readSecret(name);
       let keptValue=value,keptRule=current.credential_digests[item];
-      if (previous?.definition && previous.definition.schema === 'secret@1') {
-        const metadata = previous.definition;
-        const old = await this.#o.vault.getText(metadata.entry);
-        if(old===null || [...old].length!==metadata.length)throw new ConnectorError('RESOURCE_INVALID','已有密钥条目不可用或长度不合登记：先 secret set 重新输入后迁移');
+      if (previous) {
+        const metadata = previous.metadata;
+        const old = previous.value;
         let incoming=value,existing=old;
         if(current.credential_digests[item]==='sha512_base64'&&metadata.digest_rule==='plain'){
           existing=storedCredential(old,'sha512_base64');keptValue=old;keptRule='plain';
         } else if(current.credential_digests[item]==='plain'&&metadata.digest_rule==='sha512_base64')incoming=storedCredential(value,'sha512_base64');
         if(incoming!==existing)throw new ConnectorError('RESOURCE_INVALID','迁移的值与已有密钥不同：换一个名字');
-        consumers = [...metadata.consumers.filter(c => !(c.definition === id && c.item === item)),resourceConsumer(record,item)];
       }
-      writes.push({name,value:keptValue,digest_rule:keptRule,alreadyStored:true,short:true,consumers});
+      writes.push({name,value:keptValue,digest_rule:keptRule,alreadyStored:true,short:true});
     }
     if (new Set(writes.map(v=>v.name)).size !== writes.length) throw new ConnectorError('RESOURCE_INVALID','一次迁移的凭据项须使用不同名字');
     const prepared = writes.length ? await this.#o.variables.prepareSecrets(admin,writes,`从资源 ${id} 的凭据项迁移来`) : undefined;
-    await this.#configure(admin, record, note ?? null, prepared,expectedSecrets);
+    await this.#configure(admin, record, note ?? null, prepared);
     try {
       for (const [name,entry] of Object.entries(current.credentials))
         if(entry===credentialEntry(id,name) && (record.credentials[name]!==entry || current.credential_digests[name]!==record.credential_digests[name]))await this.#o.vault.remove(entry);
       // A failed post-commit deletion is retried by the same update, even after the definition already uses a name.
       for(const item of Object.keys(changes.credentials??{}))if(secretNameOf(record.credentials[item]??''))await this.#o.vault.remove(credentialEntry(id,item));
-      for(const name of new Set(Object.values(record.credentials).map(secretNameOf).filter((v):v is string=>v!==null)))await this.#o.variables.cleanupSecret(name);
     }catch(error){throw new ConnectorError('STORE_FAILED',`资源 ${id} 的新定义${writes.length?'与迁移密钥决定':''}已提交，旧条目清理未完成；管理员修复密钥库权限后重跑同一 resource update 清理，不重新输入值`,{cause:error});}
     this.#event('resource_updated', { resource: id, system_pack: record.system_pack });
     return record;
@@ -352,23 +344,25 @@ export class ResourceRegistry {
     if (state === null) return null;
     const { resource } = state;
     const credentials: CredentialDescription[] = [];
-    const versions=await this.#o.variables.list(by);
     for (const name of Object.keys(resource.credentials).sort()) {
       const entry = resource.credentials[name];
       const ref = secretNameOf(entry);
-      const version = ref ? versions.find(v=>v.kind === 'secret' && v.name === ref) : undefined;
-      const metadata = version?.definition?.schema === 'secret@1' ? version.definition : null;
-      credentials.push({name,entry,digest:resource.credential_digests[name],set: metadata ? await this.#o.vault.has(metadata.entry) : ref ? false : await this.#o.vault.has(entry),...(version?{version:version.version,revoked:version.decision.body.revoked}:{}),...(metadata ? {stored_digest:metadata.digest_rule,length:metadata.length,registered:metadata.consumers.some(c=>canonicalBytes(c).toString()===canonicalBytes(resourceConsumer(resource,name)).toString())} : {})});
+      const metadata = ref ? await this.#o.vault.secretMetadata(ref) : null;
+      credentials.push({name,entry,digest:resource.credential_digests[name],set:metadata!==null&&!metadata.revoked,...(metadata?{version:metadata.version,revoked:metadata.revoked,stored_digest:metadata.digest_rule,length:metadata.length}:{})});
     }
     return { ...listing(state, true), credentials };
   }
 
-  /** Admins: every resource with addresses; any other valid account: the same rows without addresses. */
+  /** Admins manage every resource; other valid accounts see assigned resources without addresses. */
   async list(by: Principal): Promise<ResourceListing[]> {
     const viewer = await this.#viewer(by);
     if (viewer === null) return [];
-    const admin = viewer.role === 'admin';
-    return (await this.states()).map((state) => listing(state, admin));
+    const admin = isAdmin(viewer);
+    const rows: ResourceListing[] = [];
+    for (const state of await this.states()) {
+      if (admin || await this.#o.authorizations.canUseResource(viewer.id, state.resource.id)) rows.push(listing(state, admin));
+    }
+    return rows;
   }
 
   /** Every resource, enabled or not, by name (no access check: for the connectors themselves). */
@@ -466,7 +460,9 @@ export class ResourceRegistry {
       throw new ConnectorError('RESOURCE_INVALID',`凭据项 ${c.name} 缺少密钥名字：用 --credential <凭据项>=<密钥名>`);
     }));
   }
-  async #configure(admin: User, record: ResourceRecord, note: string | null, prepared?: PreparedSecrets, expectedSecrets=new Map<string,string|null>()): Promise<void> {
+  async #configure(admin: User, record: ResourceRecord, note: string | null, prepared?: PreparedSecrets): Promise<void> {
+    const names = [...new Set(Object.values(record.credentials).map(secretNameOf).filter((name): name is string => name !== null))];
+    await this.#o.variables.recentSecrets(names);
     const refs = referencesIn(record.settings);
     const snapshot = await this.#o.variables.snapshot();
     const resolved = await this.#o.variables.resolveVariables(record.settings,record.id,snapshot);
@@ -476,15 +472,10 @@ export class ResourceRegistry {
     if(bound.pack.digest!==record.system_pack_digest)throw new ConnectorError('PACK_UNAVAILABLE','缺少资源绑定的原包；请管理员恢复原包或重新配置后启用');
     await this.#configuration(async tx => {
       await this.#unique(record,bound.profile,tx);
-      await this.#o.variables.lockNames([...refs.map(r=>r.name),...(prepared?.items.map(i=>i.name)??[])],tx);
+      await this.#o.variables.lockNames(refs.map(r=>r.name),tx);
       for (const ref of refs) {
         const rows = await this.#o.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|var:${ref.name}`,kind:'authorization',newestFirst:true,limit:1},tx);
         if (rows.items[0]?.body.revoked || rows.items[0]?.digest !== snapshot.get(ref.name)) throw new ConnectorError('RESOURCE_INVALID',`变量 ${ref.name} 已变：先 var set，再重做配置`);
-      }
-      for(const [name,expected] of expectedSecrets) {
-        const rows=await this.#o.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|secret:${name}`,kind:'authorization',newestFirst:true,limit:1},tx);
-        const current=rows.items[0];
-        if((!current||current.body.revoked?null:current.digest)!==expected)throw new ConnectorError('RESOURCE_INVALID','迁移期间密钥版本已变：核对现有名字后重新运行 update');
       }
       if (prepared) await this.#o.variables.commitSecrets(admin,prepared,tx);
       await this.#o.authorizations.configureResourceInTransaction(admin,record.id,stored.sha256,note ?? '',tx);
@@ -531,7 +522,7 @@ export class ResourceRegistry {
 
   async #admin(by: Principal): Promise<User> {
     const user = await this.#viewer(by);
-    if (user === null || user.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能配置资源和凭据');
+    if (user === null || !isAdmin(user)) throw new ConnectorError('ACCESS_DENIED', '只有管理员能配置资源和凭据');
     return user;
   }
 
@@ -554,9 +545,4 @@ export function listing(state: ResourceState, admin: boolean): ResourceListing {
     row.allow_plaintext = [...resource.allow_plaintext];
   }
   return row;
-}
-
-/** Identity and exact destination enrollment; no secret material. */
-export function resourceConsumer(resource: ResourceRecord, item: string) {
-  return {definition:resource.id,item,sends_to:createHash('sha256').update(canonicalBytes({origins:resource.origins,allow_plaintext:[...resource.allow_plaintext].sort()})).digest('hex')};
 }

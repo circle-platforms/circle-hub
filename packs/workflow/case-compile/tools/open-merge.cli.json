@@ -1,0 +1,80 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [
+    "%HUB_TOKEN%"
+  ],
+  "options": [
+    {
+      "name": "hub",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%HUB_URL%",
+      "type": "hub"
+    },
+    {
+      "name": "open",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "open-compile.json",
+      "type": "path"
+    },
+    {
+      "name": "plans",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<收拢的计划目录>",
+      "type": "path"
+    },
+    {
+      "name": "model",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<模型>",
+      "type": "text"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>",
+      "type": "path"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "open",
+          "placeholder": "open-compile.json",
+          "optional": false
+        },
+        {
+          "name": "plans",
+          "placeholder": "<收拢的计划目录>",
+          "optional": false
+        },
+        {
+          "name": "model",
+          "placeholder": "<模型>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<新目录>",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}

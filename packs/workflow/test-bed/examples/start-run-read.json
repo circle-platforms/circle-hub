@@ -1,0 +1,15 @@
+{
+  "comment": "读设备：booking 和 predecessor 写预订那次运行的编号，device 写你预订的那台设备在清单里的名字，line 写一条只读命令（一次一行）。整行符合管理员在执行器里声明的命令形状，Hub 才把它发给这台设备，并把设备的输出和观察时刻原样还给你。设备的输出只作参考，只说明输出的写法和排版，不能当期望值的依据。",
+  "tool": "start_run",
+  "arguments": {
+    "pack": "test-bed",
+    "inputs": { "inventory": { "external": "doc:doc:bed-topology" } },
+    "predecessor": "run_0123456789abcdef",
+    "parameters": {
+      "action": "read",
+      "booking": "run_0123456789abcdef",
+      "device": "afamx0",
+      "line": "widget show demo"
+    }
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "run",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<运行目录>",
+      "type": "path"
+    },
+    {
+      "name": "param",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<命令词，可带参数>",
+      "type": "text"
+    },
+    {
+      "name": "heads",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<命令词前缀>",
+      "type": "text"
+    },
+    {
+      "name": "method",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<对象>.<方法>",
+      "type": "text"
+    },
+    {
+      "name": "methods",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<对象>",
+      "type": "text"
+    },
+    {
+      "name": "block",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<块种类>",
+      "type": "text"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<运行目录>",
+          "optional": false
+        },
+        {
+          "name": "param",
+          "placeholder": "<命令词，可带参数>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<运行目录>",
+          "optional": false
+        },
+        {
+          "name": "heads",
+          "placeholder": "<命令词前缀>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<运行目录>",
+          "optional": false
+        },
+        {
+          "name": "method",
+          "placeholder": "<对象>.<方法>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<运行目录>",
+          "optional": false
+        },
+        {
+          "name": "methods",
+          "placeholder": "<对象>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<运行目录>",
+          "optional": false
+        },
+        {
+          "name": "block",
+          "placeholder": "<块种类>",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}

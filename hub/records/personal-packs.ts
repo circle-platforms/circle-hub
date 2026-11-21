@@ -1,3 +1,4 @@
+import { isAdmin } from './permissions.ts';
 // Current personal-pack grants are shared by publication and result readers; they confer no administrator bypass.
 import { PersonalPackGrantBody } from '../../contracts/src/sharing.ts';
 import type { Principal, RecordStore, Page, StoredRecord } from './api.ts';
@@ -14,5 +15,5 @@ export async function personalPackGrants(store:RecordStore,space:string,pack:str
 }
 export async function mayUsePersonalPack(store:RecordStore,by:Principal,space:string,pack:string):Promise<boolean>{
   if(by.id===space)return true;
-  return (await personalPackGrants(store,space,pack)).some(grant=>grant.audience==='member'?grant.member===by.id:by.role==='admin');
+  return (await personalPackGrants(store,space,pack)).some(grant=>grant.audience==='member'?grant.member===by.id:isAdmin(by));
 }

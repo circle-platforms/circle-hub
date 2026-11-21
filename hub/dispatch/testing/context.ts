@@ -10,6 +10,8 @@ import { LeaseService } from '../../leases/api.ts';
 import type { RunDetail, WorkflowStore, LoadedWorkflow } from '../../ports.ts';
 import { ExecutorRegistry } from '../executors.ts';
 import { DispatchService } from '../service.ts';
+import { MemberEnvironments } from '../member-environments.ts';
+import { canUseEnvironment } from '../../records/environment-permissions.ts';
 import { definition } from './definition.ts';
 import { startEndpoint } from './server.ts';
 import {probes} from './probes.ts';
@@ -17,7 +19,10 @@ import {probes} from './probes.ts';
 let cluster:Promise<TemporaryPostgres>|undefined;
 after(async()=>{if(cluster)await cluster.then(pg=>pg.stop()).catch(()=>{});});
 
-export async function setup(options: { mode?: string; alter?: (name: string, value: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>; onSubmit?: () => Promise<void>; timeout?: number; ttl?: number; extraTools?: string[]; serverVersion?:()=>string; delay?: Record<string,number>; lockedBuild?: string } = {}) {
+export async function setup(options: { mode?: string; alter?: (name: string, value: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>; onSubmit?: () => Promise<void>; timeout?: number; ttl?: number; extraTools?: string[]; serverVersion?:()=>string; delay?: Record<string,number>; lockedBuild?: string; items?: string[] } = {}) {
+  const items = options.items ?? ['synthetic-case'];
+  // One run item per case of the workbook (the dispatch proof wants as many as the workbook has); a single case keeps its name.
+  const runItems = items.length === 1 ? ['synthetic-item'] : items.map((_, k) => `synthetic-item-${k + 1}`);
   const clock = { ms: Date.parse('2026-10-23T00:00:00.000Z') };
   const now = () => new Date(clock.ms);
   const kit = await openTestRecords({ now, postgres: await (cluster ??= startPostgres()) });
@@ -33,14 +38,14 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   let failedSubmit=false;let failedRead = false; let stateReads = 0; let sawIntentAtSubmit = false;
   const calls: string[] = [];
   const submitted: Uint8Array[] = [];
-  let submittedRequest: unknown; let submittedSha = payload.body.sha256; let submittedIds: unknown = ['synthetic-case'];
+  let submittedRequest: unknown; let submittedSha = payload.body.sha256; let submittedIds: unknown = [...items];
   const replies = (name: string): Record<string, unknown> => {
     if (name === 'open_slot') return { ok: options.mode !== 'busy', ticket: 'synthetic-ticket', token: 'synthetic-token', ttl: options.ttl ?? 30000 };
     if (name === 'touch_slot') return { ok: options.mode !== 'heartbeat-failure', ticket: 'synthetic-ticket', token: 'synthetic-token', ttl: options.ttl ?? 30000 };
     if (name === 'inspect_slot') return { build: options.mode === 'build' ? 'wrong' : 'synthetic-build', seats: options.mode === 'seats' ? 0 : 2, reachable: true, topology: { synthetic: true } };
     if (name === 'send_blob') return { request: submittedRequest, ok: options.mode !== 'reject', key: 'synthetic-remote', digest: options.mode === 'receipt-sha' ? 'f'.repeat(64) : submittedSha, ids: options.mode === 'receipt-items' ? ['different'] : submittedIds };
     if (name === 'inspect_blob') return { state: options.mode === 'lost' ? 'vanished' : options.mode === 'unmapped' ? 'unmapped' : ++stateReads <= 2 ? 'working' : 'ended', exit: 0 };
-    if (name === 'read_blob') return { request: submittedRequest, key: 'synthetic-remote', digest: options.mode === 'result-sha' ? 'f'.repeat(64) : submittedSha, submitted: now().toISOString(), rows: options.mode === 'partial' ? [] : [{ id: 'synthetic-case', outcome: 'good' }], complete: options.mode !== 'partial' };
+    if (name === 'read_blob') return { request: submittedRequest, key: 'synthetic-remote', digest: options.mode === 'result-sha' ? 'f'.repeat(64) : submittedSha, submitted: now().toISOString(), rows: options.mode === 'partial' ? [] : items.map(id => ({ id, outcome: 'good' })), complete: options.mode !== 'partial' };
     return { ok: true };
   };
   endpoint = await startEndpoint([...definition('x').allowed_tools, 'inspect_bound_seat', ...(options.extraTools ?? [])], async (name, _args, res) => {
@@ -64,16 +69,20 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   const registry = new ExecutorRegistry(kit);
   const d = { ...definition(endpoint.endpoint),allowed_tools:[...definition(endpoint.endpoint).allowed_tools,'inspect_bound_seat'],refused_tools:['synthetic_admin_reset'],probes:{...probes,call:{...probes.call,tool:'inspect_bound_seat'}}, manifest_sha256: manifest.body.sha256, submit_timeout_ms: options.timeout ?? 300000 };
   const executor = await addSyntheticExecutor(kit,registry,admin,d,'synthetic-secret');
-  const claim = { requirement: 'workbook_verified', statement: { verdict: 'support', text: '合成核验', data: { plan_run: plan, sha256: payload.body.sha256, autoids: ['synthetic-case'], bed: { id: 'synthetic-bed', manifest_sha256: options.mode === 'manifest' ? 'f'.repeat(64) : manifest.body.sha256 }, build: 'synthetic-build', generator: 'synthetic-workflow@1.0.0' } }, qualifier: { nature: 'fact' }, warrant: { producer: 'function', id: 'synthetic.verify@1' }, validity: { status: 'valid' } };
-  const detail = { run: { run, predecessor: plan, ...(options.lockedBuild ? { build: options.lockedBuild } : {}), pack: options.mode === 'wrong-package' ? 'other-workflow@1.0.0' : 'synthetic-workflow@1.0.0', pack_digest: sha256Hex('synthetic-pack'), runner: owner.id, items: [{ id: 'synthetic-item' }], sources: [{ reference: `src:${payload.body.sha256}`, slot: 'synthetic-artifact', role: 'artifact_under_verification' }, { reference: `src:${manifest.body.sha256}`, slot: 'synthetic-manifest', role: 'expected' }], requirements: [], started_at: now().toISOString() }, submissions: [], latest: { record: sha256Hex('synthetic-validation'), result: { run, acceptance: 'accepted', errors: [], partitions: { delivered: [{ item: 'synthetic-item', requirements: [{ requirement: 'workbook_verified', status: options.mode === 'requirement' ? 'pending' : 'satisfied', claims: [claim] }] }], rejected: [], incomplete: [], quarantined: [] }, cross_item: [] } } } as unknown as RunDetail;
-  const effectDocument=effectsDocument({target:'synthetic-bed',manifest_sha256:manifest.body.sha256,build:'synthetic-build',sha256:payload.body.sha256,items:['synthetic-case'],generator:'synthetic-workflow@1.0.0'});
+  const claim = { requirement: 'workbook_verified', statement: { verdict: 'support', text: '合成核验', data: { plan_run: plan, sha256: payload.body.sha256, autoids: [...items], bed: { id: 'synthetic-bed', manifest_sha256: options.mode === 'manifest' ? 'f'.repeat(64) : manifest.body.sha256 }, build: 'synthetic-build', generator: 'synthetic-workflow@1.0.0' } }, qualifier: { nature: 'fact' }, warrant: { producer: 'function', id: 'synthetic.verify@1' }, validity: { status: 'valid' } };
+  const detail = { run: { run, predecessor: plan, ...(options.lockedBuild ? { build: options.lockedBuild } : {}), pack: options.mode === 'wrong-package' ? 'other-workflow@1.0.0' : 'synthetic-workflow@1.0.0', pack_digest: sha256Hex('synthetic-pack'), runner: owner.id, items: runItems.map(id => ({ id })), sources: [{ reference: `src:${payload.body.sha256}`, slot: 'synthetic-artifact', role: 'artifact_under_verification' }, { reference: `src:${manifest.body.sha256}`, slot: 'synthetic-manifest', role: 'expected' }], requirements: [], started_at: now().toISOString() }, submissions: [], latest: { record: sha256Hex('synthetic-validation'), result: { run, acceptance: 'accepted', errors: [], partitions: { delivered: runItems.map(id => ({ item: id, requirements: [{ requirement: 'workbook_verified', status: options.mode === 'requirement' ? 'pending' : 'satisfied', claims: [claim] }] })), rejected: [], incomplete: [], quarantined: [] }, cross_item: [] } } } as unknown as RunDetail;
+  const effectDocument=effectsDocument({target:'synthetic-bed',manifest_sha256:manifest.body.sha256,build:'synthetic-build',sha256:payload.body.sha256,items:[...items],generator:'synthetic-workflow@1.0.0'});
   const freezeExecutor=async()=>{detail.run.policy=(await boundaryPolicy()).version;detail.run.executors=(await kit.objects.put(canonicalBytes({[executor.id]:(await registry.get(executor.id))!.resolved_digest}),'application/json')).sha256;};await freezeExecutor();
   const workflows = { byDigest: async () => ({ pack: { id: 'synthetic-workflow', version: '1.0.0', digest: detail.run.pack_digest }, requirements: [{ key: 'workbook_verified', required: true, target: 'item', accepted_producer: 'fact' }],readJson:async()=>effectDocument } as unknown as LoadedWorkflow) } satisfies Pick<WorkflowStore, 'byDigest'>;
   const runs = { getRun: async (_by: unknown, id: string) => id === run ? detail : id === plan ? { ...detail, run: { ...detail.run, run: plan, predecessor: undefined } } : null };
   await leases.acquire({ keys: d.resources, prefix: 'synthetic/', ttlSeconds: options.mode === 'expiry' ? 1 : 3600, maxTtlSeconds: 3600, holder: { user: owner.id, run: options.mode === 'lineage' ? newId('run') : run } });
-  const service = new DispatchService({ recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策通过',grounds:[],tier:'blocking',data:{parameters:Object.fromEntries(Object.entries(effectDocument.effects[0].parameters.values).map(([key,values])=>[key,values[0]]))}}]])),records: kit, leases, runs, workflows, now });
+  const environmentTeam=await kit.teams.create(admin,'合成环境使用团队');
+  await kit.teams.add(admin,environmentTeam.id,owner.id);
+  await kit.authorizations.assignResource(admin,executor.id,environmentTeam.id);
+  const environmentAccess=new MemberEnvironments(kit,registry,leases,(actor,id,tx)=>canUseEnvironment(kit,actor,id,tx));
+  const service = new DispatchService({ enforceEnvironmentAssignments:true, environmentAccess, recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策通过',grounds:[],tier:'blocking',data:{parameters:Object.fromEntries(Object.entries(effectDocument.effects[0].parameters.values).map(([key,values])=>[key,values[0]]))}}]])),records: kit, leases, runs, workflows, now });
   const server=endpoint;let closing:Promise<void>|undefined;
-  return { effectDocument,freezeExecutor,kit, db, clock, now, admin, owner, run, detail, workflows, runs, executor, registry, leases, service, calls, submitted, endpoint:server, payload,
+  return { environmentAccess,environmentTeam,effectDocument,freezeExecutor,kit, db, clock, now, admin, owner, run, detail, workflows, runs, executor, registry, leases, service, calls, submitted, endpoint:server, payload,
     get sawIntentAtSubmit() { return sawIntentAtSubmit; },
     close: () => (closing ??= (async () => { await server.close(); await db.end(); await kit.close(); })()) };
   } catch(error) { await endpoint?.close().catch(()=>{});await db.end().catch(()=>{});await kit.close();throw error; }

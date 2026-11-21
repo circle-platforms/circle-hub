@@ -53,7 +53,9 @@ export async function answerRequest(ctx:RequestContext,request:string,source:str
   const record=await ctx.deps.records.store.get<RequestBody>(request,ctx.transaction);
   if(record?.kind!=='request')throw new Error('请求记录不存在');
   const old=await ctx.deps.records.store.find<{detail:{answer:string}}>({kind:'action',key:'runs.request.answer',value:request,limit:1,newestFirst:true},ctx.transaction);
-  if(old.items.length){if(old.items[0].body.detail.answer===source)return;throw new ConflictError('请求已有其他作答来源，不覆盖原回答',{fix:'查看原作答；如需另一项回答，另建明确的请求'});}
+  // The newest closing record decides: one that let a voided request wait again (reinstated_by) carries no answer, so it is answered now.
+  const answered=old.items[0]?.body.detail.answer;
+  if(typeof answered==='string'){if(answered===source)return;throw new ConflictError('请求已有其他作答来源，不覆盖原回答',{fix:'查看原作答；如需另一项回答，另建明确的请求'});}
   const at=ctx.now().toISOString();
   await ctx.deps.records.store.put({kind:'action',schema:'action@1',provenance:'observed',created_at:at,body:{action:'validate',run:record.body.run??null,item:record.body.item??null,inputs:[`rec:${request}`,`rec:${source}`],component:'requests@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{request,answer:source}},index:closingIndex(request,true)},ctx.transaction);
 }

@@ -1,15 +1,18 @@
+import type { RebuildNeeded } from './rebuild-state.ts';
+import type { VaultReadinessIssue } from '../records/api.ts';
 // Public surface of the server package (D05 D06 B08 R01 R02): the MCP server, the console, the HTTP surface and the CLI.
 // The assembly step (next phase) imports only this file: it builds ServerDeps from the real packages and registers the
 // CLI commands that need them.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Disposition, EffectOutcome } from '../../contracts/generated/vocabulary.ts';
-import type { EnvironmentCalls, EnvironmentFacts } from '../dispatch/api.ts';
+import type { EnvironmentCalls, EnvironmentFacts, EnvironmentReadiness } from '../dispatch/api.ts';
 import type { HubConfig } from '../config/index.ts';
 import type { SystemTrialInput, SystemTrialReport, SystemTrialForget } from '../connectors/api.ts';
 import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, RunsService, WorkflowStore } from '../ports.ts';
-import type { Principal, RecordsKit } from '../records/api.ts';
+import type { Principal, RecordsKit, MemberCapabilities } from '../records/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
 import type { RunsEngine } from '../runs/api.ts';
+import type { PackSummary } from '../../contracts/src/run.ts';
 
 export { createApp } from './app.ts';
 export { main, registerCommand, registeredCommands, RESERVED_COMMANDS } from './cli.ts';
@@ -21,8 +24,17 @@ export type { TextContext } from './text.ts';
 
 /** Everything the server needs; the assembly builds it from the real packages, tests from fakes (hub/server/testing.ts). */
 export interface ServerDeps {
+  rebuildNeeded?: RebuildNeeded | null;
+  /** Administrator-only startup observations, not proof of current resource readiness. */
+  startupSecretIssues?(): readonly VaultReadinessIssue[];
   config: HubConfig;
+  /** Releases assembly-owned resources only; the caller still owns the supplied records. */
+  close?(): Promise<void>;
+  /** Named documents, for the administrators' console; `circle-hub doc` writes them. */
+  documents?: { list(): Promise<Array<{ name: string; sha256: string; size: number }>> };
   records: RecordsKit;
+  /** Current member view, shared by the console and list_task_packs; only self or an active administrator. */
+  memberCapabilities(by: Principal, userId?: string, packSummaries?: readonly PackSummary[]): Promise<MemberCapabilities>;
   runs: RunsService;
   maintenance?: Pick<RunsEngine, 'startMaintenance' | 'stopMaintenance'>;
   /**
@@ -49,6 +61,15 @@ export interface ServerDeps {
   dispatch?: DispatchView;
   /** The read-only trial of a business system before it is connected (connectors' admin.trial); absent where not wired. */
   systems?: SystemsView;
+  /**
+   * Read-only lease view for the console (N7 alerts: held with no until). Absent when leases are not wired.
+   * Prefix '' lists every held key; withHolder adds the occupying account id.
+   */
+  leases?: {
+    view(prefix: string, withHolder?: true): Promise<{
+      entries: Array<{ key: string; since: string; until: string | null; run: string; user?: string }>;
+    }>;
+  };
 }
 
 /** Business systems as the console's administrators try them; the connectors recheck the administrator themselves. */
@@ -88,13 +109,19 @@ export interface JobView {
   next_action?: string;
 }
 
-/** Read-only dispatch facts for the console; every method rechecks that the reader is an enabled administrator. */
+/** Read-only dispatch facts. Readiness also permits an assigned member; other methods require an active administrator. */
 export interface DispatchView {
   executors(by: Principal): Promise<ExecutorView[]>;
   jobs(by: Principal, run: string): Promise<JobView[]>;
+  readiness?(by: Principal, target: string): Promise<EnvironmentReadiness>;
 }
 
 export interface AppOptions {
+  /**
+   * Ordinary-mode administrator reset (settings「重置和重建」and `/console/rebuild` when assembled).
+   * Uses the same RebuildResetBridge as maintenance mode; serve wires ResetPorts (apply/export) by default.
+   */
+  reset?: { bridge(): Promise<import('./rebuild-http.ts').RebuildResetBridge>; render?: import('./rebuild-http.ts').RebuildPageRenderer };
   /** Runs the console's management actions as `circle-hub` commands (serve gives one); without it they are unavailable. */
   bridge?: import('./command-bridge.ts').CommandBridge;
   /** The server certificate and key of the built-in HTTPS (PEM); required when the configuration has `https`. */
@@ -201,3 +228,24 @@ export interface AssemblyModule {
   /** Registers the commands that need the other packages (pack, resource, secret, knowledge, init-admin, operator-token). */
   registerCommands?: (register: RegisterCommand) => void;
 }
+
+export type { RebuildNeeded } from './rebuild-state.ts';
+export type { RebuildConsoleContext, RebuildPageRenderer, RebuildResetBridge } from './rebuild-http.ts';
+export type { ResetConfigurationOptions, ResetConfigurationPorts, ProtectedConfigurationDomain } from './cli-apply.ts';
+/** Pure rebuild HTML for the incompatible-store listener; also the default `ServeOptions.rebuild.render`. */
+export { renderRebuildPage } from './console/reset.ts';
+export async function createResetConfigurationPorts<State>(options: import('./cli-apply.ts').ResetConfigurationOptions<State>): Promise<import('./cli-apply.ts').ResetConfigurationPorts> {
+  return (await import('./cli-apply.ts')).createResetConfigurationPorts(options);
+}
+
+// Reset entry points are lazy: serving the Hub never imports destructive data operations.
+export type { ResetRequest, ResetScope, ResetDataScope, ResetInspection, ResetPlan, ResetProblem, ResetPorts, ResetReport } from './reset/types.ts';
+export type { ResetWorkerStatus } from './reset/worker.ts';
+export async function inspectReset(...args: Parameters<typeof import('./reset/inspection.ts').inspectReset>) { return (await import('./reset/inspection.ts')).inspectReset(...args); }
+export async function previewReset(...args: Parameters<typeof import('./reset/host.ts').previewReset>) { return (await import('./reset/host.ts')).previewReset(...args); }
+export async function resetData(...args: Parameters<typeof import('./reset/host.ts').resetData>) { return (await import('./reset/host.ts')).resetData(...args); }
+export async function launchReset(...args: Parameters<typeof import('./reset/worker.ts').launchReset>) { return (await import('./reset/worker.ts')).launchReset(...args); }
+export async function acknowledgeReset(...args: Parameters<typeof import('./reset/worker.ts').acknowledgeReset>) { return (await import('./reset/worker.ts')).acknowledgeReset(...args); }
+export async function readResetStatus(...args: Parameters<typeof import('./reset/worker.ts').readResetStatus>) { return (await import('./reset/worker.ts')).readResetStatus(...args); }
+
+export { parseResetRequest } from './reset/types.ts';

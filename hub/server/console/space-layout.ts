@@ -3,9 +3,11 @@ import {memoReadPort} from '../../records/api.ts';
 import {KnowledgeSearchScopeSchema,KnowledgeViewSchema,isKnowledgeSearchScope,uiLabelOf,type KnowledgeSearchScope,type KnowledgeView} from '../../../contracts/generated/vocabulary.ts';
 import type {PackListing} from '../../ports.ts';
 import {PACK_PLACES,packPath,type PlaceKind} from './pack-display.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import {html,link,pageLayout,type Html} from './html.ts';
+import { count, segments } from './components.ts';
 import {containsDirectory,directoryName,describeAudience} from './audience.ts';
+import {knowledgeSearchScopeLabel} from './knowledge-display.ts';
 
 export function selectedScope(ctx:PageContext):KnowledgeSearchScope{
  const scope=ctx.url.searchParams.get('scope');if(isKnowledgeSearchScope(scope))return scope;
@@ -23,17 +25,28 @@ export const PRODUCT_SOURCES_PATH='/console/knowledge/products';
  * which kind of content and, inside a folder, which folder. The words are the vocabulary's.
  */
 export function knowledgeContext(ctx:PageContext,content:string,position?:string,range?:string):Html{
- return html`<p class="ch-meta" data-knowledge-context>范围：${range??uiLabelOf('knowledge_search_scope',selectedScope(ctx))} · 内容：${content}${position===undefined?'':html` · 位置：${position}`}</p>`;
+ return html`<p class="ch-meta" data-knowledge-context>范围：${range??knowledgeSearchScopeLabel(selectedScope(ctx))} · 内容：${content}${position===undefined?'':html` · 位置：${position}`}</p>`;
 }
 /** One line a reader can open: what the three kinds of content are and whose content the left column chooses (issue 212). */
 export function knowledgeGuide():Html{
  // The scopes are described, not named: a scope with nothing in it is not shown on the left, and the guide does not name it either.
  const view=(code:KnowledgeView)=>uiLabelOf('knowledge_view',code);
- return html`<details class="ch-section" data-knowledge-guide><summary>${view('knowledge')}、${view('memory')}和${view('sources')}有什么不同</summary><p class="ch-meta">${view('knowledge')}是带来源的陈述，可以分享到团队，供任务引用。${view('memory')}是客户端会话用的偏好和习惯，不作为任务的来源。${view('sources')}是上传或读取到的原始文件，供${view('knowledge')}逐字引用。左侧按内容属于谁来选：本人的、其他成员分享的、团队的。</p></details>`;
+ return html`<details class="ch-section" data-knowledge-guide><summary>${view('knowledge')}、${view('memory')}和${view('sources')}有什么不同</summary><p class="ch-meta">${view('knowledge')}是带来源的陈述，可以分享到公共空间，供任务引用。${view('memory')}是客户端会话用的偏好和习惯，不作为任务的来源。${view('sources')}是上传或读取到的原始文件，供${view('knowledge')}逐字引用。左侧按内容属于谁来选：本人的、其他成员分享的、公共空间的。</p></details>`;
 }
 export function knowledgeTabs(ctx:PageContext):Html{
  const scope=selectedScope(ctx),products=ctx.url.pathname===PRODUCT_SOURCES_PATH,current=products?null:ctx.url.pathname.endsWith('/sources')?'sources':KnowledgeViewSchema.safeParse(ctx.url.searchParams.get('view')).data??'knowledge';
- return html`<nav class="ch-seg" aria-label="知识库内容">${KnowledgeViewSchema.options.map(view=>html`<a href="${'/console/knowledge?'+new URLSearchParams({scope,...(view==='knowledge'?{}:{view})})}"${current===view?html` aria-current="page"`:''}>${uiLabelOf('knowledge_view',view)}</a>`)}<a href="${PRODUCT_SOURCES_PATH+'?'+new URLSearchParams({scope})}"${products?html` aria-current="page"`:''}>${uiLabelOf('pack_kind','product')}</a></nav>`;
+ return segments('知识库内容', [
+  ...KnowledgeViewSchema.options.map((view) => ({
+   href: '/console/knowledge?' + new URLSearchParams({ scope, ...(view === 'knowledge' ? {} : { view }) }),
+   label: uiLabelOf('knowledge_view', view),
+   current: current === view,
+  })),
+  {
+   href: PRODUCT_SOURCES_PATH + '?' + new URLSearchParams({ scope }),
+   label: uiLabelOf('pack_kind', 'product'),
+   current: products,
+  },
+ ]);
 }
 export async function currentAudience(ctx:PageContext,space:string,path='/',product=false,pack?:string,memory=false){
  const own=space===ctx.principal.id;
@@ -70,7 +83,7 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
  const values=KnowledgeSearchScopeSchema.enum,scopes=[values.all,values.personal,values.shared,values.team];
  const nav=html`<div class="ch-nav-sub" aria-label="空间">${scopes.filter(s=>s!=='shared'||shared).map(s=>{
   const subset=packs?.filter(p=>inScope(s,p.space??'team',ctx.principal.id));
-  const count=(kind:PackListing['kind'])=>new Set(subset?.filter(p=>p.kind===kind).map(p=>(p.space??'team')+':'+p.id)).size;
+  const packCount=(kind:PackListing['kind'])=>new Set(subset?.filter(p=>p.kind===kind).map(p=>(p.space??'team')+':'+p.id)).size;
   const memoryOwners=[...new Set(memories.filter(v=>inScope(s,v.space,ctx.principal.id)).map(v=>v.space))];
   const memoryGroups=memory&&s!=='all'?memoryOwners.map(owner=>{
    const paths=ancestors(memories.filter(v=>v.space===owner).map(v=>v.path));
@@ -90,9 +103,9 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
    const tree=allowed.includes('/')?directoryTree(allowed,url,'/',label,3,selected):treeList(roots.map(root=>treeItem(html`<a href="${url(root)}" title="${label(root)}"${root===selected?html` aria-current="page"`:''}>${label(root)}</a>`,directoryTree(allowed,url,root,label,2,selected))));
    return v.space===ctx.principal.id||v.space==='team'?tree:treeList([treeItem(link(sources?'/console/knowledge':'/console/knowledge/space',names.get(v.space),{...(sources?{view:'sources'}:{}),space:v.space,path:v.paths[0],scope:s}),tree)]);
   });
-  const total=sources?archive?.counts[s]??0:memory?memories.filter(item=>inScope(s,item.space,ctx.principal.id)).length:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).reduce((count,v)=>count+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
+  const total=sources?archive?.counts[s]??0:memory?memories.filter(item=>inScope(s,item.space,ctx.principal.id)).length:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).reduce((sum,v)=>sum+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
   const href=base+'?'+new URLSearchParams({scope:s,...(memory?{view:'memory'}:sources?{view:'sources'}:{})});
-  return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${uiLabelOf('knowledge_search_scope',s)} <span class="ch-count">${(subset?count(place):total).toLocaleString('en-US')}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
+  return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${knowledgeSearchScopeLabel(s)} <span class="ch-count">${count(subset?packCount(place):total)}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
  })}</div>`;
  // Decision 151: a place's list is not repeated in a side pane. A page that selects one thing passes its own pane.
  return pageLayout(html`<div class="ch-section" data-page-content data-area-content>${content}</div>`,{...content.layout,sidebar:nav,inspector:content.layout.inspector??null});

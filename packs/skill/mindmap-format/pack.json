@@ -1,25 +1,25 @@
 {
   "schema": "pack@1",
   "id": "mindmap-format",
-  "version": "1.0.22",
+  "version": "1.0.26",
   "kind": "skill",
   "title": "脑图格式",
   "description": "按原件结构读取 KityMinder，不承担工作角色判断",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "5edb4c9e143561d85cf5f3078e1359c5125cdbd5e08ffbecebe8c556fc1244ff",
-      "size": 275
+      "sha256": "577074353ca42829f9d8644e8479b51e1ec56c09a9c315824613c1cab2e38c5c",
+      "size": 399
     },
     {
       "path": "functions/format.ts",
-      "sha256": "391b7639d3dcd5b8de625b7255e629d86b7b6411f7105f71928ac6259abb0fcc",
-      "size": 10517
+      "sha256": "2bbc51a42b729dcabb7f587fcc3a400f867679e66f072210ec686eb73f222ff2",
+      "size": 10431
     },
     {
       "path": "functions/generated/protocol.ts",
-      "sha256": "0621c599cb7fddd912ef303dd4e00a220c8ff95f6ebec44deb37c8394fa511aa",
-      "size": 13821
+      "sha256": "ae29107e817a335b6fea62b616d96f3ce49ff79341d1dd51dadd2467933ad809",
+      "size": 259
     },
     {
       "path": "functions/json-walk.ts",
@@ -32,14 +32,24 @@
       "size": 13800
     },
     {
+      "path": "functions/modules/case-structure/index.ts",
+      "sha256": "cda38095f6ebf28363c002c09894fd9e88a0531102c97fca592ac6d24df46f5f",
+      "size": 14816
+    },
+    {
+      "path": "functions/modules/case-structure/policy.json",
+      "sha256": "682de39ce35c104f24cb11f814c079b676d67947a3578a4cef17c7e1c7ba041e",
+      "size": 678
+    },
+    {
       "path": "functions/parse.ts",
       "sha256": "7ee9718d7b6d29b98b9212d84bdc04e6f0f5ed55115928df2903fb6820bb7a22",
       "size": 4487
     },
     {
       "path": "functions/selectors.ts",
-      "sha256": "4eb68ce5a3893c8fb3d32d146da71180960b9c8b515353132a9520893db05b32",
-      "size": 7836
+      "sha256": "2bad7714b6e7bb3a37fd1402717194b82c616739c7b45b354d2e73be60fab669",
+      "size": 7783
     },
     {
       "path": "functions/text-decoding.ts",
@@ -48,8 +58,8 @@
     },
     {
       "path": "skill.json",
-      "sha256": "4544c7ffc3465a804a86a70e24e933accca9601946d987946340ea174b1fd35a",
-      "size": 540
+      "sha256": "0cafe9cc90c8f5ac08f8c7a082d26b64e3e8af1b7bc4998b1aef5f64fb208888",
+      "size": 658
     },
     {
       "path": "tools/locate-quotes.ts",

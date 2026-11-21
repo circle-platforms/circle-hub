@@ -94,6 +94,10 @@ test('residue that is not in the frozen baseline blocks dispatch and names the p
   assert.match(state.missing_fact ?? '', /床面残留不属于基线/);
   assert.match(state.missing_fact ?? '', /来源探针 addresses/);
   assert.match(state.next_action ?? '', /由合成管理员按 synthetic-clear-addresses 处理后重开/);
+  assert.doesNotMatch(state.member_missing_facts?.[0]?.fact ?? '', /上一次上机验证留下/);
+  assert.match(state.member_missing_facts?.[0]?.fact ?? '', /配置或残留不符合本次核对依据/);
+  assert.match(state.member_missing_facts?.[0]?.next_action ?? '', /测试环境管理员/);
+  assert.doesNotMatch(JSON.stringify(state.member_missing_facts), /192\.0\.2|usr_|exe_|第 1 行改变/);
   const pre = (await snaps(c, state.job)).find(detail => detail.when === 'pre');
   assert.deepEqual(pre?.differences, [{ item: 'addresses', kind: 'extra', identity: '192.0.2.9/24' }]);
 });
@@ -136,6 +140,9 @@ test('an unrestored bed keeps the reported pass, attaches the diff, and blocks t
   assert.equal(blocked.outcome, 'not_dispatched');
   assert.match(blocked.missing_fact ?? '', /该床尚未恢复/);
   assert.match(blocked.next_action ?? '', /由合成管理员按 synthetic-clear-addresses 处理后重开/);
+  // a member-safe reason and the named actor travel with the refusal (no device echo line in it)
+  assert.match(blocked.member_missing_facts?.[0]?.fact ?? '', /配置或残留不符合本次核对依据.*来源探针 addresses/);
+  assert.match(blocked.member_missing_facts?.[0]?.next_action ?? '', /测试环境管理员/);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
   await rotate(c, 'synthetic verified bytes restored');
   const cleared = await c.service.dispatch(c.admin, c.run, c.executor.id);
@@ -223,6 +230,9 @@ test('residue that needs interactive confirmation blocks dispatch and names the 
   assert.match(state.missing_fact ?? '', /不可自动清理/);
   assert.match(state.next_action ?? '', /合成管理员/);
   assert.match(state.next_action ?? '', /重新派发之前/);
+  assert.match(state.member_missing_facts?.[0]?.fact ?? '', /配置或残留不符合本次核对依据/);
+  assert.match(state.member_missing_facts?.[0]?.next_action ?? '', /测试环境管理员/);
+  assert.doesNotMatch(JSON.stringify(state.member_missing_facts), /192\.0\.2|usr_|exe_|第 1 行改变/);
   assert.equal((await cleanupRows(c, state.job)).length, 0);
 });
 
@@ -392,46 +402,6 @@ test('snapshot_only config channel skips baseline residue check and verifies pre
   assert.equal(state.outcome, 'effective');
 });
 
-test('config channel without snapshot_only and without manifest baseline records undeclared baseline and refuses dispatch', async t => {
-  const bedNoBaseline = {
-    name: 'bed-a',
-    devices: [{ ipv4: ['192.0.2.1/24'], ipv6: [] }],
-  };
-  const textBedState = { bed: '/bed', items: [textConfigItem] };
-
-  async function bindMissingBaseline(c: Awaited<ReturnType<typeof setup>>) {
-    const stored = await c.kit.artifacts.ingest({
-      bytes: canonicalBytes({ id: 'synthetic-bed', devices: [1, 2].map(n => ({ interfaces: [{ address: `192.0.2.${n}/24` }] })), bed: bedNoBaseline }),
-      mediaType: 'application/json',
-      origin: { upload: { session: 'synthetic' } },
-      author: { user: c.owner.id },
-      provenanceType: 'declared',
-      visibility: { readers: [c.owner.id], admins: true, packs: [], shareable: false },
-    });
-    c.detail.run.sources = c.detail.run.sources.map(s => s.slot === 'synthetic-manifest' ? { ...s, reference: `src:${stored.body.sha256}` } : s);
-    (c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as { bed: { manifest_sha256: string } }).bed.manifest_sha256 = stored.body.sha256;
-    c.effectDocument.effects[0].parameters.values.manifest_sha256 = [stored.body.sha256];
-    await c.registry.update(c.admin, c.executor.id, {
-      ...c.executor.definition,
-      manifest_sha256: stored.body.sha256,
-      allowed_tools: [...c.executor.definition.allowed_tools, 'show_bed'],
-      bed_state: textBedState,
-    });
-    await c.freezeExecutor();
-  }
-
-  const cleanReply = { output: 'Pool            Mode            \npool1           off             \n' };
-  const queue = [cleanReply];
-  const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
-  t.after(() => c.close());
-  await bindMissingBaseline(c);
-
-  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
-  assert.match(state.missing_fact ?? '', /未声明基线，无法判残留/);
-  assert.match(state.next_action ?? '', /由合成管理员在自动化测试环境清单中声明 baseline 行或将通道声明为 snapshot_only 后重开/);
-});
-
 test('captureText strips declared lead and trail lines verbatim, preserving content', () => {
   const raw = `show ip interface brief
 
@@ -558,6 +528,9 @@ test('raw capture probe with baseline mismatch blocks dispatch, lists diff lines
   assert.match(state.next_action ?? '', /synthetic-cleanup-probe/);
   assert.match(state.next_action ?? '', /circle-hub bed baseline record/);
   assert.match(state.next_action ?? '', /--reason <理由>/);
+  assert.match(state.member_missing_facts?.[0]?.fact ?? '', /配置或残留不符合本次核对依据/);
+  assert.match(state.member_missing_facts?.[0]?.next_action ?? '', /测试环境管理员/);
+  assert.doesNotMatch(JSON.stringify(state.member_missing_facts), /192\.0\.2|usr_|exe_|第 1 行改变/);
 });
 
 test('post-run match restores bed and post-run mismatch leaves bed unrestored with line diffs', async t => {

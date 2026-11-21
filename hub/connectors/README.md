@@ -147,11 +147,11 @@ pattern a real system pack follows: `meta` is `{title, folders, found}`.
 
 ## Login (D01 R[9])
 
-Credentials are complete `${secret:NAME}` references. At each read the registry loads the current resource decision and the current named secret decisions as one credential batch, checks the exact consumer/item/destination enrollment, and captures material for the operation. A legacy `connector.<resource>.<item>` credential refuses before any request, with the migration command in the administrator log. Missing or revoked names likewise refuse with `secret set --name <NAME>`.
+Credentials are complete `${secret:NAME}` references. At each read the registry loads the current resource decision and the current authenticated named vault versions as one credential batch and captures material for the operation; the definition name reference is the only binding. A legacy `connector.<resource>.<item>` credential refuses before any request, with the migration command in the administrator log. Missing or revoked names likewise refuse with `secret set --name <NAME>`.
 
-The sealed `connector.<resource>.session` binds origins, plaintext declarations, pack, credential rules, secret decisions and a reset epoch. A rotation invalidates old sessions at the next read without a restart. Current and previous secret values prime the redactor at server startup and on reads; actual digests, headers and both Basic components are registered before sending. In-flight reads retain their captured versions.
+The sealed `connector.<resource>.session` binds origins, plaintext declarations, pack, credential rules, vault name/version identities and a reset epoch. A rotation invalidates old sessions at the next read without a restart. Current and previous secret values prime the redactor at server startup and on reads; actual digests, headers and both Basic components are registered before sending. In-flight reads retain their captured versions.
 
-A credential-version gate uses a sorted set of decision digests, a vault entry and a transaction-scoped advisory lock. Network I/O never holds that database transaction. Resources and processes sharing those versions serialize login decisions and static-credential requests; ordinary requests with an acquired token retain their declared concurrency. One refused login or static credential stops all of them before another request. An abandoned in-flight claim freezes rather than automatically reusing credentials. `resource reset-login` changes the shared epoch and clears the resource session. A new secret decision has a new gate.
+A credential-version gate uses a sorted set of authenticated vault name/version identities, a vault entry and a transaction-scoped advisory lock. Network I/O never holds that database transaction. Resources and processes sharing those versions serialize login decisions and static-credential requests; ordinary requests with an acquired token retain their declared concurrency. One refused login or static credential stops all of them before another request. An abandoned in-flight claim freezes rather than automatically reusing credentials. `resource reset-login` changes the shared epoch and clears the resource session. A new vault version has a new gate.
 
 A usable confirmed token is reused. An explicit expiry can renew once; a token refused immediately after login stops. Login failures and unknown delivered outcomes never retry. A provably undelivered login retains its existing cooldown. `LoginManager` and `StaticCredential` keep their per-resource generation and in-flight checks as an additional guard within the captured version.
 
@@ -169,14 +169,14 @@ enabling grants the last definition again. Only admins decide (the account is re
 - **Exact pack binding (B04 R[1]).** `addResource` resolves `system_pack: 'id'` to the version published now and records
   that version and its digest; reads use exactly that content (another digest under that version is not used:
   PACK_UNAVAILABLE). A newer version takes effect only through `updateResource` (`system_pack: 'id'` binds the latest then).
-- **Updates:** named material is never deleted when a consumer or digest rule changes; another consumer may need it. Legacy entries removed from a definition are deleted after the new decision commits. Migration cannot change destinations in the same operation and commits secret decisions with the resource definition in one transaction. Comparison uses the credential wire rule; a matching legacy digest preserves an existing plain named value for other consumers. Migration also enforces current/previous retention. A post-commit cleanup failure is reported as committed, with the exact repeat-update action; repeating it clears the unused legacy entry without creating another secret version.
+- **Updates:** named material is never deleted when a definition reference or digest rule changes; another definition may need it. Legacy entries removed from a definition are deleted after the new decision commits. Administrator-approved destination changes follow the current definition without resetting material; explicit migration writes named material to the independent vault and records the configuration audit. Comparison uses the credential wire rule; a matching legacy digest preserves an existing plain named value for other definitions. Migration also enforces current/previous retention. A post-commit cleanup failure is reported as committed, with the exact repeat-update action; repeating it clears the unused legacy entry without creating another secret version.
 - `resetLogin(by,id)` resets the shared credential-version stop and the per-resource session; failure to remove a session is reported to the administrator without a path.
-- The retired `setCredential(s)` API is removed. Synthetic fixtures use `testing/credentials.ts`, which explicitly creates names and writes them through records' named-secret API. Production callers configure references first, then use the administrator named-secret commands.
-- Settings allow only whole-value ordinary-variable references. Configuration takes sorted name locks, checks the referenced current decisions again inside the configuration transaction, and bounds resolved settings at 64 KiB. Origins and other fields cannot reference variables. Updates merge settings by key; removals are explicit. Each read carries its caller's ordinary-variable snapshot into nested reads. Manifests and nested-cache keys include configuration, variable and secret decisions; `variables` records each use.
+- The retired `setCredential(s)` API is removed. Synthetic fixtures use `testing/credentials.ts`, which explicitly creates names and writes them through records' named-secret API. Named-secret commands may run before any definition exists; definitions bind by name when configured.
+- Settings allow only whole-value ordinary-variable references. Configuration takes sorted name locks, checks the referenced current decisions again inside the configuration transaction, and bounds resolved settings at 64 KiB. Origins and other fields cannot reference variables. Updates merge settings by key; removals are explicit. Each read carries its caller's ordinary-variable snapshot into nested reads. Manifests and nested-cache keys include configuration and ordinary-variable decisions plus vault name/version identities; `variables` records each use.
 - `describe(by, id)` (admins): one resource, enabled or not, read anew: the admins' listing row and, for every credential the
   definition declares (sorted by name), its name, vault entry, digest rule and whether a value is set (presence only;
-  never a value or its digest; version, length and enrollment are metadata). It needs neither the system pack nor the vault key. Null for an id that is not a
-  resource. This is what the CLI's `secret set` needs to check a credential and name its rule before asking for a value.
+  never a value or its digest; version and length are authenticated vault metadata). It needs no system pack; named metadata requires the vault key for authentication. Null for an id that is not a
+  resource. This is the administrator view of the stored metadata; it does not constrain setting a name before a definition exists.
 - `listResources` gives admins origins and plaintext declarations and other accounts the rows without them; the catalog port
   gives admins the same listing and everyone else an empty list.
 
@@ -542,7 +542,7 @@ ReadPlanOutput.concurrency 可为一个计划指定更低的在途上限，实�
 
 环境边界 Needs：唯一性以“环境类别 + 外部类型”为键。两个不同环境仍可各启用一个同类型资源；外部读端口未声明环境时保留原来的歧义拒绝，不暗选生产或测试。管理员可使当前 Hub 的读取类型只采用一个资源；若要并用，后续需明确声明环境选择接口与绑定规则。
 
-Shared-stop repair messages retain the actual secret names and the resource id supplied by the caller. Both stop paths emit the named `secret set --name …` and complete `resource reset-login <resource>` actions; the stop key still depends only on the shared decision digests.
+Shared-stop repair messages retain the actual secret names and the resource id supplied by the caller. Both stop paths emit the named `secret set --name …` and complete `resource reset-login <resource>` actions; the stop key depends only on the shared authenticated vault name/version identities.
 
 ## 尝试连接与近 24 小时读取（决定 126，2026-11-01）
 
@@ -569,3 +569,11 @@ Shared-stop repair messages retain the actual secret names and the resource id s
 - 没有命中的应答原样返回同一份字节，记录和没有字典时相同。
 - 登录请求不传 `mask`：登录要用应答带回的令牌。
 - 应答回显了 Hub 自己发出的密钥时（`redactor.echoedIn`）不替换：这类应答照原来的规则整份只保留给管理员（B02 R[6]）。否则规则只命中密钥的一部分时，剩下的部分会留在可读的记录里。
+
+## 2026-11-13 资源分配边界
+
+资源配置与业务读取分配是两种权限。管理员管理目录和配置仍能读取全部已配置资源；普通成员的资源列表仅包含当前分配可用的资源，不含地址。管理员业务读取同样必须取得资源分配，不把管理员身份或 resource_config 当作使用权。
+
+外部对象解析、带操作者的接受探测及直接 executeRead 均经 records 的 authorizations.canUseResource 核对。嵌套读取在使用缓存前重新解析资源，沿同一权限边界检查。没有操作者的接受探测只检查声明并返回布尔值，不发业务读取请求。管理 catalog 保持仅管理员可用；已有运行、冻结记录和历史原件的读取语义不在这里改写。
+
+合成资源读取夹具显式写入全体成员的 resource_assign 分配；新权限测试直接配置未分配资源，覆盖无分配、全体分配撤回、团队移出和停用。开发和验证仅使用临时 PostgreSQL、合成记录及回环 HTTP 来源。
