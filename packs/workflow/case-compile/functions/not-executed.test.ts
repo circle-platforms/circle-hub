@@ -144,12 +144,12 @@ test('the report says the case was not executed, why, and what to do, and does n
   assert.deepEqual(settled.pending, [`${notExecuted().reason}；${NEXT}`], 'the named exit is the program-decided one, not "no verified plan result"');
   const text = delivery.caseConclusion(inputOf(settled), settled);
   assert.equal(text, `原始用例 ${B} 合成用例 502：没有在设备上执行，无结论。原因：${why('合成用例 501', '在第 9 步')}。下一步：${NEXT}。`);
-  assert.doesNotMatch(text, /运行器报告|Hub 尚未取得|job resume|完整字段/);
+  assert.doesNotMatch(text, /运行器报|上机 \d+ 次|job resume|完整字段/);
   assert.equal(delivery.timeline(settled, false), `第 1 次未执行：${why('合成用例 501', '在第 9 步')}。`);
   // when the case also ran on the device in another dispatch, the line lists both and counts one
   const later = dispatch('d2', [B], [{ item: B, dynamic_terminal: 'fail', evidence: { log: `src:${'2'.repeat(64)}` } }]);
   const ran = delivery.assemble([A, B], [first(), later]).cases[1];
-  assert.equal(delivery.timeline(ran, false), `第 1 次未执行：${why('合成用例 501', '在第 9 步')}；第 2 次上机验证，运行器报告未通过。`);
+  assert.equal(delivery.timeline(ran, false), `第 1 次未执行：${why('合成用例 501', '在第 9 步')}；第 2 次上机验证：未通过。`);
 });
 
 test('a case that did not run is not asked for a round, and it needs no further named exit', () => {

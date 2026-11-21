@@ -60,7 +60,7 @@ test('a delivered case with a model-written checkpoint says so: drafted by the m
 test('the closing reply carries the sentence beside the case it belongs to',()=>{
  const checkpoints={a:modelCheckpointsOf(recordedResult('item-1'),'item-1')};
  const reply=replyText('/out',{cases:1},['case.xlsx'],[delivered],input({checkpoints}));
- assert.ok(reply.includes('检查点由模型拟定')&&reply.includes('未经独立复核'),reply);
+ assert.ok(reply.includes('生成成功的用例里有 1 条含模型拟定的检查点（共 1 处），建议复核，逐项见交付报告。'),reply);
  assert.ok(!replyText('/out',{cases:1},['case.xlsx'],[delivered],input()).includes('模型拟定'));
 });
 

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { isRecord, failCall, CallFailure, localMinute } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { closingHints, modelCheckpointsOf, neverReachedBed, unsentOf, type Unsent, assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, OBSERVATION_NOTE, type Status, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, trailingUnreached, unexecutedAfter, unsuccessfulReport, type CaseOutcome, type ModelCheckpoint, type ConflictGround, type Dispatch, type JobRow, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
+import { closingHints, modelCheckpointsOf, neverReachedBed, unsentOf, type Unsent, assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, resultLine, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, trailingUnreached, unexecutedAfter, unsuccessfulReport, type CaseOutcome, type ModelCheckpoint, type ConflictGround, type Dispatch, type JobRow, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { HubReplyError, RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchBytesRetrying, getRetrying, downloadRetryControl, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
@@ -102,15 +102,26 @@ function parseSuccessors(value: unknown, run: string): Array<{ run: string; pack
     return { run: r.run, pack: r.pack, started_at: r.started_at, parameters: r.parameters, sources: r.sources };
   });
 }
-/** The answer the model gives the person, made here: where the delivery is, the counts, one line a case, what the results rest on, and the paths. */
+/**
+ * The answer the model gives the person, made here. What they asked for is automated cases in a workbook, so it says how many
+ * cases the document holds, how many succeeded and how many did not, where the workbook is, and for each case that did not
+ * succeed what happened and why; the rest is in the report. The reference engine closes a batch the same way: a result line,
+ * one line for each case that needs attention, the paths.
+ */
 export function replyText(out: string, totals: Record<string, number>, files: string[], cases: CaseOutcome[] = [], input?: ReportInput): string {
-  const scopeLine = input?.scope
-    ? [`范围：共 ${input.scope.totalCases} 条原始用例，本次 ${input.assembly.totals.cases} 条，另有 ${input.scope.outOfScope.length} 条未纳入（见交付报告）。`]
-    : [];
-  const counted = (Object.keys(STATUS) as Status[]).filter((status) => (totals[status] ?? 0) > 0).map((status) => `${STATUS[status]} ${totals[status]} 条`);
-  const result = `结果：${totals.cases} 条原始用例${counted.length ? `，${counted.join('，')}` : ''}。`;
-  const note = input && cases.some((outcome) => outcome.history.length) ? [`说明：${OBSERVATION_NOTE}`] : [];
-  return [`交付目录：${out}`, ...scopeLine, result, ...(input ? cases.map((outcome) => `- ${caseConclusion(input, outcome)}`) : []), ...note, '文件：', ...files.map((name) => `- ${join(out, name)}`)].join('\n');
+  const at = (name: string): string => join(out, name);
+  if (!input) return [`共 ${totals.cases} 条原始用例。`, ...files.map((name) => `- ${at(name)}`)].join('\n');
+  const others = cases.filter((outcome) => outcome.status !== 'delivered');
+  const drafted = cases.filter((outcome) => outcome.status === 'delivered').map((outcome) => input.checkpoints?.[outcome.autoid]?.length ?? 0).filter((count) => count > 0);
+  return [
+    resultLine(input),
+    files.includes('case.xlsx') ? `自动化用例 Excel：${at('case.xlsx')}` : '没有生成成功的用例，没有自动化用例 Excel。',
+    ...(others.length ? ['', `失败的 ${others.length} 条：`, ...others.map((outcome) => `- ${caseConclusion(input, outcome, 'cause')}`), ''] : []),
+    ...(drafted.length ? [`生成成功的用例里有 ${drafted.length} 条含模型拟定的检查点（共 ${drafted.reduce((sum, count) => sum + count, 0)} 处），建议复核，逐项见交付报告。`] : []),
+    ...(others.length && files.includes(REPORT_FILES.unsuccessful) ? [`失败用例的详细说明：${at(REPORT_FILES.unsuccessful)}`] : []),
+    ...(files.includes('unsuccessful_cases.xlsx') ? [`失败用例的 Excel（没有整卷上机验证）：${at('unsuccessful_cases.xlsx')}`] : []),
+    `交付报告：${at(REPORT_FILES.report)}`,
+  ].join('\n');
 }
 
 /**

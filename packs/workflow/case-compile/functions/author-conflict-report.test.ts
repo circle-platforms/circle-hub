@@ -8,7 +8,7 @@ function inputOf(outcome:CaseOutcome):ReportInput{
 test('verified author conflict uses the generated author-input reason without replacing recorded causes or other closings',()=>{
  const conflict:CaseOutcome={autoid:'a',status:'unrun',history:[],closing:'author_conflict',basis:{plan_run:'synthetic',attributions:['unattributed'],gaps:[]}};
  const before=structuredClone(conflict);assert.ok(caseConclusion(inputOf(conflict),conflict).includes('原因：'+labelOf('attribution','author_input')));assert.ok(closingCounts([conflict]).includes(labelOf('attribution','author_input')));assert.deepEqual(conflict,before);
- for(const closing of ['authoring_failure','device_defect','missing_fact']as const){const other={...conflict,closing},input=inputOf(other),text=caseConclusion(input,other);assert.ok(text.includes('原因：'+labelOf('attribution','unattributed')));assert.equal(caseConclusion({...input,userRulings:{a:[{source:'scope.md',target:'a',ruling:'使用者决定：合成决定'}]}},other),text);}
+ for(const closing of ['authoring_failure','device_defect','missing_fact']as const){const other={...conflict,closing},input=inputOf(other),text=caseConclusion(input,other);assert.ok(text.includes('原因（模型的分析）：合成模型说明')&&!text.includes(labelOf('attribution','author_input')),text);assert.equal(caseConclusion({...input,userRulings:{a:[{source:'scope.md',target:'a',ruling:'使用者决定：合成决定'}]}},other),text);}
 });
 test('a scoped recorded user ruling routes an existing author conflict to the author and retains the actual ruling',()=>{
  const conflict:CaseOutcome={autoid:'a',status:'unrun',history:[],closing:'author_conflict'};const input=inputOf(conflict);

@@ -258,8 +258,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "a5a506c021d5657d43b25daf54d05ff479ebb0bf2e1b98e7c91aadb698ed5205",
-      "size": 80697
+      "sha256": "7bca4e69d728b0491ab0ec34b9866654d41b9805c238664903a2a31becaf968c",
+      "size": 85729
     },
     {
       "path": "functions/device-history.ts",
@@ -978,8 +978,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "5eb284a3c1737f41769af4ff07c5b4774042c422b4e65c483144e6e0a6c9180a",
-      "size": 57670
+      "sha256": "74b45616fcc332d65d7271c56f369868164be8cba75544a203f7032b31c66b8c",
+      "size": 58437
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -1068,8 +1068,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "60ebee359523916c147fe3734e0005b068dcc13d6e75feacaee4e215f4f75593",
-      "size": 22103
+      "sha256": "deadb6687e9c2ddb3ee3c4690c72ac03f0c821d42cc03f84097abae6d3cc5dd4",
+      "size": 22591
     },
     {
       "path": "tools/device-read.cli.json",

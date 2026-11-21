@@ -152,8 +152,8 @@ test('the pass volume is the dispatched final workbook, the unsuccessful volume 
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /^# 交付报告 — 合成批\n> 生成 2026-11-08 /);
   assert.match(report, /自动化用例 Excel case\.xlsx：2 条原始用例，已整卷上机验证，全部通过。/);
-  assert.match(report, /第 1 次上机验证，运行器报告未通过。/);
-  assert.match(report, /原始用例 990000000000000102 合成用例 102：原始用例的期望与设备输出不一致（模型的判断，未经确认）。原因：还没查清。下一步：由使用者核对/);
+  assert.match(report, /第 1 次上机验证：未通过。/);
+  assert.match(report, /原始用例 990000000000000102 合成用例 102：上机 1 次，原始用例的期望与设备输出不一致（模型的判断，未经确认）。原因：期望“合成期望”，设备实际输出“第 3 步断言没有命中”。下一步：由使用者核对/);
   assert.match(report, /未做上机验证，这条原始用例未完成脚本编写。/);
   assert.match(report, /## 原始用例 990000000000000104 合成意图 4/, 'a case never compiled takes its title from the recomposition');
   const long = await readFile(join(out, 'unsuccessful_cases.md'), 'utf8');
@@ -192,7 +192,7 @@ test('a recent pass outside a verified volume leaves case-local pending eligibil
   assert.deepEqual(partial.pass?.items, [CASES[0]]); assert.ok(partial.cases[2].pending?.length); assert.equal(partial.cases[2].history.at(-1)?.terminal, 'pass');
   const together = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass']), d(FINAL, [CASES[0], CASES[2]], ['pass', 'pass'])]);
   assert.deepEqual(together.totals, { cases: 3, delivered: 2, failed: 1, unsettled: 0, unrun: 0 });
-  assert.match(timeline(together.cases[1], false), /^第 1 次上机验证，运行器报告未通过。$/);
+  assert.match(timeline(together.cases[1], false), /^第 1 次上机验证：未通过。$/);
   const unverified = assemble(CASES.slice(0, 3), [d(WHOLE, CASES.slice(0, 3), ['pass', 'fail', 'pass'])]); assert.equal(unverified.pass, null); assert.equal(unverified.cases.filter(c => c.pending?.length).length, 2);
   const none = assemble(CASES.slice(0, 2), [d(WHOLE, CASES.slice(0, 2), ['fail', 'no_verdict'])]);
   assert.equal(none.pass, null); assert.deepEqual(none.totals, { cases: 2, delivered: 0, failed: 1, unsettled: 1, unrun: 0 });
@@ -269,20 +269,17 @@ test('the verification runs the model left out are found in the Hub lineage, and
   assert.deepEqual(printed.runs, [WHOLE, FINAL]);
   assert.deepEqual(printed.added_runs, [WHOLE]);
   const replyLines = printed.reply.split('\n');
-  assert.equal(replyLines.length, 13);
-  assert.equal(replyLines[0], `交付目录：${out}`);
-  assert.equal(replyLines[1], '结果：4 条原始用例，交付 2 条，上机未通过 1 条，没有上机 1 条。');
-  // one line a case, in the reader's words; what a device result rests on is said once, after them
-  for (const index of [2, 4]) assert.match(replyLines[index], /^- 原始用例 \d+ [^：]+：上机验证通过。$/);
-  assert.match(replyLines[3], /（模型的判断，未经确认）。原因：还没查清/);
-  assert.match(replyLines[5], /原因：缺资料.*由使用者处理具名请求，期限 2026-11-09 09:00/);
-  assert.doesNotMatch(printed.reply, /状态未|判断正确|判断错误|决定者|目标自报|设备自报|不升级观察性质/);
-  assert.equal(replyLines[6], '说明：上机验证的结果取自运行器的报告，Hub 未另行核实；运行期间不能排除其他人同时操作设备。');
-  assert.equal(replyLines[7], '文件：');
-  assert.deepEqual(replyLines.slice(8), ['case.xlsx', 'unsuccessful_cases.xlsx', 'delivery_report.md', 'unsuccessful_cases.md', 'delivery.json'].map(name => `- ${join(out,name)}`));
+  // what the person asked for: how many cases the document holds, how many succeeded, how many did not and why, and where the workbook is
+  assert.deepEqual(replyLines.slice(0, 4), ['原始脑图共 4 条用例：生成成功 2 条，失败 2 条。', `自动化用例 Excel：${join(out,'case.xlsx')}`, '', '失败的 2 条：']);
+  assert.equal(replyLines[4], '- 原始用例 990000000000000102 合成用例 102：上机 1 次，原始用例的期望与设备输出不一致（模型的判断，未经确认）。原因：期望“合成期望”，设备实际输出“第 3 步断言没有命中”。');
+  assert.match(replyLines[5], /^- 原始用例 990000000000000104 合成意图 4：缺少脚本编写所需的资料，没有上机。原因：缺资料，缺少：.+。模型的分析：合成判断：缺事实。$/);
+  assert.deepEqual(replyLines.slice(6), ['', `失败用例的详细说明：${join(out,'unsuccessful_cases.md')}`, `失败用例的 Excel（没有整卷上机验证）：${join(out,'unsuccessful_cases.xlsx')}`, `交付报告：${join(out,'delivery_report.md')}`]);
+  // the cases that succeeded are not listed one by one, and nothing of how the Hub records a result is said
+  assert.doesNotMatch(printed.reply, /合成用例 101|合成用例 103|状态未|判断正确|判断错误|决定者|目标自报|设备自报|不升级观察性质|Hub|运行器|下一步/);
+  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /原因：缺资料.*下一步：由使用者处理具名请求，期限 2026-11-09 09:00/);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.added_runs, [WHOLE]);
-  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /第 1 次上机验证，运行器报告未通过/);
+  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /第 1 次上机验证：未通过/);
 });
 
 test('a verification run whose job ended before anything went to the bed is no run of the cases, and the lineage skips it', async (t) => {
@@ -367,17 +364,17 @@ test('recorded distinct failed versions have bounded conclusions and invalid def
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual({ closing: summary.cases[1].closing, label: summary.cases[1].closing_label, rounds: summary.cases[1].rounds }, { closing: 'authoring_failure', label: '所记录的核验尚未通过', rounds: 3 });
   assert.deepEqual(summary.closings, { authoring_failure: 1, device_defect: 0, missing_fact: 1, author_conflict: 0 });
-  assert.match(JSON.parse(closed.stdout).reply, /所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例。原因：还没查清/);
+  assert.match(JSON.parse(closed.stdout).reply, /合成用例 102：上机 3 次、写过 3 版自动化用例，都没有通过。原因（模型的分析）：合成判断：环境缺前置。/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000102 合成用例 102：运行器报告未通过。所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例。原因：/);
-  assert.match(report, /原因：还没查清。下一步：尚缺具名出口材料.*模型建议单列为未确认。/);
-  assert.match(report, /模型的说明（未经确认）：合成判断：环境缺前置/);
+  assert.match(report, /原始用例 990000000000000102 合成用例 102：上机 3 次、写过 3 版自动化用例，都没有通过。原因（模型的分析）：合成判断：环境缺前置。/);
+  assert.match(report, /下一步：尚缺具名出口材料.*模型建议单列为未确认。/);
+  assert.match(report, /\*\*怎么判断的\*\*（模型的失败分析，未经确认）：合成判断：环境缺前置/);
 
   // A verbatim defect candidate closes it after one round and is shown as a candidate for arbitration.
   const candidateOut = join(dir, 'f');
   assert.equal((await run(once, await notes(NOTES), candidateOut)).code, 0);
   const candidateReport = await readFile(join(candidateOut, 'unsuccessful_cases.md'), 'utf8');
-  assert.match(candidateReport, /原始用例的期望与设备输出不一致（模型的判断，未经确认）。原因：还没查清/);
+  assert.match(candidateReport, /上机 1 次，原始用例的期望与设备输出不一致（模型的判断，未经确认）。原因：期望“合成期望”，设备实际输出“第 3 步断言没有命中”。/);
   assert.match(candidateReport, /模型提出的复现步骤（未确认） 合成复现：照第 1 步配置后读第 3 步输出\n\n原始用例原句，已逐字核对\n```\n合成期望\n```\n\n设备输出，已逐字核对\n```\n第 3 步断言没有命中\n```/);
 });
 
@@ -444,7 +441,7 @@ test('an audited device pass remains unknown after three recorded distinct versi
   assert.equal(earlySummary.cases[2].closing,undefined);
   assert.ok(earlySummary.cases[2].pending.some((fact:string)=>fact.includes('已核验 1 份不同自动化用例')));
   assert.equal(earlySummary.cases[2].dispatches[0].dynamic_terminal,'pass');
-  assert.match(JSON.parse(early.stdout).reply,/运行器报告通过.*能否交付尚无结论/);
+  assert.match(JSON.parse(early.stdout).reply,/上机 1 次，最后一次运行器报通过，这次结果没有被采用，尚不能交付。/);
 
   // Three authored versions, one failed and two with a dropped pass: it closes as the model not finding a solution.
   const failedFirst = rows(whole, ['pass', 'pass', 'fail'], dropped);
@@ -455,10 +452,10 @@ test('an audited device pass remains unknown after three recorded distinct versi
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.cases.map((c: { status: string }) => c.status), ['delivered', 'delivered', 'unsettled', 'unrun']);
   assert.deepEqual({ closing: summary.cases[2].closing, rounds: summary.cases[2].rounds, terminals: summary.cases[2].dispatches.map((d: { terminal: string }) => d.terminal) }, { closing: 'authoring_failure', rounds: 3, terminals: ['fail', 'no_verdict', 'no_verdict'] });
-  assert.match(JSON.parse(closed.stdout).reply, /所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，无结论。原因：还没查清/);
+  assert.match(JSON.parse(closed.stdout).reply, /合成用例 103：上机 3 次、写过 3 版自动化用例，没有得到可采用的通过结论。原因（模型的分析）：合成判断：删除后的重复删除报执行失败。/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000103 合成用例 103：运行器报告通过；Hub 尚未取得可采用的逐条结论。所记录的自动化用例核验尚未通过（结论仅限这些尝试），已核验 3 份不同自动化用例，无结论/);
-  assert.match(report, /第 3 次上机验证，运行器报告通过；Hub 尚未取得可采用的逐条结论；交付复核无结论，设备输出有执行失败原话“Failed to run the synthetic command”，自动化用例没有检查这一行/);
+  assert.match(report, /原始用例 990000000000000103 合成用例 103：上机 3 次、写过 3 版自动化用例，没有得到可采用的通过结论。/);
+  assert.match(report, /第 3 次上机验证：运行器报通过，这次结果没有被采用（设备输出有执行失败原话“Failed to run the synthetic command”，自动化用例没有检查这一行）/);
 });
 
 test('a case never dispatched closes only on a fact the Hub recorded missing for its own plan; a written claim sends it back to authoring', async (t) => {
@@ -471,8 +468,8 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
   assert.deepEqual(summary.cases[3].missing, { kind: 'data_gap', plan_run: GAP, requirement: 'contract_methods', missing: GAP_WORDS, attributions:['data_gap'], gaps:[{missing:GAP_WORDS,reason:'missing_input',exit:{action:'request',audience:{user:'usr_synthetic'},due:'2026-11-09T00:00:00.000Z',request_kind:'clarification'}}], exit:{action:'request',audience:{user:'usr_synthetic'},due:'2026-11-09T00:00:00.000Z',request_kind:'clarification'} });
   assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 1, missing_fact: 1, author_conflict: 0 });
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000104 合成意图 4：缺少脚本编写所需的资料，无结论。原因：缺资料/);
-  assert.ok(report.includes(`Hub 核对结果摘要（内部引用保留在机器资料）。${GAP_WORDS}`));
+  assert.match(report, /原始用例 990000000000000104 合成意图 4：缺少脚本编写所需的资料，没有上机。原因：缺资料/);
+  assert.ok(report.includes(`**核对结果摘要**：${GAP_WORDS}`));
   // A later plan run that holds the case but was never answered does not hide the record of the earlier one.
   const shadowed = await hub(undefined, undefined, {}, {}, undefined, false, [], 'shadowed'); t.after(shadowed.close);
   const shadowedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
@@ -508,8 +505,8 @@ test('a plan repair budget records bounded unverified observations without inven
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual([summary.cases[3].status, summary.cases[3].closing, summary.cases[3].missing.kind, summary.cases[3].missing.plan_run], ['unrun', 'authoring_failure', 'repair_exhausted', GAP]);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000104 合成意图 4：所记录的自动化用例核验尚未通过（结论仅限这些尝试），无结论。原因：生产者错误/);
-  assert.ok(report.includes(`Hub 核对结果摘要（内部引用保留在机器资料）。${SPENT_WORDS}`));
+  assert.match(report, /原始用例 990000000000000104 合成意图 4：自动化用例没有通过脚本合并的核对，没有上机。原因：生产者错误/);
+  assert.ok(report.includes(`**核对结果摘要**：${SPENT_WORDS}`));
 });
 
 test('an invalid notes file is identified without echoing its content before any Hub read', async (t) => {
@@ -539,11 +536,11 @@ test("an author's step against the manual closes a failed case at its first roun
   assert.deepEqual([summary.cases[1].closing_label, summary.cases[1].rounds, summary.cases[1].conflict], ['作者步骤与手册冲突（待作者或用户裁定）', 1, CONFLICT]);
   assert.deepEqual([summary.cases[3].rounds ?? null, summary.cases[3].conflict], [null, { ...CONFLICT, author: '合成动作' }]);
   assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 0, missing_fact: 0, author_conflict: 2 });
-  assert.match(JSON.parse(written.stdout).reply, /原始用例 990000000000000102 合成用例 102：原始用例与手册冲突（模型的判断，未经确认）。原因：原始用例的问题/);
+  assert.match(JSON.parse(written.stdout).reply, /原始用例 990000000000000102 合成用例 102：上机 1 次，原始用例与手册冲突（模型的判断，未经确认）。原因（原始用例的问题）：作者写“合成步骤”，手册写“特殊字符仅支持“\._-””。/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000102 合成用例 102：原始用例与手册冲突（模型的判断，未经确认）。原因：原始用例的问题/);
+  assert.match(report, /原始用例 990000000000000102 合成用例 102：上机 1 次，原始用例与手册冲突（模型的判断，未经确认）。原因（原始用例的问题）：作者写“合成步骤”，手册写“特殊字符仅支持“\._-””。/);
   assert.match(report, /下一步：由使用者核对原始用例、手册和设备输出后裁定。/);
-  assert.match(report, /原始用例 990000000000000104 合成意图 4：原始用例与手册冲突（模型的判断，未经确认）。原因：原始用例的问题/);
+  assert.match(report, /原始用例 990000000000000104 合成意图 4：原始用例与手册冲突（模型的判断，未经确认）。原因（原始用例的问题）：作者写“合成动作”，手册写“特殊字符仅支持“\._-””。/);
   assert.match(report, /未做上机验证，这条原始用例未完成脚本编写。/);
   const quoted = (author: string) => `**证据，原始用例原句**，已按照规则核对原文。\n${fenced(author)}\n\n**证据，手册原话**，构建 ${plan1.record.build}，已按照规则核对原文。\n${fenced(CONFLICT.manual)}`;
   assert.ok(report.includes(quoted('合成步骤')) && report.includes(quoted('合成动作')), 'both sentences and the statement are shown as the tool checked them');
@@ -700,7 +697,7 @@ test('assemble-delivery uses matching frozen Hub parameters.scope and discloses 
   assert.deepEqual(payload.totals, { cases: 2, delivered: 1, failed: 1, unsettled: 0, unrun: 0 });
   assert.equal(payload.in_scope_total, 2);
   assert.equal(payload.out_of_scope_total, 2);
-  assert.match(payload.reply, /范围：共 4 条原始用例，本次 2 条，另有 2 条未纳入（见交付报告）。/);
+  assert.match(payload.reply, /^原始脑图共 4 条用例，本次范围 2 条：生成成功 1 条，失败 1 条；其余 2 条不在本次范围内。\n/);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.equal(summary.scope.source, 'hub_run_parameters');
   assert.equal(summary.scope.words, '只做 101 和 102 两条核心场景');
@@ -988,7 +985,7 @@ test('run31 an observed case excludes stale workbook gaps but preserves the devi
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   const section = report.split(`## 原始用例 ${CASES[2]}`)[1].split('\n##')[0];
   assert.doesNotMatch(section, /合成早期工作簿尚未生成|\bclosed\b|usr_synthetic/);
-  assert.match(section, /运行器报告未通过/);
+  assert.match(section, /第 2 次上机验证：运行器报未通过，这次结果没有被采用。/);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   const observed = summary.cases.find((c:{autoid:string})=>c.autoid===CASES[2]).dispatches.at(-1);
   assert.equal(observed.terminal, 'no_verdict');
@@ -1063,11 +1060,13 @@ test('a delivered case whose plan stands on a checkpoint the model wrote itself 
   const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
   const { code, stdout, stderr } = await run(h, await notes(NOTES), out);
   assert.equal(code, 0, stderr);
+  // the reply counts them in one line and leaves the list to the report; a case that succeeded has no line of its own
   const reply = String(JSON.parse(stdout).reply).split('\n');
-  const own = reply.find((line) => line.includes(`原始用例 ${CASES[0]} `))!, other = reply.find((line) => line.includes(`原始用例 ${CASES[2]} `))!;
-  for (const word of ['1 项期望在原始用例中没有给出具体取值', '检查点由模型拟定', '未经独立复核', '只说明这些检查点是否命中']) assert.ok(own.includes(word), word + ' / ' + own);
-  assert.ok(!other.includes('模型拟定'), other);
+  assert.ok(reply.includes('生成成功的用例里有 1 条含模型拟定的检查点（共 1 处），建议复核，逐项见交付报告。'), reply.join('\n'));
+  assert.ok(!reply.some((line) => line.includes(`原始用例 ${CASES[0]} `) || line.includes(`原始用例 ${CASES[2]} `)));
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.ok(report.includes(`- 原始用例 ${CASES[0]} 合成用例 101（含 1 处模型拟定的检查点）\n- 原始用例 ${CASES[2]} 合成用例 103\n`), report);
+  assert.ok(report.includes(`## 需要复核的检查点\n\n模型拟定的检查点：`), report);
   assert.match(report, /模型拟定的检查点：原始用例的这些期望没有给出具体取值，检查点由模型拟定，是模型的判断，未经独立复核/);
   assert.ok(report.includes('- 期望「合成应答带有签名记录」：检查点「SYNTH-SIG」。模型的理由：合成理由：选应答里的签名记录名'), report);
   assert.equal(report.split('模型拟定的检查点：').length - 1, 1, 'only the case that stands on one lists it');
