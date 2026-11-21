@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { isRecord, failCall, CallFailure, localMinute } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { closingHints, modelCheckpointsOf, neverReachedBed, unsentOf, type Unsent, assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, trailingUnreached, unexecutedAfter, unsuccessfulReport, type CaseOutcome, type ModelCheckpoint, type ConflictGround, type Dispatch, type JobRow, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
+import { closingHints, modelCheckpointsOf, neverReachedBed, unsentOf, type Unsent, assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, OBSERVATION_NOTE, type Status, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, trailingUnreached, unexecutedAfter, unsuccessfulReport, type CaseOutcome, type ModelCheckpoint, type ConflictGround, type Dispatch, type JobRow, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { HubReplyError, RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchBytesRetrying, getRetrying, downloadRetryControl, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
@@ -102,12 +102,15 @@ function parseSuccessors(value: unknown, run: string): Array<{ run: string; pack
     return { run: r.run, pack: r.pack, started_at: r.started_at, parameters: r.parameters, sources: r.sources };
   });
 }
-/** The answer the model gives the person, made here so it holds the counts and paths and nothing else. */
+/** The answer the model gives the person, made here: where the delivery is, the counts, one line a case, what the results rest on, and the paths. */
 export function replyText(out: string, totals: Record<string, number>, files: string[], cases: CaseOutcome[] = [], input?: ReportInput): string {
   const scopeLine = input?.scope
-    ? [`范围：本次共 ${input.assembly.totals.cases} / ${input.scope.totalCases} 条原始用例，另有 ${input.scope.outOfScope.length} 条未纳入本次范围（详见交付报告）。`]
+    ? [`范围：共 ${input.scope.totalCases} 条原始用例，本次 ${input.assembly.totals.cases} 条，另有 ${input.scope.outOfScope.length} 条未纳入（见交付报告）。`]
     : [];
-  return [`交付目录 ${out}`, ...scopeLine, ...(input ? cases.map((outcome) => caseConclusion(input, outcome)) : [`共 ${totals.cases} 条原始用例。`]), ...files.map((name) => `- ${join(out, name)}`)].join('\n');
+  const counted = (Object.keys(STATUS) as Status[]).filter((status) => (totals[status] ?? 0) > 0).map((status) => `${STATUS[status]} ${totals[status]} 条`);
+  const result = `结果：${totals.cases} 条原始用例${counted.length ? `，${counted.join('，')}` : ''}。`;
+  const note = input && cases.some((outcome) => outcome.history.length) ? [`说明：${OBSERVATION_NOTE}`] : [];
+  return [`交付目录：${out}`, ...scopeLine, result, ...(input ? cases.map((outcome) => `- ${caseConclusion(input, outcome)}`) : []), ...note, '文件：', ...files.map((name) => `- ${join(out, name)}`)].join('\n');
 }
 
 /**

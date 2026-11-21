@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assemble, auditKey, auditPasses, caseBasisOf, closeFailed, closeUnrun, caseConclusion, deliveryReport, type Dispatch, type CaseOutcome, type ReportInput } from './delivery.ts';
+import { assemble, auditKey, auditPasses, caseBasisOf, closeFailed, closeUnrun, caseConclusion, deliveryReport, OBSERVATION_NOTE, type Dispatch, type CaseOutcome, type ReportInput } from './delivery.ts';
 const dispatch=(run:string,item:string):Dispatch=>({run,job:run,plan_run:run,sha256:'a'.repeat(64),items:[item],rows:[{item,dynamic_terminal:'pass',qualifier:{nature:'judgment',marks:['target_reported']},accepted_as_fact:false}]});
 test('a correct observation outside the verified volume only leaves that case pending',()=>{
   const a=assemble(['a','b'],[dispatch('first','a'),dispatch('last','b')]);
@@ -17,7 +17,9 @@ test('failed cases preserve unverified attribution and invalid candidates as cas
 });
 test('device pass remains an unconfirmed report and output names match the generated volumes',()=>{
   const assembly=assemble(['a'],[dispatch('first','a')]);const input={name:'synthetic',generatedAt:'synthetic',assembly,notes:{cases:{}},originals:{a:{title:'synthetic',lines:[]}},excluded:[],files:{pass:{sha256:'a'.repeat(64)},unsuccessful:null},logs:{}} as unknown as ReportInput;
-  const text=caseConclusion(input,assembly.cases[0]);assert.match(text,/状态未确认/);assert.doesNotMatch(text,/状态已确认/);const report=deliveryReport(input);assert.ok(!report.split('交付物：').at(-1)!.includes('unsuccessful_cases.xlsx'));
+  const text=caseConclusion(input,assembly.cases[0]);assert.equal(text,'原始用例 a synthetic：上机验证通过。');const report=deliveryReport(input);
+  // the pass is the runner's own report: the report says so once, and nowhere calls it confirmed
+  assert.equal(report.split(OBSERVATION_NOTE).length-1,1);assert.match(OBSERVATION_NOTE,/取自运行器的报告，Hub 未另行核实/);assert.doesNotMatch(text+report,/已确认|已核实/);assert.ok(!report.split('交付物：').at(-1)!.includes('unsuccessful_cases.xlsx'));
 });
 
 test('all structural gaps, attributions and named exits survive even alongside a satisfied requirement',()=>{
@@ -32,7 +34,7 @@ test('all structural gaps, attributions and named exits survive even alongside a
   const outcome:CaseOutcome={autoid:'a',status:'unrun',history:[],basis,pending:['missing case evidence']};
   const input={originals:{a:{title:'synthetic'}},assembly:{cases:[outcome]}} as unknown as ReportInput;
   const text=caseConclusion(input,outcome);
-  assert.match(text,/原因缺资料、生产者错误/);
+  assert.match(text,/原因：缺资料、生产者错误/);
   assert.match(text,/first missing；second missing/);
   assert.match(text,/由Hub重评，期限 2026-11-16 09:00；由使用者处理具名请求，期限 2026-11-17 09:00/);
   assert.equal(caseBasisOf({...exported,result:{...exported.result,partitions:{pending:[...exported.result.partitions.pending,...exported.result.partitions.pending]}}},run,'a'),null);
@@ -41,8 +43,8 @@ test('all structural gaps, attributions and named exits survive even alongside a
 test('free text and an unconfirmed model attribution cannot overwrite the engine attribution',()=>{
   const outcome:CaseOutcome={autoid:'a',status:'failed',history:[],pending:['设备问题、模型问题、用户问题都只是自述'],basis:{plan_run:'synthetic',attributions:[],gaps:[]}};
   const input={originals:{a:{title:'synthetic'}},notes:{cases:{a:{judged:'设备问题',remedy:'retry',attribution:'producer_error'}}}} as unknown as ReportInput;
-  assert.match(caseConclusion(input,outcome),/原因还没查清/);
-  assert.doesNotMatch(caseConclusion(input,outcome),/原因生产者错误/);
+  assert.match(caseConclusion(input,outcome),/原因：还没查清/);
+  assert.doesNotMatch(caseConclusion(input,outcome),/原因：生产者错误/);
 });
 
 test('an audited device pass preserves its original observation and remains unknown at the recorded budget',()=>{
@@ -54,8 +56,8 @@ test('an audited device pass preserves its original observation and remains unkn
   assert.equal(closed.history[0].reported_terminal,'pass');
   assert.equal(closed.history[0].accepted_as_fact,false);
   const input={originals:{a:{title:'synthetic'}}} as unknown as ReportInput;
-  assert.match(caseConclusion(input,closed),/上机验证的判断：正确（设备自报，状态未确认）.*状态未知/);
-  assert.doesNotMatch(caseConclusion(input,closed),/判断错误|状态已确认|原因编写模型/);
+  assert.match(caseConclusion(input,closed),/运行器报告通过.*无结论/);
+  assert.doesNotMatch(caseConclusion(input,closed),/运行器报告未通过|已确认|原因：编写模型/);
 });
 
 

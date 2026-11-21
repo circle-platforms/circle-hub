@@ -18,8 +18,8 @@ test('run31 keeps the mapped device judgment apart from the Hub no-verdict', () 
   assert.equal(result.history[0].report_check?.mapped_terminal, 'fail');
   assert.equal(result.history[0].terminal, 'no_verdict');
   const text = caseConclusion(inputOf(result), result);
-  assert.match(text, /上机验证的判断：错误（设备自报，状态未确认）/);
-  assert.doesNotMatch(text, /设备原判未知|\bclosed\b|状态已确认/);
+  assert.match(text, /运行器报告未通过；Hub 尚未取得可采用的逐条结论/);
+  assert.doesNotMatch(text, /运行器报告无结论|\bclosed\b|已确认/);
 });
 test('run31 shows recorded request roles and local minutes while preserving the raw exit', () => {
   const exit = { action: 'request', request_kind: 'disposition', audience: { user: 'usr_' + '1'.repeat(26) }, due: '2026-11-16T00:00:00.000Z' };

@@ -9,7 +9,7 @@ import { movedText, type MovedCase } from './channels.ts';
 import { quoteMatches } from './quote.ts';
 import { labelOf, isAttribution, isExitAction, type Attribution } from './generated/vocabulary.ts';
 
-export const STATUS = { delivered: '交付', failed: '上机未通过', unsettled: '状态未知', unrun: '没有上机' } as const;
+export const STATUS = { delivered: '交付', failed: '上机未通过', unsettled: '无结论', unrun: '没有上机' } as const;
 export type Status = keyof typeof STATUS;
 
 /** Why a reported pass is not taken as one: the device output it came with and the line in it (see failureLine). */
@@ -577,15 +577,18 @@ export function closingLine(outcome: CaseOutcome): string | null {
   return null;
 }
 
-export const terminalLabel = (terminal: string): string => terminal === 'pass' ? '正确' : terminal === 'fail' ? '错误' : '未知';
+/** What every pass or fail of a device run rests on. The Hub records it as a judgment (the target reports on itself, and nobody is kept
+ * from working on the device meanwhile); the report and the reply say so once, in the reader's words. */
+export const OBSERVATION_NOTE = '上机验证的结果取自运行器的报告，Hub 未另行核实；运行期间不能排除其他人同时操作设备。';
+export const terminalLabel = (terminal: string): string => terminal === 'pass' ? '通过' : terminal === 'fail' ? '未通过' : '无结论';
 function observation(h: CaseOutcome['history'][number]): string {
   const terminal = h.report_check?.mapped_terminal ?? h.reported_terminal ?? h.terminal;
-  return `上机验证的判断：${terminalLabel(terminal)}（设备自报，状态未确认）${h.terminal === 'no_verdict' ? '；Hub 尚未取得可采用的逐条结论' : ''}`;
+  return `运行器报告${terminalLabel(terminal)}${h.terminal === 'no_verdict' ? '；Hub 尚未取得可采用的逐条结论' : ''}`;
 }
 export function timeline(outcome: CaseOutcome, excluded: boolean): string {
   // The dispatches that held the case without reaching it are listed in their place, as what they are: not an observation.
   const events = [
-    ...outcome.history.map(h => ({ ordinal: h.ordinal, text: `第 ${h.ordinal} 次${observation(h)}${h.audit ? `；交付复核状态未知，设备输出有执行失败原话“${h.audit.line}”，自动化用例没有检查这一行` : ''}` })),
+    ...outcome.history.map(h => ({ ordinal: h.ordinal, text: `第 ${h.ordinal} 次上机验证，${observation(h)}${h.audit ? `；交付复核无结论，设备输出有执行失败原话“${h.audit.line}”，自动化用例没有检查这一行` : ''}` })),
     ...(outcome.not_executed ?? []).map(n => ({ ordinal: n.ordinal, text: `第 ${n.ordinal} 次未执行：${publicWords(n.reason)}` })),
   ].sort((a, b) => a.ordinal - b.ordinal);
   if (!events.length) return excluded ? '未做上机验证，这条原始用例未完成脚本编写。' : '未做上机验证。';
@@ -666,7 +669,7 @@ function recordedNext(outcome: CaseOutcome): string[] {
 /** One sentence for a case whose plan holds checkpoints the model wrote itself: its judgment, unconfirmed, decided by the device run. */
 const checkpointNote = (input: ReportInput, outcome: CaseOutcome): string => {
   const count = input.checkpoints?.[outcome.autoid]?.length ?? 0;
-  return count ? `其中 ${count} 条期望没有字面，检查点由模型自写，是模型判断，状态未确认，没有独立复核；它是否成立由上机验证的设备输出裁定（逐条见交付报告）。` : '';
+  return count ? `其中 ${count} 项期望在原始用例中没有给出具体取值，检查点由模型拟定，未经独立复核；上机验证的结果只说明这些检查点是否命中（逐项见交付报告）。` : '';
 };
 export function caseConclusion(input: ReportInput, outcome: CaseOutcome): string { return caseConclusionOf(input, outcome) + checkpointNote(input, outcome); }
 const shown = (checkpoint: ModelCheckpoint): string => checkpoint.literal === undefined ? '两次捕获的设备输出相互比较' : `「${publicWords(checkpoint.literal)}」${checkpoint.count === undefined ? '' : `出现 ${checkpoint.count} 次`}`;
@@ -674,43 +677,47 @@ const shown = (checkpoint: ModelCheckpoint): string => checkpoint.literal === un
 function checkpointLines(input: ReportInput, outcome: CaseOutcome): string[] {
   const list = input.checkpoints?.[outcome.autoid] ?? [];
   if (!list.length) return [];
-  return ['', '模型自写的检查点：模型判断，状态未确认，没有独立复核，由上机验证的设备输出裁定。', ...list.map((checkpoint) => `- 期望「${publicWords(checkpoint.expectation)}」：检查点${shown(checkpoint)}。模型的理由：${publicWords(checkpoint.rationale)}`)];
+  return ['', '模型拟定的检查点：原始用例的这些期望没有给出具体取值，检查点由模型拟定，是模型的判断，未经独立复核；上机验证的结果只说明这些检查点是否命中，不说明期望已被确认。', ...list.map((checkpoint) => `- 期望「${publicWords(checkpoint.expectation)}」：检查点${shown(checkpoint)}。模型的理由：${publicWords(checkpoint.rationale)}`)];
 }
 function caseConclusionOf(input: ReportInput, outcome: CaseOutcome): string {
   const named = `原始用例 ${outcome.autoid} ${title(input, outcome.autoid)}`;
   const exits = recordedNext(outcome);
   const observed = outcome.history.at(-1);
   const unsentFacts = (input.unsent ?? []).filter(u => u.items.includes(outcome.autoid)).flatMap(u => reportFacts(u));
-  if (!outcome.closing && !outcome.history.length && unsentFacts.length) return `${named}，没有发到设备，状态未知。原因：${[...new Set(unsentFacts.map(f => publicWords(f.fact)))].join('；')}。下一步：${[...new Set(unsentFacts.map(f => publicWords(f.next_action)))].join('；')}。决定者程序只披露 Hub 的未派发记录。`;
+  if (!outcome.closing && !outcome.history.length && unsentFacts.length) return `${named}：没有发到设备，无结论。原因：${[...new Set(unsentFacts.map(f => publicWords(f.fact)))].join('；')}。下一步：${[...new Set(unsentFacts.map(f => publicWords(f.next_action)))].join('；')}。`;
   // The run stopped in a case before it: the case did not run, and the reason and the next step are the program's own.
   const unexecuted = outcome.not_executed?.at(-1);
-  if (!outcome.closing && !outcome.history.length && unexecuted) return `${named}，没有在设备上执行，状态未知。原因：${publicWords(unexecuted.reason)}。下一步：${publicWords(unexecuted.next_action)}。决定者程序只整理设备输出里已记录的运行器异常。`;
+  if (!outcome.closing && !outcome.history.length && unexecuted) return `${named}：没有在设备上执行，无结论。原因：${publicWords(unexecuted.reason)}。下一步：${publicWords(unexecuted.next_action)}。`;
 
   const sourceMissing = [...new Set([...(outcome.basis?.gaps ?? []).flatMap(gap => gap.missing ? [gap.missing] : []), ...(observed?.missing_facts?.length ? ['设备输出的完整性前提尚未核验'] : observed?.missing_fact ? [observed.missing_fact] : [])])];
   const observedWords = observed ? `${observation(observed)}。` : '';
-  if (outcome.pending?.length) return `${named}，${observedWords}交付资格状态未知，原因${reasonOf(outcome)}，缺少：${[...new Set([...sourceMissing, ...outcome.pending])].map(publicWords).join('；')}。下一步${exits.length ? exits.join('；') : observed?.missing_facts?.length ? '由测试环境管理员补齐设备输出完整性所需事实后重评' : (observed?.next_action ? publicWords(observed.next_action) : undefined) ?? '由模型将本条计划交给 Hub 取得具名缺失事实；若作者步骤与手册冲突，补齐两段逐字引文交使用者裁定'}；可重入，不表示必须停止编写。决定者程序只整理已记录证据。`;
-  if (outcome.status === 'delivered') return `${named}，自动化用例 Excel 已完成上机验证，状态未确认，判断正确（目标自报，未排除本地操作）。决定者程序仅解析回执，不升级观察性质。`;
+  if (outcome.pending?.length) return `${named}：${observedWords}能否交付尚无结论，原因：${reasonOf(outcome)}，缺少：${[...new Set([...sourceMissing, ...outcome.pending])].map(publicWords).join('；')}。下一步：${exits.length ? exits.join('；') : observed?.missing_facts?.length ? '由测试环境管理员补齐设备输出完整性所需事实后重评' : (observed?.next_action ? publicWords(observed.next_action) : undefined) ?? '由模型将本条计划交给 Hub 取得具名缺失事实；若作者步骤与手册冲突，补齐两段逐字引文交使用者裁定'}；可重入，不表示必须停止编写。`;
+  if (outcome.status === 'delivered') return `${named}：上机验证通过。`;
   const model = outcome.closing === 'author_conflict' || outcome.closing === 'device_defect';
   const status = model || (outcome.closing === 'authoring_failure' && observed?.terminal === 'fail') ? '未确认' : outcome.closing === 'missing_fact' || outcome.status === 'unsettled' || outcome.status === 'unrun' ? '未知' : '未确认';
-  const conclusion = outcome.closing === 'author_conflict' ? '模型判断原始用例与手册冲突' : outcome.closing === 'device_defect' ? '模型判断原始用例的期望与设备输出不一致' : outcome.closing === 'authoring_failure' ? `所记录的自动化用例核验尚未通过（结论仅限这些尝试）${outcome.rounds === undefined ? '' : `，已核验 ${outcome.rounds} 份不同自动化用例`}` : outcome.closing === 'missing_fact' ? '缺少脚本编写所需的资料' : outcome.status === 'failed' ? '上机验证发现错误' : '上机验证尚无结论';
+  const conclusion = outcome.closing === 'author_conflict' ? '原始用例与手册冲突' : outcome.closing === 'device_defect' ? '原始用例的期望与设备输出不一致' : outcome.closing === 'authoring_failure' ? `所记录的自动化用例核验尚未通过（结论仅限这些尝试）${outcome.rounds === undefined ? '' : `，已核验 ${outcome.rounds} 份不同自动化用例`}` : outcome.closing === 'missing_fact' ? '缺少脚本编写所需的资料' : outcome.status === 'failed' ? '上机验证未通过' : '上机验证尚无结论';
+  // Who concluded it and how far it holds, in the reader's words: a model's conclusion is named as one, a conclusion nobody could reach as none.
+  const qualified = model ? '（模型的判断，未经确认）' : status === '未知' && outcome.closing ? '，无结论' : '';
   const next = outcome.closing==='author_conflict'&&input.userRulings?.[outcome.autoid]?.length ? '等作者裁定原始用例' : exits.length ? exits.join('；') : observed?.missing_facts?.length ? '由测试环境管理员补齐设备输出完整性所需事实后重评' : (observed?.next_action ? publicWords(observed.next_action) : undefined) ?? (model ? !outcome.history.length ? '由作者或使用者根据已核对的原始用例与手册原句裁定' : '由使用者核对原始用例、手册和设备输出后裁定' : '尚缺具名出口材料，核对原运行的请求记录后重评；模型建议单列为未确认');
-  return `${named}，${outcome.closing === 'authoring_failure' ? observedWords : ''}${conclusion}，状态${status}${status === '未知' ? '' : '，判断错误'}。原因${reasonOf(outcome)}${sourceMissing.length ? `，缺少：${sourceMissing.map(publicWords).join('；')}` : ''}，下一步${next}。决定者${model ? '模型' : '程序'}。`;
+  return `${named}：${outcome.closing === 'authoring_failure' ? observedWords : ''}${conclusion}${qualified}。原因：${reasonOf(outcome)}${sourceMissing.length ? `，缺少：${sourceMissing.map(publicWords).join('；')}` : ''}。下一步：${next}。`;
 }
 
 function head(input: ReportInput): string[] {
   const { pass, unsuccessful } = input.assembly;
   const lines = [
     ...(input.scope ? [`本次范围：${input.scope.words}（共 ${input.scope.totalCases} 条原始用例，纳入本次范围 ${input.assembly.totals.cases} 条，另有 ${input.scope.outOfScope.length} 条未纳入本次范围）。`] : []),
-    pass && input.files.pass ? `自动化用例 Excel case.xlsx 中的 ${pass.items.length} 条原始用例已一起完成上机验证，判断正确。` : '尚无核对正确的自动化用例 Excel。',
-    unsuccessful && input.files.unsuccessful ? `自动化用例 Excel unsuccessful_cases.xlsx 包含 ${unsuccessful.items.length} 条仍有错误或未知的原始用例，使用各自最后一次写好的自动化用例；对应写法是否上过机见逐条记录，尚未一起做上机验证。` : '没有其他自动化用例 Excel。',
+    pass && input.files.pass ? `自动化用例 Excel case.xlsx：${pass.items.length} 条原始用例，已整卷上机验证，全部通过。` : '没有整卷上机验证通过的自动化用例 Excel。',
+    unsuccessful && input.files.unsuccessful ? `自动化用例 Excel unsuccessful_cases.xlsx：${unsuccessful.items.length} 条未通过或无结论的原始用例，各用最后一次写好的自动化用例；这些写法是否上过机见逐条记录，没有整卷上机验证。` : '没有其他自动化用例 Excel。',
+    // what every result of a device run rests on, said once instead of in every case's sentence.
+    ...(input.assembly.cases.some((c) => c.history.length) ? [OBSERVATION_NOTE] : []),
   ];
   if (input.build) lines.push(`构建 ${input.build}。`);
   // a verification run that never reached the bed is told once at the head, with the Hub's own reason and named next step.
   for (const u of input.unsent ?? []) lines.push(`另有一次上机验证没有发到设备，不算一次上机验证（涉及 ${u.items.length} 条原始用例）：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.fact)))].join('；') : '原因缺少可读取的记录'}。下一步：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.next_action)))].join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`);
-  for (const moved of [input.placedLast?.pass, input.placedLast?.unsuccessful]) if (moved?.length) lines.push(movedText(moved, new Map(moved.map((row) => [row.autoid, input.originals[row.autoid]?.title ?? ''] as const))));
+  for (const moved of [input.placedLast?.pass, input.placedLast?.unsuccessful]) if (moved?.length) lines.push(movedText(moved, new Map(moved.map((row) => [row.autoid, input.originals[row.autoid]?.title ?? ''] as const))).replace(/决定者程序。$/u, '')); // the claim's own sentence names its producer; the report does not
   const audit = input.passAudit;
-  if (audit?.markers === null && input.assembly.cases.some(c => c.history.length)) lines.push('状态未知。原因缺资料，执行器规则没有说明哪些设备输出表示执行失败；下一步由使用者补齐执行器规则，再核对设备输出。决定者程序。');
-  else if (audit?.downgraded || audit?.wordless) lines.push(`核对设备输出后，${audit.downgraded} 条原始用例有执行失败原话却未被自动化用例检查，状态未知；${audit.wordless} 条缺少设备输出，状态未知。下一步由编写模型补齐检查或由使用者补齐设备输出。决定者程序。`);
+  if (audit?.markers === null && input.assembly.cases.some(c => c.history.length)) lines.push('设备输出尚未复核，无结论：执行器规则没有说明哪些设备输出表示执行失败。下一步由使用者补齐执行器规则，再核对设备输出。');
+  else if (audit?.downgraded || audit?.wordless) lines.push(`核对设备输出后，${audit.downgraded} 条原始用例的设备输出有执行失败原话、自动化用例没有检查到，无结论；${audit.wordless} 条缺少设备输出，无结论。下一步由编写模型补齐检查或由使用者补齐设备输出。`);
   return lines;
 }
 function section(input: ReportInput, outcome: CaseOutcome): string[] {
@@ -731,10 +738,10 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
     ...rulings.flatMap(row=>['','**使用者已记录的决定（卡片原文）**',...(reportableProse(row.ruling)?fence(row.ruling):['决定原文含内部引用，完整内容见机器资料'])]),
     ...(input.assembly.unsuccessful?.sources[outcome.autoid] ? ['', executed ? `本卷这条写法已在第 ${executed.ordinal} 次上机验证中执行。` : unexecuted ? `本卷采用的这份写法在第 ${unexecuted.ordinal} 次上机验证中没有在设备上执行${outcome.history.length ? '；上面的记录来自较早一次实际到设备的上机验证' : '，还没有设备输出'}。` : '本卷采用最后一次写好的自动化用例；这份写法尚未发到设备，上面的记录来自较早一次实际到设备的上机验证。'] : []),
     ...(input.unsent ?? []).filter((u) => outcome.history.length > 0 && u.items.includes(outcome.autoid)).flatMap((u) => ['', `另有一次上机验证没有发到设备，不算一次上机验证：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.fact)))].join('；') : '原因缺少可读取的记录'}。下一步：${reportFacts(u).length ? [...new Set(reportFacts(u).map((m) => publicWords(m.next_action)))].join('；') : publicWords(u.next_action ?? '联系测试环境管理员核对未发出的原因')}。`]),
-    ...(note.judged ? ['', note.absent ? '尚未提供模型说明。' : `模型说明，状态未确认。${judged}`] : []),
+    ...(note.judged ? ['', note.absent ? '尚未提供模型说明。' : `模型的说明（未经确认）：${judged}`] : []),
     ...(outcome.missing?.missing ? ['', `Hub 核对结果摘要（内部引用保留在机器资料）。${publicWords(outcome.missing.missing)}`] : []),
     ...(note.evidence && !outcome.history.length ? ['', '**模型给出的依据（没有设备输出，未核对）**。出处保留在机器资料中。'] : note.evidence ? ['', outcome.evidence_unverified ? '**模型提出的设备输出**，逐字核对未通过，不能作核验依据。' : '**证据，设备输出**，已按照规则核对设备输出。', ...fence(note.evidence)] : []),
-    ...(note.attribution ? ['', `模型自报原因，未确认：${labelOf('attribution', note.attribution)}。`] : []),
+    ...(note.attribution ? ['', `模型给出的原因（未经确认）：${labelOf('attribution', note.attribution)}。`] : []),
     ...(candidate ? ['', `模型提出的复现步骤（未确认） ${candidate.repro}`, '', outcome.closing === 'device_defect' ? '原始用例原句，已逐字核对' : '模型提出的原始用例原句，核对未通过', ...fence(candidate.expected), '', outcome.closing === 'device_defect' ? '设备输出，已逐字核对' : '模型提出的设备输出，核对未通过', ...fence(candidate.actual)] : []),
     ...(conflict ? ['', outcome.closing === 'author_conflict' ? '**证据，原始用例原句**，已按照规则核对原文。' : '**模型提出的原始用例原句**，未取得完整的逐字核对依据。', ...fence(conflict.author), '', outcome.closing === 'author_conflict' ? `**证据，手册原话**，构建 ${input.build ?? '未知'}，已按照规则核对原文。` : `**模型提出的手册原话**，构建 ${input.build ?? '未知'}，未取得完整的逐字核对依据。`, ...fence(conflict.manual)] : []),
   ];
@@ -786,7 +793,7 @@ export function unsuccessfulReport(input: ReportInput): string {
     }
     const log = input.logs[outcome.autoid];
     if (log) {
-      if (log.text === null) lines.push('', `**第 ${outcome.history.at(-1)?.ordinal ?? '未知'} 次上机验证的设备输出**。状态未知，原因缺资料，${log.withheld ?? '没有取得设备输出'}；下一步由使用者补齐设备输出。`);
+      if (log.text === null) lines.push('', `**第 ${outcome.history.at(-1)?.ordinal ?? '未知'} 次上机验证的设备输出**。无结论，缺少资料：${log.withheld ?? '没有取得设备输出'}；下一步由使用者补齐设备输出。`);
       else {
         const tail = log.text.length > LOG_TAIL ? log.text.slice(-LOG_TAIL) : log.text;
         lines.push('', `**第 ${outcome.history.at(-1)?.ordinal ?? '未知'} 次上机验证的设备输出**${log.text.length > LOG_TAIL ? `，末尾 ${LOG_TAIL} 字` : ''}`, '```', tail.replace(/```/g, '`​``'), '```');

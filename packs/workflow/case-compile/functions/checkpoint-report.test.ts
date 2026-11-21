@@ -1,5 +1,5 @@
-// A conclusion that rests on a checkpoint the model wrote itself is shown as the model's judgment, status unconfirmed, decided by
-// the device run (owner, 2026-11-16). The checkpoints are read from the Hub's own record of the expected_grounded check.
+// A conclusion that rests on a checkpoint the model wrote itself is shown as the model's judgment, not reviewed, decided by
+// the device run (owner, 2026-11-16), in words a reader of the delivery follows (owner, 2026-11-21). The checkpoints are read from the Hub's own record of the expected_grounded check.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {fixture,plan,call,assertion,EXPECTED_REF,BLOCK_ROOT} from '../testing/blocks.ts';
@@ -44,24 +44,24 @@ test('the checkpoints of a flat model_judgment expectation are read the same way
  assert.deepEqual(counted,[{expectation:'记录出现两次',literal:'row',count:2,rationale:'次数检查点'}]);
 });
 
-test('a delivered case with a model-written checkpoint says so: model judgment, status unconfirmed, no review, decided by the device run',()=>{
+test('a delivered case with a model-written checkpoint says so: drafted by the model, not reviewed, and a device result only says whether it was hit',()=>{
  const checkpoints={a:modelCheckpointsOf(recordedResult('item-1'),'item-1')};
  const plain=caseConclusion(input(),delivered),text=caseConclusion(input({checkpoints}),delivered);
  assert.ok(text.startsWith(plain),'the sentence after the usual conclusion, which stays as it was');
- for(const word of ['1 条期望没有字面','检查点由模型自写','模型判断','状态未确认','没有独立复核','上机验证的设备输出裁定'])assert.ok(text.includes(word),word+' / '+text);
- assert.doesNotMatch(text,/状态已确认|已复核|通过|满足/);
+ for(const word of ['1 项期望在原始用例中没有给出具体取值','检查点由模型拟定','未经独立复核','只说明这些检查点是否命中'])assert.ok(text.includes(word),word+' / '+text);
+ assert.doesNotMatch(text.slice(plain.length),/已确认|已复核|通过|满足/);
  const report=deliveryReport(input({checkpoints}));
- assert.match(report,/模型自写的检查点：模型判断，状态未确认，没有独立复核，由上机验证的设备输出裁定/);
+ assert.match(report,/模型拟定的检查点：原始用例的这些期望没有给出具体取值，检查点由模型拟定，是模型的判断，未经独立复核；上机验证的结果只说明这些检查点是否命中，不说明期望已被确认。/);
  assert.ok(report.includes(`- 期望「${SENTENCE}」：检查点「${LITERAL}」。模型的理由：${RATIONALE}`),report);
  // a case without such a checkpoint is reported exactly as before
- assert.equal(deliveryReport(input({checkpoints:{}})),deliveryReport(input()));assert.doesNotMatch(deliveryReport(input()),/模型自写/);
+ assert.equal(deliveryReport(input({checkpoints:{}})),deliveryReport(input()));assert.doesNotMatch(deliveryReport(input()),/模型拟定/);
 });
 
 test('the closing reply carries the sentence beside the case it belongs to',()=>{
  const checkpoints={a:modelCheckpointsOf(recordedResult('item-1'),'item-1')};
  const reply=replyText('/out',{cases:1},['case.xlsx'],[delivered],input({checkpoints}));
- assert.ok(reply.includes('检查点由模型自写')&&reply.includes('状态未确认'),reply);
- assert.ok(!replyText('/out',{cases:1},['case.xlsx'],[delivered],input()).includes('模型自写'));
+ assert.ok(reply.includes('检查点由模型拟定')&&reply.includes('未经独立复核'),reply);
+ assert.ok(!replyText('/out',{cases:1},['case.xlsx'],[delivered],input()).includes('模型拟定'));
 });
 
 test('a case that failed on the bed lists its model-written checkpoints too, so the error is not read as the device\'s',()=>{
@@ -69,6 +69,6 @@ test('a case that failed on the bed lists its model-written checkpoints too, so 
  const checkpoints={a:modelCheckpointsOf(recordedResult('item-1'),'item-1')};
  const shared=input({assembly:{cases:[failed],totals:{cases:1},pass:null,unsuccessful:{items:['a'],sources:{a:{plan_run:'run_'+'a'.repeat(26),run:'first'}}}} as never,notes:{cases:{a:{judged:'合成说明',remedy:'合成下一步'}}},files:{pass:null,unsuccessful:{sha256:'b'.repeat(64)}},checkpoints});
  for(const text of [deliveryReport(shared),unsuccessfulReport(shared)]){
-  assert.ok(text.includes('检查点由模型自写'),text);assert.ok(text.includes(`检查点「${LITERAL}」`),text);assert.ok(text.includes('状态未确认'));
+  assert.ok(text.includes('检查点由模型拟定'),text);assert.ok(text.includes(`检查点「${LITERAL}」`),text);assert.ok(text.includes('未经独立复核'));
  }
 });

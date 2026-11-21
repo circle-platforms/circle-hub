@@ -81,7 +81,7 @@ test('the delivery report declares the cases placed last in each volume', () => 
   assert.ok(!deliveryReport(input).includes('排到最后'), 'nothing is said when no case was placed last');
   const moved = [{ autoid: A, channels: [{ id: 'disk', source: 'x', commands: [STORE] }] }];
   const report = deliveryReport({ ...input, placedLast: { pass: moved, unsuccessful: [] } });
-  assert.ok(report.includes(`原始用例 ${A} 合成用例一 的命令会留下用例结束后仍未清除的配置，已在自动化用例 Excel 中排到最后。决定者程序。`), report);
+  assert.ok(report.includes(`原始用例 ${A} 合成用例一 的命令会留下用例结束后仍未清除的配置，已在自动化用例 Excel 中排到最后。`), report);
   assert.ok(!report.includes('未通过卷'));
 });
 
