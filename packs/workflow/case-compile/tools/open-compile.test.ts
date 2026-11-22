@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { envelopeOf, main, plumbProblem, type CallTool, type PlumbStatus, type ToolAnswer } from './open-compile.ts';
+import { envelopeOf, main, NotReady, plumbProblem, plumbStatusVia, type CallTool, type PlumbStatus, type ToolAnswer } from './open-compile.ts';
 
 const BOOKING = 'run_01bookingbookingbooking0', RECOMPOSE = 'run_01recomposerecompose00', PLAN = 'run_01planplanplanplanplan00';
 const said = (envelope: Record<string, unknown>, failed = false): ToolAnswer => ({ failed, text: `合成答复\n供模型引用\n${JSON.stringify(envelope)}`, envelope });
-async function skills(versions: Record<string, string>) {
+async function skills(versions: Record<string, string>, plumb = true) {
   const root = await mkdtemp(join(tmpdir(), 'open-compile-skills-'));
   for (const [pack, version] of Object.entries(versions)) { await mkdir(join(root, pack), { recursive: true }); await writeFile(join(root, pack, 'pack.json'), JSON.stringify({ id: pack, version })); }
+  // The Plumb status is injected in these tests, so the script of the Plumb skill is never run; only its presence is looked at.
+  if (plumb) { await mkdir(join(root, 'plumb', 'tools'), { recursive: true }); await writeFile(join(root, 'plumb', 'tools', 'plumb.ts'), '// synthetic Plumb skill\n'); }
   return root;
 }
 function hub(answers: Partial<Record<string, ToolAnswer | ((args: Record<string, unknown>) => ToolAnswer)>>) {
@@ -96,8 +99,8 @@ test('not ready: a Plumb judge that is not ready, or no Plumb key on the second 
   assert.equal(asleep.calls.filter((c) => c.name === 'start_run').length, 0);
   const keyless = hub({ list_task_packs: packs() });
   const noKey = await run(argv(join(dir, 'b.json')), keyless.connect, root, async () => READY, ['synthetic-token-1234']);
-  assert.match(noKey.out, /^无法编译：标准输入第二行没有 Plumb 密钥/);
-  assert.equal(keyless.calls.length, 0);
+  assert.equal(noKey.out, "无法编译：标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF\n");
+  assert.deepEqual(keyless.calls.map((c) => c.name), ['list_task_packs'], 'the key is said together with the workflow checks, which need the Hub\'s list; no run is started');
 });
 
 test('a model still loading or failing its self check is named', () => {
@@ -149,4 +152,103 @@ test('judge defaults to plumb: the written file carries no judge, a missing Plum
   assert.equal(other.code, 1);
   assert.equal(other.out, '无法编译：--judge 只能写 plumb 或 model；不写就是 plumb\n');
   assert.equal(wrong.calls.length, 0);
+});
+
+// What a new account in a fresh environment lacks is said at once, so that nobody fixes one thing, starts again and meets the next.
+const MISSING_KEY = "标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF";
+const plumbSkillMissing = (root: string) => `本机没有装 plumb 技能（${join(root, 'plumb', 'tools', 'plumb.ts')}），它是 Hub 发布的通用技能；下一步：使用者用客户端的技能安装从 Hub 装上 plumb 技能再开编译；Hub 上没有它时，请管理员先在 Hub 上执行 circle-hub pack install plumb@<版本>`;
+const modelArgv = (out: string) => argv(out, ['--judge', 'model']).filter((value, n, all) => value !== '--plumb' && all[n - 1] !== '--plumb');
+
+test('not ready: every unmet local precondition is said in one line in the order recompose, case-compile, Plumb skill, Plumb key, and no run is started', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  // The Hub publishes case-compile only, an older case-compile is installed, the Plumb skill is not installed and stdin has one line.
+  const root = await skills({ 'case-compile': '3.21.7' }, false), asked: string[] = [];
+  const h = hub({ list_task_packs: said({ call_result: 'ok', packs: [{ pack: 'case-compile@3.22.0', id: 'case-compile', version: '3.22.0' }] }) });
+  const result = await run(argv(join(dir, 'o.json')), h.connect, root, async (url) => { asked.push(url); return READY; }, ['synthetic-token-1234']);
+  assert.equal(result.code, 1);
+  assert.equal(result.out, [
+    '无法编译：Hub 上没有分配给你的 recompose 工作流；下一步：请管理员发布并分配 recompose',
+    '本机 case-compile 技能是 3.21.7，Hub 发布的是 3.22.0；下一步：重装 3.22.0 再开编译',
+    plumbSkillMissing(root),
+    MISSING_KEY,
+  ].join('；另：') + '\n');
+  assert.deepEqual(h.calls.map((c) => c.name), ['list_task_packs'], 'the Hub is asked once and no run is started');
+  assert.deepEqual(asked, [], 'the Plumb service is not asked without the skill that asks it and the key');
+  assert.equal(existsSync(join(dir, 'o.json')), false);
+
+  // Recompose in another version, case-compile not installed, and a Plumb service that is not ready: the service comes last.
+  const second = await skills({ recompose: '1.2.0' }), seen: string[] = [];
+  const again = hub({ list_task_packs: packs() });
+  const later = await run(argv(join(dir, 'p.json')), again.connect, second, async (url, key) => { seen.push(`${url} ${key}`); return { status: 'stopped', phase: 'idle_shutdown', models_status: {} }; });
+  assert.equal(later.out, [
+    '无法编译：本机 recompose 技能是 1.2.0，Hub 发布的是 1.3.0；下一步：重装 1.3.0 再开编译',
+    `本机没有装 case-compile 技能（${join(second, 'case-compile')}）；下一步：使用者用客户端的技能安装从 Hub 装上 case-compile 技能 3.22.0（Hub 发布的版本），再开编译`,
+    'Plumb 判定服务没有就绪（status=stopped，phase=idle_shutdown，没有已加载的模型）；下一步：唤醒 Plumb，等状态为 ready 后重跑',
+  ].join('；另：') + '\n');
+  assert.deepEqual(seen, ['https://127.0.0.1:9 synthetic-plumb-key'], 'the service is asked once, with the address and the key it was given');
+  assert.deepEqual(again.calls.map((c) => c.name), ['list_task_packs']);
+});
+
+test('not ready: a single problem is the one line of its own, and a check that cannot run for want of an earlier one is not a problem of its own', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const attempt = async (options: { versions?: Record<string, string>; plumbSkill?: boolean; stdin?: string[]; published?: ToolAnswer; realStatus?: boolean }) => {
+    const root = await skills(options.versions ?? { 'case-compile': '3.22.0', recompose: '1.3.0' }, options.plumbSkill ?? true), asked: string[] = [];
+    const h = hub({ list_task_packs: options.published ?? packs() });
+    const result = await run(argv(join(dir, 'o.json')), h.connect, root, options.realStatus ? plumbStatusVia(root) : async (url, key) => { asked.push(`${url} ${key}`); return READY; }, options.stdin);
+    return { root, out: result.out, asked, calls: h.calls.map((c) => c.name) };
+  };
+  const READY_ASKED = ['https://127.0.0.1:9 synthetic-plumb-key'];
+
+  const notInstalled = await attempt({ versions: { 'case-compile': '3.22.0' } });
+  assert.equal(notInstalled.out, `无法编译：本机没有装 recompose 技能（${join(notInstalled.root, 'recompose')}）；下一步：使用者用客户端的技能安装从 Hub 装上 recompose 技能 1.3.0（Hub 发布的版本），再开编译\n`);
+  assert.deepEqual(notInstalled.asked, READY_ASKED, 'a problem of the workflows does not stop the Plumb checks, which do not depend on them');
+
+  const noSkill = await attempt({ plumbSkill: false, realStatus: true });
+  assert.equal(noSkill.out, `无法编译：${plumbSkillMissing(noSkill.root)}\n`);
+  assert.deepEqual(noSkill.calls, ['list_task_packs']);
+
+  const noSkillAndService = await attempt({ plumbSkill: false });
+  assert.equal(noSkillAndService.out, `无法编译：${plumbSkillMissing(noSkillAndService.root)}\n`);
+  assert.deepEqual(noSkillAndService.asked, [], 'without its skill the service cannot be asked, so it is not a problem of its own');
+
+  for (const stdin of [['synthetic-token-1234'], ['synthetic-token-1234', '%PLUMB_API_KEY%']]) {
+    const noKey = await attempt({ stdin });
+    assert.equal(noKey.out, `无法编译：${MISSING_KEY}\n`, 'a second line that is the unexpanded name is no key either');
+    assert.deepEqual(noKey.asked, [], 'without the key the service cannot be asked, so it is not a problem of its own');
+    assert.deepEqual(noKey.calls, ['list_task_packs']);
+  }
+
+  const notAssigned = await attempt({ versions: {}, published: said({ call_result: 'ok', packs: [] }) });
+  assert.equal(notAssigned.out, '无法编译：Hub 上没有分配给你的 recompose 工作流；下一步：请管理员发布并分配 recompose；另：Hub 上没有分配给你的 case-compile 工作流；下一步：请管理员发布并分配 case-compile\n', 'a workflow the Hub does not publish has no version to compare and nothing installed to look for');
+  assert.deepEqual(notAssigned.calls, ['list_task_packs']);
+});
+
+test('not ready: a Plumb service that cannot be asked is said after the workflow problems, in the words of the failed ask', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'open-compile-')), root = await skills({ 'case-compile': '3.22.0' });
+  const h = hub({ list_task_packs: packs() });
+  const cannot = '问不到 Plumb 状态：connection refused；下一步：核对 Plumb 地址和密钥，或请管理员唤醒 Plumb 后重跑';
+  const result = await run(argv(join(dir, 'o.json')), h.connect, root, async () => { throw new NotReady(cannot); });
+  assert.equal(result.out, `无法编译：本机没有装 recompose 技能（${join(root, 'recompose')}）；下一步：使用者用客户端的技能安装从 Hub 装上 recompose 技能 1.3.0（Hub 发布的版本），再开编译；另：${cannot}\n`);
+  assert.deepEqual(h.calls.map((c) => c.name), ['list_task_packs']);
+});
+
+test('judge model: only the problems of the workflows are said, never the Plumb skill, key or service, and the service is not asked', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'open-compile-')), root = await skills({ 'case-compile': '3.21.7' }, false), asked: string[] = [];
+  const h = hub({ list_task_packs: packs() });
+  const result = await run(modelArgv(join(dir, 'm.json')), h.connect, root, async (url) => { asked.push(url); return READY; }, ['synthetic-token-1234']);
+  assert.equal(result.code, 1);
+  assert.equal(result.out, `无法编译：本机没有装 recompose 技能（${join(root, 'recompose')}）；下一步：使用者用客户端的技能安装从 Hub 装上 recompose 技能 1.3.0（Hub 发布的版本），再开编译；另：本机 case-compile 技能是 3.21.7，Hub 发布的是 3.22.0；下一步：重装 3.22.0 再开编译\n`);
+  assert.deepEqual(asked, []);
+  assert.deepEqual(h.calls.map((c) => c.name), ['list_task_packs']);
+  assert.equal(existsSync(join(dir, 'm.json')), false);
+});
+
+test('ready: the Hub is asked in the order it always was, and a Plumb judge is asked once between the list and the first run', async () => {
+  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const events: string[] = [];
+  const h = hub({ list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) });
+  const connect = (): CallTool => { const call = h.connect(); return async (name, args) => { events.push(`hub ${name}${name === 'start_run' ? ` ${String(args.pack)}` : ''}`); return call(name, args); }; };
+  const result = await run(argv(join(dir, 'open-compile.json')), connect, root, async (url, key) => { events.push(`plumb ${url} ${key}`); return READY; });
+  assert.equal(result.code, 0, result.out);
+  assert.deepEqual(events, ['hub list_task_packs', 'plumb https://127.0.0.1:9 synthetic-plumb-key', 'hub start_run recompose', 'hub start_run case-compile']);
 });

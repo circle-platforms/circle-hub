@@ -14,6 +14,8 @@
 6. 失败分析与返工：`compile-attributor` 只读分析失败原因，`pipeline.ts rework` 新开运行、结转通过的计划（`tools/carry-plans.ts`）、重派没过的；每条最多 3 轮。
 7. 交付：`tools/assemble-delivery.ts` 组交付目录（工作簿、`delivery_report.md`、`delivery.json`）并写最后的回复。
 
+开运行的就绪判定把没满足的条件一次说全，写在同一行 `无法编译：…` 里，用“；另：”隔开，什么都不开；只有一个问题时就是它自己的那一句。顺序是：工作流没分配、没装或版本不是 Hub 发布的（先 `recompose`，后 `case-compile`），然后（判断方式是 Plumb 时）没装 `plumb` 技能、第二行标准输入没有 Plumb 密钥、Plumb 没就绪。某一项要靠前一项才查得了（工作流没分配就没有版本可比，没有 `plumb` 技能或密钥就问不了 Plumb），就不单独算一个问题。Hub 不可达或读不到工作流列表，以及参数不对，仍单独说。技能没装时的下一步写明用客户端的技能安装从 Hub 装上；Hub 上没有 `plumb` 技能时由管理员先在 Hub 上安装。
+
 每个工具答复的 `message` 写着下一步（由 `functions/next-step.ts` 统一给出）。给模型的说明在 `SKILL.md`，上机验证、失败分析和交付在 `tools/delivery.md`，保真审计在 `tools/fidelity.md`，计划字段一览在 `tools/plan-fields.md`。
 
 ### 判断方式（所有者 2026-11-22）
@@ -21,6 +23,7 @@
 命令核验和场景保真审计默认由 Plumb 判断。使用者明确说这次不经 Plumb 时，`open-compile.ts --judge model` 把这个选择写进 `open-compile.json`，流水线照它办：
 
 - 开运行不查 Plumb 状态，不要 Plumb 地址和密钥，也不要求本机装有 `plumb` 技能。
+- model 方式下客户端可以不设 Plumb 地址和密钥：编写循环的命令照旧带着 `%PLUMB_URL%` 和 `%PLUMB_API_KEY%` 两个名字，客户端不认识的名字原样留在命令里，工具不读它们。
 - 命令核验只做命令树的程序核对（`cmd-verify-plumb.ts --tree-only`）：不通过的挡住，通过的放行，没有结论的步骤状态未知，写进这条用例的复核说明，不冒充判断过。
 - 场景保真审计直接出简报（`fidelity-brief.ts`），由 `compile-fidelity` 盲审，判断并入计划的做法不变；Hub 只核对格式和简报摘要，这一点两种方式相同。
 - 每条用例的复核说明第一行写明这次的判断方式，`pipeline.ts collect` 的 `reviewed` 带出来，最后报告照录。

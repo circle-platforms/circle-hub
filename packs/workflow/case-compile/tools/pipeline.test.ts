@@ -797,3 +797,43 @@ test('the command line asks for the Plumb address and key only when Plumb is the
   const allowed = await said(['resume', '--state', 'model.json', '--hub', 'http://127.0.0.1:9/mcp'], ['synthetic-token-1234']);
   assert.equal(allowed.code, 0, allowed.out);
 });
+
+test('judge model: a client that does not know %PLUMB_URL% and %PLUMB_API_KEY% leaves them in the loop\'s commands, and resume and next neither need nor hand them to any tool', async () => {
+  await world(2);
+  const t = tools((tool, args) => {
+    if (tool === 'cmd-verify-plumb.ts') return ok(JSON.stringify({ judge: 'tree-only', review_required_count: 0 }));
+    if (tool === 'fidelity-brief.ts') { writeFileSync(join(args[args.indexOf('--out') + 1]!, 'x.abcd1234.brief.json'), '{}'); return ok(); }
+    return undefined;
+  });
+  const said = async (argv: string[], stdin: string[]) => {
+    const out: string[] = []; const write = process.stdout.write;
+    process.stdout.write = ((text: string) => { out.push(text); return true; }) as typeof process.stdout.write;
+    try { return { code: await main(argv, async () => stdin, t.run), out: out.join('') }; } finally { process.stdout.write = write; }
+  };
+  // Case 00 has just been written; case 01 is waiting, so that resume goes through the same gates as next does.
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'model' }, 'synthetic-model');
+  for (const c of state.cases) {
+    c.stage = 'writing'; c.attempts = { recompose: 1, write: 1 }; c.record_accepted = true;
+    await mkdir(join('cases', c.k, 'plan'), { recursive: true }); await writeFile(join('cases', c.k, 'plan', `${c.plan.index}.json`), '{}');
+  }
+  state.cases[0]!.action = { label: '编写 00', subagent_type: 'case-compile:compile-writer', description: '合成任务' };
+  state.cases[1]!.pending = '合成：上一次没有做完，等着再看';
+  writeFileSync('model.json', JSON.stringify(state));
+  const loop = ['--hub', 'http://127.0.0.1:9/mcp', '--plumb', '%PLUMB_URL%'], stdin = ['synthetic-token-1234', '%PLUMB_API_KEY%'];
+  const labels = (out: string) => (JSON.parse(out) as { actions: Array<{ label: string }> }).actions.map((a) => a.label);
+  const resumed = await said(['resume', '--state', 'model.json', ...loop], stdin);
+  assert.equal(resumed.code, 0, resumed.out);
+  assert.deepEqual(labels(resumed.out), ['编写 00', '审计 01'], 'the waiting case went through the tree-only check and on to the blind audit');
+  const nexted = await said(['next', '--state', 'model.json', '--finished', '编写 00', ...loop], stdin);
+  assert.equal(nexted.code, 0, nexted.out);
+  assert.deepEqual(labels(nexted.out), ['审计 00']);
+  const verifies = t.calls.filter((call) => call.tool === 'case-compile/cmd-verify-plumb.ts');
+  assert.equal(verifies.length, 2, 'both cases were checked');
+  for (const verify of verifies) {
+    assert.equal(verify.args.at(-1), '--tree-only');
+    assert.equal(verify.args.includes('--base-url'), false);
+    assert.equal(verify.stdin, undefined, 'no key is handed over');
+  }
+  assert.deepEqual(t.calls.filter((call) => call.tool.startsWith('plumb/') || call.tool === 'case-compile/fidelity-plumb.ts' || call.tool === 'case-compile/cmd-select-plumb.ts'), [], 'no Plumb tool is called');
+  assert.deepEqual(t.calls.filter((call) => [...call.args, call.stdin ?? ''].some((text) => text.includes('%PLUMB_'))), [], 'neither unexpanded name reaches any tool');
+});

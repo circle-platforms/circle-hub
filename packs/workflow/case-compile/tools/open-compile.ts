@@ -82,6 +82,12 @@ export function plumbStatusVia(skillsRoot: string): PlumbStatus {
   });
 }
 
+// Where the Plumb skill's script is expected. plumbStatusVia asks for the same path inside its executor, which is a reviewed
+// call site whose bytes are pinned outside this pack, so that executor stays as it is and this is the check made first.
+export const plumbToolPath = (skillsRoot: string): string => join(skillsRoot, 'plumb', 'tools', 'plumb.ts');
+export interface PlumbJudge { url: string; key: string; status: PlumbStatus }
+const PLUMB_KEY_PLACEHOLDER = /^%[A-Z][A-Z0-9_]*%$/;
+
 export function plumbProblem(status: unknown): string | null {
   if (!isRecord(status)) return 'Plumb 状态答复不是对象';
   const models = isRecord(status.models_status) ? Object.values(status.models_status).filter(isRecord) : [];
@@ -108,18 +114,41 @@ export interface Opened { recomposeRun: string; recomposeRecord: string; planRun
 const subjectInput = (subject: string) => subject.startsWith('src:') ? { reference: subject } : { external: subject };
 const runOf = (answer: ToolAnswer) => isRecord(answer.envelope?.run) && typeof answer.envelope.run.run === 'string' ? answer.envelope.run as Record<string, unknown> : null;
 
-export async function openCompile(call: CallTool, options: OpenOptions, skillsRoot: string, plumb?: { url: string; key: string; status: PlumbStatus }): Promise<Opened> {
+// What the Hub publishes against what is installed here, for the two workflows a compile needs. A workflow the Hub does not
+// publish to this account has no version to compare, so it is the only thing said about it.
+function workflowProblems(packs: Array<Record<string, unknown>>, skillsRoot: string): string[] {
+  const problems: string[] = [];
+  for (const pack of ['recompose', 'case-compile']) {
+    const published = packs.find((row) => row.id === pack);
+    if (!published) { problems.push(`Hub 上没有分配给你的 ${pack} 工作流；下一步：请管理员发布并分配 ${pack}`); continue; }
+    const version = String(published.version), local = installedVersion(skillsRoot, pack);
+    if (local === null) problems.push(`本机没有装 ${pack} 技能（${join(skillsRoot, pack)}）；下一步：使用者用客户端的技能安装从 Hub 装上 ${pack} 技能 ${version}（Hub 发布的版本），再开编译`);
+    else if (local !== published.version) problems.push(`本机 ${pack} 技能是 ${local}，Hub 发布的是 ${version}；下一步：重装 ${version} 再开编译`);
+  }
+  return problems;
+}
+
+// The Plumb checks in the order the skill, the key and the service. The service cannot be asked without the skill that asks
+// it or without the key it is asked with, so then it is not said to be a problem of its own.
+async function plumbProblems(plumb: PlumbJudge, skillsRoot: string): Promise<string[]> {
+  const problems: string[] = [], tool = plumbToolPath(skillsRoot);
+  const installed = existsSync(tool), keyed = plumb.key !== '' && !PLUMB_KEY_PLACEHOLDER.test(plumb.key);
+  if (!installed) problems.push(`本机没有装 plumb 技能（${tool}），它是 Hub 发布的通用技能；下一步：使用者用客户端的技能安装从 Hub 装上 plumb 技能再开编译；Hub 上没有它时，请管理员先在 Hub 上执行 circle-hub pack install plumb@<版本>`);
+  if (!keyed) problems.push("标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF");
+  if (installed && keyed) {
+    try { const problem = plumbProblem(await plumb.status(plumb.url, plumb.key)); if (problem) problems.push(problem); }
+    catch (error) { if (!(error instanceof NotReady)) throw error; problems.push(error.message); }
+  }
+  return problems;
+}
+
+export async function openCompile(call: CallTool, options: OpenOptions, skillsRoot: string, plumb?: PlumbJudge): Promise<Opened> {
   const listed = await call('list_task_packs', {});
   if (listed.failed) throw new NotReady(`读不到 Hub 的任务包：${refusalWords(listed)}`);
   const packs = Array.isArray(listed.envelope?.packs) ? listed.envelope.packs.filter(isRecord) : [];
-  for (const pack of ['recompose', 'case-compile']) {
-    const published = packs.find((row) => row.id === pack);
-    if (!published) throw new NotReady(`Hub 上没有分配给你的 ${pack} 工作流；下一步：请管理员发布并分配 ${pack}`);
-    const local = installedVersion(skillsRoot, pack);
-    if (local === null) throw new NotReady(`本机没有装 ${pack} 技能（${join(skillsRoot, pack)}）；下一步：按 Hub 发布的 ${String(published.version)} 装上再开编译`);
-    if (local !== published.version) throw new NotReady(`本机 ${pack} 技能是 ${local}，Hub 发布的是 ${String(published.version)}；下一步：重装 ${String(published.version)} 再开编译`);
-  }
-  if (plumb) { const problem = plumbProblem(await plumb.status(plumb.url, plumb.key)); if (problem) throw new NotReady(problem); }
+  // Every unmet precondition is said in one answer and nothing is opened while there is one.
+  const problems = [...workflowProblems(packs, skillsRoot), ...(plumb ? await plumbProblems(plumb, skillsRoot) : [])];
+  if (problems.length) throw new NotReady(problems.join('；另：'));
   const top = { product: options.product, build: options.build, ...(options.version ? { version: options.version } : {}) };
   const parameters = { ...(options.scope ? { scope: options.scope } : {}) };
   let recomposeRun: Record<string, unknown>, recomposeRecord: string;
@@ -178,7 +207,6 @@ export async function main(argv: string[], readStdin: () => Promise<string[]> = 
     const lines = await readStdin();
     const bearer = await requireBearerToken(async () => lines[0] ?? '');
     const key = lines[1] ?? '';
-    if (judge === 'plumb' && (!key || /^%[A-Z][A-Z0-9_]*%$/.test(key))) throw new NotReady("标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF");
     const exclude = args.exclude ? args.exclude.split(',').map((v) => v.trim()).filter(Boolean) : undefined;
     const opened = await openCompile(connect(origin, bearer), { subject: args.subject, product: args.product, build: args.build, booking: args.booking, ...(args.version ? { version: args.version } : {}), ...(args.scope ? { scope: scopeFrom(args.scope) } : {}), ...(exclude ? { exclude } : {}), ...(args.contract ? { contract: args.contract } : {}), ...(args.inventory ? { inventory: args.inventory } : {}), ...(args.profile ? { profile: args.profile } : {}), ...(args['recompose-run'] ? { reuse: { run: args['recompose-run'], record: args['recompose-record']! } } : {}) }, skillsRoot, judge === 'plumb' ? { url: args.plumb, key, status: plumbStatus } : undefined);
     const record = { schema: 'open-compile@1', ready: true, subject: args.subject, product: args.product, build: args.build, booking: args.booking, recompose_run: opened.recomposeRun, recompose_record: opened.recomposeRecord, plan_run: opened.planRun, plan_record: opened.planRecord, items: opened.items, ...(judge === 'model' ? { judge } : {}) };
