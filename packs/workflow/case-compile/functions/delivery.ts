@@ -187,22 +187,40 @@ export function workbookAbort(stopped: ReadonlyMap<string, NotExecuted>, titleOf
   };
 }
 
-/** A name of 64 characters or more that the device was sent or answered with, its length counted in the text the device printed. */
-export interface LongName { chars: number; in: 'command' | 'reply'; head: string; tail: string }
+/**
+ * A name of 64 characters or more that the device was sent or answered with, its length counted in the text the device printed.
+ * chars, head and tail are of the name itself: not the quotes, brackets or sentence punctuation around it, and not a dot after it.
+ * final_dot says that a dot followed the name in the text and was left out: a sentence ends with one, and so does an absolute
+ * domain name as DNS tools print it, which the text cannot tell apart, so the reader decides.
+ */
+export interface LongName { chars: number; in: 'command' | 'reply'; head: string; tail: string; final_dot?: true }
 const LONG_NAME_CHARS = 64, NAME_EDGE_CHARS = 16;
+const NAME_OPENING = /^[(\[{<,;:!?]+/, NAME_CLOSING = /[)\]}>,;:!?]+$/, NAME_DOTS = /\.+$/;
+/** The name inside a run of characters that has no blank or quote in it, and whether a dot was left off its end. */
+function nameWithin(token: string): { name: string; finalDot: boolean } {
+  let name = token.replace(NAME_OPENING, ''), finalDot = false;
+  for (;;) {
+    const closed = name.replace(NAME_CLOSING, ''), undotted = closed.replace(NAME_DOTS, '');
+    if (undotted.length === name.length) return { name, finalDot };
+    if (undotted.length !== closed.length) finalDot = true;
+    name = undotted;
+  }
+}
 /** The long names of a command and of the lines the device replied with, one for each place a name occurs in; none when there is no such name. */
 export function longNames(command: string, reply: readonly string[] = []): LongName[] {
-  const found: LongName[] = [], seen = new Set<string>();
+  const found = new Map<string, LongName>();
   const take = (text: string, place: LongName['in']) => {
     for (const { token } of tokensOf(text)) {
-      if (token.length < LONG_NAME_CHARS || seen.has(`${place}\0${token}`)) continue;
-      seen.add(`${place}\0${token}`);
-      found.push({ chars: token.length, in: place, head: token.slice(0, NAME_EDGE_CHARS), tail: token.slice(-NAME_EDGE_CHARS) });
+      const { name, finalDot } = nameWithin(token);
+      if (name.length < LONG_NAME_CHARS) continue;
+      const key = `${place}\0${name}`, known = found.get(key);
+      if (known) { if (finalDot) known.final_dot = true; continue; }
+      found.set(key, { chars: name.length, in: place, head: name.slice(0, NAME_EDGE_CHARS), tail: name.slice(-NAME_EDGE_CHARS), ...(finalDot ? { final_dot: true as const } : {}) });
     }
   };
   take(command, 'command');
   for (const line of reply) take(line, 'reply');
-  return found;
+  return [...found.values()];
 }
 export interface SyntaxRejection { command: string; token?: string; prompt?: string; names?: LongName[] }
 const isCaretLine = (line: string): boolean => { const s = line.trim(); return s === '^' || (s.length <= 3 && s.includes('^')); };

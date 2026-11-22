@@ -1152,6 +1152,8 @@ test('the failure analysis takes the length of a long name from names[].chars of
   const guide = await readFile(new URL('./delivery.md', import.meta.url), 'utf8');
   for (const [label, text] of [['compile-attributor', attributor], ['delivery.md', guide]] as const) {
     assert.ok(text.includes('names[].chars') && text.includes('syntax_rejected') && text.includes('不凭眼估，也不按计划本意假定'), label);
+    assert.ok(text.includes('读设备输出索引') && !text.includes('取回传'), `${label} says in plain words where the lengths are read`);
+    assert.ok(text.includes('`chars` 数的是名字本身的字符，不含名字外面的引号、括号和句末标点') && text.includes('`final_dot: true`'), `${label} says what the number counts and where a dot left off the end is said`);
     assert.equal(text.split('names[].chars').length - 1, 1, `${label} says it once`);
   }
   assert.equal(await readFile(new URL('../agents/compile-attributor.md', import.meta.url), 'utf8'), attributor, 'the agent file is the rendered role');

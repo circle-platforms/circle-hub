@@ -80,7 +80,7 @@
 | `carry-plans.ts` | 返工时把通过的计划连同保真判断结转到新运行 |
 | `fetch-run.ts`、`generate-workbook.ts` | 取一次运行的已受理结果和绑定原件，离线生成工作簿 |
 | `open-merge.ts` | 交计划、生成上传工作簿、开合并运行并提交 |
-| `download-returns.ts` | 等待并下载设备输出，写 `index.json`；`syntax_rejected`、`execution_refused` 每条里达 64 字符的长名字另列 `names`（长度取自设备输出）。`execution_refused` 只用这个脚本编写运行自己的执行器规则里声明的失败标记和设备会话，与生成工作簿的工具版本无关：这个运行是别的版本写的、重读不了它的通过结论时，照样列被设备拒绝的命令，`pass_review.unread` 写明没重读什么、为什么 |
+| `download-returns.ts` | 等待并下载设备输出，写 `index.json`；`syntax_rejected`、`execution_refused` 每条里达 64 字符的长名字另列 `names`（长度取自设备输出，只数名字本身，不含外面的引号、括号和句末标点，名字后面的点另记 `final_dot: true`）。`execution_refused` 只用这个脚本编写运行自己的执行器规则里声明的失败标记和设备会话，与生成工作簿的工具版本无关：这个运行是别的版本写的、重读不了它的通过结论时，照样列被设备拒绝的命令，`pass_review.unread` 写明没重读什么、为什么 |
 | `device-read.ts` | 经 test-bed 在预订的设备上读一条只读命令 |
 | `refresh-late.ts` | 刷新开运行后才受理的重组记录 |
 | `assemble-delivery.ts` | 组交付目录和最后的回复 |

@@ -59,8 +59,8 @@ test('a long name in the command or in a reply line is listed with its length, o
     { chars: 70, in: 'command', head: 'a'.repeat(16), tail: 'z'.repeat(16) },
     { chars: 200, in: 'command', head: 'n'.repeat(16), tail: 'n'.repeat(16) },
     { chars: 70, in: 'reply', head: 'a'.repeat(16), tail: 'z'.repeat(16) },
-    { chars: 201, in: 'reply', head: 'n'.repeat(16), tail: 'n'.repeat(15) + '.' },
-  ], 'the same name twice in a place is one, in the command and in a reply is two; a full stop glued to the name is part of the token');
+    { chars: 200, in: 'reply', head: 'n'.repeat(16), tail: 'n'.repeat(16), final_dot: true },
+  ], 'the same name twice in a place is one, in the command and in a reply is two; a full stop after the name is not counted in it, and the entry says one was there');
   assert.equal(longNames('x'.repeat(63)).length, 0); assert.equal(longNames('x'.repeat(64)).length, 1, 'sixty-four is where a token is long');
 });
 
@@ -76,4 +76,28 @@ test('the refused command and the lines the device replied with carry the names 
   ], 'but the names are counted in the whole line');
   assert.deepEqual(Object.keys(refusal!), ['command', 'prompt', 'reply', 'names']);
   assert.equal('names' in executionRefusals(SESSION, MARKERS)[0]!, false, 'an entry without a long name has no names');
+});
+
+test('what a sentence puts around a name is not counted in it, at the lengths where the number matters', () => {
+  const name = 'n'.repeat(200), entry = { chars: 200, in: 'command', head: 'n'.repeat(16), tail: 'n'.repeat(16) } as const;
+  for (const around of ['"X"', "'X'", '"X".', '(X)', '[X]', '{X}', '<X>', 'X,', 'X;', 'X:', 'X!', 'X?', '(X),', '[X]:', 'see X: refused', ':X', 'X?!']) {
+    assert.deepEqual(longNames(`widget host ${around.replace('X', name)}`), [entry], around);
+  }
+  for (const around of ['X.', '(X).', 'X.)', 'X...', '(X.)', 'X.,']) {
+    assert.deepEqual(longNames(`widget host ${around.replace('X', name)}`), [{ ...entry, final_dot: true }], around);
+  }
+  // 253 characters is the longest a domain name may be, and a dot after it is how DNS tools print an absolute name.
+  const domain = ['a'.repeat(63), 'b'.repeat(63), 'c'.repeat(63), 'd'.repeat(61)].join('.');
+  assert.equal(domain.length, 253);
+  const full = { chars: 253, in: 'command', head: 'a'.repeat(16), tail: 'd'.repeat(16) } as const;
+  assert.deepEqual(longNames(`widget host ${domain}`), [full]);
+  assert.deepEqual(longNames(`widget host ${domain}.`), [{ ...full, final_dot: true }], 'the dot is not in the 253, and it is said');
+  assert.deepEqual(longNames('widget host a', [`${domain} is refused`, `refused: ${domain}.`]), [{ ...full, in: 'reply', final_dot: true }], 'one entry for the name in the reply, which says a dot followed it once');
+  // The length that makes a name long is the name's own.
+  assert.deepEqual(longNames(`widget host ${'x'.repeat(63)}.`), [], 'a name of 63 characters and a dot is not long');
+  assert.deepEqual(longNames(`widget host ${'x'.repeat(64)}.`), [{ chars: 64, in: 'command', head: 'x'.repeat(16), tail: 'x'.repeat(16), final_dot: true }]);
+  assert.deepEqual(longNames(`widget host (${'x'.repeat(62)})`), [], 'brackets do not make a name long');
+  // Dots and punctuation inside a name stay in it.
+  const inner = `${'a'.repeat(40)}.b-c_d:e@f/${'z'.repeat(30)}`;
+  assert.deepEqual(longNames(`widget host ${inner};`), [{ chars: inner.length, in: 'command', head: inner.slice(0, 16), tail: inner.slice(-16) }]);
 });
