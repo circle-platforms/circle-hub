@@ -15,7 +15,7 @@
     },
     {
       "name": "plumb",
-      "required": true,
+      "required": false,
       "kind": "string",
       "multiple": false,
       "placeholder": "%PLUMB_URL%",
@@ -124,6 +124,14 @@
       "multiple": false,
       "placeholder": "<rec:引用>",
       "type": "text"
+    },
+    {
+      "name": "judge",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<plumb|model>",
+      "type": "text"
     }
   ],
   "forms": [
@@ -138,7 +146,7 @@
         {
           "name": "plumb",
           "placeholder": "%PLUMB_URL%",
-          "optional": false
+          "optional": true
         },
         {
           "name": "subject",
@@ -203,6 +211,11 @@
         {
           "name": "recompose-record",
           "placeholder": "<rec:引用>",
+          "optional": true
+        },
+        {
+          "name": "judge",
+          "placeholder": "<plumb|model>",
           "optional": true
         }
       ]

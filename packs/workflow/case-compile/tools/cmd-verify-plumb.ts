@@ -8,7 +8,7 @@ import {
   lookupCommandDefinition,
   truncateCmdVerifyState,
 } from '../functions/cmd-recall.ts';
-import { commandTreeAnswer, commandTreeCheck, judgeStep, type PlumbCall, type TreeAnswer } from '../functions/command-tree-verdict.ts';
+import { commandTreeAnswer, commandTreeCheck, judgeStep, treeOnlyStep, type PlumbCall, type TreeAnswer } from '../functions/command-tree-verdict.ts';
 import { expandValue } from '../functions/length-literals.ts';
 import { parseManifest } from '../functions/manifest.ts';
 import { confirmationSteps, deviceCommandLines } from '../functions/plan-commands.ts';
@@ -41,12 +41,13 @@ import { resolveRunDirectory } from './workspace-path.ts';
 import type { LockedTree } from '../functions/catalog-selection.ts';
 
 const USAGE =
-  'node <技能目录>/tools/cmd-verify-plumb.ts (--file <plan.json> | --plans <plansDir>) (--run <runDir> | --knowledge <knowledgeDir>) [--item <item.json>] [--context-mode <state|node>] [--base-url <url>] [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--out <report.json>] [--key-stdin]';
+  'node <技能目录>/tools/cmd-verify-plumb.ts (--file <plan.json> | --plans <plansDir>) (--run <runDir> | --knowledge <knowledgeDir>) [--item <item.json>] [--context-mode <state|node>] [--base-url <url>] [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--tree-only] [--out <report.json>] [--key-stdin]';
 const RULES = [
   'Plumb 的判断是未确认的模型判断，只作参考；命令对不对由命令树核对说了算（Hub 的 commands_catalog 检查，同 check-plan.ts，在 --run 目录的 run.json 与 knowledge/nodes.jsonl 上本地重算）。',
   '- 命令树核对通过而 Plumb 拒绝：标需人工复核（review_required），带 Plumb 的概率，不阻断，退出码 0；加 --strict-review 才阻断。',
   '- 命令树核对不通过：阻断（退出码 1），不论 Plumb 怎么说；先照 check-plan.ts 的同名问题改命令。',
   '- 命令树核对没有运行或没有结论（没有 --run 的冻结运行与命令树，或这一步缺事实）：只有 Plumb 的判断，它拒绝就阻断，并在这一步写明命令树核对为什么没有结论。',
+  '- --tree-only：不问 Plumb，只做命令树核对（使用者选定判断方式为 model 时由流水线带上）。命令树核对不通过照样阻断；通过就过；没有结论的步骤标需人工复核、状态未知并写明原因，不阻断，加 --strict-review 才阻断。此时不需要 --base-url 和密钥。',
   '- 步骤意图取这一步（块或顺序步骤）自己写的 description；没写就用用例标题，并在这一步的 disclosure 里说明，不借脑图里同位置的步骤，也不用作者步骤的摘要。',
 ].join('\n');
 
@@ -60,7 +61,7 @@ const VALUE_FLAGS = new Set([
   '--out',
   ...SHARED_PLUMB_VALUE_FLAGS,
 ]);
-const BOOL_FLAGS = new Set(['--strict-review', ...SHARED_PLUMB_BOOL_FLAGS]);
+const BOOL_FLAGS = new Set(['--strict-review', '--tree-only', ...SHARED_PLUMB_BOOL_FLAGS]);
 
 interface RuntimeCheckers {
   contract: RuntimeContract;
@@ -362,6 +363,7 @@ export async function runCmdVerifyPlumb(
     const contextMode: 'state' | 'node' = modeArg;
     const itemArg = strOpt('--item');
     const strictReview = parsed.flags.get('--strict-review') === true;
+    const treeOnly = parsed.flags.get('--tree-only') === true;
     const outPath = strOpt('--out');
 
     const runDir = runArg ? resolveRunDirectory(runArg).lexical : undefined;
@@ -468,7 +470,7 @@ export async function runCmdVerifyPlumb(
     const shortened = new Set<string>();
     let modelVersion: string | null = null;
     const totalQ = Object.keys(singleQuestions).length + Object.keys(listQuestions).length;
-    if (totalQ > 0) {
+    if (totalQ > 0 && !treeOnly) {
       const client = await createCasePlumbClient(extractPlumbCliOptions(parsed.flags), io);
       const refusedForLength = (error: unknown): boolean => isRecord(error) && (error.status === 413 || error.code === 'request_too_large');
       const ask = async (task: 'single_cmd_judge' | 'steplist_judge', questions: Record<string, PlumbBatchQuestion>) => {
@@ -534,6 +536,41 @@ export async function runCmdVerifyPlumb(
     const results = activeCases.map((c, caseIdx) => {
       const steps = c.units.map((unit) => {
         const qid = `${caseIdx}:${unit.unitIndex}`;
+        if (treeOnly) {
+          const judged = treeOnlyStep(unit.tree, strictReview);
+          if (judged.review_required) reviewRequiredCount += 1;
+          if (judged.blocked) {
+            const cause = unit.tree.status === 'refused' ? 'tree' : 'strict';
+            causes[cause] += 1;
+            const where = `${basename(c.file)}:${unit.pointer}`;
+            blockedItems.push(
+              cause === 'tree'
+                ? `${where} 命令树核对未通过（${unit.lines[0]}；${unit.tree.problems?.[0]?.message ?? '没有说明'}）`
+                : `${where} (${unit.lines[0]} -> 命令树核对没有结论，--strict-review)`,
+            );
+          }
+          const disclosure = [unit.intent.disclosure, judged.disclosure].filter((part): part is string => part !== undefined).join('；');
+          return {
+            pointer: unit.pointer,
+            task: unit.task,
+            command: unit.commandText,
+            intent: unit.intent.text,
+            intent_source: unit.intent.source,
+            definition_attached: unit.definition.length > 0,
+            plumb_verdict: null,
+            tree_check: unit.tree,
+            verdict: judged.verdict,
+            blocked: judged.blocked,
+            review_required: judged.review_required,
+            ...(judged.note ? { note: judged.note } : {}),
+            ...(disclosure ? { disclosure } : {}),
+            answer: null,
+            match: null,
+            confidence: null,
+            probabilities: null,
+            gate: null,
+          };
+        }
         const norm = answers.get(qid)!;
         const action: PlumbGate['action'] | undefined = norm.gate?.action;
         const lowerChoice = norm.choice.trim().toLowerCase();
@@ -599,8 +636,9 @@ export async function runCmdVerifyPlumb(
 
     const report = {
       schema: 'plumb-cmd-verify-report@1',
-      status: '未确认' as const,
-      decided_by: '模型' as const,
+      judge: treeOnly ? ('tree-only' as const) : ('plumb' as const),
+      status: treeOnly ? (reviewRequiredCount > 0 ? ('未知' as const) : ('已确认' as const)) : ('未确认' as const),
+      decided_by: treeOnly ? ('程序' as const) : ('模型' as const),
       model_version: modelVersion,
       context_mode: contextMode,
       strict_review: strictReview,
@@ -625,7 +663,7 @@ export async function runCmdVerifyPlumb(
         stdout: serialized,
         stderr: formatPlumbCallError(
           '参数无效',
-          `Plumb 命令核验未通过（阻断 ${blockedItems.length} 处）：${blockedItems.join('；')}`,
+          `${treeOnly ? '' : 'Plumb '}命令核验未通过（阻断 ${blockedItems.length} 处）：${blockedItems.join('；')}`,
           `请${next.join('；')}，再重跑 cmd-verify-plumb.ts`,
         ) + '\n',
       };

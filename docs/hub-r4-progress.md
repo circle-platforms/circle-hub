@@ -1329,6 +1329,12 @@ nav_order: 3
     - 删去的：派发服务和运行引擎的 `enforceEnvironmentAssignments` 开关和 `environmentAccess` 端口；派发前、意图事务内和后续每一轮按分配的核对（`environmentUseFailure`），以及预订和续期前按分配核对租约键（`authorizeKeys`）；`MemberEnvironments` 的 `canUse`、`authorizeKeys` 和只为守卫存在的未归属占用（`unattributedHoldings`）；成员能力里的 `environmentAccess.enforced`、`unattributed_holdings` 和只在守卫打开时才列出的「尚无已分配的运行环境」；测试环境就绪报告的「当前账户使用分配」一行；控制台和 `list_task_packs` 回执里“分配还没有启用、只是预览”的说明、「当前限制与配置预览」的标题、「已无分配」标记和随它出现的强制释放入口；只测这道守卫的测试。
     - 留下的：执行器（`exe_`）对账户、团队或全体成员的 `resource_assign` 照旧，只决定成员读模型（`/console/me` 和 `list_task_packs` 的成员能力）和测试环境就绪报告列出哪些测试环境：成员只看到分配给自己的，管理员看到全部。谁能预订、续期和上机，按工作流的分配和预订规则判断，和守卫关着时一样，生产行为不变。页面上要说明分配作用的地方只用一句话：测试环境的分配只决定这里列出哪些测试环境；谁能预订和上机按工作流的分配和预订规则判断。通用模型第 88 版（B04 R[11] 改写）。
 
+187. **`case-compile` 的判断方式可选，默认仍是 Plumb（本地工作分支 `wp/claude/judge-option`，`case-compile` 3.26.5，未发布）**（来源：所有者 2026-11-22 在对话里的原话“给 3.26.x 加判断方式选项，默认仍是 Plumb”；起因是当天 Plumb 后端因算力额度用完起不来，所有账号的编译都停在开运行之前；任务页 [`judge-option.md`](hub-r4-tasks/judge-option.md)）：
+    - `tools/open-compile.ts` 多一个 `--judge plumb|model`，不写就是 `plumb`，行为与 3.26.4 相同。写 `model` 时不查 Plumb 状态，不要 Plumb 地址、密钥和本机的 `plumb` 技能，并把选择写进 `open-compile.json`；`tools/pipeline.ts` 照这份文件办。
+    - `model` 方式下命令核验只做命令树的程序核对（`cmd-verify-plumb.ts --tree-only`）：不通过的挡住，没有结论的步骤状态未知并写进这条用例的复核说明；场景保真审计由 `compile-fidelity` 盲审。每条用例的复核说明写明这次的判断方式，由 `pipeline.ts collect` 的 `reviewed` 带进最后报告。
+    - 决定 177 不变：Plumb 仍是默认，判断都在客户端一侧，Hub 核心、六个 MCP 工具和核对规则都不改，Hub 仍只核对保真判断的格式和简报摘要。Plumb 没就绪不是模型自行改用 `model` 的理由，由使用者决定。
+    - 验证（本地 macOS，未经 CI，没有连 Hub、Plumb 或设备）：`npx tsc --noEmit` 无错误；`node --test "packs/workflow/case-compile/**/*.test.ts"` 1600 项中 1599 通过、0 失败、1 跳过（需要显式指定已安装的 Circle 应用）；`node --test "scripts/real/**/*.test.ts"` 1336 项中 1313 通过、0 失败、23 跳过（同一原因）；`node --test ".github/checks/*.test.ts"` 275 项全部通过。没有跑全量回归和验收。
+
 ## 2026-11-21 编译流程整合
 
 按所有者本轮的模块整合与公开发布要求更新 Hub PR #360。最新主线作为集成基线。编译包统一走客户端工作流，子代理每次完成只处理一次。产品包沿用主线实现，测试使用通用读端口。已通过文档与 CI 检查、冻结参考核对、编译包与通用技能测试及定向验收。Circle 在独立分支处理通用工具结果，跨仓库工作流以脚本模型和合成用例验证。范围及兼容性变化见[整合任务页](hub-r4-tasks/compile-flow-integration.md)和[兼容性记录](compatibility.md)。

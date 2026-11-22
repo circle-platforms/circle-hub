@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { collect, forLead, initState, next, recordStatus, reopen, resume, retry, rework, summary, type Gates, type PipelineState, type RunTool, type ToolRun } from './pipeline.ts';
+import { collect, forLead, initState, main, next, recordStatus, reopen, resume, retry, rework, summary, type Gates, type PipelineState, type RunTool, type ToolRun } from './pipeline.ts';
 
 const ok = (stdout = '{"ok":true}'): ToolRun => ({ code: 0, stdout, stderr: '' });
 const bad = (stderr: string): ToolRun => ({ code: 1, stdout: '', stderr });
@@ -729,4 +729,71 @@ test('no delivery volume when nothing passed; a carry that refuses leaves nothin
   const regated = refused.t.calls.filter((call) => call.tool === 'case-compile/check-plan.ts').at(-1)!.args;
   assert.deepEqual([regated[regated.indexOf('--file') + 1], regated[regated.indexOf('--run') + 1]], [join('cases', '02', 'plan', '02.json'), join('deliver-1', 'plan-run')], 'the plan the carry did not take is checked against the new run, not written again');
   assert.equal(refused.t.calls.some((call) => call.tool === 'case-compile/task-brief.ts' && call.args.includes('脚本编写')), false);
+});
+
+const withoutPlumb = (run: RunTool): Gates => ({ run, hub: 'http://127.0.0.1:9/mcp', plumb: '', token: 'synthetic-token-1234', plumbKey: '' });
+
+test('judge model: a written case passes the tree-only command check and the blind fidelity audit, Plumb is never asked, and every case says who judged', async () => {
+  await world(1);
+  const t = tools((tool, args) => {
+    if (tool === 'cmd-verify-plumb.ts') return ok(JSON.stringify({ judge: 'tree-only', review_required_count: 2 }));
+    if (tool === 'fidelity-brief.ts') { writeFileSync(join(args[args.indexOf('--out') + 1]!, '00.abcd1234.brief.json'), '{}'); return ok(); }
+    return undefined;
+  });
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'model' }, 'synthetic-model');
+  assert.equal(state.judge, 'model');
+  assert.equal('judge' in (await initState('recompose-run', 'plan-run', OPEN, 'synthetic-model')), false, 'the default keeps the state as it was');
+  const c = state.cases[0]!; c.stage = 'writing'; c.attempts = { recompose: 1, write: 1 }; c.record_accepted = true;
+  await mkdir(join('cases', '00', 'plan'), { recursive: true }); await writeFile(join('cases', '00', 'plan', '00.json'), '{}');
+  const step = await next(state, '编写 00', withoutPlumb(t.run));
+  assert.deepEqual(step.actions.map((a) => [a.label, a.subagent_type]), [['审计 00', 'case-compile:compile-fidelity']]);
+  const verify = t.calls.find((x) => x.tool === 'case-compile/cmd-verify-plumb.ts')!;
+  assert.deepEqual(verify.args, ['--plans', join('cases', '00', 'plan'), '--run', 'plan-run', '--tree-only']);
+  assert.equal(verify.stdin, undefined, 'no key is handed over');
+  assert.deepEqual(t.calls.filter((x) => x.tool === 'case-compile/fidelity-plumb.ts' || x.tool.startsWith('plumb/')), []);
+  await writeFile(join('cases', '00', 'audit', '00.abcd1234.verdict.json'), '{}');
+  const done = await next(state, '审计 00', withoutPlumb(t.run));
+  assert.deepEqual(done.ready, ['00']);
+  const collected = await collect(state, 'plans');
+  assert.equal(collected.reviewed!.length, 1);
+  assert.match(collected.reviewed![0]!.notes[0]!, /^判断方式：这次按使用者选定的方式不经 Plumb。命令核验只做了命令树的程序核对；场景保真由独立盲审（通用模型）判断，状态未确认/);
+  assert.match(collected.reviewed![0]!.notes[1]!, /有 2 步命令树核对没有结论.*状态未知/);
+});
+
+test('judge model: a command the tree refuses goes back to the writer, and the judge note is written once however often the case is written', async () => {
+  await world(1);
+  let verified = 0;
+  const t = tools((tool, args) => {
+    if (tool === 'cmd-verify-plumb.ts') return ++verified === 1 ? bad('参数无效：命令核验未通过（阻断 1 处）') : ok(JSON.stringify({ review_required_count: 0 }));
+    if (tool === 'fidelity-brief.ts') { writeFileSync(join(args[args.indexOf('--out') + 1]!, '00.abcd1234.brief.json'), '{}'); writeFileSync(join(args[args.indexOf('--out') + 1]!, '00.abcd1234.verdict.json'), '{}'); return ok(); }
+    return undefined;
+  });
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'model' }, 'synthetic-model');
+  const c = state.cases[0]!; c.stage = 'writing'; c.attempts = { recompose: 1, write: 1 }; c.record_accepted = true;
+  await mkdir(join('cases', '00', 'plan'), { recursive: true }); await writeFile(join('cases', '00', 'plan', '00.json'), '{}');
+  const again = await next(state, '编写 00', withoutPlumb(t.run));
+  assert.equal(again.actions[0]!.label, '编写 00');
+  const note = t.calls.filter((x) => x.tool === 'case-compile/task-brief.ts').at(-1)!.args;
+  assert.match(note[note.indexOf('--note') + 1]!, /命令核验没有通过/);
+  const done = await next(state, '编写 00', withoutPlumb(t.run));
+  assert.deepEqual(done.ready, ['00'], 'a verdict already written for this brief is merged without another audit');
+  assert.equal(c.review!.filter((line) => line.startsWith('判断方式：')).length, 1);
+});
+
+test('the command line asks for the Plumb address and key only when Plumb is the judge of this compile', async () => {
+  await world(1);
+  const t = tools(() => undefined);
+  const said = async (argv: string[], stdin: string[]) => {
+    const out: string[] = []; const write = process.stdout.write;
+    process.stdout.write = ((text: string) => { out.push(text); return true; }) as typeof process.stdout.write;
+    try { return { code: await main(argv, async () => stdin, t.run), out: out.join('') }; } finally { process.stdout.write = write; }
+  };
+  const save = async (file: string, open: Record<string, unknown>) => { const state = await initState('recompose-run', 'plan-run', open, 'synthetic-model'); state.cases[0]!.stage = 'recomposing'; state.cases[0]!.action = { label: '重组 00', subagent_type: 'x', description: 'y' }; writeFileSync(file, JSON.stringify(state)); };
+  await save('plumb.json', OPEN); await save('model.json', { ...OPEN, judge: 'model' });
+  const refused = await said(['resume', '--state', 'plumb.json', '--hub', 'http://127.0.0.1:9/mcp'], ['synthetic-token-1234']);
+  assert.equal(refused.code, 1); assert.match(refused.out, /缺 --plumb <Plumb地址>（这次编译的判断方式是 Plumb）/);
+  const noKey = await said(['resume', '--state', 'plumb.json', '--hub', 'http://127.0.0.1:9/mcp', '--plumb', 'https://127.0.0.1:9'], ['synthetic-token-1234']);
+  assert.equal(noKey.code, 1); assert.match(noKey.out, /第二行 %PLUMB_API_KEY%/);
+  const allowed = await said(['resume', '--state', 'model.json', '--hub', 'http://127.0.0.1:9/mcp'], ['synthetic-token-1234']);
+  assert.equal(allowed.code, 0, allowed.out);
 });

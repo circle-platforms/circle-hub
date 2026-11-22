@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {assertion,call,fixture,plan as blockPlan,quote as blockQuote} from '../testing/blocks.ts';
 import {frozenRun} from '../testing/frozen-run.ts';
 import {lockedTreeOf,type FlatCatalog} from '../testing/locked-tree.ts';
-import {commandTreeAnswer,commandTreeCheck,judgeStep,type CommandTreeCheck,type TreeAnswer} from './command-tree-verdict.ts';
+import {commandTreeAnswer,commandTreeCheck,judgeStep,treeOnlyStep,type CommandTreeCheck,type TreeAnswer} from './command-tree-verdict.ts';
 import {planBoundary} from './plan-boundary.ts';
 import {COMMAND_CATALOG,CONTRACT_DOC,LEGACY_CONTRACT_DOC,LEGACY_PROFILE_DOC,MANIFEST_DOC,PROFILE_DOC,QUOTE,goodData} from './test-support.ts';
 
@@ -123,5 +123,17 @@ test('the program has the last word on a command: what Plumb says and what the t
    const refused=judgeStep({call,note:NOTE[call]},TREE.refused!,strict);
    assert.deepEqual([refused.verdict,refused.review_required,refused.blocked],['reject',false,true],call);assert.match(refused.note!,/命令树核对未通过/);
   }
+ }
+});
+
+test('without Plumb the tree alone decides: refused blocks, accepted passes, and what it cannot settle stays unknown and is disclosed instead of passing as judged',()=>{
+ const refused:TreeAnswer={status:'refused',problems:[problem('/steps/0/args/0')]};
+ assert.deepEqual(treeOnlyStep(refused,false),{verdict:'reject',blocked:true,review_required:false,note:'命令树核对未通过（程序判定）：合成问题'});
+ assert.deepEqual(treeOnlyStep({status:'accepted'},false),{verdict:'pass',blocked:false,review_required:false});
+ for(const status of ['undetermined','not_run'] as const){
+  const open=treeOnlyStep({status,reason:'缺这一步的事实'},false);
+  assert.equal(open.verdict,'review');assert.equal(open.blocked,false);assert.equal(open.review_required,true);
+  assert.match(open.disclosure!,/命令树核对没有给出结论（缺这一步的事实）/);assert.match(open.disclosure!,/不问 Plumb/);assert.match(open.disclosure!,/状态未知/);
+  assert.equal(treeOnlyStep({status,reason:'缺这一步的事实'},true).blocked,true,'--strict-review blocks what nobody judged');
  }
 });

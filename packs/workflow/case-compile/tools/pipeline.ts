@@ -36,6 +36,7 @@ export interface PipelineState {
   recompose_run: string; plan_run: string; recompose_dir: string; plan_dir: string; records_dir: string;
   cases: CaseState[];
   open?: string;
+  judge?: 'model';
   plan_history?: Array<{ run: string; dir: string }>;
   volume?: { n: number; result?: 'passed' | 'failed' };
   device_reads?: { booking: string; device: string; bed?: string; lines: Record<string, string>; asked: Record<string, number> };
@@ -134,7 +135,7 @@ export async function initState(recomposeDir: string, planDir: string, open: Rec
     cases.push({ k: String(n).padStart(2, '0'), autoid: autoidOf(p.value) || autoidOf(r.value), title: String(fieldsOf(p.value).title ?? p.value.label ?? ''), recompose: { index: r.index, item: String(r.value.id) }, plan: { index: p.index, item: String(p.value.id) }, stage: 'queued', attempts: { recompose: 0, write: 0 } });
   }
   const reads = await deviceReadsOf(planDir, open);
-  return { schema: 'compile-pipeline@1', width, max_attempts: maxAttempts, model, recompose_run: open.recompose_run, plan_run: open.plan_run, recompose_dir: recomposeDir, plan_dir: planDir, records_dir: 'records', cases, ...(reads ? { device_reads: reads } : {}) };
+  return { schema: 'compile-pipeline@1', width, max_attempts: maxAttempts, model, recompose_run: open.recompose_run, plan_run: open.plan_run, recompose_dir: recomposeDir, plan_dir: planDir, records_dir: 'records', cases, ...(open.judge === 'model' ? { judge: 'model' as const } : {}), ...(reads ? { device_reads: reads } : {}) };
 }
 async function deviceReadsOf(planDir: string, open: Record<string, unknown>): Promise<PipelineState['device_reads']> {
   if (typeof open.booking !== 'string' || !open.booking) return undefined;
@@ -223,6 +224,18 @@ export const unavailable = (run: ToolRun) => run.code !== 0 && /暂时不可用/
 function wait(c: CaseState, reason: string): null { c.pending = reason.slice(0, NOTE_CHARS); return null; }
 const sha256File = async (path: string) => createHash('sha256').update(await readFile(path)).digest('hex');
 const PLUMB_WAKE_SECONDS = 240;
+// The user chose judge=model for this compile: Plumb is not asked. The program's command tree check stands alone and the
+// scenario audit goes to the blind auditor; every case says so in its review notes, which collect hands to the final report.
+const MODEL_JUDGE_NOTE = '判断方式：这次按使用者选定的方式不经 Plumb。命令核验只做了命令树的程序核对；场景保真由独立盲审（通用模型）判断，状态未确认，由上机验证的设备输出裁定';
+function noteOnce(c: CaseState, note: string): void { if (!c.review?.includes(note)) (c.review ??= []).push(note); }
+function unsettledCommands(verified: ToolRun): number {
+  try { const value: unknown = JSON.parse(verified.stdout); return isRecord(value) && typeof value.review_required_count === 'number' ? value.review_required_count : 0; } catch { return 0; }
+}
+function needPlumb(state: PipelineState, plumb: string | undefined, key: string | undefined): void {
+  if (state.judge === 'model') return;
+  if (!plumb) throw new Error('缺 --plumb <Plumb地址>（这次编译的判断方式是 Plumb）');
+  if (!key) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+}
 async function plumbGate(g: Gates, tool: string, args: string[]): Promise<ToolRun> {
   const first = await g.run('case-compile', tool, args, `${g.plumbKey}\n`);
   if (!unavailable(first)) return first;
@@ -335,6 +348,17 @@ async function writeEnded(state: PipelineState, c: CaseState, g: Gates, finished
   if (!existsSync(plan)) return finished ? again(`没有写出 ${plan}`) : null;
   const checked = await g.run('case-compile', 'check-plan.ts', ['--file', plan, '--run', state.plan_dir]);
   if (checked.code !== 0) return again(`计划自检没有通过：${words(checked)}`);
+  if (state.judge === 'model') {
+    const treeOnly = await g.run('case-compile', 'cmd-verify-plumb.ts', ['--plans', plans, '--run', state.plan_dir, '--tree-only']);
+    if (treeOnly.code !== 0) return again(`命令核验没有通过：${words(treeOnly)}`);
+    noteOnce(c, MODEL_JUDGE_NOTE);
+    const unsettled = unsettledCommands(treeOnly);
+    if (unsettled) (c.review ??= []).push(`命令核验：第 ${c.attempts.write} 版计划有 ${unsettled} 步命令树核对没有结论，这次不经 Plumb，这些步骤没有判断，状态未知；下一步由使用者对照同构建的手册和命令树复核`);
+    await mkdir(audits, { recursive: true });
+    const briefed = await g.run('case-compile', 'fidelity-brief.ts', ['--run', state.plan_dir, '--plans', plans, '--out', audits]);
+    if (briefed.code !== 0) return again(`场景保真简报没有生成：${words(briefed)}`);
+    return auditApplied(state, c, g, false);
+  }
   const verified = await plumbGate(g, 'cmd-verify-plumb.ts', ['--plans', plans, '--run', state.plan_dir, '--base-url', g.plumb, '--key-stdin']);
   if (unavailable(verified)) return wait(c, `命令核验暂时做不了：${words(verified)}`);
   if (verified.code !== 0) return again(`命令核验没有通过：${words(verified)}`);
@@ -543,7 +567,7 @@ type Carried = Map<string, { autoid?: string; file?: string; sha256?: string }>;
 
 async function newPlanRun(state: PipelineState, open: Record<string, unknown>, base: string, exclude: string[], what: string, g: Gates): Promise<{ target: string; planDir: string; openFile: string }> {
   const planDir = join(base, 'plan-run'), openFile = join(base, 'open-compile.json');
-  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, '--plumb', g.plumb, '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...(exclude.length ? ['--exclude', exclude.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], `${g.token}\n${g.plumbKey}\n`);
+  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' ? ['--judge', 'model'] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...(exclude.length ? ['--exclude', exclude.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], `${g.token}\n${g.plumbKey}\n`);
   if (opened.code !== 0 || !existsSync(openFile)) throw new Error(`${what}没有开成：${words(opened) || '没有输出'}`);
   const target = String(((await readJson(openFile)) as Record<string, unknown>).plan_run ?? '');
   if (!target || target === state.plan_run) throw new Error(`open-compile.ts 没有给出新的脚本编写运行（看到 ${target || '空'}）`);
@@ -771,24 +795,26 @@ export async function main(argv: string[], readStdin = readStdinLines, run?: Run
       return 0;
     }
     if (command === 'resume') {
-      const a = parseCliOptions(rest, { state: true, hub: true, plumb: true, pause: false }, 'pipeline.ts resume --state <文件> --hub <MCP地址> --plumb <Plumb地址> [--pause <秒>]') as Record<string, string>;
+      const a = parseCliOptions(rest, { state: true, hub: true, plumb: false, pause: false }, 'pipeline.ts resume --state <文件> --hub <MCP地址> --plumb <Plumb地址> [--pause <秒>]') as Record<string, string>;
       const pause = a.pause === undefined ? 0 : Number(a.pause);
       if (!Number.isInteger(pause) || pause < 0 || pause > 300) throw new Error('--pause 写 0 到 300 的整数（先等这么多秒再看）');
       const [token, plumbKey] = await readStdin();
-      if (!token || !plumbKey) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+      if (!token) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
       if (pause) await new Promise((done) => setTimeout(done, pause * 1000));
       const state = (await readJson(a.state)) as PipelineState;
-      const step = await resume(state, { run: tools, hub: a.hub, plumb: a.plumb, token, plumbKey, start: starts });
+      needPlumb(state, a.plumb, plumbKey);
+      const step = await resume(state, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', start: starts });
       await saveState(a.state, state);
       process.stdout.write(JSON.stringify(step) + '\n');
       return 0;
     }
     if (command === 'next') {
-      const a = parseCliOptions(rest, { state: true, finished: true, hub: true, plumb: true }, "pipeline.ts next --state <文件> --finished '<标签>' --hub <MCP地址> --plumb <Plumb地址>") as Record<string, string>;
+      const a = parseCliOptions(rest, { state: true, finished: true, hub: true, plumb: false }, "pipeline.ts next --state <文件> --finished '<标签>' --hub <MCP地址> --plumb <Plumb地址>") as Record<string, string>;
       const [token, plumbKey] = await readStdin();
-      if (!token || !plumbKey) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+      if (!token) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
       const state = (await readJson(a.state)) as PipelineState;
-      const step = await next(state, a.finished, { run: tools, hub: a.hub, plumb: a.plumb, token, plumbKey, start: starts });
+      needPlumb(state, a.plumb, plumbKey);
+      const step = await next(state, a.finished, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', start: starts });
       await saveState(a.state, state);
       process.stdout.write(JSON.stringify(step) + '\n');
       return 0;
@@ -812,21 +838,23 @@ export async function main(argv: string[], readStdin = readStdinLines, run?: Run
       return 0;
     }
     if (command === 'rework') {
-      const a = parseCliOptions(rest, { state: true, open: true, returns: true, notes: false, hub: true, plumb: true }, "pipeline.ts rework --state <文件> --open <这一轮的 open-compile 文件> --returns <上机回传目录> [--notes <失败分析目录>] --hub <MCP地址> --plumb <Plumb地址>") as Record<string, string>;
+      const a = parseCliOptions(rest, { state: true, open: true, returns: true, notes: false, hub: true, plumb: false }, "pipeline.ts rework --state <文件> --open <这一轮的 open-compile 文件> --returns <上机回传目录> [--notes <失败分析目录>] --hub <MCP地址> --plumb <Plumb地址>") as Record<string, string>;
       const [token, plumbKey] = await readStdin();
-      if (!token || !plumbKey) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+      if (!token) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
       const state = (await readJson(a.state)) as PipelineState;
-      const step = await rework(state, (await readJson(a.open)) as Record<string, unknown>, a.returns, a.notes, { run: tools, hub: a.hub, plumb: a.plumb, token, plumbKey, start: starts });
+      needPlumb(state, a.plumb, plumbKey);
+      const step = await rework(state, (await readJson(a.open)) as Record<string, unknown>, a.returns, a.notes, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', start: starts });
       await saveState(a.state, state);
       process.stdout.write(JSON.stringify(forLead(step)) + '\n');
       return 0;
     }
     if (command === 'reopen') {
-      const a = parseCliOptions(rest, { state: true, open: true, refused: false, hub: true, plumb: true }, "pipeline.ts reopen --state <文件> --open <这一轮的 open-compile 文件> [--refused <合并工具写的 refused.json>] --hub <MCP地址> --plumb <Plumb地址>") as Record<string, string>;
+      const a = parseCliOptions(rest, { state: true, open: true, refused: false, hub: true, plumb: false }, "pipeline.ts reopen --state <文件> --open <这一轮的 open-compile 文件> [--refused <合并工具写的 refused.json>] --hub <MCP地址> --plumb <Plumb地址>") as Record<string, string>;
       const [token, plumbKey] = await readStdin();
-      if (!token || !plumbKey) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+      if (!token) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
       const state = (await readJson(a.state)) as PipelineState;
-      const step = await reopen(state, (await readJson(a.open)) as Record<string, unknown>, a.refused, { run: tools, hub: a.hub, plumb: a.plumb, token, plumbKey, start: starts });
+      needPlumb(state, a.plumb, plumbKey);
+      const step = await reopen(state, (await readJson(a.open)) as Record<string, unknown>, a.refused, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', start: starts });
       await saveState(a.state, state);
       process.stdout.write(JSON.stringify(forLead(step)) + '\n');
       return 0;

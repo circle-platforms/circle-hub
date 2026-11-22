@@ -548,3 +548,44 @@ test('a step the judging service refuses with nothing but itself is named to the
     await rm(w.dir, { recursive: true, force: true });
   }
 });
+
+test('--tree-only asks Plumb nothing and needs no address or key: the tree refuses, accepts, or leaves a step unknown and says so', async () => {
+  const w = await frozenWorkspace([VALID[0], REFUSED, UNPARSEABLE]);
+  try {
+    stubMode = 'reject';
+    decide = null;
+    seenBatches.length = 0;
+    const res = await runCmdVerifyPlumb(['--file', w.file, '--run', w.dir, '--tree-only'], {});
+    assert.equal(seenBatches.length, 0, 'no question reaches the judging service');
+    assert.equal(res.code, 1);
+    const report = JSON.parse(res.stdout);
+    assert.deepEqual([report.judge, report.decided_by, report.model_version, report.status], ['tree-only', '程序', null, '未知']);
+    const steps = report.results[0].steps as Array<Record<string, any>>;
+    assert.deepEqual(steps.map((x) => [x.verdict, x.blocked, x.review_required, x.tree_check.status, x.plumb_verdict]), [['pass', false, false, 'accepted', null], ['reject', true, false, 'refused', null], ['review', false, true, 'undetermined', null]]);
+    assert.match(steps[2]!.disclosure, /命令树核对没有给出结论.*不问 Plumb.*状态未知/);
+    assert.deepEqual([report.blocked_count, report.review_required_count], [1, 1]);
+    assert.match(res.stderr, /^参数无效：命令核验未通过（阻断 1 处）/, 'the stop text does not name Plumb');
+    assert.match(res.stderr, /widget health interval 62/);
+  } finally {
+    decide = null;
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--tree-only on a plan the tree accepts throughout is settled by the program; a step it cannot settle blocks only under --strict-review', async () => {
+  const good = await frozenWorkspace(VALID), open = await frozenWorkspace([VALID[0], UNPARSEABLE]);
+  try {
+    const settled = await runCmdVerifyPlumb(['--file', good.file, '--run', good.dir, '--tree-only'], {});
+    assert.equal(settled.code, 0, settled.stderr);
+    const report = JSON.parse(settled.stdout);
+    assert.deepEqual([report.status, report.decided_by, report.review_required_count], ['已确认', '程序', 0]);
+    const lenient = await runCmdVerifyPlumb(['--file', open.file, '--run', open.dir, '--tree-only'], {});
+    assert.equal(lenient.code, 0, lenient.stderr);
+    assert.equal(JSON.parse(lenient.stdout).status, '未知');
+    const strict = await runCmdVerifyPlumb(['--file', open.file, '--run', open.dir, '--tree-only', '--strict-review'], {});
+    assert.equal(strict.code, 1);
+    assert.match(strict.stderr, /命令树核对没有结论，--strict-review/);
+  } finally {
+    await rm(good.dir, { recursive: true, force: true }); await rm(open.dir, { recursive: true, force: true });
+  }
+});

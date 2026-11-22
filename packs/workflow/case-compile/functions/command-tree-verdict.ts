@@ -40,6 +40,16 @@ export interface PlumbCall {call:'pass'|'review'|'reject';note:string|null;yes?:
 export interface StepJudgment {verdict:'pass'|'review'|'reject';blocked:boolean;review_required:boolean;note?:string;disclosure?:string}
 export const OVERRIDE_DISCLOSURE='Plumb 判断（未确认）与命令树核对不一致；命令树核对通过，以命令树为准，需人工复核';
 
+// The judgment without Plumb: only the program's command tree check speaks. A step it cannot settle stays unknown and is disclosed.
+export function treeOnlyStep(tree:TreeAnswer,strictReview:boolean):StepJudgment{
+ if(tree.status==='refused'){
+  const found=tree.problems?.map(problem=>problem.message).join('；')??'';
+  return {verdict:'reject',blocked:true,review_required:false,note:`命令树核对未通过（程序判定）：${found}`};
+ }
+ if(tree.status==='accepted')return {verdict:'pass',blocked:false,review_required:false};
+ return {verdict:'review',blocked:strictReview,review_required:true,disclosure:`命令树核对没有给出结论（${tree.reason??'没有说明'}）；这次按选定的判断方式不问 Plumb，这一步没有判断，状态未知`};
+}
+
 export function judgeStep(plumb:PlumbCall,tree:TreeAnswer,strictReview:boolean):StepJudgment{
  if(tree.status==='refused'){
   const found=tree.problems?.map(problem=>problem.message).join('；')??'';

@@ -16,6 +16,17 @@
 
 每个工具答复的 `message` 写着下一步（由 `functions/next-step.ts` 统一给出）。给模型的说明在 `SKILL.md`，上机验证、失败分析和交付在 `tools/delivery.md`，保真审计在 `tools/fidelity.md`，计划字段一览在 `tools/plan-fields.md`。
 
+### 判断方式（所有者 2026-11-22）
+
+命令核验和场景保真审计默认由 Plumb 判断。使用者明确说这次不经 Plumb 时，`open-compile.ts --judge model` 把这个选择写进 `open-compile.json`，流水线照它办：
+
+- 开运行不查 Plumb 状态，不要 Plumb 地址和密钥，也不要求本机装有 `plumb` 技能。
+- 命令核验只做命令树的程序核对（`cmd-verify-plumb.ts --tree-only`）：不通过的挡住，通过的放行，没有结论的步骤状态未知，写进这条用例的复核说明，不冒充判断过。
+- 场景保真审计直接出简报（`fidelity-brief.ts`），由 `compile-fidelity` 盲审，判断并入计划的做法不变；Hub 只核对格式和简报摘要，这一点两种方式相同。
+- 每条用例的复核说明第一行写明这次的判断方式，`pipeline.ts collect` 的 `reviewed` 带出来，最后报告照录。
+
+限制：model 方式没有 Plumb 的命令语义判断，命令树核对不了的步骤没有任何判断；盲审和编写用的是同一类通用模型，独立性比 Plumb 弱。两种方式的模型判断都是未确认，由上机验证的设备输出裁定。Plumb 没就绪不是改用 model 的理由，由使用者决定。
+
 ## 输入、参数与核对
 
 `workflow.json` 的输入：
@@ -59,7 +70,7 @@
 | `check-brief.ts` | 核对结构化编写简报 |
 | `cmd-lookup.ts` | 查命令写法（`--param`、`--heads`）、对象和方法（`--method`、`--methods`）、块种类（`--block`） |
 | `check-plan.ts` | 用冻结的运行离线跑 Hub 对计划的边界和检查 |
-| `cmd-select-plumb.ts`、`cmd-verify-plumb.ts` | 命令候选和命令核验；以命令树为准，Plumb 只作提示 |
+| `cmd-select-plumb.ts`、`cmd-verify-plumb.ts` | 命令候选和命令核验；以命令树为准，Plumb 只作提示。`cmd-verify-plumb.ts --tree-only` 不问 Plumb，只做命令树核对 |
 | `command-domain-precheck.ts` | 只披露计划里的配置命令落在运行器哪条清理规则下、可用哪条只读命令查看，不判断设备状态 |
 | `fidelity-brief.ts`、`fidelity-plumb.ts`、`fidelity-apply.ts` | 场景保真审计：算简报、交 Plumb 判断、把判断并入计划 |
 | `submit-plans.ts` | 展开定长占位后把计划交给 Hub |

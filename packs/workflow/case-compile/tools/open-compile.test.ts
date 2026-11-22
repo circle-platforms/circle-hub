@@ -116,3 +116,37 @@ test('a rework plan run reuses the accepted recompose run: no recompose start, t
   const half = await run(argv(join(dir, 's.json'), ['--recompose-run', RECOMPOSE]), h.connect, root);
   assert.match(half.out, /^无法编译：--recompose-run 和 --recompose-record 要一起写/);
 });
+
+test('judge model: the user chose to compile without Plumb, so no Plumb address, key or status is needed and the choice is written into open-compile.json', async () => {
+  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };
+  const asked: string[] = [];
+  const never: PlumbStatus = async (url) => { asked.push(url); throw new Error('Plumb must not be asked'); };
+  const withoutPlumb = (out: string) => argv(out, ['--judge', 'model']).filter((value, n, all) => value !== '--plumb' && all[n - 1] !== '--plumb');
+  const h = hub(answers);
+  const result = await run(withoutPlumb(join(dir, 'open-compile.json')), h.connect, root, never, ['synthetic-token-1234']);
+  assert.equal(result.code, 0, result.out);
+  assert.match(result.out, /判断方式 model：这次不经 Plumb/);
+  assert.deepEqual(asked, []);
+  assert.equal(JSON.parse(await readFile(join(dir, 'open-compile.json'), 'utf8')).judge, 'model');
+  const placeholder = await run(withoutPlumb(join(dir, 'second.json')), hub(answers).connect, root, never, ['synthetic-token-1234', '%PLUMB_API_KEY%']);
+  assert.equal(placeholder.code, 0, 'a second stdin line that is an unset placeholder is not read in this mode');
+});
+
+test('judge defaults to plumb: the written file carries no judge, a missing Plumb address is refused, and another value is refused before any call', async () => {
+  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };
+  const usual = await run(argv(join(dir, 'open-compile.json')), hub(answers).connect, root);
+  assert.equal(usual.code, 0, usual.out);
+  assert.equal('judge' in JSON.parse(await readFile(join(dir, 'open-compile.json'), 'utf8')), false);
+  const noAddress = hub(answers);
+  const missing = await run(argv(join(dir, 'a.json')).filter((value, n, all) => value !== '--plumb' && all[n - 1] !== '--plumb'), noAddress.connect, root);
+  assert.equal(missing.code, 1);
+  assert.equal(missing.out, '无法编译：缺 --plumb <Plumb地址>；只有使用者明确说这次不经 Plumb 时才写 --judge model\n');
+  assert.equal(noAddress.calls.length, 0);
+  const wrong = hub(answers);
+  const other = await run(argv(join(dir, 'b.json'), ['--judge', 'gpt']), wrong.connect, root);
+  assert.equal(other.code, 1);
+  assert.equal(other.out, '无法编译：--judge 只能写 plumb 或 model；不写就是 plumb\n');
+  assert.equal(wrong.calls.length, 0);
+});
