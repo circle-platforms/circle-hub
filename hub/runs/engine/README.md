@@ -585,9 +585,11 @@ cannot poison the next case. Owned load workers have a watchdog and are always t
 
 Batches never span evaluations, users, pack versions, modules or check declarations. A pure module is loaded once in its
 isolated process and each eligible input is invoked and serialized independently, with per-item diagnostics and errors.
-All namespace, tier, output and source checks still run through runCheck. OS/permission/import policy, memory, time,
-input/output and global child-slot caps stay unchanged. Boundary violations invalidate the physical batch; aggregate
-limits, timeout or violation trigger bounded individual fallback under the old caps, so one bad item cannot hide others.
+Ordered subject and check inputs are split into consecutive batches whose serialized JSON arrays fit the call's UTF-8
+input-byte cap; an oversized item remains alone and keeps its individual error boundary. All namespace, tier, output and
+source checks still run through runCheck. OS/permission/import policy, memory, time, input/output and global child-slot
+caps stay unchanged. Boundary violations invalidate the physical batch; aggregate limits, timeout or violation trigger
+bounded individual fallback for that batch under the old caps, so one bad item cannot hide others.
 Stopping/cancellation is never revived by fallback. Ordinary per-item throws remain per-item outcomes. Skipped checks and
 failed subject construction explicitly complete their collector slot to avoid deadlock. The parent may stage item calls
 concurrently, but only the existing bounded sandbox pool executes children, and fallback uses CHECK_PARALLELISM.
