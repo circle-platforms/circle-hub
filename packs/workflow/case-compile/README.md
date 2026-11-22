@@ -67,7 +67,7 @@
 | 工具 | 做什么 |
 | --- | --- |
 | `open-compile.ts` | 就绪判定，开重组运行和脚本编写运行 |
-| `download-run.ts` | 整份下载一次运行：条目、编写简报、来源、锁定知识树的文本文件、后绑定的 `late.json` |
+| `download-run.ts` | 整份下载一次运行：条目、编写简报、来源、锁定知识树的文本文件、后绑定的 `late.json`；历次上机的回传存在 `history/` 里下次沿用，只沿用 `index.json` 带当前 `format` 标记的，旧版本工具存的（没有标记或标记不同）整个目录清掉重新下载（返工那一轮不向 Hub 取，照用编译开始时存的） |
 | `pipeline.ts` | 逐条流水线的状态（`pipeline.json`）：`init`、`resume`、`next`、`status`、`collect`、`retry`、`rework`、`judge`（编写循环开头问这次由谁判断，不要服务和标准输入） |
 | `task-brief.ts` | 为四个子代理角色写任务文件，输出短派发提示 |
 | `check-brief.ts` | 核对结构化编写简报 |
@@ -80,7 +80,7 @@
 | `carry-plans.ts` | 返工时把通过的计划连同保真判断结转到新运行 |
 | `fetch-run.ts`、`generate-workbook.ts` | 取一次运行的已受理结果和绑定原件，离线生成工作簿 |
 | `open-merge.ts` | 交计划、生成上传工作簿、开合并运行并提交 |
-| `download-returns.ts` | 等待并下载设备输出，写 `index.json`；`syntax_rejected`、`execution_refused` 每条里达 64 字符的长名字另列 `names`（长度取自设备输出，只数名字本身，不含外面的引号、括号和句末标点，名字后面的点另记 `final_dot: true`）。`execution_refused` 只用这个脚本编写运行自己的执行器规则里声明的失败标记和设备会话，与生成工作簿的工具版本无关：这个运行是别的版本写的、重读不了它的通过结论时，照样列被设备拒绝的命令，`pass_review.unread` 写明没重读什么、为什么 |
+| `download-returns.ts` | 等待并下载设备输出，写 `index.json`（带 `schema: "device-returns@1"` 和 `format` 标记，回传的写法变了就加大 `RETURNS_FORMAT`）；`syntax_rejected`、`execution_refused` 每条里达 64 字符的长名字另列 `names`（长度取自设备输出，只数名字本身，不含外面的引号、括号和句末标点，名字后面的点另记 `final_dot: true`）。`execution_refused` 只用这个脚本编写运行自己的执行器规则里声明的失败标记和设备会话，与生成工作簿的工具版本无关：这个运行是别的版本写的、重读不了它的通过结论时，照样列被设备拒绝的命令，`pass_review.unread` 写明没重读什么、为什么 |
 | `device-read.ts` | 经 test-bed 在预订的设备上读一条只读命令 |
 | `refresh-late.ts` | 刷新开运行后才受理的重组记录 |
 | `assemble-delivery.ts` | 组交付目录和最后的回复 |

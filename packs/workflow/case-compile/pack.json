@@ -1093,8 +1093,8 @@
     },
     {
       "path": "tools/download-returns.ts",
-      "sha256": "d514e03d71d5db09278f997dc86deba9fabb23dd519c2cb0e4a56791b8091d4e",
-      "size": 18101
+      "sha256": "29f8a62cfd9c07d5f6a8f6717fae513a604465e06621dad7d3b286af6216289a",
+      "size": 18636
     },
     {
       "path": "tools/download-run.cli.json",
@@ -1103,8 +1103,8 @@
     },
     {
       "path": "tools/download-run.ts",
-      "sha256": "2671ca6ee76f1400fb0e32e1c4739d56f577ff9935a62d8e62ef2f6900140446",
-      "size": 13833
+      "sha256": "3d1502c9b9690bd391b5fbfaf092d09c1f59e986031342929773593e158f776b",
+      "size": 14977
     },
     {
       "path": "tools/fetch-run.cli.json",

@@ -27,6 +27,13 @@ const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/;
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 const OPTIONS: Record<string, boolean> = { hub: true, run: true, out: true, wait: false };
 export const WAIT_MAX_SECONDS = 86_400, POLL_MS = 20_000, UNDISPATCHED_MS = 300_000;
+/**
+ * The mark of how an index.json is written, beside its schema. Returns are kept on disk (the history of earlier device runs) and a later
+ * download reuses them; a directory whose index lacks this mark or holds another was written by an earlier version of this tool, whose rows
+ * differ (version 2 lists the commands a device refused whatever the pack version of the run), and is downloaded again. Raise it whenever
+ * the rows an index holds change in what they say.
+ */
+export const RETURNS_FORMAT = 2;
 export interface Timing { now: () => number; pause: (ms: number) => Promise<void> }
 const REAL_TIME: Timing = { now: () => Date.now(), pause: (ms) => new Promise((done) => setTimeout(done, ms)) };
 
@@ -205,7 +212,7 @@ export async function downloadReturns(input: { origin: string; bearer: string; r
       }
       index.push({ outcome: job.outcome, missing_facts: job.missing_facts ?? [], ...(job.member_missing_facts ? { member_missing_facts: job.member_missing_facts } : {}), next_action: job.next_action ?? null, job: job.job, plan_run: job.plan_run, workbook_sha256: job.sha256, ended: job.ended, device_return: deviceReturn, ...(abort ? { aborted: abort } : {}), rows });
     }
-    outputs.push({ name: 'index.json', bytes: json({ schema: 'device-returns@1', run: args.run, jobs: index, withheld, pass_review: passReview }) });
+    outputs.push({ name: 'index.json', bytes: json({ schema: 'device-returns@1', format: RETURNS_FORMAT, run: args.run, jobs: index, withheld, pass_review: passReview }) });
     for (const { name } of outputs) await mkdir(join(args.out, name, '..'), { recursive: true, mode: 0o700 });
     for (const { name, bytes } of outputs) await writeFile(join(args.out, name), bytes, { flag: 'wx', mode: 0o600 });
     const outcomes: Record<string, number> = {};

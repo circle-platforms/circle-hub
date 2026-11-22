@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { main as importedMain } from './download-run.ts';
+import { RETURNS_FORMAT } from './download-returns.ts';
 import { loadPriorDeviceHistory } from './authoring-brief.ts';
 import { main as recomposeMain } from '../recompose/tools/download-run.ts';
 
@@ -352,6 +353,54 @@ test('the first download of a compile asks once for the earlier device verificat
   assert.deepEqual(JSON.parse(await readFile(join(workdir, 'rework', 'round-2', 'plan-run', 'history.json'), 'utf8')), kept);
   await assert.rejects(readdir(join(workdir, 'rework', 'round-2', 'history')), 'nothing is fetched beside the reworked run');
   assert.equal(asked(), requests, 'neither later download asked the Hub for the history or for a job again');
+});
+
+test('returns kept by an earlier version of the tool, whose index has no format mark or another one, are downloaded again; the ones this version wrote are reused; a directory cut short is cleared first', async (t) => {
+  const h = await hub({ extra: historyRoutes([V1, V2]) }); t.after(h.close);
+  const workdir = await mkdtemp(join(tmpdir(), 'cc-history-'));
+  const download = (out: string, ...more: string[]) => fromWorkdir(workdir, () => outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', out, ...more], async () => TOKEN)));
+  const indexOf = (run: string) => join(workdir, 'history', run, 'index.json');
+  const jobsSince = (mark: number) => h.paths.slice(mark).filter((path) => path.endsWith('/jobs')).sort();
+  const asked = () => h.paths.filter((path) => path.includes('/history') || path.endsWith('/jobs')).length;
+  const historyOf = async (out: string, ...more: string[]) => { const done = await download(out, ...more); assert.equal(done.code, 0, done.stderr); return JSON.parse(done.stdout).history; };
+  const jobsOf = (...runs: string[]) => runs.map((run) => `/run-export/${run}/jobs`).sort();
+  assert.equal((await historyOf('plan-run')).status, 'fetched');
+  const written = JSON.parse(await readFile(indexOf(V1), 'utf8'));
+  assert.equal(written.format, RETURNS_FORMAT, 'what this version writes carries the mark');
+  const { format: _mark, ...unmarked } = written;
+
+  // One index without the mark, one with another: the kept history is not taken as it is, the Hub is asked again and both are downloaded again.
+  await writeFile(indexOf(V1), JSON.stringify(unmarked));
+  await writeFile(indexOf(V2), JSON.stringify({ ...JSON.parse(await readFile(indexOf(V2), 'utf8')), format: RETURNS_FORMAT - 1 }));
+  const before = h.paths.length;
+  assert.deepEqual(await historyOf('plan-run-again'), { status: 'fetched', runs: 2, downloaded: 2, file: join('plan-run-again', 'history.json') });
+  assert.deepEqual(jobsSince(before), jobsOf(V1, V2), 'each directory is asked for once more');
+  for (const run of [V1, V2]) assert.equal(JSON.parse(await readFile(indexOf(run), 'utf8')).format, RETURNS_FORMAT, run);
+
+  // What this version wrote is reused, and nothing is asked.
+  const quiet = asked();
+  assert.equal((await historyOf('plan-run-third')).status, 'reused');
+  assert.equal(asked(), quiet);
+
+  // Without the kept history file each directory decides alone: the one without the mark is downloaded again and the current one is not.
+  await rm(join(workdir, 'history', 'history.json'));
+  await writeFile(indexOf(V1), JSON.stringify(unmarked));
+  const mark = h.paths.length;
+  assert.deepEqual(await historyOf('plan-run-fourth'), { status: 'fetched', runs: 2, downloaded: 2, file: join('plan-run-fourth', 'history.json') });
+  assert.deepEqual(jobsSince(mark), jobsOf(V1), 'the current directory is not asked for');
+  // A directory cut short (the index is written last) is cleared before it is downloaded again, so that its files can be written.
+  await rm(join(workdir, 'history', 'history.json'));
+  await rm(indexOf(V2));
+  const cut = h.paths.length;
+  assert.deepEqual(await historyOf('plan-run-fifth'), { status: 'fetched', runs: 2, downloaded: 2, file: join('plan-run-fifth', 'history.json') });
+  assert.deepEqual(jobsSince(cut), jobsOf(V2));
+  assert.equal(JSON.parse(await readFile(indexOf(V2), 'utf8')).format, RETURNS_FORMAT);
+
+  // A round of rework asks the Hub for nothing, so it takes what the compile kept.
+  await writeFile(indexOf(V1), JSON.stringify(unmarked));
+  const quietAgain = asked();
+  assert.equal((await historyOf(join('rework', 'round-2', 'plan-run'), '--history-reuse', 'history')).status, 'reused');
+  assert.equal(asked(), quietAgain);
 });
 
 test('a reworked round whose compile fetched no history asks for none and says so', async (t) => {

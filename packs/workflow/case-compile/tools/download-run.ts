@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,7 @@ import { DEFAULT_TIMING, READ_RETRY_BUDGET_MS, READ_TIMEOUT_MS, downloadRunRetry
 import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
 import { DEVICE_HISTORY_SCHEMA, HISTORY_BUDGET_MS, HISTORY_DIRECTORY, HISTORY_FETCHING_FILE, HISTORY_FILE, HISTORY_MAX_RUNS, HISTORY_PENDING_REASON, parseDeviceHistory, parseHubHistory, type DeviceHistoryFile, type HistoryReturn, type HubHistory } from '../functions/device-history.ts';
 import { writeBriefs } from './authoring-brief.ts';
-import { downloadReturns } from './download-returns.ts';
+import { downloadReturns, RETURNS_FORMAT } from './download-returns.ts';
 import { fetchLate, lateSummary, writeNewLateFile } from './refresh-late.ts';
 import { CallFailure, isRecord, failCall, parseCliOptions } from '../functions/text.ts';
 
@@ -35,6 +35,15 @@ const startSelf: StartFetch = (argv, token) => {
   child.unref();
 };
 const HISTORY_PARALLEL = 3;
+/** Whether the returns in a directory were written by this version of the tool: their index carries its format mark. */
+async function currentReturns(dir: string): Promise<boolean> {
+  try { const index: unknown = JSON.parse(await readFile(join(dir, 'index.json'), 'utf8')); return isRecord(index) && index.schema === 'device-returns@1' && index.format === RETURNS_FORMAT; } catch { return false; }
+}
+/** A kept history is reused as it is only when every directory of returns it lists is current; the others are downloaded again. */
+async function keptReturnsCurrent(file: DeviceHistoryFile): Promise<boolean> {
+  for (const row of file.returns) if (row.dir !== null && !(await currentReturns(resolve(row.dir)))) return false;
+  return true;
+}
 const said = (error: unknown): string => (error instanceof CallFailure ? error.fact : error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim().slice(0, 300);
 
 export async function deviceHistory(input: { origin: string; bearer: string; run: string; out: string; shared: string; reuseOnly: boolean; replace?: boolean }, retry?: RetryControl, control: HistoryControl = {}): Promise<HistoryReport> {
@@ -51,7 +60,8 @@ export async function deviceHistory(input: { origin: string; bearer: string; run
 
   let earlier: DeviceHistoryFile | null = null;
   try { earlier = parseDeviceHistory(JSON.parse(await readFile(kept, 'utf8'))); } catch { earlier = null; }
-  if (earlier && (earlier.status === 'fetched' || input.reuseOnly)) { await writeFile(target, bytes(earlier), put); return reportOf(earlier, true); }
+  // A round of rework asks the Hub for nothing and takes what the compile kept; a download that may ask takes it only when it is current.
+  if (earlier && (input.reuseOnly || (earlier.status === 'fetched' && await keptReturnsCurrent(earlier)))) { await writeFile(target, bytes(earlier), put); return reportOf(earlier, true); }
   if (input.reuseOnly) {
     const none = unavailable(`这次编译开始时没有取到上机历史（${kept} 不存在），返工新开的运行不再向 Hub 取`);
     await writeFile(target, bytes(none), put);
@@ -95,10 +105,12 @@ export async function deviceHistory(input: { origin: string; bearer: string; run
   const worker = async (): Promise<void> => {
     for (let at = next++; at < runs.length; at = next++) {
       const run = runs[at]!.run, dir = join(input.shared, run), shown = relative(process.cwd(), resolve(dir)) || '.';
-      if (existsSync(join(dir, 'index.json'))) { returns[at] = { run, dir: shown }; continue; }
+      if (await currentReturns(dir)) { returns[at] = { run, dir: shown }; continue; }
       if (spent()) { returns[at] = { run, dir: null, reason: `取上机历史的总时限 ${Math.round(budget / 1000)} 秒已到，这一次的设备输出没有下载` }; continue; }
       try {
         const { timing: _timing, ...control } = bounded();
+        // What an earlier version, or an interrupted download, left in the directory would make the new files refuse to be written.
+        await rm(dir, { recursive: true, force: true });
         await downloadReturns({ origin: input.origin, bearer: input.bearer, run, out: dir }, timing, control);
         returns[at] = { run, dir: shown };
       } catch (error) { returns[at] = { run, dir: null, reason: spent() ? `取上机历史的总时限 ${Math.round(budget / 1000)} 秒已到，这一次的设备输出没有下载完` : said(error) }; }
@@ -113,7 +125,7 @@ export async function startHistory(input: { hub: string; bearer: string; run: st
   const bytes = (file: DeviceHistoryFile) => Buffer.from(JSON.stringify(file, null, 2) + '\n');
   let earlier: DeviceHistoryFile | null = null;
   try { earlier = parseDeviceHistory(JSON.parse(await readFile(kept, 'utf8'))); } catch { earlier = null; }
-  if (earlier?.status === 'fetched') {
+  if (earlier?.status === 'fetched' && await keptReturnsCurrent(earlier)) {
     await writeFile(target, bytes(earlier), { flag: 'wx', mode: 0o600 });
     return { status: 'reused', runs: earlier.answer?.runs.length ?? 0, downloaded: earlier.returns.filter((row) => row.dir !== null).length, file: target };
   }

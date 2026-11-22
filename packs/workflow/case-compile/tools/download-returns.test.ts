@@ -12,7 +12,7 @@ import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-suppo
 import { planRunFixture } from '../testing/plan-run.ts';
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { loadPriorDeviceHistory } from './authoring-brief.ts';
-import { main, POLL_MS, UNDISPATCHED_MS, type Timing } from './download-returns.ts';
+import { main, POLL_MS, RETURNS_FORMAT, UNDISPATCHED_MS, type Timing } from './download-returns.ts';
 import { contractFailureMarkers, passReviewInputs } from './generate-workbook.ts';
 
 const TOKEN = 'synthetic-token-1234', RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', PLAN = 'run_01bbbbbbbbbbbbbbbbbbbbbbbb';
@@ -64,6 +64,7 @@ test('the device return, every saved log and session land as checked files; a wi
   assert.deepEqual(await readFile(join(folder, 'cases', '990000000000000301', 'log.txt')), log);
   assert.deepEqual(await readFile(join(folder, 'cases', '990000000000000301', 'dev-a.txt')), session);
   const index = JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+  assert.deepEqual([index.schema, index.format], ['device-returns@1', RETURNS_FORMAT], 'the index says how it was written, so that a later download can tell one an earlier version kept');
   assert.deepEqual(index.jobs[0].rows.map((r: { item: string; verdict: string }) => [r.item, r.verdict]), [['990000000000000301', 'fail'], ['990000000000000302', 'pass']]);
   assert.deepEqual(index.jobs[0].rows[0].sessions, { 'dev-a.txt': join('c'.repeat(12), 'cases', '990000000000000301', 'dev-a.txt'), '../escape.txt': null });
   assert.equal(index.withheld.length, 1);
