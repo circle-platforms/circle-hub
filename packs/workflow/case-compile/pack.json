@@ -418,8 +418,8 @@
     },
     {
       "path": "functions/length-literals.ts",
-      "sha256": "867a3c03f380c0312982fec409e4c9c57dd6a2f41e9770280e85a2a9133e555c",
-      "size": 13441
+      "sha256": "22c0e697a474ddf82095da5e011bc314a049044a1b0be8a75286e38e3442ee09",
+      "size": 18575
     },
     {
       "path": "functions/manifest.ts",
@@ -433,8 +433,8 @@
     },
     {
       "path": "functions/plan-advice.ts",
-      "sha256": "68df0028edef455a5410319f11a47430a9b2d8f6abfc001abbadfffddf0796e5",
-      "size": 6259
+      "sha256": "085e1753a86e19a754ea179ce217dede8d6ff059cbe2a89726154c9139650b06",
+      "size": 6610
     },
     {
       "path": "functions/plan-boundary.ts",

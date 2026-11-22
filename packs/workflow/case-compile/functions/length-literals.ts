@@ -156,63 +156,145 @@ function alignedAt(host: string, literal: string): number[] {
   return found;
 }
 
-/**
- * Puts the length placeholders back into a text that was expanded. A token (see tokensOf) that is exactly what a placeholder
- * expands to becomes that placeholder; the same name inside a longer token (a name with a label or other characters around it
- * that stands alone elsewhere in the text) becomes the same placeholder with its own extra characters around it. Names that
- * only differ in length are different placeholders. The result expands back to what the text expands to, byte for byte;
- * a text this cannot be proved for is returned as it was.
- */
-export function collapseText(text: string): { text: string; collapsed: Collapsed[] } {
-  const unchanged = { text, collapsed: [] as Collapsed[] };
-  if (!LONG_RUN.test(text)) return unchanged;
-  let expected: string;
-  try { expected = expandText(text).text; } catch { return unchanged; }
+// The fixed parts of a name are what names have in common when only their lengths differ.
+interface FixedParts { kind: CanonicalName['kind']; prefix: string; suffix: string }
+const fixedKey = (parts: FixedParts): string => JSON.stringify([parts.kind, parts.prefix, parts.suffix]);
+const fixedSize = (parts: FixedParts): number => parts.prefix.length + parts.suffix.length;
+/** A character that belongs to a word: a name of fixed parts is not found glued to one, that would be another name. */
+const WORD = /[A-Za-z0-9_-]/;
+/** Longer tokens than this are not searched for names of known fixed parts. */
+const MAX_TOKEN_CHARS = 16_384;
+const MIN_FILLER = 16;
 
-  // The names that stand alone, shortest first; one that is only a shorter name with something around it is said through that one.
-  const seen = new Map<string, CanonicalName | null>();
-  for (const { token } of tokensOf(text)) if (!seen.has(token)) seen.set(token, canonicalOf(token));
+/** How many characters of filler of a domain start at `from` and are followed by `tail`, the longest one; 0 when there is none. */
+function domainFillerAt(token: string, from: number, tail: string): number {
+  const labels = token.slice(from).split('.');
+  for (let count = Math.min(labels.length, MAX_FILLER_LABELS + 1); count >= 1; count--) {
+    const filler = labels.slice(0, count).join('.');
+    if (filler.length >= MIN_FILLER && fillerLabels(filler.length).join('.') === filler && token.startsWith(tail, from + filler.length)) return filler.length;
+  }
+  return 0;
+}
+
+function plainFillerAt(token: string, from: number, tail: string): number {
+  let run = 0;
+  while (token[from + run] === 'a') run++;
+  for (let fill = run; fill >= MIN_FILLER; fill--) if (token.startsWith(tail, from + fill)) return fill;
+  return 0;
+}
+
+/** The names in a token that are exactly what the placeholders of these fixed parts expand to, whatever their length. */
+function namesFor(token: string, parts: FixedParts): CanonicalName[] {
+  const domain = parts.kind === 'domain';
+  const head = domain ? (parts.prefix ? `${parts.prefix}.` : '') : parts.prefix, tail = domain ? (parts.suffix ? `.${parts.suffix}` : '') : parts.suffix;
+  const glued = (at: number) => at >= 0 && at < token.length && WORD.test(token[at]!);
+  const found: CanonicalName[] = [];
+  for (let start = 0; start < token.length; start++) {
+    if (!token.startsWith(head, start) || glued(start - 1)) continue;
+    const from = start + head.length;
+    if (token[from] !== 'a') continue;
+    const fill = domain ? domainFillerAt(token, from, tail) : plainFillerAt(token, from, tail), end = from + fill + tail.length;
+    if (fill === 0 || glued(end)) continue;
+    const literal = token.slice(start, end), placeholder = placeholderOf(parts.kind, literal.length, parts.prefix, parts.suffix);
+    if (!expandsTo(placeholder, literal)) continue;
+    found.push({ kind: parts.kind, length: literal.length, prefix: parts.prefix, suffix: parts.suffix, fill, placeholder, literal });
+    start = end - 1;
+  }
+  return found;
+}
+
+interface Piece { text: string; start: number; name?: CanonicalName; kept?: true }
+interface Collapse { text: string; collapsed: Collapsed[]; places: Array<{ at: number; name: CanonicalName }> }
+
+/** The whole of it: which names a text holds, which placeholder each stands for, and the text with the placeholders; null when nothing is to be put back or it cannot be proved. */
+function collapse(text: string): Collapse | null {
+  if (!LONG_RUN.test(text)) return null;
+  let expected: string;
+  try { expected = expandText(text).text; } catch { return null; }
+
+  // The names that stand alone as a token, shortest first; one that is only a shorter name with something around it is said through that one.
+  const alone = new Map<string, CanonicalName | null>();
+  for (const { token } of tokensOf(text)) if (!alone.has(token)) alone.set(token, canonicalOf(token));
   const bases: CanonicalName[] = [];
-  for (const name of [...seen.values()].filter((value): value is CanonicalName => value !== null).sort((a, b) => a.length - b.length)) {
+  for (const name of [...alone.values()].filter((value): value is CanonicalName => value !== null).sort((a, b) => a.length - b.length)) {
     if (!bases.some((base) => base.kind === name.kind && base.fill === name.fill && alignedAt(name.literal, base.literal).length > 0)) bases.push(name);
   }
-  if (!bases.length) return unchanged;
 
-  // The text as pieces: what is written out and what is placeholder (kept as it is, and not looked into).
-  let pieces: Array<{ text: string; placeholder?: CanonicalName; kept?: true }> = [];
+  // The second look: a name with fixed parts of its own that holds a name of fixed parts found before, only of another length,
+  // is said through those fixed parts ("x1." and the placeholder), and so is such a name inside any other token with a long run.
+  // The fixed parts of the shortest names come first; names without any fixed part say nothing about another name.
+  const chosen = new Map<string, CanonicalName>(), known: FixedParts[] = [];
+  const add = (name: CanonicalName) => { if (!chosen.has(name.literal)) chosen.set(name.literal, name); };
+  for (const base of [...bases].sort((a, b) => fixedSize(a) - fixedSize(b))) {
+    let through: CanonicalName[] = [], most = -1;
+    for (const parts of known) {
+      if (fixedKey(parts) === fixedKey(base) || fixedSize(parts) <= most) continue;
+      const found = namesFor(base.literal, parts);
+      if (found.length) { through = found; most = fixedSize(parts); }
+    }
+    if (through.length) { through.forEach(add); continue; }
+    add(base);
+    if (fixedSize(base) > 0 && !known.some((parts) => fixedKey(parts) === fixedKey(base))) known.push({ kind: base.kind, prefix: base.prefix, suffix: base.suffix });
+  }
+  if (known.length) for (const [token, name] of alone) {
+    if (name === null && token.length <= MAX_TOKEN_CHARS && LONG_RUN.test(token)) for (const parts of known) namesFor(token, parts).forEach(add);
+  }
+  if (!chosen.size) return null;
+
+  // The text as pieces: what is written out, and what is placeholder (kept as it is, and not looked into).
+  let pieces: Piece[] = [];
   let last = 0;
   for (const found of text.matchAll(PLACEHOLDER)) {
-    if (found.index! > last) pieces.push({ text: text.slice(last, found.index) });
-    pieces.push({ text: found[0], kept: true });
+    if (found.index! > last) pieces.push({ text: text.slice(last, found.index), start: last });
+    pieces.push({ text: found[0], start: found.index!, kept: true });
     last = found.index! + found[0].length;
   }
-  if (last < text.length) pieces.push({ text: text.slice(last) });
-  for (const base of [...bases].sort((a, b) => b.length - a.length)) {
+  if (last < text.length) pieces.push({ text: text.slice(last), start: last });
+  for (const name of [...chosen.values()].sort((a, b) => b.length - a.length)) {
     pieces = pieces.flatMap((piece) => {
-      if (piece.kept || piece.placeholder) return [piece];
-      const hits = alignedAt(piece.text, base.literal);
+      if (piece.kept || piece.name) return [piece];
+      const hits = alignedAt(piece.text, name.literal);
       if (!hits.length) return [piece];
-      const split: typeof pieces = [];
+      const split: Piece[] = [];
       let from = 0;
       for (const hit of hits) {
-        if (hit > from) split.push({ text: piece.text.slice(from, hit) });
-        split.push({ text: base.placeholder, placeholder: base });
-        from = hit + base.literal.length;
+        if (hit > from) split.push({ text: piece.text.slice(from, hit), start: piece.start + from });
+        split.push({ text: name.placeholder, start: piece.start + hit, name });
+        from = hit + name.literal.length;
       }
-      if (from < piece.text.length) split.push({ text: piece.text.slice(from) });
+      if (from < piece.text.length) split.push({ text: piece.text.slice(from), start: piece.start + from });
       return split;
     });
   }
 
   const out = pieces.map((piece) => piece.text).join('');
-  try { if (expandText(out).text !== expected) return unchanged; } catch { return unchanged; }
-  const counts = new Map<string, Collapsed>();
-  for (const piece of pieces) if (piece.placeholder) {
-    const row = counts.get(piece.text) ?? { placeholder: piece.text, literal: piece.placeholder.literal, count: 0 };
+  try { if (expandText(out).text !== expected) return null; } catch { return null; }
+  const counts = new Map<string, Collapsed>(), places: Collapse['places'] = [];
+  for (const piece of pieces) if (piece.name) {
+    const row = counts.get(piece.text) ?? { placeholder: piece.text, literal: piece.name.literal, count: 0 };
     row.count++;
     counts.set(piece.text, row);
+    places.push({ at: piece.start, name: piece.name });
   }
-  return { text: out, collapsed: [...counts.values()] };
+  return { text: out, collapsed: [...counts.values()], places };
+}
+
+/**
+ * Puts the length placeholders back into a text that was expanded. A token (see tokensOf) that is exactly what a placeholder
+ * expands to becomes that placeholder; the same name inside a longer token (a name with a label or other characters around it
+ * that stands alone elsewhere in the text) becomes the same placeholder with its own extra characters around it. Names that
+ * only differ in length are different placeholders, and a name that has the fixed parts of another one found in the text is
+ * written with those fixed parts, in a longer token as well. The result expands back to what the text expands to, byte for
+ * byte; a text this cannot be proved for is returned as it was.
+ */
+export function collapseText(text: string): { text: string; collapsed: Collapsed[] } {
+  const done = collapse(text);
+  return done ? { text: done.text, collapsed: done.collapsed } : { text, collapsed: [] };
+}
+
+/** The long names a text holds as collapseText finds them, with the placeholder each stands for and where it starts in the text. */
+export function namesIn(text: string): Array<{ at: number; name: CanonicalName }> {
+  return collapse(text)?.places ?? [];
 }
 
 /**

@@ -1,5 +1,5 @@
 import { blockPointer } from './blocks.ts';
-import { canonicalOf, tokensOf } from './length-literals.ts';
+import { namesIn } from './length-literals.ts';
 import type { PlanSlots } from './slots.ts';
 import { commandWords } from './sibling-reference.ts';
 import { isRecord } from './text.ts';
@@ -72,14 +72,18 @@ const placesOf = (places: readonly string[]): string => (places.length > PLACES_
 /**
  * One line for every group of long names that share their fixed parts and differ in length: two names that were meant to be
  * the same one are told apart only by a length that was typed wrong. Names meant to differ are legitimate, so this is a fact
- * for the writer, not a refusal.
+ * for the writer, not a refusal. The names are found as collapseText finds them in the strings of the whole plan taken
+ * together, so a name inside a longer token ("x1." and the name) counts for the fixed parts it shares with a name found elsewhere.
  */
 export function lengthAdvice(strings: readonly PlanString[]): string[] {
+  const starts: number[] = [];
+  let text = '';
+  for (const { text: one } of strings) { starts.push(text.length); text += `${one}\n`; }
   const groups = new Map<string, Map<number, { placeholder: string; places: string[] }>>();
-  for (const { pointer, text } of strings) for (const { token } of tokensOf(text)) {
-    const name = canonicalOf(token);
-    if (!name) continue;
-    const key = JSON.stringify([name.kind, name.prefix, name.suffix]);
+  for (const { at, name } of namesIn(text)) {
+    let index = starts.length - 1;
+    while (starts[index]! > at) index--;
+    const key = JSON.stringify([name.kind, name.prefix, name.suffix]), pointer = strings[index]!.pointer;
     const lengths = groups.get(key) ?? new Map<number, { placeholder: string; places: string[] }>();
     groups.set(key, lengths);
     const row = lengths.get(name.length) ?? { placeholder: name.placeholder, places: [] };

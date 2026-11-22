@@ -129,3 +129,18 @@ test('the strings a plan sends are found at the place they have in the plan file
     { pointer: '/slots/plan/0/data/blocks/0/call/args/0', text: 'widget health one' }, { pointer: '/slots/plan/0/data/blocks/1/call/args/0', text: 'show widget' },
   ]);
 });
+
+test('the advice names both lengths of the shape of a real run: the shorter name alone and inside a longer token, the longer one only inside a longer token', () => {
+  const right = long('{{domain:200|pfx|sfx}}'), wrong = long('{{domain:204|pfx|sfx}}');
+  const advice = lengthAdvice([
+    { pointer: at('steps/0/args/0'), text: `widget host ${right}` },
+    { pointer: at('steps/1/args/0'), text: `widget host x1.${right}` },
+    { pointer: at('steps/2/args/0'), text: `widget host x1.${wrong}` },
+    { pointer: at('steps/3/args/0'), text: `widget host ${right}` },
+  ]);
+  assert.deepEqual(advice, [`固定部分相同的定长名字有 2 种长度：200 字符（{{domain:200|pfx|sfx}}）用在 ${at('steps/0/args/0')}、${at('steps/1/args/0')}、${at('steps/3/args/0')}；204 字符（{{domain:204|pfx|sfx}}）用在 ${at('steps/2/args/0')}；${NEXT_STEP}`]);
+  assert.equal(lengthAdvice([{ pointer: '/a', text: `x1.${right}` }, { pointer: '/b', text: `x1.${wrong}` }]).length, 1, 'tokens with the same extra characters and no name alone are one group of fixed parts as well');
+  assert.deepEqual(lengthAdvice([{ pointer: '/a', text: right }, { pointer: '/b', text: `x1.${right}` }]), [], 'the same name behind other characters is the same name');
+  assert.deepEqual(lengthAdvice([{ pointer: '/a', text: right }, { pointer: '/b', text: `z${wrong}` }]), [], 'a name glued to a word is another name');
+  assert.equal(lengthAdvice([{ pointer: '/a', text: right }, { pointer: '/b', text: `${right},${wrong}` }]).length, 1, 'and a token that holds both');
+});

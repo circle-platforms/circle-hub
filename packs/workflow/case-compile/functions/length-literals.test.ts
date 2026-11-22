@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canonicalOf, collapseJsonText, collapseText, describeExpansions, expandText, expandValue, MAX_LABEL, tokensOf } from './length-literals.ts';
+import { canonicalOf, collapseJsonText, collapseText, describeExpansions, expandText, expandValue, MAX_LABEL, namesIn, tokensOf } from './length-literals.ts';
+import { lengthAdvice } from './plan-advice.ts';
 
 const labelsOf = (literal: string) => literal.split('.').map((label) => label.length);
 
@@ -115,7 +116,7 @@ test('a name is only put back where it does not lengthen a run, and a token that
   const run = 'a'.repeat(20), longer = 'a'.repeat(21);
   assert.equal(collapseText(`${run} ${longer},${run} ${longer}`).text, '{{name:20}} {{name:21}},{{name:20}} {{name:21}}', 'two runs that are the same text but not the same name are told apart');
   const joined = name('{{domain:200|pfx|sfx}}'), other = name('{{domain:204|pfx|sfx}}');
-  assert.equal(collapseText(`${joined} ${joined},${other}`).text, '{{domain:200|pfx|sfx}} {{domain:200|pfx|sfx}},' + other, 'a name that stands alone nowhere and is glued to another is left as it is');
+  assert.equal(collapseText(`${joined} ${joined},${other}`).text, '{{domain:200|pfx|sfx}} {{domain:200|pfx|sfx}},{{domain:204|pfx|sfx}}', 'a name of the fixed parts of one found elsewhere is found in the token it is glued to, of another length');
   assert.equal(collapseText(`${longer},${run}`).text, `${longer},${run}`, 'two long runs in one token are no placeholder, and nothing else tells what they stand for');
   const glued = `${joined},${other}`;
   assert.deepEqual(collapseText(glued), { text: glued, collapsed: [] }, 'two long names in one token that stand alone nowhere are no placeholder with a long fixed part');
@@ -140,8 +141,37 @@ test('collapseJsonText hands back the text itself unless the collapsed one is JS
   assert.equal(collapseJsonText(asKey), asKey, 'a key is never expanded when the plan is read, so what would change a key is not handed over');
 });
 
+// The shape of a real run: the name with the length that was meant stands alone and inside longer tokens, and a name of another
+// length that has the same fixed parts stands only inside a longer token, so that nothing else says what its fixed parts are.
+const NEXT_STEP = '本意是同一个名字就用同一个定长占位；本意不同就保留';
+const placeholderFor = (kind: string, length: number, prefix: string, suffix: string) => `{{${kind}:${length}${suffix ? `|${prefix}|${suffix}` : prefix ? `|${prefix}` : ''}}}`;
+
+test('a name of another length that stands only inside longer tokens is written with the fixed parts of the name found elsewhere', () => {
+  const right = name('{{domain:200|pfx|sfx}}'), wrong = name('{{domain:204|pfx|sfx}}');
+  const plan = JSON.stringify({ args: [right, `x1.${right}`, `x1.${wrong}`, right] });
+  const { text, collapsed } = collapseText(plan);
+  assert.equal(text, JSON.stringify({ args: ['{{domain:200|pfx|sfx}}', 'x1.{{domain:200|pfx|sfx}}', 'x1.{{domain:204|pfx|sfx}}', '{{domain:200|pfx|sfx}}'] }));
+  assert.deepEqual(collapsed, [{ placeholder: '{{domain:200|pfx|sfx}}', literal: right, count: 3 }, { placeholder: '{{domain:204|pfx|sfx}}', literal: wrong, count: 1 }]);
+  assert.equal(expandText(text).text, plan, 'and it expands back to the very bytes');
+  assert.deepEqual(namesIn([`show ${right}`, `show x1.${right}`, `show x1.${wrong}`].join('\n')).map((row) => [row.name.length, row.name.prefix, row.name.suffix]), [[200, 'pfx', 'sfx'], [200, 'pfx', 'sfx'], [204, 'pfx', 'sfx']], 'the fixed parts are those of the name that stands alone');
+
+  assert.deepEqual(collapseText(JSON.stringify([`x1.${right}`, `x1.${wrong}`])).collapsed.map((row) => row.placeholder), ['{{domain:203|x1.pfx|sfx}}', '{{domain:207|x1.pfx|sfx}}'], 'with nothing that stands alone, tokens with the same extra characters have the same fixed parts');
+  assert.equal(collapseText(`x1.${wrong}`).text, '{{domain:207|x1.pfx|sfx}}', 'and a single one has fixed parts of its own');
+
+  const around = collapseText(JSON.stringify([right, `http://${wrong}/path`, `k=${wrong};`, `${wrong}.org`, `@${right},${wrong}`])).text;
+  assert.equal(around, JSON.stringify(['{{domain:200|pfx|sfx}}', 'http://{{domain:204|pfx|sfx}}/path', 'k={{domain:204|pfx|sfx}};', '{{domain:204|pfx|sfx}}.org', '@{{domain:200|pfx|sfx}},{{domain:204|pfx|sfx}}']), 'whatever stands around it, but not a word it is glued to');
+  assert.equal(collapseText(JSON.stringify([right, `z${wrong}`])).text, JSON.stringify(['{{domain:200|pfx|sfx}}', '{{domain:205|zpfx|sfx}}']), 'a name glued to a word before it is another name');
+  assert.equal(collapseText(JSON.stringify([right, `${wrong}z`])).text, JSON.stringify(['{{domain:200|pfx|sfx}}', '{{domain:205|pfx|sfxz}}']), 'and so is one glued to a word after it');
+
+  const pool = (length: number) => name(`{{name:${length}|pool_}}`);
+  assert.equal(collapseText(JSON.stringify([pool(64), `k=${pool(70)}`, `xpool_${'a'.repeat(70)}`])).text, JSON.stringify(['{{name:64|pool_}}', 'k={{name:70|pool_}}', '{{name:76|xpool_}}']), 'names of plain fixed parts the same way');
+  assert.equal(collapseText(JSON.stringify([name('{{name:64}}'), `k=${'a'.repeat(70)}`])).text, JSON.stringify(['{{name:64}}', '{{name:72|k=}}']), 'a name without fixed parts says nothing about the fixed parts of another');
+  assert.equal(collapseText(JSON.stringify([right, `${wrong},${wrong}`])).text, JSON.stringify(['{{domain:200|pfx|sfx}}', '{{domain:204|pfx|sfx}},{{domain:204|pfx|sfx}}']), 'every name of a token that holds several');
+});
+
 // A small generator that always gives the same texts: names of both kinds in the lengths that matter, mistyped ones, names glued
-// to other characters, quotes, escapes, JSON around it all, placeholders the text holds already and ones the expansion refuses.
+// to other characters, quotes, escapes, JSON around it all, placeholders the text holds already and ones the expansion refuses,
+// and the shape of a real run.
 function generator(seed: number) {
   let state = seed >>> 0;
   const next = () => { state = (state + 0x6d2b79f5) >>> 0; let t = state; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -158,6 +188,20 @@ function generator(seed: number) {
       try { return expandText(placeholder).text; } catch { /* a length the fixed parts do not leave room for */ }
     }
   };
+  // A name alone, the same name behind characters that are no word, and a name of another length behind such characters only.
+  const shape = () => {
+    for (;;) {
+      const domain = next() < 0.6, kind = domain ? 'domain' : 'name';
+      const prefix = pick(domain ? domainPrefix : namePrefix), suffix = pick(domain ? domainSuffix : nameSuffix), first = pick(lengths), second = pick(lengths);
+      if (first === second || (prefix === '' && suffix === '')) continue;
+      const make = (length: number): string | null => { try { return expandText(placeholderFor(kind, length, prefix, suffix)).text; } catch { return null; } };
+      const base = make(first), other = make(second);
+      if (base === null || other === null) continue;
+      if ([base, other].some((one) => { const found = canonicalOf(one); return found === null || found.prefix !== prefix || found.suffix !== suffix; })) continue;
+      const before = (): string => pick(domain ? ['x1.', 'k=', '@', ',', 'z.'] : ['k=', '@', ',', '(', '/']);
+      return { kind, prefix, suffix, first, second, base, other, before: [before(), before()] as const };
+    }
+  };
   const piece = (): string => {
     const roll = next();
     if (roll < 0.34) return literal();
@@ -168,17 +212,19 @@ function generator(seed: number) {
     if (roll < 0.62) return literal() + pick(['.org', ',', ':80', 'a', 'z', '/x']);
     if (roll < 0.66) return `${literal()},${literal()}`;
     if (roll < 0.70) return pick(['{{domain:5000}}', '{{ name:3 }}', '{{domain:x}}', '{{name:3|a b}}', '{{name:5000}}']);
+    if (roll < 0.78) { const one = shape(); return [one.base, one.before[0] + one.base, one.before[1] + one.other].join(pick(separators)); }
     return pick(words);
   };
-  return (): string => {
+  const text = (): string => {
     const parts = Array.from({ length: 1 + Math.floor(next() * 8) }, piece);
     const joined = parts.map((part, at) => (at ? pick(separators) + part : part)).join('');
     return next() < 0.35 ? JSON.stringify({ args: parts, text: joined }, null, pick([0, 1, 2])) : joined;
   };
+  return { text, shape };
 }
 
 test('for any text, what collapseText returns expands back to what the text expands to, byte for byte', () => {
-  const texts = generator(20261122);
+  const { text: texts } = generator(20261122);
   let changed = 0, plain = 0, refused = 0;
   for (let round = 0; round < 6000; round++) {
     const text = texts();
@@ -193,7 +239,24 @@ test('for any text, what collapseText returns expands back to what the text expa
       assert.equal(expandText(row.placeholder).text, row.literal, 'every row is a placeholder and what it expands to');
       assert.equal(holds(result.text, row.placeholder), holds(text, row.placeholder) + row.count, 'and counts what was put back');
     }
+    for (const { at, name: found } of namesIn(text)) assert.equal(text.startsWith(found.literal, at), true, 'a name is where it is said to be');
     assert.equal(collapseText(result.text).text, result.text, 'collapsing twice changes nothing more');
   }
   assert.ok(changed > 2000 && plain > 1000 && refused > 500, `the generator reaches what it is meant to: ${changed} changed, ${plain} plain, ${refused} refused`);
+});
+
+test('for the shape of a real run, generated, the name of another length is written with the fixed parts of the name found elsewhere and the advice names both lengths', () => {
+  const { shape } = generator(1122);
+  for (let round = 0; round < 400; round++) {
+    const { kind, prefix, suffix, first, second, base, other, before } = shape();
+    const [one, two] = [placeholderFor(kind, first, prefix, suffix), placeholderFor(kind, second, prefix, suffix)];
+    const text = [base, before[0] + base, before[1] + other].join(' ');
+    const done = collapseText(text);
+    assert.equal(done.text, [one, before[0] + one, before[1] + two].join(' '), text.slice(0, 120));
+    assert.deepEqual(done.collapsed.map((row) => [row.placeholder, row.count]), [[one, 2], [two, 1]]);
+    assert.equal(expandText(done.text).text, text);
+    const places = [['/p/0', '/p/1'], ['/p/2']], rows = first < second ? [[first, one, places[0]], [second, two, places[1]]] : [[second, two, places[1]], [first, one, places[0]]];
+    assert.deepEqual(lengthAdvice([{ pointer: '/p/0', text: `show ${base}` }, { pointer: '/p/1', text: `show ${before[0]}${base}` }, { pointer: '/p/2', text: `show ${before[1]}${other}` }]),
+      [`固定部分相同的定长名字有 2 种长度：${rows.map(([length, placeholder, where]) => `${length} 字符（${placeholder}）用在 ${(where as string[]).join('、')}`).join('；')}；${NEXT_STEP}`]);
+  }
 });

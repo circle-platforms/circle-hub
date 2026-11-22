@@ -550,6 +550,18 @@ test('the plan a reworked case ran is handed to its next writer with the long na
   assert.equal(task[task.indexOf('--prior-plans') + 1], join('rework-2', 'prior-plans'), 'the writer is pointed at the collapsed copy');
 });
 
+test('the shape of a real run: the name typed wrong, only inside a longer token, is handed over as the placeholder of the fixed parts found elsewhere', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+  const right = expandText('{{domain:200|pfx|sfx}}').text, wrong = expandText('{{domain:204|pfx|sfx}}').text;
+  const ran = plansWith([right, `x1.${right}`, `x1.${wrong}`, right]);
+  await writeFile(join('cases', '01', 'ready', '01.json'), ran);
+  await rework(state, OPENED, 'returns-1', 'notes', gates(t.run));
+  const handed = readFileSync(join('rework-2', 'prior-plans', '01.json'), 'utf8'), holds = (part: string) => handed.split(part).length - 1;
+  assert.deepEqual([holds('{{domain:200|pfx|sfx}}'), holds('"widget host x1.{{domain:200|pfx|sfx}}"'), holds('"widget host x1.{{domain:204|pfx|sfx}}"'), holds('{{domain:207')], [3, 1, 1, 0], 'the name that is longer by four characters is told apart, behind the same extra characters');
+  assert.equal(expandText(handed).text, JSON.stringify({ ...JSON.parse(ran), plan_run: OPEN.plan_run }, null, 1) + '\n');
+  assert.equal(readFileSync(join('rework-2', 'source-plans', '01.json'), 'utf8'), ran, 'the source copy keeps its bytes');
+});
+
 test('a plan that cannot be proved to expand back to its own bytes is handed to the writer as the bytes it has', async () => {
   const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
   const right = expandText('{{domain:200|pfx|sfx}}').text;

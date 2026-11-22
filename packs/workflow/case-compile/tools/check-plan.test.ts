@@ -556,3 +556,16 @@ test('names of a fixed length that share their fixed parts and differ in length 
     assert.deepEqual(JSON.parse(unrun.stdout).advice, ['固定部分相同的定长名字有 2 种长度：64 字符（{{name:64|p_}}）用在 /slots/plan/0/data/steps/0/args/0；70 字符（{{name:70|p_}}）用在 /slots/plan/0/data/steps/0/args/1；本意是同一个名字就用同一个定长占位；本意不同就保留']);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('the advice of check-plan names both lengths of the shape of a real run, with the pointers of the strings that hold them', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'plan-length-shape-'));
+  try {
+    const file = join(dir, 'plan.json');
+    await writeFile(file, JSON.stringify(flatPlan('doc:s', ['show {{domain:200|pfx|sfx}}', 'show x1.{{domain:200|pfx|sfx}}', 'show x1.{{domain:204|pfx|sfx}}'])));
+    const report = JSON.parse((await runCli(['--file', file])).stdout);
+    assert.deepEqual(report.advice, ['固定部分相同的定长名字有 2 种长度：200 字符（{{domain:200|pfx|sfx}}）用在 /slots/plan/0/data/steps/0/args/0、/slots/plan/0/data/steps/0/args/1；204 字符（{{domain:204|pfx|sfx}}）用在 /slots/plan/0/data/steps/0/args/2；本意是同一个名字就用同一个定长占位；本意不同就保留']);
+    const plain = join(dir, 'plain.json');
+    await writeFile(plain, JSON.stringify(flatPlan('doc:t', ['show {{domain:200|pfx|sfx}}', 'show x1.{{domain:200|pfx|sfx}}'])));
+    assert.equal(JSON.parse((await runCli(['--file', plain])).stdout).advice, undefined, 'the same name behind other characters is the same name');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
