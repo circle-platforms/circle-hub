@@ -23,7 +23,7 @@
 命令核验和场景保真审计默认由 Plumb 判断。使用者明确说这次不经 Plumb 时，`open-compile.ts --judge model` 把这个选择写进 `open-compile.json`，流水线照它办：
 
 - 开运行不查 Plumb 状态，不要 Plumb 地址和密钥，也不要求本机装有 `plumb` 技能。
-- model 方式下客户端可以不设 Plumb 地址和密钥：编写循环的命令照旧带着 `%PLUMB_URL%` 和 `%PLUMB_API_KEY%` 两个名字，客户端不认识的名字原样留在命令里，工具不读它们。
+- model 方式下客户端可以不设 Plumb 地址和密钥：编写循环开头先问一次 `pipeline.ts judge --state …`（读状态文件，不要服务，也不读标准输入），答 `model` 时之后的命令不带 `--plumb %PLUMB_URL%`，只写 `--hub`；答 `plumb` 时命令与以前相同。标准输入仍是两行：`pipeline.cli.json` 给 `resume`、`next`、`rework`、`reopen` 各声明了两行，守卫按声明核对行数，所以第二行 `%PLUMB_API_KEY%` 省不掉；客户端不认识这个名字时它原样留在命令里，工具在 model 方式下不读它。
 - 命令核验只做命令树的程序核对（`cmd-verify-plumb.ts --tree-only`）：不通过的挡住，通过的放行，没有结论的步骤状态未知，写进这条用例的复核说明，不冒充判断过。
 - 场景保真审计直接出简报（`fidelity-brief.ts`），由 `compile-fidelity` 盲审，判断并入计划的做法不变；Hub 只核对格式和简报摘要，这一点两种方式相同。
 - 每条用例的复核说明第一行写明这次的判断方式，`pipeline.ts collect` 的 `reviewed` 带出来，最后报告照录。
@@ -68,7 +68,7 @@
 | --- | --- |
 | `open-compile.ts` | 就绪判定，开重组运行和脚本编写运行 |
 | `download-run.ts` | 整份下载一次运行：条目、编写简报、来源、锁定知识树的文本文件、后绑定的 `late.json` |
-| `pipeline.ts` | 逐条流水线的状态（`pipeline.json`）：`init`、`resume`、`next`、`status`、`collect`、`retry`、`rework` |
+| `pipeline.ts` | 逐条流水线的状态（`pipeline.json`）：`init`、`resume`、`next`、`status`、`collect`、`retry`、`rework`、`judge`（编写循环开头问这次由谁判断，不要服务和标准输入） |
 | `task-brief.ts` | 为四个子代理角色写任务文件，输出短派发提示 |
 | `check-brief.ts` | 核对结构化编写简报 |
 | `cmd-lookup.ts` | 查命令写法（`--param`、`--heads`）、对象和方法（`--method`、`--methods`）、块种类（`--block`） |

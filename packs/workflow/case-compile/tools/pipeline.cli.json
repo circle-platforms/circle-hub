@@ -21,7 +21,8 @@
     "reopen": [
       "%HUB_TOKEN%",
       "%PLUMB_API_KEY%"
-    ]
+    ],
+    "judge": []
   },
   "options": [
     {

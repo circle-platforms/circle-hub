@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.26.6",
+  "version": "3.26.7",
   "kind": "workflow",
   "dependencies": [
     {
@@ -693,7 +693,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "a4fcf72acc7c49c80aed6887a86197a06766c6d28e97726ce7a7b0855b3743fa",
+      "sha256": "ad8882ea632ff18ac13b8a587be4ba4facac99b170f9c9a50c27b63110d207db",
       "size": 202559
     },
     {
@@ -738,7 +738,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "ccad0a7b350676fd53bc1b9ac132e86a5ff54c9be2be27dc38a29f02178f6a7c",
+      "sha256": "fb53302b668cbe256615ae379c01788a28796ba891e8728db7a8b4a0e78d0f20",
       "size": 202563
     },
     {
@@ -828,7 +828,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "700d9af3925e7e5748666e43a3654859604bcf287cf4b1b8cb171ae6fb1efe8a",
+      "sha256": "8732a396b97b5f95d6dbc46f89246e68ca1884eefc9cffcf25614f4a70dd13fd",
       "size": 202513
     },
     {
@@ -873,7 +873,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "c45347169c0fab63d457d2584f86684f54e6dcbf82716c5abf416ff3911d97ed",
+      "sha256": "c66c96d537ed3c553100f9b9da8590cfd8866a994545a4d2ecd7b4765def1cdc",
       "size": 202517
     },
     {
@@ -973,7 +973,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "e377538f2139ee0c8b0b79e6c97e8452e898fc21ca42e0c6cf495b8704bdfd98",
+      "sha256": "06ccd40c67e13637c28adbb39fca25e6a33dfee92806038e1164db4610ba9cd0",
       "size": 406
     },
     {
@@ -1193,13 +1193,13 @@
     },
     {
       "path": "tools/pipeline.cli.json",
-      "sha256": "0e528a0ce1a125214440e93ae165fa73efa48b827158201b4ac06380b6bec7e1",
-      "size": 3106
+      "sha256": "2110fd5bf73913756c88e154910bd7a5333a2d1804c3b886749b3a04545ef94e",
+      "size": 3123
     },
     {
       "path": "tools/pipeline.ts",
-      "sha256": "a9cb6c9021bd7d2362343eda04f72adf384431cc18d90281982585de936d3849",
-      "size": 66348
+      "sha256": "2427c5f0fd405be198843519130e1998f13e220a50fe105d0f42e6e97d65f5f8",
+      "size": 67010
     },
     {
       "path": "tools/plan-fields.md",
@@ -1263,8 +1263,8 @@
     },
     {
       "path": "workflows/compile-loop.js",
-      "sha256": "ac8e390bb5ac19c2d3c6f33bd2899ba4ac4d935db3ac9c77be00280c850c3172",
-      "size": 3167
+      "sha256": "212012ece1ecfe1bd9331cfcd51e5d7253da4dd020a3ecb52ca63dd1060d6c52",
+      "size": 3772
     }
   ]
 }

@@ -861,7 +861,15 @@ export async function main(argv: string[], readStdin = readStdinLines, run?: Run
       process.stdout.write(JSON.stringify(forLead(step)) + '\n');
       return 0;
     }
-    throw new Error('子命令只有 init、resume、next、status、collect、retry、rework、reopen');
+    if (command === 'judge') {
+      // The loop asks this before any other command, to know whether the commands that follow name Plumb at all; it needs no service and no standard input.
+      const a = parseCliOptions(rest, { state: true }, 'pipeline.ts judge --state <文件>') as Record<string, string>;
+      const state = await readJson(a.state);
+      if (!isRecord(state) || state.schema !== 'compile-pipeline@1') throw new Error(`--state ${a.state} 不是流水线的状态文件；用 pipeline.ts init 建一份`);
+      process.stdout.write(JSON.stringify({ judge: state.judge === 'model' ? 'model' : 'plumb' }) + '\n');
+      return 0;
+    }
+    throw new Error('子命令只有 init、resume、next、status、collect、retry、rework、reopen、judge');
   } catch (error) {
     process.stdout.write(`流水线工具没有完成：${error instanceof Error ? error.message : String(error)}\n`);
     return 1;

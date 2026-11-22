@@ -11,10 +11,9 @@ for (const [name, value] of [['pipeline', path], ['state', stateFile]])
     throw new Error(`args.${name} 要写成不含单引号、反斜杠和换行的路径：pipeline 是技能目录下的 tools/pipeline.ts，state 是工作目录里的状态文件`)
 const tool = `node '${path}'`
 const state = `--state '${stateFile}'`
-const services = "--hub %HUB_URL% --plumb %PLUMB_URL% <<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\nEOF"
 
-async function ask(words, label) {
-  const ran = await execute(`${tool} ${words} ${services}`, { timeout: 600, label })
+async function runCommand(command, label) {
+  const ran = await execute(command, { timeout: 600, label })
   const output = String(ran.output ?? '')
   const line = output.split('\n').map((text) => text.trim()).findLast((text) => text.startsWith('{'))
   if (ran.code === 0 && line !== undefined) {
@@ -22,6 +21,14 @@ async function ask(words, label) {
   }
   throw new Error(`pipeline.ts ${label} 没有完成（退出码 ${ran.code}）：${output.slice(-800)}`)
 }
+
+// The state file says who judges this compile, and the commands below name Plumb's address only when Plumb does. Standard input
+// keeps both lines either way: pipeline.cli.json declares two lines for each of these sub-commands and the guard checks the count.
+const judgedBy = (await runCommand(`${tool} judge ${state}`, 'judge')).judge
+if (judgedBy !== 'plumb' && judgedBy !== 'model')
+  throw new Error(`pipeline.ts judge 答的判断方式是 ${JSON.stringify(judgedBy)}，应当是 plumb 或 model`)
+const services = `--hub %HUB_URL% ${judgedBy === 'plumb' ? '--plumb %PLUMB_URL% ' : ''}<<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\nEOF`
+const ask = (words, label) => runCommand(`${tool} ${words} ${services}`, label)
 
 const running = new Map()
 function launch(action) {

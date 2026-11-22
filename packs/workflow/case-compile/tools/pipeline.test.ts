@@ -845,6 +845,36 @@ test('the command line asks for the Plumb address and key only when Plumb is the
   assert.equal(allowed.code, 0, allowed.out);
 });
 
+test('judge reads from the state file who judges this compile, and needs no service, no standard input and no tool', async () => {
+  await world(1);
+  const t = tools(() => undefined);
+  const said = async (argv: string[]) => {
+    const out: string[] = []; const write = process.stdout.write;
+    process.stdout.write = ((text: string) => { out.push(text); return true; }) as typeof process.stdout.write;
+    try { return { code: await main(argv, async () => { throw new Error('judge reads no standard input'); }, t.run), out: out.join('') }; } finally { process.stdout.write = write; }
+  };
+  const save = async (file: string, open: Record<string, unknown>) => writeFileSync(file, JSON.stringify(await initState('recompose-run', 'plan-run', open, 'synthetic-model')));
+  await save('plumb.json', OPEN); await save('model.json', { ...OPEN, judge: 'model' });
+  const written = JSON.parse(readFileSync('plumb.json', 'utf8')) as PipelineState;
+  assert.equal(written.judge, undefined, 'a state that was opened without the choice has no judge field');
+  writeFileSync('explicit-plumb.json', JSON.stringify({ ...written, judge: 'plumb' }));
+
+  const plumb = await said(['judge', '--state', 'plumb.json']);
+  assert.deepEqual([plumb.code, plumb.out], [0, '{"judge":"plumb"}\n']);
+  const model = await said(['judge', '--state', 'model.json']);
+  assert.deepEqual([model.code, model.out], [0, '{"judge":"model"}\n']);
+  assert.equal((await said(['judge', '--state', 'explicit-plumb.json'])).out, '{"judge":"plumb"}\n');
+
+  writeFileSync('not-a-state.json', '{"judge":"model"}');
+  const wrong = await said(['judge', '--state', 'not-a-state.json']);
+  assert.equal(wrong.code, 1); assert.match(wrong.out, /^流水线工具没有完成：--state not-a-state\.json 不是流水线的状态文件/);
+  const missing = await said(['judge', '--state', 'absent.json']);
+  assert.equal(missing.code, 1); assert.match(missing.out, /^流水线工具没有完成：/);
+  const noState = await said(['judge']);
+  assert.equal(noState.code, 1); assert.match(noState.out, /缺少必填参数 --state/);
+  assert.deepEqual(t.calls, [], 'no tool ran');
+});
+
 test('judge model: a client that does not know %PLUMB_URL% and %PLUMB_API_KEY% leaves them in the loop\'s commands, and resume and next neither need nor hand them to any tool', async () => {
   await world(2);
   const t = tools((tool, args) => {

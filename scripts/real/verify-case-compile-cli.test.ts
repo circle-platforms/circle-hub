@@ -17,7 +17,7 @@ test('all twenty-four staged release CLI entry points match declared argv and st
     const local = await buildLocalCliProbes(cc, root);
     const remote = await buildRemoteCliProbes(cc, rc, join(root, 'remote'));
     try {
-      assert.deepEqual(verifyCliInvocations(cc, CASE_COMPILE_CLI_HELPERS, { ...local.caseCompile, ...remote.caseCompile, ...remote.plumbCaseCompile, ...remote.lateCaseCompile, ...remote.readCaseCompile }), { declarations: 24, invocations: 34, processes: 50 });
+      assert.deepEqual(verifyCliInvocations(cc, CASE_COMPILE_CLI_HELPERS, { ...local.caseCompile, ...remote.caseCompile, ...remote.plumbCaseCompile, ...remote.lateCaseCompile, ...remote.readCaseCompile }), { declarations: 24, invocations: 36, processes: 52 });
       assert.deepEqual(verifyCliInvocations(rc, new Set(), { ...local.recompose, ...remote.recompose }), { declarations: 3, invocations: 3, processes: 5 });
       const receipts = await remote.receipts();
       assert.ok(receipts.length > 0);

@@ -175,7 +175,7 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
   const row = (n: number, stage: string, attempts: { recompose: number; write: number }, extra: Record<string, unknown> = {}) => ({ k: k(n), autoid: autoid(n), title: `合成用例 ${k(n)}`, recompose: { index: k(n), item: `n/r${k(n)}` }, plan: { index: k(n), item: `doc:${k(n)}` }, stage, attempts, ...extra });
   const state = (cases: unknown[]) => JSON.stringify({ schema: 'compile-pipeline@1', width: 6, max_attempts: 3, model: 'synthetic-model', recompose_run: RUN_ID, plan_run: RUN_ID_2, recompose_dir: 'recompose-run', plan_dir: 'plan-run', records_dir: 'records', cases });
   const STOPPED = '脚本编写 3 次仍未通过：合成停下原因';
-  const dirs = { init: join(base, 'init'), resume: join(base, 'resume'), next: join(base, 'next'), status: join(base, 'status'), collect: join(base, 'collect'), retry: join(base, 'retry'), rework: join(base, 'rework'), reopen: join(base, 'reopen') };
+  const dirs = { init: join(base, 'init'), resume: join(base, 'resume'), next: join(base, 'next'), status: join(base, 'status'), collect: join(base, 'collect'), retry: join(base, 'retry'), rework: join(base, 'rework'), reopen: join(base, 'reopen'), judge: join(base, 'judge') };
   for (const run of ['recompose-run', 'plan-run']) await mkdir(join(dirs.init, run, 'items'), { recursive: true });
   await writeFile(join(dirs.init, 'recompose-run', 'items', '00.json'), JSON.stringify({ id: 'n/r00', fields: { case_id: autoid(0), node: 'n/00' } }));
   await writeFile(join(dirs.init, 'plan-run', 'items', '00.json'), JSON.stringify({ id: 'doc:00', fields: { autoid: autoid(0), title: '合成用例 00' }, location: { selector: 'n/00' } }));
@@ -196,6 +196,8 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
   await writeFile(join(dirs.rework, 'pipeline.json'), state([row(0, 'ready', { recompose: 1, write: 1 })]));
   await writeFile(join(dirs.rework, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: RUN_ID, recompose_run: RUN_ID, recompose_record: 'rec:' + 'a'.repeat(64), plan_run: RUN_ID_2 }));
   await writeFile(join(dirs.rework, 'returns-1', 'index.json'), JSON.stringify({ schema: 'device-returns@1', jobs: [{ outcome: 'not_dispatched', missing_facts: [{ fact: '合成原因' }], rows: [] }] }));
+  await mkdir(dirs.judge, { recursive: true });
+  await writeFile(join(dirs.judge, 'pipeline.json'), JSON.stringify({ ...JSON.parse(state([row(0, 'ready', { recompose: 1, write: 1 })])), judge: 'model' }));
   await mkdir(dirs.reopen, { recursive: true });
   await writeFile(join(dirs.reopen, 'pipeline.json'), state([row(0, 'stopped', { recompose: 1, write: 3 }, { stopped: STOPPED, retried: RUN_ID_2 })]));
   await cp(join(dirs.rework, 'open-compile.json'), join(dirs.reopen, 'open-compile.json'));
@@ -212,6 +214,8 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
       complete: { status: 0, stdout: line({ actions: [], running: [], ready: ['00'], stopped: [], queued: 0, all_done: true, message: '全部 1 条走完流水线：1 条计划就绪。下一步：pipeline.ts collect 收拢到新目录，再后台跑合并工具 open-merge.ts（SKILL.md 第 3 节）' }), stderr: '' },
       empty: { status: 1, stdout: '流水线工具没有完成：标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%\n', stderr: '' },
     },
+    { argv: ['judge', '--state', 'pipeline.json'], cwd: dirs.status, subcommand: 'judge', stdinValues: [], complete: { status: 0, stdout: line({ judge: 'plumb' }), stderr: '' } },
+    { argv: ['judge', '--state', 'pipeline.json'], cwd: dirs.judge, subcommand: 'judge', stdinValues: [], complete: { status: 0, stdout: line({ judge: 'model' }), stderr: '' } },
     {
       argv: ['status', '--state', 'pipeline.json'], cwd: dirs.status, subcommand: 'status', stdinValues: [],
       complete: { status: 0, stdout: line({ actions: [], running: ['重组 02', '编写 03'], ready: ['00'], stopped: [{ label: `01 ${autoid(1)}`, reason: STOPPED }], queued: 1, all_done: false, message: '待派 0 个子代理；在跑 2 个（含待派），排队 1 条，就绪 1 条，停下 1 条' }), stderr: '' },
