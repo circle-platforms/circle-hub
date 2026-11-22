@@ -1,6 +1,6 @@
 {
   "schema": "case-compile.workbook-format@1",
-  "generator": "case-compile@3.26.7",
+  "generator": "case-compile@3.26.8",
   "worksheet_part": "xl/worksheets/sheet1.xml",
   "cell_types": [
     "inlineStr",

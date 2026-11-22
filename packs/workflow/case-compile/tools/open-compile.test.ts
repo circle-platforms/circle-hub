@@ -120,6 +120,43 @@ test('a rework plan run reuses the accepted recompose run: no recompose start, t
   assert.match(half.out, /^无法编译：--recompose-run 和 --recompose-record 要一起写/);
 });
 
+test('the record keeps what the compile was opened with: the scope as it was read and the left-out cases, each only when given, so that a later plan run can be opened with them again', async () => {
+  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };
+  const scope = { words: '只编这两条：“改密码”和 "退出"，a\\b（第二行\n还有一行 ）', cases: ['990000000000000001', '990000000000000002'] };
+  await writeFile(join(dir, 'scope.json'), JSON.stringify({ ...scope, note: 'a field the tool does not read' }));
+  const h = hub(answers);
+  const given = await run(argv(join(dir, 'open-compile.json'), ['--scope', join(dir, 'scope.json'), '--exclude', ' 990000000000000009 , 990000000000000008,']), h.connect, root);
+  assert.equal(given.code, 0, given.out);
+  const written = JSON.parse(await readFile(join(dir, 'open-compile.json'), 'utf8'));
+  assert.deepEqual([written.scope, written.exclude], [scope, ['990000000000000009', '990000000000000008']], 'the words and cases as read, the list as split');
+  assert.deepEqual(JSON.parse(given.out.trimEnd().split('\n').at(-1)!), written, 'the line printed is the record');
+  const parameters = h.calls.filter((c) => c.name === 'start_run').map((c) => c.args.parameters);
+  assert.deepEqual(parameters, [{ scope }, { scope, exclude: ['990000000000000009', '990000000000000008'] }], 'what the Hub was given: the scope for both runs, the left-out cases for the plan run');
+
+  // Nothing given, nothing written: an exclude that names no case is none.
+  for (const [name, extra] of [['plain.json', []], ['blank.json', ['--exclude', ' , ']]] as const) {
+    const plain = await run(argv(join(dir, name), [...extra]), hub(answers).connect, root);
+    assert.equal(plain.code, 0, plain.out);
+    const record = JSON.parse(await readFile(join(dir, name), 'utf8'));
+    assert.deepEqual(['scope' in record, 'exclude' in record], [false, false], name);
+  }
+
+  // A plan run opened again on the recomposition run of the first (rework): the record keeps both there too.
+  const again = hub(answers);
+  const reopened = await run(argv(join(dir, 'again.json'), ['--scope', join(dir, 'scope.json'), '--exclude', '990000000000000009', '--recompose-run', RECOMPOSE, '--recompose-record', 'rec:' + 'c'.repeat(64)]), again.connect, root);
+  assert.equal(reopened.code, 0, reopened.out);
+  assert.deepEqual(again.calls.map((c) => c.name + ':' + String(c.args.pack ?? '')), ['list_task_packs:', 'start_run:case-compile']);
+  assert.deepEqual(again.calls[1]!.args.parameters, { scope, exclude: ['990000000000000009'] });
+  const second = JSON.parse(await readFile(join(dir, 'again.json'), 'utf8'));
+  assert.deepEqual([second.scope, second.exclude], [scope, ['990000000000000009']]);
+
+  // A scope file that cannot be read is refused as before and nothing is written.
+  const bad = await run(argv(join(dir, 'bad.json'), ['--scope', join(dir, 'missing.json')]), hub(answers).connect, root);
+  assert.match(bad.out, /^无法编译：--scope 文件 .*missing\.json 读不出 JSON/);
+  assert.equal(existsSync(join(dir, 'bad.json')), false);
+});
+
 test('judge model: the user chose to compile without Plumb, so no Plumb address, key or status is needed and the choice is written into open-compile.json', async () => {
   const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };

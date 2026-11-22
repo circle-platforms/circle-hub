@@ -483,7 +483,8 @@ async function afterDevice(rows: (autoids: string[]) => unknown[], options: { ju
   const uncarried: string[] = [];
   const t = tools((tool, args) => {
     const at = (name: string) => args[args.indexOf(name) + 1]!;
-    if (tool === 'open-compile.ts') { opens++; writeFileSync(at('--out'), JSON.stringify({ ...OPENED, plan_run: opens === 1 ? NEXT_PLAN : `run_01planplanplanplanplan0${opens}` })); return ok('就绪'); }
+    // The record the tool writes keeps the scope it read and the cases left out, when it was given them.
+    if (tool === 'open-compile.ts') { opens++; writeFileSync(at('--out'), JSON.stringify({ ...OPENED, plan_run: opens === 1 ? NEXT_PLAN : `run_01planplanplanplanplan0${opens}`, ...(args.includes('--scope') ? { scope: JSON.parse(readFileSync(at('--scope'), 'utf8')) } : {}), ...(args.includes('--exclude') ? { exclude: at('--exclude').split(',') } : {}) })); return ok('就绪'); }
     if (tool === 'download-run.ts') { mkdirSync(join(at('--out'), 'briefs'), { recursive: true }); writeFileSync(join(at('--out'), 'run.json'), JSON.stringify({ run: NEXT_PLAN })); for (const k of ['00', '01', '02']) writeFileSync(join(at('--out'), 'briefs', `${k}.md`), '合成简报'); return ok(); }
     if (tool === 'carry-plans.ts') {
       mkdirSync(at('--plans'), { recursive: true });
@@ -776,6 +777,84 @@ test('no delivery volume when nothing passed; a carry that refuses leaves nothin
   const regated = refused.t.calls.filter((call) => call.tool === 'case-compile/check-plan.ts').at(-1)!.args;
   assert.deepEqual([regated[regated.indexOf('--file') + 1], regated[regated.indexOf('--run') + 1]], [join('cases', '02', 'plan', '02.json'), join('deliver-1', 'plan-run')], 'the plan the carry did not take is checked against the new run, not written again');
   assert.equal(refused.t.calls.some((call) => call.tool === 'case-compile/task-brief.ts' && call.args.includes('脚本编写')), false);
+});
+
+// A compile of part of a mind map: the words the user gave, kept as they were, and the cases they name; one case left out when it was opened.
+const SCOPE = { words: '只编这三条：“登录后改密码”、"退出" 和 a\\b（第二行\n还有一行 ）', cases: ['990000000000001000', '990000000000001001', '990000000000001002'] };
+const LEFT_OUT = '990000000000009001';
+const flagOf = (args: string[], name: string): string | undefined => args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
+const openCalls = (calls: Array<{ tool: string; args: string[] }>) => calls.filter((call) => call.tool === 'case-compile/open-compile.ts').map((call) => call.args);
+
+test('a compile of part of a mind map keeps its scope and its left-out cases in every plan run a rework opens, and the record of each open says so for the next', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+  const first = { ...OPENED, scope: SCOPE, exclude: [LEFT_OUT] };
+  await rework(state, first, 'returns-1', 'notes', gates(t.run));
+  const [opened] = openCalls(t.calls);
+  assert.equal(flagOf(opened!, '--scope'), join('rework-2', 'compile-scope.json'), 'the scope is a file of the round\'s own directory');
+  assert.equal(flagOf(opened!, '--exclude'), LEFT_OUT);
+  const text = readFileSync(join('rework-2', 'compile-scope.json'), 'utf8');
+  assert.deepEqual(JSON.parse(text), SCOPE);
+  assert.ok(text.includes(JSON.stringify(SCOPE.words)), 'the words are written as the user gave them');
+  const recorded = JSON.parse(readFileSync(state.open!, 'utf8'));
+  assert.deepEqual([recorded.scope, recorded.exclude], [SCOPE, [LEFT_OUT]], 'the next open wrote both down again');
+
+  // The round after it starts from that record, and keeps both.
+  await writeFile(join('cases', '01', 'plan', '01.json'), '{"plan":"01 round 2"}');
+  await next(state, '编写 01', gates(t.run));
+  await returned('returns-2', state.cases.map((c) => ({ item: c.autoid, verdict: c.k === '01' ? 'fail' : 'pass' })));
+  await rework(state, recorded, 'returns-2', undefined, gates(t.run));
+  const again = openCalls(t.calls)[1]!;
+  assert.equal(flagOf(again, '--scope'), join('rework-3', 'compile-scope.json'));
+  assert.deepEqual(JSON.parse(readFileSync(join('rework-3', 'compile-scope.json'), 'utf8')), SCOPE);
+  assert.equal(flagOf(again, '--exclude'), LEFT_OUT);
+  assert.deepEqual([JSON.parse(readFileSync(state.open!, 'utf8')).scope], [SCOPE]);
+});
+
+test('a reopen and a delivery volume keep the scope too, and merge the left-out cases of the record with the ones this pipeline dropped, each once and in the order met', async () => {
+  // reopen: the case that stopped again is dropped; the record's own left-out case stays first
+  const { state, t } = await afterDevice(() => []);
+  state.open = 'open-compile.json';
+  const [a, b, c] = state.cases.map((row) => row.autoid);
+  const s = state.cases[1]!;
+  s.stage = 'stopped'; s.attempts = { recompose: 1, write: 5 }; s.stopped = '脚本编写 5 次仍未通过：合成原因'; s.retried = OPEN.plan_run;
+  await reopen(state, { ...OPENED, scope: SCOPE, exclude: [LEFT_OUT] }, undefined, gates(t.run));
+  const [opened] = openCalls(t.calls);
+  assert.equal(flagOf(opened!, '--scope'), join('reopen-1', 'compile-scope.json'));
+  assert.deepEqual(JSON.parse(readFileSync(join('reopen-1', 'compile-scope.json'), 'utf8')), SCOPE);
+  assert.equal(flagOf(opened!, '--exclude'), `${LEFT_OUT},${b}`);
+  const carry = t.calls.find((call) => call.tool === 'case-compile/carry-plans.ts')!.args;
+  assert.equal(flagOf(carry, '--exclude'), b, 'only the case this pipeline dropped is left out of the carry, the record\'s one was never in the plans');
+  // a later round: the record now lists the dropped case too, and it is still one entry
+  const recorded = JSON.parse(readFileSync(state.open, 'utf8'));
+  assert.deepEqual([recorded.scope, recorded.exclude], [SCOPE, [LEFT_OUT, b]]);
+  await returned('returns-2', [{ item: a, verdict: 'pass' }, { item: c, verdict: 'fail' }]);
+  await rework(state, recorded, 'returns-2', undefined, gates(t.run));
+  const later = openCalls(t.calls)[1]!;
+  assert.deepEqual([flagOf(later, '--scope'), flagOf(later, '--exclude')], [join('rework-2', 'compile-scope.json'), `${LEFT_OUT},${b}`]);
+  assert.deepEqual(JSON.parse(readFileSync(join('rework-2', 'compile-scope.json'), 'utf8')), SCOPE);
+
+  // delivery volume: the case that used its last round is dropped
+  const volume = await afterDevice(([x, y, z]) => [{ item: x, verdict: 'pass' }, { item: y, verdict: 'fail' }, { item: z, verdict: 'pass' }]);
+  volume.state.cases[1]!.device_rounds = 2;
+  const dropped = volume.state.cases[1]!.autoid;
+  await rework(volume.state, { ...OPENED, scope: SCOPE, exclude: [LEFT_OUT, dropped] }, 'returns-1', undefined, gates(volume.t.run));
+  const [deliver] = openCalls(volume.t.calls);
+  assert.equal(flagOf(deliver!, '--scope'), join('deliver-1', 'compile-scope.json'));
+  assert.deepEqual(JSON.parse(readFileSync(join('deliver-1', 'compile-scope.json'), 'utf8')), SCOPE);
+  assert.equal(flagOf(deliver!, '--exclude'), `${LEFT_OUT},${dropped}`, 'a case in both lists is named once');
+  assert.equal(volume.state.volume?.n, 1);
+});
+
+test('a record without a scope or left-out cases opens the next plan run as it always did, and a record whose scope or left-out cases are malformed is refused before anything is opened', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+  for (const [broken, said] of [[{ scope: { words: 1, cases: [] } }, /--open 里的 scope 不是 \{"words":"…","cases":\[…\]\} 的形状/], [{ scope: { words: '范围', cases: [7] } }, /--open 里的 scope 不是/], [{ exclude: LEFT_OUT }, /--open 里的 exclude 不是 autoid 的列表/], [{ exclude: [LEFT_OUT, 5] }, /--open 里的 exclude 不是 autoid 的列表/]] as const) {
+    await assert.rejects(rework(state, { ...OPENED, ...broken }, 'returns-1', undefined, gates(t.run)), said);
+  }
+  assert.deepEqual([openCalls(t.calls), existsSync('rework-2')], [[], false], 'nothing was opened and no directory was made');
+  await rework(state, OPENED, 'returns-1', 'notes', gates(t.run));
+  const [opened] = openCalls(t.calls);
+  assert.deepEqual([opened!.includes('--scope'), opened!.includes('--exclude'), existsSync(join('rework-2', 'compile-scope.json'))], [false, false, false]);
+  assert.deepEqual(['scope' in JSON.parse(readFileSync(state.open!, 'utf8')), 'exclude' in JSON.parse(readFileSync(state.open!, 'utf8'))], [false, false]);
 });
 
 const withoutPlumb = (run: RunTool): Gates => ({ run, hub: 'http://127.0.0.1:9/mcp', plumb: '', token: 'synthetic-token-1234', plumbKey: '' });
