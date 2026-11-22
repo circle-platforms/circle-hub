@@ -12,8 +12,9 @@ import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { ResourceAssignmentSubject, UserId } from '../../contracts/src/common.ts';
 import { CliError, UsageError } from './errors.ts';
 import { decided } from './cli-arguments.ts';
+import { teamOf } from './cli-team.ts';
 import type { DispatchView } from './api.ts';
-export const EXECUTOR_USAGE = 'add --name=<名字> (<定义文件> | --reference=src:<摘要>) | name <现有执行器编号> <明确名字> | update <执行器> (<定义文件> | --reference=src:<摘要>) | assign|unassign <执行器> (--team=<团队> | --user=<账户>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
+export const EXECUTOR_USAGE = 'add --name=<名字> (<定义文件> | --reference=src:<摘要>) | name <现有执行器编号> <明确名字> | update <执行器> (<定义文件> | --reference=src:<摘要>) | assign|unassign <执行器> (--team=<团队名或ID> | --user=<账户>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
 export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | explain-release --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
@@ -80,7 +81,7 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
   if(parsed.values.secret)throw new UsageError('--secret 已退役：用 circle-hub secret set --name <名字> 换钥匙，引用它的执行器下次开会话用新版本');
   const assignment = sub === 'assign' || sub === 'unassign';
   if (assignment) {
-    if (parsed.positionals.length !== 1 || parsed.values.reference !== undefined || (parsed.values.team !== undefined) === (parsed.values.user !== undefined)) throw new UsageError('执行器分配须且只能指定 --team=<团队> 或 --user=<账户>');
+    if (parsed.positionals.length !== 1 || parsed.values.reference !== undefined || (parsed.values.team !== undefined) === (parsed.values.user !== undefined)) throw new UsageError('执行器分配须且只能指定 --team=<团队名或ID> 或 --user=<账户>');
   } else if (parsed.values.team !== undefined || parsed.values.user !== undefined) throw new UsageError('团队和账户参数只用于 assign/unassign');
   if (sub==='add' && !ExecutorStableName.safeParse(parsed.values.name).success) throw new UsageError('新执行器须用 --name 明确指定名字；名字不能使用内部编号');
   if (sub!=='add' && parsed.values.name!==undefined) throw new UsageError('--name 只用于登记新执行器；给现有执行器命名用 executor name <编号> <名字>');
@@ -99,7 +100,7 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
     const current = await registry.readSource(parsed.positionals[0]);
     if (!current) throw new CliError('执行器不可用');
     const recipient = parsed.values.team !== undefined
-      ? await hub.records.teams.get(by, parsed.values.team)
+      ? await hub.records.teams.get(by, await teamOf(hub.records.teams, by, parsed.values.team))
       : UserId.safeParse(parsed.values.user).success ? await hub.records.principals.get(parsed.values.user!) : await hub.records.principals.findByName(parsed.values.user!);
     if (!recipient) throw new CliError(parsed.values.team !== undefined ? '团队不可用' : '账户不可用');
     const subject = ResourceAssignmentSubject.parse(recipient.id);
