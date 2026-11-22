@@ -25,7 +25,7 @@
 ## 可以改的路径
 
 - `packs/workflow/case-compile/`、`packs/skill/plumb/`
-- `hub/server/cli-team.ts`、`hub/server/cli-pack.ts`、`hub/server/cli-resource.ts`、`hub/server/local-tools.ts`、`hub/server/pack-words.ts`、`hub/server/tools.ts`、`hub/server/README.md` 和它们的测试
+- `hub/server/cli-team.ts`、`hub/server/cli-pack.ts`、`hub/server/cli-resource.ts`、`hub/server/cli-job.ts`、`hub/server/local-tools.ts`、`hub/server/pack-words.ts`、`hub/server/tools.ts`、`hub/server/README.md` 和它们的测试
 - `scripts/real/testing/local-cli-probes.ts`、`scripts/real/verify-case-compile-cli.test.ts`（新子命令的探针和计数）
 - `docs/member-guide.md`、`docs/admin-guide.md`、`docs/quickstart.md`、`docs/hub-r4-progress.md`、`docs/compatibility.md`、`docs/compatibility.en.md`、`CHANGELOG.md`、`.github/checks/doc-set.json`、本页
 
