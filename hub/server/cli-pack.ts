@@ -1,4 +1,4 @@
-import { teamId } from './cli-team.ts';
+import { teamOf } from './cli-team.ts';
 import { isAdmin } from '../records/api.ts';
 import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import { copyFile, lstat, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -10,7 +10,7 @@ import { CliError, UsageError } from './errors.ts';
 import { parse, decided } from './cli-arguments.ts';
 import type { Session } from './cli-session.ts';
 export const PACK_USAGE =
-  'pack install <通用技能@版本> | uninstall <通用技能> | publish <目录> [--stage] [--dry-run] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <工作流> | assign <工作流> --team=<团队ID> | unassign <用户> <工作流> | unassign <工作流> --team=<团队ID> | retire <发布版本> | activate <产品知识来源> | deactivate <产品知识来源> | list | shapes <工作流>';
+  'pack install <通用技能@版本> | uninstall <通用技能> | publish <目录> [--stage] [--dry-run] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <工作流> | assign <工作流> --team=<团队名或ID> | unassign <用户> <工作流> | unassign <工作流> --team=<团队名或ID> | retire <发布版本> | activate <产品知识来源> | deactivate <产品知识来源> | list | shapes <工作流>';
 function problemLine(problem: PackProblem): string {
   const where = [problem.file, problem.field ?? (problem.line === undefined ? '' : `第 ${problem.line} 行`)].filter((part) => part !== '').join(' ');
   return `- [${problem.rule}] ${where}：${problem.message}（处理：${problem.fix}）`;
@@ -160,8 +160,9 @@ export async function packCommand(session: Session, args: readonly string[]): Pr
       const { positionals, values } = parse(rest, { team: { type: 'string' }, note: { type: 'string' } }, 1, 2);
       if (values.team !== undefined) {
         if (positionals.length !== 1) throw new UsageError('团队分配只给一个包ID，不能同时指定个人');
-        const team = teamId(values.team), pack = packIdOf(positionals[0], '分配');
+        const pack = packIdOf(positionals[0], '分配');
         const by = await session.admin(), hub = await session.hub();
+        const team = await teamOf(hub.records.teams, by, values.team);
         if (sub === 'assign') await decided(() => hub.registry.assignTeam(by, team, pack, { note: values.note }));
         else await decided(() => hub.registry.unassignTeam(by, team, pack, values.note));
         const teamRow = await hub.records.teams.get(by, team);
@@ -170,7 +171,7 @@ export async function packCommand(session: Session, args: readonly string[]): Pr
         session.out(sub === 'assign' ? `已把 ${packTitle} 分配给团队 ${teamName}` : `已撤回团队 ${teamName} 的 ${packTitle} 分配`);
         return 0;
       }
-      if (positionals.length !== 2) throw new UsageError('个人分配须给出账户和工作流；团队分配使用 --team=<团队ID>');
+      if (positionals.length !== 2) throw new UsageError('个人分配须给出账户和工作流；团队分配使用 --team=<团队名或ID>');
       const packId = packIdOf(positionals[1], '分配');
       const admin = await session.admin();
       const user = await session.user(positionals[0]);
@@ -179,7 +180,8 @@ export async function packCommand(session: Session, args: readonly string[]): Pr
       else await decided(() => hub.registry.unassign(admin, user.id, packId, values.note));
       const name=user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name;
       const packTitle = (await hub.registry.latestVersion(packId))?.title ?? packId;
-      session.out(sub === 'assign' ? `已把 ${packTitle} 分配给 ${name}` : `${name} 不再能用 ${packTitle}`);
+      // The withdrawal is of the personal assignment only: what a team of the account is assigned stays usable.
+      session.out(sub === 'assign' ? `已把 ${packTitle} 分配给 ${name}` : `已撤回 ${name} 的 ${packTitle} 个人分配；经团队分配的不受影响`);
       return 0;
     }
     case 'retire': {

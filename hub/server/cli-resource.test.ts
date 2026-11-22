@@ -23,7 +23,7 @@ function fixture(options: { denied?: boolean; addError?: Error; assignmentError?
     } },
     records: {
       authorizations: { assignResource: async (...values: unknown[]) => { calls.push(['assign', ...values]); if (options.assignmentError) throw options.assignmentError; } },
-      teams: { get: async (_by: Principal, id: string) => id === team ? { id: team, name: '合成团队' } : null },
+      teams: { get: async (_by: Principal, id: string) => id === team ? { id: team, name: '合成团队' } : null, list: async () => [{ id: team, name: '合成团队' }] },
     },
   };
   const session = new class extends Session {
@@ -34,7 +34,7 @@ function fixture(options: { denied?: boolean; addError?: Error; assignmentError?
 }
 
 test('resource add uses the created resource identity for explicit whole-Hub or team assignments', async () => {
-  for (const [flag, subject] of [['--all', WHOLE_HUB], ['--team=' + team, team]]) {
+  for (const [flag, subject] of [['--all', WHOLE_HUB], ['--team=' + team, team], ['--team=合成团队', team]]) {
     const f = fixture();
     assert.equal(await resourceCommand(f.session, [...args, flag]), 0);
     assert.deepEqual(f.calls.map(call => call[0]), ['add', 'assign']);
@@ -55,10 +55,19 @@ test('resource add without an audience stays unassigned and discloses that nobod
 });
 
 test('resource add rejects conflicting or malformed targets and retains administrator permission before writes', async () => {
-  for (const flags of [['--all', '--team=' + team], ['--team=team'], ['--team=not-a-team']]) {
+  {
     const f = fixture({ denied: true });
-    await assert.rejects(resourceCommand(f.session, [...args, ...flags]), UsageError);
+    await assert.rejects(resourceCommand(f.session, [...args, '--all', '--team=' + team]), UsageError);
     assert.deepEqual(f.calls, []);
+  }
+  // A team is named by its number or its name, so a value that is no number is looked up, which only an administrator may do
+  for (const flag of ['--team=team', '--team=not-a-team']) {
+    const denied = fixture({ denied: true });
+    await assert.rejects(resourceCommand(denied.session, [...args, flag]), /只有管理员/);
+    assert.deepEqual(denied.calls, []);
+    const unknown = fixture();
+    await assert.rejects(resourceCommand(unknown.session, [...args, flag]), (error: unknown) => error instanceof UsageError && /没有叫「(team|not-a-team)」的团队/.test(error.message));
+    assert.deepEqual(unknown.calls, [], 'nothing is added for a team that does not exist');
   }
   const f = fixture({ denied: true });
   await assert.rejects(resourceCommand(f.session, [...args, '--all']), /只有管理员/);

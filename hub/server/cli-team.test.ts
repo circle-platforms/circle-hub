@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { tmpdir } from 'node:os';
 import type { Principal, Team, TeamDeletion, Teams, User } from '../records/api.ts';
 import type { CliContext } from './api.ts';
-import { teamCommand, type TeamCommandSession } from './cli-team.ts';
+import { teamCommand, teamOf, type TeamCommandSession } from './cli-team.ts';
 import { packCommand } from './cli-pack.ts';
 import { resourceCommand } from './cli-resource.ts';
 import { Session } from './cli-session.ts';
@@ -84,4 +84,27 @@ test('assignment commands accept equals flags and reject conflicting personal, t
   await assert.rejects(packCommand(session, ['assign', member.name, 'synthetic-workflow', '--team=' + id]), UsageError);
   await assert.rejects(resourceCommand(session, ['assign', 'synthetic-resource', '--team=' + id, '--all']), UsageError);
   await assert.rejects(resourceCommand(session, ['assign', 'synthetic-resource']), UsageError);
+});
+
+test('a team is named by its name where a team is asked for, as an account is: the command line prints no team number to copy', async () => {
+  const by: Principal = { ...member, role: 'admin' }, out: string[] = [], calls: string[] = [];
+  const other = 'tm_1123456789abcdefghjkmnpqrs';
+  const row = (teamId: string, name: string) => ({ ...team, id: teamId, name, member_count: 0, pack_count: 0, resource_count: 0, changed_at: team.created_at });
+  let listed = [row(id, team.name), row(other, '另一个合成团队')];
+  const teams: Teams = {
+    list: async () => listed, get: async (_by, teamId) => { calls.push('get ' + teamId); return { ...team, id: teamId }; },
+    memberships: async () => [], membershipsMany: async () => new Map(), members: async () => [], assignments: async () => ({ packs: [], resources: [] }),
+    create: async () => team, delete: async (_by, teamId) => { calls.push('delete ' + teamId); return deletion; },
+    add: async (_by, teamId) => { calls.push('add ' + teamId); return { team: teamId, user: member, added_at: member.created_at, added_by: by.id }; },
+    remove: async (_by, teamId) => { calls.push('remove ' + teamId); return true; },
+  };
+  const session: TeamCommandSession = { member: async () => by, admin: async () => by, records: async () => ({ teams }), user: async () => member, out: line => out.push(line) };
+  for (const args of [['show', team.name], ['add', team.name, member.name], ['remove', team.name, member.name], ['delete', team.name]]) assert.equal(await teamCommand(session, args), 0);
+  assert.deepEqual(calls.filter((call) => !call.startsWith('get ')), ['add ' + id, 'remove ' + id, 'delete ' + id], 'the name resolved to its team');
+  assert.equal(calls.every((call) => call.endsWith(id)), true);
+  assert.doesNotMatch(out.join('\n'), /tm_|usr_/);
+  assert.equal(await teamOf(teams, by, other), other, 'a number is still taken as it is, without a lookup by name');
+  await assert.rejects(teamCommand(session, ['show', '没有的团队']), (error: unknown) => error instanceof UsageError && error.message === '没有叫「没有的团队」的团队；团队的名字用 circle-hub team list 查看');
+  listed = [row(id, team.name), row(other, team.name)];
+  await assert.rejects(teamCommand(session, ['add', team.name, member.name]), (error: unknown) => error instanceof UsageError && error.message === '有 2 个团队都叫「合成团队」；请在控制台的团队页里操作其中一个');
 });

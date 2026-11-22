@@ -167,11 +167,11 @@ chmod -R u+w /tmp/ch-quickstart/d && rm -rf /tmp/ch-quickstart
 ```bash
 ./bin/circle-hub team create 研发一组
 ./bin/circle-hub team list
-# 记下输出的团队编号（形如 tm_…）
+# 后面的命令用团队的名字指代它
 
 ./bin/circle-hub user create alice
-./bin/circle-hub team add <团队ID> alice
-./bin/circle-hub team show <团队ID>
+./bin/circle-hub team add <团队名> alice
+./bin/circle-hub team show <团队名>
 ```
 
 - **团队（`tm_…`）**：管理员在网页控制台 `/console/team` 管理；权限取并集。
@@ -186,7 +186,7 @@ chmod -R u+w /tmp/ch-quickstart/d && rm -rf /tmp/ch-quickstart
 ./bin/circle-hub pack publish packs/workflow/test-bed --stage --dry-run
 ./bin/circle-hub pack publish packs/workflow/test-bed --stage
 ./bin/circle-hub pack assign admin test-bed
-# 或：./bin/circle-hub pack assign test-bed --team=<团队ID>
+# 或：./bin/circle-hub pack assign test-bed --team=<团队名>
 ./bin/circle-hub doc put bed-topology packs/workflow/test-bed/examples/bed-topology.json
 ./bin/circle-hub doc list
 ```
@@ -210,7 +210,7 @@ chmod -R u+w /tmp/ch-quickstart/d && rm -rf /tmp/ch-quickstart
   --credential password=SYNTH_PLM_PASS
 printf '%s\n' '<合成账号>' | ./bin/circle-hub secret set --name SYNTH_PLM_USER --reason "quickstart synthetic verification"
 printf '%s\n' '<合成口令>' | ./bin/circle-hub secret set --name SYNTH_PLM_PASS --digest SYNTH_PLM_PASS=sha512_base64 --reason "quickstart synthetic verification"
-./bin/circle-hub resource assign <资源ID> --team=<团队ID>
+./bin/circle-hub resource assign <资源ID> --team=<团队名>
 ```
 
 部署定义里对应字段为 `resources` / `resourceAssignments` / `executors`（`deployment@2`；资源凭据用 `${secret:NAME}` 引用，见 `contracts/src/deployment.ts`）。`apply` 行为：同名且内容相同则跳过；有差异只列路径、不覆盖。`export` 不含密钥值与令牌。

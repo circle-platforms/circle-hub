@@ -77,28 +77,28 @@ nav_order: 3
 从控制台 `/console/teams` 建好团队、加入成员，或通过 CLI 一次完成：
 
 ```bash
-# 1) 建团队并记下输出的团队编号 tm_…
+# 1) 建团队；后面的命令用团队的名字指代它（也接受团队编号）
 ./bin/circle-hub team create 研发一组
 ./bin/circle-hub team list
 
 # 2) 把成员加进团队（同一成员可加入多个团队）
-./bin/circle-hub team add <团队ID> <用户名>
-./bin/circle-hub team show <团队ID>
+./bin/circle-hub team add <团队名> <用户名>
+./bin/circle-hub team show <团队名>
 ```
 
 > **控制台与 CLI 实测说明**：
 > - 管理操作结果页现已把 `usr_…`、`tm_…`、`exe_…`、`res_…` 等内部编号脱敏替换为可读名称；
 > - 进入 `/console/teams/<团队ID>`（或 `/console/team/<团队ID>`）后，页面下方提供 **`批量分配工作流`** 多选卡片，可一次勾选多个工作流分配给该团队，列表中也可单行直接「分配 / 撤回」工作流或撤回团队业务系统连接；
 > - 欲从控制台核对某成员最终实际拿到的工作流、连接与环境预览，点击 `/console/team/<成员>` 的 **按这个成员的视角看**（`/console/me?user=<id>`）；
-> - 在运行 Hub 的主机上使用管理员操作令牌时，只读 CLI 命令（如 `resource list --as <成员>`）会被拒绝（有令牌时只按令牌所属账户读取）；`team list` 只显示编号与名字，查看绑定明细仍用 `team show <团队ID>`。
+> - 在运行 Hub 的主机上使用管理员操作令牌时，只读 CLI 命令（如 `resource list --as <成员>`）会被拒绝（有令牌时只按令牌所属账户读取）；`team list` 只显示名字，查看绑定明细用 `team show <团队名>`；命令里要写团队的地方都可以写名字，有重名的团队时到控制台操作。
 
 随后按团队需求分别分配能力（成员具体怎么使用见[成员手册](member-guide.md)）：
 
 | 能力类别 | 分配/启用做法（控制台 + CLI） | 当前限制与说明 |
 |---|---|---|
-| **工作流（`workflow`）** | 控制台 `/console/teams/<团队ID>` 支持 **`批量分配工作流`**，工作流详情页 `/console/workflows/<工作流ID>` 与发布结果页支持「分配给团队」；或 CLI：<br>`./bin/circle-hub pack assign <工作流ID> --team=<团队ID>`<br>（也可直接分给个人：`pack assign <用户名> <工作流ID>`） | 例如 `test-bed`、`case-compile`、`case-compile-criterion-review` 等；不传 `@版本号`，成员自动看到在架版本；控制台工作流详情页「使用范围」现已直接显示 `团队 <名>` |
+| **工作流（`workflow`）** | 控制台 `/console/teams/<团队ID>` 支持 **`批量分配工作流`**，工作流详情页 `/console/workflows/<工作流ID>` 与发布结果页支持「分配给团队」；或 CLI：<br>`./bin/circle-hub pack assign <工作流ID> --team=<团队名>`<br>（也可直接分给个人：`pack assign <用户名> <工作流ID>`） | 例如 `test-bed`、`case-compile`、`case-compile-criterion-review` 等；不传 `@版本号`，成员自动看到在架版本；控制台工作流详情页「使用范围」现已直接显示 `团队 <名>` |
 | **通用技能（`skill`）** | 发布结果页可点 **立即安装**，或进入 `/console/skills/<技能ID>` 在「安装这个版本」卡片点 **安装** /「卸载通用技能」卡片点 **卸载**（或 **退役这个版本**）；也可主机 CLI：<br>`./bin/circle-hub pack install <技能ID>@<版本>` | 通用技能仅发布不生效，必须 `install` 精确版本；**当前仍不支持按团队分配，一经安装对全站所有成员可见**（如格式化等通用技能无团队隔离） |
-| **业务系统连接（`system`）** | 控制台 `/console/operations/system` 接入时选「使用对象：某个团队 / 全体 / 先不分配」，或在 `/console/teams/<团队ID>` 分配/撤回团队连接；或 CLI：<br>`./bin/circle-hub resource add … --team=<团队ID>`<br>`./bin/circle-hub resource assign <资源ID> (--team=<团队ID> \| --all)` | 新建连接默认先不分配；**防坑提醒**：若连接已分给**全体**（`--all`），再追加分配给某团队**不会产生隔离效果**（未加入该团队的成员照样可见可用），且控制台当前**尚无「撤回全体（`--all`）」表单**，团队页仅能撤回单个团队授权，撤回 `--all` 仍须在主机执行 `./bin/circle-hub resource unassign <资源ID> --all` |
+| **业务系统连接（`system`）** | 控制台 `/console/operations/system` 接入时选「使用对象：某个团队 / 全体 / 先不分配」，或在 `/console/teams/<团队ID>` 分配/撤回团队连接；或 CLI：<br>`./bin/circle-hub resource add … --team=<团队名>`<br>`./bin/circle-hub resource assign <资源ID> (--team=<团队名> \| --all)` | 新建连接默认先不分配；**防坑提醒**：若连接已分给**全体**（`--all`），再追加分配给某团队**不会产生隔离效果**（未加入该团队的成员照样可见可用），且控制台当前**尚无「撤回全体（`--all`）」表单**，团队页仅能撤回单个团队授权，撤回 `--all` 仍须在主机执行 `./bin/circle-hub resource unassign <资源ID> --all` |
 | **产品知识库（`product`）** | 发布结果页可点 **启用** 并跳转 `/console/operations/knowledge` 导入，或从 `/console/knowledge/products` 点开对应产品（`/console/workflows/<产品ID>`）点 **启用产品知识来源 / 停用产品知识来源**；也可主机 CLI：<br>`./bin/circle-hub pack activate <产品ID>`<br>`./bin/circle-hub knowledge sync --product <产品ID>` | 产品包 `activate` 对**整个 Hub 生效**（不支持按团队隔离）；必须先启用后才会出现在知识导入页面的产品下拉里 |
 | **自动化测试环境（`executor` / `bed`）** | 控制台 `/console/connections?tab=environments` 已提供上传 `bed-topology`（`doc-put`）、上传新增执行器（`executor-add`）及按目标分组分配（`executor-assign`）表单；普通变量 `var set`、修改/停用执行器、租约前缀 `lease register` 与干净基线 `bed baseline record` 见下节主机 CLI 步骤 | **测试环境的分配只决定成员的「我能做的事」和能力投影列出哪些测试环境，不按环境分配限制或授予预订权**：谁能预订和上机按工作流的分配和预订规则判断——**已获分配 `test-bed` 工作流的成员均可按既有租约归属与基线/就绪核对规则预订任何可用测试环境**（不能靠环境分配控制权限） |
 
@@ -145,7 +145,7 @@ nav_order: 3
 - **工作流（`workflow`）→ 首次须分配给团队；升版按需退役旧版并核对执行器 `proof.warrant_id`**：发布结果页直接提供 **分配给团队** 下拉表单，也可到 `/console/workflows/<工作流ID>` 分配或点 **退役这个版本**，或在 `/console/teams/<团队ID>` 批量勾选多个工作流；主机 CLI 等价命令：
   ```bash
   # 首次上线分给团队（之后升新小版不用重复 assign，已获权团队自动可见新版）
-  ./bin/circle-hub pack assign <工作流ID> --team=<团队ID>
+  ./bin/circle-hub pack assign <工作流ID> --team=<团队名>
 
   # 升版后不再让新运行使用旧版时退役旧版（已有运行照常可看/可结束）
   ./bin/circle-hub pack retire <工作流ID>@<旧版本>

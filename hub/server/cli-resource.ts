@@ -1,4 +1,4 @@
-import { teamId } from './cli-team.ts';
+import { teamOf } from './cli-team.ts';
 import { isAdmin } from '../records/api.ts';
 import {referencesIn} from '../../contracts/src/variables.ts';
 import { ENVIRONMENT, isEnvironment, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
@@ -10,7 +10,7 @@ import { CliError, UsageError } from './errors.ts';
 import { parse, decided } from './cli-arguments.ts';
 import type { Session } from './cli-session.ts';
 import { RUNNING_HUB_LOGIN } from './cli-session.ts';
-export const RESOURCE_USAGE = 'resource assign|unassign <资源ID> (--team=<团队ID> | --all) | add <业务系统接入> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--all | --team=<团队ID>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <业务系统接入>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
+export const RESOURCE_USAGE = 'resource assign|unassign <资源ID> (--team=<团队名或ID> | --all) | add <业务系统接入> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--all | --team=<团队名或ID>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <业务系统接入>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 function pairs(values: readonly string[] | undefined, flag: string): [string, string][] {
   return (values ?? []).map((value) => {
     const at = value.indexOf('=');
@@ -56,9 +56,9 @@ export async function resourceCommand(session: Session, args: readonly string[])
     case 'assign':
     case 'unassign': {
       const { positionals, values } = parse(rest, { team: { type: 'string' }, all: { type: 'boolean' }, note: { type: 'string' } }, 1);
-      if ((values.team !== undefined) === (values.all === true)) throw new UsageError('资源分配须且只能指定 --team=<团队ID> 或 --all');
-      const subject = values.team !== undefined ? teamId(values.team) : WHOLE_HUB;
+      if ((values.team !== undefined) === (values.all === true)) throw new UsageError('资源分配须且只能指定 --team=<团队名或ID> 或 --all');
       const by = await session.admin(), hub = await session.hub();
+      const subject = values.team !== undefined ? await teamOf(hub.records.teams, by, values.team) : WHOLE_HUB;
       const resource = (await hub.resources.list(by)).find(row => row.id === positionals[0]);
       if (!resource) throw new CliError('资源不可用');
       if (sub === 'assign') await decided(() => hub.records.authorizations.assignResource(by, resource.id, subject, { note: values.note }));
@@ -86,7 +86,6 @@ export async function resourceCommand(session: Session, args: readonly string[])
         1,
       );
       if (values.team !== undefined && values.all === true) throw new UsageError('--team 与 --all 不能同时给');
-      const subject = values.team !== undefined ? teamId(values.team) : values.all === true ? WHOLE_HUB : undefined;
       if (values.name === undefined || values.name.trim() === '') throw new UsageError('要用 --name 给资源起名字');
       const environment = values.environment;
       if (environment === undefined || !isEnvironment(environment)) {
@@ -114,6 +113,7 @@ export async function resourceCommand(session: Session, args: readonly string[])
       if(values['unset-setting']?.length)throw new UsageError('--unset-setting 只用于 update');
       const admin = await session.admin();
       const hub = await session.hub();
+      const subject = values.team !== undefined ? await teamOf(hub.records.teams, admin, values.team) : values.all === true ? WHOLE_HUB : undefined;
       const input: AddResourceInput = {
         credentials:Object.fromEntries(pairs(values.credential,'--credential')),
         system_pack: positionals[0],
