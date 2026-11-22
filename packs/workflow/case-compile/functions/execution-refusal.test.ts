@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { executionRefusals } from './delivery.ts';
+import { executionRefusals, longNames } from './delivery.ts';
 
 const MARKERS = ['Synthetic refusal of the command', 'Synthetic transfer failure from'];
 const SESSION = [
@@ -47,4 +47,33 @@ test('generic Error, Failed and percent Invalid words do not declare an executio
   const session = ['seat#widget show', 'Error: synthetic business label', 'Failed to synthetic observation', '% Invalid synthetic label', 'seat#'].join('\n');
   assert.deepEqual(executionRefusals(session, MARKERS), []);
   assert.deepEqual(executionRefusals(session, ['Error: synthetic business label']), [{command:'widget show',prompt:'seat#',reply:['Error: synthetic business label']}]);
+});
+
+// A long name is measured in the text the device printed, so that nobody has to count it by eye or take it from the plan.
+const NAME_A = 'a'.repeat(30) + 'MIDDLE' + 'z'.repeat(34), NAME_B = 'n'.repeat(200);
+
+test('a long name in the command or in a reply line is listed with its length, once for each place it is in, and nothing else is added', () => {
+  assert.deepEqual(longNames(`widget host ${NAME_A}`), [{ chars: 70, in: 'command', head: 'a'.repeat(16), tail: 'z'.repeat(16) }]);
+  assert.deepEqual(longNames('widget host a-short-name', ['Error: no such host']), [], 'no long name, nothing listed');
+  assert.deepEqual(longNames(`copy ${NAME_A} ${NAME_A} "${NAME_B}"`, [`Error: ${NAME_A} is refused`, `seen ${NAME_A} and ${NAME_A}`, `and ${NAME_B}.`]), [
+    { chars: 70, in: 'command', head: 'a'.repeat(16), tail: 'z'.repeat(16) },
+    { chars: 200, in: 'command', head: 'n'.repeat(16), tail: 'n'.repeat(16) },
+    { chars: 70, in: 'reply', head: 'a'.repeat(16), tail: 'z'.repeat(16) },
+    { chars: 201, in: 'reply', head: 'n'.repeat(16), tail: 'n'.repeat(15) + '.' },
+  ], 'the same name twice in a place is one, in the command and in a reply is two; a full stop glued to the name is part of the token');
+  assert.equal(longNames('x'.repeat(63)).length, 0); assert.equal(longNames('x'.repeat(64)).length, 1, 'sixty-four is where a token is long');
+});
+
+test('the refused command and the lines the device replied with carry the names they hold, counted before the entry clips a long line', () => {
+  const echoLine = `Error: bad ${'k'.repeat(300)} and ${NAME_B} follows`;
+  const session = ['seat#widget host ' + NAME_A, echoLine, 'Synthetic refusal of the command', 'seat#widget ok', 'ok', 'seat#'].join('\n');
+  const [refusal] = executionRefusals(session, MARKERS);
+  assert.equal(refusal!.reply[0]!.length, 401, 'the entry keeps a clipped copy of the long line');
+  assert.deepEqual(refusal!.names, [
+    { chars: 70, in: 'command', head: 'a'.repeat(16), tail: 'z'.repeat(16) },
+    { chars: 300, in: 'reply', head: 'k'.repeat(16), tail: 'k'.repeat(16) },
+    { chars: 200, in: 'reply', head: 'n'.repeat(16), tail: 'n'.repeat(16) },
+  ], 'but the names are counted in the whole line');
+  assert.deepEqual(Object.keys(refusal!), ['command', 'prompt', 'reply', 'names']);
+  assert.equal('names' in executionRefusals(SESSION, MARKERS)[0]!, false, 'an entry without a long name has no names');
 });

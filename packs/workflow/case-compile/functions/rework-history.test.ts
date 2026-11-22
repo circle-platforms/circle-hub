@@ -23,6 +23,7 @@ import {
   runnerLoggedCommands,
 } from './rework-history.ts';
 import { buildCompileBrief, renderCompileBriefMd, validateCompileBrief } from './authoring-brief.ts';
+import { expandText } from './length-literals.ts';
 
 const CASE_ID = '990000000000000301';
 const OTHER_CASE_ID = '990000000000000399';
@@ -1056,4 +1057,33 @@ test('a typed block gives its command to the plan-versus-returns check, and a ba
   assert.equal(commandMatchesPlanSet('widget key publish "example.test" "example.test.key.343', norms, norms, true), true, 'an echo cut inside the captured value');
   assert.equal(commandMatchesPlanSet('widget key revoke "example.test" "example.test.key.34332.pub"', norms, norms, false), false);
   assert.equal(commandMatchesPlanSet('widget reseal "example.te', norms, norms, true), false);
+});
+
+test('a prior plan that holds length placeholders is matched to the device by the names it sent and said by the placeholders it was written with', () => {
+  const ids = buildCaseIdSet(CASE_ID);
+  const sent = expandText('{{domain:200|pfx|sfx}}').text, longer = expandText('{{domain:204|pfx|sfx}}').text;
+  const written = makePlan(CASE_ID, 'widget host {{domain:200|pfx|sfx}}', 'show widget host', 'Host', 'no widget host {{domain:200|pfx|sfx}}');
+  const plan = parsePriorPlanSnapshot(written, ids, 'rework-2/prior-plans/00.json');
+  assert.deepEqual(plan.steps.map((step) => step.commandText), [`widget host ${sent}`, 'show widget host', `no widget host ${sent}`], 'the commands are the ones that were sent');
+  assert.equal(plan.steps[0]!.args[0], `widget host ${sent}`);
+  assert.equal(plan.steps[0]!.summary, '[1] dut0.exec("widget host {{domain:200|pfx|sfx}}") // 第一步配置', 'and the summary is the plan as it was written');
+  assert.ok(plan.steps.every((step) => !step.summary.includes(sent)));
+
+  // the device printed the names it was sent; the plan is not taken for another run's, and its steps are found
+  const session = ['seat#show widget host', 'Host: ok', `seat#widget host ${sent}`, 'Error: name too long', `seat#no widget host ${sent}`, 'seat#'].join('\n');
+  const returnsIndex = { schema: 'device-returns@1', jobs: [{ job: 'c'.repeat(64), rows: [{ item: CASE_ID, verdict: 'fail', sessions: { 'dut0.txt': 'c/dut0.txt' }, syntax_rejected: [], execution_refused: [{ session: 'dut0.txt', prompt: 'seat#', command: `widget host ${sent}`, reply: ['Error: name too long'] }] }] }] };
+  const evidence = extractCaseDeviceEvidence({ round: 1, returnsIndex, caseIds: ids, sessionTexts: new Map([['dut0.txt', { path: 'dut0.txt', text: session }]]), logText: '', logPath: null, priorPlan: plan })!;
+  const refused = evidence.stepExcerpts.find((step) => step.commandText === `widget host ${sent}`);
+  assert.ok(refused?.found, 'the step is found in the device text by the name that was sent');
+  assert.equal(refused?.source, 'execution_refused');
+  const literal = parsePriorPlanSnapshot(makePlan(CASE_ID, `widget host ${sent}`, 'show widget host', 'Host', `no widget host ${sent}`), ids);
+  assert.deepEqual(literal.steps.map((step) => step.commandText), plan.steps.map((step) => step.commandText), 'a plan that holds the names is read the same');
+  assert.ok(literal.steps[0]!.summary.includes(sent), 'and said as it was written');
+
+  // a name of another length is another placeholder in the rounds' changes
+  const second = parsePriorPlanSnapshot(makePlan(CASE_ID, 'widget host {{domain:204|pfx|sfx}}', 'show widget host', 'Host', 'no widget host {{domain:204|pfx|sfx}}'), ids);
+  const diff = diffPlanSnapshots(plan, second, 1, 2);
+  assert.ok(diff.lines.some((line) => line.includes('{{domain:204|pfx|sfx}}')) && diff.lines.every((line) => !line.includes(longer)), diff.lines.join('\n'));
+  const md = renderPriorRoundsMarkdown({ caseRef: CASE_ID, currentRound: 3, rounds: [{ round: 1, planSource: 'p1.json', plan, deviceEvidence: null, gateRefusals: [], errorSignatures: [], attribution: null }, { round: 2, planSource: 'p2.json', plan: second, deviceEvidence: null, gateRefusals: [], errorSignatures: [], attribution: null }], streak: analyzeRoundHistory({ currentRound: 3, rounds: [{ round: 1, plan, gateRefusals: [], errorSignatures: [], attribution: null }, { round: 2, plan: second, gateRefusals: [], errorSignatures: [], attribution: null }] }) });
+  assert.ok(md.includes('widget host {{domain:204|pfx|sfx}}') && !md.includes(sent) && !md.includes(longer), 'the brief reads the names by what they stand for');
 });

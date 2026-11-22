@@ -512,3 +512,47 @@ test('the next step on stderr names --run only for a problem that is about the f
     assert.ok(endsWithNext(noTree.stderr, RUN_FIRST + PLAN_NEXT), noTree.stderr);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('names of a fixed length that share their fixed parts and differ in length are advice: the plan is as ok as it was and the exit code does not change', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'plan-length-advice-'));
+  try {
+    const { fixture, cleanup } = await import('../testing/inverse-alternatives.ts');
+    const { frozenRun } = await import('../testing/frozen-run.ts');
+    const { treeLines } = await import('../testing/locked-tree.ts');
+    const { QUOTE } = await import('../functions/test-support.ts');
+    const { expandText } = await import('../functions/length-literals.ts');
+    const value = fixture(['demo switch on']), catalog = value.subject.command_catalog as any, runId = 'run_synthetic_length';
+    await writeFile(join(dir, 'run.json'), JSON.stringify(frozenRun({ run: runId, root: catalog.root, command_policy: catalog.policy, groups: [{ kind: 'case-compile', contract: value.subject.contract, profile: value.subject.profile, manifest: value.subject.manifest }], items: [{ id: 'synthetic-item' }] })));
+    const [head, ...nodes] = treeLines(catalog, runId);
+    await mkdir(join(dir, 'knowledge'));
+    await writeFile(join(dir, 'knowledge', 'nodes.jsonl'), [head, ...nodes].map((row) => JSON.stringify(row)).join('\n') + '\n');
+    const name = (placeholder: string) => expandText(placeholder).text;
+    const checked = async (lines: Array<string | { line: string; cleanup: true }>) => {
+      const data = fixture(lines).subject.data as Record<string, unknown>, file = join(dir, 'plan.json');
+      await writeFile(file, JSON.stringify({ item: 'synthetic-item', handling: 'handled', slots: { plan: [{ text: '合成计划', data: { ...data, expects: [{ text: QUOTE.text, quote: { ...QUOTE }, after: 1 }] } }] } }));
+      const res = await runCli(['--file', file, '--run', dir]);
+      return { code: res.code, report: JSON.parse(res.stdout) as { ok: boolean; advice?: string[]; problems: unknown[] }, stderr: res.stderr };
+    };
+    const [a, b, c] = [name('{{name:64|pool_}}'), name('{{name:70|pool_}}'), name('{{name:70|tool_}}')];
+
+    const one = await checked([`demo pool add ${a} 1`, cleanup(`no demo pool add ${a}`)]);
+    assert.deepEqual([one.code, one.report.ok, one.report.problems, one.report.advice], [0, true, [], undefined], one.stderr);
+
+    const two = await checked([`demo pool add ${a} 1`, `demo pool add ${b} 1`, cleanup(`no demo pool add ${b}`), cleanup(`no demo pool add ${a}`)]);
+    assert.deepEqual([two.code, two.report.ok, two.report.problems], [0, true, []], 'it is advice, not a refusal');
+    assert.deepEqual(two.report.advice, ['固定部分相同的定长名字有 2 种长度：64 字符（{{name:64|pool_}}）用在 /slots/plan/0/data/steps/0/args/0、/slots/plan/0/data/steps/3/args/0；70 字符（{{name:70|pool_}}）用在 /slots/plan/0/data/steps/1/args/0、/slots/plan/0/data/steps/2/args/0；本意是同一个名字就用同一个定长占位；本意不同就保留']);
+
+    const other = await checked([`demo pool add ${a} 1`, `demo pool add ${c} 1`, cleanup(`no demo pool add ${c}`), cleanup(`no demo pool add ${a}`)]);
+    assert.deepEqual([other.code, other.report.ok, other.report.advice], [0, true, undefined], 'names with other fixed parts are other names');
+
+    // the plan file holds placeholders; the names are looked at as they are sent, and without a run the plan is as it was: not ok for the run it lacks
+    const flat = join(dir, 'flat.json');
+    await writeFile(flat, JSON.stringify(flatPlan('doc:l', ['x {{name:64|p_}}', 'y {{name:70|p_}}'])));
+    const unrun = await runCli(['--file', flat]), same = join(dir, 'same.json');
+    await writeFile(same, JSON.stringify(flatPlan('doc:l', ['x {{name:64|p_}}', 'y {{name:64|p_}}'])));
+    const unrunSame = await runCli(['--file', same]);
+    assert.deepEqual([unrun.code, JSON.parse(unrun.stdout).ok, JSON.parse(unrun.stdout).problems], [unrunSame.code, JSON.parse(unrunSame.stdout).ok, JSON.parse(unrunSame.stdout).problems], 'the same verdict with or without the advice');
+    assert.equal(JSON.parse(unrunSame.stdout).advice, undefined);
+    assert.deepEqual(JSON.parse(unrun.stdout).advice, ['固定部分相同的定长名字有 2 种长度：64 字符（{{name:64|p_}}）用在 /slots/plan/0/data/steps/0/args/0；70 字符（{{name:70|p_}}）用在 /slots/plan/0/data/steps/0/args/1；本意是同一个名字就用同一个定长占位；本意不同就保留']);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

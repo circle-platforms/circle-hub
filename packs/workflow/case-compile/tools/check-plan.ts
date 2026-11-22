@@ -1,5 +1,5 @@
 import {frozenRunProblem,planBoundary,type HubCheckCoverage} from '../functions/plan-boundary.ts';
-import { planAdvice } from '../functions/plan-advice.ts';
+import { callStrings, lengthAdvice, planAdvice } from '../functions/plan-advice.ts';
 import { deviceCommandLines } from '../functions/plan-commands.ts';
 import { readCommandPolicy } from '../functions/generated/skills/command-tools/command-check/command-policy.ts';
 import {lockedTree,type LockedTree} from '../functions/catalog-selection.ts';
@@ -169,6 +169,8 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
   const claimQuotes = isRecord(claim) && Array.isArray(claim.quotes) ? claim.quotes.length : 0;
   const planData = planDataOf(expandedRecord);
   const checked = readSlots(planData);
+  // names of a fixed length that share their fixed parts and differ in length: said whatever the run, since only the plan's own strings are looked at
+  if (checked.ok) advice = lengthAdvice(callStrings(checked.slots, expandedRecord));
   if (run === undefined) {
     if (!checked.ok) {
       for (const p of checked.problems) problems.push({ pointer: p.pointer, message: p.message });
@@ -211,7 +213,7 @@ export function checkPlanObject(file: string, parsed: unknown, run?:unknown,cata
       const siblings = ready.flatMap((sibling) => {
         try { const slots = readSlots(planDataOf(JSON.parse(sibling.text))); return slots.ok ? [{ path: sibling.path, device: deviceCommandLines(contract.contract, profile.profile, slots.slots).map((row) => row.line) }] : []; } catch { return []; }
       });
-      advice = planAdvice({ device: device.map((row) => row.line), other, has: (path) => tree.nodes.has(path), pairs: readCommandPolicy(run.command_policy)?.inverse_alternatives ?? [], siblings });
+      advice = [...planAdvice({ device: device.map((row) => row.line), other, has: (path) => tree.nodes.has(path), pairs: readCommandPolicy(run.command_policy)?.inverse_alternatives ?? [], siblings }), ...advice];
     }
   }
   return result(checked.ok ? checked.slots : null, { structureOk, authorityChecked, cleanupChecked, coverage });

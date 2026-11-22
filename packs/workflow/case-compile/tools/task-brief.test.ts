@@ -15,6 +15,7 @@ import {
   subagentTypeFor,
 } from '../functions/subagent-roles.ts';
 import { ATTRIBUTION, labelOf } from '../functions/generated/vocabulary.ts';
+import { expandText } from '../functions/length-literals.ts';
 import { CONTRACT_DOC } from '../functions/test-support.ts';
 import { CallFailure, formatCallError, PROSE_WRAP_MAX_CHARS } from '../functions/text.ts';
 import { stage } from '../pack-files.ts';
@@ -491,6 +492,39 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('a rework task reads the previous plan with its length placeholders: its steps are still found in what the device printed, and the plan is said by the placeholders', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-placeholders-'));
+  try {
+    const packDir = realpathSync(await stage(join(root, 'skill'))), workDir = join(root, 'work');
+    await mkdir(workDir);
+    await writeFile(join(workDir, 'scope.md'), '只测试 301 这一条合成用例。', 'utf8');
+    const CASE = '990000000000000301', sent = expandText('{{domain:200|pfx|sfx}}').text;
+    const written = JSON.stringify({
+      item: `case-${CASE}`, handling: 'handled',
+      slots: { plan: [{ text: '合成自动化用例', quotes: [{ reference: `src:${'2'.repeat(64)}/kityminder@1/n/e1`, text: '期望命中' }], data: { bucket: 'bed-a', blocks: [], replacements: [], steps: [
+        { object: 'dut0', method: 'exec', args: ['widget host {{domain:200|pfx|sfx}}'], keywords: {}, description: '设置' },
+        { object: 'dut0', method: 'exec', args: ['show widget host'], keywords: {}, description: '查询' },
+      ], expects: [{ text: '期望命中', quote: { reference: `src:${'2'.repeat(64)}/kityminder@1/n/e1`, text: '期望命中' }, after: 2 }] } }] },
+    }, null, 1) + '\n';
+    await mkdir(join(workDir, 'run', 'items'), { recursive: true }); await mkdir(join(workDir, 'run', 'briefs'), { recursive: true });
+    await writeFile(join(workDir, 'run', 'briefs', '00.md'), '# 编写简报 00\n', 'utf8');
+    await writeFile(join(workDir, 'run', 'items', '00.json'), JSON.stringify({ id: `case-${CASE}`, fields: { autoid: CASE, title: '合成 301' } }));
+    await mkdir(join(workDir, 'prior-plans')); await writeFile(join(workDir, 'prior-plans', '00.json'), written);
+    const caseDir = join(workDir, 'returns-1', 'd'.repeat(12), 'cases', CASE);
+    await mkdir(caseDir, { recursive: true });
+    await writeFile(join(caseDir, 'dut0.txt'), `seat#widget host ${sent}\nError: name too long\nseat#show widget host\nHost: none\nseat#\n`, 'utf8');
+    await writeFile(join(caseDir, 'log.txt'), `dispatched widget host ${sent}\nError: name too long\n`, 'utf8');
+    await writeFile(join(workDir, 'returns-1', 'index.json'), JSON.stringify({ schema: 'device-returns@1', run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', jobs: [{ job: 'd'.repeat(64), verification_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', rows: [{ item: CASE, verdict: 'fail', log: join('d'.repeat(12), 'cases', CASE, 'log.txt'), sessions: { 'dut0.txt': join('d'.repeat(12), 'cases', CASE, 'dut0.txt') }, execution_refused: [{ session: 'dut0.txt', prompt: 'seat#', command: `widget host ${sent}`, reply: ['Error: name too long'] }] }] }] }));
+    const brief = await buildTaskBrief({ role: '脚本编写', caseRef: CASE, briefPath: 'run/briefs/00.md', outPath: 'plans/00.json', round: 2, priorPlans: 'prior-plans/00.json', priorReturns: 'returns-1', cwd: workDir, packRoot: packDir });
+    const summary = brief.slice(brief.indexOf('自动化用例全文摘要'), brief.indexOf('上机验证设备返回'));
+    assert.ok(summary.includes('widget host {{domain:200|pfx|sfx}}'), summary);
+    assert.ok(!summary.includes(sent), 'the plan is not said by the long name');
+    assert.ok(brief.includes('执行拒绝（execution_refused）') && brief.includes('Error: name too long'), 'the device words are all there');
+    assert.ok(brief.includes(`widget host ${sent}`), 'and the command is quoted as the device printed it');
+    assert.ok(!brief.includes('不属于同一次运行'));
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorded notes, D8 unified task-brief with failureMarkers, D9 scope partition', async () => {
@@ -1111,6 +1145,16 @@ test('attribution instructions disclose marker observations and consume generate
   assert.ok(body.includes('不证明原因属于'));
   assert.ok(body.includes('缺少可区分的证据时保留未知'));
   assert.ok(!body.includes('属于本条自动化用例自己的命令顺序'));
+});
+
+test('the failure analysis takes the length of a long name from names[].chars of the returns index, in the role text and in the delivery guide', async () => {
+  const attributor = renderAgentDefinition(resolveSubagentRole('attribute')!);
+  const guide = await readFile(new URL('./delivery.md', import.meta.url), 'utf8');
+  for (const [label, text] of [['compile-attributor', attributor], ['delivery.md', guide]] as const) {
+    assert.ok(text.includes('names[].chars') && text.includes('syntax_rejected') && text.includes('不凭眼估，也不按计划本意假定'), label);
+    assert.equal(text.split('names[].chars').length - 1, 1, `${label} says it once`);
+  }
+  assert.equal(await readFile(new URL('../agents/compile-attributor.md', import.meta.url), 'utf8'), attributor, 'the agent file is the rendered role');
 });
 
 test('the writer is taught the command lookup: its task file prints the command with the frozen run, its role names it; the recomposer has its two command forms, the other roles have none', async () => {

@@ -48,8 +48,8 @@
     },
     {
       "path": "agents/compile-attributor.md",
-      "sha256": "fa20672ad2fa41f4807af8fe8bb9e36f6af90fe6810863cdc20c22aea87a8604",
-      "size": 5059
+      "sha256": "59e719609d286eaced97ced5a4d8cdc157cfdb6affe07eaa0885beda3b1d1ced",
+      "size": 5291
     },
     {
       "path": "agents/compile-fidelity.md",
@@ -258,8 +258,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "74bed71d34c9e7e9ef1eaffd927fd6739059855b7d60f8d345944e69a5f7deb7",
-      "size": 67158
+      "sha256": "9aec8d5184358cdc2ca7047b2368d14bea2357e83ddcab491f9ab9fa12785493",
+      "size": 68633
     },
     {
       "path": "functions/device-history.ts",
@@ -418,8 +418,8 @@
     },
     {
       "path": "functions/length-literals.ts",
-      "sha256": "74903523b93e3a1668b0ff6eae6fc1a5271f01c911851354d12487eb05cecb3b",
-      "size": 5173
+      "sha256": "867a3c03f380c0312982fec409e4c9c57dd6a2f41e9770280e85a2a9133e555c",
+      "size": 13441
     },
     {
       "path": "functions/manifest.ts",
@@ -433,8 +433,8 @@
     },
     {
       "path": "functions/plan-advice.ts",
-      "sha256": "a80516361770f1410da18212fa07313b80e1c1dafef45e808faa8b595c37a754",
-      "size": 3283
+      "sha256": "68df0028edef455a5410319f11a47430a9b2d8f6abfc001abbadfffddf0796e5",
+      "size": 6259
     },
     {
       "path": "functions/plan-boundary.ts",
@@ -518,8 +518,8 @@
     },
     {
       "path": "functions/rework-history.ts",
-      "sha256": "2393d586454c04e709e3b27594d2e60cbba69228df8b6fe6b089db5014ec6da1",
-      "size": 104612
+      "sha256": "96cd2170cc79cdd5aab9b2f775a5439b86672b5e08acec30fbb3a033224ebe99",
+      "size": 105810
     },
     {
       "path": "functions/runtime-contract.ts",
@@ -568,8 +568,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "e2a2f9c997017428e9d39fe6f8a72544d656f5c2e312f508ee2e7119f52ec46a",
-      "size": 49161
+      "sha256": "f39dcaf077fd6fa384090633965ceb9e8971235fb88784041eec209bc4a423f4",
+      "size": 49401
     },
     {
       "path": "functions/subject.ts",
@@ -1028,8 +1028,8 @@
     },
     {
       "path": "tools/check-plan.ts",
-      "sha256": "67c10b44cce762837c5ae24f2e6ba7cd888eb5efefab10305002cbf0faf3fae9",
-      "size": 25357
+      "sha256": "fbd7a4450106d0f721f5c132dc4bd4e3b75a69e831f35f9b34c5ffa57b52c8cb",
+      "size": 25636
     },
     {
       "path": "tools/cmd-lookup.cli.json",
@@ -1073,8 +1073,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "38764c78eb038d6c72d440daf5af3844fca04fd44b3e4975ee3417adabcd4fa2",
-      "size": 21623
+      "sha256": "4728abe05491800d08e340bf84872b8a778a9e65d3c47b678ded690d16a5e00e",
+      "size": 21854
     },
     {
       "path": "tools/device-read.cli.json",
@@ -1178,8 +1178,8 @@
     },
     {
       "path": "tools/open-compile.ts",
-      "sha256": "77e7e0ac88ffd479c53fe5b25e06f95c3c51984868c81552b318d9aca8d8492f",
-      "size": 18273
+      "sha256": "b2564a4ba9f8300f7a51067735cab8cb65aacdd10eb348032215730bf54078ea",
+      "size": 18424
     },
     {
       "path": "tools/open-merge.cli.json",
@@ -1198,8 +1198,8 @@
     },
     {
       "path": "tools/pipeline.ts",
-      "sha256": "01a48cb672b54b6bbd3bb9a4eec159796ccdd02fe57ec9874a7e7a2140af5492",
-      "size": 66018
+      "sha256": "a9cb6c9021bd7d2362343eda04f72adf384431cc18d90281982585de936d3849",
+      "size": 66348
     },
     {
       "path": "tools/plan-fields.md",

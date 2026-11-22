@@ -40,3 +40,10 @@ test('a case whose last device output holds a syntax rejection does not close as
   const plain = closeFailed([failed('c1')], { cases: { c1: { judged: '合成判断', remedy: '合成修法' } } }, { c1: 3 }, authored, texts);
   assert.deepEqual([plain.cases[0].closing, plain.problems], ['authoring_failure', []]);
 });
+
+test('a command rejected with a caret carries the long names it holds, and one without a long name carries none', () => {
+  const name = 'host-' + 'q'.repeat(90) + '-end';
+  const [rejected] = syntaxRejections(`seat#widget sync ${name}\n\nwidget sync ${name} \n^\n`);
+  assert.deepEqual(rejected, { command: `widget sync ${name}`, token: 'widget', prompt: 'seat#', names: [{ chars: 99, in: 'command', head: 'host-' + 'q'.repeat(11), tail: 'q'.repeat(12) + '-end' }] });
+  assert.equal('names' in syntaxRejections(TYPED_AT_THE_WRONG_PROMPT)[0]!, false);
+});

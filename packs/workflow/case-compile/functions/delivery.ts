@@ -1,5 +1,6 @@
 import { isRecord, failCall, localMinute, reportStatement } from './text.ts';
 import { movedText, type MovedCase } from './channels.ts';
+import { tokensOf } from './length-literals.ts';
 import { quoteMatches } from './quote.ts';
 import { labelOf, isAttribution, isExitAction, type Attribution } from './generated/vocabulary.ts';
 
@@ -186,7 +187,24 @@ export function workbookAbort(stopped: ReadonlyMap<string, NotExecuted>, titleOf
   };
 }
 
-export interface SyntaxRejection { command: string; token?: string; prompt?: string }
+/** A name of 64 characters or more that the device was sent or answered with, its length counted in the text the device printed. */
+export interface LongName { chars: number; in: 'command' | 'reply'; head: string; tail: string }
+const LONG_NAME_CHARS = 64, NAME_EDGE_CHARS = 16;
+/** The long names of a command and of the lines the device replied with, one for each place a name occurs in; none when there is no such name. */
+export function longNames(command: string, reply: readonly string[] = []): LongName[] {
+  const found: LongName[] = [], seen = new Set<string>();
+  const take = (text: string, place: LongName['in']) => {
+    for (const { token } of tokensOf(text)) {
+      if (token.length < LONG_NAME_CHARS || seen.has(`${place}\0${token}`)) continue;
+      seen.add(`${place}\0${token}`);
+      found.push({ chars: token.length, in: place, head: token.slice(0, NAME_EDGE_CHARS), tail: token.slice(-NAME_EDGE_CHARS) });
+    }
+  };
+  take(command, 'command');
+  for (const line of reply) take(line, 'reply');
+  return found;
+}
+export interface SyntaxRejection { command: string; token?: string; prompt?: string; names?: LongName[] }
 const isCaretLine = (line: string): boolean => { const s = line.trim(); return s === '^' || (s.length <= 3 && s.includes('^')); };
 export const LEADING_PROMPT = /^([A-Za-z][A-Za-z0-9_.-]{0,20}(?:\([A-Za-z0-9_\- ]+\))?[#>])/;
 const PROMPT_LOOKBACK = 8;
@@ -211,13 +229,15 @@ export function syntaxRejections(session: string): SyntaxRejection[] {
         if (typed && lines[j].slice(typed[1].length).trim() === rejection.command) { rejection.prompt = typed[1]; break; }
       }
     }
+    const names = longNames(rejection.command);
+    if (names.length) rejection.names = names;
     const key = JSON.stringify([rejection.command, rejection.token ?? null, rejection.prompt ?? null]);
     if (!seen.has(key)) { seen.add(key); found.push(rejection); }
   }
   return found;
 }
 
-export interface ExecutionRefusal { command: string; prompt: string; reply: string[]; echo_cut?: true }
+export interface ExecutionRefusal { command: string; prompt: string; reply: string[]; echo_cut?: true; names?: LongName[] }
 const REPLY_LINES = 6, REPLY_CHARS = 400;
 export function executionRefusals(session: string, markers: readonly string[]): ExecutionRefusal[] {
   if (!markers.length) return [];
@@ -228,17 +248,20 @@ export function executionRefusals(session: string, markers: readonly string[]): 
     const echoed = lines[i].slice(typed[1].length), control = echoed.search(/[\u0000-\u001f\u007f]/);
     const command = (control < 0 ? echoed : echoed.slice(0, control)).trim();
     if (!command) continue;
-    const reply: string[] = [];
+    const reply: string[] = [], said: string[] = [];
     let markerHit = false;
     for (let j = i + 1; j < lines.length && !LEADING_PROMPT.test(lines[j]); j++) {
       const line = lines[j].trim();
       if (!line) continue;
+      said.push(line);
       reply.push(line.length > REPLY_CHARS ? line.slice(0, REPLY_CHARS) + '…' : line);
       if (markers.some((marker) => line.includes(marker))) { markerHit = true; break; }
     }
     if (!markerHit) continue;
     const trimmedReply = reply.slice(-REPLY_LINES);
-    const refusal: ExecutionRefusal = { command, prompt: typed[1], reply: trimmedReply, ...(control < 0 ? {} : { echo_cut: true as const }) };
+    // the names are counted in the lines as the device printed them, not in the clipped copy the entry keeps
+    const names = longNames(command, said.slice(-REPLY_LINES));
+    const refusal: ExecutionRefusal = { command, prompt: typed[1], reply: trimmedReply, ...(control < 0 ? {} : { echo_cut: true as const }), ...(names.length ? { names } : {}) };
     const key = JSON.stringify([refusal.command, refusal.prompt, refusal.reply]);
     if (!seen.has(key)) { seen.add(key); found.push(refusal); }
   }

@@ -11,7 +11,7 @@
 3. 脚本编写：`compile-writer` 按任务文件、同构建手册和命令树写计划；计划自检（`tools/check-plan.ts`）、命令核验（`tools/cmd-verify-plumb.ts`）和场景保真审计（`tools/fidelity-plumb.ts`，判不了的交 `compile-fidelity` 盲审）都过了才算就绪。
 4. 脚本合并：`pipeline.ts collect` 收拢就绪的计划，`tools/open-merge.ts` 交计划、生成并上传工作簿、开脚本合并运行并提交。
 5. 上机验证：Hub 核对工作簿后派发到测试环境；`tools/download-returns.ts` 等待并下载设备输出。
-6. 失败分析与返工：`compile-attributor` 只读分析失败原因，`pipeline.ts rework` 新开运行、结转通过的计划（`tools/carry-plans.ts`）、重派没过的；每条最多 3 轮。
+6. 失败分析与返工：`compile-attributor` 只读分析失败原因，`pipeline.ts rework` 新开运行、结转通过的计划（`tools/carry-plans.ts`）、重派没过的；每条最多 3 轮。交给重派的编写的上一轮计划（`rework-<n>/prior-plans/`）把展开了的长名字写回定长占位，让同一个名字是同一个占位、长度不同的名字是另一个占位；`source-plans`、结转和就绪的副本仍逐字节不变。
 7. 交付：`tools/assemble-delivery.ts` 组交付目录（工作簿、`delivery_report.md`、`delivery.json`）并写最后的回复。
 
 开运行的就绪判定把没满足的条件一次说全，写在同一行 `无法编译：…` 里，用“；另：”隔开，什么都不开；只有一个问题时就是它自己的那一句。顺序是：工作流没分配、没装或版本不是 Hub 发布的（先 `recompose`，后 `case-compile`），然后（判断方式是 Plumb 时）没装 `plumb` 技能、第二行标准输入没有 Plumb 密钥、Plumb 没就绪。某一项要靠前一项才查得了（工作流没分配就没有版本可比，没有 `plumb` 技能或密钥就问不了 Plumb），就不单独算一个问题。Hub 不可达或读不到工作流列表，以及参数不对，仍单独说。技能没装时的下一步写明用客户端的技能安装从 Hub 装上；Hub 上没有 `plumb` 技能时由管理员先在 Hub 上安装。
@@ -72,7 +72,7 @@
 | `task-brief.ts` | 为四个子代理角色写任务文件，输出短派发提示 |
 | `check-brief.ts` | 核对结构化编写简报 |
 | `cmd-lookup.ts` | 查命令写法（`--param`、`--heads`）、对象和方法（`--method`、`--methods`）、块种类（`--block`） |
-| `check-plan.ts` | 用冻结的运行离线跑 Hub 对计划的边界和检查 |
+| `check-plan.ts` | 用冻结的运行离线跑 Hub 对计划的边界和检查；固定部分相同、长度不同的定长名字作为 `advice` 说出来，不影响 `ok` |
 | `cmd-select-plumb.ts`、`cmd-verify-plumb.ts` | 命令候选和命令核验；以命令树为准，Plumb 只作提示。`cmd-verify-plumb.ts --tree-only` 不问 Plumb，只做命令树核对 |
 | `command-domain-precheck.ts` | 只披露计划里的配置命令落在运行器哪条清理规则下、可用哪条只读命令查看，不判断设备状态 |
 | `fidelity-brief.ts`、`fidelity-plumb.ts`、`fidelity-apply.ts` | 场景保真审计：算简报、交 Plumb 判断、把判断并入计划 |
@@ -80,7 +80,7 @@
 | `carry-plans.ts` | 返工时把通过的计划连同保真判断结转到新运行 |
 | `fetch-run.ts`、`generate-workbook.ts` | 取一次运行的已受理结果和绑定原件，离线生成工作簿 |
 | `open-merge.ts` | 交计划、生成上传工作簿、开合并运行并提交 |
-| `download-returns.ts` | 等待并下载设备输出，写 `index.json` |
+| `download-returns.ts` | 等待并下载设备输出，写 `index.json`；`syntax_rejected`、`execution_refused` 每条里达 64 字符的长名字另列 `names`（长度取自设备输出） |
 | `device-read.ts` | 经 test-bed 在预订的设备上读一条只读命令 |
 | `refresh-late.ts` | 刷新开运行后才受理的重组记录 |
 | `assemble-delivery.ts` | 组交付目录和最后的回复 |

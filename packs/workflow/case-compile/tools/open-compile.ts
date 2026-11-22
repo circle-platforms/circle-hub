@@ -120,7 +120,7 @@ function workflowProblems(packs: Array<Record<string, unknown>>, skillsRoot: str
   const problems: string[] = [];
   for (const pack of ['recompose', 'case-compile']) {
     const published = packs.find((row) => row.id === pack);
-    if (!published) { problems.push(`Hub 上没有分配给你的 ${pack} 工作流；下一步：请管理员发布并分配 ${pack}`); continue; }
+    if (!published) { problems.push(`当前账户没有分配 ${pack} 工作流；下一步：请管理员为该账户或所在团队分配 ${pack}（Hub 上还没有发布时先发布）`); continue; }
     const version = String(published.version), local = installedVersion(skillsRoot, pack);
     if (local === null) problems.push(`本机没有装 ${pack} 技能（${join(skillsRoot, pack)}）；下一步：使用者用客户端的技能安装从 Hub 装上 ${pack} 技能 ${version}（Hub 发布的版本），再开编译`);
     else if (local !== published.version) problems.push(`本机 ${pack} 技能是 ${local}，Hub 发布的是 ${version}；下一步：重装 ${version} 再开编译`);
@@ -134,7 +134,7 @@ async function plumbProblems(plumb: PlumbJudge, skillsRoot: string): Promise<str
   const problems: string[] = [], tool = plumbToolPath(skillsRoot);
   const installed = existsSync(tool), keyed = plumb.key !== '' && !PLUMB_KEY_PLACEHOLDER.test(plumb.key);
   if (!installed) problems.push(`本机没有装 plumb 技能（${tool}），它是 Hub 发布的通用技能；下一步：使用者用客户端的技能安装从 Hub 装上 plumb 技能再开编译；Hub 上没有它时，请管理员先在 Hub 上执行 circle-hub pack install plumb@<版本>`);
-  if (!keyed) problems.push("标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF");
+  if (!keyed) problems.push("标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后重跑");
   if (installed && keyed) {
     try { const problem = plumbProblem(await plumb.status(plumb.url, plumb.key)); if (problem) problems.push(problem); }
     catch (error) { if (!(error instanceof NotReady)) throw error; problems.push(error.message); }

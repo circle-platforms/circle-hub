@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord, parseCliOptions } from '../functions/text.ts';
+import { collapseJsonText } from '../functions/length-literals.ts';
 import { chooseSiblings, neededShapes, planCommandLines, siblingNote, type SiblingPlan } from '../functions/sibling-reference.ts';
 import { deviceReadNote, readableLines, readFileName, READ_LINES_PER_CASE, READS_DIRECTORY } from '../functions/device-read-lines.ts';
 import { HISTORY_DIRECTORY } from '../functions/device-history.ts';
@@ -686,7 +687,8 @@ export async function rework(state: PipelineState, open: Record<string, unknown>
     for (const c of inPlay) {
       const kept = join('cases', c.k, 'ready', `${c.plan.index}.json`);
       await copyFile(kept, join(base, 'source-plans', `${c.plan.index}.json`));
-      if (failed.includes(c)) await writeFile(join(priorPlans, `${c.plan.index}.json`), JSON.stringify({ ...((await readJson(kept)) as Record<string, unknown>), plan_run: state.plan_run }, null, 1) + '\n');
+      // The writer reads the plan that ran with its long names as the length placeholders they were made from: a name read from expanded text is copied by hand, and a hand-copied length goes wrong unnoticed. The other copies keep their bytes.
+      if (failed.includes(c)) await writeFile(join(priorPlans, `${c.plan.index}.json`), collapseJsonText(JSON.stringify({ ...((await readJson(kept)) as Record<string, unknown>), plan_run: state.plan_run }, null, 1) + '\n'));
     }
     for (const c of failed) {
       const ran = await g.run('case-compile', 'check-plan.ts', ['--file', join('cases', c.k, 'plan', `${c.plan.index}.json`), '--run', state.plan_dir]).catch(() => null);

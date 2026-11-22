@@ -1,4 +1,8 @@
+import { blockPointer } from './blocks.ts';
+import { canonicalOf, tokensOf } from './length-literals.ts';
+import type { PlanSlots } from './slots.ts';
 import { commandWords } from './sibling-reference.ts';
+import { isRecord } from './text.ts';
 
 export interface PlanAdviceInput {
   device: readonly string[];
@@ -45,4 +49,45 @@ export function planAdvice(input: PlanAdviceInput): string[] {
     }
   }
   return advice;
+}
+
+export interface PlanString { pointer: string; text: string }
+
+/** Every string a plan sends in a call, the positional and the keyword values of its steps and blocks, with the place it has in the plan file. */
+export function callStrings(slots: PlanSlots, record: Record<string, unknown>): PlanString[] {
+  const planned = isRecord(record.slots) ? record.slots.plan : undefined, node = Array.isArray(planned) ? planned[0] : planned;
+  const base = `/slots/plan${Array.isArray(planned) ? '/0' : ''}${isRecord(node) && isRecord(node.data) ? '/data' : ''}`;
+  const found: PlanString[] = [];
+  for (const [index, step] of slots.steps.entries()) {
+    if (step.block_kind === 'SELECT_CELL') continue;
+    for (const [at, value] of step.args.entries()) if (typeof value === 'string') found.push({ pointer: base + blockPointer(slots, `/steps/${index}/args/${at}`), text: value });
+    for (const [key, value] of Object.entries(step.keywords)) if (typeof value === 'string') found.push({ pointer: base + blockPointer(slots, `/steps/${index}/keywords/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`), text: value });
+  }
+  return found;
+}
+
+const PLACES_SHOWN = 6;
+const placesOf = (places: readonly string[]): string => (places.length > PLACES_SHOWN ? `${places.slice(0, PLACES_SHOWN).join('、')} 等共 ${places.length} 处` : places.join('、'));
+
+/**
+ * One line for every group of long names that share their fixed parts and differ in length: two names that were meant to be
+ * the same one are told apart only by a length that was typed wrong. Names meant to differ are legitimate, so this is a fact
+ * for the writer, not a refusal.
+ */
+export function lengthAdvice(strings: readonly PlanString[]): string[] {
+  const groups = new Map<string, Map<number, { placeholder: string; places: string[] }>>();
+  for (const { pointer, text } of strings) for (const { token } of tokensOf(text)) {
+    const name = canonicalOf(token);
+    if (!name) continue;
+    const key = JSON.stringify([name.kind, name.prefix, name.suffix]);
+    const lengths = groups.get(key) ?? new Map<number, { placeholder: string; places: string[] }>();
+    groups.set(key, lengths);
+    const row = lengths.get(name.length) ?? { placeholder: name.placeholder, places: [] };
+    lengths.set(name.length, row);
+    if (!row.places.includes(pointer)) row.places.push(pointer);
+  }
+  return [...groups.values()].filter((lengths) => lengths.size > 1).map((lengths) => {
+    const rows = [...lengths.entries()].sort((a, b) => a[0] - b[0]);
+    return `固定部分相同的定长名字有 ${rows.length} 种长度：${rows.map(([length, row]) => `${length} 字符（${row.placeholder}）用在 ${placesOf(row.places)}`).join('；')}；本意是同一个名字就用同一个定长占位；本意不同就保留`;
+  });
 }

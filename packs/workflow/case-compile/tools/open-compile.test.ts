@@ -99,7 +99,7 @@ test('not ready: a Plumb judge that is not ready, or no Plumb key on the second 
   assert.equal(asleep.calls.filter((c) => c.name === 'start_run').length, 0);
   const keyless = hub({ list_task_packs: packs() });
   const noKey = await run(argv(join(dir, 'b.json')), keyless.connect, root, async () => READY, ['synthetic-token-1234']);
-  assert.equal(noKey.out, "无法编译：标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF\n");
+  assert.equal(noKey.out, "无法编译：标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后重跑\n");
   assert.deepEqual(keyless.calls.map((c) => c.name), ['list_task_packs'], 'the key is said together with the workflow checks, which need the Hub\'s list; no run is started');
 });
 
@@ -155,7 +155,7 @@ test('judge defaults to plumb: the written file carries no judge, a missing Plum
 });
 
 // What a new account in a fresh environment lacks is said at once, so that nobody fixes one thing, starts again and meets the next.
-const MISSING_KEY = "标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF";
+const MISSING_KEY = "标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后重跑";
 const plumbSkillMissing = (root: string) => `本机没有装 plumb 技能（${join(root, 'plumb', 'tools', 'plumb.ts')}），它是 Hub 发布的通用技能；下一步：使用者用客户端的技能安装从 Hub 装上 plumb 技能再开编译；Hub 上没有它时，请管理员先在 Hub 上执行 circle-hub pack install plumb@<版本>`;
 const modelArgv = (out: string) => argv(out, ['--judge', 'model']).filter((value, n, all) => value !== '--plumb' && all[n - 1] !== '--plumb');
 
@@ -167,7 +167,7 @@ test('not ready: every unmet local precondition is said in one line in the order
   const result = await run(argv(join(dir, 'o.json')), h.connect, root, async (url) => { asked.push(url); return READY; }, ['synthetic-token-1234']);
   assert.equal(result.code, 1);
   assert.equal(result.out, [
-    '无法编译：Hub 上没有分配给你的 recompose 工作流；下一步：请管理员发布并分配 recompose',
+    '无法编译：当前账户没有分配 recompose 工作流；下一步：请管理员为该账户或所在团队分配 recompose（Hub 上还没有发布时先发布）',
     '本机 case-compile 技能是 3.21.7，Hub 发布的是 3.22.0；下一步：重装 3.22.0 再开编译',
     plumbSkillMissing(root),
     MISSING_KEY,
@@ -219,7 +219,7 @@ test('not ready: a single problem is the one line of its own, and a check that c
   }
 
   const notAssigned = await attempt({ versions: {}, published: said({ call_result: 'ok', packs: [] }) });
-  assert.equal(notAssigned.out, '无法编译：Hub 上没有分配给你的 recompose 工作流；下一步：请管理员发布并分配 recompose；另：Hub 上没有分配给你的 case-compile 工作流；下一步：请管理员发布并分配 case-compile\n', 'a workflow the Hub does not publish has no version to compare and nothing installed to look for');
+  assert.equal(notAssigned.out, '无法编译：当前账户没有分配 recompose 工作流；下一步：请管理员为该账户或所在团队分配 recompose（Hub 上还没有发布时先发布）；另：当前账户没有分配 case-compile 工作流；下一步：请管理员为该账户或所在团队分配 case-compile（Hub 上还没有发布时先发布）\n', 'a workflow the Hub does not publish has no version to compare and nothing installed to look for');
   assert.deepEqual(notAssigned.calls, ['list_task_packs']);
 });
 

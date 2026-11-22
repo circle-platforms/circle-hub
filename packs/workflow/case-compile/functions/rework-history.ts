@@ -1,6 +1,7 @@
 import { recompositionRecordOf } from './late.ts';
 import { failureLine, LEADING_PROMPT, LOG_STAMP, MAX_ROUNDS, type RowAudit } from './delivery.ts';
 import { isAcceptance, type Acceptance } from './generated/vocabulary.ts';
+import { expandValue } from './length-literals.ts';
 import { CallFailure, isRecord, wrapProseLine } from './text.ts';
 
 export const SESSION_RETAINED_CHARS = 12_000;
@@ -453,6 +454,13 @@ function blockCommandText(block: Record<string, unknown>): string {
   return '';
 }
 
+// What the device was sent: the plan with the names its length placeholders stand for. A plan that holds placeholders is read
+// like one that holds the names, so that its commands are found in what the device printed.
+function dataAsSent(raw: unknown, sourceLabel: string, written: Record<string, unknown>): Record<string, unknown> {
+  try { return resolvePlanDataObject(expandValue(raw).value, sourceLabel).data; } catch { return written; }
+}
+const asText = (value: unknown): string => (typeof value === 'string' ? value : JSON.stringify(value));
+
 export function parsePriorPlanSnapshot(
   raw: unknown,
   caseIds: ReadonlySet<string>,
@@ -467,11 +475,18 @@ export function parsePriorPlanSnapshot(
   const rawSteps = Array.isArray(data.steps) ? data.steps.filter(isRecord) : [];
   const rawBlocks = Array.isArray(data.blocks) ? data.blocks.filter(isRecord) : [];
   const rawExpects = Array.isArray(data.expects) ? data.expects.filter(isRecord) : [];
+  // The summaries below say the plan as it was written, placeholders and all, so that a writer reads a long name by what it
+  // stands for; the commands the plan is matched to the device by are the ones that were sent.
+  const sent = dataAsSent(raw, sourceLabel, data);
+  const sentSteps = Array.isArray(sent.steps) ? sent.steps.filter(isRecord) : [];
+  const sentBlocks = Array.isArray(sent.blocks) ? sent.blocks.filter(isRecord) : [];
 
   const steps: PlanStepSummary[] = rawSteps.map((step, i) => {
     const object = typeof step.object === 'string' ? step.object : '';
     const method = typeof step.method === 'string' ? step.method : '';
-    const args = Array.isArray(step.args) ? step.args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))) : [];
+    const written = Array.isArray(step.args) ? step.args.map(asText) : [];
+    const sentStep = sentSteps[i] ?? step;
+    const args = Array.isArray(sentStep.args) ? sentStep.args.map(asText) : [];
     const keywords = isRecord(step.keywords) ? step.keywords : undefined;
     const description = typeof step.description === 'string' ? step.description.trim() : undefined;
     const cleanup = step.cleanup === true;
@@ -481,7 +496,7 @@ export function parsePriorPlanSnapshot(
     const kwNote = keywords && Object.keys(keywords).length > 0 ? ` ${JSON.stringify(keywords)}` : '';
     const cleanTag = cleanup ? ' [cleanup]' : '';
     const descTag = description ? ` // ${description}` : '';
-    const summary = `[${i + 1}] ${object}.${method}(${args.map((a) => JSON.stringify(a)).join(', ')})${kwNote}${cleanTag}${descTag}`;
+    const summary = `[${i + 1}] ${object}.${method}(${written.map((a) => JSON.stringify(a)).join(', ')})${kwNote}${cleanTag}${descTag}`;
     return {
       index: i + 1,
       object,
@@ -501,12 +516,13 @@ export function parsePriorPlanSnapshot(
     const object = typeof block.object === 'string' ? block.object : typeof block.device === 'string' ? block.device : undefined;
     const method = typeof block.method === 'string' ? block.method : undefined;
     const target = typeof block.target === 'string' ? block.target : typeof block.for === 'string' ? block.for : undefined;
-    const commandText = blockCommandText(block);
+    const writtenCommand = blockCommandText(block);
+    const commandText = blockCommandText(sentBlocks[i] ?? block);
     const isCleanup = kind === 'RESTORE_FROM' || block.cleanup === true || block.phase === 'cleanup';
     const bodyParts = [
       `${id}:${kind}`,
       object || method ? `${object ?? ''}${method ? '.' + method : ''}` : '',
-      commandText ? JSON.stringify(commandText) : '',
+      writtenCommand ? JSON.stringify(writtenCommand) : '',
       typeof block.literal === 'string' ? `literal=${JSON.stringify(block.literal)}` : '',
       typeof block.text === 'string' ? `text=${JSON.stringify(block.text)}` : '',
       typeof block.pattern === 'string' ? `pattern=${JSON.stringify(block.pattern)}` : '',

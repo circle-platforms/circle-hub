@@ -210,6 +210,36 @@ test('a command the device refused to execute is listed for its row with the ses
   assert.equal(JSON.parse(undeclaredDone.stdout).execution_refused, 0);
 });
 
+test('an entry of the index lists the long names its command and its reply hold, counted in what the device printed, and an entry without one has no names', async (t) => {
+  const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+  doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
+  const contract = text(JSON.stringify(signTypedRuntime(doc))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
+  const plan = planRunFixture({ run: PLAN, autoids: ['990000000000000301', '990000000000000302'], exclude: [], contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+  const longer = `host-${'q'.repeat(100)}-end`, other = 'z'.repeat(70);
+  const longSession = text([
+    `seat(config)#widget name ${longer}`, '', `Name too long: ${longer}`, `also ${other}`, 'Failed to run the synthetic command', '',
+    'seat(config)#widget name short', 'fine',
+    `seat#widget sync ${other}`, '', `widget sync ${other} `, '^', 'seat#', '',
+  ].join('\n'));
+  const h = await hub(jobs(longSession), [deviceReturn, log, longSession, held, contract, profile, inventory], [], plan); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const row = JSON.parse(await readFile(join(out, 'index.json'), 'utf8')).jobs[0].rows[0];
+  assert.deepEqual(row.execution_refused, [{
+    session: 'dev-a.txt', command: `widget name ${longer}`, prompt: 'seat(config)#', reply: [`Name too long: ${longer}`, `also ${other}`, 'Failed to run the synthetic command'],
+    names: [{ chars: 109, in: 'command', head: 'host-' + 'q'.repeat(11), tail: 'q'.repeat(12) + '-end' }, { chars: 109, in: 'reply', head: 'host-' + 'q'.repeat(11), tail: 'q'.repeat(12) + '-end' }, { chars: 70, in: 'reply', head: 'z'.repeat(16), tail: 'z'.repeat(16) }],
+  }]);
+  assert.deepEqual(row.syntax_rejected, [{ session: 'dev-a.txt', command: `widget sync ${other}`, token: 'widget', prompt: 'seat#', names: [{ chars: 70, in: 'command', head: 'z'.repeat(16), tail: 'z'.repeat(16) }] }]);
+  assert.equal(JSON.parse(done.stdout).execution_refused, 1);
+  const plain = await hub(jobs(), [deviceReturn, log, session, held]); t.after(plain.close);
+  const second = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  assert.equal((await run(plain.url, second)).code, 0);
+  const none = JSON.parse(await readFile(join(second, 'index.json'), 'utf8')).jobs[0].rows[0];
+  assert.deepEqual(none.syntax_rejected, [], 'sessions without a caret list nothing, and nothing carries a names field');
+  assert.equal(JSON.stringify(none).includes('"names"'), false);
+});
+
 test('bytes that do not match their digest, a run never dispatched and a directory already in use write nothing', async (t) => {
   const forged = await hub(jobs(text('forged session')), [deviceReturn, log, session]); t.after(forged.close);
   const dir = await mkdtemp(join(tmpdir(), 'cc-returns-'));

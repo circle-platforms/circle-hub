@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { expandText } from '../functions/length-literals.ts';
 import { collect, forLead, initState, main, next, recordStatus, reopen, resume, retry, rework, summary, type Gates, type PipelineState, type RunTool, type ToolRun } from './pipeline.ts';
 
 const ok = (stdout = '{"ok":true}'): ToolRun => ({ code: 0, stdout, stderr: '' });
@@ -522,6 +523,40 @@ test('a device round is reworked by code: a new plan run, what passed carried, w
   assert.equal(check[check.indexOf('--run') + 1], join('rework-2', 'plan-run'), 'the gates run against the new plan run');
   await collect(state, 'plans-2');
   assert.deepEqual(['00', '01', '02'].map((k) => readFileSync(join('plans-2', `${k}.json`), 'utf8')), ['{"plan":"00 carried"}', '{"plan":"01 round 2"}', '{"plan":"02 carried"}']);
+});
+
+const plansWith = (names: string[], description = '一步') => JSON.stringify({ item: 'doc:01', handling: 'handled', slots: { plan: [{ text: '合成计划', data: { bucket: 'bed-a', blocks: [], replacements: [], expects: [], steps: names.map((name, n) => ({ object: 'dut0', method: 'exec', args: [`widget host ${name}`], keywords: {}, description: `${description} ${n + 1}` })) } }] } }, null, 2) + '\n';
+
+test('the plan a reworked case ran is handed to its next writer with the long names back as length placeholders, and every other copy keeps its bytes', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+  const right = expandText('{{domain:200|pfx|sfx}}').text, wrong = expandText('{{domain:204|pfx|sfx}}').text;
+  const ran = plansWith([right, right, wrong, `x1.${right}`]);
+  await writeFile(join('cases', '01', 'ready', '01.json'), ran);
+  const step = await rework(state, OPENED, 'returns-1', 'notes', gates(t.run));
+  assert.deepEqual(step.reworked, ['01']);
+  const handed = readFileSync(join('rework-2', 'prior-plans', '01.json'), 'utf8'), holds = (part: string) => handed.split(part).length - 1;
+  assert.ok(!handed.includes(right) && !handed.includes(wrong), 'no long name is left in what the writer reads');
+  assert.deepEqual([holds('{{domain:200|pfx|sfx}}'), holds('{{domain:204|pfx|sfx}}'), holds('widget host x1.{{domain:200|pfx|sfx}}')], [3, 1, 1], 'the same name is the same placeholder and the one typed longer is another');
+  assert.equal(JSON.parse(handed).plan_run, OPEN.plan_run);
+  assert.equal(expandText(handed).text, JSON.stringify({ ...JSON.parse(ran), plan_run: OPEN.plan_run }, null, 1) + '\n', 'it expands back to the plan that ran, byte for byte');
+  assert.equal(readFileSync(join('rework-2', 'source-plans', '01.json'), 'utf8'), ran, 'the source copy is the plan as it ran');
+  assert.equal(readFileSync(join('cases', '01', 'ready', '01.json'), 'utf8'), ran, 'and so is the ready copy');
+  for (const k of ['00', '02']) {
+    assert.equal(readFileSync(join('rework-2', 'source-plans', `${k}.json`), 'utf8'), `{"plan":"${k} round 1"}`);
+    assert.equal(readFileSync(join('cases', k, 'ready', `${k}.json`), 'utf8'), `{"plan":"${k} carried"}`, 'what was carried is what the carry wrote');
+    assert.equal(existsSync(join('rework-2', 'prior-plans', `${k}.json`)), false, 'a case that passed has no prior plan');
+  }
+  const task = t.calls.filter((c) => c.tool === 'case-compile/task-brief.ts').at(-1)!.args;
+  assert.equal(task[task.indexOf('--prior-plans') + 1], join('rework-2', 'prior-plans'), 'the writer is pointed at the collapsed copy');
+});
+
+test('a plan that cannot be proved to expand back to its own bytes is handed to the writer as the bytes it has', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+  const right = expandText('{{domain:200|pfx|sfx}}').text;
+  const ran = plansWith([right, right], '一步，占位 {{name:10}} 写在说明里');
+  await writeFile(join('cases', '01', 'ready', '01.json'), ran);
+  await rework(state, OPENED, 'returns-1', 'notes', gates(t.run));
+  assert.equal(readFileSync(join('rework-2', 'prior-plans', '01.json'), 'utf8'), JSON.stringify({ ...JSON.parse(ran), plan_run: OPEN.plan_run }, null, 1) + '\n', 'the placeholder the plan holds would expand to another text, so nothing is collapsed');
 });
 
 test('a reworked case whose task cannot be generated stops with the tool\'s words; the others are dispatched and the round is kept', async () => {

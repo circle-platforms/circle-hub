@@ -71,3 +71,159 @@ export function describeExpansions(file: string, expansions: Expansion[]): strin
   const seen = new Set<string>();
   return expansions.filter((e) => !seen.has(e.placeholder) && seen.add(e.placeholder)).map((e) => `${file}：${e.placeholder} → ${e.length} 字符${e.labels ? `，${e.labels.length} 段，各段 ${e.labels.join('/')}` : ''}`);
 }
+
+// The inverse of the expansion. A plan that was expanded holds long names as plain text; a writer who is handed that text
+// copies it by hand and can get a length wrong without anyone noticing. collapseText puts the placeholders back, so that
+// the same name stands for the same placeholder and a name of another length shows as another placeholder.
+
+/** The characters a fixed part may hold: visible ASCII without whitespace, quotes, the backtick and the backslash. */
+const TOKEN = /[\x21\x23-\x26\x28-\x5b\x5d-\x5f\x61-\x7e]+/g;
+/** Sixteen identical characters in a row: the filler of a name worth a placeholder, not an ordinary short name. */
+const LONG_RUN = /(.)\1{15}/;
+const LEADING_RUN = /^(.)\1{15}/;
+const TRAILING_RUN = /(.)\1{15}$/;
+// A filler of at most MAX_LENGTH characters is not made of more labels than this: every label but the last has 62 or 63.
+const MAX_FILLER_LABELS = 70;
+
+export interface CanonicalName {
+  kind: 'domain' | 'name';
+  /** The length of the whole name, the number the placeholder declares. */
+  length: number;
+  prefix: string;
+  suffix: string;
+  /** The characters the placeholder makes up between its fixed parts. */
+  fill: number;
+  placeholder: string;
+  literal: string;
+}
+export interface Collapsed { placeholder: string; literal: string; count: number }
+
+/** The maximal runs of fixed-part characters of a text, with where each one starts. */
+export function tokensOf(text: string): Array<{ token: string; index: number }> {
+  return [...text.matchAll(TOKEN)].map((found) => ({ token: found[0], index: found.index! }));
+}
+
+function placeholderOf(kind: 'domain' | 'name', length: number, prefix: string, suffix: string): string {
+  return `{{${kind}:${length}${suffix ? `|${prefix}|${suffix}` : prefix ? `|${prefix}` : ''}}}`;
+}
+
+/** A placeholder is only written when expanding it gives back the literal byte for byte. */
+function expandsTo(placeholder: string, literal: string): boolean {
+  try { return expandText(placeholder).text === literal; } catch { return false; }
+}
+
+function domainName(token: string): CanonicalName | null {
+  const labels = token.split('.');
+  for (let start = 0; start < labels.length; start++) {
+    if (!/^a{16,63}$/.test(labels[start]!)) continue;
+    for (let end = Math.min(labels.length - 1, start + MAX_FILLER_LABELS); end >= start; end--) {
+      const filler = labels.slice(start, end + 1).join('.');
+      if (fillerLabels(filler.length).join('.') !== filler) continue;
+      const prefix = labels.slice(0, start).join('.'), suffix = labels.slice(end + 1).join('.');
+      if (LONG_RUN.test(prefix) || LONG_RUN.test(suffix)) continue;
+      const placeholder = placeholderOf('domain', token.length, prefix, suffix);
+      if (expandsTo(placeholder, token)) return { kind: 'domain', length: token.length, prefix, suffix, fill: filler.length, placeholder, literal: token };
+    }
+  }
+  return null;
+}
+
+function plainName(token: string): CanonicalName | null {
+  for (const run of token.matchAll(/a{16,}/g)) {
+    const prefix = token.slice(0, run.index), suffix = token.slice(run.index! + run[0].length);
+    if (LONG_RUN.test(prefix) || LONG_RUN.test(suffix)) continue;
+    const placeholder = placeholderOf('name', token.length, prefix, suffix);
+    if (expandsTo(placeholder, token)) return { kind: 'name', length: token.length, prefix, suffix, fill: run[0].length, placeholder, literal: token };
+  }
+  return null;
+}
+
+/** What a token is when it is exactly what some length placeholder expands to and its filler is at least 16 characters long. */
+export function canonicalOf(token: string): CanonicalName | null {
+  if (token.length > MAX_LENGTH || !LONG_RUN.test(token)) return null;
+  return (token.includes('.') ? domainName(token) ?? plainName(token) : plainName(token));
+}
+
+/** Where a literal stands inside a host without lengthening the run of its own filler (a literal ending in a run is not found in the middle of a longer run). */
+function alignedAt(host: string, literal: string): number[] {
+  const found: number[] = [], before = LEADING_RUN.test(literal) ? literal[0] : null, after = TRAILING_RUN.test(literal) ? literal.at(-1) : null;
+  for (let from = host.indexOf(literal); from >= 0; from = host.indexOf(literal, from + 1)) {
+    if (before !== null && host[from - 1] === before) continue;
+    if (after !== null && host[from + literal.length] === after) continue;
+    found.push(from);
+    from += literal.length - 1;
+  }
+  return found;
+}
+
+/**
+ * Puts the length placeholders back into a text that was expanded. A token (see tokensOf) that is exactly what a placeholder
+ * expands to becomes that placeholder; the same name inside a longer token (a name with a label or other characters around it
+ * that stands alone elsewhere in the text) becomes the same placeholder with its own extra characters around it. Names that
+ * only differ in length are different placeholders. The result expands back to what the text expands to, byte for byte;
+ * a text this cannot be proved for is returned as it was.
+ */
+export function collapseText(text: string): { text: string; collapsed: Collapsed[] } {
+  const unchanged = { text, collapsed: [] as Collapsed[] };
+  if (!LONG_RUN.test(text)) return unchanged;
+  let expected: string;
+  try { expected = expandText(text).text; } catch { return unchanged; }
+
+  // The names that stand alone, shortest first; one that is only a shorter name with something around it is said through that one.
+  const seen = new Map<string, CanonicalName | null>();
+  for (const { token } of tokensOf(text)) if (!seen.has(token)) seen.set(token, canonicalOf(token));
+  const bases: CanonicalName[] = [];
+  for (const name of [...seen.values()].filter((value): value is CanonicalName => value !== null).sort((a, b) => a.length - b.length)) {
+    if (!bases.some((base) => base.kind === name.kind && base.fill === name.fill && alignedAt(name.literal, base.literal).length > 0)) bases.push(name);
+  }
+  if (!bases.length) return unchanged;
+
+  // The text as pieces: what is written out and what is placeholder (kept as it is, and not looked into).
+  let pieces: Array<{ text: string; placeholder?: CanonicalName; kept?: true }> = [];
+  let last = 0;
+  for (const found of text.matchAll(PLACEHOLDER)) {
+    if (found.index! > last) pieces.push({ text: text.slice(last, found.index) });
+    pieces.push({ text: found[0], kept: true });
+    last = found.index! + found[0].length;
+  }
+  if (last < text.length) pieces.push({ text: text.slice(last) });
+  for (const base of [...bases].sort((a, b) => b.length - a.length)) {
+    pieces = pieces.flatMap((piece) => {
+      if (piece.kept || piece.placeholder) return [piece];
+      const hits = alignedAt(piece.text, base.literal);
+      if (!hits.length) return [piece];
+      const split: typeof pieces = [];
+      let from = 0;
+      for (const hit of hits) {
+        if (hit > from) split.push({ text: piece.text.slice(from, hit) });
+        split.push({ text: base.placeholder, placeholder: base });
+        from = hit + base.literal.length;
+      }
+      if (from < piece.text.length) split.push({ text: piece.text.slice(from) });
+      return split;
+    });
+  }
+
+  const out = pieces.map((piece) => piece.text).join('');
+  try { if (expandText(out).text !== expected) return unchanged; } catch { return unchanged; }
+  const counts = new Map<string, Collapsed>();
+  for (const piece of pieces) if (piece.placeholder) {
+    const row = counts.get(piece.text) ?? { placeholder: piece.text, literal: piece.placeholder.literal, count: 0 };
+    row.count++;
+    counts.set(piece.text, row);
+  }
+  return { text: out, collapsed: [...counts.values()] };
+}
+
+/**
+ * A JSON text with its long names collapsed; the text itself when the collapsed text is no longer JSON, does not expand back to
+ * exactly these bytes, or does not read back as the same value (expandValue leaves the keys of an object as they are).
+ */
+export function collapseJsonText(text: string): string {
+  const { text: collapsed } = collapseText(text);
+  if (collapsed === text) return text;
+  try {
+    const sameValue = JSON.stringify(expandValue(JSON.parse(collapsed)).value) === JSON.stringify(JSON.parse(text));
+    return sameValue && expandText(collapsed).text === text ? collapsed : text;
+  } catch { return text; }
+}
