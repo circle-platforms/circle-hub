@@ -228,9 +228,6 @@ test('teamDetailPage lists executor assignments under 测试环境 with target n
   (ctx.deps as unknown as { dispatch: { executors: () => Promise<unknown[]> } }).dispatch = {
     executors: async () => [{ id: executor, target: '合成实验室', endpoint: 'https://192.0.2.10', enabled: true, resources: [] }],
   };
-  (ctx.deps as unknown as { memberCapabilities: () => Promise<unknown> }).memberCapabilities = async () => ({
-    environmentAccess: { enforced: false, ready: true, missing: null, nextAction: null },
-  });
   const listed = await ctx.deps.resources.list(ADMIN);
   ctx.deps.resources.list = async () => [
     ...listed,
@@ -241,7 +238,7 @@ test('teamDetailPage lists executor assignments under 测试环境 with target n
   const body = String(page.body);
   assert.match(body, /合成实验室/);
   assert.match(body, /测试环境分配/);
-  assert.match(body, /data-environment-assignment-preview/);
+  assert.match(body, /测试环境的分配只决定成员的「我能做的事」列出哪些测试环境；谁能预订和上机按工作流的分配和预订规则判断。/);
   assert.match(body, /<dt>业务系统<\/dt><dd>1<\/dd>/);
   assert.match(body, /<dt>测试环境<\/dt><dd>1<\/dd>/);
   assert.match(body, /name="resources" value="res_unassigned"/);

@@ -1,7 +1,3 @@
-import { MemberEnvironments } from '../../dispatch/member-environments.ts';
-import { ExecutorRegistry } from '../../dispatch/executors.ts';
-import { definition as executorDefinition } from '../../dispatch/testing/definition.ts';
-import { canUseEnvironment } from '../../records/environment-permissions.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -23,7 +19,6 @@ const LINE = 'inspect peers';
 
 let postgres: TemporaryPostgres;
 let h: Harness;
-let environments: MemberEnvironments;
 let map: string;
 let packRoot: string;
 const read: Array<{ user: string; run: string; targets: DeviceReadTarget[] }> = [];
@@ -80,18 +75,11 @@ function pack(id: string, projection: string, declare = true): PackSpec {
 before(async () => {
   if (skip) return;
   postgres = await startPostgres();
-  h = await openHarness(postgres, { leases: true, environmentAccess: { authorizeKeys: (actor, keys) => environments.authorizeKeys(actor, keys) }, observations: {
+  h = await openHarness(postgres, { leases: true, observations: {
     latest: async () => [],
     observe: async () => ({ observed: [], missing: null }),
     read: async (user, run, targets) => { read.push({ user: user.id, run, targets: [...targets] }); return port(targets); },
   } });
-  const registry = new ExecutorRegistry(h.kit);
-  const environment = await registry.add(h.admin, {
-    ...executorDefinition('http://127.0.0.1:1/mcp'), target: 'synthetic-device-read',
-    resources: ['meadow/dev/1', 'meadow/dev/2', 'meadow/dev/3', 'meadow/dev/4', 'meadow/dev/5', 'meadow/dev/7', 'meadow/dev/8'],
-  });
-  for (const actor of [h.alice, h.bob]) await h.kit.authorizations.assignResource(h.admin, environment.id, actor.id);
-  environments = new MemberEnvironments(h.kit, registry, h.leases!, (actor, id) => canUseEnvironment(h.kit, actor, id));
   map = await h.upload(h.alice, toyMap(standardDocument()));
   packRoot = await mkdtemp(join(tmpdir(), 'circle-hub-device-read-'));
 });

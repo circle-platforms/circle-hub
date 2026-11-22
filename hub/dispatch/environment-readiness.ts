@@ -97,9 +97,7 @@ export async function readEnvironmentReadiness(sources: EnvironmentReadinessSour
   catch { return { ...report, missing_fact: '运行环境配置未能完整读取', next_action: next('核对配置读取能力后重读') }; }
   for (const candidate of candidates) {
     if (candidate.definition.target !== target) continue;
-    let assigned: boolean | null;
-    try { assigned = await sources.canUse(actor, candidate.id); } catch { assigned = null; }
-    if (!administrator && assigned !== true) continue;
+    if (!administrator && !await sources.canUse(actor, candidate.id).catch(() => false)) continue;
     const row: EnvironmentReadinessExecutor = { ordinal: report.executors.length + 1, ...(administrator ? { executor: candidate.id } : {}), checks: [], occupancy: null, baseline_registrations: [] };
     const check = (condition: string, label: string, satisfied: boolean | null, references: string[] = [], missing?: string, action = '核对该项声明与可读依据后重读') => {
       row.checks.push({ condition, label, satisfied, observed_at: now(), references, ...(missing ? { missing_fact: missing, next_action: next(action) } : {}) });
@@ -115,7 +113,6 @@ export async function readEnvironmentReadiness(sources: EnvironmentReadinessSour
     };
     const definition = candidate.definition;
     check('enabled', '执行器启用', definition.enabled, [], definition.enabled ? undefined : '执行器已停用', '核对执行器配置后启用或选择其他已分配环境');
-    check('assignment', '当前账户使用分配', assigned, [], assigned === true ? undefined : assigned === false ? '当前账户没有该执行器的使用分配；管理员管理权不代替使用分配' : '当前使用分配未能读取', '核对并明确分配该运行环境后重读');
     await original('manifest', '清单原件可读且摘要一致', definition.manifest_sha256);
     check('manifest_freshness', '清单时效', null, [], '没有足以判定过期的版本或期限依据；未连接目标核对当前清单');
     const probes = definition.bed_state?.items ?? [];

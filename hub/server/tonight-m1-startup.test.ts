@@ -6,7 +6,7 @@ import { assembleHub } from './assemble/hub.ts';
 import { openCliHarness } from './assemble/test-cli.ts';
 import { loadServerConfig } from './main.ts';
 
-test('an existing M1 member and booking survive direct serve with the environment guard off', { timeout: 60_000 }, async () => {
+test('an existing M1 member and booking survive direct serve', { timeout: 60_000 }, async () => {
   const harness = await openCliHarness();
   try {
     const deployment = await harness.deployment();
@@ -40,9 +40,8 @@ test('an existing M1 member and booking survive direct serve with the environmen
         assembly: async () => ({ assemble: async (current, records) => {
           const hub = await assembleHub(current, records, { requireOsIsolation: false, log: () => {} });
           try {
-            assert.equal(hub.dispatch?.options.enforceEnvironmentAssignments, false);
             const capabilities = await hub.deps.memberCapabilities({ id: member.id, name: member.name, role: member.role });
-            assert.equal(capabilities.environmentAccess.enforced, false, 'N1 reports the actual inactive policy');
+            assert.equal(capabilities.member.enabled, true, 'the existing member is still enabled');
             assert.deepEqual((await hub.leases.view('bed/', true)).entries.map(row => [row.key, row.user, row.run]), [['bed/existing/device', holder.user, holder.run]]);
             assert.deepEqual(await snapshot(), before, 'assembly changes neither schema, existing records, member nor booking');
             assembled++;

@@ -9,7 +9,7 @@ import { setupJournal } from './testing/journal.ts';
 import { acceptedDispatch, MAX_NOTE_TEXT, MAX_NOTES, runnerNote } from './accepted.ts';
 import { definition } from './testing/definition.ts';
 import { readRunJobs } from './read-runs.ts';
-import { newId, type ActionBody, type Principal } from '../records/api.ts';
+import { canUseEnvironment, newId, type ActionBody, type Principal } from '../records/api.ts';
 import type { JobStatus } from './service.ts';
 
 type C = Awaited<ReturnType<typeof setup>>;
@@ -354,32 +354,13 @@ test('unreadable certification evidence remains no_verdict and gives members its
   assert.equal(c.calls.filter(call=>call==='send_blob').length,1,'missing evidence never causes another submission');
 });
 
-test('the responsibility administrator cannot lend environment use to an unassigned runner',async t=>{
+test('a runner without an environment assignment is dispatched once the release holds',async t=>{
   const c=await setup();t.after(()=>c.close());
-  await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
-  const denied=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(denied.outcome,'not_dispatched');assert.equal(denied.error_code,'SOURCE_NOT_PERMITTED');
-  assert.equal(c.calls.length,0,'authorization fails before a gateway session is opened');
-  assert.equal(c.calls.includes('send_blob'),false);
-  const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.error_code,'SOURCE_NOT_PERMITTED');assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub/);
-});
-
-test('revoking environment use after precheck is rechecked in the intent transaction',async t=>{
-  const c=await setup();t.after(()=>c.close());
-  const permission=c.environmentAccess.permission;let checks=0;
-  c.service.options.environmentAccess={
-    canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
-    permission:async(actor,executor,tx)=>{
-      checks++;
-      await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
-      return permission(actor,executor,tx);
-    },
-  };
-  const denied=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(checks,1);assert.equal(denied.outcome,'not_dispatched');assert.equal(denied.error_code,'SOURCE_NOT_PERMITTED');
-  assert.equal(c.calls.includes('send_blob'),false);
-  assert.ok(!(await c.service.journal.events(denied.job)).some(event=>event.body.detail.phase==='intent'),'no intent authorizes the revoked environment use');
+  assert.equal(await canUseEnvironment(c.kit,c.owner,c.executor.id),false,'the runner has no assignment of this environment');
+  const started=await c.service.dispatchAccepted(c.run);
+  assert.equal(started.started,true,JSON.stringify(started));
+  assert.equal(started.status?.outcome,'effective');
+  assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
 });
 
 test('an unexpected dispatch exception caught by the scheduler is not evidence of nonexecution',async t=>{
@@ -392,33 +373,6 @@ test('an unexpected dispatch exception caught by the scheduler is not evidence o
   }
   assert.equal(invoked,1,'a scheduler catch cannot authorize a blind retry');
 });
-
-test('a missing environment provider is unavailable evidence, never a claim of no assignment',async t=>{
-  const c=await setup();t.after(()=>c.close());
-  assert.equal(await c.environmentAccess.canUse(c.owner,c.executor.id),true,'this actor really has an assignment');
-  c.service.options.environmentAccess=undefined;
-  const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.error_code,'SOURCE_UNAVAILABLE');assert.equal(result.outcome,'not_dispatched');
-  assert.equal(c.calls.length,0);
-  const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.error_code,'SOURCE_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('尚未核对')));
-  assert.doesNotMatch(JSON.stringify(note),/没有.*分配|usr_|exe_|circle-hub/);
-});
-
-test('an unreadable environment permission port is unavailable, not a negative permission verdict',async t=>{
-  const c=await setup();t.after(()=>c.close());
-  assert.equal(await c.environmentAccess.canUse(c.owner,c.executor.id),true);
-  c.service.options.environmentAccess={
-    canUse:async()=>{throw new Error('private connection failure');},
-    permission:c.environmentAccess.permission,
-  };
-  const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.error_code,'SOURCE_UNAVAILABLE');assert.equal(c.calls.length,0);
-  const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.error_code,'SOURCE_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('尚未核对')));
-  assert.doesNotMatch(JSON.stringify(note),/private connection|没有.*分配|usr_|exe_|circle-hub/);
-});
-
 
 test('a verified submission without booking reports authorized environment facts without raw lease keys',async t=>{
   const c=await setup({mode:'lineage'});t.after(()=>c.close());
@@ -433,14 +387,6 @@ test('a verified submission without booking reports authorized environment facts
   for(const key of c.executor.definition.resources)assert.ok(!JSON.stringify(note).includes(key));
   assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|原因.*未查清/);
   assert.equal(c.calls.length,0);
-});
-
-test('an unassigned actor gets no environment name or booking diagnosis',async t=>{
-  const c=await setup({mode:'lineage'});t.after(()=>c.close());
-  await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
-  const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
-  assert.equal(note.error_code,'SOURCE_NOT_PERMITTED');assert.equal(note.booking,undefined);
-  assert.ok(!JSON.stringify(note).includes(c.executor.definition.target));assert.equal(c.calls.length,0);
 });
 
 test('unreadable lease coverage stays unknown instead of asserting no booking',async t=>{
@@ -503,7 +449,6 @@ test('a second member hitting an occupied physical environment receives the actu
   try {
     await atSubmit;
     const second = await c.kit.principals.createUser(c.admin,'合成第二成员');
-    await c.kit.teams!.add(c.admin,c.environmentTeam.id,second.id);
     const run = await secondDisclosureRun(c,second,true);
     await c.leases.forceRelease({keys:c.executor.definition.resources,by:c.admin.id,reason:'合成：原作业仍在执行，第二成员另持当前租约'});
     assert.equal((await c.leases.acquire({keys:c.executor.definition.resources,prefix:'synthetic/',ttlSeconds:3600,maxTtlSeconds:3600,holder:{user:second.id,run}})).ok,true);

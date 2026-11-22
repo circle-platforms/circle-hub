@@ -14,7 +14,7 @@ import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymb
 import { callErrorFact, callErrorNext } from './call-error-category.ts';
 import { SOURCE_UNKNOWN_CODES, callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
 import { fixByRole, proseByRole, type CallerRole } from './fix-by-role.ts';
-import { ENVIRONMENT_ASSIGNMENT_PREVIEW, packListHead } from './pack-words.ts';
+import { packListHead } from './pack-words.ts';
 import { isEscalatedError } from './refusal-escalate.ts';
 import { toolLocalMinute } from '../telemetry/api.ts';
 
@@ -464,7 +464,6 @@ function listText(v: ListOut, context: TextContext): string {
       workflows?: readonly unknown[];
       skills?: readonly unknown[];
       unassigned_workflows_count?: number;
-      environmentAccess?: { enforced?: boolean };
     };
   }).member_capabilities;
   const unassigned = capabilities?.unassigned_workflows_count;
@@ -485,7 +484,6 @@ function listText(v: ListOut, context: TextContext): string {
     lines.push(...pack.parameters.map(parameter => `${parameter.description}，${required(parameter.required)}`));
     if (pack.local_tools) lines.push(`已提供 ${pack.local_tools.count} 个本地工具。`);
   }
-  if (capabilities?.environmentAccess?.enforced === false) lines.push(ENVIRONMENT_ASSIGNMENT_PREVIEW);
   return lines.join('\n');
 }
 

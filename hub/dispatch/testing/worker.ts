@@ -6,8 +6,7 @@ import { openRecords } from '../../records/index.ts';
 import { FileKeyProvider } from '../../records/api.ts';
 import { Database, createPool } from '../../records/db.ts';
 import { LeaseService } from '../../leases/api.ts';
-import { DispatchService, ExecutorRegistry, MemberEnvironments } from '../api.ts';
-import { canUseEnvironment } from '../../records/environment-permissions.ts';
+import { DispatchService } from '../api.ts';
 import type { RunDetail, LoadedWorkflow } from '../../ports.ts';
 const input = JSON.parse(readFileSync(0, 'utf8'));
 const now = () => new Date(input.now);
@@ -20,8 +19,7 @@ try {
   const document=effectsDocument(parameters);
   if(typeof input.repetition==='number')(document.effects[0] as {repetition?:number}).repetition=input.repetition;
   const leases=new LeaseService(db,{now:async()=>now()});
-  const environmentAccess=new MemberEnvironments(kit,new ExecutorRegistry(kit),leases,(actor,id,tx)=>canUseEnvironment(kit,actor,id,tx));
-  const service = new DispatchService({ enforceEnvironmentAssignments:true, environmentAccess, beforeRound:typeof input.haltBeforeRound==='number'?async round=>{if(round>=input.haltBeforeRound)process.exit(86);}:undefined,recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策支持',grounds:[],tier:'blocking'}]])),records: kit, leases,
+  const service = new DispatchService({ beforeRound:typeof input.haltBeforeRound==='number'?async round=>{if(round>=input.haltBeforeRound)process.exit(86);}:undefined,recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策支持',grounds:[],tier:'blocking'}]])),records: kit, leases,
     runs: { getRun: async (_by, id) => id === detail.run.run ? detail : id === detail.run.predecessor ? { ...detail, run: { ...detail.run, run: id, predecessor: undefined } } : null },
     workflows: { byDigest: async () => ({ pack: { id: 'synthetic-workflow', version: '1.0.0', digest: detail.run.pack_digest }, requirements: [{ key: 'workbook_verified', required: true, target: 'item', accepted_producer: 'fact' }],readJson:async()=>document } as unknown as LoadedWorkflow) }, now });
   if (process.send) { process.send({ ready: true }); await new Promise(resolve => process.once('message', resolve)); }

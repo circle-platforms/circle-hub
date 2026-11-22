@@ -66,7 +66,7 @@ test('LEASE_UNAVAILABLE member keeps contract; admin gets lease.release from reg
   const admin = fixByRole('LEASE_UNAVAILABLE', 'admin')!;
   assert.doesNotMatch(admin, /请管理员/);
   assert.match(admin, /circle-hub lease release /);
-  assert.match(admin, /控制台「连接」页/);
+  assert.doesNotMatch(admin, /控制台「连接」页/);
   assert.doesNotMatch(admin, /不补造到期时刻/);
   assertCommandsRegistered(admin);
 });

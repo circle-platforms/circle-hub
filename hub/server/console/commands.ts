@@ -100,23 +100,7 @@ export const commands = {
     text: '核实运行环境已恢复原状（例如设备已重启、执行留下的配置已清除）后再执行；执行后该运行环境恢复接受执行，原记录保留。', command: command('bed', 'hold', 'clear', executor.id, REASON),
   }),
   executorUnassignConsequence:
-    '撤回后立即挡住新的预订、续期、在测试环境上执行、问设备和观察；正在进行的执行会跑完。预订仍留在持有人名下，持有人只能释放。',
-  leaseRelease: (executor: { id: string; target: string }, detail: string, heldKeys: readonly string[] = []): CommandDialog => {
-    const preface = `${detail}收回分配后预订仍留在原持有者名下；本地释放不证明远端已停。`;
-    if (heldKeys.length > 0) {
-      const choices = heldKeys.map((key) => ({ label: key, command: command('lease', 'release', key, REASON) }));
-      return {
-        id: dialogId('lease-release', executor.id), title: `强制释放预订：${executor.target}`,
-        text: `${preface}请选择要释放的持有键，复制对应命令在主机上执行。`,
-        command: choices[0]!.command, choices,
-      };
-    }
-    return {
-      id: dialogId('lease-release', executor.id), title: `强制释放预订：${executor.target}`,
-      text: `${preface}当前没有读到该测试环境上仍持有的键；请在主机上用 circle-hub lease list 核对后，把命令里的「租约键」换成实际键再执行。`,
-      command: command('lease', 'release', '租约键', REASON),
-    };
-  },
+    '撤回后成员的「我能做的事」不再列出这个测试环境；谁能预订和上机按工作流的分配和预订规则判断。预订仍留在持有人名下，正在进行的执行会跑完。',
   jobDispose: (job: string): CommandDialog => ({
     id: dialogId('job-dispose', job), title: `处置执行 ${job.slice(0, 12)} 的结果`,
     text: '先查看执行状态与处置请求，再按核对结论执行 circle-hub job dispose（核对、保持未知、标记失败三选一）；处置前该运行环境不接受新的执行。', command: command('job', 'status', job),

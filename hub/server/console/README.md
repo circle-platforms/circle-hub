@@ -225,11 +225,7 @@ PostgreSQL、独立浏览器目录和模拟钥匙串，不读取个人配置。�
 
 The task page (`/console/runs/<id>`) asks the runs service for the newest `RUN_HISTORY_LIMIT` (10) submissions and reaches older ones with `?older=<cursor>` (the cursor is the service's opaque token; one longer than 512 characters is ignored). Under the submissions table it says how many it lists, that the first row is the submission behind the current result when one is pinned, and that the withdrawn-grounds notice follows the results shown; it links to older submissions and back to the newest. The other task views keep the whole read.
 
-## 已无分配与强制释放预订（Boss 04:30）
-
-占用仍在、分配已收回时，连接→运行环境行与 Inspector 标「已无分配」（不是「未知」），并提供与 bed-hold 相同的 `commands` + `commandModal` 释放确认（`lease release`）。优先读执行器上的 `assigned` / `can_use`；没有时对选中行用 `teamsOf` + `history` 推断是否还有有效 `resource_assign`。持有键：`heldLeaseKeysForEnvironment` 用 `deps.leases.view` 与执行器 `resources` 精确匹配列出；有键时对话框单选预填命令，无端口或读失败时才保留手填占位。
-
 ## 收回测试环境分配确认（Boss 15:02）
 
-团队详情「测试环境分配」的撤回改为确认对话框：写明收回后挡住新使用、进行中的上机跑完、预订留在持有人名下；用 `heldOccupancyForEnvironment`（`leases.view` ∩ 执行器 resources ∩ 团队成员）列出仍占着的测试环境与起始时间，勾选 `force_release` 后 `executor-unassign` 再串跑 `lease-release`。词用「测试环境」。无 leases 端口时写「占用暂不可读」，仍可只撤回分配。直接分给账户的收回确认页尚未接。
+团队详情「测试环境分配」的撤回改为确认对话框：写明撤回后成员的「我能做的事」不再列出这个测试环境、谁能预订和上机按工作流的分配和预订规则判断、进行中的上机跑完、预订留在持有人名下；用 `heldOccupancyForEnvironment`（`leases.view` ∩ 执行器 resources ∩ 团队成员）列出仍占着的测试环境与起始时间，勾选 `force_release` 后 `executor-unassign` 再串跑 `lease-release`。词用「测试环境」。无 leases 端口时写「占用暂不可读」，仍可只撤回分配。直接分给账户的收回确认页尚未接。
 

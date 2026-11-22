@@ -128,7 +128,7 @@ test('resultPage command echo and stdout hide internal ids', async () => {
   assert.doesNotMatch(body, /tm_|usr_|exe_|res_/);
 });
 
-test('executor-assign result page carries the staged environment-assignment preview', async () => {
+test('executor-assign result page shows the command result without internal ids', async () => {
   const ctx = {
     principal: { id: user, name: '合成管理员', role: 'admin' },
     userName: async () => '合成成员',
@@ -137,7 +137,6 @@ test('executor-assign result page carries the staged environment-assignment prev
       records: { teams: { get: async () => ({ id: team, name: '合成团队' }) } },
       resources: { list: async () => [] },
       dispatch: { executors: async () => [{ id: executor, target: 'APV_1', endpoint: 'https://192.0.2.1', enabled: true, resources: [] }] },
-      memberCapabilities: async () => ({ environmentAccess: { enforced: false, ready: true, missing: null, nextAction: null } }),
     },
     url: new URL('http://192.0.2.1/console/admin/do/executor-assign'),
   } as unknown as PageContext;
@@ -148,7 +147,6 @@ test('executor-assign result page carries the staged environment-assignment prev
     formOf({ executor, team }),
   );
   const body = String(page.body);
-  assert.match(body, /data-environment-assignment-preview/);
-  assert.match(body, /测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断/);
+  assert.match(body, /已分配/);
   assert.doesNotMatch(body, /exe_/);
 });

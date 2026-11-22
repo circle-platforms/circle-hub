@@ -7,7 +7,7 @@ import {commands} from './commands.ts';
 import {memberSpaceMetadata} from './member-space-metadata.ts';
 import {tokensForMembers,assignmentsForMembers} from './member-reads.ts';
 import {connectedClients,clientLabel,type ConnectedClient} from './circles.ts';
-import {CLIENT_COLUMNS,clientRow,clientInspector,noClients,environmentAssignmentPreviewNotice,heldOccupancyForEnvironment,unassignOccupancyFields} from './connections.ts';
+import {CLIENT_COLUMNS,clientRow,clientInspector,noClients,heldOccupancyForEnvironment,unassignOccupancyFields} from './connections.ts';
 import type { ExecutorView } from '../api.ts';
 import {definitions,html,href,link,liveModule,page,pageLayout,table,type Html} from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
@@ -253,10 +253,6 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
     try { executors = await ctx.deps.dispatch.executors(ctx.principal); } catch { executors = []; }
   }
   const executorById = new Map(executors.map((row) => [row.id, row]));
-  let environmentAssignmentsEnforced = false;
-  try {
-    environmentAssignmentsEnforced = (await ctx.deps.memberCapabilities(ctx.principal)).environmentAccess.enforced === true;
-  } catch { }
   const workflows = packs.filter((pack) => pack.kind === 'workflow' && !pack.space && !pack.withdrawn);
   const resourceName = (id: string) => resources.find((row) => row.id === id)?.name ?? '名称暂不可读';
   const environmentName = (id: string) => executorById.get(id)?.target ?? '名称暂不可读';
@@ -333,8 +329,7 @@ ${card({ title: '工作流分配' }, table([uiLabelOf('pack_kind', 'workflow'), 
 ${card({ title: '批量分配工作流', hint: '可一次勾选多个工作流分给本团队。' }, actionForm('pack-assign-team', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${workflows.filter((pack) => !assignedPacks.has(pack.id)).length === 0 ? html`<p class="ch-meta">没有未分配的工作流。</p>` : html`<div data-fields>${workflows.filter((pack) => !assignedPacks.has(pack.id)).map((pack) => html`<label class="check" data-wide-field><input type="checkbox" name="packs" value="${pack.id}"> ${pack.title}</label>`)}</div>`}`, '分配选中的工作流', { primary: true }))}
 ${card({ title: '业务系统分配' }, table(['名称', '分配时间', ''], resourceRows, '尚未分配业务系统'))}
 ${assignResource}
-${environmentAssignmentPreviewNotice(environmentAssignmentsEnforced)}
-${card({ title: '测试环境分配', hint: environmentAssignmentsEnforced ? undefined : '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断' }, table(['目标', '分配时间', ''], environmentRows, '尚未分配测试环境'))}
+${card({ title: '测试环境分配', hint: '测试环境的分配只决定成员的「我能做的事」列出哪些测试环境；谁能预订和上机按工作流的分配和预订规则判断。' }, table(['目标', '分配时间', ''], environmentRows, '尚未分配测试环境'))}
 ${environmentConfirmations}${deleteDialog}
 </div>`, { back: link('/console/team', '返回团队') })),
   };

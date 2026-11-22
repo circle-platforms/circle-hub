@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { join } from 'node:path';
-import { MemberEnvironments } from '../../dispatch/api.ts';
 import { definition } from '../../dispatch/testing/definition.ts';
 import { writePack } from '../../runs/api.ts';
 import { createTestHub } from '../testing-real.ts';
 import { locatePack } from './test-packs.ts';
 
-test('real assembly shares assigned environment access with member projection and preserves every occupied lease', { timeout: 60000 }, async t => {
+test('real assembly lists assigned environments in the member projection and preserves every occupied lease', { timeout: 60000 }, async t => {
   const hub = await createTestHub({ repositoryPacks: false, stubs: false, requireOsIsolation: false });
   t.after(() => hub.close());
   const alice = await hub.createUser('合成甲');
@@ -23,14 +22,9 @@ test('real assembly shares assigned environment access with member projection an
   const team = await hub.records.teams.create(admin, '合成环境组');
   await hub.records.teams.add(admin, team.id, alice.principal.id);
   await hub.records.authorizations.assignResource(admin, assigned.id, team.id);
-  const environments = hub.hub.dispatch!.options.environmentAccess;
-  assert.ok(environments instanceof MemberEnvironments, 'dispatch receives the real member environment provider');
-  assert.equal(await environments.canUse(alice.principal, assigned.id), true);
-  assert.equal(await environments.canUse(admin, assigned.id), false, 'management privilege is not use permission');
-  assert.equal(await environments.authorizeKeys(alice.principal, ['synthetic/one', 'synthetic/two']), null);
-  assert.equal((await environments.authorizeKeys(alice.principal, ['synthetic/hidden']))?.code, 'SOURCE_NOT_PERMITTED');
   const before = await hub.deps.memberCapabilities(alice.principal);
   assert.equal(before.environmentAccess.ready, true);
+  assert.deepEqual(before.environments.map(row => row.name), ['已分配合成环境']);
   assert.deepEqual(before.environments[0].occupancy, []);
   assert.ok(before.environments[0].missing.some(reason => reason.includes('不代表环境空闲')));
   const run = 'run_0' + 'a'.repeat(25);
@@ -52,7 +46,7 @@ test('real assembly shares assigned environment access with member projection an
   for (const secret of [assigned.id, hidden.id, team.id, bob.principal.id, run, otherRun, 'synthetic/hidden', '未分配合成环境']) assert.equal(serialized.includes(secret), false);
   const unassigned = await hub.deps.memberCapabilities(bob.principal);
   assert.deepEqual(unassigned.environments, []);
-  assert.equal(unassigned.denials.some(row => row.reason.includes('尚无已分配的运行环境')), false, 'this assembly leaves the assignment guard off, so no assignment is asked for');
+  assert.equal(unassigned.denials.some(row => row.reason.includes('尚无已分配的运行环境')), false, 'an environment assignment is never asked for');
   const client = await hub.client(alice.token); t.after(() => client.close());
   const answer = await client.call('list_task_packs', {});
   assert.equal(answer.isError, false);
@@ -65,17 +59,12 @@ test('real assembly shares assigned environment access with member projection an
     assert.ok(unknown.environments[0].missing.some(reason => reason.includes('未能读取')));
   } finally { hub.leases.view = originalView; }
   await hub.records.authorizations.unassignResource(admin, assigned.id, team.id);
-  assert.equal(await environments.canUse(alice.principal, assigned.id), false);
   assert.deepEqual((await hub.deps.memberCapabilities(alice.principal)).environments, []);
   const revoked = await hub.deps.memberCapabilities(admin, alice.principal.id);
   assert.deepEqual(revoked.environments, []);
-  assert.equal(revoked.unattributed_holdings?.length, 1, 'revoked own booking survives independently from named environments');
-  assert.equal(revoked.unattributed_holdings?.[0].booking_run, run);
-  assert.equal(revoked.unattributed_holdings?.[0].target, null);
-  assert.equal(revoked.unattributed_holdings?.[0].assigned, false);
-  assert.equal(revoked.unattributed_holdings?.[0].can_use, false);
+  assert.ok((await hub.leases.view('synthetic/', true)).entries.some(row => row.key === 'synthetic/one' && row.user === alice.principal.id && row.run === run), 'the own booking survives the withdrawal');
   const after = await client.call('list_task_packs', {});
-  assert.deepEqual(after.structuredContent.member_capabilities, revoked, 'MCP preserves the same independent own-booking facts');
+  assert.deepEqual(after.structuredContent.member_capabilities, revoked, 'MCP gives the same projection');
   assert.equal(JSON.stringify(revoked).includes('已分配合成环境'), false, 'revocation cannot reveal a target via matching resource keys');
 });
 

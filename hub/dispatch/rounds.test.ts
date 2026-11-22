@@ -196,84 +196,12 @@ test('resume reconciles the started round and a new dispatch continues at the ne
 });
 
 
-test('revoking before round two preserves the executed first round and refuses every later intent',async t=>{
-  const c=await openCertified();t.after(()=>c.close());
-  c.service.options.beforeRound=async round=>{if(round===2)await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);};
-  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
-  assert.equal(state.outcome,'effective','the completed first effect must not become globally not_dispatched');
-  assert.equal(state.error_code,'SOURCE_NOT_PERMITTED');assert.equal(state.not_sent,undefined);assert.equal(state.frozen,false);
-  assert.deepEqual(state.rounds?.map(round=>[round.round,round.terminal]),[[1,'pass'],[2,'not_run'],[3,'not_run']]);
-  const report=await reportOf(c,state.result!);
-  assert.equal((report as unknown as {rows:Array<{dynamic_terminal:string}>}).rows[0].dynamic_terminal,'pass');
-  assert.match(state.reason??'',/前轮已执行.*后轮未开始/);
-  const events=await c.service.journal.events(state.job);
-  assert.equal(events.filter(event=>event.body.detail.phase==='intent').length,1);
-  assert.ok(!events.some(event=>event.body.detail.phase==='boundary_refused'),'a later refusal is not a job-wide no-send record');
-  const effects=await c.kit.store.findMany<{outcome:string}>({kind:'effect',key:'effect.job',values:[state.job]});
-  assert.equal(effects.at(-1)?.body.outcome,'effective');
-  const again=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(again.error_code,'SOURCE_NOT_PERMITTED');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
-});
-
-test('revoking while round one is running neither releases its lease nor hides its result',async t=>{
-  let entered:()=>void=()=>{},finish:()=>void=()=>{},waiting=true;
-  const reached=new Promise<void>(resolve=>{entered=resolve;});
-  const released=new Promise<void>(resolve=>{finish=resolve;});
-  const c=await openCertified({onStatus:async()=>{if(waiting){waiting=false;entered();await released;}}});
-  const running=c.service.dispatch(c.admin,c.run,c.executor.id);
-  t.after(async()=>{finish();await running.catch(()=>{});await c.close();});
-  await reached;
-  await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
-  assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
-  assert.equal(c.calls.filter(name=>name==='close_slot').length,0,'revocation must not release an active round lease');
-  const blocked=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(blocked.error_code,'SOURCE_NOT_PERMITTED');
-  assert.equal(c.calls.filter(name=>name==='close_slot').length,0);
-  finish();const state=await running;
-  assert.equal(state.outcome,'effective');assert.equal(state.frozen,false);assert.equal(state.not_sent,undefined);
-  assert.ok(state.result,'the first round report remains readable after assignment withdrawal');
-  const report=await reportOf(c,state.result!);
-  assert.equal((report as unknown as {rows:Array<{dynamic_terminal:string}>}).rows[0].dynamic_terminal,'pass');
-  assert.equal((await intents(c)).length,1);
-  assert.deepEqual(state.rounds?.map(round=>round.terminal),['pass','not_run','not_run']);
-  assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
-});
-
-test('revocation in the second intent transaction keeps the first effect and its result intact',async t=>{
-  const c=await openCertified();t.after(()=>c.close());let checks=0;
-  const permission=c.environmentAccess.permission;
-  c.service.options.environmentAccess={
-    canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
-    permission:async(actor,executor,tx)=>{
-      checks++;
-      if(checks===2)await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
-      return permission(actor,executor,tx);
-    },
-  };
-  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(checks,2,'the denial reached the later intent transaction, not just its earlier precheck');
-  assert.equal(state.outcome,'effective');assert.equal(state.error_code,'SOURCE_NOT_PERMITTED');
-  assert.equal(state.not_sent,undefined);assert.equal(state.frozen,false);
-  assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
-  assert.deepEqual(state.rounds?.map(round=>round.terminal),['pass','not_run','not_run']);
-  assert.equal((await intents(c)).length,1,'the denied transaction never commits a second intent');
-  const report=await reportOf(c,state.result!);
-  assert.equal((report as unknown as {rows:Array<{dynamic_terminal:string}>}).rows[0].dynamic_terminal,'pass');
-  const effects=await c.kit.store.findMany<{outcome:string;intent_key:string}>({kind:'effect',key:'effect.job',values:[state.job]});
-  assert.equal(effects.at(-1)?.body.outcome,'effective');
-  assert.equal(new Set(effects.map(effect=>effect.body.intent_key)).size,1);
-});
-
 test('a later admitted intent that expires before sending does not erase the earlier executed effect',async t=>{
-  const c=await openCertified({count:2});t.after(()=>c.close());let checks=0;
-  const permission=c.environmentAccess.permission;
-  c.service.options.environmentAccess={
-    canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
-    permission:async(actor,executor,tx)=>{
-      if(++checks===2)c.clock.ms+=c.executor.definition.submit_timeout_ms+1;
-      return permission(actor,executor,tx);
-    },
+  const c=await openCertified({count:2});t.after(()=>c.close());let locks=0;
+  const lockNames=c.kit.variables.lockNames.bind(c.kit.variables);
+  c.kit.variables.lockNames=async(names,tx)=>{
+    if(++locks===2)c.clock.ms+=c.executor.definition.submit_timeout_ms+1;
+    return lockNames(names,tx);
   };
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(c.calls.filter(name=>name==='send_blob').length,1);

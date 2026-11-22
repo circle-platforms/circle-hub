@@ -55,8 +55,6 @@ export interface DispatchOptions {
   redactor?:Redactor;
   knowledge?: BuildKnowledge;
   records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot' | 'withMutationLock'>; runs: VerificationPort;
-  enforceEnvironmentAssignments?: boolean;
-  environmentAccess?: { canUse(actor: Principal, executor: string): Promise<boolean>; permission(actor: Principal, executor: string, tx: Transaction): Promise<boolean> };
   workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
   /** Test seam: called before a later round is opened. Production leaves it unset. */
   beforeRound?: (round: number) => Promise<void>;
@@ -437,13 +435,9 @@ export class DispatchService {
     const pack = detail.run.pack.split('@')[0];
     const candidates = (await this.registry.list(admin)).filter((e) => e.definition.enabled && e.definition.proof.package === pack);
     const released: typeof candidates = [];
-    let permittedCandidates=0,environmentFailure:BoundaryFailure|undefined;
     let refusalChecks: ReleaseCheck[] | undefined;
     let refusalExecutor: string | undefined;
     for (const candidate of candidates) {
-      const useFailure=await this.environmentUseFailure(detail.run.runner,candidate.id);
-      if(useFailure){environmentFailure??=useFailure;continue;}
-      permittedCandidates++;
       try {
         const explanation = await this.explainRelease(admin, run, candidate.id);
         if (explanation.satisfied) { released.push(candidate); continue; }
@@ -460,7 +454,6 @@ export class DispatchService {
     }
     if (released.length > 1) { log('release ambiguous', released.map((e) => e.id).join('、')); return { started: false, reason: `有 ${released.length} 个执行器同时满足放行条件，请管理员指定执行器后再上机验证` }; }
     if (!released.length) {
-      if(candidates.length&&permittedCandidates===0&&environmentFailure)return {started:false,error_code:environmentFailure.code,reason:environmentFailure.message};
       if (!candidates.length) return { started: false, reason: '没有为该任务包登记的启用执行器，上机验证没有发出；等管理员登记执行器' };
       const runner = await this.options.records.principals.get(detail.run.runner);
       return {
@@ -509,8 +502,6 @@ export class DispatchService {
     const provisional:JobBinding={run,job:newJob(),initiated_by:options.initiatedBy??by.id,...(options.initiatedBy?{acting_by:by.id}:{}),executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,input:null,user:gate.detail.run.runner??by.id,resources:d.resources,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort())};
     const preflight=await gate.preflight();if(!preflight.ok)return this.boundaryRefused(by,provisional,preflight);
     const input=preflight.input;
-    const useFailure=await this.environmentUseFailure(input.user,executor);
-    if(useFailure)return this.boundaryRefused(by,{...provisional,input},useFailure);
     const previous = await this.options.records.store.getByKey<ActionBody>('action', `dispatch.bytes:${input.sha256}`);
     const allAttempts = await this.lineageAttempts(input);
     const policy = roundPolicy(gate.detail.run, gate.context.effects, d.proof.requirement);
@@ -627,7 +618,6 @@ export class DispatchService {
           const row=await this.options.records.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|var:${use.name}`,kind:'authorization',newestFirst:true,limit:1},tx);
           if(row.items[0]?.body.revoked||row.items[0]?.digest!==use.decision)throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验','用当前配置重新核验后再派发；没有提交');
         }
-        const useFailure=await this.environmentUseFailure(input.user,executor,tx);if(useFailure)throw new EffectBoundaryError(useFailure);
         await gate.reserveBudget(boundary.row,tx);
         const permitted = await this.journal.append(binding, 'gate', 'validate', 'completed', { allow_submit: true }, [], `dispatch.gate:${binding.job}`, tx);
         if (!permitted.created) throw new Error('作业已经恢复或关闭，不能再提交');
@@ -704,21 +694,6 @@ export class DispatchService {
       }
       return await this.status(by, binding.job);
     } finally { await stop(); await unlockObservation?.(); }
-  }
-  private async environmentUseFailure(userId:string,executor:string,tx?:Transaction):Promise<BoundaryFailure|null> {
-    if(this.options.enforceEnvironmentAssignments!==true)return null;
-    if(!this.options.environmentAccess)return deny(1,'SOURCE_UNAVAILABLE','环境使用权限检查未装配，尚不能核对；请管理员恢复检查接线');
-    try {
-      if (tx) {
-        if (typeof this.options.environmentAccess.permission !== 'function') return deny(1,'SOURCE_UNAVAILABLE','事务内环境权限读取未装配；不能派发，请管理员恢复接线');
-        const allowed=await this.options.environmentAccess.permission({id:userId,name:'',role:'user'},executor,tx);
-        return allowed?null:deny(1,'SOURCE_NOT_PERMITTED','运行发起账户没有本测试环境的使用权限；请管理员明确分配后重新核验');
-      }
-      const actor=await this.options.records.principals.get(userId);
-      if(!actor||actor.disabled)return deny(1,'SOURCE_NOT_PERMITTED','运行发起账户当前不可用，不能使用本测试环境');
-      if(!await this.options.environmentAccess.canUse(actor,executor))return deny(1,'SOURCE_NOT_PERMITTED','运行发起账户没有本测试环境的使用权限；请管理员明确分配后重新核验');
-      return null;
-    } catch { return deny(1,'SOURCE_UNAVAILABLE','本次环境使用权限尚未核对，不能派发；请管理员恢复权限读取后再核验'); }
   }
   private async boundaryRefused(by:Principal,binding:JobBinding,failure:BoundaryFailure,facts:Pick<JobStatus,'submission_verified'|'booking'|'call_error_category'>={},expiredBooking=false):Promise<JobStatus>{
     let adminReleaseSha:string|undefined,adminReleaseMissing=false;
@@ -1597,8 +1572,6 @@ export class DispatchService {
         for (let skipped = next; skipped <= policy.count; skipped++) await this.noteRound(binding, { round: skipped, terminal: 'not_run', meets: null, reason: 'budget_exhausted' });
         break;
       }
-      const useFailure=await this.environmentUseFailure(args.input.user,binding.executor);
-      if(useFailure)return this.stopUnstartedRounds(by,binding,d,session,remote,pulse.stop,next,policy.count,useFailure);
       if (!roundAllowed(next, policy)) return this.stopUnstartedRounds(by,binding,d,session,remote,pulse.stop,next,policy.count,deny(4, 'EFFECT_BUDGET_EXHAUSTED', `第 ${next} 轮超过冻结次数或效果行的重复预算；请开始新修订`, args.gate.context.effects.find(row => row.release.requirements.includes(d.proof.requirement))));
       if (policy.fresh_context) {
         await pulse.stop();
@@ -1639,7 +1612,7 @@ export class DispatchService {
     registered: { digest: string; resolved_digest: string }; secret: string; round: number; deviceIdentity: boolean;
     flags: { intended: boolean; submitInvoked: boolean }; session: RpcClient; remote: RemoteLease; pulse: Heartbeat; fresh: HolderSnapshot[];
   }): Promise<JobStatus|BoundaryFailure> {
-    const { by, run, executor, binding, d, gate, source, initial, input, registered, session, remote, pulse, round, deviceIdentity, flags } = args;
+    const { by, run, binding, d, gate, source, initial, input, registered, session, remote, pulse, round, deviceIdentity, flags } = args;
     const context: Record<string, unknown> = { ...this.context(binding), lease_id: remote.id, lease_token: remote.token, payload_base64: Buffer.from(source?.bytes ?? []).toString('base64') };
     let fresh: HolderSnapshot[];
     try { fresh = await this.holders(input.ancestors, input.user, d.resources, d.submit_timeout_ms + d.max_run_ms); }
@@ -1668,7 +1641,6 @@ export class DispatchService {
         await this.options.records.variables.lockNames((binding.variables ?? []).map(use => use.name), tx);
         const config = await this.options.records.store.find<AuthorizationRecord['body']>({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|executor.${binding.executor}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
         if (config.items[0]?.body.revoked || config.items[0]?.body.bound !== registered.digest) throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验', '用当前配置重新核验后再派发；没有提交');
-        const useFailure=await this.environmentUseFailure(input.user,binding.executor,tx);if(useFailure)throw new EffectBoundaryError(useFailure);
         await gate.reserveBudget(boundary.row, tx);
         const permitted = await this.journal.append(binding, 'gate', 'validate', 'completed', { allow_submit: true }, [], `dispatch.gate:${binding.job}:${round}`, tx);
         if (!permitted.created) throw new Error('作业已经恢复或关闭，不能再提交');

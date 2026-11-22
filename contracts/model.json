@@ -1,5 +1,5 @@
 {
-  "version": 87,
+  "version": 88,
   "elements": [
     {
       "id": "B01",
@@ -274,7 +274,7 @@
         "内核对应：发布记录归变更集（T02），其余四种许可归操作",
         "团队登记、成员关系与分配以 authorization@1 记录为权威：assign 的 subject=*、object=TeamId 表示团队登记或撤回，subject=UserId、object=TeamId 表示成员加入或移出，subject=TeamId、object=PackId 表示团队工作流分配；resource_assign 的 subject=TeamId 或 *、object=ResourceId 表示资源使用范围，不代替 resource_config。TeamId 采用 tm_ 加小写 ULID，首位为 0-7，其余 25 位为小写 Crockford 字符。teams 与 team_members 只是可从记录重建的投影，与决定记录在同一事务中更新；历史表不能代替授权记录。删除团队时，对该团队名下每一条工作流分配和资源分配逐条追加 revoked=true 的撤回记录，再撤回团队登记与成员关系；不能仅保留原分配并依赖团队已删除来判为不生效。既有决定记录不改写，团队删除与相关撤回在同一事务提交。今天不新增每团队知识空间与记忆。（来源：决定 150；所有者 2026-11-13 15:00 决定，见 decisions-1500.md；接口见 interfaces.md）",
         "密钥库独立于记录库：按名字读取密钥的值与已认证版本元数据，不查 secret 授权记录决定当前值或版本，不要求先有定义引用才能设置，不增加 adopt 或认领层。密钥的设置人或设置时间没有可信资料时保持未知，不以导入人或导入时间补造；旧多版本没有已认证的当前版本选择时，不按文件修改时间猜测。使用普通变量记录真实 decision 摘要，仍可引用实际 rec:；使用密钥只记录源定义位置、名字和密钥库认证的版本，不把密钥库摘要冒充 rec: 或 src:。（来源：所有者 2026-11-13 15:58 C12 决定，见 answers-codex.md；易用性设计原则见 decisions-1600.md）",
-        "测试环境按资源分配：resource_assign 的 object 为已登记执行器的 exe_ 身份，subject 为账户、团队或全体成员；ResourceAssignmentSubject 复用 TeamAssignmentSubject 并加入 UserId，其他团队主体语义不变。没有有效分配的账户看不到也不能预订或实际使用环境，管理员管理权不自动授予使用权。预订整份 acquire/extend 的键在任何租约写入前与当前执行器 resources 精确匹配并核对当前启用账户、有效团队和有效分配；未声明的键不按包名或自由文本前缀猜为非环境后放行。实际派发以 run.runner 的当前授权核对指定执行器，不借后台管理员身份；撤权不宣称已停止远端作业。成员读模型只给已分配目标及占用名字和时间，不露内部身份；占用未知不显示为空闲。普通业务系统资源保留原团队主体边界。（来源：Boss night-implementation.md 03:10 补充第1条，2026-11-14；n2-environment-plan.md）"
+        "测试环境按资源分配：resource_assign 的 object 为已登记执行器的 exe_ 身份，subject 为账户、团队或全体成员；ResourceAssignmentSubject 复用 TeamAssignmentSubject 并加入 UserId，其他团队主体语义不变。分配只决定成员读模型列出哪些测试环境，不限制预订和派发：谁能预订、续期和上机，按工作流的分配和预订规则判断。成员读模型只给已分配目标及占用名字和时间，不露内部身份；占用未知不显示为空闲。普通业务系统资源保留原团队主体边界。（来源：Boss night-implementation.md 03:10 补充第1条，2026-11-14；n2-environment-plan.md；决定 186，所有者 2026-11-22）"
       ],
       "tracedTo": [
         "E1-15",
@@ -340,6 +340,9 @@
       ],
       "changes75": [
         "删除密钥使用者登记及记录库取值依赖，密钥库自持认证值和版本元数据；普通变量保留真实决定记录引用，密钥使用改记名字与vault版本；来源：所有者 answers-codex.md 15:58 C12，2026-11-13。"
+      ],
+      "changes88": [
+        "删去测试环境分配守卫：分配只决定成员读模型列出的测试环境，预订、续期和派发不再按分配核对；去掉守卫的开关、未启用时的预览说明和只为守卫存在的未归属占用（来源：决定 186，所有者 2026-11-22）"
       ]
     },
     {

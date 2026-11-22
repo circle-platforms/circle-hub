@@ -7,7 +7,6 @@ import { card, chip, when } from './ui.ts';
 import { mePath } from './routes.ts';
 
 const EMPTY_TEAM = '请管理员把当前账户加入团队';
-export const NO_ASSIGNMENT_LABEL = '已无分配';
 
 type OccupancyRow = NonNullable<MemberEnvironmentCapability['occupancy']>[number];
 
@@ -25,22 +24,6 @@ function occupancyText(occupancy: MemberEnvironmentCapability['occupancy']): Htm
   if (occupancy === null) return html`未知（空租约不代表物理空闲）`;
   if (occupancy.length === 0) return html`本地无租约（不代表物理空闲）`;
   return html`${occupancy.map((row, index) => html`${index > 0 ? html`<br>` : ''}${occupancyLine(row)}`)}`;
-}
-
-export function environmentIsOccupied(occupancy: MemberEnvironmentCapability['occupancy']): boolean {
-  return occupancy !== null && occupancy.length > 0;
-}
-
-export function environmentLacksAssignment(item: Pick<MemberEnvironmentCapability, 'assigned' | 'can_use' | 'missing'>): boolean {
-  return !item.assigned || !item.can_use || item.missing.some((line) => line.includes(NO_ASSIGNMENT_LABEL));
-}
-
-function occupancyCell(item: MemberEnvironmentCapability, enforced: boolean): Html {
-  const text = occupancyText(item.occupancy);
-  if (enforced && environmentIsOccupied(item.occupancy) && environmentLacksAssignment(item)) {
-    return html`${text} ${chip(NO_ASSIGNMENT_LABEL, 'unchecked')}`;
-  }
-  return text;
 }
 
 function connectClientSection(ctx: PageContext): Html {
@@ -74,7 +57,7 @@ function environmentSection(view: MemberCapabilities): Html {
   const access = view.environmentAccess;
   if (!access.ready) {
     return card(
-      { title: '测试环境', hint: access.enforced === false ? '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断' : '未就绪只表示尚未核对；缺什么和下一步写在下面。' },
+      { title: '测试环境', hint: '未就绪只表示尚未核对；缺什么和下一步写在下面。' },
       definitions([
         ['状态', '未知'],
         ['缺什么', access.missing ?? '未知'],
@@ -83,10 +66,10 @@ function environmentSection(view: MemberCapabilities): Html {
     );
   }
   return card(
-    { title: '测试环境', hint: access.enforced === true ? undefined : '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断' },
+    { title: '测试环境', hint: '测试环境的分配只决定这里列出哪些测试环境；谁能预订和上机按工作流的分配和预订规则判断。' },
     table(
       ['名称', '占用'],
-      view.environments.map((item) => [item.name, occupancyCell(item, access.enforced === true)]),
+      view.environments.map((item) => [item.name, occupancyText(item.occupancy)]),
       { title: '当前没有已核对可占用的测试环境', text: '这只反映已核对的分配与本地租约，不证明物理空闲或无权。' },
     ),
   );
@@ -107,16 +90,14 @@ export function renderMemberCapabilities(
     : html``;
   return html`<div class="ch-stack" data-member-capabilities>
 ${heading}
-${view.environmentAccess.enforced === true ? '' : html`<p class="ch-meta" data-environment-assignment-preview>测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断。下面列出的测试环境分配只是预览，不代表现在的许可。</p>`}
 ${card({ title: '账户' }, definitions([['名字', view.member.name], ['状态', status]]))}
 ${card({ title: '团队' }, teamsBody)}
 ${card({ title: uiLabelOf('pack_kind', 'workflow') }, table(['名称', '引用', '归属'], packRows(view.workflows), '尚无可用的已分配工作流'))}
 ${card({ title: uiLabelOf('pack_kind', 'skill') }, table(['名称', '引用', '归属'], packRows(view.skills), '尚无可用的通用技能'))}
 ${card({ title: '业务系统' }, table(['名称', '系统包', '测试环境'], view.connections.map((item) => [item.name, item.systemPack, item.environment]), '尚无可用的已分配业务系统'))}
 ${environmentSection(view)}
-${view.unattributed_holdings === null ? html`<p class="ch-meta">本人仍持有的预订尚未核对。</p>` : view.unattributed_holdings?.length ? card({title:'本人仍持有的预订'},table(['目标','占用开始','到期','查看'],view.unattributed_holdings.map(item=>['目标归属未确认',when(item.since),item.until?when(item.until):'不限时长',link('/console/runs/'+item.booking_run,'查看原预订')]),'暂无')) : ''}
 ${options.connect ?? ''}
-${card({ title: view.environmentAccess.enforced === true ? '当前不能做的事' : '当前限制与配置预览' }, displayDenials(view.denials))}
+${card({ title: '当前不能做的事' }, displayDenials(view.denials))}
 </div>`;
 }
 

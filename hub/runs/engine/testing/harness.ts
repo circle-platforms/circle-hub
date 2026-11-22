@@ -36,7 +36,6 @@ export interface HarnessOptions {
   /** Wire the lease service into the engine (a workflow that declares leases needs it). */
   leases?: boolean;
   leaseJobs?: (keys: readonly string[]) => Promise<Array<{key:string;job:string}>>;
-  environmentAccess?: RunsEngineDeps['environmentAccess'];
   /** The device observations port (decision 112): the newest observations and a look at booked devices. */
   observations?: RunsEngineDeps['observations'];
 }
@@ -132,7 +131,6 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
       external,
       now,
       ...(leases !== null ? { leases, leaseJobs: options.leaseJobs ?? (async () => []) } : {}),
-      ...(options.environmentAccess !== undefined ? { environmentAccess: options.environmentAccess } : {}),
       ...(options.observations !== undefined ? { observations: options.observations } : {}),
       ...(options.sandboxLimits !== undefined ? { sandboxLimits: options.sandboxLimits } : {}),
       ...(options.clientKeyWindowMs !== undefined ? { clientKeyWindowMs: options.clientKeyWindowMs } : {}),

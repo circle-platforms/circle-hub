@@ -16,9 +16,8 @@ function sample(partial: Partial<MemberCapabilities> = {}): MemberCapabilities {
     skills: [{ name: '通用解析', ref: 'parse-skill@1.0.0' }],
     connections: [{ name: '合成连接', systemPack: 'hub-test-system', environment: '合成实验室' }],
     unassigned_workflows_count: 0,
-    unattributed_holdings: [],
     environments: [],
-    environmentAccess: { enforced: true, ready: false, missing: '测试环境使用权限尚未接线', nextAction: '请管理员完成测试环境分配与使用权限接线后重新查询' },
+    environmentAccess: { ready: false, missing: '测试环境使用权限尚未接线', nextAction: '请管理员完成测试环境分配与使用权限接线后重新查询' },
     denials: [],
     ...partial,
   };
@@ -81,7 +80,7 @@ test('assigned member sees team-a content without internal ids', async () => {
 
 test('occupancy without until shows unlimited duration', () => {
   const html = renderMemberCapabilities(sample({
-    environmentAccess: { enforced: true, ready: true, missing: null, nextAction: null },
+    environmentAccess: { ready: true, missing: null, nextAction: null },
     environments: [{
       name: '合成实验室', enabled: true, assigned: true, can_use: true, missing: [],
       occupancy: [{ since: '2026-11-09T02:00:00.000Z', until: null, mine: false, name: '合成成员乙' }],
@@ -92,39 +91,25 @@ test('occupancy without until shows unlimited duration', () => {
   assert.doesNotMatch(html, /到何时未知/);
 });
 
-test('occupied without assignment shows 已无分配; assigned occupancy does not', () => {
-  const revokedEnvs = [{
-    name: '本人仍占用的合成环境',
-    assigned: false,
-    can_use: false,
-    occupancy: [
-      { name: '合成成员甲', since: '2026-11-14T04:30:00.000Z', until: null, mine: true },
-    ],
-    missing: ['占着但已无分配'],
-  }] as unknown as MemberCapabilities['environments'];
-  const revoked = renderMemberCapabilities(sample({
-    environmentAccess: { enforced: true, ready: true, missing: null, nextAction: null },
-    environments: revokedEnvs,
+test('the test environment card says what an assignment decides', () => {
+  const html = renderMemberCapabilities(sample({
+    environmentAccess: { ready: true, missing: null, nextAction: null },
+    environments: [{
+      name: '合成实验室', enabled: true, assigned: true, can_use: true, missing: [],
+      occupancy: [{ name: '合成成员甲', since: '2026-11-09T02:00:00.000Z', until: '2026-11-09T03:00:00.000Z', mine: true }],
+    }],
   })).text;
-  assert.match(revoked, /已无分配/);
-  assert.match(revoked, /本人占用/);
-  assert.match(revoked, /不限时长/);
-  assert.doesNotMatch(revoked, /到何时未知/);
+  assert.match(html, /测试环境的分配只决定这里列出哪些测试环境；谁能预订和上机按工作流的分配和预订规则判断。/);
+  assert.match(html, /本人占用/);
+  assert.match(html, /当前不能做的事/);
+  assert.doesNotMatch(html, /已无分配|预览/);
+});
 
-  const assignedEnvs: MemberCapabilities['environments'] = [{
-    name: '合成实验室',
-    enabled: true,
-    assigned: true,
-    can_use: true,
-    occupancy: [{ name: '合成成员甲', since: '2026-11-09T02:00:00.000Z', until: '2026-11-09T03:00:00.000Z', mine: true }],
-    missing: [],
-  }];
-  const assigned = renderMemberCapabilities(sample({
-    environmentAccess: { enforced: true, ready: true, missing: null, nextAction: null },
-    environments: assignedEnvs,
-  })).text;
-  assert.match(assigned, /本人占用/);
-  assert.doesNotMatch(assigned, /已无分配/);
+test('member capabilities card for assigned resources is 业务系统 not 连接', () => {
+  const body = renderMemberCapabilities(sample({ connections: [] })).text;
+  assert.match(body, /ch-section-label">业务系统</);
+  assert.match(body, /尚无可用的已分配业务系统/);
+  assert.doesNotMatch(body, /尚无可用的已分配连接/);
 });
 
 test('unassigned member sees empty team guidance', async () => {
@@ -166,7 +151,7 @@ test('member cannot open another account projection', async () => {
 test('ready=false does not claim proven no environment access', () => {
   const html = renderMemberCapabilities(sample({
     environments: [],
-    environmentAccess: { enforced: true, ready: false, missing: '权限端口未就绪', nextAction: '请管理员接线后重试' },
+    environmentAccess: { ready: false, missing: '权限端口未就绪', nextAction: '请管理员接线后重试' },
   })).text;
   assert.match(html, /未知/);
   assert.match(html, /权限端口未就绪/);

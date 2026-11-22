@@ -133,7 +133,6 @@ export function fakeDeps(
       })),
       personalPackUse: async () => false,
       environments: async () => ({ ready: false, items: [], missing: '合成环境权限端口未配置', nextAction: '配置合成环境权限端口后查询' }),
-      unattributedHoldings: async () => null,
     }, by, userId),
     runs: fakes.runs,
     knowledge: fakes.knowledge,

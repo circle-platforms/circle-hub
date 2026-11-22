@@ -52,7 +52,7 @@ function memberDefault(code: string, memberFix: string | undefined): string | un
 function adminForCode(code: string): string | undefined {
   switch (code) {
     case 'LEASE_UNAVAILABLE':
-      return `请等待释放后重试，或改订其他测试环境；需要强制释放时执行 circle-hub lease release <键> --reason <理由>，或在控制台「连接」页操作`;
+      return `请等待释放后重试，或改订其他测试环境；需要强制释放时执行 circle-hub lease release <键> --reason <理由>`;
     case 'SOURCE_INTEGRITY_UNPROVEN':
       return `用 ${circleHubFromMetadata('restore', { brief: true })} 从备份恢复原件，再用 ${circleHubFromMetadata('records', { brief: true })} 核验摘要，恢复后按原引用重读`;
     case 'SOURCE_UNAVAILABLE':

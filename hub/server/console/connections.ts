@@ -1,4 +1,3 @@
-import {dot} from './ui.ts';
 import {technical,technicalCode,facts,evidence,tooltip} from './presentation.ts';
 // 连接 (the design canvas's Connections board): the Circles connected with a token, the business systems the Hub reads
 import { ENVIRONMENT_STATE, axisUiLabel, isEnvironment, uiLabelOf, type EnvironmentState } from '../../../contracts/generated/vocabulary.ts';
@@ -8,7 +7,7 @@ import type { ResourceListing } from '../../ports.ts';
 import { commands } from './commands.ts';
 import { connectedClients, connectionText, clientLabel, nameOrigin, type ConnectedClient } from './circles.ts';
 import {tokensForMembers} from './member-reads.ts';
-import { code, emptyAction, html, icon, link, liveModule, page, pageLayout, table, href, type Html } from './html.ts';
+import { code, emptyAction, html, link, liveModule, page, pageLayout, table, href, type Html } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { readsText, systemReads } from './trial.ts';
 import { packSources } from './pack-sources.ts';
@@ -52,43 +51,6 @@ export function clientInspector(item: ConnectedClient): Html {
 }
 
 const shortJob = (job: string): string => job.slice(0, 12);
-
-export const NO_ASSIGNMENT_LABEL = '已无分配';
-
-export const ENVIRONMENT_ASSIGNMENT_PREVIEW =
-  '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断。下面列出的测试环境分配只是预览，不代表现在的许可。';
-
-export function environmentAssignmentPreviewNotice(enforced: boolean | undefined): Html {
-  if (enforced === true) return html``;
-  if (enforced === false) {
-    return html`<p class="ch-meta" data-environment-assignment-preview>${ENVIRONMENT_ASSIGNMENT_PREVIEW}</p>`;
-  }
-  return html`<p class="ch-meta" data-environment-assignment-preview>测试环境分配校验的启用状态尚未取得；不据此作执行许可。</p>`;
-}
-
-type AssignmentFlags = { assigned?: boolean; can_use?: boolean; canUse?: boolean };
-
-export function environmentLacksAssignment(flags: AssignmentFlags): boolean {
-  return flags.assigned === false || flags.can_use === false || flags.canUse === false;
-}
-
-export function environmentIsOccupied(view: ExecutorView): boolean {
-  const holding = view.state?.holding;
-  return view.state?.known.occupancy === true && Array.isArray(holding) && holding.length > 0;
-}
-
-export async function heldLeaseKeysForEnvironment(ctx: PageContext, view: ExecutorView): Promise<string[] | null> {
-  const leases = ctx.deps.leases;
-  if (leases === undefined) return null;
-  const declared = new Set(view.resources);
-  if (declared.size === 0) return [];
-  try {
-    const { entries } = await leases.view('', true);
-    return [...new Set(entries.filter((entry) => declared.has(entry.key)).map((entry) => entry.key))].sort((a, b) => a.localeCompare(b));
-  } catch {
-    return null;
-  }
-}
 
 export type HeldOccupancy = {
   key: string;
@@ -134,16 +96,12 @@ export async function heldOccupancyForEnvironment(
 
 export function unassignOccupancyFields(occupancy: HeldOccupancy[] | null): Html {
   if (occupancy === null) {
-    return html`<p class="ch-meta" data-unassign-occupancy="unknown">当前占用暂不可读；撤回后预订仍留在持有人名下，可稍后在连接页强制释放。</p>`;
+    return html`<p class="ch-meta" data-unassign-occupancy="unknown">当前占用暂不可读；撤回后预订仍留在持有人名下，可稍后用 circle-hub lease release 强制释放。</p>`;
   }
   if (occupancy.length === 0) {
     return html`<p class="ch-meta" data-unassign-occupancy="none">当前没有读到该账户或团队成员在此测试环境上的预订。</p>`;
   }
   return html`<div data-unassign-occupancy="held"><p>下列测试环境仍被占用；勾选后将在撤回分配时一并强制释放（本地释放不证明远端已停）。</p><div data-fields>${occupancy.map((row) => html`<label class="check" data-wide-field><input type="checkbox" name="force_release" value="${row.key}"> 测试环境「${row.environment}」· ${row.holderName} · 自 ${when(row.since)}</label>`)}</div></div>`;
-}
-
-export function noAssignmentMark(flags: AssignmentFlags): Html {
-  return environmentLacksAssignment(flags) ? chip(NO_ASSIGNMENT_LABEL, 'unchecked') : html``;
 }
 
 export type EnvironmentLastCheck = {
@@ -307,7 +265,7 @@ async function environmentAdminForms(ctx: PageContext, executors: readonly Execu
   const grouped = groups.length === 0
     ? html`<p class="ch-meta">尚无已登记的执行器。</p>`
     : html`${groups.map(({ target, rows }) => card(
-      { title: `测试环境 ${target}`, hint: '按执行器目标归组；权限单位是执行器，一次可把同组多个执行器分给同一团队或账户。成员侧是否按分配过滤，取决于环境授权是否已合入。' },
+      { title: `测试环境 ${target}`, hint: '按执行器目标归组，一次可把同组多个执行器分给同一团队或账户。测试环境的分配只决定成员的「我能做的事」列出哪些测试环境；谁能预订和上机按工作流的分配和预订规则判断。' },
       html`${table(
         ['执行器', '网关', '资源', '状态', ''],
         rows.map((row) => {
@@ -352,18 +310,16 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  let executors:ExecutorView[]|null=null,executorsFailed=false;
  if(ctx.admin&&ctx.deps.dispatch){try{executors=await ctx.deps.dispatch.executors(ctx.principal);}catch{executorsFailed=true;}}
  let memberTargets:string[]=[];
- let environmentAssignmentsEnforced:boolean|undefined;
- {
+ if(!ctx.admin){
   try{
    const capabilities=await ctx.deps.memberCapabilities(ctx.principal);
-   environmentAssignmentsEnforced=capabilities.environmentAccess.enforced;
-   if(!ctx.admin)memberTargets=[...new Set(capabilities.environments.map(item=>item.name))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
+   memberTargets=[...new Set(capabilities.environments.map(item=>item.name))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
   }catch{memberTargets=[];}
  }
  const readinessTargets=ctx.admin
   ?[...new Set((executors??[]).map(executor=>executor.target))].sort((a,b)=>a.localeCompare(b,'zh-CN'))
   :memberTargets;
- const readinessCards=await loadReadinessReports(ctx.deps.dispatch?.readiness,ctx.principal,readinessTargets,environmentAssignmentsEnforced);
+ const readinessCards=await loadReadinessReports(ctx.deps.dispatch?.readiness,ctx.principal,readinessTargets);
  const systemId=ctx.url.searchParams.get('system'),circleId=ctx.url.searchParams.get('circle'),environmentId=ctx.url.searchParams.get('environment');
  const chosen=resources.find(resource=>resource.id===systemId),circle=circles.find(circle=>circle.token.id===circleId),environment=executors?.find(executor=>executor.id===environmentId);
  if([systemId,circleId,environmentId].filter(Boolean).length>1||systemId&&!chosen||circleId&&!circle||environmentId&&!environment)return neutralPage(ctx);
@@ -390,7 +346,7 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const period=reads===null?undefined:[...reads.values()][0];
  const systemFacts=html`<p class="ch-meta" data-tab-facts>已启用 ${count(resources.filter(resource=>resource.enabled).length)} 个，共 ${count(resources.length)} 个${period?html` · 统计时段 ${when(period.since)} 至 ${when(period.until)}`:''}</p>`;
  const orderedExecutors=executors===null?null:executorsByTarget(executors).flatMap((group)=>group.rows);
- const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{}const flags=executor as AssignmentFlags;const revoked=environmentAssignmentsEnforced&&environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 执行结果未确认':''}</div>`:'尚无执行':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
+ const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{}return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 执行结果未确认':''}</div>`:'尚无执行':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
  const environmentTable=!ctx.admin?html`<p class="ch-meta">运行环境仅管理员可见；已分配的测试环境在「我能做的事」。${link('/console/me','打开')}</p>`:executors===null?html`<p class="ch-meta">${executorsFailed?'运行环境列表暂不可用。':'这个 Hub 进程未接入在运行环境上执行；运行环境在运行 Hub 的服务器上以 circle-hub executor 登记。'}</p>`:table(['测试环境（按目标）','执行器','执行器版本','网关','资源','最近核对','最近执行','响应时间','状态'],environmentRows,{title:'尚无运行环境',text:'在运行 Hub 的服务器上以 circle-hub executor 登记后列在这里。'},undefined,{selected:orderedExecutors!.findIndex(executor=>executor.id===environmentId),hrefs:orderedExecutors!.map(executor=>href('/console/connections',{environment:executor.id}))});
  const readinessSection=html`<div class="ch-stack" data-environment-readiness>${readinessTargets.length?readinessCards.map(card=>card.body):ctx.deps.dispatch?.readiness?html`<p class="ch-meta">${ctx.admin?'尚无运行环境目标。':'尚无已分配的运行环境；请管理员分配后重读。'}</p>`:readinessUnknownNotice()}${!ctx.deps.dispatch?.readiness&&readinessTargets.length?html`<p class="ch-meta">上列目标的只读报告尚未接线；页面不作许可判断。</p>`:''}</div>`;
  const dialogs:CommandDialog[]=[];let inspector:Html;
@@ -416,22 +372,7 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
   }
   if(environment.state?.bed_hold){const clear=commands.bedHoldClear(environment);dialogs.push(clear);actions.push(commandLink(clear,'确认已恢复…'));}
   const frozen=environment.state?.holding?.find(job=>job.frozen);if(frozen){const dispose=commands.jobDispose(frozen.job);dialogs.push(dispose);actions.push(commandLink(dispose,'处置执行结果…','ch-btn ch-btn--danger'));if(frozen.run)actions.push(link('/console/runs/'+frozen.run,'查看任务'));}
-  const flags=environment as AssignmentFlags;
-  let assignmentGone: boolean | null = environmentLacksAssignment(flags)
-    ? true
-    : (flags.assigned === true || flags.can_use === true || flags.canUse === true) ? false : null;
-  const showRevoked = environmentAssignmentsEnforced && environmentIsOccupied(environment) && assignmentGone === true;
-  if (showRevoked) {
-    const holders = (environment.state?.holding ?? []).map((job) => `执行 ${shortJob(job.job)}${job.frozen ? '（结果未确认）' : ''}`);
-    const detail = holders.length > 0
-      ? `当前占用：${holders.join('、')}。`
-      : '当前仍有占用记录。';
-    const heldKeys = await heldLeaseKeysForEnvironment(ctx, environment);
-    const release = commands.leaseRelease(environment, detail, heldKeys ?? []);
-    dialogs.push(release);
-    actions.push(commandLink(release, '强制释放预订…', 'ch-btn ch-btn--danger'));
-  }
-  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">运行环境</span>${chip(state.text,state.tone)}${showRevoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}</div><h2 class="ch-panel-title">${environment.target}</h2>${state.detail.map(line=>html`<p>${line}</p>`)}${showRevoked?html`<p class="ch-meta">分配已收回；预订仍留在原持有者名下，管理员可强制释放。</p>`:''}${facts([...environmentCheckFacts(environment),['资源',environment.resources.length],['网关',environment.endpoint]])}${technicalCode(environment.id)}<footer class="ch-inspector-actions">${actions}</footer></div>`;
+  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">运行环境</span>${chip(state.text,state.tone)}</div><h2 class="ch-panel-title">${environment.target}</h2>${state.detail.map(line=>html`<p>${line}</p>`)}${facts([...environmentCheckFacts(environment),['资源',environment.resources.length],['网关',environment.endpoint]])}${technicalCode(environment.id)}<footer class="ch-inspector-actions">${actions}</footer></div>`;
  }else inspector=html``;
  // Decision 151: with nothing selected there is no pane. The figures it repeated stand in the row at the top of the page.
  const selected=!!(chosen||circle||environment);
@@ -440,6 +381,6 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
   :tab==='systems'?liveModule('systems',['system.added','system.status'],html`${systemFacts}${box(null,systems,{flush:true})}`)
   :tab==='packs'?await packSources(ctx,'system',resources,{listings,bare:true})
   :liveModule('environments',['environment.status'],html`${executors?.length?html`<p class="ch-meta" data-tab-facts>${environmentNote(executors)}</p>`:''}${readinessSection}${box(null,environmentTable,{flush:true})}${ctx.admin?await environmentAdminForms(ctx,executors):''}`);
- const body=html`<div class="ch-stack" data-connections>${environmentAssignmentPreviewNotice(environmentAssignmentsEnforced)}${tabs}<div data-connection-tab="${tab}">${content}</div></div>`;
+ const body=html`<div class="ch-stack" data-connections>${tabs}<div data-connection-tab="${tab}">${content}</div></div>`;
  return {status:200,body:page(ctx.chrome('连接',{active:'connections',hint:'业务系统只读访问，写操作尚未开放；运行环境就绪为本地只读观察；占用与冻结取执行记录；读取与响应时间接口仅提供近 24 小时，未推断更长时段。',actions:ctx.admin?html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}${button('/console/operations/system','接入业务系统',{primary:true,icon:'plus'})}`:html``}),pageLayout(body,{inspector:selected?liveModule('connection-inspector',['member.connected','system.added','system.status','environment.status'],html`${inspector}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/connections','返回连接')}))};
 }

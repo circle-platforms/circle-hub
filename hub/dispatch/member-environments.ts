@@ -1,9 +1,8 @@
-import type { ProtocolError } from '../../contracts/src/common.ts';
-import { isAdmin, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
+import { isAdmin, type Principal, type RecordsKit } from '../records/api.ts';
 import type { LeaseService } from '../leases/api.ts';
 import type { ExecutorRegistry } from './executors.ts';
 
-export type EnvironmentPermission = (actor: Principal, executor: string, tx?: Transaction) => Promise<boolean>;
+export type EnvironmentPermission = (actor: Principal, executor: string) => Promise<boolean>;
 export interface MemberEnvironment {
   name: string;
   enabled: boolean;
@@ -11,17 +10,6 @@ export interface MemberEnvironment {
   can_use: boolean;
   occupancy: Array<{ name: string; since: string; until: string | null; mine: boolean }> | null;
   missing: string[];
-}
-
-export interface UnattributedHolding {
-  booking_run: string;
-  since: string;
-  until: string | null;
-  target: null;
-  assigned: false;
-  can_use: false;
-  assignment_reason: string;
-  target_missing: string;
 }
 
 export class MemberEnvironments {
@@ -47,26 +35,6 @@ export class MemberEnvironments {
       cursor = page.next;
     } while (cursor !== null);
     return [...ids].sort();
-  }
-
-  async canUse(actor: Principal, executor: string): Promise<boolean> {
-    if (!await this.permission(actor, executor)) return false;
-    return (await this.registry.readSource(executor))?.source.enabled === true;
-  }
-
-  async authorizeKeys(actor: Principal, keys: readonly string[]): Promise<ProtocolError | null> {
-    const allowed = new Set<string>();
-    for (const id of await this.ids()) {
-      if (!await this.canUse(actor, id)) continue;
-      const entry = await this.registry.readSource(id);
-      if (entry?.source.enabled) for (const key of entry.source.resources) allowed.add(key);
-    }
-    if (keys.some(key => !allowed.has(key))) return {
-      code: 'SOURCE_NOT_PERMITTED',
-      message: '没有分配这些资源对应的启用运行环境，不能预订或续期',
-      fix: '请管理员分配相应运行环境；未登记的资源键须先明确登记，不按名称猜测权限',
-    };
-    return null;
   }
 
   async list(actor: Principal): Promise<MemberEnvironment[]> {
@@ -101,35 +69,4 @@ export class MemberEnvironments {
     }
     return out;
   }
-
-  async unattributedHoldings(actor: Principal): Promise<UnattributedHolding[] | null> {
-    try {
-      if (!this.records.artifacts.capturePermissionSnapshot) return null;
-      const viewer = (await this.records.artifacts.capturePermissionSnapshot(actor)).user;
-      if (!viewer || viewer.disabled || viewer.deleted_at) return [];
-      const held = (await this.leases.view('', true)).entries.filter(lease => lease.user === viewer.id);
-      if (!held.length) return [];
-      const assignedKeys = new Set<string>();
-      for (const id of await this.ids()) {
-        if (!await this.permission(actor, id)) continue;
-        const entry = await this.registry.readSource(id);
-        if (!entry) return null;
-        for (const key of entry.source.resources) assignedKeys.add(key);
-      }
-      const holdings = new Map<string, UnattributedHolding>();
-      for (const lease of held) {
-        if (assignedKeys.has(lease.key)) continue;
-        holdings.set([lease.run, lease.since, lease.until].join('\0'), {
-          booking_run: lease.run, since: lease.since, until: lease.until,
-          target: null, assigned: false, can_use: false,
-          assignment_reason: '当前没有分配，不能续期或开始新的上机验证；预订仍由当前账户持有',
-          target_missing: '预订没有可核验的执行器绑定，目标归属未知',
-        });
-      }
-      return [...holdings.values()];
-    } catch {
-      return null;
-    }
-  }
-
 }

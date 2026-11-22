@@ -36,6 +36,7 @@ test('local readiness verifies actor-readable SHA evidence without probing, secr
   assert.deepEqual(f.reads, [hash, hash]);
   assert.ok(report.limitations.some(line => line.includes('不表示物理环境空闲')));
   assert.equal('ready' in report, false); assert.equal('executor' in report.executors[0], false);
+  assert.equal(report.executors[0].checks.some(check => check.condition === 'assignment'), false, 'the report has no assignment row');
   assert.doesNotMatch(JSON.stringify(report), /exe_|usr_|127\.0\.0\.1|synthetic-v1|synthetic-local-evidence/);
   for (const check of report.executors[0].checks) { assert.equal(check.observed_at, instant); for (const reference of check.references) assert.equal(reference, 'src:' + hash); }
 });
@@ -50,12 +51,13 @@ test('unassigned and disabled accounts disclose no target details or internal id
   assert.equal((await readEnvironmentReadiness(f.sources, member, 'synthetic-target')).target, null);
 });
 
-test('administrator management visibility never substitutes for use assignment', async () => {
+test('an administrator sees every executor of the target without an assignment', async () => {
   const f = fixture(); f.sources.account = async () => ({ ...member, role: 'admin' } as User);
   f.sources.source = async () => ({ bytes }); f.sources.canUse = async () => false;
   const report = await readEnvironmentReadiness(f.sources, member, 'synthetic-target');
   assert.equal(report.executors[0].executor, f.candidates[0].id);
-  assert.equal(verdict(report, 'assignment'), false); assert.equal(verdict(report, 'manifest'), true);
+  assert.equal(verdict(report, 'manifest'), true);
+  assert.equal(report.executors[0].checks.some(check => check.condition === 'assignment'), false);
 });
 
 test('unreadable sources stay unknown, corrupt bytes fail SHA, and exception text never escapes', async () => {
@@ -115,7 +117,7 @@ test('missing configuration and permission reads stay neutral without disclosing
   assert.deepEqual(hidden.executors, []); assert.deepEqual(f.reads, []);
   assert.doesNotMatch(JSON.stringify(hidden), /private-permission-error|synthetic-target|src:/);
   f.sources.account = async () => ({ ...member, role: 'admin' } as User);
-  assert.equal(verdict(await readEnvironmentReadiness(f.sources, member, 'synthetic-target'), 'assignment'), null);
+  assert.equal((await readEnvironmentReadiness(f.sources, member, 'synthetic-target')).executors.length, 1, 'an unreadable assignment hides nothing from an administrator');
   f.sources.executors = async () => { throw new Error('private-config'); };
   const unknown = await readEnvironmentReadiness(f.sources, member, 'synthetic-target');
   assert.equal(unknown.target, null); assert.deepEqual(unknown.executors, []); assert.ok(unknown.missing_fact);

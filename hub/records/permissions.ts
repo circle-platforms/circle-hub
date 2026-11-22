@@ -32,12 +32,7 @@ export interface MemberCapabilities {
   skills: MemberPackCapability[];
   connections: MemberConnectionCapability[];
   environments: MemberEnvironmentCapability[];
-  unattributed_holdings: Array<{
-    booking_run: string; since: string; until: string | null;
-    target: null; assigned: false; can_use: false;
-    assignment_reason: string; target_missing: string;
-  }> | null;
-  environmentAccess: { ready: boolean; enforced: boolean; missing: string | null; nextAction: string | null };
+  environmentAccess: { ready: boolean; missing: string | null; nextAction: string | null };
   denials: Array<{ reason: string; nextAction: string }>;
 }
 export interface MemberCapabilitySources {
@@ -46,8 +41,7 @@ export interface MemberCapabilitySources {
   packs(by: Principal): Promise<readonly { id: string; version: string; title: string; kind: import('../../contracts/generated/vocabulary.ts').PackKind; space?: string }[]>;
   connections(by: Principal): Promise<readonly { id: string; name: string; systemPack: string; environment: string; enabled: boolean }[]>;
   personalPackUse(by: Principal, owner: string, pack: string): Promise<boolean>;
-  environments(by: Principal): Promise<{ ready: boolean; enforceEnvironmentAssignments?: boolean; items: readonly MemberEnvironmentCapability[]; missing: string | null; nextAction: string | null }>;
-  unattributedHoldings(by: Principal): Promise<MemberCapabilities['unattributed_holdings']>;
+  environments(by: Principal): Promise<{ ready: boolean; items: readonly MemberEnvironmentCapability[]; missing: string | null; nextAction: string | null }>;
 }
 
 export async function memberCapabilities(
@@ -63,8 +57,8 @@ export async function memberCapabilities(
   return withRequestPermissions(records.artifacts, target, async () => {
     const result: MemberCapabilities = {
       member: { name: target.name, enabled: !target.disabled && !target.deleted_at },
-      teams: [], workflows: [], unassigned_workflows_count: 0, skills: [], connections: [], environments: [], unattributed_holdings: null,
-      environmentAccess: { ready: false, enforced: false, missing: '尚未核对测试环境使用权限', nextAction: '请管理员核对测试环境使用权限接线' },
+      teams: [], workflows: [], unassigned_workflows_count: 0, skills: [], connections: [], environments: [],
+      environmentAccess: { ready: false, missing: '尚未核对测试环境使用权限', nextAction: '请管理员核对测试环境使用权限接线' },
       denials: [],
     };
     if (!result.member.enabled) {
@@ -99,8 +93,7 @@ export async function memberCapabilities(
       result.connections.push({ name: connection.name, systemPack: connection.systemPack, environment: connection.environment });
     }
     const environment = await sources.environments(target);
-    const enforced = environment.enforceEnvironmentAssignments === true;
-    result.environmentAccess = { ready: environment.ready, enforced: environment.enforceEnvironmentAssignments === true, missing: environment.missing, nextAction: environment.nextAction };
+    result.environmentAccess = { ready: environment.ready, missing: environment.missing, nextAction: environment.nextAction };
     if (environment.ready) result.environments = environment.items.map(item => ({
       name: item.name,
       enabled: item.enabled,
@@ -111,19 +104,12 @@ export async function memberCapabilities(
       })),
       missing: [...item.missing],
     }));
-    const holdings = await sources.unattributedHoldings(target);
-    result.unattributed_holdings = holdings === null ? null : holdings.map(item => ({
-      booking_run: item.booking_run, since: item.since, until: item.until,
-      target: item.target, assigned: item.assigned, can_use: item.can_use,
-      assignment_reason: !enforced && !item.assigned ? '当前没有分配；这台 Hub 没有启用运行环境分配检查，预订仍由当前账户持有，可以继续用它上机验证' : item.assignment_reason, target_missing: item.target_missing,
-    }));
     result.workflows.sort((a, b) => a.ref.localeCompare(b.ref));
     result.skills.sort((a, b) => a.ref.localeCompare(b.ref));
     result.connections.sort((a, b) => a.name.localeCompare(b.name));
     if (!result.workflows.length) result.denials.push({ reason: '尚无可用的已分配工作流', nextAction: '请管理员把当前账户加入团队并分配工作流，或直接向账户分配工作流' });
     if (!result.skills.length) result.denials.push({ reason: '尚无可用的通用技能', nextAction: '请管理员核对通用技能的安装与使用权限' });
     if (!result.connections.length) result.denials.push({ reason: '尚无可用的已分配业务系统', nextAction: '请管理员向所属团队或全体账户分配所需业务系统' });
-    if (environment.ready && enforced && !result.environments.some(item => item.assigned)) result.denials.push({ reason: '尚无已分配的运行环境', nextAction: '请管理员向账户或所属团队分配运行环境' });
     return result;
   });
 }

@@ -9,14 +9,11 @@ export function readinessSatisfiedChip(satisfied: boolean | null): { text: strin
   return { text: '未知', tone: 'unknown' };
 }
 
-export function readinessCheckBlock(check: EnvironmentReadinessCheck, enforced?: boolean): Html {
-  const allocationCheck=check.condition==='assignment';
-  const allocationPreview=allocationCheck&&enforced!==true;
-  const state=allocationPreview?{text:'配置预览',tone:'plain' as const}:readinessSatisfiedChip(check.satisfied);
-  const disclose = !allocationPreview && check.satisfied !== true && (check.missing_fact !== undefined || check.next_action !== undefined);
+export function readinessCheckBlock(check: EnvironmentReadinessCheck): Html {
+  const state = readinessSatisfiedChip(check.satisfied);
+  const disclose = check.satisfied !== true && (check.missing_fact !== undefined || check.next_action !== undefined);
   return html`<div class="ch-stack" data-readiness-check data-condition="${check.condition}">
 <div class="ch-actions">${chip(state.text, state.tone)}<span>${check.label}</span><span class="ch-meta" data-condition-id>${check.condition}</span><span class="ch-meta">${when(check.observed_at)}</span></div>
-${allocationCheck?html`<p class="ch-meta">${enforced===true?'测试环境分配校验已启用。':enforced===false?'测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断。':'测试环境分配校验的启用状态尚未取得。'}此项仅为分配配置事实，不作执行许可。</p>`:''}
 ${disclose ? html`<p class="ch-meta">缺什么：${check.missing_fact ?? '未说明'}；下一步：${check.next_action ?? '未说明'}</p>` : ''}
 </div>`;
 }
@@ -31,16 +28,16 @@ function occupancyLines(row: EnvironmentReadinessExecutor): Html {
   return html`${row.occupancy.map((entry) => html`<p class="ch-meta">${entry.mine ? '本人占用' : '他人占用'} · 自 ${when(entry.since)}${entry.until ? html` · 至 ${when(entry.until)}` : html` · 不限时长`}</p>`)}`;
 }
 
-function executorBlock(row: EnvironmentReadinessExecutor, enforced?: boolean): Html {
+function executorBlock(row: EnvironmentReadinessExecutor): Html {
   return html`<section class="ch-stack" data-readiness-executor data-ordinal="${row.ordinal}">
 ${row.executor === undefined ? '' : technical(html`${code(row.executor)}`, '查看执行器身份')}
-${row.checks.map(check=>readinessCheckBlock(check,enforced))}
+${row.checks.map(readinessCheckBlock)}
 ${occupancyLines(row)}
 ${row.baseline_registrations.length ? html`<p class="ch-meta">基线登记元数据：${row.baseline_registrations.map((item) => html`第 ${item.ordinal} 项 ${when(item.recorded_at)}`)}</p>` : ''}
 </section>`;
 }
 
-export function readinessReportCard(report: EnvironmentReadiness, enforced?: boolean): Html {
+export function readinessReportCard(report: EnvironmentReadiness): Html {
   if (report.target === null) {
     return box(
       { title: '测试环境就绪', meta: when(report.observed_at) },
@@ -50,7 +47,7 @@ ${report.limitations.map((line) => html`<p class="ch-meta">${line}</p>`)}`,
   }
   return box(
     { title: report.target, meta: html`观察 ${when(report.observed_at)}`, hint: '只读观察，不作上机或预订许可' },
-    html`${report.executors.map(row=>executorBlock(row,enforced))}
+    html`${report.executors.map(executorBlock)}
 ${report.missing_fact || report.next_action ? html`<p class="ch-meta">缺什么：${report.missing_fact ?? '未说明'}；下一步：${report.next_action ?? '未说明'}</p>` : ''}
 ${report.limitations.map((line) => html`<p class="ch-meta">${line}</p>`)}`,
   );
@@ -60,7 +57,6 @@ export async function loadReadinessReports(
   readiness: ((caller: import('../../records/api.ts').Principal, target: string) => Promise<EnvironmentReadiness>) | undefined,
   caller: import('../../records/api.ts').Principal,
   targets: readonly string[],
-  enforced?: boolean,
 ): Promise<Array<{ target: string; body: Html }>> {
   if (!readiness) {
     return targets.map((target) => ({ target, body: box({ title: target }, readinessUnknownNotice()) }));
@@ -68,7 +64,7 @@ export async function loadReadinessReports(
   const out: Array<{ target: string; body: Html }> = [];
   for (const target of targets) {
     try {
-      out.push({ target, body: readinessReportCard(await readiness(caller, target),enforced) });
+      out.push({ target, body: readinessReportCard(await readiness(caller, target)) });
     } catch {
       out.push({ target, body: box({ title: target }, readinessUnknownNotice('只读报告读取未完成', '恢复只读就绪报告读取后重读')) });
     }

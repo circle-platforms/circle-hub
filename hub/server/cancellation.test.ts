@@ -12,8 +12,8 @@ const cancelled = (error: unknown) => error instanceof McpError && error.code ==
 function emptyCapabilities() {
   return {
     member: { name: principal.name, enabled: true }, teams: [], workflows: [], skills: [],
-    unassigned_workflows_count: 0, connections: [], environments: [], unattributed_holdings: [],
-    environmentAccess: { enforced: false, ready: true, missing: null, nextAction: null }, denials: [],
+    unassigned_workflows_count: 0, connections: [], environments: [],
+    environmentAccess: { ready: true, missing: null, nextAction: null }, denials: [],
   };
 }
 
