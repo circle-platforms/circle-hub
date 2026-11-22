@@ -12,6 +12,7 @@ import {
   type PlumbJudgeRequest,
   type PlumbMindmapNode,
   type PlumbSystemOneRequest,
+  type PlumbTiming,
 } from '../functions/modules/plumb-client/index.ts';
 
 const MAX_INPUT_BYTES = 8 * 1024 * 1024;
@@ -28,6 +29,8 @@ export interface CliIo {
   env?: NodeJS.ProcessEnv;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
+  /** Replaces the clock and the pauses of the client, so that a test does not wait. */
+  timing?: PlumbTiming;
 }
 
 const HELP_TEXT = [
@@ -209,6 +212,7 @@ export async function runPlumbCli(argv: readonly string[], io: CliIo = {}): Prom
           noCache: hasFlag(flags, '--no-cache'),
           auditOut: stringFlag(flags, '--out'),
           timeoutMs: intFlag(flags, '--timeout-ms'),
+          timing: io.timing,
         },
         env,
       ),

@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "9e5d6ca605a584eb1b6d5401e7898496391707cd4b055f602e4bff6213942cf2",
-      "size": 3128
+      "sha256": "5b83fef04b22c1c7ce0c62fbfd41ade3cd7435f55479db57b1c27034819efc90",
+      "size": 3235
     },
     {
       "path": "examples/choice-node.json",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/modules/plumb-client/client.ts",
-      "sha256": "0f4c73df20a5f2ddcae278a970f4f12354580993490461a54e9dcb465629c997",
-      "size": 45701
+      "sha256": "f52ae611acc389bbba683688372bfb41aac2c3418c6fe352442900d847db6191",
+      "size": 46123
     },
     {
       "path": "functions/modules/plumb-client/gateway-limits.ts",
@@ -68,8 +68,8 @@
     },
     {
       "path": "tools/plumb.ts",
-      "sha256": "1756011fb6dedbcab7f4ad07be6c2701ea67167e13af99f6700bfbebc94482c2",
-      "size": 15784
+      "sha256": "675c9411c3434cbdfa80f3362e037656bbb1b903edcbab9bc3e5b30c5d530552",
+      "size": 15945
     }
   ]
 }

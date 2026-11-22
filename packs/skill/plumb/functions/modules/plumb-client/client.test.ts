@@ -474,8 +474,11 @@ describe('plumb-client wakeAndWait with a backend that fails to start', async ()
   }
   const wakeOptions = { timeoutMs: 720_000, pollIntervalMs: POLL_MS };
 
-  it('ends the wait at the second failed poll after the wake and quotes the gateway\'s own reason', { timeout: 30_000 }, async () => {
-    arrange([idle, failed(), failed(), ready]);
+  // The polls after a wake, counted from the first failed one: sixty seconds of five-second polls is thirteen of them.
+  const POLLS_IN_WINDOW = 13;
+
+  it('ends the wait when every poll for sixty seconds after the wake shows the failure, and quotes the gateway\'s own reason', { timeout: 30_000 }, async () => {
+    arrange([idle, ...Array.from({ length: POLLS_IN_WINDOW + 3 }, () => failed()), ready]);
     const { client, pauses } = virtualClient();
     await assert.rejects(
       () => client.wakeAndWait(wakeOptions),
@@ -492,16 +495,35 @@ describe('plumb-client wakeAndWait with a backend that fails to start', async ()
       },
     );
     assert.equal(wakeCalls, 1);
-    assert.equal(statusCalls, 3, 'the status before the wake and two polls after it, not the third answer');
-    assert.deepEqual(pauses, [POLL_MS, POLL_MS]);
+    assert.equal(statusCalls, 1 + POLLS_IN_WINDOW, 'the status before the wake and thirteen polls after it, not the answers that follow');
+    assert.deepEqual(pauses, Array.from({ length: POLLS_IN_WINDOW }, () => POLL_MS));
+    assert.equal(pauses.slice(1).reduce((sum, ms) => sum + ms, 0), 60_000, 'sixty seconds from the first failed poll to the one that ends the wait');
   });
 
-  it('wakes once and then needs two failed polls when the very first status already shows the failure', { timeout: 30_000 }, async () => {
-    arrange([failed(), failed(), failed(), ready]);
+  it('measures the window in time, not in polls', { timeout: 30_000 }, async () => {
+    arrange([idle, failed()]);
+    const { client, pauses } = virtualClient();
+    await assert.rejects(
+      () => client.wakeAndWait({ timeoutMs: 720_000, pollIntervalMs: 20_000 }),
+      (error: unknown) => error instanceof PlumbHttpError && error.code === 'backend_failed',
+    );
+    assert.deepEqual(pauses, [20_000, 20_000, 20_000, 20_000], 'the polls at 20, 40, 60 and 80 seconds: the last is sixty seconds after the first');
+    assert.equal(statusCalls, 5);
+  });
+
+  it('does not take a failure shown for less than sixty seconds as a failed backend', { timeout: 30_000 }, async () => {
+    arrange([idle, ...Array.from({ length: POLLS_IN_WINDOW - 1 }, () => failed()), ready]);
+    const answer = await virtualClient().client.wakeAndWait(wakeOptions);
+    assert.equal(answer.status, 'ready');
+    assert.equal(statusCalls, 1 + (POLLS_IN_WINDOW - 1) + 1, 'twelve failed polls cover fifty-five seconds');
+  });
+
+  it('wakes once and counts only the polls after the wake when the very first status already shows the failure', { timeout: 30_000 }, async () => {
+    arrange([failed()]);
     const { client } = virtualClient();
     await assert.rejects(() => client.wakeAndWait(wakeOptions), (error: unknown) => error instanceof PlumbHttpError && error.code === 'backend_failed');
     assert.equal(wakeCalls, 1);
-    assert.equal(statusCalls, 3, 'the first status is not one of the two polls after the wake');
+    assert.equal(statusCalls, 1 + POLLS_IN_WINDOW, 'the first status is not one of the polls of the window');
 
     arrange([failed(), failed(), starting, ready]);
     const answer = await virtualClient().client.wakeAndWait(wakeOptions);
@@ -511,10 +533,10 @@ describe('plumb-client wakeAndWait with a backend that fails to start', async ()
   });
 
   it('counts the polls after a status that is already waking and sends no wake', { timeout: 30_000 }, async () => {
-    arrange([starting, failed(), failed(), ready]);
+    arrange([starting, failed()]);
     await assert.rejects(() => virtualClient().client.wakeAndWait(wakeOptions), (error: unknown) => error instanceof PlumbHttpError && error.code === 'backend_failed');
     assert.equal(wakeCalls, 0);
-    assert.equal(statusCalls, 3);
+    assert.equal(statusCalls, 1 + POLLS_IN_WINDOW);
   });
 
   it('goes on after one failed poll that is followed by starting and then ready', { timeout: 30_000 }, async () => {
@@ -526,11 +548,24 @@ describe('plumb-client wakeAndWait with a backend that fails to start', async ()
     assert.equal(statusCalls, 4);
   });
 
-  it('resets the count when a poll in between shows another state', { timeout: 30_000 }, async () => {
+  it('starts the sixty seconds again when a poll in between shows another state', { timeout: 30_000 }, async () => {
+    // Twelve failed polls, one that is starting, and failures from then on: the window opens again at the first of them.
+    arrange([idle, ...Array.from({ length: POLLS_IN_WINDOW - 1 }, () => failed()), starting, failed()]);
+    await assert.rejects(() => virtualClient().client.wakeAndWait(wakeOptions), (error: unknown) => error instanceof PlumbHttpError && error.code === 'backend_failed');
+    assert.equal(statusCalls, 1 + (POLLS_IN_WINDOW - 1) + 1 + POLLS_IN_WINDOW, 'the failed polls before the other state do not count');
     arrange([idle, failed(), starting, failed(), ready]);
-    const answer = await virtualClient().client.wakeAndWait(wakeOptions);
-    assert.equal(answer.status, 'ready');
-    assert.equal(statusCalls, 5, 'failed, starting, failed are never two failed polls in a row');
+    assert.equal((await virtualClient().client.wakeAndWait(wakeOptions)).status, 'ready');
+    assert.equal(statusCalls, 5);
+  });
+
+  it('ends with wake_timeout, not with a failed backend, when the wait is shorter than the window', { timeout: 30_000 }, async () => {
+    arrange([idle, failed()]);
+    const { client } = virtualClient();
+    await assert.rejects(
+      () => client.wakeAndWait({ timeoutMs: 6 * POLL_MS, pollIntervalMs: POLL_MS }),
+      (error: unknown) => error instanceof PlumbHttpError && error.code === 'wake_timeout' && error.status === 504,
+    );
+    assert.equal(statusCalls, 7);
   });
 
   it('still ends with wake_timeout when the backend keeps starting', { timeout: 30_000 }, async () => {

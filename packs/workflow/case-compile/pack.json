@@ -343,8 +343,8 @@
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/client.ts",
-      "sha256": "0f4c73df20a5f2ddcae278a970f4f12354580993490461a54e9dcb465629c997",
-      "size": 45701
+      "sha256": "f52ae611acc389bbba683688372bfb41aac2c3418c6fe352442900d847db6191",
+      "size": 46123
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/gateway-limits.ts",

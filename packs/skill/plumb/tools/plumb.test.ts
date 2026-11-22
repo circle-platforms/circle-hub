@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { readPackDirectory, validatePack } from '../../../../hub/runs/api.ts';
 import { stagePack } from '../../../workflow/case-review/packaging.ts';
 import { scanSkillPack } from '../../../../scripts/real/skill-script-safety.ts';
+import type { PlumbTiming } from '../functions/modules/plumb-client/index.ts';
 import { runPlumbCli } from './plumb.ts';
 
 const PACK_DIR = fileURLToPath(new URL('../', import.meta.url));
@@ -247,20 +248,27 @@ describe('plumb CLI wake --wait when the backend cannot be started', async () =>
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
+  // A clock that moves only when the client pauses, so that sixty seconds of polls are counted instead of waited for.
+  function virtualTiming(): PlumbTiming {
+    let now = 1_700_000_000_000;
+    return { now: () => now, pause: async (ms: number) => { now += ms; } };
+  }
+
   async function wakeWait(): Promise<{ code: number; stdout: string[]; stderr: string[] }> {
     const stdout: string[] = [];
     const stderr: string[] = [];
     statusCalls = 0;
     wakeCalls = 0;
-    const code = await runPlumbCli(['wake', '--wait', '--poll-sec', '0', '--timeout-sec', '60', '--base-url', baseUrl, '--key-stdin'], {
+    const code = await runPlumbCli(['wake', '--wait', '--poll-sec', '5', '--timeout-sec', '720', '--base-url', baseUrl, '--key-stdin'], {
       stdinText: 'plumb_sk_cli_wake_0001\n',
       stdout: (line) => stdout.push(line),
       stderr: (line) => stderr.push(line),
+      timing: virtualTiming(),
     });
     return { code, stdout, stderr };
   }
 
-  it('stops after two failed polls and says why instead of waiting out the timeout', { timeout: 30_000 }, async () => {
+  it('stops when every poll for sixty seconds after the wake shows the failure, and says why instead of waiting out the timeout', { timeout: 30_000 }, async () => {
     status = {
       http: 200,
       body: { status: 'down', backend_state: 'failed', phase: 'allocation', progress_message: 'allocation_failed (rc=1): synthetic scheduler said: Backend rejected accelerator request' },
@@ -273,7 +281,7 @@ describe('plumb CLI wake --wait when the backend cannot be started', async () =>
     assert.match(stderr[0], /^\[HTTP 503\/backend_failed\] 暂时不可用：Plumb 后端启动失败，网关报告：allocation_failed \(rc=1\): synthetic scheduler said: Backend rejected accelerator request。/);
     assert.match(stderr[0], /请联系 Plumb 管理员检查后端，不要再次唤醒。$/);
     assert.equal(wakeCalls, 1);
-    assert.equal(statusCalls, 3, 'the status before the wake and two polls');
+    assert.equal(statusCalls, 14, 'the status before the wake and thirteen polls, five seconds apart, from the first failed one to sixty seconds later');
   });
 
   it('does not tell the person to run wake --wait when the wake itself is refused with backend_down', { timeout: 30_000 }, async () => {

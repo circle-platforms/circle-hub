@@ -47,8 +47,12 @@ const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 const MAX_CA_FILE_BYTES = 2 * 1024 * 1024;
 const GET_BACKOFF_MS: readonly number[] = [1_000, 2_000, 4_000];
 const MAX_POST_RATE_LIMIT_WAIT_MS = 15_000;
-/** Polls in a row that must show a failed backend before a wake stops waiting; the first poll after a wake can still show the failure of the attempt before it. */
-const FAILED_POLLS_TO_STOP = 2;
+/**
+ * How long every poll after a wake must have shown a failed backend, counted from the first of them, before the wake stops waiting. The
+ * gateway answers a status from a cache for up to ten seconds, so the first polls after a wake can still show the failure of the attempt
+ * before it; a backend that cannot start shows it for as long as this.
+ */
+const BACKEND_FAILED_FOR_MS = 60_000;
 const MAX_GATEWAY_WORDS_CHARS = 300;
 
 export const DEFAULT_PLUMB_TIMING: PlumbTiming = {
@@ -796,8 +800,9 @@ export class PlumbClient {
     if (initial.status !== 'waking') {
       await this.wake(resolvedModel);
     }
-    // Only the polls after the wake count: the status before it, and the first poll after it, can still show the failure of the attempt before.
-    let failedPolls = 0;
+    // Only the polls after the wake count: the status before it can still show the failure of the attempt before. The time of the first failed
+    // poll of an unbroken run of them; a poll that shows any other state starts the count again.
+    let failedSince: number | null = null;
     while (this.timing.now() < deadlineMs) {
       await this.timing.pause(pollMs);
       const current = await this.readStatus(resolvedModel, true);
@@ -812,8 +817,13 @@ export class PlumbClient {
           category: '暂时不可用',
         });
       }
-      failedPolls = current.backend_state === 'failed' ? failedPolls + 1 : 0;
-      if (failedPolls >= FAILED_POLLS_TO_STOP) throw this.backendFailedError(current);
+      if (current.backend_state !== 'failed') {
+        failedSince = null;
+        continue;
+      }
+      const polledAt = this.timing.now();
+      failedSince ??= polledAt;
+      if (polledAt - failedSince >= BACKEND_FAILED_FOR_MS) throw this.backendFailedError(current);
     }
     throw new PlumbHttpError({
       message: formatPlumbCallError('暂时不可用', '等待 Plumb 后端唤醒超时', '请检查后端服务状态或延长 --timeout-sec 后重试'),

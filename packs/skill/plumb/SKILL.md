@@ -33,7 +33,7 @@ node '<技能目录>/tools/plumb.ts' wake --base-url %PLUMB_URL% --wait --timeou
 EOF
 ```
 
-   等待中网关在唤醒之后连续两次报告后端启动失败（状态里 `backend_state` 是 `failed`），命令当场以 `backend_failed` 结束，不等满超时，输出里带网关自己写的原因（`progress_message`，没有就写 `phase`）；中间有一次别的状态就重新数。这时请 Plumb 管理员检查后端，不要再唤醒。唤醒请求本身被拒（`backend_down`）时同样请管理员检查后端，不再建议执行 `wake --wait`。
+   等待中网关在唤醒之后每次轮询都报告后端启动失败（状态里 `backend_state` 是 `failed`），从第一次起满 60 秒，命令当场以 `backend_failed` 结束，不等满超时，输出里带网关自己写的原因（`progress_message`，没有就写 `phase`）；中间有一次别的状态就重新数 60 秒；`--timeout-sec` 不到 60 秒时到时限以 `wake_timeout` 结束。这时请 Plumb 管理员检查后端，不要再唤醒。唤醒请求本身被拒（`backend_down`）时同样请管理员检查后端，不再建议执行 `wake --wait`。
 
 3. 单条或批量判别。超过网关单次请求上限（32 题、展开后 256 个打分对、请求体 1 MiB）时自动分批，并发不超过 2，审计记录写成 JSONL：
 
