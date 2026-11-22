@@ -34,7 +34,7 @@
     },
     {
       "pack": "plumb",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "module": "plumb-client"
     }
   ],
@@ -343,8 +343,8 @@
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/client.ts",
-      "sha256": "03c171e85d95883be5480aadb60c43f96651a9a59bd8c4b1b904b5a0a9b3e910",
-      "size": 43246
+      "sha256": "0f4c73df20a5f2ddcae278a970f4f12354580993490461a54e9dcb465629c997",
+      "size": 45701
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/gateway-limits.ts",
@@ -363,8 +363,8 @@
     },
     {
       "path": "functions/generated/skills/plumb/plumb-client/types.ts",
-      "sha256": "e73ce4270d6b735aeff9bd6991ade75a90b42d508930f937fc48bc3ebe869d54",
-      "size": 6396
+      "sha256": "d009a4c7e0ef422ecc6a50e580a3f6af1ddc33b54e4a5d6349292e613a88dd61",
+      "size": 6753
     },
     {
       "path": "functions/generated/skills/run-tools/hub-client/index.ts",

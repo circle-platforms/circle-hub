@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "plumb",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "kind": "skill",
   "title": "Plumb 判断客户端",
   "description": "在客户端查 Plumb 推理网关的模型与就绪状态、唤醒后端或提交判别题时使用；工具受 TLS 与主机锁定约束，另有供工作流内嵌的客户端模块，不代 Hub 调用模型。",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "53f8934fd9e6982862ae6aaa6adfd57b1f1299b13603fc31bbb7f19ade3fd4f0",
-      "size": 2649
+      "sha256": "9e5d6ca605a584eb1b6d5401e7898496391707cd4b055f602e4bff6213942cf2",
+      "size": 3128
     },
     {
       "path": "examples/choice-node.json",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/modules/plumb-client/client.ts",
-      "sha256": "03c171e85d95883be5480aadb60c43f96651a9a59bd8c4b1b904b5a0a9b3e910",
-      "size": 43246
+      "sha256": "0f4c73df20a5f2ddcae278a970f4f12354580993490461a54e9dcb465629c997",
+      "size": 45701
     },
     {
       "path": "functions/modules/plumb-client/gateway-limits.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/modules/plumb-client/types.ts",
-      "sha256": "e73ce4270d6b735aeff9bd6991ade75a90b42d508930f937fc48bc3ebe869d54",
-      "size": 6396
+      "sha256": "d009a4c7e0ef422ecc6a50e580a3f6af1ddc33b54e4a5d6349292e613a88dd61",
+      "size": 6753
     },
     {
       "path": "skill.json",

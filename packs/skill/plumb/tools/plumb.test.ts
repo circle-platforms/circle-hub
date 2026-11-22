@@ -214,3 +214,76 @@ describe('plumb CLI wrapper and security hygiene', async () => {
     assert.equal(validation.ok, true, JSON.stringify(validation));
   });
 });
+
+describe('plumb CLI wake --wait when the backend cannot be started', async () => {
+  interface Answer {
+    http: number;
+    body: Record<string, unknown>;
+  }
+  let status: Answer = { http: 200, body: { status: 'down', backend_state: 'idle' } };
+  let wake: Answer = { http: 200, body: { status: 'waking' } };
+  let statusCalls = 0;
+  let wakeCalls = 0;
+
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      const path = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+      let answer: Answer = { http: 404, body: {} };
+      if (req.method === 'GET' && path === '/v1/status') {
+        statusCalls += 1;
+        answer = status;
+      } else if (req.method === 'POST' && path === '/v1/wake') {
+        wakeCalls += 1;
+        answer = wake;
+      }
+      res.writeHead(answer.http, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(answer.body));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  after(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  async function wakeWait(): Promise<{ code: number; stdout: string[]; stderr: string[] }> {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    statusCalls = 0;
+    wakeCalls = 0;
+    const code = await runPlumbCli(['wake', '--wait', '--poll-sec', '0', '--timeout-sec', '60', '--base-url', baseUrl, '--key-stdin'], {
+      stdinText: 'plumb_sk_cli_wake_0001\n',
+      stdout: (line) => stdout.push(line),
+      stderr: (line) => stderr.push(line),
+    });
+    return { code, stdout, stderr };
+  }
+
+  it('stops after two failed polls and says why instead of waiting out the timeout', { timeout: 30_000 }, async () => {
+    status = {
+      http: 200,
+      body: { status: 'down', backend_state: 'failed', phase: 'allocation', progress_message: 'allocation_failed (rc=1): synthetic scheduler said: Backend rejected accelerator request' },
+    };
+    wake = { http: 200, body: { status: 'waking' } };
+    const { code, stdout, stderr } = await wakeWait();
+    assert.equal(code, 1);
+    assert.deepEqual(stdout, []);
+    assert.equal(stderr.length, 1);
+    assert.match(stderr[0], /^\[HTTP 503\/backend_failed\] 暂时不可用：Plumb 后端启动失败，网关报告：allocation_failed \(rc=1\): synthetic scheduler said: Backend rejected accelerator request。/);
+    assert.match(stderr[0], /请联系 Plumb 管理员检查后端，不要再次唤醒。$/);
+    assert.equal(wakeCalls, 1);
+    assert.equal(statusCalls, 3, 'the status before the wake and two polls');
+  });
+
+  it('does not tell the person to run wake --wait when the wake itself is refused with backend_down', { timeout: 30_000 }, async () => {
+    status = { http: 200, body: { status: 'down', backend_state: 'idle' } };
+    wake = { http: 503, body: { error: { type: 'backend_down', message: 'backend sleeping' } } };
+    const { code, stderr } = await wakeWait();
+    assert.equal(code, 1);
+    assert.equal(stderr.length, 1);
+    assert.match(stderr[0], /^\[HTTP 503\/backend_down\] /);
+    assert.match(stderr[0], /请联系 Plumb 管理员检查后端。$/);
+    assert.doesNotMatch(stderr[0], /plumb wake/);
+  });
+});

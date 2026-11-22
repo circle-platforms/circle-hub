@@ -16,6 +16,7 @@ import {
   redactSecret,
   stableStringify,
   type PlumbBatchQuestion,
+  type PlumbTiming,
 } from './index.ts';
 
 interface TempTlsPair {
@@ -398,5 +399,230 @@ describe('plumb-client concurrency, timeout, and body limits', async () => {
     );
     gateResolver?.();
     assert.equal(postHits, 1);
+  });
+});
+
+describe('plumb-client wakeAndWait with a backend that fails to start', async () => {
+  const REASON = 'allocation_failed (rc=1): synthetic scheduler said: Backend rejected accelerator request';
+  const KEY = 'plumb_sk_wake_synthetic_0001';
+  const POLL_MS = 5_000;
+  interface Step {
+    http?: number;
+    body: Record<string, unknown>;
+  }
+  const idle: Step = { body: { status: 'down', backend_state: 'idle' } };
+  const starting: Step = { body: { status: 'waking', backend_state: 'starting', phase: 'loading', progress_message: 'loading weights' } };
+  const ready: Step = { body: { status: 'ready', serving_version: 'plumb-27b-0.5.0' } };
+  // null leaves the field out of the answer.
+  const failed = (message: string | null = REASON, phase: string | null = 'allocation'): Step => ({
+    body: { status: 'down', backend_state: 'failed', ...(phase === null ? {} : { phase }), ...(message === null ? {} : { progress_message: message }) },
+  });
+  const backendDown = (): Step => ({ http: 503, body: { error: { type: 'backend_down', message: 'backend sleeping' } } });
+
+  // The status answers in order (the last one repeats), the answer to a wake, and how often each route was asked.
+  let statuses: Step[] = [];
+  let wakeAnswer: Step = { body: { status: 'waking' } };
+  let statusCalls = 0;
+  let wakeCalls = 0;
+  const arrange = (script: Step[], wake: Step = { body: { status: 'waking' } }): void => {
+    statuses = script;
+    wakeAnswer = wake;
+    statusCalls = 0;
+    wakeCalls = 0;
+  };
+
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      const send = (step: Step): void => {
+        res.writeHead(step.http ?? 200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(step.body));
+      };
+      const path = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+      if (req.method === 'GET' && path === '/v1/status') {
+        const step = statuses[Math.min(statusCalls, statuses.length - 1)];
+        statusCalls += 1;
+        return send(step);
+      }
+      if (req.method === 'POST' && path === '/v1/wake') {
+        wakeCalls += 1;
+        return send(wakeAnswer);
+      }
+      if (req.method === 'POST' && path === '/v1/judge') return send(backendDown());
+      return send({ http: 404, body: {} });
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${port}`;
+  after(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  // A clock that moves only when the client pauses, so a poll is counted instead of waited for.
+  function virtualClient(): { client: PlumbClient; pauses: number[] } {
+    let now = 1_700_000_000_000;
+    const pauses: number[] = [];
+    const timing: PlumbTiming = {
+      now: () => now,
+      pause: async (ms: number) => {
+        pauses.push(ms);
+        now += ms;
+      },
+    };
+    return { client: new PlumbClient({ baseUrl, apiKey: KEY, model: 'plumb-27b-0.5.0', noCache: true, timing }), pauses };
+  }
+  const wakeOptions = { timeoutMs: 720_000, pollIntervalMs: POLL_MS };
+
+  it('ends the wait at the second failed poll after the wake and quotes the gateway\'s own reason', { timeout: 30_000 }, async () => {
+    arrange([idle, failed(), failed(), ready]);
+    const { client, pauses } = virtualClient();
+    await assert.rejects(
+      () => client.wakeAndWait(wakeOptions),
+      (error: unknown) => {
+        assert.ok(error instanceof PlumbHttpError);
+        assert.equal(error.status, 503);
+        assert.equal(error.code, 'backend_failed');
+        assert.equal(error.retryable, false);
+        assert.equal(error.category, '暂时不可用');
+        assert.match(error.message, /^暂时不可用：Plumb 后端启动失败，网关报告：/);
+        assert.ok(error.message.includes(REASON), error.message);
+        assert.match(error.message, /请联系 Plumb 管理员检查后端，不要再次唤醒。$/);
+        return true;
+      },
+    );
+    assert.equal(wakeCalls, 1);
+    assert.equal(statusCalls, 3, 'the status before the wake and two polls after it, not the third answer');
+    assert.deepEqual(pauses, [POLL_MS, POLL_MS]);
+  });
+
+  it('wakes once and then needs two failed polls when the very first status already shows the failure', { timeout: 30_000 }, async () => {
+    arrange([failed(), failed(), failed(), ready]);
+    const { client } = virtualClient();
+    await assert.rejects(() => client.wakeAndWait(wakeOptions), (error: unknown) => error instanceof PlumbHttpError && error.code === 'backend_failed');
+    assert.equal(wakeCalls, 1);
+    assert.equal(statusCalls, 3, 'the first status is not one of the two polls after the wake');
+
+    arrange([failed(), failed(), starting, ready]);
+    const answer = await virtualClient().client.wakeAndWait(wakeOptions);
+    assert.equal(answer.status, 'ready');
+    assert.equal(wakeCalls, 1);
+    assert.equal(statusCalls, 4, 'one failed poll after the wake does not end the wait');
+  });
+
+  it('counts the polls after a status that is already waking and sends no wake', { timeout: 30_000 }, async () => {
+    arrange([starting, failed(), failed(), ready]);
+    await assert.rejects(() => virtualClient().client.wakeAndWait(wakeOptions), (error: unknown) => error instanceof PlumbHttpError && error.code === 'backend_failed');
+    assert.equal(wakeCalls, 0);
+    assert.equal(statusCalls, 3);
+  });
+
+  it('goes on after one failed poll that is followed by starting and then ready', { timeout: 30_000 }, async () => {
+    arrange([idle, failed(), starting, ready]);
+    const answer = await virtualClient().client.wakeAndWait(wakeOptions);
+    assert.equal(answer.status, 'ready');
+    assert.equal(answer.serving_version, 'plumb-27b-0.5.0');
+    assert.equal(wakeCalls, 1);
+    assert.equal(statusCalls, 4);
+  });
+
+  it('resets the count when a poll in between shows another state', { timeout: 30_000 }, async () => {
+    arrange([idle, failed(), starting, failed(), ready]);
+    const answer = await virtualClient().client.wakeAndWait(wakeOptions);
+    assert.equal(answer.status, 'ready');
+    assert.equal(statusCalls, 5, 'failed, starting, failed are never two failed polls in a row');
+  });
+
+  it('still ends with wake_timeout when the backend keeps starting', { timeout: 30_000 }, async () => {
+    arrange([idle, starting]);
+    const { client, pauses } = virtualClient();
+    await assert.rejects(
+      () => client.wakeAndWait({ timeoutMs: 6 * POLL_MS, pollIntervalMs: POLL_MS }),
+      (error: unknown) => {
+        assert.ok(error instanceof PlumbHttpError);
+        assert.equal(error.status, 504);
+        assert.equal(error.code, 'wake_timeout');
+        assert.match(error.message, /等待 Plumb 后端唤醒超时/);
+        return true;
+      },
+    );
+    assert.equal(wakeCalls, 1);
+    assert.equal(statusCalls, 7, 'the status before the wake and one poll for each of the six polling intervals');
+    assert.deepEqual(pauses, Array.from({ length: 6 }, () => POLL_MS));
+  });
+
+  it('keeps ending the wait at once on version_mismatch and error', { timeout: 30_000 }, async () => {
+    for (const state of ['version_mismatch', 'error']) {
+      arrange([idle, { body: { status: state } }, ready]);
+      await assert.rejects(
+        () => virtualClient().client.wakeAndWait(wakeOptions),
+        (error: unknown) => error instanceof PlumbHttpError && error.code === state && error.status === 503,
+      );
+      assert.equal(statusCalls, 2);
+    }
+  });
+
+  it('falls back to the phase, then to saying the gateway gave no reason', { timeout: 30_000 }, async () => {
+    arrange([idle, failed(null, 'allocation'), failed(null, 'allocation')]);
+    await assert.rejects(
+      () => virtualClient().client.wakeAndWait(wakeOptions),
+      (error: unknown) => error instanceof Error && error.message.includes('网关报告的阶段：allocation') && !error.message.includes('没有说明原因'),
+    );
+    arrange([idle, failed(null, null), failed(null, null)]);
+    await assert.rejects(
+      () => virtualClient().client.wakeAndWait(wakeOptions),
+      (error: unknown) => error instanceof Error && error.message.includes('网关没有说明原因'),
+    );
+  });
+
+  it('redacts the API key from the quoted reason and keeps it to a few hundred characters', { timeout: 30_000 }, async () => {
+    const long = `${KEY} refused the request\n${'accelerator unavailable '.repeat(60)}`;
+    arrange([idle, failed(long), failed(long)]);
+    await assert.rejects(
+      () => virtualClient().client.wakeAndWait(wakeOptions),
+      (error: unknown) => {
+        assert.ok(error instanceof PlumbHttpError);
+        assert.ok(!error.message.includes('wake_synthetic_0001'), error.message);
+        assert.match(error.message, /plumb_sk_\[REDACTED\] refused the request accelerator unavailable/);
+        const quoted = error.message.slice(error.message.indexOf('网关报告：') + 5, error.message.indexOf('。'));
+        assert.equal(Array.from(quoted).length, 301, 'three hundred characters and the ellipsis');
+        assert.ok(quoted.endsWith('…'));
+        assert.ok(!/\s{2}|\n/u.test(quoted), 'whitespace is collapsed to single spaces');
+        return true;
+      },
+    );
+  });
+
+  it('sends the person to the administrator, not to another wake, when the wake itself is answered with backend_down', { timeout: 30_000 }, async () => {
+    arrange([idle], backendDown());
+    const { client } = virtualClient();
+    const adviceOfWake = (error: unknown): boolean => {
+      assert.ok(error instanceof PlumbHttpError);
+      assert.equal(error.status, 503);
+      assert.equal(error.code, 'backend_down');
+      assert.match(error.message, /请联系 Plumb 管理员检查后端。$/);
+      assert.doesNotMatch(error.message, /plumb wake/);
+      return true;
+    };
+    await assert.rejects(() => client.wake(), adviceOfWake);
+    await assert.rejects(() => client.wakeAndWait(wakeOptions), adviceOfWake);
+
+    arrange([backendDown()]);
+    await assert.rejects(() => client.wakeAndWait(wakeOptions), adviceOfWake);
+    assert.equal(wakeCalls, 0, 'the status answer ended the wait before any wake was sent');
+  });
+
+  it('keeps the wake advice for a status or judge call that meets backend_down', { timeout: 30_000 }, async () => {
+    arrange([backendDown()]);
+    const { client } = virtualClient();
+    const advisesWake = (error: unknown): boolean => {
+      assert.ok(error instanceof PlumbHttpError);
+      assert.equal(error.code, 'backend_down');
+      assert.match(error.message, /请先执行 plumb wake --wait 等待后端就绪后再试/);
+      assert.doesNotMatch(error.message, /Plumb 管理员/);
+      return true;
+    };
+    await assert.rejects(() => client.status(), advisesWake);
+    await assert.rejects(() => client.judge({ task: 'single_cmd_judge', state: 'ctx', command: 'synthetic' }), advisesWake);
   });
 });

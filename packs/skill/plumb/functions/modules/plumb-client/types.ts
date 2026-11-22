@@ -156,6 +156,12 @@ export interface PlumbStatusResponse {
   actual_adapter_sha256?: string | null;
   backend_pid?: number | null;
   eta_sec?: number | null;
+  /** The backend's own state ("failed" when its last start attempt failed), reported beside the coarser status. */
+  backend_state?: string | null;
+  /** The step of the start attempt the gateway reports. */
+  phase?: string | null;
+  /** The gateway's own words about the start attempt, for a failed one the reason. */
+  progress_message?: string | null;
   [key: string]: unknown;
 }
 

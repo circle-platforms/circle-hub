@@ -47,6 +47,9 @@ const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 const MAX_CA_FILE_BYTES = 2 * 1024 * 1024;
 const GET_BACKOFF_MS: readonly number[] = [1_000, 2_000, 4_000];
 const MAX_POST_RATE_LIMIT_WAIT_MS = 15_000;
+/** Polls in a row that must show a failed backend before a wake stops waiting; the first poll after a wake can still show the failure of the attempt before it. */
+const FAILED_POLLS_TO_STOP = 2;
+const MAX_GATEWAY_WORDS_CHARS = 300;
 
 export const DEFAULT_PLUMB_TIMING: PlumbTiming = {
   now: () => Date.now(),
@@ -177,14 +180,24 @@ function categoryForStatus(status: number, code: string): CallErrorCategory {
   return '暂时不可用';
 }
 
-function nextActionForError(status: number, code: string): string {
+const ASK_PLUMB_ADMIN_ABOUT_BACKEND = '请联系 Plumb 管理员检查后端';
+
+/** duringWake: the failing call is part of waking the backend, so telling the person to wake it would send them in a circle. */
+function nextActionForError(status: number, code: string, duringWake = false): string {
   if (status === 401 || status === 403) return '请检查 PLUMB_API_KEY 或权限范围后重试';
   if (status === 413 || code === 'request_too_large') return `请裁剪前序上下文或拆分批量题目（${describePlumbRequestLimits()}）`;
   if (code === 'version_mismatch') return '请联系管理员调整默认部署模型或传当前在服务模型版本重试';
-  if (code === 'backend_down') return '请先执行 plumb wake --wait 等待后端就绪后再试';
+  if (code === 'backend_down') return duringWake ? ASK_PLUMB_ADMIN_ABOUT_BACKEND : '请先执行 plumb wake --wait 等待后端就绪后再试';
   if (status === 429 || code === 'rate_limited') return '请降低并发（<= 2）并等待限流窗口恢复后重试';
   if (status === 408 || status === 504) return '禁止自动重发 POST；请检查服务端状态或日志后再决定是否重试';
   return '请核对请求参数与网关状态后重试';
+}
+
+/** The gateway's own words for a person: secrets redacted, whitespace collapsed, cut to a few hundred characters. */
+function gatewayWords(value: unknown, apiKey: string | undefined): string {
+  if (typeof value !== 'string') return '';
+  const words = Array.from(redactSecret(value, [apiKey]).replace(/\s+/gu, ' ').trim());
+  return words.length > MAX_GATEWAY_WORDS_CHARS ? `${words.slice(0, MAX_GATEWAY_WORDS_CHARS).join('')}…` : words.join('');
 }
 
 function unwrapAnswerNode(raw: unknown): { answer: PlumbAnswer; gate?: PlumbGate } | null {
@@ -646,6 +659,7 @@ export class PlumbClient {
     extraHeaders?: Record<string, string>;
     bodyObj?: unknown;
     timeoutMs?: number;
+    duringWake?: boolean;
   }): Promise<T> {
     const bodyText = params.bodyObj !== undefined ? JSON.stringify(params.bodyObj) : undefined;
     const maxAttempts = params.method === 'GET' ? 4 : 3;
@@ -719,7 +733,7 @@ export class PlumbClient {
 
       const category = categoryForStatus(resp.status, errCode);
       throw new PlumbHttpError({
-        message: formatPlumbCallError(category, `Plumb 网关拒绝（${resp.status} ${errCode}）：${errMsg}`, nextActionForError(resp.status, errCode)),
+        message: formatPlumbCallError(category, `Plumb 网关拒绝（${resp.status} ${errCode}）：${errMsg}`, nextActionForError(resp.status, errCode, params.duringWake === true)),
         status: resp.status,
         code: errCode,
         retryable: resp.status === 429 || errCode === 'backend_down' || errCode === 'backend_busy',
@@ -747,12 +761,17 @@ export class PlumbClient {
   }
 
   async status(model?: string): Promise<PlumbStatusResponse> {
+    return await this.readStatus(model, false);
+  }
+
+  private async readStatus(model: string | undefined, duringWake: boolean): Promise<PlumbStatusResponse> {
     const resolvedModel = model?.trim() || this.defaultModel;
     const query = resolvedModel ? `?model=${encodeURIComponent(resolvedModel)}` : '';
     return await this.requestJson<PlumbStatusResponse>({
       method: 'GET',
       path: `/v1/status${query}`,
       authRequired: true,
+      duringWake,
     });
   }
 
@@ -764,6 +783,7 @@ export class PlumbClient {
       path: '/v1/wake',
       authRequired: true,
       bodyObj,
+      duringWake: true,
     });
   }
 
@@ -771,14 +791,16 @@ export class PlumbClient {
     const resolvedModel = options?.model?.trim() || this.defaultModel;
     const deadlineMs = this.timing.now() + (options?.timeoutMs ?? this.wakeTimeoutMs);
     const pollMs = options?.pollIntervalMs ?? DEFAULT_WAKE_POLL_MS;
-    const initial = await this.status(resolvedModel);
+    const initial = await this.readStatus(resolvedModel, true);
     if (initial.status === 'ready') return initial;
     if (initial.status !== 'waking') {
       await this.wake(resolvedModel);
     }
+    // Only the polls after the wake count: the status before it, and the first poll after it, can still show the failure of the attempt before.
+    let failedPolls = 0;
     while (this.timing.now() < deadlineMs) {
       await this.timing.pause(pollMs);
-      const current = await this.status(resolvedModel);
+      const current = await this.readStatus(resolvedModel, true);
       if (current.status === 'ready') return current;
       if (current.status === 'version_mismatch' || current.status === 'error') {
         throw new PlumbHttpError({
@@ -790,11 +812,32 @@ export class PlumbClient {
           category: '暂时不可用',
         });
       }
+      failedPolls = current.backend_state === 'failed' ? failedPolls + 1 : 0;
+      if (failedPolls >= FAILED_POLLS_TO_STOP) throw this.backendFailedError(current);
     }
     throw new PlumbHttpError({
       message: formatPlumbCallError('暂时不可用', '等待 Plumb 后端唤醒超时', '请检查后端服务状态或延长 --timeout-sec 后重试'),
       status: 504,
       code: 'wake_timeout',
+      retryable: false,
+      retryAfterMs: null,
+      category: '暂时不可用',
+    });
+  }
+
+  /** The gateway says the backend's start attempt failed: quote its reason and send the person to the administrator, not to another wake. */
+  private backendFailedError(status: PlumbStatusResponse): PlumbHttpError {
+    const reason = gatewayWords(status.progress_message, this.apiKey);
+    const phase = gatewayWords(status.phase, this.apiKey);
+    const fact = reason
+      ? `Plumb 后端启动失败，网关报告：${reason}`
+      : phase
+        ? `Plumb 后端启动失败，网关报告的阶段：${phase}`
+        : 'Plumb 后端启动失败，网关没有说明原因';
+    return new PlumbHttpError({
+      message: formatPlumbCallError('暂时不可用', fact, `${ASK_PLUMB_ADMIN_ABOUT_BACKEND}，不要再次唤醒`),
+      status: 503,
+      code: 'backend_failed',
       retryable: false,
       retryAfterMs: null,
       category: '暂时不可用',
