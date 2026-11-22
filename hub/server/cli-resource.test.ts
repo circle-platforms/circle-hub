@@ -17,12 +17,16 @@ function fixture(options: { denied?: boolean; addError?: Error; assignmentError?
   const unused = () => { throw new Error('must not access storage'); };
   const ctx: CliContext = { io: { stdout: line => out.push(line), stderr: unused, env: {}, cwd: tmpdir() }, config: unused, records: async () => unused(), deps: async () => unused(), actingAdmin: async () => unused() };
   const hub = {
+    resources: { list: async () => [record] },
     connectors: { admin: {
       addResource: async (by: Principal, input: unknown) => { calls.push(['add', by, input]); if (options.addError) throw options.addError; return record; },
       describe: async () => ({ credentials: [] }),
     } },
     records: {
-      authorizations: { assignResource: async (...values: unknown[]) => { calls.push(['assign', ...values]); if (options.assignmentError) throw options.assignmentError; } },
+      authorizations: {
+        assignResource: async (...values: unknown[]) => { calls.push(['assign', ...values]); if (options.assignmentError) throw options.assignmentError; },
+        unassignResource: async (...values: unknown[]) => { calls.push(['unassign', ...values]); },
+      },
       teams: { get: async (_by: Principal, id: string) => id === team ? { id: team, name: '合成团队' } : null, list: async () => [{ id: team, name: '合成团队' }] },
     },
   };
@@ -43,6 +47,26 @@ test('resource add uses the created resource identity for explicit whole-Hub or 
     assert.doesNotMatch(f.out.join('\n'), /synthetic-resource|res_/);
     assert.match(f.out[1], subject === WHOLE_HUB ? /已分配给全体成员/ : /已分配给团队 合成团队/);
   }
+});
+
+test('resource assign and unassign name a team by its name or its number, and the answers name the resource and the team without ids', async () => {
+  for (const [flag, subject, whom] of [['--team=合成团队', team, '团队 合成团队'], ['--team=' + team, team, '团队 合成团队'], ['--all', WHOLE_HUB, '全体成员']]) {
+    const f = fixture();
+    assert.equal(await resourceCommand(f.session, ['assign', record.id, flag]), 0);
+    assert.equal(await resourceCommand(f.session, ['unassign', record.id, flag, '--note=合成备注']), 0);
+    assert.deepEqual(f.calls, [['assign', admin, record.id, subject, { note: undefined }], ['unassign', admin, record.id, subject, '合成备注']], flag);
+    assert.deepEqual(f.out, [`资源 合成资源 已分配给${whom}`, `已撤回资源 合成资源 给${whom}的分配`], flag);
+    assert.doesNotMatch(f.out.join('\n'), /synthetic-resource|res_|tm_/);
+  }
+  // A name no team has is refused in the words every command that takes a team uses, and a resource that is not listed is the neutral one; nothing is written.
+  const f = fixture();
+  for (const sub of ['assign', 'unassign']) await assert.rejects(resourceCommand(f.session, [sub, record.id, '--team=没有的团队']), (error: unknown) => error instanceof UsageError && error.message === '没有叫「没有的团队」的团队；团队的名字用 circle-hub team list 查看');
+  await assert.rejects(resourceCommand(f.session, ['assign', 'no-such-resource', '--team=合成团队']), (error: unknown) => error instanceof CliError && error.message === '资源不可用');
+  assert.deepEqual([f.calls, f.out], [[], []]);
+  // The team is looked up only for an administrator.
+  const denied = fixture({ denied: true });
+  for (const sub of ['assign', 'unassign']) await assert.rejects(resourceCommand(denied.session, [sub, record.id, '--team=合成团队']), /只有管理员/);
+  assert.deepEqual(denied.calls, []);
 });
 
 test('resource add without an audience stays unassigned and discloses that nobody can use it', async () => {

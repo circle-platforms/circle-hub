@@ -1064,6 +1064,42 @@ describe('pack', () => {
     assert.equal((await admin.run(['pack', 'publish', packs.site])).code, 1, 'without the right again');
   });
 
+  test('a team is named by its name where a workflow is assigned to it, and a member names only the teams they are in', async () => {
+    const admin = await setup();
+    const userToken = await userWithToken(admin, '甲');
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    await expectOk(admin, ['pack', 'publish', packs.review]);
+    for (const argv of [['team', 'create', '甲组'], ['team', 'create', '乙组'], ['team', 'add', '甲组', '甲']]) await expectOk(admin, argv);
+    const asUser = { [OPERATOR_TOKEN_VARIABLE]: userToken };
+    const listedFor = async () => (await expectOk(admin, ['pack', 'list'], asUser)).out;
+    assert.deepEqual(await listedFor(), ['当前账户没有可用的工作流']);
+
+    // The workflow is given to the team by its name; its member uses it, and no answer carries a number.
+    const assigned = await expectOk(admin, ['pack', 'assign', REVIEW_PACK, '--team=甲组']);
+    assert.deepEqual(assigned.out, ['已把 合成用例检查 分配给团队 甲组']);
+    assert.deepEqual(await listedFor(), ['demo-check@1.0.0\t工作流\t合成用例检查\t已发布']);
+    // A personal assignment withdrawn alone leaves what the team gives, and the answer says so.
+    await expectOk(admin, ['pack', 'assign', '甲', REVIEW_PACK]);
+    const personal = await expectOk(admin, ['pack', 'unassign', '甲', REVIEW_PACK]);
+    assert.deepEqual(personal.out, ['已撤回 甲 的 合成用例检查 个人分配；经团队分配的不受影响']);
+    assert.equal((await listedFor()).length, 1, 'the team still gives it');
+    const withdrawn = await expectOk(admin, ['pack', 'unassign', REVIEW_PACK, '--team=甲组']);
+    assert.deepEqual(withdrawn.out, ['已撤回团队 甲组 的 合成用例检查 分配']);
+    assert.deepEqual(await listedFor(), ['当前账户没有可用的工作流']);
+    const unknown = await admin.run(['pack', 'assign', REVIEW_PACK, '--team=没有的组']);
+    assert.equal(unknown.code, 2);
+    assert.match(unknown.text, /没有叫「没有的组」的团队；团队的名字用 circle-hub team list 查看/);
+
+    // A member shows their own team by its name, with no members or assignments; another team's name is answered as a name no team has.
+    assert.deepEqual((await expectOk(admin, ['team', 'show', '甲组'], asUser)).out, ['甲组']);
+    const foreign = await admin.run(['team', 'show', '乙组'], asUser);
+    const absent = await admin.run(['team', 'show', '没有的组'], asUser);
+    assert.deepEqual([foreign.code, absent.code], [2, 2]);
+    assert.match(absent.text, /没有叫「没有的组」的团队/);
+    assert.equal(foreign.text.replace('乙组', '没有的组'), absent.text, 'the same words with the name asked: the answer does not say that the team exists');
+    assert.equal((await expectOk(admin, ['team', 'show', '乙组'])).out[0], '乙组', 'an administrator names any team');
+  });
+
   test('text from a pack, a resource or an argument reaches the terminal with every control character shown as an escape', async () => {
     const admin = await setup();
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);

@@ -470,9 +470,9 @@ test('the record status is read from the answer partitions, and a refused submis
 
 const NEXT_PLAN = 'run_01planplanplanplanplan01';
 const OPENED = { ...OPEN, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01bookingbookingbooking0', recompose_record: 'rec:' + 'a'.repeat(64) };
-async function afterDevice(rows: (autoids: string[]) => unknown[]) {
+async function afterDevice(rows: (autoids: string[]) => unknown[], options: { judge?: 'model'; more?: (tool: string, args: string[]) => ToolRun | undefined } = {}) {
   await world(3);
-  const state = await initState('recompose-run', 'plan-run', OPEN, 'synthetic-model');
+  const state = await initState('recompose-run', 'plan-run', options.judge === undefined ? OPEN : { ...OPEN, judge: options.judge }, 'synthetic-model');
   for (const c of state.cases) {
     c.stage = 'ready'; c.attempts = { recompose: 1, write: 1 }; c.record_accepted = true;
     for (const dir of ['ready', 'plan']) { await mkdir(join('cases', c.k, dir), { recursive: true }); await writeFile(join('cases', c.k, dir, `${c.k}.json`), `{"plan":"${c.k} round 1"}`); }
@@ -491,7 +491,7 @@ async function afterDevice(rows: (autoids: string[]) => unknown[]) {
       const carried = state.cases.filter((c) => !again.includes(c.autoid) && existsSync(join(at('--source-plans'), `${c.k}.json`)) && !uncarried.includes(c.k)).map((c) => { const file = join(at('--plans'), `${c.k}.json`), text = `{"plan":"${c.k} carried"}`; writeFileSync(file, text); return { autoid: c.autoid, file, sha256: createHash('sha256').update(text).digest('hex') }; });
       return ok(JSON.stringify({ schema: 'carry-plans@1', carried, needs_recheck: [], skipped: { rework: again } }));
     }
-    return undefined;
+    return options.more?.(tool, args);
   });
   return { state, t, uncarried };
 }
@@ -877,6 +877,64 @@ test('judge model: the note about steps the tree could not settle is written onc
   await next(state, '编写 00', withoutPlumb(t.run));
   assert.deepEqual(notes().map((line) => /^命令核验：第 (\d+) 版计划有 (\d+) 步/.exec(line)!.slice(1)), [['1', '2'], ['2', '1']]);
   assert.equal(c.review!.filter((line) => line.startsWith('判断方式：')).length, 1, 'and the judge note stays one');
+});
+
+// What the tree-only check and the blind audit say in a compile that Plumb does not judge, for a case written again after a device round.
+const modelGates = (written: string[]) => (tool: string, args: string[]): ToolRun | undefined => {
+  if (tool === 'cmd-verify-plumb.ts') return ok(JSON.stringify({ judge: 'tree-only', review_required_count: 0, steps_checked: 3, checked: 1 }));
+  if (tool === 'fidelity-brief.ts') {
+    const out = args[args.indexOf('--out') + 1]!;
+    for (const k of written) { writeFileSync(join(out, `${k}.abcd1234.brief.json`), '{}'); writeFileSync(join(out, `${k}.abcd1234.verdict.json`), '{}'); }
+    return ok();
+  }
+  return undefined;
+};
+// A call that asks Plumb: the plumb skill's own tools, the fidelity judgment, the command selection, and the command check without --tree-only.
+const asksPlumb = (call: { tool: string; args: string[] }): boolean =>
+  call.tool.startsWith('plumb/') || call.tool.endsWith('/fidelity-plumb.ts') || call.tool.endsWith('/cmd-select-plumb.ts') || (call.tool.endsWith('/cmd-verify-plumb.ts') && !call.args.includes('--tree-only'));
+
+test('judge model: a device round is reworked without Plumb: the new plan run is opened without its address, what passed is carried untouched, and the case written again goes through the tree-only check and the blind audit alone', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }], { judge: 'model', more: modelGates(['01']) });
+  const step = await rework(state, OPENED, 'returns-1', 'notes', withoutPlumb(t.run));
+  assert.deepEqual([step.round, step.carried, step.reworked, step.actions.map((a) => a.label)], [2, ['00', '02'], ['01'], ['编写 01']]);
+  const opened = t.calls.find((c) => c.tool === 'case-compile/open-compile.ts')!;
+  assert.deepEqual(opened.args.slice(0, 4), ['--hub', 'http://127.0.0.1:9/mcp', '--judge', 'model']);
+  assert.equal(opened.args.includes('--plumb'), false, 'no Plumb address is handed to the new run');
+  assert.equal(opened.stdin, 'synthetic-token-1234\n\n', 'the Hub token, and an empty line where the key would be: nothing is handed over that this compile does not use');
+  assert.equal(state.judge, 'model', 'the new plan run is judged as the first was');
+  assert.deepEqual(['00', '02'].map((k) => readFileSync(join('cases', k, 'ready', `${k}.json`), 'utf8')), ['{"plan":"00 carried"}', '{"plan":"02 carried"}']);
+  await writeFile(join('cases', '01', 'plan', '01.json'), '{"plan":"01 round 2"}');
+  const written = await next(state, '编写 01', withoutPlumb(t.run));
+  assert.deepEqual(written.ready, ['00', '01', '02'], 'the audit verdict of the brief is merged and the case is ready');
+  const verify = t.calls.filter((c) => c.tool === 'case-compile/cmd-verify-plumb.ts');
+  assert.deepEqual(verify.map((c) => [c.args, c.stdin]), [[['--plans', join('cases', '01', 'plan'), '--run', join('rework-2', 'plan-run'), '--tree-only'], undefined]], 'only the case written again is checked, against the new plan run, and no key is handed over');
+  assert.deepEqual(t.calls.filter(asksPlumb), [], 'no tool that asks Plumb ran: no wake, no fidelity judgment, no command selection');
+  const collected = await collect(state, 'plans-2');
+  assert.deepEqual(['00', '01', '02'].map((k) => readFileSync(join('plans-2', `${k}.json`), 'utf8')), ['{"plan":"00 carried"}', '{"plan":"01 round 2"}', '{"plan":"02 carried"}']);
+  assert.deepEqual(collected.reviewed!.map((row) => row.notes.some((note) => /^判断方式：这次按使用者选定的方式不经 Plumb/.test(note))), [true], 'the case judged in this round says who judged');
+});
+
+test('judge model: a case that stops again leaves this compile through reopen, which opens the new plan run without Plumb, carries the others and judges the case written again as before', async () => {
+  const { state, t } = await afterDevice(() => [], { judge: 'model', more: modelGates(['02']) });
+  state.open = 'open-compile.json';
+  const b = state.cases[1]!;
+  b.stage = 'stopped'; b.attempts = { recompose: 1, write: 5 }; b.stopped = '脚本编写 5 次仍未通过：合成原因'; b.retried = OPEN.plan_run;
+  const step = await reopen(state, OPENED, undefined, withoutPlumb(t.run));
+  assert.match(step.message, /^新开脚本编写运行 run_01planplanplanplanplan01（reopen-1\/open-compile\.json）：2 条就绪的计划已原样结转；retry 后又停下的 1 条不进这次编译（01）/);
+  const opened = t.calls.find((c) => c.tool === 'case-compile/open-compile.ts')!;
+  assert.deepEqual(opened.args.slice(0, 4), ['--hub', 'http://127.0.0.1:9/mcp', '--judge', 'model']);
+  assert.equal(opened.args.includes('--plumb'), false);
+  assert.equal(opened.args[opened.args.indexOf('--exclude') + 1], b.autoid, 'the case that stopped again stays out');
+  assert.equal(opened.stdin, 'synthetic-token-1234\n\n');
+  assert.deepEqual([state.judge, state.cases.map((c) => c.stage)], ['model', ['ready', 'excluded', 'ready']]);
+  assert.deepEqual(t.calls.filter(asksPlumb), []);
+  // A plan that the carry does not take is written again in the new run and goes through the same gates, still without Plumb.
+  state.cases[2]!.stage = 'writing';
+  await writeFile(join('cases', '02', 'plan', '02.json'), '{"plan":"02 again"}');
+  const again = await next(state, '编写 02', withoutPlumb(t.run));
+  assert.deepEqual(again.ready, ['00', '02']);
+  assert.deepEqual(t.calls.filter((c) => c.tool === 'case-compile/cmd-verify-plumb.ts').map((c) => c.args.at(-1)), ['--tree-only']);
+  assert.deepEqual(t.calls.filter(asksPlumb), []);
 });
 
 test('the command line asks for the Plumb address and key only when Plumb is the judge of this compile', async () => {

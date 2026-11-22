@@ -108,3 +108,86 @@ test('a team is named by its name where a team is asked for, as an account is: t
   listed = [row(id, team.name), row(other, team.name)];
   await assert.rejects(teamCommand(session, ['add', team.name, member.name]), (error: unknown) => error instanceof UsageError && error.message === '有 2 个团队都叫「合成团队」；请在控制台的团队页里操作其中一个');
 });
+
+function packSession(by: Principal, listed: readonly { id: string; name: string }[]) {
+  const out: string[] = [], calls: unknown[][] = [];
+  const unused = () => { throw new Error('must not access storage'); };
+  const ctx: CliContext = { io: { stdout: line => out.push(line), stderr: unused, env: {}, cwd: tmpdir() }, config: unused, records: async () => unused(), deps: async () => unused(), actingAdmin: async () => unused() };
+  const hub = {
+    registry: {
+      assignTeam: async (...values: unknown[]) => { calls.push(['assignTeam', ...values]); },
+      unassignTeam: async (...values: unknown[]) => { calls.push(['unassignTeam', ...values]); },
+      assign: async (...values: unknown[]) => { calls.push(['assign', ...values]); },
+      unassign: async (...values: unknown[]) => { calls.push(['unassign', ...values]); },
+      latestVersion: async (pack: string) => ({ id: pack, title: '合成工作流' }),
+    },
+    records: { teams: { list: async () => listed, get: async (_by: Principal, teamId: string) => listed.find(row => row.id === teamId) ?? null } },
+  };
+  const session = new class extends Session {
+    override async admin() { return by; }
+    override async hub() { return hub as unknown as Awaited<ReturnType<Session['hub']>>; }
+    override async user() { return member; }
+  }(ctx, {});
+  return { session, out, calls };
+}
+
+test('a workflow is assigned to a team by its name or its number, and the answers name the workflow by its title and the team by its name', async () => {
+  const by: Principal = { ...member, role: 'admin' };
+  const f = packSession(by, [{ id, name: team.name }]);
+  assert.equal(await packCommand(f.session, ['assign', 'synthetic-workflow', '--team=' + team.name]), 0);
+  assert.equal(await packCommand(f.session, ['unassign', 'synthetic-workflow', '--team=' + id, '--note=合成备注']), 0);
+  assert.deepEqual(f.calls, [['assignTeam', by, id, 'synthetic-workflow', { note: undefined }], ['unassignTeam', by, id, 'synthetic-workflow', '合成备注']], 'the name resolved to its team; the number is taken as it is');
+  assert.deepEqual(f.out, ['已把 合成工作流 分配给团队 合成团队', '已撤回团队 合成团队 的 合成工作流 分配']);
+  assert.doesNotMatch(f.out.join('\n'), /tm_|usr_|synthetic-workflow/);
+  // A name no team has, and a name two teams have, are told in the words every command that takes a team uses; nothing is written.
+  f.calls.length = 0;
+  for (const sub of ['assign', 'unassign']) await assert.rejects(packCommand(f.session, [sub, 'synthetic-workflow', '--team=没有的团队']), (error: unknown) => error instanceof UsageError && error.message === '没有叫「没有的团队」的团队；团队的名字用 circle-hub team list 查看');
+  const twice = packSession(by, [{ id, name: team.name }, { id: 'tm_1123456789abcdefghjkmnpqrs', name: team.name }]);
+  await assert.rejects(packCommand(twice.session, ['assign', 'synthetic-workflow', '--team=' + team.name]), (error: unknown) => error instanceof UsageError && error.message === '有 2 个团队都叫「合成团队」；请在控制台的团队页里操作其中一个');
+  assert.deepEqual([...f.calls, ...twice.calls], []);
+  // One workflow, one target: a team and a person together, or a person alone without a workflow, are usage errors.
+  await assert.rejects(packCommand(f.session, ['assign', member.name, 'synthetic-workflow', '--team=' + team.name]), /团队分配只给一个包ID，不能同时指定个人/);
+  await assert.rejects(packCommand(f.session, ['unassign', member.name]), /个人分配须给出账户和工作流；团队分配使用 --team=<团队名或ID>/);
+});
+
+test('a personal assignment is withdrawn alone and the answer says what stays: what a team of the account is assigned remains usable', async () => {
+  const by: Principal = { ...member, role: 'admin' };
+  const f = packSession(by, [{ id, name: team.name }]);
+  assert.equal(await packCommand(f.session, ['assign', member.name, 'synthetic-workflow']), 0);
+  assert.equal(await packCommand(f.session, ['unassign', member.name, 'synthetic-workflow', '--note=合成备注']), 0);
+  assert.deepEqual(f.calls, [['assign', by, member.id, 'synthetic-workflow', { note: undefined }], ['unassign', by, member.id, 'synthetic-workflow', '合成备注']]);
+  assert.deepEqual(f.out, ['已把 合成工作流 分配给 合成成员', '已撤回 合成成员 的 合成工作流 个人分配；经团队分配的不受影响']);
+  assert.doesNotMatch(f.out.join('\n'), /tm_|usr_|synthetic-workflow/);
+});
+
+test('a member names the teams they are in and no others: another team\'s name is answered as no such team, in the words for a name no team has, and a number the same way', async () => {
+  const other: Team = { ...team, id: 'tm_1123456789abcdefghjkmnpqrs', name: '别人的团队' };
+  const everyone = [team, other], restricted: string[] = [];
+  const row = (value: Team) => ({ ...value, member_count: 1, pack_count: 0, resource_count: 0, changed_at: value.created_at });
+  // As the records answer (hub/records/teams.test.ts): an administrator lists every team, a member the teams they are in, and get is a find in that list.
+  const list = async (by: Principal) => (by.role === 'admin' ? everyone : [team]).map(row);
+  const teams: Teams = {
+    list, get: async (by, teamId) => (await list(by)).find(value => value.id === teamId) ?? null, memberships: async () => [], membershipsMany: async () => new Map(),
+    members: async () => { restricted.push('members'); return []; }, assignments: async () => { restricted.push('assignments'); return { packs: [], resources: [] }; },
+    create: async () => team, delete: async () => deletion, add: async () => { throw new Error('not used'); }, remove: async () => true,
+  };
+  const as = (role: 'admin' | 'user') => {
+    const by: Principal = { ...member, role }, out: string[] = [];
+    const session: TeamCommandSession = { member: async () => by, admin: async () => by, records: async () => ({ teams }), user: async () => member, out: line => out.push(line) };
+    return { session, out };
+  };
+  const mine = as('user');
+  assert.equal(await teamCommand(mine.session, ['show', team.name]), 0);
+  assert.deepEqual(mine.out, [team.name], 'a member sees the name of their own team, and no members or assignments');
+  const told = async (name: string) => { try { await teamCommand(mine.session, ['show', name]); } catch (error) { return error instanceof UsageError ? error.message : String(error); } return 'no refusal'; };
+  const unknown = await told('没有的团队'), foreign = await told(other.name);
+  assert.equal(unknown, '没有叫「没有的团队」的团队；团队的名字用 circle-hub team list 查看');
+  assert.equal(foreign, unknown.replace('没有的团队', other.name), 'the same words with the name asked, so the answer does not say that the team exists');
+  const neutral = async (teamId: string) => teamCommand(mine.session, ['show', teamId]).then(() => 'no refusal', (error: unknown) => error instanceof Error ? error.message : String(error));
+  assert.equal(await neutral(other.id), '团队不可用');
+  assert.equal(await neutral('tm_2123456789abcdefghjkmnpqrs'), '团队不可用', 'a number that no team has is answered as the number of another team is');
+  assert.deepEqual([restricted, mine.out], [[], [team.name]]);
+  const admin = as('admin');
+  assert.equal(await teamCommand(admin.session, ['show', other.name]), 0);
+  assert.equal(admin.out[0], other.name, 'the administrator names any team');
+});
