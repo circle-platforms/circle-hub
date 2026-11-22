@@ -21,6 +21,7 @@
 - Plumb 客户端：后端已经失败时唤醒立即结束并带出网关的原话（`packs/skill/plumb`，1.0.4；`case-compile` 里的生成副本跟着更新）。
 - 编写循环：Plumb 不判断时命令里不带它的地址（`pipeline.ts judge`、`workflows/compile-loop.js`）。
 - 本地工具下载：不存在、已退役、技能包没有安装各答一句（`hub/server/local-tools.ts`、`pack-words.ts`、`tools.ts`）。
+- 只编译一部分用例时返工不丢范围：开运行的记录记下范围、排除和各项选项，后续的脚本编写运行照它开（`tools/open-compile.ts`、`tools/pipeline.ts`，3.26.8）。
 
 ## 可以改的路径
 
