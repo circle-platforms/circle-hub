@@ -43,8 +43,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "650a7f99056f898dd99f22754eda06b5a88aa3e038a9b0f1df13f18af79e544f",
-      "size": 16603
+      "sha256": "d7183f1eada849aefc8db72dcaaaece35b18cccc08152b503d5c1eb0e0014fe7",
+      "size": 16775
     },
     {
       "path": "agents/compile-attributor.md",
@@ -1058,8 +1058,8 @@
     },
     {
       "path": "tools/cmd-verify-plumb.ts",
-      "sha256": "a3b6aec27e3ac9bcfe46a707163b71690f7b81d8b3cfcb376e39cf46a4b3c76d",
-      "size": 29893
+      "sha256": "e6521c911b38e91f817054af2f232fffd0eb000e82c92f7f79f9ba7a0cf19a27",
+      "size": 30992
     },
     {
       "path": "tools/command-domain-precheck.cli.json",
@@ -1198,8 +1198,8 @@
     },
     {
       "path": "tools/pipeline.ts",
-      "sha256": "2427c5f0fd405be198843519130e1998f13e220a50fe105d0f42e6e97d65f5f8",
-      "size": 67010
+      "sha256": "5076e1f03da3667c1d91e4e19e708de937196e4fedf8d5dc940094911e753cbf",
+      "size": 67886
     },
     {
       "path": "tools/plan-fields.md",

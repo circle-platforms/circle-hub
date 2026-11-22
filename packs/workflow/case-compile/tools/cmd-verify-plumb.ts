@@ -47,7 +47,7 @@ const RULES = [
   '- 命令树核对通过而 Plumb 拒绝：标需人工复核（review_required），带 Plumb 的概率，不阻断，退出码 0；加 --strict-review 才阻断。',
   '- 命令树核对不通过：阻断（退出码 1），不论 Plumb 怎么说；先照 check-plan.ts 的同名问题改命令。',
   '- 命令树核对没有运行或没有结论（没有 --run 的冻结运行与命令树，或这一步缺事实）：只有 Plumb 的判断，它拒绝就阻断，并在这一步写明命令树核对为什么没有结论。',
-  '- --tree-only：不问 Plumb，只做命令树核对（使用者选定判断方式为 model 时由流水线带上）。命令树核对不通过照样阻断；通过就过；没有结论的步骤标需人工复核、状态未知并写明原因，不阻断，加 --strict-review 才阻断。此时不需要 --base-url 和密钥。',
+  '- --tree-only：不问 Plumb，只做命令树核对（使用者选定判断方式为 model 时由流水线带上）。命令树核对不通过照样阻断；通过就过；没有结论的步骤标需人工复核、状态未知并写明原因，不阻断，加 --strict-review 才阻断。一步命令也没有核对（计划都标为跳过，或没有一步下发设备命令）时状态也是未知，写明缺什么和下一步。此时工具本身不需要 --base-url 和密钥；但命令行声明（cmd-verify-plumb.cli.json）仍要求它们，守卫会拒绝没带它们的直接调用，所以这个选项由 pipeline.ts 运行，不由主代理手敲。',
   '- 步骤意图取这一步（块或顺序步骤）自己写的 description；没写就用用例标题，并在这一步的 disclosure 里说明，不借脑图里同位置的步骤，也不用作者步骤的摘要。',
 ].join('\n');
 
@@ -634,18 +634,26 @@ export async function runCmdVerifyPlumb(
       };
     });
 
+    // The program has said nothing about a command it never looked at: with no command checked, "confirmed" would be false.
+    const stepsChecked = results.reduce((sum, row) => sum + row.steps.length, 0);
+    const nothingChecked = treeOnly && stepsChecked === 0;
     const report = {
       schema: 'plumb-cmd-verify-report@1',
       judge: treeOnly ? ('tree-only' as const) : ('plumb' as const),
-      status: treeOnly ? (reviewRequiredCount > 0 ? ('未知' as const) : ('已确认' as const)) : ('未确认' as const),
+      status: treeOnly ? (reviewRequiredCount > 0 || nothingChecked ? ('未知' as const) : ('已确认' as const)) : ('未确认' as const),
       decided_by: treeOnly ? ('程序' as const) : ('模型' as const),
       model_version: modelVersion,
       context_mode: contextMode,
       strict_review: strictReview,
       checked: results.length,
+      steps_checked: stepsChecked,
       skipped,
       blocked_count: blockedItems.length,
       review_required_count: reviewRequiredCount,
+      ...(nothingChecked ? {
+        missing_fact: `没有核对任何命令：${results.length === 0 ? `这次给的计划都标为跳过（${skipped.length} 份）` : '计划里没有一步下发设备命令'}，命令树核对一步也没有做`,
+        next_action: '确认这些计划本来就不下发设备命令（跳过的用例看它写的理由）；本该有命令的先写进计划，再重跑 cmd-verify-plumb.ts',
+      } : {}),
       results,
     };
     const serialized = JSON.stringify(report, null, 2) + '\n';

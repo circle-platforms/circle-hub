@@ -589,3 +589,49 @@ test('--tree-only on a plan the tree accepts throughout is settled by the progra
     await rm(good.dir, { recursive: true, force: true }); await rm(open.dir, { recursive: true, force: true });
   }
 });
+
+test('--tree-only has said nothing about a command it did not look at: plans all skipped, or without a device command, are unknown with what is missing and the next step', async () => {
+  const w = await frozenWorkspace(VALID);
+  try {
+    const plans = join(w.dir, 'plans');
+    const skippedFile = join(plans, '01.json'), bareFile = join(plans, '02.json');
+    await writeFile(skippedFile, JSON.stringify({ item: 'doc:case-1', handling: 'skipped', reason: '不适用' }));
+    await writeFile(bareFile, JSON.stringify(planFile('doc:case-1', { bucket: 'bed-a', blocks: [], replacements: [], steps: [{ object: 'widget-seat', method: 'configure', args: [], keywords: {} }], expects: [] })));
+    const NEXT = '确认这些计划本来就不下发设备命令（跳过的用例看它写的理由）；本该有命令的先写进计划，再重跑 cmd-verify-plumb.ts';
+
+    const skipped = await runCmdVerifyPlumb(['--file', skippedFile, '--run', w.dir, '--tree-only'], {});
+    assert.equal(skipped.code, 0, skipped.stderr);
+    const none = JSON.parse(skipped.stdout);
+    assert.deepEqual([none.judge, none.status, none.decided_by, none.checked, none.steps_checked, none.skipped.length, none.blocked_count, none.review_required_count], ['tree-only', '未知', '程序', 0, 0, 1, 0, 0]);
+    assert.equal(none.missing_fact, '没有核对任何命令：这次给的计划都标为跳过（1 份），命令树核对一步也没有做');
+    assert.equal(none.next_action, NEXT);
+
+    const bare = await runCmdVerifyPlumb(['--file', bareFile, '--run', w.dir, '--tree-only'], {});
+    assert.equal(bare.code, 0, bare.stderr);
+    const noCommand = JSON.parse(bare.stdout);
+    assert.deepEqual([noCommand.status, noCommand.decided_by, noCommand.checked, noCommand.steps_checked, noCommand.results[0].steps], ['未知', '程序', 1, 0, []]);
+    assert.equal(noCommand.missing_fact, '没有核对任何命令：计划里没有一步下发设备命令，命令树核对一步也没有做');
+    assert.equal(noCommand.next_action, NEXT);
+
+    // A plan with commands the tree accepts is still confirmed, and says nothing is missing.
+    const good = await runCmdVerifyPlumb(['--file', w.file, '--run', w.dir, '--tree-only'], {});
+    assert.equal(good.code, 0, good.stderr);
+    const checked = JSON.parse(good.stdout);
+    assert.deepEqual([checked.status, checked.decided_by, checked.steps_checked, 'missing_fact' in checked, 'next_action' in checked], ['已确认', '程序', 2, false, false]);
+
+    // Once the program has looked at some command the report is about those: a skipped plan or one without a command beside them adds no gap.
+    const mixed = await runCmdVerifyPlumb(['--plans', plans, '--run', w.dir, '--tree-only'], {});
+    assert.equal(mixed.code, 0, mixed.stderr);
+    const some = JSON.parse(mixed.stdout);
+    assert.deepEqual([some.status, some.checked, some.steps_checked, some.skipped.length, 'missing_fact' in some], ['已确认', 2, 2, 1, false]);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--tree-only is run by pipeline.ts: the help says so, since the declaration still asks for the address and the key that the option does not need', async () => {
+  const helped = await runCmdVerifyPlumb(['--help'], {});
+  assert.equal(helped.code, 0);
+  assert.match(helped.stdout, /此时工具本身不需要 --base-url 和密钥；但命令行声明（cmd-verify-plumb\.cli\.json）仍要求它们，守卫会拒绝没带它们的直接调用，所以这个选项由 pipeline\.ts 运行，不由主代理手敲/);
+  assert.match(helped.stdout, /一步命令也没有核对.*状态也是未知，写明缺什么和下一步/);
+});

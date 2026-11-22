@@ -28,7 +28,7 @@ EOF
 
 输出第一行是“就绪：…”就往下走；是“无法编译：…”时把这一行原样告诉使用者，然后停止，不分析、不提问、不换参数重试。部分用例加 `--scope '<范围文件>'`（`{"words":"<范围原话>","cases":[...]}`）；返工加 `--recompose-run` 与 `--recompose-record` 沿用重组。重组运行和脚本编写运行只经此工具开，`start_run` 只开 test-bed。
 
-判断方式默认是 Plumb。只有使用者明确说这次不经 Plumb，才在这条命令上加 `--judge model`（可不写 `--plumb`，标准输入照旧）：命令核验只做命令树的程序核对，场景保真由独立盲审判断，之后的 `pipeline.ts` 照 `open-compile.json` 办。Plumb 没就绪时不自行改用 model，照上一段停下。用了 model 的，最后报告写明判断方式，并照录 collect 输出的 `reviewed`。
+判断方式默认是 Plumb。只有使用者明确说这次不经 Plumb，才在这条命令上加 `--judge model`（可不写 `--plumb`，标准输入照旧）：命令核验只做命令树的程序核对（它的 `--tree-only` 选项由 `pipeline.ts` 运行，主代理不手敲：命令行声明仍要求 Plumb 地址和密钥，守卫会拒绝不带它们的直接调用），场景保真由独立盲审判断，之后的 `pipeline.ts` 照 `open-compile.json` 办。Plumb 没就绪时不自行改用 model，照上一段停下。用了 model 的，最后报告写明判断方式，并照录 collect 输出的 `reviewed`。
 
 就绪后下载两个运行（`<recompose 技能目录>` 是与 `<技能目录>` 同在 `skills` 目录下的 `recompose`），开流水线：
 

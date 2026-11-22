@@ -565,6 +565,35 @@ test('plumb skill and case-compile plumb scripts enforce host-pinning, subcomman
   }
 });
 
+test('a compile that Plumb does not judge: its commands keep the two standard input lines the declarations count, and --tree-only typed directly is refused for the address and the key its declaration still asks for', () => {
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile);
+    try {
+      const open = `'${h.skillPath('case-compile', 'tools/open-compile.ts')}'`;
+      const pipeline = `'${h.skillPath('case-compile', 'tools/pipeline.ts')}'`;
+      const verify = `'${h.skillPath('case-compile', 'tools/cmd-verify-plumb.ts')}'`;
+      const head = `--hub %HUB_URL% --judge model --subject 'agile:mindmap:900001' --product widget --build Build_A --booking ${RUN_ID} --out open-compile.json`;
+
+      // --judge model does without --plumb, but the declaration counts two lines and the guard holds a command to the count.
+      h.assertAllowed(h.exec(`node ${open} ${head} <<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\nEOF`), `${profile}: open-compile without --plumb`);
+      h.assertRefused3(h.exec(`node ${open} ${head} <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明依次读 2 行（%HUB_TOKEN%、%PLUMB_API_KEY%）/);
+
+      // The loop's commands of such a compile: the question about the judge needs no service, and the others drop --plumb only.
+      h.assertAllowed(h.exec(`node ${pipeline} judge --state 'pipeline.json'`), `${profile}: the question about the judge`);
+      h.assertAllowed(h.exec(`node ${pipeline} resume --state 'pipeline.json' --hub %HUB_URL% <<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\nEOF`), `${profile}: resume without --plumb`);
+      h.assertRefused3(h.exec(`node ${pipeline} resume --state 'pipeline.json' --hub %HUB_URL% <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明依次读 2 行（%HUB_TOKEN%、%PLUMB_API_KEY%）/);
+      h.assertRefused3(h.exec(`node ${pipeline} resume --state 'pipeline.json' --hub %HUB_URL% <<'EOF'\n%HUB_TOKEN%\n-\nEOF`), /here-doc 写了 "-"，每行只能写允许的客户端占位符/);
+
+      // --tree-only needs neither, but its declaration cannot say so: pipeline.ts runs it, the lead does not type it.
+      h.assertRefused3(h.exec(`node ${verify} --plans plans --run plan-run --tree-only`), /^参数无效：缺少必填选项 --base-url；这次命令末尾没有写 here-doc，但 case-compile\/tools\/cmd-verify-plumb\.ts 声明从标准输入读令牌（1 行：%PLUMB_API_KEY%）/);
+      h.assertRefused3(h.exec(`node ${verify} --plans plans --run plan-run --tree-only --base-url %PLUMB_URL%`), /这次命令末尾没有写 here-doc，但 case-compile\/tools\/cmd-verify-plumb\.ts 声明从标准输入读令牌/);
+      h.assertAllowed(h.exec(`node ${verify} --plans plans --run plan-run --tree-only --base-url %PLUMB_URL% <<'EOF'\n%PLUMB_API_KEY%\nEOF`), `${profile}: with what the declaration asks for`);
+    } finally {
+      h.close();
+    }
+  }
+});
+
 test('cmd-lookup is a declared tool: the command the writer task file prints passes both guards, and what its declaration does not allow is refused', () => {
   for (const profile of ['ops', 'skills'] as const) {
     const h = createGuardHarness(profile);

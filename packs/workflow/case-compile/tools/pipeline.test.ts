@@ -827,6 +827,58 @@ test('judge model: a command the tree refuses goes back to the writer, and the j
   assert.equal(c.review!.filter((line) => line.startsWith('判断方式：')).length, 1);
 });
 
+test('judge model: a plan the tree check looked at no command of says so in the case\'s notes, and the note is written once for a plan version however often the check runs again', async () => {
+  await world(1);
+  let said: Record<string, unknown> = { review_required_count: 0, steps_checked: 0, checked: 0 };
+  const t = tools((tool, args) => {
+    if (tool === 'cmd-verify-plumb.ts') return ok(JSON.stringify(said));
+    if (tool === 'fidelity-brief.ts') { writeFileSync(join(args[args.indexOf('--out') + 1]!, '00.abcd1234.brief.json'), '{}'); return ok(); }
+    return undefined;
+  });
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'model' }, 'synthetic-model');
+  const c = state.cases[0]!; c.stage = 'writing'; c.attempts = { recompose: 1, write: 1 }; c.record_accepted = true;
+  await mkdir(join('cases', '00', 'plan'), { recursive: true }); await writeFile(join('cases', '00', 'plan', '00.json'), '{}');
+  const notes = () => c.review!.filter((line) => line.startsWith('命令核验：'));
+  await next(state, '编写 00', withoutPlumb(t.run));
+  assert.deepEqual(notes(), ['命令核验：第 1 版计划没有核对任何命令（计划标为跳过），命令树核对一步也没有做，这次不经 Plumb，状态未知；下一步由使用者确认这条用例本来就不下发设备命令']);
+  c.stage = 'writing';
+  await next(state, '编写 00', withoutPlumb(t.run));
+  assert.equal(notes().length, 1, 'the same plan version, checked again, adds nothing');
+
+  // The next version has commands in no step: another reason, said as its own note.
+  said = { review_required_count: 0, steps_checked: 0, checked: 1 };
+  c.stage = 'writing'; c.attempts.write = 2;
+  await next(state, '编写 00', withoutPlumb(t.run));
+  assert.deepEqual(notes().slice(1), ['命令核验：第 2 版计划没有核对任何命令（计划里没有一步下发设备命令），命令树核对一步也没有做，这次不经 Plumb，状态未知；下一步由使用者确认这条用例本来就不下发设备命令']);
+
+  // A plan the tree did look at says nothing of the kind.
+  said = { review_required_count: 0, steps_checked: 2, checked: 1 };
+  c.stage = 'writing'; c.attempts.write = 3;
+  await next(state, '编写 00', withoutPlumb(t.run));
+  assert.equal(notes().length, 2);
+});
+
+test('judge model: the note about steps the tree could not settle is written once for a plan version, and again for the next one', async () => {
+  await world(1);
+  let steps = 2;
+  const t = tools((tool, args) => {
+    if (tool === 'cmd-verify-plumb.ts') return ok(JSON.stringify({ review_required_count: steps, steps_checked: 3, checked: 1 }));
+    if (tool === 'fidelity-brief.ts') { writeFileSync(join(args[args.indexOf('--out') + 1]!, '00.abcd1234.brief.json'), '{}'); return ok(); }
+    return undefined;
+  });
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'model' }, 'synthetic-model');
+  const c = state.cases[0]!; c.stage = 'writing'; c.attempts = { recompose: 1, write: 1 }; c.record_accepted = true;
+  await mkdir(join('cases', '00', 'plan'), { recursive: true }); await writeFile(join('cases', '00', 'plan', '00.json'), '{}');
+  const notes = () => c.review!.filter((line) => /^命令核验：第 \d+ 版计划有 \d+ 步命令树核对没有结论/.test(line));
+  for (let again = 0; again < 3; again++) { c.stage = 'writing'; await next(state, '编写 00', withoutPlumb(t.run)); }
+  assert.equal(notes().length, 1, 'three passes of one plan version through the check: one note');
+  assert.match(notes()[0]!, /^命令核验：第 1 版计划有 2 步命令树核对没有结论/);
+  steps = 1; c.stage = 'writing'; c.attempts.write = 2;
+  await next(state, '编写 00', withoutPlumb(t.run));
+  assert.deepEqual(notes().map((line) => /^命令核验：第 (\d+) 版计划有 (\d+) 步/.exec(line)!.slice(1)), [['1', '2'], ['2', '1']]);
+  assert.equal(c.review!.filter((line) => line.startsWith('判断方式：')).length, 1, 'and the judge note stays one');
+});
+
 test('the command line asks for the Plumb address and key only when Plumb is the judge of this compile', async () => {
   await world(1);
   const t = tools(() => undefined);

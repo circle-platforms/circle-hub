@@ -232,6 +232,10 @@ function noteOnce(c: CaseState, note: string): void { if (!c.review?.includes(no
 function unsettledCommands(verified: ToolRun): number {
   try { const value: unknown = JSON.parse(verified.stdout); return isRecord(value) && typeof value.review_required_count === 'number' ? value.review_required_count : 0; } catch { return 0; }
 }
+// The tree-only check passes a plan it looked at no command of (skipped, or without a device command) with exit 0 and says so.
+function noCommandChecked(verified: ToolRun): { skipped: boolean } | null {
+  try { const value: unknown = JSON.parse(verified.stdout); return isRecord(value) && value.steps_checked === 0 ? { skipped: value.checked === 0 } : null; } catch { return null; }
+}
 function needPlumb(state: PipelineState, plumb: string | undefined, key: string | undefined): void {
   if (state.judge === 'model') return;
   if (!plumb) throw new Error('缺 --plumb <Plumb地址>（这次编译的判断方式是 Plumb）');
@@ -353,8 +357,11 @@ async function writeEnded(state: PipelineState, c: CaseState, g: Gates, finished
     const treeOnly = await g.run('case-compile', 'cmd-verify-plumb.ts', ['--plans', plans, '--run', state.plan_dir, '--tree-only']);
     if (treeOnly.code !== 0) return again(`命令核验没有通过：${words(treeOnly)}`);
     noteOnce(c, MODEL_JUDGE_NOTE);
+    // Each note is written once for a plan version, however often a later gate sends the case through this check again.
     const unsettled = unsettledCommands(treeOnly);
-    if (unsettled) (c.review ??= []).push(`命令核验：第 ${c.attempts.write} 版计划有 ${unsettled} 步命令树核对没有结论，这次不经 Plumb，这些步骤没有判断，状态未知；下一步由使用者对照同构建的手册和命令树复核`);
+    if (unsettled) noteOnce(c, `命令核验：第 ${c.attempts.write} 版计划有 ${unsettled} 步命令树核对没有结论，这次不经 Plumb，这些步骤没有判断，状态未知；下一步由使用者对照同构建的手册和命令树复核`);
+    const bare = noCommandChecked(treeOnly);
+    if (bare) noteOnce(c, `命令核验：第 ${c.attempts.write} 版计划没有核对任何命令（${bare.skipped ? '计划标为跳过' : '计划里没有一步下发设备命令'}），命令树核对一步也没有做，这次不经 Plumb，状态未知；下一步由使用者确认这条用例本来就不下发设备命令`);
     await mkdir(audits, { recursive: true });
     const briefed = await g.run('case-compile', 'fidelity-brief.ts', ['--run', state.plan_dir, '--plans', plans, '--out', audits]);
     if (briefed.code !== 0) return again(`场景保真简报没有生成：${words(briefed)}`);

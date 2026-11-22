@@ -24,7 +24,7 @@
 
 - 开运行不查 Plumb 状态，不要 Plumb 地址和密钥，也不要求本机装有 `plumb` 技能。
 - model 方式下客户端可以不设 Plumb 地址和密钥：编写循环开头先问一次 `pipeline.ts judge --state …`（读状态文件，不要服务，也不读标准输入），答 `model` 时之后的命令不带 `--plumb %PLUMB_URL%`，只写 `--hub`；答 `plumb` 时命令与以前相同。标准输入仍是两行：`pipeline.cli.json` 给 `resume`、`next`、`rework`、`reopen` 各声明了两行，守卫按声明核对行数，所以第二行 `%PLUMB_API_KEY%` 省不掉；客户端不认识这个名字时它原样留在命令里，工具在 model 方式下不读它。
-- 命令核验只做命令树的程序核对（`cmd-verify-plumb.ts --tree-only`）：不通过的挡住，通过的放行，没有结论的步骤状态未知，写进这条用例的复核说明，不冒充判断过。
+- 命令核验只做命令树的程序核对（`cmd-verify-plumb.ts --tree-only`）：不通过的挡住，通过的放行，没有结论的步骤状态未知，写进这条用例的复核说明，不冒充判断过。一步命令也没有核对（计划标为跳过，或没有一步下发设备命令）时同样是未知：工具的报告写明缺什么和下一步，复核说明也记一条。`--tree-only` 由 `pipeline.ts` 运行，不由主代理手敲：`cmd-verify-plumb.cli.json` 仍声明 `--base-url` 必填、标准输入读 Plumb 密钥（命令行声明写不出“带了这个选项就不要它们”），守卫会拒绝不带它们的直接调用。
 - 场景保真审计直接出简报（`fidelity-brief.ts`），由 `compile-fidelity` 盲审，判断并入计划的做法不变；Hub 只核对格式和简报摘要，这一点两种方式相同。
 - 每条用例的复核说明第一行写明这次的判断方式，`pipeline.ts collect` 的 `reviewed` 带出来，最后报告照录。
 
@@ -73,7 +73,7 @@
 | `check-brief.ts` | 核对结构化编写简报 |
 | `cmd-lookup.ts` | 查命令写法（`--param`、`--heads`）、对象和方法（`--method`、`--methods`）、块种类（`--block`） |
 | `check-plan.ts` | 用冻结的运行离线跑 Hub 对计划的边界和检查；固定部分相同、长度不同的定长名字作为 `advice` 说出来，不影响 `ok` |
-| `cmd-select-plumb.ts`、`cmd-verify-plumb.ts` | 命令候选和命令核验；以命令树为准，Plumb 只作提示。`cmd-verify-plumb.ts --tree-only` 不问 Plumb，只做命令树核对 |
+| `cmd-select-plumb.ts`、`cmd-verify-plumb.ts` | 命令候选和命令核验；以命令树为准，Plumb 只作提示。`cmd-verify-plumb.ts --tree-only` 不问 Plumb，只做命令树核对，由 `pipeline.ts` 运行，不手敲 |
 | `command-domain-precheck.ts` | 只披露计划里的配置命令落在运行器哪条清理规则下、可用哪条只读命令查看，不判断设备状态 |
 | `fidelity-brief.ts`、`fidelity-plumb.ts`、`fidelity-apply.ts` | 场景保真审计：算简报、交 Plumb 判断、把判断并入计划 |
 | `submit-plans.ts` | 展开定长占位后把计划交给 Hub |
