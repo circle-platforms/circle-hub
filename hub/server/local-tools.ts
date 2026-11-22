@@ -9,13 +9,15 @@ import { parsePackRef } from '../runs/packs/versions.ts';
 import type { ServerDeps } from './api.ts';
 import { authenticateAccessOnly, CONSOLE_SESSION_REFUSED } from './access-auth.ts';
 import { setCommonHeaders } from './http.ts';
-import { unassignedPackRefusal } from './pack-words.ts';
+import { absentPackRefusal, unassignedPackRefusal, uninstalledPackRefusal, withdrawnPackRefusal } from './pack-words.ts';
 import { newTraceId } from './trace.ts';
 const PREFIX = '/local-tools/';
 const ABSENT = Buffer.from('没有这个本地工具版本或文件\n');
 function unassignedBytes(packId: string): Buffer {
   return Buffer.from(`${unassignedPackRefusal(packId, 'workflow')}\n`);
 }
+/** One line each: the fact in the words the Hub uses for it elsewhere, then the next step. The version is named whole, because the answer is about this version. */
+const ABSENT_WORDS = { unknown: absentPackRefusal, withdrawn: withdrawnPackRefusal, uninstalled: uninstalledPackRefusal } as const;
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
 const CONSOLE_REFUSED = Buffer.from(CONSOLE_SESSION_REFUSED + '\n');
 /** One verified open per user and version. Later requests in this window re-check assignment without extracting again. */
@@ -63,7 +65,11 @@ async function openForDownload(deps: ServerDeps, principal: Principal, ref: stri
   return loaded;
 }
 
-/** Why a version is not handed out: the admin note, and the answer D05 R[3] gives (absent, not assigned, not a valid account). */
+/**
+ * Why a version is not handed out: the admin note, and the answer D05 R[3] gives (absent, not assigned, not a valid account).
+ * A version that is unknown, retired or a skill that is not installed is absent for the member in all three cases (404), and each
+ * says which it is, so that a client does not go on to try other version numbers.
+ */
 async function absence(deps: ServerDeps, principal: Principal, ref: string): Promise<{ note: string; status: number; bytes: Buffer }> {
   const ask = deps.workflows.absence;
   if (ask === undefined) return { note: '版本不存在、未分配或已退役', status: 404, bytes: ABSENT };
@@ -75,7 +81,7 @@ async function absence(deps: ServerDeps, principal: Principal, ref: string): Pro
   }
   // An account disabled after it authenticated: the same neutral answer as an unusable token.
   if (why === 'disabled') return { note: ABSENCE_NOTE[why], status: 401, bytes: UNAUTHENTICATED };
-  return { note: ABSENCE_NOTE[why], status: 404, bytes: ABSENT };
+  return { note: ABSENCE_NOTE[why], status: 404, bytes: Buffer.from(`${ABSENT_WORDS[why](ref)}\n`) };
 }
 export const digestHeader = (bytes: Uint8Array): string => `sha-256=:${Buffer.from(sha256Hex(bytes), 'hex').toString('base64')}:`;
 export function localToolsTarget(target: string | undefined): boolean { return /^(?:http:\/\/[^/]+)?\/local-tools(?:[\/\\%]|$)/i.test(target ?? ''); }

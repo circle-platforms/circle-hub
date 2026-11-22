@@ -37,6 +37,28 @@ export function absentPackRefusal(name: string): string {
   return `不存在：${absentPackFact(name)}。${absentPackNext()}。`;
 }
 
+// A retired version and a skill that is not installed: `start_run` (hub/runs/engine/start.ts, which cannot import this package) says
+// the same two facts in the same words, so a client reads one sentence wherever it meets the fact.
+export function withdrawnPackFact(name: string): string {
+  return `Hub 里没有名为「${name}」的工作流或技能的可用版本（已退役）`;
+}
+
+export function withdrawnPackRefusal(name: string): string {
+  return `不存在：${withdrawnPackFact(name)}。${absentPackNext()}。`;
+}
+
+export function uninstalledPackFact(name: string): string {
+  return `Hub 里没有安装技能「${name}」`;
+}
+
+export function uninstalledPackNext(): string {
+  return '请联系管理员安装此技能';
+}
+
+export function uninstalledPackRefusal(name: string): string {
+  return `不存在：${uninstalledPackFact(name)}。${uninstalledPackNext()}。`;
+}
+
 const ZERO_USABLE_NEXT = '请联系管理员把该账户加入团队或分配工作流。';
 
 export function packListHead(usable: number, unassigned?: number, assigned: number = usable): string {

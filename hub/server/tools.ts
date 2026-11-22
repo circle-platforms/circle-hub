@@ -39,7 +39,7 @@ import { observabilitySkill, observabilitySkillFile, observedCall, observedStep 
 import { cachedReadReply } from './read-replies.ts';
 import { recoverRead } from './recover-read.ts';
 import { escalateProtocolErrors } from './refusal-escalate.ts';
-import { absentPackFact, absentPackNext, unassignedPackFact, unassignedPackNext } from './pack-words.ts';
+import { absentPackFact, absentPackNext, unassignedPackFact, unassignedPackNext, uninstalledPackFact, uninstalledPackNext, withdrawnPackFact } from './pack-words.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
@@ -594,7 +594,7 @@ export function packIdAbsenceError(
   if (absence === 'withdrawn') {
     return {
       code: 'SOURCE_ABSENT',
-      message: `Hub 里没有名为「${packId}」的工作流或技能的可用版本（已退役）`,
+      message: withdrawnPackFact(packId),
       fix: absentPackNext(),
       path: '/pack_id',
     };
@@ -602,8 +602,8 @@ export function packIdAbsenceError(
   if (absence === 'uninstalled') {
     return {
       code: 'SOURCE_ABSENT',
-      message: `Hub 里没有安装技能「${packId}」`,
-      fix: '请联系管理员安装此技能',
+      message: uninstalledPackFact(packId),
+      fix: uninstalledPackNext(),
       path: '/pack_id',
     };
   }

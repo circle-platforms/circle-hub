@@ -10,13 +10,13 @@ import { createApp } from './app.ts';
 import { clearDistributionCache, digestHeader } from './local-tools.ts';
 const content = Buffer.from('export const fixture = 1;\r\n');
 const traffic = { opens: 0, checks: 0 };
-let held: 'unknown' | 'unassigned' | 'withdrawn' | 'disabled' | null = null;
+let held: 'unknown' | 'unassigned' | 'withdrawn' | 'uninstalled' | 'disabled' | null = null;
 const manifest = { schema: 'pack@1', id: 'fixture-tools', version: '10.6.0', kind: 'product', title: '合成包', description: '合成下载测试', files: [{ path: 'product.json', size: 2, sha256: sha256Hex('{}') }, { path: 'tools/fixture.ts', size: content.length, sha256: sha256Hex(content) }] };
 const digest = sha256Hex(canonicalBytes(manifest)); const calls: CallLogInput[] = []; const logs: string[] = [];
 let directory: string; let url: string; let app: ReturnType<typeof createApp>; let revoked = false;
 before(async () => {
   directory = await mkdtemp(join(tmpdir(), 'local-tools-')); await mkdir(join(directory, 'tools')); await writeFile(join(directory, 'tools/fixture.ts'), content); await writeFile(join(directory, 'product.json'), '{}'); await writeFile(join(directory, 'pack.json'), canonicalBytes(manifest));
-  const deps = { config: { host: '127.0.0.1', port: 0, limits: { maxRequestBytes: 1024 } }, records: { principals: { authenticate: async (token: string) => token === 'Bearer fixture-token' && !revoked ? { id: 'fixture-user', name: 'fixture', role: 'user' } : null }, callLog: { append: async (input: CallLogInput) => { calls.push(input); } } }, workflows: { forUser: async (_user: unknown, ref: string) => { traffic.opens += 1; return ref === 'fixture-tools@10.6.0' ? { pack: { digest, directory }, manifest } : ref === 'no-tools@10.6.0' ? { pack: { digest, directory }, manifest: { ...manifest, files: manifest.files.slice(0, 1) } } : null; }, absence: async (_user: unknown, ref: string) => { traffic.checks += 1; if (held !== null && ref === 'fixture-tools@10.6.0') return held; if (ref === 'fixture-tools@10.6.0' || ref === 'no-tools@10.6.0') return null; if (ref.startsWith('unassigned@')) return 'unassigned'; if (ref.startsWith('withdrawn@')) return 'withdrawn'; return 'unknown'; } } } as unknown as ServerDeps;
+  const deps = { config: { host: '127.0.0.1', port: 0, limits: { maxRequestBytes: 1024 } }, records: { principals: { authenticate: async (token: string) => token === 'Bearer fixture-token' && !revoked ? { id: 'fixture-user', name: 'fixture', role: 'user' } : null }, callLog: { append: async (input: CallLogInput) => { calls.push(input); } } }, workflows: { forUser: async (_user: unknown, ref: string) => { traffic.opens += 1; return ref === 'fixture-tools@10.6.0' ? { pack: { digest, directory }, manifest } : ref === 'no-tools@10.6.0' ? { pack: { digest, directory }, manifest: { ...manifest, files: manifest.files.slice(0, 1) } } : null; }, absence: async (_user: unknown, ref: string) => { traffic.checks += 1; if (held !== null && ref === 'fixture-tools@10.6.0') return held; if (ref === 'fixture-tools@10.6.0' || ref === 'no-tools@10.6.0') return null; if (ref.startsWith('unassigned@')) return 'unassigned'; if (ref.startsWith('withdrawn@')) return 'withdrawn'; if (ref.startsWith('uninstalled@')) return 'uninstalled'; return 'unknown'; } } } as unknown as ServerDeps;
   app = createApp(deps, { log: (line) => logs.push(line), codeRoot: directory }); url = (await app.listen()).url;
 });
 after(async () => { await app?.close(); await rm(directory, { recursive: true, force: true }); });
@@ -30,10 +30,32 @@ test('authorized manifest and every listed dependency retain canonical identity 
   const file = await get('/local-tools/fixture-tools@10.6.0/tools/fixture.ts'); assert.equal(file.status, 200); assert.deepEqual(file.bytes, content); assert.equal(file.headers['content-digest'], digestHeader(content));
   assert.equal((await get('/local-tools/fixture-tools@10.6.0/product.json')).bytes.toString(), '{}');
 });
-test('withdrawn absent no-tool outside traversal and encoded-slash requests have identical answers', async () => {
-  const paths = ['withdrawn@10.6.0', 'absent@10.6.0', 'no-tools@10.6.0', 'fixture-tools@10.6.0/tools/absent.ts', 'fixture-tools@10.6.0/../product.json', 'fixture-tools@10.6.0/tools%2ffixture.ts'];
+test('no-tool outside traversal encoded-slash and malformed-reference requests have identical answers', async () => {
+  const paths = ['no-tools@10.6.0', 'fixture-tools@10.6.0/tools/absent.ts', 'fixture-tools@10.6.0/../product.json', 'fixture-tools@10.6.0/tools%2ffixture.ts', 'not-a-version'];
   const results = await Promise.all([...paths.map((path) => get('/local-tools/' + path)), get('/local-tools%2ffixture-tools@10.6.0'), get('/local-tools/fixture-tools@10.6.0/%2e%2e/product.json')]);
   for (const result of results) { assert.equal(result.status, 404); assert.deepEqual(result.bytes, results[0]!.bytes); assert.equal(result.headers['content-digest'], undefined); }
+  assert.equal(results[0]!.bytes.toString(), '没有这个本地工具版本或文件\n');
+});
+test('a version that is unknown, retired or a skill that is not installed says which of the three it is, in one line with its next step', async () => {
+  // The words are the ones list_task_packs and start_run use for the same facts; the version is named whole because the answer is about it.
+  const cases = [
+    ['absent@10.6.0', '不存在：Hub 里没有名为「absent@10.6.0」的工作流或技能。请核对名称。', '版本不存在'],
+    ['withdrawn@10.6.0', '不存在：Hub 里没有名为「withdrawn@10.6.0」的工作流或技能的可用版本（已退役）。请核对名称。', '版本已退役'],
+    ['uninstalled@10.6.0', '不存在：Hub 里没有安装技能「uninstalled@10.6.0」。请联系管理员安装此技能。', '技能包版本没有安装'],
+  ] as const;
+  const bodies = new Set<string>();
+  for (const [ref, body, note] of cases) {
+    const result = await get('/local-tools/' + ref);
+    assert.equal(result.status, 404, ref);
+    assert.equal(result.bytes.toString(), body + '\n', ref);
+    assert.equal(result.headers['content-digest'], undefined, ref);
+    assert.equal(calls.at(-1)?.adminNote, note, ref);
+    bodies.add(result.bytes.toString());
+  }
+  assert.equal(bodies.size, 3, 'each cause has its own answer');
+  assert.ok(!bodies.has('没有这个本地工具版本或文件\n'), 'none of them is the answer for a path or a version without local tools');
+  // A path under a version that is not there is the same answer as the version itself.
+  assert.equal((await get('/local-tools/uninstalled@10.6.0/tools/fixture.ts')).bytes.toString(), cases[2][1] + '\n');
 });
 test('an unassigned version is said to exist and not be assigned, with who can assign it (D05 R[3], decision 113)', async () => {
   const result = await get('/local-tools/unassigned@10.6.0');
@@ -59,24 +81,25 @@ test('HEAD has no body POST is 405 and shared Host and Origin checks still apply
   assert.equal((await get('/local-tools/fixture-tools@10.6.0', 'GET', 'fixture-token', { origin: 'http://192.0.2.10' })).status, 403);
   assert.equal((await get('/local-tools/fixture-tools@10.6.0', 'GET', 'fixture-token', { host: '192.0.2.10' })).status, 403);
 });
-test('admin notes name each refusal while the answer bytes stay the same', async () => {
+test('admin notes name each refusal while the answer bytes stay the same where the answer is the same', async () => {
   const cases = [
-    ['/local-tools/absent@10.6.0', '版本不存在'],
-    ['/local-tools/withdrawn@10.6.0', '版本已退役'],
-    ['/local-tools/no-tools@10.6.0', '这个版本没有本地工具'],
-    ['/local-tools/fixture-tools@10.6.0/tools/absent.ts', '清单外路径'],
-    ['/local-tools/fixture-tools@10.6.0/../product.json', '路径含 ..'],
-    ['/local-tools/fixture-tools@10.6.0/tools%2ffixture.ts', '路径含编码分隔符或保留字符'],
-    ['/local-tools/not-a-version', '版本引用格式不对'],
+    ['/local-tools/absent@10.6.0', '版本不存在', false],
+    ['/local-tools/withdrawn@10.6.0', '版本已退役', false],
+    ['/local-tools/uninstalled@10.6.0', '技能包版本没有安装', false],
+    ['/local-tools/no-tools@10.6.0', '这个版本没有本地工具', true],
+    ['/local-tools/fixture-tools@10.6.0/tools/absent.ts', '清单外路径', true],
+    ['/local-tools/fixture-tools@10.6.0/../product.json', '路径含 ..', true],
+    ['/local-tools/fixture-tools@10.6.0/tools%2ffixture.ts', '路径含编码分隔符或保留字符', true],
+    ['/local-tools/not-a-version', '版本引用格式不对', true],
   ] as const;
-  const results = [];
-  for (const [path, note] of cases) {
+  const shared = [];
+  for (const [path, note, sameAnswer] of cases) {
     const result = await get(path);
-    results.push(result);
+    if (sameAnswer) shared.push(result);
     assert.equal(result.status, 404, path);
     assert.equal(calls.at(-1)?.adminNote, note, path);
   }
-  for (const result of results) assert.deepEqual(result.bytes, results[0]!.bytes);
+  for (const result of shared) assert.deepEqual(result.bytes, shared[0]!.bytes);
 });
 
 test('one download reuses the verified open and a later withdrawal is refused from the cache', async () => {
@@ -90,8 +113,15 @@ test('one download reuses the verified open and a later withdrawal is refused fr
   try {
     const blocked = await get('/local-tools/fixture-tools@10.6.0');
     assert.equal(blocked.status, 404);
-    assert.equal(blocked.bytes.toString(), '没有这个本地工具版本或文件\n');
+    assert.equal(blocked.bytes.toString(), '不存在：Hub 里没有名为「fixture-tools@10.6.0」的工作流或技能的可用版本（已退役）。请核对名称。\n');
     assert.equal(calls.at(-1)?.adminNote, '版本已退役');
+    held = null;
+    assert.equal((await get('/local-tools/fixture-tools@10.6.0')).status, 200, 'the open is cached again');
+    held = 'uninstalled';
+    const removed = await get('/local-tools/fixture-tools@10.6.0/tools/fixture.ts');
+    assert.equal(removed.status, 404);
+    assert.equal(removed.bytes.toString(), '不存在：Hub 里没有安装技能「fixture-tools@10.6.0」。请联系管理员安装此技能。\n');
+    assert.equal(calls.at(-1)?.adminNote, '技能包版本没有安装');
   } finally {
     held = null;
     clearDistributionCache();

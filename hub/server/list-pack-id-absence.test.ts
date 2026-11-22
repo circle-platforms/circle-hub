@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { packIdAbsenceError } from './tools.ts';
 import { toolText } from './text.ts';
+import { absentPackRefusal, uninstalledPackRefusal, withdrawnPackRefusal } from './pack-words.ts';
 import { ListTaskPacksOutput } from '../../contracts/src/tools.ts';
 
 const TRACE = 'a'.repeat(32);
@@ -55,6 +56,13 @@ describe('list_task_packs exact pack_id absence errors', () => {
     assert.equal(packIdAbsenceError('skill-a', 'uninstalled').code, 'SOURCE_ABSENT');
     assert.match(packIdAbsenceError('skill-a', 'uninstalled').message, /没有安装技能/);
     assert.doesNotMatch(packIdAbsenceError('skill-a', 'uninstalled').message, /任务包|你/);
+  });
+
+  test('each absence reads the same here as in the answer of the local-tools download', () => {
+    for (const [absence, refusal] of [['unknown', absentPackRefusal], ['withdrawn', withdrawnPackRefusal], ['uninstalled', uninstalledPackRefusal]] as const) {
+      const text = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'error', errors: [packIdAbsenceError('skill-a', absence)], packs: [], trace: TRACE }));
+      assert.equal(text, refusal('skill-a'), absence);
+    }
   });
 
   test('skill kind uses 技能 in the unassigned fact', () => {
