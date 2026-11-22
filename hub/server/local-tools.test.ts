@@ -39,9 +39,9 @@ test('no-tool outside traversal encoded-slash and malformed-reference requests h
 test('a version that is unknown, retired or a skill that is not installed says which of the three it is, in one line with its next step', async () => {
   // The words are the ones list_task_packs and start_run use for the same facts; the version is named whole because the answer is about it.
   const cases = [
-    ['absent@10.6.0', '不存在：Hub 里没有名为「absent@10.6.0」的工作流或技能。请核对名称。', '版本不存在'],
-    ['withdrawn@10.6.0', '不存在：Hub 里没有名为「withdrawn@10.6.0」的工作流或技能的可用版本（已退役）。请核对名称。', '版本已退役'],
-    ['uninstalled@10.6.0', '不存在：Hub 里没有安装技能「uninstalled@10.6.0」。请联系管理员安装此技能。', '技能包版本没有安装'],
+    ['absent@10.6.0', '不存在：Hub 里没有名为「absent@10.6.0」的工作流或技能。请核对名称；当前账户可用的工作流和技能用 list_task_packs 查看。', '版本不存在'],
+    ['withdrawn@10.6.0', '不存在：Hub 里没有名为「withdrawn@10.6.0」的工作流或技能的可用版本（已退役）。当前账户可用的工作流和技能用 list_task_packs 查看。', '版本已退役'],
+    ['uninstalled@10.6.0', '不存在：Hub 里没有安装技能「uninstalled@10.6.0」。请联系管理员安装此技能；当前账户可用的工作流和技能用 list_task_packs 查看。', '技能包版本没有安装'],
   ] as const;
   const bodies = new Set<string>();
   for (const [ref, body, note] of cases) {
@@ -113,14 +113,14 @@ test('one download reuses the verified open and a later withdrawal is refused fr
   try {
     const blocked = await get('/local-tools/fixture-tools@10.6.0');
     assert.equal(blocked.status, 404);
-    assert.equal(blocked.bytes.toString(), '不存在：Hub 里没有名为「fixture-tools@10.6.0」的工作流或技能的可用版本（已退役）。请核对名称。\n');
+    assert.equal(blocked.bytes.toString(), '不存在：Hub 里没有名为「fixture-tools@10.6.0」的工作流或技能的可用版本（已退役）。当前账户可用的工作流和技能用 list_task_packs 查看。\n');
     assert.equal(calls.at(-1)?.adminNote, '版本已退役');
     held = null;
     assert.equal((await get('/local-tools/fixture-tools@10.6.0')).status, 200, 'the open is cached again');
     held = 'uninstalled';
     const removed = await get('/local-tools/fixture-tools@10.6.0/tools/fixture.ts');
     assert.equal(removed.status, 404);
-    assert.equal(removed.bytes.toString(), '不存在：Hub 里没有安装技能「fixture-tools@10.6.0」。请联系管理员安装此技能。\n');
+    assert.equal(removed.bytes.toString(), '不存在：Hub 里没有安装技能「fixture-tools@10.6.0」。请联系管理员安装此技能；当前账户可用的工作流和技能用 list_task_packs 查看。\n');
     assert.equal(calls.at(-1)?.adminNote, '技能包版本没有安装');
   } finally {
     held = null;

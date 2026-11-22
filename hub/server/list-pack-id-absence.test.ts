@@ -34,7 +34,7 @@ describe('list_task_packs exact pack_id absence errors', () => {
     assert.deepEqual(packIdAbsenceError('not-a-pack', 'unknown'), {
       code: 'SOURCE_ABSENT',
       message: 'Hub 里没有名为「not-a-pack」的工作流或技能',
-      fix: '请核对名称',
+      fix: '请核对名称；当前账户可用的工作流和技能用 list_task_packs 查看',
       path: '/pack_id',
     });
     const text = toolText(
@@ -46,7 +46,7 @@ describe('list_task_packs exact pack_id absence errors', () => {
         trace: TRACE,
       }),
     );
-    assert.equal(text, '不存在：Hub 里没有名为「not-a-pack」的工作流或技能。请核对名称。');
+    assert.equal(text, '不存在：Hub 里没有名为「not-a-pack」的工作流或技能。请核对名称；当前账户可用的工作流和技能用 list_task_packs 查看。');
   });
 
   test('withdrawn and uninstalled stay SOURCE_ABSENT', () => {
@@ -56,6 +56,9 @@ describe('list_task_packs exact pack_id absence errors', () => {
     assert.equal(packIdAbsenceError('skill-a', 'uninstalled').code, 'SOURCE_ABSENT');
     assert.match(packIdAbsenceError('skill-a', 'uninstalled').message, /没有安装技能/);
     assert.doesNotMatch(packIdAbsenceError('skill-a', 'uninstalled').message, /任务包|你/);
+    // Every next step says where the usable ones are listed, as start_run does; a retired version has no name to check.
+    assert.equal(packIdAbsenceError('x', 'withdrawn').fix, '当前账户可用的工作流和技能用 list_task_packs 查看');
+    assert.equal(packIdAbsenceError('skill-a', 'uninstalled').fix, '请联系管理员安装此技能；当前账户可用的工作流和技能用 list_task_packs 查看');
   });
 
   test('each absence reads the same here as in the answer of the local-tools download', () => {

@@ -2,7 +2,8 @@ import {repositorySkillVersion} from '../../testing/skills.ts';
 // The real Hub in-process (createTestHub of hub/server/testing-real.ts): a smoke test over the official MCP client that lists
 // the packs, starts a run on a synthetic mind map the agile stub serves (read through a real resource with the password kept
 // as its digest) and submits a result that is accepted, with the call-log lines; a user without the pack gets the neutral
-// answer while the engine's reason is in the admin note only; the default publication of the repository's packs (a
+// answer while the engine's reason is in the admin note only, and the four reasons a pack cannot be used are said in one sentence by
+// the engine, list_task_packs and the local-tools download; the default publication of the repository's packs (a
 // synthetic tree standing in for packs/), product packs activated by publishPack unless told otherwise, and a knowledge
 // sync through the helper that produces nothing the second time; and the pack discovery and staging helpers. Synthetic
 // packs written to a temporary directory; every external system is a loopback stub.
@@ -15,7 +16,7 @@ import { writePack } from '../../runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { AGILE_DOCUMENT, createTestHub, findPackDirectories, stagePack } from '../testing-real.ts';
 import { removeTree } from './files.ts';
-import { AGILE_PACK, LOCATE_PACK, PRODUCT_PACK, REVIEW_PACK, SITE_PACK, locatePack, productPack, syncSiteFiles, writeTestPacks } from './test-packs.ts';
+import { AGILE_PACK, LOCATE_PACK, PRODUCT_PACK, REVIEW_PACK, SITE_PACK, XML_PACK, locatePack, productPack, syncSiteFiles, writeTestPacks } from './test-packs.ts';
 
 let postgres: TemporaryPostgres;
 let packRoot: string;
@@ -207,6 +208,39 @@ describe('createTestHub', () => {
     assert.equal(asBob[0].admin_note, undefined, 'the caller never sees the reason');
     assert.equal(asBob[0].admin_reasons, undefined, 'the caller never sees private reasons');
     assert.ok(!JSON.stringify(started).includes('not assigned'));
+  });
+
+  test('the four reasons a pack cannot be used are said in one sentence by start_run, list_task_packs and the local-tools download, each ending with where the usable ones are listed', async (t) => {
+    // One name never published, a workflow pack retired, a skill pack published and not installed, a workflow pack not assigned.
+    const hub = await createTestHub({ postgres, repositoryPacks: false, xmlSkill: false, packs: [packs.review, locate, packs.xml], stubs: false });
+    t.after(() => hub.close());
+    await hub.hub.registry.retire(hub.admin.principal, LOCATE_PACK, '1.0.0');
+    const bob = await hub.createUser('乙');
+    const client = await hub.client(bob.token, { sessionId: 'same-words-1' });
+    t.after(() => client.close());
+    const xml = hub.published.find((version) => version.id === XML_PACK)!;
+    const LISTED = '当前账户可用的工作流和技能用 list_task_packs 查看。';
+    const facts = [
+      ['unknown', 'no-such-pack', '1.0.0', '不存在：'],
+      ['withdrawn', LOCATE_PACK, '1.0.0', '不存在：'],
+      ['uninstalled', XML_PACK, xml.version, '不存在：'],
+      ['unassigned', REVIEW_PACK, '1.0.0', '无权限：'],
+    ] as const;
+    const said = new Set<string>();
+    for (const [why, id, version, head] of facts) {
+      const started = await client.call('start_run', { pack: id, inputs: {} });
+      const listed = await client.call('list_task_packs', { pack_id: id });
+      const download = await fetch(`${hub.url}/local-tools/${id}@${version}`, { headers: { authorization: `Bearer ${bob.token}` } });
+      // The download names an absent version whole, because its answer is about that version; the two others name the pack.
+      const downloaded = (await download.text()).trimEnd().replace(`「${id}@${version}」`, `「${id}」`);
+      assert.equal(started.isError, true, why);
+      const sentence = started.content[0]?.text ?? '';
+      assert.ok(sentence.startsWith(head) && sentence.endsWith(LISTED), `${why}: ${sentence}`);
+      assert.equal(listed.content[0]?.text, sentence, `${why}: list_task_packs says what start_run says`);
+      assert.equal(downloaded, sentence, `${why}: the download says what start_run says`);
+      said.add(sentence);
+    }
+    assert.equal(said.size, 4, 'one sentence for each fact');
   });
 
   test('by default the repository\'s packs are published with product packs activated; publishPack and knowledgeSync work on them', async (t) => {

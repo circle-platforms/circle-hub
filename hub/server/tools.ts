@@ -39,7 +39,7 @@ import { observabilitySkill, observabilitySkillFile, observedCall, observedStep 
 import { cachedReadReply } from './read-replies.ts';
 import { recoverRead } from './recover-read.ts';
 import { escalateProtocolErrors } from './refusal-escalate.ts';
-import { absentPackFact, absentPackNext, unassignedPackFact, unassignedPackNext, uninstalledPackFact, uninstalledPackNext, withdrawnPackFact } from './pack-words.ts';
+import { absentPackFact, absentPackNext, unassignedPackFact, unassignedPackNext, uninstalledPackFact, uninstalledPackNext, withdrawnPackFact, withdrawnPackNext } from './pack-words.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
@@ -595,7 +595,7 @@ export function packIdAbsenceError(
     return {
       code: 'SOURCE_ABSENT',
       message: withdrawnPackFact(packId),
-      fix: absentPackNext(),
+      fix: withdrawnPackNext(),
       path: '/pack_id',
     };
   }
