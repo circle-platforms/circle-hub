@@ -1093,8 +1093,8 @@
     },
     {
       "path": "tools/download-returns.ts",
-      "sha256": "f76a50e4d7a36300cdea069b4da7aca8e625c930e98092c57b09ba696ae49efb",
-      "size": 16672
+      "sha256": "d514e03d71d5db09278f997dc86deba9fabb23dd519c2cb0e4a56791b8091d4e",
+      "size": 18101
     },
     {
       "path": "tools/download-run.cli.json",
@@ -1158,8 +1158,8 @@
     },
     {
       "path": "tools/generate-workbook.ts",
-      "sha256": "5e8524e11dfd236246cdaba855edf3119f8007bf9ab14a0fd466ffcc0b3a5683",
-      "size": 19823
+      "sha256": "d242db2a5a638ed07bbfeddef42e9b8ecbadd01749f19a7bd26dd3878a6bd443",
+      "size": 20341
     },
     {
       "path": "tools/normalize-mindmap.cli.json",

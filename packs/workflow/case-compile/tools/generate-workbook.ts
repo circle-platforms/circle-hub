@@ -82,9 +82,17 @@ export function satisfiedRecipes(input: { run: unknown; result: unknown; submiss
   return { slots: plan.slots, fields: {source_atoms:fields.source_atoms,bed_services:inventory.beds.find(bed=>bed.name===profile.profile.bed)?.services,manifest_sha256:sha256(input.inventory),criteria_review:(Array.isArray(run.groups)?run.groups:[]).find((value:unknown)=>isRecord(value)&&value.kind==='case-compile')?.criteria_review??blockReviewSources(run.sources),expected_nodes:selectedExpectedNodes(fields.expected_nodes,plan.slots), command_catalog:parsedCommand,command_identities:fields.command_identities,autoid: fields.autoid, title: fields.title, ...(Array.isArray(fields.path) ? { path: fields.path as string[] } : {}), priority: fields.priority, steps: fields.steps as Array<{ text: string }> }, contract: contract.contract, profile: profile.profile, plan_run: run.run as string, build: run.build as string, generator: GENERATOR };
   });
 }
+/**
+ * The failure lines a contract declares, and nothing else: empty when it declares none or cannot be read. Listing the commands a
+ * device refused needs only these and the device sessions, so it does not depend on the version of this tool that the recipes do.
+ */
+export function contractFailureMarkers(contract: Uint8Array): string[] {
+  try { const parsed = parseRuntimeContract(parseSubmittedJson('contract', '来源槽 contract', contract, '重新核对后生成工作簿')); if (parsed.ok && parsed.contract.failureMarkers) return parsed.contract.failureMarkers.lines; } catch { }
+  return [];
+}
+/** Re-reading a pass needs the recipes of the run, so it throws when they cannot be computed (another tool version, a plan not verified). */
 export function passReviewInputs(input: Parameters<typeof satisfiedRecipes>[0]): { markers: string[]; assertions: Map<string, string[]> } {
-  let markers: string[] = [];
-  try { const parsed = parseRuntimeContract(parseSubmittedJson('contract', '来源槽 contract', input.contract, '重新核对后生成工作簿')); if (parsed.ok && parsed.contract.failureMarkers) markers = parsed.contract.failureMarkers.lines; } catch { }
+  const markers = contractFailureMarkers(input.contract);
   if (!markers.length) return { markers, assertions: new Map() };
   return { markers, assertions: new Map(satisfiedRecipes(input).map((recipe) => [String(recipe.fields.autoid), recipe.slots.expects.map((expect) => expect.text).filter((text): text is string => typeof text === 'string' && text.length > 0)])) };
 }

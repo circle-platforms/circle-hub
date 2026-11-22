@@ -19,7 +19,7 @@ import {
 import { CallFailure, failCall, isRecord, parseCliOptions } from '../functions/text.ts';
 import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
 import { fetchRunInputs } from './fetch-run.ts';
-import { passReviewInputs } from './generate-workbook.ts';
+import { contractFailureMarkers, passReviewInputs } from './generate-workbook.ts';
 import { afterRound, ranJob } from '../functions/next-step.ts';
 
 const SOURCE = /^src:([0-9a-f]{64})$/;
@@ -118,21 +118,32 @@ export async function downloadReturns(input: { origin: string; bearer: string; r
     };
     const index: Array<Record<string, unknown>> = [];
     let refused = 0, unexecuted = 0, unreached = 0, aborted = 0;
-    const reviews = new Map<string, ReturnType<typeof passReviewInputs> | string>();
+    // What the returns of one plan run are read with: the failure markers of its own contract, and, when its recipes can be computed,
+    // the assertions of its cases for re-reading a pass. A string is the reason nothing could be read.
+    type PlanReview = { markers: string[]; assertions: Map<string, string[]> } | { markers: string[]; assertions: null; recipesFact: string };
+    const reviews = new Map<string, PlanReview | string>();
     const titles = new Map<string, Map<string, string>>();
-    const reviewOf = async (planRun: string) => {
+    const reviewOf = async (planRun: string): Promise<PlanReview | string> => {
       if (!reviews.has(planRun)) {
+        let plan: Awaited<ReturnType<typeof fetchRunInputs>> | undefined;
         try {
-          const plan = await fetchRunInputs(origin, bearer, planRun, readRetry);
+          plan = await fetchRunInputs(origin, bearer, planRun, readRetry);
           titles.set(planRun, new Map((Array.isArray(plan.run.items) ? plan.run.items : []).flatMap((item) => isRecord(item) && isRecord(item.fields) && typeof item.fields.autoid === 'string' && typeof item.fields.title === 'string' ? [[item.fields.autoid, item.fields.title] as const] : [])));
           reviews.set(planRun, passReviewInputs({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory }));
         }
-        catch (error) { reviews.set(planRun, error instanceof Error ? error.message : '读取失败'); }
+        catch (error) {
+          const fact = error instanceof Error ? error.message : '读取失败';
+          // Which commands the device refused needs only the markers of this run's own contract, a source the run bound and the Hub checked
+          // by digest, and the device sessions. Only re-reading a pass needs the recipes, which another version of this tool cannot compute.
+          const markers = plan === undefined ? [] : contractFailureMarkers(plan.originals.contract);
+          reviews.set(planRun, markers.length ? { markers, assertions: null, recipesFact: fact } : fact);
+        }
       }
       return reviews.get(planRun)!;
     };
     const verdicts: Record<string, number> = {};
     const passReview = { markers: null as number | null, read: 0, downgraded: 0, wordless: 0, unread: [] as string[] };
+    const passesUnread = new Set<string>();
     for (const job of jobs) {
       const folder = job.job.slice(0, 12);
       const deviceReturn = await piece(job.device_return, join(folder, 'device-return.txt'));
@@ -140,12 +151,18 @@ export async function downloadReturns(input: { origin: string; bearer: string; r
       const built: Array<{ entry: Record<string, unknown>; reach: ReachRow }> = [];
       const review = (job.rows ?? []).length ? await reviewOf(job.plan_run) : null;
       if (typeof review === 'string') passReview.unread.push(`缺少执行器规则或自动化用例，尚未核对设备输出，也未列出被设备拒绝执行的命令`);
-      else if (review?.markers.length) passReview.markers = Math.max(passReview.markers ?? 0, review.markers.length);
+      else if (review?.markers.length) {
+        passReview.markers = Math.max(passReview.markers ?? 0, review.markers.length);
+        if (review.assertions === null && !passesUnread.has(job.plan_run)) {
+          passesUnread.add(job.plan_run);
+          passReview.unread.push(`没有重读脚本编写运行 ${job.plan_run} 的通过结论：${review.recipesFact.replace(/[。.]+$/u, '')}；被设备拒绝执行的命令已照这个运行自己的执行器规则列出`);
+        }
+      }
       for (const row of job.rows ?? []) {
         if (!/^[0-9A-Za-z_-]{1,64}$/.test(row.item)) failCall('invalid_parameters', '原始用例的编号不能作为设备输出的目录名', '核对原始用例编号格式并重新导出后重试');
         const log = await piece(row.evidence?.log, join(folder, 'cases', row.item, 'log.txt'));
         let dropped: RowAudit | null = null;
-        if (row.dynamic_terminal === 'pass' && review && typeof review !== 'string' && review.markers.length) {
+        if (row.dynamic_terminal === 'pass' && review && typeof review !== 'string' && review.markers.length && review.assertions !== null) {
           const bytes = log === null ? undefined : outputs.find((output) => output.name === log)?.bytes;
           if (!bytes) passReview.wordless++;
           else { passReview.read++; dropped = failureLine({ 运行日志: new TextDecoder().decode(bytes) }, review.markers, review.assertions.get(row.item) ?? []); if (dropped) passReview.downgraded++; }

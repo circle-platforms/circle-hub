@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { renderPriorDeviceHistoryLines } from '../functions/authoring-brief.ts';
+import { DEVICE_HISTORY_SCHEMA } from '../functions/device-history.ts';
 import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
 import { planRunFixture } from '../testing/plan-run.ts';
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
+import { loadPriorDeviceHistory } from './authoring-brief.ts';
 import { main, POLL_MS, UNDISPATCHED_MS, type Timing } from './download-returns.ts';
+import { contractFailureMarkers, passReviewInputs } from './generate-workbook.ts';
 
 const TOKEN = 'synthetic-token-1234', RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', PLAN = 'run_01bbbbbbbbbbbbbbbbbbbbbbbb';
 const text = (s: string) => Buffer.from(s);
@@ -464,4 +469,84 @@ test('without the plan run the cases not reached are still listed, with the titl
   assert.equal(rows[1].verdict, 'not_run');
   assert.match(rows[1].not_executed.reason, /^同一份自动化用例 Excel 中排在前面的原始用例 990000000000000301 标题未知 在第 9 步出现异常，/);
   assert.match((await read(out)).jobs[0].aborted.reason, /^同一份自动化用例 Excel 中的原始用例 990000000000000301 标题未知 在第 9 步出现异常，运行器中止了整本：其后 2 条没有在设备上执行，/);
+});
+
+// A plan run written by the previous version of the pack: its result names that version, which this tool cannot recompute the recipes of.
+const PREVIOUS_VERSION = 'case-compile@3.26.6';
+function deviceRefusedAnother() {
+  const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+  doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
+  const contract = text(JSON.stringify(signTypedRuntime(doc))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
+  const items = ['990000000000000301', '990000000000000302', '990000000000000303'];
+  const refused = text('seat(config)#widget name "a_b:c" 60\n\nWidget name format error.\nFailed to run the synthetic command\n\nseat(config)#widget on\nseat(config)#\n');
+  const carrying = text('seat# configure widget\nFailed to run the synthetic command\nseat#\n');
+  const answer = jobs(refused); answer.jobs[0].items = items;
+  answer.jobs[0].rows = [
+    { item: items[0], dynamic_terminal: 'fail', evidence: { log: ref(log), sessions: { 'dev-a.txt': ref(refused) } } },
+    { item: items[1], dynamic_terminal: 'pass', evidence: { log: ref(carrying) } },
+    { item: items[2], dynamic_terminal: 'pass' },
+  ] as typeof answer.jobs[0]['rows'];
+  const make = (generator?: string) => {
+    const plan = planRunFixture({ run: PLAN, autoids: items, exclude: [], contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+    if (generator) plan.result.locks.pack = generator;
+    return plan;
+  };
+  return { items, answer, make, contract, profile, inventory, served: [deviceReturn, log, refused, carrying, contract, profile, inventory] };
+}
+const REFUSED_BY_DEVICE = { session: 'dev-a.txt', command: 'widget name "a_b:c" 60', prompt: 'seat(config)#', reply: ['Widget name format error.', 'Failed to run the synthetic command'] };
+
+test('a plan run written by another version of the pack still has the commands its device refused listed, and only the re-reading of its passes is left out and said', async (t) => {
+  const { items, answer, make, served, contract, profile, inventory } = deviceRefusedAnother();
+  const download = async (plan: ReturnType<typeof make>) => {
+    const h = await hub(answer, served, [], plan); t.after(h.close);
+    const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+    const done = await run(h.url, out);
+    assert.equal(done.code, 0, done.stderr);
+    return { index: await read(out), summary: JSON.parse(done.stdout) };
+  };
+
+  const same = await download(make());
+  assert.deepEqual(same.index.jobs[0].rows.map((r: { verdict: string }) => r.verdict), ['fail', 'no_verdict', 'pass'], 'with this version the pass whose log carries the declared line is read and dropped');
+  assert.deepEqual(same.index.pass_review, { markers: 1, read: 1, downgraded: 1, wordless: 1, unread: [] });
+
+  const other = await download(make(PREVIOUS_VERSION));
+  const rows = other.index.jobs[0].rows;
+  assert.deepEqual(rows[0].execution_refused, [REFUSED_BY_DEVICE], 'listed by the markers of the run\'s own contract, whatever version wrote the run');
+  assert.deepEqual(rows[0].execution_refused, same.index.jobs[0].rows[0].execution_refused);
+  assert.deepEqual(rows.slice(1).map((row: Record<string, unknown>) => 'execution_refused' in row), [false, false], 'a row without sessions lists nothing');
+  assert.deepEqual(rows.map((r: { verdict: string }) => r.verdict), ['fail', 'pass', 'pass'], 'no pass is downgraded on a reading that was not made');
+  assert.equal('pass_review' in rows[1] || 'runner_verdict' in rows[1], false);
+  assert.deepEqual(other.index.pass_review, {
+    markers: 1, read: 0, downgraded: 0, wordless: 0,
+    unread: [`没有重读脚本编写运行 ${PLAN} 的通过结论：自动化用例 Excel 的生成工具与脚本编写所用的工具版本不符；被设备拒绝执行的命令已照这个运行自己的执行器规则列出`],
+  });
+  assert.deepEqual([other.summary.execution_refused, other.summary.verdicts, other.summary.pass_review], [1, { fail: 1, pass: 2 }, other.index.pass_review]);
+
+  // The generator that cannot be told from the recipes still refuses: delivery reads its passes through passReviewInputs and fails on it.
+  const mismatched = make(PREVIOUS_VERSION);
+  assert.throws(() => passReviewInputs({ run: mismatched.record, result: mismatched.result, submission: mismatched.submission, contract, profile, inventory }), /自动化用例 Excel 的生成工具与脚本编写所用的工具版本不符/);
+  assert.deepEqual(contractFailureMarkers(contract), ['Failed to run the synthetic command']);
+  assert.deepEqual(contractFailureMarkers(text('not a contract')), [], 'a contract that cannot be read declares none');
+  assert.deepEqual(contractFailureMarkers(text(JSON.stringify(signTypedRuntime(structuredClone(CONTRACT_DOC))))), [], 'a contract without markers declares none');
+});
+
+test('the history of a case names the commands the device refused in an earlier run made with another version of the pack', async (t) => {
+  const { items, answer, make, served } = deviceRefusedAnother();
+  const h = await hub(answer, served, [], make(PREVIOUS_VERSION)); t.after(h.close);
+  const work = realpathSync(await mkdtemp(join(tmpdir(), 'cc-returns-history-')));
+  const done = await run(h.url, join(work, 'history', RUN)); // where download-run.ts keeps the returns of an earlier run
+  assert.equal(done.code, 0, done.stderr);
+  const current = `run_01${'c'.repeat(24)}`;
+  await mkdir(join(work, 'plan-run'), { recursive: true });
+  const listed = { run: RUN, started_at: '2026-11-19T00:00:00.000Z', build: 'synthetic-build-7', jobs: [{ job: 'c'.repeat(64), plan_run: PLAN, ended_at: '2026-11-19T01:30:00.000Z', outcome: 'effective', rows: [{ item: items[0], dynamic_terminal: 'fail' }] }] };
+  await writeFile(join(work, 'plan-run', 'history.json'), JSON.stringify({
+    schema: DEVICE_HISTORY_SCHEMA, run: current, fetched_at: '2026-11-20T00:00:00.000Z', status: 'fetched',
+    answer: { schema: 'run-history@1', run: current, subjects: ['toy:mindmap:docq7'], limit: 6, complete: true, runs: [listed] },
+    returns: [{ run: RUN, dir: join('history', RUN) }], elapsed_ms: 1500,
+  }));
+  const prior = await loadPriorDeviceHistory(join(work, 'plan-run'), items[0], work);
+  assert.equal(prior.status, 'available');
+  assert.deepEqual(prior.entries[0]!.execution_refused, { total: 1, shown: [{ command: 'widget name "a_b:c" 60', reply: 'Widget name format error. / Failed to run the synthetic command' }] });
+  const lines = renderPriorDeviceHistoryLines(prior).join('\n').replace(/\n {2,}/g, '');
+  assert.ok(lines.includes('设备拒绝执行 1 条：“widget name "a_b:c" 60” 设备答 “Widget name format error. / Failed to run the synthetic command”'), lines);
 });
