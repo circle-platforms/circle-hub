@@ -578,7 +578,7 @@ async function newPlanRun(state: PipelineState, open: Record<string, unknown>, b
   // The scope is the user's own words and cases, written as the record has them; the cases left out are the record's and the ones this pipeline dropped, each once, in the order met.
   const scope = recordedScope(open), left = [...new Set([...recordedExclude(open), ...exclude])];
   if (scope) { await mkdir(base, { recursive: true }); await writeFile(scopeFile, JSON.stringify(scope, null, 2) + '\n'); }
-  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' ? ['--judge', 'model'] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...(scope ? ['--scope', scopeFile] : []), ...(left.length ? ['--exclude', left.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], `${g.token}\n${g.plumbKey}\n`);
+  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' ? ['--judge', 'model'] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...recordedNames(open), ...(scope ? ['--scope', scopeFile] : []), ...(left.length ? ['--exclude', left.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], `${g.token}\n${g.plumbKey}\n`);
   if (opened.code !== 0 || !existsSync(openFile)) throw new Error(`${what}没有开成：${words(opened) || '没有输出'}`);
   const target = String(((await readJson(openFile)) as Record<string, unknown>).plan_run ?? '');
   if (!target || target === state.plan_run) throw new Error(`open-compile.ts 没有给出新的脚本编写运行（看到 ${target || '空'}）`);
@@ -608,16 +608,28 @@ async function switchRun(state: PipelineState, target: string, planDir: string, 
 function checkOpen(state: PipelineState, open: Record<string, unknown>): void {
   if (open.plan_run !== state.plan_run) throw new Error(`--open 写这一轮用的 open-compile 文件（它的脚本编写运行应是 ${state.plan_run}）；新的那个由本工具开`);
   for (const field of ['subject', 'product', 'build', 'booking', 'recompose_run', 'recompose_record']) if (typeof open[field] !== 'string' || !open[field]) throw new Error(`--open 不是 open-compile.ts 写的文件（缺 ${field}）`);
-  recordedScope(open); recordedExclude(open);
+  recordedScope(open); recordedExclude(open); recordedNames(open);
 }
 
 // What the first open was given and a later plan run must be given again: open-compile.ts writes the scope (the user's words and the cases they
-// name, which the recomposition run froze) and the cases left out into its record when it has them. A record without them has none.
+// name, which the recomposition run froze), the cases left out, the version line and the three named documents into its record when it has
+// them. A record without them has none.
 function recordedScope(open: Record<string, unknown>): { words: string; cases: string[] } | null {
   const scope = open.scope;
   if (scope === undefined) return null;
   if (!isRecord(scope) || typeof scope.words !== 'string' || !Array.isArray(scope.cases) || scope.cases.some((v) => typeof v !== 'string')) throw new Error('--open 里的 scope 不是 {"words":"…","cases":[…]} 的形状；--open 写 open-compile.ts 写的文件，不手改');
   return { words: scope.words, cases: scope.cases as string[] };
+}
+const RECORDED_NAMES = ['version', 'contract', 'inventory', 'profile'] as const;
+function recordedNames(open: Record<string, unknown>): string[] {
+  const options: string[] = [];
+  for (const name of RECORDED_NAMES) {
+    const value = open[name];
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || !value) throw new Error(`--open 里的 ${name} 不是${name === 'version' ? '版本线' : '命名文档'}的名字；--open 写 open-compile.ts 写的文件，不手改`);
+    options.push(`--${name}`, value);
+  }
+  return options;
 }
 function recordedExclude(open: Record<string, unknown>): string[] {
   const left = open.exclude;

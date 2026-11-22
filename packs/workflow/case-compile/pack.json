@@ -1178,8 +1178,8 @@
     },
     {
       "path": "tools/open-compile.ts",
-      "sha256": "d70fc9d20a9b76a84b5722fdc522a66faab8613ae116ed5db5f1635c0606a013",
-      "size": 18532
+      "sha256": "5492a773bf5ad9a7ed34870d50e74e7b4291cd1778bb907c73df147f18d73338",
+      "size": 18749
     },
     {
       "path": "tools/open-merge.cli.json",
@@ -1198,8 +1198,8 @@
     },
     {
       "path": "tools/pipeline.ts",
-      "sha256": "a8af4c840495274df72fa216ab73217b5e01bc6eaeb8b5c57b884a38bb0ef7fa",
-      "size": 69567
+      "sha256": "8cfcf7c0960456d73a628197279846f645a4f9f5f5dd56e64c56811a088ce403",
+      "size": 70218
     },
     {
       "path": "tools/plan-fields.md",

@@ -483,8 +483,8 @@ async function afterDevice(rows: (autoids: string[]) => unknown[], options: { ju
   const uncarried: string[] = [];
   const t = tools((tool, args) => {
     const at = (name: string) => args[args.indexOf(name) + 1]!;
-    // The record the tool writes keeps the scope it read and the cases left out, when it was given them.
-    if (tool === 'open-compile.ts') { opens++; writeFileSync(at('--out'), JSON.stringify({ ...OPENED, plan_run: opens === 1 ? NEXT_PLAN : `run_01planplanplanplanplan0${opens}`, ...(args.includes('--scope') ? { scope: JSON.parse(readFileSync(at('--scope'), 'utf8')) } : {}), ...(args.includes('--exclude') ? { exclude: at('--exclude').split(',') } : {}) })); return ok('就绪'); }
+    // The record the tool writes keeps what it was given besides the mind map: the scope it read, the cases left out, the version line and the named documents.
+    if (tool === 'open-compile.ts') { opens++; writeFileSync(at('--out'), JSON.stringify({ ...OPENED, plan_run: opens === 1 ? NEXT_PLAN : `run_01planplanplanplanplan0${opens}`, ...Object.fromEntries(['version', 'contract', 'inventory', 'profile'].filter((name) => args.includes(`--${name}`)).map((name) => [name, at(`--${name}`)])), ...(args.includes('--scope') ? { scope: JSON.parse(readFileSync(at('--scope'), 'utf8')) } : {}), ...(args.includes('--exclude') ? { exclude: at('--exclude').split(',') } : {}) })); return ok('就绪'); }
     if (tool === 'download-run.ts') { mkdirSync(join(at('--out'), 'briefs'), { recursive: true }); writeFileSync(join(at('--out'), 'run.json'), JSON.stringify({ run: NEXT_PLAN })); for (const k of ['00', '01', '02']) writeFileSync(join(at('--out'), 'briefs', `${k}.md`), '合成简报'); return ok(); }
     if (tool === 'carry-plans.ts') {
       mkdirSync(at('--plans'), { recursive: true });
@@ -782,6 +782,10 @@ test('no delivery volume when nothing passed; a carry that refuses leaves nothin
 // A compile of part of a mind map: the words the user gave, kept as they were, and the cases they name; one case left out when it was opened.
 const SCOPE = { words: '只编这三条：“登录后改密码”、"退出" 和 a\\b（第二行\n还有一行 ）', cases: ['990000000000001000', '990000000000001001', '990000000000001002'] };
 const LEFT_OUT = '990000000000009001';
+// The version line and the three named documents the first open may have been given instead of the defaults.
+const NAMES = ['version', 'contract', 'inventory', 'profile'] as const;
+const NAMED = { version: '3.2', contract: 'doc:doc:other-contract', inventory: `doc:doc:other-inventory@${'d'.repeat(64)}`, profile: 'doc:doc:other-profile' } as const;
+const namedFlags = (args: string[]) => NAMES.map((name) => flagOf(args, `--${name}`));
 const flagOf = (args: string[], name: string): string | undefined => args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
 const openCalls = (calls: Array<{ tool: string; args: string[] }>) => calls.filter((call) => call.tool === 'case-compile/open-compile.ts').map((call) => call.args);
 
@@ -845,16 +849,53 @@ test('a reopen and a delivery volume keep the scope too, and merge the left-out 
   assert.equal(volume.state.volume?.n, 1);
 });
 
-test('a record without a scope or left-out cases opens the next plan run as it always did, and a record whose scope or left-out cases are malformed is refused before anything is opened', async () => {
+test('a record without what the first open was given opens the next plan run as it always did, and a record whose entries are malformed is refused before anything is opened', async () => {
   const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
-  for (const [broken, said] of [[{ scope: { words: 1, cases: [] } }, /--open 里的 scope 不是 \{"words":"…","cases":\[…\]\} 的形状/], [{ scope: { words: '范围', cases: [7] } }, /--open 里的 scope 不是/], [{ exclude: LEFT_OUT }, /--open 里的 exclude 不是 autoid 的列表/], [{ exclude: [LEFT_OUT, 5] }, /--open 里的 exclude 不是 autoid 的列表/]] as const) {
+  for (const [broken, said] of [[{ scope: { words: 1, cases: [] } }, /--open 里的 scope 不是 \{"words":"…","cases":\[…\]\} 的形状/], [{ scope: { words: '范围', cases: [7] } }, /--open 里的 scope 不是/], [{ exclude: LEFT_OUT }, /--open 里的 exclude 不是 autoid 的列表/], [{ exclude: [LEFT_OUT, 5] }, /--open 里的 exclude 不是 autoid 的列表/], [{ version: 3.2 }, /--open 里的 version 不是版本线的名字/], [{ contract: '' }, /--open 里的 contract 不是命名文档的名字/], [{ inventory: ['doc:doc:x'] }, /--open 里的 inventory 不是命名文档的名字/], [{ profile: null }, /--open 里的 profile 不是命名文档的名字/]] as const) {
     await assert.rejects(rework(state, { ...OPENED, ...broken }, 'returns-1', undefined, gates(t.run)), said);
   }
   assert.deepEqual([openCalls(t.calls), existsSync('rework-2')], [[], false], 'nothing was opened and no directory was made');
   await rework(state, OPENED, 'returns-1', 'notes', gates(t.run));
   const [opened] = openCalls(t.calls);
   assert.deepEqual([opened!.includes('--scope'), opened!.includes('--exclude'), existsSync(join('rework-2', 'compile-scope.json'))], [false, false, false]);
-  assert.deepEqual(['scope' in JSON.parse(readFileSync(state.open!, 'utf8')), 'exclude' in JSON.parse(readFileSync(state.open!, 'utf8'))], [false, false]);
+  assert.deepEqual(namedFlags(opened!), [undefined, undefined, undefined, undefined], 'no version line and no named document is passed: the defaults are the open\'s own');
+  const recorded = JSON.parse(readFileSync(state.open!, 'utf8'));
+  assert.deepEqual(['scope', 'exclude', ...NAMES].filter((field) => field in recorded), []);
+});
+
+test('a rework opens the next plan run with the version line or the named document the compile was opened with, in every round, and with none of them when it was opened with none', async () => {
+  for (const name of NAMES) {
+    const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+    const only = (other: string) => other === name ? NAMED[name] : undefined;
+    await rework(state, { ...OPENED, [name]: NAMED[name] }, 'returns-1', 'notes', gates(t.run));
+    assert.deepEqual(namedFlags(openCalls(t.calls)[0]!), NAMES.map(only), `${name}: only the one given is passed`);
+    const recorded = JSON.parse(readFileSync(state.open!, 'utf8'));
+    assert.deepEqual(NAMES.filter((other) => other in recorded), [name], `${name}: the next open wrote it down`);
+    // The round after it starts from that record.
+    await writeFile(join('cases', '01', 'plan', '01.json'), '{"plan":"01 round 2"}');
+    await next(state, '编写 01', gates(t.run));
+    await returned('returns-2', state.cases.map((c) => ({ item: c.autoid, verdict: c.k === '01' ? 'fail' : 'pass' })));
+    await rework(state, recorded, 'returns-2', undefined, gates(t.run));
+    assert.deepEqual(namedFlags(openCalls(t.calls)[1]!), NAMES.map(only), `${name}: the second round`);
+  }
+});
+
+test('a reopen and a delivery volume open the next plan run with the version line and the named documents too', async () => {
+  const given = NAMES.map((name) => NAMED[name]);
+  const reopened = await afterDevice(() => []);
+  reopened.state.open = 'open-compile.json';
+  const stopped = reopened.state.cases[1]!;
+  stopped.stage = 'stopped'; stopped.attempts = { recompose: 1, write: 5 }; stopped.stopped = '脚本编写 5 次仍未通过：合成原因'; stopped.retried = OPEN.plan_run;
+  await reopen(reopened.state, { ...OPENED, ...NAMED }, undefined, gates(reopened.t.run));
+  assert.deepEqual(namedFlags(openCalls(reopened.t.calls)[0]!), given);
+  assert.deepEqual(NAMES.map((name) => JSON.parse(readFileSync(reopened.state.open!, 'utf8'))[name]), given, 'and the record of that open says so');
+  const volume = await afterDevice(([x, y, z]) => [{ item: x, verdict: 'pass' }, { item: y, verdict: 'fail' }, { item: z, verdict: 'pass' }]);
+  volume.state.cases[1]!.device_rounds = 2;
+  await rework(volume.state, { ...OPENED, ...NAMED, scope: SCOPE, exclude: [LEFT_OUT] }, 'returns-1', undefined, gates(volume.t.run));
+  const [deliver] = openCalls(volume.t.calls);
+  assert.deepEqual(namedFlags(deliver!), given);
+  assert.deepEqual([flagOf(deliver!, '--scope'), volume.state.volume?.n], [join('deliver-1', 'compile-scope.json'), 1], 'beside the scope and the left-out cases, which are passed as before');
+  assert.deepEqual(NAMES.map((name) => JSON.parse(readFileSync(volume.state.open!, 'utf8'))[name]), given);
 });
 
 const withoutPlumb = (run: RunTool): Gates => ({ run, hub: 'http://127.0.0.1:9/mcp', plumb: '', token: 'synthetic-token-1234', plumbKey: '' });

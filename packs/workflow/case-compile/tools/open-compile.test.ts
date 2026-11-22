@@ -157,6 +157,43 @@ test('the record keeps what the compile was opened with: the scope as it was rea
   assert.equal(existsSync(join(dir, 'bad.json')), false);
 });
 
+test('the record keeps the version line and each named document when the compile was opened with them, and nothing of them when it was not', async () => {
+  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };
+  const named = ['version', 'contract', 'inventory', 'profile'] as const;
+  const DEFAULT_DOCS = { contract: 'doc:doc:runner-contract', inventory: 'doc:doc:bed-topology', profile: 'doc:doc:runtime-profile' };
+  const given = { version: '3.2', contract: 'doc:doc:other-contract', inventory: `doc:doc:other-inventory@${'d'.repeat(64)}`, profile: 'doc:doc:other-profile' };
+  const fromHub = (h: ReturnType<typeof hub>) => { const [recompose, plan] = h.calls.filter((c) => c.name === 'start_run').map((c) => c.args as { version?: string; inputs: Record<string, unknown> }); return { recompose: recompose!, plan: plan! }; };
+  for (const name of named) {
+    const h = hub(answers), out = join(dir, `${name}.json`);
+    const result = await run(argv(out, [`--${name}`, given[name]]), h.connect, root);
+    assert.equal(result.code, 0, result.out);
+    const record = JSON.parse(await readFile(out, 'utf8'));
+    assert.deepEqual(named.filter((field) => field in record), [name], `only ${name} is recorded, as it was given`);
+    assert.equal(record[name], given[name]);
+    assert.deepEqual(JSON.parse(result.out.trimEnd().split('\n').at(-1)!), record, 'the line printed is the record');
+    const { recompose, plan } = fromHub(h);
+    // what the Hub was given: the version line for both runs, a named document for the plan run in place of its default
+    assert.deepEqual([recompose.version, plan.version], name === 'version' ? [given.version, given.version] : [undefined, undefined], name);
+    for (const doc of ['contract', 'inventory', 'profile'] as const) assert.deepEqual(plan.inputs[doc], { external: name === doc ? given[doc] : DEFAULT_DOCS[doc] }, `${name}: ${doc}`);
+  }
+  // None given: none recorded, and the Hub is given the defaults and no version line.
+  const h = hub(answers);
+  assert.equal((await run(argv(join(dir, 'plain.json')), h.connect, root)).code, 0);
+  const plain = JSON.parse(await readFile(join(dir, 'plain.json'), 'utf8'));
+  assert.deepEqual(named.filter((field) => field in plain), []);
+  assert.deepEqual([fromHub(h).plan.version, fromHub(h).plan.inputs.contract], [undefined, { external: DEFAULT_DOCS.contract }]);
+  // All four on a plan run that reuses the recomposition (a rework): the plan run is given them and the record keeps them.
+  const again = hub(answers);
+  const reopened = await run(argv(join(dir, 'all.json'), ['--version', given.version, '--contract', given.contract, '--inventory', given.inventory, '--profile', given.profile, '--recompose-run', RECOMPOSE, '--recompose-record', 'rec:' + 'c'.repeat(64)]), again.connect, root);
+  assert.equal(reopened.code, 0, reopened.out);
+  const all = JSON.parse(await readFile(join(dir, 'all.json'), 'utf8'));
+  assert.deepEqual(named.map((field) => all[field]), named.map((field) => given[field]));
+  const starts = again.calls.filter((c) => c.name === 'start_run').map((c) => c.args as { pack: string; version?: string; inputs: Record<string, unknown> });
+  assert.deepEqual(starts.map((s) => s.pack), ['case-compile'], 'no recomposition is started');
+  assert.deepEqual([starts[0]!.version, starts[0]!.inputs.contract, starts[0]!.inputs.inventory, starts[0]!.inputs.profile], [given.version, { external: given.contract }, { external: given.inventory }, { external: given.profile }]);
+});
+
 test('judge model: the user chose to compile without Plumb, so no Plumb address, key or status is needed and the choice is written into open-compile.json', async () => {
   const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };

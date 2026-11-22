@@ -6,7 +6,7 @@
 
 每条原始用例独立推进，关口都由 `tools/pipeline.ts` 跑，子代理由编写循环 `workflows/compile-loop.js` 派发：
 
-1. 开运行：`tools/open-compile.ts` 先由代码判定技能版本、Plumb、命名文档、test-bed 预订和脑图是否就绪，再开用例重组运行（子包 `recompose`）和脚本编写运行，写 `open-compile.json`；给了 `--scope` 或 `--exclude` 的，记录里另有可选的 `scope`（`{words, cases}`，原话照录）和 `exclude`（autoid 列表），`pipeline.ts` 以后新开脚本编写运行（返工、重新开、交付卷）时照它们带上，新的 `open-compile.json` 再记一遍，记录的 schema 仍是 `open-compile@1`。
+1. 开运行：`tools/open-compile.ts` 先由代码判定技能版本、Plumb、命名文档、test-bed 预订和脑图是否就绪，再开用例重组运行（子包 `recompose`）和脚本编写运行，写 `open-compile.json`；给了 `--scope`、`--exclude`、`--version`、`--contract`、`--inventory` 或 `--profile` 的，记录里另有同名的可选字段（`scope` 是 `{words, cases}`，原话照录；`exclude` 是 autoid 列表；`version` 是版本线；`contract`、`inventory`、`profile` 是命名文档），`pipeline.ts` 以后新开脚本编写运行（返工、重新开、交付卷）时照它们带上，新的 `open-compile.json` 再记一遍，记录的 schema 仍是 `open-compile@1`。
 2. 用例重组：每条原始用例由 `compile-recomposer` 写成重组后的用例，离线自检（`recompose/tools/check-record.ts`）后单条提交，受理后即可编写。
 3. 脚本编写：`compile-writer` 按任务文件、同构建手册和命令树写计划；计划自检（`tools/check-plan.ts`）、命令核验（`tools/cmd-verify-plumb.ts`）和场景保真审计（`tools/fidelity-plumb.ts`，判不了的交 `compile-fidelity` 盲审）都过了才算就绪。
 4. 脚本合并：`pipeline.ts collect` 收拢就绪的计划，`tools/open-merge.ts` 交计划、生成并上传工作簿、开脚本合并运行并提交。
