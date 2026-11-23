@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { createHmac, randomBytes } from 'node:crypto';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { MemberExternalIdentityAudit } from '../../contracts/src/resources.ts';
 import { DEFAULT_LIMITS } from '../config/index.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
-import { AccessError, sha256Hex } from './api.ts';
+import { AccessError, FileKeyProvider, sha256Hex } from './api.ts';
 import { openRecords } from './index.ts';
 
 let postgres: TemporaryPostgres;
@@ -70,12 +70,20 @@ test('H1: bindExternalIdentity records member-external-identity@1 with hashed is
   const audits = await identityAuditRecords(kit, alice.id);
   assert.equal(audits.length, 2);
   assert.equal(audits[0].action, 'bind');
-  assert.equal(audits[0].issuer, sha256Hex(issuer));
-  assert.equal(audits[0].subject, sha256Hex(subject));
+  assert.notEqual(audits[0].issuer, sha256Hex(issuer));
+  assert.notEqual(audits[0].subject, sha256Hex(subject));
+  assert.match(audits[0].issuer, /^[0-9a-f]{64}$/);
+  assert.match(audits[0].subject, /^[0-9a-f]{64}$/);
   assert.equal(audits[0].reason, undefined);
   assert.equal(audits[1].action, 'unbind');
+  assert.equal(audits[1].issuer, audits[0].issuer);
+  assert.equal(audits[1].subject, audits[0].subject);
   assert.equal(audits[1].reason, 'manual');
   assert.equal(audits[1].by, admin.id);
+  const bobAudits = await identityAuditRecords(kit, bob.id);
+  assert.equal(bobAudits.length, 1);
+  assert.equal(bobAudits[0].issuer, audits[0].issuer);
+  assert.equal(bobAudits[0].subject, audits[0].subject);
   assert.ok(!JSON.stringify(audits).includes(subject));
   assert.ok(!JSON.stringify(audits).includes(issuer));
 });
@@ -149,4 +157,56 @@ test('H1: member deletion finish() deletes external_member_identities, records d
       ['unbind', 'deleted'],
     ],
   );
+  const originalBind = audits.find((a) => a.action === 'bind')!;
+  const originalUnbind = audits.find((a) => a.action === 'unbind')!;
+  assert.notEqual(originalBind.issuer, sha256Hex(issuer));
+  assert.notEqual(originalBind.subject, sha256Hex(subject));
+  assert.equal(originalUnbind.issuer, originalBind.issuer);
+  assert.equal(originalUnbind.subject, originalBind.subject);
+});
+
+test('S8: external-identity audit HMAC key persists under keys/ without keyProvider and derives from keyProvider when configured', async (t) => {
+  const dbName = `s8_keyed_${randomBytes(4).toString('hex')}`;
+  const database = await postgres.createDatabase(dbName);
+  const dataDir = await mkdtemp(join(tmpdir(), 'circle-hub-s8-'));
+  const otherDir = await mkdtemp(join(tmpdir(), 'circle-hub-s8-other-'));
+  t.after(async () => {
+    await rm(dataDir, { recursive: true, force: true });
+    await rm(otherDir, { recursive: true, force: true });
+    await postgres.dropDatabase(dbName);
+  });
+
+  const issuer = 'https://work.example.invalid/tenant-s8';
+  const subject = 'raw-ext-subject-s8';
+  const kit1 = await openRecords({ database, dataDir, logDir: join(dataDir, 'logs'), limits: { ...DEFAULT_LIMITS } });
+  const { user: adminUser } = await kit1.principals.bootstrapAdmin('密钥审计管理员');
+  const admin = { id: adminUser.id, name: adminUser.name, role: adminUser.role };
+  const member = await kit1.principals.createUser(admin, '密钥审计成员');
+  await kit1.principals.bindExternalIdentity({ id: member.id, name: member.name, role: member.role }, issuer, subject);
+  await kit1.close();
+
+  assert.equal((await stat(join(dataDir, 'keys', 'external-identity-audit.key'))).mode & 0o777, 0o600);
+
+  const kit2 = await openRecords({ database, dataDir, logDir: join(dataDir, 'logs'), limits: { ...DEFAULT_LIMITS } }, { migrate: false });
+  await kit2.principals.unbindExternalIdentity(admin, member.id, issuer);
+  const persistedAudits = await identityAuditRecords(kit2, member.id);
+  await kit2.close();
+  assert.equal(persistedAudits.length, 2);
+  assert.equal(persistedAudits[0].issuer, persistedAudits[1].issuer);
+  assert.equal(persistedAudits[0].subject, persistedAudits[1].subject);
+  assert.notEqual(persistedAudits[0].issuer, sha256Hex(issuer));
+
+  const keyProvider = new FileKeyProvider(join(otherDir, 'vault.key'));
+  await keyProvider.initKey();
+  const masterKey = await keyProvider.getKey();
+  const expectedKey = createHmac('sha256', masterKey).update('circle-hub:external-identity-audit:v1').digest();
+  const kit3 = await openRecords({ database, dataDir: otherDir, logDir: join(otherDir, 'logs'), limits: { ...DEFAULT_LIMITS } }, { keyProvider, migrate: false });
+  const member2 = await kit3.principals.createUser(admin, '密钥派生审计成员');
+  await kit3.principals.bindExternalIdentity({ id: member2.id, name: member2.name, role: member2.role }, issuer, subject);
+  const derivedAudits = await identityAuditRecords(kit3, member2.id);
+  await kit3.close();
+  assert.equal(derivedAudits.length, 1);
+  assert.equal(derivedAudits[0].issuer, createHmac('sha256', expectedKey).update(issuer).digest('hex'));
+  assert.equal(derivedAudits[0].subject, createHmac('sha256', expectedKey).update(subject).digest('hex'));
+  assert.notEqual(derivedAudits[0].issuer, persistedAudits[0].issuer);
 });

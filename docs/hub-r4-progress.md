@@ -1401,8 +1401,8 @@ nav_order: 3
     - 验证：本地 macOS，未经 CI，在十个包升版本号的提交 cb9fa0c2b5（工作目录干净）上：`npm run typecheck`、`npm run verify:contracts`、`npm run test:unit`（三组 190、380、10432 项，0 失败，跳过 0、2、8）、`npm run test:docs`（278 项全过）、`npm run test:acceptance`（281 项全过）、`npm run verify:references`、`npm run test:references`（8 项全过），七步退出码都是 0。跳过的 10 项与决定 189 所列相同。之后删例外、写文档的那个提交只改了 `.github/checks/exceptions.json` 和文档，在本地带着标记重跑了 `npm run typecheck`、`npm run verify:contracts` 和 `npm run test:docs`。
     - 演练实例（正式实例数据的副本；两次演练之后都恢复到 c8550a1fa2、只有迁移 1，恢复后的快照与演练前逐项相同）：整合分支原样切换，Hub 进入需要重建的维护模式；执行迁移后重启正常，789,854 条记录用新代码重新核对无异常；试发布时上面八个包被拒。带着升版本号的提交再做一次，切换脚本带 `--migrate`：从停止到恢复 5.4 秒，其中迁移 1.7 秒，首轮维护 29.1 秒，切换前后的对比全部相同；全部包试发布，没有一个被拒。
     - 没有做：没有用整合后的 Hub 和 Circle 做真实的脑图编译，放在评审意见修完之后，在第二实例上做一次。
-193. **收拢 `case-compile` 移除 `legacy` 流水线的来源登记（分支 `integrate/hub-consolidated-20261123`，PR #362 复核 H17）**（来源：所有者 2026-11-23 在整合指令第 2 条要求「替换老的设计和代码，将新加入模块或内容（如 pipeline next 等）做合并，只保留最新的，可以不考虑向前的兼容性」）。
-    - 提交 `46bd9c8bf3`（合自 `wp/swarm/hub-packs-clean`）在 `packs/workflow/case-compile`（`workflow.json`、`functions/project.ts`、`tables/recompose-format.json`、`adjudicate/tables/recompose-format.json`、`authority/tables/recompose-format.json`、`SKILL.md`）及 `docs/member-guide.md` 中移除了 `parameters.pipeline="legacy"` 及未绑定重组记录的多用例直编路径，只保留 `recomposed` 流水线。
+193. **登记 `case-compile` 移除 `legacy` 流水线的来源（分支 `integrate/hub-consolidated-20261123`，拉取请求 362 复核 H17）**（来源：所有者 2026-11-23 在整合指令第 2 条要求「替换老的设计和代码，将新加入模块或内容（如 pipeline next 等）做合并，只保留最新的，可以不考虑向前的兼容性」）。
+    - 提交 `46bd9c8bf3`（合自 `wp/swarm/hub-packs-clean`）在 `packs/workflow/case-compile`（`workflow.json`、`functions/project.ts`、`tables/recompose-format.json`、`recompose/tables/recompose-format.json`、`adjudicate/tables/recompose-format.json`、`authority/tables/recompose-format.json`、`SKILL.md`）及 `docs/member-guide.md` 中移除了 `parameters.pipeline="legacy"` 及未绑定重组记录的多用例直编路径，只保留 `recomposed` 流水线。
     - 上述总原则可支持停用历史兼容路径；但是否按每条工作流逐一确认取消 `legacy` 模式仍标明「待集成者向所有者复核确认」。
 
 ## 2026-11-21 编译流程整合

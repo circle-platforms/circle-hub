@@ -61,8 +61,10 @@ describe('the pack files', () => {
       ],
     );
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
-    // 1.0.10 的规程写明了精确指针；1.0.12 加了读修复清单的第 0 步；1.0.14 增加 frontmatter 后仍需保留完整的 only=/fields= 与缺陷列表指导全文（供 start_run 交给模型），因此将长度上限从 2500 放宽到 2700。
+    // 1.0.10 added exact pointers in the procedure; 1.0.12 added step 0 for reading the fix list; after adding YAML frontmatter in 1.0.14, SKILL.md still preserves the complete only=/fields= and defect-list guidance returned by start_run to the model, raising the length cap from 2500 to 2700.
     assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 2700, 'a short Chinese procedure (it is in every start_run answer)');
+    assert.ok(text('SKILL.md').includes('不要向用户索取缺陷编号，也不要自己列举 only='));
+    assert.ok(text('SKILL.md').includes('运行不会去锁定别的构建'));
   });
 
   it('declares a parameter schema the engine can enforce (no regular expressions, zod reads it)', () => {

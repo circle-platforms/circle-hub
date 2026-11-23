@@ -2,14 +2,15 @@ import {memberDeletionDialog,memberDeletionProgress,deletionDialogId} from './me
 import {spaceCapacityDialog} from './space-capacity.ts';
 import {capacitySummary} from './capacity.ts';
 import {dialog,actionLink,tooltip,field} from './presentation.ts';
-import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
+import {labelOf,uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
+import {MemberExternalIdentityAudit} from '../../../contracts/src/resources.ts';
 import {commands} from './commands.ts';
 import {memberSpaceMetadata} from './member-space-metadata.ts';
 import {tokensForMembers,assignmentsForMembers} from './member-reads.ts';
 import {connectedClients,clientLabel,type ConnectedClient} from './circles.ts';
 import {CLIENT_COLUMNS,clientRow,clientInspector,noClients,heldOccupancyForEnvironment,unassignOccupancyFields} from './connections.ts';
 import type { ExecutorView } from '../api.ts';
-import {definitions,html,href,link,liveModule,page,pageLayout,table,type Html} from './html.ts';
+import {code,definitions,html,href,link,liveModule,page,pageLayout,table,type Html} from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { count, emptyBlock, postForm, segments, selectControl } from './components.ts';
 import {box,button,card,chip,commandLink,commandModal,when,type CommandDialog} from './ui.ts';
@@ -51,6 +52,33 @@ async function packSourcesFor(ctx: PageContext, userId: string): Promise<PackSou
   if (!ctx.admin) return null;
   const auth = ctx.deps.records.authorizations;
   return auth.packSources ? auth.packSources(ctx.principal, userId) : null;
+}
+
+async function externalIdentityAuditCard(ctx: PageContext, memberId: string): Promise<Html> {
+  if (!ctx.admin || typeof ctx.deps.records.store?.find !== 'function') return html``;
+  const result = await ctx.deps.records.store.find({
+    kind: 'action',
+    key: 'member.external_identity.member',
+    value: memberId,
+    newestFirst: true,
+    limit: 50,
+  });
+  const audits = result.items
+    .filter((item) => item.schema === 'member-external-identity@1')
+    .map((item) => MemberExternalIdentityAudit.safeParse(item.body))
+    .filter((parsed): parsed is { success: true; data: ReturnType<typeof MemberExternalIdentityAudit.parse> } => parsed.success)
+    .map((parsed) => parsed.data);
+  if (audits.length === 0) return html``;
+  const rows = await Promise.all(
+    audits.map(async (entry) => [
+      when(entry.at),
+      labelOf('external_identity_action', entry.action),
+      entry.reason ? labelOf('external_identity_unbind_reason', entry.reason) : '无',
+      code(entry.issuer.slice(0, 12)),
+      await ctx.userName(entry.by),
+    ]),
+  );
+  return card({ title: '外部身份变更记录' }, table(['时间', '动作', '原因', '来源摘要', '操作人'], rows, '尚无外部身份变更记录'));
 }
 
 function workflowCell(titles: string[], sources: PackSource[] | null, packs: readonly { id: string; title: string }[], adminRole: boolean): unknown {
@@ -108,7 +136,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   if(ctx.admin)dialogs.push(revoke);
   inspector=html`<div data-inspector-content>${clientInspector(selectedDevice)}<footer class="ch-inspector-actions">${ctx.admin?commandLink(revoke,'断开…','ch-btn ch-btn--danger'):html`<span class="ch-meta">由管理员断开</span>`}</footer></div>`;
  }else if(selectedUser?.deleted_at){
-  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status','deleted'),'plain')}</div><h2 class="ch-panel-title">${uiLabelOf('account_display_name','deleted_member')}</h2>${definitions([['成员编号',selectedUser.id],['删除时间',when(selectedUser.deleted_at)]])}${ctx.admin?await memberDeletionProgress(ctx,selectedUser.id):''}</div>`;
+  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status','deleted'),'plain')}</div><h2 class="ch-panel-title">${uiLabelOf('account_display_name','deleted_member')}</h2>${definitions([['成员编号',selectedUser.id],['删除时间',when(selectedUser.deleted_at)]])}${ctx.admin?await memberDeletionProgress(ctx,selectedUser.id):''}${await externalIdentityAuditCard(ctx,selectedUser.id)}</div>`;
  }else if(selectedUser){
   const deletion=ctx.admin&&ctx.url.searchParams.get('deletion')==='preview'?await memberDeletionDialog(ctx,selectedUser.id):html``;
   confirmations=html`${confirmations}${deletion}`;
@@ -146,7 +174,7 @@ ${user.disabled?'':html`${card({title:'签发邀请码',hint:'邀请码 24 小�
 ${card({title:'签发客户端访问令牌',hint:'新令牌仅在结果页显示一次，只用于连接客户端。'},registeredActionForm('token-issue',csrf,'签发令牌',{values:{user:user.id,label:'客户端'},primary:true}))}`}
 ${card({title:'重置密码',hint:'生成仅显示一次的初始密码；下次登录必须修改。'},registeredActionForm('password-reset',csrf,'重置密码',{values:{user:user.id}}))}
 </div>`:'';
-  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass')}</div><h2 class="ch-panel-title">${user.name}</h2>${card({title:'权限'},definitions(permissions))}${ctx.admin?html`<div class="ch-actions">${link(memberCapabilitiesHref(user.id),'按这个成员的视角看')}${commandLink(publish,'调整发布权…')}</div>`:''}${card({title:'工作流分配'},table([uiLabelOf('pack_kind','workflow'),'可使用'],rows,'尚无工作流',undefined,{selected:packs.findIndex(pack=>pack.id===workflow),hrefs:packs.map(pack=>href('/console/team/'+user.id,{workflow:pack.id}))}))}${selectedAssignment}${memberOps}${card({title:'已连接的客户端'},table(CLIENT_COLUMNS,devices.filter(device=>device.token.user===user.id).map(device=>clientRow(device,link(href('/console/team',{circle:device.id}),clientLabel(device)))),noClients(ctx.admin)))}<footer class="ch-inspector-actions">${ctx.admin?html`${actionLink('/console/team/'+user.id+'?deletion=preview#'+deletionDialogId,'删除成员…','danger')}`:''}</footer></div>`;
+  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass')}</div><h2 class="ch-panel-title">${user.name}</h2>${card({title:'权限'},definitions(permissions))}${ctx.admin?html`<div class="ch-actions">${link(memberCapabilitiesHref(user.id),'按这个成员的视角看')}${commandLink(publish,'调整发布权…')}</div>`:''}${card({title:'工作流分配'},table([uiLabelOf('pack_kind','workflow'),'可使用'],rows,'尚无工作流',undefined,{selected:packs.findIndex(pack=>pack.id===workflow),hrefs:packs.map(pack=>href('/console/team/'+user.id,{workflow:pack.id}))}))}${selectedAssignment}${memberOps}${await externalIdentityAuditCard(ctx,user.id)}${card({title:'已连接的客户端'},table(CLIENT_COLUMNS,devices.filter(device=>device.token.user===user.id).map(device=>clientRow(device,link(href('/console/team',{circle:device.id}),clientLabel(device)))),noClients(ctx.admin)))}<footer class="ch-inspector-actions">${ctx.admin?html`${actionLink('/console/team/'+user.id+'?deletion=preview#'+deletionDialogId,'删除成员…','danger')}`:''}</footer></div>`;
  }else{
   let usage=null;if(ctx.admin&&spaces){try{usage=await spaces.usage(ctx.principal,'team');}catch{usage=null;}}
   if(usage)confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,'team',usage)}`;

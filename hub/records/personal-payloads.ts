@@ -33,6 +33,7 @@ const USER=/^usr_[0-9a-z]{26}$/;
 export function personalOwnerOf(record:{kind:RecordKind;schema?:string;body:unknown}):string|null{
  const owner=personalRecordOwner(record.kind,record.body);if(owner)return owner;
  const body=record.body as Record<string,unknown>|null;
+ if(record.schema==='member-notification-intent@1'||record.schema==='member-notification-receipt@1'||record.schema==='member-bot-inbound@1'){const member=body?.member;return typeof member==='string'&&USER.test(member)?member:null;}
  if(record.kind==='action'&&typeof record.schema==='string'&&/^memory-(refusal|unchanged)@/.test(record.schema)){const by=body?.by;return typeof by==='string'&&USER.test(by)?by:null;}
  if(record.kind==='run'){const space=body?.pack_space;return typeof space==='string'&&USER.test(space)?space:null;}
  if(record.kind!=='source_artifact')return null;

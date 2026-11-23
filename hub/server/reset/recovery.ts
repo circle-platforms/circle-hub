@@ -1,4 +1,4 @@
-import { readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { agentFor, postgresFor, settingsOf, type PlatformContext } from '../../platform/api.ts';
@@ -10,7 +10,8 @@ import { assertProtectedFiles } from './protected-files.ts';
 const Journal = z.object({
   database: z.string(), archive: z.string().max(63), failed: z.string().max(63), originalOid: z.string().regex(/^[0-9]+$/),
   wasLoaded: z.boolean(), wasRunning: z.boolean(),
-  originals: z.array(z.strictObject({ area: z.enum(['keys','vault']), path: z.string(), size: z.number().int().nonnegative(), sha256: z.string().regex(/^[0-9a-f]{64}$/) })),
+  botRuntimeStage: z.string().regex(/^reset-bot-[0-9a-f-]+$/).optional(),
+  originals: z.array(z.strictObject({ area: z.enum(['keys','vault']), path: z.string(), sha256: z.string().regex(/^[0-9a-f]{64}$/), size: z.number().int().nonnegative() })),
 });
 export async function recoverPendingReset(context: PlatformContext): Promise<void> {
   const path = join(context.layout.run, 'reset-operation.json');
@@ -36,6 +37,19 @@ export async function recoverPendingReset(context: PlatformContext): Promise<voi
       await session.query(`ALTER DATABASE ${quoteIdentifier(database)} ALLOW_CONNECTIONS true`);
     });
     await assertProtectedFiles(context.layout, saved.originals);
+    if (saved.botRuntimeStage) {
+      const stageDir = join(context.layout.setAside, saved.botRuntimeStage);
+      const botRuntimeRoot = join(context.layout.root, 'bot-runtime');
+      for (const dir of ['files', 'channel-staging'] as const) {
+        try {
+          await mkdir(botRuntimeRoot, { recursive: true, mode: 0o700 });
+          await rename(join(stageDir, dir), join(botRuntimeRoot, dir));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+      }
+      await rm(stageDir, { recursive: true, force: true });
+    }
     if (saved.wasLoaded || saved.wasRunning) { await agent.start(); if (saved.wasRunning) await waitForHealth(settings.port, { host: settings.listenHost, authority: settings.allowedHosts?.[0], timeoutMs: context.healthTimeoutMs }); }
     await rm(path);
   } catch { throw new Error('上次重建的原库或原文件恢复尚未核对；未开始新重建，保留全部归档和恢复记录'); }
