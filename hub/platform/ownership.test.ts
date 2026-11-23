@@ -49,7 +49,7 @@ async function tamperingStatements(session: SqlSession): Promise<string[]> {
       updateProbe = [`UPDATE ${table} SET ${quoted} = ${quoted}`];
     }
     out.push(
-      ...(['lease_registrations', 'oauth_clients', 'trace_spans', 'resource_samples', 'process_events', 'team_members'].includes(table) ? [] : [`DELETE FROM ${table}`]),
+      ...(['lease_registrations', 'oauth_clients', 'trace_spans', 'resource_samples', 'process_events', 'team_members', 'external_member_identities'].includes(table) ? [] : [`DELETE FROM ${table}`]),
       ...updateProbe,
       `TRUNCATE ${table}`,
       `TRUNCATE ${table} CASCADE`,
@@ -108,8 +108,10 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
     withSession(control.applicationConnector, control.target.database, async (session) => {
       assert.equal(RUNTIME_GRANTS.teams, 'SELECT, INSERT, UPDATE', 'the approved projection grant, never a history grant');
       assert.equal(RUNTIME_GRANTS.team_members, 'SELECT, INSERT, DELETE', 'membership projection cannot be updated');
+      assert.equal(RUNTIME_GRANTS.external_member_identities, 'SELECT, INSERT, DELETE', 'external identities can be unbound by deletion without allowing UPDATE');
       assert.equal(await sqlState(session, 'UPDATE teams SET deleted_at = deleted_at'), null);
       assert.equal(await sqlState(session, 'DELETE FROM team_members WHERE false'), null);
+      assert.equal(await sqlState(session, 'DELETE FROM external_member_identities WHERE false'), null);
       // The registered-prefix projection must remain writable before and after restoration, without granting DDL.
       await session.query("INSERT INTO lease_registrations (prefix, owner, registered_at) VALUES ('test/ownership/', 'synthetic-owner', now())");
       await session.query("UPDATE lease_registrations SET owner = 'synthetic-next' WHERE prefix = 'test/ownership/'");

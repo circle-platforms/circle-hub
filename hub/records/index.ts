@@ -70,6 +70,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   const memberDeletions=new PgMemberDeletions(db,store,store.personalPayloads,now);
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs','personal'));
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs'),{shared:true});
+  memberDeletions.registerBotFilesRoot(join(config.dataDir,'bot-runtime','files'));
   let closed: Promise<void> | undefined;
   return {
     teams,

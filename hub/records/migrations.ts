@@ -1867,7 +1867,7 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
-  external_member_identities: "SELECT, INSERT",
+  external_member_identities: "SELECT, INSERT, DELETE",
   trace_spans: "SELECT, INSERT, DELETE",
   resource_samples: "SELECT, INSERT, DELETE",
   process_events: "SELECT, INSERT, DELETE",

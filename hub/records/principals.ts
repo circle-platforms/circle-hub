@@ -8,6 +8,7 @@ import {retireReadScope} from './read-scope.ts';
 // Model 38 (R01 R[12], decision 136 ⑫): every issuance, use and revocation also appends a token_issuance record in the
 // same transaction as the row change (token-issuance.ts); the rows remain the working state and the earlier history.
 import { randomBytes } from 'node:crypto';
+import { MemberExternalIdentityAudit } from '../../contracts/src/resources.ts';
 import { TokenActionSchema, isPermissionRole, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, RecordStore, TokenInfo, User, UserChange, Transaction } from './api.ts';
@@ -61,6 +62,45 @@ export function normalizeInvitation(text: string): string {
 function invitationCode(): string {
   const plain = [...randomBytes(12)].map((byte) => CODE_ALPHABET[byte % 32]).join('');
   return `${plain.slice(0, 4)}-${plain.slice(4, 8)}-${plain.slice(8)}`;
+}
+
+/** Records a hashed bind or unbind audit event without leaking plaintext external issuer/subject values. */
+export async function appendExternalIdentityAudit(
+  store: Pick<RecordStore, 'put'>,
+  input: {
+    action: 'bind' | 'unbind';
+    by: string;
+    member: string;
+    issuer: string;
+    subject: string;
+    at: string;
+    reason?: 'manual' | 'disabled' | 'deleted';
+  },
+  tx: Transaction,
+): Promise<void> {
+  const body = MemberExternalIdentityAudit.parse({
+    schema: 'member-external-identity@1',
+    action: input.action,
+    by: input.by,
+    member: input.member,
+    issuer: sha256Hex(input.issuer),
+    subject: sha256Hex(input.subject),
+    at: input.at,
+    ...(input.reason === undefined ? {} : { reason: input.reason }),
+  });
+  await store.put(
+    {
+      kind: 'action',
+      schema: 'member-external-identity@1',
+      provenance: 'observed',
+      body,
+      index: [
+        { key: 'member.external_identity.member', value: input.member },
+        { key: 'member.external_identity.action', value: input.action },
+      ],
+    },
+    tx,
+  );
 }
 
 /** Reused by member deletion, keeping a single named administrator-set namespace. */
@@ -237,7 +277,33 @@ export class PgPrincipals implements Principals {
       if (current.disabled === disabled) return current;
       if (disabled && isAdmin(current)) await this.#keepAnAdmin(tx, current.id);
       const updated = await this.#update(tx, current, { role: current.role, disabled }, by.id);
-      if (disabled) await this.#revokeConsoleSessions(tx, by.id, userId, this.#now().toISOString());
+      if (disabled) {
+        const at = this.#now().toISOString();
+        await this.#revokeConsoleSessions(tx, by.id, userId, at);
+        const removed = await this.#db.query<{ issuer: string; subject: string }>(
+          'DELETE FROM external_member_identities WHERE owner = $1 RETURNING issuer, subject',
+          [userId],
+          tx,
+        );
+        const rows = [...removed.rows].sort(
+          (a, b) => String(a.issuer).localeCompare(String(b.issuer)) || String(a.subject).localeCompare(String(b.subject)),
+        );
+        for (const row of rows) {
+          await appendExternalIdentityAudit(
+            this.#store,
+            {
+              action: 'unbind',
+              by: by.id,
+              member: userId,
+              issuer: String(row.issuer),
+              subject: String(row.subject),
+              at,
+              reason: 'disabled',
+            },
+            tx,
+          );
+        }
+      }
       return updated;
     }).finally(retireReadScope);
   }
@@ -286,10 +352,82 @@ export class PgPrincipals implements Principals {
   async bindExternalIdentity(by: Principal, issuer: string, subject: string): Promise<void> {
     await this.#db.transaction(async (tx) => {
       await this.lockActive(by, tx);
-      await this.#db.query('INSERT INTO external_member_identities(issuer,subject,owner) VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [issuer, subject, by.id], tx);
+      const inserted = await this.#db.query(
+        'INSERT INTO external_member_identities(issuer,subject,owner) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING 1',
+        [issuer, subject, by.id],
+        tx,
+      );
+      if (inserted.rowCount) {
+        await appendExternalIdentityAudit(
+          this.#store,
+          {
+            action: 'bind',
+            by: by.id,
+            member: by.id,
+            issuer,
+            subject,
+            at: this.#now().toISOString(),
+          },
+          tx,
+        );
+        return;
+      }
       const match = await this.#db.query('SELECT 1 FROM external_member_identities WHERE issuer=$1 AND subject=$2 AND owner=$3', [issuer, subject, by.id], tx);
       if (!match.rowCount) throw new ConflictError('此身份或当前成员已有不同绑定');
     });
+  }
+
+  async unbindExternalIdentity(by: Principal, userId: string, issuer?: string): Promise<number> {
+    if (!USER_ID.test(userId)) throw new ConflictError('成员编号格式不对');
+    return this.#db.transaction(async (tx) => {
+      if (by.id === userId) {
+        await this.lockActive(by, tx);
+      } else {
+        await this.#decider(tx, by, true);
+        const found = await this.#db.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [userId], tx);
+        if (!found.rowCount) throw new ConflictError('成员不存在');
+      }
+      const removed = issuer === undefined
+        ? await this.#db.query<{ issuer: string; subject: string }>(
+            'DELETE FROM external_member_identities WHERE owner = $1 RETURNING issuer, subject',
+            [userId],
+            tx,
+          )
+        : await this.#db.query<{ issuer: string; subject: string }>(
+            'DELETE FROM external_member_identities WHERE owner = $1 AND issuer = $2 RETURNING issuer, subject',
+            [userId, issuer],
+            tx,
+          );
+      const at = this.#now().toISOString();
+      const rows = [...removed.rows].sort(
+        (a, b) => String(a.issuer).localeCompare(String(b.issuer)) || String(a.subject).localeCompare(String(b.subject)),
+      );
+      for (const row of rows) {
+        await appendExternalIdentityAudit(
+          this.#store,
+          {
+            action: 'unbind',
+            by: by.id,
+            member: userId,
+            issuer: String(row.issuer),
+            subject: String(row.subject),
+            at,
+            reason: 'manual',
+          },
+          tx,
+        );
+      }
+      return rows.length;
+    });
+  }
+
+  async externalIdentities(owner: string): Promise<readonly string[]> {
+    if (!USER_ID.test(owner)) return [];
+    const result = await this.#db.query<{ issuer: string }>(
+      'SELECT issuer FROM external_member_identities WHERE owner = $1 ORDER BY issuer',
+      [owner],
+    );
+    return result.rows.map((row) => String(row.issuer));
   }
 
   async externalSubject(owner: string, issuer: string): Promise<string | null> {

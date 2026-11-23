@@ -149,6 +149,8 @@ export const DEFAULT_ADMIN_NAME = 'admin';
 
 export interface Principals {
   bindExternalIdentity(by: Principal, issuer: string, subject: string): Promise<void>;
+  unbindExternalIdentity(by: Principal, userId: string, issuer?: string): Promise<number>;
+  externalIdentities(owner: string): Promise<readonly string[]>;
   externalSubject(owner: string, issuer: string): Promise<string | null>;
   externalMember(issuer: string, subject: string): Promise<User | null>;
   /** Creates the first admin and its token. Refused (ConflictError) once any admin exists. */
@@ -1007,7 +1009,7 @@ export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
 export type {PurgeRequester,PurgePending,PurgeRequestBody} from './personal-sync.ts';
 export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'purgeRequests'|'confirmPurge'|'usageForSpace'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
 export interface RecordsKit {
-  memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'|'registerHandover'>;
+  memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'|'registerBotFilesRoot'|'registerHandover'>;
   personalSync?:PersonalSyncStore;
   personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'withStagingSlot'|'stage'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'|'purgedRunOriginals'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;
