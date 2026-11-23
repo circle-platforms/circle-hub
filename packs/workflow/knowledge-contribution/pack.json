@@ -208,8 +208,8 @@
     },
     {
       "path": "tools/operation-capture/SKILL.md",
-      "sha256": "8fa6ca9adc1ff3365e28c348ad9d3ea126e940325d604be573f1f1e38ba7d2cf",
-      "size": 7075
+      "sha256": "616cd9f923d6e5a33ac876a53e9571764753d408dadfa434049b20e604766a62",
+      "size": 7084
     },
     {
       "path": "tools/operation-capture/egress.json",
@@ -288,8 +288,8 @@
     },
     {
       "path": "tools/operation-capture/operation.ts",
-      "sha256": "8bb43c3b805d9f56a55f13e9ae49ca413fd8f50def017d8b16546274c5aa2df6",
-      "size": 6190
+      "sha256": "73fc37aaa26531f026277158764b2cf5d17e88b62f19332e7aeb5b04f09f7f4e",
+      "size": 6199
     },
     {
       "path": "workflow.json",

@@ -1,3 +1,8 @@
+---
+name: case-compile-criterion-review
+description: 由非作者账号依据原文引文独立复核 case-compile 提交的类型化判据声明时使用：只作 accept 或 reject 复核。
+---
+
 # 类型化判据独立复核
 
 只复核声明的判据类型、字面/次数/捕获关系是否忠实覆盖作者期望，不编写设备命令、不修改原期望，不签设备结果。

@@ -17,7 +17,7 @@
 
 ## 包函数的隔离
 
-按 [Hub r4 架构](hub-r4-architecture.md)，任务包里的函数在受限的子进程里运行（由 rules 包实现，待复核）：Node 权限模型禁止写文件和起子进程，只许读解压后的包；架构简报记录了在 Node 24.17 上核实过权限模型不限制网络，所以子进程另在 macOS `sandbox-exec` 下运行并禁止网络；另有时间、内存和输入输出大小的限制。在 Linux 上，这一层是 bubblewrap 加管理员装载的 Hub AppArmor 策略（见 [rules 包说明](https://github.com/circle-platforms/circle-hub/blob/main/hub/rules/README.md)）。没有可用的操作系统隔离的地方默认拒绝运行包内函数（`SANDBOX_UNAVAILABLE`）。其他平台上的等价隔离尚未确定。
+按 [Hub r4 架构](hub-r4-architecture.md)，工作流或技能里的函数在受限的子进程里运行（由 rules 包实现，待复核）：Node 权限模型禁止写文件和起子进程，只许读解压后的包；架构简报记录了在 Node 24.17 上核实过权限模型不限制网络，所以子进程另在 macOS `sandbox-exec` 下运行并禁止网络；另有时间、内存和输入输出大小的限制。在 Linux 上，这一层是 bubblewrap 加管理员装载的 Hub AppArmor 策略（见 [rules 包说明](https://github.com/circle-platforms/circle-hub/blob/main/hub/rules/README.md)）。没有可用的操作系统隔离的地方默认拒绝运行包内函数（`SANDBOX_UNAVAILABLE`）。其他平台上的等价隔离尚未确定。
 
 公开 CI 在 Ubuntu 上运行。拉取请求只跑快的检查（`Types`、`Generated contracts match the model`、`Docs and CI checks`；其中 `Docs and CI checks` 以完整 Git 历史 `fetch-depth: 0` 运行 `npm run test:docs`，包含 `package-boundaries`、`package-cycles`、`core-names-no-pack`、`no-compat-paths`、`doc-set`、`contract-schema-freeze`、`tool-input-stability`、`test-suites`、`address-id-check` 和遇到浅克隆就失败的 `pack-version` 检查；另跑 `Reference archive`）；完整的测试由合并队列在将成为 main 的那个提交上运行，每次推送到 main 也再跑一遍。在拉取请求上，各分片和汇总它们的检查（`Unit tests`、`Acceptance on a temporary PostgreSQL`、`Linux isolation`）都跳过，必需检查把跳过算作通过；在合并队列和 main 上，每个汇总检查要求它的所有分片都通过。默认单元测试（`npm run test:unit`）只纳入 `scripts/real` 里守卫、Circle 主目录、预检和工具声明的十一个测试；其余 `scripts/real` 测试（真实系统验收、数据转换和诊断脚本）在 `.github/checks/test-suites.ts` 里列为不在默认测试集，需要时用 `node --test` 直接运行；单元测试任务从 PostgreSQL 的 apt 源安装 18 版客户端，所以备份、恢复和部署的用例在那里运行。包内函数的沙箱用例，包括对真实监听的本机服务器验证的断网，由 `Linux isolation` 任务运行：合并队列和每次推送到 main 都会触发，它安装 bubblewrap 和 AppArmor，为本任务的 Node 生成并装载 Hub 的 AppArmor 策略，隔离不可用就直接失败，然后运行按跳过条件从源码选出的单元和验收测试文件。它不改 `kernel.apparmor_restrict_unprivileged_userns`，启动器策略自带的 `userns` 规则已经够用。其他单元和验收任务没有隔离，这些用例在那里跳过。Ubuntu 上没有 `sandbox-exec`、plutil 和 launchd，所以 `sandbox-exec` 本身、plutil 和 launchd 的检查在 Ubuntu 上跳过；密钥文件在每个平台上都一样，它们的用例在那里运行。这些用例由 `macOS-only paths` 工作流在 `macos-15` 上运行，沙箱用例也在那里经 `sandbox-exec` 再跑一遍：每次推送到 main、每晚一次，也可以手动触发；拉取请求不触发它，它也不是必需检查。所以合并队列的检查是 bubblewrap 与 AppArmor 下沙箱的证据，但不是 `sandbox-exec`、plutil 和 launchd 的证据；拉取请求自己的检查对两者都不是证据。跳过不算通过；每个阶段仍在本机 macOS 上完整运行一次，命令、计数和跳过的用例记在 [Hub r4 进度](hub-r4-progress.md)里。CI 的任务摘要列出每个跳过的用例。
 
@@ -32,15 +32,15 @@
 |---|---|---|
 | 通用模型 | `contracts/model.json` | 生成器 `tools/gen-contracts.ts`；`tools/show-element.ts` |
 | 词表、协议码与核心违规码、引用形式、记录种类 | `contracts/generated/vocabulary.ts` 与 `protocol.ts`，由模型和 `contracts/codes.json` 生成 | Hub 的全部包；标签只经 `labelOf` 取得 |
-| 记录、结果、任务包文件与表的 JSON Schema（键为 `name@major`，全部登记在 `SCHEMA_REGISTRY`） | `contracts/src/*.ts`，其中 `pack`、`knowledge`、`resources`、`tables` 四份由拥有它们的包编写，改了之后由该包运行 `npm run gen:contracts`，把生成物和改动一起交，合约包复核生成的差异；生成到 `contracts/generated/schemas` | Hub；任务包作者；任何读取校验结果的客户端 |
+| 记录、结果、包文件与表的 JSON Schema（键为 `name@major`，全部登记在 `SCHEMA_REGISTRY`） | `contracts/src/*.ts`，其中 `pack`、`knowledge`、`resources`、`tables` 四份由拥有它们的包编写，改了之后由该包运行 `npm run gen:contracts`，把生成物和改动一起交，合约包复核生成的差异；生成到 `contracts/generated/schemas` | Hub；工作流与技能作者；任何读取校验结果的客户端 |
 | 六个 MCP 工具的输入、输出与注解 | `contracts/src/tools.ts`，生成到 `contracts/generated/tools.json` | 任何 MCP 客户端 |
-| 任务包的文件布局 | 模型格式提案里的包文件清单（`PACK_FILE_PATHS`） | 任务包作者；Hub 的发布校验 |
+| 工作流与技能包的文件布局 | 模型格式提案里的包文件清单（`PACK_FILE_PATHS`） | 工作流与技能作者；Hub 的发布校验 |
 
 ## 发布顺序
 
 1. Hub 先：模型或合约变化时提升对应 schema 的主版本（`name@major`）并更新本页；发布需要所有者另行决定。
 2. Circle 不随 Hub 同步发布：它只是 MCP 客户端，依赖的是 MCP 协议和工具的 schema。
-3. 任务包各自带版本，上传时自动跑包内的正例与反例（发布校验），不过不发布。
+3. 工作流与技能各自带版本，上传时自动跑包内的正例与反例（发布校验），不过不发布。
 
 升级 `foundation/circle` 基线和各仓库的标识改名都是单独的决定，各留一条记录在本页的“历史”里。
 
@@ -52,6 +52,9 @@
 同时退役并移除：控制台 `/console/packs`（含 `/console/packs/<id>` 与 `/console/packs/-/publish`）和第二处管理入口 `/console/admin`、`/console/admin/packs`、`/console/admin/resources`、`/console/admin/secrets`、`/console/admin/knowledge`、`/console/admin/calls`（工作流在 `/console/workflows`，通用技能在 `/console/skills`，团队在 `/console/team` 与 `/console/teams`）；控制台的 JSON 读写接口（`/console/api/*` 下只留 `GET /console/api/stream`）和一次性登录链接（`POST /console/api/login-links` 与 `/console/login/<code>`）；密钥的使用者与发送地址登记，以及以记录库为密钥值与版本权威的做法；1–33 号增量迁移（新库只有一个 `baseline` 迁移）、只为旧库升级的测试、`skill bind-legacy` 与 `pack bind-skills` 两个命令；旧库自动升级的设计（`circle-hub upgrade` 从未合入，改为重置重建）。2026-11-21 起退役：运行环境配置 `runtime-profile@1` 的 `runtime.contract_sha256`（规则身份只由工作簿身份行带）。
 
 ## 历史
+
+- 2026-11-23：case-compile 移除参数 `pipeline` 的 `legacy` 兼容模式，仅保留 `recomposed` 流水线（`workflow.json`、`functions/project.ts` 与 `recompose-format.json`）；为 18 份此前缺少 YAML frontmatter 的工作流与技能 `SKILL.md` 补齐 frontmatter，清理修改范围内的术语表述，并更新受影响包的补丁版本及清单摘要。
+- 2026-11-20：成员私聊应用接口 v1 使用 `POST /api/bot/v1`、成员 Bearer 令牌及 `Circle-Version`；远程聊天视图与独立宿主保持同一 Circle 版本，设置页通过 `bot set`、`bot test` 与 `bot disable` 管理模型。六个业务 MCP 工具继续按 D06 服务工作流与技能，增量迁移新增成员外部身份唯一绑定；新增 `member-notification-intent@1` 与 `member-notification-receipt@1` 记录成员受众、载荷摘要与平台确认；成员文件接口按 SHA-256 校验，单文件上限 100 MiB（设计契约与合成回环已验证，真实租户与生产部署须部署所有者另行验收）。
 
 - 2026-11-09：派发意图的内部字节唯一键加入核验后的血缘根（多轮仍带轮次/尝试号）；原全局S键和索引不改写，按原reservation完整绑定读取，同血缘保持原重试/未知规则，独立任务不继承别的血缘轮次/窗口。旧未知的物理目标占用仍全局阻止；无法核验归属的旧记录保守拒绝。外部六工具/合约schema不变；旧二进制回滚仍保守地按全局S阻止独立任务，不能用回滚恢复本修复的跨任务隔离。
 - 2026-11-09：case-compile源码升为3.9.19，主合成脑图/计划改为随附冻结合约和命令树已声明的单条间隔配置；ID与引用重新派生，旧多命令样例作为拒绝对照保留。沿用包/生成器同版约束，工作簿生成器身份同步case-compile@3.9.19，四个合成工作簿样本重算版本相关字节/摘要；生成、校验算法与schema未变。新核验须匹配任务包及生成器版本；不重写历史结果、冻结合约/配置/命令来源，不自动升级已部署包。

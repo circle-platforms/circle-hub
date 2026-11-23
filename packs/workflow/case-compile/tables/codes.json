@@ -243,7 +243,7 @@
     {
       "code": "case-compile.internal_error",
       "when": "投影函数内部出错",
-      "fix": "将输入交给任务包维护人，修复后重新开始运行"
+      "fix": "将输入交给工作流维护人，修复后重新开始运行"
     },
     {
       "code": "case-compile.autoid_imprecise",

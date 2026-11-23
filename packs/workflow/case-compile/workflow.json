@@ -203,12 +203,11 @@
     },
     {
       "name": "pipeline",
-      "description": "recomposed 走重组；legacy 明说跳过重组，整份脑图不绑定重组记录时必须写，最终报告要说明",
+      "description": "recomposed 走重组；整份脑图必须绑定重组记录，不再支持跳过重组",
       "required": false,
       "schema": {
         "type": "string",
         "enum": [
-          "legacy",
           "recomposed"
         ]
       }

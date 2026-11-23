@@ -5,9 +5,9 @@ description: 要搜索、预订、释放或登记自动化测试环境，看环�
 
 # 自动化测试环境的登记、预订与释放
 
-先读取任务包和管理员发布的自动化测试环境清单，缺省 inputs.inventory 为 `{"external":"doc:doc:bed-topology"}`。
+先读取工作流说明和管理员发布的自动化测试环境清单，缺省 inputs.inventory 为 `{"external":"doc:doc:bed-topology"}`。
 清单内容由管理员发布；使用者登记只记归属，不修改清单。所有结论原样转述，保留
-“Hub 记录里…（未排除本地操作）”，不能据此声称已经排除本地操作或已经停止网关作业。这个任务包不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。搜索条件里的 need.build 仍是 need 的字段。
+“Hub 记录里…（未排除本地操作）”，不能据此声称已经排除本地操作或已经停止网关作业。这个工作流不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。搜索条件里的 need.build 仍是 need 的字段。
 
 - `search`：可按 need.devices、need.build 搜索。不写 need 也展示每台设备的占用。
   管理员或登记人能看到持有人名字；别人只看运行号、取得时刻和未终态作业号。在装构建以设备上实际看到的为准：结论给出最近一次观察和它的时间（观察只对那个时刻成立），没观察过的设备写“没有观察记录”；清单里写的在装构建不再使用。

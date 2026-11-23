@@ -1,5 +1,3 @@
-// One workbook for the whole document (decision 104): several cases of one run in one workbook, each item's check regenerating
-// the whole workbook from the plans the plan run accepted. Synthetic cases only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import check, { readWorkbook } from './workbook.ts';
@@ -63,11 +61,9 @@ test('the dispatch policy binds every case of the workbook and its declared maxi
   assert.deepEqual((supported[0].data as any).parameters.items, [AUTOID, SECOND]);
   const capped = dispatchPolicy({ ...itemInput(inputs, bytes, 0), table: { ...DISPATCH, max_items: 1 } });
   assert.equal(capped[0].verdict, 'refute', JSON.stringify(capped));
-  // The cap is the document's size, not a defect of the policy table.
   assert.match(capped[0].statement, /工作簿有 2 个用例，超过一次派发最多 1 个/); assert.doesNotMatch(capped[0].statement, /修正政策表/);
 });
 
-// ---- startup: the whole document without autoid
 import { projectItems } from './project.ts';
 import { MANIFEST_DOC } from './test-support.ts';
 import { runtimeDocument, profileDocument } from '../testing/runtime.ts';
@@ -81,26 +77,58 @@ function twoCaseModel(second = SECOND) { return { nodes: [
   { text: '执行 widget health interval 61', data: {}, children: [6] },
   { text: '期望成功', data: {}, children: [] },
 ] }; }
-function startInput(value: unknown, parameters: Record<string, unknown> = { pipeline: 'legacy' }, extra: unknown[] = []) { return { inputs: [
+function startInput(value: unknown, parameters: Record<string, unknown> = {}, extra: unknown[] = [], extraContext: Record<string, unknown> = {}) { return { inputs: [
   { slot: 'subject', sha256: 'a'.repeat(64), parser: 'kityminder@1', model: value },
   { slot: 'contract', model: runtimeDocument() }, { slot: 'profile', model: profileDocument() }, { slot: 'inventory', model: MANIFEST_DOC }, ...extra,
-], parameters, context: { leases: { now: '2026-10-23T02:00:00.000Z', entries: [] } } }; }
+], parameters, context: { leases: { now: '2026-10-23T02:00:00.000Z', entries: [] }, ...extraContext } }; }
+function recomposedStartInput(value: unknown, parameters: Record<string, unknown> = {}, extra: unknown[] = []) {
+  const rawNodes = (value as { nodes?: Array<{ data?: { id?: string; autoid?: string }; selector?: string }> })?.nodes ?? [];
+  const cases = rawNodes.filter((n) => typeof n.data?.autoid === 'string');
+  const context = { product: 'orbit', root: 'r'.repeat(64), product_pack_digest: 'p'.repeat(64) };
+  const runBody = {
+    run: 'run_recompose_whole_mindmap',
+    pack: 'recompose@1.3.2',
+    pack_digest: 'd'.repeat(64),
+    ...context,
+    predecessor: null,
+    items: cases.map((n, index) => ({
+      id: `recompose-item-${index + 1}`,
+      fields: { source_ref: `src:${'a'.repeat(64)}`, node: n.selector ?? '', case_id: n.data!.autoid },
+    })),
+  };
+  const resultBody = {
+    schema: 'validation@1',
+    run: runBody.run,
+    acceptance: 'accepted',
+    locks: { pack: runBody.pack, pack_digest: runBody.pack_digest },
+    partitions: {},
+  };
+  return startInput(
+    value,
+    parameters,
+    [
+      { slot: 'recomposition_run', external: null, meta: { kind: 'run', record: 'f'.repeat(64) }, model: { kind: 'run', body: runBody } },
+      { slot: 'recomposition_result', external: null, meta: { kind: 'validation_result', record: 'e'.repeat(64) }, model: { kind: 'validation_result', body: resultBody } },
+      ...extra,
+    ],
+    context,
+  );
+}
 const errorCode = (input: unknown) => { const out = projectItems(input) as { error?: { code: string; fix: string } }; assert.ok(out.error?.fix, JSON.stringify(out).slice(0, 400)); return out.error!.code; };
 
 test('without autoid the run takes every textual-autoid case of the document in order; duplicates refuse', () => {
-  const out = projectItems(startInput(twoCaseModel())) as { items: Array<{ id: string; fields: Record<string, unknown> }> };
+  const out = projectItems(recomposedStartInput(twoCaseModel())) as { items: Array<{ id: string; fields: Record<string, unknown> }> };
   assert.deepEqual(out.items.map((item) => item.fields.autoid), [AUTOID, SECOND]);
-  assert.deepEqual(out.items.map((item) => item.id), ['doc:case-1', 'doc:case-2'], 'a node id that names one node keeps <document>:<node id>; the document is the root node (3.9.17)');
-  assert.equal(errorCode(startInput(twoCaseModel(AUTOID))), 'case-compile.autoid_ambiguous');
+  assert.deepEqual(out.items.map((item) => item.id), ['doc:case-1', 'doc:case-2']);
+  assert.equal(errorCode(recomposedStartInput(twoCaseModel(AUTOID))), 'case-compile.autoid_ambiguous');
   const one = projectItems(startInput(twoCaseModel(), { autoid: SECOND })) as { items: Array<{ fields: Record<string, unknown> }> };
   assert.deepEqual(one.items.map((item) => item.fields.autoid), [SECOND]);
   assert.equal(errorCode(startInput(twoCaseModel(), { pipeline: 'recomposed' })), 'case-compile.invalid_parameter');
 });
 
 test('each case carries its mind-map path from the root, and the workbook shows it as AAA>BBB>CCC on the autoid row only', () => {
-  // Issue #144: one group level between the root and the second case.
   const model = twoCaseModel(); model.nodes[0].children = [1, 7]; model.nodes.push({ text: '合成分组', data: { id: 'group' }, children: [4] });
-  const out = projectItems(startInput(model)) as { items: Array<{ fields: Record<string, unknown> }> };
+  const out = projectItems(recomposedStartInput(model)) as { items: Array<{ fields: Record<string, unknown> }> };
   assert.deepEqual(out.items.map((item) => item.fields.path), [['合成文档', '合成标题一'], ['合成文档', '合成分组', '合成标题二']]);
   const inputs = twoCases(); inputs[1].fields = { ...inputs[1].fields, path: ['合成文档', '合成分组', '合成用例二'] };
   const bytes = generateWorkbookSet(inputs); const sheet = coreModel(bytes).sheets[0];
@@ -108,7 +136,6 @@ test('each case carries its mind-map path from the root, and the workbook shows 
   assert.equal(d(8), '合成文档>合成分组>合成用例'); assert.equal(d(13), '合成文档>合成分组>合成用例二');
   assert.equal(d(10) ?? '', ''); assert.equal(d(15) ?? '', '');
   assert.ok(readWorkbook(coreModel(bytes), inputs).ok);
-  // The reader and the recipe both bind the path: another path reads back as a step mismatch and a recipe mismatch.
   const other = structuredClone(inputs); other[1].fields.path = ['合成文档', '合成用例二'];
   const read = readWorkbook(coreModel(bytes), other); assert.ok(!read.ok);
   if (!read.ok) assert.deepEqual([...new Set(read.problems.map((v) => v.rule))].sort(), ['recipe', 'step']);
@@ -116,18 +143,16 @@ test('each case carries its mind-map path from the root, and the workbook shows 
 
 test('a workbook of several cases needs the plan run accepted result, and its plans are frozen in item order', () => {
   const workbook = { slot: 'workbook', parser: 'xlsx@1', sha256: 'b'.repeat(64), model: coreModel(generateWorkbook(generationFixture())) };
-  const noPlanRun = projectItems(startInput(twoCaseModel(), { pipeline: 'legacy' }, [workbook])) as { error?: { code: string; pointer?: string; fix: string } };
+  const noPlanRun = projectItems(recomposedStartInput(twoCaseModel(), {}, [workbook])) as { error?: { code: string; pointer?: string; fix: string } };
   assert.equal(noPlanRun.error?.code, 'case-compile.workbook_context');
   assert.equal(noPlanRun.error?.pointer, '/parameters/plan_run');
   assert.match(noPlanRun.error?.fix ?? '', /parameters\.plan_run/);
   assert.match(noPlanRun.error?.fix ?? '', /predecessor/);
   assert.match(noPlanRun.error?.fix ?? '', /inputs\.plan_result/);
-  const noPlanResult = projectItems(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook])) as { error?: { code: string; pointer?: string; fix: string } };
+  const noPlanResult = projectItems(recomposedStartInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook])) as { error?: { code: string; pointer?: string; fix: string } };
   assert.equal(noPlanResult.error?.code, 'case-compile.workbook_context');
   assert.equal(noPlanResult.error?.pointer, '/inputs/plan_result');
-  const ids = (projectItems(startInput(twoCaseModel())) as { items: Array<{ id: string }> }).items.map((item) => item.id);
-  // The shapes the Hub records: the plan is the model's judgment claim (the plan slot's text and data, no rule verdict), the
-  // catalog receipt the commands_known rule verdict.
+  const ids = (projectItems(recomposedStartInput(twoCaseModel())) as { items: Array<{ id: string }> }).items.map((item) => item.id);
   const planClaim = (data: unknown, extra: Record<string, unknown> = {}) => ({ item: 'x', requirement: 'plan', pointer: '/items/0/slots/plan/0', statement: { text: '合成计划', ...(data === undefined ? {} : { data }), ...extra }, qualifier: { nature: 'judgment' } });
   const rows = (plan: (k: number) => unknown) => ids.map((item, k) => ({ item, requirements: [
     { requirement: 'plan', status: 'satisfied', claims: [plan(k)] },
@@ -135,24 +160,21 @@ test('a workbook of several cases needs the plan run accepted result, and its pl
   ] }));
   const delivered = rows((k) => planClaim({ plan: k }));
   const result = (body: Record<string, unknown>) => ({ slot: 'plan_result', external: null, meta: { kind: 'validation_result', record: 'd'.repeat(64) }, model: { kind: 'validation_result', body: { schema: 'validation@1', acceptance: 'accepted', run: 'run_plan', locks: { pack: FORMAT.generator }, partitions: { delivered }, ...body } } });
-  const out = projectItems(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook, result({})])) as { groups: Array<{ plan_set: Array<{ item: string; plan: unknown; fields: { autoid: string } }> }> };
+  const out = projectItems(recomposedStartInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook, result({})])) as { groups: Array<{ plan_set: Array<{ item: string; plan: unknown; fields: { autoid: string } }> }> };
   assert.deepEqual(out.groups[0].plan_set.map((entry) => [entry.item, entry.plan, entry.fields.autoid]), [[ids[0], { plan: 0 }, AUTOID], [ids[1], { plan: 1 }, SECOND]]);
-  const wrongRun = projectItems(startInput(twoCaseModel(), { plan_run: 'run_other', pipeline: 'legacy' }, [workbook, result({})])) as { error?: { code: string; pointer?: string } };
+  const wrongRun = projectItems(recomposedStartInput(twoCaseModel(), { plan_run: 'run_other' }, [workbook, result({})])) as { error?: { code: string; pointer?: string } };
   assert.equal(wrongRun.error?.code, 'case-compile.workbook_context'); assert.equal(wrongRun.error?.pointer, '/inputs/plan_result');
-  assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook, result({ partitions: { delivered: delivered.slice(0, 1) } })])), 'case-compile.workbook_context');
-  // A plan claim without the plan's data, or a rule verdict standing in for the model's plan, freezes nothing.
+  assert.equal(errorCode(recomposedStartInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook, result({ partitions: { delivered: delivered.slice(0, 1) } })])), 'case-compile.workbook_context');
   for (const plan of [(_k: number) => planClaim(undefined), (k: number) => planClaim({ plan: k }, { verdict: 'support' })])
-    assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook, result({ partitions: { delivered: rows(plan) } })])), 'case-compile.workbook_context');
+    assert.equal(errorCode(recomposedStartInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook, result({ partitions: { delivered: rows(plan) } })])), 'case-compile.workbook_context');
 });
 
-// ---- 3.9.6: node identity, autoid shape, registers per case and the item cap
 import { createTestParserRegistry } from '../../../../hub/testing/parsers.ts';
 import { recognize } from '../../../../hub/refs/api.ts';
 import { fixture as blockFixture, positiveBlocks } from '../testing/blocks.ts';
 type Projected = { error?: { code: string; message: string; fix: string }; items: Array<{ id: string; location: { selector: string }; fields: { autoid: string; title: string; steps: Array<{ text: string }> } }>; groups: Array<{ message: string }> };
 const project = (input: unknown) => projectItems(input) as Projected;
 interface SyntheticCase { id: string; autoid?: unknown; auto?: string; title: string; step: string; expect: string }
-/** A synthetic KityMinder document read by the kityminder@1 parser, so the selectors are the parser's. */
 function parsed(cases: SyntheticCase[]): unknown {
   const map = { root: { data: { id: 'synthetic-map', text: '合成用例' }, children: cases.map((c, i) => ({ data: { id: c.id, text: c.title, priority: 2, resource: ['合成'], auto: c.auto ?? 'YES', ...(c.autoid === undefined ? {} : { autoid: c.autoid }) }, children: [{ data: { id: `step-${i}`, text: c.step }, children: [{ data: { id: `expected-${i}`, text: c.expect } }] }] })) } };
   return recognize(createTestParserRegistry(), Buffer.from(JSON.stringify(map)), 'application/json')!.document.model;
@@ -161,42 +183,36 @@ const caseOne: SyntheticCase = { id: 'case-a', autoid: AUTOID, title: '合成用
 
 test('a pasted case that kept the node id of its source is its own item with its own autoid', () => {
   const pasted = (auto = 'YES') => parsed([{ ...caseOne, id: 'pasted', auto }, { id: 'pasted', autoid: SECOND, title: '合成用例二', step: 'widget health interval pool-b 61', expect: '生效二' }]);
-  const both = project(startInput(pasted()));
+  const both = project(recomposedStartInput(pasted()));
   assert.equal(both.error, undefined, JSON.stringify(both.error));
   assert.deepEqual(both.items.map((item) => [item.fields.autoid, item.fields.title, item.location.selector, item.fields.steps.map((step) => step.text)]), [
     [AUTOID, '合成用例一', 'i/0', ['widget health interval pool-a 60']],
     [SECOND, '合成用例二', 'i/1', ['widget health interval pool-b 61']],
   ]);
   assert.equal(new Set(both.items.map((item) => item.id)).size, 2, 'a repeated node id takes the selector, so the item ids stay distinct');
-  // The first copy declared not automatable: the only item is the second case, under its own autoid, title and node.
   assert.deepEqual(project(startInput(pasted('NO'))).items.map((item) => [item.fields.autoid, item.fields.title, item.location.selector]), [[SECOND, '合成用例二', 'i/1']]);
-  // A node id that names one node keeps the item id <document>:<node id>.
   assert.deepEqual(project(startInput(parsed([caseOne]))).items.map((item) => item.id), ['synthetic-map:case-a']);
 });
 
 test('a whole run refuses autoids of another shape, naming the cases and their autoids, and counts the cases without one', () => {
   const two = (second: unknown, auto = 'YES') => parsed([caseOne, { id: 'case-b', autoid: second, auto, title: '合成用例二', step: 'widget health interval pool-b 61', expect: '生效二' }]);
   for (const bad of [SECOND + ' ', SECOND.slice(1), SECOND.slice(0, -1) + '２', 12345]) {
-    const refused = project(startInput(two(bad))).error;
+    const refused = project(recomposedStartInput(two(bad))).error;
     assert.equal(refused?.code, 'case-compile.autoid_invalid', JSON.stringify(refused));
     assert.ok(refused!.message.includes('n/case-b') && refused!.message.includes(JSON.stringify(bad)), refused!.message);
     assert.match(refused!.fix, /删去这些 autoid 后重新上传/); assert.match(refused!.fix, /parameters\.autoid/);
   }
-  // A case declared not automatable, or a run that names another case: nothing to refuse.
   assert.equal(project(startInput(two(SECOND + ' ', 'NO'))).error, undefined);
   assert.equal(project(startInput(two(SECOND + ' '), { autoid: AUTOID })).error, undefined);
-  // Without an autoid the case is not compiled, and the selection summary says how many.
   const without = project(startInput(two(undefined)));
   assert.deepEqual(without.items.map((item) => item.fields.autoid), [AUTOID]);
   assert.match(without.groups[0].message, /另有 1 个用例没有 autoid，不编译/);
-  assert.doesNotMatch(project(startInput(two(SECOND))).groups[0].message, /没有 autoid/);
-  // Ten cases are named, then the count.
-  const listed = project(startInput(parsed(Array.from({ length: 12 }, (_, k) => ({ ...caseOne, id: `case-${k}`, autoid: `synthetic-${k}` }))))).error!;
+  assert.doesNotMatch(project(recomposedStartInput(two(SECOND))).groups[0].message, /没有 autoid/);
+  const listed = project(recomposedStartInput(parsed(Array.from({ length: 12 }, (_, k) => ({ ...caseOne, id: `case-${k}`, autoid: `synthetic-${k}` }))))).error!;
   assert.equal(listed.code, 'case-compile.autoid_invalid'); assert.equal(listed.message.match(/n\/case-\d+/g)?.length, 10); assert.match(listed.message, /等 12 个/);
 });
 
 test('two block-plan cases that both capture into baseline verify, and a register does not carry over to the next case', () => {
-  // SyntheticReference keeps registers within one case (the runner's static preflight resets them at every case start).
   const f = blockFixture();
   const recipe = (autoid: string) => ({ slots: positiveBlocks().CAPTURE_COMPARE, fields: { ...f.fields, autoid }, contract: f.contract, profile: f.profile, plan_run: 'run_00000000000000000000000000', build: 'SYN_ORBIT_10_8_1' });
   const recipes = [recipe('SYN-BLOCK-1'), recipe('SYN-BLOCK-2')];
@@ -206,7 +222,6 @@ test('two block-plan cases that both capture into baseline verify, and a registe
   assert.deepEqual(read.autoids, ['SYN-BLOCK-1', 'SYN-BLOCK-2']);
   assert.ok(read.executions.filter((row) => row.h === 'baseline' && !row.assertion).length === 2, 'each case captures baseline itself');
   assert.equal(digest(generateWorkbookSet(recipes)), digest(bytes));
-  // Rename the second case's own capture: its checkpoint then reads a register only the first case captured.
   const rows = (model as any).sheets[0].rows as Array<{ cells: Array<{ reference: string; text: string }> }>;
   const start = rows.findIndex((row) => row.cells.some((cell) => cell.reference.startsWith('A') && cell.text === 'SYN-BLOCK-2'));
   const capture = rows.slice(start).find((row) => row.cells.some((cell) => cell.reference.startsWith('H') && cell.text === 'baseline'))!;
@@ -218,24 +233,22 @@ test('two block-plan cases that both capture into baseline verify, and a registe
 
 test('more cases than one dispatch takes are refused at the start with the cap and a split the workflow offers', () => {
   const cases = (n: number) => parsed(Array.from({ length: n }, (_, k) => ({ ...caseOne, id: `case-${k}`, autoid: String(990000000000000100n + BigInt(k)) })));
-  const over = project(startInput(cases(DISPATCH.max_items + 1))).error;
+  const over = project(recomposedStartInput(cases(DISPATCH.max_items + 1))).error;
   assert.equal(over?.code, 'case-compile.too_many_cases', JSON.stringify(over));
   assert.ok(over!.message.includes(`${DISPATCH.max_items + 1} 个自动化用例`) && over!.message.includes(`最多 ${DISPATCH.max_items} 个`), over!.message);
   assert.match(over!.fix, /拆成几份/); assert.match(over!.fix, /parameters\.autoid/);
-  const full = project(startInput(cases(DISPATCH.max_items)));
+  const full = project(recomposedStartInput(cases(DISPATCH.max_items)));
   assert.equal(full.error, undefined, JSON.stringify(full.error)); assert.equal(full.items.length, DISPATCH.max_items);
 });
 
-// 3.9.17: a mind map without an agile document id is named by its root node; a tree without node ids by the digest of its
-// texts and shape. Runs started before keep their recorded item ids.
 import { rootDocumentId } from './cases.ts';
 const outline = (leaf = '期望成功') => { const bytes = new TextEncoder().encode(JSON.stringify({ root: { data: { text: '合成文档' }, children: [{ data: { text: '合成分组' }, children: [{ data: { text: '合成标题一', resource: ['功能'], autoid: AUTOID }, children: [{ data: { text: '执行 widget health interval 60' }, children: [{ data: { text: leaf } }] }] }] }] } }));
   const read = recognize(createTestParserRegistry(), bytes, 'application/json'); assert.ok(read); return read.document.model; };
 test('an uploaded mind map is named by its root node id, not by its first case', () => {
   assert.equal(rootDocumentId(twoCaseModel()), 'doc');
-  const out = projectItems(startInput(twoCaseModel())) as { items: Array<{ id: string }> };
+  const out = projectItems(recomposedStartInput(twoCaseModel())) as { items: Array<{ id: string }> };
   assert.ok(out.items.every((item) => item.id.startsWith('doc:')), JSON.stringify(out.items.map((item) => item.id)));
-  const agile = startInput(twoCaseModel()); (agile.inputs[0] as { external?: string }).external = 'agile:mindmap:90001@2026-11-01';
+  const agile = recomposedStartInput(twoCaseModel()); (agile.inputs[0] as { external?: string }).external = 'agile:mindmap:90001@2026-11-01';
   const external = projectItems(agile) as { items: Array<{ id: string }> };
   assert.deepEqual(external.items.map((item) => item.id), ['90001:case-1', '90001:case-2'], 'an agile document id still wins');
 });
@@ -248,32 +261,34 @@ test('a tree without node ids is named by a digest of its whole tree: the same o
   assert.equal((projectItems(startInput(outline())) as { items: Array<{ id: string }> }).items[0].id, out.items[0].id, 'two starts give the same item id');
 });
 
-test('decision 155: a whole mind map without recomposition has to say so, a single case does not', () => {
+test('a whole mind map requires recomposition bindings and rejects legacy pipeline mode, while a single case does not', () => {
   const two = parsed([caseOne, { ...caseOne, id: 'case-b', autoid: SECOND }]);
   const refused = project(startInput(two, {})).error;
   assert.equal(refused?.code, 'case-compile.invalid_parameter');
   assert.match(refused!.message, /要先走重组/);
-  assert.match(refused!.fix, /parameters\.pipeline=legacy/);
-  assert.equal(project(startInput(two, { pipeline: 'legacy' })).error, undefined);
+  assert.doesNotMatch(refused!.fix, /legacy/);
+  const legacyRefused = project(startInput(two, { pipeline: 'legacy' })).error;
+  assert.equal(legacyRefused?.code, 'case-compile.invalid_parameter');
+  assert.equal(project(recomposedStartInput(two, {})).error, undefined);
   assert.equal(project(startInput(two, { autoid: AUTOID })).error, undefined);
 });
 
 test('parameters.exclude leaves cases out of a whole-document run, and only there', () => {
   const two = parsed([caseOne, { ...caseOne, id: 'case-b', autoid: SECOND }]);
-  assert.deepEqual(project(startInput(two, { exclude: [AUTOID] })).items.map((item) => item.fields.autoid), [SECOND]);
-  assert.equal(project(startInput(two, { exclude: [AUTOID], autoid: SECOND })).error?.code, 'case-compile.invalid_parameter', 'exclude and autoid do not go together');
-  for (const bad of [[], [AUTOID, AUTOID], ['not-an-autoid'], 'x']) assert.equal(project(startInput(two, { exclude: bad, pipeline: 'legacy' })).error?.code, 'case-compile.invalid_parameter', JSON.stringify(bad));
-  assert.equal(project(startInput(two, { exclude: ['990000000000000099'], pipeline: 'legacy' })).error?.code, 'case-compile.autoid_not_found', 'an autoid the rule does not take');
-  assert.equal(project(startInput(two, { exclude: [AUTOID, SECOND], pipeline: 'legacy' })).error?.code, 'case-compile.autoid_not_found', 'nothing left to compile');
+  assert.deepEqual(project(recomposedStartInput(two, { exclude: [AUTOID] })).items.map((item) => item.fields.autoid), [SECOND]);
+  assert.equal(project(recomposedStartInput(two, { exclude: [AUTOID], autoid: SECOND })).error?.code, 'case-compile.invalid_parameter', 'exclude and autoid do not go together');
+  for (const bad of [[], [AUTOID, AUTOID], ['not-an-autoid'], 'x']) assert.equal(project(recomposedStartInput(two, { exclude: bad })).error?.code, 'case-compile.invalid_parameter', JSON.stringify(bad));
+  assert.equal(project(recomposedStartInput(two, { exclude: ['990000000000000099'] })).error?.code, 'case-compile.autoid_not_found', 'an autoid the rule does not take');
+  assert.equal(project(recomposedStartInput(two, { exclude: [AUTOID, SECOND] })).error?.code, 'case-compile.autoid_not_found', 'nothing left to compile');
 });
 
 test('parameters.scope projects only in-scope cases, freezes out_of_scope metadata, and refuses exclude/autoid/shape conflicts', () => {
   const THIRD = '990000000000000033';
   const three = parsed([caseOne, { ...caseOne, id: 'case-b', autoid: SECOND }, { ...caseOne, id: 'case-c', autoid: THIRD }]);
-  const both = project(startInput(three, { scope: { words: '本次只编译前两条', cases: [AUTOID] }, exclude: [SECOND], pipeline: 'legacy' }));
+  const both = project(recomposedStartInput(three, { scope: { words: '本次只编译前两条', cases: [AUTOID] }, exclude: [SECOND] }));
   assert.equal(both.error?.code, 'case-compile.invalid_parameter', 'scope and exclude must be mutually exclusive');
   assert.match(both.error?.message ?? '', /scope.*exclude/);
-  const withAutoid = project(startInput(three, { scope: { words: '本次只编译一条', cases: [AUTOID] }, autoid: AUTOID, pipeline: 'legacy' }));
+  const withAutoid = project(recomposedStartInput(three, { scope: { words: '本次只编译一条', cases: [AUTOID] }, autoid: AUTOID }));
   assert.equal(withAutoid.error?.code, 'case-compile.invalid_parameter', 'scope and autoid must be mutually exclusive');
   for (const bad of [
     '只做第一条',
@@ -283,10 +298,10 @@ test('parameters.scope projects only in-scope cases, freezes out_of_scope metada
     { words: '只做第一条', cases: ['not-an-autoid'] },
     { words: '只做第一条', cases: [AUTOID], extra: true },
   ]) {
-    assert.equal(project(startInput(three, { scope: bad, pipeline: 'legacy' })).error?.code, 'case-compile.invalid_parameter', JSON.stringify(bad));
+    assert.equal(project(recomposedStartInput(three, { scope: bad })).error?.code, 'case-compile.invalid_parameter', JSON.stringify(bad));
   }
-  assert.equal(project(startInput(three, { scope: { words: '缺编号', cases: ['990000000000000099'] }, pipeline: 'legacy' })).error?.code, 'case-compile.autoid_not_found');
-  const picked = projectItems(startInput(three, { scope: { words: '本次只编第一、三条', cases: [THIRD, AUTOID] }, pipeline: 'legacy' })) as {
+  assert.equal(project(recomposedStartInput(three, { scope: { words: '缺编号', cases: ['990000000000000099'] } })).error?.code, 'case-compile.autoid_not_found');
+  const picked = projectItems(recomposedStartInput(three, { scope: { words: '本次只编第一、三条', cases: [THIRD, AUTOID] } })) as {
     items: Array<{ fields: { autoid: string } }>;
     groups: Array<{ scope?: { words: string; cases: string[]; out_of_scope: Array<{ autoid: string; title: string }> } }>;
   };
@@ -303,7 +318,7 @@ test('parameters.scope projects only in-scope cases, freezes out_of_scope metada
     ],
   }));
   const planResult = { slot: 'plan_result', external: null, meta: { kind: 'validation_result', record: 'd'.repeat(64) }, model: { kind: 'validation_result', body: { schema: 'validation@1', acceptance: 'accepted', run: 'run_plan', locks: { pack: FORMAT.generator }, partitions: { delivered } } } };
-  const narrowed = project(startInput(three, { plan_run: 'run_plan', scope: { words: '中途改成一条', cases: [AUTOID] }, pipeline: 'legacy' }, [workbook, planResult]));
+  const narrowed = project(recomposedStartInput(three, { plan_run: 'run_plan', scope: { words: '中途改成一条', cases: [AUTOID] } }, [workbook, planResult]));
   assert.equal(narrowed.error?.code, 'case-compile.workbook_context');
 });
 

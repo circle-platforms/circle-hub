@@ -6,7 +6,6 @@ import { createHash } from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import { satisfiedRecipe, satisfiedRecipes } from './tools/generate-workbook.ts';
 import { generateWorkbook, generateWorkbookSet, GENERATOR } from './functions/generate.ts';
-// Real run engine and temporary PostgreSQL; every contract, profile, document, device and model is synthetic.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { join } from 'node:path';
@@ -23,6 +22,7 @@ import { planSubject } from './functions/subject.ts';
 import {parseRuntimeContract,runtimeDigest,stripAdditions} from './functions/runtime-contract.ts';
 import {profileDocument} from './testing/runtime.ts';
 import { call, openHub, sha, ROOT, type Hub } from './testing/hub.ts';
+import { attachRecompositionFields, runSyntheticRecomposition } from './testing/recompose-hub-helper.ts';
 import { TEMPLATE_HEADER_ROW, templateDocument } from './testing/template.ts';
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres; let hub: Hub;
@@ -94,7 +94,6 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const quotes=submitted.items.flatMap((item:{slots:{plan:Array<{quotes:Array<{reference:string;text:string}>}>}})=>item.slots.plan.flatMap(claim=>claim.quotes));
     for(const quote of quotes){const resolved=await hub.service.resolveReference(hub.alice,{run:plan.run,text:quote.text,expect:'quotation'},call());assert.equal(resolved.resolution,'resolved',JSON.stringify(resolved));assert.ok(JSON.stringify(resolved).includes(quote.reference));}
   });
-  /** One frozen contract of this many bytes, a whole mind map of this many cases verified in one plan and one workbook, then again against that workbook. */
   async function verifyWholeWorkbook(cases: number, repeats: number, size: {min: number; max: number}): Promise<void> {
     const contract=structuredClone(CONTRACT_DOC);contract.entries[0].h_semantics='synthetic contract documentation '.repeat(repeats);
     const original=stripAdditions(contract)!;contract.original.contract_sha256=runtimeDigest(original);original.contract_sha256=contract.original.contract_sha256;
@@ -113,22 +112,23 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const nodes=(parsed.document.model as {nodes:Array<{data:{id?:string};selector:string}>}).nodes;
     const put=(external:string,bytes:Uint8Array)=>hub.external.put(external,{bytes,mediaType:'application/json'});
     put('agile:mindmap:synthetic-batch',sourceBytes);put('doc:doc:synthetic-large-contract',contractBytes);put('doc:doc:synthetic-large-profile',Buffer.from(JSON.stringify(profile)));
+    const recomp=await runSyntheticRecomposition(hub,{product:'widget',build:'Fixture_Build_A',subject:{external:'agile:mindmap:synthetic-batch'}});
     const started=start();delete (started.inputs as Partial<typeof started.inputs>).case_index;
-    const parameters: Record<string, string> = { pipeline: 'legacy' };
     started.inputs.subject.external='agile:mindmap:synthetic-batch';started.inputs.contract.external='doc:doc:synthetic-large-contract';started.inputs.profile.external='doc:doc:synthetic-large-profile';
-    const args={ ...started, parameters };
+    const args={...started,inputs:{...started.inputs,recomposition_run:{reference:recomp.runRef},recomposition_result:{reference:recomp.resultRef}},parameters:{}};
     const first=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const plan=first.answer.run!;assert.equal(plan.items.length,cases);
-    const send=(run:string)=>({run,model:'synthetic-model',items:plan.items.map((item,i)=>{
+    const send=(targetRun:typeof plan)=>({run:targetRun.run,model:'synthetic-model',items:targetRun.items.map((item,i)=>{
       const data=goodData(),leaf=nodes.find(node=>node.data.id==='expected-'+i)!;assert.ok(leaf);data.expects[0].quote.reference=`src:${sha(sourceBytes.toString())}/kityminder@1/${leaf.selector}`;
+      attachRecompositionFields(item,recomp.resultRef,data);
       return {item:item.id,handling:'handled' as const,slots:{plan:[{text:'合成整卷计划',quotes:data.expects.map(row=>row.quote),data}]}};
     })});
-    const submitted=send(plan.run),answer=await hub.service.submitResult(hub.alice,submitted,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
+    const submitted=send(plan),answer=await hub.service.submitResult(hub.alice,submitted,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
     const rows=Object.values(answer.result!.partitions).flat();assert.equal(rows.length,cases);
     for(const row of rows)for(const requirement of row.requirements.filter(value=>value.requirement!=='workbook_verified'))assert.equal(requirement.status,'satisfied',JSON.stringify(requirement));
     const recipes=satisfiedRecipes({run:first.answer,result:answer,submission:submitted,contract:contractBytes,profile:Buffer.from(JSON.stringify(profile)),inventory:Buffer.from(JSON.stringify(MANIFEST_DOC))});assert.equal(recipes.length,cases);
     const workbook=generateWorkbookSet(recipes);const artifact=await hub.kit.artifacts.ingest({bytes:workbook,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',origin:{read:{object:'fixture:workbook:four-cases'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});
-    const second=await hub.service.startRunDetailed(hub.alice,{...args,predecessor:plan.run,parameters:{...parameters,plan_run:plan.run},inputs:{...args.inputs,plan_result:{run:plan.run},workbook:{reference:'src:'+artifact.body.sha256}}},call());assert.equal(second.answer.call_result,'ok',JSON.stringify(second.answer.errors));
-    const verified=await hub.service.submitResult(hub.alice,send(second.answer.run!.run),call());assert.equal(verified.acceptance,'accepted',JSON.stringify(verified.errors));
+    const second=await hub.service.startRunDetailed(hub.alice,{...args,predecessor:plan.run,parameters:{plan_run:plan.run},inputs:{...args.inputs,plan_result:{run:plan.run},workbook:{reference:'src:'+artifact.body.sha256}}},call());assert.equal(second.answer.call_result,'ok',JSON.stringify(second.answer.errors));
+    const verified=await hub.service.submitResult(hub.alice,send(second.answer.run!),call());assert.equal(verified.acceptance,'accepted',JSON.stringify(verified.errors));
     const verifiedRows=Object.values(verified.result!.partitions).flat();assert.equal(verifiedRows.length,cases);
     for(const row of verifiedRows){assert.ok(row.requirements.every(requirement=>requirement.status==='satisfied'),JSON.stringify(row.requirements));const proofs=row.requirements.filter(requirement=>requirement.requirement==='workbook_verified').flatMap(requirement=>requirement.claims).filter(claim=>claim.statement.data?.sha256);assert.ok(proofs.length);for(const proof of proofs){assert.equal(proof.statement.data!.sha256,artifact.body.sha256);assert.equal((proof.statement.data!.autoids as string[]).length,cases);}}
   }

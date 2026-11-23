@@ -855,7 +855,7 @@
   },
   "review_pack": {
     "id": "case-compile-criterion-review",
-    "version": "1.0.1"
+    "version": "1.0.2"
   },
   "limits": {
     "blocks": 256,

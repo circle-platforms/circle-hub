@@ -124,8 +124,6 @@ export interface Opened { recomposeRun: string; recomposeRecord: string; planRun
 const subjectInput = (subject: string) => subject.startsWith('src:') ? { reference: subject } : { external: subject };
 const runOf = (answer: ToolAnswer) => isRecord(answer.envelope?.run) && typeof answer.envelope.run.run === 'string' ? answer.envelope.run as Record<string, unknown> : null;
 
-// What the Hub publishes against what is installed here, for the two workflows a compile needs. A workflow the Hub does not
-// publish to this account has no version to compare, so it is the only thing said about it.
 function workflowProblems(packs: Array<Record<string, unknown>>, skillsRoot: string): string[] {
   const problems: string[] = [];
   for (const pack of ['recompose', 'case-compile']) {
@@ -138,8 +136,6 @@ function workflowProblems(packs: Array<Record<string, unknown>>, skillsRoot: str
   return problems;
 }
 
-// The Plumb checks in the order the skill, the key and the service. The service cannot be asked without the skill that asks
-// it or without the key it is asked with, so then it is not said to be a problem of its own.
 async function plumbProblems(plumb: PlumbJudge, skillsRoot: string): Promise<string[]> {
   const problems: string[] = [], tool = plumbToolPath(skillsRoot);
   const installed = existsSync(tool), keyed = plumb.key !== '' && !PLUMB_KEY_PLACEHOLDER.test(plumb.key);
@@ -164,9 +160,8 @@ export function jevProblems(jev: JevJudgeInput): string[] {
 
 export async function openCompile(call: CallTool, options: OpenOptions, skillsRoot: string, plumb?: PlumbJudge, jev?: JevJudgeInput): Promise<Opened> {
   const listed = await call('list_task_packs', {});
-  if (listed.failed) throw new NotReady(`读不到 Hub 的任务包：${refusalWords(listed)}`);
+  if (listed.failed) throw new NotReady(`读不到 Hub 的工作流：${refusalWords(listed)}`);
   const packs = Array.isArray(listed.envelope?.packs) ? listed.envelope.packs.filter(isRecord) : [];
-  // Every unmet precondition is said in one answer and nothing is opened while there is one.
   const problems = [...workflowProblems(packs, skillsRoot), ...(plumb ? await plumbProblems(plumb, skillsRoot) : []), ...(jev ? jevProblems(jev) : [])];
   if (problems.length) throw new NotReady(problems.join('；另：'));
   const top = { product: options.product, build: options.build, ...(options.version ? { version: options.version } : {}) };

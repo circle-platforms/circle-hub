@@ -1,3 +1,8 @@
+---
+name: criterion-review
+description: 由非作者账号复核已提交的判据变更声明与原文引文时使用：必须显式绑定声明与原件引用，不绑定产品线。
+---
+
 # 判据变更声明复核
 
 本任务不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。本任务复核判断请求所指的那份提交里的声明。它不是前驱的已受理结果，必须按 next_action 显式绑定 declaration 的 rec: 和 evidence 里的期望原件，predecessor 为声明运行。src 输入绑定整份原件（不带解析器或选择器），rec 输入可绑定片段；quotes 仍指向声明所引的精确片段。

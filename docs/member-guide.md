@@ -66,10 +66,10 @@ nav_order: 4
 
 连上 Hub 后，直接让模型调用只读 MCP 工具核对当前可用工作流（在 Circle 中，当 `mcpServers` 的键为 `Hub` 时，Hub 的 6 个标准工具显示为 `mcp__Hub__list_task_packs`、`mcp__Hub__get_nodes`、`mcp__Hub__resolve_reference`、`mcp__Hub__upload_file`、`mcp__Hub__start_run`、`mcp__Hub__submit_result`；下文的 `list_task_packs` / `start_run` 等名称均指对应工具），**不要让模型用 `curl $HUB_URL` 探测（环境变量未对 shell 展开），也不要在仅仅问权限时去启动 `test-bed` 的写记录运行**：
 
-1. **列出有权使用的任务包与能力投影**：调用 **`list_task_packs`**（在 Circle 中工具名为 `mcp__Hub__list_task_packs`，参数 `{}`）。
+1. **列出有权使用的工作流、通用技能与能力投影**：调用 **`list_task_packs`**（在 Circle 中工具名为 `mcp__Hub__list_task_packs`，参数 `{}`）。
    - 返回结构除了你有权使用的工作流与通用技能列表（含 `pack: "<id>@<version>"`、`digest`、`inputs`、参数声明与 `local_tools` 安装命令）外，现已随附与 `/console/me` 同源的 **`member_capabilities`** 成员能力投影（含所属团队、工作流、技能、连接，以及分配给你的测试环境及其占用）；
-   - 当 Hub 上还有其他尚未分配给你的工作流时，文本首句会明确告知 **`你能用的 X 个；Hub 上另有 Y 个没有分配给你（名字不列出），需要哪个请管理员分配。`**（哪怕当前可用为 `0` 个，也会明确说明 Hub 上另有未分配包，而不再沉默只回 `0 个`）；
-   - 用 **`start_run`**（`mcp__Hub__start_run`）直接点名未分配的工作流会明确返回 `SOURCE_NOT_PERMITTED`（首行直接说明「任务包 X 存在，没有分配给你」，不再误把「资料尚未取得」作为首句）。
+   - 当 Hub 上还有其他尚未分配给你的工作流或技能时，文本首句会明确告知 **`当前账户可用的工作流和技能共 X 个。另有 Y 个未分配给当前账户，名称不列出。`**（哪怕当前可用为 `0` 个，也会明确说明 Hub 上另有未分配工作流或技能，而不再沉默只回 `0 个`）；
+   - 用 **`start_run`**（`mcp__Hub__start_run`）直接点名未分配的工作流会明确返回 `SOURCE_NOT_PERMITTED`（首行直接说明「无权限：当前账户未获授权使用工作流「X」」，不再误把「资料尚未取得」作为首句）。
 2. **读取工作流与技能规程**：调用 **`get_nodes`**（`mcp__Hub__get_nodes`，参数 `{"pack": "<包ID>"}`）读出 `SKILL.md`、输入槽位和检查规范。
 3. **审批模式、`/mode` 与工具权限**：Circle 默认（`manual`）审批模式下，**服务端注解（`readOnlyHint` 等）不会自动跳过审批**——不仅是 `skill_install`、`mcp__Hub__start_run`、`mcp__Hub__upload_file`、执行技能本地工具（`download-run.ts`）和普通 `ls`/`grep` shell 命令，连只读 MCP 工具（如 `mcp__Hub__list_task_packs`、`mcp__Hub__get_nodes`）默认也会按权限规则触发审批卡。前几次运行建议在人工确认 `digest` 与参数行为后，使用 `/approve` / 权限规则放行常用只读或明确工具，或按需切换审批模式（如 `/mode auto`，涉及 `acquire` 预订或 `release` 释放前仍须自己确认目标）。
 
@@ -184,7 +184,7 @@ circle-hub local-tools verify <本地技能目录> --digest <包摘要>
 
 ### 第 2 步：读取工作流说明并做用例重组（`recompose`）
 
-调用 `get_nodes({"pack": "case-compile"})` 读最新规程。常规流程先对目标原始脑图做用例重组（`recompose`；仅当后续需要同租约上机时才带 `predecessor: "<booking>"`），整理要点、步骤改写和缺项问题并取得重组记录（`recomposition_run` 与 `recomposition_result`）；如确实跳过重组，按 `case-compile` 规定写明参数 `"pipeline": "legacy"`。
+调用 `get_nodes({"pack": "case-compile"})` 读最新规程。主流程通过 `open-compile.ts` 与 `pipeline.ts`（客户端工作流 `compile-loop.js` 调用 `pipeline.ts next` 滚动推进）对目标原始脑图做用例重组（`recompose`；仅当后续需要同租约上机时才带 `predecessor: "<booking>"`），整理要点、步骤改写和缺项问题并取得重组记录（`recomposition_run` 与 `recomposition_result`）；整份脑图编译必须绑定重组记录，不再支持跳过重组的 `legacy` 模式。
 
 > **整批规则、范围外用例与 `rec:` 引用当场保存提示（实测必知）**：
 > - `recompose`（如 `1.2.3+`）会按**整张冻结脑图的全部条目**逐条核对并封批（`functions/seal.ts`）：哪怕你这一次只想编其中 2 条用例，脑图里共有 17 条时也必须整批重组齐备才能封批；若整批中不属于你本次目标的其他用例触发了与手册冲突的弹窗确认（不要替原作者改动其业务规则），一般选保留原写法并等作者答复即可。
@@ -206,7 +206,7 @@ node <本地技能目录>/tools/download-run.ts --hub %HUB_URL% --run <脚本编
 
 在本地目录读清各原始用例对应条目、执行器规则、同构建手册和命令树。
 
-### 第 4 步：编写计划、本地预检与保真核对、提交核对并生成工作簿（`case.xlsx`）
+### 第 4 步：脚本编写、本地预检与保真核对、提交核对并生成工作簿（`case.xlsx`）
 
 1. 按 `slots.schema.json`、`tables/blocks-format.json` 和执行器规则为每条纳入范围的原始用例写出自动化用例 JSON 计划（遇到地址从环境清单替换、期望必须逐字取自原始期望/实机可观察行、清理步骤按逆序放在每条末尾；提交前可先跑只读工具 `node <本地技能目录>/tools/check-plan.ts` 离线核对格式与占位符）。
 2. **场景保真核对三步（提交前必做，缺则被本地拦截）**：`3.19.1` 起 `submit-plans.ts` 在连接 Hub 前会先在本地校验每份计划的 `data.fidelity`；缺少该字段或简报摘要过期时会被本地直接退回（退出码 `1`，不消耗 Hub 修复次数，详见包内 `SKILL.md`）：
