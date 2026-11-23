@@ -37,3 +37,5 @@ export { MemberEnvironments, type MemberEnvironment, type EnvironmentPermission 
 export { readEnvironmentReadiness, createEnvironmentReadiness, type EnvironmentReadinessSources, type EnvironmentReadiness, type EnvironmentReadinessExecutor, type EnvironmentReadinessCheck } from './environment-readiness.ts';
 
 export { ExecutorNames } from './executor-names.ts';
+
+export { staleWarrant } from './warrant-version.ts';

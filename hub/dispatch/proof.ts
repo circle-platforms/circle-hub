@@ -5,6 +5,7 @@ import type { RunDetail, RunsService, WorkflowStore } from '../ports.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import { canonicalize, isSha256 } from '../records/api.ts';
 import { at, type ExecutorDefinition } from './definition.ts';
+import { versionsApart } from './warrant-version.ts';
 export type VerificationPort = Pick<RunsService, 'getRun'>;
 export interface VerifiedInput {
   judgments?:Claim[];
@@ -69,10 +70,13 @@ export async function inspectInput(by:Principal,id:string,d:ExecutorDefinition,r
  const facts=all.filter(claim=>claim.qualifier.nature==='fact'),functions=facts.filter(claim=>claim.warrant.producer==='function'),designated=functions.filter(claim=>claim.warrant.id===d.proof.warrant_id),claims=designated.filter(claim=>validClaim(claim,now));
  add('proof.claims.nature','存在对应的事实主张',result?facts.length>0:null,all.map((claim,index)=>f('proof.claims.'+index+'.qualifier.nature','fact',claim.qualifier.nature,claim.qualifier.nature==='fact')));
  add('proof.claims.producer','存在函数生产的核验事实',result?functions.length>0:null,facts.map((claim,index)=>f('proof.claims.'+index+'.warrant.producer','function',claim.warrant.producer,claim.warrant.producer==='function')));
- add('proof.claims.warrant_id','核验函数身份等于执行器指定身份',result?designated.length>0:null,functions.length?functions.map((claim,index)=>f('proof.claims.'+index+'.warrant.id',d.proof.warrant_id,claim.warrant.id,claim.warrant.id===d.proof.warrant_id)):[f('proof.claims.warrant.id',d.proof.warrant_id,undefined,false)]);
- add('proof.claims.validity','指定核验事实支持且有效未过期',result?claims.length>0:null,designated.flatMap((claim,index)=>[f('proof.claims.'+index+'.statement.verdict','support',claim.statement.verdict,claim.statement.verdict==='support'),f('proof.claims.'+index+'.validity.status','valid',claim.validity.status,claim.validity.status==='valid'),f('proof.claims.'+index+'.validity.expires_at','after_now_or_absent',claim.validity.expires_at,!claim.validity.expires_at||Date.parse(claim.validity.expires_at)>now.getTime())]));
+ // The two identities are shown in plain only when they are one function of one pack in two versions: both are then the name the
+ // executor itself declares with a version number. Every other identity stays a digest.
+ add('proof.claims.warrant_id','核验函数身份等于执行器指定身份',result?designated.length>0:null,functions.length?functions.map((claim,index)=>f('proof.claims.'+index+'.warrant.id',d.proof.warrant_id,claim.warrant.id,claim.warrant.id===d.proof.warrant_id,versionsApart(d.proof.warrant_id,claim.warrant.id)?{expected:String(d.proof.warrant_id),actual:claim.warrant.id}:undefined)):[f('proof.claims.warrant.id',d.proof.warrant_id,undefined,false)]);
+ // Without a fact of the designated function there is nothing whose validity or agreement could be judged: both stay unchecked.
+ add('proof.claims.validity','指定核验事实支持且有效未过期',result&&designated.length?claims.length>0:null,designated.flatMap((claim,index)=>[f('proof.claims.'+index+'.statement.verdict','support',claim.statement.verdict,claim.statement.verdict==='support'),f('proof.claims.'+index+'.validity.status','valid',claim.validity.status,claim.validity.status==='valid'),f('proof.claims.'+index+'.validity.expires_at','after_now_or_absent',claim.validity.expires_at,!claim.validity.expires_at||Date.parse(claim.validity.expires_at)>now.getTime())]),result&&!designated.length?{blocked_by:'proof.claims.warrant_id'}:undefined);
  const consistent=claims.length>0&&claims.every(claim=>canonicalize(claim.statement.data??null)===canonicalize(claims[0].statement.data??null));
- add('proof.claims.consistency','有效核验事实的数据相互一致',result?consistent:null,claims.flatMap((claim,index)=>releaseDifferences('proof.claims.'+index+'.statement.data',claims[0]?.statement.data,claim.statement.data)));
+ add('proof.claims.consistency','有效核验事实的数据相互一致',result&&claims.length?consistent:null,claims.flatMap((claim,index)=>releaseDifferences('proof.claims.'+index+'.statement.data',claims[0]?.statement.data,claim.statement.data)),result&&!claims.length?{blocked_by:designated.length?'proof.claims.validity':'proof.claims.warrant_id'}:undefined);
  const data=claims[0]?.statement.data,planRun=at(data,d.proof.plan_run),sha256=at(data,d.proof.sha256),ids=at(data,d.proof.items),target=at(data,d.proof.target),manifest=at(data,d.proof.manifest_sha256),build=at(data,d.proof.build),generator=at(data,d.proof.generator);
  const hasData=consistent;
  add('proof.plan_run','产物的计划运行等于本运行前驱',hasData?typeof planRun==='string'&&!!planRun&&planRun===detail?.run.predecessor:null,[f('proof.plan_run',detail?.run.predecessor,planRun,hasData?typeof planRun==='string'&&!!planRun&&planRun===detail?.run.predecessor:null)]);

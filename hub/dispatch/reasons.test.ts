@@ -4,6 +4,7 @@ import { canonicalBytes, sha256Hex } from '../records/api.ts';
 import { BOOKING_NEXT, releaseMissingFacts, reportMissingFacts, statusDiagnostics } from './reasons.ts';
 import { runnerNote } from './accepted.ts';
 import type { RunJob } from './read-runs.ts';
+import { releaseField } from './release-diagnostics.ts';
 
 const jobId = 'a'.repeat(64), content = 'b'.repeat(64);
 function job(extra: Record<string, unknown> = {}): RunJob {
@@ -123,6 +124,19 @@ test('a member refused at a release check reads the next step of that check, not
   const shown=statusDiagnostics(job({admin_release:[identity]}),false);
   assert.deepEqual(shown.missing_facts,[mismatch]);
   assert.doesNotMatch(JSON.stringify(shown),/联系管理员核对当前环境的清单绑定|circle-hub|脚本合并|脚本编写/);
+});
+
+test('a member refused because the executor names another version of the verification function is told which side is behind',()=>{
+  const warrant=(expected:string,actual:string,plain=true)=>({condition:'proof.claims.warrant_id',label:'核验函数身份等于执行器指定身份',satisfied:false,fields:[releaseField('proof.claims.0.warrant.id',expected,actual,false,plain?{expected,actual}:undefined)]});
+  const [behind]=releaseMissingFacts([warrant('synthetic-flow.sheet_verified@3.20.4','synthetic-flow.sheet_verified@3.26.8')]);
+  assert.equal(behind.fact,'核对项目“核验函数身份等于执行器指定身份”：这次核验所用的工作流版本和执行器指定的不一致');
+  assert.match(behind.next_action,/^请管理员把这个测试环境的执行器更新到这次核验所用的版本；更新后再发起上机验证，自动化用例不用改$/);
+  const [stale]=releaseMissingFacts([warrant('synthetic-flow.sheet_verified@3.26.8','synthetic-flow.sheet_verified@3.20.4')]);
+  assert.match(stale.next_action,/^重新开始运行并重新核验，再发起上机验证；重新开始后仍然这样被拒，请管理员核对这个测试环境的执行器指定的版本$/);
+  const [other]=releaseMissingFacts([warrant('synthetic-flow.sheet_verified@3.26.8','private-source-marker@1',false)]);
+  assert.equal(other.fact,'核对项目“核验函数身份等于执行器指定身份”尚未满足');
+  assert.match(other.next_action,/^请管理员核对这个测试环境的执行器指定的核验函数/);
+  assert.doesNotMatch(JSON.stringify([behind,stale,other]),/circle-hub|private-source-marker|exe_/);
 });
 
 test('a run without the whole booking is told to book it and start the run again, in one wording',()=>{

@@ -1,7 +1,7 @@
 import { sha256Hex, type RecordsKit } from '../records/api.ts';
 import type { JobStatus } from './service.ts';
 import type { RunJob } from './read-runs.ts';
-import { releaseNextStep } from './refusal-text.ts';
+import { releaseNextStep, warrantVersions } from './refusal-text.ts';
 
 export interface DispatchMissingFact { fact: string; next_action: string }
 export interface DispatchDiagnostics {
@@ -47,7 +47,7 @@ export async function reportMissingFacts(records: Pick<RecordsKit, 'objects'>, j
 
 export function releaseMissingFacts(checks: NonNullable<JobStatus['admin_release']>): DispatchMissingFact[] {
   return checks.filter(check=>check.satisfied!==true).map(check=>({
-    fact:check.satisfied===null?`核对项目“${check.label}”缺少前置事实，尚未核对`:check.condition==='proof.executor_identity'?`核对项目“${check.label}”：本次核验的目标或清单摘要与当前执行器声明不一致`:`核对项目“${check.label}”尚未满足`,
+    fact:check.satisfied===null?`核对项目“${check.label}”缺少前置事实，尚未核对`:check.condition==='proof.executor_identity'?`核对项目“${check.label}”：本次核验的目标或清单摘要与当前执行器声明不一致`:check.condition==='proof.claims.warrant_id'&&warrantVersions(check.fields)?`核对项目“${check.label}”：这次核验所用的工作流版本和执行器指定的不一致`:`核对项目“${check.label}”尚未满足`,
     next_action:releaseNextStep(check,{callerIsAdmin:false}),
   })).filter((fact,index,all)=>all.findIndex(other=>other.fact===fact.fact&&other.next_action===fact.next_action)===index).slice(0,16);
 }
