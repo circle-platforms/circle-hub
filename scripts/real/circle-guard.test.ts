@@ -44,6 +44,12 @@ function installRealSkillSubsets(home: string) {
   writeFileSync(join(plumbDst, 'SKILL.md'), readFileSync(join(plumbSrc, 'SKILL.md'), 'utf8'));
   cpSync(join(plumbSrc, 'tools'), join(plumbDst, 'tools'), { recursive: true });
 
+  const jevSrc = join(REPO_ROOT, 'packs/skill/jev-judge');
+  const jevDst = join(home, 'skills/jev-judge');
+  mkdirSync(join(jevDst, 'tools'), { recursive: true });
+  writeFileSync(join(jevDst, 'SKILL.md'), readFileSync(join(jevSrc, 'SKILL.md'), 'utf8'));
+  cpSync(join(jevSrc, 'tools'), join(jevDst, 'tools'), { recursive: true });
+
   const kcTools = join(REPO_ROOT, 'packs/workflow/knowledge-contribution/tools');
   for (const name of ['jev', 'operation-capture']) {
     cpSync(join(kcTools, name), join(home, 'skills', name), { recursive: true });
@@ -148,7 +154,9 @@ test('guard-offline A/D: literal quote grammar, space-in-home, and 3-line fixes 
       h.assertRefused3(h.exec(`node ${tb} --role '脚本编写' --case=case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`), /--case=…/);
 
       const ad = `'${h.skillPath('case-compile', 'tools/assemble-delivery.ts')}'`;
-      h.assertAllowed(h.exec(`node ${ad} --hub ${HUB_URL} --runs ${RUN_ID},${RUN_ID_2} --notes notes.json --out dist --recompose ${RUN_ID} --name '合成 交付' <<'EOF'\n%HUB_TOKEN%\nEOF`));
+      h.assertAllowed(h.exec(`node ${ad} --hub ${HUB_URL} --runs ${RUN_ID},${RUN_ID_2} --notes notes.json --open open-compile.json --out dist --recompose ${RUN_ID} --name '合成 交付' <<'EOF'\n%HUB_TOKEN%\nEOF`));
+      // --open is required: the declaration says so, and the guard refuses a call without it.
+      h.assertRefused3(h.exec(`node ${ad} --hub ${HUB_URL} --runs ${RUN_ID} --notes notes.json --out dist <<'EOF'\n%HUB_TOKEN%\nEOF`), /缺少必填选项 --open/);
       const dr = `'${h.skillPath('case-compile', 'tools/download-returns.ts')}'`;
       h.assertAllowed(h.exec(`node ${dr} --hub ${HUB_URL} --run ${RUN_ID} --out returns --wait 30 <<'EOF'\n%HUB_TOKEN%\nEOF`));
       const cr = `'${h.skillPath('recompose', 'tools/check-record.ts')}'`;
@@ -448,7 +456,7 @@ test('every command-form second line across all execute refusals passes replay, 
       verifyRefusalSecondLine('equals option', h.exec(`node ${tb} --role '脚本编写' --case=c1 --brief b.md --out p.json --task-file t.md`), true);
       verifyRefusalSecondLine('optional invalid prior-plans', h.exec(`node ${tb} --role '脚本编写' --case c1 --brief b.md --out p.json --task-file t.md --prior-plans ../outside.json`), false);
       verifyRefusalSecondLine('wrong hub url', h.exec(`node ${fr} --hub ${ALT_HUB_URL} --run ${RUN_ID} --out r <<'EOF'\n%HUB_TOKEN%\nEOF`), true);
-      verifyRefusalSecondLine('missing heredoc', h.exec(`node ${ad} --hub ${HUB_URL} --runs ${RUN_ID} --notes n.json --out dist`), true);
+      verifyRefusalSecondLine('missing heredoc', h.exec(`node ${ad} --hub ${HUB_URL} --runs ${RUN_ID} --notes n.json --open o.json --out dist`), true);
       verifyRefusalSecondLine('unexpected heredoc', h.exec(`node ${cr} --file records <<'EOF'\n%HUB_TOKEN%\nEOF`), true);
 
       if (profile === 'ops') {
@@ -565,7 +573,57 @@ test('plumb skill and case-compile plumb scripts enforce host-pinning, subcomman
   }
 });
 
-test('a compile that Plumb does not judge: its commands keep the two standard input lines the declarations count, and --tree-only typed directly is refused for the address and the key its declaration still asks for', () => {
+test('the jev-judge command line is never run directly: installed in the home, every form of a direct call is refused with the same sentence in both profiles, and the allowed-tools page names the rule and no such tool', () => {
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile);
+    try {
+      const jev = `'${h.skillPath('jev-judge', 'tools/jev-judge.ts')}'`;
+      assert.ok(existsSync(h.skillPath('jev-judge', 'tools/jev-judge.ts')) && existsSync(h.skillPath('jev-judge', 'tools/jev-judge.cli.json')), 'the tool is installed with its declaration: the refusal is the guard\'s, not an absence');
+      const heredoc = (...lines: string[]) => `<<'EOF'\n${lines.join('\n')}\nEOF`;
+      const sentence = (command: string) => { const res = h.exec(command); assert.equal(res.decision, 'deny', `${profile}: ${command}`); return res; };
+      for (const command of [
+        `node ${jev} ask --input request.json --out answers --key-stdin ${heredoc('%JEV_API_KEY%')}`,
+        `node ${jev} ask --input request.json --out answers --model jev-1.14.0 --timeout-ms 60000 --key-stdin ${heredoc('%JEV_API_KEY%')}`,
+        `node ${jev} ask --input request.json --out answers --key-stdin ${heredoc('jev_sk_synthetic_1')}`,
+        `node ${jev} --help`,
+        `node ${jev}`,
+      ]) h.assertRefused3(sentence(command), /不允许：直接运行 jev-judge 技能的命令行工具/);
+      assert.match(String(sentence(`node ${jev} --help`).reason), /^无权限：/);
+      assert.match(h.allowedText(), /直接运行 jev-judge 技能的命令行工具/);
+      assert.ok(!h.allowedText().includes('jev-judge/tools/jev-judge.ts'), 'the page lists no way to run it');
+    } finally {
+      h.close();
+    }
+  }
+});
+
+test('the command check and the fidelity audit take --judge from the pipeline only: a direct call with it is refused in both profiles, and the option is declared nowhere', () => {
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile);
+    try {
+      const verify = `'${h.skillPath('case-compile', 'tools/cmd-verify-plumb.ts')}'`, fidelity = `'${h.skillPath('case-compile', 'tools/fidelity-plumb.ts')}'`;
+      const heredoc = (...lines: string[]) => `<<'EOF'\n${lines.join('\n')}\nEOF`;
+      // Without --judge the same calls are allowed (the guard is not refusing them for another reason).
+      h.assertAllowed(h.exec(`node ${verify} --plans plans --run run-dir --base-url %PLUMB_URL% --key-stdin ${heredoc('%PLUMB_API_KEY%')}`), `${profile}: command check as declared`);
+      h.assertAllowed(h.exec(`node ${fidelity} --run run-dir --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin ${heredoc('%PLUMB_API_KEY%')}`), `${profile}: audit as declared`);
+      for (const judge of ['jev', 'plumb']) {
+        h.assertRefused3(h.exec(`node ${verify} --plans plans --run run-dir --judge ${judge} --key-stdin ${heredoc('%JEV_API_KEY%')}`), /这个脚本没有 --judge 选项/);
+        h.assertRefused3(h.exec(`node ${verify} --plans plans --run run-dir --base-url %PLUMB_URL% --judge ${judge} --key-stdin ${heredoc('%PLUMB_API_KEY%')}`), /这个脚本没有 --judge 选项/);
+        h.assertRefused3(h.exec(`node ${fidelity} --run run-dir --plans plans --briefs briefs --judge ${judge} --key-stdin ${heredoc('%JEV_API_KEY%')}`), /这个脚本没有 --judge 选项/);
+        h.assertRefused3(h.exec(`node ${fidelity} --run run-dir --plans plans --briefs briefs --base-url %PLUMB_URL% --judge ${judge} --key-stdin ${heredoc('%PLUMB_API_KEY%')}`), /这个脚本没有 --judge 选项/);
+      }
+    } finally {
+      h.close();
+    }
+  }
+  // The declarations themselves: --judge is not among the options a model may write.
+  for (const tool of ['cmd-verify-plumb', 'fidelity-plumb']) {
+    const declared = (JSON.parse(readFileSync(join(REPO_ROOT, 'packs/workflow/case-compile/tools', `${tool}.cli.json`), 'utf8')) as { options: Array<{ name: string }> }).options.map((option) => option.name);
+    assert.ok(!declared.includes('judge'), `${tool}.cli.json must not declare --judge: the pipeline passes it, the model never writes it`);
+  }
+});
+
+test('a compile that Plumb does not judge: its commands keep the three standard input lines the declarations count (Hub token, Plumb key, Jev key), and --tree-only typed directly is refused for the address and the key its declaration still asks for', () => {
   for (const profile of ['ops', 'skills'] as const) {
     const h = createGuardHarness(profile);
     try {
@@ -574,15 +632,26 @@ test('a compile that Plumb does not judge: its commands keep the two standard in
       const verify = `'${h.skillPath('case-compile', 'tools/cmd-verify-plumb.ts')}'`;
       const head = `--hub %HUB_URL% --judge model --subject 'agile:mindmap:900001' --product widget --build Build_A --booking ${RUN_ID} --out open-compile.json`;
 
-      // --judge model does without --plumb, but the declaration counts two lines and the guard holds a command to the count.
-      h.assertAllowed(h.exec(`node ${open} ${head} <<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\nEOF`), `${profile}: open-compile without --plumb`);
-      h.assertRefused3(h.exec(`node ${open} ${head} <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明依次读 2 行（%HUB_TOKEN%、%PLUMB_API_KEY%）/);
+      // --judge model and --judge jev do without --plumb, but the declaration counts three lines and the guard holds a command to the count.
+      const three = "<<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\n%JEV_API_KEY%\nEOF";
+      h.assertAllowed(h.exec(`node ${open} ${head} ${three}`), `${profile}: open-compile without --plumb`);
+      h.assertAllowed(h.exec(`node ${open} ${head.replace('--judge model', '--judge jev')} ${three}`), `${profile}: open-compile for a compile Jev judges`);
+      h.assertAllowed(h.exec(`node ${open} --hub %HUB_URL% --plumb %PLUMB_URL% --subject 'agile:mindmap:900001' --product widget --build Build_A --booking ${RUN_ID} --out open-compile.json ${three}`), `${profile}: open-compile with Plumb`);
+      const declared = /声明依次读 3 行（%HUB_TOKEN%、%PLUMB_API_KEY%、%JEV_API_KEY%）/;
+      h.assertRefused3(h.exec(`node ${open} ${head} <<'EOF'\n%HUB_TOKEN%\nEOF`), declared);
+      h.assertRefused3(h.exec(`node ${open} ${head} <<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\nEOF`), declared);
+      h.assertRefused3(h.exec(`node ${open} ${head} <<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\n%HUB_TOKEN%\nEOF`), /声明依次读 3 行/);
+      h.assertRefused3(h.exec(`node ${open} ${head} <<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\n%JEV_API_KEY%\n%JEV_API_KEY%\nEOF`), /声明依次读 3 行/);
+      h.assertRefused3(h.exec(`node ${open} ${head} <<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\n12345\nEOF`), /here-doc 写了 "12345"，每行只能写允许的客户端占位符/);
 
       // The loop's commands of such a compile: the question about the judge needs no service, and the others drop --plumb only.
       h.assertAllowed(h.exec(`node ${pipeline} judge --state 'pipeline.json'`), `${profile}: the question about the judge`);
-      h.assertAllowed(h.exec(`node ${pipeline} resume --state 'pipeline.json' --hub %HUB_URL% <<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\nEOF`), `${profile}: resume without --plumb`);
-      h.assertRefused3(h.exec(`node ${pipeline} resume --state 'pipeline.json' --hub %HUB_URL% <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明依次读 2 行（%HUB_TOKEN%、%PLUMB_API_KEY%）/);
-      h.assertRefused3(h.exec(`node ${pipeline} resume --state 'pipeline.json' --hub %HUB_URL% <<'EOF'\n%HUB_TOKEN%\n-\nEOF`), /here-doc 写了 "-"，每行只能写允许的客户端占位符/);
+      for (const command of ["resume --state 'pipeline.json'", "next --state 'pipeline.json' --finished '编写 00'"]) h.assertAllowed(h.exec(`node ${pipeline} ${command} --hub %HUB_URL% ${three}`), `${profile}: ${command.split(' ')[0]} without --plumb`);
+      h.assertAllowed(h.exec(`node ${pipeline} rework --state 'pipeline.json' --open open-compile.json --returns returns-1 --hub %HUB_URL% ${three}`), `${profile}: rework without --plumb`);
+      h.assertAllowed(h.exec(`node ${pipeline} reopen --state 'pipeline.json' --open open-compile.json --hub %HUB_URL% ${three}`), `${profile}: reopen without --plumb`);
+      h.assertRefused3(h.exec(`node ${pipeline} resume --state 'pipeline.json' --hub %HUB_URL% <<'EOF'\n%HUB_TOKEN%\nEOF`), declared);
+      h.assertRefused3(h.exec(`node ${pipeline} resume --state 'pipeline.json' --hub %HUB_URL% <<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\nEOF`), declared);
+      h.assertRefused3(h.exec(`node ${pipeline} resume --state 'pipeline.json' --hub %HUB_URL% <<'EOF'\n%HUB_TOKEN%\n-\n%JEV_API_KEY%\nEOF`), /here-doc 写了 "-"，每行只能写允许的客户端占位符/);
 
       // --tree-only needs neither, but its declaration cannot say so: pipeline.ts runs it, the lead does not type it.
       h.assertRefused3(h.exec(`node ${verify} --plans plans --run plan-run --tree-only`), /^参数无效：缺少必填选项 --base-url；这次命令末尾没有写 here-doc，但 case-compile\/tools\/cmd-verify-plumb\.ts 声明从标准输入读令牌（1 行：%PLUMB_API_KEY%）/);

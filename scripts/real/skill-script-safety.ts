@@ -51,10 +51,10 @@ export const REVIEWED_SKILL_CALLS: readonly CallReview[] = [{
   reason: '把运行目录下 cases/<两位序号>/audit 改名为同一父目录下的 audit-<次数>-<毫秒>，留存上一版审计；源和目标都是流水线自己建的相对路径，不创建链接，失败即略过。',
 }, {
   file: 'packs/workflow/case-compile/tools/pipeline.ts',
-  operation: 'rename', call: "rename(join(audits, name), join(audits, name.replace(/\\.verdict\\.json$/, '.plumb-review.json')))",
-  snippetSha256: '4d7056959d7c14000dc1cee69fc9357d12e6278a650a187b329cc494af1bda83',
-  reviewer: 'Claude', date: '2026-11-22',
-  reason: '在同一审计目录里把列出的 *.verdict.json 改名为 *.plumb-review.json；只换文件名后缀，不出目录，不创建链接。',
+  operation: 'rename', call: 'rename(join(audits, name), kept(name))',
+  snippetSha256: '12e75855ad023c16cccdc10623059e1cd60f70893fa46327c69c0982f4ae123b',
+  reviewer: 'Claude', date: '2026-11-23',
+  reason: '在同一审计目录里把列出的 *.verdict.json 改名为 *.plumb-review.json（判断方式为 Jev 时 *.jev-review.json）；kept 只把文件名后缀换成这两个之一，源和目标都在 audits 目录里，不出目录，不创建链接。',
 }, {
   file: 'packs/workflow/case-compile/tools/pipeline.ts',
   operation: 'rename', call: 'rename(temporary, path)',

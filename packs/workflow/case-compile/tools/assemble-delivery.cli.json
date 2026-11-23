@@ -53,6 +53,14 @@
       "multiple": false,
       "placeholder": null,
       "type": "text"
+    },
+    {
+      "name": "open",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "open-compile.json",
+      "type": "path"
     }
   ],
   "forms": [
@@ -82,6 +90,11 @@
         {
           "name": "out",
           "placeholder": "<新目录>",
+          "optional": false
+        },
+        {
+          "name": "open",
+          "placeholder": "open-compile.json",
           "optional": false
         }
       ]

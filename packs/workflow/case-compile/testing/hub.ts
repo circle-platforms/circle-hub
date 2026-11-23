@@ -164,11 +164,12 @@ export const call = (session = 'sess-case-compile') => ({
   sessionId: session,
 });
 
-export async function publishPlumbSkill(registry: PackRegistry, records: Pick<TestRecordsKit, 'authorizations'>, admin: Principal): Promise<void> {
-  const temp = await temporaryDirectory('hub-plumb-skill-');
+/** Publishes one repository skill pack as it is, so that the case-compile pack, which embeds a module of it, can be published (embeds.skill_missing). */
+async function publishRepositorySkill(registry: PackRegistry, records: Pick<TestRecordsKit, 'authorizations'>, admin: Principal, id: 'plumb' | 'jev-judge'): Promise<void> {
+  const temp = await temporaryDirectory(`hub-${id}-skill-`);
   try {
     await records.authorizations.grantPublishRight(admin, admin.id, '显式合成技能发布夹具');
-    const root = fileURLToPath(new URL('../../../skill/plumb/', import.meta.url));
+    const root = fileURLToPath(new URL(`../../../skill/${id}/`, import.meta.url));
     const manifest = JSON.parse(await readFile(join(root, 'pack.json'), 'utf8')) as {
       id: string;
       version: string;
@@ -180,13 +181,15 @@ export async function publishPlumbSkill(registry: PackRegistry, records: Pick<Te
     };
     const files: Record<string, Uint8Array> = {};
     for (const row of manifest.files) files[row.path] = await readFile(join(root, row.path));
-    const staged = await writePack(join(temp.path, 'plumb'), { ...manifest, files });
+    const staged = await writePack(join(temp.path, id), { ...manifest, files });
     const outcome = await registry.publish(admin, staged.dir);
-    if (!outcome.ok) throw new Error(`synthetic plumb skill publication refused: ${JSON.stringify(outcome.problems)}`);
+    if (!outcome.ok) throw new Error(`synthetic ${id} skill publication refused: ${JSON.stringify(outcome.problems)}`);
   } finally {
     await temp.remove();
   }
 }
+export const publishPlumbSkill = (registry: PackRegistry, records: Pick<TestRecordsKit, 'authorizations'>, admin: Principal): Promise<void> => publishRepositorySkill(registry, records, admin, 'plumb');
+export const publishJevSkill = (registry: PackRegistry, records: Pick<TestRecordsKit, 'authorizations'>, admin: Principal): Promise<void> => publishRepositorySkill(registry, records, admin, 'jev-judge');
 
 export async function openHub(postgres: TemporaryPostgres, options: { knowledge?: FakeKnowledge } = {}): Promise<Hub> {
   let clock = Date.parse('2026-10-23T08:00:00.000Z');
@@ -203,6 +206,7 @@ export async function openHub(postgres: TemporaryPostgres, options: { knowledge?
     await installWorkbookFixture(registry,kit,admin);
     await publishEmbeddedSkills(registry,kit,admin);
     await publishPlumbSkill(registry,kit,admin);
+    await publishJevSkill(registry,kit,admin);
     const staged = await stage(join(temp.path, 'case-compile'));
     const published = await registry.publish(alice, staged);
     if (!published.ok) throw new Error(`case-compile was not published: ${JSON.stringify(published.problems, null, 1)}`);

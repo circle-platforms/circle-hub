@@ -66,6 +66,8 @@ export interface GuardDeclaration {
   interpreters?: string[];
   commands?: Array<{ name: string; args?: string[]; max?: number; stdin?: string[]; note?: string }>;
   scripts?: ScriptDeclaration[];
+  /** Installed tools that are never run directly, whatever their CLI declaration says: discovery skips them and a call is refused with this sentence. */
+  denyScripts?: Array<{ path: string; what: string; how: string }>;
   shellAlternatives?: Record<string, string>;
   rules?: GuardRule[];
 }
@@ -573,7 +575,9 @@ function declaredStdinFor(tool: DiscoveredTool, subcommand: string | null): stri
 
 export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
   const tools: DiscoveredTool[] = [];
+  const denied = new Set(asList(env.declaration.denyScripts).map((row) => row.path));
   const add = (tool: DiscoveredTool) => {
+    if (denied.has(tool.id)) return;
     if (!tools.some((known) => known.file === tool.file)) tools.push(tool);
   };
   const trySafeFile = (lexical: string, rootReal: string, rootLexical: string): string | null => {
@@ -1511,6 +1515,8 @@ function validateExecuteCommand(
 
   const tool = tools.find((candidate) => candidate.file === physicalScript);
   if (!tool) {
+    const denial = asList(d.denyScripts).find((row) => inSkills && path.relative(env.skills, physicalScript).split(path.sep).join('/') === row.path);
+    if (denial) return { ok: false, category: 'permission_denied', what: denial.what, how: denial.how };
     const sameDir = tools.filter((candidate) => path.dirname(candidate.file) === path.dirname(physicalScript));
     return {
       ok: false,
@@ -2129,9 +2135,9 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
           : '；不读标准输入';
     lines.push(`- \`${command.name} <秒数>\`（最多 ${command.max ?? 600}${stdinNote}）：${command.note ?? ''}`);
   }
-  if (asList(d.rules).length) {
+  if (asList(d.rules).length || asList(d.denyScripts).length) {
     lines.push('', '## 例外与拦截规则', '');
-    for (const rule of asList(d.rules)) {
+    for (const rule of [...asList(d.rules), ...asList(d.denyScripts)]) {
       lines.push(`- ${rule.what.replace(/^不允许：/, '')} → ${rule.how ? rule.how.replace(/^这次可以这样做：/, '') : ''}`);
     }
   }

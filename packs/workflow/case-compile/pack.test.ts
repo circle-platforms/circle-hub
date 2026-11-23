@@ -18,7 +18,7 @@ const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
   const manifest = await computeManifest();
   assert.equal(PackManifest.safeParse(manifest).success, true);
-  assert.equal(manifest.version, '3.26.8');
+  assert.equal(manifest.version, '3.26.9');
   assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`);
   assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles();
@@ -466,4 +466,14 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
 test('start examples delegate version selection to Hub and skill forbids memory-pinned versions',()=>{
  const example=JSON.parse(read('examples/start-run.json'));assert.equal(example.arguments.pack,'case-compile');
  assert.match(read('SKILL.md'),/不要从记忆填写旧版本/);
+});
+
+test('--judge stays undeclared in the CLI declarations of the two judge tools: only the pipeline passes it, so the guard refuses a model that writes it', () => {
+  for (const tool of ['cmd-verify-plumb', 'fidelity-plumb']) {
+    const declared = (JSON.parse(read(`tools/${tool}.cli.json`)) as { options: Array<{ name: string }>; forms?: Array<{ pairs: Array<{ name: string }> }> });
+    assert.ok(!declared.options.some((option) => option.name === 'judge'), `${tool}.cli.json declares --judge`);
+    assert.ok(!(declared.forms ?? []).some((form) => form.pairs.some((pair) => pair.name === 'judge')), `a form of ${tool}.cli.json names --judge`);
+    // The tool itself does take the option (the pipeline passes it): it is the declaration alone that keeps the model from writing it.
+    assert.match(read(`tools/${tool}.ts`), /'--judge'/);
+  }
 });

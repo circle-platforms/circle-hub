@@ -5,22 +5,26 @@
     "init": [],
     "resume": [
       "%HUB_TOKEN%",
-      "%PLUMB_API_KEY%"
+      "%PLUMB_API_KEY%",
+      "%JEV_API_KEY%"
     ],
     "next": [
       "%HUB_TOKEN%",
-      "%PLUMB_API_KEY%"
+      "%PLUMB_API_KEY%",
+      "%JEV_API_KEY%"
     ],
     "status": [],
     "collect": [],
     "retry": [],
     "rework": [
       "%HUB_TOKEN%",
-      "%PLUMB_API_KEY%"
+      "%PLUMB_API_KEY%",
+      "%JEV_API_KEY%"
     ],
     "reopen": [
       "%HUB_TOKEN%",
-      "%PLUMB_API_KEY%"
+      "%PLUMB_API_KEY%",
+      "%JEV_API_KEY%"
     ],
     "judge": []
   },

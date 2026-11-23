@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { after, test } from 'node:test';
 import { knowledgeFiles } from '../functions/knowledge-text.ts';
 import { COMMAND_CATALOG, CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC, QUOTE } from '../functions/test-support.ts';
 import { frozenRun, writeDownload } from '../testing/frozen-run.ts';
 import type { FlatCatalog } from '../testing/locked-tree.ts';
+import { FakeCallError, JEV_WIRE_KEY, JEV_WIRE_VERSION, filesBelow, jevFake, jevWire, sha256Text, textForms, validAnswer } from '../testing/jev-fake.ts';
+import { JEV_ENDPOINT } from '../functions/generated/skills/jev-judge/jev-client/index.ts';
+import { COMMAND_CRITERIA, SINGLE_INSTRUCTIONS } from '../functions/jev-judge.ts';
 import { runCmdVerifyPlumb } from './cmd-verify-plumb.ts';
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
@@ -634,4 +637,295 @@ test('--tree-only is run by pipeline.ts: the help says so, since the declaration
   assert.equal(helped.code, 0);
   assert.match(helped.stdout, /此时工具本身不需要 --base-url 和密钥；但命令行声明（cmd-verify-plumb\.cli\.json）仍要求它们，守卫会拒绝没带它们的直接调用，所以这个选项由 pipeline\.ts 运行，不由主代理手敲/);
   assert.match(helped.stdout, /一步命令也没有核对.*状态也是未知，写明缺什么和下一步/);
+});
+
+// ---- Jev as the judge: pipeline.ts runs the tool with --judge jev when the user chose Jev for this compile ----
+
+const JEV_IN = { stdinText: 'jev_sk_synthetic_1\n' };
+const jevArgs = (file: string, dir: string, extra: string[] = []) => ['--file', file, '--run', dir, '--judge', 'jev', '--key-stdin', ...extra];
+
+test('--judge jev: Jev is asked about every command, each step is held for review with Jev\'s probability, nothing blocks and Plumb is never asked', async () => {
+  const w = await frozenWorkspace(VALID);
+  try {
+    seenBatches.length = 0;
+    const f = jevFake(() => ({ type: 'noul', noul: 0.8 }));
+    const audit = join(w.dir, 'jev-commands.jsonl');
+    const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir, ['--audit-out', audit]), { ...JEV_IN, jev: f.factory });
+    assert.equal(res.code, 0, res.stderr);
+    assert.equal(res.stderr, '');
+    assert.equal(seenBatches.length, 0, 'no question reaches the Plumb gateway');
+    assert.deepEqual(f.configs, [{ apiKey: 'jev_sk_synthetic_1', auditPath: audit }], 'the key comes from the first stdin line and the request log is named');
+    assert.deepEqual(f.requests.map((r) => r.model), ['jev-latest', 'jev-1.13.0'], 'one invocation has one model version');
+    const report = JSON.parse(res.stdout);
+    assert.deepEqual([report.judge, report.status, report.decided_by, report.model_version, report.prompt_version, report.jev_requests], ['jev', '未确认', '模型', 'jev-1.13.0', 'jev-noul@command-v1', 2]);
+    assert.deepEqual([report.blocked_count, report.review_required_count], [0, 2]);
+    for (const step of report.results[0].steps) {
+      assert.deepEqual([step.verdict, step.blocked, step.review_required, step.plumb_verdict, step.tree_check.status], ['review', false, true, 'review', 'accepted']);
+      assert.equal(step.note, '[需人工复核：Jev 的回答未经确认，只作参考（p(是)=0.800）]');
+      assert.deepEqual([step.answer, step.match, step.probabilities.yes], ['yes', 0.8, 0.8]);
+      assert.deepEqual(step.gate, { action: 'review', calibrated: false, calibration_source: 'uncalibrated' });
+      assert.equal(step.disclosure, undefined, 'the tree accepted the step, so there is nothing more to disclose');
+    }
+    // The first command line of the plan went out as `command`, beside the context.
+    assert.equal((f.requests[0]!.state as { command: string }).command, 'widget health interval 60');
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev: the tree refuses what it refuses whatever Jev says, and a step the tree cannot settle says that Jev alone advised and nothing settled it', async () => {
+  const w = await frozenWorkspace([VALID[0], REFUSED, UNPARSEABLE]);
+  try {
+    const f = jevFake(() => ({ type: 'noul', noul: 0.99 }));
+    const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { ...JEV_IN, jev: f.factory });
+    assert.equal(res.code, 1);
+    const steps = JSON.parse(res.stdout).results[0].steps as Array<Record<string, any>>;
+    assert.deepEqual(steps.map((x) => [x.verdict, x.blocked, x.review_required, x.tree_check.status]), [['review', false, true, 'accepted'], ['reject', true, false, 'refused'], ['review', false, true, 'undetermined']]);
+    assert.equal(steps[1]!.plumb_verdict, 'review', 'what Jev said stays beside the tree\'s refusal');
+    assert.match(steps[2]!.disclosure, /命令树核对没有给出结论.*这一步只有 Jev 的判断（未确认，只作参考），既没有放行也没有拒绝，状态未知/);
+    assert.match(res.stderr, /^参数无效：Jev 命令核验未通过（阻断 1 处）/);
+    assert.match(res.stderr, /widget health interval 62/);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev: an outage ends the tool under the word the pipeline waits on, a refused key says what to do, and a key that is no key or a call that is no Jev call is refused before any request', async () => {
+  const w = await frozenWorkspace(VALID);
+  try {
+    const outage = jevFake(() => new FakeCallError('暂时不可用', 503, 'unavailable'));
+    const down = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { ...JEV_IN, jev: outage.factory });
+    assert.equal(down.code, 1);
+    assert.equal(down.stdout, '');
+    assert.match(down.stderr, /^暂时不可用：Jev 暂时不可用（HTTP 503，unavailable）/);
+    const refused = jevFake(() => new FakeCallError('无权限', 401, 'unauthorized'));
+    const denied = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { ...JEV_IN, jev: refused.factory });
+    assert.match(denied.stderr, /^无权限：Jev 拒绝了密钥（HTTP 401，unauthorized）.*JEV_API_KEY/);
+    assert.ok(!denied.stderr.includes('jev_sk_synthetic_1'));
+    const idle = jevFake(() => ({ type: 'noul', noul: 0.5 }));
+    const placeholder = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { stdinText: '%JEV_API_KEY%\n', jev: idle.factory });
+    assert.match(placeholder.stderr, /^无权限：Jev 密钥没有展开，标准输入第一行还是占位符/);
+    const noFlag = await runCmdVerifyPlumb(['--file', w.file, '--run', w.dir, '--judge', 'jev'], { ...JEV_IN, jev: idle.factory });
+    assert.match(noFlag.stderr, /^无权限：Jev 密钥只从标准输入第一行读入，没有带 --key-stdin/);
+    const other = await runCmdVerifyPlumb(['--file', w.file, '--run', w.dir, '--judge', 'gpt', '--key-stdin'], { ...JEV_IN, jev: idle.factory });
+    assert.match(other.stderr, /^参数无效：--judge 只能写 plumb 或 jev/);
+    const both = await runCmdVerifyPlumb(['--file', w.file, '--run', w.dir, '--judge', 'jev', '--tree-only'], { ...JEV_IN, jev: idle.factory });
+    assert.match(both.stderr, /^参数无效：--tree-only 不问任何判断服务，不能同时写 --judge/);
+    assert.equal(idle.requests.length, 0);
+    assert.deepEqual(idle.configs, [], 'no client was built for any of them');
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev: a question Jev refuses for its length (the body too large, or the model\'s context too short) is asked again with fewer of the earlier steps, and the report says which', async () => {
+  for (const [status, code] of [[413, 'request_too_large'], [422, 'context_too_long']] as const) {
+    const w = await frozenWorkspace(VALID);
+    try {
+      const f = jevFake((request) => ((request.state as { context: string }).context.includes('[已执行的步骤]') ? new FakeCallError('参数无效', status, code, '题面太长') : { type: 'noul', noul: 0.6 }));
+      const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { ...JEV_IN, jev: f.factory });
+      assert.equal(res.code, 0, `${code}: ${res.stderr}`);
+      const steps = JSON.parse(res.stdout).results[0].steps as Array<Record<string, unknown>>;
+      assert.deepEqual(steps.map((s) => s.earlier_steps_shortened ?? false), [false, true], code);
+      assert.ok(f.requests.some((r) => !(r.state as { context: string }).context.includes('[已执行的步骤]') && (r.state as { command: string }).command === 'widget health interval 61'), `${code}: the second step was asked again without the steps before it`);
+    } finally {
+      await rm(w.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+
+// ---- the real embedded client of the jev-judge skill runs; only the network under it is replaced ----
+
+const WIRE_KEY = JEV_WIRE_KEY;
+
+test('--judge jev with the real embedded client: the request that leaves carries the mapped question and state, the answers come back as unconfirmed review advice, and neither the key nor the state text is written anywhere', async () => {
+  const w = await frozenWorkspace(VALID);
+  try {
+    const wire = jevWire();
+    const out = join(w.dir, 'verify', 'report.json'), audit = join(w.dir, 'verify', 'jev-commands.jsonl');
+    const before = new Set(await filesBelow(w.dir));
+    const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir, ['--out', out, '--audit-out', audit]), { stdinText: `${WIRE_KEY}\n`, jevTransport: wire.transport });
+    assert.equal(res.code, 0, res.stderr);
+    assert.equal(res.stderr, '');
+
+    // What left: one request per command, to the module's fixed address, the key only in the header, the question as the adapter maps it.
+    assert.equal(wire.calls.length, 2);
+    for (const call of wire.calls) {
+      assert.equal(call.url, JEV_ENDPOINT);
+      assert.equal(call.authorization, `Bearer ${WIRE_KEY}`);
+      assert.equal(call.contentType, 'application/json');
+      assert.equal(call.timeoutMs, 60_000, 'on the pipeline path a request may take a minute, not the client\'s default half minute');
+      assert.deepEqual(Object.keys(call.sent), ['state', 'model', 'questions']);
+      assert.deepEqual(Object.keys(call.sent.questions), ['q1']);
+      assert.deepEqual(call.sent.questions.q1, { type: 'noul', instructions: SINGLE_INSTRUCTIONS, criteria: COMMAND_CRITERIA });
+      assert.ok(!call.text.includes(WIRE_KEY), 'the key is not in the body');
+    }
+    assert.deepEqual(wire.calls.map((call) => call.sent.model), ['jev-latest', JEV_WIRE_VERSION], 'the first request asks for the latest, the next one for the exact version that answered');
+    const [first, second] = wire.calls.map((call) => call.sent.state as { context: string; command: string; definition?: string });
+    assert.deepEqual(Object.keys(first!), ['context', 'command', 'definition']);
+    assert.equal(first!.command, 'widget health interval 60');
+    assert.equal(first!.context, '[用例]\n健康检查间隔配置\n\n[当前步骤]\n步骤位置: /steps/0\n步骤意图: 设置健康检查间隔为 60\n候选命令: widget health interval 60');
+    assert.equal(second!.command, 'widget health interval 61');
+    assert.match(second!.context, /\n\n\[已执行的步骤\]\n1\. widget health interval 60\n\n\[当前步骤\]\n步骤位置: \/steps\/1\n步骤意图: 把健康检查间隔改成 61\n候选命令: widget health interval 61$/);
+
+    // What came back: advice only, with the disclosure, held for review whatever Jev's probability.
+    const report = JSON.parse(res.stdout);
+    assert.deepEqual([report.judge, report.status, report.decided_by, report.model_version, report.prompt_version, report.jev_requests, report.blocked_count, report.review_required_count], ['jev', '未确认', '模型', JEV_WIRE_VERSION, 'jev-noul@command-v1', 2, 0, 2]);
+    for (const step of report.results[0].steps) {
+      assert.deepEqual([step.verdict, step.blocked, step.review_required, step.answer, step.match, step.probabilities.yes], ['review', false, true, 'yes', 0.8, 0.8]);
+      assert.deepEqual(step.gate, { action: 'review', calibrated: false, calibration_source: 'uncalibrated' });
+      assert.equal(step.probabilities.no, 0.2);
+      assert.equal(step.note, '[需人工复核：Jev 的回答未经确认，只作参考（p(是)=0.800）]');
+    }
+    assert.equal(await readFile(out, 'utf8'), res.stdout, 'the report file is what the tool printed');
+
+    // The request log has one line per request: sizes, digest, status and usage, no content, owner-only.
+    const lines = (await readFile(audit, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.equal(lines.length, 2);
+    lines.forEach((line, index) => {
+      assert.deepEqual(Object.keys(line), ['ts', 'endpoint_host', 'questions', 'question_types', 'body_bytes', 'body_sha256', 'attempt', 'http_status', 'model', 'usage', 'duration_ms', 'error_code']);
+      assert.deepEqual([line.endpoint_host, line.questions, line.question_types, line.attempt, line.http_status, line.model, line.usage, line.error_code], ['api.typesafe.ai', 1, ['noul'], 1, 200, JEV_WIRE_VERSION, { input_tokens: 120, output_tokens: 30 }, null]);
+      assert.equal(line.body_sha256, sha256Text(wire.calls[index]!.text));
+      assert.equal(line.body_bytes, Buffer.byteLength(wire.calls[index]!.text));
+    });
+    assert.equal((await stat(audit)).mode & 0o777, 0o600);
+
+    // Neither the key nor the text of any state is in a file the run wrote, in what it printed, or in the request log.
+    const written = (await filesBelow(w.dir)).filter((file) => !before.has(file));
+    assert.deepEqual(written.map((file) => relative(w.dir, file)), ['verify/jev-commands.answers.jsonl', 'verify/jev-commands.jsonl', 'verify/report.json'], 'the answers are kept beside the request log, for the next pass');
+    const kept = (await readFile(join(w.dir, 'verify', 'jev-commands.answers.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.deepEqual(kept.map((line) => [Object.keys(line), line.model_version, line.answer]), [[['key', 'model_version', 'answer'], JEV_WIRE_VERSION, { type: 'noul', noul: 0.8 }], [['key', 'model_version', 'answer'], JEV_WIRE_VERSION, { type: 'noul', noul: 0.8 }]]);
+    assert.equal((await stat(join(w.dir, 'verify', 'jev-commands.answers.jsonl'))).mode & 0o777, 0o600);
+    const seen = [...(await Promise.all(written.map((file) => readFile(file, 'utf8')))), res.stdout, res.stderr];
+    for (const text of seen) {
+      assert.ok(!text.includes(WIRE_KEY));
+      for (const call of wire.calls) for (const form of [...textForms((call.sent.state as { context: string }).context), ...textForms(JSON.stringify(call.sent.state)), call.text]) assert.ok(!text.includes(form), 'the state text stays out of what the run leaves behind');
+    }
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev with the real embedded client: a request the service refuses for its length, in either of its two ways, is asked again without the earlier steps and the report says which', async () => {
+  for (const [name, refusal] of [['body too large', { status: 413, body: 'too large' }], ['context too long', { status: 422, body: JSON.stringify({ error: { type: 'max_tokens_exceeded' } }) }]] as const) {
+    const w = await frozenWorkspace(VALID);
+    try {
+      const wire = jevWire((question, call) => ((call.sent.state as { context: string }).context.includes('[已执行的步骤]') ? refusal : validAnswer(question)));
+      const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir, ['--audit-out', join(w.dir, 'audit.jsonl')]), { stdinText: `${WIRE_KEY}\n`, jevTransport: wire.transport });
+      assert.equal(res.code, 0, `${name}: ${res.stderr}`);
+      assert.equal(wire.calls.length, 3, `${name}: the first step, the second with the first before it (refused), the second alone`);
+      const states = wire.calls.map((call) => (call.sent.state as { context: string; command: string }));
+      assert.deepEqual(states.map((state) => [state.command, state.context.includes('[已执行的步骤]')]), [['widget health interval 60', false], ['widget health interval 61', true], ['widget health interval 61', false]], name);
+      const steps = JSON.parse(res.stdout).results[0].steps as Array<Record<string, unknown>>;
+      assert.deepEqual(steps.map((step) => step.earlier_steps_shortened ?? false), [false, true], name);
+      assert.deepEqual(steps.map((step) => step.review_required), [true, true], name);
+      const audit = (await readFile(join(w.dir, 'audit.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { http_status: number; error_code: string | null });
+      assert.deepEqual(audit.map((line) => [line.http_status, line.error_code]), [[200, null], [refusal.status, name === 'body too large' ? 'request_too_large' : 'context_too_long'], [200, null]], name);
+    } finally {
+      await rm(w.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('--judge jev with the real embedded client: jev_requests counts the requests that left the client, the one it sent again after a 429 included, and the request log has a line for each', async () => {
+  const w = await frozenWorkspace(VALID);
+  try {
+    const wire = jevWire((question, _call, n) => (n === 1 ? { status: 429, body: '', headers: { 'retry-after': '0.5' } } : validAnswer(question)));
+    const audit = join(w.dir, 'jev-commands.jsonl');
+    const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir, ['--audit-out', audit]), { stdinText: `${WIRE_KEY}\n`, jevTransport: wire.transport });
+    assert.equal(res.code, 0, res.stderr);
+    assert.equal(wire.calls.length, 3, 'two questions and one request sent again');
+    const report = JSON.parse(res.stdout);
+    assert.equal(report.jev_requests, 3, 'the requests that left, not the questions asked');
+    const lines = (await readFile(audit, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { attempt: number; http_status: number; error_code: string | null });
+    assert.deepEqual(lines.map((line) => [line.attempt, line.http_status, line.error_code]), [[1, 429, 'rate_limited'], [2, 200, null], [1, 200, null]]);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev with the real embedded client: a request the service rejects leaves its step without a Jev opinion: the tree speaks alone, the other steps are answered, and nothing of the request is shown or sent back to the writer', async () => {
+  const w = await frozenWorkspace(VALID);
+  try {
+    // The service rejects the question of the second step, and its answer echoes the request body (which the client never shows).
+    const wire = jevWire((question, call) => ((call.sent.state as { command: string }).command.endsWith('61') ? { status: 422, body: JSON.stringify({ detail: call.text }) } : validAnswer(question)));
+    const out = join(w.dir, 'report.json'), audit = join(w.dir, 'jev-commands.jsonl');
+    const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir, ['--out', out, '--audit-out', audit]), { stdinText: `${WIRE_KEY}\n`, jevTransport: wire.transport });
+    assert.equal(res.code, 0, res.stderr);
+    assert.equal(res.stderr, '');
+    const report = JSON.parse(res.stdout);
+    const [judged, gone] = report.results[0].steps as Array<Record<string, any>>;
+    assert.deepEqual([judged.verdict, judged.review_required, judged.jev_no_opinion, judged.gate.action], ['review', true, undefined, 'review'], 'the step Jev answered is advice, as always');
+    assert.deepEqual([gone.verdict, gone.blocked, gone.review_required, gone.plumb_verdict, gone.answer, gone.gate, gone.tree_check.status], ['pass', false, false, null, null, null, 'accepted'], 'the step without a Jev opinion stands on the tree alone');
+    assert.deepEqual(gone.jev_no_opinion, { code: 'request_rejected', reason: 'Jev 服务拒绝了这个请求（HTTP 422，request_rejected）' });
+    assert.equal(gone.disclosure, 'Jev 对这一步没有给出答复（Jev 服务拒绝了这个请求（HTTP 422，request_rejected））；这一步只有命令树核对的结论（通过），没有 Jev 的判断');
+    assert.deepEqual([report.jev_no_opinion_count, report.review_required_count, report.blocked_count, report.jev_requests], [1, 1, 0, 2]);
+    // Nothing of the rejected request, and not the key, is in what the run wrote or printed.
+    const state = JSON.stringify((wire.calls[1]!.sent.state as { context: string }).context).slice(1, -1);
+    for (const text of [res.stdout, await readFile(out, 'utf8'), await readFile(audit, 'utf8'), await readFile(join(w.dir, 'jev-commands.answers.jsonl'), 'utf8')]) {
+      assert.ok(!text.includes(WIRE_KEY) && !text.includes(wire.calls[1]!.text) && !text.includes(state));
+    }
+    // The next pass asks the rejected question again and nothing else: the answered one is kept.
+    const next = jevWire((question) => validAnswer(question));
+    const again = await runCmdVerifyPlumb(jevArgs(w.file, w.dir, ['--audit-out', join(w.dir, 'second.jsonl')]), { stdinText: `${WIRE_KEY}\n`, jevTransport: next.transport });
+    assert.equal(again.code, 0, again.stderr);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev with the real embedded client: a step the service refuses for its size even alone has no Jev opinion, and what the tree refuses is still blocked', async () => {
+  const w = await frozenWorkspace([VALID[0], REFUSED, UNPARSEABLE]);
+  try {
+    const wire = jevWire((question, call) => ((call.sent.state as { command: string }).command.endsWith('62') || (call.sent.state as { command: string }).command.endsWith('5') ? { status: 413, body: 'too large' } : validAnswer(question)));
+    const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir, ['--audit-out', join(w.dir, 'audit.jsonl')]), { stdinText: `${WIRE_KEY}\n`, jevTransport: wire.transport });
+    assert.equal(res.code, 1, 'the tree refuses the second step whatever Jev says');
+    const steps = JSON.parse(res.stdout).results[0].steps as Array<Record<string, any>>;
+    assert.deepEqual(steps.map((step) => [step.verdict, step.blocked, step.review_required, step.jev_no_opinion?.code, step.earlier_steps_shortened ?? false]), [['review', false, true, undefined, false], ['reject', true, false, 'request_too_large', true], ['review', false, true, 'request_too_large', true]]);
+    assert.match(steps[2]!.disclosure, /命令树核对没有给出结论.*Jev 对这一步没有给出答复（题面超过 Jev 服务的大小上限（HTTP 413，request_too_large））；这一步没有判断，状态未知/);
+    assert.match(res.stderr, /^参数无效：Jev 命令核验未通过（阻断 1 处）：00\.json:\/steps\/1 命令树核对未通过/);
+    assert.doesNotMatch(res.stderr, /Jev 拒收|拒绝了这个请求|没有给出答复/, 'the blocked step is the tree\'s, and is said as such');
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev with the real embedded client: what the service refuses, echoes or drops ends the tool under the right word, and no error text carries the key or the state', async () => {
+  const w = await frozenWorkspace(VALID);
+  try {
+    const cases: Array<{ name: string; script: Parameters<typeof jevWire>[0]; head: RegExp; code: string }> = [
+      { name: 'key refused', script: () => ({ status: 401, body: JSON.stringify({ detail: 'Invalid API key' }) }), head: /^无权限：Jev 拒绝了密钥（HTTP 401，unauthorized）.*JEV_API_KEY/s, code: 'unauthorized' },
+      { name: 'service error echoing the key', script: () => ({ status: 500, body: `upstream said Bearer ${WIRE_KEY}` }), head: /^暂时不可用：Jev 暂时不可用（HTTP 500，invalid_response）：Jev 的应答里出现了 API 密钥/, code: 'invalid_response' },
+      { name: 'connection lost with the key in its message', script: () => Object.assign(new Error(`socket hang up ${WIRE_KEY}`), { code: 'ECONNRESET' }), head: /^暂时不可用：Jev 暂时不可用（connection_lost）/, code: 'connection_lost' },
+      { name: 'answer of another shape', script: () => ({ status: 200, body: JSON.stringify({ model: JEV_WIRE_VERSION, answers: { q1: { type: 'choice', choice: 'x', probabilities: { x: 1 }, confidence: 1 } }, usage: { input_tokens: 1, output_tokens: 1 } }) }), head: /^暂时不可用：Jev 暂时不可用（HTTP 200，invalid_response）/, code: 'invalid_response' },
+    ];
+    for (const [index, failing] of cases.entries()) {
+      const wire = jevWire(failing.script);
+      const audit = join(w.dir, `audit-${index}.jsonl`);
+      const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir, ['--audit-out', audit]), { stdinText: `${WIRE_KEY}\n`, jevTransport: wire.transport });
+      assert.equal(res.code, 1, failing.name);
+      assert.equal(res.stdout, '', `${failing.name}: no report is written when Jev did not answer`);
+      assert.match(res.stderr, failing.head, failing.name);
+      assert.equal(wire.calls.length, 1, `${failing.name}: the first failure stops the others and nothing is sent again`);
+      const logged = (await readFile(audit, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { error_code: string | null; question_types: string[] });
+      assert.deepEqual(logged.map((line) => [line.error_code, line.question_types]), [[failing.code, ['noul']]], failing.name);
+      const call = wire.calls[0]!;
+      const state = call.sent.state as { context: string; command: string };
+      for (const text of [res.stderr, await readFile(audit, 'utf8')]) {
+        assert.ok(!text.includes(WIRE_KEY), `${failing.name}: the key is not shown`);
+        for (const form of [...textForms(state.context), state.command, call.text]) assert.ok(!text.includes(form), `${failing.name}: the state text is not shown`);
+      }
+    }
+    // A key that cannot go into a header is refused by the client before anything is sent, and no text shows it.
+    const idle = jevWire();
+    const bad = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { stdinText: 'bad key!\n', jevTransport: idle.transport });
+    assert.equal(bad.code, 1);
+    assert.match(bad.stderr, /^无权限：Jev 密钥照现在的写法用不了（密钥为空、太长或含不允许的字符），没有发出任何请求（invalid_key）/);
+    assert.doesNotMatch(bad.stderr, /拒绝了密钥/);
+    assert.ok(!bad.stderr.includes('bad key!'));
+    assert.equal(idle.calls.length, 0);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
 });

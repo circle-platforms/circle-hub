@@ -198,7 +198,7 @@ const LEAD_ASKS_NOBODY_RULE = {
   how: '这次可以这样做：按技能第 1 节的次序自行决定（与同构建手册和命令树一致、保住作者步骤与边界、已声明执行器能判定、改动最小），把决定记为“模型决定：”并写进最终报告，然后继续往下做。',
 };
 
-const OPEN_COMPILE_HOW = "这次可以这样做：跑 node '<case-compile 技能目录>/tools/open-compile.ts' --hub %HUB_URL% --plumb %PLUMB_URL% --subject … --product … --build … --booking … --out 'open-compile.json'（标准输入两行 %HUB_TOKEN%、%PLUMB_API_KEY%；返工加 --recompose-run 与 --recompose-record）；它输出“无法编译：…”时把这一行原样告诉使用者并停止。";
+const OPEN_COMPILE_HOW = "这次可以这样做：跑 node '<case-compile 技能目录>/tools/open-compile.ts' --hub %HUB_URL% --plumb %PLUMB_URL% --subject … --product … --build … --booking … --out 'open-compile.json'（标准输入三行 %HUB_TOKEN%、%PLUMB_API_KEY%、%JEV_API_KEY%；使用者明确说用 Jev 或不经 Plumb 时才加 --judge jev 或 --judge model，那时不写 --plumb；返工加 --recompose-run 与 --recompose-record）；它输出“无法编译：…”时把这一行原样告诉使用者并停止。";
 const RECOMPOSE_OPENS_BY_TOOL_RULE = {
   id: 'recompose-opens-by-tool',
   tool: `mcp__${SERVER_NAME}__start_run`,
@@ -291,6 +291,15 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
           },
         ]
       : [],
+    // Jev is asked only by the pipeline, with the client that case-compile carries inside it; the jev-judge command line, if a Circle home has the skill
+    // installed at all, would be a free channel to the service, so it is never run directly.
+    denyScripts: [
+      {
+        path: 'jev-judge/tools/jev-judge.ts',
+        what: '不允许：直接运行 jev-judge 技能的命令行工具。Jev 只用于编译的命令核验和场景保真审计，由流水线用 case-compile 内嵌的客户端去问；命令行工具会成为发往外部判断服务的任意通道。',
+        how: '这次可以这样做：要用 Jev 判断，请使用者在开编译时说“判断方式用 Jev”（open-compile.ts 加 --judge jev），之后由 pipeline.ts 去问；不用这个命令行。',
+      },
+    ],
     scripts: [
       {
         path: 'jev/jev.ts',

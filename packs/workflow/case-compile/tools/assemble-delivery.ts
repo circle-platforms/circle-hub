@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { isRecord, failCall, CallFailure, localMinute } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { closingHints, modelCheckpointsOf, neverReachedBed, unsentOf, type Unsent, assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, resultLine, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, trailingUnreached, unexecutedAfter, unsuccessfulReport, type CaseOutcome, type ModelCheckpoint, type ConflictGround, type Dispatch, type JobRow, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
+import { JUDGE_LINES, openedJudge, openRecordBelongs, closingHints, modelCheckpointsOf, neverReachedBed, unsentOf, type Unsent, assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, resultLine, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, trailingUnreached, unexecutedAfter, unsuccessfulReport, type CaseOutcome, type ModelCheckpoint, type ConflictGround, type Dispatch, type JobRow, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { HubReplyError, RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchBytesRetrying, getRetrying, downloadRetryControl, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
@@ -16,17 +16,17 @@ import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 import { afterDelivery } from '../functions/next-step.ts';
 
-const OPTIONS = { hub: true, runs: true, notes: true, out: true, recompose: false, name: false } as const;
+const OPTIONS = { hub: true, runs: true, notes: true, out: true, open: true, recompose: false, name: false } as const;
 function options(argv: string[]): Record<string, string> {
   const values: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i]?.startsWith('--') ? argv[i].slice(2) : '';
-    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) failCall('invalid_parameters', '参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次', '请使用 --hub、--runs、--notes 和 --out 的合法写法重试');
+    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) failCall('invalid_parameters', '参数写法：--hub --runs --notes --out --open 必填，--recompose --name 可选，每个只写一次', '请使用 --hub、--runs、--notes、--out 和 --open 的合法写法重试');
     values[key] = argv[i + 1];
   }
   const missing = Object.entries(OPTIONS).filter(([key, required]) => required && !values[key]).map(([key]) => '--' + key);
   if (missing.length) {
-    failCall('invalid_parameters', `缺少参数：${missing.join('、')}${missing.includes('--notes') ? '（--notes 为模型手写的说明 JSON 文件路径）' : ''}。参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次`, '请使用 --hub、--runs、--notes 和 --out 的合法写法重试');
+    failCall('invalid_parameters', `缺少参数：${missing.join('、')}${missing.includes('--notes') ? '（--notes 为模型手写的说明 JSON 文件路径）' : ''}${missing.includes('--open') ? '（--open 为这一轮用的开运行记录，pipeline.json 的 open）' : ''}。参数写法：--hub --runs --notes --out --open 必填，--recompose --name 可选，每个只写一次`, '请使用 --hub、--runs、--notes、--out 和 --open 的合法写法重试');
   }
   return values;
 }
@@ -95,6 +95,7 @@ export function replyText(out: string, files: string[], cases: CaseOutcome[], in
   const drafted = cases.filter((outcome) => outcome.status === 'delivered').map((outcome) => input.checkpoints?.[outcome.autoid]?.length ?? 0).filter((count) => count > 0);
   return [
     resultLine(input),
+    ...(input.judge ? [JUDGE_LINES[input.judge]] : []),
     files.includes('case.xlsx') ? `自动化用例 Excel：${at('case.xlsx')}` : '没有生成成功的用例，没有自动化用例 Excel。',
     ...(others.length ? ['', `失败的 ${others.length} 条：`, ...others.map((outcome) => `- ${caseConclusion(input, outcome, 'cause')}`), ''] : []),
     ...(drafted.length ? [`生成成功的用例里有 ${drafted.length} 条含模型拟定的检查点（共 ${drafted.reduce((sum, count) => sum + count, 0)} 处），建议复核，逐项见交付报告。`] : []),
@@ -179,6 +180,9 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const runs = [...new Set(args.runs.split(',').map((v) => v.trim()).filter(Boolean))];
     if (!runs.length || runs.some((run) => !RUN_ID.test(run)) || (args.recompose !== undefined && !RUN_ID.test(args.recompose))) failCall('invalid_parameters', '--runs 请按上机验证的先后顺序填写编号，以逗号分隔；--recompose 请填写用例重组的编号', '请核对运行、范围、产物身份和原始输入，修正后重试');
     const notesValue = parsedPlanFile(`说明文件 ${basename(args.notes)}`, await readSubmittedFileBytes(args.notes, 'notes'));
+    // The record that opened this compile says who judged its commands and scenarios (no field means Plumb); the report says it in a line the program writes.
+    const openRecord = parsedPlanFile(`开运行记录 ${basename(args.open)}`, await readSubmittedFileBytes(args.open, 'open'));
+    const judge = openedJudge(openRecord);
     await emptyOrAbsent(args.out);
     const origin = parseHubOrigin(args.hub);
     const bearer = await requireBearerToken(readToken);
@@ -237,6 +241,11 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       return left < right ? -1 : left > right ? 1 : a.run < b.run ? -1 : a.run > b.run ? 1 : 0;
     });
     for (const d of [...dispatches, ...unsent]) await planOf(d.plan_run);
+    // The record says who judged this compile: it has to be this compile's own, not another one's (that would write another judge into this report).
+    if (!openRecordBelongs(openRecord, [...planRuns.keys(), ...[...dispatches, ...unsent].map((d) => d.plan_run)], args.recompose)) {
+      const named = isRecord(openRecord) ? `脚本编写运行 ${String(openRecord.plan_run ?? '没有写').slice(0, 40)}、用例重组运行 ${String(openRecord.recompose_run ?? '没有写').slice(0, 40)}` : '没有读出运行';
+      failCall('invalid_parameters', `--open 的开运行记录不是这次编译的（它写的${named}，都不在 --runs 这些上机验证所属的脚本编写运行里，也不是 --recompose）`, '--open 写这一轮用的 open-compile.json（pipeline.json 的 open），不用别的编译的');
+    }
 
     const scopedRuns: Array<{ run: string; scope: FrozenScope | null; key: string }> = [];
     for (const d of [...dispatches, ...unsent]) {
@@ -516,11 +525,11 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       if (found.length) checkpoints[outcome.autoid] = found;
     }
     const hints = closingHints(assembly.cases, notes, unsent);
-    const input: ReportInput = { ...(Object.keys(userRulings).length?{userRulings}:{}),...(Object.keys(checkpoints).length?{checkpoints}:{}),unsent, name: args.name ?? basename(resolve(args.out)), generatedAt: localMinute(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast }, ...(scopeSummary ? { scope: scopeSummary } : {}) };
+    const input: ReportInput = { judge, ...(Object.keys(userRulings).length?{userRulings}:{}),...(Object.keys(checkpoints).length?{checkpoints}:{}),unsent, name: args.name ?? basename(resolve(args.out)), generatedAt: localMinute(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast }, ...(scopeSummary ? { scope: scopeSummary } : {}) };
     input.artifacts = [...outputs.map(output => output.name), ...Object.values(REPORT_FILES)];
     outputs.push({ name: REPORT_FILES.report, bytes: Buffer.from(deliveryReport(input)) }, { name: REPORT_FILES.unsuccessful, bytes: Buffer.from(unsuccessfulReport(input)) });
     const summary = {
-      schema: 'case-delivery@1', generator: GENERATOR, name: input.name, generated_at: now().toISOString(), build: input.build, totals: assembly.totals,
+      schema: 'case-delivery@1', generator: GENERATOR, name: input.name, generated_at: now().toISOString(), build: input.build, judge, judge_line: JUDGE_LINES[judge], totals: assembly.totals,
       ...(scopeSummary ? {
         scope: { source: 'hub_run_parameters', words: scopeSummary.words, cases: scopeSummary.cases },
         in_scope_total: inScope.length,

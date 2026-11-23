@@ -23,11 +23,12 @@ async function runCommand(command, label) {
 }
 
 // The state file says who judges this compile, and the commands below name Plumb's address only when Plumb does. Standard input
-// keeps both lines either way: pipeline.cli.json declares two lines for each of these sub-commands and the guard checks the count.
+// keeps all three lines either way: pipeline.cli.json declares three lines for each of these sub-commands (the Hub token, the Plumb key
+// and the Jev key) and the guard checks the count; the tool reads the lines of its own judge and no other.
 const judgedBy = (await runCommand(`${tool} judge ${state}`, 'judge')).judge
-if (judgedBy !== 'plumb' && judgedBy !== 'model')
-  throw new Error(`pipeline.ts judge 答的判断方式是 ${JSON.stringify(judgedBy)}，应当是 plumb 或 model`)
-const services = `--hub %HUB_URL% ${judgedBy === 'plumb' ? '--plumb %PLUMB_URL% ' : ''}<<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\nEOF`
+if (judgedBy !== 'plumb' && judgedBy !== 'jev' && judgedBy !== 'model')
+  throw new Error(`pipeline.ts judge 答的判断方式是 ${JSON.stringify(judgedBy)}，应当是 plumb、jev 或 model`)
+const services = `--hub %HUB_URL% ${judgedBy === 'plumb' ? '--plumb %PLUMB_URL% ' : ''}<<'EOF'\n%HUB_TOKEN%\n%PLUMB_API_KEY%\n%JEV_API_KEY%\nEOF`
 const ask = (words, label) => runCommand(`${tool} ${words} ${services}`, label)
 
 const running = new Map()

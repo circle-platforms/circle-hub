@@ -10,7 +10,7 @@ import { isRecord, parseCliOptions } from '../functions/text.ts';
 
 const CALL_TIMEOUT_MS = 180_000;
 const DEFAULT_DOCS = { contract: 'doc:doc:runner-contract', inventory: 'doc:doc:bed-topology', profile: 'doc:doc:runtime-profile' } as const;
-const USAGE = "open-compile.ts --hub <MCP地址> [--plumb <Plumb地址>] --subject <脑图外部标识或 src: 引用> --product <产品> --build <构建> --booking <test-bed 预订号> --out <新文件> [--version <版本线>] [--scope <范围文件>] [--exclude <autoid,...>] [--contract <doc:doc:名字>] [--inventory <doc:doc:名字>] [--profile <doc:doc:名字>] [--recompose-run <重组运行编号> --recompose-record <rec:引用>] [--judge plumb|model]";
+const USAGE = "open-compile.ts --hub <MCP地址> [--plumb <Plumb地址>] --subject <脑图外部标识或 src: 引用> --product <产品> --build <构建> --booking <test-bed 预订号> --out <新文件> [--version <版本线>] [--scope <范围文件>] [--exclude <autoid,...>] [--contract <doc:doc:名字>] [--inventory <doc:doc:名字>] [--profile <doc:doc:名字>] [--recompose-run <重组运行编号> --recompose-record <rec:引用>] [--judge plumb|jev|model]";
 
 export class NotReady extends Error {}
 
@@ -63,6 +63,16 @@ export async function readStdinLines(): Promise<string[]> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
   return Buffer.concat(chunks).toString('utf8').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+// The three stdin lines are read by position (token, Plumb key, Jev key): a blank line stays a line, so that a key which expands to
+// nothing is "no key" and does not move the next one up.
+export async function readStdinByPosition(): Promise<string[]> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  const lines = Buffer.concat(chunks).toString('utf8').split(/\r?\n/).map((line) => line.trim());
+  if (lines.at(-1) === '') lines.pop();
+  return lines;
 }
 
 export type PlumbStatus = (url: string, key: string) => Promise<unknown>;
@@ -134,7 +144,7 @@ async function plumbProblems(plumb: PlumbJudge, skillsRoot: string): Promise<str
   const problems: string[] = [], tool = plumbToolPath(skillsRoot);
   const installed = existsSync(tool), keyed = plumb.key !== '' && !PLUMB_KEY_PLACEHOLDER.test(plumb.key);
   if (!installed) problems.push(`本机没有装 plumb 技能（${tool}），它是 Hub 发布的通用技能；下一步：使用者用客户端的技能安装从 Hub 装上 plumb 技能再开编译；Hub 上没有它时，请管理员先在 Hub 上执行 circle-hub pack install plumb@<版本>`);
-  if (!keyed) problems.push("标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后重跑");
+  if (!keyed) problems.push("标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，依次 %HUB_TOKEN%、%PLUMB_API_KEY%、%JEV_API_KEY%，最后一行 EOF；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后重跑");
   if (installed && keyed) {
     try { const problem = plumbProblem(await plumb.status(plumb.url, plumb.key)); if (problem) problems.push(problem); }
     catch (error) { if (!(error instanceof NotReady)) throw error; problems.push(error.message); }
@@ -142,12 +152,22 @@ async function plumbProblems(plumb: PlumbJudge, skillsRoot: string): Promise<str
   return problems;
 }
 
-export async function openCompile(call: CallTool, options: OpenOptions, skillsRoot: string, plumb?: PlumbJudge): Promise<Opened> {
+// What a compile judged by Jev needs on this machine: a key on the third stdin line, and nothing else. The compile asks Jev with the client that
+// case-compile carries inside it, never with the installed jev-judge skill (whose standalone tool would be a free channel to the service), so the
+// skill need not be installed. Jev has no status route and a probe would be a billed call, so nothing is said about its readiness here.
+export interface JevJudgeInput { key: string }
+export function jevProblems(jev: JevJudgeInput): string[] {
+  const problems: string[] = [];
+  if (jev.key === '' || PLUMB_KEY_PLACEHOLDER.test(jev.key)) problems.push("标准输入第三行没有 Jev 密钥；命令末尾写 <<'EOF'，依次 %HUB_TOKEN%、%PLUMB_API_KEY%、%JEV_API_KEY%，最后一行 EOF；还没有 Jev 密钥时向管理员申请，保存为客户端密钥 JEV_API_KEY 后重跑");
+  return problems;
+}
+
+export async function openCompile(call: CallTool, options: OpenOptions, skillsRoot: string, plumb?: PlumbJudge, jev?: JevJudgeInput): Promise<Opened> {
   const listed = await call('list_task_packs', {});
   if (listed.failed) throw new NotReady(`读不到 Hub 的任务包：${refusalWords(listed)}`);
   const packs = Array.isArray(listed.envelope?.packs) ? listed.envelope.packs.filter(isRecord) : [];
   // Every unmet precondition is said in one answer and nothing is opened while there is one.
-  const problems = [...workflowProblems(packs, skillsRoot), ...(plumb ? await plumbProblems(plumb, skillsRoot) : [])];
+  const problems = [...workflowProblems(packs, skillsRoot), ...(plumb ? await plumbProblems(plumb, skillsRoot) : []), ...(jev ? jevProblems(jev) : [])];
   if (problems.length) throw new NotReady(problems.join('；另：'));
   const top = { product: options.product, build: options.build, ...(options.version ? { version: options.version } : {}) };
   const parameters = { ...(options.scope ? { scope: options.scope } : {}) };
@@ -185,7 +205,7 @@ function scopeFrom(path: string | undefined): OpenOptions['scope'] {
   return { words: value.words, cases: value.cases as string[] };
 }
 
-export async function main(argv: string[], readStdin: () => Promise<string[]> = readStdinLines, connect: (origin: string, bearer: string) => CallTool = hubTools, skillsRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'), plumbStatus: PlumbStatus = plumbStatusVia(skillsRoot)): Promise<number> {
+export async function main(argv: string[], readStdin: () => Promise<string[]> = readStdinByPosition, connect: (origin: string, bearer: string) => CallTool = hubTools, skillsRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'), plumbStatus: PlumbStatus = plumbStatusVia(skillsRoot)): Promise<number> {
   let args: Record<string, string>;
   try {
     args = parseCliOptions(argv, { hub: true, plumb: false, judge: false, subject: true, product: true, build: true, booking: true, out: true, version: false, scope: false, exclude: false, contract: false, inventory: false, profile: false, 'recompose-run': false, 'recompose-record': false }, USAGE) as Record<string, string>;
@@ -195,8 +215,8 @@ export async function main(argv: string[], readStdin: () => Promise<string[]> = 
   }
   try {
     const judge = args.judge ?? 'plumb';
-    if (judge !== 'plumb' && judge !== 'model') throw new NotReady('--judge 只能写 plumb 或 model；不写就是 plumb');
-    if (judge === 'plumb' && !args.plumb) throw new NotReady('缺 --plumb <Plumb地址>；只有使用者明确说这次不经 Plumb 时才写 --judge model');
+    if (judge !== 'plumb' && judge !== 'jev' && judge !== 'model') throw new NotReady('--judge 只能写 plumb、jev 或 model；不写就是 plumb');
+    if (judge === 'plumb' && !args.plumb) throw new NotReady('缺 --plumb <Plumb地址>；只有使用者明确说这次不经 Plumb 时才写 --judge model 或 --judge jev');
     if (!RUN_ID.test(args.booking)) throw new NotReady('--booking 不是运行编号；写 test-bed 预订运行的编号（run_ 开头）');
     for (const slot of ['contract', 'inventory', 'profile'] as const) if (args[slot] !== undefined && !/^doc:doc:[a-z][a-z0-9-]{0,63}(@[0-9a-f]{64})?$/.test(args[slot])) throw new NotReady(`--${slot} 不是命名文档；写 doc:doc:<名字>`);
     if ((args['recompose-run'] === undefined) !== (args['recompose-record'] === undefined)) throw new NotReady('--recompose-run 和 --recompose-record 要一起写（沿用已有重组时），或都不写');
@@ -206,13 +226,13 @@ export async function main(argv: string[], readStdin: () => Promise<string[]> = 
     const origin = parseHubOrigin(args.hub);
     const lines = await readStdin();
     const bearer = await requireBearerToken(async () => lines[0] ?? '');
-    const key = lines[1] ?? '';
+    const key = lines[1] ?? '', jevKey = lines[2] ?? '';
     const exclude = args.exclude ? args.exclude.split(',').map((v) => v.trim()).filter(Boolean) : undefined;
     const scope = args.scope ? scopeFrom(args.scope) : undefined;
-    const opened = await openCompile(connect(origin, bearer), { subject: args.subject, product: args.product, build: args.build, booking: args.booking, ...(args.version ? { version: args.version } : {}), ...(scope ? { scope } : {}), ...(exclude ? { exclude } : {}), ...(args.contract ? { contract: args.contract } : {}), ...(args.inventory ? { inventory: args.inventory } : {}), ...(args.profile ? { profile: args.profile } : {}), ...(args['recompose-run'] ? { reuse: { run: args['recompose-run'], record: args['recompose-record']! } } : {}) }, skillsRoot, judge === 'plumb' ? { url: args.plumb, key, status: plumbStatus } : undefined);
-    const record = { schema: 'open-compile@1', ready: true, subject: args.subject, product: args.product, build: args.build, booking: args.booking, recompose_run: opened.recomposeRun, recompose_record: opened.recomposeRecord, plan_run: opened.planRun, plan_record: opened.planRecord, items: opened.items, ...(args.version ? { version: args.version } : {}), ...(args.contract ? { contract: args.contract } : {}), ...(args.inventory ? { inventory: args.inventory } : {}), ...(args.profile ? { profile: args.profile } : {}), ...(scope ? { scope } : {}), ...(exclude?.length ? { exclude } : {}), ...(judge === 'model' ? { judge } : {}) };
+    const opened = await openCompile(connect(origin, bearer), { subject: args.subject, product: args.product, build: args.build, booking: args.booking, ...(args.version ? { version: args.version } : {}), ...(scope ? { scope } : {}), ...(exclude ? { exclude } : {}), ...(args.contract ? { contract: args.contract } : {}), ...(args.inventory ? { inventory: args.inventory } : {}), ...(args.profile ? { profile: args.profile } : {}), ...(args['recompose-run'] ? { reuse: { run: args['recompose-run'], record: args['recompose-record']! } } : {}) }, skillsRoot, judge === 'plumb' ? { url: args.plumb, key, status: plumbStatus } : undefined, judge === 'jev' ? { key: jevKey } : undefined);
+    const record = { schema: 'open-compile@1', ready: true, subject: args.subject, product: args.product, build: args.build, booking: args.booking, recompose_run: opened.recomposeRun, recompose_record: opened.recomposeRecord, plan_run: opened.planRun, plan_record: opened.planRecord, items: opened.items, ...(args.version ? { version: args.version } : {}), ...(args.contract ? { contract: args.contract } : {}), ...(args.inventory ? { inventory: args.inventory } : {}), ...(args.profile ? { profile: args.profile } : {}), ...(scope ? { scope } : {}), ...(exclude?.length ? { exclude } : {}), ...(judge === 'model' || judge === 'jev' ? { judge } : {}) };
     await writeFile(resolve(args.out), JSON.stringify(record, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-    process.stdout.write(`就绪：用例重组运行 ${opened.recomposeRun}、脚本编写运行 ${opened.planRun}，共 ${opened.items} 条用例${judge === 'model' ? '；判断方式 model：这次不经 Plumb，命令核验只做命令树的程序核对，场景保真由独立盲审判断，结论都要在最后报告里照实写' : ''}。下一步下载两个运行（download-run.ts），再按编排开始编译。\n${JSON.stringify(record)}\n`);
+    process.stdout.write(`就绪：用例重组运行 ${opened.recomposeRun}、脚本编写运行 ${opened.planRun}，共 ${opened.items} 条用例${judge === 'model' ? '；判断方式 model：这次不经 Plumb，命令核验只做命令树的程序核对，场景保真由独立盲审判断，结论都要在最后报告里照实写' : judge === 'jev' ? '；判断方式 jev：命令核验和场景保真由 Jev（TypeSafe 的线上判断服务）判断，原始用例的步骤、写出的命令和手册片段会发到 TypeSafe；Jev 的回答是模型的判断，未经确认，一律只作参考、逐条进复核，结论都要在最后报告里照实写' : ''}。下一步下载两个运行（download-run.ts），再按编排开始编译。\n${JSON.stringify(record)}\n`);
     return 0;
   } catch (error) {
     const words = error instanceof NotReady ? error.message : `开运行工具出错：${error instanceof Error ? error.message : String(error)}`;

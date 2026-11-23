@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { policyOf, type BriefKnowledge, type BriefPolicy } from '../functions/authoring-brief.ts';
 import {
@@ -8,20 +8,23 @@ import {
   lookupCommandDefinition,
   truncateCmdVerifyState,
 } from '../functions/cmd-recall.ts';
-import { commandTreeAnswer, commandTreeCheck, judgeStep, treeOnlyStep, type PlumbCall, type TreeAnswer } from '../functions/command-tree-verdict.ts';
+import { commandTreeAnswer, commandTreeCheck, jevUnansweredStep, judgeStep, treeOnlyStep, type PlumbCall, type TreeAnswer } from '../functions/command-tree-verdict.ts';
 import { expandValue } from '../functions/length-literals.ts';
 import { parseManifest } from '../functions/manifest.ts';
 import { confirmationSteps, deviceCommandLines } from '../functions/plan-commands.ts';
 import {
-  createCasePlumbClient,
+  createCaseJudge,
   extractPlumbCliOptions,
   formatPlumbCliError,
+  judgeOf,
   parseFlagMap,
   plumbFailure,
   SHARED_PLUMB_BOOL_FLAGS,
   SHARED_PLUMB_VALUE_FLAGS,
+  type JudgeName,
   type PlumbToolIo,
 } from '../functions/plumb-cli.ts';
+import { JEV_COMMAND_PROMPT, type JevUnanswered } from '../functions/jev-judge.ts';
 import { parseProfile, type RuntimeProfile } from '../functions/profile.ts';
 import { parseRuntimeContract, type RuntimeContract } from '../functions/runtime-contract.ts';
 import { readSlots, type PlanStep } from '../functions/slots.ts';
@@ -41,13 +44,14 @@ import { resolveRunDirectory } from './workspace-path.ts';
 import type { LockedTree } from '../functions/catalog-selection.ts';
 
 const USAGE =
-  'node <技能目录>/tools/cmd-verify-plumb.ts (--file <plan.json> | --plans <plansDir>) (--run <runDir> | --knowledge <knowledgeDir>) [--item <item.json>] [--context-mode <state|node>] [--base-url <url>] [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--tree-only] [--out <report.json>] [--key-stdin]';
+  'node <技能目录>/tools/cmd-verify-plumb.ts (--file <plan.json> | --plans <plansDir>) (--run <runDir> | --knowledge <knowledgeDir>) [--item <item.json>] [--context-mode <state|node>] [--base-url <url>] [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--tree-only] [--judge <plumb|jev>] [--out <report.json>] [--key-stdin]';
 const RULES = [
   'Plumb 的判断是未确认的模型判断，只作参考；命令对不对由命令树核对说了算（Hub 的 commands_catalog 检查，同 check-plan.ts，在 --run 目录的 run.json 与 knowledge/nodes.jsonl 上本地重算）。',
   '- 命令树核对通过而 Plumb 拒绝：标需人工复核（review_required），带 Plumb 的概率，不阻断，退出码 0；加 --strict-review 才阻断。',
   '- 命令树核对不通过：阻断（退出码 1），不论 Plumb 怎么说；先照 check-plan.ts 的同名问题改命令。',
   '- 命令树核对没有运行或没有结论（没有 --run 的冻结运行与命令树，或这一步缺事实）：只有 Plumb 的判断，它拒绝就阻断，并在这一步写明命令树核对为什么没有结论。',
   '- --tree-only：不问 Plumb，只做命令树核对（使用者选定判断方式为 model 时由流水线带上）。命令树核对不通过照样阻断；通过就过；没有结论的步骤标需人工复核、状态未知并写明原因，不阻断，加 --strict-review 才阻断。一步命令也没有核对（计划都标为跳过，或没有一步下发设备命令）时状态也是未知，写明缺什么和下一步。此时工具本身不需要 --base-url 和密钥；但命令行声明（cmd-verify-plumb.cli.json）仍要求它们，守卫会拒绝没带它们的直接调用，所以这个选项由 pipeline.ts 运行，不由主代理手敲。',
+  '- --judge jev：由 Jev 判断，不问 Plumb（使用者选定判断方式为 jev 时由流水线带上，密钥只从标准输入第一行读入，不需要 --base-url）。Jev 的回答一律未确认、只作参考：每一步都标需人工复核并带 Jev 给的概率，不放行也不拒绝；命令树核对不通过的照样阻断。',
   '- 步骤意图取这一步（块或顺序步骤）自己写的 description；没写就用用例标题，并在这一步的 disclosure 里说明，不借脑图里同位置的步骤，也不用作者步骤的摘要。',
 ].join('\n');
 
@@ -59,6 +63,7 @@ const VALUE_FLAGS = new Set([
   '--item',
   '--context-mode',
   '--out',
+  '--judge',
   ...SHARED_PLUMB_VALUE_FLAGS,
 ]);
 const BOOL_FLAGS = new Set(['--strict-review', '--tree-only', ...SHARED_PLUMB_BOOL_FLAGS]);
@@ -212,6 +217,7 @@ function extractUnitsForPlan(params: {
   frozenRun: Record<string, unknown> | null;
   commandTree: LockedTree | undefined;
   treeProblem?: string;
+  judge?: JudgeName;
 }): VerifiedCasePlan {
   const expanded = expandValue(params.planObj).value;
   if (!isRecord(expanded) || !isRecord(expanded.slots) || !Array.isArray(expanded.slots.plan) || expanded.slots.plan.length === 0) {
@@ -325,7 +331,7 @@ function extractUnitsForPlan(params: {
   if (overBudgetList.length > 0) {
     throw plumbFailure(
       '参数无效',
-      `以下命令上下文超过 Plumb @1800 token 上限，拒绝截断并停用：${overBudgetList.join('；')}`,
+      `以下命令上下文超过 ${params.judge === 'jev' ? '给 Jev 的 @1800 token 题面（与给 Plumb 的相同）' : 'Plumb @1800 token'} 上限，拒绝截断并停用：${overBudgetList.join('；')}`,
       '请拆短单步命令列表或精简当前步骤描述',
     );
   }
@@ -364,6 +370,9 @@ export async function runCmdVerifyPlumb(
     const itemArg = strOpt('--item');
     const strictReview = parsed.flags.get('--strict-review') === true;
     const treeOnly = parsed.flags.get('--tree-only') === true;
+    const plumbOptions = extractPlumbCliOptions(parsed.flags);
+    const judge: JudgeName = judgeOf(plumbOptions);
+    if (treeOnly && plumbOptions.judge !== undefined) throw plumbFailure('参数无效', '--tree-only 不问任何判断服务，不能同时写 --judge', '去掉其中一个');
     const outPath = strOpt('--out');
 
     const runDir = runArg ? resolveRunDirectory(runArg).lexical : undefined;
@@ -441,6 +450,7 @@ export async function runCmdVerifyPlumb(
           productLine,
           frozenRun,
           commandTree,
+          judge,
           ...(treeProblem !== undefined ? { treeProblem } : {}),
         }),
       );
@@ -466,13 +476,20 @@ export async function runCmdVerifyPlumb(
     }
 
     const answers = new Map<string, ReturnType<typeof normalizeJudgeAnswer>>();
+    // Units whose question Jev's service turned down: no Jev opinion for them, and the step says so and why.
+    const noAnswer = new Map<string, JevUnanswered>();
     const tooLongAlone: string[] = [];
     const shortened = new Set<string>();
     let modelVersion: string | null = null;
     const totalQ = Object.keys(singleQuestions).length + Object.keys(listQuestions).length;
+    let jevRequests: number | null = null;
     if (totalQ > 0 && !treeOnly) {
-      const client = await createCasePlumbClient(extractPlumbCliOptions(parsed.flags), io);
-      const refusedForLength = (error: unknown): boolean => isRecord(error) && (error.status === 413 || error.code === 'request_too_large');
+      // The request log of a Jev call lands where the caller names it; when it names none, beside the report, if one is written. The answers of
+      // the passes before this one are kept in a file next to it, so that a pass asks only what has no answer yet.
+      const auditOut = plumbOptions.auditOut ?? (judge === 'jev' && outPath ? join(dirname(resolve(outPath)), 'jev-audit.jsonl') : undefined);
+      const { client, jev } = await createCaseJudge({ ...plumbOptions, ...(judge === 'jev' && auditOut ? { auditOut, jevAnswers: `${auditOut.replace(/\.jsonl$/u, '')}.answers.jsonl` } : {}) }, io);
+      // A request the service refuses for its size (the body too large, or the model's context too short for it) is asked again with fewer earlier steps.
+      const refusedForLength = (error: unknown): boolean => isRecord(error) && (error.status === 413 || error.code === 'request_too_large' || error.code === 'context_too_long');
       const ask = async (task: 'single_cmd_judge' | 'steplist_judge', questions: Record<string, PlumbBatchQuestion>) => {
         try { return await client.judgeBatched({ task, questions }); } catch (error) { if (!refusedForLength(error)) throw error; }
         const answered: Record<string, unknown> = {};
@@ -497,30 +514,60 @@ export async function runCmdVerifyPlumb(
         }
         return { answers: answered as Awaited<ReturnType<typeof client.judgeBatched>>['answers'], model_version: model };
       };
+      // Jev: a question the service turns down for its size is asked again with fewer earlier steps, as for Plumb; what is turned down alone, or for
+      // another reason, has no Jev opinion and the batch goes on.
+      const tooLong = (why: JevUnanswered | undefined): boolean => why !== undefined && (why.code === 'request_too_large' || why.code === 'context_too_long');
+      const askJev = async (task: 'single_cmd_judge' | 'steplist_judge', questions: Record<string, PlumbBatchQuestion>) => {
+        const first = await client.judgeBatched({ task, questions });
+        const answered = { ...first.answers }, gone: Record<string, JevUnanswered> = { ...(first.unanswered ?? {}) };
+        let model = first.model_version;
+        for (const [qid, why] of Object.entries(first.unanswered ?? {})) {
+          const { unit } = qLookup.get(qid)!;
+          let current = questions[qid]!, reason: JevUnanswered | undefined = why;
+          while (tooLong(reason)) {
+            const state = current.state === undefined ? null : unit.shorter?.() ?? null;
+            if (state === null) break;
+            current = { ...current, state };
+            shortened.add(qid);
+            const one = await client.judgeBatched({ task, questions: { [qid]: current } });
+            model = one.model_version ?? model;
+            if (one.answers[qid]) { answered[qid] = one.answers[qid]!; delete gone[qid]; break; }
+            reason = one.unanswered?.[qid];
+            if (reason) gone[qid] = reason;
+          }
+        }
+        return { answers: answered, unanswered: gone, model_version: model };
+      };
+      const askAll = (task: 'single_cmd_judge' | 'steplist_judge', questions: Record<string, PlumbBatchQuestion>) => (judge === 'jev' ? askJev(task, questions) : ask(task, questions));
       if (Object.keys(singleQuestions).length > 0) {
-        const sRes = await ask('single_cmd_judge', singleQuestions);
+        const sRes = await askAll('single_cmd_judge', singleQuestions);
         modelVersion = sRes.model_version;
         for (const qid of Object.keys(singleQuestions)) {
           const rawAns = sRes.answers[qid];
           if (!rawAns) {
+            const why = 'unanswered' in sRes ? sRes.unanswered?.[qid] : undefined;
+            if (why) { noAnswer.set(qid, why); continue; }
             if (tooLongAlone.length > 0) continue;
-            throw plumbFailure('暂时不可用', `Plumb single_cmd_judge 缺少结果 ${qid}`, '请重试命令核验');
+            throw plumbFailure('暂时不可用', `${judge === 'jev' ? 'Jev' : 'Plumb'} single_cmd_judge 缺少结果 ${qid}`, '请重试命令核验');
           }
           answers.set(qid, normalizeJudgeAnswer(rawAns));
         }
       }
       if (Object.keys(listQuestions).length > 0) {
-        const lRes = await ask('steplist_judge', listQuestions);
+        const lRes = await askAll('steplist_judge', listQuestions);
         modelVersion = lRes.model_version ?? modelVersion;
         for (const qid of Object.keys(listQuestions)) {
           const rawAns = lRes.answers[qid];
           if (!rawAns) {
+            const why = 'unanswered' in lRes ? lRes.unanswered?.[qid] : undefined;
+            if (why) { noAnswer.set(qid, why); continue; }
             if (tooLongAlone.length > 0) continue;
-            throw plumbFailure('暂时不可用', `Plumb steplist_judge 缺少结果 ${qid}`, '请重试命令核验');
+            throw plumbFailure('暂时不可用', `${judge === 'jev' ? 'Jev' : 'Plumb'} steplist_judge 缺少结果 ${qid}`, '请重试命令核验');
           }
           answers.set(qid, normalizeJudgeAnswer(rawAns));
         }
       }
+      if (jev) jevRequests = jev.requests;
     }
 
     if (tooLongAlone.length > 0) {
@@ -571,6 +618,41 @@ export async function runCmdVerifyPlumb(
             gate: null,
           };
         }
+        const missing = noAnswer.get(qid);
+        if (missing) {
+          // No Jev opinion for this unit: the command tree check alone settles it, and the step says that Jev did not answer and why.
+          const judged = jevUnansweredStep(unit.tree, strictReview, missing.reason);
+          if (judged.review_required) reviewRequiredCount += 1;
+          if (judged.blocked) {
+            const cause = unit.tree.status === 'refused' ? 'tree' : 'strict';
+            causes[cause] += 1;
+            const where = `${basename(c.file)}:${unit.pointer}`;
+            blockedItems.push(cause === 'tree' ? `${where} 命令树核对未通过（${unit.lines[0]}；${unit.tree.problems?.[0]?.message ?? '没有说明'}）` : `${where} (${unit.lines[0]} -> 命令树核对没有结论，--strict-review)`);
+          }
+          const disclosure = [unit.intent.disclosure, judged.disclosure].filter((part): part is string => part !== undefined).join('；');
+          return {
+            pointer: unit.pointer,
+            task: unit.task,
+            command: unit.commandText,
+            intent: unit.intent.text,
+            intent_source: unit.intent.source,
+            definition_attached: unit.definition.length > 0,
+            ...(shortened.has(qid) ? { earlier_steps_shortened: true } : {}),
+            plumb_verdict: null,
+            tree_check: unit.tree,
+            verdict: judged.verdict,
+            blocked: judged.blocked,
+            review_required: judged.review_required,
+            ...(judged.note ? { note: judged.note } : {}),
+            ...(disclosure ? { disclosure } : {}),
+            jev_no_opinion: { code: missing.code, reason: missing.reason },
+            answer: null,
+            match: null,
+            confidence: null,
+            probabilities: null,
+            gate: null,
+          };
+        }
         const norm = answers.get(qid)!;
         const action: PlumbGate['action'] | undefined = norm.gate?.action;
         const lowerChoice = norm.choice.trim().toLowerCase();
@@ -582,7 +664,7 @@ export async function runCmdVerifyPlumb(
           action === 'reject'
             ? { call: 'reject', note: 'Plumb match 落入 reject 区', ...said }
             : action === 'review'
-              ? { call: 'review', note: '[需人工复核：Plumb match 落入 review 区]', ...said }
+              ? { call: 'review', note: judge === 'jev' ? `[需人工复核：Jev 的回答未经确认，只作参考${typeof yes === 'number' ? `（p(是)=${yes.toFixed(3)}）` : ''}]` : '[需人工复核：Plumb match 落入 review 区]', ...said }
               : isMismatch
                 ? { call: 'reject', note: 'Plumb match 判断命令不匹配', ...said }
                 : { call: 'pass', note: null, ...said };
@@ -600,7 +682,9 @@ export async function runCmdVerifyPlumb(
                 : `${where} (${unit.lines[0]} -> reject，命令树核对没有结论)`,
           );
         }
-        const disclosure = [unit.intent.disclosure, judged.disclosure].filter((part): part is string => part !== undefined).join('；');
+        // Jev never settles a step: where the tree has no conclusion either, nothing releases or refuses it, and the step says so.
+        const jevAlone = judge === 'jev' && unit.tree.status !== 'accepted' && unit.tree.status !== 'refused' ? `命令树核对没有给出结论（${unit.tree.reason ?? '没有说明'}）；这一步只有 Jev 的判断（未确认，只作参考），既没有放行也没有拒绝，状态未知` : undefined;
+        const disclosure = [unit.intent.disclosure, judged.disclosure, jevAlone].filter((part): part is string => part !== undefined).join('；');
 
         return {
           pointer: unit.pointer,
@@ -639,10 +723,13 @@ export async function runCmdVerifyPlumb(
     const nothingChecked = treeOnly && stepsChecked === 0;
     const report = {
       schema: 'plumb-cmd-verify-report@1',
-      judge: treeOnly ? ('tree-only' as const) : ('plumb' as const),
+      judge: treeOnly ? ('tree-only' as const) : judge,
       status: treeOnly ? (reviewRequiredCount > 0 || nothingChecked ? ('未知' as const) : ('已确认' as const)) : ('未确认' as const),
       decided_by: treeOnly ? ('程序' as const) : ('模型' as const),
       model_version: modelVersion,
+      ...(judge === 'jev' ? { prompt_version: JEV_COMMAND_PROMPT } : {}),
+      ...(jevRequests !== null ? { jev_requests: jevRequests } : {}),
+      ...(noAnswer.size > 0 ? { jev_no_opinion_count: noAnswer.size } : {}),
       context_mode: contextMode,
       strict_review: strictReview,
       checked: results.length,
@@ -671,7 +758,7 @@ export async function runCmdVerifyPlumb(
         stdout: serialized,
         stderr: formatPlumbCallError(
           '参数无效',
-          `${treeOnly ? '' : 'Plumb '}命令核验未通过（阻断 ${blockedItems.length} 处）：${blockedItems.join('；')}`,
+          `${treeOnly ? '' : judge === 'jev' ? 'Jev ' : 'Plumb '}命令核验未通过（阻断 ${blockedItems.length} 处）：${blockedItems.join('；')}`,
           `请${next.join('；')}，再重跑 cmd-verify-plumb.ts`,
         ) + '\n',
       };

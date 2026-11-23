@@ -1,12 +1,16 @@
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { type CallErrorCategory as CallErrorCode } from './generated/vocabulary.ts';
+import { JevClient, httpsTransport, type JevTransport } from './generated/skills/jev-judge/jev-client/index.ts';
+import { JevJudge, jevFailure, type JevAsker, type JevUnanswered } from './jev-judge.ts';
 import { CallFailure, formatCallError } from './text.ts';
 import {
   PlumbClient,
   PlumbHttpError,
   validatePlumbBaseUrl,
   type CallErrorCategory as PlumbErrorCategory,
+  type PlumbBatchAnswer,
+  type PlumbBatchQuestion,
   type PlumbClientConfig,
 } from './generated/skills/plumb/plumb-client/index.ts';
 
@@ -39,6 +43,8 @@ const MAX_STDIN_BYTES = 64 * 1024;
 const FORBIDDEN_SECRET_FLAGS = new Set(['--api-key', '--token', '--claim-code']);
 
 export interface PlumbCliOptions {
+  /** plumb (the default) or jev; only the tools that the pipeline runs for a compile judged by Jev take it. */
+  judge?: string;
   baseUrl?: string;
   model?: string;
   caFile?: string;
@@ -47,12 +53,20 @@ export interface PlumbCliOptions {
   cacheDir?: string;
   noCache?: boolean;
   auditOut?: string;
+  /** Jev only: the file that keeps the answers across passes (the tools name it beside their other outputs; no option of the command line sets it). */
+  jevAnswers?: string;
   keyStdin?: boolean;
 }
+
+/** Builds the client of the jev-judge skill for one invocation; tests inject a scripted one. */
+export type JevFactory = (config: { apiKey: string; auditPath?: string; transport?: JevTransport; timeoutMs?: number }) => JevAsker | Promise<JevAsker>;
 
 export interface PlumbToolIo {
   stdinText?: string;
   env?: NodeJS.ProcessEnv;
+  jev?: JevFactory;
+  /** Stands in for the network when a test runs the embedded Jev client; the command line has no way to set it, and the address stays the module's fixed one. */
+  jevTransport?: JevTransport;
 }
 
 export function parseFlagMap(
@@ -112,6 +126,7 @@ export function extractPlumbCliOptions(flags: ReadonlyMap<string, string | true>
     return typeof v === 'string' ? v : undefined;
   };
   return {
+    judge: str('--judge'),
     baseUrl: str('--base-url'),
     model: str('--model'),
     caFile: str('--ca-file'),
@@ -124,10 +139,10 @@ export function extractPlumbCliOptions(flags: ReadonlyMap<string, string | true>
   };
 }
 
-async function readFirstLineStdin(io: PlumbToolIo): Promise<string> {
+async function readFirstLineStdin(io: PlumbToolIo, what = 'Plumb API Key'): Promise<string> {
   if (io.stdinText !== undefined) {
     const first = io.stdinText.split(/\r?\n/u)[0]?.trim() ?? '';
-    if (!first) throw plumbFailure('无权限', '标准输入第一行为空', '请通过标准输入传入 Plumb API Key');
+    if (!first) throw plumbFailure('无权限', '标准输入第一行为空', `请通过标准输入传入 ${what}`);
     return first;
   }
   if (process.stdin.isTTY) {
@@ -139,13 +154,13 @@ async function readFirstLineStdin(io: PlumbToolIo): Promise<string> {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     total += buf.length;
     if (total > MAX_STDIN_BYTES) {
-      throw plumbFailure('参数无效', '标准输入内容超过上限', '第一行仅传 Plumb API Key');
+      throw plumbFailure('参数无效', '标准输入内容超过上限', `第一行仅传 ${what}`);
     }
     chunks.push(buf);
   }
   const first = Buffer.concat(chunks).toString('utf8').split(/\r?\n/u)[0]?.trim() ?? '';
   if (!first) {
-    throw plumbFailure('无权限', '标准输入第一行为空', '请确保第一行为有效 Plumb API Key');
+    throw plumbFailure('无权限', '标准输入第一行为空', `请确保第一行为有效 ${what}`);
   }
   return first;
 }
@@ -199,4 +214,59 @@ export async function createCasePlumbClient(
     auditOut: opts.auditOut,
   };
   return new PlumbClient(config);
+}
+
+export type JudgeName = 'plumb' | 'jev';
+
+/** What the two judge tools use of a judge: the batched question call, whoever answers. */
+export interface BatchJudgeClient {
+  judgeBatched(params: { task?: string; questions: Record<string, PlumbBatchQuestion> }): Promise<{ model_version: string | null; answers: Record<string, PlumbBatchAnswer>; unanswered?: Record<string, JevUnanswered> }>;
+}
+
+export interface CaseJudge {
+  judge: JudgeName;
+  client: BatchJudgeClient;
+  /** Set when Jev judges: the adapter, which counts the requests it really sent. */
+  jev?: JevJudge;
+}
+
+/** The longest a Jev request may take on the pipeline path: the client's own limit is 30 seconds, which a busy service can pass. */
+export const JEV_REQUEST_TIMEOUT_MS = 60_000;
+/**
+ * The embedded client of the jev-judge skill: its address is fixed in the module, its key is the first line of the standard input, its request log
+ * is the audit path. What it reports as sent is what left its transport: the client sends a request again once after a 429 or a 529, and that is
+ * a second request for the service, and for its bill.
+ */
+export const DEFAULT_JEV: JevFactory = ({ apiKey, auditPath, transport, timeoutMs }) => {
+  let sent = 0;
+  const inner = transport ?? httpsTransport;
+  const counting: JevTransport = (request) => { sent += 1; return inner(request); };
+  const client = new JevClient({ apiKey, timeoutMs: timeoutMs ?? JEV_REQUEST_TIMEOUT_MS, ...(auditPath ? { auditPath } : {}), transport: counting });
+  return { ask: (request) => client.ask(request), sent: () => sent };
+};
+const KEY_PLACEHOLDER = /^%[A-Z][A-Z0-9_]*%$/u;
+
+export function judgeOf(opts: PlumbCliOptions): JudgeName {
+  const judge = opts.judge ?? 'plumb';
+  if (judge !== 'plumb' && judge !== 'jev') throw plumbFailure('参数无效', `--judge 只能写 plumb 或 jev（看到 ${judge.slice(0, 40)}）`, '这个选项由 pipeline.ts 按这次编译的判断方式带上，不手写');
+  return judge;
+}
+
+/**
+ * The client that answers the batched questions of one invocation: Plumb as before, or Jev. The Jev key comes only from the
+ * first line of the standard input (never from the environment) and is never an unexpanded placeholder.
+ */
+export async function createCaseJudge(opts: PlumbCliOptions, io: PlumbToolIo = {}): Promise<CaseJudge> {
+  if (judgeOf(opts) === 'plumb') return { judge: 'plumb', client: await createCasePlumbClient(opts, io) };
+  if (!opts.keyStdin) throw plumbFailure('无权限', 'Jev 密钥只从标准输入第一行读入，没有带 --key-stdin', '这个选项由 pipeline.ts 带上，不手写');
+  const apiKey = await readFirstLineStdin(io, 'Jev 密钥');
+  if (KEY_PLACEHOLDER.test(apiKey)) throw plumbFailure('无权限', 'Jev 密钥没有展开，标准输入第一行还是占位符', '请使用者把 Jev 密钥保存为客户端密钥 JEV_API_KEY，再启动编写循环');
+  let asker: JevAsker;
+  try {
+    asker = await (io.jev ?? DEFAULT_JEV)({ apiKey, ...(opts.auditOut ? { auditPath: opts.auditOut } : {}), ...(io.jevTransport ? { transport: io.jevTransport } : {}) });
+  } catch (error) {
+    throw jevFailure(error, apiKey);
+  }
+  const jev = new JevJudge(asker, { ...(opts.model ? { model: opts.model } : {}), secret: apiKey, ...(opts.jevAnswers ? { answersFile: opts.jevAnswers } : {}) });
+  return { judge: 'jev', client: jev, jev };
 }

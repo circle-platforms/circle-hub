@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { expandText } from '../functions/length-literals.ts';
-import { collect, forLead, initState, main, next, recordStatus, reopen, resume, retry, rework, summary, type Gates, type PipelineState, type RunTool, type ToolRun } from './pipeline.ts';
+import { JEV_ASK_SPACING_MS, JEV_UNANSWERED_LIMIT, collect, forLead, initState, main, next, recordStatus, reopen, resume, retry, rework, summary, type CaseState, type Gates, type PipelineState, type RunTool, type ToolRun } from './pipeline.ts';
 
 const ok = (stdout = '{"ok":true}'): ToolRun => ({ code: 0, stdout, stderr: '' });
 const bad = (stderr: string): ToolRun => ({ code: 1, stdout: '', stderr });
@@ -34,7 +35,7 @@ function tools(script: (tool: string, args: string[]) => ToolRun | undefined) {
   };
   return { run, calls };
 }
-const gates = (run: RunTool): Gates => ({ run, hub: 'http://127.0.0.1:9/mcp', plumb: 'https://127.0.0.1:9', token: 'synthetic-token-1234', plumbKey: 'synthetic-plumb-key' });
+const gates = (run: RunTool): Gates => ({ run, hub: 'http://127.0.0.1:9/mcp', plumb: 'https://127.0.0.1:9', token: 'synthetic-token-1234', plumbKey: 'synthetic-plumb-key', jevKey: 'synthetic-jev-key' });
 const OPEN = { recompose_run: 'run_01recomposerecompose00', plan_run: 'run_01planplanplanplanplan00' };
 
 test('init queues every case paired by node and starts six recomposers; the seventh waits', async () => {
@@ -470,7 +471,7 @@ test('the record status is read from the answer partitions, and a refused submis
 
 const NEXT_PLAN = 'run_01planplanplanplanplan01';
 const OPENED = { ...OPEN, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01bookingbookingbooking0', recompose_record: 'rec:' + 'a'.repeat(64) };
-async function afterDevice(rows: (autoids: string[]) => unknown[], options: { judge?: 'model'; more?: (tool: string, args: string[]) => ToolRun | undefined } = {}) {
+async function afterDevice(rows: (autoids: string[]) => unknown[], options: { judge?: 'model' | 'jev'; more?: (tool: string, args: string[]) => ToolRun | undefined } = {}) {
   await world(3);
   const state = await initState('recompose-run', 'plan-run', options.judge === undefined ? OPEN : { ...OPEN, judge: options.judge }, 'synthetic-model');
   for (const c of state.cases) {
@@ -484,7 +485,7 @@ async function afterDevice(rows: (autoids: string[]) => unknown[], options: { ju
   const t = tools((tool, args) => {
     const at = (name: string) => args[args.indexOf(name) + 1]!;
     // The record the tool writes keeps what it was given besides the mind map: the scope it read, the cases left out, the version line and the named documents.
-    if (tool === 'open-compile.ts') { opens++; writeFileSync(at('--out'), JSON.stringify({ ...OPENED, plan_run: opens === 1 ? NEXT_PLAN : `run_01planplanplanplanplan0${opens}`, ...Object.fromEntries(['version', 'contract', 'inventory', 'profile'].filter((name) => args.includes(`--${name}`)).map((name) => [name, at(`--${name}`)])), ...(args.includes('--scope') ? { scope: JSON.parse(readFileSync(at('--scope'), 'utf8')) } : {}), ...(args.includes('--exclude') ? { exclude: at('--exclude').split(',') } : {}) })); return ok('就绪'); }
+    if (tool === 'open-compile.ts') { opens++; writeFileSync(at('--out'), JSON.stringify({ ...OPENED, plan_run: opens === 1 ? NEXT_PLAN : `run_01planplanplanplanplan0${opens}`, ...(args.includes('--judge') ? { judge: at('--judge') } : {}), ...Object.fromEntries(['version', 'contract', 'inventory', 'profile'].filter((name) => args.includes(`--${name}`)).map((name) => [name, at(`--${name}`)])), ...(args.includes('--scope') ? { scope: JSON.parse(readFileSync(at('--scope'), 'utf8')) } : {}), ...(args.includes('--exclude') ? { exclude: at('--exclude').split(',') } : {}) })); return ok('就绪'); }
     if (tool === 'download-run.ts') { mkdirSync(join(at('--out'), 'briefs'), { recursive: true }); writeFileSync(join(at('--out'), 'run.json'), JSON.stringify({ run: NEXT_PLAN })); for (const k of ['00', '01', '02']) writeFileSync(join(at('--out'), 'briefs', `${k}.md`), '合成简报'); return ok(); }
     if (tool === 'carry-plans.ts') {
       mkdirSync(at('--plans'), { recursive: true });
@@ -510,7 +511,7 @@ test('a device round is reworked by code: a new plan run, what passed carried, w
   const downloaded = t.calls.filter((c) => c.tool === 'case-compile/download-run.ts');
   assert.deepEqual(downloaded.map((c) => c.args.slice(c.args.indexOf('--run'))), [['--run', NEXT_PLAN, '--out', join('rework-2', 'plan-run'), '--history-reuse', 'history']]);
   const opened = t.calls.find((c) => c.tool === 'case-compile/open-compile.ts')!;
-  assert.deepEqual([opened.args.slice(opened.args.indexOf('--subject')), opened.stdin], [['--subject', 'agile:mindmap:900001', '--product', 'widget', '--build', 'Fixture_Build_A', '--booking', 'run_01bookingbookingbooking0', '--recompose-run', OPEN.recompose_run, '--recompose-record', OPENED.recompose_record, '--out', join('rework-2', 'open-compile.json')], 'synthetic-token-1234\nsynthetic-plumb-key\n'], 'the same mind map, build, booking and recompose run');
+  assert.deepEqual([opened.args.slice(opened.args.indexOf('--subject')), opened.stdin], [['--subject', 'agile:mindmap:900001', '--product', 'widget', '--build', 'Fixture_Build_A', '--booking', 'run_01bookingbookingbooking0', '--recompose-run', OPEN.recompose_run, '--recompose-record', OPENED.recompose_record, '--out', join('rework-2', 'open-compile.json')], 'synthetic-token-1234\nsynthetic-plumb-key\n%JEV_API_KEY%\n'], 'the same mind map, build, booking and recompose run, and the three stdin lines: the Plumb key of a Plumb compile, the placeholder where a Jev key would be');
   const task = t.calls.filter((c) => c.tool === 'case-compile/task-brief.ts').at(-1)!.args, at = (name: string) => task[task.indexOf(name) + 1];
   assert.deepEqual([at('--round'), at('--prior-plans'), at('--prior-returns'), at('--prior-notes'), at('--run'), at('--brief'), at('--task-file')], ['2', join('rework-2', 'prior-plans'), 'returns-1', 'notes', join('rework-2', 'plan-run'), join('rework-2', 'plan-run', 'briefs', '01.md'), join('tasks', 'write', '01-r2-1.md')]);
   assert.match(at('--note')!, /^停下前最后一次没有通过：上机第 1 轮没有通过（判定 no_verdict）/);
@@ -898,7 +899,7 @@ test('a reopen and a delivery volume open the next plan run with the version lin
   assert.deepEqual(NAMES.map((name) => JSON.parse(readFileSync(volume.state.open!, 'utf8'))[name]), given);
 });
 
-const withoutPlumb = (run: RunTool): Gates => ({ run, hub: 'http://127.0.0.1:9/mcp', plumb: '', token: 'synthetic-token-1234', plumbKey: '' });
+const withoutPlumb = (run: RunTool): Gates => ({ run, hub: 'http://127.0.0.1:9/mcp', plumb: '', token: 'synthetic-token-1234', plumbKey: '', jevKey: '' });
 
 test('judge model: a written case passes the tree-only command check and the blind fidelity audit, Plumb is never asked, and every case says who judged', async () => {
   await world(1);
@@ -1015,12 +1016,12 @@ const asksPlumb = (call: { tool: string; args: string[] }): boolean =>
 
 test('judge model: a device round is reworked without Plumb: the new plan run is opened without its address, what passed is carried untouched, and the case written again goes through the tree-only check and the blind audit alone', async () => {
   const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }], { judge: 'model', more: modelGates(['01']) });
-  const step = await rework(state, OPENED, 'returns-1', 'notes', withoutPlumb(t.run));
+  const step = await rework(state, { ...OPENED, judge: 'model' }, 'returns-1', 'notes', withoutPlumb(t.run));
   assert.deepEqual([step.round, step.carried, step.reworked, step.actions.map((a) => a.label)], [2, ['00', '02'], ['01'], ['编写 01']]);
   const opened = t.calls.find((c) => c.tool === 'case-compile/open-compile.ts')!;
   assert.deepEqual(opened.args.slice(0, 4), ['--hub', 'http://127.0.0.1:9/mcp', '--judge', 'model']);
   assert.equal(opened.args.includes('--plumb'), false, 'no Plumb address is handed to the new run');
-  assert.equal(opened.stdin, 'synthetic-token-1234\n\n', 'the Hub token, and an empty line where the key would be: nothing is handed over that this compile does not use');
+  assert.equal(opened.stdin, 'synthetic-token-1234\n%PLUMB_API_KEY%\n%JEV_API_KEY%\n', 'the Hub token, and the placeholder where each key would be: nothing is handed over that this compile does not use');
   assert.equal(state.judge, 'model', 'the new plan run is judged as the first was');
   assert.deepEqual(['00', '02'].map((k) => readFileSync(join('cases', k, 'ready', `${k}.json`), 'utf8')), ['{"plan":"00 carried"}', '{"plan":"02 carried"}']);
   await writeFile(join('cases', '01', 'plan', '01.json'), '{"plan":"01 round 2"}');
@@ -1039,13 +1040,13 @@ test('judge model: a case that stops again leaves this compile through reopen, w
   state.open = 'open-compile.json';
   const b = state.cases[1]!;
   b.stage = 'stopped'; b.attempts = { recompose: 1, write: 5 }; b.stopped = '脚本编写 5 次仍未通过：合成原因'; b.retried = OPEN.plan_run;
-  const step = await reopen(state, OPENED, undefined, withoutPlumb(t.run));
+  const step = await reopen(state, { ...OPENED, judge: 'model' }, undefined, withoutPlumb(t.run));
   assert.match(step.message, /^新开脚本编写运行 run_01planplanplanplanplan01（reopen-1\/open-compile\.json）：2 条就绪的计划已原样结转；retry 后又停下的 1 条不进这次编译（01）/);
   const opened = t.calls.find((c) => c.tool === 'case-compile/open-compile.ts')!;
   assert.deepEqual(opened.args.slice(0, 4), ['--hub', 'http://127.0.0.1:9/mcp', '--judge', 'model']);
   assert.equal(opened.args.includes('--plumb'), false);
   assert.equal(opened.args[opened.args.indexOf('--exclude') + 1], b.autoid, 'the case that stopped again stays out');
-  assert.equal(opened.stdin, 'synthetic-token-1234\n\n');
+  assert.equal(opened.stdin, 'synthetic-token-1234\n%PLUMB_API_KEY%\n%JEV_API_KEY%\n');
   assert.deepEqual([state.judge, state.cases.map((c) => c.stage)], ['model', ['ready', 'excluded', 'ready']]);
   assert.deepEqual(t.calls.filter(asksPlumb), []);
   // A plan that the carry does not take is written again in the new run and goes through the same gates, still without Plumb.
@@ -1070,7 +1071,12 @@ test('the command line asks for the Plumb address and key only when Plumb is the
   const refused = await said(['resume', '--state', 'plumb.json', '--hub', 'http://127.0.0.1:9/mcp'], ['synthetic-token-1234']);
   assert.equal(refused.code, 1); assert.match(refused.out, /缺 --plumb <Plumb地址>（这次编译的判断方式是 Plumb）/);
   const noKey = await said(['resume', '--state', 'plumb.json', '--hub', 'http://127.0.0.1:9/mcp', '--plumb', 'https://127.0.0.1:9'], ['synthetic-token-1234']);
-  assert.equal(noKey.code, 1); assert.match(noKey.out, /第二行 %PLUMB_API_KEY%/);
+  assert.equal(noKey.code, 1); assert.match(noKey.out, /缺 Plumb 密钥：标准输入第二行要是 %PLUMB_API_KEY% 展开后的密钥，现在它是客户端没有展开的占位符或空行（这次编译的判断方式是 Plumb）；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后再启动编写循环/);
+  // Three lines were written and the second is the placeholder the client did not expand: the cause is said, not the number of lines.
+  const unexpanded = await said(['resume', '--state', 'plumb.json', '--hub', 'http://127.0.0.1:9/mcp', '--plumb', 'https://127.0.0.1:9'], ['synthetic-token-1234', '%PLUMB_API_KEY%', 'synthetic-jev-key']);
+  assert.equal(unexpanded.code, 1); assert.match(unexpanded.out, /缺 Plumb 密钥：标准输入第二行/); assert.doesNotMatch(unexpanded.out, /标准输入要三行/);
+  const blank = await said(['resume', '--state', 'plumb.json', '--hub', 'http://127.0.0.1:9/mcp', '--plumb', 'https://127.0.0.1:9'], ['synthetic-token-1234', '', 'synthetic-jev-key']);
+  assert.equal(blank.code, 1); assert.match(blank.out, /缺 Plumb 密钥：标准输入第二行/);
   const allowed = await said(['resume', '--state', 'model.json', '--hub', 'http://127.0.0.1:9/mcp'], ['synthetic-token-1234']);
   assert.equal(allowed.code, 0, allowed.out);
 });
@@ -1143,4 +1149,510 @@ test('judge model: a client that does not know %PLUMB_URL% and %PLUMB_API_KEY% l
   }
   assert.deepEqual(t.calls.filter((call) => call.tool.startsWith('plumb/') || call.tool === 'case-compile/fidelity-plumb.ts' || call.tool === 'case-compile/cmd-select-plumb.ts'), [], 'no Plumb tool is called');
   assert.deepEqual(t.calls.filter((call) => [...call.args, call.stdin ?? ''].some((text) => text.includes('%PLUMB_'))), [], 'neither unexpanded name reaches any tool');
+});
+
+// ---- Jev as the judge the user chose: the two gates run with --judge jev and the Jev key, nothing is woken, and every Jev answer only advises ----
+
+const jevGates = (run: RunTool, now?: () => number): Gates => ({ run, hub: 'http://127.0.0.1:9/mcp', plumb: '', token: 'synthetic-token-1234', plumbKey: '%PLUMB_API_KEY%', jevKey: 'synthetic-jev-key', ...(now ? { now } : {}) });
+// The pipeline's clock in the Jev tests: it stands where the test puts it and moves only when the test says so.
+function clockAt(start = Date.UTC(2026, 10, 23, 4, 0, 0)) {
+  let at = start;
+  return Object.assign(() => at, { tick: (ms: number) => { at += ms; } });
+}
+// A local time to the second, written the way the pipeline writes it in a waiting reason.
+const localSecondOf = (ms: number): string => { const d = new Date(ms), p = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+const callsOf = (calls: Array<{ tool: string; args: string[]; stdin?: string }>, tool: string) => calls.filter((c) => c.tool === `case-compile/${tool}`);
+
+test('judge jev: a written case runs the command check and the fidelity audit with the Jev judge and key, wakes nothing, says once who judged, and its verdict goes to the blind audit', async () => {
+  await world(1);
+  const jevVerdict = JSON.stringify({ steps: [{ n: 'a2', verdict: 'changed', step_indices: [1], rationale: '合成：Jev 判保持，不自动放行', model_judgment: { choice: '保持', confidence: 0.93, gate: { action: 'review', reason: 'source=uncalibrated' } } }] });
+  let ready = false;
+  const t = tools((tool) => {
+    if (tool === 'cmd-verify-plumb.ts') return ok(JSON.stringify({ judge: 'jev', review_required_count: 3, blocked_count: 0 }));
+    if (tool === 'fidelity-apply.ts') return ok(JSON.stringify(ready ? { ready: true, merged: [], attention: [], skipped: [] } : { ready: false, merged: [], attention: [{ file: '00.json', state: '未确认', message: '审计判作者步骤 a2 的场景被改了：合成理由' }], skipped: [] }));
+    return undefined;
+  });
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  assert.equal(state.judge, 'jev');
+  const c = state.cases[0]!; c.stage = 'writing'; c.attempts = { recompose: 1, write: 1 }; c.record_accepted = true;
+  const audit = join('cases', '00', 'audit');
+  await mkdir(join('cases', '00', 'plan'), { recursive: true }); await writeFile(join('cases', '00', 'plan', '00.json'), '{}');
+  // The files the fidelity tool writes are there beforehand: the tool itself is scripted.
+  await mkdir(audit, { recursive: true }); await writeFile(join(audit, '00.aaaa1111.brief.json'), '{}'); await writeFile(join(audit, '00.aaaa1111.verdict.json'), jevVerdict);
+  const step = await next(state, '编写 00', jevGates(t.run));
+  const [verify] = callsOf(t.calls, 'cmd-verify-plumb.ts'), [fidelity] = callsOf(t.calls, 'fidelity-plumb.ts');
+  assert.deepEqual(verify!.args, ['--plans', join('cases', '00', 'plan'), '--run', 'plan-run', '--audit-out', join(audit, 'jev-commands.jsonl'), '--judge', 'jev', '--key-stdin']);
+  assert.deepEqual(fidelity!.args, ['--run', 'plan-run', '--plans', join('cases', '00', 'plan'), '--briefs', audit, '--judge', 'jev', '--key-stdin']);
+  assert.deepEqual([verify!.stdin, fidelity!.stdin], ['synthetic-jev-key\n', 'synthetic-jev-key\n'], 'the Jev key alone, on the first line; no Plumb address or key reaches a tool');
+  assert.deepEqual(t.calls.filter((x) => x.tool.startsWith('plumb/') || x.args.includes('--base-url')), [], 'no wake and no Plumb address');
+  assert.deepEqual(step.actions.map((a) => [a.label, a.subagent_type]), [['审计 00', 'case-compile:compile-fidelity']], 'what Jev said releases nothing: a second opinion is asked for');
+  assert.deepEqual(readdirSync(audit).sort(), ['00.aaaa1111.brief.json', '00.aaaa1111.jev-review.json'], 'the Jev judgment is kept beside the brief under its own name');
+  assert.equal(c.review!.length, 3);
+  assert.match(c.review![0]!, /^判断方式：这次按使用者选定的方式由 Jev（TypeSafe 的线上判断服务）判断命令核验和场景保真，这条用例的原始用例步骤、写出的命令和手册片段发给 TypeSafe（从第一次问 Jev 起）；Jev 的回答是模型的判断，未经确认，一律只作参考，不放行也不拒绝/);
+  assert.match(c.review![1]!, /^命令核验：第 1 版计划有 3 步命令由 Jev 判断，一律只作参考，报告里每一步标需人工复核并带 Jev 给的概率；命令树核对不通过的已经挡住$/);
+  assert.match(c.review![2]!, /^场景保真：第 1 版计划的 Jev 判断（未确认）一律只作参考，逐条交独立盲审；本次无人值守，由独立盲审给出结论（Jev 的原判断保存在 cases\/00\/audit\/[^）]+\.jev-review\.json）$/);
+  assert.ok(c.review!.every((line) => !/Plumb 拿不准/.test(line)), 'no text says Plumb was unsure');
+  await writeFile(join(audit, '00.aaaa1111.verdict.json'), JSON.stringify({ steps: [{ n: 'a2', verdict: 'preserved', step_indices: [1], rationale: '合成：盲审判保住' }] }));
+  ready = true;
+  assert.deepEqual((await next(state, '审计 00', jevGates(t.run))).ready, ['00']);
+  const collected = await collect(state, 'plans-jev');
+  assert.deepEqual(collected.reviewed?.map((r) => [r.autoid, r.notes.length]), [[c.autoid, 3]], 'collect hands the notes to the final report');
+});
+
+test('judge jev: the notes about who judged are written once however often a case is written, and the command note once for each plan version', async () => {
+  await world(1);
+  let steps = 2;
+  const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? ok(JSON.stringify({ judge: 'jev', review_required_count: steps })) : undefined));
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  const c = state.cases[0]!; c.stage = 'writing'; c.attempts = { recompose: 1, write: 1 }; c.record_accepted = true;
+  await mkdir(join('cases', '00', 'plan'), { recursive: true }); await writeFile(join('cases', '00', 'plan', '00.json'), '{}');
+  for (let again = 0; again < 3; again++) { c.stage = 'writing'; await next(state, '编写 00', jevGates(t.run)); }
+  assert.equal(c.review!.filter((line) => line.startsWith('判断方式：')).length, 1);
+  assert.equal(c.review!.filter((line) => /^命令核验：第 1 版计划有 2 步命令由 Jev 判断/.test(line)).length, 1);
+  steps = 1; c.stage = 'writing'; c.attempts.write = 2;
+  await next(state, '编写 00', jevGates(t.run));
+  assert.deepEqual(c.review!.filter((line) => line.startsWith('命令核验：')).map((line) => /^命令核验：第 (\d+) 版计划有 (\d+) 步/.exec(line)!.slice(1)), [['1', '2'], ['2', '1']]);
+  assert.equal(c.review!.filter((line) => line.startsWith('判断方式：')).length, 1);
+});
+
+test('judge jev: a gate Jev cannot serve waits without an attempt and without a wake, and a refused key stops the case under its sentence and goes back to its gates on retry', async () => {
+  await world(2);
+  const time = clockAt();
+  let service: 'down' | 'refused' | 'up' = 'down';
+  const refusal = '无权限：Jev 拒绝了密钥（HTTP 401）。请使用者向管理员重新领取 Jev 密钥，保存为客户端密钥 JEV_API_KEY，再启动编写循环；计划不用改。';
+  const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? (service === 'down' ? bad('暂时不可用：Jev 暂时不可用（HTTP 503）。稍后再启动编写循环重试；计划不用改。') : service === 'refused' ? bad(refusal) : ok(JSON.stringify({ judge: 'jev', review_required_count: 1 }))) : undefined));
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  for (const [i, c] of state.cases.entries()) { c.stage = 'writing'; c.attempts = { recompose: 1, write: 1 }; c.record_accepted = true; await mkdir(join('cases', c.k, 'plan'), { recursive: true }); await writeFile(join('cases', c.k, 'plan', `0${i}.json`), '{}'); }
+  const first = await next(state, '编写 00', jevGates(t.run, time));
+  assert.deepEqual(t.calls.map((x) => x.tool.split('/')[1]), ['check-plan.ts', 'cmd-verify-plumb.ts'], 'one try, no wake and no second try');
+  assert.deepEqual([first.waiting?.map((w) => w.label), state.cases[0]!.attempts.write, state.cases[0]!.stage], [['编写 00'], 1, 'writing']);
+  assert.match(first.waiting![0]!.reason, /^命令核验暂时做不了：暂时不可用：Jev 暂时不可用（HTTP 503）/);
+
+  service = 'refused';
+  time.tick(JEV_ASK_SPACING_MS);
+  const stopped = await next(state, '编写 01', jevGates(t.run, time));
+  const [zero, one] = state.cases;
+  assert.deepEqual([zero!.stage, one!.stage], ['stopped', 'stopped'], 'the waiting case tried again with the same key and was refused too');
+  assert.match(one!.stopped!, new RegExp('^Jev 没有接受密钥，计划没有改：命令核验：' + refusal.slice(0, 20)));
+  assert.deepEqual([one!.attempts.write, stopped.actions.length], [1, 0], 'no attempt was spent and no writer was started');
+
+  service = 'up';
+  const retried = await retry(state, '00', '模型决定：密钥已换', { run: t.run });
+  assert.deepEqual([state.cases[0]!.stage, retried.actions.length, retried.waiting?.map((w) => w.label)], ['writing', 0, ['编写 00']], 'back to its gates, not to a writer');
+  assert.equal(state.cases[0]!.attempts.write, 1);
+  const resumed = await resume(state, jevGates(t.run, time));
+  assert.deepEqual(resumed.ready, ['00']);
+  assert.deepEqual(t.calls.filter((x) => x.tool.startsWith('plumb/')), [], 'Plumb was never woken');
+});
+
+// ---- Jev bills each request: a case it leaves unanswered is asked again only so often, and not too soon ----
+
+const SILENT = '暂时不可用：Jev 暂时不可用（timeout）：Jev 请求超时（30000 毫秒）；服务可能已经处理并计费。没有重发这个请求；请先确认是否要再问一次。稍后再启动编写循环重试；计划不用改。';
+const SILENCE_STOP = '暂时不可用：Jev 连续 5 次没有给出答复（Jev 请求超时（30000 毫秒）；服务可能已经处理并计费）。稍后对这条用例执行 retry（每次脚本编写运行里只能执行一次），或者换一种判断方式重新开编译。';
+const caseOfPlans = (args: string[]) => /cases[\\/](\d\d)[\\/]plan/.exec(args[args.indexOf('--plans') + 1] ?? '')?.[1] ?? '';
+async function writingCases(state: PipelineState) {
+  for (const [i, c] of state.cases.entries()) { c.stage = 'writing'; c.attempts = { recompose: 1, write: 1 }; c.record_accepted = true; await mkdir(join('cases', c.k, 'plan'), { recursive: true }); await writeFile(join('cases', c.k, 'plan', `0${i}.json`), '{}'); }
+}
+const asksOf = (calls: Array<{ tool: string; args: string[] }>, tool: string, k: string) => calls.filter((x) => x.tool === `case-compile/${tool}` && caseOfPlans(x.args) === k).length;
+// What the waiting reason says at the end: which ask this was, until when the case is left alone, and when it stops.
+const said = (n: number, notBefore: number) => `（Jev 连续第 ${n} 次没有答复；${localSecondOf(notBefore)} 之前不再问；满 5 次这条用例停下）`;
+
+test('judge jev: after an unanswered ask a case is not asked again for a minute, whoever asks; an early pass neither asks nor counts, a pass after the minute asks, and the reason says until when', async () => {
+  await world(3);
+  const time = clockAt(), began = time();
+  const t = tools((tool, args) => (tool === 'cmd-verify-plumb.ts' && caseOfPlans(args) === '00' ? bad(SILENT) : undefined));
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  await writingCases(state);
+  const [zero] = state.cases as [CaseState, CaseState, CaseState];
+  const g = () => jevGates(t.run, time);
+  const asks = () => asksOf(t.calls, 'cmd-verify-plumb.ts', '00');
+
+  const first = await next(state, '编写 00', g());
+  assert.deepEqual([zero.jev_unanswered, zero.jev_not_before, asks()], [1, began + JEV_ASK_SPACING_MS, 1]);
+  assert.ok(first.waiting![0]!.reason.endsWith(said(1, began + JEV_ASK_SPACING_MS)), first.waiting![0]!.reason);
+  assert.match(first.waiting![0]!.reason, /；\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} 之前不再问；/);
+
+  // The gates of the other cases finish inside the minute, one after the other: each is a pass of the waiting case, and none asks.
+  time.tick(10_000);
+  assert.deepEqual((await next(state, '编写 01', g())).ready, ['01']);
+  time.tick(10_000);
+  assert.deepEqual((await next(state, '编写 02', g())).ready, ['01', '02']);
+  assert.deepEqual([zero.jev_unanswered, zero.jev_not_before, asks()], [1, began + JEV_ASK_SPACING_MS, 1], 'two early passes: no ask and no count');
+  assert.ok(zero.pending!.endsWith(said(1, began + JEV_ASK_SPACING_MS)), 'the reason is as it was');
+
+  // The last millisecond before the minute is up: a resume does not ask either, and the case is still listed as waiting.
+  assert.equal(JEV_ASK_SPACING_MS, 60_000);
+  time.tick(59_999 - 20_000);
+  assert.equal(time() - began, 59_999);
+  const early = await resume(state, g());
+  assert.deepEqual([zero.jev_unanswered, asks(), early.waiting?.map((w) => w.label), zero.stage], [1, 1, ['编写 00'], 'writing']);
+  assert.ok(early.waiting![0]!.reason.endsWith(said(1, began + JEV_ASK_SPACING_MS)));
+
+  // The minute is up: the case is asked, and the next minute is counted from this ask.
+  time.tick(1);
+  const due = await resume(state, g());
+  assert.deepEqual([zero.jev_unanswered, zero.jev_not_before, asks()], [2, began + 2 * JEV_ASK_SPACING_MS, 2]);
+  assert.ok(due.waiting![0]!.reason.endsWith(said(2, began + 2 * JEV_ASK_SPACING_MS)), due.waiting![0]!.reason);
+  await resume(state, g());
+  assert.deepEqual([zero.jev_unanswered, asks()], [2, 2], 'straight after an ask the case is left alone again');
+});
+
+test('judge jev: a case Jev leaves unanswered is asked again until the fifth time in a row, a minute apart, then it stops under a sentence in the call-error form with the last reason, spends no attempt and leaves the other cases going', async () => {
+  await world(2);
+  const time = clockAt(), began = time();
+  const t = tools((tool, args) => (tool === 'cmd-verify-plumb.ts' && caseOfPlans(args) === '00' ? bad(SILENT) : undefined));
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  await writingCases(state);
+  const [zero, one] = state.cases as [CaseState, CaseState];
+  const g = () => jevGates(t.run, time);
+  const asks = () => asksOf(t.calls, 'cmd-verify-plumb.ts', '00');
+
+  const first = await next(state, '编写 00', g());
+  assert.deepEqual([zero.jev_unanswered, asks(), zero.stage, first.waiting?.map((w) => w.label)], [1, 1, 'writing', ['编写 00']]);
+  assert.match(first.waiting![0]!.reason, /^命令核验暂时做不了：暂时不可用：Jev 暂时不可用（timeout）/);
+  assert.ok(first.waiting![0]!.reason.endsWith(said(1, began + JEV_ASK_SPACING_MS)));
+
+  // The gate of another case is a later ask of the waiting one too, once the minute has passed.
+  time.tick(JEV_ASK_SPACING_MS);
+  const second = await next(state, '编写 01', g());
+  assert.deepEqual([second.ready, zero.jev_unanswered, asks(), one.jev_unanswered], [['01'], 2, 2, undefined], 'the other case went on to its audit and is ready');
+  for (const n of [3, 4]) {
+    time.tick(JEV_ASK_SPACING_MS);
+    const step = await resume(state, g());
+    assert.deepEqual([zero.jev_unanswered, asks(), zero.stage, step.waiting?.map((w) => w.label), step.stopped], [n, n, 'writing', ['编写 00'], []]);
+    assert.ok(step.waiting![0]!.reason.endsWith(said(n, time() + JEV_ASK_SPACING_MS)));
+  }
+
+  time.tick(JEV_ASK_SPACING_MS);
+  const last = await resume(state, g());
+  assert.equal(JEV_UNANSWERED_LIMIT, 5);
+  assert.deepEqual([zero.stage, zero.stopped, zero.pending, zero.jev_not_before, asks()], ['stopped', SILENCE_STOP, undefined, undefined, 5]);
+  assert.equal(time() - began, 4 * JEV_ASK_SPACING_MS, 'five unanswered asks span four minutes');
+  assert.match(zero.stopped!, /^(参数无效|无权限|暂时不可用)：[^。]+。[^。]+。$/, 'the call-error form: the word, the fact, the next step');
+  assert.deepEqual([last.stopped, last.waiting, last.ready, last.all_done], [[{ label: `00 ${zero.autoid}`, reason: SILENCE_STOP }], undefined, ['01'], true]);
+  assert.deepEqual([zero.attempts.write, one.stage, one.attempts.write], [1, 'ready', 1], 'no attempt was spent, and the other case is where it was');
+
+  // Nothing asks Jev about it any more, and no wake or Plumb address is involved.
+  time.tick(JEV_ASK_SPACING_MS);
+  await resume(state, g());
+  assert.equal(asks(), 5);
+  assert.deepEqual(t.calls.filter((x) => x.tool.startsWith('plumb/') || x.args.includes('--base-url')), []);
+});
+
+test('judge jev: a case stopped for Jev\'s silence goes back to its gates on retry, with its plan as it was, the count started over and no minute to wait, and one more silence costs five more asks', async () => {
+  await world(1);
+  const time = clockAt();
+  let silent = true;
+  const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? (silent ? bad(SILENT) : ok(JSON.stringify({ judge: 'jev', review_required_count: 1 }))) : undefined));
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  await writingCases(state);
+  const c = state.cases[0]!, planFile = join('cases', '00', 'plan', '00.json');
+  await writeFile(planFile, '{"plan":"as the writer left it"}');
+  const g = () => jevGates(t.run, time);
+  await next(state, '编写 00', g());
+  for (let n = 0; n < 4; n++) { time.tick(JEV_ASK_SPACING_MS); await resume(state, g()); }
+  assert.equal(c.stage, 'stopped');
+
+  silent = false;
+  const retried = await retry(state, '00', '模型决定：Jev 恢复了，重做命令核验和场景保真审计', { run: t.run });
+  assert.deepEqual([c.stage, c.attempts.write, c.jev_unanswered, c.jev_not_before, c.stopped, c.carry, c.retried, retried.actions.length, retried.waiting?.map((w) => w.label)], ['writing', 1, undefined, undefined, undefined, undefined, state.plan_run, 0, ['编写 00']], 'back to its gates, not to a writer');
+  assert.equal(readFileSync(planFile, 'utf8'), '{"plan":"as the writer left it"}', 'the plan was not touched');
+  assert.deepEqual((await resume(state, g())).ready, ['00'], 'asked at once: the retry is the decision to ask');
+
+  // A second silence in the same plan run is five more asks, and then the case stays stopped: a case is retried once per plan run.
+  await world(1);
+  silent = true;
+  const second = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  await writingCases(second);
+  await next(second, '编写 00', g());
+  for (let n = 0; n < 4; n++) { time.tick(JEV_ASK_SPACING_MS); await resume(second, g()); }
+  assert.equal(second.cases[0]!.stage, 'stopped');
+  silent = false;
+  await retry(second, '00', '模型决定：再试一次', { run: t.run });
+  silent = true;
+  for (let n = 0; n < 5; n++) { await resume(second, g()); time.tick(JEV_ASK_SPACING_MS); }
+  assert.equal(second.cases[0]!.stage, 'stopped');
+  assert.match(second.cases[0]!.stopped!, /^暂时不可用：Jev 连续 5 次没有给出答复/);
+  await assert.rejects(retry(second, '00', '模型决定：第三次', { run: t.run }), /retry 过一次又停下，不再 retry/);
+});
+
+test('judge jev: any end of a pass of the gates but an unanswered one starts the count over, and the command check answering alone does not', async () => {
+  // An answer in full: four silences, then both gates answer.
+  await world(1);
+  const time = clockAt();
+  let silences = 4;
+  const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? (silences-- > 0 ? bad(SILENT) : ok(JSON.stringify({ judge: 'jev', review_required_count: 1 }))) : undefined));
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  await writingCases(state);
+  const c = state.cases[0]!;
+  await next(state, '编写 00', jevGates(t.run, time));
+  for (let n = 0; n < 3; n++) { time.tick(JEV_ASK_SPACING_MS); await resume(state, jevGates(t.run, time)); }
+  assert.deepEqual([c.jev_unanswered, c.stage], [4, 'writing']);
+  time.tick(JEV_ASK_SPACING_MS);
+  assert.deepEqual([(await resume(state, jevGates(t.run, time))).ready, c.jev_unanswered, c.jev_not_before], [['00'], undefined, undefined], 'answered: the case is ready and keeps no count and no minute to wait');
+
+  // A refusal is an answer too: the plan goes back to its writer, and the next plan is asked from the first time again.
+  await world(1);
+  let mode: 'silent' | 'refused' = 'silent';
+  const u = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? (mode === 'silent' ? bad(SILENT) : bad('参数无效：Jev 命令核验未通过（阻断 1 处）：合成命令树核对未通过')) : undefined));
+  const sent = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  await writingCases(sent);
+  const d = sent.cases[0]!;
+  await next(sent, '编写 00', jevGates(u.run, time));
+  for (let n = 0; n < 3; n++) { time.tick(JEV_ASK_SPACING_MS); await resume(sent, jevGates(u.run, time)); }
+  assert.equal(d.jev_unanswered, 4);
+  mode = 'refused';
+  time.tick(JEV_ASK_SPACING_MS);
+  const back = await resume(sent, jevGates(u.run, time));
+  assert.deepEqual([back.actions.map((a) => a.label), d.jev_unanswered, d.jev_not_before, d.attempts.write, d.stage], [['编写 00'], undefined, undefined, 2, 'writing']);
+  mode = 'silent';
+  await next(sent, '编写 00', jevGates(u.run, time));
+  for (let n = 0; n < 3; n++) { time.tick(JEV_ASK_SPACING_MS); await resume(sent, jevGates(u.run, time)); }
+  assert.deepEqual([d.jev_unanswered, d.stage], [4, 'writing'], 'four silences of the new plan are not five in a row');
+  time.tick(JEV_ASK_SPACING_MS);
+  await resume(sent, jevGates(u.run, time));
+  assert.deepEqual([d.stage, d.stopped!.startsWith('暂时不可用：Jev 连续 5 次')], ['stopped', true]);
+
+  // The command check answering is not the pass answering: a case whose audit Jev never answers asks the commands again each time, and stops at the fifth.
+  await world(1);
+  const v = tools((tool) => (tool === 'fidelity-plumb.ts' ? bad(SILENT) : tool === 'cmd-verify-plumb.ts' ? ok(JSON.stringify({ judge: 'jev', review_required_count: 1 })) : undefined));
+  const half = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  await writingCases(half);
+  const e = half.cases[0]!;
+  await next(half, '编写 00', jevGates(v.run, time));
+  for (let n = 0; n < 3; n++) { time.tick(JEV_ASK_SPACING_MS); await resume(half, jevGates(v.run, time)); }
+  assert.deepEqual([e.jev_unanswered, e.stage, asksOf(v.calls, 'cmd-verify-plumb.ts', '00')], [4, 'writing', 4]);
+  time.tick(JEV_ASK_SPACING_MS);
+  assert.equal((await resume(half, jevGates(v.run, time))).waiting, undefined, 'the fifth pass ends it');
+  assert.deepEqual([e.stage, e.stopped, asksOf(v.calls, 'cmd-verify-plumb.ts', '00'), asksOf(v.calls, 'fidelity-plumb.ts', '00')], ['stopped', SILENCE_STOP, 5, 5]);
+});
+
+test('judge plumb: waiting for Plumb is neither capped nor spaced: a gate it cannot serve is asked again at every pass, with a wake each time, whatever the clock says, and never stops the case', async () => {
+  await world(1);
+  const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? bad('暂时不可用：Plumb 网关拒绝（503 backend_down）') : undefined));
+  const state = await initState('recompose-run', 'plan-run', OPEN, 'synthetic-model');
+  await writingCases(state);
+  const c = state.cases[0]!, still = clockAt();
+  const g = () => ({ ...gates(t.run), now: still });
+  await next(state, '编写 00', g());
+  for (let n = 0; n < 11; n++) await resume(state, g());
+  const step = await resume(state, g());
+  assert.deepEqual([c.stage, c.jev_unanswered, c.jev_not_before, c.attempts.write, step.stopped, step.waiting?.map((w) => w.label)], ['writing', undefined, undefined, 1, [], ['编写 00']]);
+  assert.equal(step.waiting![0]!.reason, '命令核验暂时做不了：暂时不可用：Plumb 网关拒绝（503 backend_down）', 'the reason says nothing of a count or a time');
+  assert.equal(asksOf(t.calls, 'cmd-verify-plumb.ts', '00'), 2 * 13, 'asked, woken and asked again, thirteen times with the clock standing still: no cap, no spacing');
+  assert.equal(t.calls.filter((x) => x.tool === 'plumb/plumb.ts').length, 13);
+});
+
+test('judge jev: a device round, a reopen and a delivery volume open the next plan run as a Jev compile again, with the Jev key and no Plumb address, and the case written again goes through the Jev gates', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }], { judge: 'jev', more: (tool) => (tool === 'cmd-verify-plumb.ts' ? ok(JSON.stringify({ judge: 'jev', review_required_count: 1 })) : undefined) });
+  // An open file that says another judge is not the file of this compile.
+  await assert.rejects(rework(state, OPENED, 'returns-1', 'notes', jevGates(t.run)), /--open 记的判断方式是 plumb，这次编译的状态文件里是 jev/);
+  const step = await rework(state, { ...OPENED, judge: 'jev' }, 'returns-1', 'notes', jevGates(t.run));
+  assert.deepEqual([step.round, step.carried, step.reworked, step.actions.map((a) => a.label)], [2, ['00', '02'], ['01'], ['编写 01']]);
+  const opened = callsOf(t.calls, 'open-compile.ts')[0]!;
+  assert.deepEqual(opened.args.slice(0, 4), ['--hub', 'http://127.0.0.1:9/mcp', '--judge', 'jev']);
+  assert.equal(opened.args.includes('--plumb'), false);
+  assert.equal(opened.stdin, 'synthetic-token-1234\n%PLUMB_API_KEY%\nsynthetic-jev-key\n', 'three lines, always, read by position');
+  assert.equal(state.judge, 'jev');
+  assert.equal(JSON.parse(readFileSync(join('rework-2', 'open-compile.json'), 'utf8')).judge, 'jev', 'the new record says who judges');
+  await writeFile(join('cases', '01', 'plan', '01.json'), '{"plan":"01 round 2"}');
+  await next(state, '编写 01', jevGates(t.run));
+  assert.deepEqual(callsOf(t.calls, 'cmd-verify-plumb.ts').map((c) => [c.args.at(-3), c.args.at(-2), c.args.at(-1), c.stdin]), [['--judge', 'jev', '--key-stdin', 'synthetic-jev-key\n']]);
+
+  // A case that stops again leaves through reopen, which keeps the judge too.
+  const second = await afterDevice(() => [], { judge: 'jev', more: (tool) => (tool === 'cmd-verify-plumb.ts' ? ok(JSON.stringify({ judge: 'jev', review_required_count: 0 })) : undefined) });
+  second.state.open = 'open-compile.json';
+  const b = second.state.cases[1]!;
+  b.stage = 'stopped'; b.attempts = { recompose: 1, write: 5 }; b.stopped = '脚本编写 5 次仍未通过：合成原因'; b.retried = OPEN.plan_run;
+  await reopen(second.state, { ...OPENED, judge: 'jev' }, undefined, jevGates(second.t.run));
+  const reopened = callsOf(second.t.calls, 'open-compile.ts')[0]!;
+  assert.deepEqual(reopened.args.slice(0, 4), ['--hub', 'http://127.0.0.1:9/mcp', '--judge', 'jev']);
+  assert.equal(second.state.judge, 'jev');
+});
+
+test('judge jev: the command line needs the Jev key on the third line, a placeholder the client did not expand is no key, and Plumb\'s address and key are not asked for', async () => {
+  await world(1);
+  const t = tools(() => undefined);
+  const said = async (argv: string[], stdin: string[]) => {
+    const out: string[] = []; const write = process.stdout.write;
+    process.stdout.write = ((text: string) => { out.push(text); return true; }) as typeof process.stdout.write;
+    try { return { code: await main(argv, async () => stdin, t.run), out: out.join('') }; } finally { process.stdout.write = write; }
+  };
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  state.cases[0]!.stage = 'recomposing'; state.cases[0]!.action = { label: '重组 00', subagent_type: 'x', description: 'y' };
+  writeFileSync('jev.json', JSON.stringify(state));
+  const loop = ['resume', '--state', 'jev.json', '--hub', 'http://127.0.0.1:9/mcp'];
+  for (const stdin of [['synthetic-token-1234'], ['synthetic-token-1234', 'plumb-key'], ['synthetic-token-1234', 'plumb-key', ''], ['synthetic-token-1234', 'plumb-key', '%JEV_API_KEY%']]) {
+    const refused = await said(loop, stdin);
+    assert.equal(refused.code, 1, JSON.stringify(stdin));
+    assert.match(refused.out, /^流水线工具没有完成：缺 Jev 密钥：标准输入第三行要是 %JEV_API_KEY% 展开后的密钥（这次编译的判断方式是 Jev）；还没有 Jev 密钥时向管理员申请，保存为客户端密钥 JEV_API_KEY 后再启动编写循环/);
+  }
+  const allowed = await said(loop, ['synthetic-token-1234', '%PLUMB_API_KEY%', 'synthetic-jev-key']);
+  assert.equal(allowed.code, 0, allowed.out);
+  const noToken = await said(loop, []);
+  assert.equal(noToken.out, '流水线工具没有完成：标准输入要三行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%，第三行 %JEV_API_KEY%\n');
+  assert.equal((await said(['judge', '--state', 'jev.json'], [])).out, '{"judge":"jev"}\n');
+});
+
+test('the words 暂时不可用 inside a tool\'s report, a refusal or a case title are no outage; the tool\'s own failure line at the start of its standard error is, for Plumb and for Jev', async () => {
+  for (const judge of ['plumb', 'jev'] as const) {
+    await world(1);
+    const time = clockAt();
+    const g = (run: RunTool): Gates => (judge === 'jev' ? jevGates(run, time) : { ...gates(run), now: time });
+    // The command check refuses a plan whose step text says the words: the refusal is the tool's answer, not the service's silence.
+    let said: ToolRun = { code: 1, stdout: JSON.stringify({ results: [{ title: '接口暂时不可用时的处理', steps: [] }] }), stderr: '参数无效：命令核验未通过（阻断 1 处）：00.json:/steps/0 命令树核对未通过（widget 暂时不可用）；请改命令' };
+    const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? said : undefined));
+    const state = await initState('recompose-run', 'plan-run', judge === 'jev' ? { ...OPEN, judge } : OPEN, 'synthetic-model');
+    await writingCases(state);
+    const c = state.cases[0]!;
+    const woken = () => t.calls.filter((x) => x.tool === 'plumb/plumb.ts').length;
+
+    const refused = await next(state, '编写 00', g(t.run));
+    assert.deepEqual([refused.actions.map((a) => a.label), c.attempts.write, c.pending, c.jev_unanswered, c.jev_not_before, woken()], [['编写 00'], 2, undefined, undefined, undefined, 0], `${judge}: back to the writer, nothing waits or counts, nobody is woken`);
+
+    // A failure line that is only on standard output, with nothing on standard error, is not the tool's failure line either.
+    said = { code: 1, stdout: '暂时不可用：这是报告里的一行', stderr: '' };
+    c.stage = 'writing';
+    const quoted = await next(state, '编写 00', g(t.run));
+    assert.deepEqual([quoted.actions.map((a) => a.label), c.attempts.write, c.pending, c.jev_unanswered, woken()], [['编写 00'], 3, undefined, undefined, 0], judge);
+
+    // The tool's own failure line is an outage: the case waits, and Plumb is woken where Plumb is the judge.
+    said = bad('暂时不可用：服务这会儿答不了');
+    c.stage = 'writing';
+    const outage = await next(state, '编写 00', g(t.run));
+    assert.deepEqual([outage.actions.length, outage.waiting?.map((w) => w.label), c.attempts.write, c.jev_unanswered, woken()], [0, ['编写 00'], 3, judge === 'jev' ? 1 : undefined, judge === 'jev' ? 0 : 1], judge);
+    assert.ok(c.pending!.startsWith('命令核验暂时做不了：暂时不可用：服务这会儿答不了'), judge);
+  }
+});
+
+test('each child of the pipeline gets the key its judge uses and the literal placeholder where another key would be: a stored Jev key never travels in a Plumb or model compile, nor a stored Plumb key in a Jev one', async () => {
+  const TOKEN = 'synthetic-token-1234', PLUMB = 'synthetic-plumb-key', JEV = 'synthetic-jev-key';
+  const time = clockAt();
+  const expected = {
+    plumb: { opens: `${TOKEN}\n${PLUMB}\n%JEV_API_KEY%\n`, gates: [`${PLUMB}\n`], other: [JEV] },
+    model: { opens: `${TOKEN}\n%PLUMB_API_KEY%\n%JEV_API_KEY%\n`, gates: [undefined], other: [PLUMB, JEV] },
+    jev: { opens: `${TOKEN}\n%PLUMB_API_KEY%\n${JEV}\n`, gates: [`${JEV}\n`], other: [PLUMB] },
+  } as const;
+  for (const judge of ['plumb', 'model', 'jev'] as const) {
+    // The client expanded both placeholders: both keys are stored, whatever the compile uses.
+    const g = (run: RunTool): Gates => ({ run, hub: 'http://127.0.0.1:9/mcp', plumb: judge === 'plumb' ? 'https://127.0.0.1:9' : '', token: TOKEN, plumbKey: PLUMB, jevKey: JEV, now: time });
+    const more = (tool: string) => (tool === 'cmd-verify-plumb.ts' ? ok(JSON.stringify({ judge, review_required_count: 0, steps_checked: 1, checked: 1 })) : undefined);
+    const option = judge === 'plumb' ? undefined : judge;
+    const heard: Array<{ tool: string; stdin?: string }> = [];
+
+    // A device round: the next plan run is opened, and the case that failed is written again and goes through the gates.
+    const first = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }], { ...(option ? { judge: option } : {}), more });
+    await rework(first.state, { ...OPENED, ...(option ? { judge: option } : {}) }, 'returns-1', 'notes', g(first.t.run));
+    await writeFile(join('cases', '01', 'plan', '01.json'), '{"plan":"01 round 2"}');
+    await next(first.state, '编写 01', g(first.t.run));
+    heard.push(...first.t.calls);
+
+    // A case that stopped again: the next plan run is opened without it.
+    const second = await afterDevice(() => [], { ...(option ? { judge: option } : {}), more });
+    second.state.open = 'open-compile.json';
+    const b = second.state.cases[1]!;
+    b.stage = 'stopped'; b.attempts = { recompose: 1, write: 5 }; b.stopped = '脚本编写 5 次仍未通过：合成原因'; b.retried = OPEN.plan_run;
+    await reopen(second.state, { ...OPENED, ...(option ? { judge: option } : {}) }, undefined, g(second.t.run));
+    heard.push(...second.t.calls);
+
+    const stdinOf = (tool: string) => [...new Set(heard.filter((call) => call.tool.endsWith(`/${tool}`)).map((call) => call.stdin))];
+    assert.deepEqual(stdinOf('open-compile.ts'), [expected[judge].opens], `${judge}: the three lines the open tool reads`);
+    assert.deepEqual(stdinOf('download-run.ts'), [`${TOKEN}\n`], `${judge}: a download needs the Hub token only`);
+    assert.deepEqual(stdinOf('cmd-verify-plumb.ts'), expected[judge].gates, `${judge}: the command check gets its own judge's key alone, or nothing`);
+    for (const call of heard) for (const key of expected[judge].other) assert.ok(!(call.stdin ?? '').includes(key), `${judge}: ${call.tool} was handed a key this compile does not use`);
+    assert.ok(heard.some((call) => call.tool.endsWith('/open-compile.ts')) && heard.some((call) => call.tool.endsWith('/cmd-verify-plumb.ts')), `${judge}: the flow reached the children it is about`);
+  }
+});
+
+test('judge jev: a key the client finds unusable as written stops the case under a head that says nothing was sent, not as a refusal by the service; retry goes back to its gates', async () => {
+  await world(1);
+  const time = clockAt();
+  let usable = false;
+  const local = '无权限：Jev 密钥照现在的写法用不了（密钥为空、太长或含不允许的字符），没有发出任何请求（invalid_key）。请使用者向管理员重新领取 Jev 密钥，保存为客户端密钥 JEV_API_KEY，再启动编写循环；计划不用改。';
+  const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? (usable ? ok(JSON.stringify({ judge: 'jev', review_required_count: 1 })) : bad(local)) : undefined));
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  await writingCases(state);
+  const c = state.cases[0]!;
+  const step = await next(state, '编写 00', jevGates(t.run, time));
+  assert.equal(c.stage, 'stopped');
+  assert.ok(c.stopped!.startsWith('Jev 密钥没有通过本地检查，没有发出任何请求，计划没有改：命令核验：无权限：Jev 密钥照现在的写法用不了'), c.stopped);
+  assert.ok(!c.stopped!.includes('没有接受密钥') && !c.stopped!.includes('拒绝了密钥'), 'the service refused nothing: it was never asked');
+  assert.deepEqual([c.attempts.write, step.actions.length], [1, 0], 'no attempt was spent and no writer was started');
+  usable = true;
+  const retried = await retry(state, '00', '模型决定：密钥换成能用的写法', { run: t.run });
+  assert.deepEqual([c.stage, retried.actions.length, retried.waiting?.map((w) => w.label)], ['writing', 0, ['编写 00']], 'back to its gates, not to a writer');
+  assert.deepEqual((await resume(state, jevGates(t.run, time))).ready, ['00']);
+});
+
+test('judge jev: the note that the text of the case goes to TypeSafe is written when the first Jev request of the case is made, whatever the gates come to', async () => {
+  const JEV_NOTE = /^判断方式：这次按使用者选定的方式由 Jev（TypeSafe 的线上判断服务）判断命令核验和场景保真，这条用例的原始用例步骤、写出的命令和手册片段发给 TypeSafe（从第一次问 Jev 起）/;
+  const outcomes: Array<[string, ToolRun, (c: CaseState) => void]> = [
+    ['no answer yet', bad(SILENT), (c) => assert.equal(c.stage, 'writing')],
+    ['the plan is sent back by the command gate', bad('参数无效：Jev 命令核验未通过（阻断 1 处）：00.json:/steps/0 命令树核对未通过'), (c) => assert.equal(c.attempts.write, 2)],
+    ['the key is refused', bad('无权限：Jev 拒绝了密钥（HTTP 401，unauthorized）：合成。请使用者向管理员重新领取 Jev 密钥'), (c) => assert.match(c.stopped!, /^Jev 没有接受密钥，计划没有改：命令核验：/)],
+    ['the request log cannot be written', bad('参数无效：Jev 的请求记录没有写成（audit_failed）：合成。先修好请求记录的位置和权限'), (c) => assert.match(c.stopped!, /^Jev 的请求记录没有写成，计划没有改：命令核验：/)],
+  ];
+  for (const [what, said, check] of outcomes) {
+    await world(1);
+    const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? said : undefined));
+    const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+    await writingCases(state);
+    const c = state.cases[0]!;
+    await next(state, '编写 00', jevGates(t.run, clockAt()));
+    check(c);
+    assert.equal(c.review?.length, 1, `${what}: one note`);
+    assert.match(c.review![0]!, JEV_NOTE, what);
+  }
+});
+
+test('judge jev: a request log that cannot be written stops the case under its sentence, whichever category word the client gave it: no wait, no writer attempt, the plan as it was, and retry goes back to the gates', async () => {
+  for (const head of ['参数无效', '暂时不可用']) {
+    await world(1);
+    const time = clockAt();
+    let broken = true;
+    const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? (broken ? bad(`${head}：Jev 的请求记录没有写成（audit_failed）：审计文件打不开或写不进。先修好请求记录的位置和权限，再启动编写循环；计划不用改。`) : ok(JSON.stringify({ judge: 'jev', review_required_count: 1 }))) : undefined));
+    const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+    await writingCases(state);
+    const c = state.cases[0]!, planFile = join('cases', '00', 'plan', '00.json');
+    await writeFile(planFile, '{"plan":"as the writer left it"}');
+    const step = await next(state, '编写 00', jevGates(t.run, time));
+    assert.deepEqual([c.stage, c.attempts.write, c.pending, c.jev_unanswered, c.jev_not_before, step.actions.length, step.waiting], ['stopped', 1, undefined, undefined, undefined, 0, undefined], head);
+    assert.ok(c.stopped!.startsWith('Jev 的请求记录没有写成，计划没有改：命令核验：'), head);
+    assert.match(c.stopped!, /Jev 的请求记录没有写成（audit_failed）/);
+    assert.equal(readFileSync(planFile, 'utf8'), '{"plan":"as the writer left it"}');
+    broken = false;
+    const retried = await retry(state, '00', '模型决定：请求记录的位置修好了', { run: t.run });
+    assert.deepEqual([c.stage, c.attempts.write, retried.actions.length, retried.waiting?.map((w) => w.label)], ['writing', 1, 0, ['编写 00']], `${head}: back to its gates, not to a writer`);
+    assert.deepEqual((await resume(state, jevGates(t.run, time))).ready, ['00'], head);
+  }
+});
+
+test('judge jev: a question the service rejected is said in the review notes with its reason and the gate goes on: no writer attempt, the tree\'s verdict stands for the step, and a fidelity step without a Jev answer goes to the blind audit with a note that says Jev gave none', async () => {
+  await world(1);
+  const reason = 'Jev 服务拒绝了这个请求（HTTP 422，request_rejected）';
+  // Three steps: the first Jev judged (held for review), the second has no Jev opinion and the tree has no conclusion either (held, unknown), the third has no Jev opinion and the tree passed it.
+  const report = { judge: 'jev', review_required_count: 2, jev_no_opinion_count: 2, results: [{ steps: [{ review_required: true }, { review_required: true, jev_no_opinion: { code: 'request_rejected', reason } }, { review_required: false, jev_no_opinion: { code: 'request_rejected', reason } }] }] };
+  const summary = { judge: 'jev', checked: 1, written: [], jev_no_opinion: [{ file: '00.json', item: 'doc:00', steps: [{ n: '2', code: 'request_rejected', reason }, { n: '3', code: 'request_rejected', reason }] }] };
+  const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? ok(JSON.stringify(report)) : tool === 'fidelity-plumb.ts' ? ok(JSON.stringify(summary)) : undefined));
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  await writingCases(state);
+  const c = state.cases[0]!, audits = join('cases', '00', 'audit');
+  // The fidelity tool left the brief of this case where it is, with no verdict, as it does for a case it could not put to Jev whole.
+  await mkdir(audits, { recursive: true }); await writeFile(join(audits, '00.aaaa1111.brief.json'), '{}');
+  const step = await next(state, '编写 00', jevGates(t.run, clockAt()));
+  assert.deepEqual([step.actions.map((a) => [a.label, a.subagent_type]), c.stage, c.attempts.write, c.jev_unanswered, c.pending], [[['审计 00', 'case-compile:compile-fidelity']], 'auditing', 1, undefined, undefined], 'the blind audit is asked, and nothing goes back to the writer');
+  assert.deepEqual(c.review!.slice(1), [
+    `命令核验：第 1 版计划有 2 步 Jev 没有给出答复（${reason}），这些步骤只有命令树核对的结论，没有 Jev 的判断`,
+    '命令核验：第 1 版计划有 1 步命令由 Jev 判断，一律只作参考，报告里每一步标需人工复核并带 Jev 给的概率；命令树核对不通过的已经挡住',
+    `场景保真：第 1 版计划的步骤 2、3 没有 Jev 的答复（${reason}）；Jev 对它们没有给出判断，这条用例整个交独立盲审给出结论`,
+  ]);
+  assert.ok(c.review!.every((line) => !/Jev 的判断（未确认）一律只作参考，逐条交独立盲审/.test(line)), 'no note says that Jev judged the case: it did not');
+});
+
+test('the stdin lines of the pipeline are read by position: a blank line stays a line', () => {
+  const module = new URL('./pipeline.ts', import.meta.url).href;
+  const read = (input: string) => JSON.parse(spawnSync(process.execPath, ['--input-type=module', '-e', `import { readStdinLines } from ${JSON.stringify(module)}; console.log(JSON.stringify(await readStdinLines()));`], { input, encoding: 'utf8' }).stdout) as string[];
+  assert.deepEqual(read('tok\nplumb\njev\n'), ['tok', 'plumb', 'jev']);
+  assert.deepEqual(read('tok\n\njev\n'), ['tok', '', 'jev']);
+  assert.deepEqual(read('tok\n\n\n'), ['tok', '', '']);
 });

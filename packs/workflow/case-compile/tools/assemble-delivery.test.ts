@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { test, after } from 'node:test';
 const priorTZ=process.env.TZ;process.env.TZ='Asia/Tokyo';after(()=>{if(priorTZ===undefined)delete process.env.TZ;else process.env.TZ=priorTZ;});
 import { generateWorkbookSet } from '../functions/generate.ts';
@@ -118,7 +118,9 @@ async function outputOf(run: () => Promise<number>) {
 async function notes(cases: Record<string, unknown>) { const dir = await mkdtemp(join(tmpdir(), 'cc-notes-')); const path = join(dir, 'notes.json'); await writeFile(path, JSON.stringify({ cases })); return path; }
 const CANDIDATE = { repro: '合成复现：照第 1 步配置后读第 3 步输出', expected: '合成期望', actual: '第 3 步断言没有命中' };
 const NOTES = { [CASES[1]]: { judged: '合成判断：计划写错', remedy: '合成修法：改计划后重跑', evidence: '第 3 步断言没有命中', defect_candidate: CANDIDATE }, [CASES[3]]: { judged: '合成判断：缺事实', remedy: '合成取舍：等补证' } };
-const run = (h: { url: string }, notesPath: string, out: string, runs = `${WHOLE},${FINAL}`, retry?: Parameters<typeof main>[3], extraArgs: string[] = []) => outputOf(() => main(['--hub', h.url, '--runs', runs, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', out, '--name', '合成批', ...extraArgs], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z'), {sourceCacheDirectory:false,...retry}));
+// Every call names the record that opened the compile (a plain one: no judge field, which means Plumb) unless the test gives its own.
+const PLAIN_OPEN = await (async () => { const dir = await mkdtemp(join(tmpdir(), 'cc-open-')); const path = join(dir, 'open-compile.json'); await writeFile(path, JSON.stringify({ schema: 'open-compile@1', ready: true, recompose_run: RECOMPOSE, plan_run: PLAN1 })); return path; })();
+const run = (h: { url: string }, notesPath: string, out: string, runs = `${WHOLE},${FINAL}`, retry?: Parameters<typeof main>[3], extraArgs: string[] = []) => outputOf(() => main(['--hub', h.url, '--runs', runs, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', out, '--name', '合成批', ...(extraArgs.includes('--open') ? [] : ['--open', PLAIN_OPEN]), ...extraArgs], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z'), {sourceCacheDirectory:false,...retry}));
 
 test('the pass volume is the dispatched final workbook, the unsuccessful volume holds the failed plan, and every case is accounted for', async (t) => {
   const h = await hub(); t.after(h.close); const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
@@ -250,10 +252,10 @@ test('the verification runs the model left out are found in the Hub lineage, and
   assert.deepEqual(printed.runs, [WHOLE, FINAL]);
   assert.deepEqual(printed.added_runs, [WHOLE]);
   const replyLines = printed.reply.split('\n');
-  assert.deepEqual(replyLines.slice(0, 4), ['原始脑图共 4 条用例：生成成功 2 条，失败 2 条。', `自动化用例 Excel：${join(out,'case.xlsx')}`, '', '失败的 2 条：']);
-  assert.equal(replyLines[4], '- 原始用例 990000000000000102 合成用例 102：上机 1 次，原始用例的期望与设备输出不一致（模型的判断，未经确认）。原因：期望“合成期望”，设备实际输出“第 3 步断言没有命中”。');
-  assert.match(replyLines[5], /^- 原始用例 990000000000000104 合成意图 4：缺少脚本编写所需的资料，没有上机。原因：缺资料，缺少：.+。模型的分析：合成判断：缺事实。$/);
-  assert.deepEqual(replyLines.slice(6), ['', `失败用例的详细说明：${join(out,'unsuccessful_cases.md')}`, `失败用例的 Excel（没有整卷上机验证）：${join(out,'unsuccessful_cases.xlsx')}`, `交付报告：${join(out,'delivery_report.md')}`]);
+  assert.deepEqual(replyLines.slice(0, 5), ['原始脑图共 4 条用例：生成成功 2 条，失败 2 条。', '判断方式：Plumb', `自动化用例 Excel：${join(out,'case.xlsx')}`, '', '失败的 2 条：']);
+  assert.equal(replyLines[5], '- 原始用例 990000000000000102 合成用例 102：上机 1 次，原始用例的期望与设备输出不一致（模型的判断，未经确认）。原因：期望“合成期望”，设备实际输出“第 3 步断言没有命中”。');
+  assert.match(replyLines[6], /^- 原始用例 990000000000000104 合成意图 4：缺少脚本编写所需的资料，没有上机。原因：缺资料，缺少：.+。模型的分析：合成判断：缺事实。$/);
+  assert.deepEqual(replyLines.slice(7), ['', `失败用例的详细说明：${join(out,'unsuccessful_cases.md')}`, `失败用例的 Excel（没有整卷上机验证）：${join(out,'unsuccessful_cases.xlsx')}`, `交付报告：${join(out,'delivery_report.md')}`]);
   assert.doesNotMatch(printed.reply, /合成用例 101|合成用例 103|状态未|判断正确|判断错误|决定者|目标自报|设备自报|不升级观察性质|Hub|运行器|下一步/);
   assert.deepEqual([printed.hints, printed.message], [[], '交付目录已组好：最后回复原样用 reply，不另加表格或逐条重述'], 'the answer names the next step: the reply is the closing answer');
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /原因：缺资料.*下一步：由使用者处理具名请求，期限 2026-11-09 09:00/);
@@ -595,7 +597,7 @@ test('a --scope option is refused: the scope of a delivery is the one frozen in 
   const out = join(dir, 'out');
   const refused = await run(h, await notes(NOTES), out, `${WHOLE},${FINAL}`, undefined, ['--scope', scopePath]);
   assert.equal(refused.code, 1);
-  assert.match(refused.stderr, /^参数无效：参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次/);
+  assert.match(refused.stderr, /^参数无效：参数写法：--hub --runs --notes --out --open 必填，--recompose --name 可选，每个只写一次/);
   await assert.rejects(readdir(out));
 });
 
@@ -709,7 +711,7 @@ test('assemble-delivery refuses one scoped run paired with an unscoped run, and 
   t.after(noRecompose.close);
   const outNoRec = join(await mkdtemp(join(tmpdir(), 'cc-scope-norec-')), 'out');
   const notesPath = await notes({ [CASES[1]]: NOTES[CASES[1]] });
-  const ok = await outputOf(() => main(['--hub', noRecompose.url, '--runs', `${WHOLE},${FINAL}`, '--notes', notesPath, '--out', outNoRec, '--name', '合成无重组批'], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z')));
+  const ok = await outputOf(() => main(['--hub', noRecompose.url, '--runs', `${WHOLE},${FINAL}`, '--notes', notesPath, '--out', outNoRec, '--name', '合成无重组批', '--open', PLAIN_OPEN], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z')));
   assert.equal(ok.code, 0, ok.stderr);
   const summary = JSON.parse(await readFile(join(outNoRec, 'delivery.json'), 'utf8'));
   assert.equal(summary.in_scope_total, 2);
@@ -1001,7 +1003,7 @@ test('CLI reads case-bound card decisions without changing frozen scope and leav
  const dir=await mkdtemp(join(tmpdir(),'delivery-card-'));t.after(()=>rm(dir,{recursive:true,force:true}));
  const notesPath=await notes({[CASES[1]]:{judged:'合成冲突',remedy:'合成下一步',evidence:'第 3 步断言没有命中',author_conflict:CONFLICT},[CASES[3]]:{judged:'合成冲突',remedy:'合成下一步',author_conflict:{...CONFLICT,author:'合成动作'}}});
  const ruling='使用者决定：保留原始用例，暂不编写';await writeFile(join(dir,'scope.md'),`# 使用者原话，由主会话记录\n## 用例 ${CASES[3]}\n${ruling}\n`);
- const cli=(out:string)=>new Promise<{code:number|null;stdout:string;stderr:string}>((done,reject)=>{const child=spawn(process.execPath,[fileURLToPath(new URL('./assemble-delivery.ts',import.meta.url)),'--hub',h.url,'--runs',`${WHOLE},${FINAL}`,'--recompose',RECOMPOSE,'--notes',notesPath,'--out',out],{cwd:dir});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',code=>done({code,stdout,stderr}));child.stdin.end(TOKEN+'\n');});
+ const cli=(out:string)=>new Promise<{code:number|null;stdout:string;stderr:string}>((done,reject)=>{const child=spawn(process.execPath,[fileURLToPath(new URL('./assemble-delivery.ts',import.meta.url)),'--hub',h.url,'--runs',`${WHOLE},${FINAL}`,'--recompose',RECOMPOSE,'--notes',notesPath,'--out',out,'--open',PLAIN_OPEN],{cwd:dir});let stdout='',stderr='';child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.on('error',reject);child.on('close',code=>done({code,stdout,stderr}));child.stdin.end(TOKEN+'\n');});
  const out=join(dir,'with-card'),result=await cli(out);assert.equal(result.code,0,result.stderr);
  const summary=JSON.parse(await readFile(join(out,'delivery.json'),'utf8'));assert.equal(summary.cases.length,4);assert.deepEqual(summary.cases.find((c:any)=>c.autoid===CASES[3]).user_rulings,[{source:'scope.md',target:CASES[3],ruling}]);assert.equal(summary.cases.find((c:any)=>c.autoid===CASES[1]).user_rulings,undefined);
  const report=await readFile(join(out,'delivery_report.md'),'utf8');assert.match(report,/下一步：等作者裁定原始用例。/);assert.ok(report.includes(ruling));assert.match(report,/下一步：由使用者核对原始用例、手册和设备输出后裁定/);
@@ -1087,4 +1089,58 @@ test('two compiles of one mind map under one booking are two lineages: a late-bo
   assert.equal(lineageKeyOf([...plan(FIRST), { slot: 'recomposition_result', reference: RESULT }]), FIRST, 'the merge run of the compile, which binds the result too');
   assert.equal(lineageKeyOf([{ slot: 'subject', reference: SUBJECT }, { slot: 'recomposition_result', reference: RESULT }]), RESULT, 'a run from before the late binding');
   assert.equal(lineageKeyOf([{ slot: 'subject', reference: SUBJECT }]), SUBJECT);
+});
+
+test('--open says who judged: the report and the reply carry the line of the judge the compile was opened with, in all three modes, and delivery.json names it', async (t) => {
+  const h = await hub(); t.after(h.close);
+  const dir = await mkdtemp(join(tmpdir(), 'cc-judge-line-'));
+  const opened = async (name: string, record: Record<string, unknown>) => { const path = join(dir, `${name}.json`); await writeFile(path, JSON.stringify({ schema: 'open-compile@1', ready: true, recompose_run: RECOMPOSE, plan_run: PLAN1, ...record })); return path; };
+  const lines = {
+    plumb: '判断方式：Plumb',
+    jev: '判断方式：Jev（TypeSafe 的线上判断服务；原始用例的步骤、写出的命令和手册片段发给了 TypeSafe；结论是模型的判断，未经确认，逐条进复核）',
+    model: '判断方式：通用大模型（不经 Plumb；命令核验只做命令树的程序核对，场景保真由独立盲审判断）',
+  } as const;
+  for (const [mode, record] of [['plumb', {}], ['jev', { judge: 'jev' }], ['model', { judge: 'model' }]] as const) {
+    const out = join(dir, `out-${mode}`);
+    const res = await run(h, await notes(NOTES), out, `${WHOLE},${FINAL}`, undefined, ['--open', await opened(mode, record)]);
+    assert.equal(res.code, 0, res.stderr);
+    const reply = (JSON.parse(res.stdout) as { reply: string }).reply.split('\n');
+    assert.equal(reply[1], lines[mode], 'the reply says it right after the result line');
+    const report = (await readFile(join(out, 'delivery_report.md'), 'utf8')).split('\n');
+    assert.ok(report.includes(lines[mode]), mode);
+    assert.equal(report.filter((line) => line.startsWith('判断方式：')).length, 1);
+    assert.ok(report.indexOf(lines[mode]) < report.findIndex((line) => line.startsWith('自动化用例 Excel')), 'in the head of the report, before the files');
+    const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+    assert.deepEqual([summary.judge, summary.judge_line], [mode, lines[mode]]);
+  }
+  // --open is required, so the line cannot be forgotten: a call without it is refused before the Hub is read, and nothing is written.
+  const noOpen = join(dir, 'out-no-open'), notesPath = await notes(NOTES), asked = h.requests.length;
+  const missing = await outputOf(() => main(['--hub', h.url, '--runs', `${WHOLE},${FINAL}`, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', noOpen], async () => TOKEN));
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /^参数无效：缺少参数：--open（--open 为这一轮用的开运行记录，pipeline\.json 的 open）。参数写法：--hub --runs --notes --out --open 必填/);
+  await assert.rejects(readdir(noOpen));
+  assert.equal(h.requests.length, asked, 'the hub was not asked for this call');
+  // A file that is no open record, or names a judge nobody knows, is refused before the Hub is read, and nothing is written.
+  const refuse = async (path: string, said: RegExp) => { const out = join(dir, `out-${basename(path)}`); const res = await run(h, await notes(NOTES), out, `${WHOLE},${FINAL}`, undefined, ['--open', path]); assert.equal(res.code, 1); assert.match(res.stderr, said); await assert.rejects(readdir(out)); };
+  const other = join(dir, 'other.json'); await writeFile(other, JSON.stringify({ schema: 'pipeline@1' }));
+  await refuse(other, /^参数无效：--open 不是 open-compile\.ts 写的开运行记录/);
+  await refuse(await opened('gpt', { judge: 'gpt' }), /^参数无效：--open 里的判断方式 "gpt" 不认识（应当是 jev 或 model，没有这一项就是 plumb）/);
+  // The record has to be this compile's own: one whose runs are none of this compile's would write another compile's judge into this report.
+  const ELSEWHERE = { plan_run: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recompose_run: 'run_01yyyyyyyyyyyyyyyyyyyyyyyy' };
+  await refuse(await opened('elsewhere', { judge: 'jev', ...ELSEWHERE }), /^参数无效：--open 的开运行记录不是这次编译的（它写的脚本编写运行 run_01zzzzzzzzzzzzzzzzzzzzzzzz、用例重组运行 run_01yyyyyyyyyyyyyyyyyyyyyyyy，都不在 --runs 这些上机验证所属的脚本编写运行里，也不是 --recompose）/);
+  await refuse(await opened('no-runs', { judge: 'jev', plan_run: undefined, recompose_run: undefined }), /^参数无效：--open 的开运行记录不是这次编译的（它写的脚本编写运行 没有写、用例重组运行 没有写/);
+  // One of the two is enough: this compile's plan run, or the recomposition run that --recompose names.
+  for (const [name, own] of [['own-plan-run', { ...ELSEWHERE, plan_run: PLAN1 }], ['own-recompose-run', { ...ELSEWHERE, recompose_run: RECOMPOSE }]] as const) {
+    const out = join(dir, `out-${name}`);
+    const res = await run(h, await notes(NOTES), out, `${WHOLE},${FINAL}`, undefined, ['--open', await opened(name, { judge: 'jev', ...own })]);
+    assert.equal(res.code, 0, `${name}: ${res.stderr}`);
+    assert.equal(JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8')).judge, 'jev', name);
+  }
+  // Without --recompose only the plan run can show that the record belongs here.
+  const bare = await opened('bare', { judge: 'jev', ...ELSEWHERE, recompose_run: RECOMPOSE });
+  const bareNotes = await notes(NOTES);
+  const withoutRecompose = await outputOf(() => main(['--hub', h.url, '--runs', `${WHOLE},${FINAL}`, '--notes', bareNotes, '--out', join(dir, 'out-bare'), '--open', bare], async () => TOKEN));
+  assert.equal(withoutRecompose.code, 1);
+  assert.match(withoutRecompose.stderr, /^参数无效：--open 的开运行记录不是这次编译的/);
+  await assert.rejects(readdir(join(dir, 'out-bare')));
 });

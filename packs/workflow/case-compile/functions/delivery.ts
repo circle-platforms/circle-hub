@@ -511,8 +511,31 @@ export function modelCheckpointsOf(result: unknown, id: string): ModelCheckpoint
   }
   return [...found.values()];
 }
+/** Who judged the command checks and the scenario audits of the compile: what its open record says (no field means Plumb). */
+export type JudgeMode = 'plumb' | 'jev' | 'model';
+export const JUDGE_LINES: Record<JudgeMode, string> = {
+  plumb: '判断方式：Plumb',
+  jev: '判断方式：Jev（TypeSafe 的线上判断服务；原始用例的步骤、写出的命令和手册片段发给了 TypeSafe；结论是模型的判断，未经确认，逐条进复核）',
+  model: '判断方式：通用大模型（不经 Plumb；命令核验只做命令树的程序核对，场景保真由独立盲审判断）',
+};
+export function openedJudge(record: unknown): JudgeMode {
+  if (!isRecord(record) || record.schema !== 'open-compile@1') failCall('invalid_parameters', '--open 不是 open-compile.ts 写的开运行记录（没有 schema open-compile@1）', '--open 写这一轮用的 open-compile.json（pipeline.json 的 open），不手改');
+  if (record.judge === undefined) return 'plumb';
+  if (record.judge === 'jev' || record.judge === 'model') return record.judge;
+  return failCall('invalid_parameters', `--open 里的判断方式 ${JSON.stringify(record.judge).slice(0, 40)} 不认识（应当是 jev 或 model，没有这一项就是 plumb）`, '--open 写 open-compile.ts 写的文件，不手改');
+}
+/**
+ * Whether an open record is the one of the compile that is being delivered: its script-writing run is one of the compile's plan runs, or its
+ * recomposition run is the one given. A record of another compile would put another compile's judge into this one's report.
+ */
+export function openRecordBelongs(record: unknown, planRuns: Iterable<string>, recompose: string | undefined): boolean {
+  if (!isRecord(record)) return false;
+  const own = new Set(planRuns);
+  return (typeof record.plan_run === 'string' && own.has(record.plan_run)) || (recompose !== undefined && record.recompose_run === recompose);
+}
 export interface ReportInput {
   name: string; generatedAt: string; build: string | null;
+  judge?: JudgeMode;
   assembly: Assembly; notes: Notes; originals: Record<string, Original>; excluded: string[];
   artifacts?: string[];
   files: { pass: { sha256: string } | null; unsuccessful: { sha256: string } | null };
@@ -610,6 +633,7 @@ function head(input: ReportInput): string[] {
   const lines = [
     resultLine(input),
     ...(input.scope ? [`本次范围：${input.scope.words}`] : []),
+    ...(input.judge ? [JUDGE_LINES[input.judge]] : []),
     pass && input.files.pass ? `自动化用例 Excel case.xlsx：${pass.items.length} 条原始用例，已整卷上机验证，全部通过。` : '没有整卷上机验证通过的自动化用例 Excel。',
     unsuccessful && input.files.unsuccessful ? `自动化用例 Excel unsuccessful_cases.xlsx：${unsuccessful.items.length} 条未通过或无结论的原始用例，各用最后一次写好的自动化用例；这些写法是否上过机见逐条记录，没有整卷上机验证。` : '没有其他自动化用例 Excel。',
   ];

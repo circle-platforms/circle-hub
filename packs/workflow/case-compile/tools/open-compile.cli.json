@@ -2,7 +2,8 @@
   "schema": "tool-cli@2",
   "stdin": [
     "%HUB_TOKEN%",
-    "%PLUMB_API_KEY%"
+    "%PLUMB_API_KEY%",
+    "%JEV_API_KEY%"
   ],
   "options": [
     {
@@ -130,7 +131,7 @@
       "required": false,
       "kind": "string",
       "multiple": false,
-      "placeholder": "<plumb|model>",
+      "placeholder": "<plumb|jev|model>",
       "type": "text"
     }
   ],
@@ -215,7 +216,7 @@
         },
         {
           "name": "judge",
-          "placeholder": "<plumb|model>",
+          "placeholder": "<plumb|jev|model>",
           "optional": true
         }
       ]

@@ -50,6 +50,18 @@ export function treeOnlyStep(tree:TreeAnswer,strictReview:boolean):StepJudgment{
  return {verdict:'review',blocked:strictReview,review_required:true,disclosure:`命令树核对没有给出结论（${tree.reason??'没有说明'}）；这次按选定的判断方式不问 Plumb，这一步没有判断，状态未知`};
 }
 
+// The judgment of a step that Jev gave no answer to because its service turned the question down: the program's command tree check speaks alone, as
+// without a judge, and the step says that Jev gave no answer and why (not that Jev judged it). Nothing is sent back to the plan writer for it.
+export function jevUnansweredStep(tree:TreeAnswer,strictReview:boolean,why:string):StepJudgment{
+  const said=`Jev 对这一步没有给出答复（${why}）`;
+  if(tree.status==='refused'){
+   const found=tree.problems?.map(problem=>problem.message).join('；')??'';
+   return {verdict:'reject',blocked:true,review_required:false,note:`命令树核对未通过（程序判定）：${found}`,disclosure:`${said}；这一步只有命令树核对的结论`};
+  }
+  if(tree.status==='accepted')return {verdict:'pass',blocked:false,review_required:false,disclosure:`${said}；这一步只有命令树核对的结论（通过），没有 Jev 的判断`};
+  return {verdict:'review',blocked:strictReview,review_required:true,disclosure:`命令树核对没有给出结论（${tree.reason??'没有说明'}）；${said}；这一步没有判断，状态未知`};
+}
+
 export function judgeStep(plumb:PlumbCall,tree:TreeAnswer,strictReview:boolean):StepJudgment{
  if(tree.status==='refused'){
   const found=tree.problems?.map(problem=>problem.message).join('；')??'';

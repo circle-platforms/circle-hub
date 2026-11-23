@@ -1,18 +1,20 @@
 import {CallFailure} from '../functions/text.ts';
 import { realpathSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildFidelityVerdictDocument, mapPlumbSequenceToFidelityRow, type BoundStepDecision } from '../functions/fidelity-bind.ts';
+import { buildFidelityVerdictDocument, fidelityPromptOf, mapPlumbSequenceToFidelityRow, type BoundStepDecision } from '../functions/fidelity-bind.ts';
 import { FIDELITY_MAX_EST_TOKENS, partitionFidelityBlocks, renderFidelityStepState, type LiteralSubstitution, type PartitionedFidelityBlocks } from '../functions/fidelity-render.ts';
 import {
-  createCasePlumbClient,
+  createCaseJudge,
   extractPlumbCliOptions,
   formatPlumbCliError,
+  judgeOf,
   parseFlagMap,
   plumbFailure,
   SHARED_PLUMB_BOOL_FLAGS,
   SHARED_PLUMB_VALUE_FLAGS,
+  type JudgeName,
   type PlumbToolIo,
 } from '../functions/plumb-cli.ts';
 import { writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
@@ -27,9 +29,9 @@ import {
 import { briefFile, planCases, verdictFile, type PlanCase } from './fidelity-brief.ts';
 
 const USAGE =
-  'node <技能目录>/tools/fidelity-plumb.ts --run <运行目录> --plans <plansDir> --briefs <briefsDir> --base-url <url> [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--out <summary.json>] [--key-stdin]';
+  'node <技能目录>/tools/fidelity-plumb.ts --run <运行目录> --plans <plansDir> --briefs <briefsDir> --base-url <url> [--model <id>] [--ca-file <pem>] [--ca-sha256 <hex>] [--cache-dir <dir>] [--no-cache] [--audit-out <jsonl>] [--strict-review] [--judge <plumb|jev>] [--out <summary.json>] [--key-stdin]';
 
-const VALUE_FLAGS = new Set(['--run', '--plans', '--briefs', '--out', ...SHARED_PLUMB_VALUE_FLAGS]);
+const VALUE_FLAGS = new Set(['--run', '--plans', '--briefs', '--out', '--judge', ...SHARED_PLUMB_VALUE_FLAGS]);
 const BOOL_FLAGS = new Set(['--strict-review', ...SHARED_PLUMB_BOOL_FLAGS]);
 
 interface PendingStepQuery {
@@ -66,7 +68,8 @@ const readTextOrNull = async (path: string): Promise<string | null> => {
   }
 };
 
-function overBudgetStop(waiting: readonly OverBudgetCase[], judgedByPlumb: number): string {
+function overBudgetStop(waiting: readonly OverBudgetCase[], judgedByPlumb: number, judge: JudgeName = 'plumb'): string {
+  const name = judge === 'jev' ? 'Jev' : 'Plumb';
   const steps = (c: OverBudgetCase): string => {
     const shown = c.steps.slice(0, 6).map((st) => `${st.n} 约 ${st.est_tokens}`).join('、');
     return `${shown}${c.steps.length > 6 ? ` 等共 ${c.steps.length} 步` : ''}`;
@@ -77,9 +80,10 @@ function overBudgetStop(waiting: readonly OverBudgetCase[], judgedByPlumb: numbe
     const reduced = w.reduced_est_tokens === null ? '没有逐字重复的长字面量可换名' : `重复的长字面量换成名字后仍约 ${w.reduced_est_tokens}`;
     return `${c.file}（步骤 ${steps(c)} token；候选命令块约 ${w.command_blocks}、豁免依据约 ${w.exemptions}，${reduced}；简报 ${c.brief}）`;
   };
-  const fact = `${waiting.length} 条自动化用例的保真核对题面超过 Plumb 的 ${FIDELITY_MAX_EST_TOKENS} token 上限，工具不在命令块中间截断，这些用例没有交给 Plumb：${waiting.map(describe).join('；')}${judgedByPlumb > 0 ? `。其余 ${judgedByPlumb} 条已由 Plumb 核对并写入核对目录` : ''}`;
+  const limit = judge === 'jev' ? `给 Jev 的题面上限（与给 Plumb 的相同，${FIDELITY_MAX_EST_TOKENS} token）` : `Plumb 的 ${FIDELITY_MAX_EST_TOKENS} token 上限`;
+  const fact = `${waiting.length} 条自动化用例的保真核对题面超过 ${limit}，工具不在命令块中间截断，这些用例没有交给 ${name}：${waiting.map(describe).join('；')}${judgedByPlumb > 0 ? `。其余 ${judgedByPlumb} 条已由 ${name} 核对并写入核对目录` : ''}`;
   const next = [
-    '这些用例改走独立模型盲审：对上面每份简报运行 node \'<技能目录>/tools/task-brief.ts\' --role \'保真核对\' --case \'<用例文件名>\' --brief \'<简报>\' --out \'<同前缀的 .verdict.json>\' --task-file \'<任务文件>\'，派 compile-fidelity 写出判断（只用这种单条形式，不要对整个核对目录用 --batch，它会覆盖 Plumb 已写的判断）',
+    '这些用例改走独立模型盲审：对上面每份简报运行 node \'<技能目录>/tools/task-brief.ts\' --role \'保真核对\' --case \'<用例文件名>\' --brief \'<简报>\' --out \'<同前缀的 .verdict.json>\' --task-file \'<任务文件>\'，派 compile-fidelity 写出判断（只用这种单条形式，不要对整个核对目录用 --batch，它会覆盖 NAME 已写的判断）'.replace('NAME', name),
     '写完运行 fidelity-apply.ts 并入自动化用例',
     '也可以缩短这些用例的命令块后重跑本工具',
   ].join('；');
@@ -105,7 +109,11 @@ export async function runFidelityPlumb(
     const plansDir = getReq('--plans');
     const briefsDir = getReq('--briefs');
     const outSummary = typeof parsed.flags.get('--out') === 'string' ? (parsed.flags.get('--out') as string).trim() : '';
-    const strictReview = parsed.flags.get('--strict-review') === true;
+    const plumbOptions = extractPlumbCliOptions(parsed.flags);
+    const judge: JudgeName = judgeOf(plumbOptions);
+    // Jev answers only advise: the review gate of one never releases a step, so every step of a Jev audit goes to the blind audit.
+    const strictReview = parsed.flags.get('--strict-review') === true || judge === 'jev';
+    const promptVersion = fidelityPromptOf(judge);
 
     const { cases, skipped } = await planCases(runDirectory, plansDir);
     await mkdir(briefsDir, { recursive: true, mode: 0o700 });
@@ -147,8 +155,8 @@ export async function runFidelityPlumb(
       if(saved!==null){
         const doc=JSON.parse(saved);
         const digest=sha256Hex(stepQueries.map(step=>step.requestSha256).join(','));
-        if(doc.model_disclosure?.prompt_version!=='sequence@product-2400-exemptions-v2'||doc.model_disclosure?.request_sha256!==digest)
-          throw new CallFailure('invalid_parameters','已有判断没有绑定本版完整豁免题目；不能复用旧题目的判断','保留旧文件，改用新的 --briefs 目录重新核对');
+        if(doc.model_disclosure?.prompt_version!==promptVersion||doc.model_disclosure?.request_sha256!==digest)
+          throw new CallFailure('invalid_parameters',judge==='jev'?'已有判断不是 Jev 按本版题目写的（判断方式或题目版本不同）；不能复用另一种判断方式或旧题目的判断':'已有判断没有绑定本版完整豁免题目；不能复用旧题目的判断','保留旧文件，改用新的 --briefs 目录重新核对');
         reused.push({file:planCase.file,item:planCase.item,verdict:resolve(vPath)});continue;
       }
       pendingCases.push({
@@ -162,9 +170,14 @@ export async function runFidelityPlumb(
 
     const written: Array<{ file: string; item: string; verdict: string; preserved: number; changed: number; unrealized: number; review_required: string[]; literal_substitutions: Array<{ step: string } & LiteralSubstitution> }> = [];
     let modelVersion: string | undefined;
+    let jevRequests: number | null = null;
+    const noOpinion: Array<{ file: string; item: string; steps: Array<{ n: string; code: string; reason: string }> }> = [];
 
     if (pendingCases.length > 0) {
-      const client = await createCasePlumbClient(extractPlumbCliOptions(parsed.flags), io);
+      // Where the audit's request log lands for Jev when the caller names none: next to the briefs, and the answers of the passes before this one
+      // are kept in a file beside it, so that a pass asks only the questions that have no answer yet.
+      const auditOut = plumbOptions.auditOut ?? (judge === 'jev' ? join(briefsDir, 'jev-audit.jsonl') : undefined);
+      const { client, jev } = await createCaseJudge({ ...plumbOptions, ...(judge === 'jev' && auditOut ? { auditOut, jevAnswers: `${auditOut.replace(/\.jsonl$/u, '')}.answers.jsonl` } : {}) }, io);
       const questions: Record<string, PlumbBatchQuestion> = {};
       for (const ctx of pendingCases) {
         for (const sq of ctx.steps) {
@@ -172,18 +185,28 @@ export async function runFidelityPlumb(
             task: 'sequence',
             state: sq.state,
             step_n: sq.stepIdx + 1,
+            // Jev names the author step in its question; the step's label is the one the state text shows.
+            ...(judge === 'jev' ? { metadata: { author_step: ctx.planCase.brief.author_steps[sq.stepIdx]!.n } } : {}),
           };
         }
       }
       const batchRes = await client.judgeBatched({ task: 'sequence', questions });
-      modelVersion = batchRes.model_version;
+      modelVersion = batchRes.model_version ?? undefined;
+      jevRequests = jev ? jev.requests : null;
 
       for (const ctx of pendingCases) {
+        // A step whose question Jev's service turned down has no Jev opinion. A case with such a step gets no verdict file from this tool: its brief
+        // stays where it is, and the blind audit judges the case, as for a case too large to ask; the summary says which steps had no answer and why.
+        const lacking = ctx.steps.filter((sq) => batchRes.unanswered?.[sq.qid] !== undefined);
+        if (lacking.length > 0) {
+          noOpinion.push({ file: ctx.planCase.file, item: ctx.planCase.item, steps: lacking.map((sq) => ({ n: ctx.planCase.brief.author_steps[sq.stepIdx]!.n, code: batchRes.unanswered![sq.qid]!.code, reason: batchRes.unanswered![sq.qid]!.reason })) });
+          continue;
+        }
         const decisions: BoundStepDecision[] = [];
         for (const sq of ctx.steps) {
           const itemAns = batchRes.answers[sq.qid];
           if (!itemAns) {
-            throw plumbFailure('暂时不可用', `Plumb 批量结果缺少步骤 ${sq.qid}`, '请重试 Plumb 保真核对');
+            throw plumbFailure('暂时不可用', `${judge === 'jev' ? 'Jev' : 'Plumb'} 批量结果缺少步骤 ${sq.qid}`, `请重试 ${judge === 'jev' ? 'Jev' : 'Plumb'} 保真核对`);
           }
           const normalized = normalizeJudgeAnswer(itemAns);
           decisions.push(
@@ -192,9 +215,10 @@ export async function runFidelityPlumb(
               authorStep: ctx.planCase.brief.author_steps[sq.stepIdx]!,
               partitioned: ctx.partitioned,
               plumb: normalized,
-              modelVersion: itemAns.model_version ?? batchRes.model_version,
+              modelVersion: itemAns.model_version ?? batchRes.model_version ?? '',
               requestSha256: sq.requestSha256,
               strictReview,
+              judge,
             }),
           );
         }
@@ -204,9 +228,10 @@ export async function runFidelityPlumb(
           brief: ctx.planCase.brief,
           decisions,
           partitioned: ctx.partitioned,
-          modelVersion: batchRes.model_version,
+          modelVersion: batchRes.model_version ?? '',
           requestSha256: batchDigest,
           literalSubstitutions: substitutions,
+          judge,
         });
         await writeNew(ctx.verdictPath, Buffer.from(JSON.stringify(doc, null, 2) + '\n'));
         const countVerdict = (v: string) => decisions.filter((d) => d.row.verdict === v).length;
@@ -226,11 +251,14 @@ export async function runFidelityPlumb(
     const summary = {
       status: '未确认',
       decided_by: '模型',
+      judge,
       model_version: modelVersion ?? null,
+      ...(jevRequests !== null ? { jev_requests: jevRequests } : {}),
       strict_review: strictReview,
       checked: cases.length,
       reused,
       written,
+      ...(noOpinion.length > 0 ? { jev_no_opinion: noOpinion } : {}),
       over_budget: overBudget,
       skipped,
     };
@@ -239,7 +267,7 @@ export async function runFidelityPlumb(
       await writePrivateFile(outSummary, serialized);
     }
     const waiting = overBudget.filter((c) => !c.verdict_present);
-    if (waiting.length > 0) return { code: 1, stdout: serialized, stderr: overBudgetStop(waiting, written.length + reused.length) + '\n' };
+    if (waiting.length > 0) return { code: 1, stdout: serialized, stderr: overBudgetStop(waiting, written.length + reused.length, judge) + '\n' };
     return { code: 0, stdout: serialized, stderr: '' };
   } catch (error) {
     return { code: 1, stdout: '', stderr: formatPlumbCliError(error) + '\n' };

@@ -6,7 +6,7 @@
 
 每条原始用例独立推进，关口都由 `tools/pipeline.ts` 跑，子代理由编写循环 `workflows/compile-loop.js` 派发：
 
-1. 开运行：`tools/open-compile.ts` 先由代码判定技能版本、Plumb、命名文档、test-bed 预订和脑图是否就绪，再开用例重组运行（子包 `recompose`）和脚本编写运行，写 `open-compile.json`；给了 `--scope`、`--exclude`、`--version`、`--contract`、`--inventory` 或 `--profile` 的，记录里另有同名的可选字段（`scope` 是 `{words, cases}`，原话照录；`exclude` 是 autoid 列表；`version` 是版本线；`contract`、`inventory`、`profile` 是命名文档），`pipeline.ts` 以后新开脚本编写运行（返工、重新开、交付卷）时照它们带上，新的 `open-compile.json` 再记一遍，记录的 schema 仍是 `open-compile@1`。
+1. 开运行：`tools/open-compile.ts` 先由代码判定技能版本、Plumb 或 Jev 的配置、命名文档、test-bed 预订和脑图是否就绪，再开用例重组运行（子包 `recompose`）和脚本编写运行，写 `open-compile.json`；给了 `--scope`、`--exclude`、`--version`、`--contract`、`--inventory` 或 `--profile` 的，记录里另有同名的可选字段（`scope` 是 `{words, cases}`，原话照录；`exclude` 是 autoid 列表；`version` 是版本线；`contract`、`inventory`、`profile` 是命名文档），`pipeline.ts` 以后新开脚本编写运行（返工、重新开、交付卷）时照它们带上，新的 `open-compile.json` 再记一遍，记录的 schema 仍是 `open-compile@1`。
 2. 用例重组：每条原始用例由 `compile-recomposer` 写成重组后的用例，离线自检（`recompose/tools/check-record.ts`）后单条提交，受理后即可编写。
 3. 脚本编写：`compile-writer` 按任务文件、同构建手册和命令树写计划；计划自检（`tools/check-plan.ts`）、命令核验（`tools/cmd-verify-plumb.ts`）和场景保真审计（`tools/fidelity-plumb.ts`，判不了的交 `compile-fidelity` 盲审）都过了才算就绪。
 4. 脚本合并：`pipeline.ts collect` 收拢就绪的计划，`tools/open-merge.ts` 交计划、生成并上传工作簿、开脚本合并运行并提交。
@@ -14,21 +14,37 @@
 6. 失败分析与返工：`compile-attributor` 只读分析失败原因，`pipeline.ts rework` 新开运行、结转通过的计划（`tools/carry-plans.ts`）、重派没过的；每条最多 3 轮。交给重派的编写的上一轮计划（`rework-<n>/prior-plans/`）把展开了的长名字写回定长占位，让同一个名字是同一个占位、长度不同的名字是另一个占位（名字夹在更长的串里时，也按文本里别处找到的固定部分写，如 `x1.` 加占位）；`source-plans`、结转和就绪的副本仍逐字节不变。
 7. 交付：`tools/assemble-delivery.ts` 组交付目录（工作簿、`delivery_report.md`、`delivery.json`）并写最后的回复。
 
-开运行的就绪判定把没满足的条件一次说全，写在同一行 `无法编译：…` 里，用“；另：”隔开，什么都不开；只有一个问题时就是它自己的那一句。顺序是：工作流没分配、没装或版本不是 Hub 发布的（先 `recompose`，后 `case-compile`），然后（判断方式是 Plumb 时）没装 `plumb` 技能、第二行标准输入没有 Plumb 密钥、Plumb 没就绪。某一项要靠前一项才查得了（工作流没分配就没有版本可比，没有 `plumb` 技能或密钥就问不了 Plumb），就不单独算一个问题。Hub 不可达或读不到工作流列表，以及参数不对，仍单独说。技能没装时的下一步写明用客户端的技能安装从 Hub 装上；Hub 上没有 `plumb` 技能时由管理员先在 Hub 上安装。
+开运行的就绪判定把没满足的条件一次说全，写在同一行 `无法编译：…` 里，用“；另：”隔开，什么都不开；只有一个问题时就是它自己的那一句。顺序是：工作流没分配、没装或版本不是 Hub 发布的（先 `recompose`，后 `case-compile`），然后（判断方式是 Plumb 时）没装 `plumb` 技能、第二行标准输入没有 Plumb 密钥、Plumb 没就绪，或（判断方式是 Jev 时）第三行标准输入没有 Jev 密钥（`jev-judge` 技能不用装）。某一项要靠前一项才查得了（工作流没分配就没有版本可比，没有 `plumb` 技能或密钥就问不了 Plumb），就不单独算一个问题。Hub 不可达或读不到工作流列表，以及参数不对，仍单独说。技能没装时的下一步写明用客户端的技能安装从 Hub 装上；Hub 上没有 `plumb` 技能时由管理员先在 Hub 上安装。
 
 每个工具答复的 `message` 写着下一步（由 `functions/next-step.ts` 统一给出）。给模型的说明在 `SKILL.md`，上机验证、失败分析和交付在 `tools/delivery.md`，保真审计在 `tools/fidelity.md`，计划字段一览在 `tools/plan-fields.md`。
 
-### 判断方式（所有者 2026-11-22）
+### 判断方式（所有者 2026-11-22 定可选，2026-11-23 加 Jev）
 
-命令核验和场景保真审计默认由 Plumb 判断。使用者明确说这次不经 Plumb 时，`open-compile.ts --judge model` 把这个选择写进 `open-compile.json`，流水线照它办：
+命令核验和场景保真审计由使用者选的判断方式判断，默认是 Plumb。使用者明确说这次用 Jev 或不经 Plumb 时，`open-compile.ts --judge jev` 或 `--judge model` 把这个选择写进 `open-compile.json`，状态文件记下它（`judge`），流水线和以后每一次新开脚本编写运行（返工、重新开、交付卷）都照它办，不会自己换。Plumb 没就绪不是改用 jev 或 model 的理由，由使用者决定：没有任何一种判断方式会自动换成另一种。
+
+- 标准输入是三行：`open-compile.ts` 和 `pipeline.ts` 的 `resume`、`next`、`rework`、`reopen` 各声明了三行（`%HUB_TOKEN%`、`%PLUMB_API_KEY%`、`%JEV_API_KEY%`），守卫按声明核对行数，所以三行总是都写；工具按位置读自己判断方式要的那一行，别的行不读。客户端不认识的名字原样留在命令里，展开成空的就是空行，读到占位符或空行都是没有这把密钥。
+- 编写循环开头先问一次 `pipeline.ts judge --state …`（读状态文件，不要服务，也不读标准输入），答 `plumb` 时之后的命令带 `--plumb %PLUMB_URL%`，答 `jev` 或 `model` 时只写 `--hub`。
+- 每条用例的复核说明第一行写明这次的判断方式，`pipeline.ts collect` 的 `reviewed` 带出来，最后报告照录；`assemble-delivery.ts` 的 `--open` 必填，它按开运行记录在 `delivery_report.md` 的开头和最后回复里写一行判断方式（Plumb、Jev 或通用大模型），`delivery.json` 记 `judge` 和 `judge_line`；记录里没有判断方式一项就是 Plumb，所以这一行不会漏写。
+
+**Jev**（`--judge jev`，用 `jev-judge` 技能包内嵌在本工作流里的客户端）：
+
+- 开运行只要标准输入第三行是 Jev 密钥，和别的没满足的条件一起一次说全；不要 Plumb 地址、密钥和技能，也不用在本机装 `jev-judge` 技能，也不查任何服务：Jev 没有状态接口，试探一次就是一次计费调用，所以开运行不说 Jev 就不就绪。编译里问 Jev 用的是本工作流自带的客户端，由 `pipeline.ts` 带着密钥去问；`jev-judge` 技能的命令行工具不让模型直接运行（守卫拒绝），否则它就是一条发往 TypeSafe 的任意通道。
+- 命令核验（`cmd-verify-plumb.ts`）和场景保真审计（`fidelity-plumb.ts`）由 `pipeline.ts` 加 `--judge jev` 运行，两个选项主代理不手敲（命令行声明里没有它们，守卫会拒绝直接调用，有测试钉住）；不唤醒任何服务。每道题一次请求：命令核验每个命令（或命令列表）一道是否题，场景保真每个作者步骤一道三选一题（题目版本 `jev-noul@command-v1`、`jev-choice@fidelity-v1`）。第一次请求要 `jev-latest`，之后的请求要它答出来的确切版本，一次运行只有一个 `model_version`；答出来的模型名必须是 名称-X.Y.Z 的确切版本，`jev-latest` 这样会变的别名不算：不是就当这次没答，什么也不记。每个请求最多等 60 秒；密钥只从标准输入第一行读入，请求摘要（不含内容）写到审计目录里的 `jev-commands.jsonl` 和 `jev-audit.jsonl`，报告里的 `jev_requests` 是真正发出去的请求数（客户端在 429、529 后重发的那一次也算）。
+- Jev 按请求计费，已经得到的回答留在审计目录里的 `jev-commands.answers.jsonl` 和 `jev-audit.answers.jsonl`（每行只有题目的摘要、确切的模型版本和客户端核对过的回答，没有题面，没有密钥）：下一遍只问还没有回答的题，一批里已经答了的，在后面的请求失败时也留着；换了命令、计划或题目的题重新问，换了模型版本的回答不用。场景保真的判断文件仍只在一条用例的每一步都有结果时才写。
+- Jev 的回答没有校准过的阈值，一律是未确认的模型判断，每一步都落在 `review` 区（`calibrated: false`），没有放行也没有拒绝：命令核验每一步标需人工复核并带 Jev 的概率，命令树核对不通过的照样挡住，命令树也没有结论的步骤写明只有 Jev 的判断、状态未知；场景保真每一步都不靠 Jev 放行（保住的也按 `--strict-review` 的办法记为需人工复核），整份判断另存为 `*.jev-review.json`，交 `compile-fidelity` 盲审，盲审的判断并入计划。
+- 原始用例的步骤、写出的命令和手册片段会发到 TypeSafe（所有者 2026-11-23 定，只限这两项编译判断）：这条用例的复核说明在第一次问 Jev 时就写明了，不管之后关口怎么样；开运行的第一行和交付报告的判断方式那一行也写明了。
+- Jev 的服务拒收某一道题（请求被拒，或题面超过上限、少带前面的步骤重问以后仍然不行）时，那一步没有 Jev 的判断：命令核验里它按命令树核对的结论处理（报告里这一步的 `jev_no_opinion` 写原因，命令树通过的步骤不标需人工复核，没有结论的状态未知），场景保真里这条用例整个交独立盲审（工具不给它写判断文件）；原因都写进复核说明，不把计划退给写手，也不耗写手的次数。本地的请求记录写不进文件时，这条用例停下，原因写“Jev 的请求记录没有写成，计划没有改”，修好位置后 `pipeline.ts retry`。
+- 题面上限暂按给 Plumb 的算（命令上下文 1800 token、场景保真题面 2400 token），超限的处理不变：命令核验被 Jev 以请求过大或上下文过长拒收时，少带前面的步骤重问（同一道题不重发第二遍），重问以后仍然被拒的那一步没有 Jev 的判断，场景保真超限的用例走独立盲审。Jev 自己的真实上限还没有实测，第一次真实使用后再按它调。
+- Jev 暂时不可用时，这条用例等着，不唤醒、不耗次数；问过没有答复，隔满 1 分钟（按流水线的时钟）才再问，不管来问的是 `resume` 还是别的用例的关口，没到点的一次不问也不数，等待理由写着“到几点之前不再问”，状态文件里每条用例的 `jev_not_before` 就是那个时刻。Jev 按请求计费，超时和断连的请求可能已经计费，所以等待有上限：同一条用例连续 5 次没有得到 Jev 的答复（一次是命令核验加场景保真审计的一遍；命令核验答了、审计没答也算没答；五次至少隔四分钟）就停下，原因写“暂时不可用：Jev 连续 5 次没有给出答复（最后一次的原因）。稍后对这条用例执行 retry（每次脚本编写运行里只能执行一次），或者换一种判断方式重新开编译。”；一遍里两道关口都得到答复（通过、拒绝或打回计划都算）就重新数，状态文件里每条用例的 `jev_unanswered` 是现在数到几。Plumb 的等待没有上限也没有间隔，照旧。
+- 因 Jev 停下的用例（连续 5 次没有答复、密钥被拒或请求记录写不进文件）照别的停下的用例办：其余用例照常往下走；Jev 恢复、换了密钥或修好了请求记录的位置后，`pipeline.ts retry` 让它回到这两道关口，不重写计划，次数重新数。密钥被拒时原因写明是 Jev 没有接受密钥、计划没有改；密钥照写法就用不了（为空、太长或含不允许的字符）时写“Jev 密钥没有通过本地检查，没有发出任何请求，计划没有改”，不说成服务拒绝，也不数作 Jev 没有答复。
+
+**model**（`--judge model`）：
 
 - 开运行不查 Plumb 状态，不要 Plumb 地址和密钥，也不要求本机装有 `plumb` 技能。
-- model 方式下客户端可以不设 Plumb 地址和密钥：编写循环开头先问一次 `pipeline.ts judge --state …`（读状态文件，不要服务，也不读标准输入），答 `model` 时之后的命令不带 `--plumb %PLUMB_URL%`，只写 `--hub`；答 `plumb` 时命令与以前相同。标准输入仍是两行：`pipeline.cli.json` 给 `resume`、`next`、`rework`、`reopen` 各声明了两行，守卫按声明核对行数，所以第二行 `%PLUMB_API_KEY%` 省不掉；客户端不认识这个名字时它原样留在命令里，工具在 model 方式下不读它。
 - 命令核验只做命令树的程序核对（`cmd-verify-plumb.ts --tree-only`）：不通过的挡住，通过的放行，没有结论的步骤状态未知，写进这条用例的复核说明，不冒充判断过。一步命令也没有核对（计划标为跳过，或没有一步下发设备命令）时同样是未知：工具的报告写明缺什么和下一步，复核说明也记一条。`--tree-only` 由 `pipeline.ts` 运行，不由主代理手敲：`cmd-verify-plumb.cli.json` 仍声明 `--base-url` 必填、标准输入读 Plumb 密钥（命令行声明写不出“带了这个选项就不要它们”），守卫会拒绝不带它们的直接调用。
-- 场景保真审计直接出简报（`fidelity-brief.ts`），由 `compile-fidelity` 盲审，判断并入计划的做法不变；Hub 只核对格式和简报摘要，这一点两种方式相同。
-- 每条用例的复核说明第一行写明这次的判断方式，`pipeline.ts collect` 的 `reviewed` 带出来，最后报告照录。
+- 场景保真审计直接出简报（`fidelity-brief.ts`），由 `compile-fidelity` 盲审，判断并入计划的做法不变；Hub 只核对格式和简报摘要，三种方式相同。
 
-限制：model 方式没有 Plumb 的命令语义判断，命令树核对不了的步骤没有任何判断；盲审和编写用的是同一类通用模型，独立性比 Plumb 弱。两种方式的模型判断都是未确认，由上机验证的设备输出裁定。Plumb 没就绪不是改用 model 的理由，由使用者决定。
+限制：model 方式没有 Plumb 的命令语义判断，命令树核对不了的步骤没有任何判断；盲审和编写用的是同一类通用模型，独立性比 Plumb 弱。Jev 的回答没有校准，每一条都要人复核，它给的概率只是参考；它是第三方的线上服务，看不到服务那一侧的模型怎么变，所以只认它答出来的确切版本。三种方式的模型判断都是未确认，由上机验证的设备输出裁定。
 
 ## 输入、参数与核对
 
@@ -73,9 +89,9 @@
 | `check-brief.ts` | 核对结构化编写简报 |
 | `cmd-lookup.ts` | 查命令写法（`--param`、`--heads`）、对象和方法（`--method`、`--methods`）、块种类（`--block`） |
 | `check-plan.ts` | 用冻结的运行离线跑 Hub 对计划的边界和检查；固定部分相同、长度不同的定长名字作为 `advice` 说出来，不影响 `ok` |
-| `cmd-select-plumb.ts`、`cmd-verify-plumb.ts` | 命令候选和命令核验；以命令树为准，Plumb 只作提示。`cmd-verify-plumb.ts --tree-only` 不问 Plumb，只做命令树核对，由 `pipeline.ts` 运行，不手敲 |
+| `cmd-select-plumb.ts`、`cmd-verify-plumb.ts` | 命令候选和命令核验；以命令树为准，Plumb 只作提示。`cmd-verify-plumb.ts --tree-only` 不问 Plumb，只做命令树核对；`--judge jev` 改问 Jev，回答一律未确认、只作参考；两个选项都由 `pipeline.ts` 运行，不手敲 |
 | `command-domain-precheck.ts` | 只披露计划里的配置命令落在运行器哪条清理规则下、可用哪条只读命令查看，不判断设备状态 |
-| `fidelity-brief.ts`、`fidelity-plumb.ts`、`fidelity-apply.ts` | 场景保真审计：算简报、交 Plumb 判断、把判断并入计划 |
+| `fidelity-brief.ts`、`fidelity-plumb.ts`、`fidelity-apply.ts` | 场景保真审计：算简报、交 Plumb（或使用者选的 Jev）判断、把判断并入计划；`--judge jev` 由 `pipeline.ts` 运行，不手敲 |
 | `submit-plans.ts` | 展开定长占位后把计划交给 Hub |
 | `carry-plans.ts` | 返工时把通过的计划连同保真判断结转到新运行 |
 | `fetch-run.ts`、`generate-workbook.ts` | 取一次运行的已受理结果和绑定原件，离线生成工作簿 |
@@ -115,6 +131,7 @@
 | `runner-workbook` | `workbook-writer` | 工作簿模板、G 列写法、XLSX 读写 |
 | `command-tools` | `command-check` | 命令树语法、命令策略、取值范围 |
 | `plumb` | `plumb-client` | Plumb 网关客户端 |
+| `jev-judge` | `jev-client` | Jev（TypeSafe 的线上判断服务）客户端：固定地址、密钥只由调用方传入、请求和应答逐项核对 |
 
 ## 包外的需要（Needs）
 

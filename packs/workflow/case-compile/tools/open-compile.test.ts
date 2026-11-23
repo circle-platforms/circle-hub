@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -99,7 +100,7 @@ test('not ready: a Plumb judge that is not ready, or no Plumb key on the second 
   assert.equal(asleep.calls.filter((c) => c.name === 'start_run').length, 0);
   const keyless = hub({ list_task_packs: packs() });
   const noKey = await run(argv(join(dir, 'b.json')), keyless.connect, root, async () => READY, ['synthetic-token-1234']);
-  assert.equal(noKey.out, "无法编译：标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后重跑\n");
+  assert.equal(noKey.out, "无法编译：标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，依次 %HUB_TOKEN%、%PLUMB_API_KEY%、%JEV_API_KEY%，最后一行 EOF；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后重跑\n");
   assert.deepEqual(keyless.calls.map((c) => c.name), ['list_task_packs'], 'the key is said together with the workflow checks, which need the Hub\'s list; no run is started');
 });
 
@@ -219,17 +220,17 @@ test('judge defaults to plumb: the written file carries no judge, a missing Plum
   const noAddress = hub(answers);
   const missing = await run(argv(join(dir, 'a.json')).filter((value, n, all) => value !== '--plumb' && all[n - 1] !== '--plumb'), noAddress.connect, root);
   assert.equal(missing.code, 1);
-  assert.equal(missing.out, '无法编译：缺 --plumb <Plumb地址>；只有使用者明确说这次不经 Plumb 时才写 --judge model\n');
+  assert.equal(missing.out, '无法编译：缺 --plumb <Plumb地址>；只有使用者明确说这次不经 Plumb 时才写 --judge model 或 --judge jev\n');
   assert.equal(noAddress.calls.length, 0);
   const wrong = hub(answers);
   const other = await run(argv(join(dir, 'b.json'), ['--judge', 'gpt']), wrong.connect, root);
   assert.equal(other.code, 1);
-  assert.equal(other.out, '无法编译：--judge 只能写 plumb 或 model；不写就是 plumb\n');
+  assert.equal(other.out, '无法编译：--judge 只能写 plumb、jev 或 model；不写就是 plumb\n');
   assert.equal(wrong.calls.length, 0);
 });
 
 // What a new account in a fresh environment lacks is said at once, so that nobody fixes one thing, starts again and meets the next.
-const MISSING_KEY = "标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，下一行 %HUB_TOKEN%，再一行 %PLUMB_API_KEY%，最后一行 EOF；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后重跑";
+const MISSING_KEY = "标准输入第二行没有 Plumb 密钥；命令末尾写 <<'EOF'，依次 %HUB_TOKEN%、%PLUMB_API_KEY%、%JEV_API_KEY%，最后一行 EOF；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后重跑";
 const plumbSkillMissing = (root: string) => `本机没有装 plumb 技能（${join(root, 'plumb', 'tools', 'plumb.ts')}），它是 Hub 发布的通用技能；下一步：使用者用客户端的技能安装从 Hub 装上 plumb 技能再开编译；Hub 上没有它时，请管理员先在 Hub 上执行 circle-hub pack install plumb@<版本>`;
 const modelArgv = (out: string) => argv(out, ['--judge', 'model']).filter((value, n, all) => value !== '--plumb' && all[n - 1] !== '--plumb');
 
@@ -325,4 +326,54 @@ test('ready: the Hub is asked in the order it always was, and a Plumb judge is a
   const result = await run(argv(join(dir, 'open-compile.json')), connect, root, async (url, key) => { events.push(`plumb ${url} ${key}`); return READY; });
   assert.equal(result.code, 0, result.out);
   assert.deepEqual(events, ['hub list_task_packs', 'plumb https://127.0.0.1:9 synthetic-plumb-key', 'hub start_run recompose', 'hub start_run case-compile']);
+});
+
+// ---- Jev as the judge the user chose ----
+const jevArgv = (out: string) => argv(out, ['--judge', 'jev']).filter((value, n, all) => value !== '--plumb' && all[n - 1] !== '--plumb');
+const JEV_KEY = 'synthetic-jev-key-1234';
+const MISSING_JEV_KEY = "标准输入第三行没有 Jev 密钥；命令末尾写 <<'EOF'，依次 %HUB_TOKEN%、%PLUMB_API_KEY%、%JEV_API_KEY%，最后一行 EOF；还没有 Jev 密钥时向管理员申请，保存为客户端密钥 JEV_API_KEY 后重跑";
+
+test('judge jev: the user chose Jev, so no Plumb address, key, skill or status is looked at, the jev-judge skill need not be installed, no service is probed, and the choice is written into open-compile.json', async () => {
+  // Only the two workflows are installed: the compile asks Jev with the client inside case-compile, never with the jev-judge skill.
+  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }, false), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const asked: string[] = [];
+  const never: PlumbStatus = async (url) => { asked.push(url); throw new Error('Plumb must not be asked'); };
+  const h = hub({ list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) });
+  // The Plumb line is a literal placeholder, as a client without a Plumb key leaves it: it is not read in this mode.
+  const result = await run(jevArgv(join(dir, 'open-compile.json')), h.connect, root, never, ['synthetic-token-1234', '%PLUMB_API_KEY%', JEV_KEY]);
+  assert.equal(result.code, 0, result.out);
+  assert.match(result.out, /^就绪：用例重组运行 .*、脚本编写运行 .*，共 1 条用例；判断方式 jev：命令核验和场景保真由 Jev（TypeSafe 的线上判断服务）判断，原始用例的步骤、写出的命令和手册片段会发到 TypeSafe；Jev 的回答是模型的判断，未经确认，一律只作参考、逐条进复核/);
+  assert.deepEqual(asked, []);
+  assert.deepEqual(h.calls.map((c) => c.name), ['list_task_packs', 'start_run', 'start_run'], 'the Hub is asked as it always was, and Jev is not asked at all');
+  const record = JSON.parse(await readFile(join(dir, 'open-compile.json'), 'utf8'));
+  assert.equal(record.judge, 'jev');
+  assert.equal(record.schema, 'open-compile@1');
+  assert.ok(!JSON.stringify(record).includes(JEV_KEY), 'the key is not written anywhere');
+});
+
+test('not ready for Jev: a third line that is no key is said in the one answer with the workflow problems, and the jev-judge skill is never mentioned, and nothing is opened', async () => {
+  const root = await skills({ 'case-compile': '3.21.7' }, false), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const h = hub({ list_task_packs: packs() });
+  const workflow = `本机没有装 recompose 技能（${join(root, 'recompose')}）；下一步：使用者用客户端的技能安装从 Hub 装上 recompose 技能 1.3.0（Hub 发布的版本），再开编译；另：本机 case-compile 技能是 3.21.7，Hub 发布的是 3.22.0；下一步：重装 3.22.0 再开编译`;
+  for (const [n, third] of [[1, undefined], [2, ''], [3, '%JEV_API_KEY%']] as const) {
+    const result = await run(jevArgv(join(dir, `j${n}.json`)), h.connect, root, async () => { throw new Error('no service is probed'); }, third === undefined ? ['synthetic-token-1234', 'plumb-key'] : ['synthetic-token-1234', 'plumb-key', third]);
+    assert.equal(result.code, 1);
+    assert.equal(result.out, `无法编译：${workflow}；另：${MISSING_JEV_KEY}\n`);
+    assert.ok(!result.out.includes('jev-judge'), 'the skill is no precondition');
+  }
+  assert.deepEqual(h.calls.map((c) => c.name), ['list_task_packs', 'list_task_packs', 'list_task_packs']);
+  assert.equal(existsSync(join(dir, 'j1.json')), false);
+  // Only the key is missing: it is the one sentence, with the skill installed or not.
+  const installed = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0', 'jev-judge': '1.0.0' }, false);
+  const keyless = await run(jevArgv(join(dir, 'k.json')), hub({ list_task_packs: packs() }).connect, installed, async () => READY, ['synthetic-token-1234', 'plumb-key', '']);
+  assert.equal(keyless.out, `无法编译：${MISSING_JEV_KEY}\n`);
+});
+
+test('the three stdin lines are read by position: a blank line stays a line, so a key that expands to nothing is no key and moves no other up', async () => {
+  const module = new URL('./open-compile.ts', import.meta.url).href;
+  const read = (input: string) => JSON.parse(spawnSync(process.execPath, ['--input-type=module', '-e', `import { readStdinByPosition } from ${JSON.stringify(module)}; console.log(JSON.stringify(await readStdinByPosition()));`], { input, encoding: 'utf8' }).stdout) as string[];
+  assert.deepEqual(read('tok\nplumb\njev\n'), ['tok', 'plumb', 'jev']);
+  assert.deepEqual(read('tok\n\njev\n'), ['tok', '', 'jev']);
+  assert.deepEqual(read('tok\n  plumb \r\n\r\n'), ['tok', 'plumb', '']);
+  assert.deepEqual(read(''), []);
 });

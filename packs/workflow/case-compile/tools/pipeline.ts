@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord, parseCliOptions } from '../functions/text.ts';
+import { JEV_LOG_FAILED } from '../functions/jev-judge.ts';
 import { collapseJsonText } from '../functions/length-literals.ts';
 import { chooseSiblings, neededShapes, planCommandLines, siblingNote, type SiblingPlan } from '../functions/sibling-reference.ts';
 import { deviceReadNote, readableLines, readFileName, READ_LINES_PER_CASE, READS_DIRECTORY } from '../functions/device-read-lines.ts';
@@ -31,13 +32,17 @@ export interface CaseState {
   pending?: string;
   ready_sha256?: string;
   audits?: number;
+  /** Jev only: how many times in a row its gates were left unanswered (暂时不可用); a pass of both gates that got its answers starts the count over. */
+  jev_unanswered?: number;
+  /** Jev only: the earliest time the case is asked again after an unanswered ask (milliseconds, by the pipeline's clock). */
+  jev_not_before?: number;
 }
 export interface PipelineState {
   schema: 'compile-pipeline@1'; width: number; max_attempts: number; model: string;
   recompose_run: string; plan_run: string; recompose_dir: string; plan_dir: string; records_dir: string;
   cases: CaseState[];
   open?: string;
-  judge?: 'model';
+  judge?: 'model' | 'jev';
   plan_history?: Array<{ run: string; dir: string }>;
   volume?: { n: number; result?: 'passed' | 'failed' };
   device_reads?: { booking: string; device: string; bed?: string; lines: Record<string, string>; asked: Record<string, number> };
@@ -136,7 +141,7 @@ export async function initState(recomposeDir: string, planDir: string, open: Rec
     cases.push({ k: String(n).padStart(2, '0'), autoid: autoidOf(p.value) || autoidOf(r.value), title: String(fieldsOf(p.value).title ?? p.value.label ?? ''), recompose: { index: r.index, item: String(r.value.id) }, plan: { index: p.index, item: String(p.value.id) }, stage: 'queued', attempts: { recompose: 0, write: 0 } });
   }
   const reads = await deviceReadsOf(planDir, open);
-  return { schema: 'compile-pipeline@1', width, max_attempts: maxAttempts, model, recompose_run: open.recompose_run, plan_run: open.plan_run, recompose_dir: recomposeDir, plan_dir: planDir, records_dir: 'records', cases, ...(open.judge === 'model' ? { judge: 'model' as const } : {}), ...(reads ? { device_reads: reads } : {}) };
+  return { schema: 'compile-pipeline@1', width, max_attempts: maxAttempts, model, recompose_run: open.recompose_run, plan_run: open.plan_run, recompose_dir: recomposeDir, plan_dir: planDir, records_dir: 'records', cases, ...(open.judge === 'model' || open.judge === 'jev' ? { judge: open.judge } : {}), ...(reads ? { device_reads: reads } : {}) };
 }
 async function deviceReadsOf(planDir: string, open: Record<string, unknown>): Promise<PipelineState['device_reads']> {
   if (typeof open.booking !== 'string' || !open.booking) return undefined;
@@ -149,7 +154,7 @@ async function deviceReadsOf(planDir: string, open: Record<string, unknown>): Pr
 }
 
 export type StartTool = (skill: string, tool: string, args: string[], stdin?: string) => void;
-export interface Gates { run: RunTool; hub: string; plumb: string; token: string; plumbKey: string; start?: StartTool }
+export interface Gates { run: RunTool; hub: string; plumb: string; token: string; plumbKey: string; jevKey: string; start?: StartTool; /** The pipeline's clock, in milliseconds (Date.now unless a test gives its own). */ now?: () => number }
 
 async function dispatchRecompose(state: PipelineState, c: CaseState, gates: Pick<Gates, 'run'>, note?: string): Promise<Action> {
   c.stage = 'recomposing'; c.attempts.recompose += 1; note = noteFor(c, note); delete c.pending;
@@ -221,7 +226,9 @@ const noteFor = (c: CaseState, note?: string) => {
 };
 const runIndex = (c: CaseState) => c.run_index ?? c.plan.index;
 function stop(c: CaseState, reason: string) { c.stage = 'stopped'; c.stopped = reason.slice(0, NOTE_CHARS); delete c.pending; }
-export const unavailable = (run: ToolRun) => run.code !== 0 && /暂时不可用/.test(`${run.stderr}\n${run.stdout}`);
+// The tool's own failure line is the first thing on its standard error. A report, a plan or a case title that says the same words is no outage
+// of a service, and the same holds for a refusal that quotes them.
+export const unavailable = (run: ToolRun) => run.code !== 0 && /^暂时不可用：/u.test(run.stderr.trim());
 function wait(c: CaseState, reason: string): null { c.pending = reason.slice(0, NOTE_CHARS); return null; }
 const sha256File = async (path: string) => createHash('sha256').update(await readFile(path)).digest('hex');
 const PLUMB_WAKE_SECONDS = 240;
@@ -236,10 +243,78 @@ function unsettledCommands(verified: ToolRun): number {
 function noCommandChecked(verified: ToolRun): { skipped: boolean } | null {
   try { const value: unknown = JSON.parse(verified.stdout); return isRecord(value) && value.steps_checked === 0 ? { skipped: value.checked === 0 } : null; } catch { return null; }
 }
-function needPlumb(state: PipelineState, plumb: string | undefined, key: string | undefined): void {
+const STDIN_LINES = '标准输入要三行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%，第三行 %JEV_API_KEY%';
+const KEY_PLACEHOLDER = /^%[A-Z][A-Z0-9_]*%$/;
+// What each judge needs of this call: Plumb its address and key, Jev its key (a placeholder the client did not expand is no key), the model nothing.
+function needJudge(state: PipelineState, plumb: string | undefined, plumbKey: string | undefined, jevKey: string | undefined): void {
   if (state.judge === 'model') return;
+  if (state.judge === 'jev') {
+    if (!jevKey || KEY_PLACEHOLDER.test(jevKey)) throw new Error('缺 Jev 密钥：标准输入第三行要是 %JEV_API_KEY% 展开后的密钥（这次编译的判断方式是 Jev）；还没有 Jev 密钥时向管理员申请，保存为客户端密钥 JEV_API_KEY 后再启动编写循环');
+    return;
+  }
   if (!plumb) throw new Error('缺 --plumb <Plumb地址>（这次编译的判断方式是 Plumb）');
-  if (!key) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+  if (!plumbKey || KEY_PLACEHOLDER.test(plumbKey)) throw new Error('缺 Plumb 密钥：标准输入第二行要是 %PLUMB_API_KEY% 展开后的密钥，现在它是客户端没有展开的占位符或空行（这次编译的判断方式是 Plumb）；还没有 Plumb 密钥时向管理员申请，保存为客户端密钥 PLUMB_API_KEY 后再启动编写循环');
+}
+// The user chose Jev for this compile (Jev's answers are 未确认 advice: nothing passes or fails on one). The same two gates run with the
+// Jev judge, without a wake, and every case says so in its review notes.
+const JEV_JUDGE_NOTE = '判断方式：这次按使用者选定的方式由 Jev（TypeSafe 的线上判断服务）判断命令核验和场景保真，这条用例的原始用例步骤、写出的命令和手册片段发给 TypeSafe（从第一次问 Jev 起）；Jev 的回答是模型的判断，未经确认，一律只作参考，不放行也不拒绝：命令核验每一步标需人工复核，命令树核对不通过的照样挡住；场景保真逐条交独立盲审，由上机验证的设备输出裁定';
+const JEV_KEY_STOP = 'Jev 没有接受密钥，计划没有改：';
+// A key the client itself finds unusable (empty, too long, characters it does not allow) was never sent: that is not a refusal by the service.
+const JEV_KEY_LOCAL_STOP = 'Jev 密钥没有通过本地检查，没有发出任何请求，计划没有改：';
+const JEV_LOG_STOP = 'Jev 的请求记录没有写成，计划没有改：';
+// Jev bills every request, and one that timed out or lost its connection may have been billed already, so waiting for it is capped and spaced.
+// A case that Jev left unanswered this many times in a row stops, and between two asks of the same case at least this long passes, whoever
+// would ask (a resume, or the next gate of another case: with several cases in parallel that happens all the time). Plumb's waiting is neither.
+export const JEV_UNANSWERED_LIMIT = 5;
+export const JEV_ASK_SPACING_MS = 60_000;
+const jevAnswered = (c: CaseState): void => { delete c.jev_unanswered; delete c.jev_not_before; };
+// The time the reports write to the minute (a deadline), here to the second: the spacing is a minute.
+function localSecond(ms: number): string {
+  const d = new Date(ms), p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+const JEV_SILENCE_STOP = '暂时不可用：Jev 连续 ';
+// What Jev said the last time, as the fact the client reported: without the category word, the service's name for itself and the next steps.
+function lastReason(run: ToolRun): string {
+  const fact = words(run).replace(/^暂时不可用：/u, '').split('。')[0] ?? '';
+  return (fact.replace(/^Jev 暂时不可用（[^）]*）：/u, '').trim() || '没有说明原因').slice(0, 200);
+}
+const jevSilence = (times: number, run: ToolRun): string => `${JEV_SILENCE_STOP}${times} 次没有给出答复（${lastReason(run)}）。稍后对这条用例执行 retry（每次脚本编写运行里只能执行一次），或者换一种判断方式重新开编译。`;
+// The three lines a child that declares them reads (the Hub token, the Plumb key, the Jev key): the key the recorded judge uses, and the literal
+// placeholder in the place of each of the others, which a tool already takes for no key. A stored key of a judge this compile does not use goes nowhere.
+const standardInput = (state: PipelineState, g: Gates): string => `${g.token}\n${state.judge === undefined ? g.plumbKey : '%PLUMB_API_KEY%'}\n${state.judge === 'jev' ? g.jevKey : '%JEV_API_KEY%'}\n`;
+const jevGate = (g: Gates, tool: string, args: string[]): Promise<ToolRun> => g.run('case-compile', tool, [...args, '--judge', 'jev', '--key-stdin'], `${g.jevKey}\n`);
+const keyRefused = (run: ToolRun): boolean => run.code !== 0 && /^无权限：Jev /.test(words(run));
+const keyUnusable = (run: ToolRun): boolean => run.code !== 0 && /^无权限：Jev 密钥照现在的写法用不了/.test(words(run));
+// The tool says in its own failure line that the request log could not be written, whatever the category word before it (the client words it as a
+// refusal before it sends and as an outage after it was answered).
+const logFailed = (run: ToolRun): boolean => run.code !== 0 && new RegExp(`^(?:参数无效|暂时不可用)：${JEV_LOG_FAILED}`, 'u').test(run.stderr.trim());
+// The units of the command check that Jev's service turned down are in its report, one step each; the steps of the audit that it turned down are in its summary.
+function commandsWithoutJev(run: ToolRun): { count: number; reason: string; undecided: number } | null {
+  try {
+    const report: unknown = JSON.parse(run.stdout);
+    const steps = isRecord(report) && Array.isArray(report.results) ? report.results.filter(isRecord).flatMap((row) => (Array.isArray(row.steps) ? row.steps.filter(isRecord) : [])) : [];
+    const gone = steps.filter((step) => isRecord(step.jev_no_opinion));
+    if (gone.length === 0) return null;
+    const first = gone[0]!.jev_no_opinion as Record<string, unknown>;
+    return { count: gone.length, reason: String(first.reason ?? '没有说明原因').slice(0, 200), undecided: gone.filter((step) => step.review_required === true).length };
+  } catch { return null; }
+}
+function stepsWithoutJev(run: ToolRun): { steps: string; reason: string } | null {
+  try {
+    const summary: unknown = JSON.parse(run.stdout);
+    const cases = isRecord(summary) && Array.isArray(summary.jev_no_opinion) ? summary.jev_no_opinion.filter(isRecord) : [];
+    const steps = cases.flatMap((row) => (Array.isArray(row.steps) ? row.steps.filter(isRecord) : []));
+    if (steps.length === 0) return null;
+    return { steps: [...new Set(steps.map((step) => String(step.n)))].join('、'), reason: String(steps[0]!.reason ?? '没有说明原因').slice(0, 200) };
+  } catch { return null; }
+}
+// What a verdict that was held back for the blind audit is saved as, and what the note about it says.
+const reviewSuffix = (state: PipelineState): string => (state.judge === 'jev' ? '.jev-review.json' : '.plumb-review.json');
+function reviewNote(state: PipelineState, c: CaseState, kept: string): string {
+  return state.judge === 'jev'
+    ? `场景保真：第 ${c.attempts.write} 版计划的 Jev 判断（未确认）一律只作参考，逐条交独立盲审；本次无人值守，由独立盲审给出结论（Jev 的原判断保存在 ${kept}）`
+    : `场景保真：第 ${c.attempts.write} 版计划里有 Plumb 拿不准、标为“待人工复核”的步骤；本次无人值守，改由独立盲审给出结论（Plumb 的原判断保存在 ${kept}）`;
 }
 async function plumbGate(g: Gates, tool: string, args: string[]): Promise<ToolRun> {
   const first = await g.run('case-compile', tool, args, `${g.plumbKey}\n`);
@@ -349,7 +424,8 @@ async function toWriter(state: PipelineState, c: CaseState, g: Pick<Gates, 'run'
 
 async function writeEnded(state: PipelineState, c: CaseState, g: Gates, finished: boolean): Promise<Action | null> {
   const plans = join('cases', c.k, 'plan'), plan = join(plans, `${c.plan.index}.json`), audits = join('cases', c.k, 'audit');
-  const again = async (reason: string) => c.attempts.write >= state.max_attempts ? (stop(c, `脚本编写 ${c.attempts.write} 次仍未通过：${reason}`), null) : dispatchWrite(state, c, g, `上一次没有通过：${reason}`);
+  // A plan sent back to its writer is a new plan: whatever Jev's silence had counted for the old one is gone.
+  const again = async (reason: string) => { jevAnswered(c); return c.attempts.write >= state.max_attempts ? (stop(c, `脚本编写 ${c.attempts.write} 次仍未通过：${reason}`), null) : dispatchWrite(state, c, g, `上一次没有通过：${reason}`); };
   if (!existsSync(plan)) return finished ? again(`没有写出 ${plan}`) : null;
   const checked = await g.run('case-compile', 'check-plan.ts', ['--file', plan, '--run', state.plan_dir]);
   if (checked.code !== 0) return again(`计划自检没有通过：${words(checked)}`);
@@ -365,6 +441,46 @@ async function writeEnded(state: PipelineState, c: CaseState, g: Gates, finished
     await mkdir(audits, { recursive: true });
     const briefed = await g.run('case-compile', 'fidelity-brief.ts', ['--run', state.plan_dir, '--plans', plans, '--out', audits]);
     if (briefed.code !== 0) return again(`场景保真简报没有生成：${words(briefed)}`);
+    return auditApplied(state, c, g, false);
+  }
+  if (state.judge === 'jev') {
+    await mkdir(audits, { recursive: true });
+    // Said before the first request of the case is made, whatever comes of the gates: from here on the text of the case is on its way to TypeSafe.
+    noteOnce(c, JEV_JUDGE_NOTE);
+    const stopWith = (head: string) => (what: string, run: ToolRun): null => { stop(c, `${head}${what}：${words(run)}`); return null; };
+    const stopKey = stopWith(JEV_KEY_STOP), stopLocalKey = stopWith(JEV_KEY_LOCAL_STOP), logStopped = stopWith(JEV_LOG_STOP);
+    const stopped = (what: string, run: ToolRun): null => (keyUnusable(run) ? stopLocalKey(what, run) : stopKey(what, run));
+    // One count for the whole pass of the two gates: the command check answering does not start it over when the audit is then left unanswered,
+    // since the next pass asks the commands again. Any other end of a pass (a refusal, a stop, a plan sent back, both answers) does.
+    const unanswered = (what: string, run: ToolRun): null => {
+      const times = c.jev_unanswered = (c.jev_unanswered ?? 0) + 1;
+      if (times >= JEV_UNANSWERED_LIMIT) { delete c.jev_not_before; stop(c, jevSilence(times, run)); return null; }
+      // Not asked again before the spacing has passed, counted from the moment this ask came back: retryWaiting leaves the case alone till then.
+      const until = c.jev_not_before = (g.now ?? Date.now)() + JEV_ASK_SPACING_MS;
+      return wait(c, `${what}暂时做不了：${words(run).slice(0, 1200)}（Jev 连续第 ${times} 次没有答复；${localSecond(until)} 之前不再问；满 ${JEV_UNANSWERED_LIMIT} 次这条用例停下）`);
+    };
+    const checked = await jevGate(g, 'cmd-verify-plumb.ts', ['--plans', plans, '--run', state.plan_dir, '--audit-out', join(audits, 'jev-commands.jsonl')]);
+    // A request log that cannot be written is neither an outage of Jev nor a fault of the plan: the case stops, its plan as it is.
+    if (logFailed(checked)) { jevAnswered(c); return logStopped('命令核验', checked); }
+    if (unavailable(checked)) return unanswered('命令核验', checked);
+    if (keyRefused(checked)) { jevAnswered(c); return stopped('命令核验', checked); }
+    const withoutJev = commandsWithoutJev(checked);
+    if (withoutJev) noteOnce(c, `命令核验：第 ${c.attempts.write} 版计划有 ${withoutJev.count} 步 Jev 没有给出答复（${withoutJev.reason}），这些步骤只有命令树核对的结论，没有 Jev 的判断`);
+    if (checked.code !== 0) return again(`命令核验没有通过：${words(checked)}`);
+    const advised = unsettledCommands(checked) - (withoutJev?.undecided ?? 0);
+    if (advised > 0) noteOnce(c, `命令核验：第 ${c.attempts.write} 版计划有 ${advised} 步命令由 Jev 判断，一律只作参考，报告里每一步标需人工复核并带 Jev 给的概率；命令树核对不通过的已经挡住`);
+    const audited = await jevGate(g, 'fidelity-plumb.ts', ['--run', state.plan_dir, '--plans', plans, '--briefs', audits]);
+    if (logFailed(audited)) { jevAnswered(c); return logStopped('场景保真审计', audited); }
+    if (unavailable(audited)) return unanswered('场景保真审计', audited);
+    jevAnswered(c);
+    if (keyRefused(audited)) return stopped('场景保真审计', audited);
+    const auditWithoutJev = stepsWithoutJev(audited);
+    if (auditWithoutJev) noteOnce(c, `场景保真：第 ${c.attempts.write} 版计划的步骤 ${auditWithoutJev.steps} 没有 Jev 的答复（${auditWithoutJev.reason}）；Jev 对它们没有给出判断，这条用例整个交独立盲审给出结论`);
+    if (audited.code !== 0) {
+      if ((await pendingBriefs(audits)).length) return dispatchAudit(c, g);
+      if (/^参数无效/.test(words(audited))) return again(`场景保真审计做不了：${words(audited)}`);
+      stop(c, `场景保真审计没有做完（Jev）：${words(audited)}`); return null;
+    }
     return auditApplied(state, c, g, false);
   }
   const verified = await plumbGate(g, 'cmd-verify-plumb.ts', ['--plans', plans, '--run', state.plan_dir, '--base-url', g.plumb, '--key-stdin']);
@@ -429,8 +545,9 @@ async function auditApplied(state: PipelineState, c: CaseState, g: Pick<Gates, '
   if (refused) {
     const unsure = await reviewZoneVerdicts(audits);
     if (unsure.length && (c.audits ?? 0) < state.max_attempts) {
-      for (const name of unsure) await rename(join(audits, name), join(audits, name.replace(/\.verdict\.json$/, '.plumb-review.json')));
-      (c.review ??= []).push(`场景保真：第 ${c.attempts.write} 版计划里有 Plumb 拿不准、标为“待人工复核”的步骤；本次无人值守，改由独立盲审给出结论（Plumb 的原判断保存在 ${join(audits, unsure[0]!.replace(/\.verdict\.json$/, '.plumb-review.json'))}）`);
+      const kept = (name: string) => join(audits, name.replace(/\.verdict\.json$/, reviewSuffix(state)));
+      for (const name of unsure) await rename(join(audits, name), kept(name));
+      (c.review ??= []).push(reviewNote(state, c, kept(unsure[0]!)));
       return dispatchAudit(c, g);
     }
   }
@@ -449,6 +566,8 @@ async function retryWaiting(state: PipelineState, current: CaseState | null, g: 
   let tried = 0;
   for (const row of state.cases) {
     if (row === current || !row.pending || tried >= 2 || !RUNNING.includes(row.stage)) continue;
+    // A case Jev left unanswered is not asked before its time: an early pass neither asks nor counts, nor uses up one of this call's two tries.
+    if (row.jev_not_before !== undefined && (g.now ?? Date.now)() < row.jev_not_before) continue;
     tried++;
     const action = await advanceGate(state, row, g, false);
     if (action) actions.push(action);
@@ -541,7 +660,12 @@ export async function retry(state: PipelineState, which: string, decision: strin
     return summary(state, again);
   }
   const atAudit = (c.stopped ?? '').startsWith('场景保真审计没有做完') && existsSync(join('cases', c.k, 'plan', `${c.plan.index}.json`));
-  c.decision = decision.trim().slice(0, NOTE_CHARS); c.carry = c.stopped; delete c.stopped; c.regated = false; c.retried = state.plan_run;
+  // A case that Jev's refused key, Jev's silence or a request log that could not be written stopped has a plan that is not at fault: it goes back to its gates, which the next resume
+  // runs again (with the new key, or when Jev answers), and its count of unanswered asks starts over.
+  const kept = existsSync(join('cases', c.k, 'plan', `${c.plan.index}.json`));
+  const atKey = ((c.stopped ?? '').startsWith(JEV_KEY_STOP) || (c.stopped ?? '').startsWith(JEV_KEY_LOCAL_STOP)) && kept, atSilence = (c.stopped ?? '').startsWith(JEV_SILENCE_STOP) && kept, atLog = (c.stopped ?? '').startsWith(JEV_LOG_STOP) && kept;
+  c.decision = decision.trim().slice(0, NOTE_CHARS); c.carry = c.stopped; delete c.stopped; c.regated = false; c.retried = state.plan_run; jevAnswered(c);
+  if (atKey || atSilence || atLog) { delete c.carry; c.stage = 'writing'; c.pending = atKey ? 'Jev 的密钥已换过：命令核验和场景保真审计重做，计划没有改' : atLog ? 'Jev 的请求记录已能写：命令核验和场景保真审计重做，计划没有改' : 'Jev 再问一次：命令核验和场景保真审计重做，计划没有改'; return summary(state, []); }
   const actions: Action[] = [];
   if (atAudit) {
     const action = await auditApplied(state, c, g, false);
@@ -578,7 +702,7 @@ async function newPlanRun(state: PipelineState, open: Record<string, unknown>, b
   // The scope is the user's own words and cases, written as the record has them; the cases left out are the record's and the ones this pipeline dropped, each once, in the order met.
   const scope = recordedScope(open), left = [...new Set([...recordedExclude(open), ...exclude])];
   if (scope) { await mkdir(base, { recursive: true }); await writeFile(scopeFile, JSON.stringify(scope, null, 2) + '\n'); }
-  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' ? ['--judge', 'model'] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...recordedNames(open), ...(scope ? ['--scope', scopeFile] : []), ...(left.length ? ['--exclude', left.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], `${g.token}\n${g.plumbKey}\n`);
+  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' || state.judge === 'jev' ? ['--judge', state.judge] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...recordedNames(open), ...(scope ? ['--scope', scopeFile] : []), ...(left.length ? ['--exclude', left.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], standardInput(state, g));
   if (opened.code !== 0 || !existsSync(openFile)) throw new Error(`${what}没有开成：${words(opened) || '没有输出'}`);
   const target = String(((await readJson(openFile)) as Record<string, unknown>).plan_run ?? '');
   if (!target || target === state.plan_run) throw new Error(`open-compile.ts 没有给出新的脚本编写运行（看到 ${target || '空'}）`);
@@ -606,6 +730,8 @@ async function switchRun(state: PipelineState, target: string, planDir: string, 
 }
 
 function checkOpen(state: PipelineState, open: Record<string, unknown>): void {
+  const recorded = open.judge === 'model' || open.judge === 'jev' ? open.judge : 'plumb', chosen = state.judge ?? 'plumb';
+  if (recorded !== chosen) throw new Error(`--open 记的判断方式是 ${recorded}，这次编译的状态文件里是 ${chosen}；--open 写这一轮用的 open-compile 文件，不手改`);
   if (open.plan_run !== state.plan_run) throw new Error(`--open 写这一轮用的 open-compile 文件（它的脚本编写运行应是 ${state.plan_run}）；新的那个由本工具开`);
   for (const field of ['subject', 'product', 'build', 'booking', 'recompose_run', 'recompose_record']) if (typeof open[field] !== 'string' || !open[field]) throw new Error(`--open 不是 open-compile.ts 写的文件（缺 ${field}）`);
   recordedScope(open); recordedExclude(open); recordedNames(open);
@@ -810,13 +936,17 @@ export async function collect(state: PipelineState, out: string): Promise<{ copi
   return { copied, stopped: state.cases.filter((c) => c.stage === 'stopped').map((c) => ({ autoid: c.autoid, reason: c.stopped ?? '' })), not_done: [], ...(reviewed.length ? { reviewed } : {}), ...(excluded.length ? { excluded } : {}) };
 }
 
-async function readStdinLines(): Promise<string[]> {
+// The three stdin lines are read by position (token, Plumb key, Jev key): a blank line stays a line, so a key that expands to
+// nothing is "no key" and does not move the next one up.
+export async function readStdinLines(): Promise<string[]> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks).toString('utf8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = Buffer.concat(chunks).toString('utf8').split(/\r?\n/).map((l) => l.trim());
+  if (lines.at(-1) === '') lines.pop();
+  return lines;
 }
 
-export async function main(argv: string[], readStdin = readStdinLines, run?: RunTool, skillsRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')): Promise<number> {
+export async function main(argv: string[], readStdin = readStdinLines, run?: RunTool, skillsRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'), now: () => number = Date.now): Promise<number> {
   const [command, ...rest] = argv;
   const tools = run ?? spawnTool(skillsRoot);
   const starts = run ? undefined : startTool(skillsRoot);
@@ -838,23 +968,23 @@ export async function main(argv: string[], readStdin = readStdinLines, run?: Run
       const a = parseCliOptions(rest, { state: true, hub: true, plumb: false, pause: false }, 'pipeline.ts resume --state <文件> --hub <MCP地址> --plumb <Plumb地址> [--pause <秒>]') as Record<string, string>;
       const pause = a.pause === undefined ? 0 : Number(a.pause);
       if (!Number.isInteger(pause) || pause < 0 || pause > 300) throw new Error('--pause 写 0 到 300 的整数（先等这么多秒再看）');
-      const [token, plumbKey] = await readStdin();
-      if (!token) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+      const [token, plumbKey, jevKey] = await readStdin();
+      if (!token) throw new Error(STDIN_LINES);
       if (pause) await new Promise((done) => setTimeout(done, pause * 1000));
       const state = (await readJson(a.state)) as PipelineState;
-      needPlumb(state, a.plumb, plumbKey);
-      const step = await resume(state, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', start: starts });
+      needJudge(state, a.plumb, plumbKey, jevKey);
+      const step = await resume(state, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', jevKey: jevKey ?? '', start: starts, now });
       await saveState(a.state, state);
       process.stdout.write(JSON.stringify(step) + '\n');
       return 0;
     }
     if (command === 'next') {
       const a = parseCliOptions(rest, { state: true, finished: true, hub: true, plumb: false }, "pipeline.ts next --state <文件> --finished '<标签>' --hub <MCP地址> --plumb <Plumb地址>") as Record<string, string>;
-      const [token, plumbKey] = await readStdin();
-      if (!token) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+      const [token, plumbKey, jevKey] = await readStdin();
+      if (!token) throw new Error(STDIN_LINES);
       const state = (await readJson(a.state)) as PipelineState;
-      needPlumb(state, a.plumb, plumbKey);
-      const step = await next(state, a.finished, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', start: starts });
+      needJudge(state, a.plumb, plumbKey, jevKey);
+      const step = await next(state, a.finished, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', jevKey: jevKey ?? '', start: starts, now });
       await saveState(a.state, state);
       process.stdout.write(JSON.stringify(step) + '\n');
       return 0;
@@ -879,32 +1009,32 @@ export async function main(argv: string[], readStdin = readStdinLines, run?: Run
     }
     if (command === 'rework') {
       const a = parseCliOptions(rest, { state: true, open: true, returns: true, notes: false, hub: true, plumb: false }, "pipeline.ts rework --state <文件> --open <这一轮的 open-compile 文件> --returns <上机回传目录> [--notes <失败分析目录>] --hub <MCP地址> --plumb <Plumb地址>") as Record<string, string>;
-      const [token, plumbKey] = await readStdin();
-      if (!token) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+      const [token, plumbKey, jevKey] = await readStdin();
+      if (!token) throw new Error(STDIN_LINES);
       const state = (await readJson(a.state)) as PipelineState;
-      needPlumb(state, a.plumb, plumbKey);
-      const step = await rework(state, (await readJson(a.open)) as Record<string, unknown>, a.returns, a.notes, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', start: starts });
+      needJudge(state, a.plumb, plumbKey, jevKey);
+      const step = await rework(state, (await readJson(a.open)) as Record<string, unknown>, a.returns, a.notes, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', jevKey: jevKey ?? '', start: starts, now });
       await saveState(a.state, state);
       process.stdout.write(JSON.stringify(forLead(step)) + '\n');
       return 0;
     }
     if (command === 'reopen') {
       const a = parseCliOptions(rest, { state: true, open: true, refused: false, hub: true, plumb: false }, "pipeline.ts reopen --state <文件> --open <这一轮的 open-compile 文件> [--refused <合并工具写的 refused.json>] --hub <MCP地址> --plumb <Plumb地址>") as Record<string, string>;
-      const [token, plumbKey] = await readStdin();
-      if (!token) throw new Error("标准输入要两行：第一行 %HUB_TOKEN%，第二行 %PLUMB_API_KEY%");
+      const [token, plumbKey, jevKey] = await readStdin();
+      if (!token) throw new Error(STDIN_LINES);
       const state = (await readJson(a.state)) as PipelineState;
-      needPlumb(state, a.plumb, plumbKey);
-      const step = await reopen(state, (await readJson(a.open)) as Record<string, unknown>, a.refused, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', start: starts });
+      needJudge(state, a.plumb, plumbKey, jevKey);
+      const step = await reopen(state, (await readJson(a.open)) as Record<string, unknown>, a.refused, { run: tools, hub: a.hub, plumb: a.plumb ?? '', token, plumbKey: plumbKey ?? '', jevKey: jevKey ?? '', start: starts, now });
       await saveState(a.state, state);
       process.stdout.write(JSON.stringify(forLead(step)) + '\n');
       return 0;
     }
     if (command === 'judge') {
-      // The loop asks this before any other command, to know whether the commands that follow name Plumb at all; it needs no service and no standard input.
+      // The loop asks this before any other command, to know whether the commands that follow name Plumb at all (and which key line they need); it needs no service and no standard input.
       const a = parseCliOptions(rest, { state: true }, 'pipeline.ts judge --state <文件>') as Record<string, string>;
       const state = await readJson(a.state);
       if (!isRecord(state) || state.schema !== 'compile-pipeline@1') throw new Error(`--state ${a.state} 不是流水线的状态文件；用 pipeline.ts init 建一份`);
-      process.stdout.write(JSON.stringify({ judge: state.judge === 'model' ? 'model' : 'plumb' }) + '\n');
+      process.stdout.write(JSON.stringify({ judge: state.judge === 'model' || state.judge === 'jev' ? state.judge : 'plumb' }) + '\n');
       return 0;
     }
     throw new Error('子命令只有 init、resume、next、status、collect、retry、rework、reopen、judge');

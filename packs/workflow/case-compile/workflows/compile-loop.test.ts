@@ -11,11 +11,11 @@ const ok = (stdout = '{"ok":true}'): ToolRun => ({ code: 0, stdout, stderr: '' }
 const bad = (stderr: string): ToolRun => ({ code: 1, stdout: '', stderr });
 const OPEN = { recompose_run: 'run_01recomposerecompose00', plan_run: 'run_01planplanplanplanplan00' };
 const PIPELINE = '/synthetic skills/case-compile/tools/pipeline.ts';
-// The first line of every command after the first question: a compile that Plumb judges names its address, one that Plumb does not judge names only the Hub.
+// The first line of every command after the first question: a compile that Plumb judges names its address, one that Plumb does not judge (the model or Jev does) names only the Hub.
 const PLUMB_FORM = /^node '\/synthetic skills\/case-compile\/tools\/pipeline\.ts' (resume|next) --state 'pipeline\.json' (--finished '(重组|编写|审计) \d\d' |--pause [1-9]\d* )?--hub %HUB_URL% --plumb %PLUMB_URL% <<'EOF'$/;
 const MODEL_FORM = /^node '\/synthetic skills\/case-compile\/tools\/pipeline\.ts' (resume|next) --state 'pipeline\.json' (--finished '(重组|编写|审计) \d\d' |--pause [1-9]\d* )?--hub %HUB_URL% <<'EOF'$/;
 
-async function world(cases: number, judge?: 'model'): Promise<string[]> {
+async function world(cases: number, judge?: 'model' | 'jev'): Promise<string[]> {
   process.chdir(await mkdtemp(join(tmpdir(), 'compile-loop-')));
   for (const run of ['recompose-run', 'plan-run']) await mkdir(join(run, 'items'), { recursive: true });
   await mkdir(join('plan-run', 'briefs'), { recursive: true }); await mkdir('records', { recursive: true });
@@ -35,19 +35,25 @@ interface Bench {
   gate?: (tool: string, args: string[]) => ToolRun | undefined;
   writes?: (label: string, start: number) => boolean;
   ends?: (label: string, start: number) => boolean;
-  judge?: 'model';
+  judge?: 'model' | 'jev';
+  /** Whether a pause of the script moves the pipeline's clock by as many seconds, as a real pause does (the default). */
+  sleeps?: boolean;
 }
-async function bench(cases: number, { gate = () => undefined, writes = () => true, ends = () => true, judge }: Bench = {}) {
+async function bench(cases: number, { gate = () => undefined, writes = () => true, ends = () => true, judge, sleeps = true }: Bench = {}) {
   const items = await world(cases, judge);
   const answer = ok('合成答复\n供模型引用\n' + JSON.stringify({ call_result: 'ok', acceptance: 'accepted', result: { partitions: { delivered: items.map((item) => ({ item, requirements: [{ requirement: 'record', status: 'satisfied', claims: [] }] })) } } }));
   const run: RunTool = async (_skill, tool, args) => {
     if (tool === 'task-brief.ts') return ok(`派发提示 ${args[args.indexOf('--role') + 1]} ${args[args.indexOf('--case') + 1]}`);
     return gate(tool, args) ?? (tool === 'submit-records.ts' ? answer : ok());
   };
+  // The pipeline's clock: it moves only by the pauses the script asks for, and only when the bench says they are slept.
+  const begin = Date.UTC(2026, 10, 23, 4, 0, 0);
+  let now = begin;
+  const clock = () => now;
   const printed = async (argv: string[], stdin: string[]): Promise<{ code: number; output: string }> => {
     const lines: string[] = []; const write = process.stdout.write;
     process.stdout.write = ((text: string) => { lines.push(text); return true; }) as typeof process.stdout.write;
-    try { return { code: await main(argv, async () => stdin, run), output: lines.join('').trimEnd() }; } finally { process.stdout.write = write; }
+    try { return { code: await main(argv, async () => stdin, run, undefined, clock), output: lines.join('').trimEnd() }; } finally { process.stdout.write = write; }
   };
   assert.equal((await printed(['init', '--recompose-run', 'recompose-run', '--plan-run', 'plan-run', '--open', 'open-compile.json', '--model', 'synthetic-model', '--state', 'pipeline.json'], [])).code, 0);
 
@@ -64,14 +70,15 @@ async function bench(cases: number, { gate = () => undefined, writes = () => tru
         assert.deepEqual([line, rest], [`node '${PIPELINE}' judge --state 'pipeline.json'`, []], 'the question that comes first needs no service and no standard input');
         return await printed(['judge', '--state', 'pipeline.json'], []);
       }
-      assert.deepEqual(rest, ['%HUB_TOKEN%', '%PLUMB_API_KEY%', 'EOF'], command);
-      assert.match(line!, judge === 'model' ? MODEL_FORM : PLUMB_FORM);
+      assert.deepEqual(rest, ['%HUB_TOKEN%', '%PLUMB_API_KEY%', '%JEV_API_KEY%', 'EOF'], command);
+      assert.match(line!, judge === 'model' || judge === 'jev' ? MODEL_FORM : PLUMB_FORM);
       const words = [...line!.matchAll(/'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2]!).slice(2, -1).map((word) => word === '%HUB_URL%' ? 'http://127.0.0.1:9/mcp' : word === '%PLUMB_URL%' ? 'https://127.0.0.1:9' : word);
       const at = words.indexOf('--pause');
       if (at >= 0) {
         const seconds = Number(words[at + 1]); pauses.push(seconds); words.splice(at, 2);
+        if (sleeps) now += seconds * 1000;
       }
-      return await printed(words, ['synthetic-token-1234', 'synthetic-plumb-key']);
+      return await printed(words, ['synthetic-token-1234', 'synthetic-plumb-key', 'synthetic-jev-key']);
     } finally { inCommand = false; }
   };
   const agent = async (description: string, options: { agentType?: string; label?: string; phase?: string }) => {
@@ -98,7 +105,7 @@ async function bench(cases: number, { gate = () => undefined, writes = () => tru
   const given = { pipeline: PIPELINE, state: 'pipeline.json' };
   const result = (await body(agent, execute, given, (line: string) => logs.push(line), () => undefined)) as Record<string, unknown>;
   const state = JSON.parse(await readFile('pipeline.json', 'utf8')) as PipelineState;
-  return { result, commands, pauses, started, most, logs, state };
+  return { result, commands, pauses, started, most, logs, state, elapsed: now - begin };
 }
 
 test('the script is a workflow a client can run: its meta is a plain literal first, and it reads nothing but its calls', () => {
@@ -136,7 +143,21 @@ test('a compile that Plumb does not judge asks once and then names no Plumb addr
   for (const command of commands.slice(1)) {
     assert.ok(!command.includes('%PLUMB_URL%') && !command.includes('--plumb'), command);
     assert.match(command.split('\n')[0]!, / --hub %HUB_URL% <<'EOF'$/);
-    assert.ok(command.endsWith('\n%HUB_TOKEN%\n%PLUMB_API_KEY%\nEOF'), 'the two lines pipeline.cli.json declares for these sub-commands stay');
+    assert.ok(command.endsWith('\n%HUB_TOKEN%\n%PLUMB_API_KEY%\n%JEV_API_KEY%\nEOF'), 'the three lines pipeline.cli.json declares for these sub-commands stay');
+  }
+});
+
+test('a compile that Jev judges asks once, names no Plumb address, and hands the three lines on so that the pipeline reads the Jev key from the third', async () => {
+  const { result, commands, started, state } = await bench(3, { judge: 'jev' });
+  assert.equal(state.judge, 'jev');
+  assert.deepEqual([result.all_done, (result.ready as string[]).sort(), result.stopped], [true, ['00', '01', '02'], []]);
+  assert.deepEqual([...started].sort(), ['编写 00', '编写 01', '编写 02', '重组 00', '重组 01', '重组 02']);
+  assert.equal(commands[0], `node '${PIPELINE}' judge --state 'pipeline.json'`);
+  assert.ok(commands.length > 3);
+  for (const command of commands.slice(1)) {
+    assert.ok(!command.includes('%PLUMB_URL%') && !command.includes('--plumb'), command);
+    assert.match(command.split('\n')[0]!, / --hub %HUB_URL% <<'EOF'$/);
+    assert.ok(command.endsWith('\n%HUB_TOKEN%\n%PLUMB_API_KEY%\n%JEV_API_KEY%\nEOF'), command);
   }
 });
 
@@ -189,6 +210,30 @@ test('when only a gate that waits for a service is left the script looks again a
   assert.deepEqual(started, ['重组 00', '编写 00']);
 });
 
+const SILENCE = '暂时不可用：Jev 暂时不可用（HTTP 503，service_error）：Jev 服务出错（HTTP 503），服务可能已经处理了请求。没有重发这个请求；请先确认是否要再问一次，反复出现请联系服务方。稍后再启动编写循环重试；计划不用改。';
+
+test('judge jev: a gate Jev never answers is asked five times in a row, a minute apart, then its case stops and the script ends by itself, not after forty pauses; Plumb\'s waiting above is not capped', async () => {
+  let asked = 0;
+  const { result, pauses, commands, started, state, elapsed } = await bench(1, { judge: 'jev', gate: (tool) => (tool === 'cmd-verify-plumb.ts' ? (asked++, bad(SILENCE)) : undefined) });
+  assert.equal(asked, 5, 'Jev was asked five times and no more');
+  assert.deepEqual(pauses, [60, 60, 60, 60], 'the first ask is the gate of the writer that ended; four resumes follow, each after the minute');
+  assert.equal(elapsed, 4 * 60_000, 'five unanswered asks span four minutes of the pipeline\'s clock');
+  assert.equal(commands.filter((command) => / resume --state 'pipeline\.json' --pause 60 /.test(command)).length, 4);
+  assert.deepEqual([result.all_done, result.ready, result.waiting, started], [true, [], undefined, ['重组 00', '编写 00']]);
+  assert.deepEqual(result.stopped, [{ label: `00 ${state.cases[0]!.autoid}`, reason: '暂时不可用：Jev 连续 5 次没有给出答复（Jev 服务出错（HTTP 503），服务可能已经处理了请求）。稍后对这条用例执行 retry（每次脚本编写运行里只能执行一次），或者换一种判断方式重新开编译。' }]);
+  assert.deepEqual([state.cases[0]!.stage, state.cases[0]!.jev_unanswered, state.cases[0]!.jev_not_before, state.cases[0]!.attempts.write], ['stopped', 5, undefined, 1]);
+});
+
+test('judge jev: when the pauses of the script do not move the clock no early pass asks, and the script still ends by itself at its own limit of pauses', async () => {
+  let asked = 0;
+  const { result, pauses, state, elapsed } = await bench(1, { judge: 'jev', sleeps: false, gate: (tool) => (tool === 'cmd-verify-plumb.ts' ? (asked++, bad(SILENCE)) : undefined) });
+  assert.equal(asked, 1, 'one ask, then forty passes that are all early');
+  assert.equal(pauses.length, 40);
+  assert.equal(elapsed, 0);
+  assert.deepEqual([result.all_done, result.ready, (result.waiting as Array<{ label: string }>).map((w) => w.label)], [false, [], ['编写 00']]);
+  assert.deepEqual([state.cases[0]!.stage, state.cases[0]!.jev_unanswered, state.cases[0]!.attempts.write], ['writing', 1, 1], 'the case waits as it did, with its count at one');
+});
+
 const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor as new (...names: string[]) => (...values: unknown[]) => Promise<unknown>;
 const never = () => { throw new Error('nothing is to run'); };
 const runLoop = (execute: (command: string) => Promise<{ code: number; output: string }>) =>
@@ -205,8 +250,8 @@ test('a question about the judge that fails or is answered with a judge nobody k
   await assert.rejects(runLoop(async (command) => { asked.push(command); return { code: 1, output: '流水线工具没有完成：合成：状态文件读不了' }; }), /^Error: pipeline\.ts judge 没有完成（退出码 1）：流水线工具没有完成：合成：状态文件读不了$/);
   assert.deepEqual(asked, [`node '${PIPELINE}' judge --state 'pipeline.json'`]);
   asked.length = 0;
-  await assert.rejects(runLoop(async (command) => { asked.push(command); return { code: 0, output: '{"judge":"someone"}' }; }), /pipeline\.ts judge 答的判断方式是 "someone"，应当是 plumb 或 model/);
-  await assert.rejects(runLoop(async () => ({ code: 0, output: '{"ok":true}' })), /pipeline\.ts judge 答的判断方式是 undefined，应当是 plumb 或 model/);
+  await assert.rejects(runLoop(async (command) => { asked.push(command); return { code: 0, output: '{"judge":"someone"}' }; }), /pipeline\.ts judge 答的判断方式是 "someone"，应当是 plumb、jev 或 model/);
+  await assert.rejects(runLoop(async () => ({ code: 0, output: '{"ok":true}' })), /pipeline\.ts judge 答的判断方式是 undefined，应当是 plumb、jev 或 model/);
   assert.equal(asked.length, 1, 'nothing was asked after the answer that was not understood');
 });
 

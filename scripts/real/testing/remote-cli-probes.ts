@@ -58,6 +58,8 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
   await writeFile(join(plans, '01.json'), JSON.stringify({ item: item.id, handling: 'handled', slots: { plan: [{ text: '合成计划', quotes: [], data: {} }] } }));
   await writeFile(join(records, '01.json'), JSON.stringify({ item: item.id, method: { kind: 'declared', text: '合成方法', sources: ['synthetic-reference'], basis: '合成依据' } }));
   const notes = join(workRoot, 'notes.json'); await writeFile(notes, '{"cases":{}}');
+  // The record that opened the compile (a plain one: no judge field, which means Plumb); the delivery tool reads it before it reads the Hub.
+  const opened = join(workRoot, 'opened.json'); await writeFile(opened, JSON.stringify({ schema: 'open-compile@1', ready: true }));
   const child = fork(fileURLToPath(new URL('./remote-cli-worker.ts', import.meta.url)), [], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'], env: { NODE_NO_WARNINGS: '1' } });
   const origin = await new Promise<string>((resolve, reject) => {
     child.once('error', reject); child.once('exit', code => reject(new Error(`Synthetic CLI responder exited before ready: ${code}`)));
@@ -114,14 +116,14 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
   const lateReport = { run: LATE, dir: 'late-run', resolved_at: late.resolved_at, inputs: late.late.inputs, accepted: 1, newly_accepted: ['case-0'], waiting: [{ item: 'case-1', state: 'no_result', problem: '合成：还没有已受理提交' }], briefs: 1 };
   const openArgv = ['--hub', origin + '/mcp', '--plumb', origin, '--subject', 'agile:mindmap:990001', '--product', 'synth-switch', '--build', 'b1', '--booking', PLAN, '--out', join(workRoot, 'open-compile.json')];
   const openProbe: CliProbe = {
-    argv: openArgv, cwd: workRoot, subcommand: null, stdinValues: [token, 'synthetic-plumb-key'],
+    argv: openArgv, cwd: workRoot, subcommand: null, stdinValues: [token, 'synthetic-plumb-key', 'synthetic-jev-key'],
     complete: { status: 1, stdout: '无法编译：Hub 答复 400：\n', stderr: '' },
     empty: { status: 1, stdout: OPEN_EMPTY_STDOUT, stderr: '' },
   };
   const plumbProbe = (argv: string[]): CliProbe[] => [{ argv, cwd: workRoot, subcommand: null, stdinValues: [token], complete: { status: 0 }, empty: { status: 1, stdout: '' } }];
   return {
     caseCompile: {
-      'tools/assemble-delivery.ts': probe(['--hub', origin + '/mcp', '--runs', EMPTY, '--notes', notes, '--out', join(workRoot, 'delivery')], { status: 1, stdout: '', stderr: NO_DISPATCH_STDERR }),
+      'tools/assemble-delivery.ts': probe(['--hub', origin + '/mcp', '--runs', EMPTY, '--notes', notes, '--out', join(workRoot, 'delivery'), '--open', opened], { status: 1, stdout: '', stderr: NO_DISPATCH_STDERR }),
       'tools/download-returns.ts': probe(['--hub', origin + '/mcp', '--run', RUN, '--out', join(workRoot, 'returns')]),
       'tools/download-run.ts': probe(['--hub', origin + '/mcp', '--run', RUN, '--out', join(workRoot, 'compile-download')]),
       'tools/fetch-run.ts': probe(['--hub', origin + '/mcp', '--run', RUN, '--out', join(workRoot, 'fetched')]),

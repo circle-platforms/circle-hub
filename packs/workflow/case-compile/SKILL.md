@@ -17,18 +17,19 @@ description: 使用者要把一份测试脑图的原始用例编成自动化用�
 
 ## 0. 开运行即核对与逐条流水线
 
-取得或沿用 test-bed 预订后，第一步只跑开运行工具；技能版本、Plumb、命名文档、预订和脑图是否就绪由它和 Hub 用代码判定：
+取得或沿用 test-bed 预订后，第一步只跑开运行工具；技能版本、Plumb 或 Jev 的配置、命名文档、预订和脑图是否就绪由它和 Hub 用代码判定：
 
 ```sh
 node '<技能目录>/tools/open-compile.ts' --hub %HUB_URL% --plumb %PLUMB_URL% --subject 'agile:mindmap:<文档号>' --product '<产品>' --build '<构建>' --booking '<test-bed 预订号>' --out 'open-compile.json' <<'EOF'
 %HUB_TOKEN%
 %PLUMB_API_KEY%
+%JEV_API_KEY%
 EOF
 ```
 
 输出第一行是“就绪：…”就往下走；是“无法编译：…”时把这一行原样告诉使用者，然后停止，不分析、不提问、不换参数重试。部分用例加 `--scope '<范围文件>'`（`{"words":"<范围原话>","cases":[...]}`）；返工加 `--recompose-run` 与 `--recompose-record` 沿用重组。重组运行和脚本编写运行只经此工具开，`start_run` 只开 test-bed。
 
-判断方式默认是 Plumb。只有使用者明确说这次不经 Plumb，才在这条命令上加 `--judge model`（可不写 `--plumb`，标准输入照旧）：命令核验只做命令树的程序核对（它的 `--tree-only` 选项由 `pipeline.ts` 运行，主代理不手敲：命令行声明仍要求 Plumb 地址和密钥，守卫会拒绝不带它们的直接调用），场景保真由独立盲审判断，之后的 `pipeline.ts` 照 `open-compile.json` 办。Plumb 没就绪时不自行改用 model，照上一段停下。用了 model 的，最后报告写明判断方式，并照录 collect 输出的 `reviewed`。
+判断方式默认是 Plumb。使用者明确说这次用 Jev，才在这条命令上加 `--judge jev`；明确说这次不经 Plumb，才加 `--judge model`；都可不写 `--plumb`，标准输入照旧三行（Jev 密钥是第三行；不用装 `jev-judge` 技能，Jev 只经本工作流自带的客户端去问，它的命令行守卫不放行）。Jev 是 TypeSafe 的线上判断服务，原始用例的步骤、写出的命令和手册片段会发给它；它的回答是模型的判断，未经确认，一律只作参考：命令核验每一步标需人工复核，命令树核对不通过的照样挡住，场景保真逐条交独立盲审。model 的命令核验只做命令树的程序核对（`--tree-only` 由 `pipeline.ts` 运行，主代理不手敲：命令行声明仍要求 Plumb 地址和密钥，守卫会拒绝不带它们的直接调用），场景保真由独立盲审判断。之后的 `pipeline.ts` 照 `open-compile.json` 办。Plumb 没就绪时不自行改用 jev 或 model，照上一段停下。最后报告写明判断方式（`assemble-delivery.ts --open` 写这一行），并照录 collect 输出的 `reviewed`。
 
 就绪后下载两个运行（`<recompose 技能目录>` 是与 `<技能目录>` 同在 `skills` 目录下的 `recompose`），开流水线：
 
@@ -90,7 +91,7 @@ EOF
 
 ## 3. 脚本合并
 
-流水线已对每条用例跑过下面的命令核验和 Plumb 场景保真审计（缺审、过期或格式错在本地拦截，不占修复次数）；`all_done` 后先收拢就绪的计划，再提交给 Hub：`node '<技能目录>/tools/pipeline.ts' collect --state 'pipeline.json' --out 'plans'`，提交、生成工作簿和合并都用收拢后的 `plans` 目录。collect 输出的 `reviewed` 写进最终报告。收拢后不改 `plans`、不写跳过声明；对就绪条目有异议用 `retry` 送回。收拢后**后台**跑合并工具（约 10 分钟）：交计划、生成并上传 Excel、开脚本合并运行并提交都由它做，输出“合并通过：…”时照它的下一步进第 4 节；“合并不了：…”照它的下一步办（脚本合并运行已开出时先 `pipeline.ts reopen`，不再交旧的脚本编写运行）。命令核验以命令树为准：命令树核对不过的必改；Plumb 拒绝而命令树核对通过的只标需人工复核，不阻断。按说明改错并自动重交，最多重交 2 次；重改计划后重跑审计；不要把 Hub 已接收当全部正确。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）。
+流水线已对每条用例跑过下面的命令核验和场景保真审计（缺审、过期或格式错在本地拦截，不占修复次数）；`all_done` 后先收拢就绪的计划，再提交给 Hub：`node '<技能目录>/tools/pipeline.ts' collect --state 'pipeline.json' --out 'plans'`，提交、生成工作簿和合并都用收拢后的 `plans` 目录。collect 输出的 `reviewed` 写进最终报告。收拢后不改 `plans`、不写跳过声明；对就绪条目有异议用 `retry` 送回。收拢后**后台**跑合并工具（约 10 分钟）：交计划、生成并上传 Excel、开脚本合并运行并提交都由它做，输出“合并通过：…”时照它的下一步进第 4 节；“合并不了：…”照它的下一步办（脚本合并运行已开出时先 `pipeline.ts reopen`，不再交旧的脚本编写运行）。命令核验以命令树为准：命令树核对不过的必改；Plumb 拒绝而命令树核对通过的只标需人工复核，不阻断。按说明改错并自动重交，最多重交 2 次；重改计划后重跑审计；不要把 Hub 已接收当全部正确。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）。
 
 ```sh
 node '<技能目录>/tools/open-merge.ts' --hub %HUB_URL% --open 'open-compile.json' --plans 'plans' --model '<模型>' --out '<新目录>' <<'EOF'
@@ -122,6 +123,7 @@ EOF
 node '<技能目录>/tools/pipeline.ts' rework --state 'pipeline.json' --open 'open-compile.json' --returns '<新目录>' --notes 'notes' --hub %HUB_URL% --plumb %PLUMB_URL% <<'EOF'
 %HUB_TOKEN%
 %PLUMB_API_KEY%
+%JEV_API_KEY%
 EOF
 ```
 

@@ -6,6 +6,13 @@ import {
 } from './fidelity-render.ts';
 import type { LiteralSubstitution } from './fidelity-render.ts';
 import type { PlumbGate, PlumbNormalizedAnswer } from './generated/skills/plumb/plumb-client/index.ts';
+import { JEV_FIDELITY_PROMPT } from './jev-judge.ts';
+
+/** Who answered the scenario questions of one audit: Plumb as before, or Jev, whose answers only ever advise. */
+export type FidelityJudge = 'plumb' | 'jev';
+export const PLUMB_FIDELITY_PROMPT = 'sequence@product-2400-exemptions-v2';
+export const fidelityPromptOf = (judge: FidelityJudge): string => (judge === 'jev' ? JEV_FIDELITY_PROMPT : PLUMB_FIDELITY_PROMPT);
+const nameOf = (judge: FidelityJudge): string => (judge === 'jev' ? 'Jev' : 'Plumb');
 
 export interface BoundStepDecision {
   row: FidelityRow;
@@ -79,8 +86,10 @@ export function mapPlumbSequenceToFidelityRow(params: {
   modelVersion: string;
   requestSha256?: string;
   strictReview?: boolean;
+  judge?: FidelityJudge;
 }): BoundStepDecision {
-  const { brief, authorStep, partitioned, plumb, modelVersion, requestSha256, strictReview = false } = params;
+  const { brief, authorStep, partitioned, plumb, modelVersion, requestSha256, strictReview = false, judge = 'plumb' } = params;
+  const name = nameOf(judge);
   const normalizedChoice = normalizePlumbSequenceChoice(plumb.choice);
   const gateAction = plumb.gate?.action ?? 'pass';
   const mapped = mapStepIndices(brief, authorStep, partitioned);
@@ -99,15 +108,15 @@ export function mapPlumbSequenceToFidelityRow(params: {
     } else if (strictReview) {
       verdict = 'changed';
       reviewRequired = true;
-      notes.push('--strict-review 已启用，review 区不自动放行');
+      notes.push(judge === 'jev' ? 'Jev 的回答未经确认，一律只作参考，不自动放行' : '--strict-review 已启用，review 区不自动放行');
     } else {
       verdict = 'preserved';
       reviewRequired = true;
-      notes.push('[需人工复核：Plumb sequence 落入 review 区]');
+      notes.push(`[需人工复核：${name} sequence 落入 review 区]`);
     }
   } else {
     verdict = normalizedChoice === '未实现' ? 'unrealized' : 'changed';
-    notes.push('Plumb gate=reject，拒绝自动放行');
+    notes.push(`${name} gate=reject，拒绝自动放行`);
   }
 
   if (verdict === 'preserved' && stepIndices.length === 0) {
@@ -120,7 +129,7 @@ export function mapPlumbSequenceToFidelityRow(params: {
 
   const confText = Number.isFinite(plumb.confidence) ? plumb.confidence.toFixed(3) : 'n/a';
   const rationaleParts = [
-    `Plumb(${modelVersion}) sequence=${normalizedChoice}（conf=${confText}, gate=${gateAction}, 映射方式=${mapped.tier}）`,
+    `${name}(${modelVersion}) sequence=${normalizedChoice}（conf=${confText}, gate=${gateAction}, 映射方式=${mapped.tier}）`,
     ...notes,
   ];
   const rationale = rationaleParts.join('；').slice(0, 4096);
@@ -156,12 +165,14 @@ export function buildFidelityVerdictDocument(params: {
   modelVersion: string;
   requestSha256?: string;
   literalSubstitutions?: ReadonlyArray<{ step: string } & LiteralSubstitution>;
+  judge?: FidelityJudge;
 }): {
   steps: FidelityRow[];
   disclosure: string;
   model_disclosure: ModelDisclosure;
 } {
-  const { decisions, partitioned, modelVersion, requestSha256, literalSubstitutions = [] } = params;
+  const { decisions, partitioned, modelVersion, requestSha256, literalSubstitutions = [], judge = 'plumb' } = params;
+  const name = nameOf(judge);
   const rows = decisions.map((d) => d.row);
   const kept = rows.filter((r) => r.verdict === 'preserved').map((r) => r.n);
   const changed = rows.filter((r) => r.verdict === 'changed').map((r) => r.n);
@@ -170,7 +181,7 @@ export function buildFidelityVerdictDocument(params: {
 
   const segments: string[] = [];
   if (reviewSteps.length > 0) {
-    segments.push(`[需人工复核：Plumb sequence 落入 review 区] 步骤 ${reviewSteps.join('、')}`);
+    segments.push(`[需人工复核：${name} sequence 落入 review 区] 步骤 ${reviewSteps.join('、')}`);
   }
   if (kept.length > 0) segments.push(`保持步骤：${kept.join('、')}`);
   if (changed.length > 0) segments.push(`改变步骤：${changed.join('、')}`);
@@ -184,9 +195,9 @@ export function buildFidelityVerdictDocument(params: {
       const row = `${sub.name}（${sub.length} 个字符，出现 ${sub.occurrences} 次，SHA-256 前 12 位 ${sub.sha256_12}）`;
       perStep.set(sub.step, [...(perStep.get(sub.step) ?? []), row]);
     }
-    segments.push(`长字面量换名：${[...perStep].map(([step, rows]) => `步骤 ${step} 的 ${rows.join('、')}`).join('；')}，送 Plumb 的题面里逐字相同的长字面量写成了名字，原文只在题面的对照表里列一次，自动化用例和简报里的原文没有改`);
+    segments.push(`长字面量换名：${[...perStep].map(([step, rows]) => `步骤 ${step} 的 ${rows.join('、')}`).join('；')}，送 ${name} 的题面里逐字相同的长字面量写成了名字，原文只在题面的对照表里列一次，自动化用例和简报里的原文没有改`);
   }
-  segments.push(`依据 Plumb(${modelVersion}) 判断（状态未确认，决定者模型）。`);
+  segments.push(`依据 ${name}(${modelVersion}) 判断（状态未确认，决定者模型）${judge === 'jev' ? '；Jev 的回答一律只作参考，不自动放行，逐条交独立盲审' : ''}。`);
 
   return {
     steps: rows,
@@ -196,7 +207,7 @@ export function buildFidelityVerdictDocument(params: {
       decided_by: '模型',
       model_version: modelVersion,
       ...(requestSha256 ? { request_sha256: requestSha256 } : {}),
-      prompt_version: 'sequence@product-2400-exemptions-v2',
+      prompt_version: fidelityPromptOf(judge),
       review_required_steps: reviewSteps,
     },
   };
