@@ -2,7 +2,7 @@
   "schema": "deployment@2",
   "packs": [
     {
-      "ref": "test-bed@1.4.1",
+      "ref": "test-bed@1.4.2",
       "directory": "../../packs/workflow/test-bed"
     }
   ],
