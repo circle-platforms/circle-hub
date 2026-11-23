@@ -75,7 +75,11 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
   const mayRead = async (record: StoredRecord): Promise<boolean> => {
     const account = await records.principals.get(principal.id);
     if (account === null || account.disabled) return false;
-    if (record.schema === 'member-notification-intent@1' || record.schema === 'member-notification-receipt@1') {
+    if (
+      record.schema === 'member-notification-intent@1' ||
+      record.schema === 'member-notification-receipt@1' ||
+      record.schema === 'member-bot-inbound@1'
+    ) {
       return !account.deleted_at && isObject(record.body) && record.body.member === account.id;
     }
     // Space manifests may contain directories outside a partial grant; use the path-filtered space API instead.

@@ -132,7 +132,8 @@ const ACTION_COMPONENTS: Readonly<Record<string, ResetDataScope>> = {
   'hub.feeding@2': 'knowledge', 'connectors@1': 'knowledge',
 };
 function classifyAction(record: CurrentRecord, body: Body): ResetDataScope | null {
-  if (record.schema === 'member-notification-intent@1') return 'history';
+  if (record.schema === 'member-notification-intent@1' || record.schema === 'member-bot-inbound@1') return 'history';
+  if (record.schema === 'member-external-identity@1' || record.schema === 'bot-secret-change@1') return 'config';
   if (['memory-refusal@1', 'memory-unchanged@1', 'personal-sync-mode@1', 'personal-sync-commit@1',
     'personal-sync-purge-request@1', 'personal-sync-http-audit@1'].includes(record.schema)) return 'knowledge';
   if (record.schema === 'mcp-client-declaration@1') return body.kind === 'read' && sha256(body.call) && object(body.client) !== null ? 'history' : null;

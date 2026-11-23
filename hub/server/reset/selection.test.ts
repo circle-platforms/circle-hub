@@ -237,7 +237,7 @@ test('resource definitions yield a pack registry alias instead of only a manifes
   assert.equal(resourceDefinitionReferences({ ...resource, schema: 'resource@2' }), null);
 });
 
-test('personal-bot notification intents and receipts classify into history', () => {
+test('personal-bot notification intents and receipts classify into history and audit records into config', () => {
   const intent = record(1, 'action', 'member-notification-intent@1', {
     schema: 'member-notification-intent@1',
     kind: 'dispatch',
@@ -249,6 +249,10 @@ test('personal-bot notification intents and receipts classify into history', () 
     subject: hash(22),
     sha256: hash(10),
     size: 12,
+    text_sha256: hash(12),
+    text_size: 12,
+    file_sha256: null,
+    file_size: null,
     name_sha256: null,
     write: {
       interaction: 'submit_then_read',
@@ -274,9 +278,42 @@ test('personal-bot notification intents and receipts classify into history', () 
     missing: null,
     next: null,
   });
+  const inbound = record(3, 'action', 'member-bot-inbound@1', {
+    schema: 'member-bot-inbound@1',
+    kind: 'dispatch',
+    request: '33333333-3333-4333-8333-333333333333',
+    member: user,
+    issuer: hash(20),
+    subject: hash(22),
+    channel: hash(21),
+    platform_id_sha256: hash(23),
+    text_sha256: hash(12),
+    text_size: 12,
+    files: [],
+    at,
+  });
+  const identityAudit = record(4, 'action', 'member-external-identity@1', {
+    schema: 'member-external-identity@1',
+    action: 'bind',
+    by: user,
+    member: user,
+    issuer: hash(20),
+    subject: hash(22),
+    at,
+  });
+  const secretAudit = record(5, 'action', 'bot-secret-change@1', {
+    schema: 'bot-secret-change@1',
+    action: 'set',
+    slot: 'personal-bot.model',
+    by: user,
+    at,
+  });
   assert.equal(classifyCurrentRecord(intent), 'history');
   assert.equal(classifyCurrentRecord(receipt), 'history');
-  const selected = selectCurrentRecords([intent, receipt], new Set(['history']));
+  assert.equal(classifyCurrentRecord(inbound), 'history');
+  assert.equal(classifyCurrentRecord(identityAudit), 'config');
+  assert.equal(classifyCurrentRecord(secretAudit), 'config');
+  const selected = selectCurrentRecords([intent, receipt, inbound, identityAudit, secretAudit], new Set(['history']));
   assert.deepEqual(selected.blocked, []);
-  assert.deepEqual(selected.cleared, [intent.digest, receipt.digest]);
+  assert.deepEqual(selected.cleared, [intent.digest, receipt.digest, inbound.digest]);
 });
