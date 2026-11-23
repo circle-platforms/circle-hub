@@ -53,6 +53,7 @@
 
 ## 历史
 
+- 2026-11-24：现在这条历史上第一个 `release/*` 标记 `release/2026-11-23`，标在 2026-11-23 部署到正式实例的提交 c8550a1fa2 上（决定 192）。包版本检查和已发布 schema 的兼容检查从此以这个提交为基线，不再以 main 为基线：已发布的包版本内容不再变，已发布 schema 不接受不兼容改动。2026-11-21 登记的 14 条 schema 例外（`read-manifest@1` 和 `tree_root@1` 的 `variables[]`、`secret@1`）随之删去，这些改动已在基线里；此后的不兼容改动要重新登记例外。
 - 2026-11-23：整合分支里内容有变、版本号却没变的十个包升版本号。正式实例、第二实例和演练实例当天运行的提交（c8550a1fa2）已经发布了其中八个的旧版本号，同一版本号不能再以另一份内容发布（`publish.version_reused`）：`case-compile` 3.26.9 → 3.26.10，`recompose` 1.3.2 → 1.3.3，`recompose-adjudication` 与 `recompose-authority` 1.1.18 → 1.1.19，`test-bed` 1.4.1 → 1.4.2，`html-format` 1.0.23 → 1.0.24，`workbook-format` 与 `xml-format` 1.0.24 → 1.0.25；另两个没有在这些实例上发布，相对同一提交内容也变了，一并升：`knowledge-contribution` 1.3.23 → 1.3.24，`story-traceability` 1.0.19 → 1.0.20。`case-compile` 和它的三个子包接受的重组证据版本加上 `recompose` 1.3.3 与两个 1.1.19。部署这一版时，执行器指定的核验函数要改成 `case-compile.workbook_verified@3.26.10`，客户端要重装 `case-compile` 和 `recompose`。
 - 2026-11-23：case-compile 移除参数 `pipeline` 的 `legacy` 兼容模式，仅保留 `recomposed` 流水线（`workflow.json`、`functions/project.ts` 与 `recompose-format.json`）；为 18 份此前缺少 YAML frontmatter 的工作流与技能 `SKILL.md` 补齐 frontmatter，清理修改范围内的术语表述，并更新受影响包的补丁版本及清单摘要。
 - 2026-11-20：成员私聊应用接口 v1 使用 `POST /api/bot/v1`、成员 Bearer 令牌及 `Circle-Version`；远程聊天视图与独立宿主保持同一 Circle 版本，设置页通过 `bot set`、`bot test` 与 `bot disable` 管理模型。六个业务 MCP 工具继续按 D06 服务工作流与技能，增量迁移新增成员外部身份唯一绑定；新增 `member-notification-intent@1` 与 `member-notification-receipt@1` 记录成员受众、载荷摘要与平台确认；成员文件接口按 SHA-256 校验，单文件上限 100 MiB（设计契约与合成回环已验证，真实租户与生产部署须部署所有者另行验收）。

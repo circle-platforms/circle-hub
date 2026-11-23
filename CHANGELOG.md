@@ -4,6 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Clear the 14 schema exceptions that the first `release/*` tag makes stale (`release/2026-11-23` marks the commit production runs; decision 192): the pack version check and the published schema freeze now take that commit as their baseline instead of main.
 - Give a new version to the ten packs whose content changed while their version stayed (`case-compile` 3.26.10, `recompose` 1.3.3, `recompose-adjudication` and `recompose-authority` 1.1.19, `test-bed` 1.4.2, `html-format` 1.0.24, `workbook-format` and `xml-format` 1.0.25, `knowledge-contribution` 1.3.24, `story-traceability` 1.0.20): the instances that run c8550a1fa2 had published the old versions, and a published version cannot change.
 - Remove the `legacy` compatibility pipeline mode from `case-compile` (`workflow.json`, `functions/project.ts`, `tables/recompose-format.json`, and synced sub-pack tables), add YAML frontmatter across the 18 remaining `SKILL.md` files, standardize terminology across modified packs and docs, and refresh pack versions and manifests accordingly.
 - Integrate the sanitized personal-bot design specification and compatibility documentation (unique external member identity bindings, `POST /api/bot/v1` and `/api/bot/v1/files/<sha256>`, `member-notification-intent@1` and `member-notification-receipt@1`, console `bot set`/`test`/`disable` controls, and synthetic loopback pairing coverage; production tenant deployment remains pending owner authorization).
