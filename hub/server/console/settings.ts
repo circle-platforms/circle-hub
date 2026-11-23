@@ -2,7 +2,7 @@ import { tooltip, field, facts, technicalCode, technical } from './presentation.
 import { X509Certificate } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { BOT_MODEL_PROTOCOL, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { MANIFEST_FILE, layoutAt, listBackups } from '../../platform/api.ts';
 import { maskPlaceholder, type TokenInfo, type User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
@@ -236,7 +236,7 @@ function botModelForm(profile: BotProfile | null, csrf: string): Html {
   const id = 'bot';
   const fields = html`<div data-fields>
     ${field('机器人名称', html`<input id="${id}-name" name="name" required maxlength="256" value="${profile?.name ?? ''}">`)}
-    ${field('API 协议', html`<select id="${id}-protocol" name="protocol">${['openai', 'responses', 'anthropic'].map((p) => html`<option value="${p}"${profile?.protocol === p ? html` selected` : ''}>${p}</option>`)}</select>`)}
+    ${field('API 协议', html`<select id="${id}-protocol" name="protocol">${BOT_MODEL_PROTOCOL.map((p) => html`<option value="${p}"${profile?.protocol === p ? html` selected` : ''}>${uiLabelOf('bot_model_protocol', p)}</option>`)}</select>`)}
     ${field('API 地址', html`<input id="${id}-endpoint" name="endpoint" type="url" required spellcheck="false" value="${profile?.endpoint ?? ''}">`)}
     ${field('模型 ID', html`<input id="${id}-model" name="model" required spellcheck="false" value="${profile?.model ?? ''}">`)}
     ${field('模型族 ID', html`<input id="${id}-family" name="family" maxlength="256" spellcheck="false" value="${profile?.family ?? ''}">`)}

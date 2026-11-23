@@ -152,6 +152,7 @@ test('D1 + H1 CLI & Console: bot-secret-change@1 audits, reviewer removal, and a
   const botHtml = await botTab.text();
   assert.ok(!botHtml.includes('独立复核模型'));
   assert.ok(!botHtml.includes('bot-review-'));
+  assert.ok(botHtml.includes('OpenAI 对话补全协议') && botHtml.includes('Anthropic 消息协议') && botHtml.includes('OpenAI Responses 协议'));
 
   const reviewPost = await send('/console/admin/do/bot-review-set', {
     method: 'POST',
