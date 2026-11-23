@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BOT_MODEL_PROTOCOL, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { MANIFEST_FILE, layoutAt, listBackups } from '../../platform/api.ts';
-import { maskPlaceholder, type TokenInfo, type User } from '../../records/api.ts';
+import { maskPlaceholder } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
 import { readBotProfile, readChannel, readIdentity, type BotProfile } from '../personal-bot.ts';
 import { commands } from './commands.ts';
@@ -16,7 +16,7 @@ import { registeredActionForm } from './command-form.ts';
 import { actionForm } from './manage.ts';
 import { errorLine, segments } from './components.ts';
 import { resetRebuildSection } from './reset.ts';
-import { box, button, card, chip, commandLink, commandModal, duration, kv, sectionHead, when, type CommandDialog } from './ui.ts';
+import { box, card, chip, commandLink, commandModal, duration, kv, sectionHead, when, type CommandDialog } from './ui.ts';
 
 export type { HubFacts } from './context.ts';
 export { circleEntry, originOf } from './context.ts';
@@ -39,12 +39,6 @@ export async function authorityFingerprint(dataDir: string): Promise<string | nu
     return null;
   }
 }
-
-/** A fingerprint shortened as the design shows it: the first three and the last two bytes. */
-const shortPrint = (fingerprint: string): string => {
-  const bytes = fingerprint.split(':');
-  return bytes.length <= 6 ? fingerprint : `${bytes.slice(0, 3).join(':')}:…:${bytes.slice(-2).join(':')}`;
-};
 
 /** Steps to trust this Hub's certificate authority in a browser, per operating system of the reader's computer. */
 export function trustSteps(): Html {
@@ -122,14 +116,6 @@ async function hubState(ctx: PageContext): Promise<Html> {
   const backup = box({ title: '备份',hint:'备份在运行 Hub 的服务器上执行。', ...(ctx.admin ? { tail: commandLink(commands.backup(), '备份命令…', 'ch-btn ch-btn--ghost') } : {}) }, backupState);
   // Decision 151, step 8: four cards, two a row, each with its state at the head. They were four bare columns.
   return html`<section class="ch-section" data-columns="2" data-hub-state>${service}${certificate}${backup}${database}</section>`;
-}
-
-/** Active tokens of a user: each one is a Circle (or a spare console login) that can connect. */
-const active = (tokens: readonly TokenInfo[]): TokenInfo[] => tokens.filter((token) => token.revoked_at === null);
-
-function lastUse(tokens: readonly TokenInfo[]): string | null {
-  const times = tokens.map((token) => token.last_used_at).filter((at): at is string => at !== null).sort();
-  return times.at(-1) ?? null;
 }
 
 export interface SecretRow {

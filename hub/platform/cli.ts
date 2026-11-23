@@ -1,7 +1,7 @@
 // `circle-hub` platform commands. The server CLI delegates these to runPlatformCommand; bin/circle-hub falls back to
 // main() here when the server package is absent. All output is Chinese; the vault master key is never printed.
 // The vault is 密钥库 (the design standard's term); its key is named by VAULT_KEY_ITEM.label.
-import { mkdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf } from '../../contracts/generated/vocabulary.ts';

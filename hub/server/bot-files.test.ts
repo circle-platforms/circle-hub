@@ -288,7 +288,7 @@ test('bot-files exports quota/retention constants, prunes expired files before q
     const remainingFiles = await readdir(ownerFolder(hub.deps.config.dataDir, user.principal.id));
     assert.deepEqual(remainingFiles, [afterExpiry.sha]);
 
-    const byteReq = (payload: Buffer, sha: string) => {
+    const byteReq = (payload: Buffer) => {
       const req = Object.assign(new EventEmitter(), {
         method: 'PUT',
         headers: { 'content-length': String(payload.length) },
@@ -318,7 +318,7 @@ test('bot-files exports quota/retention constants, prunes expired files before q
 
     const bigBytePayload = Buffer.alloc(600, 65);
     const bigSha = createHash('sha256').update(bigBytePayload).digest('hex');
-    const c1 = byteReq(bigBytePayload, bigSha);
+    const c1 = byteReq(bigBytePayload);
     await exported.transferBotFile(c1.req, c1.res, hub.deps.config.dataDir, user.principal.id, bigSha, async () => true, {
       now: () => clock,
       maxMemberBytes: 1024,
@@ -327,7 +327,7 @@ test('bot-files exports quota/retention constants, prunes expired files before q
 
     const secondBig = Buffer.alloc(500, 66);
     const secondSha = createHash('sha256').update(secondBig).digest('hex');
-    const c2 = byteReq(secondBig, secondSha);
+    const c2 = byteReq(secondBig);
     await exported.transferBotFile(
       c2.req,
       c2.res,

@@ -64,17 +64,19 @@ function invitationCode(): string {
   return `${plain.slice(0, 4)}-${plain.slice(4, 8)}-${plain.slice(8)}`;
 }
 
+type ExternalIdentityAuditBody = ReturnType<typeof MemberExternalIdentityAudit.parse>;
+
 /** Records a hashed bind or unbind audit event without leaking plaintext external issuer/subject values. */
 export async function appendExternalIdentityAudit(
   store: Pick<RecordStore, 'put'>,
   input: {
-    action: 'bind' | 'unbind';
+    action: ExternalIdentityAuditBody['action'];
     by: string;
     member: string;
     issuer: string;
     subject: string;
     at: string;
-    reason?: 'manual' | 'disabled' | 'deleted';
+    reason?: ExternalIdentityAuditBody['reason'];
   },
   tx: Transaction,
 ): Promise<void> {
