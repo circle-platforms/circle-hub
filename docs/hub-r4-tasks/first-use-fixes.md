@@ -23,10 +23,19 @@
 - 本地工具下载：不存在、已退役、技能包没有安装各答一句（`hub/server/local-tools.ts`、`pack-words.ts`、`tools.ts`）。
 - 只编译一部分用例时返工不丢范围：开运行的记录记下范围、排除和各项选项，后续的脚本编写运行照它开（`tools/open-compile.ts`、`tools/pipeline.ts`，3.26.8）。
 
+## 第三轮（决定 190）
+
+正式实例升级后查出的一项：工作流升了版本、某个测试环境的执行器没有跟上时，Hub 没有把它说清楚。只改 Hub 核心，包版本不变：
+
+- 发布工作流和 `executor list` 列出仍指定别的版本的启用执行器，写出该改成的身份（`hub/server/cli-job.ts`、`hub/server/cli-pack.ts`）。
+- 同一个工作流有几个执行器又都不放行时，给运行者的理由取这次核验所对应的那个执行器的，不再取登记在最前面的（`hub/dispatch/service.ts` 的 `refusalRankOf`）。
+- 核验函数版本不一致时写明两个版本和下一步；只由它引出的两条条件记为未核对，不各算一条错误（`hub/dispatch/proof.ts`、`refusal-text.ts`、`reasons.ts`、`warrant-version.ts`）。
+
 ## 可以改的路径
 
 - `packs/workflow/case-compile/`、`packs/skill/plumb/`
 - `hub/server/cli-team.ts`、`hub/server/cli-pack.ts`、`hub/server/cli-resource.ts`、`hub/server/cli-job.ts`、`hub/server/local-tools.ts`、`hub/server/pack-words.ts`、`hub/server/tools.ts`、`hub/server/README.md` 和它们的测试
+- `hub/dispatch/proof.ts`、`hub/dispatch/refusal-text.ts`、`hub/dispatch/reasons.ts`、`hub/dispatch/service.ts`（只限放行被拒时取哪个执行器的理由）、`hub/dispatch/warrant-version.ts`、`hub/dispatch/api.ts`、`hub/dispatch/README.md` 和它们的测试，`hub/server/assemble/cli-admin.test.ts`（第三轮）
 - `scripts/real/testing/local-cli-probes.ts`、`scripts/real/verify-case-compile-cli.test.ts`（新子命令的探针和计数）
 - `docs/member-guide.md`、`docs/admin-guide.md`、`docs/quickstart.md`、`docs/hub-r4-progress.md`、`docs/compatibility.md`、`docs/compatibility.en.md`、`CHANGELOG.md`、`.github/checks/doc-set.json`、本页
 
@@ -35,7 +44,8 @@
 - 同一条用例以前上机的结果已经进编写简报（决定 182），第二轮修好了其中被拒命令丢失的问题。别的用例、别的成员观察到的设备行为仍进不来：把贡献层（决定 73、172）接进编写简报没有做，要所有者先定别的成员读不读得到、无人值守时由谁提出、条目是否只作提示。
 - `model` 方式下编写循环的标准输入仍是声明的两行，第二行是 Plumb 密钥的占位（流水线这时不读它）：声明和命令守卫只收客户端占位符，改成可选的一行要动 `tool-cli@2` 和守卫，没有做。
 - 后台任务连续唤醒的上限在 Circle 一侧改（circle#601），不在这个仓库。
+- 正式实例上另一个测试环境的执行器本身没有改：它的网关在另一台主机上，测试环境从 11-16 起由另一个账户预订着。在那里用新流程之前，要由管理这个测试环境的人更新执行器的定义（网关没有新的提交工具时先升级网关），并在干净的测试环境上登记新增状态项的基线。
 
 ## 验证
 
-见决定 188、189 的验证一行。真实环境上的检验是第二实例上以这个新建账号做的整份编译，结果记在验收目录。
+见决定 188、189、190 的验证一行。真实环境上的检验是第二实例上以这个新建账号做的整份编译，结果记在验收目录。

@@ -152,7 +152,7 @@ nav_order: 3
   # 升版后不再让新运行使用旧版时退役旧版（已有运行照常可看/可结束）
   ./bin/circle-hub pack retire <工作流ID>@<旧版本>
   ```
-  > **升版必查（核验函数身份与执行器同步）**：若新版工作流更改了版本号（如 `case-compile` 从 `3.19.1` 升到 `3.20.1`），Hub 产出的核验事实主张携带 `warrant.id = "<包ID>.<检查ID>@<版本号>"`（例如 `case-compile.workbook_verified@3.20.1`），自动上机放行阶段会严格比对「核验函数身份等于执行器指定身份」（`hub/dispatch/proof.ts`）。若执行器定义里的 `proof.warrant_id` 仍钉在旧版本上，成员脚本合并后会被放行门禁直接拦下；请同步到主机用 `./bin/circle-hub executor update <exe_…> <新定义.json>` 更新对应执行器（如约束了生成器也一并更新 `effects` 条件）。
+  > **升版必查（核验函数身份与执行器同步）**：若新版工作流更改了版本号（如 `case-compile` 从 `3.19.1` 升到 `3.20.1`），Hub 产出的核验事实主张携带 `warrant.id = "<包ID>.<检查ID>@<版本号>"`（例如 `case-compile.workbook_verified@3.20.1`），自动上机放行阶段会严格比对「核验函数身份等于执行器指定身份」（`hub/dispatch/proof.ts`）。若执行器定义里的 `proof.warrant_id` 仍钉在旧版本上，成员脚本合并后会被放行门禁直接拦下；请同步到主机用 `./bin/circle-hub executor update <exe_…> <新定义.json>` 更新对应执行器（如约束了生成器也一并更新 `effects` 条件）。`pack publish` 发布工作流后会逐个列出仍指定别的版本的启用执行器（写明是哪个测试环境）和该改成的身份，`executor list` 也会列出；因此被拒的上机验证，管理员读到的答复写明执行器指定的版本、这次核验所用的版本和要执行的命令，成员读到的写哪一侧落后、该找谁。
 - **产品知识库（`product`）→ 先启用再导入知识**：发布结果页提供 **启用** 按钮与 **去导入公共知识** 链接（`/console/operations/knowledge`），从 `/console/knowledge/products` 进入产品详情页（`/console/workflows/<产品ID>`）也提供 **启用产品知识来源 / 停用产品知识来源** 按钮。
 - **业务系统适配器（`system`）→ 接入实例**：发布结果页提供 **立即接入** 按钮，直接带 `system_pack` 参数跳转到 `/console/operations/system`。
 - 完成后可用控制台对应列表页或 `./bin/circle-hub pack list` 核对状态（已发布 / 已安装 / 已退役）与使用范围。
@@ -264,7 +264,7 @@ curl -sS http://127.0.0.1:7420/healthz
 ./bin/circle-hub executor list
 ```
 
-- 确认 `/healthz` 返回的 `release` 与目标提交/版本一致；若改动了工作流或通用技能版本，按需补做 `pack publish --stage` + `pack install` / `pack retire`；**若工作流（如 `case-compile`）升了版本号，别忘了同步对照执行器定义中的 `proof.warrant_id`（例如 `case-compile.workbook_verified@<新版本>`），必要时执行 `./bin/circle-hub executor update <exe_…> <新定义.json>`，否则成员上机放行会报核验函数身份不符**。
+- 确认 `/healthz` 返回的 `release` 与目标提交/版本一致；若改动了工作流或通用技能版本，按需补做 `pack publish --stage` + `pack install` / `pack retire`；**若工作流（如 `case-compile`）升了版本号，别忘了同步对照执行器定义中的 `proof.warrant_id`（例如 `case-compile.workbook_verified@<新版本>`），必要时执行 `./bin/circle-hub executor update <exe_…> <新定义.json>`，否则成员上机放行会报核验函数身份不符**；发布时和 `executor list` 里列出的“指定的核验函数是…”就是要改的执行器，一个工作流有几个测试环境的执行器时要逐个改。
 - **服务停机与重启期间影响预期**：在服务进入关闭阶段到重新拉起期间，Hub 会在关闭预算内等待已受理请求与正在传输的运行资料响应发完，未入场的新请求会收到 `HTTP 503` 与 `Retry-After`；进程真正切换的 `ECONNREFUSED` 短暂窗口内，`case-compile 3.19.2+` / `recompose 1.2.4+` 本地工具对读类调用与明确未执行的 `503` 会自动退避最多 `60` 秒，更早版本仍会报错须等服务恢复后重跑。服务拉起后首轮读取会短暂变慢，随后恢复正常；**成员已持有的访问令牌全部有效、已连接的 Circle 会话无需重新登录或重新连接（仅内存中的控制台网页登录会话会被清空，网页端需重新登录）**。
 
 ### 2. 同结构降级 / 回退边界
