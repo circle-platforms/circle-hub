@@ -8,6 +8,7 @@ import {buildScope,createResolver,resolveSubmission} from './exact.ts';
 import {evaluate,productionEvaluationInput} from './evaluate.ts';
 import {authorOriginOf} from './lineage.ts';
 import {isProduction} from './start.ts';
+import {lateFromLocks} from './late-inputs.ts';
 export async function recheckEffectChecks(deps:RunsEngineDeps,input:Parameters<EffectCheckReplay>[0]):ReturnType<EffectCheckReplay> {
  const ctx=createEngineContext(deps),store=deps.records.store;
  const saved=await runById(store,input.run);if(!saved)throw new Error('冻结运行不可回读；请管理员恢复运行记录后重核');
@@ -37,9 +38,11 @@ export async function recheckEffectChecks(deps:RunsEngineDeps,input:Parameters<E
  const action=await actionOfResult(store,record.digest,result.digest),session=typeof action?.body.detail?.session==='string'?action.body.detail.session:null;
  const submission=effectiveSubmission(raw,run,session);
  if(!submission)throw new Error('缺少本次提交的模型身份；请恢复原验证动作或显式声明后重核');
- const scope=await buildScope(ctx,run,workflow,user,'function'),resolver=createResolver(ctx,scope,'function');
+ const late=lateFromLocks(result.body.locks.late);
+ if(run.late_inputs?.length&&!late)throw new Error('已受理结果没有记录开运行后再绑定的输入用到的结果；请恢复原结果记录后重核');
+ const scope=await buildScope(ctx,run,workflow,user,'function',[],late?.inputs),resolver=createResolver(ctx,scope,'function');
  const exact=await resolveSubmission(scope,resolver,workflow,run.items,submission);
  if(exact.errors.length)throw new Error('冻结提交的精确来源当前不能解析；请修复来源、受理或权限后重核');
- const replay=await evaluate(ctx,{run,workflow,submission,submissionDigest:input.submission,exact,carried:new Map(),roundsUsed:new Map(),origin:submissionOrigin(submission,[run.session??null],run,session),author:await authorOriginOf(ctx,run),traceId:result.body.trace,replayChecks:ids});
+ const replay=await evaluate(ctx,{run,workflow,submission,submissionDigest:input.submission,exact,carried:new Map(),roundsUsed:new Map(),origin:submissionOrigin(submission,[run.session??null],run,session),author:await authorOriginOf(ctx,run),traceId:result.body.trace,replayChecks:ids,...(late?{late}:{})});
  return replay.outcomes;
 }

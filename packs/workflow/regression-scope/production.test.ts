@@ -252,15 +252,14 @@ describe('a production run of regression-scope', { skip }, () => {
     };
     const read = await callTool(deps as unknown as Parameters<typeof callTool>[0], toolCall as unknown as Parameters<typeof callTool>[1], 'get_nodes', { reference: detail.answer.result!.reference });
     assert.equal(read.isError, false);
-    assert.match(read.content[0].text, /覆盖：完整：已查 0，共 0/);
-    assert.match(read.content[0].text, /条目明细：没有条目/);
-    assert.match(read.content[0].text, /两个构建之间没有纳入范围的变更路径，回归范围是空的。/);
+    assert.match(read.content[0].text, /没有需要核对的原始用例。/);
     const content = (read.structuredContent as { content: { text: string; reference: string; readable: boolean } }).content;
     assert.equal(content.reference, detail.answer.result!.reference);
     assert.equal(content.readable, true);
     const parsed = JSON.parse(content.text);
     assert.deepEqual(parsed.partitions, { delivered: [], incomplete: [], quarantined: [], rejected: [] });
     assert.deepEqual(parsed.coverage, { complete: true, examined: 0, total: 0 });
+    assert.ok(parsed.cross_item.some((claim: { statement: { text: string } }) => claim.statement.text === '两个构建之间没有纳入范围的变更路径，回归范围是空的。'));
   });
 
   it('starts on a command diff that quotes more references than one evaluation may read', async () => {

@@ -36,13 +36,13 @@ describe('the knowledge base says where the reader is, at the same place on ever
     const home = await member.get('/console/knowledge?scope=personal');
     assert.equal(home.status, 200);
     assert.equal(context(home.body), '范围：我的 · 内容：知识');
-    assert.equal(context((await member.get('/console/knowledge?scope=team')).body), '范围：团队 · 内容：知识');
+    assert.equal(context((await member.get('/console/knowledge?scope=team')).body), '范围：公共空间 · 内容：知识');
     assert.equal(context((await member.get('/console/knowledge?view=memory&scope=personal')).body), '范围：我的 · 内容：记忆');
     assert.equal(context((await member.get('/console/knowledge?view=sources&scope=personal')).body), '范围：我的 · 内容：原文');
     const folder = await member.get('/console/knowledge/space?' + new URLSearchParams({ space: bed.reviewer.user.id, path: '/方法/步骤', scope: 'personal' }));
     assert.equal(context(folder.body), '范围：我的 · 内容：知识 · 位置：方法 › 步骤');
     // One line a reader can open says what the three kinds are; it is closed until asked for, and only on the home.
-    assert.match(home.body, /<details class="ch-section" data-knowledge-guide><summary>知识、记忆和原文有什么不同<\/summary><p class="ch-meta">知识是带来源的陈述，可以分享到团队，供任务引用。记忆是客户端会话用的偏好和习惯，不作为任务的来源。原文是上传或读取到的原始文件，供知识逐字引用。左侧按内容属于谁来选：本人的、其他成员分享的、团队的。<\/p><\/details>/);
+    assert.match(home.body, /<details class="ch-section" data-knowledge-guide><summary>知识、记忆和原文有什么不同<\/summary><p class="ch-meta">知识是带来源的陈述，可以分享到公共空间，供任务引用。记忆是客户端会话用的偏好和习惯，不作为任务的来源。原文是上传或读取到的原始文件，供知识逐字引用。左侧按内容属于谁来选：本人的、其他成员分享的、公共空间的。<\/p><\/details>/);
     assert.doesNotMatch(folder.body, /data-knowledge-guide/);
     assert.deepEqual(wordingProblems(home.body), []);
   });
@@ -117,10 +117,9 @@ describe('the administrator\'s entries say what they are for (issues 219, 220, 2
     assert.equal(page.status, 200);
     const materials = /<div data-product-materials>(.*?)<\/div><\/div>/s.exec(page.body)?.[0] ?? '';
     assert.match(materials, /各产品来源导入的内容，由产品包自己声明：/);
-    // Every row is a product that can be chosen in the form, with at least one thing its producers import.
     const rows = [...materials.matchAll(/<tr[^>]*><td><b>([^<]+)<\/b> <code>([^<]+)<\/code><\/td><td><ul class="ch-plain-list">((?:<li>[^<]+<\/li>)+)<\/ul><\/td><\/tr>/g)];
     assert.ok(rows.length > 0, materials.slice(0, 400));
-    const offered = [...(/<datalist id="products">(.*?)<\/datalist>/s.exec(page.body)?.[1] ?? '').matchAll(/<option value="([^"]+)">/g)].map((option) => option[1]);
+    const offered = [...(/<select name="product">(.*?)<\/select>/s.exec(page.body)?.[1] ?? '').matchAll(/<option value="([^"]+)">/g)].map((option) => option[1]).filter((value) => value.length > 0);
     assert.deepEqual(rows.map((row) => row[2]).sort(), [...offered].sort());
     // The general card assumes no kind of material; a planned module no longer takes a card of its own.
     assert.doesNotMatch(page.body, /例如构建、手册、命令树|规划中|上传文档导入/);

@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "knowledge-contribution",
-  "version": "1.3.21",
+  "version": "1.3.23",
   "kind": "workflow",
   "title": "知识回注",
   "description": "Circle 整合技能回注，Hub 按锁定根核对原文和归位，不改变原文或根",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "091947a8f803d19e677762ef7cd78395f4f223d2dd9f488bc5d6adabb72a6914",
-      "size": 6641
+      "sha256": "96623188803a25fa26e4fa98b7fbe4a53e2e81c0ad2e0a90feab5689559da930",
+      "size": 6599
     },
     {
       "path": "checks.json",
@@ -93,8 +93,8 @@
     },
     {
       "path": "tools/jev/SKILL.md",
-      "sha256": "babd868dfb288a40edf902a7c93e88cb3ec5655bef7712a35779fc4766c3e58c",
-      "size": 6410
+      "sha256": "37bd37c6023a78b84a72df350916c8ceba09a40d6e1ecfaae2de0ea9a92b5e91",
+      "size": 6287
     },
     {
       "path": "tools/jev/egress.json",
@@ -113,13 +113,18 @@
     },
     {
       "path": "tools/jev/generated.json",
-      "sha256": "6f198adab31505699e8f7e33f923034bd5448508040f1292a25708efb2983742",
+      "sha256": "5245df54e4ee4ad7738b1fb392e8ee48ab4e450a330f8bafecb7670ac8f6cc00",
       "size": 1639
     },
     {
       "path": "tools/jev/hooks.json",
       "sha256": "eea571812944787cbfebefd602cc0b9f6f92e1bf683df0bc6aa7fade275006e6",
       "size": 718
+    },
+    {
+      "path": "tools/jev/jev.cli.json",
+      "sha256": "70a17c6549dfe4e3f3637c8e4ccaffcccbdb958b75d4e0a17d0c686825635d17",
+      "size": 7466
     },
     {
       "path": "tools/jev/jev.ts",
@@ -203,8 +208,8 @@
     },
     {
       "path": "tools/operation-capture/SKILL.md",
-      "sha256": "691305c6aed937fa4abfa97eccf0433c5bd3989da3efe0e4cf1e3391fa2ce753",
-      "size": 6864
+      "sha256": "8fa6ca9adc1ff3365e28c348ad9d3ea126e940325d604be573f1f1e38ba7d2cf",
+      "size": 7075
     },
     {
       "path": "tools/operation-capture/egress.json",
@@ -213,7 +218,7 @@
     },
     {
       "path": "tools/operation-capture/generated.json",
-      "sha256": "53dac75c44370521ca4214551f510f7c21bac6856ab13e64fc98064576d513cc",
+      "sha256": "86a4cbcae57d3a8e5fe2f8f21d4310883c40c459f91e03dff40413b87e84328c",
       "size": 392
     },
     {
@@ -275,6 +280,11 @@
       "path": "tools/operation-capture/lib/state.ts",
       "sha256": "f054d7277fac90c37cb53af0d7bd142a4eed151d321dc5c3c802e8582f3405b1",
       "size": 26764
+    },
+    {
+      "path": "tools/operation-capture/operation.cli.json",
+      "sha256": "4fdc1c2cca3a4febdc08906c2bdc92d885b9d5be88d24f92d58fe4fbf99f790a",
+      "size": 2749
     },
     {
       "path": "tools/operation-capture/operation.ts",

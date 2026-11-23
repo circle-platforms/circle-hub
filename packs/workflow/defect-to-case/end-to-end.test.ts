@@ -101,14 +101,14 @@ describe('defect-to-case end to end run', { skip }, () => {
             slots: {
               cases: [
                 {
-                  text: 'SLB健康检查间隔配置测试',
+                  text: 'widget 健康检查间隔配置测试',
                   quotes: [{ reference: fixRef, text: '故意写错的引文内容，不在原文里' }],
                   data: {
-                    title: 'SLB健康检查间隔配置测试',
+                    title: 'widget 健康检查间隔配置测试',
                     priority: 2,
                     negative: false,
                     expects_refutation: false,
-                    preconditions: ['SLB正常运行'],
+                    preconditions: ['widget 服务正常运行'],
                     steps: [{ command: 'widget health interval 60' }],
                     expected: [
                       {
@@ -150,14 +150,14 @@ describe('defect-to-case end to end run', { skip }, () => {
             slots: {
               cases: [
                 {
-                  text: 'SLB健康检查间隔配置测试',
+                  text: 'widget 健康检查间隔配置测试',
                   quotes: [{ reference: fixRef, text: '健康检查间隔设置成功' }],
                   data: {
-                    title: 'SLB健康检查间隔配置测试',
+                    title: 'widget 健康检查间隔配置测试',
                     priority: 2,
                     negative: false,
                     expects_refutation: false,
-                    preconditions: ['SLB正常运行'],
+                    preconditions: ['widget 服务正常运行'],
                     steps: [{ command: 'widget health interval 60' }],
                     expected: [
                       {

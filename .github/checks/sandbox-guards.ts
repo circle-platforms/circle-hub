@@ -56,11 +56,10 @@ export function guardProblem(file: string, source: string): string | undefined {
   return `${file}: imports ${imports.join(', ')} but never uses sandboxSkip(), osIsolationAvailable() or requireOsIsolation: false, so it fails instead of skipping where sandbox-exec is missing`;
 }
 
-/** Every tracked test file outside the frozen trees that breaks the rule. */
 export function guardProblems(root: string): string[] {
   const files = execFileSync('git', ['ls-files', '-z', '--', '*.test.ts'], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
     .split('\0')
-    .filter((file) => file !== '' && !file.startsWith('foundation/') && !file.startsWith('references/'));
+    .filter((file) => file !== '');
   const problems: string[] = [];
   for (const file of files) {
     const problem = guardProblem(file, readFileSync(join(root, file), 'utf8'));

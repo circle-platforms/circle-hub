@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { observationLockFree, setup } from './testing/context.ts';
+import { probesWithResidue } from './testing/probes.ts';
 import type { Aggregation } from '../../contracts/generated/vocabulary.ts';
 
 type Fixture = Awaited<ReturnType<typeof setup>>;
@@ -36,16 +37,21 @@ async function reportOf(c: Fixture, reference: string) {
   return JSON.parse(new TextDecoder().decode(source.bytes)) as { rounds: Array<{ round: number; terminal: string; reason?: string; early_stop?: boolean; meets?: boolean | null }> };
 }
 
-async function openCertified(options: { aggregation?: Aggregation; count?: number; fresh_context?: boolean; baseline_first?: boolean; window_seconds?: number; outcomes?: string[]; failVersion?: number; onSubmit?: () => Promise<void> } = {}) {
-  let reads = 0; let versions = 0; let opens = 0;
+async function openCertified(options: { aggregation?: Aggregation; count?: number; fresh_context?: boolean; baseline_first?: boolean; window_seconds?: number; outcomes?: string[]; failVersion?: number; dirtyResidueRead?: number; onSubmit?: () => Promise<void>; onStatus?: () => Promise<void> } = {}) {
+  let reads = 0; let versions = 0; let opens = 0; let residueReads = 0;
   let c: Fixture;
   c = await setup({
     onSubmit: options.onSubmit,
-    alter: (name, value) => {
+    alter: async (name, value) => {
+      if(name==='inspect_blob')await options.onStatus?.();
       if (name === 'open_slot' && options.fresh_context) { opens += 1; return { ...value, ticket: `synthetic-ticket-${opens}`, token: `synthetic-token-${opens}` }; }
       if (name === 'touch_slot' && options.fresh_context) {
         const args = c.endpoint.calls.filter(call => call.params.name === 'touch_slot').at(-1)?.params.arguments as { ticket?: string; token?: string } | undefined;
         return { ...value, ticket: args?.ticket, token: args?.token };
+      }
+      if (name === 'inspect_bound_seat' && options.dirtyResidueRead !== undefined) {
+        const command = (c.endpoint.calls.filter(call => call.params.name === 'inspect_bound_seat').at(-1)?.params.arguments as { command?: string } | undefined)?.command;
+        if (command === 'inspect peers' || command === 'inspect units') { residueReads += 1; return { output: residueReads === options.dirtyResidueRead ? 'unit-b 192.0.2.6\nDEMO#' : 'DEMO#' }; }
       }
       if (name === 'inspect_bound_seat' && String((value as { output?: string }).output).startsWith('version:')) {
         versions += 1;
@@ -61,6 +67,10 @@ async function openCertified(options: { aggregation?: Aggregation; count?: numbe
   });
   install(c, policy(options.count ?? 3, options.aggregation ?? 'all', { fresh_context: options.fresh_context, baseline_first: options.baseline_first, window_seconds: options.window_seconds }));
   await certify(c);
+  if (options.dirtyResidueRead !== undefined) {
+    await c.registry.update(c.admin, c.executor.id, { ...(await c.registry.get(c.executor.id))!.definition, probes: { ...probesWithResidue, call: c.executor.definition.probes!.call } });
+    await c.freezeExecutor();
+  }
   return c;
 }
 
@@ -114,6 +124,18 @@ test('a failed baseline round is not_run and does not count as a failure', { tim
   assert.equal(rounds[1]?.reason, 'integrity_unproven');
   assert.equal((await intents(c)).some(row => row.body.detail.round === 2), false);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 2);
+});
+
+test('residue found at a later round\'s baseline makes that round not_run, like any other baseline mismatch', { timeout: 60000 }, async t => {
+  const c = await openCertified({ baseline_first: true, dirtyResidueRead: 5 }); t.after(() => c.close());
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  const rounds = state.rounds ?? [];
+  assert.deepEqual(rounds.map(round => round.terminal), ['pass', 'not_run', 'pass']);
+  assert.equal(rounds[1]?.reason, 'integrity_unproven');
+  assert.equal((await intents(c)).some(row => row.body.detail.round === 2), false);
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 2);
+  const found = (await c.service.journal.events(state.job)).filter(e => e.body.detail.phase === 'device_probe' && e.body.detail.matched === false);
+  assert.deepEqual(found.map(e => [e.body.detail.seat, e.body.detail.check, e.body.detail.state]), [['synthetic-0', 'residue-1', 'residue']]);
 });
 
 test('a round outside the window stays in the denominator as budget_exhausted', { timeout: 60000 }, async t => {
@@ -171,4 +193,26 @@ test('resume reconciles the started round and a new dispatch continues at the ne
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 3);
   assert.deepEqual((await intents(c)).map(row => row.body.detail.round).sort(), [1, 2, 3]);
   assert.notEqual(continued.job, first.body.detail.job);
+});
+
+
+test('a later admitted intent that expires before sending does not erase the earlier executed effect',async t=>{
+  const c=await openCertified({count:2});t.after(()=>c.close());let locks=0;
+  const lockNames=c.kit.variables.lockNames.bind(c.kit.variables);
+  c.kit.variables.lockNames=async(names,tx)=>{
+    if(++locks===2)c.clock.ms+=c.executor.definition.submit_timeout_ms+1;
+    return lockNames(names,tx);
+  };
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
+  assert.equal(state.outcome,'effective');assert.equal(state.not_sent,undefined);assert.equal(state.frozen,false);
+  assert.deepEqual(state.rounds?.map(round=>round.terminal),['pass','not_run']);
+  const issued=await intents(c);assert.equal(issued.length,2);
+  const effects=await c.kit.store.findMany<{outcome:string;intent_key:string}>({kind:'effect',key:'effect.job',values:[state.job]});
+  const latest=new Map(effects.map(effect=>[effect.body.intent_key,effect.body.outcome]));
+  assert.equal(latest.get(String(issued[0].body.detail.intent_key)),'effective');
+  assert.equal(latest.get(String(issued[1].body.detail.intent_key)),'not_dispatched');
+  const again=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(again.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,2,'only the known-unsent round retries');
+  assert.equal((await intents(c)).filter(event=>event.body.detail.round===1).length,1);
 });

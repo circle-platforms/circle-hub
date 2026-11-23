@@ -389,10 +389,13 @@ test('a run superseded by a newer revision answers RUN_SUPERSEDED; the submissio
   const run = await draft();
   const revision = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map } }, predecessor: run.run }, h.call());
   assert.equal(revision.call_result, 'ok');
+  assert.ok(revision.run);
   const args = submission(run);
   const answer = await h.service.submitResult(h.alice, args, h.call());
   valid(answer);
   assert.deepEqual(answer.errors.map((e) => e.code), ['RUN_SUPERSEDED']);
+  assert.equal(answer.errors[0].message, `这次运行已有后续的运行 ${revision.run.run}，不再接受提交`);
+  assert.equal(answer.errors[0].fix, '要修改已交的内容，请开始新的运行再提交；不修改时，在后续的运行里继续');
   assert.equal(answer.result, undefined);
   const stored = await h.kit.store.find({ key: INDEX.submissionRun, value: run.run, kind: 'submission' });
   assert.deepEqual(stored.items[0].body, args);
@@ -571,4 +574,40 @@ test('a stored submission belongs to the run it was stored for, whatever keys it
     h.workflows.unassign(h.bob.id, 'toy-review');
     h.workflows.unassign(h.bob.id, 'toy-verify');
   }
+});
+
+test('transitional retries re-evaluate the same material without spending its own repair round', { skip }, async () => {
+  const run = await draft();
+  const args = submission(run, { [ITEM.c2]: null });
+  const first = await h.service.submitResult(h.alice, args, h.call('same-material'));
+  assert.equal(first.acceptance, 'accepted');
+  assert.ok(first.result!.errors.some(error => error.code === 'not_covered'));
+  const validations = async () => (await h.kit.store.find<ActionBody>({ key: INDEX.actionRun, value: run.run, kind: 'action' })).items.filter(action => action.body.action === 'validate');
+  const before = (await validations()).length;
+  const second = await h.service.submitResult(h.alice, structuredClone(args), h.call('same-material'));
+  assert.equal((await validations()).length, before + 1, 'a pending result is actually re-evaluated, not returned as a cached receipt');
+  assert.deepEqual(second.result!.rounds, first.result!.rounds);
+  assert.deepEqual(second.errors.map(error => [error.code,error.rounds_left]), first.errors.map(error => [error.code,error.rounds_left]));
+  const independent = await h.service.submitResult(h.alice, structuredClone(args), h.call('another-observer'));
+  assert.deepEqual(independent.result!.rounds, first.result!.rounds);
+  assert.equal((await validations()).length, before + 2);
+  const different = await h.service.submitResult(h.alice, submission(run, { [ITEM.c2]: null, [ITEM.c1]: handled(ITEM.c1, [finding(run, ITEM.c1)]) }), h.call('same-material'));
+  assert.equal(different.result!.rounds.used, first.result!.rounds.used + 1, 'a distinct digest still counts the prior material');
+});
+
+test('same material is rechecked when catalog evidence becomes available', { skip }, async () => {
+  const run = await draft();
+  const args = submission(run, { [ITEM.c1]: handled(ITEM.c1,[finding(run,ITEM.c1,{commands:[{command:'zone set',present:true}]})]) });
+  h.knowledge.withoutCatalog.add(ROOTS.meadow329);
+  try {
+    const first = await h.service.submitResult(h.alice,args,h.call('catalog-evidence'));
+    assert.equal(first.acceptance,'accepted');
+    const before = requirementOf(itemOf(first.result!,ITEM.c1).item,'catalog');
+    assert.ok(before.layers.some(layer=>layer.terminal==='unchecked'||layer.terminal==='incomplete'));
+    h.knowledge.withoutCatalog.delete(ROOTS.meadow329);
+    const second = await h.service.submitResult(h.alice,structuredClone(args),h.call('catalog-evidence'));
+    const after = requirementOf(itemOf(second.result!,ITEM.c1).item,'catalog');
+    assert.ok(after.layers.some(layer=>layer.terminal==='pass'));
+    assert.deepEqual(second.result!.rounds,first.result!.rounds,'new evidence is not another authored material');
+  } finally { h.knowledge.withoutCatalog.delete(ROOTS.meadow329); }
 });

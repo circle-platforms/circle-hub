@@ -1,3 +1,98 @@
-# recompose
+---
+name: recompose
+description: 单独做用例重组，或在 case-compile 第 1 节重组原始用例时使用：把原始用例整理成重组后的用例，保留原意、原句、改写后的步骤、具体取值和缺的资料。按全量或给定范围处理，需要脑图在敏捷平台上的文档号。
+---
 
-只使用冻结原件和真实 Hub 记录。缺事实点名在等谁与提交前出口，不猜，不把模型判断当事实。
+# 用例重组
+
+原始用例经过用例重组，得到重组后的用例，再交给脚本编写。这里搬运原文，不创作内容，不能加原始用例没写的对象或动作；有来源的前置欠缺写入 `sources.states`，交脚本编写补齐并配对逆清理。Hub 已按脑图位置读出原始用例的意图、动作和期望，不调用模型。
+
+在 case-compile 里，开运行由 `open-compile.ts` 做，每条用例的重组任务、自检和提交由 `pipeline.ts` 派发和执行；下文的 `start_run`、下载和提交命令只在单独做用例重组时用。
+
+本地工具在客户端给出的 `<技能目录>`。命令与文件仅写工作目录相对路径（禁 `/tmp` 等外部目录）；`execute` 只运行单行 `node '<技能目录>/tools/<脚本>.ts' --选项 '值'`（空格隔开）。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端执行时展开；需令牌的工具不在命令行或文件写令牌，只在命令末尾接三行标准输入 `<<'EOF'` / `%HUB_TOKEN%` / `EOF`。
+
+每条原始用例写一句，带 ID、标题和结论。结论只用通过、未通过、无结论；模型自己的判断写明是模型的判断、未经确认，无结论不写成通过或未通过。未通过或无结论才写原因和下一步。原因只用生成词表的归因标签：缺资料、原始用例的问题、生产者错误、临时故障、目标侧、还没查清。证据和决定者放最后；决定者用程序、模型、使用者。工具参数与内部引用留在机器可读部分。
+
+## 读原始用例
+
+按范围或全量一次处理并封批原始用例：若使用者一开始就只点做部分用例，从第一次运行（`recompose`）起即传与后续 `case-compile` 相同的 `parameters.scope`（`scope.md` 与 `parameters.scope.words` 用同一原话，完整脑图仍作为上下文整份下载，Hub 仅对 `scope.cases` 内用例投影条目并按冻结全集在 `full_set` 封批；后续 `case-compile` 范围须为其冻结条目的子集，范围在首次 `start_run` 时定死，中途换范围或扩大须重新 `start_run` 重开 `recompose`）；未传 `scope` 时，处理整份全部带 `autoid`、未声明不自动化的原始用例（分片不能独立封整批，仅后续脚本编写用 `parameters.exclude` 排除时不免除整批结案，缺任何一条都会阻塞封批）。与后面的脚本编写使用同一构建的手册和命令树；先整份下载，再读每条原始用例及手册和命令树，在本地读和搜，不逐条、逐页取 Hub。
+
+```text
+start_run: pack=recompose；inputs.subject=<同一份脑图>
+product/build/version: start_run 顶层，与后续 case-compile 相同
+parameters.scope: {"words":"<范围原话>","cases":["<autoid>",...]}（可选；与 scope.md/case-compile 同原话，完整脑图仍下载作上下文；不传则选整份带 autoid、未声明不自动化的原始用例）
+本地原始用例: items/<序号>.json 中 fields.atoms
+本地来源: sources.json、sources/<摘要>（含完整脑图）；手册和命令树: knowledge/
+引用照抄下载文件中“· 引用”行的 tree:…，不自行拼接；该行是标注，其下才是原文，带“源 … 行 …”的按原文行号排，没有的先后不是手册先后
+```
+
+```sh
+node '<技能目录>/tools/download-run.ts' --hub %HUB_URL% --run '<用例重组编号>' --out '<新目录>' <<'EOF'
+%HUB_TOKEN%
+EOF
+```
+
+## 写重组后的用例
+
+意图和期望保持原始用例原句，工具会逐字取出，不用重打。写错位置的验证方法或结果可以搬到对应位置，不重新表述。否定、条件、差异和命令都留下；命令可以改参数，不删改、不替换作者的被测对象、被测动作或边界条件，也不凭空增设无来源的新测试目标；使作者命令在设备上成立所缺的功能前置必须在第 2 步从手册查全写入 `states`（`missing_prerequisite`）。
+
+重组后的用例不带具体设备或测试环境真实地址，脚本编写时再按测试环境选；写入 `adapted.commands` 或 `slots` 的每条命令都必须是**具体可执行的完整命令行**（按 `knowledge/` 锁定命令树 `words` 逐词抄写，所有必填 `<argN:...>` 与选用的可选 `[...]` 参数一律替换为合法具体字面值：字符串用双引号如 `"web1"`、整数写十进制数、未选用的 `[...]` 直接省略，严禁保留 `<argN:...>`、`[...]`、`...` 或 `<中文>`）。若命令语法必须含目标 IP 字段且未给出固定值，填 RFC 5737/3849 文档保留地址（如 `192.0.2.10` 或 `2001:db8::1`）并在 `unknowns` 写明待脚本编写按测试环境替换。正例：`widget service ip "web1" 192.0.2.10`；反例：`widget listener <arg1:ipv4/ipv6> [<arg2:int ...>]` 或带 `<源IP>` 尖括号写法。说不清就写缺什么以及谁接下来做什么，不编造答案。只有“设置成功”这种说法、没有能判断的观察目标时，仍然缺资料。
+
+读手册（含同构建手册正文、跨章说明与配置示例），把原始用例成立所缺的前置写全并记入 `states`（`missing_prerequisite` + `prerequisites` + `reason`，含功能默认关闭、依赖对象没建、监听前提、多端本端与对端对称配置）；若对原始动作作了等价改写或步骤补全，在 `adapted` 写明 `equivalence_reason` 与 `equivalence_refs`。注意原始用例若明确要测“前置不存在/未配置”的反向场景，只记清该前提是测试条件，不写成必补前置。不要假设测试环境已经具备；运行器仅对执行器规则 `contract.cleanup` 声明的清配对象上发出、且命中其前缀规则的配置，在第 2 条及之后用例开始前与整本结束关闭连接时自动清理（收尾命令含存盘，也由该规则声明）；第 1 条用例前、其余设备、未命中规则的命令及跨步前置条件均须显式准备与恢复（运行器收尾覆盖的存盘等命令只写主步骤，不写 `cleanup:true`）。
+
+每条原始用例写一个文件，**只接受下面这一种精简机器形状**（`submit-records` 会自动封装为 `recompose-record@1`；严禁写完整 `schema`/`case`/`contract`/`atoms`/`coverage`/`ledgers` 或 `handling`，否则将被拒收）。除前两项外可省略；没有提出问题的原句保持原样。具体字段取值（如 `method.kind` 允许 `declared`、`recomposed`、`missing`）以 `tables/recompose-format.json` 为准。
+
+```json
+{
+  "item": "<下载文件中的 id>",
+  "method": {"kind":"declared","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"},
+  "slots": [{"atom":"a4","knowledge_location":"has_verification_knowledge","evidence":[],"proposal":null}],
+  "states": [{"atom":"a2","state":"missing_prerequisite","reason":"缺什么","prerequisites":["要先做什么"]}],
+  "adapted": [{"atom":"a2","action":"structural_completion","text":"改写后的步骤","commands":["完整命令行"],"equivalence_reason":"为什么保持原意","equivalence_refs":["<手册或命令树引用>"]}],
+  "concretizations": [{"slot":"e1","value":"具体取值","value_ref":"<来源引用>","source_kind":"catalog"}],
+  "unknowns": [{"missing":"缺什么","next_action":"接下来谁做什么","audience":"编写模型","due":"脚本编写之前"}]
+}
+```
+
+```text
+method.kind: declared=原始用例写了方法；recomposed=方法在别处搬来；missing=确实没有，须写 unknowns
+knowledge_location: has_verification_knowledge=能判断期望；recomposable_from_elsewhere=别处有依据，写 evidence；genuinely_missing=缺依据，写 proposal
+states.state: underdetermined=写法不清；missing_prerequisite=缺前置，写 prerequisites；settled=已有决定
+adapted.action: parameter_change=改参数；equivalent_form=等价写法；structural_completion=补全结构
+adapted.commands: 完整命令行，由对应构建的命令树解析
+引用: method.sources、slots.evidence、adapted.equivalence_refs 每项都是引用，不是原句文字；本用例原句取 items/<序号>.json 里 fields.atoms[].reference，手册和命令树取 knowledge/ 里“· 引用”行的 tree:…
+```
+
+## 原始用例与手册不一致
+
+原始用例要求的取值或写法被手册和命令树排除，期望却是成功时，不问使用者，也不照写上机：按手册和命令树做最小改写，保住被测对象、被测动作和边界（长度、类型、数量不变）。原始用例要测的正是非法输入、期望就是被拒绝时，不算这种问题，照写。先读同一构建的手册原话，保存其引用。
+
+主代理和子代理都不问使用者。有多种改法时依次取：与同构建手册和命令树一致、保住作者步骤与边界、已声明执行器能判定、改动最小。使用者在 scope.md 里已有明确决定的照做。
+
+只用已有字段保存决定，不另造结构。每个模型决定都写明原句、手册原话和改法，由主代理列进最终报告。
+
+```text
+模型决定: states.reason 以“模型决定：”开头，写原句、手册原话和改法；state=settled
+使用者已决定: states.reason 以“使用者决定：”开头，逐字写使用者的话；state=settled
+按手册改写: adapted.action=parameter_change；equivalence_reason 写依据
+确定取值: concretizations.decided_by="模型"（使用者决定的写"使用者"）；value_ref=<手册引用>
+按手册改写也落不了地: state=underdetermined；reason 写原句、手册原话和试过的改法；unknowns.missing 写缺什么
+不用 conflict: 它要求两个有签发权的来源，原始用例和手册都不是
+```
+
+## 交给脚本编写
+
+```sh
+# 提交前先离线自检：UTF-8/JSON 语法、单一精简格式、item 唯一/完整性，并用冻结的运行和命令树跑 Hub 对重组记录的检查（支持单文件或目录，不接触 Hub）
+node '<技能目录>/tools/check-record.ts' --file '<重组后的用例目录>' --run '<下载运行目录>'
+# 注意：命令行与 <<'EOF' 必须在同一行（空格隔开，切勿在 <<'EOF' 前换行）
+node '<技能目录>/tools/submit-records.ts' --hub %HUB_URL% --run '<用例重组编号>' --model '<模型>' --records '<重组后的用例目录>' <<'EOF'
+%HUB_TOKEN%
+EOF
+```
+
+提交前先跑 `check-record.ts`，必带 `--run`；输出 `ok=true`，或剩下的问题全是 `"verdict":"unknown"`（本地读不到的引用，交 Hub 判定）时才提交：它离线检出编码/语法错误、完整 schema 字段误用、缺 `item`/`method` 或同 `item` 重复，并用同一份冻结的运行和命令树把 Hub 对重组记录的检查（`record`、`full_set`）跑一遍，Hub 会拒绝的问题（引用写成原句文字、取值不在声明范围内、改写后的命令不合命令树等）这里同样报出，按报出的位置和值改完再提交；不带 `--run` 时结果里 `hub_checks.ran` 为 `false`，只核对了形状，不能当作 Hub 会接受；再由 `submit-records.ts` 从标准输入取令牌，补齐能按规则确定的内容，把本次范围内的重组后的用例一次交给 Hub（未设 `scope` 时即为整份）。每条已投影的原始用例都要有文件；按答复指出的错误改后重交，全部核对正确才完成。
+
+之后的脚本编写、脚本合并、上机验证和失败分析按 case-compile 技能做：它的 `open-compile.ts` 加 `--recompose-run`（这次的用例重组编号）和 `--recompose-record`（下载目录 `references.json` 或导出顶层的 `run_reference`）沿用这次重组。
+
+提交前的模型决定和使用者决定都写入 sources.states 的 settled 条目与 reason。重组封批后不改已保存记录；在后续编写工作目录 scope.md 用明确的“## 全局”或“## 用例 <完整ID>”标题与“使用者决定：<原话>”逐行记录，由编写简报保留来源。未知标题不自动当全局，代码引用不作为决定。

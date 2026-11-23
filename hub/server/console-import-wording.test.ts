@@ -12,14 +12,10 @@ test('the product-source import names itself and leaves builds, manuals and comm
   assert.equal(page.status,200,page.body);
   // The card that needs a product says so in its title; its general hint no longer assumes one kind of material.
   assert.match(page.body,/按产品来源导入/);
-  assert.match(page.body,/从所选产品已配置的知识来源，在后台只读导入团队知识，每条附来源/);
+  assert.match(page.body,/从所选产品已配置的知识来源，在后台只读导入公共知识，每条附来源/);
   assert.doesNotMatch(page.body,/在后台只读导入构建、手册与命令树/);
-  // What a product source imports is the product pack's to declare: the field says so, and names no kind of material
-  // of its own. With no product enabled there is no list to show (issue 238).
-  assert.match(page.body,/每个产品导入哪些内容由它的产品包声明，列在下面/);
-  assert.doesNotMatch(page.body,/例如构建、手册、命令树|data-product-materials/);
-  // The route that needs no product pack stays beside it, unchanged.
-  assert.match(page.body,/按团队读取原文导入/);assert.match(page.body,/无须产品包/);
+  assert.doesNotMatch(page.body,/例如构建、手册、命令树|data-product-materials|每个产品导入哪些内容由它的产品包声明/);
+  assert.match(page.body,/按公共空间读取原文导入/);assert.match(page.body,/无须产品包/);
   assert.deepEqual(wordingProblems(page.body),[]);
  }finally{await hub.close();}
 });

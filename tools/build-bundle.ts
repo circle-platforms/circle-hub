@@ -1,7 +1,6 @@
 // Builds the release bundle of one platform (owner decision 123): `node tools/build-bundle.ts --platform <platform>
 // --out <dir> [--version <x.y.z>] [--node <vX.Y.Z>] [--commit <rev>]`. The bundle is a tar.gz holding one directory
 // `circle-hub-<version>-<platform>/` with
-//   app/         git archive of the commit (without foundation/ and references/) and `npm ci --include=dev` for the
 //                target platform (`--os` and `--cpu`: the PostgreSQL binaries are a dev dependency per platform);
 //   node/        bin/node and LICENSE of the official Node.js build, checked against the release's SHASUMS256.txt;
 //   bundle.json  version, commit, platform, Node version and the tree digest of app/ (hub/platform bundleTreeDigest).
@@ -14,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { BUNDLE_FILE, BUNDLE_PLATFORMS, BUNDLE_SCHEMA, RELEASE_EXCLUDES, bundleTreeDigest, type BundlePlatform } from '../hub/platform/release.ts';
+import { BUNDLE_FILE, BUNDLE_PLATFORMS, BUNDLE_SCHEMA, bundleTreeDigest, type BundlePlatform } from '../hub/platform/release.ts';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 /** The Node.js the bundles carry: 24.20 or later is needed for process.permission.drop (the Linux pack sandbox). */
@@ -84,8 +83,7 @@ export async function buildBundle(options: { platform: BundlePlatform; out: stri
     const app = join(dir, 'app');
     await mkdir(app, { recursive: true });
     const archive = join(staging, 'source.tar');
-    const pathspec = ['.', ...RELEASE_EXCLUDES.map((entry) => `:(exclude)${entry}`)];
-    run('git', ['-C', ROOT, 'archive', '--format=tar', `--output=${archive}`, options.commit, '--', ...pathspec], ROOT);
+    run('git', ['-C', ROOT, 'archive', '--format=tar', `--output=${archive}`, options.commit, '--', '.'], ROOT);
     run('tar', ['-x', '-f', archive, '-C', app], ROOT);
     await rm(archive);
     const { os, cpu } = npmTarget(options.platform);

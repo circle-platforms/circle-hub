@@ -369,6 +369,7 @@ export async function putAction(
     detail: Record<string, unknown>;
     component?: string;
     submissionRecord?: string;
+    uniqueKey?: string;
   },
 ): Promise<StoredRecord<ActionBody>> {
   const body: ActionBody = {
@@ -392,7 +393,7 @@ export async function putAction(
     { key: INDEX.actionRun, value: input.run },
   ];
   if (input.submissionRecord !== undefined) index.push({ key: INDEX.actionSubmission, value: input.submissionRecord });
-  return store.put<ActionBody>({ kind: 'action', schema: SCHEMAS.action, provenance: 'observed', body, created_at: input.endedAt, index });
+  return store.put<ActionBody>({ kind: 'action', schema: SCHEMAS.action, provenance: 'observed', body, created_at: input.endedAt, ...(input.uniqueKey === undefined ? {} : { unique_key: input.uniqueKey }), index });
 }
 
 /** The engine's actions of a run, oldest first. */

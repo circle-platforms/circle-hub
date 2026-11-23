@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
-import { contractCanonical, runtimeDigest, parseRuntimeContract, runtimeMethod, RUNTIME_ADDITIONS, stripAdditions } from './runtime-contract.ts';
+import { contractCanonical, interfaceDigest, interfaceForm, runtimeDigest, parseRuntimeContract, runtimeMethod, RUNTIME_ADDITIONS, stripAdditions } from './runtime-contract.ts';
+import FORMAT from '../tables/runtime-contract-format.json' with { type: 'json' };
 import { isRecord } from './text.ts';
 import { runtimeDocument, signRuntime } from '../testing/runtime.ts';
 test('canonical bytes match the runner sorted compact UTF-8 algorithm independently', () => {
@@ -157,6 +158,70 @@ test('the expected identity of a @2 document is the pinned original, not the rec
   assert.equal(good.ok, true, JSON.stringify(good));
   const wrong = parseRuntimeContract(v2.document, { digest: (v2.document as { contract_sha256: string }).contract_sha256, runtimeVersion: 'synthetic-runtime-v2' });
   assert.equal(wrong.ok, false);
+});
+test('the interface form leaves out the members that say which bytes, and only those', () => {
+  const original = runtimeDocument() as Record<string, any>;
+  original.entries[0].status_authority = 'device_receipt_set:' + 'a'.repeat(64);
+  const form = interfaceForm(original) as Record<string, any>;
+  assert.deepEqual(FORMAT.interface, { omitted: ['contract_sha256', 'source_hashes', 'certification', 'atlas_snapshot'], runtime_omitted: ['runner_source', 'runner_sha256'], source_omitted: ['line'], source_in: ['objects', 'entries', 'execute_actions'] });
+  assert.deepEqual(Object.keys(form).sort(), ['complete', 'entries', 'execute_actions', 'objects', 'runtime', 'schema']);
+  assert.deepEqual(form.runtime, { minimum_version: 'synthetic-runtime-v2', found_times_supported: false });
+  assert.deepEqual(form.entries[0].source, { path: 'fixture/runtime.py' });
+  assert.equal(form.entries[0].status_authority, 'device_receipt_set:');
+  assert.equal(form.entries[1].status_authority, 'project_policy:excel-authoring-v1');
+  const { source: _source, status_authority: _authority, ...declared } = original.entries[0];
+  const { source: _formSource, status_authority: _formAuthority, ...kept } = form.entries[0];
+  assert.deepEqual(kept, declared, 'every other member of a declaration is in the form as it is');
+  assert.equal(original.entries[0].source.line, 1, 'the document itself is not changed');
+});
+const certified = () => { const original = runtimeDocument() as Record<string, any>; original.entries[0].status_authority = 'device_receipt_set:' + 'a'.repeat(64); return signRuntime(original) as Record<string, any>; };
+for (const [name, mutate] of Object.entries({
+  'a source digest': (v: any) => { v.source_hashes['fixture/runtime.py'] = 'b'.repeat(64); },
+  'another source file': (v: any) => { v.source_hashes['fixture/more.py'] = 'c'.repeat(64); },
+  'the runner file and its digest': (v: any) => { v.runtime.runner_source = 'fixture/other.py'; v.runtime.runner_sha256 = 'b'.repeat(64); },
+  'the line a declaration stands on': (v: any) => { for (const entry of v.entries) entry.source.line += 40; },
+  'the snapshot record': (v: any) => { v.atlas_snapshot = { fixture: true, revision: 2 }; },
+  'the certification record': (v: any) => { v.certification = { ...v.certification, receipt_count: 3, receipt_set_sha256: 'd'.repeat(64) }; },
+  'the receipts behind a certified status': (v: any) => { v.entries[0].status_authority = 'device_receipt_set:' + 'b'.repeat(64); },
+})) test(`a repair changes the whole digest and leaves the interface identity: ${name}`, () => {
+  const before = certified(), after = structuredClone(before); mutate(after);
+  assert.notEqual(runtimeDigest(after), runtimeDigest(before));
+  assert.equal(interfaceDigest(after), interfaceDigest(before));
+});
+for (const [name, mutate] of Object.entries({
+  'a signature': (v: any) => { v.entries[0].signature.parameters[0].name = 'other'; },
+  'a status': (v: any) => { v.entries[0].status = 'disabled'; },
+  'how a method is dispatched': (v: any) => { v.entries[0].dispatch = 'cmd_primitive'; },
+  'what a method is said to do': (v: any) => { v.entries[0].h_semantics = 'synthetic other output'; },
+  'a runtime capability': (v: any) => { v.runtime.found_times_supported = true; },
+  'the runtime version': (v: any) => { v.runtime.minimum_version = 'synthetic-runtime-v3'; },
+  'an object': (v: any) => { v.objects.push({ name: 'widget-new', status: 'enabled' }); },
+  'an action': (v: any) => { v.execute_actions.push({ normalized: 'synthetic', status: 'enabled' }); },
+  'the file a declaration is in': (v: any) => { v.entries[0].source.path = 'fixture/elsewhere.py'; },
+  'the kind of authority a status stands on': (v: any) => { v.entries[0].status_authority = 'project_policy:excel-authoring-v1'; },
+  'a member this form does not know': (v: any) => { v.future_member = { strict: true }; },
+  'a runtime member this form does not know': (v: any) => { v.runtime.future_capability = true; },
+})) test(`a changed declaration is another interface identity: ${name}`, () => {
+  const before = certified(), after = structuredClone(before); mutate(after);
+  assert.notEqual(interfaceDigest(after), interfaceDigest(before));
+});
+test('a @2 document that declares the interface identity of its original pins it; one that does not pins the whole digest', () => {
+  const original = runtimeDocument(); const v2 = v2Document(original);
+  const old = parseRuntimeContract(v2.document); assert.ok(old.ok); if (!old.ok) return;
+  assert.deepEqual(old.contract.pinned, { identity: v2.originalIdentity, build: v2.originalIdentity, bytes: v2.bytes });
+  const declared = interfaceDigest(original);
+  const document = signRuntime({ ...v2.document, original: { ...v2.document.original, interface_sha256: declared } });
+  const read = parseRuntimeContract(document); assert.ok(read.ok, JSON.stringify(read)); if (!read.ok) return;
+  assert.deepEqual(read.contract.pinned, { identity: declared, build: v2.originalIdentity, bytes: v2.bytes });
+  assert.notEqual(declared, v2.originalIdentity);
+  assert.equal(runtimeDigest(stripAdditions(document)!), v2.originalIdentity);
+  const plain = parseRuntimeContract(original); assert.ok(plain.ok); if (plain.ok) assert.deepEqual(plain.contract.pinned, { identity: original.contract_sha256, build: original.contract_sha256, bytes: null });
+});
+for (const [name, value] of Object.entries({ 'another digest': 'b'.repeat(64), 'the whole digest': null, 'not a digest': 'interface', 'not a text': 7 })) test(`a declared interface identity that is not the one recomputed from the original is refused at its pointer: ${name}`, () => {
+  const v2 = v2Document(runtimeDocument());
+  const document = signRuntime({ ...v2.document, original: { ...v2.document.original, interface_sha256: value ?? v2.originalIdentity } });
+  const read = parseRuntimeContract(document);
+  assert.equal(read.ok, false); if (!read.ok) assert.deepEqual(read.problems.map((problem) => [problem.pointer, problem.message]), [['/original/interface_sha256', '声明的接口身份与按原合约重算的不一致']]);
 });
 for (const [name, mutate] of Object.entries({
   missing: (v: any) => { delete v.original; },

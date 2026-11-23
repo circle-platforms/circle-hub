@@ -1,6 +1,8 @@
 // Bind explicit text values to the original Python signature without expanding defaults or evaluating expressions.
 import type { RuntimeEntry } from './runtime-contract.ts';
 import type { PlanStep, KeywordValue } from './slots.ts';
+import {cellInput,cellTemplate,cellSyntax,cellSafeText,cellSelectionPosition,cellSelectionValueProblem} from './cell-selection.ts';
+import { addressKey } from './manifest.ts';
 export interface BoundValue { name: string; value: KeywordValue; pointer: string }
 export interface BindProblem { code: string; pointer: string; message: string }
 export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string, executorProvided: ReadonlySet<string> = new Set()): { values: BoundValue[]; problems: BindProblem[] } {
@@ -29,8 +31,10 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string, 
     if (param.redacted) for (const value of values.filter((v) => v.name === param.name)) issue('param_sensitive', value.pointer, '脱敏凭据参数不许出现在计划里');
   }
   for (const v of values) {
+    const selection = cellSelectionPosition(step, v.pointer, at);
+    if (selection !== null) { const problem = cellSelectionValueProblem(selection, v.value); if (problem !== null) issue('param_value', v.pointer, problem); continue; }
     if (typeof v.value === 'number') { if (!Number.isSafeInteger(v.value) || v.value < 0) issue('param_value', v.pointer, '整数关键字必须是安全非负整数'); }
-    else if (!(step.restore_for!==undefined&&step.input_register!==undefined&&v.pointer===at+'/args/0'&&v.value==='{}')&&!hasSingleLineValue(v.value)) issue('param_value', v.pointer, '参数值必须是有效单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
+    else if (!(step.restore_for!==undefined&&step.input_register!==undefined&&v.pointer===at+'/args/0'&&v.value==='{}')&&!(cellInput(step)&&v.pointer===at+'/args/0'&&cellTemplate(v.value)&&hasSingleLineValue(cellSyntax(v.value)))&&!hasSingleLineValue(v.value)) issue('param_value', v.pointer, '参数值必须是有效单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
   }
   return { values, problems };
 }
@@ -50,10 +54,20 @@ export function hasBalancedCommandText(text: string): boolean {
 
 /** Shared cell-format policy; literal assertions do not use the ordinary command quote lexer. */
 export function hasSingleLineValue(value: unknown): value is string {
-  return typeof value === 'string' && value.isWellFormed() && value.trim() === value && !/[\r\n\v\f\u0085\u2028\u2029\u0000-\u0008\u000e-\u001f\uFFFE\uFFFF]/.test(value) && !/\{(?:0)?\}/.test(value) && !value.startsWith('=') && !/_x[0-9a-fA-F]{4}_/.test(value);
+  return cellSafeText(value) && value.trim() === value && !/\{(?:0)?\}/.test(value) && !value.startsWith('=');
 }
 
 /** POSIX expansions are active outside single quotes; glob and control syntax only outside quotes. */
+export function hostProgramLine(programs:readonly {program:string;addressPrefix?:string}[]|undefined,line:string,input=false):{addresses:string[];unknown_addresses?:string[]}|null{
+  if(!programs?.length||hasShellDynamicSyntax(input?cellSyntax(line):line))return null;
+  const words=line.trim().split(/\s+/),declared=programs.find(row=>row.program===words[0]);
+  if(!declared)return null;
+  const prefix=declared.addressPrefix;
+  const declaredAddresses=prefix===undefined?[]:words.slice(1).filter(word=>word.startsWith(prefix)).map(word=>word.slice(prefix.length));
+  const deferred=(address:string)=>input&&(address.includes('{}')||address.includes('{0}'));
+  const unknown_addresses=declaredAddresses.filter(deferred),addresses=declaredAddresses.filter(address=>!deferred(address));
+  return addresses.every(address=>addressKey(address)!==null)?{addresses,...(unknown_addresses.length?{unknown_addresses}:{})}:null;
+}
 export function hasShellDynamicSyntax(text:string):boolean {
   let quote:string|null=null;
   for(let i=0;i<text.length;i++){

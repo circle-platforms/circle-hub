@@ -47,8 +47,20 @@ test('a review pins file call and whole function bytes and cannot approve anothe
   for (const changed of [source.replace("'a.tmp'","'b.tmp'"),source.replace("rename(temp,'a')","rename(temp,'b')"),source.replace("await rename(temp,'a')","await rename(temp,'a');await rename(temp,'a')"),source.replace('rename(temp,','symlink(temp,')]) assert.ok(audit(changed,[review]).issues.length>0);
   assert.ok(scanSkillScripts(new Map([['other.ts',source]]),[review]).issues.length>0);
 });
+test('a child process passes only as an exact reviewed call site, and an unreviewed one names its call and digest', () => {
+  const source = `import {spawn,execFile} from 'node:child_process';function run(tool){return spawn(process.execPath,[tool],{stdio:'pipe'});}`;
+  const call = "spawn(process.execPath,[tool],{stdio:'pipe'})";
+  const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true); let snippet = '';
+  const visit = (node: ts.Node) => { if (ts.isCallExpression(node) && node.expression.getText(parsed) === 'spawn') snippet = callSnippet(parsed, node); ts.forEachChild(node, visit); }; visit(parsed);
+  const unreviewed = audit(source).issues;
+  assert.deepEqual(unreviewed.map(v => [v.operation, v.call, v.snippetSha256]), [['node:child_process.spawn', call, sha(snippet)]]);
+  const review: CallReview = { file, operation: 'node:child_process.spawn', call, snippetSha256: sha(snippet), reviewer: '合成复核人', date: '2026-11-22', reason: '合成子进程复核' };
+  assert.deepEqual(audit(source, [review]).issues, []); assert.equal(audit(source, [review]).reviewed.length, 1);
+  for (const changed of [source.replace('[tool]', "[tool,'--more']"), source.replace('return spawn(', 'return execFile('), source.replace('{stdio:', "{shell:true,stdio:")]) assert.ok(audit(changed, [review]).issues.length > 0, changed);
+  assert.ok(audit(`import {exec} from 'node:child_process'; run(exec);`, [review]).issues.length > 0);
+});
 test('the original Jev atomic file replacement review retains its dated reason', () => {
-  assert.equal(REVIEWED_SKILL_CALLS.length,2);const reviewed=REVIEWED_SKILL_CALLS[0];
+  assert.equal(REVIEWED_SKILL_CALLS.length,10);const reviewed=REVIEWED_SKILL_CALLS.find(row=>row.file==='packs/workflow/knowledge-contribution/tools/jev/lib/local.ts');assert.ok(reviewed);
   assert.equal(reviewed.file,'packs/workflow/knowledge-contribution/tools/jev/lib/local.ts');assert.equal(reviewed.operation,'rename');assert.equal(reviewed.call,'rename(temp,file)');assert.equal(reviewed.reviewer,'集成者');assert.match(reviewed.date,/^\d{4}-\d{2}-\d{2}$/);assert.match(reviewed.reason,/普通文件.*目录/);assert.match(reviewed.snippetSha256,/^[a-f0-9]{64}$/);
 });
 test('the stale-owner recovery review pins its actual function without approving changed paths or extra calls', () => {
@@ -131,12 +143,13 @@ test('every published client skill and helper passes the manifest gate with all 
       if(existsSync(manifest)){
         const pack=JSON.parse(readFileSync(manifest,'utf8'));
         if(pack.schema==='pack@1'&&Array.isArray(pack.files)&&pack.files.some((file:{path:string})=>file.path.startsWith('tools/')&&/\.[cm]?[jt]sx?$/.test(file.path)))directories.push(child);
-      }else walk(child);
+      }
+      walk(child);
     }
   };
   walk(join(repository,'packs'));
   const ids=directories.map(directory=>JSON.parse(readFileSync(join(directory,'pack.json'),'utf8')).id);
-  for(const required of ['case-compile','knowledge-contribution'])assert.ok(ids.includes(required),`missing published client scripts for ${required}; merge the required layout and skill packages before claiming coverage`);
+  for (const required of ['case-compile','recompose','knowledge-contribution'])assert.ok(ids.includes(required),`missing published client scripts for ${required}; merge the required layout and skill packages before claiming coverage`);
   const reviewed=[];
   for(const directory of directories.sort()){
     const pack=JSON.parse(readFileSync(join(directory,'pack.json'),'utf8'));const result=scanSkillPack(directory);
@@ -144,4 +157,50 @@ test('every published client skill and helper passes the manifest gate with all 
     t.diagnostic(`${pack.id}: ${result.files} script/helper/hook sources; ${result.reviewed.length} reviewed call sites`);
   }
   assert.deepEqual(reviewed,REVIEWED_SKILL_CALLS,'every registered call site must still occur exactly once in a scanned published package');
+});
+
+test('scanSkillPack validates pure-data .cli.json declarations via AST without regex or execution', () => {
+  const f = fixture();
+  try {
+    f.write({
+      'tools/run.ts': `if (import.meta.main) console.log(process.argv.slice(2));\n`,
+      'tools/run.cli.json': JSON.stringify({ schema: 'tool-cli@2', stdin: ['%HUB_TOKEN%'], options: [] }),
+      'tools/helper.ts': `export const helperValue = 1;\n`,
+    });
+    assert.deepEqual(scanSkillPack(f.dir, []).issues, []);
+
+    f.write({
+      'tools/run.ts': `if (import.meta.main) console.log(process.argv.slice(2));\n`,
+      'tools/run.cli.json': JSON.stringify({ schema: 'tool-cli@2', stdin: [], options: [] }),
+      'tools/extra.ts': `console.log(process.argv[2] ?? 'ok');\n`,
+    });
+    assert.ok(scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration' && i.file.endsWith('tools/extra.ts')));
+
+    for (const badJson of [
+      '{not-json',
+      JSON.stringify({ schema: 'wrong@1', stdin: [] }),
+      JSON.stringify({ schema: 'tool-cli@1', stdin: [] }),
+      JSON.stringify({ schema: 'tool-cli@2', stdin: [], options: [], extra: true }),
+      JSON.stringify({ schema: 'tool-cli@2', stdin: ['raw-secret'], options: [] }),
+    ]) {
+      f.write({
+        'tools/run.ts': `console.log(process.argv.length);\n`,
+        'tools/run.cli.json': badJson,
+      });
+      assert.ok(scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration'), badJson);
+    }
+
+    f.write({
+      'tools/orphan.cli.json': JSON.stringify({ schema: 'tool-cli@2', stdin: [], options: [] }),
+    });
+    assert.ok(scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration' && i.file.endsWith('orphan.cli.json')));
+
+    f.write({
+      'tools/helper.ts': `export const helperOnly = 42;\n`,
+      'tools/helper.cli.json': JSON.stringify({ schema: 'tool-cli@2', stdin: [], options: [] }),
+    });
+    assert.ok(!scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration' && i.file.endsWith('helper.cli.json')));
+  } finally {
+    f.close();
+  }
 });

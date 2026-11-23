@@ -99,7 +99,7 @@ export function draftProfile(environment: unknown, manifest: unknown, rawContrac
   // The denial word list is retired (R5): dispatch authority comes from the contract's closed roles, complete commands
   // and effect table, so the draft no longer asks for /denied.
   for (const pointer of ['/synthetic', '/workbook', '/seats', '/hosts', '/max_wait_seconds', '/fold_newlines']) add(pointer, '缺少运行环境部署事实', '集成者从运行器格式和只读预检填写，重新运行 --check；不得以空列表代替未核对的事实');
-  const profile = { schema: FORMAT.profile_schema, synthetic: null, runtime: { minimum_version: wanted.runtimeVersion, contract_sha256: wanted.digest }, bed: beds.beds[0]!.name, device_count: environment.device_count, max_wait_seconds: null, fold_newlines: null, workbook: null, seats: null, hosts: null, allowed, unopened, pending };
+  const profile = { schema: FORMAT.profile_schema, synthetic: null, runtime: { minimum_version: wanted.runtimeVersion }, bed: beds.beds[0]!.name, device_count: environment.device_count, max_wait_seconds: null, fold_newlines: null, workbook: null, seats: null, hosts: null, allowed, unopened, pending };
   return profile;
 }
 /** `rawContract`, when given, lets a typed entry's roles come from its typed authority (as the pack's profile parser). */

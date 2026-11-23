@@ -9,15 +9,37 @@ import {newId,AccessError} from '../../records/api.ts';
 import {html,link,page,pageLayout,pre,table,emptyAction,type Html} from './html.ts';
 import {button} from './ui.ts';
 import {evidence,panel as card,field as inputField,actionLink,dialog} from './presentation.ts';
+import { postForm, selectControl, submitButton } from './components.ts';
 import {exactSize,memoryState,number,timestamp,versionLabel} from './knowledge-display.ts';
-import {type PageContext,type PageResult,neutralPage} from './pages.ts';
+import { type PageContext, type PageResult, neutralPage } from './context.ts';
 import {currentAudience,inScope,knowledgeContext,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
 import {MARKDOWN_FIELD} from './form-recovery.ts';
 import {containsDirectory,directoryName} from './audience.ts';
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 
 const location=(parameters:Record<string,string|undefined>={})=>'/console/knowledge?'+new URLSearchParams({view:'memory',...Object.fromEntries(Object.entries(parameters).filter((pair):pair is [string,string]=>pair[1]!==undefined))});
-const form=(ctx:PageContext,action:string,fields:Html,label:string,disabled=false,danger=false,back?:string)=>html`<form method="post" action="/console/knowledge/do/memory-${action}"${back?html` data-memory-editor`:''}><input type="hidden" name="csrf" value="${ctx.csrf??''}">${ctx.personalEpoch?html`<input type="hidden" name="personal_epoch" value="${ctx.personalEpoch}">`:html``}${fields}<div class="${back?'ch-editor-actions ':''}ch-actions"><button class="ch-btn ${danger||action==='revoke'?'ch-btn--danger':'ch-btn--primary'}" type="submit"${disabled?html` disabled`:''}>${label}</button>${back?actionLink(back,'取消并返回'):''}</div></form>`;
+function form(ctx: PageContext, action: string, fields: Html, label: string, disabled = false, danger = false, back?: string): Html {
+  const isDanger = danger || action === 'revoke';
+  if (back) {
+    return postForm({
+      action: `/console/knowledge/do/memory-${action}`,
+      csrf: ctx.csrf ?? '',
+      fields,
+      personalEpoch: ctx.personalEpoch,
+      extra: ' data-memory-editor',
+      actions: html`<div class="ch-editor-actions ch-actions">${submitButton(label, { danger: isDanger, disabled })}${actionLink(back, '取消并返回')}</div>`,
+    });
+  }
+  return postForm({
+    action: `/console/knowledge/do/memory-${action}`,
+    csrf: ctx.csrf ?? '',
+    fields,
+    submit: label,
+    disabled,
+    danger: isDanger,
+    personalEpoch: ctx.personalEpoch,
+  });
+}
 const field=inputField;
 const memoryLabel=()=>uiLabelOf('knowledge_view','memory');
 const actionLabel=(action:MemoryAction)=>uiLabelOf('memory_action',action);
@@ -37,7 +59,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
   const parsed=record?.kind==='memory_share'?MemoryShareBody.safeParse(record.body):null;
   if(!parsed?.success||parsed.data.by!==ctx.principal.id&&!ctx.admin)return neutralPage(ctx);
   const body=parsed.data;
-  result=card({title:uiLabelOf('knowledge_share_status',body.status),hint:'私人原文与分享保留；确认时重新检查，回执保留实际结果'},html`<p>${body.code??''} ${evidence(body.message)}</p>${body.team_document?link(location({scope:'team',document:body.team_document}),memoryLabel()+' · '+actionLabel('share')):''}`);
+  result=card({title:uiLabelOf('knowledge_share_status',body.status),hint:'私人原文与分享保留；确认时重新检查，核对记录保留实际结果'},html`<p>${body.code??''} ${evidence(body.message)}</p>${body.team_document?link(location({scope:'team',document:body.team_document}),memoryLabel()+' · '+actionLabel('share')):''}`);
  }
  let content:Html;
  if(document){
@@ -45,14 +67,14 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
   if(editable&&ctx.url.searchParams.get('edit')==='1')return {status:200,body:page(ctx.chrome('编辑记忆',{active:'knowledge'}),await spaceLayout(ctx,pageLayout(memoryEditor(ctx,doc.space==='team'?'team':'personal',doc),{inspector:null})))};
   const audience=await currentAudience(ctx,doc.space,doc.path,false,undefined,true);
   const toggleForm=form(ctx,'write',html`<input type="hidden" name="space" value="${doc.space==='team'?'team':'personal'}"><input type="hidden" name="document" value="${document}"><input type="hidden" name="expected_version" value="${doc.current_version}"><input type="hidden" name="enabled" value="${doc.state==='enabled'?'false':'true'}"><input type="hidden" name="client_key" value="${newId('evt')}">`,actionLabel(doc.state==='enabled'?'disable_memory':'enable_memory'),false,doc.state==='enabled');
-  const manage=html`<footer class="ch-inspector-actions">${own||doc.space==='team'&&ctx.admin?actionLink('#memory-versions','版本记录','ghost'):''}${editable?actionLink('#memory-toggle',doc.state==='enabled'?'停用…':'启用…',doc.state==='enabled'?'danger':'secondary'):''}${own?actionLink(location({scope,document,share:'1'}),'分享到团队…'):''}${editable?actionLink(location({scope,document,edit:'1'}),'编辑','primary'):''}</footer>${editable?dialog('memory-toggle',doc.state==='enabled'?'停用记忆':'启用记忆',html`<p>${doc.state==='enabled'?'停用后不再用于新会话；已有版本保留。':'启用后可用于符合读取权限的会话。'}</p>`,toggleForm):''}`;
+  const manage=html`<footer class="ch-inspector-actions">${own||doc.space==='team'&&ctx.admin?actionLink('#memory-versions','版本记录','ghost'):''}${editable?actionLink('#memory-toggle',doc.state==='enabled'?'停用…':'启用…',doc.state==='enabled'?'danger':'secondary'):''}${own?actionLink(location({scope,document,share:'1'}),'分享到公共空间…'):''}${editable?actionLink(location({scope,document,edit:'1'}),'编辑','primary'):''}</footer>${editable?dialog('memory-toggle',doc.state==='enabled'?'停用记忆':'启用记忆',html`<p>${doc.state==='enabled'?'停用后不再用于新会话；已有版本保留。':'启用后可用于符合读取权限的会话。'}</p>`,toggleForm):''}`;
   const history=doc.current_version!==null&&(own||doc.space==='team'&&ctx.admin)?await memory.history(ctx.principal,document,ctx.url.searchParams.get('history_cursor')??undefined):null;
-  const versions=history?card({title:actionLabel('history'),hint:'仅本人或团队管理员可浏览版本记录；切换版本不修改正文'},html`${table(['版本','标题','状态','大小','更新时间','记录人'],await Promise.all(history.items.map(async (row,index)=>[link(location({scope,document,version:row.version}),versionLabel('记忆版本',row.at,undefined,history.next?undefined:history.items.length-index)),row.title,memoryState(row.state as typeof doc.state),exactSize(row.bytes),timestamp(row.at),await ctx.userName(row.by)])))}${history.next?link(location({scope,document,history_cursor:history.next}),'更早的版本'):''}`):html``;
+  const versions=history?card({title:actionLabel('history'),hint:'仅本人或管理员可浏览版本记录；切换版本不修改正文'},html`${table(['版本','标题','状态','大小','更新时间','记录人'],await Promise.all(history.items.map(async (row,index)=>[link(location({scope,document,version:row.version}),versionLabel('记忆版本',row.at,undefined,history.next?undefined:history.items.length-index)),row.title,memoryState(row.state as typeof doc.state),exactSize(row.bytes),timestamp(row.at),await ctx.userName(row.by)])))}${history.next?link(location({scope,document,history_cursor:history.next}),'更早的版本'):''}`):html``;
   let sharing=html``;
   if(own&&ctx.url.searchParams.get('share')==='1'){
    const target=ctx.url.searchParams.get('team_path')??doc.path,key=ctx.url.searchParams.get('client_key')??newId('evt');
    const plan=await memory.share(ctx.principal,{document,version:doc.current_version,team_path:target,client_key:key,check_only:true});
-   sharing=card({title:actionLabel('share_preview'),hint:'私人原文和分享设置保留；团队副本独立。预检不写记录，确认时重查管理员停用、大小、凭据和团队修改'},html`${plan.effect?html`<p>${uiLabelOf('memory_share_effect',plan.effect).replace('{title}',plan.title)}</p>`:''}<p>我的：保留不变 · ${audience.text}</p><p>团队：${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge"><input type="hidden" name="view" value="memory"><input type="hidden" name="document" value="${document}"><input type="hidden" name="share" value="1"><input type="hidden" name="client_key" value="${key}">${field('团队文件夹',html`<input name="team_path" value="${plan.target_path??''}" maxlength="2000">`)}<button class="ch-btn ch-btn--secondary" type="submit">重新预检</button></form>${checkTable(plan.checks)}${form(ctx,'share',html`<input type="hidden" name="document" value="${document}"><input type="hidden" name="version" value="${doc.current_version}"><input type="hidden" name="team_path" value="${plan.target_path??''}"><input type="hidden" name="client_key" value="${key}">`,'确认分享到团队',!plan.ok)}`);
+   sharing=card({title:actionLabel('share_preview'),hint:'私人原文和分享设置保留；公共空间副本独立。预检不写记录，确认时重查管理员停用、大小、凭据和公共空间修改'},html`${plan.effect?html`<p>${uiLabelOf('memory_share_effect',plan.effect).replace('{title}',plan.title)}</p>`:''}<p>我的：保留不变 · ${audience.text}</p><p>公共空间：${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge"><input type="hidden" name="view" value="memory"><input type="hidden" name="document" value="${document}"><input type="hidden" name="share" value="1"><input type="hidden" name="client_key" value="${key}">${field('公共空间文件夹',html`<input name="team_path" value="${plan.target_path??''}" maxlength="2000">`)}${submitButton('重新预检', { secondary: true })}</form>${checkTable(plan.checks)}${form(ctx,'share',html`<input type="hidden" name="document" value="${document}"><input type="hidden" name="version" value="${doc.current_version}"><input type="hidden" name="team_path" value="${plan.target_path??''}"><input type="hidden" name="client_key" value="${key}">`,'确认分享到公共空间',!plan.ok)}`);
   }
   const editor=editable&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,doc.space==='team'?'team':'personal',doc):html``;
   content=html`${result}${card(null,html`<div class="ch-actions"><span class="ch-tag">${memoryLabel()}</span>${memoryState(doc.state)}</div><h2 class="ch-panel-title" title="客户端会话偏好，不经事实验证，不作为任务的输入或来源">${evidence(doc.title)}</h2><p>分享范围：${audience.text}${audience.inherited.map(path=>html` · 同文件夹设置 · ${directoryName(path)}`)}</p><p>${number(doc.bytes)} 字节 · ${timestamp(doc.updated_at)} · ${directoryName(doc.path)}</p>${pre(doc.markdown)}`)}${editor}${sharing}${history?dialog('memory-versions','版本记录',versions):''}${manage}`;
@@ -73,7 +95,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
    grant=await grantDialog(ctx,{id:'memory-grants',trigger:false,current:audience.text,content:directoryName(path)+' · 只读，含全部子文件夹',checks:await memory.precheckGrant(ctx.principal,path),grants:(await memory.grants(ctx.principal)).filter(g=>containsDirectory(g.path,path)),fields:html`<input type="hidden" name="path" value="${path}">`,form:(action,fields,label,disabled)=>form(ctx,action,fields,label,disabled)});
   }
   const selectedSync=syncSelected(ctx)&&(scope==='personal'||scope==='all'),syncPanel=scope==='personal'||scope==='all'?await personalSyncNotice(ctx):html``;
-  content=pageLayout(html`${tabs}${result}${selectedSync?'':syncPanel}${grant}${usage?html`<p title="标题、文件夹与正文计入启用内容；旧版本及停用文档不占启用额度，版本记录占用计入私人容量">${uiLabelOf('memory_field','active_content')} ${capacitySize(usage.active)} / ${capacitySize(usage.limits.spaceBytes)} · ${uiLabelOf('memory_field','active_documents')} ${number(usage.activeDocuments)} / ${number(usage.limits.spaceDocuments)} · 单篇正文上限 ${capacitySize(usage.limits.documentBytes)}</p>`:''}${canWrite&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,team?'team':'personal'):''}${card({title:memoryLabel(),hint:'分享给其他账户的记忆只能查看，不自动加载到其会话；团队与本人启用记忆具备会话读取资格'},table(['标题','分享范围','状态','大小','更新时间','位置'],rows,{title:'还没有记忆',text:'客户端会话写入的记忆和在这里新建的记忆列在这里；启用的记忆可用于新会话。',...(canWrite?{action:emptyAction(location({scope:team?'team':'personal',edit:'1'}),actionLabel('create'))}:{})}))}`,{...(selectedSync?{inspector:syncPanel,detail:true,back:link(location({scope}),'返回记忆')}:{}),actions:html`${scope==='personal'&&!local?html`<a class="ch-btn ch-btn--secondary" href="#memory-grants">分享…</a>`:''}${controls}`});
+  content=pageLayout(html`${tabs}${result}${selectedSync?'':syncPanel}${grant}${usage?html`<p title="标题、文件夹与正文计入启用内容；旧版本及停用文档不占启用额度，版本记录占用计入私人容量">${uiLabelOf('memory_field','active_content')} ${capacitySize(usage.active)} / ${capacitySize(usage.limits.spaceBytes)} · ${uiLabelOf('memory_field','active_documents')} ${number(usage.activeDocuments)} / ${number(usage.limits.spaceDocuments)} · 单篇正文上限 ${capacitySize(usage.limits.documentBytes)}</p>`:''}${canWrite&&ctx.url.searchParams.get('edit')==='1'?memoryEditor(ctx,team?'team':'personal'):''}${card({title:memoryLabel(),hint:'分享给其他账户的记忆只能查看，不自动加载到其会话；公共空间与本人启用记忆具备会话读取资格'},table(['标题','分享范围','状态','大小','更新时间','位置'],rows,{title:'还没有记忆',text:'客户端会话写入的记忆和在这里新建的记忆列在这里；启用的记忆可用于新会话。',...(canWrite?{action:emptyAction(location({scope:team?'team':'personal',edit:'1'}),actionLabel('create'))}:{})}))}`,{...(selectedSync?{inspector:syncPanel,detail:true,back:link(location({scope}),'返回记忆')}:{}),actions:html`${scope==='personal'&&!local?html`${actionLink('#memory-grants','分享…')}`:''}${controls}`});
  }
  // The three views are tabs of one place: the place's name is the title, the tab says which view.
  return {status:200,body:page(ctx.chrome('知识库',{active:'knowledge',hint:'记忆只用于客户端会话；知识与记忆的分享设置分别管理'}),await spaceLayout(ctx,content))};
@@ -81,7 +103,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
 
 function memoryEditor(ctx:PageContext,space:KnowledgeSpaceKind,doc?:{document:string;current_version:string;title:string;path:string;markdown:string;state:string}):Html{
  const back=location({scope:ctx.url.searchParams.get('scope')??(space==='team'?'team':'personal'),document:doc?.document,version:ctx.url.searchParams.get('version')??undefined,path:ctx.url.searchParams.get('path')??undefined});
- return html`<section data-editor-foreground>${card({title:actionLabel(doc?'edit':'create'),hint:'正文可使用 Markdown 标记，按原文保存，页面不渲染也不转换格式；保存时检查大小，版本变化时拒绝覆盖'},form(ctx,'write',html`<div data-fields><input type="hidden" name="space" value="${space}"><input type="hidden" name="document" value="${doc?.document??''}"><input type="hidden" name="expected_version" value="${doc?.current_version??''}"><input type="hidden" name="client_key" value="${newId('evt')}">${field('标题',html`<input name="title" value="${doc?.title??''}" required maxlength="300">`)}${field('文件夹',html`<input name="path" value="${doc?.path??ctx.url.searchParams.get('path')??'/'}" required maxlength="2000">`)}${field('状态',html`<select name="enabled"><option value="true">${uiLabelOf('memory_status','enabled')}</option><option value="false"${doc?.state==='disabled'?html` selected`:''}>${uiLabelOf('memory_status','disabled')}</option></select>`)}<div data-wide-field>${field(MARKDOWN_FIELD.label,html`<textarea name="markdown" rows="6" required>${doc?.markdown??''}</textarea>`,MARKDOWN_FIELD.hint)}</div></div>`,actionLabel('save'),false,false,back))}</section>`;
+ return html`<section data-editor-foreground>${card({title:actionLabel(doc?'edit':'create'),hint:'正文可使用 Markdown 标记，按原文保存，页面不渲染也不转换格式；保存时检查大小，版本变化时拒绝覆盖'},form(ctx,'write',html`<div data-fields><input type="hidden" name="space" value="${space}"><input type="hidden" name="document" value="${doc?.document??''}"><input type="hidden" name="expected_version" value="${doc?.current_version??''}"><input type="hidden" name="client_key" value="${newId('evt')}">${field('标题',html`<input name="title" value="${doc?.title??''}" required maxlength="300">`)}${field('文件夹',html`<input name="path" value="${doc?.path??ctx.url.searchParams.get('path')??'/'}" required maxlength="2000">`)}${field('状态',selectControl('enabled',[{value:'true',label:uiLabelOf('memory_status','enabled'),selected:doc?.state!=='disabled'},{value:'false',label:uiLabelOf('memory_status','disabled'),selected:doc?.state==='disabled'}]))}<div data-wide-field>${field(MARKDOWN_FIELD.label,html`<textarea name="markdown" rows="6" required>${doc?.markdown??''}</textarea>`,MARKDOWN_FIELD.hint)}</div></div>`,actionLabel('save'),false,false,back))}</section>`;
 }
 
 export async function performMemoryAction(ctx:PageContext,action:string,values:{get(key:string):string|null|undefined}):Promise<string>{

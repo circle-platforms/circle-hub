@@ -33,8 +33,9 @@ test('malformed JSON, XML, XHTML and XLSX uploads return the definite parser rea
     const result = await client.call('upload_file', { file_path: Buffer.from(text).toString('base64'), media_type: mediaType });
     assert.equal(result.isError, true);
     const errors = result.structuredContent.errors as { code: string; message: string; fix: string }[];
-    assert.equal(errors[0].code, 'SOURCE_UNPARSEABLE'); assert.match(errors[0].message, reason); assert.ok(errors[0].message.includes(parser)); assert.equal(errors[0].fix, FIX);
-    assert.doesNotMatch(JSON.stringify(result), /private-synthetic|synthetic-private-label/); assert.ok(result.content.some((block) => block.text?.includes(FIX)));
+    assert.equal(errors[0].code, 'SOURCE_UNPARSEABLE'); assert.match(errors[0].message, reason); assert.ok(errors[0].message.includes(parser));
+    assert.equal(errors[0].fix, FIX);
+    assert.doesNotMatch(JSON.stringify(result), /private-synthetic|synthetic-private-label|memory_share|这是一小时内/); assert.ok(result.content.some((block) => block.text?.includes(FIX)));
   }
 });
 

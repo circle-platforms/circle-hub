@@ -1,0 +1,85 @@
+{
+  "schema": "pack@1",
+  "id": "jev-judge",
+  "version": "1.0.0",
+  "kind": "skill",
+  "title": "Jev 判断客户端",
+  "description": "客户端侧的 TypeSafe Jev 判断：供把 Jev 作为判断器的工作流内嵌的客户端模块，和只在集成者已放行的主目录里用的命令行；请求只发往固定地址，密钥只从标准输入收，超时的请求不重发，不代 Hub 调用模型。",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "8a3b615bd1e52f845e3f6e1d3ca7969c1480764863b3e48b606064b376b7ddfe",
+      "size": 5399
+    },
+    {
+      "path": "examples/choice-command-select.json",
+      "sha256": "a0f083b7cf228256ad3977c207038de17b84e202742847513e52796fe0281c8c",
+      "size": 959
+    },
+    {
+      "path": "examples/choice-step-fidelity.json",
+      "sha256": "4d7ce1ee0554059b98ad64aea8a31d109bddbe3380aba243227fbf4ad53573f2",
+      "size": 795
+    },
+    {
+      "path": "examples/noul-command-match.json",
+      "sha256": "2643a704c78d7705ff9c7c0a1dfd65e97b3b74317b1e2eb930ab26f5ed491b49",
+      "size": 556
+    },
+    {
+      "path": "examples/score-command-list.json",
+      "sha256": "facece254c21ddcaf7608bcb83fbac83a3beeb3889328b7e4cc8d0fc553d916d",
+      "size": 721
+    },
+    {
+      "path": "functions/modules/jev-client/client.ts",
+      "sha256": "00f7126d1c08affa12d18ab63bde815eb76cc8dc8f14c8cfa088bc36596e7c4c",
+      "size": 17733
+    },
+    {
+      "path": "functions/modules/jev-client/files.ts",
+      "sha256": "ce8234a2d13eb431d95eb56b289df2b2848f50939c5e6e1792e7d66f2e58f3b9",
+      "size": 1545
+    },
+    {
+      "path": "functions/modules/jev-client/index.ts",
+      "sha256": "850732e3695b3883ca7d71d3a00503b92a8cbba23a6c494165a2a4e6801448da",
+      "size": 900
+    },
+    {
+      "path": "functions/modules/jev-client/redact.ts",
+      "sha256": "380d50a42ad7112e1e204c7647e6c49a3a097da671c324bc725fe345817b99ae",
+      "size": 1905
+    },
+    {
+      "path": "functions/modules/jev-client/transport.ts",
+      "sha256": "81658a3f469e889e6f589d51eaeeadd67fbfcf28d70ac0870365599b2deee10e",
+      "size": 6319
+    },
+    {
+      "path": "functions/modules/jev-client/types.ts",
+      "sha256": "5a050781f8ff290506108f6b0424749910cf03bbb3f70a39f2cb29409aec1ce9",
+      "size": 5412
+    },
+    {
+      "path": "functions/modules/jev-client/validate.ts",
+      "sha256": "d506106bd6ebe7b49d4c4da7e801fdb1dbcbac2c3444d5cc07416a36c38c92b9",
+      "size": 17414
+    },
+    {
+      "path": "skill.json",
+      "sha256": "9cda6b7eda0e7cf6a59facbe5808cb398dfea89b2cb78d819fccbde1fa13ebc5",
+      "size": 348
+    },
+    {
+      "path": "tools/jev-judge.cli.json",
+      "sha256": "6d641aaa78cb61cf3f0cf881ac6bb7e0e95bd5805899b22b33125e2e579eab7e",
+      "size": 965
+    },
+    {
+      "path": "tools/jev-judge.ts",
+      "sha256": "b12b8e3494a7813879089b510a0203375ff4645e700cd7441c289203a28242ad",
+      "size": 16415
+    }
+  ]
+}

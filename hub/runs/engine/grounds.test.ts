@@ -67,3 +67,29 @@ test('a result that cites one root hundreds of times looks that root up once in 
  assert.equal(await withQueryReads(ctx,current=>groundsReadableBy(current,run,grounds,by)),false,'the product the root belongs to still decides, in each read');
  assert.equal(asked,2,'nothing is kept past the read');
 });
+
+test('one check asks about a source file once for a reader, whatever parts of it the grounds select, and keeps only a yes',async()=>{
+ const alice={id:runRecord.runner,name:'合成成员',role:'user' as const},bob={id:'usr_'+'1'.repeat(26),name:'合成读者',role:'user' as const};
+ const sha='c'.repeat(64),run=RunRecord.parse({...runRecord,sources:[]});
+ let listed=0,allowed=true;
+ const artifact={kind:'source_artifact',body:{sha256:sha}};
+ const ctx={deps:{records:{store:{},artifacts:{records:async()=>{listed+=1;return [artifact];},canRead:async()=>allowed}}}} as unknown as EngineContext;
+ const grounds=Array.from({length:120},(_,n)=>`src:${sha}/kityminder@1/n/${String(n).padStart(12,'0')}`);
+ assert.equal(await groundsReadableBy(ctx,run,null,alice,{references:grounds}),true);
+ assert.equal(listed,1,'120 grounds in one file are one question');
+ const proven=new Set<string>();
+ listed=0;
+ assert.equal(await groundsReadableBy(ctx,run,null,alice,{references:grounds.slice(0,3),proven}),true);
+ assert.equal(await groundsReadableBy(ctx,run,null,alice,{references:grounds,proven}),true);
+ assert.equal(listed,1);
+ assert.equal(await groundsReadableBy(ctx,run,null,bob,{references:grounds,proven}),true);
+ assert.equal(listed,2,'what one reader may read says nothing about another');
+ assert.equal(await groundsReadableBy(ctx,run,null,alice,{references:grounds}),true);
+ assert.equal(listed,3,'a check without the set starts from nothing');
+ allowed=false;listed=0;
+ const refused=new Set<string>();
+ assert.equal(await groundsReadableBy(ctx,run,null,alice,{references:grounds,proven:refused}),false);
+ assert.equal(await groundsReadableBy(ctx,run,null,alice,{references:grounds,proven:refused}),false);
+ assert.equal(listed,2);
+ assert.equal(refused.size,0);
+});

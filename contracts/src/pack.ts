@@ -4,8 +4,8 @@
 // engine on them; the packs package writes packs in these shapes. Product dialect is data and pack functions, never core code.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import {FeedingOffsetSchema} from './feeding.ts';
-import {SkillDependencies,SkillLocks} from './skills.ts';
-export {SkillDependency,SkillLock,SkillDependencies,SkillLocks} from './skills.ts';
+import {EmbeddedModules,SkillDependencies,SkillLocks,SkillModuleId} from './skills.ts';
+export {EmbeddedModule,EmbeddedModules,EMBEDDED_SKILLS_DIR,SKILL_MODULES_DIR,SkillDependency,SkillLock,SkillDependencies,SkillLocks,SkillModuleId} from './skills.ts';
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
 import {FrozenCriterion} from './criterion.ts';
@@ -32,7 +32,9 @@ import {
   type Target,
 } from '../generated/vocabulary.ts';
 import { PACK_FILE_PATHS } from '../generated/protocol.ts';
-import { ErrorClaimFields, ItemId, IsoTime, JsonPointer, PackId, PackVersion, Sha256, Versioned } from './common.ts';
+import { ErrorClaimFields, ItemId, IsoTime, JsonPointer, PackId, PackVersion, RunId, Sha256, Versioned } from './common.ts';
+import { MissingFact } from './recovery.ts';
+import { LateInputRow } from './validation.ts';
 import { CommandPolicy, FragmentRef, PackFunctionRef } from './product.ts';
 import { ExternalObjectId, Ground, ReferenceUri, referenceUriOf } from './reference.ts';
 import { ExternalType } from './resources.ts';
@@ -80,7 +82,9 @@ export const SkillParser = z.strictObject({
   function: PackFunctionRef,
   locate: PackFunctionRef.optional(),
 });
-export const SkillDeclaration = z.strictObject({ schema:z.literal('skill@1'), parsers:z.array(SkillParser).max(64) }).refine(value=>new Set(value.parsers.map(p=>p.parser)).size===value.parsers.length,'parser versions are unique in a skill');
+export const SkillModule = z.strictObject({ id:SkillModuleId, title:z.string().min(1).max(100), family:z.string().min(1).max(300) });
+export type SkillModule = z.infer<typeof SkillModule>;
+export const SkillDeclaration = z.strictObject({ schema:z.literal('skill@1'), parsers:z.array(SkillParser).max(64), modules:z.array(SkillModule).max(64).optional() }).refine(value=>new Set(value.parsers.map(p=>p.parser)).size===value.parsers.length,'parser versions are unique in a skill').refine(value=>new Set((value.modules??[]).map(m=>m.id)).size===(value.modules??[]).length,'module names are unique in a skill');
 export type SkillDeclaration = z.infer<typeof SkillDeclaration>;
 
 // ---------------------------------------------------------------- pack.json
@@ -113,6 +117,7 @@ export const PackManifest = z
     title: z.string().min(1),
     description: z.string().min(1),
     dependencies: SkillDependencies.optional(),
+    embeds: EmbeddedModules.optional().describe('skill modules this pack carries as generated files; publication compares them with the named skill version (T01 R[6])'),
     files: z.array(PackFileEntry).describe('every file of the pack except pack.json, sorted by path'),
   })
   .superRefine((m, ctx) => {
@@ -340,6 +345,78 @@ export const DeviceObservation = z.strictObject({
 }).refine((o) => (o.run === null) !== (o.job === null), 'an observation comes from exactly one booking run or one dispatch job');
 export type DeviceObservation = z.infer<typeof DeviceObservation>;
 
+export const DeviceHelpTarget = z.strictObject({
+  inventory: Sha256,
+  device: JsonPointer,
+  label: z.string().min(1).max(200),
+  line: z.string().min(1).max(2000),
+  mode: z.string().min(1).max(100).optional().describe('the level to ask at, from the closed set the executor declares; absent when it declares none'),
+  keys: z.array(z.string().min(1).max(500)).min(1).max(8),
+});
+export type DeviceHelpTarget = z.infer<typeof DeviceHelpTarget>;
+
+export const DeviceHelpPosition = z.strictObject({
+  prefix: z.string().min(1).describe('exactly the text typed before the question mark'),
+  words: z.number().int().min(1).describe('how many words of the line the prefix holds'),
+  next_word: z.string().nullable().describe('the word of the line that follows the prefix; null when the prefix is the whole line'),
+  described: z.boolean().describe('whether the device described the position at all (a non-empty text at the declared place of its answer)'),
+  caret_only: z.boolean().nullable().describe('whether the device answered with nothing but a caret; null when the executor does not say'),
+  text: z.string().nullable().describe('the device words as received; null when it described nothing or the text is not shown (withheld, anomaly)'),
+  truncated: z.boolean().describe('whether `text` is only the start of what the device said (the whole is in the original)'),
+  withheld: z.boolean().describe('the credential scan held the text back: it is in the original for administrators and not quoted'),
+  anomaly: z.string().nullable().describe('why the answer is not shown: the target did not confirm that nothing was entered and the line was cleared, or the text could not be stored'),
+  observed_at: IsoTime,
+  reference: z.string().min(1).describe('src: of the stored answer as received (function bytes only)'),
+  text_reference: z.string().nullable().describe('src: of the stored text the model may read; null when there is no text'),
+});
+export type DeviceHelpPosition = z.infer<typeof DeviceHelpPosition>;
+
+export const DeviceHelpResult = z.strictObject({
+  inventory: Sha256,
+  device: JsonPointer,
+  label: z.string().min(1).max(200),
+  line: z.string().describe('the line as it was sent (its words joined by single spaces); when nothing was asked, the line as it was given'),
+  mode: z.string().nullable(),
+  words: z.number().int().min(0),
+  positions: z.array(DeviceHelpPosition),
+  missing: z.strictObject({ fact: z.string().min(1), next_action: z.string().min(1) }).nullable()
+    .describe('what is missing when nothing was asked or the questioning stopped before an answer, with the next step'),
+});
+export type DeviceHelpResult = z.infer<typeof DeviceHelpResult>;
+
+export const DeviceReadTarget = z.strictObject({
+  inventory: Sha256,
+  device: JsonPointer,
+  label: z.string().min(1).max(200),
+  line: z.string().min(1).max(2000),
+  keys: z.array(z.string().min(1).max(500)).min(1).max(8),
+});
+export type DeviceReadTarget = z.infer<typeof DeviceReadTarget>;
+
+export const DeviceReadAnswer = z.strictObject({
+  has_output: z.boolean().describe('whether the device printed any text at the declared place of its answer'),
+  output: z.string().nullable().describe('the device words as received, at most the executor\'s bound of them; null when there were none or they are not shown (withheld, anomaly)'),
+  truncated: z.boolean().describe('whether `output` is only the start of what the device printed (the whole is in the original)'),
+  withheld: z.boolean().describe('the credential scan held the text back: it is in the original for administrators and not quoted'),
+  anomaly: z.string().nullable().describe('why the answer is not shown: what stands at the declared place is not text, or the text could not be stored'),
+  observed_at: IsoTime,
+  reference: z.string().min(1).describe('src: of the stored answer as received (function bytes only)'),
+  text_reference: z.string().nullable().describe('src: of the stored text the model may read; null when there is no text'),
+});
+export type DeviceReadAnswer = z.infer<typeof DeviceReadAnswer>;
+
+export const DeviceReadResult = z.strictObject({
+  inventory: Sha256,
+  device: JsonPointer,
+  label: z.string().min(1).max(200),
+  line: z.string().describe('the line as it was sent (its words joined by single spaces); when nothing was sent, the line as it was given'),
+  sent: z.boolean().describe('whether the line was handed to the declared read at all; false when a check before it stopped the request'),
+  answer: DeviceReadAnswer.nullable().describe('the stored answer of the one read; null when the line was not sent or no answer was received'),
+  missing: z.strictObject({ fact: z.string().min(1), next_action: z.string().min(1) }).nullable()
+    .describe('what is missing when the line was not sent, no answer was received or the answer is not shown, with the next step'),
+});
+export type DeviceReadResult = z.infer<typeof DeviceReadResult>;
+
 export const RunContext = z.strictObject({
   run: z.string().min(1).optional().describe('Actual Hub run identity; not supplied by a model'),
   predecessor: z.string().min(1).nullable().optional().describe('Actual Hub predecessor; null for a new lineage, absent only in historical contexts'),
@@ -376,11 +453,21 @@ export const RunContext = z.strictObject({
     .array(DeviceObservation)
     .optional()
     .describe('present only when the workflow asked for the observations context: the latest observation of each device an executor covers under the workflow\'s lease prefix; a device never observed is absent, never declared'),
+  late_inputs: z
+    .array(LateInputRow)
+    .optional()
+    .describe('the inputs bound after the start (W06 R[7]): at projection only slot and run; at an evaluation or a run export also the reference to the result read then, or the missing fact when none was readable; absent when the workflow declares none'),
 });
 export type RunContext = z.infer<typeof RunContext>;
 
 /** An item as a check subject builder sees it. */
-export const SubjectItem = z.strictObject({ id: ItemId, label: z.string(), location: ReferenceUri, fields: z.record(z.string(), z.unknown()) });
+export const SubjectItem = z.strictObject({
+  id: ItemId,
+  label: z.string(),
+  location: ReferenceUri,
+  fields: z.record(z.string(), z.unknown()),
+  late: z.record(z.string(), z.unknown()).optional().describe('this evaluation\'s overlay from workflow.refresh (W06 R[7]): what the run results bound after the start say about the item; the frozen fields are unchanged; absent when the workflow declares no refresh'),
+});
 export type SubjectItem = z.infer<typeof SubjectItem>;
 
 /** An exact value of a submission as resolved at the boundary: the reference, whether it resolved and the source it resolved into. */
@@ -556,10 +643,16 @@ export const PredecessorInputDefault = z.strictObject({
   pack:PackId,
   slot:Key.optional().describe('Copy this frozen input of the predecessor run. An explicit value must be the same object'),
 });
-/** A slot whose values may be run ids. The Hub binds each run’s latest accepted submitted validation record. */
-export const RunResultSource = z.strictObject({pack:PackId});
+export const RunResultSource = z.strictObject({
+  pack:PackId,
+  after_start:z.boolean().optional().describe('true: start_run freezes the run id only; every evaluation and run export re-resolves its latest accepted submitted validation record, passes it to workflow.refresh and records the reference in locks.late. An explicit rec: binding stays frozen'),
+});
 const IndexFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
 /** How the Hub fills a missing only= on a knowledge index. Values come from structured records, never from a word list. */
+export const ItemRefreshRef = PackFunctionRef.extend({
+  reads: z.array(Key).max(16).describe('frozen input slots the function also receives (never one bound after the start)'),
+});
+export type ItemRefreshRef = z.infer<typeof ItemRefreshRef>;
 export const IndexBindingDefault = z.strictObject({
   only_from: z.discriminatedUnion('source', [
     z.strictObject({source: z.literal('build_defects')}).describe('Index keys of this build’s kind=defect&key=bug view, the fixed-bug and release-page entries already on the knowledge root'),
@@ -576,7 +669,7 @@ export const WorkflowInput = z.strictObject({
   required: z.boolean(),
   many: z.boolean(),
   default_from_predecessor: PredecessorInputDefault.optional().describe('When predecessor is supplied and this slot is absent: without slot, bind that workflow’s latest accepted submitted validation record; with slot, copy that frozen input. An explicit value for a named slot must be the same object'),
-  from_runs: RunResultSource.optional().describe('Bindings may be run ids of this workflow. The Hub replaces each run id with that run’s latest accepted submitted validation record. An omitted required slot walks the predecessor lineage for runs of this workflow'),
+  from_runs: RunResultSource.optional().describe('Bindings may be run ids of this workflow. Without after_start the Hub replaces each run id with that run’s latest accepted submitted validation record at start_run; with after_start it freezes the run id only and every evaluation and run export reads that run’s latest accepted submitted validation record then. An explicit rec: binding is frozen either way. An omitted required slot walks the predecessor lineage for runs of this workflow'),
   index_default: IndexBindingDefault.optional().describe('When a knowledge index omits only or fields, the Hub fills them from only_from and fields. An only or fields the caller already wrote stays'),
   unknown_entries: z.literal('disclose').optional().describe('For a knowledge:facets or knowledge:index input: bind a view whose last page is truncated only because some entries are unknown (the view says unknown_only and carries unknown_entries), still marked truncated and carrying the count. The pack’s functions must state the unknown entries as unknown, never as zero or as a failure. Absent: every truncated last page is refused'),
 }).superRefine((slot,ctx)=>{
@@ -587,6 +680,10 @@ export const WorkflowInput = z.strictObject({
     if(!slot.accepts.some(type=>type.toLowerCase()==='application/json'))ctx.addIssue({code:'custom',path:['accepts'],message:'a predecessor validation record requires application/json'});
   }
   if(slot.from_runs!==undefined&&!slot.accepts.some(type=>type.toLowerCase()==='application/json'))ctx.addIssue({code:'custom',path:['accepts'],message:'an accepted validation record requires application/json'});
+  if(slot.from_runs?.after_start===true){
+    if(slot.role!=='expected')ctx.addIssue({code:'custom',path:['role'],message:'a run result bound after the start is an expected source: role expected'});
+    if(slot.many)ctx.addIssue({code:'custom',path:['many'],message:'a run result bound after the start binds one run: many false'});
+  }
   if(slot.index_default===undefined)return;
   if(!slot.accepts.includes('knowledge:index'))ctx.addIssue({code:'custom',path:['index_default'],message:'index_default applies to a knowledge:index input'});
   if(new Set(slot.index_default.fields).size!==slot.index_default.fields.length)ctx.addIssue({code:'custom',path:['index_default','fields'],message:'fields names a field once'});
@@ -624,6 +721,7 @@ export const WorkflowFile = z
       .describe('the run-context parts this workflow asks for beyond the defaults, for example builds: the knowledge base builds of the bound product, frozen with the run'),
     subject: Key.describe('the input slot that holds the judged source'),
     projection: PackFunctionRef.describe('ProjectionInput -> ProjectionOutput: the items of the run (W01)'),
+    refresh: ItemRefreshRef.optional().describe('ItemRefreshInput -> ItemRefreshOutput: the per-item overlay item.late from the run results bound after the start (W06 R[7]), called once per evaluation and run export; required exactly when an input declares from_runs.after_start'),
     expected_sources: PackFunctionRef.optional().describe('ExpectedSourcesInput -> ExpectedSourcesOutput: external objects to bind as expected sources'),
     feeding:z.strictObject({require_version:z.boolean().optional(),classifications:z.array(z.string().min(1)).max(1000).optional(),declared_line_parameter:Key.optional()}).optional(),
     contribution: z.strictObject({slot:Key,requirement:Key}).optional().describe('a dedicated knowledge-contribution run; slot holds the artifact and requirement names its item-level fact verification'),
@@ -652,6 +750,15 @@ export const WorkflowFile = z
     });
     w.context?.forEach((key, k) => {
       if (w.context!.findIndex((x) => x === key) !== k) ctx.addIssue({ code: 'custom', path: ['context', k], message: `context key ${key} is declared twice` });
+    });
+    const late = new Set(w.inputs.filter((i) => i.from_runs?.after_start === true).map((i) => i.slot));
+    if (late.size > 0 && w.refresh === undefined) ctx.addIssue({ code: 'custom', path: ['refresh'], message: 'a workflow with an input bound after the start (from_runs.after_start) declares refresh' });
+    if (late.size === 0 && w.refresh !== undefined) ctx.addIssue({ code: 'custom', path: ['refresh'], message: 'refresh needs an input bound after the start (from_runs.after_start)' });
+    if (late.has(w.subject)) ctx.addIssue({ code: 'custom', path: ['subject'], message: 'the subject slot is frozen at start_run, not bound after the start' });
+    w.refresh?.reads.forEach((slot, k) => {
+      if (!w.inputs.some((i) => i.slot === slot)) ctx.addIssue({ code: 'custom', path: ['refresh', 'reads', k], message: `refresh reads an unknown slot ${slot}` });
+      else if (late.has(slot)) ctx.addIssue({ code: 'custom', path: ['refresh', 'reads', k], message: `slot ${slot} is bound after the start and reaches refresh in late, not in reads` });
+      if (w.refresh!.reads.indexOf(slot) !== k) ctx.addIssue({ code: 'custom', path: ['refresh', 'reads', k], message: `refresh reads slot ${slot} twice` });
     });
     w.inputs.forEach((input, k) => {
       const from = input.index_default?.only_from;
@@ -698,6 +805,29 @@ export const ProjectionInput = z.strictObject({
 });
 export type ProjectionInput = z.infer<typeof ProjectionInput>;
 
+export const LateBoundInput = z.strictObject({
+  slot: Key,
+  run: RunId,
+  input: BoundInput.nullable().describe('the record as a bound input (its canonical JSON parsed by the json parser, meta {record, kind, schema, created_at, source}), as an explicit rec: binding would give it; null when none was readable'),
+  missing: MissingFact.optional().describe('why there is no record, in Chinese; absent when input is given'),
+});
+export type LateBoundInput = z.infer<typeof LateBoundInput>;
+
+export const ItemRefreshInput = z.strictObject({
+  items: z.array(SubjectItem).describe('the frozen items of the run, without late'),
+  inputs: z.array(BoundInput).describe('the frozen inputs of the slots refresh.reads names'),
+  late: z.array(LateBoundInput),
+  parameters: z.record(z.string(), z.unknown()),
+  context: RunContext,
+});
+export type ItemRefreshInput = z.infer<typeof ItemRefreshInput>;
+
+export const ItemRefreshOutput = z.strictObject({
+  items: z.array(z.strictObject({ id: ItemId, late: z.record(z.string(), z.unknown()) })),
+  warnings: z.array(PackWarning).optional(),
+});
+export type ItemRefreshOutput = z.infer<typeof ItemRefreshOutput>;
+
 /** An item as the projection function returns it: the Hub adds the source digest and forms the location reference. */
 export const ProjectedItem = z.strictObject({
   id: ItemId,
@@ -731,6 +861,16 @@ export const ProjectionOutput = z.union([
       .max(64)
       .optional()
       .describe('devices whose installed build the Hub looks at once the run\'s acquire is granted, by the digest of the inventory and the device\'s JSON Pointer in it (an executor seat bound to the same inventory and pointer is probed), with a label for display; only for a workflow that asks for the observations context'),
+    ask: z
+      .array(DeviceHelpTarget)
+      .max(8)
+      .optional()
+      .describe('lines to ask devices this run\'s lineage holds the lease of, what they expect at the end of each (the Hub types the line after a question mark and never presses Enter; the executor declares how); only for a workflow that declares leases'),
+    read: z
+      .array(DeviceReadTarget)
+      .max(1)
+      .optional()
+      .describe('one read-only command line to send to a device this run\'s lineage holds the lease of, for the device\'s own output (the executor declares the shape of a line it sends and where the text is; one line per run); only for a workflow that declares leases'),
   }),
   PackFailure,
 ]);
@@ -823,6 +963,8 @@ export const schemas: Record<string, z.ZodType> = {
   'pack-sample@1': PackSample,
   'projection-input@1': ProjectionInput,
   'projection-output@1': ProjectionOutput,
+  'item-refresh-input@1': ItemRefreshInput,
+  'item-refresh-output@1': ItemRefreshOutput,
   'expected-sources-input@1': ExpectedSourcesInput,
   'expected-sources-output@1': ExpectedSourcesOutput,
   'run-subject-input@1': RunSubjectInput,

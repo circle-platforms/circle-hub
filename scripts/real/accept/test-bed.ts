@@ -55,7 +55,7 @@ function machine(gold:TestBedGold):Machine {
       :next==='acquire'?{action:'acquire',bed:gold.acquire.bed,need:gold.need}
       :next==='extend'?{action:'extend',booking}
       :{action:'release',booking};
-    return [{tool:'hub_start_run',input:{pack:'test-bed',inputs:{inventory:{external:`doc:doc:${gold.inventory}`}},parameters,...(next==='extend'||next==='release'?{predecessor:booking}:{})}}];
+    return [{tool:'mcp__hub__start_run',input:{pack:'test-bed',inputs:{inventory:{external:`doc:doc:${gold.inventory}`}},parameters,...(next==='extend'||next==='release'?{predecessor:booking}:{})}}];
   };
   const stop=(reason:string):Reply=>{
     failure??=reason;
@@ -80,14 +80,14 @@ function machine(gold:TestBedGold):Machine {
       const rec=parseRecReference(text);
       if(current.run===null||rec===null)return stop(`${step} 缺少运行号或完整结果引用`);
       reference=rec;paging=true;pagesRead=1;
-      return [{tool:'hub_get_nodes',input:{reference:rec}}];
+      return [{tool:'mcp__hub__get_nodes',input:{reference:rec}}];
     }
     current.pages.push(text);
     const next=parseNextCall(text);
     if(next!==null){
       if(next.reference!==reference)return stop(`${step} 分页引用改变`);
       if(pagesRead>=MAX_PAGES)return stop(`${step} 在 ${MAX_PAGES} 页内仍未读全`);
-      pagesRead++;return [{tool:'hub_get_nodes',input:next}];
+      pagesRead++;return [{tool:'mcp__hub__get_nodes',input:next}];
     }
     current.complete=true;return advance();
   }};

@@ -1,0 +1,17 @@
+{
+  "state": {
+    "step": "负载均衡 > 后端池 > 创建 HTTP 后端池 pool_demo"
+  },
+  "questions": {
+    "pick_command": {
+      "type": "choice",
+      "instructions": "`step` is a Chinese test step written by a tester for a network device: the titles along one path of a mind map, joined by ' > '; the last parts are the action and the expected result. Each option is one CLI command. Which option is the CLI command that this step requires the tester to execute? A related command with the opposite effect or a different effect does not qualify. Choose `none` if none of the listed commands is that command.",
+      "criteria": {
+        "A": "pool create <pool_name> http — create an HTTP back-end pool",
+        "B": "pool create <pool_name> tcp — create a TCP back-end pool",
+        "C": "pool delete <pool_name> — delete a back-end pool",
+        "none": "None of the listed commands is the command this step needs"
+      }
+    }
+  }
+}

@@ -10,10 +10,10 @@ before(async()=>{pg=await startPostgres();});after(()=>pg?.stop());
 for(const disabled of ['runner','owner'])test(`a ${disabled} deactivated after projection cannot commit a new personal run`,{skip},async t=>{
  const h=await openHarness(pg);t.after(()=>h.close());h.review.pack.space=h.bob.id;for(const slot of h.review.workflow.inputs)slot.accepts=['application/json'];delete h.review.workflow.expected_sources;
  const map=await h.upload(h.alice,toyMap(standardDocument())),entered=barrier(),release=barrier(),active=h.kit.principals.lockActive.bind(h.kit.principals);let once=false;
- h.kit.principals.lockActive=async(...args)=>{if(args[0].id===h.alice.id&&!once){once=true;assert.ok(args[2]?.includes(h.bob.id));entered.release();await release.promise;}return active(...args);};
+ h.kit.principals.lockActive=async(...args)=>{if(args[0].id===h.alice.id&&args[2]?.includes(h.bob.id)&&!once){once=true;assert.ok(args[2].includes(h.bob.id));entered.release();await release.promise;}return active(...args);};
  const starting=h.service.startRun(h.alice,{pack:'toy-review',pack_space:h.bob.id,product:'Meadow',version:'3.2',inputs:{map:{reference:map}}},h.call());
  try{await reaches(entered,starting);await h.kit.principals.setDisabled(h.admin,disabled==='owner'?h.bob.id:h.alice.id,true);}finally{release.release();}
- const result=await starting;assert.equal(result.call_result,'error',JSON.stringify(result));assert.equal(result.errors[0]?.code,'SOURCE_UNAVAILABLE');assert.equal((await h.kit.store.list({kind:'run'})).items.length,0);
+ const result=await starting;assert.equal(once,true,'the personal owner commit guard was reached');assert.equal(result.call_result,'error',JSON.stringify(result));assert.equal(result.errors[0]?.code,'SOURCE_UNAVAILABLE');assert.equal((await h.kit.store.list({kind:'run'})).items.length,0);
 });
 test('disabling a personal workflow owner does not reinterpret an already frozen run evaluation', {skip},async t=>{
  const h=await openHarness(pg);t.after(()=>h.close());h.review.pack.space=h.bob.id;for(const slot of h.review.workflow.inputs)slot.accepts=['application/json'];delete h.review.workflow.expected_sources;

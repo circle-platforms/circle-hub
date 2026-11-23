@@ -1,3 +1,4 @@
+import { TEST_KNOWLEDGE_READ_PORTS } from '../../../../hub/knowledge/testing/read-ports.ts';
 // Production harness of the migration equivalence: the repository's synthetic product pack (famx) produces its two
 // family manuals from synthetic SVN directory fixtures through real Hub knowledge transactions and its sandboxed
 // producer. The same harness ran before the move (frozen in baseline/trees.json) and runs after it. All bytes are synthetic.
@@ -111,7 +112,7 @@ export async function produceFixture(postgres:TemporaryPostgres,fixture:Producti
   const wanted:string[]=[];const notes:string[]=[];
   addAdocSources(build,options,read,id=>wanted.push(id),notes);
   if(wanted.length||notes.length)throw new Error(`the sync step did not bind the whole fixture: ${JSON.stringify({wanted,notes})}`);
-  const knowledge=createKnowledge({records,parsers:createTestParserRegistry(),packs,external,admin,sandbox:{requireOsIsolation:false}});
+  const knowledge=createKnowledge({ ...TEST_KNOWLEDGE_READ_PORTS,records,parsers:createTestParserRegistry(),packs,external,admin,sandbox:{requireOsIsolation:false}});
   const sync=await knowledge.syncProduct(product,{options:{build},maxAgeSeconds:0,recheck:true});
   if(sync.counts.produced!==1)throw new Error(`production failed: ${JSON.stringify(sync.builds)}`);
   const body=await knowledge.store.composition(sync.builds[0].composition!);

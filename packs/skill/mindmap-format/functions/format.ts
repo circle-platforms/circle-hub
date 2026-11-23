@@ -1,5 +1,5 @@
 // Parser interface, typed parse errors and the parser registry (B03 F[0]: a parser@version declares the selector grammar).
-import { PROTOCOL_CODES, type ProtocolCode } from './generated/protocol.ts';
+import type { ProtocolCode } from './generated/protocol.ts';
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -93,7 +93,7 @@ export class ParseError extends Error {
   readonly detail: string | null;
   /** Recovery is defined where the failure is constructed, not inferred from translated prose. */
   readonly fix: string;
-  constructor(parser: string, message: string, offset: number | null = null, detail: string | null = null, fix: string = PROTOCOL_CODES.SOURCE_UNPARSEABLE.fix) {
+  constructor(parser: string, message: string, offset: number | null = null, detail: string | null = null, fix: string = '') {
     super(message);
     this.name = 'ParseError';
     this.parser = parser;
@@ -140,7 +140,7 @@ export class ParseSyntaxError extends ParseError {
 
 /** The input uses a construct the Hub refuses on principle (DOCTYPE, entity declarations). */
 export class ParseForbiddenError extends ParseError {
-  constructor(parser: string, message: string, offset: number | null = null, detail: string | null = null, fix: string = PROTOCOL_CODES.SOURCE_UNPARSEABLE.fix) {
+  constructor(parser: string, message: string, offset: number | null = null, detail: string | null = null, fix: string = '') {
     super(parser, message, offset, detail, fix);
     this.name = 'ParseForbiddenError';
   }

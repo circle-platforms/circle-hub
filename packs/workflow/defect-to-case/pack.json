@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.25",
+  "version": "1.6.27",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "1c540faf534534a28657a4601427492053fe41abdb84a691c2e809e5f58b1243",
-      "size": 11588
+      "sha256": "56b1fe267455b95273b55cfd1fdb03bfdb5818b6f1fdc26f177429555622f1e6",
+      "size": 10918
     },
     {
       "path": "checks.json",
@@ -23,13 +23,13 @@
     },
     {
       "path": "examples/submission.json",
-      "sha256": "730c327fd8bff528ad1a969488aeb97e4c32af0801094f099197767869da94a0",
-      "size": 1953
+      "sha256": "0e7b3a207b7fc1bcb7ca32b35fa312b55ddc7ccee5beb23e7dfeba4505837e12",
+      "size": 1957
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "71e7e17301ed9f703c8bb861b0f94c05d7849cb71e679b65ca4d9f0a5f7cb393",
-      "size": 1508
+      "sha256": "a46fb2a6b623afea54020c1acf625dbf89c9a0826ef2823219b71acc61a7d6c7",
+      "size": 1526
     },
     {
       "path": "functions/case-identity.ts",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "8d5d91bfa8a256b06b5fb75bf3c2337be62c190275223e46471be82d5f5d1a3c",
-      "size": 24539
+      "sha256": "0dd3f00c5f927e43edd7215662da1c065a900cc59b6055282468915714f80f9a",
+      "size": 24551
     },
     {
       "path": "functions/command-head.ts",
@@ -218,7 +218,7 @@
     },
     {
       "path": "tables/refutation-commands.json",
-      "sha256": "c732449a161c9213404a19366890d0c0cb2cf6bc395e1be1bce19980824d8a88",
+      "sha256": "7fc2a95de8dcb2c531f9cb644b59d5985a115b117b37b0e17aaa795d59b00f29",
       "size": 555
     },
     {
@@ -228,8 +228,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "e6045705d13ba4389002b2257eee059abe065d0bcda552730e30f02115c871d9",
-      "size": 2092
+      "sha256": "5dc66b34d455fed05b19c4cc409f90bef686e823ac3d48f990f8c626360825fc",
+      "size": 2098
     }
   ]
 }

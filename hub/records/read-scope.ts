@@ -7,10 +7,15 @@ import type {RecordStore,FindQuery,Page,StoredRecord,IndexEntry} from './api.ts'
 interface Variant {methods:Set<PropertyKey>;proxy:object}
 interface Scope {active:boolean;generation:number;version:{current:number;scopes:Set<Scope>};ports:WeakMap<object,Variant[]>;stores:WeakMap<object,RecordStore>;values:WeakMap<object,Map<string,Promise<unknown>>>;clearers:Set<()=>void>;data:ReadValues;verified:Map<string,Array<{parts:readonly string[];value:unknown}>>}
 const scopes=new AsyncLocalStorage<Scope>();
+const retirement=new AsyncLocalStorage<()=>void>();
+export function withReadRetirement<T>(retire:()=>void,read:()=>T):T{
+ const parent=retirement.getStore();
+ return retirement.run(()=>{parent?.();retire();},read);
+}
 const current=(scope:Scope)=>scope.active&&scope.generation===scope.version.current;
 const retired=(scope:Scope)=>scope.generation!==scope.version.current;
 /** Retire retained adapters and pending frozen results after a destructive account or payload write. */
-export function retireReadScope():void{const scope=scopes.getStore();if(!scope)return;scope.version.current++;for(const active of scope.version.scopes)for(const clear of active.clearers)clear();}
+export function retireReadScope():void{retirement.getStore()?.();const scope=scopes.getStore();if(!scope)return;scope.version.current++;for(const active of scope.version.scopes)for(const clear of active.clearers)clear();}
 export function withReadScope<T>(read:()=>T,options:{isolated?:boolean}={}):T{
  const parent=scopes.getStore();if(parent&&current(parent)&&!options.isolated)return read();
  const version=parent?.version??{current:0,scopes:new Set<Scope>()};

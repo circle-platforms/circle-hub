@@ -1,6 +1,12 @@
 {
   "schema": "case-compile.runtime-contract-format@1",
   "contract_schema": "ist.excel.function-contract",
+  "interface": {
+    "omitted": ["contract_sha256", "source_hashes", "certification", "atlas_snapshot"],
+    "runtime_omitted": ["runner_source", "runner_sha256"],
+    "source_omitted": ["line"],
+    "source_in": ["objects", "entries", "execute_actions"]
+  },
   "certification_schema": "ist.excel.capability-certification-set",
   "statuses": ["enabled", "disabled", "internal"],
   "dispatches": ["direct_method_call", "cmd_primitive", "execute_registry", "checkpoint_two_argument", "checkpoint_v2_three_argument", "builtin_special_case"],

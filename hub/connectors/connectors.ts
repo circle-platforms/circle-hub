@@ -1,3 +1,5 @@
+import { secretVersionKey } from './secret-version.ts';
+import { isAdmin } from '../records/api.ts';
 // Wiring of the connectors: the resource registry, one runtime per enabled resource (HttpSource, and the LoginManager or
 // StaticCredential of the resource), the read engine, and the two ports of hub/ports.ts this package provides:
 // ExternalReaderPort (accepts, read) and ResourceCatalogPort. A resource uses the system pack version and digest its
@@ -9,7 +11,7 @@ import { CredentialStop } from './credential-stop.ts';
 import { callPackFunction, osIsolationAvailable, type SandboxLimits } from '../rules/api.ts';
 import { createDefaultRegistry, type ParserRegistry } from '../refs/api.ts';
 import { type ExternalRead, type ExternalReadContext, type ExternalReaderPort, type PacksPort, type ResourceCatalogPort, type ResourceListing } from '../ports.ts';
-import { canonicalBytes, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
+import { canonicalBytes, sha256Hex, VaultReadinessError, type Principal, type RecordsKit } from '../records/api.ts';
 import { step } from '../telemetry/api.ts';
 import type { ReadDeclaration } from '../../contracts/src/resources.ts';
 import { ConnectorError, asConnectorError } from './errors.ts';
@@ -20,7 +22,7 @@ import { ProfileCache, type LoadedProfile } from './profiles.ts';
 import { ReadEngine, externalRoutingType, externalSizeReason, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadEngineOptions, type ReadOutcome, type ResourceRuntime } from './read.ts';
 import { TrialLoginStops, trialSystem, forgetTrialLogin, type SystemTrialInput, type SystemTrialReport, type SystemTrialForget } from './trial.ts';
 import { Redactor } from './redact.ts';
-import { ResourceRegistry, sessionEntry, resourceConsumer, storedCredential, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
+import { ResourceRegistry, sessionEntry, storedCredential, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
 import { compileRoutes } from './routes.ts';
 import type { ResourceRecord } from '../../contracts/src/resources.ts';
 
@@ -74,7 +76,6 @@ export interface ConnectorsOptions {
 export interface ResourceAdmin {
   addResource(by: Principal, input: AddResourceInput): Promise<ResourceRecord>;
   updateResource(by: Principal, id: string, changes: UpdateResourceInput): Promise<ResourceRecord>;
-  /** Admins get addresses and plaintext declarations; any other valid account the rows without them. */
   listResources(by: Principal): Promise<ResourceListing[]>;
   /**
    * Admins only: one resource, enabled or not, with each named reference, wire rule and current storage metadata
@@ -169,14 +170,20 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     });
 
   async function runtimeOf(state: ResourceState, loaded: Awaited<ReturnType<ProfileCache['load']>>, context?: ExternalReadContext): Promise<ResourceRuntime> {
-    for (const material of await records.variables.recentSecrets()) redactor.add(material.value);
+    let recent;
+    try { recent = await records.variables.recentSecrets(); }
+    catch (error) {
+      if (error instanceof VaultReadinessError) context?.adminNote?.(error.adminMessage);
+      throw error;
+    }
+    for (const material of recent) redactor.add(material.value);
     const resolved = await records.variables.resolveVariables(state.resource.settings,state.resource.id,context?.variables);
     resolved.uses=resolved.uses.map(u=>({...u,at:u.at.replace('#/','#/settings/')}));
     const original = state.resource;
     const requests = Object.entries(original.credentials).map(([item,entry])=>{
       const name=secretNameOf(entry);
       if(!name)throw new ConnectorError('CREDENTIAL_MISSING',`资源 ${original.id} 的凭据还是旧写法：用 circle-hub resource update ${original.id} --credential ${item}=<密钥名> 改成引用，原值会迁移过去`);
-      return {name,consumer:resourceConsumer(original,item)};
+      return {name};
     });
     let materials;
     try {materials=await records.variables.readSecrets(requests);}catch(error) {throw new ConnectorError('CREDENTIAL_MISSING',error instanceof Error ? error.message : '密钥未设置；请 secret set');}
@@ -187,13 +194,14 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       const value=m.metadata.digest_rule===rule?m.value:storedCredential(m.value,rule);
       redactor.addSent(value);values.set(original.credentials[item]+'#'+item,value);
     }
-    const gate=materials.length?new CredentialStop(records.store,records.vault,materials.map(m=>m.decision),materials.map(m=>m.name),original.id):null;
+    const gate=materials.length?new CredentialStop(records.store,records.vault,materials.map(secretVersionKey),materials.map(m=>m.name),original.id):null;
     const epoch=await gate?.epoch() ?? '';
-    const dependencies=[...resolved.uses.map(u=>u.decision),...materials.map(m=>m.decision)];
+    const dependencies=resolved.uses.map(u=>u.decision);
+    const secretVersions=materials.map(secretVersionKey);
     const vault=new Proxy(records.vault,{get(target,key){if(key==='getText')return async (entry:string)=>values.has(entry)?values.get(entry)!:target.getText(entry);const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}});
     const credentials=Object.fromEntries(Object.entries(original.credentials).map(([item,entry])=>[item,entry+'#'+item]));
     state={...state,resource:{...original,settings:resolved.value as Record<string,unknown>}};
-    const key = `${state.bound}|${state.decision}|${loaded.pack.digest}|${dependencies.join("|")}|${epoch}`;
+    const key = `${state.bound}|${state.decision}|${loaded.pack.digest}|${dependencies.join("|")}|${JSON.stringify(secretVersions)}|${epoch}`;
     const known = runtimes.get(state.resource.id);
     if (known !== undefined && known.key === key) return known.runtime;
     const { resource } = state;
@@ -221,7 +229,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         system_pack_digest: resource.system_pack_digest,
         credentials: resource.credentials,
         credential_digests: resource.credential_digests,
-        dependencies, epoch,
+        dependencies, secretVersions, epoch,
       }),
     );
     let guard = guards.get(resource.id);
@@ -268,7 +276,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     }
     const runtime: ResourceRuntime = {
       resource,
-      variables:[...resolved.uses,...materials.map((m,i)=>({at:resource.id+'#/credentials/'+Object.keys(original.credentials)[i].replaceAll('~','~0').replaceAll('/','~1'),name:m.name,decision:m.decision}))],
+      variables:[...resolved.uses,...materials.map((m,i)=>({at:resource.id+'#/credentials/'+Object.keys(original.credentials)[i].replaceAll('~','~0').replaceAll('/','~1'),kind:'secret' as const,name:m.name,version:m.version,sealed_sha256:m.sealed_sha256}))],
       dependencies,
       gate,
       decision: state.decision,
@@ -289,6 +297,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     const out: { runtime: ResourceRuntime; read: ReadDeclaration }[] = [];
     for (const state of await registry.states()) {
       if (!state.enabled) continue;
+      if (context && !await records.authorizations.canUseResource(context.principal.id, state.resource.id)) continue;
       let loaded;
       try {
         loaded = await loadBound(state);
@@ -338,6 +347,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         if (type === null) return false;
         registry.invalidate();
         for(const state of await registry.states()) if(state.enabled) {
+          if(context && !await records.authorizations.canUseResource(context.principal.id, state.resource.id))continue;
           try {if((await loadBound(state)).profile.reads.some(r=>r.external===type))return true;}
           catch(error){
             const failed=asConnectorError(error,'PACK_UNAVAILABLE');
@@ -355,10 +365,12 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
       const shown = typeof id === 'string' ? id : String(id);
       try {
+        const readerId = context?.principal?.id;
+        const account = typeof readerId === 'string' ? await records.principals.get(readerId) : null;
+        if (account === null || account.disabled || account.deleted_at) throw new ConnectorError('READER_INVALID', '读取者不是有效的 Hub 账号');
         context={...context,variables:context.variables??await records.variables.snapshot()};
         const sizeReason = typeof id === 'string' ? externalSizeReason(id) : null;
         if (sizeReason !== null) {
-          const account = await records.principals.get(context.principal.id);
           return { ok: false, id: shown, reason: sizeReason,
             ...(account !== null && !account.disabled ? { inputError: {message:sizeReason,fix:'缩短读取键后重读'} } : {}) };
         }
@@ -391,7 +403,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   async function resourceList(by:Principal):Promise<ResourceListing[]> {
     const rows=await registry.list(by);
     const user=await records.principals.get(by.id);
-    if(user?.role!=='admin' || user.disabled)return rows;
+    if(!user||!isAdmin(user) || user.disabled)return rows;
     for(const row of rows) {
       const state=await registry.get(row.id);
       if(!state)continue;
@@ -408,7 +420,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     async list(user: Principal): Promise<ResourceListing[]> {
       try {
         const viewer = typeof user?.id === 'string' ? await records.principals.get(user.id) : null;
-        if (viewer === null || viewer.disabled || viewer.role !== 'admin') return [];
+        if (viewer === null || viewer.disabled || !isAdmin(viewer)) return [];
         return await resourceList(viewer);
       } catch {
         return [];
@@ -421,12 +433,12 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   const admin: ResourceAdmin = {
     async trial(by, input) {
       const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;
-      if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能尝试连接业务系统');
+      if (viewer === null || viewer.disabled || !isAdmin(viewer)) throw new ConnectorError('ACCESS_DENIED', '只有管理员能尝试连接业务系统');
       return trialSystem({ store: records.store, load: (ref) => profiles.load(ref), redactor, now, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.log ? { log: options.log } : {}), failedLogins: failedTrialLogins }, input, viewer.id);
     },
     async forgetTrialLogin(by, input) {
       const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;
-      if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能清除登录失败记录');
+      if (viewer === null || viewer.disabled || !isAdmin(viewer)) throw new ConnectorError('ACCESS_DENIED', '只有管理员能清除登录失败记录');
       return forgetTrialLogin({ load: (ref) => profiles.load(ref), redactor, now, failedLogins: failedTrialLogins }, input, viewer.id);
     },
     addResource: (by, input) => registry.add(by, input),
@@ -448,7 +460,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     },
     async loginStatus(by, id) {
       const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;
-      if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能看登录状态');
+      if (viewer === null || viewer.disabled || !isAdmin(viewer)) throw new ConnectorError('ACCESS_DENIED', '只有管理员能看登录状态');
       const state = await registry.get(id);
       if (state === null) return null;
       const runtime = await runtimeOf(state, await loadBound(state));
@@ -457,10 +469,14 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       return status&&shared?.stopped?{...status,stopped:true,cooldownUntil:null,failure:status.failure??shared.code??'LOGIN_FAILED'}:status;
     },
     resetLogin: async (by,id,note)=>{
-      const actual=await records.principals.get(by.id);if(!actual||actual.disabled||actual.role!=='admin')throw new ConnectorError('ACCESS_DENIED');
+      const actual=await records.principals.get(by.id);if(!actual||actual.disabled||!isAdmin(actual))throw new ConnectorError('ACCESS_DENIED');
       registry.invalidate();const state=await registry.get(id);
-      if(state) { const defs=await records.variables.list(by);const names=Object.values(state.resource.credentials).map(secretNameOf).filter((name):name is string=>name!==null);const decisions=names.map(name=>defs.find(d=>d.kind==='secret'&&d.name===name&&d.definition)?.decision.digest).filter((v):v is string=>!!v);
-      if(decisions.length)await new CredentialStop(records.store,records.vault,decisions,names,id).reset(); }
+      if(state) {
+        const names=Object.values(state.resource.credentials).map(secretNameOf).filter((name):name is string=>name!==null);
+        const identities=await Promise.all(names.map(name=>records.vault.secretIdentity(name)));
+        const versions=identities.filter(identity=>identity!==null).map(secretVersionKey);
+        if(versions.length)await new CredentialStop(records.store,records.vault,versions,names,id).reset();
+      }
       await registry.resetLogin(by,id,note);
     },
   };
@@ -478,6 +494,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         registry.invalidate();
         const state = await registry.get(resource);
         if (state === null || !state.enabled) return { ok: false, external, code: 'RESOURCE_UNAVAILABLE', reason: `资源 ${redactor.text(String(resource))} 不存在或已停用`, manifest: null };
+        if (!await records.authorizations.canUseResource(context.principal.id, resource)) return { ok: false, external, code: 'ACCESS_DENIED', reason: '没有读取该资源的权限', manifest: null };
         const loaded = await loadBound(state);
         const read = loaded.profile.reads.find((r) => r.name === readName);
         if (read === undefined) return { ok: false, external, code: 'READ_UNDECLARED', reason: `系统包没有读取 ${redactor.text(String(readName))}`, manifest: null };

@@ -2,29 +2,269 @@
 import T from '../tables/recompose-format.json' with { type: 'json' };
 import { canonicalJson } from './canonical-json.ts';
 import { authorityOf, reviewedAtom, acceptedPair, object } from './recompose-evidence.ts';
-import { compileGrammar, commandIdentity, parseCommandState, type CommandDefinition } from './generated/command-grammar.ts';
-import type { AuthorAtom } from './compile-structure.ts';
+import { compileGrammar, commandIdentity, commandTokens, parseCommandState, type CommandDefinition, type CommandGrammar } from './generated/skills/command-tools/command-check/grammar.ts';
+import type { AuthorAtom } from './generated/skills/mindmap-format/case-structure/index.ts';
 import SHAPE from '../tables/recompose-record.schema.json' with { type: 'json' };
 import { schema } from './schema.ts';
 import CODES from '../tables/recompose-codes.json' with { type: 'json' };
 const text = (v: any) => typeof v === 'string' && v.length > 0;
 const exitOk = (v: any) => object(v) && ['action', 'object', 'owner', 'due'].every(k => text(v[k]));
 const unknownOk = (v: any) => object(v) && ['missing', 'next_action', 'audience', 'due'].every(k => text(v[k]));
+type CommandToken = { value: string; quoted: boolean; raw: string };
+type AdaptedCommandDiagnosis =
+    | { kind: 'ok' }
+    | { kind: 'unknown'; missing: string; owner: string }
+    | {
+        kind: 'syntax';
+        reasonKind: 'lexical_error' | 'template_placeholder' | 'signature_mismatch' | 'unknown_command_head';
+        matchedPath: string | null;
+        placeholder?: string;
+        failedTokenIndex?: number;
+        failedToken?: string;
+        expectedTypes?: string[];
+        why: string;
+    };
+function templatePlaceholderToken(tokens: readonly CommandToken[]): { index: number; raw: string } | undefined {
+    for (let i = 0; i < tokens.length; i++) {
+        const { value, quoted, raw } = tokens[i];
+        const trimmed = value.trim();
+        if (quoted) {
+            if (/^<(?:arg\d+:[^>\s/]+|[\u4e00-\u9fffA-Za-z_][\u4e00-\u9fffA-Za-z0-9_.:|-]*)>$/.test(trimmed))
+                return { index: i, raw };
+            continue;
+        }
+        if (/^<[^>]+>$/.test(value) || /<arg\d+:/i.test(value))
+            return { index: i, raw };
+        const strippedIpv6 = value.replace(/\[[0-9a-fA-F:]+\]/g, '');
+        if (value === '[' || value === ']' || value === '...' || strippedIpv6.startsWith('[') || strippedIpv6.endsWith(']'))
+            return { index: i, raw };
+    }
+    return undefined;
+}
+function describeParamType(param: any): string {
+    const t = typeof param?.type === 'string' && param.type ? param.type : '签名声明的类型';
+    if (t === 'keyword') {
+        const kw = param.keyword ?? param.name;
+        return kw ? `关键字「${kw}」` : '关键字';
+    }
+    if (t === 'enum' && Array.isArray(param.values) && param.values.length > 0)
+        return `枚举值（${param.values.join('|')}）`;
+    if ((t === 'int' || t === 'port') && (param.minimum !== undefined || param.maximum !== undefined)) {
+        const min = param.minimum !== undefined ? String(param.minimum) : '-∞';
+        const max = param.maximum !== undefined ? String(param.maximum) : '+∞';
+        return `${t}（范围 ${min}..${max}）`;
+    }
+    if (t === 'string' && (param.minLength !== undefined || param.maxLength !== undefined)) {
+        const min = param.minLength !== undefined ? String(param.minLength) : '0';
+        const max = param.maxLength !== undefined ? String(param.maxLength) : '+∞';
+        return `string（长度 ${min}..${max}）`;
+    }
+    return t;
+}
+function argParamMatch(param: any, value: string): boolean {
+    if (param?.unchecked_constraints?.length)
+        return false;
+    const len = [...value].length;
+    if (param?.minLength !== undefined && len < param.minLength || param?.maxLength !== undefined && len > param.maxLength)
+        return false;
+    switch (param?.type) {
+        case 'string':
+            return true;
+        case 'keyword':
+            return value === (param.keyword ?? param.name);
+        case 'enum':
+            return Array.isArray(param.values) && param.values.includes(value);
+        case 'int':
+        case 'port': {
+            if (!/^-?\d+$/.test(value))
+                return false;
+            const n = Number(value);
+            return Number.isSafeInteger(n) && (param.minimum === undefined || n >= param.minimum) && (param.maximum === undefined || n <= param.maximum) && (param.type !== 'port' || n >= 0 && n <= 65535);
+        }
+        case 'ipv4': {
+            const parts = value.split('.');
+            return parts.length === 4 && parts.every(p => /^\d{1,3}$/.test(p) && (p === '0' || !p.startsWith('0')) && Number(p) <= 255);
+        }
+        case 'mask': {
+            const parts = value.split('.');
+            if (!(parts.length === 4 && parts.every(p => /^\d{1,3}$/.test(p) && (p === '0' || !p.startsWith('0')) && Number(p) <= 255)))
+                return false;
+            const bits = parts.map(p => Number(p).toString(2).padStart(8, '0')).join('');
+            let zero = false;
+            for (const bit of bits) {
+                if (bit === '0')
+                    zero = true;
+                else if (zero)
+                    return false;
+            }
+            return true;
+        }
+        case 'ipv6': {
+            if (!value.includes(':') || value.includes('%') || value.includes(':::'))
+                return false;
+            const split = value.split('::');
+            if (split.length > 2)
+                return false;
+            const parts = value.split(':');
+            let count = 0;
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                if (!part)
+                    continue;
+                if (part.includes('.')) {
+                    const v4 = part.split('.');
+                    if (i !== parts.length - 1 || !(v4.length === 4 && v4.every(p => /^\d{1,3}$/.test(p) && (p === '0' || !p.startsWith('0')) && Number(p) <= 255)))
+                        return false;
+                    count += 2;
+                }
+                else {
+                    if (part.length > 4 || !/^[0-9a-fA-F]+$/.test(part))
+                        return false;
+                    count++;
+                }
+            }
+            return split.length === 2 ? count < 8 : count === 8 && !value.startsWith(':') && !value.endsWith(':');
+        }
+        case 'hostname':
+        case 'ip_or_hostname':
+            return value.length > 0 && value.length <= 253;
+        default:
+            return true;
+    }
+}
+function diagnoseSignatureMismatch(
+    atomId: string,
+    cmdIdx: number,
+    line: string,
+    matchedPath: string,
+    signatures: readonly any[] | undefined,
+    tokens: readonly CommandToken[],
+    matchedWordCount: number,
+): Extract<AdaptedCommandDiagnosis, { kind: 'syntax' }> {
+    const args = tokens.slice(matchedWordCount);
+    let bestT = 0;
+    const expectedAtT = new Map<number, Set<string>>();
+    const requiredAfterT = new Set<string>();
+    const addExpected = (t: number, desc: string) => {
+        let set = expectedAtT.get(t);
+        if (!set) {
+            set = new Set();
+            expectedAtT.set(t, set);
+        }
+        set.add(desc);
+    };
+    for (const sig of signatures ?? []) {
+        const params: any[] = Array.isArray(sig?.params) ? sig.params : [];
+        const visited = new Set<string>();
+        const walk = (p: number, t: number): void => {
+            const key = `${p}:${t}`;
+            if (visited.has(key))
+                return;
+            visited.add(key);
+            if (t > bestT)
+                bestT = t;
+            if (t === args.length) {
+                for (let k = p; k < params.length; k++) {
+                    if (params[k]?.optional !== true) {
+                        requiredAfterT.add(describeParamType(params[k]));
+                        break;
+                    }
+                    requiredAfterT.add(describeParamType(params[k]));
+                }
+                return;
+            }
+            if (p < params.length) {
+                if (argParamMatch(params[p], args[t].value))
+                    walk(p + 1, t + 1);
+                else
+                    addExpected(t, describeParamType(params[p]));
+                if (params[p]?.optional === true)
+                    walk(p + 1, t);
+            }
+        };
+        walk(0, 0);
+    }
+    if (bestT >= args.length) {
+        const failIdx = tokens.length - 1;
+        const failTok = tokens[failIdx]?.raw ?? line;
+        const expectedTypes = [...requiredAfterT];
+        const expectedClause = expectedTypes.length ? `，该位置要求 ${expectedTypes.join(' / ')}` : '';
+        return {
+            kind: 'syntax',
+            reasonKind: 'signature_mismatch',
+            matchedPath,
+            failedTokenIndex: failIdx,
+            failedToken: failTok,
+            ...(expectedTypes.length ? { expectedTypes } : {}),
+            why: `改写 ${atomId} 的第 ${cmdIdx + 1} 条命令「${line}」在已匹配命令 ${matchedPath} 后缺少必需参数（止于「${failTok}」）${expectedClause}（见已匹配命令 ${matchedPath} 的签名）`,
+        };
+    }
+    const failIdx = matchedWordCount + bestT;
+    const failTok = tokens[failIdx]?.raw ?? line;
+    const expectedTypes = [...(expectedAtT.get(bestT) ?? [])];
+    const requirementText = expectedTypes.length ? `该位置要求 ${expectedTypes.join(' / ')}` : '该位置不接受多余参数';
+    return {
+        kind: 'syntax',
+        reasonKind: 'signature_mismatch',
+        matchedPath,
+        failedTokenIndex: failIdx,
+        failedToken: failTok,
+        ...(expectedTypes.length ? { expectedTypes } : {}),
+        why: `改写 ${atomId} 的第 ${cmdIdx + 1} 条命令「${line}」在已匹配命令 ${matchedPath} 后参数或数量不合法（词元 #${failIdx}：「${failTok}」），${requirementText}（见已匹配命令 ${matchedPath} 的签名）`,
+    };
+}
+const RECORD_FIX = '由模型改正重组记录后重交';
+function diagnoseAdaptedCommand(grammar: CommandGrammar, entriesCount: number, catalogComplete: boolean, atomId: string, cmdIdx: number, line: string): AdaptedCommandDiagnosis {
+    if (entriesCount === 0)
+        return { kind: 'unknown', missing: '改写后的命令没有锁定目录的完整语法身份', owner: '产品包作者' };
+    const tokens = commandTokens(line);
+    if (!tokens?.length)
+        return { kind: 'syntax', reasonKind: 'lexical_error', matchedPath: null, failedTokenIndex: 0, failedToken: line, why: `改写 ${atomId} 的第 ${cmdIdx + 1} 条命令「${line}」词法不完整或含非法字符（词元 #0：「${line}」）` };
+    let node = grammar.root, matchedPath: string | null = null, matchedNode: typeof node | null = null, matchedWordCount = 0, walkAt = 0;
+    while (walkAt < tokens.length && !tokens[walkAt].quoted) {
+        const next = node.children.get(tokens[walkAt].value);
+        if (!next)
+            break;
+        node = next;
+        walkAt++;
+        if (node.path !== null) {
+            matchedPath = node.path;
+            matchedNode = node;
+            matchedWordCount = walkAt;
+        }
+    }
+    const placeholder = templatePlaceholderToken(tokens);
+    if (placeholder)
+        return { kind: 'syntax', reasonKind: 'template_placeholder', matchedPath, placeholder: placeholder.raw, failedTokenIndex: placeholder.index, failedToken: placeholder.raw, why: `改写 ${atomId} 的第 ${cmdIdx + 1} 条命令「${line}」含未替换占位符 ${placeholder.raw}${matchedPath ? `（已匹配命令前缀 ${matchedPath}）` : ''}` };
+    const state = parseCommandState(grammar, line);
+    if (state.status === 'parameters_unchecked')
+        return { kind: 'unknown', missing: state.missing ?? '改写后的命令没有锁定目录的完整语法身份', owner: '产品包作者' };
+    if (state.status === 'not_command') {
+        if (matchedPath !== null)
+            return diagnoseSignatureMismatch(atomId, cmdIdx, line, matchedPath, matchedNode?.signatures, tokens, matchedWordCount);
+        if (!catalogComplete)
+            return { kind: 'unknown', missing: '改写后的命令没有锁定目录的完整语法身份', owner: '产品包作者' };
+        const failIdx = walkAt < tokens.length ? walkAt : 0;
+        const failTok = tokens[failIdx]?.raw ?? line;
+        return { kind: 'syntax', reasonKind: 'unknown_command_head', matchedPath: null, failedTokenIndex: failIdx, failedToken: failTok, why: `改写 ${atomId} 的第 ${cmdIdx + 1} 条命令「${line}」未命中锁定目录的已知命令前缀（词元 #${failIdx}：「${failTok}」）` };
+    }
+    return { kind: 'ok' };
+}
 export function recomposeOut(verdict: string, statement: string, extra: any = {}) { return { verdict, statement, grounds: [], tier: 'blocking', ...extra }; }
 export function checkRecomposition(input: any): any[] {
     const s = input.subject ?? {}, fields = s.fields ?? {}, record = s.data, ctx = s.context ?? {}, atoms: AuthorAtom[] = fields.atoms ?? [], out: any[] = [];
-    const unknown = (missing: string, owner = '重组模型与产品包作者', at = '/record') => { const full = missing + '；等待' + owner + '在重新提交之前补事实并重产'; out.push(recomposeOut('unknown', full, { reason: 'missing_input', missing: full, pointer: at, data: { missing_fact: missing, next_action: '补事实并重产', owner, due: '重新提交之前' } })); };
+    const unknown = (missing: string, owner = '重组模型与产品包作者', at = '/record', next?: string) => { const full = missing + '；等待' + owner + '在重新提交之前补事实并重产' + (next ? '。下一步' + next : ''); out.push(recomposeOut('unknown', full, { reason: 'missing_input', missing: full, pointer: at, data: { missing_fact: missing, next_action: next ?? '补事实并重产', owner, due: '重新提交之前' } })); };
     const bad = (key: string, why: string, at: any = '/record', data: any = {}) => { if (typeof at !== 'string') {
         data = { ...at, ...data };
         at = '/record';
-    } const row = CODES.violations.find(r => r.code === 'recompose.' + key); out.push(recomposeOut('refute', why + '；' + (row?.fix ?? '重组者按声明形状修正后重交'), { ...(row ? { code: row.code } : {}), pointer: at, ...(data.conditional_on_judgment ? { judgment_sources: ['/record/0'] } : {}), data: { ...data, missing_fact: why, next_action: row?.fix ?? '重组者修正后重交', owner: '重组者/产品包作者', due: '重新提交之前' } })); };
+    } const row = CODES.violations.find(r => r.code === 'recompose.' + key); out.push(recomposeOut('refute', why + '；' + (row?.fix ?? '重组者按声明形状修正后重交'), { ...(row ? { code: row.code } : {}), pointer: at, ...(data.conditional_on_judgment ? { judgment_sources: ['/record/0'] } : {}), data: { ...data, missing_fact: why, next_action: row?.fix ?? '重组者修正后重交', owner: data.owner ?? '重组者/产品包作者', due: '重新提交之前' } })); };
     if (!object(record)) {
         unknown('缺独立 recompose-record@1 产物', '重组模型');
         return out;
     }
     const physical = (v: any): boolean => Array.isArray(v) ? v.some(physical) : object(v) ? Object.entries(v).some(([k, x]) => T.bed_fields.includes(k) || physical(x)) : false;
     if (physical(record) || record.ledgers?.rebindings?.length)
-        bad('bound_to_bed', '重组账本出现物理目标字段或重绑定项');
+        bad('bound_to_bed', '重组账本出现物理目标字段或用例参数替换项');
     for (const c of Array.isArray(record.sources?.candidates) ? record.sources.candidates : [])
         if (c.signing_authority !== false)
             bad('candidate_signed', '候选没有签发权，必须显式 false');
@@ -33,31 +273,29 @@ export function checkRecomposition(input: any): any[] {
         return out;
     }
     for (const u of record.unknowns ?? [])
-        if (unknownOk(u))
-            unknown(u.missing + '；' + u.next_action, u.audience);
-        else
+        if (!unknownOk(u))
             bad('missing_without_exit', '未知条目缺 missing/next_action/audience/due');
     if (record.schema !== T.record || record.case?.source_ref !== fields.source_ref || record.case?.node !== fields.node || record.case?.id !== fields.case_id)
         bad('quote_not_verbatim', '产物没有绑定实际作者用例身份');
     if (fields.missing?.length)
         unknown(fields.missing.join('；'), '作者');
     if (!atoms.length)
-        unknown('缺由结构投影计算的作者原子全集', '作者');
+        unknown('缺由结构投影计算的用例原句全集', '作者');
     const ids = atoms.map(a => a.id), declared = Array.isArray(record.atoms) ? record.atoms : [];
     const key = (values: any) => Array.isArray(values) ? [...values].sort() : [];
     if (canonicalJson(key(declared.map((a: any) => a.id))) !== canonicalJson(key(ids)))
-        bad('atom_dropped', '作者原子全集不等于结构投影', {}, { expected: ids });
+        bad('atom_dropped', '用例原句全集不等于结构投影', {}, { expected: ids });
     if (record.ledgers?.original?.length !== atoms.length || record.ledgers.original.some((o: any) => !ids.includes(o.atom)))
-        bad('quote_not_verbatim', '原文账含重复或作者全集之外的原子');
+        bad('quote_not_verbatim', '原文账含重复的用例原句，或含全集之外的用例原句');
     for (const atom of atoms) {
         const row = declared.find((a: any) => a.id === atom.id), original = record.ledgers?.original?.filter((a: any) => a.atom === atom.id) ?? [];
         if (!row || row.text !== atom.text || row.quote_ref !== atom.reference || canonicalJson(row.span) !== canonicalJson([atom.start, atom.end]) || original.length !== 1 || original[0].text !== atom.text || original[0].quote_ref !== atom.reference)
-            bad('quote_not_verbatim', '原文账必须逐字等于投影的原子及位置');
+            bad('quote_not_verbatim', '原文账必须逐字等于投影的用例原句及位置');
     }
     for (const [name, kind] of [['intent', 'action'], ['expectation', 'expectation']]) {
         const v = record.contract?.[name];
         if (!object(v) || v.verbatim !== true || !atoms.some(a => (a.kind === kind || name === 'intent' && a.kind === 'intent') && a.text === v.text && a.reference === v.quote_ref))
-            bad('quote_not_verbatim', name + ' 不等于原件中声明位置的逐字原子');
+            bad('quote_not_verbatim', name + ' 不等于原件中声明位置的用例原句');
     }
     const method = record.contract?.method;
     if (!object(method) || !T.method_kinds.includes(method.kind))
@@ -65,44 +303,33 @@ export function checkRecomposition(input: any): any[] {
     else if (method.kind === 'missing') {
         if (!record.unknowns?.some(unknownOk))
             bad('missing_without_exit', '方法真实欠缺而没有具名出口');
-        else
-            unknown('缺验证方法：' + record.unknowns.map((u: any) => u.missing).join('；'));
     }
     else if (!text(method.text) || !Array.isArray(method.sources) || !method.sources.length || !text(method.basis))
         unknown('缺方法来源和具名声明位置', '重组模型');
     if (!object(record.ledgers) || !['original', 'adapted', 'concretizations', 'rebindings'].every(k => Array.isArray(record.ledgers[k])))
-        bad('atom_dropped', '必须分开保留四本账');
+        bad('atom_dropped', '必须分开保留原文、改写、具体取值、重新绑定四类记录');
     const coverage = record.coverage ?? {}, mapped = object(coverage.mapped) ? coverage.mapped : {}, unmapped = Array.isArray(coverage.unmapped) ? coverage.unmapped : [], slots = Array.isArray(record.expectation_slots) ? record.expectation_slots : [];
     if (canonicalJson(key(coverage.author_atoms)) !== canonicalJson(key(ids)) || canonicalJson(key([...Object.keys(mapped), ...unmapped])) !== canonicalJson(key(ids)) || new Set([...Object.keys(mapped), ...unmapped]).size !== ids.length)
-        bad('atom_dropped', '覆盖分母和分子必须逐项对应实际作者原子，不能自报覆盖率');
+        bad('atom_dropped', '覆盖分母和分子必须逐项对应实际的用例原句，不能自报覆盖率');
     const slotIds = slots.map((v: any) => v.slot);
     if (new Set(slotIds).size !== slotIds.length)
-        bad('atom_dropped', '期望位身份重复');
+        bad('atom_dropped', '期望的判断依据有重复的编号');
     for (const [id, targets] of Object.entries(mapped))
         if (!Array.isArray(targets) || !targets.length || new Set(targets).size !== targets.length || targets.some(t => !slotIds.includes(t)))
-            bad('atom_dropped', '原子 ' + id + ' 没有实际期望位映射');
-    if (unmapped.length && record.status === 'complete')
-        bad('atom_dropped', '存在未映射原子，不能自报 complete');
-    for (const id of unmapped) {
-        if (!(record.unknowns ?? []).some((u: any) => unknownOk(u) && (u.atom === id || u.atom === undefined)))
-            bad('missing_without_exit', '未映射原子 ' + id + ' 缺具名出口');
-        else
-            unknown('作者原子 ' + id + ' 尚未映射', '重组模型');
-    }
+            bad('atom_dropped', '用例原句 ' + id + ' 没有对应的期望判断依据');
+    for (const id of unmapped)
+        if (atoms.find(a => a.id === id)?.kind === 'expectation')
+            bad('atom_dropped', '作者期望 ' + id + ' 没有对应的判断依据');
     for (const atom of atoms.filter(a => a.kind === 'expectation'))
         if (!slots.some((v: any) => v.atom === atom.id))
-            bad('atom_dropped', '作者期望 ' + atom.id + ' 没有对应期望位');
+            bad('atom_dropped', '作者期望 ' + atom.id + ' 没有对应的判断依据');
     for (const slot of slots) {
         if (!T.knowledge_locations.includes(slot.knowledge_location))
             bad('', '期望知识位置不在三值闭集');
         if (slot.knowledge_location === 'recomposable_from_elsewhere' && !slot.evidence?.length)
-            unknown('期望位 ' + slot.slot + ' 缺可重组来源', '产品包作者');
-        if (slot.knowledge_location === 'genuinely_missing') {
-            if (!slot.proposal && !record.unknowns?.some(unknownOk))
-                bad('missing_without_exit', '真实欠缺没有提议或出口');
-            else
-                unknown('期望位 ' + slot.slot + ' 的验证知识真实欠缺', '产品包作者');
-        }
+            bad('missing_without_exit', '期望的判断依据 ' + slot.slot + ' 说可以从别处找到，却没有写来源');
+        if (slot.knowledge_location === 'genuinely_missing' && !slot.proposal && !record.unknowns?.some(unknownOk))
+            bad('missing_without_exit', '真实欠缺没有提议或出口');
     }
     if (ctx.predecessor === undefined)
         unknown('缺 Hub 实际前驱上下文，不能补造历史前驱', '平台维护者');
@@ -114,8 +341,8 @@ export function checkRecomposition(input: any): any[] {
     else if (record.predecessor !== undefined)
         bad('atom_dropped', '新系列没有实际前驱，不能自填旧记录');
     const authority = authorityOf(s.authority_run, s.authority_result, ctx);
-    if (!authority)
-        unknown('缺与锁定产品包、版本、根一致的规范来源凭证', '产品包发布管理员');
+    if (!authority && (record.sources?.governing ?? []).length)
+        bad('candidate_signed', '没有绑定来源凭证，不能声称有签发权的规范来源；放进 candidates');
     const gov = record.sources?.governing ?? [], candidates = record.sources?.candidates ?? [];
     if (authority)
         for (const g of gov)
@@ -126,21 +353,29 @@ export function checkRecomposition(input: any): any[] {
         if (!govRefs.includes(used) && !atoms.some(a => a.reference === used) && !(authority?.declarations.some((d: any) => d.role === 'verification_method' && d.ref === used))) {
             if (candidateRefs.includes(used) || authority)
                 bad('candidate_signed', '候选或未声明来源被当作方法/期望的签发依据');
-            else
-                unknown('缺方法来源的产品声明凭证', '产品包作者');
         }
-    const usedRefs = [...method?.sources ?? [], ...slots.flatMap((v: any) => v.evidence ?? []), ...govRefs, ...candidateRefs, ...record.ledgers.adapted.flatMap((a: any) => a.equivalence_refs ?? []), ...record.ledgers.concretizations.flatMap((c: any) => [c.value_ref, c.authority].filter(Boolean))];
-    for (const ref of new Set(usedRefs))
-        if (!atoms.some(a => a.reference === ref) && !(s.evidence ?? []).some((e: any) => e.reference === ref && e.resolved === true && typeof e.text === 'string'))
-            unknown('缺可解析且本轮可读的声明片段 ' + ref, '来源维护者');
+    const usedAt: Array<{ ref: string; at: string; place: string }> = [];
+    const lean = (refs: any, at: string, place: string) => (Array.isArray(refs) ? refs : []).forEach((ref: any, i: number) => usedAt.push({ ref, at: `${at}/${i}`, place: `${place} 第 ${i + 1} 项` }));
+    lean(method?.sources, '/record/contract/method/sources', 'method.sources');
+    slots.forEach((v: any, i: number) => lean(v.evidence, `/record/expectation_slots/${i}/evidence`, `slots（atom=${v.atom}）的 evidence`));
+    govRefs.forEach((ref: any, i: number) => usedAt.push({ ref, at: `/record/sources/governing/${i}/ref`, place: `sources.governing 第 ${i + 1} 项的 ref` }));
+    candidateRefs.forEach((ref: any, i: number) => usedAt.push({ ref, at: `/record/sources/candidates/${i}/ref`, place: `candidates 第 ${i + 1} 项的 ref` }));
+    record.ledgers.adapted.forEach((a: any, i: number) => lean(a.equivalence_refs, `/record/ledgers/adapted/${i}/equivalence_refs`, `adapted（atom=${a.atom}）的 equivalence_refs`));
+    record.ledgers.concretizations.forEach((c: any, i: number) => { for (const key of ['value_ref', 'authority']) if (c[key]) usedAt.push({ ref: c[key], at: `/record/ledgers/concretizations/${i}/${key}`, place: `concretizations（slot=${c.slot}）的 ${key}` }); });
+    for (const ref of new Set(usedAt.map(u => u.ref)))
+        if (!atoms.some(a => a.reference === ref) && !(typeof ctx.root === 'string' && ref.startsWith('tree:' + ctx.root + '/')) && !(s.evidence ?? []).some((e: any) => e.reference === ref && e.resolved === true && typeof e.text === 'string')) {
+            const places = usedAt.filter(u => u.ref === ref);
+            const full = `${places.map(u => u.place).join('、')} 的值「${ref}」不是本轮可读的引用；这里只能写本用例原句的引用（原始用例条目 fields.atoms[].reference，形如 src:<摘要>/…）或锁定知识树 tree:${typeof ctx.root === 'string' ? ctx.root : '<锁定根>'}/… 下的引用，原句文字不是引用；把它改成其中一种后重新提交`;
+            out.push(recomposeOut('unknown', full, { reason: 'missing_input', missing: full, pointer: places[0].at, data: { missing_fact: full, next_action: '把这里的值改成原句的引用或锁定知识树的引用后重新提交', owner: '重组模型', due: '重新提交之前', value: ref, places: places.map(u => u.at) } }));
+        }
     const states = record.sources?.states ?? [];
     if (states.length !== ids.length || states.some((v: any) => !ids.includes(v.atom)))
-        bad('atom_dropped', '来源状态必须与作者原子全集一一对应');
+        bad('atom_dropped', '来源状态必须与用例原句全集一一对应');
     const reviews: any[] = [], sourceRun = ctx.predecessor ?? ctx.run ?? null;
     for (const atom of atoms) {
         const rows = states.filter((v: any) => v.atom === atom.id);
         if (rows.length !== 1 || !T.states.includes(rows[0]?.state)) {
-            bad('atom_dropped', '每个原子必须有唯一来源状态');
+            bad('atom_dropped', '每条用例原句必须有唯一来源状态');
             continue;
         }
         const state = rows[0], review = reviewedAtom(record, atom.id, s.review_run, s.review_result, sourceRun, ctx);
@@ -149,10 +384,12 @@ export function checkRecomposition(input: any): any[] {
         if (!exitOk(state.exit))
             bad('missing_without_exit', '来源状态缺完整 action/object/owner/due 出口');
         if (state.state === 'settled') {
-            if (!review || review.state !== 'settled' || state.adjudicated_by !== review.reference)
-                unknown('原子 ' + atom.id + ' 缺适用于本提案的已受理独立裁定', '独立裁定模型');
-            else
-                reviews.push(review);
+            if (state.adjudicated_by !== undefined && state.adjudicated_by !== null) {
+                if (!review || review.state !== 'settled' || state.adjudicated_by !== review.reference)
+                    unknown('用例原句 ' + atom.id + ' 引用的独立裁定不适用于本提案', '独立裁定模型');
+                else
+                    reviews.push(review);
+            }
         }
         else if (state.state === 'conflict') {
             const refs = state.conflicts ?? [];
@@ -170,8 +407,6 @@ export function checkRecomposition(input: any): any[] {
             else
                 unknown('冲突来源的实际签发权尚未核对', '产品包作者');
         }
-        else
-            unknown('原子 ' + atom.id + ' 状态 ' + state.state + '：' + (state.reason ?? '缺来源事实') + '；' + (state.exit?.action ?? '补声明'), state.exit?.owner ?? '产品包作者');
     }
     const fromBed = (ref: any) => typeof ref === 'string' && (s.bed_sources ?? []).some((base: string) => ref === base || ref.startsWith(base + '/'));
     for (const row of [...record.ledgers.adapted, ...record.ledgers.concretizations])
@@ -187,40 +422,72 @@ export function checkRecomposition(input: any): any[] {
         unknown(raw.missing ?? '锁定目录范围未完整', '产品包作者');
     const sourceCommands = atoms.filter(a => a.kind !== 'intent').flatMap(a => { const id = identity(a.content); return id ? [{ atom: a.id, identity: id }] : []; });
     const actualCommands: any[] = sourceCommands.filter(c => !record.ledgers.adapted.some((a: any) => a.atom === c.atom));
-    for (const adapted of record.ledgers?.adapted ?? []) {
+    const adaptedRows = Array.isArray(record.ledgers?.adapted) ? record.ledgers.adapted : [];
+    const catalogComplete = raw.complete !== false;
+    for (let adaptedIdx = 0; adaptedIdx < adaptedRows.length; adaptedIdx++) {
+        const adapted = adaptedRows[adaptedIdx];
         const atom = atoms.find(a => a.id === adapted.atom);
         if (!atom) {
-            bad('atom_dropped', '适配项没有一一对应作者原子');
+            bad('atom_dropped', '改写项没有一一对应用例原句');
             continue;
         }
         if (!T.actions.includes(adapted.action))
-            bad('', '适配动作不在声明闭集中');
-        if (!text(adapted.source_of_value) || !text(adapted.authority))
-            unknown('适配 ' + adapted.atom + ' 缺 source_of_value/authority', '重组模型');
+            bad('', '改写动作不在声明闭集中');
+        if (!text(adapted.source_of_value))
+            unknown('改写 ' + adapted.atom + ' 缺 source_of_value', '重组模型');
         else if (authority) {
             if (!govRefs.includes(adapted.authority) && !authority.declarations.some((d: any) => d.ref === adapted.authority))
-                unknown('适配 ' + adapted.atom + ' 缺产品授予的 authority', '产品包作者');
+                unknown('改写 ' + adapted.atom + ' 缺产品授予的 authority', '产品包作者');
             if (!atoms.some(a => a.reference === adapted.source_of_value) && !govRefs.includes(adapted.source_of_value) && !authority.declarations.some((d: any) => d.ref === adapted.source_of_value))
-                unknown('适配 ' + adapted.atom + ' 缺合法 source_of_value', '产品包作者');
+                unknown('改写 ' + adapted.atom + ' 缺合法 source_of_value', '产品包作者');
         }
-        if (!adapted.equivalence_refs?.length || authority && !adapted.equivalence_refs.every((ref: string) => authority.declarations.some((d: any) => d.ref === ref)))
-            unknown('适配 ' + adapted.atom + ' 缺产品声明位置的等价依据', '产品包作者');
+        if (authority && !adapted.equivalence_refs?.length || authority && !adapted.equivalence_refs.every((ref: string) => authority.declarations.some((d: any) => d.ref === ref)))
+            unknown('改写 ' + adapted.atom + ' 缺产品声明位置的等价依据', '产品包作者');
         let critical = adapted.changes?.some((c: any) => T.critical_roles.includes(c.role)) === true;
         const before = sourceCommands.find(c => c.atom === adapted.atom)?.identity;
-        for (const line of adapted.commands ?? []) {
+        const adaptedCommands = Array.isArray(adapted.commands) ? adapted.commands : [];
+        for (let cmdIdx = 0; cmdIdx < adaptedCommands.length; cmdIdx++) {
+            const line = adaptedCommands[cmdIdx];
+            const cmdPointer = `/record/ledgers/adapted/${adaptedIdx}/commands/${cmdIdx}`;
+            if (typeof line !== 'string') {
+                bad('command_syntax', `改写 ${adapted.atom} 的第 ${cmdIdx + 1} 条命令项不是字符串`, cmdPointer, { owner: '重组模型', determination: 'error', atom: adapted.atom, adapted_index: adaptedIdx, command_index: cmdIdx, command: line, reason_kind: 'lexical_error', matched_path: null });
+                continue;
+            }
+            const diagnosis = diagnoseAdaptedCommand(grammar, definitions.length, catalogComplete, adapted.atom, cmdIdx, line);
+            if (diagnosis.kind === 'syntax') {
+                bad('command_syntax', diagnosis.why, cmdPointer, {
+                    owner: '重组模型',
+                    determination: 'error',
+                    atom: adapted.atom,
+                    adapted_index: adaptedIdx,
+                    command_index: cmdIdx,
+                    command: line,
+                    reason_kind: diagnosis.reasonKind,
+                    matched_path: diagnosis.matchedPath,
+                    ...(diagnosis.placeholder !== undefined ? { placeholder: diagnosis.placeholder } : {}),
+                    ...(diagnosis.failedTokenIndex !== undefined ? { failed_token_index: diagnosis.failedTokenIndex } : {}),
+                    ...(diagnosis.failedToken !== undefined ? { failed_token: diagnosis.failedToken } : {}),
+                    ...(diagnosis.expectedTypes?.length ? { expected_types: diagnosis.expectedTypes } : {}),
+                });
+                continue;
+            }
+            if (diagnosis.kind === 'unknown') {
+                unknown(diagnosis.missing, diagnosis.owner, cmdPointer, RECORD_FIX);
+                continue;
+            }
             const id = identity(line);
             if (!id) {
-                unknown('适配命令没有锁定目录的完整语法身份', '产品包作者');
+                unknown('改写后的命令没有锁定目录的完整语法身份', '产品包作者', cmdPointer, RECORD_FIX);
                 continue;
             }
             actualCommands.push({ atom: adapted.atom, identity: id });
             if (before && authority) {
                 for (const p of id.parameters) {
-                    const old = before.parameters.find(v => v.position === p.position);
+                    const old = before.parameters.find((v: any) => v.position === p.position);
                     if (old && canonicalJson(old.parsed) !== canonicalJson(p.parsed) && authority.parameters.some((d: any) => d.path === id.path && d.position === p.position && d.load_bearing === true))
                         critical = true;
                     if (old && canonicalJson(old.parsed) !== canonicalJson(p.parsed) && !record.ledgers.concretizations.some((c: any) => c.atom === adapted.atom && canonicalJson(c.value) === canonicalJson((p.parsed as any).value)))
-                        unknown('适配 ' + adapted.atom + ' 的新参数值缺具体化账与来源', '重组模型与产品包作者');
+                        unknown('改写 ' + adapted.atom + ' 的新参数值缺具体化账与来源', '重组模型与产品包作者');
                 }
             }
         }
@@ -228,11 +495,11 @@ export function checkRecomposition(input: any): any[] {
         if (review?.load_bearing === true)
             critical = true;
         if (critical && adapted.load_bearing !== true)
-            bad('unmarked_load_bearing', '产品声明或独立裁定认定承载语义，但适配未标注');
+            bad('unmarked_load_bearing', '产品声明或独立裁定认定承载语义，但改写未标注');
         if (adapted.load_bearing === true && (!Array.isArray(adapted.conditions) || !adapted.conditions.length || adapted.conditions.some((v: any) => !text(v))))
-            bad('unmarked_load_bearing', '承载语义适配缺等价条件');
+            bad('unmarked_load_bearing', '承载语义的改写缺等价条件');
         if (review?.bed_independent === false)
-            bad('bound_to_bed', '独立裁定认定本适配依赖具体床', '/record', { conditional_on_judgment: true, adjudication: review.reference, reviewer: review.reviewer, model: review.model });
+            bad('bound_to_bed', '独立裁定认定本改写依赖具体床', '/record', { conditional_on_judgment: true, adjudication: review.reference, reviewer: review.reviewer, model: review.model });
     }
     if (!raw.root)
         unknown('缺锁定命令目录', '产品包作者');
@@ -254,8 +521,8 @@ export function checkRecomposition(input: any): any[] {
         if (row.planned < row.count)
             bad('atom_dropped', '可以改参数，不可以删命令', {}, { identity: id, required_count: row.count, planned_count: row.planned, missing_count: row.count - row.planned });
     for (const row of record.ledgers?.concretizations ?? []) {
-        if (!text(row.source_of_value) || !text(row.authority)) {
-            unknown('具体化 ' + row.slot + ' 缺 source_of_value/authority', '重组模型');
+        if (!text(row.source_of_value)) {
+            unknown('具体化 ' + row.slot + ' 缺 source_of_value', '重组模型');
             continue;
         }
         if (!authority) {
@@ -271,7 +538,7 @@ export function checkRecomposition(input: any): any[] {
             continue;
         }
         const valueEvidence = (s.evidence ?? []).find((e: any) => e.reference === row.value_ref && e.resolved === true), author = sourceCommands.find(c => atoms.some(a => a.id === c.atom && a.reference === row.source_of_value));
-        const fromAuthor = author && row.value_ref === row.source_of_value && declaration.path === author.identity.path && author.identity.parameters.some(p => p.position === declaration.position && canonicalJson((p.parsed as any).value) === canonicalJson(row.value));
+        const fromAuthor = author && row.value_ref === row.source_of_value && declaration.path === author.identity.path && author.identity.parameters.some((p: any) => p.position === declaration.position && canonicalJson((p.parsed as any).value) === canonicalJson(row.value));
         const literal = valueEvidence && valueEvidence.text === String(row.value) && (row.value_ref === row.source_of_value || row.value_ref.startsWith(row.source_of_value + '/'));
         if (!fromAuthor && !literal) {
             unknown('具体化 ' + row.slot + ' 缺与实际来源相等的值或原生参数绑定', '产品包作者');
@@ -291,6 +558,6 @@ export function checkRecomposition(input: any): any[] {
         return out;
     }
     if (record.status !== 'complete')
-        return [recomposeOut('refute', '实际覆盖、来源与四账均完整，状态应为 complete；重组者重新提交前修正状态', { data: { status: 'complete' } })];
-    return [recomposeOut('support', '重组结构、原文全集、来源凭证、四账和独立裁定已核对；以判断为前提', { data: { schema: T.record, status: 'complete', coverage: { total: ids.length, mapped: ids.length, unmapped: [] }, reviews }, judgment_sources: ['/record/0'] })];
+        return [recomposeOut('refute', '实际覆盖、来源与原文、改写、具体取值、重新绑定四类记录均完整，状态应为 complete；重组者重新提交前修正状态', { data: { status: 'complete' } })];
+    return [recomposeOut('support', '重组结构和原文全集已核对；原文、改写、具体取值、重新绑定四类记录已核对；来源状态与缺口是模型判断，交给脚本编写', { data: { schema: T.record, status: 'complete', coverage: { total: ids.length, mapped: ids.length, unmapped: [] }, reviews }, judgment_sources: ['/record/0'] })];
 }

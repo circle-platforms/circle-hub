@@ -67,6 +67,7 @@ export interface CheckBindings {
    * for the admin log. Outcomes keep only a stable, path-free part.
    */
   onError?: (error: unknown, check: string) => void;
+  lateBound?: boolean;
 }
 
 /** Input a pack check function receives. Its output must be an array of check-outcome@1. */
@@ -88,8 +89,10 @@ const Outcomes = z.array(CheckOutcomeShape).max(10_000);
  */
 const CHECK_REASONS: readonly Reason[] = ReasonSchema.extract(['check_error', 'timeout', 'missing_input', 'integrity_unproven', 'budget_exhausted', 'output_failed']).options;
 
+const LATE_REASONS: readonly Reason[] = [...CHECK_REASONS, ...ReasonSchema.extract(['awaiting_step']).options];
+
 /** Problems with outcomes a pack function returned: verdict shape, reasons, and the code namespace of the pack. */
-function outcomeProblems(outcomes: CheckOutcome[], pack: string): string | undefined {
+function outcomeProblems(outcomes: CheckOutcome[], pack: string, reasons: readonly Reason[] = CHECK_REASONS): string | undefined {
   for (const [i, o] of outcomes.entries()) {
     const at = `第 ${i + 1} 项`;
     if (o.verdict === 'refute' && o.code === undefined) return `${at}是反驳却没有码`;
@@ -97,13 +100,18 @@ function outcomeProblems(outcomes: CheckOutcome[], pack: string): string | undef
     if (o.verdict === 'unknown' && (typeof o.missing !== 'string' || !o.missing.trim())) return `${at}是未知却没有顶层 missing`;
     if (o.verdict === 'unknown' && o.reason === undefined) return `${at}是未知却没有原因`;
     if (o.verdict !== 'unknown' && o.reason !== undefined) return `${at}不是未知却带了原因 ${o.reason}`;
-    if (o.reason !== undefined && !CHECK_REASONS.includes(o.reason)) return `${at}的原因 ${o.reason} 不是检查能给的原因（只能是 ${CHECK_REASONS.join('、')}）`;
+    if (o.reason !== undefined && !reasons.includes(o.reason)) return `${at}的原因 ${o.reason} 不是检查能给的原因（只能是 ${reasons.join('、')}）`;
     if (o.code !== undefined) {
       if (o.code.startsWith('core.') || Object.hasOwn(PROTOCOL_CODES, o.code)) return `${at}的码 ${o.code} 属于核心解释器或协议，包内函数不能给出`;
       if (!o.code.startsWith(`${pack}.`) || o.code.length <= pack.length + 1) return `${at}的码 ${o.code} 不在包命名空间 ${pack}. 下`;
     }
   }
   return undefined;
+}
+
+/** data.sandbox is the Hub's own mark of a sandbox failure; a pack function cannot give it (D05 R[7]). */
+function withoutSandboxMark(outcomes: CheckOutcome[]): CheckOutcome[] {
+  return outcomes.map((o) => (o.data !== undefined && Object.hasOwn(o.data, 'sandbox') ? { ...o, data: Object.fromEntries(Object.entries(o.data).filter(([key]) => key !== 'sandbox')) } : o));
 }
 
 /** The check's tier for its outcomes; a negative-case outcome keeps its own, but never blocks without a basis. */
@@ -212,10 +220,10 @@ export async function runCheck(declaration: CheckDeclaration, bindings: CheckBin
     const result = await (bindings.functionRunner ?? callPackFunction)({ packDir: bindings.packDir, module: fn.module, export: fn.export }, input, declaration.limits, bindings.sandbox);
     const parsed = Outcomes.safeParse(result.output);
     if (!parsed.success) return [unknown(base, 'check_error', `包内函数 ${name} 的输出不是 check-outcome@1 数组`, { data: { issues: parsed.error.issues.slice(0, 5).map((i) => i.message) } })];
-    const problem = outcomeProblems(parsed.data, pack);
+    const problem = outcomeProblems(parsed.data, pack, bindings.lateBound === true ? LATE_REASONS : CHECK_REASONS);
     if (problem) return [unknown(base, 'check_error', `包内函数 ${name} 的输出无效：${problem}`)];
     if (parsed.data.length === 0) return [unknown(base, 'check_error', `包内函数 ${name} 没有给出结果`)];
-    return withTier(parsed.data, base.tier, basis);
+    return withTier(withoutSandboxMark(parsed.data), base.tier, basis);
   } catch (error) {
     report(error);
     if (error instanceof SandboxError) return [unknown(base, sandboxReason(error), `包内函数 ${name}：${error.message}`, { data: publicDetail(error, fn.module) })];

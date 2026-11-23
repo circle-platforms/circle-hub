@@ -630,7 +630,13 @@ describe('T2-2 按编号读原件 (source-read) 全部反例', () => {
     });
     assert.equal(res.out.call_result, 'ok', JSON.stringify(res.out.errors));
     assert.match(res.out.run?.sources.find((s) => s.slot === 'defect')?.label ?? '', /里没有 plm:bug:99999999（读于/);
-    assert.match(res.text, /SOURCE_ABSENT/);
+    assert.doesNotMatch(res.text, /SOURCE_ABSENT/);
+    const modelText = res.raw.content[1].text ?? '';
+    assert.ok(modelText.startsWith('供模型引用\n'));
+    const model = JSON.parse(modelText.slice('供模型引用\n'.length)) as { source_context: { gaps: Array<{ code: string; message: string }> } };
+    const absence = model.source_context.gaps.find((gap) => gap.code === 'SOURCE_ABSENT');
+    assert.ok(absence);
+    assert.match(absence.message, /里没有 plm:bug:99999999（读于/);
   });
 
   it('counter-example 2: undeclared route or unsupported object type is rejected with schema error', async () => {

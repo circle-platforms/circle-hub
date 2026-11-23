@@ -132,6 +132,18 @@ interface EntryAt {
 /** Children of an expanded node read in one query. */
 const CHILD_BATCH = 64;
 
+function nodeSegments(path: string): string[] {
+  const invalid = () => new KnowledgeError('路径格式不对；按 nodes 返回的 path 重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/paths'}});
+  if (!TreePath.safeParse(path).success) throw invalid();
+  try { return pathSegments(path); }
+  catch (error) { if (error instanceof ReferenceSyntaxError) throw invalid(); throw error; }
+}
+
+function withFragments(view: NodeViews[number], rows: ReadonlyMap<string, ReadRow> | null): NodeViews[number] {
+  if (rows === null) return view;
+  return { ...view, entries: view.entries.map((entry) => { const fragments = rows.get(entry.entry)?.fragments; return fragments !== undefined && fragments.length > 0 ? Object.assign({}, entry, { fragments: [...fragments] }) : entry; }) };
+}
+
 export class TreeReading {
   readonly #context: KnowledgeContext;
   readonly #products = new Lru<string, { products: Set<string>; at: number }>(64,Number.POSITIVE_INFINITY,true);
@@ -292,15 +304,7 @@ export class TreeReading {
         if (skipped.length < 5) skipped.push(cutText(path, 100));
         continue;
       }
-      if (!TreePath.safeParse(path).success) throw new KnowledgeError('路径格式不对；按 nodes 返回的 path 重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/paths'}});
-      let segments: string[];
-      try {
-        segments = pathSegments(path);
-      } catch (error) {
-        if (error instanceof ReferenceSyntaxError) throw new KnowledgeError('路径格式不对；按 nodes 返回的 path 重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/paths'}});
-        throw error;
-      }
-      paths.push({ text: path, segments });
+      paths.push({ text: path, segments: nodeSegments(path) });
     }
     const badCursor = (reason:string):never => {throw new KnowledgeError(`游标${reason}；请从首页重新读取`,{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'},fix:'移除 cursor，从同一根、路径和深度的首页重新读取，再使用返回的 next'});};
     const decoded=query.cursor?decodeCursor(query.cursor):null;
@@ -315,18 +319,12 @@ export class TreeReading {
     const offset=decoded?.o??0,entryOffset=decoded?.e??0;
     const rootNode=await this.#context.store.node(root);
     if (rootNode === null) throw new KnowledgeError('已授权的根缺少原件；请管理员从备份恢复后重读',{code:'SOURCE_INTEGRITY_UNPROVEN'});
-    let composition = relationComposition ?? await this.compositionOf(root);
-    if(composition?.body.empty_scope||rootNode.entries.length===0&&rootNode.children.length===0){
-      if(!composition||!await this.mayReadProducts(reader,[composition.body.product])){
-        const candidates=relationComposition?[relationComposition]:await this.compositionsOf(root);
-        composition=null;
-        for(const view of candidates)if(await this.mayReadProducts(reader,[view.body.product])){composition=view;break;}
-      }
-      if(!composition)return null;
-      if(composition.body.empty_scope){
-        if(offset!==0||entryOffset!==0)throw new KnowledgeError('空根没有后续页；从首页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
-        return {nodes:[],next:null,coverage:{complete:true,examined:0,total:0,note:emptyScopeNote(composition.body.empty_scope)!}};
-      }
+    const chosen = await this.#readableComposition(root, reader, rootNode, relationComposition);
+    if (chosen === null) return null;
+    const composition = chosen.composition;
+    if(composition?.body.empty_scope){
+      if(offset!==0||entryOffset!==0)throw new KnowledgeError('空根没有后续页；从首页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
+      return {nodes:[],next:null,coverage:{complete:true,examined:0,total:0,note:emptyScopeNote(composition.body.empty_scope)!}};
     }
     const { pageNodes } = this.#context.limits;
     const pageBytes = budget ?? this.#context.limits.pageBytes;
@@ -454,6 +452,57 @@ export class TreeReading {
     };
   }
 
+  async #readableComposition(root: string, reader: Principal, rootNode: TreeNodeBody, related: CompositionView | null): Promise<{ composition: CompositionView | null } | null> {
+    let composition = related ?? await this.compositionOf(root);
+    if (composition?.body.empty_scope || rootNode.entries.length === 0 && rootNode.children.length === 0) {
+      if (!composition || !await this.mayReadProducts(reader, [composition.body.product])) {
+        const candidates = related ? [related] : await this.compositionsOf(root);
+        composition = null;
+        for (const view of candidates) if (await this.mayReadProducts(reader, [view.body.product])) { composition = view; break; }
+      }
+      if (!composition) return null;
+    }
+    return { composition };
+  }
+
+  async subtreeNodes(query: { root: string; paths?: readonly string[]; composition?: string | null }, reader: Principal): Promise<AsyncGenerator<NodeViews[number]> | null> {
+    const root = query.root;
+    if (typeof root !== 'string' || !SHA256.test(root)) return null;
+    if (query.composition != null && !SHA256.test(query.composition)) return null;
+    if (!(await this.mayReadRoot(reader, root))) return null;
+    const starts: string[][] = [];
+    for (const path of query.paths === undefined || query.paths.length === 0 ? ['/'] : query.paths) starts.push(nodeSegments(path));
+    const hint = query.composition;
+    const relationComposition = hint === null ? null : await this.#relations?.compositionFor(root, reader, hint) ?? null;
+    if (hint && !relationComposition) throw new KnowledgeError('所给组成不属于该根；按运行锁定的组成重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/composition'}});
+    const rootNode = await this.#context.store.node(root);
+    if (rootNode === null) throw new KnowledgeError('已授权的根缺少原件；请管理员从备份恢复后重读',{code:'SOURCE_INTEGRITY_UNPROVEN'});
+    const readable = await this.#readableComposition(root, reader, rootNode, relationComposition);
+    if (readable === null || readable.composition?.body.empty_scope) return null;
+    const chosen = readable.composition, reading = this, seen = new Set<string>();
+    async function* walk(segments: string[], digest: string, node: TreeNodeBody): AsyncGenerator<NodeViews[number]> {
+      const path = pathOf(segments);
+      if (seen.has(path)) return;
+      seen.add(path);
+      const rows = chosen === null ? null : await chosen.rowsAt(path);
+      yield withFragments(reading.#nodeView(root, segments, digest, node, rows, await reading.#entriesAt(rows, node.entries), chosen), rows);
+      for (let at = 0; at < node.children.length; at += CHILD_BATCH) {
+        const slice = node.children.slice(at, at + CHILD_BATCH);
+        const batch = await reading.#context.store.nodes(slice.map((child) => child.digest)).catch(() => null);
+        for (const child of slice) {
+          const childNode = batch?.get(child.digest) ?? await reading.#context.store.node(child.digest);
+          if (childNode !== null) yield* walk([...segments, child.name], child.digest, childNode);
+        }
+      }
+    }
+    return (async function* () {
+      for (const segments of starts) {
+        const found = await reading.nodeAt(root, segments);
+        if (found !== null) yield* walk([...segments], found.digest, found.node);
+      }
+    })();
+  }
+
   #nodeView(root: string, segments: string[], digest: string, node: TreeNodeBody, rows: ReadonlyMap<string, ReadRow> | null, entries: EntryAt[],composition:CompositionView|null): NodeViews[number] {
     const path = pathOf(segments);
     return {
@@ -465,14 +514,15 @@ export class TreeReading {
       children: node.children.map((child) => ({ name: child.name, path: pathOf([...segments, child.name]), digest: child.digest })),
       entries: entries.map(({ digest: entry, content }) => {
         const placement = rows?.get(entry)?.placement;
-        const applicability = applicabilityText(content.applicability,rows?.get(entry)?.applicability_sources??[]);
+        const conditions = applicabilityText(content.applicability,rows?.get(entry)?.applicability_sources??[]);
+        const applicability = [...(conditions === UNDECLARED ? [] : [conditions]), ...(placement === undefined ? [] : [placement.note])].join('；');
         return {
           entry,
           // Entries are checked against the entry_kind axis before they are stored; a stored kind outside it is corruption.
           kind: EntryKindSchema.parse(content.kind),
           statement: content.statement,
           reference: treeReference(root, path, entry),
-          applicability: placement === undefined ? applicability : `${applicability}；${placement.note}`,
+          ...(applicability === '' ? {} : { applicability }),
           applicability_fields:applicabilityFields(content.data,content.applicability),
           applicability_context:{composition:composition?.record??null,criteria_digest:applicabilityCriterion(composition?.body.applicability_context,composition?.body.known_builds)},
           data: content.data,

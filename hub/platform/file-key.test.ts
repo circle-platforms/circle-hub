@@ -112,3 +112,29 @@ test('concurrent removal treats ENOENT as absent but does not hide other failure
  await assert.rejects(store.delete(),/属主或权限不对/);
  assert.ok((await readdir(join(root,'keys'))).includes(file!));
 });
+
+test('initial setup may atomically replace only an operator token without changing the vault master key', async t => {
+  const {open} = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'hub-operator-replace-'));
+  t.after(() => rm(root, {recursive:true,force:true}));
+  const operator = fileKeyStore({root,service:'synthetic',account:'operator-token',item:OPERATOR_TOKEN_ITEM});
+  const master = fileKeyStore({root,service:'synthetic',account:'vault',item:VAULT_KEY_ITEM});
+  const old = new Uint8Array(32).fill(17), next = new Uint8Array(32).fill(29);
+  await operator.write(old); await master.write(old);
+  const path = keyFilePath(root, 'synthetic', 'operator-token');
+  const held = await open(path, 'r');
+  try {
+    await assert.rejects(operator.write(next), /不覆盖/);
+    await operator.write(next, {replace:true});
+    assert.deepEqual(await operator.read(), next);
+    assert.ok((await held.readFile()).equals(Buffer.from(old)));
+    assert.deepEqual(await master.read(), old);
+    assert.equal((await lstat(path)).mode & 0o777, 0o600);
+    assert.equal((await lstat(join(root,'keys'))).mode & 0o777, 0o700);
+    assert.equal((await readdir(join(root,'keys'))).some(name => name.endsWith('.tmp')), false);
+    await assert.rejects(master.write(next, {replace:true}), /主密钥不覆盖/);
+    assert.deepEqual(await master.read(), old);
+    await assert.rejects(operator.write(new Uint8Array(31), {replace:true}), /32 字节/);
+    assert.deepEqual(await operator.read(), next);
+  } finally { await held.close(); }
+});

@@ -5,22 +5,21 @@
 <p align="center">
   <a href="https://circle-platforms.github.io/circle-hub/">Docs</a> ·
   <a href="docs/design/en/generic-model.md">Model</a> ·
-  <a href="docs/hub-r4-brief.md">Milestone</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
   <a href="README.zh-CN.md">中文</a>
 </p>
 
 ---
 
-circle-hub is the team hub for [Circle](https://github.com/circle-platforms/circle), being rebuilt as a standard [MCP](https://modelcontextprotocol.io) server. A model works in the client; the Hub hands out the work, checks what comes back at its boundary and keeps the record. It never generates content.
+circle-hub is the knowledge and verification hub for [Circle](https://github.com/circle-platforms/circle), built as a standard [MCP](https://modelcontextprotocol.io) server. A model works in the client; the Hub hands out the work, checks what comes back at its boundary and keeps the record. It never generates content.
 
 ## What the Hub is
 
-This is the design that milestone 1 is building; [Status](#status) says what exists today.
+This is the Hub design implemented for milestone 1; [Status](#status) says what exists today.
 
 - **Task packs** say what to review and how a result is checked: requirement templates, slot schemas, checks, a procedure for the model and the pack's own deterministic functions. Product, workflow and system packs are separate, and product knowledge lives only in packs, never in the core.
 - **Verified results.** On submission the Hub resolves every exact value to a reference, checks quotations verbatim against the sources, re-runs the pack's checks in a sandbox and computes a terminal state for every item, requirement and layer. Each item lands in exactly one partition, and unknown stays unknown.
-- **A knowledge tree** per product line and version, content-addressed and built from the sources by deterministic parsers; knowledge that needs judgment stays on the client and enters through separate contribution runs, checked verbatim by the Hub, and the Hub calls no model. A run locks the root it reads.
+- **A knowledge tree** per product line and version, content-addressed and built from the sources by deterministic parsers; knowledge that needs judgment stays on the client and enters through separate contribution runs, checked verbatim by the Hub, and the Hub calls no model. A run locks the root it reads. Knowledge lives in each member's personal space and the Hub-wide **public space** (teams manage workflow and business-system assignments rather than separate per-team knowledge spaces).
 
 The contracts define six tools: `list_task_packs`, `upload_file`, `start_run`, `get_nodes`, `resolve_reference` and `submit_result`. Records are append-only and everything else is derived from them. Circle is to connect through an ordinary MCP server entry and shows no Hub-specific interface.
 
@@ -40,7 +39,7 @@ For other computers on the internal network, add this machine's address: `… | 
 
 ## Status
 
-Milestone 1 is built and deployed, and 0.3.0 is the first release of the redesigned Hub, with one-click install bundles for macOS and Linux ([CHANGELOG](CHANGELOG.md), [current status](docs/hub-status-2026-11.md)). The model, the contracts generated from it, the [architecture brief](docs/hub-r4-architecture.md), the packages under `hub/` (server, web console, knowledge tree, read-only connectors, dispatch), the packs and a persistent single-machine deployment are in place; [docs/hub-r4-progress.md](docs/hub-r4-progress.md) says which parts have landed and been reviewed, and what is still open. The task-and-approval server that came before (up to 0.2.0) is retired, and its briefs and handoffs are kept as [historical records](docs/README.md#历史记录).
+Milestone 1 is built and deployed, and 0.3.0 is the first release of the redesigned Hub, with one-click install bundles for macOS and Linux ([CHANGELOG](CHANGELOG.md)). The model, the contracts generated from it, the [architecture brief](docs/hub-r4-architecture.md), all 15 modular packages under `hub/` (`config`, `records`, `telemetry`, `rules`, `refs`, `connectors`, `knowledge`, `dispatch`, `runs`, `server`, `health`, `jev`, `leases`, `requests`, `platform` — with dependency boundaries and cycle checks enforced via [`.github/checks/package-edges.json`](.github/checks/package-edges.json)), a single consolidated `baseline` database migration (`hub/records/migrations.ts`, `version: 1`), the packs and a persistent single-machine deployment are in place; [docs/hub-r4-progress.md](docs/hub-r4-progress.md) says which parts have landed and been reviewed, and what is still open. The task-and-approval server that came before (up to 0.2.0) is retired, and its historical records live in Git history.
 
 ## Run the checks
 
@@ -52,8 +51,7 @@ npm run typecheck
 npm run verify:contracts   # contracts/generated matches contracts/model.json, contracts/codes.json and contracts/src
 npm run test:unit
 npm run test:acceptance    # temporary PostgreSQL, synthetic fixtures, scripted models
-npm run verify:references  # frozen Circle baseline, checked by SHA
-npm test                   # contracts check, unit, docs, acceptance and reference tests
+npm test                   # contracts check, unit, docs and acceptance tests
 node --test ".github/checks/*.test.ts"   # docs checks
 ```
 
@@ -61,10 +59,11 @@ node --test ".github/checks/*.test.ts"   # docs checks
 
 ## Documentation
 
-- [Milestone 1 brief](docs/hub-r4-brief.md) · [architecture](docs/hub-r4-architecture.md) · [progress and decisions](docs/hub-r4-progress.md)
+- [Quickstart](docs/quickstart.md) ([English](docs/quickstart.en.md)): install → deployment definition → `apply` → connect Circle → first run · [admin guide](docs/admin-guide.md) · [member guide](docs/member-guide.md) · [editing a workflow or skill](docs/edit-pack.md) · [resetting and rebuilding](docs/reset.md) (most guides in Chinese)
+- [Architecture](docs/hub-r4-architecture.md) · [progress and decisions](docs/hub-r4-progress.md)
 - [Generic model](docs/design/en/generic-model.md) · [the five-element checklist](docs/design/en/object-standard.md) · [design index](docs/design/en/README.md) (Chinese originals in [docs/design](docs/design/README.md))
 - [Compatibility matrix](docs/compatibility.en.md): what circle, circle-hub and circle-packs expect of each other.
-- [Source manifest](references/README.md): the frozen Circle source baseline in `foundation/circle`, verified by SHA, never imported at runtime.
+- [Documentation index](docs/README.md) and the maintained document set ([doc-set.json](.github/checks/doc-set.json)).
 
 ## Contributing and security
 
@@ -74,4 +73,4 @@ circle-hub works with [circle](https://github.com/circle-platforms/circle): Circ
 
 ## License
 
-circle-hub is released under the [Apache License 2.0](LICENSE). The [NOTICE](NOTICE) file names the copyright holder and reserves the Circle and Circle Hub names, logos and icons: the license covers the code and its documentation, not the marks. The design specifications in [docs/design](docs/design/README.md) are under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and must be credited, with a link to the original, when reused. Until 2026-10-13 the repository was under the MIT License. The frozen Circle source baseline in `foundation/circle` keeps its MIT license; it, the archived platform in `references/` and the dependencies are described in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Contributions are accepted under the [contributor terms](CONTRIBUTING.md#contributor-terms).
+circle-hub is released under the [Apache License 2.0](LICENSE). The [NOTICE](NOTICE) file names the copyright holder and reserves the Circle and Circle Hub names, logos and icons: the license covers the code and its documentation, not the marks. The design specifications in [docs/design](docs/design/README.md) are under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and must be credited, with a link to the original, when reused. Until 2026-10-13 the repository was under the MIT License. Code adapted from the upstream Circle source baseline keeps its MIT license; it and the dependencies are described in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Contributions are accepted under the [contributor terms](CONTRIBUTING.md#contributor-terms).

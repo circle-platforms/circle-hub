@@ -1,0 +1,80 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [
+    "%HUB_TOKEN%"
+  ],
+  "options": [
+    {
+      "name": "hub",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%HUB_URL%",
+      "type": "hub"
+    },
+    {
+      "name": "run",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<脚本编写编号>",
+      "type": "run"
+    },
+    {
+      "name": "model",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<模型>",
+      "type": "text"
+    },
+    {
+      "name": "plans",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<自动化用例目录>",
+      "type": "path"
+    },
+    {
+      "name": "timeout-sec",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<秒>",
+      "type": "int"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": "<脚本编写编号>",
+          "optional": false
+        },
+        {
+          "name": "model",
+          "placeholder": "<模型>",
+          "optional": false
+        },
+        {
+          "name": "plans",
+          "placeholder": "<自动化用例目录>",
+          "optional": false
+        },
+        {
+          "name": "timeout-sec",
+          "placeholder": "<秒>",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

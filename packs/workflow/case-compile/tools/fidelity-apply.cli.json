@@ -1,0 +1,92 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "run",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<运行目录>",
+      "type": "path"
+    },
+    {
+      "name": "plans",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<自动化用例目录>",
+      "type": "path"
+    },
+    {
+      "name": "briefs",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<核对目录>",
+      "type": "path"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<运行目录>",
+          "optional": false
+        },
+        {
+          "name": "plans",
+          "placeholder": "<自动化用例目录>",
+          "optional": false
+        },
+        {
+          "name": "briefs",
+          "placeholder": "<核对目录>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<运行目录>",
+          "optional": false
+        },
+        {
+          "name": "plans",
+          "placeholder": "<自动化用例目录>",
+          "optional": false
+        },
+        {
+          "name": "briefs",
+          "placeholder": "<核对目录>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "run",
+          "placeholder": "<run directory>",
+          "optional": false
+        },
+        {
+          "name": "plans",
+          "placeholder": "<plan directory>",
+          "optional": false
+        },
+        {
+          "name": "briefs",
+          "placeholder": "<brief directory>",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}

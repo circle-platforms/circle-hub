@@ -25,7 +25,7 @@ export async function openOperationWorld(t: TestContext, options: { captureUrl?:
     await bed?.close();
     await postgres.stop();
   });
-  bed = await openBed({ postgres, syncOneName: options.manual === true });
+  bed = await openBed({ postgres, syncTwoName: options.manual !== true, syncOneName: options.manual === true });
   await bed.hub.assignPack(bed.reviewer.principal, 'knowledge-contribution');
   const local = await scratch(t);
   if (options.captureUrl === undefined) await writeFile(local.tokenFile, `${bed.reviewer.token}\n`, { mode: 0o600 });

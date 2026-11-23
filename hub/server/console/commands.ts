@@ -61,11 +61,11 @@ export const commands = {
   }),
   secretSet: (name: string): CommandDialog => ({
     id: dialogId('secret-set', name), title: `更新凭据 ${name}`,
-    text: '新内容从标准输入读取，不出现在命令、记录和页面中；引用该凭据的业务系统与运行环境下次使用新版本。', command: command('secret', 'set', `--name=${name}`, REASON),
+    text: '新内容从标准输入读取，不出现在命令、记录和页面中；不必先有资源或执行器引用这个名字。引用它的业务系统与运行环境下次使用新版本。', command: command('secret', 'set', `--name=${name}`, REASON),
   }),
   secretUnset: (name: string): CommandDialog => ({
     id: dialogId('secret-unset', name), title: `吊销凭据 ${name}`,
-    text: '吊销后引用该凭据的读取与派发不再可用；版本记录保留。', command: command('secret', 'unset', `--name=${name}`, REASON),
+    text: '吊销后引用该凭据的读取与在运行环境上执行不再可用；密钥库保留版本元数据。', command: command('secret', 'unset', `--name=${name}`, REASON),
   }),
   resourceToggle: (resource: { id: string; name: string; enabled: boolean }): CommandDialog => ({
     id: dialogId(resource.enabled ? 'resource-disable' : 'resource-enable', resource.id), title: `${resource.enabled ? '停用' : '启用'}业务系统 ${resource.name}`,
@@ -93,15 +93,17 @@ export const commands = {
   }),
   executorDisable: (executor: { id: string; target: string }): CommandDialog => ({
     id: dialogId('executor-disable', executor.id), title: `停用运行环境 ${executor.target}`,
-    text: '停用后不再向该运行环境派发作业；已派发的作业照旧查询与处置。', command: command('executor', 'disable', executor.id),
+    text: '停用后不再向该运行环境发起执行；已发出的执行照旧查询与处置。', command: command('executor', 'disable', executor.id),
   }),
   bedHoldClear: (executor: { id: string; target: string }): CommandDialog => ({
     id: dialogId('bed-hold-clear', executor.id), title: `确认运行环境 ${executor.target} 已恢复`,
-    text: '核实运行环境已恢复原状（例如设备已重启、作业留下的配置已清除）后再执行；执行后该运行环境恢复接受派发，原记录保留。', command: command('bed', 'hold', 'clear', executor.id, REASON),
+    text: '核实运行环境已恢复原状（例如设备已重启、执行留下的配置已清除）后再执行；执行后该运行环境恢复接受执行，原记录保留。', command: command('bed', 'hold', 'clear', executor.id, REASON),
   }),
+  executorUnassignConsequence:
+    '撤回后成员的「我能做的事」不再列出这个测试环境；谁能预订和上机按工作流的分配和预订规则判断。预订仍留在持有人名下，正在进行的执行会跑完。',
   jobDispose: (job: string): CommandDialog => ({
-    id: dialogId('job-dispose', job), title: `处置作业 ${job.slice(0, 12)} 的派发结果`,
-    text: '先查看作业状态与处置请求，再按核对结论执行 circle-hub job dispose（核对、保持未知、标记失败三选一）；处置前该运行环境不接受新的派发。', command: command('job', 'status', job),
+    id: dialogId('job-dispose', job), title: `处置执行 ${job.slice(0, 12)} 的结果`,
+    text: '先查看执行状态与处置请求，再按核对结论执行 circle-hub job dispose（核对、保持未知、标记失败三选一）；处置前该运行环境不接受新的执行。', command: command('job', 'status', job),
   }),
   tlsIssue: (): CommandDialog => ({
     id: 'cmd-tls-issue', title: '重新签发服务器证书',

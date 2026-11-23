@@ -1,0 +1,149 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "subcommands": {
+    "list": [],
+    "read": [],
+    "status": [],
+    "verify": [],
+    "flush": [],
+    "submit": []
+  },
+  "options": [
+    {
+      "name": "session",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "sha",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "proposals",
+      "type": "path",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "product",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "build",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "model",
+      "type": "text",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    }
+  ],
+  "forms": [
+    {
+      "positional": "list",
+      "pairs": [
+        {
+          "name": "session",
+          "placeholder": null,
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": "status",
+      "pairs": [
+        {
+          "name": "session",
+          "placeholder": null,
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": "verify",
+      "pairs": [
+        {
+          "name": "session",
+          "placeholder": null,
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": "flush",
+      "pairs": [
+        {
+          "name": "session",
+          "placeholder": null,
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": "read",
+      "pairs": [
+        {
+          "name": "session",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "sha",
+          "placeholder": null,
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": "submit",
+      "pairs": [
+        {
+          "name": "session",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "proposals",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "product",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "model",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "build",
+          "placeholder": null,
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

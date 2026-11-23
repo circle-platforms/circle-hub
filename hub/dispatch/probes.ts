@@ -7,6 +7,8 @@ import type { JobBinding, Journal } from './journal.ts';
 import { canRetryRead } from './read-policy.ts';
 import { RpcClient, ToolReplyError, type Exchange } from './transport.ts';
 import {PrecheckFactError} from './precheck-failure.ts';
+import { judgeResidue, residueFact, residueNext, type ResidueReading } from './residue.ts';
+import { replayBookingVersions, type ReplayIdentity } from './probe-replay.ts';
 export type BuildKnowledge = Pick<KnowledgePort,'builds'|'resolveBuild'> & Partial<Pick<KnowledgePort,'rootInfo'>>;
 function addresses(values: unknown[]): string[] {
   return [...new Set(values.map(value=>{
@@ -24,12 +26,14 @@ export function probeValues(text: unknown, pattern: string): string[] {
 /** What a version probe saw on one seat, for the device observation record (decision 112). */
 export interface SeatEcho { device: string; label: string; values: string[]; reference: string }
 
-export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledge|undefined,binding:JobBinding,d:ExecutorDefinition,client:RpcClient,context:Record<string,unknown>,journal:Journal,sleep:(ms:number)=>Promise<void>,observed?:(echo:SeatEcho)=>Promise<void>):Promise<boolean> {
+export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledge|undefined,binding:JobBinding,d:ExecutorDefinition,client:RpcClient,context:Record<string,unknown>,journal:Journal,sleep:(ms:number)=>Promise<void>,observed?:(echo:SeatEcho)=>Promise<void>,replay?:Omit<ReplayIdentity,'executor'|'executorDigest'>):Promise<boolean> {
   const spec=d.probes!; const owner=await records.principals.get(binding.user);
   if(!owner || owner.disabled || !d.manifest_sha256)throw new PrecheckFactError('缺少有效探测主体或绑定清单','管理员恢复预订运行的有效主体，核对清单来源及摘要绑定后再采证');
+  const replayed=replay?await replayBookingVersions(records,owner,{...replay,executor:binding.executor,executorDigest:binding.executor_digest},d):null;
+  const reused:{run:string;observed_at:string}[]=[];
   let source;
-  try{source=await records.artifacts.source(owner,d.manifest_sha256,{consumer:'function'});}catch{throw new PrecheckFactError('绑定清单的读取前提未成立','管理员核对该清单的可见性和读取档位，恢复允许函数读取的清单后再采证');}
-  if(!source?.bytes || sha256Hex(source.bytes)!==d.manifest_sha256)throw new PrecheckFactError('绑定清单字节不可读或完整性未通过','管理员按绑定摘要恢复清单原件，核对可见性与读取档位并验证摘要后再采证');
+  try{source=await records.artifacts.source(owner,d.manifest_sha256,{consumer:'function'});}catch{throw new PrecheckFactError('绑定清单的读取前提未成立','管理员核对该清单的可见性和读取档位，恢复允许函数读取的清单后再采证', {fact:'本次绑定清单当前不可读取',next_action:'联系管理员恢复本次清单的合法读取前提后重新核对'});}
+  if(!source?.bytes || sha256Hex(source.bytes)!==d.manifest_sha256)throw new PrecheckFactError('绑定清单字节不可读或完整性未通过','管理员按绑定摘要恢复清单原件，核对可见性与读取档位并验证摘要后再采证', {fact:'本次绑定清单的摘要与可取得原件尚未核对一致',next_action:'联系管理员核对当前清单及摘要绑定，再按当前清单重新核验'});
   let manifest:unknown;
   try{manifest=parseStrictJson(new TextDecoder('utf-8',{fatal:true}).decode(source.bytes));}catch{throw new PrecheckFactError('绑定清单不是有效的 UTF-8 JSON','管理员读取受限清单原件，修复清单格式并重新发布正确摘要后再采证');}
   const devices=spec.devices!==undefined?at(manifest,spec.devices):undefined;
@@ -51,7 +55,7 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
   if(targets.length!==selected.length || new Set(selected).size!==targets.length || targets.some(device=>!selected.includes(device)))throw new PrecheckFactError(`缺少覆盖全部 ${targets.length} 个派发目标设备的一一对应探测座位`,'管理员核对设备集合指针、派发目标的类型闭集与各座位声明，为每个派发目标补一个座位、去掉非派发目标的座位后再采证');
   // Listed for the precheck answer: manifest devices that are not dispatch targets, by manifest position and declared type.
   const unprobed=devices.map((device,index)=>({device,index})).filter(row=>!targets.includes(row.device)).map(row=>({index:row.index,type:typeOf(row.device)}));
-  // The build the devices run is what they report (decision 120; the gateway's env_prepare and the reference compile skill do the same): only a run's
+  // The build the devices run is what they report (decision 120): only a run's
   // locked build is compared against it. Without one the version probe records each seat's own report and judges nothing.
   const locked=typeof context.build==='string'?context.build:null;
   const names=new Set<string>(locked===null?[]:[locked]);
@@ -65,30 +69,59 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
     for(const alias of await knowledge.builds(context.product))if(alias.base===base)names.add(alias.name);
   }
   let verified=true; const assessments:string[]=[];
-  probeLoop: for(const seat of spec.seats)for(const [key,check] of Object.entries({version:seat.version,interfaces:seat.interfaces})) {
+  const readSeat=async(seat:{seat:string;index:number},key:string,command:string)=>{
     let response:Exchange|undefined;let refused=false;let failedSource:string|undefined;
     for(let attempt=1;attempt<=3;attempt++) {
-      try{ response=await client.declaredRead(spec.call,{...context,command:check.command,seat_index:seat.index},`probe.${seat.index}.${key}`);break; }
+      try{ response=await client.declaredRead(spec.call,{...context,command,seat_index:seat.index},`probe.${seat.index}.${key}`);break; }
       catch(error) {const retry=canRetryRead(error,d,context);if(error instanceof ToolReplyError)failedSource=error.source; await journal.append(binding,'probe.retry','read','error',{seat:seat.seat,check:key,attempt,next_action:retry && attempt<3?'自动重读本座位，不提交':'目标拒绝或原件不可保存，修复后重跑 precheck，未提交'});if(!retry){refused=true;break;} if(attempt<3)await sleep(d.poll_ms); }
     }
-    let matched=false,actual:string[]=[],expected:string[]=[],reason='回显里没有所需字段';
-    try {
-      const text=response && at(response.value,spec.output);
-      if(typeof text==='string') actual=probeValues(text,check.pattern);
-      if(key==='version') {expected=[...names].sort();matched=actual.length===1 && (locked===null || names.has(actual[0]));if(response&&observed)await observed({device:seat.manifest.device,label:seat.seat,values:actual,reference:response.source});}
-      else { const entries=at(at(manifest,seat.manifest.device),seat.manifest.addresses); if(!Array.isArray(entries) || !entries.length)throw new Error('清单里没有座位接口地址'); expected=addresses(entries.map(e=>at(e,seat.manifest.address))); actual=addresses(actual); matched=JSON.stringify(actual)===JSON.stringify(expected); }
-      if(actual.length)reason=key==='version' && locked===null?'回显里不止一个构建值；请核对版本提取规则':'回显值与锁定构建或绑定清单不符';
-    }catch{reason='清单或回显中缺少有效接口地址；请核对提取规则和清单';}
-    if(!response)reason=refused?'目标明确拒绝或原件无法保存；停止后续设备登录，请负责人核对受限原件和读取配置':'只读应答连续三次不可用；恢复读取后重跑预检';
-    const refs=response?[response.source]:failedSource?[failedSource]:[];
-    const unjudged=key==='version' && locked===null;
-    const artifact=await records.artifacts.ingest({bytes:canonicalBytes({seat:seat.seat,check:key,matched,actual,expected,reason:matched?null:reason,...(unjudged?{judged:false}:{})}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[`src:${d.manifest_sha256}`,...refs]}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
-    assessments.push(`src:${artifact.body.sha256}`);
-    await journal.append(binding,'device_probe','validate','completed',{seat:seat.seat,check:key,matched,...(unjudged?{judged:false}:{}),lease_digest:sha256Hex(canonicalBytes([context.lease_id,context.lease_token])),...(!matched?{missing_fact:`座位 ${seat.seat} 的 ${key}：${reason}`,next_action:key==='version'?(unjudged?'管理员读取该座位受限原件，核对版本提取声明只取出一个构建值后再采证':'管理员读取该座位受限原件，按锁定构建及已核实别名核对设备版本，恢复正确构建或修正提取声明后再采证'):'管理员读取该座位受限原件，逐一核对清单接口全集与实际接口，恢复缺少的接口事实或修正提取声明后再采证'}:{})},[`src:${artifact.body.sha256}`,...refs]);
-    verified=verified && matched;
-    if(refused)break probeLoop;
+    return {response,refused,failedSource};
+  };
+  probeLoop: for(const seat of spec.seats) {
+    for(const [key,check] of Object.entries({version:seat.version,interfaces:seat.interfaces})) {
+      const judge=(response:Exchange|undefined,refused:boolean)=>{
+        let matched=false,actual:string[]=[],expected:string[]=[],reason='回显里没有所需字段';
+        try {
+          const text=response && at(response.value,spec.output);
+          if(typeof text==='string') actual=probeValues(text,check.pattern);
+          if(key==='version') {expected=[...names].sort();matched=actual.length===1 && (locked===null || names.has(actual[0]));}
+          else { const entries=at(at(manifest,seat.manifest.device),seat.manifest.addresses); if(!Array.isArray(entries) || !entries.length)throw new Error('清单里没有座位接口地址'); expected=addresses(entries.map(e=>at(e,seat.manifest.address))); actual=addresses(actual); matched=JSON.stringify(actual)===JSON.stringify(expected); }
+          if(actual.length)reason=key==='version' && locked===null?'回显里不止一个构建值；请核对版本提取规则':'回显值与锁定构建或绑定清单不符';
+        }catch{reason='清单或回显中缺少有效接口地址；请核对提取规则和清单';}
+        if(!response)reason=refused?'目标明确拒绝或原件无法保存；停止后续设备登录，请负责人核对受限原件和读取配置':'只读应答连续三次不可用；恢复读取后重跑预检';
+        return {matched,actual,expected,reason};
+      };
+      const kept=key==='version'?replayed?.exchanges.get(`${seat.index}.version`):undefined;
+      let read:{response?:Exchange;refused:boolean;failedSource?:string}=kept?{response:kept,refused:false}:await readSeat(seat,key,check.command);
+      let judged=judge(read.response,read.refused);
+      let reuse=kept!==undefined;
+      if(reuse && !judged.matched){read=await readSeat(seat,key,check.command);judged=judge(read.response,read.refused);reuse=false;}
+      const {response,refused,failedSource}=read;
+      const {matched,actual,expected,reason}=judged;
+      if(key==='version'&&response&&observed&&!reuse)try{await observed({device:seat.manifest.device,label:seat.seat,values:actual,reference:response.source});}catch{}
+      if(reuse&&replayed&&!reused.some(row=>row.run===replayed.run))reused.push({run:replayed.run,observed_at:replayed.observed_at});
+      const refs=response?[response.source]:failedSource?[failedSource]:[];
+      const unjudged=key==='version' && locked===null;
+      const artifact=await records.artifacts.ingest({bytes:canonicalBytes({seat:seat.seat,check:key,matched,actual,expected,reason:matched?null:reason,...(unjudged?{judged:false}:{})}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[`src:${d.manifest_sha256}`,...refs]}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
+      assessments.push(`src:${artifact.body.sha256}`);
+      await journal.append(binding,'device_probe','validate','completed',{seat:seat.seat,check:key,matched,...(unjudged?{judged:false}:{}),...(reuse&&replayed?{reused_booking_run:replayed.run,reused_observed_at:replayed.observed_at}:{}),lease_digest:sha256Hex(canonicalBytes([context.lease_id,context.lease_token])),...(!matched?{missing_fact:`座位 ${seat.seat} 的 ${key}：${reason}`,next_action:key==='version'?(unjudged?'管理员读取该座位受限原件，核对版本提取声明只取出一个构建值后再采证':'管理员读取该座位受限原件，按锁定构建及已核实别名核对设备版本，恢复正确构建或修正提取声明后再采证'):'管理员读取该座位受限原件，逐一核对清单接口全集与实际接口，恢复缺少的接口事实或修正提取声明后再采证'}:{})},[`src:${artifact.body.sha256}`,...refs]);
+      verified=verified && matched;
+      if(refused)break probeLoop;
+    }
+    for(const [position,probe] of (seat.residue??[]).entries()) {
+      const key=`residue-${position+1}`;
+      const {response,refused,failedSource}=await readSeat(seat,key,probe.command);
+      const reading:ResidueReading=response?judgeResidue(at(response.value,spec.output),probe):{state:'unread',why:refused?'refused':'unavailable'};
+      const clean=reading.state==='clean';
+      const refs=response?[response.source]:failedSource?[failedSource]:[];
+      const artifact=await records.artifacts.ingest({bytes:canonicalBytes({seat:seat.seat,check:key,command:probe.command,state:reading.state,matched:clean,actual:reading.state==='residue'?reading.lines:[],expected:[],reason:reading.state==='clean'?null:residueFact(seat.seat,probe.command,reading)}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[`src:${d.manifest_sha256}`,...refs]}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
+      assessments.push(`src:${artifact.body.sha256}`);
+      await journal.append(binding,'device_probe','validate','completed',{seat:seat.seat,check:key,state:reading.state,matched:clean,lease_digest:sha256Hex(canonicalBytes([context.lease_id,context.lease_token])),...(reading.state!=='clean'?{missing_fact:residueFact(seat.seat,probe.command,reading),next_action:residueNext(reading)}:{})},[`src:${artifact.body.sha256}`,...refs]);
+      verified=verified && clean;
+      if(refused)break probeLoop;
+    }
   }
-  const report=await records.artifacts.ingest({bytes:canonicalBytes({verified,assessments,...(unprobed.length?{unprobed_non_targets:unprobed}:{})}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:assessments}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
+  const report=await records.artifacts.ingest({bytes:canonicalBytes({verified,assessments,...(reused.length?{reused_booking_versions:reused}:{}),...(unprobed.length?{unprobed_non_targets:unprobed}:{})}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:assessments}},author:{user:null},provenanceType:'projected',visibility:{readers:[binding.user],admins:true,packs:[],shareable:false}});
   await journal.append(binding,'result','read_back','completed',{reference:`src:${report.body.sha256}`,probe_assessments:assessments.length,...(unprobed.length?{unprobed_non_targets:unprobed,note:`${unprobed.length} 台清单设备未探测（非派发目标，按声明的类型闭集判定）；它们只按清单身份参与拓扑与地址绑定，不派发命令`}:{})},assessments);
   return verified;
 }

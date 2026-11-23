@@ -1,0 +1,59 @@
+{
+  "schema": "compat-register@1",
+  "status": "locked",
+  "description": "Locked compatibility words, string literals, environment prefixes, and retired/C3 symbols enforced by .github/checks/no-compat-paths.ts (Q&A #9 locked register).",
+  "excludePaths": [
+    "hub/records/migrations.ts"
+  ],
+  "words": [
+    "legacy",
+    "backfill",
+    "historical",
+    "deprecated",
+    "compat",
+    "backcompat",
+    "dual",
+    "shim",
+    "polyfill",
+    "workaround",
+    "obsolete"
+  ],
+  "literals": [
+    "bind-legacy",
+    "bind-skills"
+  ],
+  "prefixes": [
+    "CIRCLE_SERVER_"
+  ],
+  "symbols": [
+    "bindLegacySkills",
+    "bindLegacyParser",
+    "restoreLegacyRequests",
+    "legacyResultRequests",
+    "backfillCitations",
+    "summarizeStoredResults",
+    "materializePersonalObjects",
+    "RETIRED_NAMES",
+    "RETIRED_PREFIX",
+    "retiredEnvironmentKeys",
+    "isRetiredName",
+    "RetiredName",
+    "assertNoRetiredEnvironment",
+    "RETIRED_VARIABLES",
+    "dualWrite",
+    "dualRead",
+    "verifyLocalFile",
+    "NewRunRecord",
+    "PersistedLeaseContextRow",
+    "PersistedRequirementSummary",
+    "StoredLayerResult",
+    "StoredPartitionItem",
+    "StoredValidationResult",
+    "storedItemNotices",
+    "readStoredValidationResult",
+    "PublishableRequirementsFile",
+    "bindingRecord",
+    "bindingRecords",
+    "bindingDisclosure"
+  ]
+}

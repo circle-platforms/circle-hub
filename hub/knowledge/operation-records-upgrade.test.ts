@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -87,7 +88,7 @@ test('a run and receipt persisted by the frozen Hub replay unchanged after upgra
   assert.equal(runsBefore.length, 1);
   assert.equal(resultsBefore.length, 1);
 
-  const knowledge = createKnowledge({ records: kit, packs, external, parsers: createTestParserRegistry(), sandbox: { requireOsIsolation: await sandboxIsolation() }, admin });
+  const knowledge = createKnowledge({...TEST_KNOWLEDGE_READ_PORTS, records: kit, packs, external, parsers: createTestParserRegistry(), sandbox: { requireOsIsolation: await sandboxIsolation() }, admin });
   // The stored record is unchanged; only its derived view now says the source of its `at` is unknown (round-five review, item 8).
   assert.equal('captured_at_declared' in (fixture.view.contribution as { feeding: object }).feeding, false);
   const upgradedView = { ...fixture.view, note: HISTORICAL_CAPTURE_TIME };

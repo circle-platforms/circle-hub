@@ -1,7 +1,7 @@
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { RunRequestView } from '../../ports.ts';
 import { href, html, table, type Html } from './html.ts';
-import type { PageContext } from './pages.ts';
+import type { PageContext } from './context.ts';
 import { box, chip, count, when } from './ui.ts';
 
 /** The most kinds of request a page draws: a pack can ask something different of each of thousands of items, and a table of 30,000 rows was 13.8 MB of page. */

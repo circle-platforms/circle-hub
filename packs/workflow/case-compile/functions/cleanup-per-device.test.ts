@@ -29,7 +29,6 @@ function twoDevices(steps: Step[], runner?: string[]) {
   const profile = structuredClone(value.subject.profile) as Doc;
   profile.allowed.push({ object: B, method: 'configure', parameters: { line: 'device_cli' }, reviewed: true });
   profile.seats.push({ object: B, device: 'dut1', ordinal: 1 });
-  profile.runtime.contract_sha256 = signed.original.contract_sha256;
   value.subject.contract = signed as never;
   value.subject.profile = profile as never;
   return value;
@@ -47,11 +46,12 @@ test('two devices configured in turn are cleaned in either device order', () => 
 test('with the runner covering both devices, an explicit inverse on the second device is not taken for an extra operation', () => {
   // The shape met on a real bed: a peer entry on each device, the runner clears both, the plan undoes them device by device.
   const steps = [on(A, 'demo feature on'), on(A, 'demo pool add one 10'), on(B, 'demo pool add two 20'), on(A, 'demo relay enable'), undo(A, 'demo relay disable'), undo(A, 'no demo pool add one'), undo(B, 'no demo pool add two')];
-  const value = twoDevices(steps, ['demo pool', 'demo feature']);
+  refused(twoDevices(steps, ['demo pool', 'demo feature']), 'demo feature off');
+  const value = twoDevices([...steps, undo(A, 'demo feature off')], ['demo pool', 'demo feature']);
   supported(value);
   const [shape] = checkContractShape(value);
   assert.equal(shape?.verdict, 'support', JSON.stringify(shape));
-  assert.match(shape!.statement, /widget-seat 的“demo feature on”/, 'the switch nobody undid stays the runner\'s');
+  assert.doesNotMatch(shape!.statement, /由运行器自己的清理收尾/, 'the declared switch inverse must run in the case before runner clearing');
   assert.doesNotMatch(shape!.statement, /demo pool add/, 'the case undid both pool entries itself');
 });
 

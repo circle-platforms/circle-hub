@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {KnowledgeError} from '../../knowledge/api.ts';
 import {newId} from '../../records/api.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import {recoverEditor} from './form-recovery.ts';
 
 const ctx={principal:{id:newId('usr'),role:'user',name:'合成作者'},csrf:'synthetic-session-csrf',chrome:(title:string,extra:unknown)=>({title,...extra as object,user:null,csrf:null})} as PageContext;

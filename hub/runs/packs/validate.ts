@@ -259,6 +259,9 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
     if(!requirements.requirements.length||requirements.requirements.some(row=>row.independent_of!=='predecessor'))c.add(problem('workflow.predecessor_access','workflow.json','只读前驱要求每个要求项都独立于前驱','所有要求项声明 independent_of: predecessor，或移除 predecessor_access',{field:'/predecessor_access'}));
     if(workflow.criterion_review&&workflow.inputs.some(row=>row.default_from_predecessor!==undefined||row.from_runs!==undefined))c.add(problem('workflow.predecessor_default','workflow.json','判据复核前驱不能缺省绑定已受理结果','显式绑定声明提交的 rec:，不要绑定前驱结果',{field:'/inputs'}));
   }
+  if(workflow&&requirements&&requirements.requirements.every(row=>row.accepted_producer==='fact'))workflow.inputs.forEach((row,k)=>{
+    if(row.from_runs?.after_start===true)c.add(problem('workflow.late_binding','workflow.json',`输入槽 ${row.slot} 声明了开运行后再绑定（from_runs.after_start），可这个工作流的要求项全是事实，开运行时就算出结果，之后不再核验`,'去掉 after_start，在开运行时绑定已受理结果；或者给工作流加上由模型提交的要求项',{field:`/inputs/${k}/from_runs/after_start`}));
+  });
   if(workflow?.criterion_review&&requirements&&(workflow.predecessor_access!=='view'||requirements.requirements.length!==1||requirements.requirements.some(row=>!row.independence_by_account)))c.add(problem('workflow.criterion_review','workflow.json','判据复核需要只读前驱和一个按账号独立的要求项','声明 predecessor_access: view 和 independence_by_account: true',{field:'/criterion_review'}));
   if (requirements) {
     for (const [i, row] of (ledger?.shapes ?? []).entries()) {
@@ -270,7 +273,7 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       if (ledger!.shapes.findIndex(r => r.requirement === row.requirement && r.interpreter === row.interpreter) !== i) c.add(problem('ledger.duplicate', 'ledger.json', '同一判定形状重复裁定', '删除重复的形状', {field}));
     }
     requirements.requirements.forEach((r,i) => {
-      if (r.run_table && !ledger?.shapes.some(shape=>shape.requirement===r.key)) c.warn(problem('ledger.unruled','requirements.json',`要求项 ${r.key} 的台账为空，带来的表都会是未裁定`, '由包作者在下一版 ledger.json 裁定允许的解释器', {field:`/requirements/${i}/run_table`}));
+      if (r.run_table && !ledger?.shapes.some(shape=>shape.requirement===r.key)) c.warn(problem('ledger.unruled','requirements.json',`要求项 ${r.key} 的裁定清单为空，带来的表都会是未裁定`, '由包作者在下一版 ledger.json 裁定允许的解释器', {field:`/requirements/${i}/run_table`}));
     });
   }
 
@@ -547,6 +550,7 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
   const entries: FunctionEntry[] = [];
   if (workflow) {
     entries.push(functionEntry(workflow.projection, 'workflow.json', '/projection'));
+    if (workflow.refresh) entries.push(functionEntry(workflow.refresh, 'workflow.json', '/refresh'));
     if (workflow.expected_sources) entries.push(functionEntry(workflow.expected_sources, 'workflow.json', '/expected_sources'));
   }
   for (const [k, check] of (checks?.checks ?? []).entries()) {

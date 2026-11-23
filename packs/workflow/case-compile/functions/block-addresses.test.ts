@@ -63,8 +63,7 @@ test('capacity excess refuses a block plan before the volume runs and valid ordi
 test('addresses inside a parsed block command use the same closed command-role declaration',()=>{
  const g=addressFixture(),source='src:'+'d'.repeat(64)+'/json@1/p/signature';
  const doc=structuredClone(g.contractDoc);doc.effects.command.command_roles.push({signature:source,position:0,role:'bed_endpoint'});
- const signed=signTypedRuntime(doc),profile=structuredClone(g.profileDoc);profile.runtime.contract_sha256=signed.original.contract_sha256;
- const catalog=structuredClone(g.catalog) as any;
+ const signed=signTypedRuntime(doc),profile=structuredClone(g.profileDoc); const catalog=structuredClone(g.catalog) as any;
  catalog.entries.push({words:['demo','show','address'],reference:'tree:'+catalog.root+'/commands/demo/show/address',signatures:[{id:source,reference:source,params:[{name:'endpoint',type:'ipv4',native_type:{name:'synthetic-ipv4',grammar:'synthetic-address@1',declaration:'src:'+'d'.repeat(64)+'/json@1/p/types/endpoint'}}]}]});
  for(const [value,code]of [['192.0.2.10',null],['192.0.2.130','case-compile.environment_unreachable'],['192.0.2.200','case-compile.address_off_bed']] as const){
   const data=g.data();data.blocks[0].call.args=['demo show address '+value];

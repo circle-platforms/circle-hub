@@ -1,9 +1,6 @@
-// Public surface of the telemetry package (B08, decision 146): the trace context (usage.ts, the one file the packages below
-// records may import directly), the writer, the retention job and the permission-checked reader. Code above records calls
-// the context through this file; startTelemetry belongs to whoever owns the process (serve, one CLI command).
 import type { Environment } from '../../contracts/generated/vocabulary.ts';
 import type { DatabaseConfig } from '../config/index.ts';
-import { createPool, Database } from '../records/db.ts';
+import { createPool, Database } from '../records/api.ts';
 import { TraceReader } from './reader.ts';
 import { scheduleRetention, type RetentionSchedule } from './retention.ts';
 import { installTraceSink } from './usage.ts';
@@ -36,6 +33,7 @@ export {
   type Usage,
 } from './usage.ts';
 export { BATCH_ROWS, FLUSH_MS, QUEUE_ROWS, TraceWriter, type StoredSpanRow, type WriterOptions, type WriterStats } from './writer.ts';
+export { toolLocalMinute, toolZoneOf } from './tool-time.ts';
 
 /** How long close() waits for the last write; a process that is stopping does not wait for a database that is gone. */
 const CLOSE_WAIT_MS = 5000;

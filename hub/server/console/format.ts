@@ -19,7 +19,15 @@ export function relativeTime(iso:string|null|undefined,now=new Date()):string{
  return d.getFullYear()===now.getFullYear()?`${pad(d.getMonth()+1)}-${pad(d.getDate())}`:`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 }
 export function time(iso:string|null|undefined,now=new Date()):Html{return html`<time class="nowrap ch-time"${iso?html` datetime="${iso}" title="${hoverTime(iso)}"`:''}>${relativeTime(iso,now)}</time>`;}
+export function localMinute(iso:string|null|undefined):Html{
+ if(!iso)return html`未记录`;
+ const d=new Date(iso);if(!Number.isFinite(d.getTime()))return html`${iso}`;
+ const fallback=`${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+ return html`<time class="nowrap ch-time" datetime="${iso}" data-local-minute title="${hoverTime(iso)}">${fallback}</time>`;
+}
 export function size(bytes:number):string{
  if(!Number.isFinite(bytes)||bytes<0)return '未知';const units=['B','KB','MB','GB','TB'];let n=bytes,unit=0;
  while(n>=1024&&unit<units.length-1){n/=1024;unit++;}return n.toLocaleString('en-US',{minimumFractionDigits:unit?1:0,maximumFractionDigits:unit?1:0})+' '+units[unit];
 }
+
+export { count } from './numbers.ts';

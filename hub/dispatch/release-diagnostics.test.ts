@@ -53,10 +53,43 @@ for(const [condition,change]of cases)test('release inspection identifies '+condi
  const c=await setup();t.after(()=>c.close());const d=structuredClone(c.executor.definition);await change(c,d);
  const result=await inspectInput(c.admin,c.run,d,c.kit,c.runs,c.workflows,c.now());
  assert.equal(result.input,undefined);assert.ok(result.checks.some(check=>check.condition===condition&&check.satisfied!==true),JSON.stringify(result.checks));
- assert.ok(!JSON.stringify(result.checks).includes('private-source-marker'));
+ const serialized=JSON.stringify(result.checks);
+ if(condition==='proof.executor_identity'){
+  const identity=result.checks.find(check=>check.condition===condition)!;
+  assert.ok(identity.fields.some(field=>field.expected==='private-source-marker'||field.actual==='private-source-marker'));
+  assert.ok(identity.fields.every(field=>field.expected_sha256.length===64&&field.actual_sha256.length===64));
+ }else assert.ok(!serialized.includes('private-source-marker'));
  for(const check of result.checks)if(check.satisfied===null)assert.ok(check.missing_fact&&check.next_action);
  for(const check of result.checks)for(const field of check.fields){assert.equal(field.expected_sha256.length,64);assert.equal(field.actual_sha256.length,64);}
  await assert.rejects(verifyInput(c.admin,c.run,d,c.kit,c.runs,c.workflows,c.now()),error=>error instanceof ReleaseDiagnosticError&&error.checks.some(check=>check.condition===condition&&check.satisfied!==true));
+});
+test('a verification by another version of the function the executor names is shown in plain, and what depends on a designated fact stays unchecked',async t=>{
+ const c=await setup();t.after(()=>c.close());const d=structuredClone(c.executor.definition);
+ d.proof.warrant_id='synthetic-workflow.sheet_verified@1.0.0';claim(c).warrant.id='synthetic-workflow.sheet_verified@1.1.0';
+ const result=await inspectInput(c.admin,c.run,d,c.kit,c.runs,c.workflows,c.now());
+ const check=result.checks.find(row=>row.condition==='proof.claims.warrant_id')!;
+ assert.equal(check.satisfied,false);
+ assert.deepEqual(check.fields.map(field=>[field.matches,field.expected,field.actual]),[[false,'synthetic-workflow.sheet_verified@1.0.0','synthetic-workflow.sheet_verified@1.1.0']]);
+ for(const condition of ['proof.claims.validity','proof.claims.consistency']){
+  const dependent=result.checks.find(row=>row.condition===condition)!;assert.equal(dependent.satisfied,null,condition);assert.ok(dependent.missing_fact&&dependent.next_action,condition);
+  assert.equal(dependent.blocked_by,'proof.claims.warrant_id',condition+' names the condition that stopped it');
+ }
+ assert.deepEqual(result.checks.filter(row=>row.satisfied===false).map(row=>row.condition),['proof.claims.warrant_id'],'the one cause is the one error');
+ // Another function of the same pack, and the same function of another pack, stay digests.
+ for(const other of ['synthetic-workflow.other_check@1.1.0','other-workflow.sheet_verified@1.1.0']){
+  claim(c).warrant.id=other;
+  const again=(await inspectInput(c.admin,c.run,d,c.kit,c.runs,c.workflows,c.now())).checks.find(row=>row.condition==='proof.claims.warrant_id')!;
+  assert.equal(again.satisfied,false);assert.ok(again.fields.every(field=>field.expected===undefined&&field.actual===undefined),other);
+ }
+});
+test('a designated fact that is no longer valid is an error of its own, and agreement is then not judged',async t=>{
+ const c=await setup();t.after(()=>c.close());const d=structuredClone(c.executor.definition);
+ claim(c).validity.expires_at=c.now().toISOString();
+ const checks=(await inspectInput(c.admin,c.run,d,c.kit,c.runs,c.workflows,c.now())).checks;
+ const of=(condition:string)=>checks.find(row=>row.condition===condition)!;
+ assert.equal(of('proof.claims.warrant_id').satisfied,true);
+ assert.equal(of('proof.claims.validity').satisfied,false);assert.equal(of('proof.claims.validity').blocked_by,undefined);
+ assert.equal(of('proof.claims.consistency').satisfied,null);assert.equal(of('proof.claims.consistency').blocked_by,'proof.claims.validity');
 });
 async function gate(c:C){return prepareEffectGate({records:c.kit,runs:c.runs,workflows:c.workflows,by:c.admin,run:c.run,executor:c.executor.id,definition:c.executor.definition,resolved_digest:c.executor.resolved_digest,now:c.now});}
 test('each dispatch parameter mismatch and artifact requirement mismatch names its field',async t=>{

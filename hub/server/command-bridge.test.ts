@@ -71,7 +71,8 @@ test('a bridged command acts as the administrator of the given token, exactly as
   const bridge = createCommandBridge({ env, cwd: scratch, overrides: overrides() });
   const created = await bridge.run(['user', 'create', 'alice', '--role=user'], { token: adminToken });
   assert.equal(created.code, 0, created.stderr.join('\n'));
-  assert.match(created.stdout.join('\n'), /已建立用户 alice/);
+  assert.match(created.stdout.join('\n'), /已建立用户 alice（用户）/);
+  assert.doesNotMatch(created.stdout.join('\n'), /usr_|token issue/);
   const issued = await bridge.run(['token', 'issue', 'alice', '--label=web'], { token: adminToken });
   assert.equal(issued.code, 0, issued.stderr.join('\n'));
   assert.match(issued.stdout.at(-1)!, /^[A-Za-z0-9_-]{43}$/, 'the issued token is the last line, shown once');

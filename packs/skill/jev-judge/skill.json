@@ -1,0 +1,11 @@
+{
+  "schema": "skill@1",
+  "parsers": [],
+  "modules": [
+    {
+      "id": "jev-client",
+      "title": "Jev 判断客户端",
+      "family": "只发往 TypeSafe 固定地址的 System One 请求模块：密钥只由调用方传入，请求和应答逐项核对，恒输出模型判断披露字段，超时和断连的请求不重发"
+    }
+  ]
+}

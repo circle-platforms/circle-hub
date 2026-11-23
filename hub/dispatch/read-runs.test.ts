@@ -83,3 +83,20 @@ test('the runs of some jobs come from those jobs alone, never from a scan of eve
   assert.deepEqual(asked, [job, unbound]);
   assert.equal((await dispatchedRuns(records, [])).size, 0);
 });
+
+test('a run job carries when its journal recorded the end: the first terminal record, or the first that left the effect unresolved', async () => {
+  const reservation = { body: { detail: { binding: { job: 'a'.repeat(64), input: { run, plan_run: plan, item: 'verification', items: ['case-a'], sha256: 'b'.repeat(64) } } } } };
+  const event = (ended_at: unknown, detail: Record<string, unknown>) => ({ digest: 'd'.repeat(64), body: { ended_at, detail } });
+  const read = async (history: unknown[], events = history.length) => {
+    const records = { store: { find: async () => ({ items: [reservation], next: null }), findMany: async () => history, put: () => { throw new Error('unexpected write'); } } } as unknown as Pick<RecordsKit, 'store'>;
+    const [job] = await readRunJobs(records, { status: async (_by: Principal, id: string) => ({ job: id, phase: 'complete', outcome: 'effective' as const, frozen: false, events }) }, admin, run);
+    return [job.ended, job.ended_at];
+  };
+  const reserved = event('2026-11-19T01:00:00.000Z', { phase: 'reservation' });
+  assert.deepEqual(await read([reserved, event('2026-11-19T02:00:00.000Z', { phase: 'complete', done: true }), event('2026-11-19T03:00:00.000Z', { phase: 'dispose', done: true })]), ['done', '2026-11-19T02:00:00.000Z'], 'cleanup and later records do not move the end');
+  assert.deepEqual(await read([reserved, event('2026-11-19T02:30:00.000Z', { phase: 'unknown' })]), ['unknown', '2026-11-19T02:30:00.000Z']);
+  assert.deepEqual(await read([reserved, event('2026-11-19T02:30:00.000Z', { phase: 'unknown' }), event('2026-11-19T04:00:00.000Z', { phase: 'complete', done: true })]), ['done', '2026-11-19T04:00:00.000Z'], 'an effect resolved later ended when its terminal record was written');
+  assert.deepEqual(await read([reserved]), [null, undefined], 'a running job has no end');
+  assert.deepEqual(await read([reserved, event('not a time', { phase: 'complete', done: true })]), ['done', undefined], 'a record without a time gives none');
+  assert.deepEqual(await read([reserved, event('2026-11-19T02:00:00.000Z', { phase: 'complete', done: true })], 1), [null, undefined], 'only the records the status counted are read');
+});

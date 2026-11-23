@@ -91,7 +91,7 @@ const VIEW_WRITING = '照该输入槽说明里的写法逐字填视图标识：k
 interface ViewAbsence { absent: string; fix: string }
 const absentRead = (id: string, why: ViewAbsence): ExternalRead => ({ ok: false, id, reason: why.absent, inputError: { code: 'SOURCE_ABSENT', message: why.absent, fix: why.fix } });
 const productAbsent = (product: string) => ({ code: 'SOURCE_ABSENT' as const, message: `Hub 里没有产品 ${cutText(product, 80)}`, fix: '核对产品名（产品 id 或任一名字）后重读' });
-const productForbidden = (product: string) => ({ code: 'SOURCE_NOT_PERMITTED' as const, message: `产品 ${product} 的知识存在，你没有读取权限`, fix: '请管理员给你分配一个绑定这条产品线的任务包后重读' });
+const productForbidden = (product: string) => ({ code: 'SOURCE_NOT_PERMITTED' as const, message: `产品 ${product} 的知识存在，当前账户没有读取权限`, fix: '请联系管理员为该账户分配一个绑定这条产品线的工作流或技能后重读' });
 
 /** The query keys each view takes, and which of them it needs. */
 const QUERY = {

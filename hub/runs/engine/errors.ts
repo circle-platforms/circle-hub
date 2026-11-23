@@ -3,6 +3,7 @@
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES, type ProtocolCode } from '../../../contracts/generated/protocol.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import { UNAVAILABLE_MESSAGE } from '../../refs/api.ts';
+import type { LoadedWorkflow } from '../../ports.ts';
 
 export class Refusal extends Error {
   readonly errors: ProtocolError[];
@@ -45,11 +46,16 @@ export function missing(exists: boolean, path: string | undefined, what: string,
   return new Refusal([missingError(exists, path, what, fix)], adminNote);
 }
 
-/** The registered fix of a core violation or protocol code; pack codes have none here. */
-export function fixOf(code: string): string | undefined {
+export function fixOf(code: string, workflow?: Pick<LoadedWorkflow, 'pack' | 'manifest' | 'readJson'>): string | undefined {
   if (Object.hasOwn(CORE_VIOLATION_CODES, code)) return CORE_VIOLATION_CODES[code as keyof typeof CORE_VIOLATION_CODES].fix;
   if (Object.hasOwn(PROTOCOL_CODES, code)) return PROTOCOL_CODES[code as ProtocolCode].fix;
-  return undefined;
+  if (!workflow || !code.startsWith(workflow.pack.id + '.') || !workflow.manifest.files.some(file => file.path === 'tables/codes.json')) return undefined;
+  const table = workflow.readJson('tables/codes.json');
+  if (table === null || typeof table !== 'object' || !('violations' in table) || !Array.isArray(table.violations)) return undefined;
+  const rows = table.violations.filter((row: unknown): row is Record<string, unknown> => row !== null && typeof row === 'object' && 'code' in row && row.code === code);
+  if (rows.length === 0) return undefined;
+  if (rows.length !== 1 || typeof rows[0].fix !== 'string') throw new Error('已登记包码的修正说明无效，请维护人修正包码表');
+  return rows[0].fix;
 }
 
 /** The text of a thrown value for the admin log, never for callers. */

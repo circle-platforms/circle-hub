@@ -2,7 +2,7 @@
 // one note what was left out or shortened and how to read it.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { TEXT_BUDGET, fit, oneLine, softCap, type Block, type Entry } from './budget.ts';
+import { fit, oneLine, type Block, type Entry } from './budget.ts';
 
 const NOTE = /^部分：/;
 
@@ -20,8 +20,12 @@ function random(seed: number): () => number {
 
 const linesOfEntry = (entry: Entry): readonly string[] => (typeof entry === 'string' ? [entry] : Array.isArray(entry) ? (entry as readonly string[]) : (entry as { lines: readonly string[] }).lines);
 
-test('the budget is 30,000 characters, below what the real client was measured to deliver (about 49,000)', () => {
-  assert.equal(TEXT_BUDGET, 30_000);
+test('without a budget nothing is left out, however long (decision 158: the client keeps a long answer in a file)', () => {
+  const entries = Array.from({ length: 3000 }, (_, i) => `- 条目 ${i} ${'字'.repeat(100)}`);
+  const fitted = fit([{ priority: 0, head: ['条目：'], entries, more: () => '不该出现' }], { tail: ['追踪 t'] });
+  assert.equal(fitted.cut, false);
+  assert.deepEqual(fitted.shown, [3000]);
+  assert.equal(fitted.text, ['条目：', ...entries, '追踪 t'].join('\n'));
 });
 
 test('everything that fits is shown in display order without a note, the tail last', () => {
@@ -119,38 +123,7 @@ test('a block without its own way to read the rest uses the fallback; identical 
   assert.ok(note.includes('问管理员'));
 });
 
-test('softCap: the first part keeps its priority, the rest yields to other blocks, counts on, and needs the first part whole', () => {
-  const steps = Array.from({ length: 100 }, (_, i) => `规程第 ${i + 1} 行 ${'x'.repeat(30)}`);
-  const items = Array.from({ length: 10 }, (_, i) => `- 条目 ${i}`);
-  const blocksOf = (): Block[] => [
-    ...softCap({ priority: 1, head: ['规程：'], entries: steps, unit: '规程', more: (from) => `规程：从第 ${from + 1} 行起读` }, 500, 5, 0),
-    { priority: 2, head: ['条目：'], entries: items, unit: '条目', measure: '个' },
-  ];
-  const fitted = fit(blocksOf(), { budget: 1200 });
-  assert.ok(fitted.text.length <= 1200);
-  const [firstPart, rest, shownItems] = fitted.shown;
-  const lines = fitted.text.split('\n');
-  assert.ok(firstPart > 0 && firstPart < 100);
-  assert.equal(shownItems, 10, 'the items fill before the rest of the procedure');
-  assert.ok(rest > 0, 'the rest takes what is left');
-  const shownSteps = lines.filter((l) => l.startsWith('规程第 '));
-  assert.deepEqual(shownSteps, steps.slice(0, firstPart + rest), 'one contiguous procedure, in order');
-  assert.ok(lines.indexOf('条目：') > lines.indexOf(shownSteps.at(-1)!), 'display order is kept');
-  const from = firstPart + rest;
-  assert.ok(lines.at(-1)!.includes(`规程 ${100 - from} 行（第 ${from + 1} 到第 100 行）`), 'the rest counts on from the first part');
-  assert.ok(lines.at(-1)!.includes(`规程：从第 ${from + 1} 行起读`), 'and its way on starts at the first line left out');
-  const tight = fit(blocksOf(), { budget: 300 });
-  assert.equal(tight.shown[1], 0, 'nothing of the rest while the first part is not whole');
-  assert.ok(tight.text.length <= 300);
-});
-
-test('softCap with a rest priority below the list’s own: the rest still follows the first part and is never dropped silently', () => {
-  const lines = Array.from({ length: 10 }, (_, i) => `第 ${i + 1} 行`);
-  const blocks = softCap({ priority: 3, entries: lines, unit: '行' }, 20, 1, 0);
-  assert.equal(blocks[1].priority, 3, 'the rest is not put before the first part');
-  const fitted = fit(blocks);
-  assert.equal(fitted.text, lines.join('\n'), 'everything fits, so everything is shown');
-  assert.equal(fitted.cut, false);
+test('a block that must follow another waits for it, and is never dropped silently', () => {
   // A block whose prerequisite has a later priority waits for it instead of being skipped for good.
   const manual: Block[] = [
     { priority: 3, entries: ['甲 1', '甲 2'] },
@@ -176,7 +149,7 @@ test('property: whatever the blocks, the text is within the budget, lines are ne
   for (let run = 0; run < 300; run++) {
     const seed = 1000 + run;
     const next = random(seed);
-    const budget = [TEXT_BUDGET, 2000, 500, 160][Math.floor(next() * 4)];
+    const budget = [30_000, 2000, 500, 160][Math.floor(next() * 4)];
     const tail = next() < 0.5 ? ['追踪 4bf92f3577b34da6a3ce929d0e0e4736'] : [];
     const blocks: Block[] = [];
     for (let b = 0, count = 1 + Math.floor(next() * 8); b < count; b++) {
@@ -190,9 +163,7 @@ test('property: whatever the blocks, the text is within the budget, lines are ne
         unit: `块${b}`,
         more: next() < 0.8 ? (from: number) => `块${b}：从第 ${from + 1} 个起读` : undefined,
       } satisfies Block;
-      // Some lists are split by softCap, with any rest priority, lower ones included.
-      if (next() < 0.3 && entries.length > 1) blocks.push(...softCap(block, Math.floor(next() * 3000), Math.floor(next() * 5), blocks.length));
-      else blocks.push(block);
+      blocks.push(next() < 0.3 && blocks.length > 0 ? { ...block, after: Math.floor(next() * blocks.length) } : block);
     }
     const fitted = fit(blocks, { budget, tail });
     assert.ok(fitted.text.length <= budget, `seed ${seed}: ${fitted.text.length} > ${budget}`);

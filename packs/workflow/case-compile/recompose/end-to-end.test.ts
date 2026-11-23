@@ -1,4 +1,5 @@
 import { assembleRecompose } from '../tools/seal-recompose.ts';
+import { submissionFor } from './tools/submit-records.ts';
 import { fixture as blockFixture, plan as blockPlan, call as blockCall } from '../testing/blocks.ts';
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { satisfiedRecipe } from '../tools/generate-workbook.ts';
@@ -6,6 +7,7 @@ import { generateWorkbook } from '../functions/generate.ts';
 // The real run engine, registry, record reader and sandboxes; all systems and model decisions are synthetic.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { authorStepCoverage, fidelityBrief } from '../functions/fidelity.ts';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -19,6 +21,7 @@ import { stageRecompose } from '../testing/stage-recompose.ts';
 import { fixture as unitFixture } from '../testing/recompose.ts';
 import { fixtureJson, fixtureText } from '../../../../tests/fixtures/recompose/index.ts';
 import { admittedRecomposition } from '../functions/recomposition.ts';
+import { readLate } from '../functions/late.ts';
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 const sha = (s: string | Uint8Array) => createHash('sha256').update(s).digest('hex');
 test('a product publication, genuine independent adjudication and append-only recomposition admit one complete artifact', { skip }, async () => {
@@ -78,12 +81,12 @@ test('a product publication, genuine independent adjudication and append-only re
         const submit = (run: string, item: string, data: any) => ({ run, model: 'scripted-recomposer', items: [{ item, handling: 'handled' as const, slots: { record: [{ text: '合成重组判断', quotes, data }] } }] });
         const draft = await h.service.submitResult(h.alice, submit(original.run, original.items[0].id, record), call());
         assert.equal(draft.acceptance, 'accepted', JSON.stringify(draft.errors));
-        assert.ok(Object.values(draft.result!.partitions).flat().some(i => i.requirements.some(r => r.status !== 'satisfied')));
+        assert.ok(Object.values(draft.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(draft.result));
         const submission = (await h.kit.store.find({ kind: 'submission', key: INDEX.submissionRun, value: original.run })).items[0];
         await h.kit.authorizations.share(h.admin, original.run, [h.bob.id]);
         const review = await h.service.startRunDetailed(h.bob, { pack: 'recompose-adjudication', predecessor: original.run, inputs: { source_run: { reference: 'rec:' + (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: original.run })).items[0].digest }, declaration: { reference: 'rec:' + submission.digest }, evidence: [{ external }, ...inputs.evidence] } }, call());
         assert.equal(review.answer.call_result, 'ok', JSON.stringify(review.answer.errors));
-        const reviewed = await h.service.submitResult(h.bob, { run: review.answer.run!.run, model: 'scripted-independent-model', items: review.answer.run!.items.map(i => ({ item: i.id, handling: 'handled', slots: { decision: [{ text: '合成独立原子裁定', code: 'accept', location: i.location, quotes: [i.fields.quote as any], data: { atom: String(i.fields.atom), state: 'settled', load_bearing: i.fields.atom === 'a1', bed_independent: true, reason: '按真实原文与声明位置核对合成语义' } }] } })) }, call());
+        const reviewed = await h.service.submitResult(h.bob, { run: review.answer.run!.run, model: 'scripted-independent-model', items: review.answer.run!.items.map(i => ({ item: i.id, handling: 'handled', slots: { decision: [{ text: '合成独立用例原句裁定', code: 'accept', location: i.location, quotes: [i.fields.quote as any], data: { atom: String(i.fields.atom), state: 'settled', load_bearing: i.fields.atom === 'a1', bed_independent: true, reason: '按真实原文与声明位置核对合成语义' } }] } })) }, call());
         assert.equal(reviewed.acceptance, 'accepted', JSON.stringify(reviewed.errors));
         assert.ok(Object.values(reviewed.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(reviewed.result));
         await h.kit.authorizations.share(h.admin, review.answer.run!.run, [h.alice.id]);
@@ -107,7 +110,6 @@ test('a product publication, genuine independent adjudication and append-only re
         const runtime = blockFixture(), rawContract = structuredClone(runtime.contractDoc) as any;
         rawContract.effects.command.command_scope = ['/commands/widget', '/commands/no/widget', '/commands/show'];
         const contract = signTypedRuntime(rawContract), profile = structuredClone(runtime.profileDoc);
-        profile.runtime.contract_sha256 = contract.original.contract_sha256;
         profile.workbook.autoid_pattern = '^orbit-case-[0-9]+$';
         const extra = (words: string[], params: any[]) => ({ words, reference: 'tree:' + build.root + '/commands/' + words.join('/'), signatures: [{ id: words.join('/'), reference: 'src:' + build.root + '/xml@1/x/' + words.join('/') + '/arguments', params }] });
         const pool = { name: 'pool', type: 'string' as const, native_type: { name: 'synthetic-string', declaration: 'src:' + build.root + '/xml@1/x/arg', grammar: 'synthetic-tree@1' } };
@@ -120,7 +122,7 @@ test('a product publication, genuine independent adjudication and append-only re
         const planStarted = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: compileInputs, parameters: compileParameters }, call());
         assert.equal(planStarted.answer.call_result, 'ok', JSON.stringify(planStarted.answer.errors));
         const expected = record.contract.expectation, quote = { reference: expected.quote_ref, text: expected.text }, criterion = { id: 'interval_literal', expectation: quote.reference, quote, kind: 'literal', operator: 'abs_found', literal: 'interval=5', rationale: '合成模型选择可观察间隔字段，交独立复核', scope_root: build.root };
-        const data = blockPlan([{ kind: 'CONFIG', id: 'configure', call: blockCall('widget health interval pool1 5') }, { kind: 'OBSERVE_ASSERT', id: 'observe', call: blockCall('show health pool1'), assertions: [{ id: 'assert_interval', output: 'observe', op: 'abs_found', literal: 'interval=5', quote, expectation: quote.reference, criterion: criterion.id }] }, { kind: 'CONFIG', id: 'cleanup', cleanup: true, call: blockCall('no widget health interval pool1') }], [{ expectation: quote.reference, status: 'asserted', assertions: ['assert_interval'] }]);
+        const data = blockPlan([{ kind: 'CONFIG', id: 'configure', call: blockCall('widget health interval pool1 5'), author_step_refs: record.atoms.filter((atom: any) => atom.kind === 'action').map((atom: any) => atom.id) }, { kind: 'OBSERVE_ASSERT', id: 'observe', call: blockCall('show health pool1'), assertions: [{ id: 'assert_interval', output: 'observe', op: 'abs_found', literal: 'interval=5', quote, expectation: quote.reference, criterion: criterion.id }] }, { kind: 'CONFIG', id: 'cleanup', cleanup: true, call: blockCall('no widget health interval pool1') }], [{ expectation: quote.reference, status: 'asserted', assertions: ['assert_interval'] }]);
         data.criteria = [criterion];
         data.block_context = { preconditions: [], causal_links: [{ from: 'configure', to: 'observe', quote }], responders: [] };
         data.recomposition = { receipt: 'rec:' + result.digest, case_id: record.case.id, slots: [{ slot: 'e1', assertions: ['assert_interval'] }], rebindings: [] };
@@ -142,6 +144,9 @@ test('a product publication, genuine independent adjudication and append-only re
         const finalInputs = { ...compileInputs, criteria_review_run: { reference: 'rec:' + criterionSnapshot.digest }, criteria_review: { reference: 'rec:' + criterionReceipt.digest } };
         const ready = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', predecessor: planStarted.answer.run!.run, inputs: finalInputs, parameters: compileParameters }, call());
         assert.equal(ready.answer.call_result, 'ok', JSON.stringify(ready.answer.errors));
+        const { fidelity: _judged, ...plain } = data as unknown as Record<string, unknown>, frozenItem = ready.answer.run!.items[0] as any;
+        const brief = fidelityBrief(frozenItem.id, frozenItem.fields?.recomposition?.record, plain)!;
+        (data as unknown as Record<string, unknown>).fidelity = { brief_sha256: brief.brief_sha256, steps: brief.author_steps.map((s) => ({ n: s.n, verdict: 'preserved', step_indices: authorStepCoverage(brief, plain).carriers.filter((row) => row.refs.includes(s.n)).map((row) => row.index), rationale: '合成审计：计划实现了作者这一步' })), disclosure: '合成审计：作者步骤逐条保住。' };
         const sent = planSubmission(ready.answer.run!), readyResult = await h.service.submitResult(h.alice, sent, call());
         assert.equal(readyResult.acceptance, 'accepted', JSON.stringify(readyResult.errors));
         for (const requirement of Object.values(readyResult.result!.partitions).flat().flatMap(i => i.requirements).filter(r => r.requirement !== 'workbook_verified'))
@@ -178,6 +183,57 @@ test('a product publication, genuine independent adjudication and append-only re
         }
         const storedParts = await h.kit.store.find({ kind: 'submission', key: INDEX.submissionRun, value: partsRun.run });
         assert.equal(storedParts.items.length, 2);
+        const wholeStart = await h.service.startRunDetailed(h.alice, { ...start, pack: 'recompose', inputs: { subject: { external: multiExternal } }, parameters: { case_depths: [1] } }, call());
+        assert.equal(wholeStart.answer.call_result, 'ok', JSON.stringify(wholeStart.answer.errors));
+        const wholeRun = wholeStart.answer.run!;
+        const files = wholeRun.items.map((item: any, index: number) => ({ item: item.id, method: { kind: 'recomposed', text: '从作者动作取验证方法', sources: [item.fields.atoms[0].reference], basis: '合成依据' }, ...(index === 1 ? { states: [{ atom: item.fields.atoms[0].id, state: 'missing_prerequisite', reason: '功能默认关闭', prerequisites: ['先打开功能'] }] } : {}) }));
+        const whole = await h.service.submitResult(h.alice, submissionFor(wholeRun as any, files, 'scripted-recomposer') as any, call());
+        assert.equal(whole.acceptance, 'accepted', JSON.stringify(whole.errors));
+        assert.ok(Object.values(whole.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(whole.result));
+        assert.ok(whole.result!.cross_item.some(c => c.requirement === 'full_set' && c.statement.verdict === 'support'));
+        const wholeRecord = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: wholeRun.run })).items[0];
+        const compiled = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: { ...compileInputs, subject: { external: multiExternal }, recomposition_run: { reference: 'rec:' + wholeRecord.digest }, recomposition_result: { run: wholeRun.run } }, parameters: {} }, call());
+        assert.equal(compiled.answer.call_result, 'ok', JSON.stringify(compiled.answer.errors));
+        const lateOf = async (run: any) => {
+            const answered: any = await (h!.service as any).exportLate(h!.alice, run.run);
+            const read = readLate(answered?.body ?? answered, run.run);
+            assert.ok(typeof read !== 'string', 'run-late@1: ' + JSON.stringify(answered).slice(0, 600));
+            return (item: any) => read.items.find((row) => row.id === item.id)?.late as any;
+        };
+        assert.ok(compiled.answer.run!.items.every((item: any) => item.fields.recomposition === undefined && item.fields.recomposition_late?.run === wholeRun.run), JSON.stringify(compiled.answer.run!.items.map((item: any) => item.fields.recomposition_late)));
+        const compiledLate = await lateOf(compiled.answer.run!);
+        const carried = compiled.answer.run!.items.map((item: any) => compiledLate(item)?.recomposition);
+        assert.equal(carried.length, wholeRun.items.length);
+        assert.ok(carried.every((proof: any) => proof?.record?.status === 'complete'), JSON.stringify(carried));
+        assert.equal(carried[1].record.sources.states[0].state, 'missing_prerequisite');
+
+        const firstId = String((wholeRun.items[0] as any).fields.case_id), secondId = String((wholeRun.items[1] as any).fields.case_id);
+        const scopedStart = await h.service.startRunDetailed(h.alice, { ...start, pack: 'recompose', inputs: { subject: { external: multiExternal } }, parameters: { case_depths: [1], scope: { words: '本次仅范围验证第一条', cases: [firstId] } } }, call());
+        assert.equal(scopedStart.answer.call_result, 'ok', JSON.stringify(scopedStart.answer.errors));
+        const scopedRun = scopedStart.answer.run!;
+        assert.deepEqual(scopedRun.items.map((i: any) => i.fields.case_id), [firstId]);
+        const scopedFile = { item: (scopedRun.items[0] as any).id, method: { kind: 'recomposed', text: '从作者动作取验证方法', sources: [(scopedRun.items[0] as any).fields.atoms[0].reference], basis: '合成范围验证' } };
+        const scopedDone = await h.service.submitResult(h.alice, submissionFor(scopedRun as any, [scopedFile], 'scripted-recomposer') as any, call());
+        assert.equal(scopedDone.acceptance, 'accepted', JSON.stringify(scopedDone.errors));
+        assert.ok(scopedDone.result!.cross_item.some(c => c.requirement === 'full_set' && c.statement.verdict === 'support'));
+        const scopedRecord = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: scopedRun.run })).items[0];
+        assert.equal((scopedRecord.body as any).sources.find((s: any) => s.slot === 'subject')?.reference, multiRef, 'full mindmap digest stays bound as context');
+        const recomposeGroup = (scopedRecord.body as any).groups.find((g: any) => g.kind === 'recompose-scope@1');
+        assert.equal(recomposeGroup.scope?.words, '本次仅范围验证第一条');
+        assert.deepEqual(recomposeGroup.scope?.out_of_scope.map((c: any) => c.autoid), [secondId]);
+
+        const scopedCompileInputs = { ...compileInputs, subject: { external: multiExternal }, recomposition_run: { reference: 'rec:' + scopedRecord.digest }, recomposition_result: { run: scopedRun.run } };
+        const tooWideWhole = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: scopedCompileInputs, parameters: { pipeline: 'recomposed' } }, call());
+        assert.equal(tooWideWhole.answer.call_result, 'error', 'whole-doc compile exceeding scoped recompose must refuse fail-closed');
+        const tooWideScope = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: scopedCompileInputs, parameters: { pipeline: 'recomposed', scope: { words: '临时加第二条', cases: [firstId, secondId] } } }, call());
+        assert.equal(tooWideScope.answer.call_result, 'error', 'wider case-compile scope must refuse fail-closed');
+        const outsideAutoid = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: scopedCompileInputs, parameters: { pipeline: 'recomposed', autoid: secondId } }, call());
+        assert.equal(outsideAutoid.answer.call_result, 'error', 'out-of-scope autoid against scoped recompose must refuse fail-closed');
+
+        const matchingCompile = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: scopedCompileInputs, parameters: { pipeline: 'recomposed', scope: { words: '本次仅范围验证第一条', cases: [firstId] } } }, call());
+        assert.equal(matchingCompile.answer.call_result, 'ok', JSON.stringify(matchingCompile.answer.errors));
+        assert.deepEqual(matchingCompile.answer.run!.items.map((i: any) => i.fields.autoid), [firstId]);
+        assert.equal((await lateOf(matchingCompile.answer.run!))(matchingCompile.answer.run!.items[0])?.recomposition?.record?.status, 'complete');
     }
     finally {
         await h?.close();

@@ -1,16 +1,17 @@
-import {commandTokens} from './generated/command-grammar.ts';
-import {readCommandPolicy,pathSegments} from './command-policy.ts';
-import {authorTexts} from './command-policy.ts';
-import {commandLines} from './generated/command-grammar.ts';
+import {commandTokens} from './generated/skills/command-tools/command-check/grammar.ts';
+import {readCommandPolicy,pathSegments,inverseLines} from './generated/skills/command-tools/command-check/command-policy.ts';
+import {authorTexts} from './generated/skills/command-tools/command-check/command-policy.ts';
+import {commandLines} from './generated/skills/command-tools/command-check/grammar.ts';
 import {selectedExpectedNodes} from './expected-nodes.ts';
 import {planCommands,deviceCommandLines,confirmationSteps} from './plan-commands.ts';
 // Frozen raw inputs are revalidated on every check. This pack only verifies the authored plan slots.
 import { checkContractShape } from './checks.ts';
-import { isRecord } from './text.ts';
+import { isRecord, sealed, opened } from './text.ts';
 import { parseRuntimeContract } from './runtime-contract.ts';
 import { parseProfile, allowedCall } from './profile.ts';
 import { parseManifest } from './manifest.ts';
 import { readSlots } from './slots.ts';
+import { blockPointer } from './blocks.ts';
 import { bindArguments, hasBalancedCommandText } from './binding.ts';
 import type { LeaseRow } from './bed.ts';
 /**
@@ -57,7 +58,7 @@ export function citedCriterion(criteria: readonly FrozenItemCriterion[], referen
   return criteria.find((criterion) => criterion.declaration === reference) ?? null;
 }
 
-export interface PlanSubject {projection_unknowns?:string[];recomposition_requested?:boolean;recomposition?:any;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown; expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; item: string; location: string | null; data: unknown; contract: unknown; profile: unknown; manifest: unknown; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[] }
+export interface PlanSubject {projection_unknowns?:string[];recomposition_requested?:boolean;recomposition?:any;recomposition_problem?:string;recomposition_waiting?:unknown;recomposition_late?:unknown;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown; expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; item: string; location: string | null; data: unknown; contract: unknown; profile: unknown; manifest: unknown; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[] }
 export function planDataOf(record: Record<string, unknown>): unknown {
   const slots = isRecord(record.slots) ? record.slots : {};
   const plan = Array.isArray(slots.plan) ? slots.plan[0] : slots.plan;
@@ -71,28 +72,49 @@ export function planSubject(input: unknown): PlanSubject {
   const frozen = isRecord(group) ? group : {};
   const leases = isRecord(frozen.leases) ? frozen.leases : {};
   const item = isRecord(raw.item) ? raw.item : {};
+  const late = isRecord(item.late) ? item.late : {};
   const id = typeof raw.item === 'string' ? raw.item : typeof item.id === 'string' ? item.id : '';
   const inventory=parseManifest(frozen.manifest),profile=isRecord(frozen.profile)?frozen.profile:{};
-  return {projection_unknowns:isRecord(item.fields)&&Array.isArray(item.fields.projection_unknowns)?item.fields.projection_unknowns as string[]:[],recomposition_requested:frozen.recomposition_requested===true||isRecord(planDataOf(raw))&&Object.hasOwn(planDataOf(raw) as object,'recomposition'),recomposition:frozen.recomposition,bed_services:inventory.ok?inventory.beds.find(bed=>bed.name===profile.bed)?.services:undefined,manifest_sha256:typeof frozen.manifest_sha256==='string'?frozen.manifest_sha256:undefined,criteria_review:frozen.criteria_review, expected_nodes:selectedExpectedNodes(isRecord(item.fields)?item.fields.expected_nodes:undefined,planDataOf(raw)),command_catalog:Array.isArray(raw.catalog)&&typeof context.root==='string'?{root:context.root,complete:raw.catalog_complete===true,entries:raw.catalog,...(context.command_policy!==undefined?{policy:context.command_policy}:{}),...(typeof raw.catalog_missing==='string'?{missing:raw.catalog_missing}:{})}:undefined,command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
+  return {projection_unknowns:isRecord(item.fields)&&Array.isArray(item.fields.projection_unknowns)?item.fields.projection_unknowns as string[]:[],recomposition_requested:frozen.recomposition_requested===true||isRecord(planDataOf(raw))&&Object.hasOwn(planDataOf(raw) as object,'recomposition'),recomposition:late.recomposition!==undefined?late.recomposition:isRecord(item.fields)&&item.fields.recomposition!==undefined?item.fields.recomposition:frozen.recomposition,recomposition_problem:typeof late.recomposition_problem==='string'?late.recomposition_problem:isRecord(item.fields)&&typeof item.fields.recomposition_problem==='string'?item.fields.recomposition_problem:undefined,recomposition_waiting:isRecord(late.recomposition_waiting)?late.recomposition_waiting:undefined,recomposition_late:isRecord(item.fields)&&isRecord(item.fields.recomposition_late)?item.fields.recomposition_late:undefined,bed_services:inventory.ok?inventory.beds.find(bed=>bed.name===profile.bed)?.services:undefined,manifest_sha256:typeof frozen.manifest_sha256==='string'?frozen.manifest_sha256:undefined,criteria_review:frozen.criteria_review, expected_nodes:selectedExpectedNodes(isRecord(item.fields)?item.fields.expected_nodes:undefined,planDataOf(raw)),command_catalog:sealed(Array.isArray(raw.catalog)&&typeof context.root==='string'?{root:context.root,complete:raw.catalog_complete===true,entries:raw.catalog,...(context.command_policy!==undefined?{policy:context.command_policy}:{}),...(Array.isArray(raw.value_domains)?{value_domains:raw.value_domains}:{}),...(typeof raw.catalog_missing==='string'?{missing:raw.catalog_missing}:{})}:undefined),command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
 }
 export function commandSubject(input:unknown):unknown{return planSubject(input);}
-export function quoteSubject(input: unknown): unknown {
-  const subject = planSubject(input); const outcomes = checkContractShape({subject}); const gap = outcomes.find(v => v.verdict === 'unknown'); if (gap) return { item: subject.item, location: subject.location, missing: gap.missing, reason: gap.reason }; const blocked=outcomes.filter(v=>v.verdict==='refute'&&v.pointer&&v.code).map(v=>({check:'contract_shape',pointer:v.pointer!,code:v.code!}));if(blocked.length)return {blocked}; const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
+export interface QuotePlace { quote: { reference: string; text: string }; place: string; frozen?: true }
+export type QuotePlaces =
+  | { kind: 'blocked'; blocked: Array<{ check: string; pointer: string; code: string }> }
+  | { kind: 'gap'; item: string; location: string | null; missing: unknown; reason: unknown }
+  | { kind: 'unreadable'; item: string }
+  | { kind: 'quotes'; item: string; places: QuotePlace[] };
+export function quotePlaces(input: unknown): QuotePlaces {
+  const subject = planSubject(input); const outcomes = checkContractShape({subject}); const blocked=outcomes.filter(v=>v.verdict==='refute'&&v.pointer&&v.code).map(v=>({check:'contract_shape',pointer:v.pointer!,code:v.code!}));if(blocked.length)return {kind:'blocked',blocked}; const gap = outcomes.find(v => v.verdict === 'unknown'); if (gap) return { kind: 'gap', item: subject.item, location: subject.location, missing: gap.missing, reason: gap.reason }; const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
   const profile = contract.ok && beds.ok ? parseProfile(subject.profile, contract.contract, beds.beds) : null;
   // quote@1 has no required option: an explicit missing-field record produces missing_input, never a fictitious quote.
-  if (!read.ok || !contract.ok || !beds.ok || !profile?.ok) return { item: subject.item, quotes: [{}], unreadable: true };
+  if (!read.ok || !contract.ok || !beds.ok || !profile?.ok) return { kind: 'unreadable', item: subject.item };
   // An expectation taken from a frozen accepted criterion cites the declaration, which quote@1 cannot read as a source:
   // what has to be verbatim in an expected source of this run is the declaration's own grounds (W10 step two, B03 R[3]).
-  const quotes = read.slots.expects.flatMap((v) => {
+  const places: QuotePlace[] = [];
+  const placeOf = (pointer: string): string => blockPointer(read.slots, pointer);
+  for (const [index, v] of read.slots.expects.entries()) {
     const criterion = citedCriterion(subject.criteria, v.quote.reference);
-    return criterion === null || criterion.new !== v.quote.text ? [v.quote] : criterion.grounds.map((ground) => ({ reference: ground.reference, text: ground.quote }));
-  });
+    const place = placeOf(`/expects/${index}/quote`);
+    if (criterion === null || criterion.new !== v.quote.text) places.push({ quote: v.quote, place });
+    else for (const ground of criterion.grounds) places.push({ quote: { reference: ground.reference, text: ground.quote }, place });
+  }
+  for (const [index, step] of read.slots.steps.entries()) if (step.precondition_source) places.push({ quote: step.precondition_source, place: placeOf(`/steps/${index}/precondition_source`) });
   if(read.slots.blocks.length){
     const context=read.slots.block_context;
-    for(const list of [context?.preconditions,context?.causal_links,context?.responders])for(const row of Array.isArray(list)?list:[])if(isRecord(row.quote)&&typeof row.quote.reference==='string'&&typeof row.quote.text==='string')quotes.push({reference:row.quote.reference,text:row.quote.text});
-    for(const row of Array.isArray(subject.expected_nodes)?subject.expected_nodes:[])if(isRecord(row)&&row.declaration!==undefined&&typeof row.reference==='string')quotes.push({reference:row.reference+'/@assertion',text:JSON.stringify(row.declaration)});
+    for(const name of ['preconditions','causal_links','responders'])for(const [index,row] of (Array.isArray(context?.[name])?context![name] as unknown[]:[]).entries())if(isRecord(row)&&isRecord(row.quote)&&typeof row.quote.reference==='string'&&typeof row.quote.text==='string')places.push({quote:{reference:row.quote.reference,text:row.quote.text},place:`/block_context/${name}/${index}/quote`});
+    for(const [index,row] of (Array.isArray(subject.expected_nodes)?subject.expected_nodes:[]).entries())if(isRecord(row)&&row.declaration!==undefined&&typeof row.reference==='string')places.push({quote:{reference:row.reference+'/@assertion',text:JSON.stringify(row.declaration)},place:`/fields/expected_nodes/${index}`,frozen:true});
   }
-  return { item: subject.item, quotes };
+  return { kind: 'quotes', item: subject.item, places };
+}
+export function quoteSubject(input: unknown): unknown {
+  const found = quotePlaces(input);
+  switch (found.kind) {
+    case 'blocked': return { blocked: found.blocked };
+    case 'gap': return { item: found.item, location: found.location, missing: found.missing, reason: found.reason };
+    case 'unreadable': return { item: found.item, quotes: [{}], unreadable: true };
+    case 'quotes': return { item: found.item, quotes: found.places.map((row) => row.quote) };
+  }
 }
 
 /** Authored source text is distinct from the model's final step values. */
@@ -103,8 +125,8 @@ export function workbookSubject(input: unknown): unknown {
   const raw = isRecord(input) ? input : {}; const context = isRecord(raw.context) ? raw.context : {};
   const groups = Array.isArray(context.groups) ? context.groups : []; const group = groups.find((v) => isRecord(v) && v.kind === 'case-compile');
   const frozen = isRecord(group) ? group : {}; const item = isRecord(raw.item) ? raw.item : {};
-  const subject=planSubject(input),contract=parseRuntimeContract(subject.contract),manifest=parseManifest(subject.manifest),slots=readSlots(subject.data);const profile=contract.ok&&manifest.ok?parseProfile(subject.profile,contract.contract,manifest.beds):null;const catalog=contract.ok&&profile?.ok&&slots.ok?planCommands(contract.contract,profile.profile,slots.slots,subject.command_catalog).catalog:null;
-  return {...subject,fields:{...(isRecord(item.fields)?item.fields:{}),bed_services:subject.bed_services,manifest_sha256:subject.manifest_sha256,criteria_review:subject.criteria_review,expected_nodes:subject.expected_nodes,command_catalog:catalog},workbook:frozen.workbook??null,generation:frozen.generation??null,plan_set:frozen.plan_set??null,manifest_sha256:frozen.manifest_sha256??null};
+  const subject=planSubject(input),contract=parseRuntimeContract(subject.contract),manifest=parseManifest(subject.manifest),slots=readSlots(subject.data);const profile=contract.ok&&manifest.ok?parseProfile(subject.profile,contract.contract,manifest.beds):null;const catalog=contract.ok&&profile?.ok&&slots.ok?planCommands(contract.contract,profile.profile,slots.slots,opened(subject.command_catalog)).catalog:null;
+  return {...subject,fields:{...(isRecord(item.fields)?item.fields:{}),bed_services:subject.bed_services,manifest_sha256:subject.manifest_sha256,criteria_review:subject.criteria_review,expected_nodes:subject.expected_nodes,command_catalog:sealed(catalog)},workbook:frozen.workbook??null,generation:frozen.generation??null,plan_set:sealed(frozen.plan_set??null),manifest_sha256:frozen.manifest_sha256??null};
 }
 
 /** Only frozen contract/profile roles choose device CLI slots; no scanning prose or author identities. */
@@ -122,5 +144,6 @@ export function selectCommandCatalog(input:unknown):unknown{
   if(policy)for(const line of restoreLines){const tokens=commandTokens(line);if(!tokens)continue;for(const rule of policy.inverse_rules){const prefix=pathSegments(rule.source_prefix)?.slice(1),inverse=pathSegments(rule.inverse_prefix)?.slice(1);if(prefix&&inverse&&prefix.every((word,index)=>tokens[index]?.value===decodeURIComponent(word)&&!tokens[index].quoted))lines.push([...inverse.map(decodeURIComponent),...tokens.slice(prefix.length).map(token=>token.raw)].join(' '));}}
  }
 
- return {base:'/commands',lines:[...new Set([...lines,...subject.case_texts.flatMap(text=>commandLines(text).map(line=>line.text))])]};
+ const selected=[...new Set([...lines,...subject.case_texts.flatMap(text=>commandLines(text).map(line=>line.text))])];
+ return {base:'/commands',lines:[...selected,...inverseLines(readCommandPolicy(context.command_policy),selected)]};
 }

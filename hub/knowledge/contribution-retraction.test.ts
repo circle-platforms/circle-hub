@@ -76,7 +76,7 @@ test('a relation grounded in tree entries is retracted as an entry: the record s
   assert.equal(single?.note, withdrawn?.note);
   assert.ok(await layer.read(ctx.relation, ctx.w.admin), 'a retracted contribution stays readable');
   const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/system/show'], depth:0}, ctx.w.admin);
-  assert.match(toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes}), /这条回注本身已被管理员撤回；历史引文仍保留/);
+  assert.match(toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes}), /资料或证据已撤回，历史原句保留。/);
 
   // The other end: its tree entries and the assertion placed on it stay exactly as they were.
   assert.deepEqual(await nodes('/commands/net/ping'), otherEnd);

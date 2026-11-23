@@ -1,4 +1,3 @@
-import {bindLegacyParser} from '../refs/api.ts';
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../connectors/testing/credentials.ts';
 // createTestHub(): the Hub assembled from the REAL packages in-process (hub/server/assemble/hub.ts: pack registry, run
 // engine, knowledge, connectors) on a temporary PostgreSQL, listening on a loopback port. The external systems are the
@@ -35,7 +34,8 @@ import type { Principal, User } from '../records/api.ts';
 import { osIsolationAvailable } from '../rules/api.ts';
 import type { PackVersionInfo } from '../runs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
-import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
+import type { TestRecordsKit } from '../testing/records.ts';
+import { openAssemblyRuntimeRecords } from './assemble/testing-runtime-records.ts';
 import type { HubApp, ServerDeps } from './api.ts';
 import { createApp } from './app.ts';
 import { removeTree } from './assemble/files.ts';
@@ -212,7 +212,7 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
   const scratch = await mkdtemp(join(tmpdir(), 'circle-hub-testhub-'));
   let records: TestRecordsKit;
   try {
-    records = await openTestRecords({ postgres: options.postgres, now: options.now, limits: options.limits });
+    records = await openAssemblyRuntimeRecords({ postgres: options.postgres, now: options.now, limits: options.limits });
   } catch (error) {
     await removeTree(scratch);
     throw error;
@@ -259,6 +259,8 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
     await records.authorizations.grantPublishRight(admin.principal, admin.user.id, '测试 Hub 的管理员发布任务包');
 
     const publishPack = async (directory: string, publish: { activate?: boolean } = {}): Promise<PackVersionInfo> => {
+      const embeds = (JSON.parse(await readFile(join(directory, 'pack.json'), 'utf8')) as { embeds?: Array<{ pack: string; version: string }> }).embeds ?? [];
+      for (const row of embeds) if ((await hub.registry.getVersion(row.pack, row.version)) === null) await publishPack(fileURLToPath(new URL(`../../packs/skill/${row.pack}/`, import.meta.url)));
       const staged = await stagePack(directory, scratch);
       const outcome = await hub.registry.publish(admin.principal, staged);
       if (!outcome.ok) {
@@ -274,22 +276,18 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
     if(options.mindmapSkill!==false){
       const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/mindmap-format/',import.meta.url)));
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
-      await bindLegacyParser({registry:hub.registry,records},admin.principal,'kityminder@1',skill.id+'@'+skill.version);
     }
     if(options.workbookSkill!==false){
       const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/workbook-format/',import.meta.url)));
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
-      await bindLegacyParser({registry:hub.registry,records},admin.principal,'xlsx@1',skill.id+'@'+skill.version);
     }
     if(options.xmlSkill!==false){
       const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/xml-format/',import.meta.url)));
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
-      await bindLegacyParser({registry:hub.registry,records},admin.principal,'xml@1',skill.id+'@'+skill.version);
     }
     if(options.htmlSkill!==false){
       const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/html-format/',import.meta.url)));
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
-      await bindLegacyParser({registry:hub.registry,records},admin.principal,'html@1',skill.id+'@'+skill.version);
     }
     await hub.deps.parsers.refresh?.();
     const published: PackVersionInfo[] = [];

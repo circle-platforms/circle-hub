@@ -27,6 +27,7 @@ async function world(t: { after: (fn: () => Promise<void>) => void }, answer: ()
     reads: [{ name: 'one', external: 'fixture:item', request: { route: 'one' } }, { name: 'file', external: 'fixture:file', request: { route: 'file' } }] } });
   kit.packs.set(handle);
   const resource = await kit.connectors.admin.addResource(kit.admin, { system_pack: handle.id, name: '合成来源', environment: 'test', origins: { source: 'http://192.0.2.1' } });
+  await kit.records.authorizations.grant(kit.admin, { permission: 'resource_assign', subject: '*', object: resource.id });
   const read = (name = 'one') => kit.connectors.executeRead(resource.id, name, { id: 'sample' }, { principal: kit.user, purpose: 'synthetic masking' });
   const bytesOf = async (sha256: string) => Buffer.from((await kit.records.artifacts.source(kit.user, sha256))!.bytes!).toString('utf8');
   return { kit, read, bytesOf, calls: () => calls };
@@ -159,6 +160,7 @@ test('an answer that echoes a credential the Hub sent is not touched by the dict
     reads: [{ name: 'one', external: 'fixture:echo', request: { route: 'one' } }] } });
   kit.packs.set(handle);
   const resource = await kit.connectors.admin.addResource(kit.admin, { system_pack: handle.id, name: '合成来源', environment: 'test', origins: { source: 'http://192.0.2.1' }, credentials: { token: 'SYNTHETIC_TOKEN' }, allow_plaintext: ['http://192.0.2.1'] });
+  await kit.records.authorizations.grant(kit.admin, { permission: 'resource_assign', subject: '*', object: resource.id });
   await setSyntheticCredential(kit.records, kit.connectors, kit.admin, resource.id, 'token', token);
   // A rule that would replace only the tail of the token, leaving its head in a readable record.
   await kit.records.masking!.set(kit.admin, { name: 'tail', label: '密钥', pattern: 'Token-[0-9]{4}', ignore_case: false }, '合成规则只命中密钥的一部分');

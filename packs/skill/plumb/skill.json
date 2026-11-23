@@ -1,0 +1,11 @@
+{
+  "schema": "skill@1",
+  "parsers": [],
+  "modules": [
+    {
+      "id": "plumb-client",
+      "title": "Plumb 推理网关客户端",
+      "family": "受 TLS Root CA 与指纹校验约束的 Plumb HTTP(S) 状态、唤醒与判别请求模块，恒输出模型判定披露字段"
+    }
+  ]
+}

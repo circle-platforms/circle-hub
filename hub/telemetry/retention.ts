@@ -1,6 +1,6 @@
 // Diagnostic data is kept 14 days (B08 R[5]). A background job deletes older rows in bounded batches, so one pass never
 // holds a long transaction; the job is traced like every other background task.
-import type { Database } from '../records/db.ts';
+import type { Database } from '../records/api.ts';
 import { background } from './usage.ts';
 
 export const RETENTION_DAYS = 14;

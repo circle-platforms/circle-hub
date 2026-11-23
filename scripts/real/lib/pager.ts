@@ -1,7 +1,5 @@
-// Shared pager for reading complete results with hub_get_nodes across real client scenarios.
 import type { Reply, Turn } from '../scripted-model.ts';
 
-/** Maximum number of result pages to read with hub_get_nodes. */
 export const MAX_PAGES = 6;
 
 /**
@@ -54,11 +52,6 @@ export function createPagerState(): PagerState {
   return { reference: null, pagesRead: 0 };
 }
 
-/**
- * Handles the common paging respond flow:
- * Turn 0: returns startAction();
- * Later turns: extracts rec: reference, calls hub_get_nodes, and pages using parseNextCall up to maxPages.
- */
 export function pagedRespond(
   turn: Pick<Turn, 'index' | 'toolResults'>,
   state: PagerState,
@@ -79,14 +72,14 @@ export function pagedRespond(
 
   if (state.reference !== null && state.pagesRead === 0) {
     state.pagesRead = 1;
-    return [{ tool: 'hub_get_nodes', input: { reference: state.reference } }];
+    return [{ tool: 'mcp__hub__get_nodes', input: { reference: state.reference } }];
   }
 
   if (state.pagesRead > 0 && state.pagesRead < maxPages) {
     const next = parseNextCall(lastText);
     if (next !== null) {
       state.pagesRead += 1;
-      return [{ tool: 'hub_get_nodes', input: { reference: next.reference, cursor: next.cursor } }];
+      return [{ tool: 'mcp__hub__get_nodes', input: { reference: next.reference, cursor: next.cursor } }];
     }
   }
 

@@ -90,3 +90,13 @@ test('capacity and transaction failures preserve the ordinary capture and leave 
  await assert.rejects(spaces.archiveSource(w.user,save(raw.digest,w.user.id)),/synthetic archive transaction failure/);w.kit.store.put=put;assert.equal((await w.kit.artifacts.records(raw.body.sha256)).length,1);assert.equal(await spaces.current(w.user.id),null);assert.equal((await spaces.archive(w.user)).total,0);assert.equal(await w.kit.artifacts.mayDeclareUpload(w.user,raw.digest),true);
  assert.ok((await spaces.archiveSource(w.user,save(raw.digest,w.user.id))).record);
 });
+test('source archive resolves cited kityminder@1 mindmap fragments without a run or refs.legacy-parser',async t=>{
+ const w=await makeWorld(postgres,{mindmapSkill:true});t.after(w.close);const spaces=w.knowledge.spaces!;
+ assert.equal((await w.kit.store.find({kind:'action',key:'refs.legacy-parser',value:'kityminder@1',limit:10})).items.length,0);
+ const mindmap=Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成脑图'},children:[{data:{id:'n1',text:'开启配置检查，不要跳过。'},children:[]}]}}));
+ const file=await spaces.importFile(w.user,mindmap,'application/json','synthetic.km.json','/脑图');
+ const entry=await spaces.write(w.user,{kind:'observation',path:'/脑图',statement:'合成原件归档脑图条目',grounds:[{reference:`src:${file.body.sha256}/kityminder@1/n/n1`,quotation:'开启配置检查，不要跳过。'}]});
+ assert.equal(entry.status,'verified');
+ const inspected=await spaces.original(w.user,{sha256:file.body.sha256,artifact:file.digest,root:entry.root,path:'/脑图',entry:entry.entry,ground:0});
+ assert.equal(inspected.parsed,true);assert.equal(inspected.status,'resolved');assert.equal(inspected.matches?.total,1);assert.ok(inspected.window?.text.includes('开启配置检查，不要跳过。'));
+});

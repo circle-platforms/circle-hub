@@ -4,7 +4,9 @@ import {TreeRootBody} from '../../contracts/src/knowledge.ts';
 import {makeWorld,startPostgres,catalogXml,BASE_CATALOG} from './test-support.ts';
 import {commandPolicyForRoot} from '../runs/engine/command-policy.ts';
 import {runContextOf} from '../runs/engine/evaluate.ts';
-const one={schema:'command-policy@1' as const,read_only:['/commands/demo'],inverse_rules:[]};
+const one={schema:'command-policy@1' as const,read_only:['/commands/demo'],inverse_rules:[],
+ persistence_channels:[{id:'disk',commands:[{prefix:'/commands/demo/store'},{prefix:'/commands/demo/link/rank',with_parameter:3}],source:'Synthetic manual 4.2: a stored file stays on the unit'}],
+ forbidden_combinations:[{id:'boot_reload',side_a:[{prefix:'/commands/demo/mirror/boot/on'}],side_b:[{prefix:'/commands/demo/reload'}],source:'Synthetic manual 7.3: switch the boot sync off first'}]};
 test('product command rules are composition-bound and the run context retains the old snapshot after a rule update',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const w=await makeWorld(pg,{pack:{declaration:{command_policy:one}}});t.after(()=>w.close());
  w.external.set('site:tree:policy',{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});

@@ -30,7 +30,8 @@ test('profile check refuses missing extra duplicate roleless and undocumented un
   for (const mutate of [(v: any) => v.allowed.pop(), (v: any) => v.allowed.push({ object: 'widget-disabled', method: 'cycle', parameters: {} }), (v: any) => v.unopened.push(v.unopened[0]), (v: any) => delete v.allowed[0].parameters.line, (v: any) => v.unopened[0].parameters[0].next = '']) {
     const bad = structuredClone(profile); mutate(bad); assert.throws(() => checkCoverage(bad, parsed.contract));
   }
-  assert.throws(() => checkProfile({ ...profile, runtime: { ...profile.runtime, contract_sha256: 'b'.repeat(64) } }, manifest, contract));
+  assert.throws(() => checkProfile({ ...profile, runtime: { ...profile.runtime, minimum_version: 'another-runtime' } }, manifest, contract));
+  assert.throws(() => checkProfile({ ...profile, runtime: { ...profile.runtime, contract_sha256: parsed.contract.pinned.identity } }, manifest, contract));
 });
 test('profile drafts never guess parameter semantics or environment mappings', () => {
   const { contract, manifest } = setup(); const draft = draftProfile({ ready: true, device_count: 2 }, manifest, contract);

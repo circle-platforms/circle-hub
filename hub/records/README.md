@@ -133,8 +133,9 @@ brief says.
 
 Migration 27 adds `trace_spans`, the diagnostic rows of [hub/telemetry](../telemetry/README.md) (B08 R[5]): not records, no
 digest, no append-only trigger; the runtime role has SELECT, INSERT and DELETE, and rows older than 14 days are deleted.
-`Database.query` and `FileObjectStore.get` add their usage to the current step through `hub/telemetry/usage.ts`, the only
-import of that package here; `Database` measures nothing outside a trace. `stagingSlots` keeps the async context of the
+`trace-usage.ts` owns the process trace context and counters, with its closed names in `trace-names.ts`.
+Telemetry imports them through `api.ts`; records never imports telemetry.
+`Database.query` and `FileObjectStore.get` add their usage to the current step through this local context; `Database` measures nothing outside a trace. `stagingSlots` keeps the async context of the
 call that asked, as the sandbox's slot pool does: a later call's pump starts the work.
 
 Migration 28 holds `resource_samples` and `process_events`, which belong to hub/health: diagnostic data, outside the append-only
@@ -1278,3 +1279,43 @@ A source artifact whose bytes were replaced carries `masking` (`dictionary`, the
 `rules`, each rule that matched with its count; never what was matched). The store accepts it only on a read of a
 business system and only with at least one rule; it takes part in the dedupe key only when present, so every other
 ingest keeps the key and the record it always had. A copy of such an artifact into an archive keeps the mark.
+
+## Shared permission and record-read implementation
+
+`permissions.ts` owns `isAdmin` and run ownership visibility (`canSeeRun`). Role checks use the current account loaded
+by the calling boundary; the helper does not authenticate an account or grant a system actor identity.
+`record-visibility.ts` declares one exhaustive `RECORD_ACCESS` entry per generated record kind and the generic record-read
+policy. Its ports require a current account, authorized run headers, source and contribution permissions, and the existing
+request, result and submission checks. Dedicated space, memory and personal-pack records remain behind their own readers.
+
+`runOfRecord` takes a stored record. Wrapped submission arguments must carry
+`submission-received@1`; a canonical top-level run takes precedence. The shared modules are exported through `api.ts`; server/runs adapter changes require interface coordination. Until those callers adopt `mayReadRecord`, their existing implementations have not been replaced. No system account or environment variable is introduced.
+
+
+## Teams and resource assignments
+
+`PgTeams(db,store,objects,principals,authorizations,now)` implements the approved `RecordsKit.teams` interface.
+`assign/*/TeamId` registers a team and binds canonical `{id,name}` bytes retained by ObjectStore. Members are the
+latest active `assign/UserId/TeamId` decisions; `teams` and `team_members` only project that history. Deleting a team
+appends a revocation for every active member, pack and resource assignment, then revokes registration and removes projected membership; reusing its name creates a different ID. A revoked ID cannot
+be registered again. Team writes lock user rows in ID order before the team and authorization locks.
+
+Pack assignment accepts direct users and teams through separate wrappers. Resource assignment uses `resource_assign`
+and accepts only a team or all enabled accounts. `canUseResource(userId,resourceId)` checks the current enabled account;
+administrator status alone does not grant business reads; administrators still manage unassigned resources. A single SQL permission snapshot collects the
+current account, direct decisions, team registrations, membership decisions, team grants and pack audiences. The same
+snapshot drives `canUse`, `packs`, resource grants and pack-user sharing. Batch pack/user queries use that implementation.
+Frozen runs, remote work and stored results are not cancelled or rewritten by team withdrawal.
+
+Wiring the kit's `teams` member belongs to the index.ts owner. System actor identity remains undecided; no new account,
+configuration or administrator bypass is introduced. Separate per-team knowledge spaces are outside this implementation.
+
+## 2026-11-14 今晚的升级边界
+
+集成者当日 14:57 重新裁定：原 M2/C2 显式预检、文件和摘要应用的方案不进入今晚版本。今晚继续只使用版本 1 基线，已有库不需要运行额外迁移命令；原工作流授权、预订、血缘与互斥规则继续执行。原候选源码与合成验证留在独立设计分支，不作为今晚启动或自动升级保证。
+
+下一版设计须满足：安装和重启的一步自动升级、需要决定时运行维护页面、保留正在进行的运行和预订、普通分配中显示保留权限、改数据前说明实际回退限制，以及不要求管理员处理内部编号。读取旧数据和保留相同授权语义是两件事；旧严格程序拒绝新增迁移，忽略新限制的旧程序也不是安全的权限回退目标。跨重启远端上机验证的保活与恢复仍需专门实现，不能用清场替代这项保证。
+
+## Call-log session filter (decision 180)
+
+The existing call-log query accepts an exact declared session id. On this line the session filter reads the call log without a dedicated index and no migration is added, so the 2026-11-14 boundary above holds as written: the migrations are the version 1 baseline alone. The session indexes are left to the next schema migration.

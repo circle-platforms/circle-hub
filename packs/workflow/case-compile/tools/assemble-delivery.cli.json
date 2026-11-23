@@ -1,0 +1,103 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [
+    "%HUB_TOKEN%"
+  ],
+  "options": [
+    {
+      "name": "hub",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%HUB_URL%",
+      "type": "hub"
+    },
+    {
+      "name": "runs",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<脚本合并编号>,<脚本合并编号>",
+      "type": "run",
+      "separator": ",",
+      "trimValues": true
+    },
+    {
+      "name": "recompose",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<用例重组编号>",
+      "type": "run"
+    },
+    {
+      "name": "notes",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<说明.json>",
+      "type": "path"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>",
+      "type": "path"
+    },
+    {
+      "name": "name",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "open",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "open-compile.json",
+      "type": "path"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "runs",
+          "placeholder": "<脚本合并编号>,<脚本合并编号>",
+          "optional": false
+        },
+        {
+          "name": "recompose",
+          "placeholder": "<用例重组编号>",
+          "optional": false
+        },
+        {
+          "name": "notes",
+          "placeholder": "<说明.json>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<新目录>",
+          "optional": false
+        },
+        {
+          "name": "open",
+          "placeholder": "open-compile.json",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}

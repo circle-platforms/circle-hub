@@ -13,7 +13,8 @@ test('a partial nested result limits its parent and is reread rather than cached
     return {requests:[{key:'original',route:'one'}],reads:[{external:'fixture:leaf:sample'}],done:true,original:'original'};
   }});t.after(()=>kit.close());
   const handle=await writePack(kit.packRoot,{id:'synthetic-coverage',functions:['docstore.ts'],system:{schema:'system@1',title:'合成覆盖',roles:[{name:'source'}],auth:{kind:'none'},routes:[{id:'one',role:'source',method:'GET',path:'/one',response:'json',max_bytes:1024,read:true}],reads:[{name:'leaf',external:'fixture:leaf',request:{route:'one'},project:{module:'functions/docstore.ts',export:'searchProject'}},{name:'parent',external:'fixture:parent',plan:{module:'functions/docstore.ts',export:'searchPlan'}}]}});kit.packs.set(handle);
-  await kit.connectors.admin.addResource(kit.admin,{system_pack:handle.id,name:'合成覆盖来源',environment:'test',origins:{source:'http://192.0.2.2'}});
+  const resource = await kit.connectors.admin.addResource(kit.admin,{system_pack:handle.id,name:'合成覆盖来源',environment:'test',origins:{source:'http://192.0.2.2'}});
+  await kit.records.authorizations.grant(kit.admin, { permission: 'resource_assign', subject: '*', object: resource.id });
   const read=()=>kit.connectors.reader.read('fixture:parent:sample',{principal:kit.user,purpose:'synthetic coverage'});
   const first=await read();assert.equal(first.ok,true);if(!first.ok)return;
   assert.equal(first.coverage?.complete,false);assert.match(first.coverage?.note??'',/fixture:leaf:sample/);

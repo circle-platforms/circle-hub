@@ -2,7 +2,8 @@ import {repositorySkillVersion} from '../../testing/skills.ts';
 // The real Hub in-process (createTestHub of hub/server/testing-real.ts): a smoke test over the official MCP client that lists
 // the packs, starts a run on a synthetic mind map the agile stub serves (read through a real resource with the password kept
 // as its digest) and submits a result that is accepted, with the call-log lines; a user without the pack gets the neutral
-// answer while the engine's reason is in the admin note only; the default publication of the repository's packs (a
+// answer while the engine's reason is in the admin note only, and the four reasons a pack cannot be used are said in one sentence by
+// the engine, list_task_packs and the local-tools download; the default publication of the repository's packs (a
 // synthetic tree standing in for packs/), product packs activated by publishPack unless told otherwise, and a knowledge
 // sync through the helper that produces nothing the second time; and the pack discovery and staging helpers. Synthetic
 // packs written to a temporary directory; every external system is a loopback stub.
@@ -15,7 +16,7 @@ import { writePack } from '../../runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { AGILE_DOCUMENT, createTestHub, findPackDirectories, stagePack } from '../testing-real.ts';
 import { removeTree } from './files.ts';
-import { AGILE_PACK, LOCATE_PACK, PRODUCT_PACK, REVIEW_PACK, SITE_PACK, locatePack, productPack, syncSiteFiles, writeTestPacks } from './test-packs.ts';
+import { AGILE_PACK, LOCATE_PACK, PRODUCT_PACK, REVIEW_PACK, SITE_PACK, XML_PACK, locatePack, productPack, syncSiteFiles, writeTestPacks } from './test-packs.ts';
 
 let postgres: TemporaryPostgres;
 let packRoot: string;
@@ -29,20 +30,6 @@ before(async () => {
   locate = (await writePack(join(packRoot, LOCATE_PACK), locatePack())).dir;
 });
 
-/** The get_nodes call a text gives after `marker`, parsed. */
-function callAfter(text: string, marker: string): Record<string, unknown> | null {
-  const at = text.indexOf(`${marker}get_nodes `);
-  if (at < 0) return null;
-  const from = at + `${marker}get_nodes `.length;
-  for (let end = text.indexOf('}', from); end >= 0; end = text.indexOf('}', end + 1)) {
-    try {
-      return JSON.parse(text.slice(from, end + 1)) as Record<string, unknown>;
-    } catch {
-      // not the end of the object yet
-    }
-  }
-  return null;
-}
 after(async () => {
   await postgres?.stop();
   if (packRoot) await removeTree(packRoot);
@@ -51,9 +38,10 @@ after(async () => {
 interface StartedRun {
   run: string;
   pack: string;
-  items: { id: string; label: string; location: string }[];
+  items: { id: string; label: string; location: string; summary: string }[];
   sources: { reference: string; role: string; external?: string }[];
   requirements: { key: string }[];
+  slots?: { schema: unknown };
 }
 
 describe('createTestHub', () => {
@@ -81,8 +69,15 @@ describe('createTestHub', () => {
     const client = await hub.client(alice.token, { sessionId: 'smoke-session-1' });
     const listed = await client.call('list_task_packs');
     assert.equal(listed.isError, false);
-    assert.deepEqual((listed.structuredContent.packs as { pack: string }[]).map((p) => p.pack).sort(), [`${REVIEW_PACK}@1.0.0`,...await Promise.all(['html-format','mindmap-format','workbook-format','xml-format'].map(async id=>id+'@'+await repositorySkillVersion(id)))].sort());
-    assert.equal(listed.content.length, 1, 'one plain-text block');
+    assert.deepEqual((listed.structuredContent.packs as { pack: string }[]).map((p) => p.pack).sort(), [`${REVIEW_PACK}@1.0.0`,...await Promise.all(['html-format','hub-observability','mindmap-format','workbook-format','xml-format'].map(async id=>id+'@'+await repositorySkillVersion(id)))].sort());
+    assert.equal(listed.content.length, 2, 'reader text followed by model references');
+    assert.ok(listed.content.every(block => block.type === 'text'));
+    assert.match(listed.content[0].text ?? '', /合成用例检查/);
+    assert.doesNotMatch(listed.content[0].text ?? '', /rec:|src:/);
+    assert.match(listed.content[1].text ?? '', /^供模型引用\n/);
+    const listedModelAnswer = JSON.parse(listed.content[1].text!.slice('供模型引用\n'.length));
+    delete listedModelAnswer.source_context;
+    assert.deepEqual(listedModelAnswer, listed.structuredContent);
 
     const started = await client.call('start_run', { pack: REVIEW_PACK, inputs: { map: { external: `agile:mindmap:${AGILE_DOCUMENT}` } } });
     assert.equal(started.isError, false, JSON.stringify(started.structuredContent));
@@ -93,14 +88,21 @@ describe('createTestHub', () => {
     assert.ok(run.items.every((item) => item.id.startsWith(`${AGILE_DOCUMENT}:`) && item.location.startsWith('src:')));
     assert.ok(run.sources.some((s) => s.role === 'subject' && s.external?.startsWith(`agile:mindmap:${AGILE_DOCUMENT}`)));
     assert.equal(stubs.agile.logins, 1, 'one login with the stored digest');
-    // The assembly gives the server the engine's detail: the text names the run record, and its references read.
     const startText = started.content[0].text ?? '';
-    assert.match(startText, /\n- [^\n]+ \| [^\n]+ \| 1 个期望结果\n/, 'items as id | label | summary');
-    const schema = callAfter(startText, '完整的槽位模式（JSON Schema，带说明和写法）：');
-    assert.ok(schema !== null && /^rec:[0-9a-f]{64}#\/slots\/schema$/.test(String(schema.reference)), `the full slot schema is named: ${startText.slice(0, 200)}`);
+    assert.ok(run.items.every(item => startText.includes(`原始用例 ${item.label}，1 个期望结果；状态未知`)));
+    assert.ok(run.items.every(item => item.summary === '1 个期望结果'));
+    assert.match(String(started.structuredContent.record), /^rec:[0-9a-f]{64}$/);
+    assert.match(JSON.stringify(run.slots?.schema), /"notes"/);
+    assert.match(started.content[1].text ?? '', /^供模型引用\n/);
+    const { original_cases, ...modelAnswer } = JSON.parse(started.content[1].text!.slice('供模型引用\n'.length));
+    delete modelAnswer.source_context;
+    assert.deepEqual(modelAnswer, started.structuredContent);
+    assert.deepEqual(original_cases, run.items.map(item => ({ id: item.id, autoid: null, title: item.label })));
+    const schema = { reference: `${started.structuredContent.record}#/slots/schema` };
     const read = await client.call('get_nodes', schema);
     assert.equal(read.isError, false, read.content[0].text);
-    assert.match(read.content[0].text ?? '', /"notes"/, 'the full schema of the run record, by reference');
+    assert.match(String((read.structuredContent.content as { text?: string }).text), /"notes"/, 'the full schema of the run record, by reference');
+    assert.doesNotMatch(startText, /rec:|src:|槽位模式/);
 
     const submitted = await client.call('submit_result', {
       run: run.run,
@@ -122,7 +124,8 @@ describe('createTestHub', () => {
     const detail = await hub.hub.runs.getRun(alice.principal, run.run);
     assert.equal(detail?.submissions.length, 1);
     assert.equal(detail?.latest?.result.acceptance, 'accepted');
-    assert.ok((submitted.content[0].text ?? '').includes(`存下的结果 rec:${detail?.latest?.record}（`), 'the receipt names the stored result');
+    assert.equal(submitted.structuredContent.record, `rec:${detail?.latest?.record}`, 'the machine-readable answer names the stored result');
+    assert.doesNotMatch(submitted.content[0].text ?? '', /rec:|存下的结果/);
     const lines = (await hub.records.callLog.query(hub.admin.principal, { userId: alice.user.id, newestFirst: false, limit: 50 })).items;
     const calls = lines.filter((line) => line.tool !== 'initialize' && line.tool !== 'tools/list');
     assert.deepEqual(calls.map((line) => line.tool), ['list_task_packs', 'start_run', 'get_nodes', 'submit_result']);
@@ -131,7 +134,7 @@ describe('createTestHub', () => {
     assert.equal(calls[3].acceptance, 'accepted');
   });
 
-  test('a production run through the real engine: the start_run text gives the counts, each requirement and the problems first, and the whole result reads by reference', async (t) => {
+  test('a production run through the real engine: each original case has a conclusion and the whole result reads by reference', async (t) => {
     const hub = await createTestHub({ postgres, repositoryPacks: false, packs: [locate], stubs: false });
     t.after(() => hub.close());
     const alice = await hub.createUser('甲');
@@ -154,18 +157,17 @@ describe('createTestHub', () => {
     const result = started.structuredContent.result as { reference: string; counts: Record<string, number> };
     assert.match(result.reference, /^rec:[0-9a-f]{64}$/, 'the answer carries the result the engine computed');
     const lines = (started.content[0].text ?? '').split('\n');
-    assert.match(lines[1], /^结果（start_run 时由 Hub 算出）：分区：/);
-    assert.ok(lines.includes('要求项（满足状态与各层终态的条目数）：'), 'the counts of each requirement');
-    assert.ok(lines.some((line) => /^- titles 标题与期望：满足 1，未满足 1/.test(line)), lines.slice(0, 12).join('\n'));
-    const problems = lines.findIndex((line) => line.startsWith('问题与未知（'));
-    const whole = lines.findIndex((line) => line.startsWith(`完整结果 ${result.reference}：`));
-    assert.ok(whole > 0 && problems > whole, 'the whole result is named before the problems');
-    assert.ok(lines.slice(problems).some((line) => line.startsWith('- r1:c2 | 用例二 | ') && line.includes(' | titles | ')), 'the case without an expected result is a problem');
-    assert.ok(problems < lines.findIndex((line) => line.startsWith('条目（')), 'the problems before the items');
+    assert.match(lines.find(line => line.startsWith('原始用例 用例一：')) ?? '', /状态已确认；判断正确/);
+    assert.match(lines.find(line => line.startsWith('原始用例 用例二：')) ?? '', /状态已确认；判断错误；原因原始用例的问题；下一步/);
+    assert.doesNotMatch(lines.join('\n'), /分区：|要求项（|问题与未知|r1:c2|rec:/);
     const read = await client.call('get_nodes', { reference: result.reference });
     assert.equal(read.isError, false, read.content[0].text);
-    assert.match(read.content[0].text ?? '', new RegExp(`^内容 ${result.reference}：模型可读\n`));
-    assert.ok((read.content[0].text ?? '').includes('- r1:c2 | 用例二 | '), 'the item is in the stored result');
+    const stored = JSON.parse(String((read.structuredContent.content as { text?: string }).text)) as { partitions: Record<string, { item: string; requirements: { requirement: string; status: string }[] }[]> };
+    const originalCases = Object.values(stored.partitions).flat();
+    assert.equal(originalCases.length, 2);
+    assert.deepEqual(originalCases.flatMap(item => item.requirements.filter(requirement => requirement.requirement === 'titles').map(requirement => requirement.status)).sort(), ['satisfied', 'unsatisfied']);
+    assert.ok(originalCases.some(item => item.item === 'r1:c2'), 'the item is in the stored result');
+    assert.match(read.content[0].text ?? '', /^原始用例 用例二：.*状态已确认；判断错误/m);
     await client.close();
   });
 
@@ -193,7 +195,11 @@ describe('createTestHub', () => {
     await client.close();
     assert.equal(started.isError, true);
     const errors = started.structuredContent.errors as { code: string; message: string }[];
-    assert.deepEqual(errors.map((e) => [e.code, e.message]), [['SOURCE_NOT_PERMITTED', `任务包 ${REVIEW_PACK} 存在，没有分配给你`]]);
+    assert.deepEqual(errors.map((e) => [e.code, e.message]), [['SOURCE_NOT_PERMITTED', `当前账户未获授权使用工作流「${REVIEW_PACK}」`]]);
+    assert.equal(
+      started.content[0]?.text,
+      `无权限：当前账户未获授权使用工作流「${REVIEW_PACK}」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。`,
+    );
     const asAdmin = (await hub.records.callLog.query(hub.admin.principal, { userId: bob.user.id, tool: 'start_run' })).items;
     assert.equal(asAdmin.length, 1);
     assert.match((asAdmin[0].admin_reasons ?? []).join('\n'), new RegExp(`start_run: pack ${REVIEW_PACK} is unassigned for ${bob.user.id}`));
@@ -202,6 +208,39 @@ describe('createTestHub', () => {
     assert.equal(asBob[0].admin_note, undefined, 'the caller never sees the reason');
     assert.equal(asBob[0].admin_reasons, undefined, 'the caller never sees private reasons');
     assert.ok(!JSON.stringify(started).includes('not assigned'));
+  });
+
+  test('the four reasons a pack cannot be used are said in one sentence by start_run, list_task_packs and the local-tools download, each ending with where the usable ones are listed', async (t) => {
+    // One name never published, a workflow pack retired, a skill pack published and not installed, a workflow pack not assigned.
+    const hub = await createTestHub({ postgres, repositoryPacks: false, xmlSkill: false, packs: [packs.review, locate, packs.xml], stubs: false });
+    t.after(() => hub.close());
+    await hub.hub.registry.retire(hub.admin.principal, LOCATE_PACK, '1.0.0');
+    const bob = await hub.createUser('乙');
+    const client = await hub.client(bob.token, { sessionId: 'same-words-1' });
+    t.after(() => client.close());
+    const xml = hub.published.find((version) => version.id === XML_PACK)!;
+    const LISTED = '当前账户可用的工作流和技能用 list_task_packs 查看。';
+    const facts = [
+      ['unknown', 'no-such-pack', '1.0.0', '不存在：'],
+      ['withdrawn', LOCATE_PACK, '1.0.0', '不存在：'],
+      ['uninstalled', XML_PACK, xml.version, '不存在：'],
+      ['unassigned', REVIEW_PACK, '1.0.0', '无权限：'],
+    ] as const;
+    const said = new Set<string>();
+    for (const [why, id, version, head] of facts) {
+      const started = await client.call('start_run', { pack: id, inputs: {} });
+      const listed = await client.call('list_task_packs', { pack_id: id });
+      const download = await fetch(`${hub.url}/local-tools/${id}@${version}`, { headers: { authorization: `Bearer ${bob.token}` } });
+      // The download names an absent version whole, because its answer is about that version; the two others name the pack.
+      const downloaded = (await download.text()).trimEnd().replace(`「${id}@${version}」`, `「${id}」`);
+      assert.equal(started.isError, true, why);
+      const sentence = started.content[0]?.text ?? '';
+      assert.ok(sentence.startsWith(head) && sentence.endsWith(LISTED), `${why}: ${sentence}`);
+      assert.equal(listed.content[0]?.text, sentence, `${why}: list_task_packs says what start_run says`);
+      assert.equal(downloaded, sentence, `${why}: the download says what start_run says`);
+      said.add(sentence);
+    }
+    assert.equal(said.size, 4, 'one sentence for each fact');
   });
 
   test('by default the repository\'s packs are published with product packs activated; publishPack and knowledgeSync work on them', async (t) => {

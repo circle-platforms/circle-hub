@@ -973,6 +973,7 @@ ROOT 的三种情形：
 - 类型只按原始 `type` 精确字段和本包的 `ARGUMENT_TYPES` 定义：STRING/XSTRING 为字符串；U16/U32 为对应无符号范围；DOTTEDIP 为 IPv4；IPADDR 为 IPv4/IPv6；IPMASK 为连续点分掩码或 0–128 前缀；HOSTNAME/IP_OR_HOSTNAME 为 contracts 的对应显式类型。help 只保留说明，不能改变类型。所有重载完整消费所有参数；展开或数量上限不转 STRING，给缺口与重产出口。
 - `optional` 精确值为 `YES` 或 `NO`，省略按本语法的 `NO`；空串、大小写变体、yes/y/true/1 等不是别名。未知值是结构违规，不能默认必填。未声明或没有定义的 type 保留原参数位置，不填占位类型；状态取生成的 `type_declaration_status.undeclared`、`command_parse_status.parameters_unchecked`，补证约束交通用检查返回现有 unknown/missing_input。
 - 类型覆盖只按精确 schema=`famx-command-argument-types@1`、origin=`product:famx/README.md#command-grammar` 的发布声明中的原样 command + position；字段不做 trim、大小写或同义归并，不能从 help 推。没有这种来源授权不得做覆盖。limit 只解释本语法声明的完整含端点 `[low - high]`，以及 STRING 上完整 `{value|value}` 的精确成员集（不许空项、重复、嵌套或隐式转义）；未声明约束语法保留未核对，不判已满足。
+- `item` 的 `user_level` 是命令树为这条命令声明的访问级别，按原样的名字读出（不折叠大小写、不映射成别的词），空或省略就没有级别。它随来源绑定写进每个重载的 `access`（名字、声明它的 `item` 的引用、本语法），并在条目文字里单列一行“级别：<名字>”。哪个提示符接受哪一级命令不在这里判断：那是运行器合约对它每个方法的声明（见 case-compile 的 `refused_access`）。
 - 直接 commands 函数必须收到完整 definitions（words/signatures）；旧 heads 单独不足以证明命令。标题、祖先、步骤及期望用同一个完整解析器，结果路径去重并稳定排序。
 
 手册结构语法为 `famx-manual-signature@2`：完整单行 `**head** *<required> [optional]*` 是候选结构；只有全部精确 head/variant 及参数位置和 optional 结构对上锁定树才产生命令定义。格式本身不证明命令。表的签名列必须是精确机器列标识 `command_signature@2`，不能凭“命令/Command”等自然语言表头或连接词猜列角色。普通代码块每行完整过树后可产生 canonical 命令引用，并保留原始 command_lines；散文强调/引号不抽命令。JSON 过渡输入目前只直接调用可达：head_tokens 是精确身份，params.required 必须是显式布尔；数字或非英文不使签名变示例，例子不找最长前缀。没有锁定树时只保留章节原文和补树出口。AsciiDoc AST 只映射候选结构，语言、粗体和单词外形不能决定命令身份。
@@ -1117,7 +1118,7 @@ systems have not been read or validated; the integrator supplies the actual bran
 
 ### famx-red-b 测试修复记录
 
-三块生产接线测试按 R2/R4/R6 的精确结构规则更新；无锁定树、容错 XML 和正文许可都不能恢复旧推断。用例来源字节变化须重绑摘要与位置，完整条目比较逐条进行，避免失败时格式化巨型数组。命令树 optional 非法字段保留全部结构诊断，重复警告按字段汇总；见 [任务记录](../../../docs/hub-r4-tasks/famx-red-b.md)。
+三块生产接线测试按 R2/R4/R6 的精确结构规则更新；无锁定树、容错 XML 和正文许可都不能恢复旧推断。用例来源字节变化须重新绑定摘要与位置，完整条目比较逐条进行，避免失败时格式化巨型数组。命令树 optional 非法字段保留全部结构诊断，重复警告按字段汇总；见 [任务记录](../../../docs/hub-r4-tasks/famx-red-b.md)。
 
 ## famx-trunk-red 收尾
 
@@ -1156,6 +1157,30 @@ The paired command must fully parse back to the same signature. Other parameter 
 cleanup order stay fixed; valid quoting is read through the existing command grammar. Conflicting pair declarations,
 multiple invertible parameters or a non-unique paired target remain unknown with an author repair action. They cannot
 fall through to a guessed prefix inverse. Ordinary declared prefix rules remain available when no enum rule applies.
+
+### Persistence channels and forbidden combinations
+
+`command_policy` can also declare where commands leave state that the runner's per-case cleanup does not remove, and which
+command sets the product documentation forbids on one volume together. Both are exact prefixes of the locked command tree,
+matched by whole path segments against the commands the tree parsed from a plan; nothing is read from command text.
+
+```json
+"persistence_channels": [
+  {"id": "disk", "commands": [{"prefix": "/commands/demo/store"}], "source": "the manual's statement that a stored file stays on the unit"},
+  {"id": "peer", "commands": [{"prefix": "/commands/demo/mirror/push"}, {"prefix": "/commands/demo/link/rank", "with_parameter": 3}], "source": "the manual's statement that a push also writes the peer's saved configuration"}
+],
+"forbidden_combinations": [
+  {"id": "boot_reload", "side_a": [{"prefix": "/commands/demo/mirror/boot/on"}], "side_b": [{"prefix": "/commands/demo/reload"}, {"prefix": "/commands/demo/mirror/push"}], "source": "the manual's warning to switch the boot sync off first"}
+]
+```
+
+A case with a command of any channel runs after the other cases of its volume (they keep their order), and the workbook, the
+run's support and the delivery report say which cases were placed last. A volume with a command of side A and a command of side
+B, in one case or two, is refused, naming the cases, the commands and the `source`. `with_parameter` (zero-based position of a
+signature's parameter) counts a command only when that optional parameter was written, for a command that writes the peer only
+when it is given a peer. The declaration is product data: this repository's `product.json` declares none, because the commands
+that write state are the real product's and are kept in its data outside the repository (the reading is in the skill
+`command-tools`, the use in case-compile's `functions/channels.ts`).
 
 ### The directory walk moved to the adoc-format skill (1.7.47)
 
@@ -1236,3 +1261,31 @@ build-site page there would misstate its source and collide with the PLM record'
 
 The pack's copy of the shared command grammar is regenerated with the positional binding of union expansions (see
 contracts/src/command-grammar.ts): an omitted optional IPADDR argument no longer lets a given address bind one position later.
+
+### The access level of a command
+
+The command tree marks every item with `user_level`, the level at which the command sits. The parser keeps it by its native
+name on each overload (`CatalogSignature.access`, source evidence like a parameter's `native_type`, not part of syntax
+comparison) and shows it as a line of the entry's statement. It decides nothing about prompts: the runner contract declares
+which level each of its methods' prompts refuses, and the workflow pack checks a plan against that. Re-project the knowledge
+tree of each build to carry the level; the syntax of every entry is unchanged.
+
+### Block-style table cells and the parameter a row states
+
+A manual states a parameter's value domain in the table under the paragraph that declares the command, and it writes the long
+ones as AsciiDoc-style cells: `|name a|` on one line, then the cell's paragraphs and lists on the lines below. The cell before
+the specifier is spelled `name a` in the source, because the `a` is the specifier of the next cell; the origin check reads a
+cell specifier at the end of the text before a separator with the engine's rule (the pattern is the engine's
+`CellSpecEndRx`), so the engine's text `name` matches that piece of the line. The engine reports the separator's line for
+the cell under it, and the origin check accepts a cell that starts on the lines below a separator that ends its line (only
+blank lines between). A span specifier is read the same way, so a row such as `| *cmd* 2+| text` is mapped as the engine
+gives it (two cells) and reported as differing from the header.
+
+A row also records what it states. The paragraph before a table that declares a command and its parameters (one authored
+strong, then authored emphasis spans separated by white space; a manual may split a parameter list over several spans, which
+is not a signature for placement and stays chapter content) names the command forms and the parameter names; a row of the
+table whose first cell is, letter for letter, one of those names carries `data.parameter = { commands, name }`. Both are
+positions in the document and an exact name, never a reading of the row's words: a row that names no parameter of the
+paragraph (a memory table, a list of format symbols, two names in one cell) carries nothing. A workflow pack can then put the
+manual's statement of each parameter beside the command it belongs to (case-compile's authoring brief does). Re-produce the
+knowledge tree of each build to get the rows; no existing entry changes its statement or its reference.

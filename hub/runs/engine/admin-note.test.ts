@@ -38,7 +38,11 @@ describe('the admin note of a call', () => {
     const start = noted();
     const answer = await h.service.startRun(h.bob, { pack: 'toy-review', inputs: {} }, start.context);
     // Not assigned: the caller is told so in its words (D05 R[3], decision 112); the admin note keeps the account.
-    assert.deepEqual(answer.errors.map((e) => [e.code, e.message]), [['SOURCE_NOT_PERMITTED', '任务包 toy-review 存在，没有分配给你']]);
+    assert.deepEqual(answer.errors.map((e) => [e.code, e.message]), [['SOURCE_NOT_PERMITTED', '当前账户未获授权使用工作流「toy-review」']]);
+    assert.equal(
+      answer.errors[0]!.fix,
+      '请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看',
+    );
     assert.deepEqual(start.notes, [`start_run: pack toy-review is unassigned for ${h.bob.id}`]);
     assert.ok(h.logs.some((entry) => entry.traceId === start.context.traceId && entry.what === 'start_run'), 'the adminLog has it too, with the trace');
     assert.ok(!JSON.stringify(answer).includes(h.bob.id), 'the account id stays in the admin note');

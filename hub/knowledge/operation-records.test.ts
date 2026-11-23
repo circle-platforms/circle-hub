@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {after, before, test, type TestContext} from 'node:test';
@@ -86,9 +87,9 @@ test('an operation record enters at declaration grade from a client capture and 
   assert.equal(feeding.binding.build, ctx.build.name);
   assert.equal(feeding.object, sha256Hex(canonicalize(operationIdentity(feeding as unknown as Record<string, unknown>))));
   const text = toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes});
-  assert.match(text, /条目 观察/);
-  assert.match(text, /客户端捕获/);
-  assert.match(text, /依据 声明/);
+  assert.match(text, /执行了合成显示；状态未确认；决定者模型/);
+  assert.match(text, /证据合成回显/);
+  assert.doesNotMatch(text, /条目 观察|客户端捕获|依据 声明/);
   const again = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observation(ctx, '/commands/system/show')), {...call, traceId:'a'.repeat(32)});
   assert.equal(again.result?.contributions?.stored[0].record, digest);
   const later = RunRecord.parse((await ctx.service.getRun(ctx.w.admin, ctx.run.run))!.run);
@@ -142,11 +143,11 @@ test('procedure and pitfall keep the same binding, a contradiction is marked, an
   assert.equal(second.result?.contributions?.stored.length, 1, JSON.stringify(second.errors));
   const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping'], depth:0}, ctx.w.admin);
   const text = toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes});
-  assert.match(text, /条目 常见误区/);
-  assert.match(text, /矛盾已标记，两边都留，不裁决/);
+  assert.match(text, /合成显示为空时先核对地址；状态未确认；决定者模型/);
+  assert.match(text, /两份资料的说法有冲突；状态未知；原因还没查清；下一步由使用者核对两边原句/);
   assert.doesNotMatch(text, /裁决为/);
   const show = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/system/show'], depth:0}, ctx.w.admin);
-  assert.match(toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:show!.nodes}), /条目 步骤/);
+  assert.match(toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:show!.nodes}), /核对合成状态的步骤；状态未确认；决定者模型/);
   const stored = await ctx.w.kit.store.get(left);
   const feedingRecord = (stored!.body as {feeding_record?:string}).feeding_record!;
   await ctx.w.knowledge.feeding!.retract(ctx.w.admin, {schema:'retraction@1', entries:[feedingRecord], by:ctx.w.admin.id, at:new Date().toISOString(), reason:'合成撤回'});
@@ -282,10 +283,10 @@ test('a product reader who can read the original sees the operation record on th
   assert.equal(visible.contribution.submitted_by, ctx.w.admin.id);
   assert.equal(visible.contribution.session, 'operation-session');
   const text = toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes});
-  assert.match(text, /客户端捕获/);
-  assert.match(text, new RegExp(ctx.w.admin.id));
-  assert.match(text, /会话 operation-session/);
-  assert.match(text, /矛盾已标记，两边都留，不裁决/);
+  assert.match(text, /执行了读者可见的显示；状态未确认；决定者模型/);
+  assert.doesNotMatch(text, new RegExp(ctx.w.admin.id));
+  assert.doesNotMatch(text, /会话 operation-session/);
+  assert.match(text, /两份资料的说法有冲突；状态未知；原因还没查清；下一步由使用者核对两边原句/);
   assert.equal(await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping'], depth:0}, ctx.w.outsider), null);
 });
 
@@ -319,7 +320,7 @@ test('a contribution with an operation record is stored on a pool of one connect
   // the pool, or it waits for the pool's ten-second timeout.
   const narrow = await openRecords({dataDir:ctx.w.kit.dataDir, logDir:join(ctx.w.kit.dataDir, 'one-connection-logs'), database:ctx.w.kit.database, limits:DEFAULT_LIMITS}, {keyProvider:ctx.w.kit.keyProvider, maxConnections:1});
   t.after(() => narrow.close());
-  const knowledge = createKnowledge({records:narrow, parsers:createDefaultRegistry(), packs:ctx.w.packs, external:ctx.w.external, jev:null, sandbox:{requireOsIsolation:await sandboxIsolation()}, admin:ctx.w.admin});
+  const knowledge = createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,records:narrow, parsers:createDefaultRegistry(), packs:ctx.w.packs, external:ctx.w.external, jev:null, sandbox:{requireOsIsolation:await sandboxIsolation()}, admin:ctx.w.admin});
   const workflows = new FakeWorkflowStore();
   await workflows.add(fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/', import.meta.url)));
   const service = createRunsService({records:narrow, packs:ctx.w.packs, knowledge, external:ctx.w.external, workflows, parsers:createDefaultRegistry()});

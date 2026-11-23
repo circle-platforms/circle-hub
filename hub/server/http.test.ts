@@ -1,7 +1,6 @@
 // The HTTP surface: request targets that URL parsing refuses (never an unhandled rejection), /healthz with the release id,
 // the Host and Origin checks against DNS rebinding, the same 401 for every kind of bad token, method and media type
 // refusals and their call-log lines, strict UTF-8, bounded bodies (declared and streamed), the process-wide body budget,
-// and a graceful close that waits for the handlers it cut off.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
@@ -362,7 +361,7 @@ describe('close', () => {
     await other.close();
   });
 
-  test('a handler slower than the close deadline still writes its call-log line before close() resolves', async () => {
+  test('a handler completing during the shutdown grace delivers its reply and call-log line before close resolves', async () => {
     const app = createApp(server.deps, { codeRoot: server.records.dataDir, closeTimeoutMs: 100, closeGraceMs: 5000, log: () => {} });
     const info = await app.listen();
     const workflows = server.fakes.workflows;
@@ -383,13 +382,13 @@ describe('close', () => {
       );
       await new Promise((resolve) => setTimeout(resolve, 100));
       setTimeout(release, 400);
-      const started = Date.now();
       await app.close();
-      assert.ok(finished, 'close() waited for the handler it cut off');
-      assert.ok(Date.now() - started >= 300, 'past the close deadline');
+      assert.ok(finished, 'close() waited for the admitted handler');
       const lines = await server.records.callLog.query(server.admin.principal, { tool: 'list_task_packs', limit: 50 });
-      assert.ok(lines.items.some((line) => line.trace_id === trace), 'the line of the cut-off call is written');
-      assert.equal(await pending, 'ECONNRESET', 'the connection itself was closed at the deadline');
+      assert.ok(lines.items.some((line) => line.trace_id === trace), 'the admitted call log is written');
+      const reply = await pending;
+      assert.ok(reply && typeof reply === 'object', 'the complete response reached the caller during grace');
+      assert.equal(reply.status, 200);
     } finally {
       release();
       workflows.summaries = original;

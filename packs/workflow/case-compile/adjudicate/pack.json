@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose-adjudication",
-  "version": "1.0.3",
+  "version": "1.1.18",
   "kind": "workflow",
   "title": "recompose-adjudication",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -23,18 +23,18 @@
     },
     {
       "path": "functions/canonical-json.ts",
-      "sha256": "1205f7e664f147172a57cb55e31f4f38f85f935f47a8bfdd0e62b5fa8d913d16",
-      "size": 958
+      "sha256": "7b6ed816a84b9cc987dec0523309eb7348e0d172c78e33f6cfa9bcfee07d9e9c",
+      "size": 1489
     },
     {
       "path": "functions/check.ts",
-      "sha256": "95710166ba5e3126adb15405443ee32a8c085841be5f7498feaae9f74584b1ac",
-      "size": 1229
+      "sha256": "eb0fc5e8f5845a1fd9787abf7a41198f9d96dbb1788012f540c0d4da65a7b433",
+      "size": 1244
     },
     {
-      "path": "functions/compile-structure.ts",
-      "sha256": "449511eb624e0bca749f194cef1ebdfcc2b8bf7671e74b6d584486c14705774f",
-      "size": 13117
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "18b5252ec45fec48185200bacb1b5b3ab15623b9071fddf824bc4fa05784876d",
+      "size": 1117
     },
     {
       "path": "functions/project.ts",
@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "f1c0a6f4ce9834daf7dd664f93525c143d7e399250eddfa3f9ec3b784181472c",
-      "size": 4185
+      "sha256": "dc07d9e56f0df7d2f34806c0ff3eee75ecb64f07f8d63379b9f7e18d2de4bb68",
+      "size": 4682
     },
     {
       "path": "functions/schema.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "3e9e1753b14522c6d6b6d9387e38a3f9555af0c37d70d3aa3b5b867896044de5",
-      "size": 2771
+      "sha256": "0c3f2d5ad16377ee596fed88e35ed2f618c0fc207c54706aec6639c6311c04d8",
+      "size": 10376
     },
     {
       "path": "requirements.json",
@@ -88,13 +88,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "d3c71245bc1271cbefddd28d242da8102cb4d0091685dd6ce629da9d3ed7d612",
-      "size": 271
-    },
-    {
-      "path": "tables/compile-structure.json",
-      "sha256": "d6ed96abebf56a8bdb4cd684982b457905b0ac864b13d92736d3c7a689833923",
-      "size": 617
+      "sha256": "5fa7f8c7187a5e712274c1ccbed17144cd10884c87a0b077ba2cc6c4b9ff63af",
+      "size": 277
     },
     {
       "path": "tables/decision.schema.json",

@@ -7,8 +7,9 @@ import {projectItems} from './project.ts';
 import {MINDMAP_MODEL,AUTOID} from './test-support.ts';
 import {parseProfile} from './profile.ts';
 import {contractOf,bedsOf} from './test-support.ts';
-import {compileGrammar,commandIdentity} from './generated/command-grammar.ts';
+import {commandIdentity} from './generated/skills/command-tools/command-check/grammar.ts';
 import {selectCommandCatalog} from './subject.ts';
+import {namedCommand} from './command-obligations.ts';
 import {ROOT,policy,entries,catalog,grammar,fixture,cleanup} from '../testing/authority-scope.ts';
 const good=['demo pool add one 10','demo pool add two 20',cleanup('no demo pool add two'),cleanup('no demo pool add one')];
 
@@ -37,15 +38,15 @@ test('authored duplicate identities are counted, parameters may change, and miss
  const none=fixture([],source);none.data.steps=[{object:'widget-clock',method:'pause',args:['1'],keywords:{}}];assert.ok(checkCommandsKnown(none.input).some(row=>row.verdict==='refute'&&row.statement.includes('尚缺 2 次')));
 });
 
-test('selection includes source commands while inverse existence is proven by the parsed cleanup paths',()=>{
+test('selection grows with the submitted and source commands and their rule lines, never the whole namespace',()=>{
  const value=fixture(['demo pool add one 10']);
  const raw={context:{root:ROOT,command_policy:policy,groups:[{kind:'case-compile',contract:value.contract,profile:PROFILE_DOC,manifest:MANIFEST_DOC}]},item:{id:'case-1',group:'frozen',fields:{steps:[{text:'demo pool add omitted 20'}]}},slots:{plan:value.data}};
  // use the exact existing raw input adapter shape below
  const selected=selectCommandCatalog(raw) as {lines:string[]};
  assert.ok(selected.lines.includes('demo pool add omitted 20'));
  assert.ok(selected.lines.includes('demo pool add one 10'));
- assert.ok(!selected.lines.some(line=>line==='no demo pool add one 10'));
- assert.ok(selected.lines.length<=3,'prefetch grows with submitted/source operations, never the whole namespace');
+ assert.ok(selected.lines.includes('no demo pool add one 10'));
+ assert.ok(selected.lines.length<=6,'prefetch grows with submitted/source operations, never the whole namespace');
 });
 
 test('capacity is derived from the frozen device type inventory, and excess ordinals refuse the whole compile',()=>{
@@ -66,6 +67,25 @@ test('inverse signature arity is structural, and with several valid arities the 
  assert.ok(checkCommandsKnown(ambiguous.input).every(row=>row.verdict==='support'),JSON.stringify(checkCommandsKnown(ambiguous.input)));
  const other=fixture(['demo pool add one 10',cleanup('no demo pool add two')]);const raw2=other.input.subject.command_catalog as any;delete raw2.policy.inverse_rules[0].leading_parameters;raw2.entries[1].signatures.push({...raw2.entries[1].signatures[0],reference:`src:${ROOT}/xml@1/x/commands/item[20]/arguments`,params:[]});
  assert.ok(checkCommandsKnown(other.input).some(row=>row.verdict==='refute'&&row.statement.includes('在逆序位置的清理应是下面之一')),JSON.stringify(checkCommandsKnown(other.input)));
+});
+
+test('a command the author named without its arguments is owed on the command alone, and a neighbouring command does not serve it',()=>{
+ const named=(rows:ReturnType<typeof checkCommandsKnown>)=>rows.filter(row=>row.verdict==='refute'&&row.statement.includes('没有写出参数'));
+ const replaced=fixture(['demo poolish add one 10'],['demo pool add']);
+ const refused=named(checkCommandsKnown(replaced.input));
+ assert.equal(refused.length,1,JSON.stringify(checkCommandsKnown(replaced.input)));
+ assert.match(refused[0].statement,/可以改参数，不可以删命令：作者写了命令 demo pool add（没有写出参数）1 次，计划里这条命令 0 次，尚缺 1 次；换成别的命令不算/);
+ const kept=fixture(['demo pool add one 10',cleanup('no demo pool add one')],['demo pool add']);
+ assert.ok(checkCommandsKnown(kept.input).every(row=>row.verdict==='support'),JSON.stringify(checkCommandsKnown(kept.input)));
+ const described=fixture(['demo pool add one 10',cleanup('no demo pool add one')],['demo pool add 一个新池']);
+ assert.ok(checkCommandsKnown(described.input).every(row=>row.verdict==='support'));
+ assert.equal(named(checkCommandsKnown(fixture(['show pool one'],['demo pool add 一个新池']).input)).length,1);
+ const both=['demo pool add one 10','demo pool add'];
+ assert.equal(named(checkCommandsKnown(fixture(['demo pool add one 10',cleanup('no demo pool add one')],both).input)).length,1);
+ assert.ok(checkCommandsKnown(fixture(['demo pool add one 10','demo pool add two 20',cleanup('no demo pool add two'),cleanup('no demo pool add one')],both).input).every(row=>row.verdict==='support'));
+ for(const text of ['执行 demo pool add','"demo" pool add','demo pool add one','先 show pool'])assert.equal(named(checkCommandsKnown(fixture(['show pool one'],[text]).input)).length,0,text);
+ assert.deepEqual(namedCommand(grammar,'demo pool add'),{path:'/commands/demo/pool/add',words:'demo pool add'});
+ assert.equal(namedCommand(grammar,'demo pool'),null,'a menu is not a command');
 });
 
 test('author commands cannot be moved into cleanup to erase their execution obligations',()=>{

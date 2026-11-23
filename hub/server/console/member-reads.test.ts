@@ -5,7 +5,7 @@ import {startPostgres} from '../../testing/postgres.ts';
 import {openTestRecords} from '../../testing/records.ts';
 import {circlesOf} from './connections.ts';
 import {circleNames} from './circles.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 test('batched Circle projection hides disabled owners and revoked devices and scopes an ordinary reader to their own devices',async t=>{

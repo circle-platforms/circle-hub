@@ -4,22 +4,21 @@
 // listener with the certificate of <data root>/tls). Every request first passes the Host check of the listener it arrived
 // on (127.0.0.1:<port>, localhost:<port> and the declared names, against DNS rebinding) and the Origin check (absent, or
 // one of this server's own origins); then the route decides. The request target is parsed once and never throws:
-// a target that is neither a path nor an absolute http URL of this server is a 400. close() stops accepting, lets requests in
-// flight end (bounded), closes every connection, then waits (bounded again) for the handlers it cut off, so their call-log
-// lines are written before the caller closes the records; it never stops the database.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
 import type { TLSSocket } from 'node:tls';
 import type { AddressInfo } from 'node:net';
 import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
+import { isAdmin } from '../records/api.ts';
 import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { authorizeRefusal, handleConsole } from './console/index.ts';
 import { LiveEvents } from './console/live.ts';
 import { JobStore } from './console/manage.ts';
-import { LoginLinkStore, SessionStore } from './console/session.ts';
+import { SESSION_COOKIE, SECURE_SESSION_COOKIE, SessionStore } from './console/session.ts';
 import { PackStaging } from './console/staging.ts';
-import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
+import { BodyBudget, allowedHosts, cookiesOf, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
+import { createRebuildHandler } from './rebuild-http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import {handlePersonalSync,personalSyncTarget,SyncAdmission} from './personal-sync.ts';
 import { handleRunExport, runExportTarget } from './run-export.ts';
@@ -111,7 +110,6 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const sessions = new SessionStore(() => clock().getTime());
   const authorizations = new AuthorizationStore(() => clock().getTime());
   const registrations = new RegistrationWindow(() => clock().getTime());
-  const loginLinks = new LoginLinkStore(() => clock().getTime());
   const staging = new PackStaging(() => clock().getTime());
   const syncAdmission=new SyncAdmission();
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
@@ -131,7 +129,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     && request.headers.host?.toLowerCase() === proxyAuthority
     && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer);
   const clients = new DeclaredClients(deps);
-  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, clients, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)), ...(options.keepalive ? { keepalive: options.keepalive } : {}), ...(options.health ? { sessions: options.health.sessions } : {}) };
+  const mcpOptions = { deps, traces: options.observation?.traces, serverVersion: packageVersion(), log, budget, clients, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)), ...(options.keepalive ? { keepalive: options.keepalive } : {}), ...(options.health ? { sessions: options.health.sessions } : {}) };
   // Read when a request comes: an app may be created before its records are (the listener checks build one without).
   const oauthOptions = { get principals() { return deps.records.principals; }, store: authorizations, registrations, secureRequest, log };
   const jobs = new JobStore(clock);
@@ -140,10 +138,32 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log, jobs, live,
     staging,
+    ...(deps.rebuildNeeded === undefined ? {} : { rebuildNeeded: deps.rebuildNeeded }),
     hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
     ...(options.observation ? { observation: options.observation } : {}),
     ...(options.bridge ? { bridge: options.bridge } : {}),
-    authorizations, loginLinks, secureRequest,
+    authorizations, secureRequest,
+  };
+
+  let resetHandler: Promise<ReturnType<typeof createRebuildHandler>> | undefined;
+  const handleReset = async (request: IncomingMessage, response: ServerResponse, url: URL) => {
+    const reset = options.reset;
+    if (!reset) return sendText(response, 503, '重建执行端口未装配，请使用本机受控命令');
+    resetHandler ??= (async () => createRebuildHandler({
+      dataDir: deps.config.dataDir, rebuildNeeded: null, bridge: await reset.bridge(), render: reset.render,
+      originAllowed: request => originAllowed(request, origins), log, now: clock,
+      authenticateAdmin: async request => {
+        const secure = secureRequest(request);
+        const session = sessions.get(cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE), secure);
+        if (!session) return null;
+        const principal = await (deps.records.principals.authenticateConsoleSession?.('Bearer ' + session.token) ?? deps.records.principals.authenticate('Bearer ' + session.token));
+        if (!principal || !isAdmin(principal)) return null;
+        const password = await deps.records.principals.passwordState?.(principal.id);
+        if (password?.mustChange) return null;
+        return { session, principalId: principal.id };
+      },
+    }))();
+    return (await resetHandler)(request, response, url);
   };
 
   const route = async (request: IncomingMessage, response: ServerResponse, target: RequestTarget | null): Promise<void> => {
@@ -167,6 +187,13 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       request.resume();
       return sendText(response, 400, BAD_TARGET, { connection: 'close' });
     }
+    if (stopping) {
+      request.resume();
+      const headers = { connection: 'close', 'retry-after': '5' };
+      const message = 'Hub 正在重启，这次调用没有执行，稍后原样重试';
+      if (isMcp) return sendRpcError(response, 503, -32000, message, headers);
+      return sendText(response, 503, message, headers);
+    }
     const url = target.url;
     if (localToolsTarget(request.url)) return handleLocalTools(request, response, deps, log);
     if (runExportTarget(request.url)) return handleRunExport(request, response, deps, log);
@@ -179,6 +206,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     if(url.pathname===SYNC_DISCOVERY_PATH)return handleSyncDiscovery(request,response,issuerOf(request,secureRequest(request)));
     if (isMcp) return handleMcp(request, response, mcpOptions, deps.config.limits.maxRequestBytes);
     if (oauthTarget(url.pathname)) return handleOAuth(request, response, url, oauthOptions, authorizeRefusal);
+    if (url.pathname === '/console/rebuild' || url.pathname.startsWith('/console/rebuild/') || url.pathname.startsWith('/console/reset/status/') || url.pathname === '/console/admin/do/reset') return handleReset(request, response, url);
     if (url.pathname === '/console' || url.pathname.startsWith('/console/')) return handleConsole(request, response, url, consoleOptions);
     request.resume();
     sendText(response, 404, '没有这个地址');
@@ -207,8 +235,13 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     // `task` never rejects: fail() catches everything, so no request can leave a rejection nobody handles. Its trace ends
     // with it, the last-resort 500 included.
     const remote = traceContextFrom(request.headers.traceparent);
+    const answered = new Promise<void>(resolve => {
+      const done = () => { response.off('finish', done); response.off('close', done); resolve(); };
+      response.once('finish', done); response.once('close', done);
+      if (response.writableFinished || response.destroyed) done();
+    });
     const task: Promise<void> = startTrace({ ...requestEntry(target?.url.pathname), traceId: remote?.traceId, parentSpanId: remote?.parentSpanId }, () =>
-      route(request, response, target).catch((error: unknown) => fail(request, response, label, error)).finally(() => noteAnswer(response)));
+      route(request, response, target).catch((error: unknown) => fail(request, response, label, error)).finally(() => noteAnswer(response))).then(() => answered);
     inflight.add(task);
     void task.finally(() => { finished(); inflight.delete(task); }).catch(() => {});
   };
@@ -285,14 +318,13 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       const current = server;
       const listeners = [server, secureServer].filter((s): s is Server => s !== null);
       if (current !== null) {
+        const completed = await drained(closeTimeoutMs) || await drained(closeGraceMs);
         const closed = Promise.all(listeners.map((s) => new Promise<void>((resolve) => s.close(() => resolve()))));
-        for (const s of listeners) s.closeIdleConnections();
-        await drained(closeTimeoutMs);
-        for (const s of listeners) s.closeAllConnections();
-        // Cutting a connection does not stop its handler: wait for those too (bounded), so a call that is still running
-        // writes its call-log line before the caller stops the sandbox and closes the records.
-        if (!(await drained(closeGraceMs))) {
-          log(`停止时还有 ${inflight.size} 个请求没有结束（连接已断开，又等了 ${closeGraceMs} 毫秒）；它们的调用日志可能写不进去`);
+        if (completed) {
+          for (const s of listeners) s.closeIdleConnections();
+        } else {
+          for (const s of listeners) s.closeAllConnections();
+          log(`停止预算已用完，还有 ${inflight.size} 个请求没有结束；连接已断开，结果未知，调用日志可能写不进去；不要盲目重发，请按运行号、提交摘要或作业号核对`);
         }
         await closed;
       } else {
@@ -301,7 +333,6 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       sessions.clear();
       authorizations.clear();
       registrations.clear();
-      loginLinks.clear();
       await staging.clear();
     })());
 

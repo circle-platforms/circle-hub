@@ -1,3 +1,5 @@
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 // The knowledge search index is built by background rounds and only read by searches. Real PostgreSQL and a real product
 // composition, synthetic entries; the scheduling cases run on a fake source and a mocked clock.
 import assert from 'node:assert/strict';
@@ -28,7 +30,7 @@ async function productWorld(t: { after(fn: () => unknown): void }, entries: numb
 
 /** The same records in a new process, or with other limits. */
 const knowledgeOn = (w: World, records: World['kit'] | (World['kit'] & { spaceIndex: SpaceSearchIndex }) = w.kit) =>
-  createKnowledge({ records, parsers: createTestParserRegistry(), packs: w.packs, external: w.external, jev: null, sandbox: { requireOsIsolation: false }, admin: w.admin });
+  createKnowledge({...TEST_KNOWLEDGE_READ_PORTS, records, parsers: createTestParserRegistry(), packs: w.packs, external: w.external, jev: null, sandbox: { requireOsIsolation: false }, admin: w.admin });
 
 const counts = async (db: Database): Promise<number[]> => {
   const out: number[] = [];
@@ -100,7 +102,7 @@ test('a read that registers a new team version leaves its index to the backgroun
   assert.deepEqual(await counts(w.db), unchanged, 'and wrote nothing of the index');
   assert.deepEqual(hidden.matches, []);
   assert.deepEqual(hidden.warnings?.map((warning) => warning.path), ['/', previous.body.products[0].path]);
-  assert.match(hidden.warnings?.[0].message ?? '', /^团队知识索引：正在后台建立；未检索该范围$/);
+  assert.match(hidden.warnings?.[0].message ?? '', new RegExp(`^${labelOf('knowledge_search_scope', 'team')}知识索引：正在后台建立；未检索该范围$`));
   assert.deepEqual(await spaces.indexRound(), { built: 2, refused: 0, failed: 0 });
   const shown = await spaces.search(w.user, '合成团队条目', 'team');
   assert.equal(shown.matches.length, 1);

@@ -10,6 +10,7 @@ import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck } from '../../records/api.ts';
 import type { AuthorizationRequest } from '../oauth.ts';
 import { AUTHORIZATION_REQUEST_TTL_MS, DEVICE_PAGE, UNNAMED_CLIENT, formatUserCode, redirectIsLocal } from '../oauth.ts';
+import { errorLine, postForm, submitButton } from './components.ts';
 import { CONTENT_SECURITY_POLICY, code, definitions, html, page, type Html } from './html.ts';
 import { stepper } from './ui.ts';
 
@@ -72,12 +73,15 @@ function callout(tone: 'info' | 'warn', body: Html): Html {
 }
 
 function invitationForm(request: AuthorizationRequest, error: string | null, primary: boolean): Html {
-  return html`<form method="post" action="/console/authorize/${request.id}">
-<div class="ch-field"><label class="ch-field-label" for="invitation">邀请码</label><div class="ch-input"><input id="invitation" name="code" autocomplete="off" size="20" maxlength="64" required placeholder="XXXX-XXXX-XXXX"></div></div>
-${error === null ? '' : html`<p class="error">${error}</p>`}
-<input type="hidden" name="csrf" value="${request.csrf}"><input type="hidden" name="step" value="identity">
-<button type="submit" class="ch-btn ${primary ? 'ch-btn--primary' : 'ch-btn--secondary'}">验证邀请码</button>
-</form>`;
+  return postForm({
+    action: `/console/authorize/${request.id}`,
+    csrf: request.csrf,
+    primary,
+    fields: html`<div class="ch-field"><label class="ch-field-label" for="invitation">邀请码</label><div class="ch-input"><input id="invitation" name="code" autocomplete="off" size="20" maxlength="64" required placeholder="XXXX-XXXX-XXXX"></div></div>
+${error === null ? '' : errorLine(error)}
+<input type="hidden" name="step" value="identity">`,
+    submit: '验证邀请码',
+  });
 }
 
 /** The identity step: the invitation code, or signing in to the console first. */
@@ -94,16 +98,19 @@ export function identityPage(request: AuthorizationRequest, error: string | null
  * account, and the approval is refused when it is no longer the one the page showed.
  */
 export function confirmPage(request: AuthorizationRequest, account: { id: string; name: string; role: string }, via: 'invitation' | 'session', csrf: string, error: string | null): Html {
-  const decide = html`<form method="post" action="/console/authorize/${request.id}" class="ch-actions">
-<input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="step" value="decide"><input type="hidden" name="account" value="${account.id}">
-<button type="submit" class="ch-btn ch-btn--secondary" name="decision" value="deny">拒绝</button>
-<button type="submit" class="ch-btn ch-btn--primary" name="decision" value="approve">允许连接</button>
-</form>`;
+  const decide = postForm({
+    action: `/console/authorize/${request.id}`,
+    csrf,
+    formClass: 'ch-actions',
+    fields: html`<input type="hidden" name="step" value="decide"><input type="hidden" name="account" value="${account.id}">`,
+    actions: html`${submitButton('拒绝', { secondary: true, name: 'decision', value: 'deny' })}
+${submitButton('允许连接', { name: 'decision', value: 'approve' })}`,
+  });
   const other = via === 'session'
     ? html`<details><summary>以其他账号连接</summary><div>${invitationForm(request, null, false)}</div></details>`
     : '';
   return page(allowChrome(request, '管理员在团队页管理连接；成员在设置页查看本人的客户端。断开由管理员生成命令执行。'), html`${stepper(STEPS, 1)}
-${error === null ? '' : html`<p class="error">${error}</p>`}
+${error === null ? '' : errorLine(error)}
 <p>以 <b data-evidence>${account.name}</b>（${account.role}）的身份允许 ${clientName(request)} 连接本 Hub。</p>
 <section class="ch-section">${facts(request)}</section>
 ${redirectNotice(request.redirectUri, account.name)}
@@ -123,12 +130,13 @@ export function endedPage(request: AuthorizationRequest): Html {
 /** The device page: the user code a client shows is typed here (RFC 8628 3.3); `typed` is kept after a wrong code. */
 export function deviceCodePage(typed: string, nonce: string, error: string | null): Html {
   return page(chrome('连接客户端', '输入客户端显示的设备码；下一步确认以哪个账号允许连接。'), html`${stepper(STEPS, 0)}
-${error === null ? '' : html`<p class="error">${error}</p>`}
-<form method="post" action="${DEVICE_PAGE}">
-<div class="ch-field"><label class="ch-field-label" for="user-code">设备码</label><div class="ch-input"><input id="user-code" name="user_code" value="${typed}" autocomplete="off" autocapitalize="characters" spellcheck="false" size="12" maxlength="20" required placeholder="XXXX-XXXX"></div></div>
-<input type="hidden" name="csrf" value="${nonce}">
-<button type="submit" class="ch-btn ch-btn--primary">继续</button>
-</form>
+${error === null ? '' : errorLine(error)}
+${postForm({
+    action: DEVICE_PAGE,
+    csrf: nonce,
+    fields: html`<div class="ch-field"><label class="ch-field-label" for="user-code">设备码</label><div class="ch-input"><input id="user-code" name="user_code" value="${typed}" autocomplete="off" autocapitalize="characters" spellcheck="false" size="12" maxlength="20" required placeholder="XXXX-XXXX"></div></div>`,
+    submit: '继续',
+  })}
 <p class="ch-meta">设备码 ${AUTHORIZATION_REQUEST_TTL_MS / 60_000} 分钟内有效，Hub 重启后失效。</p>`);
 }
 
@@ -139,7 +147,7 @@ export function expiredPage(message = `连接请求已过期、不存在，或�
 
 /** An authorization request the endpoint cannot answer at a redirect URI (unknown client, mismatched redirect URI). */
 export function refusedPage(message: string): Html {
-  return page(chrome('连接请求无效'), html`<p class="error">${message}</p>`);
+  return page(chrome('连接请求无效'), errorLine(message));
 }
 
 /** The message for an invitation that cannot be used. */

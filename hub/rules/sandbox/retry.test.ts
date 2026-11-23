@@ -7,9 +7,10 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { SandboxError } from './errors.ts';
 import { osIsolationAvailable } from './isolation.ts';
+import { isExhaustedFunctionFailure, retryFunction, type FunctionAttempt } from './retry.ts';
 import { callPackFunction, type SandboxOptions } from './sandbox.ts';
 
-for (const cause of ['timeout', 'queue_full', 'stopping', 'spawn_failed']) test(`bounded retry recovers from ${cause} with recorded backoff`, async () => {
+for (const cause of ['timeout', 'queue_full', 'stopping', 'spawn_failed', 'resident_observation_unavailable']) test(`bounded retry recovers from ${cause} with recorded backoff`, async () => {
   const os = await osIsolationAvailable();
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'circle-hub-function-retry-')));
   await writeFile(join(dir, 'fn.ts'), 'export default () => 7;');
@@ -34,6 +35,22 @@ for (const cause of ['timeout', 'queue_full', 'stopping', 'spawn_failed']) test(
   } finally {
     childProcess.spawn = spawn; syncBuiltinESMExports(); await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('a watchdog stop on an unobserved process tree is retried within three attempts, then reported as exhausted', async () => {
+  let calls = 0;
+  const attempts: FunctionAttempt[] = [];
+  const unobserved = new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'resident_observation_unavailable' });
+  await assert.rejects(retryFunction(async () => { calls++; throw unobserved; }, 1000, attempt => attempts.push(attempt)), failure => failure === unobserved);
+  assert.equal(calls, 3);
+  assert.deepEqual(attempts.map(attempt => [attempt.attempt, attempt.delayMs, attempt.retry, attempt.reason]),
+    [[1, 50, true, 'resident_observation_unavailable'], [2, 100, true, 'resident_observation_unavailable'], [3, 0, false, 'resident_observation_unavailable']]);
+  assert.equal(isExhaustedFunctionFailure(unobserved), true, 'a completed retry policy is marked, so a shared subject build is not retried again by every check');
+  let isolationCalls = 0;
+  const noIsolation = new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'os_isolation' });
+  await assert.rejects(retryFunction(async () => { isolationCalls++; throw noIsolation; }, 1000), failure => failure === noIsolation);
+  assert.equal(isolationCalls, 1);
+  assert.equal(isExhaustedFunctionFailure(noIsolation), false);
 });
 
 test('retry exhaustion is bounded and deterministic function defects are never retried', async () => {

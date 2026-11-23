@@ -11,24 +11,29 @@ description: 在用户明确开启共享的客户端会话里，由工具后钩�
 
 ## 1. 用户开启本会话
 
-用户先准备仅供采集使用的 Hub 令牌文件：一行令牌、普通单链接文件、权限 0600。令牌不写在命令、提案或仓库里。用 `/session` 查会话号，然后由用户确认执行：
+用户先准备仅供采集使用的 Hub 令牌文件：一行令牌、普通单链接文件、权限 0600。令牌不写在命令、提案或仓库里。用 `/session` 查会话号，然后由用户在自己的终端里执行（模型不执行这条命令）：
 
 ```sh
-node <技能目录>/operation.ts enable --session <会话号> --hub <Hub MCP 地址> --token-file <令牌文件>
+node '<技能目录>/operation.ts' enable --session '<会话号>' --hub '<Hub MCP 地址>' --token-file '<令牌文件>'
 ```
 
-明文 HTTP 只许本机回环假 Hub。状态保存在客户端 home 的 `operation-capture/` 下，不写工作区。`CIRCLE_HOME` 未设置时按客户端默认 home；去空白、`~` 展开和 realpath 与客户端一致。技能须安装在该 home 的 `skills/operation-capture/`；通用安装根是 `~/.agents/skills/operation-capture/`，因为客户端不向钩子提供技能目录。
+明文 HTTP 只许本机回环假 Hub。状态保存在客户端 home 的 `operation-capture/` 下，不写工作区。`CIRCLE_HOME` 未设置时按客户端默认 home；去空白、`~` 展开和 realpath 与客户端一致。客户端不向钩子提供技能目录，钩子只从这个 home 的 `skills/operation-capture/` 加载，所以技能要装在那里；装在别处（例如通用的 `~/.agents/skills/`）钩子找不到。
 
-开启后，`after_tool` 钩子自动把工具输出和当前 Hub 令牌的字面出现脱敏、保存完整 UTF-8 原件、追加 SHA-256 哈希链清单并直传 Hub，出处为 `client_captured`。钩子显式传递 `captured_at`；旧客户端缺这个声明时记录仍保留，视图注明采集时间未声明，上传时刻不当作采集时刻。模型不参与采集或上传。不能完整脱敏、扫描不完整、Unicode 不良或超限时整条不采，不截断。钩子对模型静默；错误只在本地日志写结构错误码。网络结果未知不等于未上传，重试依靠幂等上传。
+开启后，`after_tool` 钩子自动把工具输出和当前 Hub 令牌的字面出现脱敏、保存完整 UTF-8 原件、追加 SHA-256 哈希链清单并直传 Hub，出处为 `client_captured`。钩子显式传递 `captured_at`；缺这个声明的记录仍保留，视图注明采集时间未声明，上传时刻不当作采集时刻。模型不参与采集或上传。不能完整脱敏、扫描不完整、Unicode 不良或超限时整条不采，不截断。钩子对模型静默；错误只在本地日志写结构错误码。网络结果未知不等于未上传，重试依靠幂等上传。
 
-随时核对或停止：
+随时核对：
 
 ```sh
-node <技能目录>/operation.ts status --session <会话号>
-node <技能目录>/operation.ts verify --session <会话号>
-node <技能目录>/operation.ts flush --session <会话号>
-node <技能目录>/operation.ts recover --session <会话号>
-node <技能目录>/operation.ts disable --session <会话号>
+node '<技能目录>/operation.ts' status --session '<会话号>'
+node '<技能目录>/operation.ts' verify --session '<会话号>'
+node '<技能目录>/operation.ts' flush --session '<会话号>'
+```
+
+恢复和停止也由用户在自己的终端里执行：
+
+```sh
+node '<技能目录>/operation.ts' recover --session '<会话号>'
+node '<技能目录>/operation.ts' disable --session '<会话号>'
 ```
 
 `disable` 会等待进行中的采集、上传或整合完成，返回后不再执行这些动作；待传记录只有重新开启后才重试。`recover` 把未登记输出和不完整清单尾部移到本地 `recovery/` 并显示数量，这些无法证明完整的片段只保全、不上传。清单被改、原件被改或有未登记文件时先运行它核查，不能自动重建链掩盖变化。能重写整个状态目录并重算全部摘要的人可伪造自洽链，本技能没有外部信任锚。
@@ -38,15 +43,15 @@ node <技能目录>/operation.ts disable --session <会话号>
 `list` 只列元数据、摘要和上传引用；`read` 才输出本地原件，且该原件必须已有上传回执：
 
 ```sh
-node <技能目录>/operation.ts list --session <会话号>
-node <技能目录>/operation.ts read --session <会话号> --sha <原件 SHA-256>
+node '<技能目录>/operation.ts' list --session '<会话号>'
+node '<技能目录>/operation.ts' read --session '<会话号>' --sha '<原件 SHA-256>'
 ```
 
 只从 `read` 的实际字节逐字抄引文，不从会话转述抄。每条整合记录只引一份原件；步骤涉及多份原件时拆成多条。
 
 ## 3. 模型只写三类提案
 
-写一个普通 JSON 文件，结构如下。`kind` 只能是 `observation`、`procedure`、`pitfall`，其他内容不提交。`session` 与开启共享的会话相同，`capture` 是已上传原件摘要，`path` 从 Hub 知识树复制。每条可写 `device` 和 `bed`，只是客户端声明，只收字符串；省略时分别沿用采集清单的 `targets.device` / `device_id`、`targets.bed` / `bed_id`，不得冲突，声明床必须同时有设备。运行或它接续的预订冻结了自动化测试环境清单时，Hub 按清单核对；只有一个自动化测试环境含该设备时补上 `bed`，同名设备在几个自动化测试环境里就写明 `bed`。记录只写设备和自动化测试环境，不写租约。提案任何文字都不得含当前 Hub 令牌，含了就在开运行前被拒。单份采集会自动带上 `upload.source.artifact`；同字节有多份采集时必须在条目里另写 `artifact`，从 `list` 选本次原件。旧清单缺这个字段时须重新采集上传，不按字节或顺序猜采集时刻。
+写一个普通 JSON 文件，结构如下。`kind` 只能是 `observation`、`procedure`、`pitfall`，其他内容不提交。`session` 与开启共享的会话相同，`capture` 是已上传原件摘要，`path` 从 Hub 知识树复制。每条可写 `device` 和 `bed`，只是客户端声明，只收字符串；省略时分别沿用采集清单的 `targets.device` / `device_id`、`targets.bed` / `bed_id`，不得冲突，声明床必须同时有设备。运行或它接续的预订冻结了自动化测试环境清单时，Hub 按清单核对；只有一个自动化测试环境含该设备时补上 `bed`，同名设备在几个自动化测试环境里就写明 `bed`。记录只写设备和自动化测试环境，不写租约。提案任何文字都不得含当前 Hub 令牌，含了就在开运行前被拒。单份采集会自动带上 `upload.source.artifact`；同字节有多份采集时必须在条目里另写 `artifact`，从 `list` 选本次原件。清单缺这个字段时须重新采集上传，不按字节或顺序猜采集时刻。
 
 - observation：`statement`、`action`、`quote`；quote 为 `{line: 行号, text: 逐字引文}`。
 - procedure：`statement`、`goal`、`steps`；每步为 `{text: 步骤, quote: {line, text}}`。
@@ -76,9 +81,9 @@ node <技能目录>/operation.ts read --session <会话号> --sha <原件 SHA-25
 产品由操作者选择；只有操作者已给构建目标时才加 `--build`，它只用于 `start_run` 锁定，绝不写进提案或回注条目。`--model` 是当前整合模型的确切身份，不是产品版本。
 
 ```sh
-node <技能目录>/operation.ts submit --session <会话号> --proposals <提案.json> --product <产品> [--build <操作者给定构建>] --model <整合模型身份>
+node '<技能目录>/operation.ts' submit --session '<会话号>' --proposals '<提案.json>' --product '<产品>' [--build '<操作者给定构建>'] --model '<整合模型身份>'
 ```
 
 脚本核验整份清单和全部引文，上传普通工作清单，开 `knowledge-contribution` 回注运行，再从运行回答取 `product/root` 形成 `code=assertion` 和对应的 `fed-*@1` 结构。Hub 自己填写版本、对象、上传者和时间。未受理时按原回执修正，退出码非零；不得把未入层条目说成已回注。回执追加保留，不覆盖。
 
-启动幂等键包含本版技能、模型身份和已核验提案内容的摘要：同一上下文原样重试只在 Hub 为该键记录的幂等有效期内沿用原运行（默认 24 小时），不同提案分别开运行。有效期之后，相同提案也可能开出新运行；先查原回执和运行，结果未知时由管理员核对，不要盲目重交。旧版技能已经提交过或结果未知的提案，不要用新版盲目重交；必要时用原版本恢复，不能确认就保留未知。
+启动幂等键包含本版技能、模型身份和已核验提案内容的摘要：同一上下文原样重试只在 Hub 为该键记录的幂等有效期内沿用原运行（默认 24 小时），不同提案分别开运行。有效期之后，相同提案也可能开出新运行；先查原回执和运行，结果未知时由管理员核对，不要盲目重交。幂等键含技能版本：另一版技能提交过或结果未知的提案，不要用这一版盲目重交；必要时用原版本恢复，不能确认就保留未知。

@@ -2,7 +2,7 @@
 // reported in initialize (clientInfo), the name an OAuth client registered (client_name, the label of its token) or the
 // label an administrator gave a token. Where a name came from is shown only in the technical details. Nothing reported
 // is shown as 客户端; no product name is ever assumed.
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import type {ClientDeclaration} from '../../../contracts/src/spaces.ts';
 import {UNNAMED_CLIENT} from '../oauth.ts';
 import {evidence} from './presentation.ts';

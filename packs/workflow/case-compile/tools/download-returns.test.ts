@@ -1,0 +1,553 @@
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { realpathSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { renderPriorDeviceHistoryLines } from '../functions/authoring-brief.ts';
+import { DEVICE_HISTORY_SCHEMA } from '../functions/device-history.ts';
+import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
+import { planRunFixture } from '../testing/plan-run.ts';
+import { signTypedRuntime } from '../testing/typed-fixtures.ts';
+import { loadPriorDeviceHistory } from './authoring-brief.ts';
+import { main, POLL_MS, RETURNS_FORMAT, UNDISPATCHED_MS, type Timing } from './download-returns.ts';
+import { contractFailureMarkers, passReviewInputs } from './generate-workbook.ts';
+
+const TOKEN = 'synthetic-token-1234', RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', PLAN = 'run_01bbbbbbbbbbbbbbbbbbbbbbbb';
+const text = (s: string) => Buffer.from(s);
+const deviceReturn = text('作业的设备返回。逐条结论：\n990000000000000301：失败\n'), log = text('合成日志：第 2 步断言没有命中\n');
+const session = text('seat# configure widget\nFailed to run the synthetic command\nseat#\n'), held = text('合成会话：被扣住的一段\n');
+const ref = (bytes: Uint8Array) => `src:${sha256(bytes)}`;
+function jobs(sessionBytes: Uint8Array = session) {
+  return { schema: 'run-jobs@1', run: RUN, jobs: [{ job: 'c'.repeat(64), verification_run: RUN, plan_run: PLAN, items: ['990000000000000301', '990000000000000302'], sha256: 'd'.repeat(64), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: ref(deviceReturn),
+    rows: [{ item: '990000000000000301', dynamic_terminal: 'fail', evidence: { log: ref(log), sessions: { 'dev-a.txt': ref(sessionBytes), '../escape.txt': ref(held) } } }, { item: '990000000000000302', dynamic_terminal: 'pass' }] }] };
+}
+async function hub(answer: unknown, served: Uint8Array[], forbidden: Uint8Array[] = [], plan?: { record: unknown; result: unknown; submission: unknown }) {
+  const bytes = new Map(served.map((b) => [sha256(b), b])), denied = new Set(forbidden.map((b) => sha256(b)));
+  const server = createServer((request, response) => {
+    if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end(); return; }
+    const url = request.url ?? '';
+    if (url === `/run-export/${RUN}/jobs`) {
+      const now = typeof answer === 'function' ? (answer as () => unknown)() : answer;
+      if (now === null) { response.statusCode = 503; response.end('稍后\n'); return; }
+      response.end(JSON.stringify(now)); return;
+    }
+    if (plan && url === `/run-export/${PLAN}`) { response.end(JSON.stringify({ schema: 'run-export@1', run: plan.record, result: plan.result, submission: plan.submission })); return; }
+    const source = /^\/run-export\/run_\w+\/sources\/([0-9a-f]{64})$/.exec(url);
+    if (source && denied.has(source[1])) { response.statusCode = 403; response.end('不给\n'); return; }
+    if (source && bytes.has(source[1])) { response.end(bytes.get(source[1])); return; }
+    response.statusCode = 404; response.end('没有\n');
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  return { url: `http://127.0.0.1:${port}/mcp`, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+}
+function clock(): Timing & { pauses: number[] } { let at = 0; const pauses: number[] = []; return { pauses, now: () => at, pause: async (ms) => { pauses.push(ms); at += ms; } }; }
+async function run(url: string, out: string, extra: string[] = [], timing?: Timing, retry?: Parameters<typeof main>[3]) {
+  const err: string[] = [], outText: string[] = [];
+  const stderr = process.stderr.write.bind(process.stderr), stdout = process.stdout.write.bind(process.stdout);
+  process.stderr.write = ((chunk: string | Uint8Array) => { err.push(String(chunk)); return true; }) as typeof process.stderr.write;
+  process.stdout.write = ((chunk: string | Uint8Array) => { outText.push(String(chunk)); return true; }) as typeof process.stdout.write;
+  try { return { code: await main(['--hub', url, '--run', RUN, '--out', out, ...extra], async () => TOKEN, timing, retry), stderr: err.join(''), stdout: outText.join('') }; }
+  finally { process.stderr.write = stderr; process.stdout.write = stdout; }
+}
+
+test('the device return, every saved log and session land as checked files; a withheld piece is named, an odd session name is not a path', async (t) => {
+  const h = await hub(jobs(), [deviceReturn, log, session], [held]); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const folder = join(out, 'c'.repeat(12));
+  assert.deepEqual(await readFile(join(folder, 'device-return.txt')), deviceReturn);
+  assert.deepEqual(await readFile(join(folder, 'cases', '990000000000000301', 'log.txt')), log);
+  assert.deepEqual(await readFile(join(folder, 'cases', '990000000000000301', 'dev-a.txt')), session);
+  const index = JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+  assert.deepEqual([index.schema, index.format], ['device-returns@1', RETURNS_FORMAT], 'the index says how it was written, so that a later download can tell one an earlier version kept');
+  assert.deepEqual(index.jobs[0].rows.map((r: { item: string; verdict: string }) => [r.item, r.verdict]), [['990000000000000301', 'fail'], ['990000000000000302', 'pass']]);
+  assert.deepEqual(index.jobs[0].rows[0].sessions, { 'dev-a.txt': join('c'.repeat(12), 'cases', '990000000000000301', 'dev-a.txt'), '../escape.txt': null });
+  assert.equal(index.withheld.length, 1);
+  assert.match(index.withheld[0], /session-2\.txt，没有读取这份设备输出的权限/);
+  assert.equal(JSON.parse(done.stdout).withheld.length, 1);
+  assert.deepEqual(index.jobs[0].rows[0].syntax_rejected, [], 'sessions read, no lone caret in them');
+  assert.equal('syntax_rejected' in index.jobs[0].rows[1], false, 'a row without sessions has nothing to read');
+});
+
+test('a command the device answered with a lone caret is listed for its row with the session, the word under the caret and the prompt', async (t) => {
+  const refused = text('seat(config)#exit\n\nseat#widget sync to peer-b\n\nwidget sync to peer-b \n^\nseat#\n');
+  const h = await hub(jobs(refused), [deviceReturn, log, refused, held]); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const index = JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+  assert.deepEqual(index.jobs[0].rows[0].syntax_rejected, [{ session: 'dev-a.txt', command: 'widget sync to peer-b', token: 'widget', prompt: 'seat#' }]);
+  assert.equal(JSON.parse(done.stdout).syntax_rejected, 1);
+  assert.deepEqual(await readFile(join(out, 'c'.repeat(12), 'cases', '990000000000000301', 'dev-a.txt')), refused, 'the session itself is written word for word');
+});
+
+test('a pass whose run log carries a declared execution-failure line its assertions do not read is listed as no verdict when the returns are read', async (t) => {
+  const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+  doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
+  const contract = text(JSON.stringify(signTypedRuntime(doc))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
+  const items = ['990000000000000301', '990000000000000302', '990000000000000303', '990000000000000304'];
+  const plan = planRunFixture({ run: PLAN, autoids: items, exclude: [], contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+  const clean = text('seat# configure widget\nseat#\n'), unread = text('seat# configure widget\nFailed to run the synthetic command\nseat#\n');
+  const read = text('seat# configure widget\n健康检查间隔设置成功 Failed to run the synthetic command\nseat#\n');
+  const answer = jobs(); answer.jobs[0].items = items;
+  answer.jobs[0].rows = [
+    { item: items[0], dynamic_terminal: 'pass', evidence: { log: ref(clean) } }, { item: items[1], dynamic_terminal: 'pass', evidence: { log: ref(unread) } },
+    { item: items[2], dynamic_terminal: 'pass', evidence: { log: ref(read) } }, { item: items[3], dynamic_terminal: 'pass' },
+  ] as typeof answer.jobs[0]['rows'];
+  const h = await hub(answer, [deviceReturn, clean, unread, read, contract, profile, inventory], [], plan); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const index = JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+  assert.deepEqual(index.jobs[0].rows.map((r: { verdict: string }) => r.verdict), ['pass', 'no_verdict', 'pass', 'pass'], 'the line inside an assertion text of the case is read by it; a pass without a saved log is not reviewed');
+  assert.deepEqual([index.jobs[0].rows[1].runner_verdict, index.jobs[0].rows[1].pass_review], ['pass', { where: '运行日志', line: 'Failed to run the synthetic command' }]);
+  assert.equal('pass_review' in index.jobs[0].rows[0], false);
+  const reviewed = { markers: 1, read: 3, downgraded: 1, wordless: 1, unread: [] };
+  assert.deepEqual(index.pass_review, reviewed);
+  const summary = JSON.parse(done.stdout);
+  assert.deepEqual([summary.verdicts, summary.pass_review], [{ pass: 3, no_verdict: 1 }, reviewed]);
+  assert.deepEqual(await readFile(join(out, 'c'.repeat(12), 'cases', items[1], 'log.txt')), unread, 'the log itself is written word for word');
+
+  const blind = await hub(answer, [deviceReturn, clean, unread, read]); t.after(blind.close);
+  const other = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const kept = await run(blind.url, other);
+  assert.equal(kept.code, 0, kept.stderr);
+  const unreviewed = JSON.parse(kept.stdout);
+  assert.deepEqual(unreviewed.verdicts, { pass: 4 });
+  assert.deepEqual([unreviewed.pass_review.markers, unreviewed.pass_review.read, unreviewed.pass_review.unread.length], [null, 0, 1]);
+  assert.match(unreviewed.pass_review.unread[0], /^缺少执行器规则或自动化用例，尚未核对设备输出，也未列出被设备拒绝执行的命令$/);
+});
+
+test('a command the device refused to execute is listed for its row with the session, the prompt and the device’s reply up to the declared line', async (t) => {
+  const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+  doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
+  const contract = text(JSON.stringify(signTypedRuntime(doc))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
+  const plan = planRunFixture({ run: PLAN, autoids: ['990000000000000301', '990000000000000302'], exclude: [], contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+  const refused = text('seat(config)#widget name "a_b:c" 60\n\nWidget name format error.\nFailed to run the synthetic command\n\nseat(config)#widget on\nseat(config)#\n');
+  const h = await hub(jobs(refused), [deviceReturn, log, refused, held, contract, profile, inventory], [], plan); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const index = JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+  assert.deepEqual(index.jobs[0].rows[0].execution_refused, [{ session: 'dev-a.txt', command: 'widget name "a_b:c" 60', prompt: 'seat(config)#', reply: ['Widget name format error.', 'Failed to run the synthetic command'] }]);
+  assert.deepEqual(index.jobs[0].rows[0].syntax_rejected, [], 'no caret: the device parsed the command and refused to execute it');
+  assert.equal('execution_refused' in index.jobs[0].rows[1], false, 'a row without sessions lists nothing');
+  assert.equal(JSON.parse(done.stdout).execution_refused, 1);
+
+  const blind = await hub(jobs(refused), [deviceReturn, log, refused, held]); t.after(blind.close);
+  const other = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const kept = await run(blind.url, other);
+  assert.equal(kept.code, 0, kept.stderr);
+  const unlisted = JSON.parse(await readFile(join(other, 'index.json'), 'utf8'));
+  assert.equal('execution_refused' in unlisted.jobs[0].rows[0], false);
+  assert.deepEqual(unlisted.jobs[0].rows[0].syntax_rejected, []);
+  assert.match(unlisted.pass_review.unread[0], /也未列出被设备拒绝执行的命令$/);
+
+  const batch2Session = text([
+    'seat(config)#widget peer r1 192.0.2.71',
+    'Warning: For security consideration, please set a challenge code.',
+    'seat(config)#widget sync to r1',
+    '',
+    'checking version and licenses....',
+    'Error: Wrong peer configurations or the challenge codes on the peers are mismatched.',
+    'Failed to synchronize configuration to 192.0.2.71.',
+    '',
+    'seat(config)#widget sync rollback r1',
+    '',
+    'checking version and licenses....',
+    'Error: Wrong peer configurations or the challenge codes on the peers are mismatched.',
+    'Failed to synchronize configuration to 192.0.2.71.',
+    'seat(config)#',
+  ].join('\n'));
+  const batch2Doc = structuredClone(doc);
+  batch2Doc.exec_failure_markers = { source: 'synthetic/domain-rules.json', sha256: 'a'.repeat(64), lines: ['Failed to synchronize configuration to 192.0.2.71.'] };
+  const batch2Contract = text(JSON.stringify(signTypedRuntime(batch2Doc)));
+  const batch2Plan = planRunFixture({ run: PLAN, autoids: ['990000000000000301', '990000000000000302'], exclude: [], contract: batch2Contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+  const b2Hub = await hub(jobs(batch2Session), [deviceReturn, log, batch2Session, held, batch2Contract, profile, inventory], [], batch2Plan);
+  t.after(b2Hub.close);
+  const b2Out = join(await mkdtemp(join(tmpdir(), 'cc-returns-b2-')), 'returns');
+  const b2Done = await run(b2Hub.url, b2Out);
+  assert.equal(b2Done.code, 0, b2Done.stderr);
+  const b2Index = JSON.parse(await readFile(join(b2Out, 'index.json'), 'utf8'));
+  assert.deepEqual(b2Index.jobs[0].rows[0].execution_refused, [
+    {
+      session: 'dev-a.txt',
+      command: 'widget sync to r1',
+      prompt: 'seat(config)#',
+      reply: [
+        'checking version and licenses....',
+        'Error: Wrong peer configurations or the challenge codes on the peers are mismatched.',
+        'Failed to synchronize configuration to 192.0.2.71.',
+      ],
+    },
+    {
+      session: 'dev-a.txt',
+      command: 'widget sync rollback r1',
+      prompt: 'seat(config)#',
+      reply: [
+        'checking version and licenses....',
+        'Error: Wrong peer configurations or the challenge codes on the peers are mismatched.',
+        'Failed to synchronize configuration to 192.0.2.71.',
+      ],
+    },
+  ]);
+  assert.deepEqual(b2Index.jobs[0].rows[0].syntax_rejected, []);
+  assert.equal(JSON.parse(b2Done.stdout).execution_refused, 2);
+  assert.deepEqual(await readFile(join(b2Out, 'c'.repeat(12), 'cases', '990000000000000301', 'log.txt')), log);
+  const unrelated = await hub(jobs(batch2Session), [deviceReturn, log, batch2Session, held, contract, profile, inventory], [], plan); t.after(unrelated.close);
+  const unrelatedOut = join(await mkdtemp(join(tmpdir(), 'cc-returns-unrelated-marker-')), 'returns');
+  const unrelatedDone = await run(unrelated.url, unrelatedOut); assert.equal(unrelatedDone.code, 0, unrelatedDone.stderr);
+  const unrelatedIndex = JSON.parse(await readFile(join(unrelatedOut, 'index.json'), 'utf8'));
+  assert.deepEqual(unrelatedIndex.jobs[0].rows[0].execution_refused, [], 'the same generic Error/Failed text does not match an unrelated declared marker');
+  const noMarkerContract = text(JSON.stringify(signTypedRuntime(CONTRACT_DOC)));
+  const noMarkerPlan = planRunFixture({ run: PLAN, autoids: ['990000000000000301', '990000000000000302'], exclude: [], contract: noMarkerContract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+  const undeclared = await hub(jobs(batch2Session), [deviceReturn, log, batch2Session, held, noMarkerContract, profile, inventory], [], noMarkerPlan); t.after(undeclared.close);
+  const undeclaredOut = join(await mkdtemp(join(tmpdir(), 'cc-returns-no-marker-')), 'returns');
+  const undeclaredDone = await run(undeclared.url, undeclaredOut); assert.equal(undeclaredDone.code, 0, undeclaredDone.stderr);
+  const undeclaredIndex = JSON.parse(await readFile(join(undeclaredOut, 'index.json'), 'utf8'));
+  assert.equal('execution_refused' in undeclaredIndex.jobs[0].rows[0], false, 'missing rules stay undeclared rather than becoming an empty verified execution result');
+  assert.deepEqual(undeclaredIndex.jobs[0].rows[0].execution_refused ?? [], []);
+  assert.equal(undeclaredIndex.pass_review.markers, null);
+  assert.equal(JSON.parse(undeclaredDone.stdout).execution_refused, 0);
+});
+
+test('an entry of the index lists the long names its command and its reply hold, counted in what the device printed, and an entry without one has no names', async (t) => {
+  const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+  doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
+  const contract = text(JSON.stringify(signTypedRuntime(doc))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
+  const plan = planRunFixture({ run: PLAN, autoids: ['990000000000000301', '990000000000000302'], exclude: [], contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+  const longer = `host-${'q'.repeat(100)}-end`, other = 'z'.repeat(70);
+  const longSession = text([
+    `seat(config)#widget name ${longer}`, '', `Name too long: ${longer}`, `also ${other}`, 'Failed to run the synthetic command', '',
+    'seat(config)#widget name short', 'fine',
+    `seat#widget sync ${other}`, '', `widget sync ${other} `, '^', 'seat#', '',
+  ].join('\n'));
+  const h = await hub(jobs(longSession), [deviceReturn, log, longSession, held, contract, profile, inventory], [], plan); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const row = JSON.parse(await readFile(join(out, 'index.json'), 'utf8')).jobs[0].rows[0];
+  assert.deepEqual(row.execution_refused, [{
+    session: 'dev-a.txt', command: `widget name ${longer}`, prompt: 'seat(config)#', reply: [`Name too long: ${longer}`, `also ${other}`, 'Failed to run the synthetic command'],
+    names: [{ chars: 109, in: 'command', head: 'host-' + 'q'.repeat(11), tail: 'q'.repeat(12) + '-end' }, { chars: 109, in: 'reply', head: 'host-' + 'q'.repeat(11), tail: 'q'.repeat(12) + '-end' }, { chars: 70, in: 'reply', head: 'z'.repeat(16), tail: 'z'.repeat(16) }],
+  }]);
+  assert.deepEqual(row.syntax_rejected, [{ session: 'dev-a.txt', command: `widget sync ${other}`, token: 'widget', prompt: 'seat#', names: [{ chars: 70, in: 'command', head: 'z'.repeat(16), tail: 'z'.repeat(16) }] }]);
+  assert.equal(JSON.parse(done.stdout).execution_refused, 1);
+  const plain = await hub(jobs(), [deviceReturn, log, session, held]); t.after(plain.close);
+  const second = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  assert.equal((await run(plain.url, second)).code, 0);
+  const none = JSON.parse(await readFile(join(second, 'index.json'), 'utf8')).jobs[0].rows[0];
+  assert.deepEqual(none.syntax_rejected, [], 'sessions without a caret list nothing, and nothing carries a names field');
+  assert.equal(JSON.stringify(none).includes('"names"'), false);
+});
+
+test('bytes that do not match their digest, a run never dispatched and a directory already in use write nothing', async (t) => {
+  const forged = await hub(jobs(text('forged session')), [deviceReturn, log, session]); t.after(forged.close);
+  const dir = await mkdtemp(join(tmpdir(), 'cc-returns-'));
+  const wrong = await run(forged.url, join(dir, 'a'));
+  assert.equal(wrong.code, 1);
+  const none = await hub({ schema: 'run-jobs@1', run: RUN, jobs: [] }, []); t.after(none.close);
+  assert.match((await run(none.url, join(dir, 'b'))).stderr, /尚未开始上机验证/);
+  const used = join(dir, 'c'); await writeFile(join(dir, 'c-marker'), 'x');
+  const fine = await hub(jobs(), [deviceReturn, log, session, held]); t.after(fine.close);
+  await run(fine.url, used);
+  assert.match((await run(fine.url, used)).stderr, /已有文件/, 'a second download into the same directory is refused');
+});
+
+const running = () => { const answer = jobs(); return { ...answer, jobs: answer.jobs.map((job) => ({ ...job, ended: null, rows: null, device_return: null })) }; };
+const undispatched = { schema: 'run-jobs@1', run: RUN, jobs: [] };
+
+test('--wait reads the job list until every job of the run has ended, through a failed read, and then writes the returns', async (t) => {
+  const answers: unknown[] = [running(), null, running(), jobs()];
+  const h = await hub(() => answers.length > 1 ? answers.shift() : answers[0], [deviceReturn, log, session, held]); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'), time = clock();
+  const done = await run(h.url, out, ['--wait', '3600'], time);
+  assert.equal(done.code, 0, done.stderr);
+  assert.deepEqual(time.pauses, [POLL_MS, POLL_MS, POLL_MS], 'one read per interval; the read the Hub failed is tried again');
+  assert.match(done.stderr, /等待上机验证结束，最多 3600 秒/);
+  const summary = JSON.parse(done.stdout);
+  assert.deepEqual([summary.jobs, summary.ended, summary.verdicts], [1, ['done'], { fail: 1, pass: 1 }]);
+  assert.deepEqual(await readFile(join(out, 'c'.repeat(12), 'device-return.txt')), deviceReturn);
+  assert.equal(JSON.parse(await readFile(join(out, 'jobs.json'), 'utf8')).jobs[0].ended, 'done', 'the answer saved is the one that showed the end');
+});
+
+test('--wait gives up at its limit, and sooner when the run shows no job at all, writing nothing; its value is a number of seconds', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'cc-returns-'));
+  const never = await hub(running, []); t.after(never.close);
+  const late = clock(), slow = await run(never.url, join(dir, 'a'), ['--wait', '50'], late);
+  assert.equal(slow.code, 1);
+  assert.match(slow.stderr, /等了 50 秒，上机验证还没有结束，设备输出尚未保存。用同一命令继续等待/);
+  assert.deepEqual(late.pauses, [POLL_MS, POLL_MS, 10_000], 'the last pause ends at the limit');
+  const none = await hub(undispatched, []); t.after(none.close);
+  const idle = clock(), absent = await run(none.url, join(dir, 'b'), ['--wait', '3600'], idle);
+  assert.equal(absent.code, 1);
+  assert.match(absent.stderr, /尚未开始上机验证，设备输出尚未保存。原样再做一次脚本合并，查看 Hub 的上机验证说明/);
+  assert.equal(idle.pauses.reduce((sum, ms) => sum + ms, 0), UNDISPATCHED_MS);
+  await assert.rejects(readFile(join(dir, 'a', 'index.json')));
+  for (const value of ['0', 'abc', '86401', '-5']) assert.match((await run(never.url, join(dir, 'c'), ['--wait', value], clock())).stderr, /--wait 不在允许范围内。填写 1 到 86400 的整数秒数后重试/, value);
+  assert.match((await run(never.url, join(dir, 'c'), ['--poll', '1'], clock())).stderr, /参数无效：未知选项 --poll。只允许 --hub/);
+  assert.match((await run(none.url, join(dir, 'd'))).stderr, /尚未开始上机验证/);
+});
+
+test('download-returns retries 503 Retry-After and ECONNREFUSED on reads, honors Retry-After in --wait, and reports waited time and attempts', async (t) => {
+  const h = await hub(jobs(), [deviceReturn, log, session, held]); t.after(h.close);
+  let calls = 0;
+  const t1 = clock();
+  const out1 = join(await mkdtemp(join(tmpdir(), 'cc-returns-retry-')), 'ok');
+  const r1 = await run(h.url, out1, [], t1, {
+    fetch: async (input, init) => {
+      calls++;
+      if (calls === 1) return new Response('重启中', { status: 503, headers: { 'retry-after': '5' } });
+      if (calls === 2) throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) });
+      return globalThis.fetch(input, init);
+    },
+  });
+  assert.equal(r1.code, 0, r1.stderr);
+  assert.deepEqual(t1.pauses, [5_000, 2_000]);
+  assert.deepEqual(await readFile(join(out1, 'c'.repeat(12), 'device-return.txt')), deviceReturn);
+
+  let pollStep = 0;
+  const t2 = clock();
+  const out2 = join(await mkdtemp(join(tmpdir(), 'cc-returns-wait-retry-')), 'ok');
+  const r2 = await run(h.url, out2, ['--wait', '60'], t2, {
+    fetch: async (input, init) => {
+      pollStep++;
+      if (pollStep === 1) return new Response(JSON.stringify(running()), { status: 200 });
+      if (pollStep === 2) return new Response('过载', { status: 503, headers: { 'retry-after': '5' } });
+      return globalThis.fetch(input, init);
+    },
+  });
+  assert.equal(r2.code, 0, r2.stderr);
+  assert.deepEqual(t2.pauses, [POLL_MS, 5_000]);
+
+  const t3 = clock();
+  const out3 = join(await mkdtemp(join(tmpdir(), 'cc-returns-wait-fail-')), 'out');
+  const r3 = await run(h.url, out3, ['--wait', '12'], t3, {
+    fetch: async () => new Response('Hub 繁忙', { status: 503 }),
+  });
+  assert.equal(r3.code, 1);
+  assert.match(r3.stderr, /^暂时不可用：Hub 答复 503：Hub 繁忙，已等待 12 秒并尝试 4 次仍未恢复。请.*。$/m);
+  await assert.rejects(readFile(join(out3, 'index.json')));
+});
+
+test('run31 not-dispatched downloads expose the outcome, reason and next action without claiming a device result', async t => {
+  const answer = jobs();
+  Object.assign(answer.jobs[0], { outcome: 'not_dispatched', rows: null, device_return: null, missing_facts: [{ fact: '合成环境配置未恢复', next_action: '由测试环境管理员恢复后重开' }], next_action: '由测试环境管理员恢复后重开' });
+  const h = await hub(answer, []); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const result = await run(h.url, out);
+  assert.equal(result.code, 0, result.stderr);
+  const index = JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+  assert.equal(index.jobs[0].outcome, 'not_dispatched');
+  assert.deepEqual(index.jobs[0].missing_facts, [{ fact: '合成环境配置未恢复', next_action: '由测试环境管理员恢复后重开' }]);
+  const summary = JSON.parse(result.stdout);
+  assert.deepEqual(summary.outcomes, { not_dispatched: 1 });
+  assert.match(summary.message, /^有 1 个上机验证作业没有发到设备，不算一轮上机，也不返工：按 missing_facts 的原因和下一步处理/);
+  assert.equal(summary.missing_facts[0].next_action, '由测试环境管理员恢复后重开');
+});
+
+test('the answer names the next step: the delivery directory when every case passed, the rework when some did not, nothing while a job runs', async (t) => {
+  const passed = jobs();
+  passed.jobs[0].rows = [{ item: '990000000000000301', dynamic_terminal: 'pass' }, { item: '990000000000000302', dynamic_terminal: 'pass' }] as typeof passed.jobs[0]['rows'];
+  const h = await hub(passed, [deviceReturn]); t.after(h.close);
+  const done = await run(h.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
+  assert.equal(done.code, 0, done.stderr);
+  assert.equal(JSON.parse(done.stdout).message, '这一轮上机 2 条全部通过，没有要返工的：按 tools/delivery.md 第 5 节组交付目录（assemble-delivery.ts），最后回复用它给的回复');
+
+  const mixed = await hub(jobs(), [deviceReturn, log, session, held]); t.after(mixed.close);
+  const some = await run(mixed.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
+  assert.equal(some.code, 0, some.stderr);
+  assert.equal(JSON.parse(some.stdout).message, '这一轮上机 2 条里 1 条没有通过：逐条分析后跑 pipeline.ts rework（SKILL.md 第 5 节）');
+
+  const running = jobs();
+  Object.assign(running.jobs[0], { ended: null, outcome: 'unknown', rows: null, device_return: null });
+  const live = await hub(running, []); t.after(live.close);
+  const early = await run(live.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
+  if (early.code === 0) assert.equal('message' in JSON.parse(early.stdout), false, 'a job still running is no round to conclude');
+
+  const incomplete = jobs();
+  incomplete.jobs[0].rows = [{ item: '990000000000000301', dynamic_terminal: 'no_verdict', report_check: { resolved: false } }, { item: '990000000000000302', dynamic_terminal: 'pass' }] as typeof incomplete.jobs[0]['rows'];
+  const partial = await hub(incomplete, [deviceReturn]); t.after(partial.close);
+  const open = await run(partial.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
+  assert.equal(open.code, 0, open.stderr);
+  assert.equal(JSON.parse(open.stdout).message, '这一轮上机 2 条里 1 条的报告不完整、还没有结论，其余 1 条通过：跑 pipeline.ts rework（SKILL.md 第 5 节），这 1 条不进交付卷，照它的 message 办');
+
+  const resent = jobs();
+  resent.jobs[0].rows = [{ item: '990000000000000301', dynamic_terminal: 'pass' }, { item: '990000000000000302', dynamic_terminal: 'pass' }] as typeof resent.jobs[0]['rows'];
+  resent.jobs.unshift({ ...resent.jobs[0], job: 'e'.repeat(64), outcome: 'not_dispatched', rows: null, device_return: null, missing_facts: [{ fact: '合成：预订没有覆盖整个测试环境', next_action: '补齐预订后原样重交原提交' }] } as unknown as typeof resent.jobs[0]);
+  const later = await hub(resent, [deviceReturn]); t.after(later.close);
+  const ran = await run(later.url, join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns'));
+  assert.equal(ran.code, 0, ran.stderr);
+  assert.equal(JSON.parse(ran.stdout).message, '这一轮上机 2 条全部通过，没有要返工的：按 tools/delivery.md 第 5 节组交付目录（assemble-delivery.ts），最后回复用它给的回复', 'a job not dispatched before the one that ran is no reason to call the round not dispatched');
+});
+
+const stoppedLog = text([
+  '2026-11-17 07:08:56 #######   step2: 合成分组>合成用例 301',
+  '2026-11-17 07:08:56 192.0.2.10 - sends command in config: widget on',
+  '2026-11-17 07:08:58 #######   step9: 按声明的行列结构取一格',
+  '2026-11-17 07:09:03 ################# The failed check point num:   0   ####',
+  '2026-11-17 07:09:03 ################# The passed check point num:   0   ####',
+  '2026-11-17 07:09:03 >       return invoke(request, logger, checker)',
+  '2026-11-17 07:09:03 runner/workbook_runner.py:101: in run_workbook',
+  '2026-11-17 07:09:03 E       runner.CellSelectionError: 取不到：没有符合声明形状的行；位置：数据行',
+  '2026-11-17 07:09:03 ######################      FAIL      ####################',
+].join('\n') + '\n');
+const NOT_COMPLETE = { condition: 'result.complete', pointer: '/complete', declared_pointer: '/complete', resolved: false, present: true, actual_sha256: 'e'.repeat(64), result_definition_sha256: 'f'.repeat(64), missing_fact: '结果完整字段 /complete 尚不为 true，缺完整报告', next_action: '按该指针对照已保存原件：原件未齐时稍后 job resume；不重交' };
+const ITEMS3 = ['990000000000000301', '990000000000000302', '990000000000000303'];
+function stoppedJob(rows: Array<Record<string, unknown>>) {
+  const answer = jobs(); answer.jobs[0].items = ITEMS3;
+  answer.jobs[0].rows = ITEMS3.map((item, k) => ({ item, dynamic_terminal: 'no_verdict', report_check: NOT_COMPLETE, ...rows[k] })) as typeof answer.jobs[0]['rows'];
+  return answer;
+}
+async function planOfThree(): Promise<{ plan: ReturnType<typeof planRunFixture>; served: Uint8Array[] }> {
+  const contract = text(JSON.stringify(signTypedRuntime(structuredClone(CONTRACT_DOC)))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
+  return { plan: planRunFixture({ run: PLAN, autoids: ITEMS3, exclude: [], contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` }), served: [contract, profile, inventory] };
+}
+const read = async (out: string) => JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+
+test('the cases after the one whose exception ended the run are listed as not executed with the reason and the next step, not as a device verdict', async (t) => {
+  const { plan, served } = await planOfThree();
+  const answer = stoppedJob([{ evidence: { log: ref(stoppedLog), sessions: { 'dev-a.txt': ref(session) } } }, {}, {}]);
+  const h = await hub(answer, [deviceReturn, stoppedLog, session, ...served], [], plan); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const rows = (await read(out)).jobs[0].rows;
+  assert.deepEqual(rows.map((r: { verdict: string }) => r.verdict), ['no_verdict', 'not_run', 'not_run'], 'the first case keeps the verdict the Hub gave it');
+  assert.equal('not_executed' in rows[0], false, 'it ran; its own words are in its log');
+  assert.deepEqual(rows[0].report_check, NOT_COMPLETE);
+  const reason = '同一份自动化用例 Excel 中排在前面的原始用例 990000000000000301 合成用例 301 在第 9 步出现异常，运行器中止了整本，本条没有在设备上执行';
+  for (const k of [1, 2]) {
+    assert.deepEqual(rows[k].not_executed, { reason, next_action: '修正前一条后重新上机；本次不算本条的一次上机', aborted_by: { item: ITEMS3[0], step: 9 } });
+    assert.deepEqual([rows[k].log, rows[k].sessions], [null, {}], 'there is nothing of it on the device');
+    assert.deepEqual(rows[k].report_check, NOT_COMPLETE, 'what the Hub recorded stays disclosed');
+  }
+  const summary = JSON.parse(done.stdout);
+  assert.deepEqual([summary.verdicts, summary.not_executed], [{ no_verdict: 1, not_run: 2 }, 2]);
+  assert.deepEqual((await read(out)).jobs[0].aborted, {
+    by: { item: ITEMS3[0], step: 9 },
+    reason: '同一份自动化用例 Excel 中的原始用例 990000000000000301 合成用例 301 在第 9 步出现异常，运行器中止了整本：其后 2 条没有在设备上执行，整份报告因此不完整',
+    next_action: '修正原始用例 990000000000000301 后重新上机，异常报告在它的设备输出里；等待和 job resume 都补不出缺的报告，也不重新提交这次上机验证',
+  });
+  assert.equal(summary.aborted, 1);
+});
+
+test('a run that reached every case, or whose last reached case shows no exception, is listed as before', async (t) => {
+  const { plan, served } = await planOfThree();
+  const plain = text('2026-11-17 07:08:58 #######   step2: 合成分组>合成用例 302\n2026-11-17 07:09:03 ######################      PASS      ####################\n');
+  const failedCheck = text('2026-11-17 07:08:58 #######   step3: 合成断言\n2026-11-17 07:08:58 fail to find: widget ready\n2026-11-17 07:09:03 ################# The failed check point num:   1   ####\n2026-11-17 07:09:03 ######################      FAIL      ####################\n');
+  const cases: Array<[string, Array<Record<string, unknown>>]> = [
+    ['every case has a log', [{ evidence: { log: ref(stoppedLog) } }, { evidence: { log: ref(plain) } }, { evidence: { log: ref(plain) } }]],
+    ['a later case has only a session', [{ evidence: { log: ref(stoppedLog) } }, { evidence: { sessions: { 'dev-a.txt': ref(session) } } }, {}]],
+    ['the last case reached failed a check point and the run went on', [{ evidence: { log: ref(plain) } }, { evidence: { log: ref(failedCheck) } }, {}]],
+    ['no case was reached', [{}, {}, {}]],
+  ];
+  for (const [name, rows] of cases) {
+    const h = await hub(stoppedJob(rows), [deviceReturn, stoppedLog, plain, failedCheck, session, ...served], [], plan); t.after(h.close);
+    const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+    const done = await run(h.url, out);
+    assert.equal(done.code, 0, `${name}: ${done.stderr}`);
+    const index = await read(out);
+    assert.deepEqual(index.jobs[0].rows.map((r: { verdict: string }) => r.verdict), ['no_verdict', 'no_verdict', 'no_verdict'], name);
+    assert.equal(index.jobs[0].rows.some((r: Record<string, unknown>) => 'not_executed' in r), false, name);
+    assert.equal('aborted' in index.jobs[0], false, name);
+    const summary = JSON.parse(done.stdout);
+    assert.deepEqual([summary.verdicts, 'not_executed' in summary, 'aborted' in summary], [{ no_verdict: 3 }, false, false], name);
+  }
+});
+
+test('without the plan run the cases not reached are still listed, with the title said to be unknown', async (t) => {
+  const h = await hub(stoppedJob([{ evidence: { log: ref(stoppedLog) } }, {}, {}]), [deviceReturn, stoppedLog]); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const rows = (await read(out)).jobs[0].rows;
+  assert.equal(rows[1].verdict, 'not_run');
+  assert.match(rows[1].not_executed.reason, /^同一份自动化用例 Excel 中排在前面的原始用例 990000000000000301 标题未知 在第 9 步出现异常，/);
+  assert.match((await read(out)).jobs[0].aborted.reason, /^同一份自动化用例 Excel 中的原始用例 990000000000000301 标题未知 在第 9 步出现异常，运行器中止了整本：其后 2 条没有在设备上执行，/);
+});
+
+// A plan run written by the previous version of the pack: its result names that version, which this tool cannot recompute the recipes of.
+const PREVIOUS_VERSION = 'case-compile@3.26.6';
+function deviceRefusedAnother() {
+  const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+  doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
+  const contract = text(JSON.stringify(signTypedRuntime(doc))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
+  const items = ['990000000000000301', '990000000000000302', '990000000000000303'];
+  const refused = text('seat(config)#widget name "a_b:c" 60\n\nWidget name format error.\nFailed to run the synthetic command\n\nseat(config)#widget on\nseat(config)#\n');
+  const carrying = text('seat# configure widget\nFailed to run the synthetic command\nseat#\n');
+  const answer = jobs(refused); answer.jobs[0].items = items;
+  answer.jobs[0].rows = [
+    { item: items[0], dynamic_terminal: 'fail', evidence: { log: ref(log), sessions: { 'dev-a.txt': ref(refused) } } },
+    { item: items[1], dynamic_terminal: 'pass', evidence: { log: ref(carrying) } },
+    { item: items[2], dynamic_terminal: 'pass' },
+  ] as typeof answer.jobs[0]['rows'];
+  const make = (generator?: string) => {
+    const plan = planRunFixture({ run: PLAN, autoids: items, exclude: [], contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+    if (generator) plan.result.locks.pack = generator;
+    return plan;
+  };
+  return { items, answer, make, contract, profile, inventory, served: [deviceReturn, log, refused, carrying, contract, profile, inventory] };
+}
+const REFUSED_BY_DEVICE = { session: 'dev-a.txt', command: 'widget name "a_b:c" 60', prompt: 'seat(config)#', reply: ['Widget name format error.', 'Failed to run the synthetic command'] };
+
+test('a plan run written by another version of the pack still has the commands its device refused listed, and only the re-reading of its passes is left out and said', async (t) => {
+  const { items, answer, make, served, contract, profile, inventory } = deviceRefusedAnother();
+  const download = async (plan: ReturnType<typeof make>) => {
+    const h = await hub(answer, served, [], plan); t.after(h.close);
+    const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+    const done = await run(h.url, out);
+    assert.equal(done.code, 0, done.stderr);
+    return { index: await read(out), summary: JSON.parse(done.stdout) };
+  };
+
+  const same = await download(make());
+  assert.deepEqual(same.index.jobs[0].rows.map((r: { verdict: string }) => r.verdict), ['fail', 'no_verdict', 'pass'], 'with this version the pass whose log carries the declared line is read and dropped');
+  assert.deepEqual(same.index.pass_review, { markers: 1, read: 1, downgraded: 1, wordless: 1, unread: [] });
+
+  const other = await download(make(PREVIOUS_VERSION));
+  const rows = other.index.jobs[0].rows;
+  assert.deepEqual(rows[0].execution_refused, [REFUSED_BY_DEVICE], 'listed by the markers of the run\'s own contract, whatever version wrote the run');
+  assert.deepEqual(rows[0].execution_refused, same.index.jobs[0].rows[0].execution_refused);
+  assert.deepEqual(rows.slice(1).map((row: Record<string, unknown>) => 'execution_refused' in row), [false, false], 'a row without sessions lists nothing');
+  assert.deepEqual(rows.map((r: { verdict: string }) => r.verdict), ['fail', 'pass', 'pass'], 'no pass is downgraded on a reading that was not made');
+  assert.equal('pass_review' in rows[1] || 'runner_verdict' in rows[1], false);
+  assert.deepEqual(other.index.pass_review, {
+    markers: 1, read: 0, downgraded: 0, wordless: 0,
+    unread: [`没有重读脚本编写运行 ${PLAN} 的通过结论：自动化用例 Excel 的生成工具与脚本编写所用的工具版本不符；被设备拒绝执行的命令已照这个运行自己的执行器规则列出`],
+  });
+  assert.deepEqual([other.summary.execution_refused, other.summary.verdicts, other.summary.pass_review], [1, { fail: 1, pass: 2 }, other.index.pass_review]);
+
+  // The generator that cannot be told from the recipes still refuses: delivery reads its passes through passReviewInputs and fails on it.
+  const mismatched = make(PREVIOUS_VERSION);
+  assert.throws(() => passReviewInputs({ run: mismatched.record, result: mismatched.result, submission: mismatched.submission, contract, profile, inventory }), /自动化用例 Excel 的生成工具与脚本编写所用的工具版本不符/);
+  assert.deepEqual(contractFailureMarkers(contract), ['Failed to run the synthetic command']);
+  assert.deepEqual(contractFailureMarkers(text('not a contract')), [], 'a contract that cannot be read declares none');
+  assert.deepEqual(contractFailureMarkers(text(JSON.stringify(signTypedRuntime(structuredClone(CONTRACT_DOC))))), [], 'a contract without markers declares none');
+});
+
+test('the history of a case names the commands the device refused in an earlier run made with another version of the pack', async (t) => {
+  const { items, answer, make, served } = deviceRefusedAnother();
+  const h = await hub(answer, served, [], make(PREVIOUS_VERSION)); t.after(h.close);
+  const work = realpathSync(await mkdtemp(join(tmpdir(), 'cc-returns-history-')));
+  const done = await run(h.url, join(work, 'history', RUN)); // where download-run.ts keeps the returns of an earlier run
+  assert.equal(done.code, 0, done.stderr);
+  const current = `run_01${'c'.repeat(24)}`;
+  await mkdir(join(work, 'plan-run'), { recursive: true });
+  const listed = { run: RUN, started_at: '2026-11-19T00:00:00.000Z', build: 'synthetic-build-7', jobs: [{ job: 'c'.repeat(64), plan_run: PLAN, ended_at: '2026-11-19T01:30:00.000Z', outcome: 'effective', rows: [{ item: items[0], dynamic_terminal: 'fail' }] }] };
+  await writeFile(join(work, 'plan-run', 'history.json'), JSON.stringify({
+    schema: DEVICE_HISTORY_SCHEMA, run: current, fetched_at: '2026-11-20T00:00:00.000Z', status: 'fetched',
+    answer: { schema: 'run-history@1', run: current, subjects: ['toy:mindmap:docq7'], limit: 6, complete: true, runs: [listed] },
+    returns: [{ run: RUN, dir: join('history', RUN) }], elapsed_ms: 1500,
+  }));
+  const prior = await loadPriorDeviceHistory(join(work, 'plan-run'), items[0], work);
+  assert.equal(prior.status, 'available');
+  assert.deepEqual(prior.entries[0]!.execution_refused, { total: 1, shown: [{ command: 'widget name "a_b:c" 60', reply: 'Widget name format error. / Failed to run the synthetic command' }] });
+  const lines = renderPriorDeviceHistoryLines(prior).join('\n').replace(/\n {2,}/g, '');
+  assert.ok(lines.includes('设备拒绝执行 1 条：“widget name "a_b:c" 60” 设备答 “Widget name format error. / Failed to run the synthetic command”'), lines);
+});

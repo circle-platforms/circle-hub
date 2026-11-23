@@ -131,6 +131,19 @@ export function readAddress(bed: ManifestBed, leases: readonly LeaseRow[], now: 
  * Whether the address falls in a device-interface subnet that has no trigger device.
  * Compared by the numeric value and the interface prefix, not by the address text.
  */
+export function hostReaches(bed: ManifestBed, deviceName: string, address: string): boolean | null {
+  const device = bed.devices.find((d) => d.name === deviceName);
+  const v4 = addressValue('ipv4', address); const v6 = v4 === null ? addressValue('ipv6', address) : null;
+  if (!device || (v4 === null && v6 === null)) return null;
+  const family = v4 === null ? 'ipv6' : 'ipv4'; const value = (v4 ?? v6) as bigint; const bits = family === 'ipv4' ? 32n : 128n;
+  return [...device.ipv4, ...device.ipv6].some((iface) => iface.family === family && (iface.value >> (bits - BigInt(iface.prefix))) === (value >> (bits - BigInt(iface.prefix))));
+}
+
+export function interfacesOf(bed: ManifestBed, deviceName: string): string[] {
+  const device = bed.devices.find((d) => d.name === deviceName);
+  return device ? [...device.ipv4, ...device.ipv6].map((iface) => `${iface.address}/${iface.prefix}`) : [];
+}
+
 export function inBlindSegment(bed: ManifestBed, address: string, triggerTypes: ReadonlySet<string> = TRIGGER_TYPES): boolean {
   const v4 = addressValue('ipv4', address);
   const v6 = v4 === null ? addressValue('ipv6', address) : null;

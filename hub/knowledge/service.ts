@@ -8,7 +8,7 @@ import {requestKnowledgeFact} from './requests.ts';
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
 // production, sync, current-root, calibration, placement, provenance and layer operations of this package.
 import type { JevClient } from '../jev/api.ts';
-import type { EntryDiff, KnowledgePort, NodesPage, NodesQuery, PacksPort, ProductHandle, ReadRoot, ReadRootQuery, RootDiff, RootInfo, ExternalReaderPort } from '../ports.ts';
+import type { EntryDiff, KnowledgeRunReadPort, KnowledgePackReadPort, KnowledgePort, NodesPage, NodesQuery, PacksPort, ProductHandle, ReadRoot, ReadRootQuery, RootDiff, RootInfo, ExternalReaderPort } from '../ports.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { EntryKind } from '../../contracts/generated/vocabulary.ts';
@@ -22,6 +22,7 @@ import { canonicalSize,compareText, cutText } from './digest.ts';
 import { ObservationLayer } from './layers.ts';
 import { ContributionLayer } from './contributions.ts';
 import { contributionNodes } from './contribution-pages.ts';
+import { withoutEmptyApplicability } from './applicability-fields.ts';
 import { MAX_DESCRIPTION, Placer, type PlaceOptions, type PlacementChild, type PlacementOutcome, type PlacementSpan, type PlacementTree } from './placement.ts';
 import { produceTree, type ProduceInput, type ProduceResult } from './produce.ts';
 import { TreeReading, type ProvenanceRow, type TreeLock } from './read.ts';
@@ -33,12 +34,18 @@ import { LinkReading } from './links.ts';
 import { KnowledgeViews } from './views.ts';
 import { withReadCache } from './read-cache.ts';
 
+
+function withoutEmptyConditions(page: NodesPage | null): NodesPage | null {
+  return page === null ? null : { ...page, nodes: page.nodes.map((node) => ({ ...node, entries: node.entries.map(withoutEmptyApplicability) })) };
+}
 export interface KnowledgeOptions {
   /** Additional declared scope (for example unversioned knowledge); roots and compositions must belong to this product. */
   additionalScopeRoots?: (product:string)=>Promise<readonly {root:string;composition:string}[]>;
   records: KnowledgeRecords;
   parsers: ParserRegistry;
   packs: PacksPort;
+  runReads: KnowledgeRunReadPort;
+  packReads: KnowledgePackReadPort;
   external: ExternalReaderPort;
   /** Test injection point of the placement judge (a scripted judge in this package's tests). The production assembly never
    * passes one: the Hub calls no model, and spans the code cannot place stay unplaced at the root. */
@@ -125,6 +132,8 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     store,
     parsers: options.parsers,
     packs: options.packs,
+    runReads: options.runReads,
+    packReads: options.packReads,
     external: options.external,
     placer,
     calibration,
@@ -309,21 +318,29 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     }),
     catalog: (root, catalogId, selection): Promise<CatalogView | null> => withReadCache(()=>reading.catalog(root, catalogId, selection)),
     treeReader: (lock?: TreeLock | null): TreeReader => {
-      const legacy=reading.treeReader(lock??null), scoped=spaces.treeReader();
-      const reader:TreeReader={...legacy,
-        read:async(root,path,entry,who)=>await spaces.version(root)?scoped.read(root,path,entry,who):legacy.read(root,path,entry,who),
-        hasRoot:async(root,who)=>await spaces.version(root)?scoped.hasRoot!(root,who):legacy.hasRoot!(root,who),
+      const productTree=reading.treeReader(lock??null), scoped=spaces.treeReader();
+      const reader:TreeReader={...productTree,
+        read:async(root,path,entry,who)=>await spaces.version(root)?scoped.read(root,path,entry,who):productTree.read(root,path,entry,who),
+        hasRoot:async(root,who)=>await spaces.version(root)?scoped.hasRoot!(root,who):productTree.hasRoot!(root,who),
       };
       return {...reader,read:(...args)=>withReadCache(()=>reader.read(...args)),readEntry:(...args)=>withReadCache(()=>reader.readEntry(...args)),...(reader.hasRoot?{hasRoot:(...args:Parameters<NonNullable<TreeReader['hasRoot']>>)=>withReadCache(()=>reader.hasRoot!(...args))}:{})};
     },
     getNodes:async(query:NodesQuery,reader:Principal):Promise<NodesPage|null>=>withReadCache(async()=>{
-      if(await spaces.version(query.root))return spaces.getNodes(query,reader);
+      if(await spaces.version(query.root))return withoutEmptyConditions(await spaces.getNodes(query,reader));
       // Establish permission before even decoding a contribution cursor.
       if(!(await reading.mayReadRoot(reader,query.root)))return null;
       const page=await contributionNodes(context,reading,contributions,query,reader);if(!page)return null;
       const paths=page.nodes.map(node=>node.path),products=paths.length?await reading.productsOfRoot(query.root):[];const rows=[];for(const product of products)rows.push(...await feeding.entriesAtNodes(reader,product,query.root,paths,query.feeding_offset?.offset??Number.MAX_SAFE_INTEGER));
       for(const node of page.nodes){const relevant=rows.filter(row=>row.validity==='valid'&&row.body.root===query.root&&(row.body.path===node.path||row.body.path===null&&node.path==='/'||Array.isArray(row.body.commands)&&row.body.commands.some((command:Record<string,unknown>)=>command.path===node.path)));const references=[];for(const row of relevant){if(references.length===100)break;const ref={object:row.body.object,reference:'rec:'+row.record};if(canonicalSize(page)+canonicalSize(references)+canonicalSize(ref)>context.limits.pageBytes-1024)break;references.push(ref);}if(relevant.length){node.feeding_objects=references;node.feeding_complete=references.length===relevant.length;if(!node.feeding_complete)page.coverage={...page.coverage,complete:false,note:[page.coverage.note,'喂入引用达到本页预算；从知识 index/facets 视图读取完整范围'].filter(Boolean).join('；')};}}
-      return page;
+      return withoutEmptyConditions(page);
+    }),
+    subtree: (query, reader) => withReadCache(async () => {
+      if (await spaces.version(query.root)) return null;
+      const nodes = await reading.subtreeNodes(query, reader);
+      if (nodes === null) return null;
+      const out: NodesPage['nodes'] = [];
+      for await (const node of nodes) out.push({ ...node, entries: node.entries.map(withoutEmptyApplicability) });
+      return out;
     }),
     diffRoots: (from, to): Promise<RootDiff | null> => withReadCache(()=>reading.diff(from, to)),
     diffEntries: (from: string, to: string, diffOptions: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null> => withReadCache(()=>reading.diffEntries(from, to, diffOptions)),

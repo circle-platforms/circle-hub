@@ -55,7 +55,7 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
     }
     if (ctx.parsers.forRun) {
       try { ctx = { ...ctx, parsers: await ctx.parsers.forRun(stored.body.run) }; }
-      catch { return { call_result: 'error', errors: [{ code: 'SOURCE_READ_FAILED', message: '缺少本运行锁定的解析技能包摘要', fix: '管理员恢复原技能包；历史运行缺锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明后重读' }], references: [], diagnostics: [] }; }
+      catch { return { call_result: 'error', errors: [{ code: 'SOURCE_READ_FAILED', message: `运行 ${stored.body.run} 锁定的解析技能包版本在包库中不可读取`, fix: '请管理员从发布库或备份恢复本运行锁定的技能包版本后重读，或重开一次运行' }], references: [], diagnostics: [] }; }
     }
     // What the model will be shown: text the model may read (consumer model).
     const artifacts = ctx.deps.records.artifacts;
@@ -84,7 +84,7 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
     ctx.log({ traceId: call.traceId, run: null, what: 'resolve_reference', detail: `root ${input.root} is absent or not readable by ${user.id}` });
     const exists = treeReader.rootExists !== undefined ? await treeReader.rootExists(input.root) : null;
     // The same words as get_nodes for the same root (hub/server/tools.ts ROOT_ABSENT_FIX, ROOT_FORBIDDEN_FIX).
-    return { call_result: 'error', errors: [exists === null ? unavailableError() : missingError(exists, undefined, `知识树根 ${input.root}`, exists ? '请管理员给你分配一个绑定这条产品线的任务包；或改读你的运行锁定的根' : '核对知识根；知识根来自运行或 get_nodes')], references: [], diagnostics: [] };
+    return { call_result: 'error', errors: [exists === null ? unavailableError() : missingError(exists, undefined, `知识树根 ${input.root}`, exists ? '请联系管理员为该账户分配一个绑定这条产品线的工作流或技能；或改读当前账户运行锁定的根' : '核对知识根；知识根来自运行或 get_nodes')], references: [], diagnostics: [] };
   }
 
   if (input.text.trim().startsWith('rec:')) {

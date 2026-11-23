@@ -187,6 +187,15 @@ export class FakeWorkflows implements WorkflowStore {
     if (scripted !== undefined) return scripted.value as PackSummary[];
     return (await this.usable(user)).map((pack) => pack.summary!).filter((summary) => summary !== null);
   }
+
+  async absence(user: Principal, ref: string): Promise<'unknown' | 'unassigned' | 'uninstalled' | 'withdrawn' | 'disabled' | null> {
+    const pack = this.find(ref);
+    if (pack === undefined) return 'unknown';
+    if (pack.kind === 'skill') return 'uninstalled';
+    if (!(await isActive(this.#records, user))) return 'unknown';
+    if (!(await this.#records.authorizations.canUse(user.id, pack.id))) return 'unassigned';
+    return null;
+  }
 }
 
 function loaded(pack: FakePack): LoadedWorkflow {
@@ -601,6 +610,8 @@ export class FakeRuns implements RunsService {
       ...(input.predecessor === undefined ? {} : { predecessor: input.predecessor }),
       ...(context.sessionId === null ? {} : { session: context.sessionId }),
       ...(input.model_identity === undefined ? {} : { model_identity: input.model_identity }),
+      skills: [],
+      submission_due: input.submission_due ?? new Date(this.#now().getTime() + 86400000).toISOString(),
       started_at: this.#now().toISOString(),
       runner: user.id,
       host: 'local_circle',
@@ -849,11 +860,11 @@ export class FakeRuns implements RunsService {
       production:stored.production === null ? null : {record:stored.production.record,result:stored.production.result} };
   }
 
-  async exportRun(user: Principal, run: string): Promise<{ run: RunRecordView; result: ValidationResult | null; submission: unknown | null } | null> {
+  async exportRun(user: Principal, run: string): Promise<{ run_reference: string; accepted_result_reference: string | null; run: RunRecordView; result: ValidationResult | null; submission: unknown | null } | null> {
     const stored = await this.#visible(user, run);
     if (stored === null || (stored.record.runner !== user.id && !(await isAdmin(this.#records, user)))) return null;
-    const result = stored.latest?.result.acceptance === 'accepted' ? stored.latest.result : null;
-    return { run: stored.record, result, submission: result ? this.#bodies.get(`${run}:${result.submission}`) ?? null : null };
+    const accepted = [...stored.results.entries()].reverse().find(([key, entry]) => key !== stored.recordDigest && entry.result.acceptance === 'accepted' && this.#bodies.has(`${run}:${entry.result.submission}`))?.[1] ?? null;
+    return { run_reference: `rec:${stored.recordDigest}`, accepted_result_reference: accepted ? `rec:${accepted.record}` : null, run: stored.record, result: accepted?.result ?? null, submission: accepted ? this.#bodies.get(`${run}:${accepted.result.submission}`) ?? null : null };
   }
 
   async listRuns(user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecordView>> {

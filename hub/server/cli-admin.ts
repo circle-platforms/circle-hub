@@ -1,4 +1,5 @@
-import {knowledgeMessage} from './capacity.ts';
+import { isAdmin } from '../records/api.ts';
+import { ADMIN_COMMANDS } from './command-registry.ts';
 // The administrator commands the assembly registers with the server CLI: pack, resource, secret, knowledge, init-admin and
 // operator-token. Every command that changes state acts as the admin of the operator token: CIRCLE_HUB_TOKEN, or when it is
 // not set the private key file of the deployment (account operator-token beside the vault master key, hub/platform
@@ -9,1063 +10,32 @@ import {knowledgeMessage} from './capacity.ts';
 // the only admin. A lost or dead token file is replaced without a token by `operator-token reissue`: a new token of an
 // enabled admin goes straight into the file and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
-import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
-import {referencesIn} from '../../contracts/src/variables.ts';
-import {bindLegacySkills,bindLegacyParser} from '../refs/api.ts';
-import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
-import { maskCommand, MASK_USAGE } from './cli-mask.ts';
-import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE } from './cli-job.ts';
-import { traceCommand, TRACE_USAGE } from './cli-trace.ts';
-import { updateTrace } from '../telemetry/api.ts';
-import { copyFile, open, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { LeaseService } from '../leases/service.ts';
-import { createPool, Database } from '../records/db.ts';
-import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
-import { ENVIRONMENT, isEnvironment, isLeaseOp, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
-import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/index.ts';
-import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
-import { KnowledgeError, createKnowledgeReader, formatKnowledgeRetract, formatReprojectReport, formatSeedReport, formatSyncReport, knowledgeReproject, knowledgeRetract, knowledgeSeed, knowledgeSync, parseKnowledgeReprojectArgs, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeReprojectArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
-import { DocsError } from './docs.ts';
-import type { ProductHandle, RunsService } from '../ports.ts';
-import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordStore, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
-import { packChanges, unruledShapes, parsePackRef, type PackProblem, type PublishCheck, type PublishReport } from '../runs/api.ts';
+import { readUploadedSource } from './cli-job.ts';
+import { DOC_MEDIA_TYPES, DOC_SUFFIXES, docMediaType, docSuffixOf } from './docs.ts';
+import { lstat, readFile, writeFile } from 'node:fs/promises';
+import { basename, isAbsolute, resolve } from 'node:path';
+import { isLeaseOp, labelOf } from '../../contracts/generated/vocabulary.ts';
+import { HubConfigError, HubEnvironmentError } from '../config/index.ts';
+import { productionShareKey, isSha256, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
+import { parsePackRef } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
-import { assembleHub, type AssembledHub, type AssemblyOptions } from './assemble/hub.ts';
-import { OPERATOR_TOKEN_VARIABLE, deploymentKeyService, fileOperatorTokens, takeEnvironmentToken, tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
+import { tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
 import { DEFAULT_ADMIN_NAME, initialPassword, validPassword } from '../records/api.ts';
-import { SecretInputError, readSecret as readSecretFromStdin } from './assemble/secret-input.ts';
+import { readSecret as readSecretFromStdin } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
-import { readNamedEnvironment } from './assemble/env-file.ts';
-import { vaultKeyProblem } from './assemble/vault.ts';
 import { CliError, UsageError } from './errors.ts';
+import { parse, decided } from './cli-arguments.ts';
+import { Session, REISSUE_LABEL, REISSUE, REMOVE_ITEM, type AdminCommandOptions, type OperatorAct } from './cli-session.ts';
+import { packIdOf } from './cli-pack.ts';
+export type { AdminCommandOptions, OperatorAct } from './cli-session.ts';
+export { PACK_USAGE } from './cli-pack.ts';
+export { RESOURCE_USAGE } from './cli-resource.ts';
+export { KNOWLEDGE_USAGE, writeKnowledgeViewFile, runContributionEntries } from './cli-knowledge.ts';
 
-export interface AdminCommandOptions {
-  /**
-   * Where the operator token is kept when CIRCLE_HUB_TOKEN is not set; default the deployment's private key file
-   * (fileOperatorTokens). `service` is the deployment's key service, resolved as the vault master key's (deploymentKeyService).
-   */
-  tokens?: (config: HubConfig, service: string) => OperatorTokenStore;
-  /** Reads a secret value for `secret set`; default standard input (no echo on a terminal). */
-  readSecret?: (label: string) => Promise<string>;
-  /** Options of the commands' own assembly (tests: no OS isolation where sandbox-exec is missing). */
-  assembly?: AssemblyOptions;
-}
-
-export const SKILL_USAGE='skill bind-legacy <解析器 id@版本> <通用技能 id@版本>';
-export const PACK_USAGE =
-  'pack install <通用技能@版本> | uninstall <通用技能> | bind-skills <旧运行> --skill <通用技能@版本>… --reason <理由> | publish <目录> [--stage] [--dry-run] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <工作流> | unassign <用户> <工作流> | retire <发布版本> | activate <产品知识来源> | deactivate <产品知识来源> | list | shapes <工作流>';
-export const RESOURCE_USAGE = 'resource add <业务系统接入> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <业务系统接入>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
-export const SECRET_USAGE = NAMED_SECRET_USAGE;
-export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--suffix <外部标识的后缀>] [--limit <条数>] | export <sha256> --out <文件>';
-export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由> | register <前缀> --owner <用户> --reason <理由> | unregister <前缀> --reason <理由>';
-export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <工作流> [--reason <理由>] | list [--object <对象>]';
-export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <工作流>';
-export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
-export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | reproject <产品> <版本线> | retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因> | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
-export const INIT_ADMIN_USAGE = `init-admin [<用户名>] [--password-stdin]   建第一位管理员（省略用户名时为 ${DEFAULT_ADMIN_NAME}），密码从标准输入读取或随机生成；操作令牌存进私有密钥文件，不显示`;
-export const OPERATOR_TOKEN_USAGE =
-  'operator-token set   从标准输入读一个启用中的管理员的令牌，存进私有密钥文件（账户 operator-token）；令牌文件丢失时用，已有的不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进私有密钥文件，不显示；已有的不覆盖 | remove --confirm-only-operator-token   仅删除本地操作令牌文件，不改主密钥、不撤销数据库令牌';
-
-const USER_ID = /^usr_[0-9a-z]{26}$/;
-/** Label of a token `operator-token reissue` issues (shown by `token list`). */
-const REISSUE_LABEL = '操作令牌（重新签发）';
-/** The break-glass path: a new admin token straight into the token file, without any token. */
-const REISSUE = 'circle-hub operator-token reissue';
-/** How to remove the local operator token that no longer works (revoked, its account disabled or no longer an admin). */
-const REMOVE_ITEM = '运行 circle-hub operator-token remove --confirm-only-operator-token（仅删除本地操作令牌，不改密钥库主密钥；不会撤销数据库令牌）';
-const DEAD_ITEM = `${REMOVE_ITEM}，再运行 ${REISSUE}（有几位管理员时加 --as <管理员>）`;
-
-/**
- * How to give one command a token other than the token file's. Not exported: serve refuses to start while the variable
- * is set, and a token kept in a shell's environment reaches everything that shell starts.
- */
-const ONE_COMMAND_TOKEN = `只给这一条命令一个令牌：${OPERATOR_TOKEN_VARIABLE}="$T" circle-hub <命令>（先用 read -rs T 读入，令牌不进命令历史）；不要 export ${OPERATOR_TOKEN_VARIABLE}：serve 见到它会拒绝启动，留在 shell 里的令牌也会传给这个 shell 启动的每个程序`;
-/**
- * What a running Hub does after `secret set` or `resource reset-login` removed the vault's session entry (hub/connectors,
- * "Between processes"): it reads the entry again before a read that needs the credential (and when its login status is
- * shown), so a stop or a cool-down it holds ends then and it logs in once; a usable token it holds stays in use until its
- * next login, which takes the new value. No restart.
- */
-const RUNNING_HUB_LOGIN = '正在运行的 Hub 下一次读取会核对密钥版本及重置代数，旧令牌、停止和冷却不再沿用，用当前版本登录一次；不用重启 Hub';
-
-type Flags = Record<string, { type: 'string' | 'boolean'; multiple?: boolean }>;
-
-/** `positionals` arguments, or from `positionals` to `most` when an argument may be left out. */
-function parse<T extends Flags>(args: readonly string[], options: T, positionals: number, most = positionals) {
-  let parsed;
-  try {
-    parsed = parseArgs({ args: [...args], options, allowPositionals: true, strict: true });
-  } catch (error) {
-    throw new UsageError(error instanceof Error ? error.message : String(error));
-  }
-  const given = parsed.positionals.length;
-  if (given < positionals || given > most) throw new UsageError(`需要 ${most === positionals ? positionals : `${positionals} 至 ${most}`} 个参数，给了 ${given} 个`);
-  return parsed;
-}
-
-const principalOf = (user: Pick<User, 'id' | 'name' | 'role'>): Principal => ({ id: user.id, name: user.name, role: user.role });
-
-/** A refusal of another package as an operator message with its fix (records' `fix`, the connectors' and knowledge's text). */
-async function decided<T>(fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn();
-  } catch (error) {
-    if (error instanceof RecordsError) throw new CliError(error.message, error.fix ?? null);
-    if (error instanceof DocsError) throw new CliError(error.message, error.hint);
-    if(error instanceof KnowledgeError)throw new CliError(knowledgeMessage(error),error.fix);
-    if (error instanceof ConnectorError || error instanceof SecretInputError) throw new CliError(error.message);
-    throw error;
-  }
-}
-
-/** A state-changing command's operator: its admin, and whether its token still works after the command (a revocation). */
-export interface OperatorAct {
-  admin: Principal;
-  /**
-   * Null while the operator token still authenticates as an enabled admin; else what the operator is told (the command just
-   * revoked that token or disabled its account) and how to recover.
-   */
-  noticeIfLost(): Promise<string | null>;
-}
-
-/** One invocation: the operator token taken from the environment first, then configuration, records and the assembly. */
-class Session {
-  readonly ctx: CliContext;
-  readonly options: AdminCommandOptions;
-  /**
-   * CIRCLE_HUB_TOKEN, taken out of the environment object when the session starts, so that no child process this command
-   * starts (a pack function, a tool) inherits it. The configuration accepts the name for commands (loadServerConfig).
-   */
-  readonly envToken: string | null;
-  #hub: Promise<AssembledHub> | null = null;
-  #tokens: Promise<OperatorTokenStore> | null = null;
-  #leases: Promise<LeaseService> | null = null;
-  #leaseDatabase: Database | null = null;
-
-  constructor(ctx: CliContext, options: AdminCommandOptions) {
-    this.ctx = ctx;
-    this.options = options;
-    this.envToken = takeEnvironmentToken(ctx.io.env);
-  }
-
-  /** A line on stdout, made safe for a terminal (it may quote a pack, a resource or a remote system). */
-  out(line: string): void {
-    this.ctx.io.stdout(terminalSafe(line));
-  }
-
-  err(line: string): void {
-    this.ctx.io.stderr(terminalSafe(line));
-  }
-
-  config(): HubConfig {
-    return this.ctx.config();
-  }
-
-  records(): Promise<RecordsKit> {
-    return this.ctx.records();
-  }
-
-  /** The lease service over this deployment's database (one pool per invocation, closed with it by close()). */
-  leases(): Promise<LeaseService> {
-    this.#leases ??= (async () => {
-      const records = await this.records();
-      this.#leaseDatabase = new Database(createPool(this.config().database, 2));
-      return new LeaseService(this.#leaseDatabase, { records: records.store });
-    })();
-    return this.#leases;
-  }
-
-  /**
-   * Ends the pools this invocation opened besides the records kit's (the CLI context closes that one): the lease pool and
-   * the assembled hub's dispatch pool. An idle pool keeps the process alive for its idle timeout, so a command that
-   * leaves one open returns its output and then waits 30 seconds before it exits.
-   */
-  async close(): Promise<void> {
-    const hub = this.#hub === null ? null : await this.#hub.catch(() => null);
-    await hub?.dispatch?.close().catch(() => {});
-    await this.#leases?.catch(() => null);
-    await this.#leaseDatabase?.end().catch(() => {});
-  }
-
-  /** The operator token file of this deployment: its key service is resolved as the vault master key's. */
-  tokens(): Promise<OperatorTokenStore> {
-    this.#tokens ??= (async () => {
-      const config = this.config();
-      const service = await deploymentKeyService(this.ctx.io.env);
-      return this.options.tokens?.(config, service) ?? fileOperatorTokens(config.dataDir, service);
-    })();
-    return this.#tokens;
-  }
-
-  /**
-   * The assembly over this invocation's records (one per invocation): the vault key is required by the commands that read
-   * or write a secret value; its operator's log lines (connector and registry events) go to this command's stderr.
-   */
-  hub(requireVaultKey = false, quiet?: boolean): Promise<AssembledHub> {
-    this.#hub ??= (async () =>
-      assembleHub(this.config(), await this.records(), { log: (line) => this.err(line), ...this.options.assembly, ...(quiet === undefined ? {} : { log: quiet ? () => {} : (line: string) => this.err(line) }), requireVaultKey, command: true }))();
-    return this.#hub;
-  }
-
-  /** The operator token: CIRCLE_HUB_TOKEN, else the token file; null when there is none. */
-  async operatorToken(): Promise<string | null> {
-    if (this.envToken !== null) return this.envToken;
-    const store = await this.tokens();
-    try {
-      return await store.read();
-    } catch (error) {
-      throw new CliError(`读不出${store.where}里的操作令牌：${messageOf(error)}`, `${hintOf(error) ?? '检查数据根的 keys 目录（当前服务账户拥有，权限 0700，文件 0600）后重试'}；或者${ONE_COMMAND_TOKEN}`);
-    }
-  }
-
-  /** The admin a state-changing command acts as: the account of the operator token, which must be an enabled admin. */
-  async admin(): Promise<Principal> {
-    return (await this.#operator()).admin;
-  }
-
-  /** The operator token and its enabled admin; refused (before anything is read or written) when there is none. */
-  async #operator(requireAdmin=true): Promise<{ admin: Principal; token: string }> {
-    const kit = await this.records();
-    const token = await this.operatorToken();
-    if (token === null) {
-      if(!requireAdmin)throw new CliError('这个命令会改变运行状态，需要有效操作令牌',`通过 ${OPERATOR_TOKEN_VARIABLE} 提供运行者本人或管理员的令牌；不采用只读命令的身份回退`);
-      throw new CliError(
-        '这个命令会改变 Hub 的状态，要管理员令牌，没有找到',
-        `已有管理员而操作令牌文件丢了时，用 ${REISSUE} 给一位启用中的管理员签发新令牌存进${(await this.tokens()).where}（不显示），手里有管理员令牌时也可以用 circle-hub operator-token set 从标准输入存进去；第一位管理员用 circle-hub init-admin [<名字>]（省略时为 ${DEFAULT_ADMIN_NAME}）建立；或者${ONE_COMMAND_TOKEN}`,
-      );
-    }
-    const principal = await kit.principals.authenticate(`Bearer ${token}`);
-    if (principal === null || requireAdmin&&principal.role !== 'admin') {
-      if(!requireAdmin)throw new CliError('操作令牌无效或账号已停用','用运行者本人或管理员的有效令牌重试');
-      const hint =
-        this.envToken === null
-          ? `${(await this.tokens()).where}里的操作令牌已不能用（已撤销、账号已停用或不再是管理员）：${DEAD_ITEM}`
-          : `给这条命令一个启用中的管理员的有效令牌（${OPERATOR_TOKEN_VARIABLE}）`;
-      throw new CliError('令牌无效，或者不属于启用中的管理员；这个命令只有管理员能执行', hint);
-    }
-    updateTrace({ userId: principal.id });
-    return { admin: principal, token };
-  }
-
-  async member():Promise<Principal>{return (await this.#operator(false)).admin;}
-
-  /** The operator of a state-changing command that may cut off its own token (token revoke, user disable). */
-  async act(): Promise<OperatorAct> {
-    const { admin, token } = await this.#operator();
-    const lost =
-      this.envToken !== null
-        ? `${OPERATOR_TOKEN_VARIABLE} 给这条命令的管理员令牌现在已不能用（令牌已撤销或账号已停用）`
-        : `${(await this.tokens()).where}里的操作令牌现在已不能用（令牌已撤销或账号已停用）：之后改变状态的命令会被拒绝；恢复：${DEAD_ITEM}`;
-    return {
-      admin,
-      noticeIfLost: async () => {
-        const still = await (await this.records()).principals.authenticate(`Bearer ${token}`);
-        return still !== null && still.role === 'admin' ? null : lost;
-      },
-    };
-  }
-
-  /**
-   * Who a read-only command reads as: the account of the operator token (CIRCLE_HUB_TOKEN, else the token file), with
-   * `--as` allowed only when it names that account; without a token `--as` or the only enabled admin. A token file that
-   * cannot be read (wrong owner or permissions) is said on stderr and the command reads as if there were none.
-   */
-  async viewer(as: string | undefined, quietTokenRead = false): Promise<Principal> {
-    const principal = await this.#reader(as, quietTokenRead);
-    updateTrace({ userId: principal.id });
-    return principal;
-  }
-
-  async #reader(as: string | undefined, quietTokenRead: boolean): Promise<Principal> {
-    let token = this.envToken;
-    let source = `${OPERATOR_TOKEN_VARIABLE} 的令牌`;
-    let hint: string | null = null;
-    if (token === null) {
-      const store = await this.tokens();
-      source = `${store.where}里的操作令牌`;
-      hint = `${REMOVE_ITEM}后，只读命令按 --as 或唯一启用的管理员读取；改变状态的命令要的新操作令牌用 ${REISSUE} 签发`;
-      try {
-        token = await store.read();
-      } catch (error) {
-        if (!quietTokenRead) this.err(`注意：读不出${source}（${messageOf(error)}）；这个只读命令按${as === undefined ? '唯一启用的管理员' : ` --as ${as} `}读取`);
-        return this.ctx.actingAdmin(as);
-      }
-    }
-    if (token === null) return this.ctx.actingAdmin(as);
-    const principal = await (await this.records()).principals.authenticate(`Bearer ${token}`);
-    if (principal === null) throw new CliError(`${source}无效（不存在、已撤销，或者账号已停用）`, hint);
-    if (as !== undefined && as !== principal.name && as !== principal.id) {
-      throw new CliError(`--as ${as} 与令牌的账号 ${principal.name} 不一致：有令牌时只读命令以令牌的账号读取`, '去掉 --as；要以另一个账号读取，就只给这一条命令那个账号的令牌');
-    }
-    return principal;
-  }
-
-  async user(nameOrId: string): Promise<User> {
-    const kit = await this.records();
-    const user = USER_ID.test(nameOrId) ? await kit.principals.get(nameOrId) : await kit.principals.findByName(nameOrId);
-    if (user === null) throw new CliError(`没有用户 ${nameOrId}`);
-    return user;
-  }
-
-  /** User id -> name, for listings. */
-  async names(): Promise<Map<string, string>> {
-    return new Map((await (await this.records()).principals.list()).map((user) => [user.id, user.deleted_at?`${uiLabelOf('account_display_name','deleted_member')}（${user.id}）`:user.name]));
-  }
-}
-
-// ---------------------------------------------------------------- pack
-
-function problemLine(problem: PackProblem): string {
-  const where = [problem.file, problem.field ?? (problem.line === undefined ? '' : `第 ${problem.line} 行`)].filter((part) => part !== '').join(' ');
-  return `- [${problem.rule}] ${where}：${problem.message}（处理：${problem.fix}）`;
-}
-
-/** At most this many changed files are named one by one in a check's comparison with the version in use. */
-const MAX_CHANGE_LINES = 50;
-
-/** A passed check's comparison with the version in use: the versions, then each file added, modified or removed. */
-function changeLines(checked: PublishCheck & { ok: true }): string[] {
-  const current = checked.current;
-  if (current === null) return [`包 ${checked.manifest.id} 还没有已发布的版本，没有可比较的当前版本`];
-  const from = `${current.id}@${current.version}`;
-  if (current.digest === checked.digest) return [`与当前版本 ${from} 内容相同`];
-  const changes = packChanges(current.manifest, checked.manifest);
-  const count = (change: string): number => changes.filter((c) => c.change === change).length;
-  const lines = [`当前版本 ${from}，本次 ${checked.manifest.id}@${checked.manifest.version}：${labelOf('change_kind', 'added')} ${count('added')} 个文件，${labelOf('change_kind', 'modified')} ${count('modified')} 个，${labelOf('change_kind', 'removed')} ${count('removed')} 个`];
-  for (const change of changes.slice(0, MAX_CHANGE_LINES)) lines.push(`  ${labelOf('change_kind', change.change)} ${change.path}`);
-  if (changes.length > MAX_CHANGE_LINES) lines.push(`  另有 ${changes.length - MAX_CHANGE_LINES} 个文件有变化`);
-  return lines;
-}
-
-/**
- * A temporary directory holding pack.json and the files it lists, copied from `source` (which may hold more: tests, a README).
- * A listed path must be a plain file inside `source`; the publish check still verifies every digest and refuses anything
- * the copy lacks. Returns the directory to publish; its parent is the one to remove.
- */
-async function stagePackDirectory(source: string): Promise<string> {
-  let manifest: { files?: Array<{ path?: unknown }> };
-  try {
-    manifest = JSON.parse(await readFile(join(source, 'pack.json'), 'utf8'));
-  } catch {
-    throw new CliError(`读不出 ${source} 里的 pack.json`, '目录要含 pack.json，它列出包的文件');
-  }
-  if (!Array.isArray(manifest.files)) throw new CliError('pack.json 没有 files 清单', '先按包的工具生成 pack.json');
-  const root = await mkdtemp(join(tmpdir(), 'circle-hub-stage-'));
-  const target = join(root, 'pack');
-  try {
-    await mkdir(target);
-    for (const path of ['pack.json', ...manifest.files.map((f) => f.path)]) {
-      if (typeof path !== 'string' || path.startsWith('/') || path.split('/').some((part) => part === '' || part === '.' || part === '..')) {
-        throw new CliError(`pack.json 里有不合法的文件路径：${String(path).slice(0, 120)}`);
-      }
-      const from = join(source, path);
-      const info = await lstat(from).catch(() => null);
-      if (info === null || !info.isFile()) throw new CliError(`pack.json 列出的 ${path} 不是目录里的普通文件`, '补上这个文件，或重新生成 pack.json');
-      await mkdir(dirname(join(target, path)), { recursive: true });
-      await copyFile(from, join(target, path));
-    }
-    return target;
-  } catch (error) {
-    await rm(root, { recursive: true, force: true });
-    throw error;
-  }
-}
-
-function packIdOf(ref: string, what: string): string {
-  const parsed = parsePackRef(ref);
-  if (parsed === null || parsed.version !== null) throw new UsageError(`${what}按包号写，不带版本：${ref.slice(0, 120)}`);
-  return parsed.id;
-}
-
-async function skillCommand(session:Session,args:readonly string[]):Promise<number>{
- const [sub,...rest]=args;if(sub!=='bind-legacy')throw new UsageError(SKILL_USAGE);
- const {positionals}=parse(rest,{},2);const by=await session.admin(),hub=await session.hub();
- const binding=await decided(()=>bindLegacyParser({registry:hub.registry,records:hub.records},by,positionals[0],positionals[1]));
- session.out(`解析器 ${binding.parser} → ${binding.skill.pack}@${binding.skill.version}；摘要 ${binding.skill.digest}`);
- session.out(`迁移时点事后声明；操作者 ${binding.decided_by}；时间 ${binding.at}；测试 ${binding.test}；rec:${binding.record}；旧记录不改`);
- session.out(`本次扫描 ${binding.scanned_runs} 个历史运行；追加绑定 ${binding.bound_runs} 条；已有绑定 ${binding.already_bound_runs} 条`);return 0;
-}
-
-async function packCommand(session: Session, args: readonly string[]): Promise<number> {
-  const [sub, ...rest] = args;
-  switch (sub) {
-    case 'install': {
-      const {positionals}=parse(rest,{},1);const by=await session.admin();const hub=await session.hub();
-      const decision=await decided(()=>hub.registry.install(by,positionals[0]));
-      session.out(`通用技能已安装；决定 ${decision.digest}`);return 0;
-    }
-    case 'uninstall': {
-      const {positionals}=parse(rest,{},1);const by=await session.admin();const hub=await session.hub();
-      const decision=await decided(()=>hub.registry.uninstall(by,positionals[0]));
-      session.out(`通用技能已卸载；旧运行仍按冻结摘要复核；决定 ${decision.digest}`);return 0;
-    }
-    case 'bind-skills': {
-      const {positionals,values}=parse(rest,{skill:{type:'string',multiple:true},reason:{type:'string'}},1);
-      if(!values.reason||!Array.isArray(values.skill)||!values.skill.length)throw new UsageError('pack bind-skills <旧运行> --skill <通用技能@版本>… --reason <理由>');
-      const by=await session.admin(),hub=await session.hub();
-      const record=await decided(()=>bindLegacySkills({registry:hub.registry,records:hub.records},by,positionals[0],values.skill as string[],values.reason as string));
-      session.out(`历史运行的技能摘要声明已追加；不是原执行历史的补造；rec:${record}`);return 0;
-    }
-    case 'shapes': {
-      const {positionals,values}=parse(rest,{as:{type:'string'}},1);
-      const viewer=await session.viewer(values.as);
-      const pack=packIdOf(positionals[0],'查看判定形状');
-      const hub=await session.hub();
-      const shapes=await unruledShapes(hub.records.store,viewer,pack);
-      if(!shapes.length)session.out('没有未裁定的形状');
-      for(const shape of shapes)session.out(`${shape.requirement}\t${shape.interpreter}\t${shape.count}\t${shape.latest_run}`);
-      return 0;
-    }
-    case 'publish': {
-      const { positionals, values } = parse(rest, { stage: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, 'answer-request':{type:'string',multiple:true} }, 1);
-      const source = isAbsolute(positionals[0]) ? positionals[0] : resolve(session.ctx.io.cwd, positionals[0]);
-      const admin = await session.admin();
-      const hub = await session.hub();
-      const refused = (outcome: { problems: PackProblem[]; report: PublishReport | null }, what: string): never => {
-        for (const problem of outcome.problems) session.err(problemLine(problem));
-        for (const problem of outcome.report?.warnings ?? []) session.err(`注意：${problemLine(problem).slice(2)}`);
-        const fix = outcome.problems.some((p) => p.rule === 'publish.no_right') ? `管理员先授予发布权：circle-hub pack grant-publish ${admin.name}` : '按上面每条问题的处理改好后重新发布';
-        throw new CliError(`${what}：${outcome.problems.length} 个问题`, fix);
-      };
-      // --stage publishes a copy of exactly the files pack.json lists, so a source directory may hold tests and a README.
-      const staged = values.stage === true ? await stagePackDirectory(source) : null;
-      const options = { answerRequests: values['answer-request'] ?? [] };
-      if (values['dry-run'] === true) {
-        // Every check and refusal of publish, nothing stored: what the console's 发布任务包 shows before its 发布 step.
-        let checked;
-        try {
-          checked = await decided(() => hub.registry.check(admin, staged ?? source, options));
-        } finally {
-          if (staged !== null) await rm(dirname(staged), { recursive: true, force: true });
-        }
-        if (!checked.ok) return refused(checked, '发布内容未通过发布校验');
-        const ref = `${checked.manifest.id}@${checked.manifest.version}`;
-        const samples = checked.report.samples;
-        session.out(
-          checked.existing === null
-            ? `发布校验通过：${ref}（${uiLabelOf('pack_kind', checked.manifest.kind)}，摘要 ${checked.digest}）：样例 ${samples.passed}/${samples.total} 通过`
-            : `${ref} 已经以同样的内容发布过（摘要 ${checked.digest}），发布不会产生新的记录`,
-        );
-        for (const line of changeLines(checked)) session.out(line);
-        for (const warning of checked.report.warnings) session.err(`注意：${problemLine(warning).slice(2)}`);
-        session.out(checked.existing === null ? '试运行：没有发布，也没有写入任何内容；去掉 --dry-run 即发布这个版本' : '试运行：没有写入任何内容');
-        return 0;
-      }
-      let outcome;
-      try {
-        outcome = await decided(() => hub.registry.publish(admin, staged ?? source, options));
-      } finally {
-        if (staged !== null) await rm(dirname(staged), { recursive: true, force: true });
-      }
-      if (!outcome.ok) return refused(outcome, '发布内容没有发布');
-      const version = outcome.version;
-      const ref = `${version.id}@${version.version}`;
-      const samples = outcome.report.samples;
-      session.out(
-        outcome.created
-          ? `已发布 ${ref}（${uiLabelOf('pack_kind', version.kind)}，摘要 ${version.digest}）：样例 ${samples.passed}/${samples.total} 通过`
-          : `${ref} 已经以同样的内容发布过（摘要 ${version.digest}），包版本没有新的记录`,
-      );
-      if(values['answer-request']?.length)session.out(`请求作答：发布记录 rec:${version.record} 对应 ${new Set(values['answer-request']).size} 个指定请求（重复作答不增写）`);
-      for (const warning of outcome.report.warnings) session.err(`注意：${problemLine(warning).slice(2)}`);
-      if (version.kind === 'product' && !(await hub.registry.isActive(version.id))) session.out(`产品知识来源启用后才生效：circle-hub pack activate ${version.id}`);
-      if (version.kind === 'workflow') session.out(`工作流分配给用户后才能用：circle-hub pack assign <用户> ${version.id}`);
-      if (version.kind === 'system') session.out(`业务系统接入实例化为资源后才读取：circle-hub resource add ${version.id} --name <名字> --environment <环境> --origin <角色>=<地址>`);
-      return 0;
-    }
-    case 'grant-publish':
-    case 'revoke-publish': {
-      const { positionals } = parse(rest, {}, 1);
-      const admin = await session.admin();
-      const user = await session.user(positionals[0]);
-      const kit = await session.records();
-      if (sub === 'grant-publish') await decided(() => kit.authorizations.grantPublishRight(admin, user.id));
-      else await decided(() => kit.authorizations.revokePublishRight(admin, user.id));
-      session.out(`${user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name}（${user.id}）${sub === 'grant-publish' ? '有了发布权' : '的发布权已撤销'}`);
-      return 0;
-    }
-    case 'assign':
-    case 'unassign': {
-      const { positionals } = parse(rest, {}, 2);
-      const packId = packIdOf(positionals[1], '分配');
-      const admin = await session.admin();
-      const user = await session.user(positionals[0]);
-      const hub = await session.hub();
-      if (sub === 'assign') await decided(() => hub.registry.assign(admin, user.id, packId));
-      else await decided(() => hub.registry.unassign(admin, user.id, packId));
-      const name=user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name;
-      session.out(sub === 'assign' ? `已把 ${packId} 分配给 ${name}（${user.id}）` : `${name}（${user.id}）不再能用 ${packId}`);
-      return 0;
-    }
-    case 'retire': {
-      const { positionals } = parse(rest, {}, 1);
-      const ref = parsePackRef(positionals[0]);
-      if (ref === null || ref.version === null) throw new UsageError(`退役要写 <包号>@<版本>：${positionals[0].slice(0, 120)}`);
-      const admin = await session.admin();
-      const hub = await session.hub();
-      await decided(() => hub.registry.retire(admin, ref.id, ref.version as string));
-      hub.connectors.refresh();
-      session.out(`${ref.id}@${ref.version} 已退役：新的运行不再用它，已有的运行照常读取和完成`);
-      return 0;
-    }
-    case 'activate':
-    case 'deactivate': {
-      const { positionals } = parse(rest, {}, 1);
-      const packId = packIdOf(positionals[0], sub === 'activate' ? '启用' : '停用');
-      const admin = await session.admin();
-      const hub = await session.hub();
-      if (sub === 'activate') await decided(() => hub.registry.activate(admin, packId));
-      else await decided(() => hub.registry.deactivate(admin, packId));
-      session.out(sub === 'activate' ? `产品知识来源 ${packId} 已对整个 Hub 启用` : `产品知识来源 ${packId} 已停用`);
-      return 0;
-    }
-    case 'list': {
-      const { values } = parse(rest, { as: { type: 'string' } }, 0);
-      const viewer = await session.viewer(values.as);
-      const hub = await session.hub();
-      const listings = await hub.catalog.list(viewer);
-      if (listings.length === 0) {
-        session.out(viewer.role === 'admin' ? '还没有发布任何内容' : '当前账户没有可用的工作流');
-        return 0;
-      }
-      const names = await session.names();
-      for (const pack of listings) {
-        const state = uiLabelOf('pack_status', pack.withdrawn ? 'retired' : pack.kind === 'product' ? (pack.active ? 'enabled' : 'inactive') : 'published');
-        const fields = [`${pack.id}@${pack.version}`, uiLabelOf('pack_kind', pack.kind), pack.title, state];
-        if (viewer.role === 'admin') {
-          fields.push(`所有者 ${names.get(pack.owner) ?? pack.owner}`, pack.published_at);
-          if (pack.kind === 'workflow') fields.push(`分配给 ${(pack.assigned_to ?? []).map((id) => names.get(id) ?? id).join('、') || '无'}`);
-        }
-        session.out(fields.join('\t'));
-      }
-      return 0;
-    }
-    default:
-      throw new UsageError(`pack 的子命令：${PACK_USAGE}`);
-  }
-}
-
-// ---------------------------------------------------------------- resource
-
-function pairs(values: readonly string[] | undefined, flag: string): [string, string][] {
-  return (values ?? []).map((value) => {
-    const at = value.indexOf('=');
-    if (at <= 0) throw new UsageError(`${flag} 写成 <名字>=<值>，请核对这个参数`);
-    return [value.slice(0, at), value.slice(at + 1)];
-  });
-}
-
-function settingValue(text: string): string {
-  if (/^\s*[\[{]/.test(text)) throw new UsageError('数组或对象请用 --setting-json');
-  return text;
-}
-function resourceSettings(values: {setting?:string[];'setting-json'?:string[];'setting-var'?:string[]}) {
-  const out:Record<string,unknown>={};
-  const add=(key:string,value:unknown)=>{if(Object.hasOwn(out,key))throw new UsageError('设置键重复；逐项核对');out[key]=value;};
-  for(const [key,value] of pairs(values.setting,'--setting'))add(key,settingValue(value));
-  for(const [key,value] of pairs(values['setting-json'],'--setting-json')) {try {add(key,JSON.parse(value));}catch(error){if(error instanceof UsageError)throw error;throw new UsageError('设置 JSON 无效；核对 --setting-json，不回显原文');}}
-  for(const [key,value] of pairs(values['setting-var'],'--setting-var')) {if(!/^[A-Z][A-Z0-9_]{0,63}$/.test(value))throw new UsageError('设置的变量名字不合规则');add(key,'${var:'+value+'}');}
-  return out;
-}
-async function resourceWarnings(session:Session, record:import('../../contracts/src/resources.ts').ResourceRecord) {
-  const hub=await session.hub(false); const by=await session.admin();
-  const described=await hub.connectors.admin.describe(by,record.id);
-  for(const item of described?.credentials??[]) {
-    const match=/^\$\{secret:([^}]+)\}$/.exec(item.entry);if(!match)continue;
-    if(!item.set)session.out(`密钥 ${match[1]} 还没有设置：用 circle-hub secret set --name ${match[1]} 设置`);
-    else if(!item.registered)session.out(`密钥 ${match[1]} 的这一版未登记此使用者和地址：要重新输入一次值才会发往这里`);
-  }
-}
-
-/**
- * The login column of `resource list`: the state stored in the vault, read fresh by this command (a running server reads it
- * again at its next read that needs the credential, RUNNING_HUB_LOGIN).
- */
-function loginText(status: LoginStatus | null): string {
-  if (status === null) return '不用登录';
-  let state: string;
-  if (status.stopped) state = `登录已停止${status.failure ? `（${status.failure}）` : ''}：用 secret set 重设凭据或 resource reset-login 解除（正在运行的 Hub 不用重启）`;
-  else if (status.cooldownUntil !== null) state = `登录冷却到 ${status.cooldownUntil}`;
-  else if (status.token) state = `已登录${status.expiresAt ? `（到期 ${status.expiresAt}）` : ''}`;
-  else state = '还没有登录';
-  return `密钥库里的登录状态：${state}`;
-}
-
-async function resourceCommand(session: Session, args: readonly string[]): Promise<number> {
-  const [sub, ...rest] = args;
-  switch (sub) {
-    case 'add': {
-      const { values, positionals } = parse(
-        rest,
-        {
-          name: { type: 'string' },
-          environment: { type: 'string' },
-          origin: { type: 'string', multiple: true },
-          'allow-plaintext': { type: 'string', multiple: true },
-          setting: { type: 'string', multiple: true },
-          'setting-json': {type:'string',multiple:true},
-          'setting-var': {type:'string',multiple:true},
-          'unset-setting': {type:'string',multiple:true},
-          credential: {type:'string',multiple:true},
-        },
-        1,
-      );
-      if (values.name === undefined || values.name.trim() === '') throw new UsageError('要用 --name 给资源起名字');
-      const environment = values.environment;
-      if (environment === undefined || !isEnvironment(environment)) {
-        throw new UsageError(`--environment 是 ${ENVIRONMENT.map((code) => `${code}（${labelOf('environment', code)}）`).join('、')} 之一`);
-      }
-      const origins: Record<string, string> = {};
-      for (const [role, url] of pairs(values.origin, '--origin')) {
-        if (Object.hasOwn(origins, role)) throw new UsageError(`角色 ${role} 的地址给了两次`);
-        origins[role] = url;
-      }
-      if (Object.keys(origins).length === 0) throw new UsageError('至少用一个 --origin <角色>=<地址> 给出业务系统接入每个角色的地址');
-      const plaintext = new Set<string>();
-      for (const role of values['allow-plaintext'] ?? []) {
-        if (!Object.hasOwn(origins, role)) throw new UsageError(`--allow-plaintext ${role}：这个角色没有用 --origin 给地址`);
-        let origin: URL;
-        try {
-          origin = new URL(origins[role]);
-        } catch {
-          throw new UsageError(`角色 ${role} 的地址不是 URL`);
-        }
-        if (origin.protocol !== 'http:') throw new UsageError(`--allow-plaintext ${role}：只有 http 地址才需要允许明文`);
-        plaintext.add(origin.origin);
-      }
-      const settings = resourceSettings(values);
-      if(values['unset-setting']?.length)throw new UsageError('--unset-setting 只用于 update');
-      const admin = await session.admin();
-      const hub = await session.hub();
-      const input: AddResourceInput = {
-        credentials:Object.fromEntries(pairs(values.credential,'--credential')),
-        system_pack: positionals[0],
-        name: values.name,
-        environment: environment as Environment,
-        origins,
-        ...(plaintext.size > 0 ? { allow_plaintext: [...plaintext] } : {}),
-        ...(Object.keys(settings).length > 0 ? { settings } : {}),
-      };
-      const record = await decided(() => hub.connectors.admin.addResource(admin, input));
-      session.out(`已添加资源 ${record.id}：${record.name}（业务系统接入 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
-      await resourceWarnings(session,record);
-      return 0;
-    }
-    case 'update': {
-      const { values, positionals } = parse(
-        rest,
-        {
-          'system-pack': { type: 'string' },
-          name: { type: 'string' },
-          environment: { type: 'string' },
-          origin: { type: 'string', multiple: true },
-          'allow-plaintext': { type: 'string', multiple: true },
-          'clear-plaintext': { type: 'boolean' },
-          setting: { type: 'string', multiple: true },
-          'setting-json': {type:'string',multiple:true},
-          'setting-var': {type:'string',multiple:true},
-          'unset-setting': {type:'string',multiple:true},
-          credential: {type:'string',multiple:true},
-        },
-        1,
-      );
-      if (values['clear-plaintext'] && values['allow-plaintext'] !== undefined) {
-        throw new UsageError('--clear-plaintext 与 --allow-plaintext 不能同时给');
-      }
-      const changes: UpdateResourceInput = {};
-      if (values['system-pack'] !== undefined) changes.system_pack = values['system-pack'];
-      if (values.name !== undefined) {
-        if (values.name.trim() === '') throw new UsageError('--name 不能是空的');
-        changes.name = values.name;
-      }
-      if (values.environment !== undefined) {
-        if (!isEnvironment(values.environment)) throw new UsageError(`--environment 是 ${ENVIRONMENT.map((code) => `${code}（${labelOf('environment', code)}）`).join('、')} 之一`);
-        changes.environment = values.environment as Environment;
-      }
-      if (values.origin !== undefined) {
-        const origins: Record<string, string> = {};
-        for (const [role, url] of pairs(values.origin, '--origin')) {
-          if (Object.hasOwn(origins, role)) throw new UsageError(`角色 ${role} 的地址给了两次`);
-          origins[role] = url;
-        }
-        changes.origins = origins;
-      }
-      if (values['clear-plaintext']) {
-        changes.allow_plaintext = [];
-      } else if (values['allow-plaintext'] !== undefined) {
-        const plaintext = new Set<string>();
-        for (const role of values['allow-plaintext']) {
-          const url = changes.origins?.[role];
-          if (url === undefined) throw new UsageError(`--allow-plaintext ${role}：同一条命令里要用 --origin 给出这个角色的地址（地址整项替换）`);
-          let origin: URL;
-          try {
-            origin = new URL(url);
-          } catch {
-            throw new UsageError(`角色 ${role} 的地址不是 URL`);
-          }
-          if (origin.protocol !== 'http:') throw new UsageError(`--allow-plaintext ${role}：只有 http 地址才需要允许明文`);
-          plaintext.add(origin.origin);
-        }
-        changes.allow_plaintext = [...plaintext];
-      }
-      const settings=resourceSettings(values);
-      if(Object.keys(settings).length)changes.settings=settings;
-      if(values['unset-setting'])changes.unset_settings=values['unset-setting'];
-      if(values.credential)changes.credentials=Object.fromEntries(pairs(values.credential,'--credential'));
-      if (Object.keys(changes).length === 0) throw new UsageError('没有要改的项：给 --system-pack、--name、--environment、--origin、--allow-plaintext、--clear-plaintext 或 --setting');
-      const admin = await session.admin();
-      const hub = await session.hub();
-      const previous=await hub.connectors.admin.describe(admin,positionals[0]);
-      const clearedRoles: string[] = [];
-      if (changes.origins !== undefined && values['allow-plaintext'] === undefined && !values['clear-plaintext'] && previous) {
-        const prevOrigins = previous.origins ?? {};
-        const prevPlaintext = new Set(previous.allow_plaintext ?? []);
-        const kept = new Set<string>();
-        for (const [role, oldUrl] of Object.entries(prevOrigins)) {
-          try {
-            const oldOrigin = new URL(oldUrl).origin;
-            if (prevPlaintext.has(oldOrigin)) {
-              if (changes.origins[role] === oldUrl) {
-                kept.add(oldOrigin);
-              } else {
-                clearedRoles.push(role);
-              }
-            }
-          } catch {}
-        }
-        changes.allow_plaintext = [...kept];
-      }
-      const missingLegacy=(previous?.credentials??[]).filter(c=>!c.entry.startsWith('${secret:')&&!c.set&&changes.credentials?.[c.name]);
-      const record = await decided(() => hub.connectors.admin.updateResource(admin, positionals[0], changes));
-      for(const item of missingLegacy)session.out(`原值不在密钥库里：接着用 circle-hub secret set --name ${changes.credentials![item.name]} 设置`);
-      session.out(`已更新资源 ${record.id}：${record.name}（业务系统接入 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
-      if (values['clear-plaintext']) session.out('已清空所有明文放行');
-      else if (clearedRoles.length > 0) session.out(`已清掉角色 ${clearedRoles.sort().join('、')} 的明文放行`);
-      await resourceWarnings(session,record);
-      return 0;
-    }
-    case 'show': {
-      const {positionals,values}=parse(rest,{values:{type:'boolean'}},1);
-      const by=await session.admin(), hub=await session.hub(false), kit=await session.records();
-      const d=await hub.connectors.admin.describe(by,positionals[0]);if(!d)throw new CliError('资源不可用');
-      session.out(`${d.id} ${d.name} ${d.system_pack}`);
-      const config=await kit.authorizations.resourceConfig(d.id);let bound=config?.body.bound??null;
-      let cursor:string|null=null;
-      while(!bound){const page=await kit.authorizations.history({permission:'resource_config',subject:WHOLE_HUB,object:d.id,newestFirst:true,limit:500,cursor});bound=page.items.find(row=>!row.body.revoked&&row.body.bound)?.body.bound??null;if(bound||!page.next)break;cursor=page.next;}
-      const bytes=bound?await kit.objects.get(bound):null;if(!bytes)throw new CliError('资源定义原件缺失；请管理员从可信备份恢复后重做 resource show');
-      const source=parseStrictJson(Buffer.from(bytes).toString()) as {settings?:Record<string,unknown>};const versions=await kit.variables.list(by);
-      for(const [key,value] of Object.entries(source.settings??{})){
-        const refs=referencesIn(value).filter(ref=>ref.kind==='var');
-        const names=refs.map(ref=>{const version=versions.find(v=>v.kind==='var'&&v.name===ref.name);return '${var:'+ref.name+'} '+(!version?'还没有设置':version.decision.body.revoked?`已撤回（最后第 ${version.version} 版）`:`第 ${version.version} 版`);});
-        session.out(`设置 ${key}：${names.length?names.join('；'):values.values?JSON.stringify(value):'长度 '+Buffer.byteLength(JSON.stringify(value))}`);
-      }
-      for(const c of d.credentials){const version=c.revoked?`已撤回（最后第 ${c.version} 版）`:c.version?`第 ${c.version} 版`:'尚未登记命名版本';const stored=c.stored_digest?labelOf('digest_rule',c.stored_digest):'无当前登记';session.out(`凭据项 ${c.name} ${c.entry} ${version} 长度 ${c.length??'不适用'} 发送规则 ${labelOf('digest_rule',c.digest)} 存储规则 ${stored} ${c.set?'有条目':'无条目'} ${c.registered?'已登记使用者':'无当前使用者登记'}`);}
-      return 0;
-    }
-    case 'read': {
-      const { positionals, values } = parse(rest, { events: { type: 'boolean' } }, 3);
-      const admin = await session.admin();
-      // Default output is metadata only; --events sends redacted connector diagnostics to stderr for smoke capture.
-      const hub = await session.hub(true, values.events !== true);
-      const [resource, readName, key] = positionals;
-      const described = await decided(() => hub.connectors.admin.describe(admin, resource));
-      if (described === null) throw new CliError('资源不可用');
-      const result = await hub.connectors.executeRead(resource, readName, { id: key }, { principal: admin, purpose: '管理员冒烟读取' });
-      session.out(`${described.system_pack}/${readName}：${result.ok ? '读取完成' : `失败（${result.code}）`}`);
-      if (result.ok) for (const artifact of result.artifacts) session.out(`产物 ${artifact.name} ${artifact.artifact.body.sha256} ${artifact.artifact.body.size} 字节`);
-      if (result.manifest !== null) session.out(`读清单 ${result.manifest}`);
-      return result.ok ? 0 : 1;
-    }
-    case 'list': {
-      const { values } = parse(rest, { as: { type: 'string' } }, 0);
-      const viewer = await session.viewer(values.as);
-      if (viewer.role !== 'admin') throw new CliError('只有管理员能列出资源');
-      const hub = await session.hub();
-      // The console's listing (ResourceCatalogPort): admins only, with addresses and plaintext declarations.
-      const listings = await hub.resources.list(viewer);
-      if (listings.length === 0) {
-        session.out('还没有资源');
-        return 0;
-      }
-      // The login column is read from the vault, which needs the master key: asked once for the whole listing, so an
-      // unreadable key costs one refusal, not one per resource.
-      const keyProblem = listings.some((resource) => resource.enabled) ? await vaultKeyProblem(hub.records) : null;
-      for (const resource of listings) {
-        const fields = [resource.id, resource.name, resource.system_pack, labelOf('environment', resource.environment as Environment), resource.enabled ? '启用' : '停用'];
-        fields.push(Object.entries(resource.origins ?? {}).map(([role, url]) => `${role}=${url}`).join(' '));
-        if ((resource.allow_plaintext ?? []).length > 0) fields.push(`允许明文 ${(resource.allow_plaintext ?? []).join(' ')}`);
-        if (resource.enabled) {
-          let login: string;
-          if (keyProblem !== null) login = `登录状态读不出：${keyProblem}`;
-          else {
-            try {
-              login = loginText(await hub.connectors.admin.loginStatus(viewer, resource.id));
-            } catch (error) {
-              login = `登录状态读不出：${messageOf(error)}`;
-            }
-          }
-          fields.push(login);
-        }
-        session.out(fields.join('\t'));
-      }
-      return 0;
-    }
-    case 'disable':
-    case 'enable':
-    case 'reset-login': {
-      const { positionals } = parse(rest, {}, 1);
-      const admin = await session.admin();
-      // A reset only removes the vault's session entry, which needs no master key.
-      const hub = await session.hub();
-      const id = positionals[0];
-      if (sub === 'disable') await decided(() => hub.connectors.admin.disable(admin, id));
-      else if (sub === 'enable') await decided(() => hub.connectors.admin.enable(admin, id));
-      else await decided(() => hub.connectors.admin.resetLogin(admin, id));
-      if (sub === 'reset-login') {
-        session.out(`资源 ${id} 在密钥库里的登录状态已清除：Hub 下一次要用这个资源的凭据时用已存的凭据登录一次`);
-        session.err(`注意：${RUNNING_HUB_LOGIN}`);
-      } else session.out(sub === 'disable' ? `资源 ${id} 已停用：不再读取` : `资源 ${id} 已启用`);
-      return 0;
-    }
-    default:
-      throw new UsageError(`resource 的子命令：${RESOURCE_USAGE}`);
-  }
-}
-
-// ---------------------------------------------------------------- secret
-
-async function secretCommand(session: Session, args: readonly string[]): Promise<number> { return namedSecretCommand(session, args); }
-
-// ---------------------------------------------------------------- knowledge
-
-async function productOf(hub: AssembledHub, viewer: Principal, name: string): Promise<ProductHandle> {
-  const product = (await hub.packs.productByName(name)) ?? (await hub.packs.productById(name));
-  if (product === null || !(await hub.packs.readableProducts(viewer)).has(product.product.id)) {
-    throw new CliError(`没有叫 ${name.slice(0, 80)} 的启用中的产品知识来源，或当前账户无权读取相关知识`, '用 circle-hub pack list 查看产品知识来源，用 pack activate 启用');
-  }
-  return product;
-}
-
-/** Own the newly created file before writing, so cleanup never removes a competing writer's file. */
-export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, openTarget = async () => open(target, 'wx', 0o600)): Promise<Record<string, unknown>> {
-  let file: Awaited<ReturnType<typeof openTarget>>;
-  try { file = await openTarget(); }
-  catch { throw new CliError('无法创建知识视图文件', '检查目录权限并换一个不存在的文件名后重试'); }
-  try { await file.writeFile(bytes); await file.close(); }
-  catch {
-    await file.close().catch(() => {});
-    const removed = await rm(target).then(() => true, () => false);
-    throw new CliError('知识视图文件写入失败', removed ? '半截文件已删除；检查磁盘空间和目录权限后重试' : '检查并删除本次创建的半截文件，恢复磁盘空间和目录权限后重试');
-  }
-  try {
-    const view: unknown = JSON.parse(Buffer.from(bytes).toString('utf8'));
-    if (view === null || typeof view !== 'object' || Array.isArray(view)) throw new Error('not a view object');
-    return view as Record<string, unknown>;
-  } catch {
-    const removed = await rm(target).then(() => true, () => false);
-    throw new CliError('知识视图字节不是有效的 JSON 对象', removed ? '文件已删除；修复知识视图字节后重新导出' : '检查并删除本次创建的文件，修复知识视图字节后重新导出');
-  }
-}
-
-const objectOf = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
-
-/**
- * `knowledge retract --run`: the contribution records a run stored, in receipt order, as its accepted validation results
- * list them (`contributions.stored`); a contribution record names no run. The run is read through the runs service, as
- * `run show` and `share run` read it. Every accepted result the run's detail names is read, not only the latest: a later
- * accepted submission's receipt lists only its own items, and an abandoned run's latest result is the management projection,
- * which has no receipt. Stored results are read as stored, so older result shapes still give their receipts. Null when the
- * run is absent; the retraction screen then refuses it.
- */
-export async function runContributionEntries(runs: Pick<RunsService, 'getRun'>, store: Pick<RecordStore, 'get'>, by: Principal, run: string): Promise<string[] | null> {
-  const detail = await runs.getRun(by, run);
-  if (detail === null) return null;
-  const results = new Map<string, unknown>();
-  for (const submission of detail.submissions) if (submission.result !== null) results.set(submission.result, null);
-  if (detail.latest !== null) results.set(detail.latest.record, detail.latest.result);
-  const entries: string[] = [];
-  for (const [digest, known] of results) {
-    const stored = known === null ? await store.get(digest) : null;
-    const result = objectOf(known ?? (stored?.kind === 'validation_result' ? stored.body : null));
-    if (result === null || result.run !== run || result.acceptance !== 'accepted') continue;
-    const rows = objectOf(result.contributions)?.stored;
-    for (const row of Array.isArray(rows) ? rows : []) {
-      const record = objectOf(row)?.record;
-      if (typeof record === 'string' && isSha256(record) && !entries.includes(record)) entries.push(record);
-    }
-  }
-  return entries;
-}
-
-async function knowledgeCommand(session: Session, args: readonly string[]): Promise<number> {
-  const [sub, ...rest] = args;
-  if (sub === 'view') {
-    const { values, positionals } = parse(rest, { out: { type: 'string' }, only: { type: 'string' }, as: { type: 'string' } }, 1);
-    if (!values.out) throw new UsageError('knowledge view 要用 --out 指定新文件');
-    const viewer = await session.viewer(values.as, true).catch(error => {
-      if (error instanceof CliError || error instanceof UsageError) throw error;
-      throw new CliError('无法核对知识视图读取账号', '检查管理员身份及记录库连接后重试；原始异常不输出到终端');
-    });
-    if (viewer.role !== 'admin') throw new CliError('只有管理员能导出知识视图');
-    const target = resolve(values.out);
-    if (await lstat(target).then(() => true, () => false)) throw new CliError('输出文件已存在', '换一个新文件');
-    let external = positionals[0];
-    if (values.only !== undefined) {
-      if (!values.only || /[&?#]/.test(values.only) || /[?&]only=/.test(external)) throw new UsageError('--only 要给非空取值列表，不能同时写在引用里；特殊字符按 URI 百分号编码');
-      external += `${external.includes('?') ? '&' : '?'}only=${values.only.replaceAll(' ', '%20')}`;
-    }
-    const result = await (async () => {
-      try {
-        const hub = await session.hub(false, true);
-        return await createKnowledgeReader(hub.knowledge).read(external, { principal: viewer, run: null, purpose: 'administrator view export' });
-      } catch { throw new CliError('知识视图计算未完成', '检查装配、来源和视图计算后重试；原始异常不输出到终端'); }
-    })();
-    if (!result.ok) throw new CliError('未能读取指定知识视图', '核对产品、构建、权限和视图参数后重试；原始读取说明不输出到终端');
-    const artifact = result.artifacts.find(a => a.name === 'original');
-    const kit = await session.records();
-    const bytes = artifact ? await kit.artifacts.trustedBytes(artifact.artifact.body.sha256).catch(() => { throw new CliError('知识视图字节读取失败', '修复原件存储后重新导出；原始异常不输出到终端'); }) : null;
-    if (bytes === null) throw new CliError('知识视图字节缺失', '修复原件存储后重新导出');
-    const view = await writeKnowledgeViewFile(target, bytes);
-    const counts = (value: unknown): unknown => {
-      if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
-      if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
-      return Object.fromEntries(Object.entries(value).filter(([key]) => /^[a-z][a-z0-9_]*$/.test(key)).map(([key, entry]) => [key, counts(entry)]).filter(([, entry]) => entry !== undefined));
-    };
-    session.out(`已导出 ${artifact!.artifact.body.sha256}：${bytes.length} 字节，权限 0600`);
-    session.out(`totals：${view.totals == null ? '未提供' : JSON.stringify(counts(view.totals))}；截断：${typeof view.truncated === 'boolean' ? (view.truncated ? '是' : '否') : '未提供'}；跳过：${typeof view.skipped === 'number' ? view.skipped : '未提供'}`);
-    return 0;
-  }
-  if (sub === 'sync') {
-    let parsed: KnowledgeSyncArgs;
-    try {
-      parsed = parseKnowledgeSyncArgs(rest);
-    } catch (error) {
-      throw new UsageError(messageOf(error));
-    }
-    const admin = await session.admin();
-    const hub = await session.hub(true);
-    const report = await decided(() => knowledgeSync(hub.knowledge, hub.packs, admin, parsed));
-    for (const line of formatSyncReport(report).trimEnd().split('\n')) session.out(line);
-    return report.error === null && report.counts.failed === 0 ? 0 : 1;
-  }
-  if (sub === 'seed') {
-    let parsed: KnowledgeSeedArgs;
-    try {
-      parsed = parseKnowledgeSeedArgs(rest);
-    } catch (error) {
-      throw new UsageError(messageOf(error));
-    }
-    const admin = await session.admin();
-    const hub = await session.hub(true);
-    const report = await decided(() => knowledgeSeed(hub.knowledge, hub.packs, admin, parsed, hub.resources));
-    for (const line of formatSeedReport(report).trimEnd().split('\n')) session.out(line);
-    return report.ok ? 0 : 1;
-  }
-  if (sub === 'reproject') {
-    // Re-projects a line's existing fed cases onto its current seedling root, as seed does before it moves the pointer.
-    let parsed: KnowledgeReprojectArgs;
-    try {
-      parsed = parseKnowledgeReprojectArgs(rest);
-    } catch (error) {
-      throw new UsageError(messageOf(error));
-    }
-    const admin = await session.admin();
-    const hub = await session.hub(true);
-    const report = await decided(() => knowledgeReproject(hub.knowledge, hub.packs, admin, parsed));
-    for (const line of formatReprojectReport(report).trimEnd().split('\n')) session.out(line);
-    return report.ok ? 0 : 1;
-  }
-  if (sub === 'retract') {
-    const { values } = parse(rest, { entry: { type: 'string', multiple: true }, run: { type: 'string', multiple: true }, object: { type: 'string', multiple: true }, reason: { type: 'string' } }, 0);
-    const entries = values.entry ?? [];
-    const runs = values.run ?? [];
-    const objects = values.object ?? [];
-    const reason = values.reason;
-    if (reason === undefined || reason.trim() === '') throw new UsageError('knowledge retract 要用 --reason 给一行原因');
-    if (reason.includes('\n') || reason.includes('\r')) throw new UsageError('knowledge retract 的 --reason 必须是一行');
-    if (entries.length + runs.length + objects.length === 0) throw new UsageError('knowledge retract 至少要一个 --entry、--run 或 --object');
-    if ([...entries, ...runs, ...objects].some(id => id.trim() === '')) throw new UsageError('knowledge retract 的目标不能为空');
-    if ([...entries, ...objects].some(id => !isSha256(id))) throw new UsageError('knowledge retract 的 --entry 和 --object 是记录摘要（64 位十六进制）');
-    const admin = await session.admin();
-    const hub = await session.hub(true);
-    const feeding = hub.knowledge.feeding;
-    if (!feeding) throw new CliError('喂入层没有装上', '用当前 Hub 装配后重试');
-    // A run's contributions join the entries of the same command, so the entry record lists them and the read side marks
-    // each one; entries an earlier record already lists are skipped as covered, as any other target is.
-    const included: Array<{ run: string; count: number }> = [];
-    const targets = [...entries];
-    for (const run of new Set(runs)) {
-      const stored = await decided(() => runContributionEntries(hub.deps.runs, hub.records.store, admin, run));
-      if (stored === null) continue;
-      included.push({ run, count: stored.length });
-      targets.push(...stored);
-    }
-    const report = await decided(() => knowledgeRetract(feeding, admin, { entries: targets, runs, objects, reason: reason.trim(), at: hub.knowledge.__context.now().toISOString() }));
-    for (const row of included) session.out(`运行 ${row.run} 存下的回注条目 ${row.count} 个一并列为撤回目标`);
-    for (const line of formatKnowledgeRetract(report)) session.out(line);
-    return 0;
-  }
-  if (sub === 'roots') {
-    const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
-    const viewer = await session.viewer(values.as);
-    const hub = await session.hub();
-    const product = await productOf(hub, viewer, positionals[0]);
-    const id = product.product.id;
-    const builds = await hub.knowledge.builds(id);
-    const lines: string[] = [];
-    for (const build of builds) if (!lines.includes(build.line)) lines.push(build.line);
-    session.out(`产品线 ${id}（${product.product.names.join('、')}）：${builds.length} 个构建，${lines.length} 条版本线`);
-    for (const line of lines) {
-      const current = await hub.knowledge.currentRoot(id, line);
-      session.out(`版本线 ${line}：${current === null ? '还没有当前根' : `当前根 ${current.root}（构建 ${current.build.name}，产出于 ${current.produced_at}）`}`);
-      // Builds that have a root first, one line each; a line with many name-only builds stays readable: they
-      // close the line as one count instead of one row per build.
-      const ofLine = builds.filter((b) => b.line === line);
-      const rooted = ofLine.filter((b) => b.root !== null || b.base !== b.name);
-      const nameOnly = ofLine.filter((b) => b.root === null && b.base === b.name);
-      for (const build of rooted) {
-        session.out(
-          [
-            `  ${build.name}`,
-            build.family,
-            build.base === build.name ? '自身为基础构建' : `基于 ${build.base}`,
-            build.released_at === null ? '未发布' : `发布于 ${build.released_at}`,
-            build.root === null ? '还没有根' : `根 ${build.root}`,
-          ].join('\t'),
-        );
-      }
-      if (nameOnly.length > 0) session.out(`  另有 ${nameOnly.length} 个构建只有名字，还没有根`);
-    }
-    return 0;
-  }
-  if (sub === 'diff') {
-    const { values, positionals } = parse(rest, { as: { type: 'string' } }, 2);
-    const [from, to] = positionals;
-    if (!isSha256(from) || !isSha256(to)) throw new UsageError('knowledge diff 的两个参数都是知识根的摘要（64 位十六进制）');
-    const viewer = await session.viewer(values.as);
-    const hub = await session.hub();
-    const neutral = new CliError('没有这两个知识根，或者你不能读它们');
-    if (viewer.role !== 'admin') {
-      const readable = await hub.packs.readableProducts(viewer);
-      for (const root of [from, to]) {
-        const infos = await hub.knowledge.rootInfo(root);
-        if (infos.length === 0 || !infos.some((info) => readable.has(info.product))) throw neutral;
-      }
-    }
-    const diff = await hub.knowledge.diffRoots(from, to);
-    if (diff === null) throw neutral;
-    session.out(`从 ${diff.from} 到 ${diff.to}：增加 ${diff.added.length}，删除 ${diff.removed.length}，改动 ${diff.modified.length}`);
-    for (const path of diff.added) session.out(`+ ${path}`);
-    for (const path of diff.removed) session.out(`- ${path}`);
-    for (const path of diff.modified) session.out(`~ ${path}`);
-    return 0;
-  }
-  throw new UsageError(`knowledge 的子命令：${KNOWLEDGE_USAGE}`);
-}
+export { SECRET_USAGE, ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, DOC_USAGE, INIT_ADMIN_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
+import { ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, DOC_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
 
 // ---------------------------------------------------------------- init-admin
 
@@ -1074,9 +44,11 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
  * exists that nobody can account for; the message says what happened (`done` first) and the hint how to go on. Neither
  * names a command that needs the token that could not be stored.
  */
-async function storeUnseen(kit: RecordsKit, store: OperatorTokenStore, admin: Pick<User, 'id' | 'name' | 'role'>, token: IssuedToken, done: string): Promise<void> {
+const principalOf = (user: Pick<User, 'id' | 'name' | 'role'>): Principal => ({ id: user.id, name: user.name, role: user.role });
+
+async function storeUnseen(kit: RecordsKit, store: OperatorTokenStore, admin: Pick<User, 'id' | 'name' | 'role'>, token: IssuedToken, done: string, replace = false): Promise<void> {
   try {
-    await store.write(token.token);
+    await store.write(token.token, { replace });
   } catch (error) {
     let revoked: boolean;
     let why = '';
@@ -1096,26 +68,27 @@ async function storeUnseen(kit: RecordsKit, store: OperatorTokenStore, admin: Pi
   }
 }
 
-async function initAdminCommand(session: Session, args: readonly string[]): Promise<number> {
+export async function initAdminCommand(session: Session, args: readonly string[]): Promise<number> {
   const { positionals, values } = parse(args, { 'password-stdin': { type: 'boolean' } }, 0, 1);
   const name = positionals[0] ?? DEFAULT_ADMIN_NAME;
   const supplied = values['password-stdin'] === true ? await (session.options.readSecret ?? readSecretFromStdin)('管理员密码') : '';
+  if (values['password-stdin'] === true && supplied === '') throw new UsageError('未收到管理员密码；未创建账号或操作令牌');
   if (supplied !== '' && !validPassword(supplied)) throw new UsageError('密码须为 12 至 256 个字符，不含控制字符');
   const password = supplied || initialPassword();
   const kit = await session.records();
-  if ((await kit.principals.list()).some((user) => user.role === 'admin')) {
+  if ((await kit.principals.list()).some((user) => isAdmin(user))) {
     throw new CliError(
       '已经有管理员；init-admin 只建第一位管理员',
       `给用户签发令牌用 circle-hub token issue <用户>（以私有密钥文件里的操作令牌执行）；操作令牌丢了（令牌文件丢失，或它的令牌已撤销）就用 ${REISSUE}`,
     );
   }
   const store = await session.tokens();
-  if (await store.present()) {
-    throw new CliError(`${store.where}里已经有操作令牌`, `它属于另一个 Hub 时先${REMOVE_ITEM}，再运行 init-admin`);
-  }
+  const replacing = await store.present();
   const { user, token } = await decided(() => kit.principals.bootstrapAdmin(name, {password,mustChange:supplied === ''}));
-  await storeUnseen(kit, store, user, token, `已建立第一位管理员 ${user.name}（${user.id}）`);
-  session.out(`已建立第一位管理员 ${user.name}（${user.id}）；它的令牌 ${token.id} 已存进${store.where}，没有显示`);
+  await storeUnseen(kit, store, user, token, `已建立第一位管理员 ${user.name}`, true);
+  if (replacing) session.out('已原子替换上一个库留下的操作令牌文件');
+  session.out(`已建立第一位管理员 ${user.name}`);
+  session.out(`它的令牌已存进${store.where}，没有显示`);
   if (supplied === '') { session.out('初始密码（仅显示一次，首次登录必须修改）：'); session.out(password); }
   session.out('之后改变状态的命令（user、token 和 pack、resource、secret、knowledge 里的这类命令）都从这个操作令牌文件读管理员令牌，不用另外给出令牌');
   return 0;
@@ -1132,7 +105,7 @@ async function initAdminCommand(session: Session, args: readonly string[]): Prom
  * needs no token because the CLI is no access boundary against whoever can run it against the database (that account can
  * change the database directly); what it gives exists only in the deployment's token file.
  */
-async function operatorTokenCommand(session: Session, args: readonly string[]): Promise<number> {
+export async function operatorTokenCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'reissue') return reissueCommand(session, rest);
   if (sub === 'remove') {
@@ -1155,7 +128,7 @@ async function operatorTokenCommand(session: Session, args: readonly string[]): 
   // A Hub token has no white space; a pasted line may.
   const token = (await decided(() => read('管理员令牌'))).trim();
   const principal = tokenBytes(token) === null ? null : await kit.principals.authenticate(`Bearer ${token}`);
-  if (principal === null || principal.role !== 'admin') {
+  if (principal === null || !isAdmin(principal)) {
     throw new CliError(
       '这个令牌无效，或者不属于启用中的管理员，没有存进操作令牌文件',
       `给一个启用中的管理员的有效令牌；手里没有的话，用 ${REISSUE} 给一位启用中的管理员签发新令牌，直接存进操作令牌文件（不显示）`,
@@ -1189,12 +162,12 @@ async function reissueCommand(session: Session, args: readonly string[]): Promis
  * The read originals a gold script needs as input: every stored `source_artifact` whose origin is a read, by external id.
  * Only the external id, the digest, the size and the read time reach the screen — never the content.
  */
-async function originalCommand(session: Session, args: readonly string[]): Promise<number> {
+export async function originalCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'list') {
     const { values } = parse(rest, { external: { type: 'string' }, suffix: { type: 'string' }, limit: { type: 'string' }, as: { type: 'string' } }, 0);
     const viewer = await session.viewer(values.as);
-    if (viewer.role !== 'admin') throw new CliError('只有管理员能列出原件');
+    if (!isAdmin(viewer)) throw new CliError('只有管理员能列出原件');
     const limit = values.limit === undefined ? 100 : Number(values.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new UsageError('--limit 是 1 到 500 的整数');
     const kit = await session.records();
@@ -1227,7 +200,7 @@ async function originalCommand(session: Session, args: readonly string[]): Promi
     const sha = positionals[0];
     if (!isSha256(sha)) throw new UsageError('sha256 要写成 64 位小写十六进制');
     const viewer = await session.viewer(undefined);
-    if (viewer.role !== 'admin') {
+    if (!isAdmin(viewer)) {
       // A non-admin gets the same answer as for a nonexistent original: no existence signal.
       throw new CliError('Hub 没有保存这份原件');
     }
@@ -1256,12 +229,12 @@ async function originalCommand(session: Session, args: readonly string[]): Promi
  * prefix — never the fencing token or the lease id; `lease release` force-frees a key with a reason that lands in the
  * action record. Only administrators; a non-administrator gets the same answer as for a row that does not exist.
  */
-async function leaseCommand(session: Session, args: readonly string[]): Promise<number> {
+export async function leaseCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'list') {
     const { values } = parse(rest, { prefix: { type: 'string' }, as: { type: 'string' } }, 0);
     const viewer = await session.viewer(values.as);
-    if (viewer.role !== 'admin') throw new CliError('只有管理员能列出租约');
+    if (!isAdmin(viewer)) throw new CliError('只有管理员能列出租约');
     const leases = await session.leases();
     const view = await leases.view(values.prefix ?? '', true);
     const registrations=await leases.registrations(values.prefix??'');
@@ -1280,7 +253,7 @@ async function leaseCommand(session: Session, args: readonly string[]): Promise<
     if(!values.reason?.trim())throw new UsageError('登记或注销须写 --reason <理由>');
     if(sub==='register'&&!values.owner)throw new UsageError('登记须写 --owner <用户>');
     const viewer=await session.viewer(values.as);
-    if(viewer.role!=='admin')throw new CliError('只有管理员能管理登记');
+    if(!isAdmin(viewer))throw new CliError('只有管理员能管理登记');
     const leases=await session.leases();
     if(sub==='unregister'){
       const outcome=await leases.unregister({prefix,by:viewer.id,admin:true,reason:values.reason});
@@ -1306,7 +279,7 @@ async function leaseCommand(session: Session, args: readonly string[]): Promise<
     if (key === '' || !/^[a-z0-9][a-z0-9:._/-]{0,199}$/.test(key)) throw new UsageError('键的写法不对（小写字母、数字和 :._/-，最长 200）');
     if (values.reason === undefined || values.reason.trim() === '') throw new UsageError('强制释放要写 --reason <理由>（写进动作记录）');
     const viewer = await session.viewer(values.as);
-    if (viewer.role !== 'admin') {
+    if (!isAdmin(viewer)) {
       // The same answer as for a row that does not exist: no existence signal for a non-administrator.
       throw new CliError('没有租约行');
     }
@@ -1333,27 +306,38 @@ async function leaseCommand(session: Session, args: readonly string[]): Promise<
  * source pipeline, the pointer moved by compare-and-set); `doc list` and `doc show` print name, digest and size only.
  * Everyone who is not an admin gets the same answer as for a doc that does not exist.
  */
-async function docCommand(session: Session, args: readonly string[]): Promise<number> {
+export async function docCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'put') {
-    const { positionals } = parse(rest, {}, 2);
+    const { positionals, values } = parse(rest, { reference: { type: 'string' } }, 1, 2);
     const [name, file] = positionals;
+    if (Number(file !== undefined) + Number(values.reference !== undefined) !== 1) throw new UsageError('定义文件和 --reference 必须且只能提供一种');
     // The neutral rule: a non-admin is told what they would hear for a doc that does not exist.
     const viewer = await session.viewer(undefined);
-    if (viewer.role !== 'admin') throw new CliError(`没有叫 ${name.slice(0, 80)} 的命名文档`);
+    if (!isAdmin(viewer)) throw new CliError(`没有叫 ${name.slice(0, 80)} 的命名文档`);
     const admin = await session.admin();
-    const source = isAbsolute(file) ? file : resolve(session.ctx.io.cwd, file);
-    const bytes = await readFile(source).catch(() => null);
+    const source = file === undefined ? undefined : isAbsolute(file) ? file : resolve(session.ctx.io.cwd, file);
+    const uploaded = values.reference !== undefined ? await readUploadedSource(await session.records(), admin, values.reference) : null;
+    const bytes = uploaded !== null ? uploaded.bytes : await readFile(source!).catch(() => null);
     if (bytes === null) throw new CliError(`读不出文件 ${file.slice(0, 120)}`, '给一个有读取权限的现有文件');
+    const mediaType = uploaded !== null ? uploaded.mediaType : docMediaType(basename(source!));
+    if (!DOC_MEDIA_TYPES.includes(mediaType)) {
+      const seen = uploaded !== null ? `上传原件 ${values.reference!.slice(0, 16)}… 的媒体类型是 ${mediaType}` : `文件名 ${basename(source!).slice(0, 120)} 的扩展名认不出格式`;
+      throw new CliError(
+        `命名文档 ${name} 没有发布：${seen}，Hub 没有能读它的解析器，工作流绑定它时会被拒绝`,
+        `按内容格式给文件起扩展名后重新发布（可用：${DOC_SUFFIXES.join('、')}；JSON 用 .json）；用 --reference 时上传原件要是 ${DOC_MEDIA_TYPES.join('、')} 之一`,
+      );
+    }
     const hub = await session.hub();
-    const put = await decided(() => hub.docs.put(admin, name, new Uint8Array(bytes), { fileName: basename(source) }));
+    const fileName = uploaded !== null ? `${name}${docSuffixOf(mediaType) ?? ''}` : basename(source!);
+    const put = await decided(() => hub.docs.put(admin, name, new Uint8Array(bytes), { fileName, mediaType }));
     session.out(put.created ? `已发布命名文档 ${put.name}（摘要 ${put.sha256}，${put.size} 字节）` : `命名文档 ${put.name} 已经是这份（摘要 ${put.sha256}，${put.size} 字节）`);
     return 0;
   }
   if (sub === 'list') {
     const { values } = parse(rest, { as: { type: 'string' } }, 0);
     const viewer = await session.viewer(values.as);
-    if (viewer.role !== 'admin') {
+    if (!isAdmin(viewer)) {
       session.out('还没有命名文档');
       return 0;
     }
@@ -1369,7 +353,7 @@ async function docCommand(session: Session, args: readonly string[]): Promise<nu
   if (sub === 'show') {
     const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
     const viewer = await session.viewer(values.as);
-    if (viewer.role !== 'admin') throw new CliError(`没有叫 ${positionals[0].slice(0, 80)} 的命名文档`);
+    if (!isAdmin(viewer)) throw new CliError(`没有叫 ${positionals[0].slice(0, 80)} 的命名文档`);
     const hub = await session.hub();
     const info = await hub.docs.show(positionals[0]);
     if (info === null) throw new CliError(`没有叫 ${positionals[0].slice(0, 80)} 的命名文档`);
@@ -1379,10 +363,10 @@ async function docCommand(session: Session, args: readonly string[]): Promise<nu
   throw new UsageError(`doc 的子命令：${DOC_USAGE}`);
 }
 
-async function recordsCommand(session:Session,args:readonly string[]):Promise<number> {
+export async function recordsCommand(session:Session,args:readonly string[]):Promise<number> {
   const [sub,...rest]=args;if(sub!=='verify')throw new UsageError('records verify [--kind <记录类型>] [--vault]');
   const {values}=parse(rest,{kind:{type:'string'},as:{type:'string'},vault:{type:'boolean'}},0);
-  const viewer=await session.viewer(values.as);if(viewer.role!=='admin')throw new CliError('只有管理员能核对记录完整性');
+  const viewer=await session.viewer(values.as);if(!isAdmin(viewer))throw new CliError('只有管理员能核对记录完整性');
   const kind=values.kind ?? 'action';if(!(RECORD_KINDS as readonly string[]).includes(kind))throw new UsageError('记录类型不在生成的协议词表里');
   const records=await session.records();let cursor:string|null=null,total=0,notes=0;
   do {
@@ -1403,7 +387,7 @@ async function recordsCommand(session:Session,args:readonly string[]):Promise<nu
 }
 
 // ---------------------------------------------------------------- sharing (B04, R02): a read capability only
-async function sharingCommand(session: Session, args: readonly string[], withdraw = false): Promise<number> {
+export async function sharingCommand(session: Session, args: readonly string[], withdraw = false): Promise<number> {
   const admin = await session.admin();
   const kit = await session.records();
   const [sub, ...rest] = args;
@@ -1448,30 +432,6 @@ async function sharingCommand(session: Session, args: readonly string[], withdra
 
 // ---------------------------------------------------------------- registration
 
-type Handler = (session: Session, args: readonly string[]) => Promise<number>;
-
-const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
-  {name:'share',summary:SHARE_USAGE.slice('share '.length),handler:sharingCommand},
-  {name:'unshare',summary:UNSHARE_USAGE.slice('unshare '.length),handler:(session,args)=>sharingCommand(session,args,true)},
-  {name:'records',summary:'verify [--kind <记录类型>] [--vault]（核存储摘要，可选核验密钥库解密，不输出正文）',handler:recordsCommand},
-  { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
-  { name: 'job', summary: JOB_USAGE, handler: jobCommand },
-  { name: 'bed', summary: BED_USAGE, handler: bedCommand },
-  {name:'skill',summary:SKILL_USAGE.slice('skill '.length),handler:skillCommand},
-  { name: 'pack', summary: PACK_USAGE.slice('pack '.length), handler: packCommand },
-  { name: 'resource', summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
-  { name: 'var', summary: VAR_USAGE.slice('var '.length), handler: variableCommand },
-  { name: 'mask', summary: MASK_USAGE.slice('mask '.length), handler: maskCommand },
-  { name: 'secret', summary: SECRET_USAGE.slice('secret '.length), handler: secretCommand },
-  { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: originalCommand },
-  { name: 'lease', summary: LEASE_USAGE.slice('lease '.length), handler: leaseCommand },
-  { name: 'knowledge', summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },
-  { name: 'trace', summary: TRACE_USAGE.slice('trace '.length), handler: traceCommand },
-  { name: 'doc', summary: DOC_USAGE.slice('doc '.length), handler: docCommand },
-  { name: 'init-admin', summary: INIT_ADMIN_USAGE.slice('init-admin '.length), handler: initAdminCommand },
-  { name: 'operator-token', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: operatorTokenCommand },
-];
-
 /**
  * An error a command ends with, made safe for a terminal (a message or a hint may quote a pack, a resource or a remote
  * system). The configuration's own errors pass unchanged: the server CLI prints them as they are.
@@ -1510,7 +470,7 @@ export function operatorViewer(ctx: CliContext, options: AdminCommandOptions = {
 
 /** The administrator commands, for the assembly's registerCommands (tests inject the token store, stdin and the assembly). */
 export function adminCommands(options: AdminCommandOptions = {}): CliCommand[] {
-  return COMMANDS.map(({ name, summary, handler }) => ({
+  return ADMIN_COMMANDS.map(({ name, summary, handler }) => ({
     name,
     summary,
     run: async (args, ctx) => {

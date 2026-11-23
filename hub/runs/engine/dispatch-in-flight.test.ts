@@ -1,5 +1,4 @@
-// Decision 105 read the way the reference compile skill reads a running task (read the task by its id, never resubmit):
-// a run whose release requirement is open does not try to dispatch; while a job of the run has not ended, the same
+// Decision 105, a running task read by its id and never resubmitted: a run whose release requirement is open does not try to dispatch; while a job of the run has not ended, the same
 // submission reads progress and a different one is kept as received but not validated. Toy pack, scripted dispatch port.
 import { createTestParserRegistry } from '../../testing/parsers.ts';
 import assert from 'node:assert/strict';
@@ -19,10 +18,11 @@ test('an accepted run tries to dispatch only once the release requirements its i
   const original = h.review.effects; t.after(() => { (h.review as { effects?: unknown }).effects = original; });
   const start = async () => (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '10.6.1', build: 'Rel_MEADOW_10_6_1_7', inputs: { map: { reference: await h.upload(h.alice, toyMap(standardDocument())) } } }, h.call())).run!;
   const submission = (run: { run: string; items: Array<{ id: string }> }, model: string) => ({ run: run.run, model, items: run.items.map((i) => ({ item: i.id, handling: 'handled', slots: { findings: [] } })), cross_item: [{ nature: 'judgment', statement: '合成等级', grounds: [], code: 'draft_level', rank: 'P4' }] });
+  const callers: string[] = [];let failDispatch=false;
   const ready: boolean[] = []; let flight: { jobs: string[]; notes: Array<{ job?: string; text: string }> } | null = null;
   const job = 'c'.repeat(64);
   const service = createRunsService({ parsers: createTestParserRegistry(), records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external,
-    dispatch: { jobs: async () => [], reconcile: async () => { throw new Error('合成：不对账'); }, accepted: async (_run, value) => { ready.push(value); return value ? [{ job, text: '合成：已派发' }] : []; }, inFlight: async () => flight } });
+    dispatch: { jobs: async () => [], reconcile: async () => { throw new Error('合成：不对账'); }, accepted: async (_run, value,caller) => {assert.ok(caller);assert.equal(caller.id,h.alice.id);callers.push(caller.id);if(failDispatch)throw new Error('private-target diagnostic');ready.push(value); return value ? [{ job, text: '合成：已派发' }] : []; }, inFlight: async (_run,caller) => {assert.ok(caller);assert.equal(caller.id,h.alice.id);callers.push(caller.id);return flight;} } });
 
   // Which requirements the toy submission satisfies, read from a run without an effect row.
   const probe = await start();
@@ -60,4 +60,10 @@ test('an accepted run tries to dispatch only once the release requirements its i
   const same = await service.submitResult(h.alice, submission(run, 'synthetic'), h.call('another-session'));
   assert.equal(same.acceptance, 'accepted', JSON.stringify(same.errors)); assert.ok(same.dispatch?.length, JSON.stringify(same));
   assert.equal((await service.getRun(h.alice, run.run))!.latest!.record, latest);
+  flight=null;failDispatch=true;
+  const uncertain=await service.submitResult(h.alice,submission(run,'synthetic'),h.call('another-session'));
+  assert.equal(uncertain.acceptance,'accepted');assert.equal(uncertain.dispatch?.[0]?.outcome,'unknown');
+  assert.equal(uncertain.dispatch?.[0]?.not_sent,undefined);assert.match(uncertain.dispatch![0].next_action!,/不要重新发送/);
+  assert.doesNotMatch(JSON.stringify(uncertain.dispatch),/private-target|没有派发|已记下/);
+  assert.ok(callers.length>=4,'normal, in-flight and reuse paths retain the real caller');
 });

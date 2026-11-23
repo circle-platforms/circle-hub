@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { addSyntheticExecutor } from '../../hub/dispatch/testing/credentials.ts';
+import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { FedObservationSchema } from '../../contracts/src/feeding.ts';
 import {
   capture, capturedArtifact, commandTarget, contribution, openOperationWorld, quote, startOperationRun,
@@ -113,6 +115,12 @@ test('scenario 43: T4-3 records a declared device on its booked bed and rejects 
     }],
   };
   await world.bed.hub.hub.docs.put(world.bed.hub.admin.principal, 'operation-device-bed', new TextEncoder().encode(JSON.stringify(inventory)), { fileName: 'operation-device-bed.json' });
+  const catalog = await addSyntheticExecutor(world.bed.hub.records, world.bed.hub.hub.dispatch!.registry, world.bed.hub.admin.principal, {
+    ...definition('http://127.0.0.1:1/mcp'), target: 'bench-a',
+    manifest_sha256: (await world.bed.hub.hub.docs.show('operation-device-bed'))!.sha256,
+    resources: inventory.beds[0]!.devices.map(device => `bed/bench-a/${device.name}`),
+  }, 'synthetic-operation-booking-key');
+  await world.bed.hub.records.authorizations.assignResource(world.bed.hub.admin.principal, catalog.id, world.bed.reviewer.user.id);
   const booked = await world.client.call('start_run', {
     pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:operation-device-bed' } },
     parameters: { action: 'acquire', bed: 'bench-a', need: { devices: [{ type: 'router', count: 1 }], build: world.build } },
@@ -159,7 +167,7 @@ test('scenario 43: T4-3 records a declared device on its booked bed and rejects 
   const feeding = FedObservationSchema.parse(view.contribution.feeding);
   assert.equal(feeding.device, 'edge-a');
   assert.equal(feeding.bed, 'bench-a', 'the only bed of the frozen manifest that has the device');
-  assert.match(view.note ?? '', /设备 edge-a（台架 bench-a）/);
+  assert.match(view.note ?? '', /测试环境 edge-a，bench-a/);
 
   const foreign = await submit('edge-other', '清单外设备');
   assert.equal(foreign.out.acceptance, 'not_accepted');

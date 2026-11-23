@@ -8,8 +8,8 @@ import { KnowledgeShareInput, KnowledgeShareReceipt } from './sharing.ts';
 import { SpaceEntryInput, SpaceEntryReceipt, SpaceId, SpaceSearchHit } from './spaces.ts';
 import { KnowledgeSpaceKindSchema, KnowledgeSearchScopeSchema, KnowledgeEntryStatusSchema } from '../generated/vocabulary.ts';
 import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS,ApplicabilityFields } from './contributions.ts';
-import { AcceptanceSchema, CallResultSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ProvenanceTypeSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
-import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256, TraceId, ProtocolError } from './common.ts';
+import { AcceptanceSchema, CallResultSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ProvenanceTypeSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema, StepTypeSchema, StepLevelSchema, EnvironmentSchema } from '../generated/vocabulary.ts';
+import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256, TraceId, UserId, ProtocolError } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { Backlinks } from './views.ts';
 import { InputBinding, LocalToolsSummary, PackSummary, RunSummary } from './run.ts';
@@ -47,6 +47,7 @@ Memory: get_nodes with memory lists or reads preferences, and upload_file with m
 Sharing: upload_file with share_entry submits a verified personal entry; team_path optionally selects the team directory (default: the personal path); a receipt records that target with a registered rejection or the merged team reference. withdraw_entry withdraws an own team submission or an administrator-authorized team entry. Results require grounds readable by every actual result reader.
 Personal knowledge: upload_file with personal_entry writes only to the caller's space; space=personal imports an original without drafting entries. get_nodes with search and scope searches current readable knowledge only without run. During a run, copy exact tree addresses from the frozen team/personal roots and the initiator's currently authorized content.
 If start_run or get_nodes times out, get_nodes call_query checks the exact original arguments without rerunning them. Use the original trace when known; without it matching calls are candidates, not proven to be the timed-out call.
+Hub call diagnostics: discover the bundled hub-observability skill with list_task_packs { "pack_id": "hub-observability" }, then read its SKILL.md with get_nodes. It uses this same authenticated MCP connection.
 Rules: quote exact values verbatim from the sources; never invent commands, numbers or identifiers; relay the server's results unchanged and mark your own commentary as model relay.`;
 
 const Fields = {
@@ -120,7 +121,7 @@ export const UploadFileInput = z.strictObject({
   space: KnowledgeSpaceKindSchema.extract(['personal']).optional().describe('Import a file into the caller personal knowledge space; the Hub never drafts an entry'),
   media_type: z.string().optional().describe('Media type if known, for example text/markdown'),
   name: z.string().optional().describe('Original file name, for display'),
-  provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Client-declared upload provenance; defaults to declared. client_captured is for Circle operation captures and stays declaration grade.'),
+  provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Use declared (or omit this field) for uploaded workbooks and other user-supplied or generated workflow input files. client_captured is only for original model/client operation records, such as tool-hook captures, not merely a file generated or uploaded by a client. These captures stay declaration grade for operation-record knowledge feeding only; they cannot be used as ordinary workflow inputs or as verification, scoring or release evidence. Neither value makes an upload a Hub observation.'),
   captured_at: IsoTime.optional().describe('The original capture moment declared by the client, not the Hub receipt moment; Hub receipt is kept separately in the record created_at'),
 }).refine(input => [input.file_path,input.personal_entry,input.share_entry,input.withdraw_entry,input.memory,input.memory_share].filter(value=>value!==undefined).length===1, 'provide exactly one payload mode').refine(input=>!(input.memory||input.memory_share)||[input.space,input.media_type,input.name,input.provenance_type,input.captured_at].every(v=>v===undefined),'memory mode accepts no file metadata');
 // safeExtend: the receipt, optional in the envelope, is required here, and the envelope's refinements stay.
@@ -131,7 +132,7 @@ export const UploadFileOutput = Envelope.safeExtend({
   share: KnowledgeShareReceipt.optional(),
   withdrawn_reference: referenceUriOf('tree').optional(),
   acceptance: AcceptanceSchema,
-  reference: referenceUriOf('src').optional().describe('src:<sha256> of the stored bytes, to use as a run input; only when accepted'),
+  reference: referenceUriOf('src').optional().describe('src:<sha256> of accepted stored bytes; the reference alone does not establish input eligibility or verified evidence. For an ordinary declared upload, the returned artifact can select the exact capture when binding a workflow input. client_captured references are for operation-record knowledge feeding only, not ordinary workflow inputs.'),
   artifact: Sha256.optional().describe('Exact source_artifact record, so equal-byte captures can be bound independently; only when accepted'),
   sha256: Sha256.optional(),
   size: z.number().int().nonnegative().optional(),
@@ -185,7 +186,7 @@ export const AcceptedBy = z.strictObject({
   type: z.string().min(1),
   inputs: z.array(z.strictObject({ pack: z.string().describe('id@version'), slot: z.string().min(1), role: SourceRoleSchema })),
 });
-export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), result: ProductionResult.optional(), accepted_by: z.array(AcceptedBy).optional(), local_tools: LocalToolsSummary.optional().describe('the tools/ files of the pack this run froze; absent when it ships none. An answer-level fact: the run record itself never changes') }).superRefine((o, ctx) => {
+export const StartRunOutput = Envelope.extend({ record: referenceUriOf('rec').optional().describe('Immutable run record reference for machine readers'), run: RunSummary.optional(), result: ProductionResult.optional(), accepted_by: z.array(AcceptedBy).optional(), local_tools: LocalToolsSummary.optional().describe('the tools/ files of the pack this run froze; absent when it ships none. An answer-level fact: the run record itself never changes') }).superRefine((o, ctx) => {
   if ((o.call_result === 'ok') !== (o.run !== undefined)) issue(ctx, ['run'], 'an ok answer carries the run and an error answer carries none');
   if (o.result !== undefined && o.run === undefined) issue(ctx, ['result'], 'a result belongs to a run');
   if (o.local_tools !== undefined && o.run === undefined) issue(ctx, ['local_tools'], 'local tools belong to a run');
@@ -197,7 +198,42 @@ const CallQuery=z.strictObject({
   trace:TraceId.optional().describe('The original trace when known; omit it to list matching candidates'),
 }).superRefine((value,ctx)=>{if((value.start_run===undefined)===(value.get_nodes===undefined))issue(ctx,[],'provide exactly one original call argument object');});
 
+const ObservationCalls = z.strictObject({
+  user: UserId.optional().describe('Filter by Hub account id; this never changes who is authorized to read'),
+  session: z.string().regex(/^[\x21-\x7e]{1,200}$/).optional().describe('Session id as returned in a call; clients may omit the declaration'),
+  tool: z.string().regex(/^[A-Za-z0-9_./:-]{1,100}$/).optional().describe('Exact tool or MCP method name from the call log'),
+  run: RunId.optional(),
+  trace: TraceId.optional(),
+  from: IsoTime.optional().describe('Inclusive UTC start'),
+  to: IsoTime.optional().describe('Exclusive UTC end'),
+  cursor: z.string().min(1).max(64).optional().describe('Opaque next cursor from the previous page with the same filters'),
+  limit: z.number().int().min(1).max(100).optional().describe('Maximum calls on this page; defaults to 50'),
+}).refine(value => !value.from || !value.to || Date.parse(value.from) < Date.parse(value.to), {
+  path: ['to'], message: 'The end must be after the start',
+});
+
+const ObservationQuery = z.union([z.strictObject({ calls: ObservationCalls }), z.strictObject({ trace: TraceId })]);
+const SpanId = z.string().regex(/^[0-9a-f]{16}$/);
+const ObservedCall = z.strictObject({
+  at: IsoTime, user: UserId.nullable(), session: z.string().nullable(), tool: z.string(), run: RunId.nullable(),
+  trace_id: TraceId, span_id: SpanId, call_result: CallResultSchema, error_code: z.string().nullable(),
+  acceptance: AcceptanceSchema.nullable(), duration_ms: z.number(),
+});
+const ObservedStep = z.strictObject({
+  span_id: SpanId, parent_span_id: SpanId.nullable(), is_root: z.boolean(), name: z.string(), type: StepTypeSchema,
+  started_at: IsoTime, ended_at: IsoTime, duration_ms: z.number(), level: StepLevelSchema,
+  user_id: UserId.nullable(), session_id: z.string().nullable(), run_id: RunId.nullable(),
+  client_name: z.string().nullable(), client_version: z.string().nullable(), client_platform: z.string().nullable(),
+  release: z.string().nullable(), environment: EnvironmentSchema.nullable(), usage: z.record(z.string(), z.number()),
+  get children(): z.ZodArray<typeof ObservedStep> { return z.array(ObservedStep); },
+});
+const ObservationResult = z.union([
+  z.strictObject({ calls: z.array(ObservedCall).max(100), next: z.string().nullable() }),
+  z.strictObject({ trace: z.strictObject({ trace_id: TraceId, roots: z.array(ObservedStep), truncated: z.boolean() }).nullable() }),
+]);
+
 export const GetNodesInput = z.strictObject({
+  observability: ObservationQuery.optional().describe('Read retained Hub call diagnostics using the current MCP account. Members see their calls; administrators can see all accounts. Supply calls or trace as the only mode.'),
   memory:MemoryQuery.optional().describe('List or read versioned client preferences without a run. Session lists select team or personal; session document reads pin a listed version. A grant permits browsing only. Continue with memory.cursor; these documents cannot be grounds.'),
   pack: z.string().min(1).max(100).optional().describe('Read a visible pack file without starting a run; especially SKILL.md for a generic skill'),
   pack_space: SpaceId.optional(),
@@ -216,6 +252,8 @@ export const GetNodesInput = z.strictObject({
   reference: ReferenceUri.optional().describe('Read the content a reference points at instead of a subtree'),
   cursor: z.string().optional(),
   call_query:CallQuery.optional().describe('Check your own in-flight call and recent completion logs without rerunning it; provide the exact original arguments'),
+}).refine(input => input.observability === undefined || Object.keys(input).length === 1, {
+  path: ['observability'], message: '观测查询必须单独调用',
 }).refine(input=>input.memory===undefined||[input.pack,input.pack_space,input.file,input.space,input.search,input.scope,input.run,input.root,input.paths,input.depth,input.reference,input.cursor,input.call_query].every(v=>v===undefined),'memory is an independent non-evidence mode');
 
 const NodeEntry = z.strictObject({
@@ -228,7 +266,7 @@ const NodeEntry = z.strictObject({
   kind: EntryKindSchema,
   statement: z.string(),
   reference: referenceUriOf('tree').describe('Tree address of the node pinned to this entry, tree:<root><path>@<entry>; cite it verbatim as a ground'),
-  applicability: z.string(),
+  applicability: z.string().optional().describe('The conditions under which the entry holds; absent when nothing is declared, judged or in conflict (K02 F[6], decision 159)'),
   applicability_fields:ApplicabilityFields.optional(),
   applicability_context:z.strictObject({composition:Sha256.nullable(),criteria_digest:Sha256.nullable()}).optional(),
   data: z.record(z.string(), z.unknown()).optional().describe('Machine-readable content of the entry, for example the signatures and typed parameters of a catalog leaf'),
@@ -250,6 +288,9 @@ const KnowledgeNode = z.strictObject({
 });
 
 export const GetNodesOutput = Envelope.extend({
+  observability: ObservationResult.optional().describe('Call diagnostics, outside the evidence chain. A null trace has no currently visible details.'),
+  skill_file: z.strictObject({ pack: z.string(), path: z.string(), sha256: Sha256, text: z.string() }).optional()
+    .describe('A verified text file from a bundled skill, with its version and file digest'),
   memory_page:MemoryPage.optional(),
   memory_document:MemoryDocumentView.optional(),
   warnings:z.array(ProtocolError).max(100).optional().describe('Unavailable knowledge search scopes omitted from the matches; never claim a complete search while warnings are present'),
@@ -278,7 +319,7 @@ export const GetNodesOutput = Envelope.extend({
     .optional(),
 }).superRefine((o, ctx) => {
   if (o.call_result === 'error') {
-    if (o.memory_page!==undefined||o.memory_document!==undefined||(o.nodes ?? []).length > 0 || o.content !== undefined || (o.matches ?? []).length > 0 || o.call_status !== undefined) issue(ctx, ['nodes'], 'an error answer carries no nodes, content or call status');
+    if (o.observability!==undefined||o.skill_file!==undefined||o.memory_page!==undefined||o.memory_document!==undefined||(o.nodes ?? []).length > 0 || o.content !== undefined || (o.matches ?? []).length > 0 || o.call_status !== undefined) issue(ctx, ['nodes'], 'an error answer carries no nodes, content or call status');
     return;
   }
   if(o.call_status!==undefined && (o.root!==undefined || o.nodes!==undefined || o.content!==undefined))issue(ctx,['call_status'],'a call status is separate from a knowledge or reference read');
@@ -324,6 +365,8 @@ export const ResolveReferenceOutput = Envelope.extend({
 
 export const SubmitResultInput = Submission;
 export const SubmitResultOutput = Envelope.safeExtend({
+  step_name: z.string().min(1).refine(value => value.trim().length > 0, 'a name is not whitespace').optional().describe('The declared user-facing step name only when the nonempty set of requirements actually checked by this submission explicitly resolves to one workflow step; absent for missing declarations, multiple steps or an unproven checked scope'),
+  record: referenceUriOf('rec').optional().describe('Immutable validation result record reference for machine readers'),
   withdrawn_grounds:z.array(Ground).optional().describe("Live withdrawal qualifier, outside the immutable historical result"),
   withdrawn_grounds_hidden_count:z.number().int().nonnegative().optional().describe('Count of currently unreadable withdrawn grounds, without their identities'),
   acceptance: AcceptanceSchema,
@@ -351,7 +394,38 @@ export const SubmitResultOutput = Envelope.safeExtend({
   if (Object.entries(derived).some(([key, value]) => counts[key] !== value)) issue(ctx, ['counts'], 'counts are derived from result.partitions (W08 R[0])');
 });
 
-export const TOOLS: ToolDefinition[] = [
+function extensibleOutput(schema: z.ZodType): z.ZodType {
+  const copies = new Map<z.ZodType, z.ZodType>();
+  const open: z.ZodType[] = [];
+  const unlinked = new Set<z.ZodType>();
+  const visit = (value: unknown): unknown => {
+    if (value instanceof z.ZodType) {
+      const previous = copies.get(value);
+      if (previous || open.includes(value)) {
+        if (!previous || unlinked.has(value)) for (const holder of open) unlinked.add(holder);
+        return previous ?? z.lazy(() => copies.get(value)!);
+      }
+      open.push(value);
+      const definition: z.core.$ZodTypeDef & Record<string, unknown> = {
+        ...Object.fromEntries(Object.entries(value._zod.def).map(([key, child]) => [key, visit(child)])),
+        type: value._zod.def.type,
+      };
+      open.pop();
+      if (definition.type === 'object') definition.catchall = z.unknown();
+      const clone = z.core.clone(value, definition, { parent: !unlinked.has(value) });
+      const metadata = unlinked.has(value) ? z.globalRegistry.get(value) : undefined;
+      if (metadata !== undefined) z.globalRegistry.add(clone, metadata);
+      copies.set(value, clone);
+      return clone;
+    }
+    if (Array.isArray(value)) return value.map(visit);
+    if (z.core.util.isPlainObject(value)) return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, visit(child)]));
+    return value;
+  };
+  return visit(schema) as z.ZodType;
+}
+
+export const TOOLS: ToolDefinition[] = ([
   {
     name: 'list_task_packs',
     label: '查询工作流',
@@ -366,7 +440,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'upload_file',
     label: '上传文件',
     title: 'Upload a file',
-    description: 'Upload a file for a run, or set space=personal to import a private original. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference. Use memory or memory_share instead for versioned session preferences: no evidence reference is returned.',
+    description: 'Upload a file for a run, or set space=personal to import a private original. For uploaded workbooks and other workflow input files, use provenance_type=declared or omit it. client_captured is only for original model/client operation records: declaration-grade knowledge feeding, not ordinary workflow inputs or verification evidence. Generating or uploading a workbook on the client does not make it an operation capture. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference. Use memory or memory_share instead for versioned session preferences: no evidence reference is returned.',
     input: UploadFileInput,
     output: UploadFileOutput,
     effect: 'none',
@@ -387,7 +461,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'get_nodes',
     label: '读取知识',
     title: 'Read knowledge nodes',
-    description: 'Read a permitted pack file with pack, pack_space and file, or personal/team knowledge nodes and immutable references. Without run, search and scope find visible knowledge as leads. With run, search is rejected: read exact addresses from the frozen versions. upload_file with personal_entry stores a caller-authored note or verified entry. Use call_query with exact original arguments to check your own long start_run or get_nodes call without rerunning it.',
+    description: 'Read a permitted pack file with pack, pack_space and file, or personal/team knowledge nodes and immutable references. Without run, search and scope find visible knowledge as leads. With run, search is rejected: read exact addresses from the frozen versions. upload_file with personal_entry stores a caller-authored note or verified entry. Use call_query with exact original arguments to check your own long start_run or get_nodes call without rerunning it. Use observability to list retained Hub calls or inspect their trace steps and usage.',
     input: GetNodesInput,
     output: GetNodesOutput,
     effect: 'none',
@@ -415,6 +489,6 @@ export const TOOLS: ToolDefinition[] = [
     writesHubRecords: true,
     idempotent: true,
   },
-];
+] satisfies ToolDefinition[]).map(tool => ({ ...tool, output: extensibleOutput(tool.output) }));
 
 export { Coverage, ItemId, PackId, ExternalObjectId, Fields };

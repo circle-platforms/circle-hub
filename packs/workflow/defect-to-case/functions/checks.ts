@@ -278,7 +278,7 @@ export function checkDuplicate(input:unknown):CheckOutcome[]{
  // A view truncated only by unknown entries: those cases may carry the draft's commands, so "no duplicate" stays unknown
  // with the count and the view's own next action. Re-reading the same frozen revision does not supply the missing facts.
  const unknownOnly=compact?.unknownOnly===true&&Number(compact.unknownEntries)>0;
- const missing=(draft:DraftCase,fact:string):CheckOutcome=>({verdict:'unknown',reason:'missing_input',missing:fact+'；下一步：客户端补完整草稿身份；索引缺作者结构声明时由作者补 case_structure 后重产新根并重绑，'+(unknownOnly?'索引只因未知用例截断时按视图说明补齐这些用例的事实后以新输入重开运行，同一修订重读补不出这些事实':'截断时按同一根补读')+'；非法负向命令缺合法身份时交包作者补身份合约或具名人工复核',statement:fact+'；下一步按回执补结构或范围并重开核验',grounds:[],tier:'advisory',...own,data:{draft_id:draft.id??null,requirement:'not_duplicate',rule_version:STRUCTURE_RULE,structure_key:null,...(unknownOnly?{unknown_entries:compact!.unknownEntries}:{})}});
+ const missing=(draft:DraftCase,fact:string):CheckOutcome=>({verdict:'unknown',reason:'missing_input',missing:fact+'；下一步：客户端补完整草稿身份；索引缺作者结构声明时由作者补 case_structure 后重产新根并重新绑定，'+(unknownOnly?'索引只因未知用例截断时按视图说明补齐这些用例的事实后以新输入重开运行，同一修订重读补不出这些事实':'截断时按同一根补读')+'；非法负向命令缺合法身份时交包作者补身份合约或具名人工复核',statement:fact+'；下一步按回执补结构或范围并重开核验',grounds:[],tier:'advisory',...own,data:{draft_id:draft.id??null,requirement:'not_duplicate',rule_version:STRUCTURE_RULE,structure_key:null,...(unknownOnly?{unknown_entries:compact!.unknownEntries}:{})}});
  if(!index||!compact)return drafts.map(draft=>missing(draft,'缺冻结 indexed_cases 视图'));
  const entries=index.schema==='compact-case-index@1'&&isRecord(index.by_commands)?Object.values(index.by_commands).flatMap(v=>Array.isArray(v)?v:[]):isRecord(index.entries)?Object.values(index.entries):[];
  const entities=new Map<string,{document:string;node:string;reference:string;keys:Set<string>}>();let unresolved=0;
@@ -288,7 +288,7 @@ export function checkDuplicate(input:unknown):CheckOutcome[]{
   const facts:string[]=[];const keys=paths.map(normalizeCommand),only=compact.only?.map(normalizeCommand);
   if(compact.invalidMetadata)facts.push('only 或 cut_keys 字段形状无效；下一步集成者修正核心元数据');
   if(compact.invalidUnknown)facts.push('unknown_entries 或 unknown_only 字段形状无效或与 truncated 矛盾；下一步集成者修正核心元数据');
-  if(Number(compact.sourceSkipped)>0)facts.push('缺少 '+compact.sourceSkipped+' 份文档；下一步作者补产新根并重绑');
+  if(Number(compact.sourceSkipped)>0)facts.push('缺少 '+compact.sourceSkipped+' 份文档；下一步作者补产新根并重新绑定');
   if(only&&!keys.some(key=>only.includes(key)))facts.push('索引没有收窄到草稿命令 '+keys.join('、')+'；下一步按草稿命令补读 only');
   if(compact.unplacedCommands>0)facts.push('缺 '+compact.unplacedCommands+' 个条目的 commands 字段；下一步作者补结构并重产新根');
   if(compact.unplaced>0)facts.push('存在 '+compact.unplaced+' 个未归位条目；下一步作者补完整结构声明');
