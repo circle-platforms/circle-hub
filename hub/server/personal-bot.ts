@@ -290,8 +290,9 @@ async function handleChannelReceipt(
   const declared = MemberNotificationIntent.safeParse(intent?.body);
   if (!intent || !declared.success || declared.data.channel !== channelId) return sendJson(res, 404, {});
   const state =
-    (op.state === 'sent' && op.acknowledgment?.code !== 0) ||
-    (op.state === 'refused' && (!op.acknowledgment || op.acknowledgment.code === 0))
+    (op.state === 'sent' && (op.acknowledgment?.code !== 0 || op.reached_target !== true)) ||
+    (op.state === 'refused' && (!op.acknowledgment || op.acknowledgment.code === 0 || op.reached_target !== true)) ||
+    (op.state === 'not_sent' && op.reached_target !== false)
       ? 'unknown'
       : op.state;
   const body = MemberNotificationReceipt.parse({
@@ -308,7 +309,7 @@ async function handleChannelReceipt(
             ? 'not_dispatched'
             : 'unknown',
     acknowledgment: op.acknowledgment ?? null,
-    reached_target: op.reached_target,
+    reached_target: state === 'unknown' ? null : state === 'not_sent' ? false : true,
     missing: state === 'unknown' ? '未取得与本条消息对应的平台确认' : null,
     next: state === 'unknown' ? '核对目标侧记录，不自动重发' : null,
   });

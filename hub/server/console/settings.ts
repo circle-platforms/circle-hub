@@ -260,14 +260,14 @@ async function adminBotSettings(ctx: PageContext): Promise<PageResult> {
   );
   const reviewCard = card(
     { title: '独立复核模型' },
-    html`<p>${declared ? '已配置不同模型族' : '待复核：需要配置不同模型族的初评和复核模型'}</p>${botModelForm(review, true, csrf)}${review ? actionForm('bot-review-test', csrf, '', '测试复核连接') : ''}${review ? actionForm('bot-review-disable', csrf, '', '停用复核模型') : ''}`,
+    html`<p>${declared ? '已配置不同模型族' : '尚未完成独立配置：需要为机器人与独立复核模型配置不同模型族'}</p>${botModelForm(review, true, csrf)}${review ? actionForm('bot-review-test', csrf, '', '测试复核连接') : ''}${review ? actionForm('bot-review-disable', csrf, '', '停用复核模型') : ''}`,
   );
   const applicationForm = actionForm(
     'bot-identity',
     csrf,
     html`<div data-fields>
-      ${field('企业 ID', html`<input name="tenant" id="bot-tenant" required value="${identity?.tenant ?? ''}">`)}
-      ${field('应用 Agent ID', html`<input name="application" id="bot-app" required value="${identity?.application ?? ''}">`)}
+      ${field('租户 ID', html`<input name="tenant" id="bot-tenant" required value="${identity?.tenant ?? ''}">`)}
+      ${field('应用 ID', html`<input name="application" id="bot-app" required value="${identity?.application ?? ''}">`)}
       ${field('应用 Secret', html`<input name="value" id="bot-app-secret" type="password" autocomplete="new-password" required>`)}
     </div>`,
     '保存登录应用',
