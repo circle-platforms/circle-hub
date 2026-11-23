@@ -104,7 +104,7 @@ export const chatOperation = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('stop'), conversation: z.uuid(), request: z.uuid() }),
 ]);
 
-export async function readBotProfile(vault: Vault, _reviewer?: boolean): Promise<BotProfile | null> {
+export async function readBotProfile(vault: Vault): Promise<BotProfile | null> {
   const sealed = await vault.get(profileName);
   if (!sealed) return null;
   const result = profileSchema.safeParse(JSON.parse(Buffer.from(sealed).toString('utf8')));
@@ -112,7 +112,7 @@ export async function readBotProfile(vault: Vault, _reviewer?: boolean): Promise
   return result.data;
 }
 
-export async function setBotProfile(vault: Vault, data: unknown, _reviewer?: boolean): Promise<void> {
+export async function setBotProfile(vault: Vault, data: unknown): Promise<void> {
   const parsed = profileSchema.safeParse(data);
   if (!parsed.success) {
     throw new CliError('请检查名称、协议、模型 ID、API 地址和密钥。地址须为 HTTPS 或本机 HTTP，密钥只填在密钥栏。');
@@ -120,7 +120,7 @@ export async function setBotProfile(vault: Vault, data: unknown, _reviewer?: boo
   await vault.put(profileName, JSON.stringify(parsed.data));
 }
 
-export async function disableBot(vault: Vault, _reviewer?: boolean): Promise<void> {
+export async function disableBot(vault: Vault): Promise<void> {
   await vault.remove(profileName);
 }
 

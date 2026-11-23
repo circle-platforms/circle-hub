@@ -173,7 +173,7 @@ test('personal-bot enforces H5 direct bearer, H8/H9 strict SemVer Bot-Client-Ver
         key: 'unused-reviewer-key',
       }),
     );
-    assert.equal(await (readBotProfile as (v: typeof hub.records.vault, r?: boolean) => Promise<unknown>)(hub.records.vault, true), null);
+    assert.equal(await readBotProfile(hub.records.vault), null);
   } finally {
     await new Promise<void>((resolve) => host.close(() => resolve()));
     await hub.close();
