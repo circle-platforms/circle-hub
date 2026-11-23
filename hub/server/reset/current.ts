@@ -6,7 +6,7 @@ import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordSco
 import { resetScopes, type ResetRequest, type ResetProblem, type ResetCount, type ResetDataScope } from './types.ts';
 
 const TABLE_SCOPES: Readonly<Record<string, ResetDataScope>> = {
-  users: 'config', tokens: 'config', oauth_clients: 'config', invitations: 'config', user_history: 'config',
+  users: 'config', tokens: 'config', oauth_clients: 'config', invitations: 'config', user_history: 'config', external_member_identities: 'config',
   teams: 'config', team_members: 'config', leases: 'config', lease_registrations: 'config', member_deletion_intents: 'config',
   personal_spaces: 'config', personal_purges: 'config',
   call_logs: 'history', call_notes: 'history', call_reasons: 'history', trace_spans: 'history', resource_samples: 'history', process_events: 'history',

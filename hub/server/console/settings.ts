@@ -1,9 +1,4 @@
-import {tooltip} from './presentation.ts';
-import {facts,technicalCode,technical} from './presentation.ts';
-// 设置 (the design canvas's Admin board): members and the Circles connected with their tokens, credentials and the Hub's
-// state for administrators; a member sees their own Circles and the Hub's state. The console runs only adding a member
-// (proposal decision 6 of 2026-10-31); disabling, disconnecting, issuing a spare login token and changing a credential are
-// commands for the administrator's Circle. Token values and credential contents are never shown.
+import { tooltip, field, facts, technicalCode, technical } from './presentation.ts';
 import { X509Certificate } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -11,12 +6,14 @@ import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { MANIFEST_FILE, layoutAt, listBackups } from '../../platform/api.ts';
 import { maskPlaceholder, type TokenInfo, type User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
+import { readBotProfile, readChannel, readIdentity, type BotProfile } from '../personal-bot.ts';
 import { commands } from './commands.ts';
 import { connectedClients, clientLabel } from './circles.ts';
 import { CLIENT_COLUMNS, clientRow } from './connections.ts';
 import { code, href, html, link, liveModule, page, pageLayout, pre, table, type Html } from './html.ts';
 import { circleEntry, originOf, neutralPage, type PageContext, type PageResult } from './context.ts';
 import { registeredActionForm } from './command-form.ts';
+import { actionForm } from './manage.ts';
 import { errorLine, segments } from './components.ts';
 import { resetRebuildSection } from './reset.ts';
 import { box, button, card, chip, commandLink, commandModal, duration, kv, sectionHead, when, type CommandDialog } from './ui.ts';
@@ -177,7 +174,6 @@ function whenOrUnknown(at: string | null | undefined): string {
 export async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<Secrets> {
   const variables = ctx.deps.records.variables as {
     listSecrets?: (by: typeof ctx.principal) => Promise<VaultSecretMeta[]>;
-    list?: (by: typeof ctx.principal) => Promise<import('../../records/api.ts').NamedVersion[]>;
   } | undefined;
   if (variables?.listSecrets !== undefined) {
     try {
@@ -196,26 +192,6 @@ export async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Prom
       }
       return { rows, text: null };
     } catch {
-    }
-  } else if (variables?.list !== undefined) {
-    try {
-      const rows: SecretRow[] = [];
-      for (const named of await variables.list(ctx.principal)) {
-        if (named.kind !== 'secret') continue;
-        rows.push({
-          name: named.name,
-          by: await whoSet(ctx, named.decision.body.decided_by),
-          at: whenOrUnknown(named.decision.body.decided_at),
-          withdrawn: named.decision.body.revoked,
-          version: named.version,
-          digestRule: null,
-          length: null,
-          entry: null,
-        });
-      }
-      return { rows, text: null };
-    } catch {
-      // Fall back to the command's own listing below.
     }
   }
   return { rows: null, text: run === null ? null : await run(['secret', 'list']) };
@@ -248,14 +224,72 @@ export async function settingsPage(ctx: PageContext, run: ((argv: string[]) => P
 }
 
 /** The two tabs of the settings page (decision 151, step 8): the first is the reader's own list, the second the Hub's state. */
-function settingsTabs(first: string, hub: boolean, total?: number): Html {
+function settingsTabs(first: string, hub: boolean, total?: number, bot = false): Html {
   return segments('设置内容', [
-    { href: '/console/settings', label: first, count: total, current: !hub },
+    { href: '/console/settings', label: first, count: total, current: !hub && !bot },
     { href: href('/console/settings', { tab: 'hub' }), label: 'Hub 状态', current: hub },
+    ...(first === '凭据' ? [{ href: href('/console/settings', { tab: 'bot' }), label: '机器人', current: bot }] : []),
   ], 'data-settings-tabs');
 }
 
+function botModelForm(profile: BotProfile | null, review: boolean, csrf: string): Html {
+  const id = review ? 'review' : 'bot';
+  const fields = html`<div data-fields>
+    ${field('机器人名称', html`<input id="${id}-name" name="name" required maxlength="256" value="${profile?.name ?? ''}">`)}
+    ${field('API 协议', html`<select id="${id}-protocol" name="protocol">${['openai', 'responses', 'anthropic'].map((p) => html`<option value="${p}"${profile?.protocol === p ? html` selected` : ''}>${p}</option>`)}</select>`)}
+    ${field('API 地址', html`<input id="${id}-endpoint" name="endpoint" type="url" required spellcheck="false" value="${profile?.endpoint ?? ''}">`)}
+    ${field('模型 ID', html`<input id="${id}-model" name="model" required spellcheck="false" value="${profile?.model ?? ''}">`)}
+    ${field('模型族 ID', html`<input id="${id}-family" name="family" maxlength="256" spellcheck="false" value="${profile?.family ?? ''}">`)}
+    ${field('API Key', html`<input id="${id}-key" name="value" type="password" autocomplete="new-password" required>`)}
+  </div>`;
+  return actionForm(review ? 'bot-review-set' : 'bot-set', csrf, fields, profile ? '保存并轮换密钥' : '保存配置', { primary: true });
+}
+
+async function adminBotSettings(ctx: PageContext): Promise<PageResult> {
+  const vault = typeof ctx.deps.records.vault?.get === 'function' ? ctx.deps.records.vault : null;
+  const csrf = ctx.csrf ?? '';
+  const profile = vault ? await readBotProfile(vault) : null;
+  const review = vault ? await readBotProfile(vault, true) : null;
+  const identity = vault ? await readIdentity(vault) : null;
+  const channel = vault ? await readChannel(vault) : null;
+  const declared = Boolean(
+    profile?.family &&
+    review?.family &&
+    profile.family !== review.family &&
+    (profile.model !== review.model || profile.endpoint !== review.endpoint),
+  );
+  const reviewCard = card(
+    { title: '独立复核模型' },
+    html`<p>${declared ? '已配置不同模型族' : '待复核：需要配置不同模型族的初评和复核模型'}</p>${botModelForm(review, true, csrf)}${review ? actionForm('bot-review-test', csrf, '', '测试复核连接') : ''}${review ? actionForm('bot-review-disable', csrf, '', '停用复核模型') : ''}`,
+  );
+  const applicationForm = actionForm(
+    'bot-identity',
+    csrf,
+    html`<div data-fields>
+      ${field('企业 ID', html`<input name="tenant" id="bot-tenant" required value="${identity?.tenant ?? ''}">`)}
+      ${field('应用 Agent ID', html`<input name="application" id="bot-app" required value="${identity?.application ?? ''}">`)}
+      ${field('应用 Secret', html`<input name="value" id="bot-app-secret" type="password" autocomplete="new-password" required>`)}
+    </div>`,
+    '保存登录应用',
+  );
+  const channelForm = actionForm(
+    'bot-channel',
+    csrf,
+    html`<div data-fields>
+      ${field('Bot ID', html`<input name="bot" id="channel-id" required value="${channel?.bot ?? ''}">`)}
+      ${field('适配器访问 Hub 的地址', html`<input name="hub" id="channel-hub" type="url" value="${channel?.hub ?? originOf(ctx)}" required>`)}
+      ${field('机器人 Secret', html`<input name="value" id="channel-secret" type="password" autocomplete="new-password" required>`)}
+    </div>`,
+    '保存私聊通道',
+  );
+  const channelCards = html`${card({ title: '扫码登录应用' }, html`<p>${identity ? '已配置' : '未配置'}</p>${applicationForm}${identity ? html`<form method="post" action="/console/identity/bind"><input type="hidden" name="csrf" value="${csrf}"><button class="ch-btn" type="submit">扫码绑定本人身份</button></form>` : ''}`)}
+    ${card({ title: '私聊机器人通道' }, html`<p>${channel ? (channel.enabled ? '已请求启用' : '已配置，已停用') : '未配置'}</p>${channelForm}${channel && identity ? actionForm(channel.enabled ? 'bot-channel-stop' : 'bot-channel-start', csrf, '', channel.enabled ? '停止私聊通道' : '启动私聊通道') : ''}`)}`;
+  const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', false, undefined, true)}<div class="ch-stack" data-settings-tab="bot">${card({ title: '机器人模型' }, html`<p>${profile ? '已配置' : '未配置'}</p>${botModelForm(profile, false, csrf)}${profile ? actionForm('bot-test', csrf, '', '测试连接') : ''}${profile ? actionForm('bot-disable', csrf, '', '停用') : ''}`)}${reviewCard}${channelCards}</div></div>`;
+  return { status: 200, body: page(ctx.chrome('设置', { active: 'settings' }), pageLayout(body, { inspector: null })) };
+}
+
 async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<PageResult> {
+  if (ctx.url.searchParams.get('tab') === 'bot') return adminBotSettings(ctx);
   const dialogs: CommandDialog[] = [];
   const secrets = await secretsOf(ctx, run);
   const secretName=ctx.url.searchParams.get('secret'),selectedSecret=secrets.rows?.find(secret=>secret.name===secretName);
@@ -317,6 +351,9 @@ ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSe
 }
 
 async function memberSettings(ctx: PageContext): Promise<PageResult> {
+  const binding = await ctx.deps.records.vault?.has?.('personal-bot.identity')?.catch(() => false)
+    ? html`<form method="post" action="/console/identity/bind"><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}"><button class="ch-btn" type="submit">扫码绑定本人身份</button></form>`
+    : '';
   const hub = ctx.url.searchParams.get('tab') === 'hub';
   const tokens = await ctx.deps.records.principals.tokens(ctx.principal.id);
   const clients = hub ? [] : await connectedClients(ctx.deps.records, tokens.filter(token => token.revoked_at === null).map(token => ({ token, owner: ctx.principal.name })));
@@ -325,7 +362,7 @@ async function memberSettings(ctx: PageContext): Promise<PageResult> {
 ${liveModule('my-circles', ['member.connected'], card({ title: ctx.principal.name, lead: html`<span class="ch-avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的客户端', undefined, undefined, undefined, '每台设备上的客户端独立连接；名称和版本照客户端报的写；断开由管理员执行')}${table([...CLIENT_COLUMNS,'操作'], rows, { title: '尚无已连接的客户端', text: '按“连接新的客户端”的配置连接后，客户端列在这里。' })}`))}
 ${card({ title: '连接新的客户端', meta: 'MCP 标准连接确认',hint:'下面是 mcpServers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。浏览器确认身份后允许连接；其他设备可使用管理员签发的邀请码。' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx), false)}</code></pre>`)}
 </section>`;
-  const body = html`<div class="ch-stack" data-settings>${settingsTabs('我的客户端', hub, tokens.filter(token => token.revoked_at === null).length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'mine'}">${content}</div></div>`;
+  const body = html`<div class="ch-stack" data-settings>${settingsTabs('我的客户端', hub, tokens.filter(token => token.revoked_at === null).length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'mine'}">${binding}${content}</div></div>`;
   return { status: 200, body: page(ctx.chrome('设置', { active: 'settings', hint: '我的客户端与 Hub 状态',  }),pageLayout(body,{inspector:null})) };
 }
 

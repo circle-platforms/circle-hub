@@ -236,3 +236,47 @@ test('resource definitions yield a pack registry alias instead of only a manifes
   assert.deepEqual(resourceDefinitionReferences(resource), [{ kind: 'record', digest: hash(20), field: '/system_pack_digest', recordAlias: true }]);
   assert.equal(resourceDefinitionReferences({ ...resource, schema: 'resource@2' }), null);
 });
+
+test('personal-bot notification intents and receipts classify into history', () => {
+  const intent = record(1, 'action', 'member-notification-intent@1', {
+    schema: 'member-notification-intent@1',
+    kind: 'dispatch',
+    event: '11111111-1111-4111-8111-111111111111',
+    receipt: '22222222-2222-4222-8222-222222222222',
+    member: user,
+    issuer: hash(20),
+    channel: hash(21),
+    subject: hash(22),
+    sha256: hash(10),
+    size: 12,
+    name_sha256: null,
+    write: {
+      interaction: 'submit_then_read',
+      effect_class: 'notification',
+      retry_safety: 'unsafe',
+      signing: 'service_on_behalf',
+      reversible: false,
+      target_key: hash(22),
+      audience: user,
+      evidence: { call: 'receipt', pointer: '/acknowledgment/code' },
+      refusal: { stage: '/state', reached_device: '/reached_target' },
+      writes_hub_records: true,
+    },
+  });
+  const receipt = record(2, 'effect', 'member-notification-receipt@1', {
+    schema: 'member-notification-receipt@1',
+    member: user,
+    intent: intent.digest,
+    receipt: '22222222-2222-4222-8222-222222222222',
+    outcome: 'issued',
+    acknowledgment: { request: hash(11), code: 0 },
+    reached_target: true,
+    missing: null,
+    next: null,
+  });
+  assert.equal(classifyCurrentRecord(intent), 'history');
+  assert.equal(classifyCurrentRecord(receipt), 'history');
+  const selected = selectCurrentRecords([intent, receipt], new Set(['history']));
+  assert.deepEqual(selected.blocked, []);
+  assert.deepEqual(selected.cleared, [intent.digest, receipt.digest]);
+});

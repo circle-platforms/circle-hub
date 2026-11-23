@@ -99,6 +99,30 @@ export function pairs(form: Form, name: string, label: string): string[] {
   return lines;
 }
 
+function botModelAction(review: boolean): Action {
+  return {
+    title: review ? '保存复核模型' : '保存模型配置',
+    back: '/console/settings?tab=bot',
+    active: 'settings',
+    build: (form) => {
+      const family = form.get('family').trim();
+      return {
+        argv: ['bot', review ? 'review-set' : 'set'],
+        secrets: {
+          'bot-model': JSON.stringify({
+            name: form.get('name'),
+            protocol: form.get('protocol'),
+            model: form.get('model'),
+            ...(family ? { family } : {}),
+            endpoint: form.get('endpoint'),
+            key: form.get('value'),
+          }),
+        },
+      };
+    },
+  };
+}
+
 export interface Action {
   title: string;
   /** Where the result page links back to. */
@@ -295,6 +319,74 @@ export const ACTIONS: Record<string, Action> = {
     back: KNOWLEDGE,
     background: true,
     build: (form) => fromRegistration('knowledge-sync', form),
+  },
+  'bot-set': botModelAction(false),
+  'bot-review-set': botModelAction(true),
+  'bot-review-test': {
+    title: '测试复核模型连接',
+    back: '/console/settings?tab=bot',
+    active: 'settings',
+    build: () => ({ argv: ['bot', 'review-test'] }),
+  },
+  'bot-review-disable': {
+    title: '停用复核模型',
+    back: '/console/settings?tab=bot',
+    active: 'settings',
+    build: () => ({ argv: ['bot', 'review-disable'] }),
+  },
+  'bot-identity': {
+    title: '保存登录应用',
+    back: '/console/settings?tab=bot',
+    active: 'settings',
+    build: (form) => ({
+      argv: ['bot', 'identity-set'],
+      secrets: {
+        'personal-bot.identity': JSON.stringify({
+          tenant: form.get('tenant'),
+          application: form.get('application'),
+          secret: form.get('value'),
+        }),
+      },
+    }),
+  },
+  'bot-channel': {
+    title: '保存私聊通道',
+    back: '/console/settings?tab=bot',
+    active: 'settings',
+    build: (form) => ({
+      argv: ['bot', 'channel-set'],
+      secrets: {
+        'personal-bot.channel': JSON.stringify({
+          bot: form.get('bot'),
+          hub: form.get('hub'),
+          secret: form.get('value'),
+        }),
+      },
+    }),
+  },
+  'bot-channel-start': {
+    title: '启动私聊通道',
+    back: '/console/settings?tab=bot',
+    active: 'settings',
+    build: () => ({ argv: ['bot', 'channel-start'] }),
+  },
+  'bot-channel-stop': {
+    title: '停止私聊通道',
+    back: '/console/settings?tab=bot',
+    active: 'settings',
+    build: () => ({ argv: ['bot', 'channel-stop'] }),
+  },
+  'bot-test': {
+    title: '测试模型连接',
+    back: '/console/settings?tab=bot',
+    active: 'settings',
+    build: () => ({ argv: ['bot', 'test'] }),
+  },
+  'bot-disable': {
+    title: '停用机器人模型',
+    back: '/console/settings?tab=bot',
+    active: 'settings',
+    build: () => ({ argv: ['bot', 'disable'] }),
   },
 };
 

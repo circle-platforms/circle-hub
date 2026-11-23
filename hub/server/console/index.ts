@@ -12,6 +12,7 @@ import { type ConsoleOptions, ENDED_COOKIE, SECURE_ENDED_COOKIE, HOME, sendHtml,
 import { handleAuthenticatedConsole } from './console-posts.ts';
 import { FAVICON_SVG, html, page } from './html.ts';
 import { login, loginPage, logout, passwordPage, setup, setupPage } from './login-pages.ts';
+import { handleIdentity } from './member-identity.ts';
 import { SESSION_COOKIE, SECURE_SESSION_COOKIE, cookie, safeNext } from './session.ts';
 
 export type { ConsoleOptions } from './console-http.ts';
@@ -27,6 +28,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   // still reaches the idle limit of its session.
   const automatic = request.headers['circle-hub-refresh'] === 'live' || (segments.length === 2 && segments[0] === 'api' && segments[1] === 'stream');
   const session = automatic ? options.sessions.peek(cookieValue, secure) : options.sessions.get(cookieValue, secure);
+  if (segments[0] === 'identity') return handleIdentity(request, response, url, options, session);
   // The console's icon: static, the same for everyone, signed in or not.
   if (segments.length === 1 && segments[0] === 'favicon.svg') {
     request.resume();

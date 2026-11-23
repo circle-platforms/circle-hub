@@ -6,10 +6,7 @@ import {IndexView} from '../../../contracts/src/views.ts';
 import type {InputBinding} from '../../../contracts/src/run.ts';
 import type {WorkflowInput} from '../../../contracts/src/pack.ts';
 import {MAX_REFERENCE_LENGTH} from '../../../contracts/src/reference.ts';
-import {completeKnowledgeView} from '../../knowledge/complete-view.ts';
-import {compareText} from '../../knowledge/digest.ts';
-import {ACTION,COMPONENTS,SCHEMAS} from '../../knowledge/store.ts';
-import {MAX_ONLY_VALUES,parseViewId,splitRevision} from '../../knowledge/views.ts';
+import { ACTION, COMPONENTS, MAX_ONLY_VALUES, SCHEMAS, compareText, completeKnowledgeView, parseViewId, splitRevision } from '../../knowledge/api.ts';
 import type {ExternalRead,ExternalReadContext,ExternalReaderPort} from '../../ports.ts';
 import {canonicalBytes,canonicalize,type Artifacts,type RecordStore} from '../../records/api.ts';
 

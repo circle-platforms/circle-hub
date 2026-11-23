@@ -1856,10 +1856,18 @@ CREATE INDEX team_members_user ON team_members(user_id, team_id);
 
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   { version: 1, name: 'baseline', sql: BASELINE },
+  { version: 2, name: 'external_member_identities', sql: `CREATE TABLE public.external_member_identities (
+   issuer text NOT NULL CHECK (length(issuer) BETWEEN 1 AND 256),
+   subject text NOT NULL CHECK (length(subject) BETWEEN 1 AND 256),
+   owner text NOT NULL REFERENCES public.users(id),
+   bound_at timestamptz NOT NULL DEFAULT now(),
+   PRIMARY KEY (issuer,subject), UNIQUE (issuer,owner)
+ );` },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
+  external_member_identities: "SELECT, INSERT",
   trace_spans: "SELECT, INSERT, DELETE",
   resource_samples: "SELECT, INSERT, DELETE",
   process_events: "SELECT, INSERT, DELETE",

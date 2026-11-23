@@ -1,4 +1,3 @@
-// Local client commands: no database, key files, MCP, or execution of downloaded code.
 import { request as httpRequest, Agent as HttpAgent, type IncomingMessage } from 'node:http';
 import { request as httpsRequest, Agent as HttpsAgent } from 'node:https';
 import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises';
@@ -8,11 +7,8 @@ import { PackManifest, type PackManifest as Manifest } from '../../contracts/src
 import { canonicalBytes, sha256Hex } from '../records/api.ts';
 import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress } from '../listen.ts';
-import { resolveLayout } from '../platform/layout.ts';
-import { readSettingsFileSync, resolveSettings, type PlatformSettings } from '../platform/settings.ts';
-import { readPackDirectory } from '../runs/packs/directory.ts';
-import { DEFAULT_PACK_LIMITS } from '../runs/packs/types.ts';
-import { parsePackRef } from '../runs/packs/versions.ts';
+import { readSettingsFileSync, resolveLayout, resolveSettings, type PlatformSettings } from '../platform/api.ts';
+import { DEFAULT_PACK_LIMITS, parsePackRef, readPackDirectory } from '../runs/api.ts';
 import { readSecret, type SecretInput } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import type { CliIo } from './api.ts';

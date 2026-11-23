@@ -21,9 +21,12 @@ import {
 export async function loginPage(options: ConsoleOptions, response: ServerResponse, status: number, message: string | null, secure: boolean, ended = false, next: string | null = null): Promise<void> {
   const nonce = options.sessions.issueNonce(secure);
   const setup = await hasAdmin(options.deps) ? '' : html`<p class="notice">这个 Hub 还没有管理员：${link('/console/setup', '用初始化码创建首位管理员')}</p>`;
+  const scan = await options.deps.records.vault?.has?.('personal-bot.identity')?.catch(() => false)
+    ? html`<p class="notice">${link('/console/identity/login', '扫码登录', next ? { next: safeNext(next) } : {})}</p>`
+    : '';
   const body = page(
     anonymous('登录'),
-    html`${message === null ? '' : errorLine(message)}${ended ? html`<p class="notice">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
+    html`${message === null ? '' : errorLine(message)}${ended ? html`<p class="notice">登录已过期或已退出，请重新登录。</p>` : ''}${setup}${scan}
 ${postForm({
   action: '/console/login',
   csrf: nonce,

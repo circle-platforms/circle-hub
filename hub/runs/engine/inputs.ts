@@ -92,7 +92,7 @@ export async function bindInputs(
   build?:string,
   variables?:VariableSnapshot,
   unversioned?: ExternalReadContext['unversioned'],
-  feeding?:import('../../knowledge/feeding.ts').FeedingScope&{feeding_offset?:ExternalReadContext['feeding_offset']},
+  feeding?:import('../../knowledge/api.ts').FeedingScope&{feeding_offset?:ExternalReadContext['feeding_offset']},
   late: ReadonlySet<string> = new Set(),
 ): Promise<BoundSource[]> {
   const { artifacts, store } = ctx.deps.records;

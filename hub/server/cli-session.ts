@@ -1,8 +1,8 @@
 import { isAdmin } from '../records/api.ts';
 import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import { updateTrace } from '../telemetry/api.ts';
-import { LeaseService } from '../leases/service.ts';
-import { createPool, Database } from '../records/db.ts';
+import { LeaseService } from '../leases/api.ts';
+import { createPool, Database } from '../records/api.ts';
 import { type HubConfig } from '../config/index.ts';
 import { type Principal, type RecordsKit, type User } from '../records/api.ts';
 import type { CliContext } from './api.ts';

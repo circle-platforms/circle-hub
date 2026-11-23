@@ -6,7 +6,7 @@ export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments
 export { canUseEnvironment } from './environment-permissions.ts';
 export { isAdmin, canSeeRun, memberCapabilities, type MemberCapabilities, type MemberCapabilitySources, type MemberPackCapability, type MemberConnectionCapability, type MemberEnvironmentCapability } from './permissions.ts';
 export { RECORD_ACCESS, runOfRecord, mayReadRecord, type RecordVisibilityPorts } from './record-visibility.ts';
-export { openRecords, migrateRecords } from './index.ts';
+export { MIGRATIONS, openRecords, migrateRecords } from './index.ts';
 export { SLOW_QUERY_MS, MAX_TRACE_STEPS, MAX_STATUS_LENGTH, installTraceSink, traceSinkInstalled, tracing, currentTrace, addUsage, startTrace, background, step, addEvent, updateTrace, setTraceStatus, withoutTrace, recordQuery, recordSourceRead, type Usage, type SpanRow, type TraceSink, type TraceOptions, type TraceFields } from './trace-usage.ts';
 export { BACKGROUND_STEPS, TIMED_BACKGROUND_STEPS, STEP_NAMES, USAGE_NAMES, ACCOUNTED_USAGE, isUsageName, mcpStep, consoleStep, syncStep, commandStep, type BackgroundStep, type StepName, type UsageName } from './trace-names.ts';
 export { createPool, Database, iso, normalizeTime, pageLimit, type Row, type PgTransaction } from './db.ts';
@@ -148,6 +148,9 @@ export type InvitationCheck = { ok: true; invitation: string; user: User; expire
 export const DEFAULT_ADMIN_NAME = 'admin';
 
 export interface Principals {
+  bindExternalIdentity(by: Principal, issuer: string, subject: string): Promise<void>;
+  externalSubject(owner: string, issuer: string): Promise<string | null>;
+  externalMember(issuer: string, subject: string): Promise<User | null>;
   /** Creates the first admin and its token. Refused (ConflictError) once any admin exists. */
   bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }): Promise<{ user: User; token: IssuedToken }>;
   createUser(by: Principal, name: string, role?: PermissionRole, credential?: { password: string; mustChange: boolean }): Promise<User>;

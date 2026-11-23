@@ -147,3 +147,43 @@ test('setup-code prints a code only while no administrator exists', async () => 
     env = saved;
   }
 });
+
+test('bot settings reach the CLI vault through the admin bridge without rendering the model key', async () => {
+  const bridge = createCommandBridge({ env, cwd: scratch, overrides: overrides() });
+  await new FileKeyProvider(join(scratch, 'vault.key')).initKey();
+  const key = 'synthetic-private-model-key';
+  const profile = {
+    name: '合成成员机器人',
+    protocol: 'openai',
+    model: 'fixture',
+    endpoint: 'https://model.example.invalid/v1',
+    key,
+  };
+  const settings = { token: adminToken, secrets: { 'bot-model': JSON.stringify(profile) } };
+  const saved = await bridge.run(['bot', 'set'], settings);
+  assert.equal(saved.code, 0, saved.stderr.join('\n'));
+  assert.doesNotMatch(JSON.stringify(saved), new RegExp(key));
+  const bad = await bridge.run(['bot', 'set'], { ...settings, secrets: { 'bot-model': 'bad ' + key } });
+  assert.equal(bad.code, 2);
+  assert.doesNotMatch(JSON.stringify(bad), new RegExp(key));
+  const refused = await bridge.run(['bot', 'disable'], { token: 'invalid' });
+  assert.equal(refused.code, 1);
+  const review = await bridge.run(['bot', 'review-set'], {
+    token: adminToken,
+    secrets: {
+      'bot-model': JSON.stringify({
+        ...profile,
+        family: 'synthetic-verifier',
+        model: 'fixture-verifier',
+        key: 'other-synthetic-key',
+      }),
+    },
+  });
+  assert.equal(review.code, 0);
+  assert.doesNotMatch(JSON.stringify(review), /other-synthetic-key/);
+  assert.equal((await bridge.run(['bot', 'review-disable'], { token: adminToken })).code, 0);
+  assert.match((await bridge.run(['bot', 'review-test'], { token: adminToken })).stderr.join('\n'), /尚未启用/);
+  const disabled = await bridge.run(['bot', 'disable'], { token: adminToken });
+  assert.equal(disabled.code, 0);
+  assert.match((await bridge.run(['bot', 'test'], { token: adminToken })).stderr.join('\n'), /尚未启用/);
+});

@@ -22,8 +22,8 @@ import {
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
 import { canUseEnvironment, memberCapabilities, type Principal, type RecordsKit } from '../../records/api.ts';
-import { LeaseService } from '../../leases/service.ts';
-import { createPool, Database } from '../../records/db.ts';
+import { LeaseService } from '../../leases/api.ts';
+import { createPool, Database } from '../../records/api.ts';
 import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
 import { isolationFailureText, osIsolationAvailable, osIsolationFailure, type SandboxOptions } from '../../rules/api.ts';
 import { AssemblyError } from './errors.ts';

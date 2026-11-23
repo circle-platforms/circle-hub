@@ -41,12 +41,11 @@ import {
 } from '../../refs/api.ts';
 import { SandboxError, type CatalogView } from '../../rules/api.ts';
 import { parseExternal } from '../../connectors/api.ts';
-import { COMPONENTS } from '../../knowledge/api.ts';
+import { COMPONENTS, declarationGroundsRefusal } from '../../knowledge/api.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead } from './retry-read.ts';
 import { describe, protocolError } from './errors.ts';
-import { declarationGroundsRefusal } from '../../knowledge/declaration-grade.ts';
 import { principalOf, sourceReader } from './readers.ts';
 import { resultsOf } from './store.ts';
 import { isObject, pointerOf, valueAt } from './util.ts';

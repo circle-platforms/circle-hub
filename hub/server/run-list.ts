@@ -6,7 +6,7 @@ import type { ValidationResult } from '../../contracts/src/validation.ts';
 import { partitionCountsOf } from '../../contracts/src/validation.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import type { Page, Principal, RecordStore, RecordsKit, StoredRecord } from '../records/api.ts';
-import { listRunRecords, resultsOf } from '../runs/engine/store.ts';
+import { listRunRecords, resultsOf } from '../runs/api.ts';
 import { CliError } from './errors.ts';
 
 export const RUN_LIST_DEFAULT_LIMIT = 50;

@@ -57,6 +57,7 @@ export {
   VIEW_SYSTEM,
   compareValues,
   parseViewId,
+  splitRevision,
   viewIdExample,
   routeKnowledgeViews,
 } from './views.ts';
@@ -69,12 +70,13 @@ export { MAX_REAL_OPTIONS, belowThreshold, narrowCandidates, optionNames, placem
 
 export { ObservationLayer } from './layers.ts';
 export { ContributionLayer, ContributionRefusal } from './contributions.ts';
-export type { ContributionScope, ContributionOrigin, PreparedContribution, ContributionAdmissionCode } from './contributions.ts';
+export type { ContributionAppendPlan, ContributionScope, ContributionOrigin, PreparedContribution, ContributionAdmissionCode } from './contributions.ts';
+export { CAPTURED_GROUND, declarationGroundsRefusal } from './declaration-grade.ts';
 
 export type { EntryContent, NodeContent } from './digest.ts';
-export { cutText, entryContentOf, entryDigest, nodeDigest, normaliseApplicability, normaliseStatement } from './digest.ts';
+export { compareText, cutText, entryContentOf, entryDigest, nodeDigest, normaliseApplicability, normaliseStatement } from './digest.ts';
 
-export { COMPONENTS, INDEX, SCHEMAS, KnowledgeStore, buildProblem } from './store.ts';
+export { ACTION, COMPONENTS, INDEX, SCHEMAS, KnowledgeStore, buildProblem } from './store.ts';
 export { KnowledgeError } from './errors.ts';
 
 export type { KnowledgeCliCommand, KnowledgeCliContext, KnowledgeSyncArgs } from './cli.ts';

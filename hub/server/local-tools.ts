@@ -1,11 +1,10 @@
-// Read-only distribution of author-published bytes, independently authorized on every request.
 import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PackManifest, packPathProblem } from '../../contracts/src/pack.ts';
 import { canonicalBytes, sha256Hex, type CallLogInput, type Principal } from '../records/api.ts';
-import { parsePackRef } from '../runs/packs/versions.ts';
+import { parsePackRef } from '../runs/api.ts';
 import type { ServerDeps } from './api.ts';
 import { authenticateAccessOnly, CONSOLE_SESSION_REFUSED } from './access-auth.ts';
 import { setCommonHeaders } from './http.ts';
@@ -16,11 +15,9 @@ const ABSENT = Buffer.from('没有这个本地工具版本或文件\n');
 function unassignedBytes(packId: string): Buffer {
   return Buffer.from(`${unassignedPackRefusal(packId, 'workflow')}\n`);
 }
-/** One line each: the fact in the words the Hub uses for it elsewhere, then the next step. The version is named whole, because the answer is about this version. */
 const ABSENT_WORDS = { unknown: absentPackRefusal, withdrawn: withdrawnPackRefusal, uninstalled: uninstalledPackRefusal } as const;
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
 const CONSOLE_REFUSED = Buffer.from(CONSOLE_SESSION_REFUSED + '\n');
-/** One verified open per user and version. Later requests in this window re-check assignment without extracting again. */
 const DISTRIBUTION_REUSE_MS = 60_000;
 const DISTRIBUTION_CACHE_MAX = 32;
 type LoadedForDownload = Pick<NonNullable<Awaited<ReturnType<ServerDeps['workflows']['forUser']>>>, 'pack' | 'manifest'>;

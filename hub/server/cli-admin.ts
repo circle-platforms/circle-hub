@@ -29,6 +29,20 @@ import { CliError, UsageError } from './errors.ts';
 import { parse, decided } from './cli-arguments.ts';
 import { Session, REISSUE_LABEL, REISSUE, REMOVE_ITEM, type AdminCommandOptions, type OperatorAct } from './cli-session.ts';
 import { packIdOf } from './cli-pack.ts';
+import {
+  botOrigins,
+  callBot,
+  channelProfile,
+  channelProfileName,
+  disableBot,
+  identityProfile,
+  identityProfileName,
+  newChannel,
+  readBotProfile,
+  readChannel,
+  refreshChannel,
+  setBotProfile,
+} from './personal-bot.ts';
 export type { AdminCommandOptions, OperatorAct } from './cli-session.ts';
 export { PACK_USAGE } from './cli-pack.ts';
 export { RESOURCE_USAGE } from './cli-resource.ts';
@@ -430,7 +444,90 @@ export async function sharingCommand(session: Session, args: readonly string[], 
   return 0;
 }
 
-// ---------------------------------------------------------------- registration
+const BOT_COMMANDS = [
+  'set',
+  'disable',
+  'test',
+  'review-set',
+  'review-test',
+  'review-disable',
+  'identity-set',
+  'channel-set',
+  'channel-start',
+  'channel-stop',
+] as const;
+
+async function readSecretJson(
+  readSecret: (label: string) => Promise<string>,
+  label: string,
+  usageMessage: string,
+): Promise<unknown> {
+  try {
+    return JSON.parse(await readSecret(label));
+  } catch {
+    throw new UsageError(usageMessage);
+  }
+}
+
+export async function botCommand(session: Session, args: readonly string[]): Promise<number> {
+  const [sub] = args;
+  if (args.length !== 1 || !BOT_COMMANDS.includes(sub as (typeof BOT_COMMANDS)[number])) {
+    throw new UsageError(`bot ${BOT_COMMANDS.join(' | ')}`);
+  }
+  const admin = await session.admin();
+  const { vault } = await session.records();
+  const readSecret = session.options.readSecret ?? readSecretFromStdin;
+  if (sub === 'identity-set' || sub === 'channel-set') {
+    const identity = sub === 'identity-set';
+    const name = identity ? identityProfileName : channelProfileName;
+    const value = await readSecretJson(readSecret, name, '请输入通道配置 JSON');
+    if (identity) {
+      const parsed = identityProfile.safeParse(value);
+      if (!parsed.success) throw new UsageError('通道配置字段无效');
+      await vault.put(name, JSON.stringify(parsed.data));
+      session.out('登录应用配置已保存');
+    } else {
+      const parsed = channelProfile.safeParse(value);
+      if (!parsed.success) throw new UsageError('通道配置字段无效');
+      await vault.put(name, JSON.stringify(newChannel(parsed.data)));
+      session.out('私聊机器人配置已保存');
+    }
+    return 0;
+  }
+  if (sub === 'channel-start' || sub === 'channel-stop') {
+    const channel = await readChannel(vault);
+    if (!channel || !(await vault.has(identityProfileName))) {
+      throw new CliError('请先配置登录应用和私聊机器人');
+    }
+    const enabled = sub === 'channel-start';
+    await vault.put(channelProfileName, JSON.stringify({ ...channel, enabled }));
+    const result = await refreshChannel(session.config().dataDir, vault, botOrigins(session.config()));
+    if (result?.status !== 200) throw new CliError('已保存通道设置，适配器尚未确认');
+    session.out(enabled ? '适配器已接收启动请求' : '适配器已断开');
+    return 0;
+  }
+  const reviewer = sub.startsWith('review-');
+  const command = reviewer ? sub.slice('review-'.length) : sub;
+  if (command === 'disable') {
+    await disableBot(vault, reviewer);
+    session.out('机器人模型已停用');
+    return 0;
+  }
+  if (command === 'set') {
+    const settings = await readSecretJson(readSecret, 'bot-model', '请输入机器人模型配置 JSON');
+    await setBotProfile(vault, settings, reviewer);
+    session.out('机器人模型配置已保存');
+    return 0;
+  }
+  const config = await readBotProfile(vault, reviewer);
+  if (!config) throw new CliError('机器人模型尚未启用');
+  const result = await callBot(session.config().dataDir, { owner: admin.id, op: { action: 'test' }, config });
+  if (result.status !== 200 || !(result.body as { tested?: boolean })?.tested) {
+    throw new CliError((result.body as { message?: string })?.message ?? '机器人连接测试失败');
+  }
+  session.out('机器人已用指定模型收到回复');
+  return 0;
+}
 
 /**
  * An error a command ends with, made safe for a terminal (a message or a hint may quote a pack, a resource or a remote

@@ -23,8 +23,7 @@ import {
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
 import type { CallContext, WorkflowStore } from '../ports.ts';
-import { findSubschema, renderExpected } from '../runs/api.ts';
-import { localToolsOf } from '../runs/packs/ports.ts';
+import { findSubschema, localToolsOf, renderExpected } from '../runs/api.ts';
 import { IntegrityError, RecordsError, recordExistence, isSha256, decodeCursor, withReadScope, withRequestPermissions, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import { SandboxError } from '../rules/api.ts';
@@ -1104,7 +1103,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     const problem = pageCursorProblem(result.reference, cursor);
     if (problem !== null) return { answer: errorAnswer('get_nodes', [violation('get_nodes', '/cursor', problem, CURSOR_FIX)]) };
   }
-  let feedingReceipt:import('../knowledge/feeding.ts').FeedingReceipt|undefined;
+  let feedingReceipt:import('../knowledge/api.ts').FeedingReceipt|undefined;
   if(parsed.scheme==='src'&&result.readable){const detail=run?await deps.runs.getRun(call.principal,run):null;const captures=detail?.run.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===parsed.sha256&&binding.artifact;})??[];for(const capture of captures.length?captures:[undefined]){const meta=capture?.meta_artifact?await deps.records.store.get<any>(capture.meta_artifact):null;feedingReceipt=await deps.knowledge.feeding?.observeSourceBounded(call.principal,parsed.sha256,{sourceRecord:capture?.artifact,readManifest:capture?.read_manifest,metaRecord:capture?.meta_artifact,metaSource:meta?.kind==='source_artifact'?meta.body.sha256:undefined,composition:detail?.run.target_basis.find(claim=>claim.statement.data?.root===detail?.run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:detail?.run.product,root:detail?.run.root,run,line:detail?.run.version});}}
   const feedingState=parsed.scheme==='rec'?await deps.knowledge.feeding?.recordState(parsed.record,call.principal):null;
   const spaceVersion=parsed.scheme==='tree'&&parsed.entry&&deps.knowledge.spaces?await deps.knowledge.spaces.version(parsed.root):null;

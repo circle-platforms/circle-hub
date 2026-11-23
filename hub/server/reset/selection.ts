@@ -132,6 +132,7 @@ const ACTION_COMPONENTS: Readonly<Record<string, ResetDataScope>> = {
   'hub.feeding@2': 'knowledge', 'connectors@1': 'knowledge',
 };
 function classifyAction(record: CurrentRecord, body: Body): ResetDataScope | null {
+  if (record.schema === 'member-notification-intent@1') return 'history';
   if (['memory-refusal@1', 'memory-unchanged@1', 'personal-sync-mode@1', 'personal-sync-commit@1',
     'personal-sync-purge-request@1', 'personal-sync-http-audit@1'].includes(record.schema)) return 'knowledge';
   if (record.schema === 'mcp-client-declaration@1') return body.kind === 'read' && sha256(body.call) && object(body.client) !== null ? 'history' : null;
@@ -158,7 +159,7 @@ const CLASSIFIERS = {
   source_artifact: classifyArtifact,
   authorization: classifyAuthorization,
   action: classifyAction,
-  effect: fixed('history', 'effect@1'), request: fixed('history', 'request@1'), call_log: classifyCall,
+  effect: fixed('history', 'effect@1', 'member-notification-receipt@1'), request: fixed('history', 'request@1'), call_log: classifyCall,
   run: fixed('history', 'run@1'), submission: fixed('history', 'submission@1', 'submission-received@1'),
   validation_result: fixed('history', 'validation@1'), result_summary: fixed('history', 'result-summary@1'),
   pack_version: classifyPack,

@@ -6,7 +6,7 @@ import { isKnowledgeContributionSchema } from '../../contracts/src/contributions
 import type { ContributionLayer } from '../knowledge/api.ts';
 // The readers hub/refs resolves references with, built on the records kit for one caller (B02 R[3], R02). Absent and
 // forbidden are the same null everywhere; the real reason goes to the admin note through `note`.
-import { canSeeRun } from '../runs/engine/api.ts';
+import { canSeeRun } from '../runs/api.ts';
 import type { RunsService } from '../ports.ts';
 import { IntegrityError, disclosedExistence, recordExistence } from '../records/api.ts';
 import type { Principal, RecordKind, RecordsKit, SourceArtifact, StoredRecord } from '../records/api.ts';
@@ -75,6 +75,9 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
   const mayRead = async (record: StoredRecord): Promise<boolean> => {
     const account = await records.principals.get(principal.id);
     if (account === null || account.disabled) return false;
+    if (record.schema === 'member-notification-intent@1' || record.schema === 'member-notification-receipt@1') {
+      return !account.deleted_at && isObject(record.body) && record.body.member === account.id;
+    }
     // Space manifests may contain directories outside a partial grant; use the path-filtered space API instead.
     if (record.kind==='member_deletion'||record.kind==='knowledge_team_source_attribution'||record.kind==='knowledge_source_attribution'||isMemoryRecord(record)||record.kind.startsWith('knowledge_space_')||record.kind==='knowledge_share'||record.kind.startsWith('personal_pack_')) return false;
     if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema)||record.schema==='claim@1'&&isObject(record.body)&&isObject(record.body.statement)&&isObject(record.body.statement.data)&&record.body.statement.data.feeding!==undefined)) return (await contributions?.read(record.digest, account)) != null;

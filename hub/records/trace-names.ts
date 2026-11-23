@@ -17,7 +17,7 @@ export type BackgroundStep = (typeof BACKGROUND_STEPS)[number];
 export const TIMED_BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'summarize-results', 'index-knowledge', 'poll-console', 'purge-traces'] as const satisfies readonly BackgroundStep[];
 
 const COMMAND_STEPS = [
-  'run-command', 'run-serve', 'run-reset', 'run-user', 'run-token', 'run-logs', 'run-run', 'run-local-tools', 'run-setup-code',
+  'run-command', 'run-bot', 'run-serve', 'run-reset', 'run-user', 'run-token', 'run-logs', 'run-run', 'run-local-tools', 'run-setup-code',
   'run-apply', 'run-export', 'run-team', 'run-share', 'run-unshare', 'run-records', 'run-executor', 'run-job', 'run-bed', 'run-pack', 'run-resource', 'run-var', 'run-mask', 'run-secret',
   'run-original', 'run-lease', 'run-knowledge', 'run-doc', 'run-init-admin', 'run-operator-token', 'run-trace', 'run-health', 'run-crashes',
   'run-init', 'run-db', 'run-key', 'run-service', 'run-backup', 'run-restore', 'run-deploy', 'run-rollback', 'run-rehearse', 'run-status', 'run-tls',

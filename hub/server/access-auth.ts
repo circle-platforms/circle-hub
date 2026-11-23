@@ -1,4 +1,6 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Principal, Principals } from '../records/api.ts';
+import { sendJson } from './http.ts';
 
 export const CONSOLE_SESSION_REFUSED = '无权限：控制台登录凭证不能用于此入口。请使用访问令牌。';
 
@@ -20,4 +22,20 @@ export async function authenticateAccessOnly(principals: Principals, authorizati
   return principal
     ? { ok: true, principal, token_id: null, client_id: null }
     : { ok: false, reason: 'unauthenticated' };
+}
+
+export async function requireAccessBearer(
+  request: IncomingMessage,
+  response: ServerResponse,
+  principals: Principals,
+): Promise<Principal | null> {
+  const access = await authenticateAccessOnly(principals, request.headers.authorization ?? null);
+  if (access.ok) return access.principal;
+  request.resume();
+  if (access.reason === 'console_session') {
+    sendJson(response, 403, { message: CONSOLE_SESSION_REFUSED });
+    return null;
+  }
+  sendJson(response, 401, { message: '请重新登录' }, { 'www-authenticate': 'Bearer' });
+  return null;
 }

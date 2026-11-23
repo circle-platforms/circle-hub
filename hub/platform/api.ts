@@ -21,6 +21,7 @@ export {
   OPERATOR_TOKEN_ACCOUNT,
   readSettings,
   readSettingsFile,
+  readSettingsFileSync,
   resolveDatabaseNames,
   resolveSettings,
   SERVICE_LABEL,

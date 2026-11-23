@@ -22,6 +22,9 @@ import { createRebuildHandler } from './rebuild-http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import {handlePersonalSync,personalSyncTarget,SyncAdmission} from './personal-sync.ts';
 import { handleRunExport, runExportTarget } from './run-export.ts';
+import { IdentityChallenges } from './console/member-identity.ts';
+import { botFilesPath, handleBotFile } from './bot-files.ts';
+import { chatPath, handleBot, handleBotChannel, refreshChannel } from './personal-bot.ts';
 import { handleMcp } from './mcp.ts';
 import { AuthorizationStore, RegistrationWindow, handleOAuth, issuerOf, oauthTarget, resourceMetadataUrl } from './oauth.ts';
 import { SYNC_DISCOVERY_PATH, handleSyncDiscovery } from './sync-discovery.ts';
@@ -135,6 +138,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const jobs = new JobStore(clock);
   const live = new LiveEvents({ records: deps.records, sessions, log }, options.live);
   jobs.watch((job) => live.publish({ name: 'import.progress', data: { job: job.id } }));
+  let channelTimer: ReturnType<typeof setInterval> | undefined;
+  let channelSync: Promise<unknown> | undefined;
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log, jobs, live,
     staging,
@@ -143,6 +148,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     ...(options.observation ? { observation: options.observation } : {}),
     ...(options.bridge ? { bridge: options.bridge } : {}),
     authorizations, secureRequest,
+    identityChallenges: new IdentityChallenges(),
   };
 
   let resetHandler: Promise<ReturnType<typeof createRebuildHandler>> | undefined;
@@ -195,6 +201,10 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       return sendText(response, 503, message, headers);
     }
     const url = target.url;
+    if (url.pathname.startsWith(botFilesPath)) return handleBotFile(request, response, deps, url.pathname.slice(botFilesPath.length));
+    if (url.pathname.startsWith('/api/bot-channel/v1/files/')) return handleBotChannel(request, response, deps, budget, url.pathname.slice('/api/bot-channel/v1/files/'.length));
+    if (url.pathname === '/api/bot-channel/v1') return handleBotChannel(request, response, deps, budget);
+    if (url.pathname === chatPath) return handleBot(request, response, deps, budget);
     if (localToolsTarget(request.url)) return handleLocalTools(request, response, deps, log);
     if (runExportTarget(request.url)) return handleRunExport(request, response, deps, log);
     if (url.pathname === '/healthz') {
@@ -306,6 +316,16 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     hosts = allowedHosts(host, port, declared);
     origins = new Set([...ownOrigins(hosts), ...ownOrigins(secureHosts, 'https')]);
     if (proxyOrigin) { hosts.add(new URL(proxyOrigin).host); origins.add(proxyOrigin); }
+    if (typeof deps.records?.vault?.has === 'function') {
+      const syncChannel = () => {
+        channelSync ??= refreshChannel(deps.config.dataDir, deps.records.vault, origins)
+          .catch(() => undefined)
+          .finally(() => { channelSync = undefined; });
+      };
+      syncChannel();
+      channelTimer = setInterval(syncChannel, 30_000);
+      channelTimer.unref();
+    }
     const literal = host.includes(':') ? `[${host}]` : host;
     return { host, port, url: `http://${literal}:${port}`, ...(secure ? { https: secure } : {}) };
   };
@@ -313,6 +333,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const close = (): Promise<void> =>
     (closing ??= (async () => {
       stopping = true;
+      clearInterval(channelTimer);
+      await channelSync;
       // An event stream is a request in flight that never ends by itself.
       live.close();
       const current = server;

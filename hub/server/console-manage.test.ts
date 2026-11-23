@@ -489,6 +489,51 @@ test('every action is declared with a page to return to', () => {
   }
 });
 
+test('bot actions dispatch through the admin bridge with secrets out of argv and HTML', async () => {
+  calls.length = 0;
+  const post = (name: string, fields: Record<string, string>) =>
+    send('POST', `/console/admin/do/${name}`, { cookie: `circle_hub_session=${session}`, body: form({ csrf, ...fields }) });
+  const key = 'synthetic-console-bot-key';
+  const modelRes = await post('bot-set', {
+    name: '合成助手',
+    protocol: 'openai',
+    endpoint: 'https://model.example.invalid/v1',
+    model: 'demo-model',
+    family: 'demo-family',
+    value: key,
+  });
+  assert.equal(modelRes.status, 200);
+  const modelCall = calls.at(-1)!;
+  assert.deepEqual(modelCall.argv, ['bot', 'set']);
+  assert.ok(!modelCall.argv.join(' ').includes(key));
+  assert.ok(!modelRes.body.includes(key));
+  assert.deepEqual(JSON.parse(modelCall.input.secrets!['bot-model']), {
+    name: '合成助手',
+    protocol: 'openai',
+    model: 'demo-model',
+    family: 'demo-family',
+    endpoint: 'https://model.example.invalid/v1',
+    key,
+  });
+
+  const idRes = await post('bot-identity', { tenant: 'demo-tenant', application: 'demo-app', value: 'app-secret' });
+  assert.equal(idRes.status, 200);
+  assert.deepEqual(calls.at(-1)!.argv, ['bot', 'identity-set']);
+  assert.ok(!idRes.body.includes('app-secret'));
+
+  const chanRes = await post('bot-channel', { bot: 'demo-bot', hub: 'https://hub.example.invalid/', value: 'chan-secret' });
+  assert.equal(chanRes.status, 200);
+  assert.deepEqual(calls.at(-1)!.argv, ['bot', 'channel-set']);
+  assert.ok(!chanRes.body.includes('chan-secret'));
+
+  assert.equal((await post('bot-channel-start', {})).status, 200);
+  assert.deepEqual(calls.at(-1)!.argv, ['bot', 'channel-start']);
+  assert.equal((await post('bot-test', {})).status, 200);
+  assert.deepEqual(calls.at(-1)!.argv, ['bot', 'test']);
+  assert.equal((await post('bot-disable', {})).status, 200);
+  assert.deepEqual(calls.at(-1)!.argv, ['bot', 'disable']);
+});
+
 test('closing the app removes every staged directory', async () => {
   const cookie = `circle_hub_session=${session}`;
   const { answer, dir } = await stage(cookie);

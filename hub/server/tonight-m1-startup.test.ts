@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Database, createPool, openRecords, type User } from '../records/api.ts';
+import { Database, MIGRATIONS, createPool, openRecords, type User } from '../records/api.ts';
 import { LeaseService } from '../leases/api.ts';
 import { assembleHub } from './assemble/hub.ts';
 import { openCliHarness } from './assemble/test-cli.ts';
@@ -31,7 +31,7 @@ test('an existing M1 member and booking survive direct serve', { timeout: 60_000
         member: (await database.query('SELECT * FROM users WHERE id=$1', [member.id])).rows,
       });
       const before = await snapshot();
-      assert.deepEqual(before.migrations.map(row => row.version), [1], 'this is an M1 database, not an M2 database with a disabled flag');
+      assert.deepEqual(before.migrations.map(row => row.version), MIGRATIONS.map(migration => migration.version), 'this is an M1 database, not an M2 database with a disabled flag');
       assert.ok(before.records.length > 0);
       assert.equal(before.leases.length, 1);
       let assembled = 0, listened = 0;

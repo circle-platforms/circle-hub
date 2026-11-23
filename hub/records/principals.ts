@@ -283,6 +283,25 @@ export class PgPrincipals implements Principals {
     return row === undefined ? null : userOf(row);
   }
 
+  async bindExternalIdentity(by: Principal, issuer: string, subject: string): Promise<void> {
+    await this.#db.transaction(async (tx) => {
+      await this.lockActive(by, tx);
+      await this.#db.query('INSERT INTO external_member_identities(issuer,subject,owner) VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [issuer, subject, by.id], tx);
+      const match = await this.#db.query('SELECT 1 FROM external_member_identities WHERE issuer=$1 AND subject=$2 AND owner=$3', [issuer, subject, by.id], tx);
+      if (!match.rowCount) throw new ConflictError('此身份或当前成员已有不同绑定');
+    });
+  }
+
+  async externalSubject(owner: string, issuer: string): Promise<string | null> {
+    const result = await this.#db.query('SELECT e.subject FROM external_member_identities e JOIN users u ON u.id=e.owner WHERE u.id=$1 AND e.issuer=$2 AND NOT u.disabled AND u.deleted_at IS NULL', [owner, issuer]);
+    return result.rows.length ? String(result.rows[0].subject) : null;
+  }
+
+  async externalMember(issuer: string, subject: string): Promise<User | null> {
+    const result = await this.#db.query('SELECT u.* FROM external_member_identities e JOIN users u ON u.id=e.owner WHERE e.issuer=$1 AND e.subject=$2 AND NOT u.disabled AND u.deleted_at IS NULL', [issuer, subject]);
+    return result.rows.length ? userOf(result.rows[0]) : null;
+  }
+
   async findByName(name: string): Promise<User | null> {
     if (typeof name !== 'string') return null;
     const row = (await this.#db.query('SELECT * FROM users WHERE name = $1 AND deleted_at IS NULL', [name])).rows[0];

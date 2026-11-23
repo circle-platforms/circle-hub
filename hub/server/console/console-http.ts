@@ -14,6 +14,7 @@ import type { PageContext } from './context.ts';
 import type { RebuildNeeded } from './reset.ts';
 import type { HubFacts } from './settings.ts';
 import type { ConsoleSession, SessionStore } from './session.ts';
+import type { IdentityChallenges } from './member-identity.ts';
 import type { PackStaging } from './staging.ts';
 
 export interface ConsoleOptions {
@@ -30,6 +31,7 @@ export interface ConsoleOptions {
   rebuildNeeded?: RebuildNeeded | null;
   observation?: HealthPageSources;
   authorizations?: AuthorizationStore;
+  identityChallenges?: IdentityChallenges;
 }
 
 export const LOGIN_FORM_LIMIT = 8 * 1024;

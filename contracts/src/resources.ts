@@ -1214,7 +1214,61 @@ export const EffectRecord=z.strictObject({
 }).superRefine((effect,ctx)=>{if(effect.outcome==='unknown'){if(!effect.missing)ctx.addIssue({code:'custom',path:['missing'],message:'an unknown effect names its missing fact'});if(!effect.exit)ctx.addIssue({code:'custom',path:['exit'],message:'an unknown effect names its next action'});}}).meta(recoveryCondition('outcome',['unknown'],['missing','exit']));
 export type EffectRecord=z.infer<typeof EffectRecord>;
 
+export const MemberNotificationIntent = z.strictObject({
+  schema: z.literal('member-notification-intent@1'),
+  kind: z.literal(ActionKindSchema.enum.dispatch),
+  receipt: z.uuid(),
+  event: z.uuid(),
+  member: UserId,
+  issuer: Sha256,
+  subject: Sha256,
+  channel: Sha256,
+  sha256: Sha256,
+  size: z.number().int().min(0).max(100 * 1024 * 1024),
+  name_sha256: Sha256.nullable(),
+  write: WriteDeclaration.extend({
+    effect_class: z.literal(EffectClassSchema.enum.notification),
+    retry_safety: z.literal(RetrySafetySchema.enum.unsafe),
+    signing: z.literal(SigningSchema.enum.service_on_behalf),
+    reversible: z.literal(false),
+    target_key: Sha256,
+    audience: UserId,
+    writes_hub_records: z.literal(true),
+  }),
+}).superRefine((v, ctx) => {
+  if (v.write.audience !== v.member || v.write.target_key !== v.subject) {
+    ctx.addIssue({ code: 'custom', path: ['write'], message: 'Notification must target the bound member' });
+  }
+});
+
+export const MemberNotificationReceipt = z.strictObject({
+  schema: z.literal('member-notification-receipt@1'),
+  member: UserId,
+  intent: Sha256,
+  receipt: z.uuid(),
+  outcome: EffectOutcomeSchema.extract(['issued', 'target_rejected', 'unknown', 'not_dispatched']),
+  acknowledgment: z.strictObject({ request: Sha256, code: z.number().int() }).nullable(),
+  reached_target: z.boolean().nullable(),
+  missing: z.string().min(1).nullable(),
+  next: z.string().min(1).nullable(),
+}).superRefine((v, ctx) => {
+  if (v.reached_target !== (v.outcome === 'not_dispatched' ? false : v.outcome === 'unknown' ? null : true)) {
+    ctx.addIssue({ code: 'custom', path: ['reached_target'], message: 'Reachability must agree with the observed stage' });
+  }
+  if (v.outcome === 'unknown' && (!v.missing || !v.next)) {
+    ctx.addIssue({ code: 'custom', path: ['missing'], message: 'Unknown delivery requires the missing receipt and a next action' });
+  }
+  if (v.outcome === 'issued' && v.acknowledgment?.code !== 0) {
+    ctx.addIssue({ code: 'custom', path: ['acknowledgment'], message: 'Issued requires a successful platform acknowledgment' });
+  }
+  if (v.outcome === 'target_rejected' && (!v.acknowledgment || v.acknowledgment.code === 0)) {
+    ctx.addIssue({ code: 'custom', path: ['acknowledgment'], message: 'Refusal requires a platform error receipt' });
+  }
+});
+
 export const schemas: Record<string, z.ZodType> = {
+  'member-notification-intent@1': MemberNotificationIntent,
+  'member-notification-receipt@1': MemberNotificationReceipt,
   'effect@1':EffectRecord,
   'write-declaration@1':WriteDeclaration,
   'executor@1':ExecutorSource,

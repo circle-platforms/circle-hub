@@ -9,9 +9,7 @@ import { isReason } from '../../../contracts/generated/vocabulary.ts';
 import { step } from '../../telemetry/api.ts';
 import { applyDispatchResults } from './dispatch-results.ts';
 import { recordResultRequests, answerRepairedRequests, supersedeEarlierRequests } from './requests.ts';
-import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
-import { CAPTURED_GROUND } from '../../knowledge/declaration-grade.ts';
-import type { ContributionAppendPlan } from '../../knowledge/contributions.ts';
+import { CAPTURED_GROUND, ContributionRefusal, KnowledgeError, type ContributionAppendPlan, type ContributionScope, type PreparedContribution } from '../../knowledge/api.ts';
 import { getInterpreter, type CheckOutcome } from '../../rules/api.ts';
 // submit_result (W07, W08, T03, A04): the arguments are stored exactly as received before anything else; a repeat of the same
 // (run, submission digest) observed at the same session and declared model returns the stored result without re-running
