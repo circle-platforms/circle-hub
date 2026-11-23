@@ -313,7 +313,7 @@ async function adminBotSettings(
       ],
       [html`宿主连接 ${code('host.sock')}`, hostConnected ? chip('运行中', 'pass') : chip('未连接', 'unchecked')],
       [html`通道连接 ${code('channel.sock')}`, channelConnected ? chip('运行中', 'pass') : chip('未连接', 'unchecked')],
-    ]),
+    ], { wide: true }),
   );
 
   const modelCard = box(

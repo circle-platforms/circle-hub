@@ -112,6 +112,7 @@ test('S1: bot notification intent/receipt and inbound records are readable only 
       issuer,
       subject,
       channel,
+      role: 'assistant',
       sha256: textSha,
       size: 21,
       text_sha256: textSha,

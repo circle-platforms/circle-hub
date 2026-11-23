@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  ExternalIdentityActionSchema,
+  ExternalIdentityUnbindReasonSchema,
+} from '../generated/vocabulary.ts';
+import {
   BotSecretChangeAudit,
   MemberBotInbound,
   MemberExternalIdentityAudit,
@@ -39,6 +43,7 @@ test('private notification declarations bind exactly one checked member and targ
     issuer: digest,
     subject: digest,
     channel: digest,
+    role: 'assistant',
     sha256: digest,
     size: 5,
     text_sha256: digest2,
@@ -49,6 +54,11 @@ test('private notification declarations bind exactly one checked member and targ
     write,
   };
   assert.ok(MemberNotificationIntent.safeParse(base).success);
+  assert.ok(MemberNotificationIntent.safeParse({ ...base, role: 'notice', code: 'new_conversation' }).success);
+  const withoutRole: Record<string, unknown> = { ...base };
+  delete withoutRole.role;
+  assert.equal(MemberNotificationIntent.safeParse(withoutRole).success, false);
+  assert.equal(MemberNotificationIntent.safeParse({ ...base, role: 'notice', code: 'x\ny\u0000<script>' }).success, false);
   assert.ok(
     MemberNotificationIntent.safeParse({
       ...base,
@@ -233,6 +243,33 @@ test('bot inbound and audit record contracts enforce required invariants', () =>
       issuer: digest,
       subject: digest2,
       at: timestamp,
+    }).success,
+    false,
+  );
+  assert.equal(ExternalIdentityActionSchema.safeParse('rotate').success, false);
+  assert.equal(ExternalIdentityUnbindReasonSchema.safeParse('expired').success, false);
+  assert.equal(
+    MemberExternalIdentityAudit.safeParse({
+      schema: 'member-external-identity@1',
+      action: 'rotate',
+      by: admin,
+      member,
+      issuer: digest,
+      subject: digest2,
+      at: timestamp,
+    }).success,
+    false,
+  );
+  assert.equal(
+    MemberExternalIdentityAudit.safeParse({
+      schema: 'member-external-identity@1',
+      action: 'unbind',
+      by: admin,
+      member,
+      issuer: digest,
+      subject: digest2,
+      at: timestamp,
+      reason: 'expired',
     }).success,
     false,
   );

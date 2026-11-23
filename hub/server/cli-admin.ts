@@ -588,17 +588,25 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
   }
   if (sub === 'disable') {
     await disableBot(vault);
+    const hostSync = await refreshHost(session.config().dataDir, vault, (msg) => session.err(msg));
     await recordBotSecretChange(store, 'model', 'remove', admin.id, new Date().toISOString());
-    await refreshHost(session.config().dataDir, vault);
-    session.out('机器人模型已停用');
+    session.out(
+      hostSync.notified
+        ? '机器人模型已停用，已通知宿主'
+        : '机器人模型已停用（宿主当前未连接，将在下次调用时同步）',
+    );
     return 0;
   }
   if (sub === 'set') {
     const settings = await readSecretJson(readSecret, 'bot-model', '请输入机器人模型配置 JSON');
     await setBotProfile(vault, settings);
+    const hostSync = await refreshHost(session.config().dataDir, vault, (msg) => session.err(msg));
     await recordBotSecretChange(store, 'model', 'set', admin.id, new Date().toISOString());
-    await refreshHost(session.config().dataDir, vault);
-    session.out('机器人模型配置已保存');
+    session.out(
+      hostSync.notified
+        ? '机器人模型配置已保存，已通知宿主'
+        : '机器人模型配置已保存（宿主当前未连接，将在下次调用时同步）',
+    );
     return 0;
   }
   const config = await readBotProfile(vault);

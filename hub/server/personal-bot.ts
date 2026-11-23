@@ -27,6 +27,7 @@ import { mediaTypeOf, readBody, serverOrigins, type BodyBudget } from './http.ts
 export { ensureBotRuntimeDir, inspectBotRuntimeDir, type BotRuntimeDirInspection };
 
 const profileName = 'personal-bot.model';
+const configVersionName = 'personal-bot.model-version';
 const reviewerProfileName = 'personal-bot.reviewer';
 export const identityProfileName = 'personal-bot.identity';
 export const channelProfileName = 'personal-bot.channel';
@@ -125,28 +126,77 @@ export async function readBotProfile(vault: Vault): Promise<BotProfile | null> {
   return result.data;
 }
 
+async function readStoredConfigVersion(vault: Vault): Promise<number> {
+  const versionRaw = await vault.getText(configVersionName);
+  if (versionRaw !== null && /^\d+$/.test(versionRaw)) {
+    return Number(versionRaw);
+  }
+  return (await vault.has(profileName)) ? 1 : 0;
+}
+
+export async function readBotConfigState(
+  vault: Vault,
+): Promise<{ config: BotProfile | null; configVersion: number }> {
+  const versionRaw = await vault.getText(configVersionName);
+  const config = await readBotProfile(vault);
+  const configVersion =
+    versionRaw !== null && /^\d+$/.test(versionRaw) ? Number(versionRaw) : config ? 1 : 0;
+  return { config, configVersion };
+}
+
 export async function setBotProfile(vault: Vault, data: unknown): Promise<void> {
   const parsed = profileSchema.safeParse(data);
   if (!parsed.success) {
     throw new CliError('请检查名称、协议、模型标识、服务地址和密钥。地址须为 HTTPS 或本机 HTTP，密钥只填在密钥栏。');
   }
+  const prev = await readStoredConfigVersion(vault);
   await vault.put(profileName, JSON.stringify(parsed.data));
   if (await vault.has(reviewerProfileName)) {
     await vault.remove(reviewerProfileName);
   }
+  await vault.put(configVersionName, String(prev + 1));
 }
 
-export async function refreshHost(dataDir: string, vault: Vault): Promise<void> {
+export interface RefreshHostResult {
+  notified: boolean;
+  configVersion: number;
+  detail?: string;
+}
+
+export async function refreshHost(
+  dataDir: string,
+  vault: Vault,
+  log?: (line: string) => void,
+): Promise<RefreshHostResult> {
+  let configVersion = 0;
   try {
-    const profile = await readBotProfile(vault);
-    await callBot(
+    const state = await readBotConfigState(vault);
+    configVersion = state.configVersion;
+    const result = await callBot(
       dataDir,
-      profile
-        ? { owner: '_hub', op: { action: 'configure' }, config: profile }
-        : { owner: '_hub', op: { action: 'disable' } },
+      state.config
+        ? { owner: '_hub', op: { action: 'configure' }, config: state.config, configVersion }
+        : { owner: '_hub', op: { action: 'disable' }, configVersion },
     );
-  } catch {
-    // Best-effort runtime notification: an offline host syncs via config on the next call.
+    if (result.status === 200) {
+      return { notified: true, configVersion };
+    }
+    const bodyObj = result.body && typeof result.body === 'object' ? (result.body as Record<string, unknown>) : {};
+    const rawDetail =
+      result.adminDetail ??
+      (typeof bodyObj.message === 'string'
+        ? bodyObj.message
+        : typeof bodyObj.error === 'string'
+          ? bodyObj.error
+          : `状态 ${result.status}`);
+    const detail = await maskVaultSecrets(vault, rawDetail).catch(() => rawDetail);
+    log?.(`通知机器人宿主配置变更失败（版本 ${configVersion}）：${detail}`);
+    return { notified: false, configVersion, detail };
+  } catch (error) {
+    const rawDetail = error instanceof Error ? error.message : String(error);
+    const detail = await maskVaultSecrets(vault, rawDetail).catch(() => rawDetail);
+    log?.(`通知机器人宿主配置变更失败（版本 ${configVersion}）：${detail}`);
+    return { notified: false, configVersion, detail };
   }
 }
 
@@ -156,10 +206,12 @@ export async function disableBot(
 ): Promise<void> {
   const vault = 'records' in vaultOrDeps ? vaultOrDeps.records.vault : vaultOrDeps;
   const dir = 'config' in vaultOrDeps ? vaultOrDeps.config.dataDir : dataDir;
+  const prev = await readStoredConfigVersion(vault);
   await vault.remove(profileName);
   if (await vault.has(reviewerProfileName)) {
     await vault.remove(reviewerProfileName);
   }
+  await vault.put(configVersionName, String(prev + 1));
   if (dir) await refreshHost(dir, vault);
 }
 
@@ -221,8 +273,8 @@ function mapHostError(
 ): { status: number; code: ProtocolCode; fact?: string; nextAction?: string; rawCode: string } {
   const obj = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
   const rawCode = typeof obj.code === 'string' ? obj.code : '';
-  if (status === 409 && rawCode === 'version_mismatch') {
-    return { status: 409, code: 'BOT_VERSION_MISMATCH', rawCode };
+  if ((status === 409 || status === 400) && rawCode === 'version_mismatch') {
+    return { status: 400, code: 'BOT_VERSION_MISMATCH', rawCode };
   }
   if (status === 409) {
     return { status: 409, code: 'BOT_CONFLICT', fact: '机器人当前正忙或状态冲突', rawCode };
@@ -246,7 +298,13 @@ function mapHostError(
     return { status: 413, code: 'BOT_INVALID_REQUEST', fact: '机器人请求体超过允许大小上限', rawCode };
   }
   if (status === 422 && (rawCode === 'attachment_integrity_failed' || rawCode === 'invalid_request')) {
-    return { status: 422, code: 'BOT_INVALID_REQUEST', fact: '机器人附件完整性校验未通过', rawCode };
+    return {
+      status: 422,
+      code: 'BOT_INVALID_REQUEST',
+      fact: '机器人附件完整性校验未通过',
+      nextAction: '请重新上传附件后重试',
+      rawCode,
+    };
   }
   const upstreamStatus = status === 502 || status === 503 ? status : 502;
   const upstreamMessages: Record<string, { fact: string; nextAction?: string }> = {
@@ -329,7 +387,7 @@ export async function callBot(
   if (!dirCheck.ok) {
     return {
       status: 503,
-      body: botError('BOT_UPSTREAM_UNAVAILABLE', '机器人宿主当前不可用'),
+      body: botError('BOT_UPSTREAM_UNAVAILABLE', '机器人宿主当前不可用', '请管理员检查运行文件夹与宿主进程后稍后重试'),
       adminDetail: `bot-runtime 异常：${dirCheck.reason}`,
     };
   }
@@ -338,7 +396,7 @@ export async function callBot(
     const unavailable = (detail?: string) =>
       resolve({
         status: 503,
-        body: botError('BOT_UPSTREAM_UNAVAILABLE', '机器人宿主暂不可用'),
+        body: botError('BOT_UPSTREAM_UNAVAILABLE', '机器人宿主暂不可用', '请管理员检查宿主进程后稍后重试'),
         ...(detail ? { adminDetail: detail } : {}),
       });
     const req = unixRequest(
@@ -382,18 +440,34 @@ async function readJsonBody(
   if (!body.ok) {
     if (res.headersSent || res.writableEnded || res.destroyed) return undefined;
     if (body.reason === 'busy') {
-      sendBotJson(res, 503, botError('BOT_UPSTREAM_UNAVAILABLE', messages.busy || '暂时无法接收消息'));
+      sendBotJson(
+        res,
+        503,
+        botError('BOT_UPSTREAM_UNAVAILABLE', messages.busy || '暂时无法接收消息', '当前服务请求负载较高，请稍后重试'),
+      );
     } else if (body.reason === 'too_large') {
-      sendBotJson(res, 413, botError('BOT_INVALID_REQUEST', '请求体超过 72 KiB 大小上限'));
+      sendBotJson(
+        res,
+        413,
+        botError('BOT_INVALID_REQUEST', '请求体超过 72 KiB 大小上限', '请精简请求内容至 72 KiB 以内后重试'),
+      );
     } else {
-      sendBotJson(res, 400, botError('BOT_INVALID_REQUEST', '请求体读取未完成'));
+      sendBotJson(
+        res,
+        400,
+        botError('BOT_INVALID_REQUEST', '请求体读取未完成', '请保持连接完整并重新发送请求'),
+      );
     }
     return undefined;
   }
   try {
     return JSON.parse(body.bytes.toString('utf8'));
   } catch {
-    sendBotJson(res, 400, botError('BOT_INVALID_REQUEST', messages.invalid || '请求格式错误'));
+    sendBotJson(
+      res,
+      400,
+      botError('BOT_INVALID_REQUEST', messages.invalid || '请求格式错误', '请发送合法的 JSON 请求体后重试'),
+    );
     return undefined;
   }
 }
@@ -401,20 +475,35 @@ async function readJsonBody(
 export async function handleBot(req: IncomingMessage, res: ServerResponse, deps: ServerDeps, budget: BodyBudget): Promise<void> {
   if (req.method !== 'POST') {
     req.resume();
-    return sendBotJson(res, 405, botError('BOT_INVALID_REQUEST', '此地址只接受 POST'), { allow: 'POST' });
+    return sendBotJson(
+      res,
+      405,
+      botError('BOT_INVALID_REQUEST', '此地址只接受 POST', '请改用 POST 方法重新请求'),
+      { allow: 'POST' },
+    );
   }
   const principal = await requireDirectAccessBearer(req, res, deps.records.principals);
   if (!principal) return;
   if (mediaTypeOf(req) !== 'application/json') {
     req.resume();
-    return sendBotJson(res, 415, botError('BOT_INVALID_REQUEST', '需要 JSON'));
+    return sendBotJson(
+      res,
+      415,
+      botError('BOT_INVALID_REQUEST', '需要 JSON', '请将 Content-Type 设为 application/json 后重试'),
+    );
   }
   const hold = budget.hold();
   try {
     const input = await readJsonBody(req, res, hold, { busy: '暂时无法接收消息', invalid: '请求格式错误' });
     if (input === undefined) return;
     const op = chatOperation.safeParse(input);
-    if (!op.success) return sendBotJson(res, 400, botError('BOT_INVALID_REQUEST', '请求字段无效'));
+    if (!op.success) {
+      return sendBotJson(
+        res,
+        400,
+        botError('BOT_INVALID_REQUEST', '请求字段无效', '请核对操作类型与必填字段后重试'),
+      );
+    }
     const renewed = await authenticateAccessOnly(deps.records.principals, req.headers.authorization ?? null);
     if (!renewed.ok || renewed.principal.id !== principal.id) {
       return sendBotJson(res, 401, botError('BOT_UNAUTHENTICATED'), { 'www-authenticate': 'Bearer' });
@@ -431,16 +520,25 @@ export async function handleBot(req: IncomingMessage, res: ServerResponse, deps:
       return sendBotJson(res, 400, botError('BOT_VERSION_INVALID'));
     }
     const nowMs = (deps.now?.() ?? new Date()).getTime();
-    const profile = await readBotProfile(deps.records.vault);
+    const { config, configVersion } = await readBotConfigState(deps.records.vault);
     if (
       op.data.action === 'send' &&
       ((!op.data.text.trim() && !op.data.files?.length) ||
         !(await validateBotFiles(deps.config.dataDir, principal.id, op.data.files ?? [], { now: nowMs })))
     ) {
-      return sendBotJson(res, 400, botError('BOT_INVALID_REQUEST', '消息或附件不可用'));
+      return sendBotJson(
+        res,
+        400,
+        botError('BOT_INVALID_REQUEST', '消息或附件不可用', '请提供非空消息文本或重新上传有效附件后重试'),
+      );
     }
-    if (op.data.action === 'send' && !profile) return sendBotJson(res, 503, botError('BOT_DISABLED', '机器人模型尚未启用'));
-    const config = profile ?? null;
+    if (op.data.action === 'send' && !config) {
+      return sendBotJson(
+        res,
+        503,
+        botError('BOT_DISABLED', '机器人模型尚未启用', '请管理员在控制台配置并启用机器人模型后重试'),
+      );
+    }
     const identity =
       op.data.action === 'send' && (await deps.records.vault.has(identityProfileName))
         ? await readIdentity(deps.records.vault)
@@ -449,7 +547,14 @@ export async function handleBot(req: IncomingMessage, res: ServerResponse, deps:
     const route = issuer
       ? { source: 'client', issuer, subject: await deps.records.principals.externalSubject(principal.id, issuer) }
       : undefined;
-    const result = await callBot(deps.config.dataDir, { owner: principal.id, op: op.data, version, config, route });
+    const result = await callBot(deps.config.dataDir, {
+      owner: principal.id,
+      op: op.data,
+      version,
+      config,
+      configVersion,
+      route,
+    });
     if (result.status >= 400) {
       const mapped = mapHostError(result.status, result.body);
       await recordHostFailure(
@@ -480,7 +585,11 @@ export async function handleBot(req: IncomingMessage, res: ServerResponse, deps:
         { message: 'secret reflected in response' },
         'BOT_UPSTREAM_UNAVAILABLE',
       );
-      return sendBotJson(res, 502, botError('BOT_UPSTREAM_UNAVAILABLE', '机器人响应异常'));
+      return sendBotJson(
+        res,
+        502,
+        botError('BOT_UPSTREAM_UNAVAILABLE', '机器人响应异常', '请管理员检查机器人模型配置后稍后重试'),
+      );
     }
     sendBotJson(res, result.status, result.body);
   } finally {
@@ -520,7 +629,7 @@ const deliverySchema = z.strictObject({
   subject: word,
   receipt: z.uuid(),
   role: BotMessageRoleSchema,
-  code: z.string().min(1).max(64).optional(),
+  code: z.string().regex(/^[a-z0-9_]{1,64}$/).optional(),
   text: z.string().max(64000),
   file: fileDescriptor.optional(),
 });
@@ -547,12 +656,20 @@ async function handleChannelFile(
   const subjectHeader = req.headers['bot-member-subject'];
   if (typeof subjectHeader !== 'string' || subjectHeader.length === 0 || subjectHeader.length > 1024) {
     req.resume();
-    return sendBotJson(res, 403, botError('BOT_CLIENT_FORBIDDEN', '缺少有效的通道成员身份头'));
+    return sendBotJson(
+      res,
+      403,
+      botError('BOT_CLIENT_FORBIDDEN', '缺少有效的通道成员身份头', '请在请求头中提供有效的 Bot-Member-Subject 后重试'),
+    );
   }
   const identity = await readIdentity(deps.records.vault);
   if (!identity) {
     req.resume();
-    return sendBotJson(res, 403, botError('BOT_CLIENT_FORBIDDEN', '外部身份未绑定'));
+    return sendBotJson(
+      res,
+      403,
+      botError('BOT_CLIENT_FORBIDDEN', '外部身份未绑定', '请管理员启用扫码登录应用并由成员绑定外部身份后重试'),
+    );
   }
   const issuer = identityIssuer(identity.tenant);
   const subject = Buffer.from(subjectHeader, 'base64url').toString('utf8');
@@ -560,7 +677,11 @@ async function handleChannelFile(
   const member = await lookup();
   if (!member) {
     req.resume();
-    return sendBotJson(res, 403, botError('BOT_CLIENT_FORBIDDEN', '外部身份未绑定有效成员'));
+    return sendBotJson(
+      res,
+      403,
+      botError('BOT_CLIENT_FORBIDDEN', '外部身份未绑定有效成员', '请成员在控制台绑定外部身份并确认账号启用后重试'),
+    );
   }
   const stillActive = async () => {
     const latest = await readChannel(deps.records.vault);
@@ -575,13 +696,26 @@ async function handleChannelFile(
   }
   if (req.method !== 'GET') {
     req.resume();
-    return sendBotJson(res, 405, botError('BOT_INVALID_REQUEST', '只允许 GET 或 PUT'), { allow: 'GET, PUT' });
+    return sendBotJson(
+      res,
+      405,
+      botError('BOT_INVALID_REQUEST', '只允许 GET 或 PUT', '请改用 GET 下载或 PUT 上传通道附件'),
+      { allow: 'GET, PUT' },
+    );
   }
   const receiptHeader = req.headers['bot-delivery-receipt'];
   const parsedReceipt = z.uuid().safeParse(receiptHeader);
   if (!parsedReceipt.success) {
     req.resume();
-    return sendBotJson(res, 403, botError('BOT_CLIENT_FORBIDDEN', '下载附件须提供有效的 Bot-Delivery-Receipt'));
+    return sendBotJson(
+      res,
+      403,
+      botError(
+        'BOT_CLIENT_FORBIDDEN',
+        '下载附件须提供有效的 Bot-Delivery-Receipt',
+        '请在请求头中提供有效的 Bot-Delivery-Receipt 后重试',
+      ),
+    );
   }
   const intentRecord = await deps.records.store.getByKey('action', 'chat-intent:' + parsedReceipt.data);
   const declared = MemberNotificationIntent.safeParse(intentRecord?.body);
@@ -596,7 +730,11 @@ async function handleChannelFile(
     declared.data.file_sha256 !== sha
   ) {
     req.resume();
-    return sendBotJson(res, 403, botError('BOT_CLIENT_FORBIDDEN', '未找到匹配当前成员与投递意图的附件'));
+    return sendBotJson(
+      res,
+      403,
+      botError('BOT_CLIENT_FORBIDDEN', '未找到匹配当前成员与投递意图的附件', '请核对投递回执、成员身份及附件摘要是否一致'),
+    );
   }
   return transferBotFile(req, res, deps.config.dataDir, member.id, sha, stillActive, { ...clockOpt, scope: 'files' });
 }
@@ -610,7 +748,7 @@ async function handleChannelReceipt(
   const intent = await deps.records.store.getByKey('action', 'chat-intent:' + op.receipt);
   const declared = MemberNotificationIntent.safeParse(intent?.body);
   if (!intent || !declared.success || declared.data.channel !== channelId) {
-    return sendBotJson(res, 404, botError('BOT_NOT_FOUND', '未找到对应的投递意图记录'));
+    return sendBotJson(res, 404, botError('BOT_NOT_FOUND', '未找到对应的投递意图记录', '请核对回执编号与所属通道后重试'));
   }
 
   const missingReasons: string[] = [];
@@ -708,15 +846,16 @@ async function handleChannelReceipt(
   });
 
   if (!outcome.ok) {
-    return sendBotJson(res, 409, botError('BOT_CONFLICT', outcome.message));
+    return sendBotJson(res, 409, botError('BOT_CONFLICT', outcome.message, '请核对已记录的投递回执状态，勿对终态回执重复提交不同结果'));
   }
   const effective = outcome.effective;
 
-  const config = (await readBotProfile(deps.records.vault)) ?? null;
+  const { config, configVersion } = await readBotConfigState(deps.records.vault);
   const result = await callBot(deps.config.dataDir, {
     owner: 'channel',
     op: { action: 'receipt', receipt: op.receipt, state: effective.outcome },
     config,
+    configVersion,
   });
   if (result.status >= 400) {
     const mapped = mapHostError(result.status, result.body);
@@ -731,8 +870,13 @@ async function handleChannelNext(
   issuer: string,
   channelId: string,
 ): Promise<void> {
-  const config = (await readBotProfile(deps.records.vault)) ?? null;
-  const result = await callBot(deps.config.dataDir, { owner: 'channel', op: { action: 'claim', issuer }, config });
+  const { config, configVersion } = await readBotConfigState(deps.records.vault);
+  const result = await callBot(deps.config.dataDir, {
+    owner: 'channel',
+    op: { action: 'claim', issuer },
+    config,
+    configVersion,
+  });
   if (result.status !== 200) {
     const mapped = mapHostError(result.status, result.body);
     return sendBotJson(res, mapped.status, botError(mapped.code, mapped.fact, mapped.nextAction));
@@ -742,7 +886,11 @@ async function handleChannelNext(
 
   const parsed = deliverySchema.safeParse(rawDelivery);
   if (!parsed.success) {
-    return sendBotJson(res, 502, botError('BOT_UPSTREAM_UNAVAILABLE', '机器人宿主返回的投递载荷结构无效'));
+    return sendBotJson(
+      res,
+      502,
+      botError('BOT_UPSTREAM_UNAVAILABLE', '机器人宿主返回的投递载荷结构无效', '请管理员检查机器人宿主版本与日志后重试'),
+    );
   }
   const item = parsed.data;
   const member = await deps.records.principals.externalMember(issuer, item.subject);
@@ -751,6 +899,7 @@ async function handleChannelNext(
       owner: 'channel',
       op: { action: 'receipt', receipt: item.receipt, state: EffectOutcomeSchema.enum.not_dispatched },
       config,
+      configVersion,
     });
     return sendBotJson(res, 200, { delivery: null });
   }
@@ -760,8 +909,13 @@ async function handleChannelNext(
       owner: 'channel',
       op: { action: 'receipt', receipt: item.receipt, state: EffectOutcomeSchema.enum.not_dispatched },
       config,
+      configVersion,
     });
-    return sendBotJson(res, 409, botError('BOT_CONFLICT', '待投递的附件在本地不存在或已失效'));
+    return sendBotJson(
+      res,
+      409,
+      botError('BOT_CONFLICT', '待投递的附件与当前本地文件状态冲突', '已向宿主回写未发出状态，请核对附件后重新发起发送'),
+    );
   }
   const intentPayload = computeIntentPayload(item.text, item.file);
   const target = sha256Hex(JSON.stringify([issuer, item.subject]));
@@ -774,6 +928,8 @@ async function handleChannelNext(
     issuer,
     channel: channelId,
     subject: target,
+    role: item.role,
+    ...(item.code ? { code: item.code } : {}),
     sha256: intentPayload.sha256,
     size: intentPayload.size,
     text_sha256: intentPayload.text_sha256,
@@ -834,10 +990,20 @@ async function handleChannelInbound(
   bot: string,
 ): Promise<void> {
   if (!op.text.trim() && !op.files?.length) {
-    return sendBotJson(res, 400, botError('BOT_INVALID_REQUEST', '入站消息内容与附件不能同时为空'));
+    return sendBotJson(
+      res,
+      400,
+      botError('BOT_INVALID_REQUEST', '入站消息内容与附件不能同时为空', '请提供非空消息文本或至少一个有效附件后重试'),
+    );
   }
-  const config = await readBotProfile(deps.records.vault);
-  if (!config) return sendBotJson(res, 503, botError('BOT_DISABLED', '机器人模型尚未启用'));
+  const { config, configVersion } = await readBotConfigState(deps.records.vault);
+  if (!config) {
+    return sendBotJson(
+      res,
+      503,
+      botError('BOT_DISABLED', '机器人模型尚未启用', '请管理员在控制台配置并启用机器人模型后重试'),
+    );
+  }
 
   // RFC 9562 v8 deterministic request UUID derived from the inbound message identity.
   const hash = createHash('sha256').update(JSON.stringify([issuer, bot, op.subject, op.platformId])).digest();
@@ -885,19 +1051,27 @@ async function handleChannelInbound(
   const existingInbound = await deps.records.store.getByKey('action', 'chat-inbound:' + request);
   if (existingInbound) {
     if (!inboundMatches(existingInbound.body)) {
-      return sendBotJson(res, 409, botError('BOT_CONFLICT', '入站消息请求与既有记录不一致'));
+      return sendBotJson(
+        res,
+        409,
+        botError('BOT_CONFLICT', '入站消息请求与既有记录不一致', '请核对平台消息编号与内容，勿用同一消息编号提交不同载荷'),
+      );
     }
     const healed = await commitChannelStagedFiles(deps.config.dataDir, member.id, files, { now: () => nowMs });
     if (!healed.ok) {
-      return sendBotJson(res, healed.status, botError(healed.code, healed.message));
+      return sendBotJson(res, healed.status, { code: healed.code, message: healed.message });
     }
     if (!(await validateBotFiles(deps.config.dataDir, member.id, files, { now: nowMs }))) {
-      return sendBotJson(res, 409, botError('BOT_CONFLICT', '入站消息附件在本地不存在或已失效'));
+      return sendBotJson(
+        res,
+        409,
+        botError('BOT_CONFLICT', '入站消息附件与当前本地文件状态冲突', '请重新暂存对应附件后再重试该入站请求'),
+      );
     }
   } else {
     const verified = await verifyChannelStagedFiles(deps.config.dataDir, member.id, files, { now: () => nowMs });
     if (!verified.ok) {
-      return sendBotJson(res, verified.status, botError(verified.code, verified.message));
+      return sendBotJson(res, verified.status, { code: verified.code, message: verified.message });
     }
     let reservationConsumed = false;
     try {
@@ -910,7 +1084,11 @@ async function handleChannelInbound(
         index: [{ key: 'chat.inbound.owner', value: member.id }],
       });
       if (!putResult.created && !inboundMatches(putResult.body)) {
-        return sendBotJson(res, 409, botError('BOT_CONFLICT', '入站消息请求与既有记录不一致'));
+        return sendBotJson(
+          res,
+          409,
+          botError('BOT_CONFLICT', '入站消息请求与既有记录不一致', '请核对平台消息编号与内容，勿用同一消息编号提交不同载荷'),
+        );
       }
       const committed = await commitChannelStagedFiles(deps.config.dataDir, member.id, files, {
         now: () => nowMs,
@@ -920,7 +1098,7 @@ async function handleChannelInbound(
         },
       });
       if (!committed.ok) {
-        return sendBotJson(res, committed.status, botError(committed.code, committed.message));
+        return sendBotJson(res, committed.status, { code: committed.code, message: committed.message });
       }
     } finally {
       if (!reservationConsumed) await verified.release();
@@ -931,6 +1109,7 @@ async function handleChannelInbound(
     owner: member.id,
     op: { action: 'inbound', request, text: op.text, files: op.files },
     config,
+    configVersion,
     route: { source: 'channel', issuer, subject: op.subject },
   });
   if (result.status >= 400) {
@@ -958,18 +1137,30 @@ export async function handleBotChannel(
 ): Promise<void> {
   if (sha === undefined && (req.method !== 'POST' || req.headers.origin || mediaTypeOf(req) !== 'application/json')) {
     req.resume();
-    return sendBotJson(res, 403, botError('BOT_CLIENT_FORBIDDEN', '通道入口请求不被允许'));
+    return sendBotJson(
+      res,
+      403,
+      botError('BOT_CLIENT_FORBIDDEN', '通道入口请求不被允许', '请使用不带 Origin 的 POST application/json 请求访问通道入口'),
+    );
   }
   if (!(await deps.records.vault.has(channelProfileName))) {
     req.resume();
-    return sendBotJson(res, 401, botError('BOT_UNAUTHENTICATED', '通道令牌未配置或无效'));
+    return sendBotJson(
+      res,
+      401,
+      botError('BOT_UNAUTHENTICATED', '通道令牌未配置或无效', '请管理员保存并启用私聊通道配置，并使用当前通道令牌重试'),
+    );
   }
   const channel = await readChannel(deps.records.vault);
   const supplied = Buffer.from(req.headers.authorization ?? '');
   const expected = Buffer.from('Bearer ' + channel?.token);
   if (!channel?.enabled || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
     req.resume();
-    return sendBotJson(res, 401, botError('BOT_UNAUTHENTICATED', '通道凭证无效或已停用'));
+    return sendBotJson(
+      res,
+      401,
+      botError('BOT_UNAUTHENTICATED', '通道凭证无效或已停用', '请核对当前启用的私聊通道令牌后重试'),
+    );
   }
   if (sha !== undefined) return handleChannelFile(req, res, deps, channel, sha);
   const hold = budget.hold();
@@ -977,16 +1168,34 @@ export async function handleBotChannel(
     const data = await readJsonBody(req, res, hold, { busy: '暂时无法接收通道请求', invalid: '通道请求格式无效' });
     if (data === undefined) return;
     const parsed = channelInput.safeParse(data);
-    if (!parsed.success) return sendBotJson(res, 400, botError('BOT_INVALID_REQUEST', '通道请求字段无效'));
+    if (!parsed.success) {
+      return sendBotJson(
+        res,
+        400,
+        botError('BOT_INVALID_REQUEST', '通道请求字段无效', '请核对通道操作类型与必填字段后重试'),
+      );
+    }
     const identity = await readIdentity(deps.records.vault);
-    if (!identity) return sendBotJson(res, 503, botError('BOT_DISABLED', '通道身份应用尚未启用'));
+    if (!identity) {
+      return sendBotJson(
+        res,
+        503,
+        botError('BOT_DISABLED', '通道身份应用尚未启用', '请管理员在控制台配置扫码登录应用后重试'),
+      );
+    }
     const issuer = identityIssuer(identity.tenant);
     const channelId = sha256Hex(JSON.stringify([issuer, channel.bot]));
     const op = parsed.data;
     if (op.action === 'receipt') return handleChannelReceipt(res, deps, op, channelId);
     if (op.action === 'next') return handleChannelNext(res, deps, issuer, channelId);
     const member = await deps.records.principals.externalMember(issuer, op.subject);
-    if (!member) return sendBotJson(res, 403, botError('BOT_CLIENT_FORBIDDEN', '外部身份未绑定有效成员'));
+    if (!member) {
+      return sendBotJson(
+        res,
+        403,
+        botError('BOT_CLIENT_FORBIDDEN', '外部身份未绑定有效成员', '请成员在控制台绑定外部身份并确认账号启用后重试'),
+      );
+    }
     if (op.action === 'authorize') return sendBotJson(res, 200, { bound: true });
     return handleChannelInbound(res, deps, member, op, issuer, channelId, channel.bot);
   } finally {

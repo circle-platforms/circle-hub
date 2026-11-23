@@ -16,7 +16,7 @@ import {isIP} from 'node:net';
 import {X509Certificate} from 'node:crypto';
 import { SecretReference, VariableUse, referencesIn, resolve as resolveExecutorReferences, VariableInputError } from './variables.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../generated/protocol.ts';
-import { AcceptanceSchema,BotSecretActionSchema,BotSecretSlotSchema,EffectMarkSchema,EffectClassSchema,EffectOutcomeSchema,DynamicTerminalSchema,ExternalIdentityActionSchema,ExternalIdentityUnbindReasonSchema,RetrySafetySchema,SigningSchema,WriteInteractionSchema,ActionKindSchema, ActionResultSchema, EnvironmentSchema, DigestRuleSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
+import { AcceptanceSchema,BotMessageRoleSchema,BotSecretActionSchema,BotSecretSlotSchema,EffectMarkSchema,EffectClassSchema,EffectOutcomeSchema,DynamicTerminalSchema,ExternalIdentityActionSchema,ExternalIdentityUnbindReasonSchema,RetrySafetySchema,SigningSchema,WriteInteractionSchema,ActionKindSchema, ActionResultSchema, EnvironmentSchema, DigestRuleSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
 import { Coverage, idOf, IsoTime, JsonPointer, PackId, PackVersion, RunId, Sha256, UserId, Versioned } from './common.ts';
 import { PackFunctionRef } from './product.ts';
 import { ExternalObjectId } from './reference.ts';
@@ -1225,6 +1225,8 @@ export const MemberNotificationIntent = z.strictObject({
   issuer: Sha256,
   subject: Sha256,
   channel: Sha256,
+  role: BotMessageRoleSchema,
+  code: z.string().regex(/^[a-z0-9_]{1,64}$/).optional(),
   sha256: Sha256,
   size: NonNegativeInt,
   text_sha256: Sha256.nullable(),

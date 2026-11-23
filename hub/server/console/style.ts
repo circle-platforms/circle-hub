@@ -315,6 +315,7 @@ main nav.ch-seg a { flex: none; }
 /* A value with no place to break (a digest, a run id, a reference) wraps inside its cell instead of widening the page:
    a 64-character digest in a task's 技术信息 made the page 198px wider than a 390px screen. */
 .ch-kv dd { min-width: 0; overflow-wrap: anywhere; }
+.ch-kv--wide { grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--space-4); }
 /* html, focus boundaries: a preview that scrolls can be reached and scrolled with the keyboard. */
 .ch-original-preview:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 /* breadcrumbs: the places above a page and the page itself are an ordered list drawn on one line. The separator is the

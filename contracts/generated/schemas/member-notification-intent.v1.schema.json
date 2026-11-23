@@ -36,6 +36,18 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
+    "role": {
+      "type": "string",
+      "enum": [
+        "user",
+        "assistant",
+        "notice"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]{1,64}$"
+    },
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
@@ -251,6 +263,7 @@
     "issuer",
     "subject",
     "channel",
+    "role",
     "sha256",
     "size",
     "text_sha256",

@@ -209,7 +209,12 @@ export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutO
       const message = hostOk ? refusedOrigin : refusedHost;
       if (isMcp) sendRpcError(response, 403, -32000, message, { connection: 'close' });
       else if(target&&personalSyncTarget(target.url.pathname))sendJson(response,403,{code:'SOURCE_UNAVAILABLE'},{connection:'close'});
-      else if (isBot) sendJson(response, 403, botError('BOT_CLIENT_FORBIDDEN', message), { connection: 'close' });
+      else if (isBot) {
+        const nextAction = hostOk
+          ? '请确认请求来源在允许名单内后重试'
+          : '请使用本部署允许的访问地址与端口后重试';
+        sendJson(response, 403, botError('BOT_CLIENT_FORBIDDEN', message, nextAction), { connection: 'close' });
+      }
       else sendText(response, 403, message, { connection: 'close' });
       return;
     }
@@ -222,7 +227,7 @@ export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutO
       const headers = { connection: 'close', 'retry-after': '5' };
       const message = 'Hub 正在重启，这次调用没有执行，稍后原样重试';
       if (isMcp) return sendRpcError(response, 503, -32000, message, headers);
-      if (isBot) return sendJson(response, 503, botError('BOT_UPSTREAM_UNAVAILABLE', message), headers);
+      if (isBot) return sendJson(response, 503, botError('BOT_UPSTREAM_UNAVAILABLE', message, '请等待 Hub 重启完成后原样重试'), headers);
       return sendText(response, 503, message, headers);
     }
     const url = target.url;
@@ -232,7 +237,7 @@ export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutO
     if (url.pathname === chatPath) return handleBot(request, response, deps, budget);
     if (isBot) {
       request.resume();
-      return sendJson(response, 404, botError('BOT_NOT_FOUND'));
+      return sendJson(response, 404, botError('BOT_NOT_FOUND', '没有这个机器人接口地址', '请核对请求路径后重试'));
     }
     if (localToolsTarget(request.url)) return handleLocalTools(request, response, deps, log);
     if (runExportTarget(request.url)) return handleRunExport(request, response, deps, log);
@@ -264,7 +269,9 @@ export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutO
         sendJson(
           response,
           500,
-          isBot ? botError('BOT_UPSTREAM_UNAVAILABLE', '机器人请求处理发生内部错误') : { error: 'Hub 内部错误' },
+          isBot
+            ? botError('BOT_UPSTREAM_UNAVAILABLE', '机器人请求处理发生内部错误', '请稍后重试，若持续出现请联系管理员检查服务日志')
+            : { error: 'Hub 内部错误' },
           { connection: 'close' },
         );
       } else {

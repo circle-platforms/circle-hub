@@ -96,4 +96,15 @@ test('requireAccessBearer is removed and requireDirectAccessBearer accepts direc
   assert.equal(missing.result().json.code, 'BOT_UNAUTHENTICATED');
   assert.match(missing.result().json.message, /^无权限：/);
   assert.ok(!String(missing.result().json.message).includes('个人助手'));
+
+  // F2: botError default fallback and situational override behavior
+  const defaultErr = botError('BOT_DISABLED');
+  assert.equal(defaultErr.code, 'BOT_DISABLED');
+  assert.equal(defaultErr.message, '暂时不可用：机器人尚未配置启用。请管理员在控制台配置机器人模型后重试。');
+
+  const factOnlyErr = botError('BOT_DISABLED', '自定义事实');
+  assert.equal(factOnlyErr.message, '暂时不可用：自定义事实。请管理员在控制台配置机器人模型后重试。');
+
+  const customNextErr = botError('BOT_CLIENT_FORBIDDEN', '缺少有效来源', '请核对请求来源后重试');
+  assert.equal(customNextErr.message, '无权限：缺少有效来源。请核对请求来源后重试。');
 });

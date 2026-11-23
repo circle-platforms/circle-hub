@@ -86,7 +86,7 @@ export const CALL_ERROR_CATEGORY_BY_CODE = {
   BOT_CLIENT_FORBIDDEN: 'permission_denied',
   BOT_NOT_FOUND: 'not_found',
   BOT_VERSION_INVALID: 'invalid_parameters',
-  BOT_VERSION_MISMATCH: 'occupied',
+  BOT_VERSION_MISMATCH: 'invalid_parameters',
   BOT_QUOTA_EXCEEDED: 'temporarily_unavailable',
   BOT_UPSTREAM_UNAVAILABLE: 'temporarily_unavailable',
   BOT_REQUEST_TIMEOUT: 'temporarily_unavailable',

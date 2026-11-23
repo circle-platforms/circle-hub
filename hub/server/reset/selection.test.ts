@@ -247,6 +247,7 @@ test('personal-bot notification intents and receipts classify into history and a
     issuer: hash(20),
     channel: hash(21),
     subject: hash(22),
+    role: 'assistant',
     sha256: hash(10),
     size: 12,
     text_sha256: hash(12),

@@ -52,9 +52,9 @@ export async function handleIdentity(
   session: ConsoleSession | null,
 ): Promise<void> {
   const { deps, identityChallenges: states } = options;
-  const unavailable = (status = 403, message = '扫码身份不可用。请使用成员账号登录。') => {
+  const unavailable = (status = 403, message = '扫码身份不可用。请使用成员账号登录。', headers: Record<string, string> = {}) => {
     req.resume();
-    return sendText(res, status, message);
+    return sendText(res, status, message, headers);
   };
   const secure = options.secureRequest(req);
   const origin = issuerOf(req, secure);
@@ -141,7 +141,7 @@ export async function handleIdentity(
     session: owner ? session!.id : null,
     next: safeNext(url.searchParams.get('next')),
   });
-  if (!state) return unavailable(429);
+  if (!state) return unavailable(429, '当前来源待完成的扫码登录请求过多，请稍后再试。', { 'retry-after': '60' });
   const result = await callBot(deps.config.dataDir, { action: 'qr', ...optionsForAdapter, state }, 'channel');
   const location = (result.body as { location?: unknown })?.location;
   if (

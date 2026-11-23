@@ -21,8 +21,8 @@ export function panel(head: CardHead | null, body: unknown, view = ''): Html {
   return html`<section class="ch-section"${view ? html` data-view="${view}"` : ''}>${head ? html`<div class="ch-page-head"><div><h2 class="ch-section-label">${head.lead ?? ''}${head.hint?tooltip(head.title,head.hint):head.title}${counted?html` · ${head.meta}`:''}</h2>${head.meta === undefined || counted ? '' : html`<p class="ch-meta">${head.meta}</p>`}</div>${head.tail === undefined ? '' : html`<div class="ch-actions">${head.tail}</div>`}</div>` : ''}${typeof head?.title === 'string' ? nameTables(body, head.title) : body}</section>`;
 }
 
-export function facts(pairs: readonly (readonly [unknown, unknown])[]): Html {
-  return html`<dl class="ch-kv">${pairs.map(([key, value]) => html`<dt>${key}</dt><dd>${value}</dd>`)}</dl>`;
+export function facts(pairs: readonly (readonly [unknown, unknown])[], options?: { wide?: boolean }): Html {
+  return html`<dl class="ch-kv${options?.wide ? ' ch-kv--wide' : ''}">${pairs.map(([key, value]) => html`<dt>${key}</dt><dd>${value}</dd>`)}</dl>`;
 }
 
 export function badge(text: unknown, tone: Tone | 'plain' | null = null): Html {

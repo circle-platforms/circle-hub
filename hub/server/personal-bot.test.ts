@@ -15,6 +15,7 @@ import {
   inspectBotRuntimeDir,
   maskVaultSecrets,
   newChannel,
+  readBotConfigState,
   readBotProfile,
   refreshHost,
   setBotProfile,
@@ -51,6 +52,8 @@ test('chat authenticates every request, fixes the owner, confines model credenti
     assert.equal((await send(member.token, { action: 'discover' })).status, 200);
     assert.equal(seen[0].owner, member.principal.id);
     assert.equal(seen[0].config, null);
+    assert.equal(seen[0].configVersion, 0);
+    assert.deepEqual(await readBotConfigState(hub.records.vault), { config: null, configVersion: 0 });
     const profile = {
       name: '测试机器人',
       protocol: 'openai',
@@ -61,35 +64,63 @@ test('chat authenticates every request, fixes the owner, confines model credenti
     const op = { action: 'send', conversation: randomUUID(), request: randomUUID(), text: '你好' };
     assert.equal((await send(member.token, op)).status, 503);
     await setBotProfile(hub.records.vault, profile);
+    assert.equal((await readBotConfigState(hub.records.vault)).configVersion, 1);
     await assert.rejects(
       setBotProfile(hub.records.vault, { ...profile, endpoint: 'https://example.invalid/?key=secret' }),
     );
     assert.equal((await readBotProfile(hub.records.vault))?.name, profile.name);
-    await refreshHost(hub.deps.config.dataDir, hub.records.vault);
-    const configureFrame = seen.at(-1) as { owner?: unknown; op?: { action?: string }; config?: typeof profile };
+    const refreshOk = await refreshHost(hub.deps.config.dataDir, hub.records.vault);
+    assert.deepEqual(refreshOk, { notified: true, configVersion: 1 });
+    const configureFrame = seen.at(-1) as {
+      owner?: unknown;
+      op?: { action?: string };
+      config?: typeof profile;
+      configVersion?: number;
+    };
     assert.equal(configureFrame.owner, '_hub');
     assert.deepEqual(configureFrame.op, { action: 'configure' });
     assert.equal(configureFrame.config?.key, profile.key);
+    assert.equal(configureFrame.configVersion, 1);
 
     const response = await send(member.token, op);
     assert.equal(response.status, 200);
     assert.ok(!(await response.text()).includes(profile.key));
     assert.equal((seen.at(-1)!.config as typeof profile).key, profile.key);
+    assert.equal(seen.at(-1)!.configVersion, 1);
     assert.equal((seen.at(-1)!.owner), member.principal.id);
 
     await disableBot(hub.deps);
-    const disableFrame = seen.at(-1) as { owner?: unknown; op?: { action?: string } };
+    const disableFrame = seen.at(-1) as { owner?: unknown; op?: { action?: string }; configVersion?: number };
     assert.equal(disableFrame.owner, '_hub');
     assert.deepEqual(disableFrame.op, { action: 'disable' });
+    assert.equal(disableFrame.configVersion, 2);
+    assert.deepEqual(await readBotConfigState(hub.records.vault), { config: null, configVersion: 2 });
     assert.equal((await send(member.token, { action: 'discover' })).status, 200);
     assert.equal(seen.at(-1)!.config, null);
+    assert.equal(seen.at(-1)!.configVersion, 2);
     assert.equal((await send(member.token, op)).status, 503);
-    // Offline refreshHost never throws when host.sock does not exist
-    await refreshHost(join(hub.deps.config.dataDir, 'no-such-dir'), hub.records.vault);
+    // Offline refreshHost never throws when host.sock does not exist, returns { notified: false } and logs masked detail
+    const offlineLogs: string[] = [];
+    const offlineRes = await refreshHost(
+      join(hub.deps.config.dataDir, 'no-such-dir'),
+      hub.records.vault,
+      (line) => offlineLogs.push(line),
+    );
+    assert.equal(offlineRes.notified, false);
+    assert.equal(offlineRes.configVersion, 2);
+    assert.equal(offlineLogs.length, 1);
+    assert.match(offlineLogs[0]!, /^通知机器人宿主配置变更失败（版本 2）：/);
     await hub.records.principals.setDisabled(hub.admin.principal, member.principal.id, true);
     assert.equal((await send(member.token, { action: 'discover' })).status, 401);
     assert.equal(seen.length, 5);
     assert.ok(!hub.logs.join('').includes(profile.key));
+
+    // Legacy model without personal-bot.model-version defaults to configVersion=1 and increments to 2
+    await hub.records.vault.remove('personal-bot.model-version');
+    await hub.records.vault.put('personal-bot.model', JSON.stringify(profile));
+    assert.equal((await readBotConfigState(hub.records.vault)).configVersion, 1);
+    await setBotProfile(hub.records.vault, { ...profile, name: '升级机器人' });
+    assert.equal((await readBotConfigState(hub.records.vault)).configVersion, 2);
   } finally {
     await new Promise<void>((resolve) => host.close(() => resolve()));
     await hub.close();
@@ -98,13 +129,13 @@ test('chat authenticates every request, fixes the owner, confines model credenti
 
 test('personal-bot enforces H5 direct bearer, H8/H9 strict SemVer Bot-Client-Version, and D1 removal of reviewer slot', async () => {
   const hub = await createTestServer();
-  let hostMode: 'ok' | 'version_mismatch' = 'ok';
+  let hostMode: 'ok' | 'version_mismatch' | 'version_mismatch_400' = 'ok';
   const host = createServer(async (req, res) => {
     for await (const _ of req) {
       // drain
     }
-    if (hostMode === 'version_mismatch') {
-      res.statusCode = 409;
+    if (hostMode === 'version_mismatch' || hostMode === 'version_mismatch_400') {
+      res.statusCode = hostMode === 'version_mismatch_400' ? 400 : 409;
       res.end(JSON.stringify({ code: 'version_mismatch', message: 'raw upstream version mismatch secret' }));
       return;
     }
@@ -132,6 +163,19 @@ test('personal-bot enforces H5 direct bearer, H8/H9 strict SemVer Bot-Client-Ver
     });
     assert.equal(oauthRes.status, 403);
     assert.equal(((await oauthRes.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
+
+    // T2: OAuth token on action: 'send' with text/plain MUST be refused at requireDirectAccessBearer (403) before mediaTypeOf (415)
+    const oauthTextPlain = await fetch(hub.url + chatPath, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer ' + oauthToken,
+        'content-type': 'text/plain',
+        'bot-client-version': '1.18.1',
+      },
+      body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: 'oauth' }),
+    });
+    assert.equal(oauthTextPlain.status, 403);
+    assert.equal(((await oauthTextPlain.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
 
     const legacyHeaderRes = await fetch(hub.url + chatPath, {
       method: 'POST',
@@ -180,10 +224,26 @@ test('personal-bot enforces H5 direct bearer, H8/H9 strict SemVer Bot-Client-Ver
       },
       body: JSON.stringify({ action: 'discover' }),
     });
-    assert.equal(mismatchRes.status, 409);
+    assert.equal(mismatchRes.status, 400);
     const mismatchBody = (await mismatchRes.json()) as { code?: string; message?: string };
     assert.equal(mismatchBody.code, 'BOT_VERSION_MISMATCH');
+    assert.match(mismatchBody.message ?? '', /^参数无效：/);
     assert.ok(!JSON.stringify(mismatchBody).includes('raw upstream'));
+
+    hostMode = 'version_mismatch_400';
+    const mismatch400Res = await fetch(hub.url + chatPath, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer ' + user.token,
+        'content-type': 'application/json',
+        'bot-client-version': '2.0.0',
+      },
+      body: JSON.stringify({ action: 'discover' }),
+    });
+    assert.equal(mismatch400Res.status, 400);
+    const mismatch400Body = (await mismatch400Res.json()) as { code?: string; message?: string };
+    assert.equal(mismatch400Body.code, 'BOT_VERSION_MISMATCH');
+    assert.match(mismatch400Body.message ?? '', /^参数无效：/);
 
     // S8: setBotProfile and disableBot remove stranded legacy reviewer slot
     const putLegacyReviewer = () =>

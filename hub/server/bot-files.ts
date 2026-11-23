@@ -269,12 +269,24 @@ export async function verifyChannelStagedFiles(
   const maxFiles = options.maxMemberFiles ?? MAX_MEMBER_BOT_FILES;
   const retentionMs = options.retentionMs ?? BOT_FILE_RETENTION_MS;
 
-  await ensureBotRuntimeDir(root);
+  await ensureBotRuntimeDir(root).catch(() => undefined);
+  const dirCheck = await inspectBotRuntimeDir(root);
+  if (!dirCheck.ok) {
+    return {
+      ok: false,
+      status: 503,
+      ...botError('BOT_UPSTREAM_UNAVAILABLE', '机器人附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
+    };
+  }
   return withQuotaLock(root, 'files', ownerKey, async (key) => {
     for (const file of files) {
       const staged = await verifyFileInDir(stagingDir, file.sha256, file.size);
       if (!staged) {
-        return { ok: false, status: 400, ...botError('BOT_INVALID_REQUEST', '附件尚未暂存或校验失败') };
+        return {
+          ok: false,
+          status: 400,
+          ...botError('BOT_INVALID_REQUEST', '附件尚未暂存或校验失败', '请先将附件完整上传至通道暂存区后再发送入站消息'),
+        };
       }
       await staged.handle.close();
     }
@@ -299,7 +311,11 @@ export async function verifyChannelStagedFiles(
       usage.count + inFlight.files + pendingCount > maxFiles ||
       usage.bytes + inFlight.bytes + pendingBytes > maxBytes
     ) {
-      return { ok: false, status: 413, ...botError('BOT_QUOTA_EXCEEDED', '成员机器人文件存储配额已满') };
+      return {
+        ok: false,
+        status: 413,
+        ...botError('BOT_QUOTA_EXCEEDED', '机器人私聊附件存储配额已满', '请等待旧附件到期清理或释放空间后再发送'),
+      };
     }
     const reservation: QuotaReservation = { files: pendingCount, bytes: pendingBytes };
     addInFlight(key, reservation);
@@ -341,7 +357,15 @@ export async function commitChannelStagedFiles(
   const maxFiles = options.maxMemberFiles ?? MAX_MEMBER_BOT_FILES;
   const retentionMs = options.retentionMs ?? BOT_FILE_RETENTION_MS;
 
-  await ensureBotRuntimeDir(root);
+  await ensureBotRuntimeDir(root).catch(() => undefined);
+  const dirCheck = await inspectBotRuntimeDir(root);
+  if (!dirCheck.ok) {
+    return {
+      ok: false,
+      status: 503,
+      ...botError('BOT_UPSTREAM_UNAVAILABLE', '机器人附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
+    };
+  }
   return withQuotaLock(root, 'files', ownerKey, async (key) => {
     try {
       const usage = await pruneAndMeasureDir(destDir, nowMs, retentionMs);
@@ -367,7 +391,11 @@ export async function commitChannelStagedFiles(
           (usage.count + inFlight.files + missingCount > maxFiles ||
             usage.bytes + inFlight.bytes + missingBytes > maxBytes)
         ) {
-          return { ok: false, status: 413, ...botError('BOT_QUOTA_EXCEEDED', '成员机器人文件存储配额已满') };
+          return {
+            ok: false,
+            status: 413,
+            ...botError('BOT_QUOTA_EXCEEDED', '机器人私聊附件存储配额已满', '请等待旧附件到期清理或释放空间后再发送'),
+          };
         }
       }
 
@@ -384,7 +412,11 @@ export async function commitChannelStagedFiles(
             await already.handle.close();
             continue;
           }
-          return { ok: false, status: 400, ...botError('BOT_INVALID_REQUEST', '附件尚未暂存或校验失败') };
+          return {
+            ok: false,
+            status: 400,
+            ...botError('BOT_INVALID_REQUEST', '附件尚未暂存或校验失败', '请先将附件完整上传至通道暂存区后再发送入站消息'),
+          };
         }
         await staged.handle.utimes(timestamp, timestamp).catch(() => undefined);
         await staged.handle.close();
@@ -398,7 +430,11 @@ export async function commitChannelStagedFiles(
           if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
           const prior = await verifyFileInDir(destDir, sha, expected.size);
           if (!prior) {
-            return { ok: false, status: 409, ...botError('BOT_CONFLICT', '已存在同摘要但内容冲突的文件') };
+            return {
+              ok: false,
+              status: 409,
+              ...botError('BOT_CONFLICT', '已存在同摘要但内容冲突的文件', '请核对文件摘要后重新上传'),
+            };
           }
           await prior.handle.utimes(timestamp, timestamp).catch(() => undefined);
           await prior.handle.close();
@@ -423,13 +459,17 @@ export async function promoteChannelStagedFiles(
 ): Promise<{ ok: true } | { ok: false; status: number; code: ProtocolCode; message: string }> {
   const verified = await verifyChannelStagedFiles(root, owner, files, options);
   if (!verified.ok) return verified;
+  let consumed = false;
   try {
     return await commitChannelStagedFiles(root, owner, files, {
       ...options,
       reservation: verified.reservation,
+      consumeReservation: () => {
+        consumed = true;
+      },
     });
   } finally {
-    await verified.release();
+    if (!consumed) await verified.release();
   }
 }
 
@@ -515,13 +555,26 @@ export async function transferBotFile(
   const retentionMs = options.retentionMs ?? BOT_FILE_RETENTION_MS;
   if (!isSha256(sha)) {
     req.resume();
-    return sendBotJson(res, 404, botError('BOT_NOT_FOUND', '文件摘要不存在或格式无效'));
+    return sendBotJson(
+      res,
+      404,
+      botError('BOT_NOT_FOUND', '文件摘要不存在或格式无效', '请提供有效的 64 位小写十六进制 SHA-256 文件摘要'),
+    );
   }
   if (req.method === 'GET') {
+    const dirCheck = await inspectBotRuntimeDir(root);
+    if (!dirCheck.ok && dirCheck.reason !== '不存在') {
+      req.resume();
+      return sendBotJson(
+        res,
+        503,
+        botError('BOT_UPSTREAM_UNAVAILABLE', '机器人附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
+      );
+    }
     const file = await verifiedBotFile(root, owner, sha, undefined, { now: nowMs, retentionMs });
     if (!file) {
       req.resume();
-      return sendBotJson(res, 404, botError('BOT_NOT_FOUND', '文件不存在或校验失败'));
+      return sendBotJson(res, 404, botError('BOT_NOT_FOUND', '文件不存在或校验失败', '请核对文件摘要，若已过期请重新上传'));
     }
     try {
       if (!(await stillActive())) {
@@ -544,17 +597,30 @@ export async function transferBotFile(
   }
   if (req.method !== 'PUT') {
     req.resume();
-    return sendBotJson(res, 405, botError('BOT_INVALID_REQUEST', '只允许 GET 或 PUT'), { allow: 'GET, PUT' });
+    return sendBotJson(
+      res,
+      405,
+      botError('BOT_INVALID_REQUEST', '只允许 GET 或 PUT', '请改用 GET 下载或 PUT 上传文件'),
+      { allow: 'GET, PUT' },
+    );
   }
   const lengthHeader = req.headers['content-length'];
   if (typeof lengthHeader !== 'string' || !/^\d+$/.test(lengthHeader)) {
     req.resume();
-    return sendBotJson(res, 400, botError('BOT_INVALID_REQUEST', '需要有效的文件长度'));
+    return sendBotJson(
+      res,
+      400,
+      botError('BOT_INVALID_REQUEST', '需要有效的文件长度', '请在请求头中提供非负整数 Content-Length 后重试'),
+    );
   }
   const declaredLength = Number(lengthHeader);
   if (!Number.isSafeInteger(declaredLength) || declaredLength > fileLimit) {
     req.resume();
-    return sendBotJson(res, 413, botError('BOT_INVALID_REQUEST', '单个文件大小超过 100 MiB 上限'));
+    return sendBotJson(
+      res,
+      413,
+      botError('BOT_INVALID_REQUEST', '单个文件大小超过 100 MiB 上限', '请将单个附件压缩或拆分至 100 MiB 以内后再上传'),
+    );
   }
   const maxBytes = options.maxMemberBytes ?? MAX_MEMBER_BOT_BYTES;
   const maxFiles = options.maxMemberFiles ?? MAX_MEMBER_BOT_FILES;
@@ -562,21 +628,35 @@ export async function transferBotFile(
   const dir = folder(root, owner, scope);
   const timestamp = new Date(nowMs);
 
-  await ensureBotRuntimeDir(root);
+  await ensureBotRuntimeDir(root).catch(() => undefined);
+  const dirCheck = await inspectBotRuntimeDir(root);
+  if (!dirCheck.ok) {
+    req.resume();
+    return sendBotJson(
+      res,
+      503,
+      botError('BOT_UPSTREAM_UNAVAILABLE', '机器人附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
+    );
+  }
   const reservationCheck = await withQuotaLock(root, scope, ownerKey, async (key) => {
     const usage = await pruneAndMeasureDir(dir, nowMs, retentionMs);
     const existing = await verifyFileInDir(dir, sha, declaredLength);
+    let hasExisting = false;
     if (existing) {
-      await existing.handle.utimes(timestamp, timestamp).catch(() => undefined);
+      hasExisting = true;
       await existing.handle.close();
-      return { ok: true as const, reservation: { files: 0, bytes: 0 } };
     }
     const inFlight = quotaInFlight.get(key) ?? { files: 0, bytes: 0 };
+    const usedCount = hasExisting ? Math.max(0, usage.count - 1) : usage.count;
+    const usedBytes = hasExisting ? Math.max(0, usage.bytes - declaredLength) : usage.bytes;
     if (
-      usage.count + inFlight.files + 1 > maxFiles ||
-      usage.bytes + inFlight.bytes + declaredLength > maxBytes
+      usedCount + inFlight.files + 1 > maxFiles ||
+      usedBytes + inFlight.bytes + declaredLength > maxBytes
     ) {
       return { ok: false as const };
+    }
+    if (hasExisting) {
+      await utimes(join(dir, sha), timestamp, timestamp).catch(() => undefined);
     }
     const reservation: QuotaReservation = { files: 1, bytes: declaredLength };
     addInFlight(key, reservation);
@@ -585,7 +665,11 @@ export async function transferBotFile(
 
   if (!reservationCheck.ok) {
     req.resume();
-    return sendBotJson(res, 413, botError('BOT_QUOTA_EXCEEDED', '成员机器人文件存储配额已满'));
+    return sendBotJson(
+      res,
+      413,
+      botError('BOT_QUOTA_EXCEEDED', '机器人私聊附件存储配额已满', '请等待旧附件到期清理或释放空间后再上传'),
+    );
   }
 
   let reserved: QuotaReservation | null = reservationCheck.reservation;
@@ -617,7 +701,12 @@ export async function transferBotFile(
         req.resume();
         await discardTemp();
         await releaseReservation();
-        return sendBotJson(res, 413, botError('BOT_INVALID_REQUEST', '上传内容超出声明大小'), { connection: 'close' });
+        return sendBotJson(
+          res,
+          413,
+          botError('BOT_INVALID_REQUEST', '上传内容超出声明大小', '请确保实际上传字节数与 Content-Length 一致后重试'),
+          { connection: 'close' },
+        );
       }
       hash.update(chunk);
       await handle.writeFile(chunk);
@@ -626,7 +715,11 @@ export async function transferBotFile(
     if (size !== declaredLength || hash.digest('hex') !== sha) {
       await discardTemp();
       await releaseReservation();
-      return sendBotJson(res, 422, botError('BOT_INVALID_REQUEST', '文件摘要或长度不一致'));
+      return sendBotJson(
+        res,
+        422,
+        botError('BOT_INVALID_REQUEST', '文件摘要或长度不一致', '请重新计算 SHA-256 与文件长度并完整上传'),
+      );
     }
     if (!(await stillActive())) {
       await discardTemp();
@@ -659,7 +752,7 @@ export async function transferBotFile(
     });
     await discardTemp();
     if (conflict) {
-      return sendBotJson(res, 409, botError('BOT_CONFLICT', '已存在同摘要但内容冲突的文件'));
+      return sendBotJson(res, 409, botError('BOT_CONFLICT', '已存在同摘要但内容冲突的文件', '请核对文件摘要后重新上传'));
     }
     sendBotJson(res, 200, { sha256: sha, size });
   } finally {
@@ -674,7 +767,11 @@ export async function handleBotFile(req: IncomingMessage, res: ServerResponse, d
   const configured = await deps.records.vault.has('personal-bot.model');
   if (!configured) {
     req.resume();
-    return sendBotJson(res, 503, botError('BOT_DISABLED', '机器人尚未启用'));
+    return sendBotJson(
+      res,
+      503,
+      botError('BOT_DISABLED', '机器人尚未启用', '请管理员在控制台配置并启用机器人模型后重试'),
+    );
   }
   return transferBotFile(
     req,

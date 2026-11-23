@@ -10,6 +10,7 @@ import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { memoryOperatorTokens } from './assemble/operator-token.ts';
 import { createCommandBridge } from './command-bridge.ts';
 import { wordingProblems } from './console/testing-wording.ts';
+import { CSS } from './console/style.ts';
 import { createTestServer, testConsoleCredentials } from './testing.ts';
 
 let postgres: TemporaryPostgres;
@@ -66,23 +67,22 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
   const appSecret = 'synthetic-secret-identity-456';
   const chanSecret = 'synthetic-secret-channel-789';
 
-  assert.equal(
-    (
-      await bridge.run(['bot', 'set'], {
-        token: hub.admin.token,
-        secrets: {
-          'bot-model': JSON.stringify({
-            name: '合成助手',
-            protocol: 'openai',
-            model: 'demo-model',
-            endpoint: 'https://model.example.invalid/v1',
-            key: modelKey,
-          }),
-        },
-      })
-    ).code,
-    0,
-  );
+  const offlineSet = await bridge.run(['bot', 'set'], {
+    token: hub.admin.token,
+    secrets: {
+      'bot-model': JSON.stringify({
+        name: '合成助手',
+        protocol: 'openai',
+        model: 'demo-model',
+        endpoint: 'https://model.example.invalid/v1',
+        key: modelKey,
+      }),
+    },
+  });
+  assert.equal(offlineSet.code, 0);
+  assert.ok(offlineSet.stdout.join('\n').includes('机器人模型配置已保存（宿主当前未连接，将在下次调用时同步）'));
+  assert.match(offlineSet.stderr.join('\n'), /^通知机器人宿主配置变更失败（版本 1）：/);
+  assert.ok(!offlineSet.stderr.join('\n').includes(modelKey));
   assert.equal(
     (
       await bridge.run(['bot', 'identity-set'], {
@@ -113,7 +113,10 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
     ).code,
     0,
   );
-  assert.equal((await bridge.run(['bot', 'disable'], { token: hub.admin.token })).code, 0);
+  const offlineDisable = await bridge.run(['bot', 'disable'], { token: hub.admin.token });
+  assert.equal(offlineDisable.code, 0);
+  assert.ok(offlineDisable.stdout.join('\n').includes('机器人模型已停用（宿主当前未连接，将在下次调用时同步）'));
+  assert.match(offlineDisable.stderr.join('\n'), /^通知机器人宿主配置变更失败（版本 2）：/);
   assert.equal((await bridge.run(['bot', 'identity-remove'], { token: hub.admin.token })).code, 0);
   assert.equal((await bridge.run(['bot', 'channel-remove'], { token: hub.admin.token })).code, 0);
 
@@ -140,7 +143,7 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
   });
   await new Promise<void>((resolve) => channelSockServer.listen(join(botRuntimeDir, 'channel.sock'), resolve));
   let hostMode: 'secret_error' | 'ok' = 'secret_error';
-  const hostRequests: Array<{ owner?: unknown; op?: { action?: string }; config?: { key?: string } | null }> = [];
+  const hostRequests: Array<{ owner?: unknown; op?: { action?: string }; config?: { key?: string } | null; configVersion?: number }> = [];
   const hostSockServer = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) {
@@ -150,6 +153,7 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
       owner?: unknown;
       op?: { action?: string };
       config?: { key?: string } | null;
+      configVersion?: number;
     };
     hostRequests.push(parsed);
     if (parsed.op?.action === 'test' && hostMode === 'secret_error') {
@@ -167,8 +171,8 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
     const stopRes = await bridge.run(['bot', 'channel-stop'], { token: hub.admin.token });
     assert.equal(stopRes.code, 0, stopRes.stderr.join('\n'));
 
-    // S5 + S10 + R11: bot set notifies host.sock with configure frame; bot test masks vault secrets and surfaces bot-runtime mode error
-    await bridge.run(['bot', 'set'], {
+    // S5 + S10 + R11 + F5/F14: bot set notifies host.sock with configure frame & monotonic configVersion and truthful stdout; bot test masks vault secrets and surfaces bot-runtime mode error
+    const connectedSet = await bridge.run(['bot', 'set'], {
       token: hub.admin.token,
       secrets: {
         'bot-model': JSON.stringify({
@@ -180,9 +184,13 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
         }),
       },
     });
+    assert.equal(connectedSet.code, 0);
+    assert.ok(connectedSet.stdout.join('\n').includes('机器人模型配置已保存，已通知宿主'));
+    assert.equal(connectedSet.stderr.length, 0);
     assert.equal(hostRequests.at(-1)?.owner, '_hub');
     assert.deepEqual(hostRequests.at(-1)?.op, { action: 'configure' });
     assert.equal(hostRequests.at(-1)?.config?.key, modelKey);
+    assert.equal(hostRequests.at(-1)?.configVersion, 3);
     const testMaskedFail = await bridge.run(['bot', 'test'], { token: hub.admin.token });
     assert.notEqual(testMaskedFail.code, 0);
     assert.ok(!testMaskedFail.stderr.join('\n').includes(modelKey));
@@ -223,9 +231,17 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
   assert.ok(!rawAuditJson.includes(appSecret));
   assert.ok(!rawAuditJson.includes(chanSecret));
 
-  // S8: If audit append fails after vault write, botCommand warns explicitly and fails non-zero
+  // S8 + F5: If audit append fails after vault write, refreshHost MUST STILL run BEFORE throwing audit failure!
   const { botCommand } = await import('./cli-admin.ts');
   const { Session } = await import('./cli-session.ts');
+  const failingAuditHostFrames: Array<{ owner?: unknown; op?: { action?: string }; configVersion?: number }> = [];
+  const failingAuditHost = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const c of req) chunks.push(c);
+    failingAuditHostFrames.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+    res.end(JSON.stringify({ ok: true }));
+  });
+  await new Promise<void>((resolve) => failingAuditHost.listen(join(botRuntimeDir, 'host.sock'), resolve));
   const failingStore = new Proxy(hub.records.store, {
     get(target, prop) {
       if (prop === 'put') {
@@ -257,10 +273,23 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
         }),
     },
   );
-  await assert.rejects(
-    () => botCommand(failingSession, ['set']),
-    (err: unknown) => err instanceof Error && /审计记录写入失败/.test(err.message) && /机器人模型/.test(err.message),
-  );
+  try {
+    await assert.rejects(
+      () => botCommand(failingSession, ['set']),
+      (err: unknown) => err instanceof Error && /审计记录写入失败/.test(err.message) && /机器人模型/.test(err.message),
+    );
+    assert.deepEqual(failingAuditHostFrames.at(-1)?.op, { action: 'configure' });
+    assert.equal(failingAuditHostFrames.at(-1)?.configVersion, 4);
+
+    await assert.rejects(
+      () => botCommand(failingSession, ['disable']),
+      (err: unknown) => err instanceof Error && /审计记录写入失败/.test(err.message) && /机器人模型/.test(err.message),
+    );
+    assert.deepEqual(failingAuditHostFrames.at(-1)?.op, { action: 'disable' });
+    assert.equal(failingAuditHostFrames.at(-1)?.configVersion, 5);
+  } finally {
+    await new Promise<void>((resolve) => failingAuditHost.close(() => resolve()));
+  }
 
   // 3. Console login + S12 verify /console/settings?tab=bot has pure Chinese labels, status box, recent audit box, callback URL, and passes wordingProblems
   const send = (path: string, init: RequestInit = {}) => fetch(hub.url + path, { redirect: 'manual', ...init });
@@ -303,10 +332,41 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
     labelOf('bot_secret_action', 'start_channel'),
     labelOf('bot_secret_action', 'stop_channel'),
     hub.url + '/console/identity/callback',
+    '未连接',
+    '配置机器人模型、扫码登录应用、私聊通道与运行状态',
+    'ch-kv--wide',
+    '填写模型服务的 HTTPS 接口地址；仅本机调试时可使用回环 HTTP 地址。',
+    '仅当需要按模型系列标识区分能力策略时填写，留空则按默认模型处理。',
+    '从模型服务商控制台获取；保存时加密写入密钥库，页面不回显旧密钥。',
+    '填写外部身份平台中的组织或企业租户标识。',
+    '填写外部扫码登录应用的应用标识。',
+    '从外部应用管理后台获取密钥；保存时加密写入密钥库，不回显旧密钥。',
+    '填写外部消息平台中创建的机器人标识。',
+    '填写通道适配器在本地或内网访问当前 Hub 的根地址，须为 HTTPS 或回环 HTTP 地址。',
+    '从外部消息平台机器人详情页获取通道密钥；保存时加密写入密钥库，不回显旧密钥。',
   ]) {
     assert.ok(botHtml.includes(label), `expected ${label} on /console/settings?tab=bot`);
   }
+  assert.match(botHtml, /凭据 <span class="ch-count">\d+<\/span>/);
+  assert.ok(CSS.includes('.ch-kv--wide { grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--space-4); }'));
   assert.equal((botHtml.match(/ch-btn--primary/g) ?? []).length, 3, 'all 3 forms must use primary submit buttons');
+
+  // T5(b): Verify "运行中" status chips appear when host.sock and channel.sock ARE listening
+  const liveHostSock = createServer((_req, res) => res.end('{}'));
+  const liveChanSock = createServer((_req, res) => res.end('{}'));
+  await new Promise<void>((resolve) => liveHostSock.listen(join(botRuntimeDir, 'host.sock'), resolve));
+  await new Promise<void>((resolve) => liveChanSock.listen(join(botRuntimeDir, 'channel.sock'), resolve));
+  try {
+    const liveBotHtml = await (await send('/console/settings?tab=bot', { headers: { cookie: adminCookie } })).text();
+    assert.equal(
+      (liveBotHtml.match(/<span class="ch-badge ch-badge--pass"><span class="ch-dot ch-dot--pass" aria-hidden="true"><\/span>运行中<\/span>/g) ?? []).length,
+      3,
+      'status box, host.sock, and channel.sock must all show 运行中 when listening',
+    );
+  } finally {
+    await new Promise<void>((resolve) => liveHostSock.close(() => resolve()));
+    await new Promise<void>((resolve) => liveChanSock.close(() => resolve()));
+  }
 
   // Verify wordingProblems also passes when bot-runtime has wrong mode (0o755) or is a regular file
   await chmod(botRuntimeDir, 0o755);
@@ -413,21 +473,29 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
     binds.map((b) => b.issuer).sort(),
   );
 
-  // R11: bot disable sends best-effort { owner: '_hub', op: { action: 'disable' } } when host.sock is present
+  // R11 + F5/F14: bot disable sends { owner: '_hub', op: { action: 'disable' }, configVersion } when host.sock is present and prints notified stdout
   await mkdir(botRuntimeDir, { recursive: true, mode: 0o700 });
-  const disableRequests: Array<{ owner?: unknown; op?: { action?: string } }> = [];
+  const disableRequests: Array<{ owner?: unknown; op?: { action?: string }; configVersion?: number }> = [];
   const disableHostServer = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk);
-    disableRequests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as { owner?: unknown; op?: { action?: string } });
+    disableRequests.push(
+      JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+        owner?: unknown;
+        op?: { action?: string };
+        configVersion?: number;
+      },
+    );
     res.end(JSON.stringify({ ok: true }));
   });
   await new Promise<void>((resolve) => disableHostServer.listen(join(botRuntimeDir, 'host.sock'), resolve));
   try {
     const disableRes = await bridge.run(['bot', 'disable'], { token: hub.admin.token });
     assert.equal(disableRes.code, 0, disableRes.stderr.join('\n'));
+    assert.ok(disableRes.stdout.join('\n').includes('机器人模型已停用，已通知宿主'));
+    assert.equal(disableRes.stderr.length, 0);
     assert.equal(disableRequests.length, 1);
-    assert.deepEqual(disableRequests[0], { owner: '_hub', op: { action: 'disable' } });
+    assert.deepEqual(disableRequests[0], { owner: '_hub', op: { action: 'disable' }, configVersion: 6 });
   } finally {
     await new Promise<void>((resolve) => disableHostServer.close(() => resolve()));
   }

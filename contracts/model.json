@@ -5222,7 +5222,7 @@
         "code": "BOT_VERSION_MISMATCH",
         "when": "客户端主次版本号与当前机器人协议版本不兼容",
         "fix": "将客户端更新到与当前 Hub 兼容的版本后重试",
-        "callErrorCategory": "occupied"
+        "callErrorCategory": "invalid_parameters"
       },
       {
         "code": "BOT_QUOTA_EXCEEDED",

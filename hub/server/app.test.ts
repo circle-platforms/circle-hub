@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { chmod, lstat, mkdir, readFile, stat, utimes, writeFile } from 'node:fs/promises';
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -194,43 +194,124 @@ test(
         duplex: 'half',
       } as unknown as RequestInit);
 
-      const stalledReply = await new Promise<{ status: number; body: string }>((resolve, reject) => {
-        const req = httpRequest(
-          info.url + '/api/bot/v1',
-          {
-            method: 'POST',
-            headers: {
-              authorization: 'Bearer ' + token,
-              'content-type': 'application/json',
-              'bot-client-version': '1.18.1',
-              'content-length': '64',
+      try {
+        const stalledReply = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+          let settled = false;
+          const req = httpRequest(
+            info.url + '/api/bot/v1',
+            {
+              method: 'POST',
+              headers: {
+                authorization: 'Bearer ' + token,
+                'content-type': 'application/json',
+                'bot-client-version': '1.18.1',
+                'content-length': '64',
+              },
             },
-          },
+            (res) => {
+              let body = '';
+              res.setEncoding('utf8');
+              res.on('data', (chunk) => {
+                body += chunk;
+              });
+              res.on('end', () => {
+                if (!settled) {
+                  settled = true;
+                  clearTimeout(guard);
+                  req.destroy();
+                  resolve({ status: res.statusCode ?? 0, body });
+                }
+              });
+              res.on('error', () => {
+                if (!settled) {
+                  settled = true;
+                  clearTimeout(guard);
+                  req.destroy();
+                  resolve({ status: res.statusCode ?? 0, body });
+                }
+              });
+            },
+          );
+          const guard = setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              req.destroy();
+              resolve({ status: 0, body: '' });
+            }
+          }, 2_000);
+          guard.unref();
+          req.on('error', (err) => {
+            if (settled || req.destroyed) return;
+            settled = true;
+            clearTimeout(guard);
+            reject(err);
+          });
+          req.write('{');
+        });
+        assert.equal(stalledReply.status, 408);
+        assert.equal((JSON.parse(stalledReply.body) as { code?: string }).code, 'BOT_REQUEST_TIMEOUT');
+
+        releaseUploadChunk2();
+        const slowUpload = await slowUploadPromise;
+        assert.equal(slowUpload.status, 200);
+      } finally {
+        releaseUploadChunk2();
+        await slowUploadPromise.catch(() => undefined);
+      }
+
+      // T4: /console/api/stream SSE stays open past requestTimeoutMs (60ms) without hitting 408
+      const loginPage = await fetch(info.url + '/console/login');
+      const loginHtml = await loginPage.text();
+      const loginCsrf = /name="csrf" value="([^"]+)"/.exec(loginHtml)![1];
+      const loginCookie = loginPage.headers.getSetCookie()[0].split(';')[0];
+      const signedIn = await fetch(info.url + '/console/login', {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { origin: info.url, cookie: loginCookie, 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ username: '超时成员', password: 'Synthetic!Password1', csrf: loginCsrf }).toString(),
+      });
+      assert.equal(signedIn.status, 303);
+      const sessionCookie = signedIn.headers.getSetCookie().find((c) => c.startsWith('circle_hub_session='))!.split(';')[0];
+      const sseStream = await new Promise<{ status: number; contentType: string; chunk: string; close: () => void; closedEarly: () => boolean }>((resolve, reject) => {
+        let earlyClose = false;
+        const sseReq = httpRequest(
+          info.url + '/console/api/stream',
+          { method: 'GET', headers: { cookie: sessionCookie, accept: 'text/event-stream' } },
           (res) => {
-            let body = '';
+            let chunk = '';
             res.setEncoding('utf8');
-            res.on('data', (chunk) => {
-              body += chunk;
+            res.on('data', (d) => {
+              chunk += d;
             });
-            res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
-            res.on('error', () => resolve({ status: res.statusCode ?? 0, body }));
+            res.on('end', () => {
+              earlyClose = true;
+            });
+            resolve({
+              status: res.statusCode ?? 0,
+              contentType: String(res.headers['content-type'] ?? ''),
+              chunk,
+              close: () => sseReq.destroy(),
+              closedEarly: () => earlyClose,
+            });
           },
         );
-        req.on('error', (err) => {
-          if (req.destroyed) return;
-          reject(err);
+        sseReq.on('error', (err) => {
+          if (!sseReq.destroyed) reject(err);
         });
-        req.write('{');
+        sseReq.end();
       });
-      assert.equal(stalledReply.status, 408);
-      assert.equal((JSON.parse(stalledReply.body) as { code?: string }).code, 'BOT_REQUEST_TIMEOUT');
-
-      releaseUploadChunk2();
-      const slowUpload = await slowUploadPromise;
-      assert.equal(slowUpload.status, 200);
+      try {
+        assert.equal(sseStream.status, 200);
+        assert.match(sseStream.contentType, /^text\/event-stream/);
+        await new Promise((r) => setTimeout(r, 120));
+        assert.equal(sseStream.closedEarly(), false, 'SSE stream must stay open past requestTimeoutMs (60ms)');
+      } finally {
+        sseStream.close();
+      }
     } finally {
-      await new Promise<void>((resolve) => channelSocketServer.close(() => resolve()));
       await app.close();
+      channelSocketServer.closeAllConnections?.();
+      await new Promise<void>((resolve) => channelSocketServer.close(() => resolve()));
       await records.close();
     }
   },
@@ -308,14 +389,36 @@ test(
       // S10: pre-existing 0755 bot-runtime must NOT be chmodded to 0700 by startup
       assert.equal(((await lstat(botDir)).mode & 0o777), 0o755);
 
-      // R9: wrong Host / Origin on /api/bot* -> 403 BOT_CLIENT_FORBIDDEN
+      // R9 + F2: wrong Host / Origin on /api/bot* -> 403 BOT_CLIENT_FORBIDDEN with situational nextAction
       const wrongOrigin = await fetch(info.url + '/api/bot/v1', {
         method: 'POST',
         headers: { origin: 'https://evil.example.invalid', 'content-type': 'application/json' },
         body: '{}',
       });
       assert.equal(wrongOrigin.status, 403);
-      assert.equal(((await wrongOrigin.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
+      const wrongOriginJson = (await wrongOrigin.json()) as { code?: string; message?: string };
+      assert.equal(wrongOriginJson.code, 'BOT_CLIENT_FORBIDDEN');
+      assert.match(wrongOriginJson.message ?? '', /请确认请求来源在允许名单内后重试/);
+
+      const wrongHost = await new Promise<{ status: number; json: { code?: string; message?: string } }>((resolve, reject) => {
+        const hostReq = httpRequest(
+          info.url + '/api/bot/v1',
+          {
+            method: 'POST',
+            headers: { host: 'evil.example.invalid:9999', 'content-type': 'application/json', 'content-length': '2' },
+          },
+          async (res) => {
+            const chunks: Buffer[] = [];
+            for await (const c of res) chunks.push(c);
+            resolve({ status: res.statusCode ?? 0, json: JSON.parse(Buffer.concat(chunks).toString('utf8')) });
+          },
+        );
+        hostReq.on('error', reject);
+        hostReq.end('{}');
+      });
+      assert.equal(wrongHost.status, 403);
+      assert.equal(wrongHost.json.code, 'BOT_CLIENT_FORBIDDEN');
+      assert.match(wrongHost.json.message ?? '', /请使用本部署允许的访问地址与端口后重试/);
 
       // R9: unknown subpath under /api/bot* -> 404 BOT_NOT_FOUND
       const unknownSubpath = await fetch(info.url + '/api/bot/v1/unknown-subpath');
@@ -442,7 +545,7 @@ test(
       assert.ok(scheduled.at(-1)!.cleared, 'receive timer must clear as soon as request body emits end');
       scheduled.at(-1)!.fn();
 
-      // R9: While mcpReqPromise holds close() in stopping state, /api/bot/v1 returns 503 BOT_UPSTREAM_UNAVAILABLE JSON
+      // R9 + F2: While mcpReqPromise holds close() in stopping state, /api/bot/v1 returns 503 BOT_UPSTREAM_UNAVAILABLE JSON with situational nextAction
       const closingPromise = app.close();
       const stoppingRes = await fetch(info.url + '/api/bot/v1', {
         method: 'POST',
@@ -450,7 +553,9 @@ test(
         body: JSON.stringify({ action: 'discover' }),
       });
       assert.equal(stoppingRes.status, 503);
-      assert.equal(((await stoppingRes.json()) as { code?: string }).code, 'BOT_UPSTREAM_UNAVAILABLE');
+      const stoppingJson = (await stoppingRes.json()) as { code?: string; message?: string };
+      assert.equal(stoppingJson.code, 'BOT_UPSTREAM_UNAVAILABLE');
+      assert.match(stoppingJson.message ?? '', /请等待 Hub 重启完成后原样重试/);
 
       releaseMcp();
       const mcpRes = await mcpReqPromise;
@@ -459,6 +564,97 @@ test(
     } finally {
       releaseMcp();
       globalThis.clearTimeout = originalClearTimeout;
+      await app.close();
+      await records.close();
+    }
+  },
+);
+
+test(
+  'T4 + T5(a): default createApp creates 0700 bot-runtime on listen() and keeps default 120s/900s receive timeouts',
+  { timeout: 15_000 },
+  async () => {
+    const records = await openTestRecords();
+    const config: HubConfig = {
+      dataDir: records.dataDir,
+      logDir: join(records.dataDir, 'logs'),
+      host: '127.0.0.1',
+      port: 0,
+      database: records.database,
+      limits: { ...records.config.limits },
+    };
+    const { deps } = fakeDeps(config, records);
+    const app = createApp(deps, { codeRoot: records.dataDir, closeTimeoutMs: 5000 });
+    const hostServer = createServer(async (req, res) => {
+      for await (const _ of req) {
+        // drain
+      }
+      res.end(JSON.stringify({ id: 'ok' }));
+    });
+    try {
+      // T5(a): bot-runtime does NOT exist before listen(); listen() creates it with mode 0700
+      const runtimeDir = join(records.dataDir, 'bot-runtime');
+      await assert.rejects(lstat(runtimeDir));
+      const info = await app.listen();
+      assert.equal(((await lstat(runtimeDir)).mode & 0o777), 0o700);
+      await new Promise<void>((resolve) => hostServer.listen(join(runtimeDir, 'host.sock'), resolve));
+
+      await setBotProfile(records.vault, {
+        name: '默认超时测试',
+        protocol: 'openai',
+        endpoint: 'https://model.example.invalid/v1',
+        model: 'demo',
+        key: 'default-timeout-key',
+      });
+      const boot = await records.principals.bootstrapAdmin('默认超时管理员', {
+        password: 'Synthetic!Password1',
+        mustChange: false,
+      });
+      const member = await records.principals.createUser(boot.user, '默认超时成员', 'user', {
+        password: 'Synthetic!Password1',
+        mustChange: false,
+      });
+      const token = (await records.principals.issueToken(boot.user, member.id, 'test')).token;
+
+      // T4: Default requestTimeoutMs (120_000) allows a slow body > 1050ms without 408
+      const bodyStr = JSON.stringify({ action: 'discover' });
+      const slowBodyRes = await fetch(info.url + '/api/bot/v1', {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer ' + token,
+          'content-type': 'application/json',
+          'bot-client-version': '1.18.1',
+          'content-length': String(Buffer.byteLength(bodyStr)),
+        },
+        body: (async function* () {
+          yield Buffer.from(bodyStr.slice(0, 5));
+          await new Promise((r) => setTimeout(r, 1100));
+          yield Buffer.from(bodyStr.slice(5));
+        })(),
+        duplex: 'half',
+      } as unknown as RequestInit);
+      assert.equal(slowBodyRes.status, 200);
+
+      // T4: Default botFileUploadTimeoutMs (900_000) allows an upload > 10ms without 408
+      const filePayload = Buffer.from('default-upload-timeout-ok');
+      const fileSha = createHash('sha256').update(filePayload).digest('hex');
+      const slowFileRes = await fetch(info.url + botFilesPath + fileSha, {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer ' + token,
+          'content-length': String(filePayload.length),
+        },
+        body: (async function* () {
+          yield filePayload.subarray(0, 5);
+          await new Promise((r) => setTimeout(r, 25));
+          yield filePayload.subarray(5);
+        })(),
+        duplex: 'half',
+      } as unknown as RequestInit);
+      assert.equal(slowFileRes.status, 200);
+      assert.ok(randomUUID());
+    } finally {
+      await new Promise<void>((resolve) => hostServer.close(() => resolve()));
       await app.close();
       await records.close();
     }

@@ -245,6 +245,8 @@ test('H6 + S13: exceeding STATES_PER_PEER (20) returns 429 without evicting vali
   }
   const overLimit = await sendPeer(origin, '/console/identity/login', '192.0.2.10');
   assert.equal(overLimit.status, 429, '21st concurrent state from Peer A must return 429 instead of evicting');
+  assert.equal(overLimit.headers['retry-after'], '60');
+  assert.equal(overLimit.body, '当前来源待完成的扫码登录请求过多，请稍后再试。');
 
   const peerBRes = await sendPeer(origin, '/console/identity/login', '192.0.2.22');
   assert.equal(peerBRes.status, 303, 'Peer B must still get 303 while Peer A is capped at 20');
