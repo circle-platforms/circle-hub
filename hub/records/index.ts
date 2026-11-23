@@ -56,7 +56,10 @@ async function resolveExternalIdentityAuditKey(
     } catch (error) {
       const code = (error as NodeJS.ErrnoException | undefined)?.code;
       const message = error instanceof Error ? error.message : '';
-      const missingVaultKey = code === 'ENOENT' || (error instanceof VaultError && message.includes('不存在'));
+      const missingVaultKey =
+        code === 'ENOENT' ||
+        message.startsWith('没有') ||
+        (error instanceof VaultError && message.includes('不存在'));
       if (!missingVaultKey) throw error;
     }
   }
@@ -93,7 +96,14 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   const now = options.now ?? (() => new Date());
   const objectsDir = join(config.dataDir, 'objects');
   for (const directory of [config.dataDir, objectsDir, config.logDir]) await mkdir(directory, { recursive: true, mode: 0o700 });
-  const auditKey = await resolveExternalIdentityAuditKey(config.dataDir, options.keyProvider);
+  let cachedAuditKey: Promise<Uint8Array> | undefined;
+  const getAuditKey = (): Promise<Uint8Array> => {
+    cachedAuditKey ??= resolveExternalIdentityAuditKey(config.dataDir, options.keyProvider).catch((error) => {
+      cachedAuditKey = undefined;
+      throw error;
+    });
+    return cachedAuditKey;
+  };
   const db = new Database(createPool(config.database, options.maxConnections ?? 10));
   try {
     if (options.migrate === false) await verifyMigrations(db);
@@ -107,10 +117,10 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   store.personalPayloads.beforePurge=(owner,by,tx)=>preserveTeamAttributions(store,objects,owner,by,tx,now);
   const authorizations = new RecordAuthorizations(db, store, now, objects);
   const vault = new FileVault(join(config.dataDir, 'vault'), options.keyProvider);
-  const principals = new PgPrincipals(db, now, store, auditKey);
+  const principals = new PgPrincipals(db, now, store, getAuditKey);
   const teams = new PgTeams(db, store, objects, principals, authorizations, now);
   const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now });
-  const memberDeletions=new PgMemberDeletions(db,store,store.personalPayloads,now,auditKey);
+  const memberDeletions=new PgMemberDeletions(db,store,store.personalPayloads,now,getAuditKey);
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs','personal'));
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs'),{shared:true});
   memberDeletions.registerBotFilesRoot(join(config.dataDir,'bot-runtime','files'));

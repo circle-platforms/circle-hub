@@ -171,14 +171,24 @@ export class PgPrincipals implements Principals {
   readonly #db: Database;
   readonly #now: () => Date;
   readonly #store: Pick<RecordStore, 'put'>;
-  readonly #auditKey: Uint8Array;
+  readonly #resolveAuditKey: () => Promise<Uint8Array>;
 
   /** `store` is the kit's record store; without one, a store on the same database writes the token_issuance records. */
-  constructor(db: Database, now: () => Date, store?: Pick<RecordStore, 'put'>, auditKey?: Uint8Array) {
+  constructor(
+    db: Database,
+    now: () => Date,
+    store?: Pick<RecordStore, 'put'>,
+    auditKey?: Uint8Array | (() => Promise<Uint8Array>),
+  ) {
     this.#db = db;
     this.#now = now;
     this.#store = store ?? createRecordStore(db, { maxRecordBytes: TOKEN_RECORD_BYTES, now });
-    this.#auditKey = auditKey ?? randomBytes(32);
+    if (typeof auditKey === 'function') {
+      this.#resolveAuditKey = auditKey;
+    } else {
+      const staticKey = auditKey ?? randomBytes(32);
+      this.#resolveAuditKey = async () => staticKey;
+    }
   }
 
   async bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }): Promise<{ user: User; token: IssuedToken }> {
@@ -299,21 +309,24 @@ export class PgPrincipals implements Principals {
         const rows = [...removed.rows].sort(
           (a, b) => String(a.issuer).localeCompare(String(b.issuer)) || String(a.subject).localeCompare(String(b.subject)),
         );
-        for (const row of rows) {
-          await appendExternalIdentityAudit(
-            this.#store,
-            {
-              auditKey: this.#auditKey,
-              action: 'unbind',
-              by: by.id,
-              member: userId,
-              issuer: String(row.issuer),
-              subject: String(row.subject),
-              at,
-              reason: 'disabled',
-            },
-            tx,
-          );
+        if (rows.length > 0) {
+          const auditKey = await this.#resolveAuditKey();
+          for (const row of rows) {
+            await appendExternalIdentityAudit(
+              this.#store,
+              {
+                auditKey,
+                action: 'unbind',
+                by: by.id,
+                member: userId,
+                issuer: String(row.issuer),
+                subject: String(row.subject),
+                at,
+                reason: 'disabled',
+              },
+              tx,
+            );
+          }
         }
       }
       return updated;
@@ -370,10 +383,11 @@ export class PgPrincipals implements Principals {
         tx,
       );
       if (inserted.rowCount) {
+        const auditKey = await this.#resolveAuditKey();
         await appendExternalIdentityAudit(
           this.#store,
           {
-            auditKey: this.#auditKey,
+            auditKey,
             action: 'bind',
             by: by.id,
             member: by.id,
@@ -415,21 +429,24 @@ export class PgPrincipals implements Principals {
       const rows = [...removed.rows].sort(
         (a, b) => String(a.issuer).localeCompare(String(b.issuer)) || String(a.subject).localeCompare(String(b.subject)),
       );
-      for (const row of rows) {
-        await appendExternalIdentityAudit(
-          this.#store,
-          {
-            auditKey: this.#auditKey,
-            action: 'unbind',
-            by: by.id,
-            member: userId,
-            issuer: String(row.issuer),
-            subject: String(row.subject),
-            at,
-            reason: 'manual',
-          },
-          tx,
-        );
+      if (rows.length > 0) {
+        const auditKey = await this.#resolveAuditKey();
+        for (const row of rows) {
+          await appendExternalIdentityAudit(
+            this.#store,
+            {
+              auditKey,
+              action: 'unbind',
+              by: by.id,
+              member: userId,
+              issuer: String(row.issuer),
+              subject: String(row.subject),
+              at,
+              reason: 'manual',
+            },
+            tx,
+          );
+        }
       }
       return rows.length;
     });

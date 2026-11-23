@@ -70,8 +70,8 @@ export class PgMemberDeletions {
   const to=by.id===preview.member?null:by.id,items=to?await this.#handover.plan(to,preview.member,tx):[];
   return {...preview,handover:{to,items},state:sha256Hex(canonicalize({state:preview.state,handover:{to,items}}))};
  }
- readonly db:Database;readonly store:RecordStore;readonly payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>;readonly now:()=>Date;readonly #auditKey:Uint8Array;
- constructor(db:Database,store:RecordStore,payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>,now:()=>Date,auditKey?:Uint8Array){this.db=db;this.store=store;this.payloads=payloads;this.now=now;this.#auditKey=auditKey??randomBytes(32);}
+ readonly db:Database;readonly store:RecordStore;readonly payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>;readonly now:()=>Date;readonly #resolveAuditKey:()=>Promise<Uint8Array>;
+ constructor(db:Database,store:RecordStore,payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>,now:()=>Date,auditKey?:Uint8Array|(()=>Promise<Uint8Array>)){this.db=db;this.store=store;this.payloads=payloads;this.now=now;if(typeof auditKey==='function'){this.#resolveAuditKey=auditKey;}else{const staticKey=auditKey??randomBytes(32);this.#resolveAuditKey=async()=>staticKey;}}
  async #admin(by:Principal,tx?:Transaction){const user=(await this.db.query('SELECT * FROM users WHERE id=$1'+(tx?' FOR SHARE':''),[by.id],tx)).rows[0];if(!user||user.disabled||user.role!==PermissionRoleSchema.enum.admin)throw new AccessError('对象不存在或无权读取');}
  async #preview(member:string,tx?:Transaction):Promise<MemberDeletionPreview>{
   const user=(await this.db.query('SELECT * FROM users WHERE id=$1',[member],tx)).rows[0];if(!user||user.deleted_at)throw new AccessError('对象不存在或无权读取');
@@ -156,8 +156,11 @@ export class PgMemberDeletions {
    const removedIdentities=await this.db.query<{issuer:string;subject:string}>('DELETE FROM external_member_identities WHERE owner = $1 RETURNING issuer, subject',[member],tx);
    const at=this.now().toISOString();
    const sortedIdentities=[...removedIdentities.rows].sort((a,b)=>String(a.issuer).localeCompare(String(b.issuer))||String(a.subject).localeCompare(String(b.subject)));
-   for(const row of sortedIdentities){
-    await appendExternalIdentityAudit(this.store,{auditKey:this.#auditKey,action:'unbind',by:by.id,member,issuer:String(row.issuer),subject:String(row.subject),at,reason:'deleted'},tx);
+   if(sortedIdentities.length>0){
+    const auditKey=await this.#resolveAuditKey();
+    for(const row of sortedIdentities){
+     await appendExternalIdentityAudit(this.store,{auditKey,action:'unbind',by:by.id,member,issuer:String(row.issuer),subject:String(row.subject),at,reason:'deleted'},tx);
+    }
    }
    const record=await this.store.put({kind:'member_deletion',schema:'member-deletion@1',provenance:'observed',body:{...intent,by:by.id,at},unique_key:operation_id,index:[{key:'member.deletion.member',value:member}]},tx);
    return {record:record.digest,...MemberDeletionBody.parse(record.body)};
