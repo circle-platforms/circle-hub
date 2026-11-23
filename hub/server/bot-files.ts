@@ -1,22 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, mkdir, open, readdir, rename, rm, rmdir, stat, utimes } from 'node:fs/promises';
-import { join } from 'node:path';
+import { link, lstat, mkdir, open, readdir, rename, rm, rmdir, stat, utimes } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import type { ProtocolCode } from '../../contracts/generated/protocol-codes.ts';
 import { isSha256 } from '../records/api.ts';
 import type { ServerDeps } from './api.ts';
-import { authenticateAccessOnly, requireDirectAccessBearer } from './access-auth.ts';
-import { sendJson, setCommonHeaders } from './http.ts';
-
-const botError = (code: ProtocolCode, message: string) => ({ code, message });
+import { authenticateAccessOnly, botError, requireDirectAccessBearer, sendBotJson } from './access-auth.ts';
+import { setCommonHeaders } from './http.ts';
 
 export const fileLimit = 100 * 1024 * 1024;
 export const MAX_MEMBER_BOT_BYTES = 512 * 1024 * 1024;
 export const MAX_MEMBER_BOT_FILES = 256;
 export const BOT_FILE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const DEFAULT_BOT_TEMP_MAX_AGE_MS = 15 * 60 * 1000;
 
 export const fileDescriptor = z.strictObject({
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -31,12 +30,128 @@ export const fileDescriptor = z.strictObject({
 export const botFilesPath = '/api/bot/v1/files/';
 export type BotFile = z.infer<typeof fileDescriptor>;
 
+type BotFileScope = 'files' | 'channel-staging';
+type QuotaReservation = { files: number; bytes: number };
+
+const quotaLocks = new Map<string, Promise<void>>();
+const quotaInFlight = new Map<string, QuotaReservation>();
+
 const ownerHash = (owner: string) => createHash('sha256').update(owner).digest('hex');
 
-const folder = (root: string, owner: string, scope: 'files' | 'channel-staging' = 'files') =>
+const folder = (root: string, owner: string, scope: BotFileScope = 'files') =>
   join(root, 'bot-runtime', scope, ownerHash(owner));
 
-async function verifyFileInDir(dir: string, sha: string, size?: number) {
+function quotaLockKey(root: string, scope: BotFileScope, ownerKey: string): string {
+  return `${resolve(root)}\0${scope}\0${ownerKey}`;
+}
+
+async function withQuotaLock<T>(
+  root: string,
+  scope: BotFileScope,
+  ownerKey: string,
+  fn: (key: string) => Promise<T>,
+): Promise<T> {
+  const key = quotaLockKey(root, scope, ownerKey);
+  const prev = quotaLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolvePromise) => {
+    release = resolvePromise;
+  });
+  const tail = prev.then(
+    () => gate,
+    () => gate,
+  );
+  quotaLocks.set(key, tail);
+  await prev.catch(() => undefined);
+  try {
+    return await fn(key);
+  } finally {
+    release();
+    if (quotaLocks.get(key) === tail) quotaLocks.delete(key);
+  }
+}
+
+function addInFlight(key: string, delta: QuotaReservation): void {
+  if (delta.files === 0 && delta.bytes === 0) return;
+  const current = quotaInFlight.get(key) ?? { files: 0, bytes: 0 };
+  quotaInFlight.set(key, {
+    files: current.files + delta.files,
+    bytes: current.bytes + delta.bytes,
+  });
+}
+
+function subtractInFlight(key: string, delta: QuotaReservation): void {
+  if (delta.files === 0 && delta.bytes === 0) return;
+  const current = quotaInFlight.get(key);
+  if (!current) return;
+  const nextFiles = current.files - delta.files;
+  const nextBytes = current.bytes - delta.bytes;
+  if (nextFiles <= 0 && nextBytes <= 0) quotaInFlight.delete(key);
+  else quotaInFlight.set(key, { files: Math.max(0, nextFiles), bytes: Math.max(0, nextBytes) });
+}
+
+export async function ensureBotRuntimeDir(dataDir: string): Promise<void> {
+  if (typeof dataDir !== 'string' || dataDir.length === 0) return;
+  const runtimeDir = join(dataDir, 'bot-runtime');
+  try {
+    await lstat(runtimeDir);
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
+}
+
+export type BotRuntimeDirInspection =
+  | { ok: true; path: string }
+  | { ok: false; path: string; reason: string };
+
+export async function inspectBotRuntimeDir(dataDir: string): Promise<BotRuntimeDirInspection> {
+  const runtimeDir = join(dataDir, 'bot-runtime');
+  let info;
+  try {
+    info = await lstat(runtimeDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { ok: false, path: runtimeDir, reason: '不存在' };
+    }
+    return {
+      ok: false,
+      path: runtimeDir,
+      reason: `读取状态失败（${(error as NodeJS.ErrnoException).code ?? 'ERROR'}）`,
+    };
+  }
+  if (info.isSymbolicLink()) {
+    return { ok: false, path: runtimeDir, reason: '是符号链接' };
+  }
+  if (!info.isDirectory()) {
+    return { ok: false, path: runtimeDir, reason: '不是普通目录' };
+  }
+  const mode = info.mode & 0o777;
+  if (mode !== 0o700) {
+    return {
+      ok: false,
+      path: runtimeDir,
+      reason: `权限为 0${mode.toString(8).padStart(3, '0')}（须为 0700）`,
+    };
+  }
+  if (typeof process.getuid === 'function' && info.uid !== process.getuid()) {
+    return { ok: false, path: runtimeDir, reason: '属主不匹配' };
+  }
+  return { ok: true, path: runtimeDir };
+}
+
+export interface VerifiedFileOptions {
+  now?: number;
+  retentionMs?: number;
+}
+
+async function verifyFileInDir(
+  dir: string,
+  sha: string,
+  size?: number,
+  options?: VerifiedFileOptions,
+) {
   if (!isSha256(sha)) return null;
   const handle = await open(join(dir, sha), constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => null);
   if (!handle) return null;
@@ -45,6 +160,13 @@ async function verifyFileInDir(dir: string, sha: string, size?: number) {
     if (!info.isFile() || info.size > fileLimit || (size !== undefined && size !== info.size)) {
       await handle.close();
       return null;
+    }
+    if (options?.now !== undefined) {
+      const retentionMs = options.retentionMs ?? BOT_FILE_RETENTION_MS;
+      if (options.now - info.mtimeMs >= retentionMs) {
+        await handle.close();
+        return null;
+      }
     }
     const digest = createHash('sha256');
     for await (const chunk of handle.createReadStream({ start: 0, autoClose: false })) digest.update(chunk);
@@ -59,13 +181,24 @@ async function verifyFileInDir(dir: string, sha: string, size?: number) {
   }
 }
 
-export async function verifiedBotFile(root: string, owner: string, sha: string, size?: number) {
-  return verifyFileInDir(folder(root, owner, 'files'), sha, size);
+export async function verifiedBotFile(
+  root: string,
+  owner: string,
+  sha: string,
+  size?: number,
+  options?: VerifiedFileOptions,
+) {
+  return verifyFileInDir(folder(root, owner, 'files'), sha, size, options);
 }
 
-export async function validateBotFiles(root: string, owner: string, files: BotFile[]): Promise<boolean> {
+export async function validateBotFiles(
+  root: string,
+  owner: string,
+  files: BotFile[],
+  options?: VerifiedFileOptions,
+): Promise<boolean> {
   for (const file of files) {
-    const got = await verifiedBotFile(root, owner, file.sha256, file.size);
+    const got = await verifiedBotFile(root, owner, file.sha256, file.size, options);
     if (!got) return false;
     await got.handle.close();
   }
@@ -76,8 +209,11 @@ async function pruneAndMeasureDir(
   dir: string,
   nowMs: number,
   retentionMs: number,
+  options: { create?: boolean } = {},
 ): Promise<{ count: number; bytes: number }> {
-  await mkdir(dir, { mode: 0o700, recursive: true });
+  if (options.create !== false) {
+    await mkdir(dir, { mode: 0o700, recursive: true });
+  }
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
   let count = 0;
   let bytes = 0;
@@ -97,11 +233,186 @@ async function pruneAndMeasureDir(
 }
 
 export interface BotFileTransferOptions {
-  scope?: 'files' | 'channel-staging';
+  scope?: BotFileScope;
   now?: () => number;
   maxMemberBytes?: number;
   maxMemberFiles?: number;
   retentionMs?: number;
+}
+
+export type ChannelStagingVerifyResult =
+  | {
+      ok: true;
+      reservation: QuotaReservation;
+      release: () => Promise<void>;
+    }
+  | { ok: false; status: number; code: ProtocolCode; message: string };
+
+export async function verifyChannelStagedFiles(
+  root: string,
+  owner: string,
+  files: BotFile[],
+  options: Omit<BotFileTransferOptions, 'scope'> = {},
+): Promise<ChannelStagingVerifyResult> {
+  if (files.length === 0) {
+    return {
+      ok: true,
+      reservation: { files: 0, bytes: 0 },
+      release: async () => undefined,
+    };
+  }
+  const stagingDir = folder(root, owner, 'channel-staging');
+  const destDir = folder(root, owner, 'files');
+  const ownerKey = ownerHash(owner);
+  const nowMs = options.now?.() ?? Date.now();
+  const maxBytes = options.maxMemberBytes ?? MAX_MEMBER_BOT_BYTES;
+  const maxFiles = options.maxMemberFiles ?? MAX_MEMBER_BOT_FILES;
+  const retentionMs = options.retentionMs ?? BOT_FILE_RETENTION_MS;
+
+  await ensureBotRuntimeDir(root);
+  return withQuotaLock(root, 'files', ownerKey, async (key) => {
+    for (const file of files) {
+      const staged = await verifyFileInDir(stagingDir, file.sha256, file.size);
+      if (!staged) {
+        return { ok: false, status: 400, ...botError('BOT_INVALID_REQUEST', '附件尚未暂存或校验失败') };
+      }
+      await staged.handle.close();
+    }
+
+    const usage = await pruneAndMeasureDir(destDir, nowMs, retentionMs);
+    let pendingCount = 0;
+    let pendingBytes = 0;
+    const seen = new Set<string>();
+    for (const file of files) {
+      if (seen.has(file.sha256)) continue;
+      seen.add(file.sha256);
+      const existing = await verifyFileInDir(destDir, file.sha256, file.size);
+      if (existing) {
+        await existing.handle.close();
+      } else {
+        pendingCount += 1;
+        pendingBytes += file.size;
+      }
+    }
+    const inFlight = quotaInFlight.get(key) ?? { files: 0, bytes: 0 };
+    if (
+      usage.count + inFlight.files + pendingCount > maxFiles ||
+      usage.bytes + inFlight.bytes + pendingBytes > maxBytes
+    ) {
+      return { ok: false, status: 413, ...botError('BOT_QUOTA_EXCEEDED', '成员机器人文件存储配额已满') };
+    }
+    const reservation: QuotaReservation = { files: pendingCount, bytes: pendingBytes };
+    addInFlight(key, reservation);
+    let released = false;
+    const release = async () => {
+      if (released) return;
+      released = true;
+      if (reservation.files === 0 && reservation.bytes === 0) return;
+      await withQuotaLock(root, 'files', ownerKey, async (lockKey) => {
+        subtractInFlight(lockKey, reservation);
+      });
+    };
+    return {
+      ok: true,
+      reservation,
+      release,
+    };
+  });
+}
+
+export async function commitChannelStagedFiles(
+  root: string,
+  owner: string,
+  files: BotFile[],
+  options: Omit<BotFileTransferOptions, 'scope'> & {
+    reservation?: QuotaReservation;
+    consumeReservation?: () => void;
+  } = {},
+): Promise<{ ok: true } | { ok: false; status: number; code: ProtocolCode; message: string }> {
+  if (files.length === 0) {
+    options.consumeReservation?.();
+    return { ok: true };
+  }
+  const stagingDir = folder(root, owner, 'channel-staging');
+  const destDir = folder(root, owner, 'files');
+  const ownerKey = ownerHash(owner);
+  const nowMs = options.now?.() ?? Date.now();
+  const maxBytes = options.maxMemberBytes ?? MAX_MEMBER_BOT_BYTES;
+  const maxFiles = options.maxMemberFiles ?? MAX_MEMBER_BOT_FILES;
+  const retentionMs = options.retentionMs ?? BOT_FILE_RETENTION_MS;
+
+  await ensureBotRuntimeDir(root);
+  return withQuotaLock(root, 'files', ownerKey, async (key) => {
+    try {
+      const usage = await pruneAndMeasureDir(destDir, nowMs, retentionMs);
+      const seen = new Set<string>();
+      for (const file of files) seen.add(file.sha256);
+
+      if (!options.reservation) {
+        let missingCount = 0;
+        let missingBytes = 0;
+        for (const sha of seen) {
+          const expected = files.find((f) => f.sha256 === sha)!;
+          const already = await verifyFileInDir(destDir, sha, expected.size);
+          if (already) {
+            await already.handle.close();
+          } else {
+            missingCount += 1;
+            missingBytes += expected.size;
+          }
+        }
+        const inFlight = quotaInFlight.get(key) ?? { files: 0, bytes: 0 };
+        if (
+          missingCount > 0 &&
+          (usage.count + inFlight.files + missingCount > maxFiles ||
+            usage.bytes + inFlight.bytes + missingBytes > maxBytes)
+        ) {
+          return { ok: false, status: 413, ...botError('BOT_QUOTA_EXCEEDED', '成员机器人文件存储配额已满') };
+        }
+      }
+
+      const timestamp = new Date(nowMs);
+      for (const sha of seen) {
+        const stagedPath = join(stagingDir, sha);
+        const destPath = join(destDir, sha);
+        const expected = files.find((f) => f.sha256 === sha)!;
+        const staged = await verifyFileInDir(stagingDir, sha, expected.size);
+        if (!staged) {
+          const already = await verifyFileInDir(destDir, sha, expected.size);
+          if (already) {
+            await already.handle.utimes(timestamp, timestamp).catch(() => undefined);
+            await already.handle.close();
+            continue;
+          }
+          return { ok: false, status: 400, ...botError('BOT_INVALID_REQUEST', '附件尚未暂存或校验失败') };
+        }
+        await staged.handle.utimes(timestamp, timestamp).catch(() => undefined);
+        await staged.handle.close();
+        try {
+          await link(stagedPath, destPath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EXDEV') {
+            await rename(stagedPath, destPath);
+            continue;
+          }
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+          const prior = await verifyFileInDir(destDir, sha, expected.size);
+          if (!prior) {
+            return { ok: false, status: 409, ...botError('BOT_CONFLICT', '已存在同摘要但内容冲突的文件') };
+          }
+          await prior.handle.utimes(timestamp, timestamp).catch(() => undefined);
+          await prior.handle.close();
+        }
+        await rm(stagedPath, { force: true });
+      }
+      return { ok: true };
+    } finally {
+      if (options.reservation) {
+        subtractInFlight(key, options.reservation);
+        options.consumeReservation?.();
+      }
+    }
+  });
 }
 
 export async function promoteChannelStagedFiles(
@@ -110,64 +421,16 @@ export async function promoteChannelStagedFiles(
   files: BotFile[],
   options: Omit<BotFileTransferOptions, 'scope'> = {},
 ): Promise<{ ok: true } | { ok: false; status: number; code: ProtocolCode; message: string }> {
-  if (files.length === 0) return { ok: true };
-  const stagingDir = folder(root, owner, 'channel-staging');
-  const destDir = folder(root, owner, 'files');
-  const nowMs = options.now?.() ?? Date.now();
-  const maxBytes = options.maxMemberBytes ?? MAX_MEMBER_BOT_BYTES;
-  const maxFiles = options.maxMemberFiles ?? MAX_MEMBER_BOT_FILES;
-  const retentionMs = options.retentionMs ?? BOT_FILE_RETENTION_MS;
-
-  for (const file of files) {
-    const staged = await verifyFileInDir(stagingDir, file.sha256, file.size);
-    if (!staged) {
-      return { ok: false, status: 400, ...botError('BOT_INVALID_REQUEST', '附件尚未暂存或校验失败') };
-    }
-    await staged.handle.close();
+  const verified = await verifyChannelStagedFiles(root, owner, files, options);
+  if (!verified.ok) return verified;
+  try {
+    return await commitChannelStagedFiles(root, owner, files, {
+      ...options,
+      reservation: verified.reservation,
+    });
+  } finally {
+    await verified.release();
   }
-
-  const usage = await pruneAndMeasureDir(destDir, nowMs, retentionMs);
-  let pendingCount = 0;
-  let pendingBytes = 0;
-  const seen = new Set<string>();
-  for (const file of files) {
-    if (seen.has(file.sha256)) continue;
-    seen.add(file.sha256);
-    const existing = await verifyFileInDir(destDir, file.sha256, file.size);
-    if (existing) {
-      await existing.handle.close();
-    } else {
-      pendingCount += 1;
-      pendingBytes += file.size;
-    }
-  }
-  if (usage.count + pendingCount > maxFiles || usage.bytes + pendingBytes > maxBytes) {
-    return { ok: false, status: 413, ...botError('BOT_QUOTA_EXCEEDED', '成员个人助手文件存储配额已满') };
-  }
-
-  for (const sha of seen) {
-    const stagedPath = join(stagingDir, sha);
-    const destPath = join(destDir, sha);
-    const expected = files.find((f) => f.sha256 === sha)!;
-    const timestamp = new Date(nowMs);
-    await utimes(stagedPath, timestamp, timestamp).catch(() => undefined);
-    try {
-      await link(stagedPath, destPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EXDEV') {
-        await rename(stagedPath, destPath);
-        continue;
-      }
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      const prior = await verifyFileInDir(destDir, sha, expected.size);
-      if (!prior) {
-        return { ok: false, status: 409, ...botError('BOT_CONFLICT', '已存在同摘要但内容冲突的文件') };
-      }
-      await prior.handle.close();
-    }
-    await rm(stagedPath, { force: true });
-  }
-  return { ok: true };
 }
 
 export async function cleanupBotRuntimeTempFiles(
@@ -176,7 +439,7 @@ export async function cleanupBotRuntimeTempFiles(
 ): Promise<void> {
   if (typeof dataDir !== 'string' || dataDir.length === 0) return;
   const nowMs = options.now ?? Date.now();
-  const maxAgeMs = options.maxAgeMs ?? 0;
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_BOT_TEMP_MAX_AGE_MS;
 
   const filesRoot = join(dataDir, 'bot-runtime', 'files');
   const memberDirs = await readdir(filesRoot, { withFileTypes: true }).catch(() => []);
@@ -186,7 +449,15 @@ export async function cleanupBotRuntimeTempFiles(
     const items = await readdir(memberDir, { withFileTypes: true }).catch(() => []);
     for (const item of items) {
       if (!item.name.endsWith('.part')) continue;
-      await rm(join(memberDir, item.name), { force: true });
+      const fullPath = join(memberDir, item.name);
+      if (maxAgeMs <= 0) {
+        await rm(fullPath, { force: true });
+        continue;
+      }
+      const info = await stat(fullPath).catch(() => null);
+      if (!info || nowMs - info.mtimeMs >= maxAgeMs) {
+        await rm(fullPath, { force: true });
+      }
     }
   }
 
@@ -198,7 +469,7 @@ export async function cleanupBotRuntimeTempFiles(
     const items = await readdir(stagingDir, { withFileTypes: true }).catch(() => []);
     for (const item of items) {
       const fullPath = join(stagingDir, item.name);
-      if (item.name.endsWith('.part') || maxAgeMs <= 0) {
+      if (maxAgeMs <= 0) {
         await rm(fullPath, { force: true });
         continue;
       }
@@ -212,6 +483,24 @@ export async function cleanupBotRuntimeTempFiles(
   }
 }
 
+export async function pruneExpiredBotFiles(
+  dataDir: string,
+  options: { now?: number; retentionMs?: number } = {},
+): Promise<void> {
+  if (typeof dataDir !== 'string' || dataDir.length === 0) return;
+  const nowMs = options.now ?? Date.now();
+  const retentionMs = options.retentionMs ?? BOT_FILE_RETENTION_MS;
+  const filesRoot = join(dataDir, 'bot-runtime', 'files');
+  const memberDirs = await readdir(filesRoot, { withFileTypes: true }).catch(() => []);
+  for (const entry of memberDirs) {
+    if (!entry.isDirectory()) continue;
+    const memberDir = join(filesRoot, entry.name);
+    await withQuotaLock(dataDir, 'files', entry.name, async () => {
+      await pruneAndMeasureDir(memberDir, nowMs, retentionMs, { create: false });
+    });
+  }
+}
+
 export async function transferBotFile(
   req: IncomingMessage,
   res: ServerResponse,
@@ -222,19 +511,24 @@ export async function transferBotFile(
   options: BotFileTransferOptions = {},
 ): Promise<void> {
   const scope = options.scope ?? 'files';
+  const nowMs = options.now?.() ?? Date.now();
+  const retentionMs = options.retentionMs ?? BOT_FILE_RETENTION_MS;
   if (!isSha256(sha)) {
     req.resume();
-    return sendJson(res, 404, botError('BOT_INVALID_REQUEST', '文件摘要无效'));
+    return sendBotJson(res, 404, botError('BOT_NOT_FOUND', '文件摘要不存在或格式无效'));
   }
   if (req.method === 'GET') {
-    const file = await verifiedBotFile(root, owner, sha);
+    const file = await verifiedBotFile(root, owner, sha, undefined, { now: nowMs, retentionMs });
     if (!file) {
-      return sendJson(res, 404, botError('BOT_CONFLICT', '文件不存在或校验失败'));
+      req.resume();
+      return sendBotJson(res, 404, botError('BOT_NOT_FOUND', '文件不存在或校验失败'));
     }
     try {
       if (!(await stillActive())) {
-        return sendJson(res, 401, botError('BOT_CLIENT_FORBIDDEN', '请重新登录'));
+        req.resume();
+        return sendBotJson(res, 401, botError('BOT_UNAUTHENTICATED'));
       }
+      if (res.headersSent || res.writableEnded || res.destroyed) return;
       setCommonHeaders(res);
       res.writeHead(200, {
         'content-type': 'application/octet-stream',
@@ -250,34 +544,63 @@ export async function transferBotFile(
   }
   if (req.method !== 'PUT') {
     req.resume();
-    return sendJson(res, 405, botError('BOT_INVALID_REQUEST', '只允许 GET 或 PUT'), { allow: 'GET, PUT' });
+    return sendBotJson(res, 405, botError('BOT_INVALID_REQUEST', '只允许 GET 或 PUT'), { allow: 'GET, PUT' });
   }
   const lengthHeader = req.headers['content-length'];
   if (typeof lengthHeader !== 'string' || !/^\d+$/.test(lengthHeader)) {
     req.resume();
-    return sendJson(res, 400, botError('BOT_INVALID_REQUEST', '需要有效的文件长度'));
+    return sendBotJson(res, 400, botError('BOT_INVALID_REQUEST', '需要有效的文件长度'));
   }
   const declaredLength = Number(lengthHeader);
   if (!Number.isSafeInteger(declaredLength) || declaredLength > fileLimit) {
     req.resume();
-    return sendJson(res, 413, botError('BOT_QUOTA_EXCEEDED', '单个文件大小超过 100 MiB 上限'));
+    return sendBotJson(res, 413, botError('BOT_INVALID_REQUEST', '单个文件大小超过 100 MiB 上限'));
   }
-  const nowMs = options.now?.() ?? Date.now();
   const maxBytes = options.maxMemberBytes ?? MAX_MEMBER_BOT_BYTES;
   const maxFiles = options.maxMemberFiles ?? MAX_MEMBER_BOT_FILES;
-  const retentionMs = options.retentionMs ?? BOT_FILE_RETENTION_MS;
+  const ownerKey = ownerHash(owner);
   const dir = folder(root, owner, scope);
-  const usage = await pruneAndMeasureDir(dir, nowMs, retentionMs);
-  const existing = await verifyFileInDir(dir, sha, declaredLength);
-  if (existing) {
-    await existing.handle.close();
-  } else if (usage.count + 1 > maxFiles || usage.bytes + declaredLength > maxBytes) {
+  const timestamp = new Date(nowMs);
+
+  await ensureBotRuntimeDir(root);
+  const reservationCheck = await withQuotaLock(root, scope, ownerKey, async (key) => {
+    const usage = await pruneAndMeasureDir(dir, nowMs, retentionMs);
+    const existing = await verifyFileInDir(dir, sha, declaredLength);
+    if (existing) {
+      await existing.handle.utimes(timestamp, timestamp).catch(() => undefined);
+      await existing.handle.close();
+      return { ok: true as const, reservation: { files: 0, bytes: 0 } };
+    }
+    const inFlight = quotaInFlight.get(key) ?? { files: 0, bytes: 0 };
+    if (
+      usage.count + inFlight.files + 1 > maxFiles ||
+      usage.bytes + inFlight.bytes + declaredLength > maxBytes
+    ) {
+      return { ok: false as const };
+    }
+    const reservation: QuotaReservation = { files: 1, bytes: declaredLength };
+    addInFlight(key, reservation);
+    return { ok: true as const, reservation };
+  });
+
+  if (!reservationCheck.ok) {
     req.resume();
-    return sendJson(res, 413, botError('BOT_QUOTA_EXCEEDED', '成员个人助手文件存储配额已满'));
+    return sendBotJson(res, 413, botError('BOT_QUOTA_EXCEEDED', '成员机器人文件存储配额已满'));
   }
 
+  let reserved: QuotaReservation | null = reservationCheck.reservation;
+  const releaseReservation = async () => {
+    if (!reserved) return;
+    const toRelease = reserved;
+    reserved = null;
+    if (toRelease.files === 0 && toRelease.bytes === 0) return;
+    await withQuotaLock(root, scope, ownerKey, async (key) => {
+      subtractInFlight(key, toRelease);
+    });
+  };
+
   const temp = join(dir, randomUUID() + '.part');
-  let handle: Awaited<ReturnType<typeof open>> | null = await open(temp, 'wx', 0o600);
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
   const discardTemp = async () => {
     const active = handle;
     handle = null;
@@ -285,6 +608,7 @@ export async function transferBotFile(
     await rm(temp, { force: true }).catch(() => undefined);
   };
   try {
+    handle = await open(temp, 'wx', 0o600);
     const hash = createHash('sha256');
     let size = 0;
     for await (const chunk of req) {
@@ -292,36 +616,54 @@ export async function transferBotFile(
       if (size > declaredLength) {
         req.resume();
         await discardTemp();
-        return sendJson(res, 413, botError('BOT_QUOTA_EXCEEDED', '上传内容超出声明大小'), { connection: 'close' });
+        await releaseReservation();
+        return sendBotJson(res, 413, botError('BOT_INVALID_REQUEST', '上传内容超出声明大小'), { connection: 'close' });
       }
       hash.update(chunk);
       await handle.writeFile(chunk);
     }
+    if (res.headersSent || res.writableEnded || res.destroyed) return;
     if (size !== declaredLength || hash.digest('hex') !== sha) {
       await discardTemp();
-      return sendJson(res, 422, botError('BOT_INVALID_REQUEST', '文件摘要或长度不一致'));
+      await releaseReservation();
+      return sendBotJson(res, 422, botError('BOT_INVALID_REQUEST', '文件摘要或长度不一致'));
     }
     if (!(await stillActive())) {
       await discardTemp();
-      return sendJson(res, 401, botError('BOT_CLIENT_FORBIDDEN', '请重新登录'));
+      await releaseReservation();
+      return sendBotJson(res, 401, botError('BOT_UNAUTHENTICATED'));
     }
     await handle.sync();
-    const timestamp = new Date(nowMs);
     await handle.utimes(timestamp, timestamp);
-    try {
-      await link(temp, join(dir, sha));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      const prior = await verifyFileInDir(dir, sha, size);
-      if (!prior) {
-        await discardTemp();
-        return sendJson(res, 409, botError('BOT_CONFLICT', '已存在同摘要但内容冲突的文件'));
+    let conflict = false;
+    await withQuotaLock(root, scope, ownerKey, async (key) => {
+      try {
+        try {
+          await link(temp, join(dir, sha));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+          const prior = await verifyFileInDir(dir, sha, size);
+          if (!prior) {
+            conflict = true;
+            return;
+          }
+          await prior.handle.utimes(timestamp, timestamp).catch(() => undefined);
+          await prior.handle.close();
+        }
+      } finally {
+        if (reserved) {
+          subtractInFlight(key, reserved);
+          reserved = null;
+        }
       }
-      await prior.handle.close();
-    }
+    });
     await discardTemp();
-    sendJson(res, 200, { sha256: sha, size });
+    if (conflict) {
+      return sendBotJson(res, 409, botError('BOT_CONFLICT', '已存在同摘要但内容冲突的文件'));
+    }
+    sendBotJson(res, 200, { sha256: sha, size });
   } finally {
+    await releaseReservation();
     await discardTemp();
   }
 }
@@ -329,10 +671,10 @@ export async function transferBotFile(
 export async function handleBotFile(req: IncomingMessage, res: ServerResponse, deps: ServerDeps, sha: string): Promise<void> {
   const actor = await requireDirectAccessBearer(req, res, deps.records.principals);
   if (!actor) return;
-  const rawProfile = await deps.records.vault.get('personal-bot.model');
-  if (!rawProfile) {
+  const configured = await deps.records.vault.has('personal-bot.model');
+  if (!configured) {
     req.resume();
-    return sendJson(res, 503, botError('BOT_DISABLED', '个人助手尚未启用'));
+    return sendBotJson(res, 503, botError('BOT_DISABLED', '机器人尚未启用'));
   }
   return transferBotFile(
     req,

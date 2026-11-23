@@ -38,6 +38,7 @@ import {
   disableBot,
   identityProfile,
   identityProfileName,
+  maskVaultSecrets,
   newChannel,
   readBotProfile,
   readChannel,
@@ -484,6 +485,25 @@ async function appendBotSecretChange(
   });
 }
 
+async function recordBotSecretChange(
+  store: Pick<RecordsKit['store'], 'put'>,
+  slot: BotSecretSlot,
+  action: BotSecretAction,
+  by: string,
+  at: string,
+): Promise<void> {
+  try {
+    await appendBotSecretChange(store, slot, action, by, at);
+  } catch (error) {
+    const slotLabel = labelOf('bot_secret_slot', slot);
+    const actionLabel = labelOf('bot_secret_action', action);
+    throw new CliError(
+      `密钥库中的${slotLabel}配置已变更（${actionLabel}），但审计记录写入失败：${messageOf(error)}`,
+      '请检查数据库可用性后核对配置变更记录并补做对应配置操作',
+    );
+  }
+}
+
 async function readSecretJson(
   readSecret: (label: string) => Promise<string>,
   label: string,
@@ -528,13 +548,13 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
       const parsed = identityProfile.safeParse(value);
       if (!parsed.success) throw new UsageError('通道配置字段无效');
       await vault.put(name, JSON.stringify(parsed.data));
-      await appendBotSecretChange(store, 'identity', 'set', admin.id, new Date().toISOString());
+      await recordBotSecretChange(store, 'identity', 'set', admin.id, new Date().toISOString());
       session.out('登录应用配置已保存');
     } else {
       const parsed = channelProfile.safeParse(value);
       if (!parsed.success) throw new UsageError('通道配置字段无效');
       await vault.put(name, JSON.stringify(newChannel(parsed.data)));
-      await appendBotSecretChange(store, 'channel', 'set', admin.id, new Date().toISOString());
+      await recordBotSecretChange(store, 'channel', 'set', admin.id, new Date().toISOString());
       session.out('私聊机器人配置已保存');
     }
     return 0;
@@ -544,7 +564,7 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
     const vaultKey = identity ? identityProfileName : channelProfileName;
     const slot: BotSecretSlot = identity ? 'identity' : 'channel';
     await vault.remove(vaultKey);
-    await appendBotSecretChange(store, slot, 'remove', admin.id, new Date().toISOString());
+    await recordBotSecretChange(store, slot, 'remove', admin.id, new Date().toISOString());
     session.out(identity ? '登录应用配置已移除' : '私聊机器人配置已移除');
     return 0;
   }
@@ -554,22 +574,27 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
       throw new CliError('请先配置登录应用和私聊机器人');
     }
     const enabled = sub === 'channel-start';
+    const action: BotSecretAction = enabled ? 'start_channel' : 'stop_channel';
     await vault.put(channelProfileName, JSON.stringify({ ...channel, enabled }));
+    await recordBotSecretChange(store, 'channel', action, admin.id, new Date().toISOString());
     const result = await refreshChannel(session.config().dataDir, vault, botOrigins(session.config()));
-    if (result?.status !== 200) throw new CliError('已保存通道设置，适配器尚未确认');
+    if (result?.status !== 200) {
+      const detail = result?.adminDetail ? `（${await maskVaultSecrets(vault, result.adminDetail)}）` : '';
+      throw new CliError(`已保存通道设置，适配器尚未确认${detail}`);
+    }
     session.out(enabled ? '适配器已接收启动请求' : '适配器已断开');
     return 0;
   }
   if (sub === 'disable') {
     await disableBot(vault);
-    await appendBotSecretChange(store, 'model', 'remove', admin.id, new Date().toISOString());
+    await recordBotSecretChange(store, 'model', 'remove', admin.id, new Date().toISOString());
     session.out('机器人模型已停用');
     return 0;
   }
   if (sub === 'set') {
     const settings = await readSecretJson(readSecret, 'bot-model', '请输入机器人模型配置 JSON');
     await setBotProfile(vault, settings);
-    await appendBotSecretChange(store, 'model', 'set', admin.id, new Date().toISOString());
+    await recordBotSecretChange(store, 'model', 'set', admin.id, new Date().toISOString());
     session.out('机器人模型配置已保存');
     return 0;
   }
@@ -577,7 +602,14 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
   if (!config) throw new CliError('机器人模型尚未启用');
   const result = await callBot(session.config().dataDir, { owner: admin.id, op: { action: 'test' }, config });
   if (result.status !== 200 || !(result.body as { tested?: boolean })?.tested) {
-    throw new CliError((result.body as { message?: string })?.message ?? '机器人连接测试失败');
+    const rawMsg =
+      result.adminDetail ??
+      (result.body && typeof result.body === 'object' && typeof (result.body as { message?: unknown }).message === 'string'
+        ? (result.body as { message: string }).message
+        : result.body && typeof result.body === 'object' && typeof (result.body as { error?: unknown }).error === 'string'
+          ? (result.body as { error: string }).error
+          : '机器人连接测试失败');
+    throw new CliError(await maskVaultSecrets(vault, rawMsg));
   }
   session.out('机器人已用指定模型收到回复');
   return 0;

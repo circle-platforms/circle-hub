@@ -30,13 +30,19 @@ async function listenUnixSocket(
     res.end(JSON.stringify(reply.body));
   });
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-  return { close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+  return {
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections?.();
+      }),
+  };
 }
 
 test('bot channel enforces guards, handles inbound/next/receipt records and files, and syncs adapter', async () => {
   const hub = await createTestServer();
   const folder = join(hub.deps.config.dataDir, 'bot-runtime');
-  await mkdir(folder, { mode: 0o700 });
+  await mkdir(folder, { recursive: true, mode: 0o700 });
   const hostCalls: Record<string, unknown>[] = [];
   const channelCalls: Record<string, unknown>[] = [];
   let nextDelivery: unknown = null;
@@ -69,11 +75,15 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     assert.equal((await fetch(hub.url + channelPath, { method: 'GET' })).status, 403);
     assert.equal((await postChannel(null, { action: 'next' }, { origin: hub.url })).status, 403);
     assert.equal((await postChannel(null, 'x', { 'content-type': 'text/plain' })).status, 403);
-    assert.equal((await postChannel('missing', { action: 'next' })).status, 401);
+    const missingAuth = await postChannel('missing', { action: 'next' });
+    assert.equal(missingAuth.status, 401);
+    assert.equal(((await missingAuth.json()) as { code?: string }).code, 'BOT_UNAUTHENTICATED');
 
     const stored = newChannel({ bot: 'bot-1', secret: 'chan-secret', hub: hub.url + '/' });
     await hub.records.vault.put(channelProfileName, JSON.stringify(stored));
-    assert.equal((await postChannel(stored.token, { action: 'next' })).status, 401);
+    const disabledChanAuth = await postChannel(stored.token, { action: 'next' });
+    assert.equal(disabledChanAuth.status, 401);
+    assert.equal(((await disabledChanAuth.json()) as { code?: string }).code, 'BOT_UNAUTHENTICATED');
 
     await hub.records.vault.put(channelProfileName, JSON.stringify({ ...stored, enabled: true }));
     assert.equal((await postChannel('wrong-token', { action: 'next' })).status, 401);
@@ -105,6 +115,18 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
       text: '   ',
     });
     assert.equal(emptyInbound.status, 400);
+
+    // H3 staging check: inbound referencing an unstaged sha fails with 400 BOT_INVALID_REQUEST and writes no record
+    const unstagedSha = createHash('sha256').update('never-staged').digest('hex');
+    const unstagedInbound = await postChannel(stored.token, {
+      action: 'inbound',
+      subject: 'ext-user-1',
+      platformId: 'msg-unstaged',
+      text: 'missing file',
+      files: [{ sha256: unstagedSha, size: 12, name: 'missing.txt' }],
+    });
+    assert.equal(unstagedInbound.status, 400);
+    assert.equal(((await unstagedInbound.json()) as { code?: string }).code, 'BOT_INVALID_REQUEST');
 
     const fileBytes = Buffer.from('channel-attachment');
     const fileSha = createHash('sha256').update(fileBytes).digest('hex');
@@ -298,7 +320,8 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
       reached_target: true,
     });
     assert.equal(missingReceiptRes.status, 404);
-    const missingReceiptJson = await missingReceiptRes.json();
+    const missingReceiptJson = (await missingReceiptRes.json()) as { code?: string; message?: string };
+    assert.equal(missingReceiptJson.code, 'BOT_NOT_FOUND');
 
     // Insert intent belonging to a different channel and check indistinguishable 404 payload
     await hub.records.store.put({
@@ -321,6 +344,23 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     });
     assert.equal(crossChannelReceiptRes.status, 404);
     assert.deepEqual(await crossChannelReceiptRes.json(), missingReceiptJson);
+
+    // H4: Aggregate delivery intent digest covers text as well as attachment
+    const altTextReceipt = '12121212-1212-4121-8121-121212121212';
+    nextDelivery = {
+      id: '34343434-3434-4343-8343-343434343434',
+      owner: member.principal.id,
+      subject: 'ext-user-1',
+      receipt: altTextReceipt,
+      role: 'assistant',
+      text: '另一段文本',
+      file: { sha256: fileSha, size: fileBytes.length, name: 'note.txt' },
+    };
+    const altNext = await postChannel(stored.token, { action: 'next' });
+    assert.equal(altNext.status, 200);
+    const altJson = (await altNext.json()) as { delivery: { sha256: string; intent: { text_sha256: string } } };
+    assert.notEqual(altJson.delivery.sha256, nextJson.delivery.sha256);
+    assert.notEqual(altJson.delivery.intent.text_sha256, nextJson.delivery.intent.text_sha256);
 
     // H4: Legacy state strings rejected cleanly
     const legacyStateRes = await postChannel(stored.token, {
@@ -520,3 +560,246 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     await hub.close();
   }
 });
+
+test(
+  'R3 + S6: inbound staging promotion survives transient store.put failure and heals partial commits; concurrent { unknown, issued } receipts serialize cleanly',
+  { timeout: 30_000 },
+  async (t) => {
+    const hub = await createTestServer();
+    const folder = join(hub.deps.config.dataDir, 'bot-runtime');
+    await mkdir(folder, { recursive: true, mode: 0o700 });
+    const hostReceiptStates: string[] = [];
+    const host = await listenUnixSocket(join(folder, 'host.sock'), (body) => {
+      const op = body.op as { action?: string; state?: string } | undefined;
+      if (op?.action === 'receipt') {
+        hostReceiptStates.push(String(op.state ?? ''));
+        return { body: { ok: true } };
+      }
+      return { body: { accepted: true } };
+    });
+
+    try {
+      const member = await hub.createUser('事务重试成员');
+      const stored = newChannel({ bot: 'bot-r3-s6', secret: 'chan-sec-r3', hub: hub.url + '/' });
+      await hub.records.vault.put(channelProfileName, JSON.stringify({ ...stored, enabled: true }));
+      const identity = { tenant: 'tenant-r3', application: 'app-r3', secret: 'app-sec-r3' };
+      await hub.records.vault.put(identityProfileName, JSON.stringify(identity));
+      await setBotProfile(hub.records.vault, {
+        name: '重试机器人',
+        protocol: 'openai',
+        endpoint: 'https://model.example.invalid/v1',
+        model: 'demo',
+        key: 'retry-key',
+      });
+      const issuer = identityIssuer(identity.tenant);
+      await hub.records.principals.bindExternalIdentity(member.principal, issuer, 'ext-r3');
+
+      const postChannel = (body: unknown) =>
+        fetch(hub.url + '/api/bot-channel/v1', {
+          method: 'POST',
+          headers: { authorization: 'Bearer ' + stored.token, 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+      const stagedBytes = Buffer.from('staged-attachment-for-r3');
+      const stagedSha = createHash('sha256').update(stagedBytes).digest('hex');
+      const subjectHeader = Buffer.from('ext-r3', 'utf8').toString('base64url');
+      const putRes = await fetch(hub.url + '/api/bot-channel/v1/files/' + stagedSha, {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer ' + stored.token,
+          'bot-member-subject': subjectHeader,
+          'content-length': String(stagedBytes.length),
+        },
+        body: stagedBytes,
+      });
+      assert.equal(putRes.status, 200);
+
+      const memberHash = createHash('sha256').update(member.principal.id).digest('hex');
+      const stagedPath = join(hub.deps.config.dataDir, 'bot-runtime', 'channel-staging', memberHash, stagedSha);
+      const filesPath = join(hub.deps.config.dataDir, 'bot-runtime', 'files', memberHash, stagedSha);
+
+      // R3 part 1: transient store.put failure leaves staged file intact and writes 0 records; retry succeeds cleanly with 1 record
+      const originalPut = hub.deps.records.store.put.bind(hub.deps.records.store);
+      let failInboundPut = true;
+      hub.deps.records.store.put = (async (input, tx) => {
+        if (failInboundPut && input.schema === 'member-bot-inbound@1') {
+          failInboundPut = false;
+          throw new Error('transient store.put failure');
+        }
+        return originalPut(input, tx);
+      }) as typeof hub.deps.records.store.put;
+
+      const r3Payload = {
+        action: 'inbound',
+        subject: 'ext-r3',
+        platformId: 'msg-r3-1',
+        text: '测试入站恢复',
+        files: [{ sha256: stagedSha, size: stagedBytes.length, name: 'r3.txt' }],
+      };
+      const failedAttempt = await postChannel(r3Payload);
+      assert.equal(failedAttempt.status, 500);
+      assert.equal(((await failedAttempt.json()) as { code?: string }).code, 'BOT_UPSTREAM_UNAVAILABLE');
+      assert.equal((await stat(stagedPath)).isFile(), true, 'staged copy must NOT be deleted when store.put fails');
+      await assert.rejects(stat(filesPath));
+
+      const retryAttempt = await postChannel(r3Payload);
+      assert.equal(retryAttempt.status, 200);
+      assert.deepEqual(await retryAttempt.json(), { accepted: true });
+      await assert.rejects(stat(stagedPath));
+      assert.equal((await stat(filesPath)).isFile(), true);
+
+      // R3 part 2: simulate existingInbound already persisted while staged file was NOT yet moved out of channel-staging
+      const stagedBytes2 = Buffer.from('staged-attachment-for-r3-heal');
+      const stagedSha2 = createHash('sha256').update(stagedBytes2).digest('hex');
+      const putRes2 = await fetch(hub.url + '/api/bot-channel/v1/files/' + stagedSha2, {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer ' + stored.token,
+          'bot-member-subject': subjectHeader,
+          'content-length': String(stagedBytes2.length),
+        },
+        body: stagedBytes2,
+      });
+      assert.equal(putRes2.status, 200);
+
+      // Compute same deterministic request key for msg-r3-heal and pre-insert record without moving staged file
+      const reqHash = createHash('sha256').update(JSON.stringify([issuer, stored.bot, 'ext-r3', 'msg-r3-heal'])).digest();
+      reqHash[6] = (reqHash[6] & 15) | 0x80;
+      reqHash[8] = (reqHash[8] & 63) | 0x80;
+      const hex = reqHash.subarray(0, 16).toString('hex');
+      const healReqId = [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
+      const healChannelId = createHash('sha256').update(JSON.stringify([issuer, stored.bot])).digest('hex');
+      await originalPut({
+        kind: 'action',
+        schema: 'member-bot-inbound@1',
+        provenance: 'declared',
+        unique_key: 'chat-inbound:' + healReqId,
+        index: [{ key: 'chat.inbound.owner', value: member.principal.id }],
+        body: {
+          schema: 'member-bot-inbound@1',
+          kind: 'dispatch',
+          request: healReqId,
+          member: member.principal.id,
+          issuer,
+          subject: createHash('sha256').update(JSON.stringify([issuer, 'ext-r3'])).digest('hex'),
+          channel: healChannelId,
+          platform_id_sha256: createHash('sha256').update(JSON.stringify([issuer, 'msg-r3-heal'])).digest('hex'),
+          text_sha256: createHash('sha256').update(Buffer.from('heal text', 'utf8')).digest('hex'),
+          text_size: Buffer.byteLength('heal text', 'utf8'),
+          files: [{ sha256: stagedSha2, size: stagedBytes2.length, name_sha256: createHash('sha256').update('heal.txt').digest('hex') }],
+          at: new Date().toISOString(),
+        },
+      });
+      const stagedPath2 = join(hub.deps.config.dataDir, 'bot-runtime', 'channel-staging', memberHash, stagedSha2);
+      const filesPath2 = join(hub.deps.config.dataDir, 'bot-runtime', 'files', memberHash, stagedSha2);
+      assert.equal((await stat(stagedPath2)).isFile(), true);
+      const healRetry = await postChannel({
+        action: 'inbound',
+        subject: 'ext-r3',
+        platformId: 'msg-r3-heal',
+        text: 'heal text',
+        files: [{ sha256: stagedSha2, size: stagedBytes2.length, name: 'heal.txt' }],
+      });
+      assert.equal(healRetry.status, 200);
+      await assert.rejects(stat(stagedPath2));
+      assert.equal((await stat(filesPath2)).isFile(), true);
+
+      // S6: concurrent { unknown, issued } receipt pair serializes deterministically inside withTransaction + store.lock without spurious 409s
+      const s6Receipt = 'eeeeeeee-1111-4111-8111-111111111111';
+      await originalPut({
+        kind: 'action',
+        schema: 'member-notification-intent@1',
+        provenance: 'declared',
+        unique_key: 'chat-intent:' + s6Receipt,
+        index: [{ key: 'chat.notification.owner', value: member.principal.id }],
+        body: {
+          schema: 'member-notification-intent@1',
+          kind: 'dispatch',
+          event: 'ffffffff-1111-4111-8111-111111111111',
+          receipt: s6Receipt,
+          member: member.principal.id,
+          issuer,
+          channel: healChannelId,
+          subject: createHash('sha256').update(JSON.stringify([issuer, 'ext-r3'])).digest('hex'),
+          sha256: stagedSha,
+          size: 4,
+          text_sha256: createHash('sha256').update('ping').digest('hex'),
+          text_size: 4,
+          file_sha256: null,
+          file_size: null,
+          name_sha256: null,
+          write: {
+            interaction: 'submit_then_read',
+            effect_class: 'notification',
+            retry_safety: 'unsafe',
+            signing: 'service_on_behalf',
+            reversible: false,
+            target_key: createHash('sha256').update(JSON.stringify([issuer, 'ext-r3'])).digest('hex'),
+            audience: member.principal.id,
+            evidence: { call: 'receipt', pointer: '/acknowledgment/code' },
+            refusal: { stage: '/state', reached_device: '/reached_target' },
+            writes_hub_records: true,
+          },
+        },
+      });
+
+      const originalLock = hub.deps.records.store.lock.bind(hub.deps.records.store);
+      let firstLocked = false;
+      let receiptLocked = false;
+      const firstEntered = Promise.withResolvers<void>();
+      const releaseFirst = Promise.withResolvers<void>();
+      t.after(() => releaseFirst.resolve());
+      hub.deps.records.store.lock = (async (key, tx) => {
+        await originalLock(key, tx);
+        if (key === 'chat-receipt:' + s6Receipt && !firstLocked) {
+          firstLocked = true;
+          receiptLocked = true;
+          firstEntered.resolve();
+          await releaseFirst.promise;
+        }
+      }) as typeof hub.deps.records.store.lock;
+
+      try {
+        const unknownPromise = postChannel({
+          action: 'receipt',
+          receipt: s6Receipt,
+          state: 'unknown',
+          reached_target: null,
+        });
+        await Promise.race([unknownPromise, firstEntered.promise]);
+        assert.equal(receiptLocked, true, 'handleChannelReceipt must acquire transaction advisory lock for receipt key');
+        const issuedPromise = postChannel({
+          action: 'receipt',
+          receipt: s6Receipt,
+          state: 'issued',
+          acknowledgment: { request: stagedSha, code: 0 },
+          reached_target: true,
+        });
+        // Give issued request time to reach and block on pg advisory lock while unknown holds tx
+        await new Promise((r) => setTimeout(r, 30));
+        releaseFirst.resolve();
+
+        const [rUnknown, rIssued] = await Promise.all([unknownPromise, issuedPromise]);
+        assert.equal(rUnknown.status, 200);
+        assert.equal(rIssued.status, 200);
+        const finalConfirmed = await hub.records.store.getByKey('effect', 'chat-receipt:' + s6Receipt + ':confirmed');
+        assert.equal((finalConfirmed?.body as { outcome?: string }).outcome, 'issued');
+
+        const lateUnknown = await postChannel({
+          action: 'receipt',
+          receipt: s6Receipt,
+          state: 'unknown',
+          reached_target: null,
+        });
+        assert.equal(lateUnknown.status, 200);
+        assert.equal(hostReceiptStates.at(-1), 'issued');
+      } finally {
+        releaseFirst.resolve();
+      }
+    } finally {
+      await host.close();
+      await hub.close();
+    }
+  },
+);

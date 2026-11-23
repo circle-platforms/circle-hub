@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdir, symlink } from 'node:fs/promises';
+import { chmod, lstat, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
+  callBot,
   channelProfileName,
   chatPath,
   disableBot,
+  ensureBotRuntimeDir,
+  inspectBotRuntimeDir,
+  maskVaultSecrets,
   newChannel,
   readBotProfile,
   setBotProfile,
@@ -25,7 +29,7 @@ test('chat authenticates every request, fixes the owner, confines model credenti
   });
   try {
     const folder = join(hub.deps.config.dataDir, 'bot-runtime');
-    await mkdir(folder, { mode: 0o700 });
+    await mkdir(folder, { recursive: true, mode: 0o700 });
     await new Promise<void>((resolve) => host.listen(join(folder, 'host.sock'), resolve));
     const member = await hub.createUser('测试成员');
     const send = (token: string, op: unknown, version = '1.18.1') =>
@@ -90,7 +94,7 @@ test('personal-bot enforces H5 direct bearer, H8/H9 strict SemVer Bot-Client-Ver
   });
   try {
     const folder = join(hub.deps.config.dataDir, 'bot-runtime');
-    await mkdir(folder, { mode: 0o700 });
+    await mkdir(folder, { recursive: true, mode: 0o700 });
     await new Promise<void>((resolve) => host.listen(join(folder, 'host.sock'), resolve));
 
     const user = await hub.createUser('版本成员');
@@ -123,7 +127,7 @@ test('personal-bot enforces H5 direct bearer, H8/H9 strict SemVer Bot-Client-Ver
     assert.equal(legacyHeaderRes.status, 400);
     assert.equal(((await legacyHeaderRes.json()) as { code?: string }).code, 'BOT_VERSION_INVALID');
 
-    for (const badVersion of ['1.18', 'v1.18.1', '01.18.1', '1.018.1', '1.18.01', '1.18.1-', '1.18.1+']) {
+    for (const badVersion of ['1.18', 'v1.18.1', '01.18.1', '1.018.1', '1.18.01', '1.2.3-01', '1.2.3-01.alpha', '1.18.1-', '1.18.1+']) {
       const badRes = await fetch(hub.url + chatPath, {
         method: 'POST',
         headers: {
@@ -163,112 +167,254 @@ test('personal-bot enforces H5 direct bearer, H8/H9 strict SemVer Bot-Client-Ver
     assert.equal(mismatchBody.code, 'BOT_VERSION_MISMATCH');
     assert.ok(!JSON.stringify(mismatchBody).includes('raw upstream'));
 
-    await hub.records.vault.put(
-      'personal-bot.reviewer',
-      JSON.stringify({
-        name: '已废弃审校',
-        protocol: 'openai',
-        endpoint: 'https://review.example.invalid/v1',
-        model: 'demo',
-        key: 'unused-reviewer-key',
-      }),
-    );
+    // S8: setBotProfile and disableBot remove stranded legacy reviewer slot
+    const putLegacyReviewer = () =>
+      hub.records.vault.put(
+        'personal-bot.reviewer',
+        JSON.stringify({
+          name: '已废弃审校',
+          protocol: 'openai',
+          endpoint: 'https://review.example.invalid/v1',
+          model: 'demo',
+          key: 'unused-reviewer-key',
+        }),
+      );
+    await putLegacyReviewer();
     assert.equal(await readBotProfile(hub.records.vault), null);
-  } finally {
-    await new Promise<void>((resolve) => host.close(() => resolve()));
-    await hub.close();
-  }
-});
-
-test('personal-bot masks vault secrets from echoed host errors, never logs raw host errors or payloads, and verifies bot-runtime directory via lstat', async () => {
-  const hub = await createTestServer();
-  const echoedKey = 'fixture-secret-model-key-999';
-  const channelSecret = 'fixture-channel-secret-888';
-  let seenHostCalls = 0;
-  const host = createServer(async (req, res) => {
-    const parts: Buffer[] = [];
-    for await (const p of req) parts.push(p);
-    seenHostCalls += 1;
-    const parsed = JSON.parse(Buffer.concat(parts).toString('utf8')) as { config?: { key?: string } };
-    res.statusCode = 502;
-    res.end(
-      JSON.stringify({
-        code: 'model_unreachable',
-        message: `upstream failed using ${parsed.config?.key ?? ''} and ${channelSecret}`,
-      }),
-    );
-  });
-  try {
-    const folder = join(hub.deps.config.dataDir, 'bot-runtime');
-    await mkdir(folder, { mode: 0o700 });
-    await new Promise<void>((resolve) => host.listen(join(folder, 'host.sock'), resolve));
-
-    const user = await hub.createUser('安全成员');
     await setBotProfile(hub.records.vault, {
-      name: '安全助手',
-      protocol: 'responses',
+      name: '清理测试机器人',
+      protocol: 'openai',
       endpoint: 'https://model.example.invalid/v1',
       model: 'demo',
-      key: echoedKey,
+      key: 'cleanup-key',
     });
-    const chan = newChannel({ bot: 'bot-sec', secret: channelSecret, hub: hub.url + '/' });
-    await hub.records.vault.put(channelProfileName, JSON.stringify({ ...chan, enabled: true }));
-
-    const sendRes = await fetch(hub.url + chatPath, {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer ' + user.token,
-        'content-type': 'application/json',
-        'bot-client-version': '1.18.1',
-      },
-      body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: '测试秘密遮罩' }),
-    });
-    assert.equal(sendRes.status, 502);
-    const sendBody = (await sendRes.json()) as { code?: string; message?: string };
-    assert.equal(sendBody.code, 'BOT_UPSTREAM_UNAVAILABLE');
-    const serialized = JSON.stringify(sendBody);
-    assert.ok(!serialized.includes(echoedKey), 'member response must never leak model key');
-    assert.ok(!serialized.includes(channelSecret), 'member response must never leak channel secret');
-    assert.ok(!serialized.includes('upstream failed using'), 'member response must never relay raw host message');
-
-    const callLogPage = await hub.records.callLog.query(hub.admin.principal, { userId: user.principal.id });
-    const adminNotes = callLogPage.items.map((row) => row.admin_note ?? '').join('\n');
-    const allLogs = hub.logs.join('\n') + '\n' + adminNotes;
-    assert.ok(!allLogs.includes(echoedKey), 'admin call_log and stderr logs must mask model key');
-    assert.ok(!allLogs.includes(channelSecret), 'admin call_log and stderr logs must mask channel secret');
-    assert.ok(adminNotes.includes('[REDACTED]') || hub.logs.some((line) => line.includes('[REDACTED]')));
-
-    // H16: wrong directory permissions (0o755)
-    const callsBeforeChmod = seenHostCalls;
-    await chmod(folder, 0o755);
-    const badPermRes = await fetch(hub.url + chatPath, {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer ' + user.token,
-        'content-type': 'application/json',
-        'bot-client-version': '1.18.1',
-      },
-      body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: '权限探测' }),
-    });
-    assert.equal(badPermRes.status, 503);
-    assert.equal(((await badPermRes.json()) as { code?: string }).code, 'BOT_UPSTREAM_UNAVAILABLE');
-    assert.equal(seenHostCalls, callsBeforeChmod, 'must refuse before connecting or sending secrets to 0o755 dir');
-    await chmod(folder, 0o700);
-
-    // H16: symlink check
-    const symlinkTarget = join(hub.deps.config.dataDir, 'bot-runtime-target');
-    await mkdir(symlinkTarget, { mode: 0o700 });
-    const symDataDir = join(hub.deps.config.dataDir, 'sym-data');
-    await mkdir(symDataDir, { mode: 0o700 });
-    await symlink(symlinkTarget, join(symDataDir, 'bot-runtime'));
-    const sockRes = await (await import('./personal-bot.ts')).callBot(symDataDir, {
-      action: 'send',
-      config: { key: echoedKey },
-    });
-    assert.equal(sockRes.status, 503);
-    assert.equal((sockRes.body as { code?: string }).code, 'BOT_UPSTREAM_UNAVAILABLE');
+    assert.equal(await hub.records.vault.has('personal-bot.reviewer'), false);
+    await putLegacyReviewer();
+    await disableBot(hub.records.vault);
+    assert.equal(await hub.records.vault.has('personal-bot.reviewer'), false);
   } finally {
     await new Promise<void>((resolve) => host.close(() => resolve()));
     await hub.close();
   }
 });
+
+test(
+  'R6/R7/H10b/H10c/H16/S5/S10: enforces JSON size caps, reflected-key 502, masks before slice(512), maps 404 BOT_NOT_FOUND, and inspects bot-runtime without connecting through symlinks',
+  { timeout: 30_000 },
+  async () => {
+    const hub = await createTestServer();
+    const echoedKey = 'fixture-secret-model-key-999999';
+    const channelSecret = 'fixture-channel-secret-888';
+    let seenHostCalls = 0;
+    let hostReply: { status: number; body: unknown } = {
+      status: 502,
+      body: {
+        code: 'model_unreachable',
+        message: 'x'.repeat(498) + echoedKey + ' tail',
+      },
+    };
+    const host = createServer(async (req, res) => {
+      for await (const _ of req) {
+        // drain
+      }
+      seenHostCalls += 1;
+      res.statusCode = hostReply.status;
+      res.end(JSON.stringify(hostReply.body));
+    });
+    let symConnected = false;
+    const symlinkTarget = join(hub.deps.config.dataDir, 'bot-runtime-target');
+    const symHost = createServer(async (req, res) => {
+      symConnected = true;
+      for await (const _ of req) {
+        // drain
+      }
+      res.end(JSON.stringify({ id: 'should-not-reach' }));
+    });
+    try {
+      const folder = join(hub.deps.config.dataDir, 'bot-runtime');
+      await mkdir(folder, { recursive: true, mode: 0o700 });
+      await new Promise<void>((resolve) => host.listen(join(folder, 'host.sock'), resolve));
+
+      const user = await hub.createUser('安全成员');
+      await setBotProfile(hub.records.vault, {
+        name: '安全机器人',
+        protocol: 'responses',
+        endpoint: 'https://model.example.invalid/v1',
+        model: 'demo',
+        key: echoedKey,
+      });
+      const chan = newChannel({ bot: 'bot-sec', secret: channelSecret, hub: hub.url + '/' });
+      await hub.records.vault.put(channelProfileName, JSON.stringify({ ...chan, enabled: true }));
+
+      // H5: non-JSON Content-Type -> 415 BOT_INVALID_REQUEST
+      const badContentType = await fetch(hub.url + chatPath, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer ' + user.token,
+          'content-type': 'text/plain',
+          'bot-client-version': '1.18.1',
+        },
+        body: '{}',
+      });
+      assert.equal(badContentType.status, 415);
+      assert.equal(((await badContentType.json()) as { code?: string }).code, 'BOT_INVALID_REQUEST');
+
+      // H10b: JSON body > 72 KiB -> 413 BOT_INVALID_REQUEST (never BOT_QUOTA_EXCEEDED)
+      const hugeJson = await fetch(hub.url + chatPath, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer ' + user.token,
+          'content-type': 'application/json',
+          'bot-client-version': '1.18.1',
+        },
+        body: JSON.stringify({ action: 'discover', pad: 'a'.repeat(73 * 1024) }),
+      });
+      assert.equal(hugeJson.status, 413);
+      const hugeJsonBody = (await hugeJson.json()) as { code?: string; message?: string };
+      assert.equal(hugeJsonBody.code, 'BOT_INVALID_REQUEST');
+      assert.ok(!String(hugeJsonBody.message).includes('个人助手'));
+
+      // S5: secret spanning past index 512 in host error message must be masked BEFORE .slice(0, 512)
+      const sendRes = await fetch(hub.url + chatPath, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer ' + user.token,
+          'content-type': 'application/json',
+          'bot-client-version': '1.18.1',
+        },
+        body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: '测试秘密遮罩' }),
+      });
+      assert.equal(sendRes.status, 502);
+      const sendBody = (await sendRes.json()) as { code?: string; message?: string };
+      assert.equal(sendBody.code, 'BOT_UPSTREAM_UNAVAILABLE');
+      assert.match(sendBody.message ?? '', /^暂时不可用：/);
+      assert.ok(!String(sendBody.message).includes('个人助手'));
+      const serialized = JSON.stringify(sendBody);
+      assert.ok(!serialized.includes(echoedKey), 'member response must never leak model key');
+      assert.ok(!serialized.includes(channelSecret), 'member response must never leak channel secret');
+      assert.ok(!serialized.includes('x'.repeat(20)), 'member response must never relay raw host message');
+
+      const maskedDirect = await maskVaultSecrets(hub.records.vault, `a=${echoedKey}, b=${channelSecret}`);
+      assert.equal(maskedDirect, 'a=[REDACTED], b=[REDACTED]');
+
+      const callLogPage = await hub.records.callLog.query(hub.admin.principal, { userId: user.principal.id });
+      const adminNotes = callLogPage.items.map((row) => row.admin_note ?? '').join('\n');
+      assert.ok(!adminNotes.includes(echoedKey.slice(0, 8)), 'secret spanning index 512 must be masked before slicing');
+      assert.ok(adminNotes.includes('[REDACTED]'));
+
+      // H10c: 200 response reflecting model secret key -> 502 BOT_UPSTREAM_UNAVAILABLE
+      hostReply = { status: 200, body: { reply: `oops ${echoedKey}` } };
+      const reflectedRes = await fetch(hub.url + chatPath, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer ' + user.token,
+          'content-type': 'application/json',
+          'bot-client-version': '1.18.1',
+        },
+        body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: '回显检测' }),
+      });
+      assert.equal(reflectedRes.status, 502);
+      const reflectedBody = (await reflectedRes.json()) as { code?: string; message?: string };
+      assert.equal(reflectedBody.code, 'BOT_UPSTREAM_UNAVAILABLE');
+      assert.ok(!JSON.stringify(reflectedBody).includes(echoedKey));
+
+      // H10c (non-model vault secrets): 200 response reflecting channel/vault secret via maskVaultSecrets -> 502 BOT_UPSTREAM_UNAVAILABLE
+      hostReply = { status: 200, body: { reply: `leak ${channelSecret}` } };
+      const reflectedChannelRes = await fetch(hub.url + chatPath, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer ' + user.token,
+          'content-type': 'application/json',
+          'bot-client-version': '1.18.1',
+        },
+        body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: '通道密钥回显检测' }),
+      });
+      assert.equal(reflectedChannelRes.status, 502);
+      const reflectedChannelBody = (await reflectedChannelRes.json()) as { code?: string };
+      assert.equal(reflectedChannelBody.code, 'BOT_UPSTREAM_UNAVAILABLE');
+      assert.ok(!JSON.stringify(reflectedChannelBody).includes(channelSecret));
+
+      // R6: host 404 -> 404 BOT_NOT_FOUND
+      hostReply = { status: 404, body: { code: 'not_found', message: 'unknown conversation' } };
+      const missingConv = await fetch(hub.url + chatPath, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer ' + user.token,
+          'content-type': 'application/json',
+          'bot-client-version': '1.18.1',
+        },
+        body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: '未知会话' }),
+      });
+      assert.equal(missingConv.status, 404);
+      const missingConvBody = (await missingConv.json()) as { code?: string; message?: string };
+      assert.equal(missingConvBody.code, 'BOT_NOT_FOUND');
+      assert.match(missingConvBody.message ?? '', /^不存在：/);
+
+      // S10: wrong directory permissions (0o755) -> member gets generic 503 while call_log gets exact adminDetail
+      const callsBeforeChmod = seenHostCalls;
+      await chmod(folder, 0o755);
+      const badPermRes = await fetch(hub.url + chatPath, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer ' + user.token,
+          'content-type': 'application/json',
+          'bot-client-version': '1.18.1',
+        },
+        body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: '权限探测' }),
+      });
+      assert.equal(badPermRes.status, 503);
+      const badPermBody = (await badPermRes.json()) as { code?: string; message?: string };
+      assert.equal(badPermBody.code, 'BOT_UPSTREAM_UNAVAILABLE');
+      assert.ok(!String(badPermBody.message).includes('0755'), 'member response must never disclose filesystem mode');
+      assert.equal(seenHostCalls, callsBeforeChmod, 'must refuse before connecting or sending secrets to 0o755 dir');
+      const afterPermLogs = (await hub.records.callLog.query(hub.admin.principal, { userId: user.principal.id })).items;
+      assert.ok(afterPermLogs.some((row) => (row.admin_note ?? '').includes('权限为 0755（须为 0700）')));
+      await chmod(folder, 0o700);
+
+      // S10 + H16: symlink pointing to LIVE listening socket -> 503 with connected === false and adminDetail
+      await mkdir(symlinkTarget, { mode: 0o700 });
+      await new Promise<void>((resolve) => symHost.listen(join(symlinkTarget, 'host.sock'), resolve));
+      const symDataDir = join(hub.deps.config.dataDir, 'sym-data');
+      await mkdir(symDataDir, { mode: 0o700 });
+      await symlink(symlinkTarget, join(symDataDir, 'bot-runtime'));
+      const sockRes = await callBot(symDataDir, { action: 'send', config: { key: echoedKey } });
+      assert.equal(sockRes.status, 503);
+      assert.equal((sockRes.body as { code?: string }).code, 'BOT_UPSTREAM_UNAVAILABLE');
+      assert.equal(symConnected, false, 'must NEVER connect through symlinked bot-runtime');
+      assert.match(sockRes.adminDetail ?? '', /是符号链接/);
+
+      // S10: inspectBotRuntimeDir & ensureBotRuntimeDir checks
+      const missingDir = join(hub.deps.config.dataDir, 'missing-data');
+      await mkdir(missingDir, { mode: 0o700 });
+      assert.deepEqual(await inspectBotRuntimeDir(missingDir), {
+        ok: false,
+        path: join(missingDir, 'bot-runtime'),
+        reason: '不存在',
+      });
+      await ensureBotRuntimeDir(missingDir);
+      assert.deepEqual(await inspectBotRuntimeDir(missingDir), {
+        ok: true,
+        path: join(missingDir, 'bot-runtime'),
+      });
+      assert.equal(((await lstat(join(missingDir, 'bot-runtime'))).mode & 0o777), 0o700);
+
+      const fileDataDir = join(hub.deps.config.dataDir, 'file-data');
+      await mkdir(fileDataDir, { mode: 0o700 });
+      await writeFile(join(fileDataDir, 'bot-runtime'), 'not-a-dir');
+      assert.equal((await inspectBotRuntimeDir(fileDataDir)).ok, false);
+      const fileInspect = await inspectBotRuntimeDir(fileDataDir);
+      assert.equal(fileInspect.ok ? '' : fileInspect.reason, '不是普通目录');
+
+      // ensureBotRuntimeDir never chmods a pre-existing wrong-mode directory
+      const wrongModeDataDir = join(hub.deps.config.dataDir, 'wrong-mode-data');
+      await mkdir(join(wrongModeDataDir, 'bot-runtime'), { recursive: true, mode: 0o755 });
+      await chmod(join(wrongModeDataDir, 'bot-runtime'), 0o755);
+      await ensureBotRuntimeDir(wrongModeDataDir);
+      assert.equal(((await lstat(join(wrongModeDataDir, 'bot-runtime'))).mode & 0o777), 0o755);
+    } finally {
+      await new Promise<void>((resolve) => symHost.close(() => resolve()));
+      await new Promise<void>((resolve) => host.close(() => resolve()));
+      await hub.close();
+    }
+  },
+);

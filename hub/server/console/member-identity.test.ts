@@ -233,21 +233,29 @@ test('H15: callback maps bindExternalIdentity ConflictError/AccessError to 403 a
   }
 });
 
-test('H6: 1005 requests from Peer A still leave Peer B able to start /console/identity/login with 303', async () => {
-  let firstPeerAState = '';
-  let firstPeerACookie = '';
-  for (let i = 0; i < 1005; i++) {
+test('H6 + S13: exceeding STATES_PER_PEER (20) returns 429 without evicting valid states and leaves Peer B unaffected', async () => {
+  const peerAStates: Array<{ state: string; cookie: string }> = [];
+  for (let i = 0; i < 20; i++) {
     const res = await sendPeer(origin, '/console/identity/login', '192.0.2.10');
-    assert.equal(res.status, 303, `peer A request #${i + 1} should evict own oldest state, not hit 429`);
-    if (i === 0) {
-      firstPeerAState = new URL(String(res.headers.location)).searchParams.get('state')!;
-      firstPeerACookie = firstCookie(res);
-    }
+    assert.equal(res.status, 303, `peer A request #${i + 1} within cap should return 303`);
+    peerAStates.push({
+      state: new URL(String(res.headers.location)).searchParams.get('state')!,
+      cookie: firstCookie(res),
+    });
   }
+  const overLimit = await sendPeer(origin, '/console/identity/login', '192.0.2.10');
+  assert.equal(overLimit.status, 429, '21st concurrent state from Peer A must return 429 instead of evicting');
+
   const peerBRes = await sendPeer(origin, '/console/identity/login', '192.0.2.22');
-  assert.equal(peerBRes.status, 303, 'Peer B must still get 303 after 1,005 requests from Peer A');
-  const evicted = await sendPeer(origin, `/console/identity/callback?code=c&state=${firstPeerAState}`, '192.0.2.10', {
-    headers: { cookie: firstPeerACookie },
+  assert.equal(peerBRes.status, 303, 'Peer B must still get 303 while Peer A is capped at 20');
+
+  // Consume Peer A's first state (proving it was NOT evicted) -> drops Peer A count to 19
+  const first = peerAStates[0]!;
+  const consumed = await sendPeer(origin, `/console/identity/callback?code=c&state=${first.state}`, '192.0.2.10', {
+    headers: { cookie: first.cookie },
   });
-  assert.equal(evicted.status, 403, 'Peer A oldest state was evicted after exceeding per-peer limit');
+  assert.equal(consumed.status, 303, 'first state remained valid (not evicted) and completed callback');
+
+  const afterConsume = await sendPeer(origin, '/console/identity/login', '192.0.2.10');
+  assert.equal(afterConsume.status, 303, 'Peer A can issue a fresh state once one pending challenge is consumed');
 });

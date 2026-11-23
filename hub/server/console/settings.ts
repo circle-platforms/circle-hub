@@ -1,12 +1,13 @@
-import { tooltip, field, facts, technicalCode, technical } from './presentation.ts';
+import { evidence, tooltip, field, facts, technicalCode, technical } from './presentation.ts';
 import { X509Certificate } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { BOT_MODEL_PROTOCOL, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { BOT_MODEL_PROTOCOL, BOT_SECRET_SLOT, labelOf, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { BotSecretChangeAudit } from '../../../contracts/src/resources.ts';
 import { MANIFEST_FILE, layoutAt, listBackups } from '../../platform/api.ts';
 import { maskPlaceholder } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
-import { readBotProfile, readChannel, readIdentity, type BotProfile } from '../personal-bot.ts';
+import { inspectBotRuntimeDir, probeBotSocket, readBotProfile, readChannel, readIdentity, type BotProfile } from '../personal-bot.ts';
 import { commands } from './commands.ts';
 import { connectedClients, clientLabel } from './circles.ts';
 import { CLIENT_COLUMNS, clientRow } from './connections.ts';
@@ -222,49 +223,190 @@ function botModelForm(profile: BotProfile | null, csrf: string): Html {
   const id = 'bot';
   const fields = html`<div data-fields>
     ${field('机器人名称', html`<input id="${id}-name" name="name" required maxlength="256" value="${profile?.name ?? ''}">`)}
-    ${field('API 协议', html`<select id="${id}-protocol" name="protocol">${BOT_MODEL_PROTOCOL.map((p) => html`<option value="${p}"${profile?.protocol === p ? html` selected` : ''}>${uiLabelOf('bot_model_protocol', p)}</option>`)}</select>`)}
-    ${field('API 地址', html`<input id="${id}-endpoint" name="endpoint" type="url" required spellcheck="false" value="${profile?.endpoint ?? ''}">`)}
-    ${field('模型 ID', html`<input id="${id}-model" name="model" required spellcheck="false" value="${profile?.model ?? ''}">`)}
-    ${field('模型族 ID', html`<input id="${id}-family" name="family" maxlength="256" spellcheck="false" value="${profile?.family ?? ''}">`)}
-    ${field('API Key', html`<input id="${id}-key" name="value" type="password" autocomplete="new-password" required>`)}
+    ${field('接口协议', html`<select id="${id}-protocol" name="protocol">${BOT_MODEL_PROTOCOL.map((p) => html`<option value="${p}"${profile?.protocol === p ? html` selected` : ''}>${uiLabelOf('bot_model_protocol', p)}</option>`)}</select>`)}
+    ${field('模型服务地址', html`<input id="${id}-endpoint" name="endpoint" type="url" required spellcheck="false" value="${profile?.endpoint ?? ''}">`, '填写模型服务的 HTTPS 接口地址；仅本机调试时可使用回环 HTTP 地址。')}
+    ${field('模型标识', html`<input id="${id}-model" name="model" required spellcheck="false" value="${profile?.model ?? ''}">`)}
+    ${field('模型系列标识（选填）', html`<input id="${id}-family" name="family" maxlength="256" spellcheck="false" value="${profile?.family ?? ''}">`, '仅当需要按模型系列标识区分能力策略时填写，留空则按默认模型处理。')}
+    ${field('模型密钥', html`<input id="${id}-key" name="value" type="password" autocomplete="new-password" required>`, '从模型服务商控制台获取；保存时加密写入密钥库，页面不回显旧密钥。')}
   </div>`;
   return actionForm('bot-set', csrf, fields, profile ? '保存并轮换密钥' : '保存配置', { primary: true });
 }
 
-async function adminBotSettings(ctx: PageContext): Promise<PageResult> {
+function defaultChannelHubUrl(ctx: PageContext): string {
+  const origin = originOf(ctx);
+  try {
+    const parsed = new URL(origin);
+    if (
+      parsed.protocol === 'https:' ||
+      ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname)
+    ) {
+      return origin;
+    }
+  } catch {
+    // Fall back to loopback HTTP URL when origin is unavailable or non-loopback HTTP.
+  }
+  return `http://127.0.0.1:${ctx.deps.config.port}`;
+}
+
+async function recentBotSecretChanges(ctx: PageContext): Promise<Array<{ slot: typeof BOT_SECRET_SLOT[number]; action: Parameters<typeof labelOf<'bot_secret_action'>>[1]; by: string; at: string }>> {
+  const store = ctx.deps.records.store;
+  if (!store) return [];
+  try {
+    const rawItems =
+      typeof store.findMany === 'function'
+        ? await store.findMany({ kind: 'action', key: 'bot.secret.slot', values: [...BOT_SECRET_SLOT] })
+        : (await store.list({ kind: 'action', newestFirst: true, limit: 100 })).items;
+    const rows: Array<{ slot: typeof BOT_SECRET_SLOT[number]; action: Parameters<typeof labelOf<'bot_secret_action'>>[1]; by: string; at: string }> = [];
+    for (const item of rawItems) {
+      if (item.schema !== 'bot-secret-change@1') continue;
+      const parsed = BotSecretChangeAudit.safeParse(item.body);
+      if (parsed.success) {
+        rows.push({
+          slot: parsed.data.slot,
+          action: parsed.data.action,
+          by: parsed.data.by,
+          at: parsed.data.at,
+        });
+      }
+    }
+    rows.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    return rows.slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
+async function adminBotSettings(
+  ctx: PageContext,
+  run: ((argv: string[]) => Promise<CommandRun>) | null,
+): Promise<PageResult> {
+  const secrets = await secretsOf(ctx, run);
   const vault = typeof ctx.deps.records.vault?.get === 'function' ? ctx.deps.records.vault : null;
   const csrf = ctx.csrf ?? '';
-  const profile = vault ? await readBotProfile(vault) : null;
-  const identity = vault ? await readIdentity(vault) : null;
-  const channel = vault ? await readChannel(vault) : null;
+  const profile = vault ? await readBotProfile(vault).catch(() => null) : null;
+  const identity = vault ? await readIdentity(vault).catch(() => null) : null;
+  const channel = vault ? await readChannel(vault).catch(() => null) : null;
+
+  const runtimeDir = await inspectBotRuntimeDir(ctx.deps.config.dataDir);
+  const [hostConnected, channelConnected] = runtimeDir.ok
+    ? await Promise.all([
+        probeBotSocket(ctx.deps.config.dataDir, 'host'),
+        probeBotSocket(ctx.deps.config.dataDir, 'channel'),
+      ])
+    : [false, false];
+
+  const statusBox = box(
+    {
+      title: '运行状态',
+      hint: '显示机器人运行文件夹权限与宿主进程、通道适配器的本地连接状态。',
+      tail: chip(
+        runtimeDir.ok && hostConnected ? '运行中' : runtimeDir.ok ? '未连接' : '异常',
+        runtimeDir.ok && hostConnected ? 'pass' : runtimeDir.ok ? 'incomplete' : 'fail',
+      ),
+    },
+    kv([
+      [
+        html`运行文件夹 ${code('bot-runtime')}`,
+        runtimeDir.ok
+          ? html`${chip('正常', 'pass')} ${code('0700')}`
+          : html`${chip('异常', 'fail')} ${evidence(runtimeDir.reason)}`,
+      ],
+      [html`宿主连接 ${code('host.sock')}`, hostConnected ? chip('运行中', 'pass') : chip('未连接', 'unchecked')],
+      [html`通道连接 ${code('channel.sock')}`, channelConnected ? chip('运行中', 'pass') : chip('未连接', 'unchecked')],
+    ]),
+  );
+
+  const modelCard = box(
+    {
+      title: '机器人模型',
+      hint: '配置对话接口地址、协议与密钥，供客户端发起对话与上传附件；密钥只写不回显。',
+      tail: chip(profile ? '已配置' : '未配置', profile ? 'pass' : 'unchecked'),
+    },
+    html`<p class="ch-meta">请从模型服务提供方获取接口协议、服务地址、模型标识和访问密钥。</p>${botModelForm(profile, csrf)}${profile ? html`<div class="ch-actions">${actionForm('bot-test', csrf, '', '测试连接', { primary: false })}${actionForm('bot-disable', csrf, '', '停用', { primary: false })}</div>` : ''}`,
+  );
+
   const applicationForm = actionForm(
     'bot-identity',
     csrf,
     html`<div data-fields>
-      ${field('租户 ID', html`<input name="tenant" id="bot-tenant" required value="${identity?.tenant ?? ''}">`)}
-      ${field('应用 ID', html`<input name="application" id="bot-app" required value="${identity?.application ?? ''}">`)}
-      ${field('应用 Secret', html`<input name="value" id="bot-app-secret" type="password" autocomplete="new-password" required>`)}
+      ${field('租户标识', html`<input name="tenant" id="bot-tenant" required value="${identity?.tenant ?? ''}">`, '填写外部身份平台中的组织或企业租户标识。')}
+      ${field('登录应用标识', html`<input name="application" id="bot-app" required value="${identity?.application ?? ''}">`, '填写外部扫码登录应用的应用标识。')}
+      ${field('登录应用密钥', html`<input name="value" id="bot-app-secret" type="password" autocomplete="new-password" required>`, '从外部应用管理后台获取密钥；保存时加密写入密钥库，不回显旧密钥。')}
     </div>`,
     '保存登录应用',
+    { primary: true },
   );
+  const identityCard = box(
+    {
+      title: '扫码登录应用',
+      hint: '配置外部扫码登录应用参数与回调地址；成员绑定后可用于控制台扫码登录与私聊通道身份对应。',
+      tail: chip(identity ? '已配置' : '未配置', identity ? 'pass' : 'unchecked'),
+    },
+    html`<p class="ch-meta">请在外部应用管理后台将回调地址设为 ${code(originOf(ctx) + '/console/identity/callback')}，再填入租户标识、登录应用标识与密钥。</p>${applicationForm}${identity ? html`<div class="ch-actions"><form method="post" action="/console/identity/bind"><input type="hidden" name="csrf" value="${csrf}"><button class="ch-btn ch-btn--secondary" type="submit">扫码绑定本人身份</button></form></div>` : ''}`,
+  );
+
   const channelForm = actionForm(
     'bot-channel',
     csrf,
     html`<div data-fields>
-      ${field('Bot ID', html`<input name="bot" id="channel-id" required value="${channel?.bot ?? ''}">`)}
-      ${field('适配器访问 Hub 的地址', html`<input name="hub" id="channel-hub" type="url" value="${channel?.hub ?? originOf(ctx)}" required>`)}
-      ${field('机器人 Secret', html`<input name="value" id="channel-secret" type="password" autocomplete="new-password" required>`)}
+      ${field('机器人标识', html`<input name="bot" id="channel-id" required value="${channel?.bot ?? ''}">`, '填写外部消息平台中创建的机器人标识。')}
+      ${field('适配器访问 Hub 的地址', html`<input name="hub" id="channel-hub" type="url" value="${channel?.hub ?? defaultChannelHubUrl(ctx)}" required>`, '填写通道适配器在本地或内网访问当前 Hub 的根地址，须为 HTTPS 或回环 HTTP 地址。')}
+      ${field('通道机器人密钥', html`<input name="value" id="channel-secret" type="password" autocomplete="new-password" required>`, '从外部消息平台机器人详情页获取通道密钥；保存时加密写入密钥库，不回显旧密钥。')}
     </div>`,
     '保存私聊通道',
+    { primary: true },
   );
-  const channelCards = html`${card({ title: '扫码登录应用' }, html`<p>${identity ? '已配置' : '未配置'}</p>${applicationForm}${identity ? html`<form method="post" action="/console/identity/bind"><input type="hidden" name="csrf" value="${csrf}"><button class="ch-btn" type="submit">扫码绑定本人身份</button></form>` : ''}`)}
-    ${card({ title: '私聊机器人通道' }, html`<p>${channel ? (channel.enabled ? '已请求启用' : '已配置，已停用') : '未配置'}</p>${channelForm}${channel && identity ? actionForm(channel.enabled ? 'bot-channel-stop' : 'bot-channel-start', csrf, '', channel.enabled ? '停止私聊通道' : '启动私聊通道') : ''}`)}`;
-  const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', false, undefined, true)}<div class="ch-stack" data-settings-tab="bot">${card({ title: '机器人模型' }, html`<p>${profile ? '已配置' : '未配置'}</p>${botModelForm(profile, csrf)}${profile ? actionForm('bot-test', csrf, '', '测试连接') : ''}${profile ? actionForm('bot-disable', csrf, '', '停用') : ''}`)}${channelCards}</div></div>`;
-  return { status: 200, body: page(ctx.chrome('设置', { active: 'settings' }), pageLayout(body, { inspector: null })) };
+  const channelCard = box(
+    {
+      title: '私聊机器人通道',
+      hint: '配置外部消息适配器接入 Hub 所需的机器人标识、访问地址与密钥，并控制通道启停。',
+      tail: chip(
+        channel ? (channel.enabled ? '已请求启用' : '已配置，已停用') : '未配置',
+        channel ? (channel.enabled ? 'pass' : 'incomplete') : 'unchecked',
+      ),
+    },
+    html`<p class="ch-meta">请从外部消息平台获取机器人标识与密钥；保存通道与扫码登录应用后，可在此请求启用或停止私聊通道。</p>${channelForm}${channel && identity ? html`<div class="ch-actions">${actionForm(channel.enabled ? 'bot-channel-stop' : 'bot-channel-start', csrf, '', channel.enabled ? '停止私聊通道' : '启动私聊通道', { primary: false })}</div>` : ''}`,
+  );
+
+  const changes = await recentBotSecretChanges(ctx);
+  const changeRows: unknown[][] = [];
+  for (const row of changes) {
+    const actorName = await ctx.userName(row.by);
+    changeRows.push([
+      labelOf('bot_secret_slot', row.slot),
+      labelOf('bot_secret_action', row.action),
+      actorName,
+      when(row.at),
+    ]);
+  }
+  const auditBox = box(
+    {
+      title: '最近配置变更',
+      hint: '记录每次机器人模型、扫码登录应用与私聊通道的配置更改，不含密钥原文。',
+    },
+    table(
+      ['配置项', '操作', '操作人', '时间'],
+      changeRows,
+      { title: '尚无配置变更记录', text: '保存、停用或启停机器人配置后，变更记录列在这里。' },
+    ),
+    { flush: changeRows.length > 0 },
+  );
+
+  const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', false, secrets.rows?.length, true)}<div class="ch-stack" data-settings-tab="bot">${statusBox}${modelCard}${identityCard}${channelCard}${auditBox}</div></div>`;
+  return {
+    status: 200,
+    body: page(
+      ctx.chrome('设置', {
+        active: 'settings',
+        hint: '配置机器人模型、扫码登录应用、私聊通道与运行状态',
+      }),
+      pageLayout(body, { inspector: null }),
+    ),
+  };
 }
 
 async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<PageResult> {
-  if (ctx.url.searchParams.get('tab') === 'bot') return adminBotSettings(ctx);
+  if (ctx.url.searchParams.get('tab') === 'bot') return adminBotSettings(ctx, run);
   const dialogs: CommandDialog[] = [];
   const secrets = await secretsOf(ctx, run);
   const secretName=ctx.url.searchParams.get('secret'),selectedSecret=secrets.rows?.find(secret=>secret.name===secretName);

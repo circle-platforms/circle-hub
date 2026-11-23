@@ -1,10 +1,40 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { ProtocolCode } from '../../contracts/generated/protocol-codes.ts';
+import {
+  callErrorCategory,
+  formatCallError,
+  PROTOCOL_CODES,
+  type ProtocolCode,
+} from '../../contracts/generated/protocol.ts';
 import type { Principal, Principals } from '../records/api.ts';
 import { sendJson } from './http.ts';
 
-export const CONSOLE_SESSION_REFUSED = '无权限：控制台登录凭证不能用于此入口。请使用访问令牌。';
-const BOT_CLIENT_FORBIDDEN: ProtocolCode = 'BOT_CLIENT_FORBIDDEN';
+export function botError(
+  code: ProtocolCode,
+  fact?: string,
+  nextAction?: string,
+): { code: ProtocolCode; message: string } {
+  const category = callErrorCategory(code)!;
+  return {
+    code,
+    message: formatCallError(category, fact ?? PROTOCOL_CODES[code].when, nextAction ?? PROTOCOL_CODES[code].fix),
+  };
+}
+
+export function sendBotJson(
+  response: ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): void {
+  if (response.headersSent || response.writableEnded || response.destroyed) return;
+  sendJson(response, status, body, headers);
+}
+
+export const CONSOLE_SESSION_REFUSED = formatCallError(
+  callErrorCategory('BOT_CLIENT_FORBIDDEN')!,
+  '控制台登录凭证不能用于此入口',
+  '请使用访问令牌',
+);
 
 export type AccessAuthResult =
   | { ok: true; principal: Principal; token_id: string | null; client_id: string | null }
@@ -26,22 +56,6 @@ export async function authenticateAccessOnly(principals: Principals, authorizati
     : { ok: false, reason: 'unauthenticated' };
 }
 
-export async function requireAccessBearer(
-  request: IncomingMessage,
-  response: ServerResponse,
-  principals: Principals,
-): Promise<Principal | null> {
-  const access = await authenticateAccessOnly(principals, request.headers.authorization ?? null);
-  if (access.ok) return access.principal;
-  request.resume();
-  if (access.reason === 'console_session') {
-    sendJson(response, 403, { message: CONSOLE_SESSION_REFUSED });
-    return null;
-  }
-  sendJson(response, 401, { message: '请重新登录' }, { 'www-authenticate': 'Bearer' });
-  return null;
-}
-
 export async function requireDirectAccessBearer(
   request: IncomingMessage,
   response: ServerResponse,
@@ -51,23 +65,23 @@ export async function requireDirectAccessBearer(
   if (!access.ok) {
     request.resume();
     if (access.reason === 'console_session') {
-      sendJson(response, 403, { code: BOT_CLIENT_FORBIDDEN, message: CONSOLE_SESSION_REFUSED });
+      sendBotJson(
+        response,
+        403,
+        botError('BOT_CLIENT_FORBIDDEN', '控制台登录凭证不能用于此入口', '请使用访问令牌'),
+      );
       return null;
     }
-    sendJson(
-      response,
-      401,
-      { code: BOT_CLIENT_FORBIDDEN, message: '请重新登录' },
-      { 'www-authenticate': 'Bearer' },
-    );
+    sendBotJson(response, 401, botError('BOT_UNAUTHENTICATED'), { 'www-authenticate': 'Bearer' });
     return null;
   }
   if (access.client_id !== null) {
     request.resume();
-    sendJson(response, 403, {
-      code: BOT_CLIENT_FORBIDDEN,
-      message: '无权限：第三方授权应用令牌不能访问个人助手，请使用成员直接持有的访问令牌。',
-    });
+    sendBotJson(
+      response,
+      403,
+      botError('BOT_CLIENT_FORBIDDEN', '第三方授权应用令牌不能访问机器人', '请使用成员直接持有的访问令牌'),
+    );
     return null;
   }
   return access.principal;

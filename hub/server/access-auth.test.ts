@@ -57,17 +57,11 @@ test('authenticateAccessOnly accepts an access token identity', async () => {
   });
 });
 
-test('requireDirectAccessBearer accepts direct member tokens and rejects OAuth client tokens with 403 BOT_CLIENT_FORBIDDEN', async () => {
-  const requireDirectAccessBearer = (
-    accessAuth as unknown as {
-      requireDirectAccessBearer?: (
-        req: IncomingMessage,
-        res: ServerResponse,
-        principals: Principals,
-      ) => Promise<Principal | null>;
-    }
-  ).requireDirectAccessBearer;
+test('requireAccessBearer is removed and requireDirectAccessBearer accepts direct tokens while returning BOT_UNAUTHENTICATED on 401 and BOT_CLIENT_FORBIDDEN on 403', async () => {
+  assert.equal('requireAccessBearer' in accessAuth, false);
+  const { requireDirectAccessBearer, botError } = accessAuth;
   assert.equal(typeof requireDirectAccessBearer, 'function');
+  assert.equal(typeof botError, 'function');
 
   const principals = {
     authenticateAccessToken: async (authorization: string | null | undefined) => {
@@ -80,20 +74,26 @@ test('requireDirectAccessBearer accepts direct member tokens and rejects OAuth c
   } as unknown as Principals;
 
   const direct = fakePair('Bearer direct');
-  assert.deepEqual(await requireDirectAccessBearer!(direct.req, direct.res, principals), admin);
+  assert.deepEqual(await requireDirectAccessBearer(direct.req, direct.res, principals), admin);
 
   const oauth = fakePair('Bearer oauth');
-  assert.equal(await requireDirectAccessBearer!(oauth.req, oauth.res, principals), null);
+  assert.equal(await requireDirectAccessBearer(oauth.req, oauth.res, principals), null);
   assert.equal(oauth.result().status, 403);
   assert.equal(oauth.result().json.code, 'BOT_CLIENT_FORBIDDEN');
+  assert.match(oauth.result().json.message, /^无权限：/);
+  assert.ok(!String(oauth.result().json.message).includes('个人助手'));
+  assert.ok(String(oauth.result().json.message).includes('机器人'));
 
   const consoleTok = fakePair('Bearer console');
-  assert.equal(await requireDirectAccessBearer!(consoleTok.req, consoleTok.res, principals), null);
+  assert.equal(await requireDirectAccessBearer(consoleTok.req, consoleTok.res, principals), null);
   assert.equal(consoleTok.result().status, 403);
   assert.equal(consoleTok.result().json.code, 'BOT_CLIENT_FORBIDDEN');
+  assert.equal(consoleTok.result().json.message, CONSOLE_SESSION_REFUSED);
 
   const missing = fakePair();
-  assert.equal(await requireDirectAccessBearer!(missing.req, missing.res, principals), null);
+  assert.equal(await requireDirectAccessBearer(missing.req, missing.res, principals), null);
   assert.equal(missing.result().status, 401);
-  assert.equal(missing.result().json.code, 'BOT_CLIENT_FORBIDDEN');
+  assert.equal(missing.result().json.code, 'BOT_UNAUTHENTICATED');
+  assert.match(missing.result().json.message, /^无权限：/);
+  assert.ok(!String(missing.result().json.message).includes('个人助手'));
 });

@@ -132,6 +132,10 @@ export interface AppOptions {
   live?: Partial<import('./console/live.ts').LiveOptions>;
   /** Long tool calls: response head after `headersAfterMs`, then a space every `keepaliveMs`; default 20 s and 30 s. */
   keepalive?: { headersAfterMs: number; keepaliveMs: number };
+  /** Schedules the per-request receive timeout (used by tests to inject deterministic timing). */
+  scheduleReceiveTimeout?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  /** Interval in milliseconds between periodic expired bot-file retention sweeps. */
+  botRetentionSweepIntervalMs?: number;
   /** Where requests and MCP sessions are reported (hub/health; serve gives one); without it nothing is. */
   health?: import('../health/api.ts').RequestObservers;
 }

@@ -28,9 +28,9 @@ export class IdentityChallenges {
   issue(input: Omit<Challenge, 'expires'>): string | null {
     const now = Date.now();
     for (const [id, item] of this.states) if (item.expires <= now) this.states.delete(id);
-    const samePeer: string[] = [];
-    for (const [id, item] of this.states) if (item.peer === input.peer) samePeer.push(id);
-    while (samePeer.length >= STATES_PER_PEER) this.states.delete(samePeer.shift()!);
+    let samePeerCount = 0;
+    for (const item of this.states.values()) if (item.peer === input.peer) samePeerCount += 1;
+    if (samePeerCount >= STATES_PER_PEER) return null;
     if (this.states.size >= MAX_PENDING_STATES) return null;
     const state = randomBytes(32).toString('base64url');
     this.states.set(state, { ...input, expires: now + STATE_TTL_MS });

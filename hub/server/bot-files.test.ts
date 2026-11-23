@@ -164,7 +164,68 @@ test('bot-files rejects oversized >100 MiB, mismatched digest with no .part left
       req.end();
     });
     assert.equal(tooLarge.status, 413);
-    assert.equal(tooLarge.json.code, 'BOT_QUOTA_EXCEEDED');
+    assert.equal(tooLarge.json.code, 'BOT_INVALID_REQUEST');
+
+    // H10b: body > declared content-length -> 413 BOT_INVALID_REQUEST; short body < declared -> 422 BOT_INVALID_REQUEST
+    const makeStreamReq = (declared: number, bodyBytes: Buffer) => {
+      const req = Object.assign(new EventEmitter(), {
+        method: 'PUT',
+        headers: { 'content-length': String(declared) },
+        async *[Symbol.asyncIterator]() {
+          yield bodyBytes;
+        },
+        resume() {},
+      }) as unknown as IncomingMessage;
+      let status = 0;
+      let sent = false;
+      let ended = false;
+      let body = '';
+      const res = {
+        get headersSent() {
+          return sent;
+        },
+        get writableEnded() {
+          return ended;
+        },
+        destroyed: false,
+        setHeader() {},
+        writeHead(code: number) {
+          status = code;
+          sent = true;
+        },
+        end(chunk?: string | Buffer) {
+          body = chunk ? String(chunk) : '';
+          ended = true;
+        },
+      } as unknown as ServerResponse;
+      return { req, res, result: () => ({ status, json: body ? JSON.parse(body) : null }) };
+    };
+
+    const overDeclared = makeStreamReq(4, Buffer.from('0123456789'));
+    await botFiles.transferBotFile(
+      overDeclared.req,
+      overDeclared.res,
+      hub.deps.config.dataDir,
+      user.principal.id,
+      '3'.repeat(64),
+      async () => true,
+    );
+    assert.equal(overDeclared.result().status, 413);
+    assert.equal(overDeclared.result().json.code, 'BOT_INVALID_REQUEST');
+
+    const shortPayload = Buffer.from('short');
+    const shortSha = createHash('sha256').update(shortPayload).digest('hex');
+    const shortPut = makeStreamReq(20, shortPayload);
+    await botFiles.transferBotFile(
+      shortPut.req,
+      shortPut.res,
+      hub.deps.config.dataDir,
+      user.principal.id,
+      shortSha,
+      async () => true,
+    );
+    assert.equal(shortPut.result().status, 422);
+    assert.equal(shortPut.result().json.code, 'BOT_INVALID_REQUEST');
 
     const wrongBody = Buffer.from('not-matching-digest');
     const wrongPut = await fetch(hub.url + botFilesPath + '2'.repeat(64), {
@@ -225,135 +286,416 @@ test('bot-files rejects oversized >100 MiB, mismatched digest with no .part left
       headers: { authorization: 'Bearer ' + user.token },
     });
     assert.equal(tamperedGet.status, 404);
-    assert.equal(((await tamperedGet.json()) as { code?: string }).code, 'BOT_CONFLICT');
+    assert.equal(((await tamperedGet.json()) as { code?: string }).code, 'BOT_NOT_FOUND');
   } finally {
     await hub.close();
   }
 });
 
-test('bot-files exports quota/retention constants, prunes expired files before quota checks, and cleanupBotRuntimeTempFiles removes .part and stale staging files', async () => {
-  const exported = botFiles as unknown as {
-    MAX_MEMBER_BOT_BYTES?: number;
-    MAX_MEMBER_BOT_FILES?: number;
-    BOT_FILE_RETENTION_MS?: number;
-    cleanupBotRuntimeTempFiles?: (dataDir: string) => Promise<void>;
-    transferBotFile: (
-      req: IncomingMessage,
-      res: ServerResponse,
-      root: string,
-      owner: string,
-      sha: string,
-      stillActive: () => Promise<boolean>,
-      options?: { now?: () => number; maxMemberBytes?: number; maxMemberFiles?: number },
-    ) => Promise<void>;
-  };
-  assert.equal(exported.MAX_MEMBER_BOT_BYTES, 512 * 1024 * 1024);
-  assert.equal(exported.MAX_MEMBER_BOT_FILES, 256);
-  assert.equal(exported.BOT_FILE_RETENTION_MS, 30 * 24 * 60 * 60 * 1000);
-  assert.equal(typeof exported.cleanupBotRuntimeTempFiles, 'function');
-
-  let clock = Date.UTC(2026, 10, 1, 0, 0, 0);
-  const hub = await createTestServer({ now: () => new Date(clock) });
-  try {
-    await setBotProfile(hub.records.vault, sampleProfile);
-    const user = await hub.createUser('配额成员');
-
-    const putAt = async (payload: Buffer) => {
-      const sha = createHash('sha256').update(payload).digest('hex');
-      const res = await fetch(hub.url + botFilesPath + sha, {
-        method: 'PUT',
-        headers: { authorization: 'Bearer ' + user.token, 'content-length': String(payload.length) },
-        body: new Uint8Array(payload),
-      });
-      return { res, sha };
+test(
+  'bot-files exports quota/retention constants, prunes/rejects expired files, refreshes mtime on re-upload, and cleans only stale temp files',
+  { timeout: 30_000 },
+  async () => {
+    const exported = botFiles as unknown as {
+      MAX_MEMBER_BOT_BYTES?: number;
+      MAX_MEMBER_BOT_FILES?: number;
+      BOT_FILE_RETENTION_MS?: number;
+      cleanupBotRuntimeTempFiles?: (dataDir: string, options?: { maxAgeMs?: number; now?: number }) => Promise<void>;
+      pruneExpiredBotFiles?: (dataDir: string, options?: { now?: number; retentionMs?: number }) => Promise<void>;
+      handleBotFile: (req: IncomingMessage, res: ServerResponse, deps: unknown, sha: string) => Promise<void>;
+      transferBotFile: (
+        req: IncomingMessage,
+        res: ServerResponse,
+        root: string,
+        owner: string,
+        sha: string,
+        stillActive: () => Promise<boolean>,
+        options?: { now?: () => number; maxMemberBytes?: number; maxMemberFiles?: number },
+      ) => Promise<void>;
     };
+    assert.equal(exported.MAX_MEMBER_BOT_BYTES, 512 * 1024 * 1024);
+    assert.equal(exported.MAX_MEMBER_BOT_FILES, 256);
+    assert.equal(exported.BOT_FILE_RETENTION_MS, 30 * 24 * 60 * 60 * 1000);
+    assert.equal(typeof exported.cleanupBotRuntimeTempFiles, 'function');
+    assert.equal(typeof exported.pruneExpiredBotFiles, 'function');
 
-    const batchSize = 32;
-    for (let i = 0; i < 256; i += batchSize) {
-      await Promise.all(
-        Array.from({ length: batchSize }, (_, j) => putAt(Buffer.from(`f-${i + j}`))).map(async (p) => {
-          const { res } = await p;
-          assert.equal(res.status, 200);
-        }),
+    let clock = Date.UTC(2026, 10, 1, 0, 0, 0);
+    const hub = await createTestServer({ now: () => new Date(clock) });
+    try {
+      await setBotProfile(hub.records.vault, sampleProfile);
+      const user = await hub.createUser('配额成员');
+
+      const putAt = async (payload: Buffer) => {
+        const sha = createHash('sha256').update(payload).digest('hex');
+        const res = await fetch(hub.url + botFilesPath + sha, {
+          method: 'PUT',
+          headers: { authorization: 'Bearer ' + user.token, 'content-length': String(payload.length) },
+          body: new Uint8Array(payload),
+        });
+        return { res, sha };
+      };
+
+      const batchSize = 32;
+      let firstSha = '';
+      for (let i = 0; i < 256; i += batchSize) {
+        await Promise.all(
+          Array.from({ length: batchSize }, (_, j) => putAt(Buffer.from(`f-${i + j}`))).map(async (p, idx) => {
+            const { res, sha } = await p;
+            assert.equal(res.status, 200);
+            if (i === 0 && idx === 0) firstSha = sha;
+          }),
+        );
+      }
+
+      const overflowCount = await putAt(Buffer.from('file-257'));
+      assert.equal(overflowCount.res.status, 413);
+      assert.equal(((await overflowCount.res.json()) as { code?: string }).code, 'BOT_QUOTA_EXCEEDED');
+
+      // S4: Re-uploading an existing file while at 256/256 quota refreshes its mtime instead of overflowing quota
+      clock += Math.floor(exported.BOT_FILE_RETENTION_MS! / 2);
+      const refreshExisting = await putAt(Buffer.from('f-0'));
+      assert.equal(refreshExisting.res.status, 200);
+
+      // Advance past original expiry of f-1..f-255, while refreshed f-0 is still unexpired!
+      clock += Math.floor(exported.BOT_FILE_RETENTION_MS! / 2) + 1000;
+      const expiredGet = await fetch(hub.url + botFilesPath + createHash('sha256').update('f-1').digest('hex'), {
+        headers: { authorization: 'Bearer ' + user.token },
+      });
+      assert.equal(expiredGet.status, 404);
+      assert.equal(((await expiredGet.json()) as { code?: string }).code, 'BOT_NOT_FOUND');
+
+      const refreshedGet = await fetch(hub.url + botFilesPath + firstSha, {
+        headers: { authorization: 'Bearer ' + user.token },
+      });
+      assert.equal(refreshedGet.status, 200);
+      assert.equal(await refreshedGet.text(), 'f-0');
+
+      const afterExpiry = await putAt(Buffer.from('after-retention-prune'));
+      assert.equal(afterExpiry.res.status, 200);
+      const remainingFiles = await readdir(ownerFolder(hub.deps.config.dataDir, user.principal.id));
+      assert.deepEqual(remainingFiles.sort(), [firstSha, afterExpiry.sha].sort());
+
+      // S4: pruneExpiredBotFiles removes expired files directly
+      const ownerDir = ownerFolder(hub.deps.config.dataDir, user.principal.id);
+      const oldDate = new Date(clock - exported.BOT_FILE_RETENTION_MS! - 1000);
+      await utimes(join(ownerDir, firstSha), oldDate, oldDate);
+      await exported.pruneExpiredBotFiles!(hub.deps.config.dataDir, { now: clock });
+      assert.deepEqual(await readdir(ownerDir), [afterExpiry.sha]);
+
+      const byteReq = (payload: Buffer) => {
+        const req = Object.assign(new EventEmitter(), {
+          method: 'PUT',
+          headers: { 'content-length': String(payload.length) },
+          async *[Symbol.asyncIterator]() {
+            yield payload;
+          },
+          resume() {},
+        }) as unknown as IncomingMessage;
+        let status = 0;
+        let sent = false;
+        let body = '';
+        const res = {
+          get headersSent() {
+            return sent;
+          },
+          setHeader() {},
+          writeHead(code: number) {
+            status = code;
+            sent = true;
+          },
+          end(chunk?: string | Buffer) {
+            body = chunk ? String(chunk) : '';
+          },
+        } as unknown as ServerResponse;
+        return { req, res, result: () => ({ status, json: body ? JSON.parse(body) : null }) };
+      };
+
+      const bigBytePayload = Buffer.alloc(600, 65);
+      const bigSha = createHash('sha256').update(bigBytePayload).digest('hex');
+      const c1 = byteReq(bigBytePayload);
+      await exported.transferBotFile(c1.req, c1.res, hub.deps.config.dataDir, user.principal.id, bigSha, async () => true, {
+        now: () => clock,
+        maxMemberBytes: 1024,
+      });
+      assert.equal(c1.result().status, 200);
+
+      const secondBig = Buffer.alloc(500, 66);
+      const secondSha = createHash('sha256').update(secondBig).digest('hex');
+      const c2 = byteReq(secondBig);
+      await exported.transferBotFile(
+        c2.req,
+        c2.res,
+        hub.deps.config.dataDir,
+        user.principal.id,
+        secondSha,
+        async () => true,
+        { now: () => clock, maxMemberBytes: 1024 },
       );
-    }
+      assert.equal(c2.result().status, 413);
+      assert.equal(c2.result().json.code, 'BOT_QUOTA_EXCEEDED');
 
-    const overflowCount = await putAt(Buffer.from('file-257'));
-    assert.equal(overflowCount.res.status, 413);
-    assert.equal(((await overflowCount.res.json()) as { code?: string }).code, 'BOT_QUOTA_EXCEEDED');
+      // S3: cleanupBotRuntimeTempFiles defaults to 15m age for both .part and channel-staging/*
+      const stalePart = join(ownerDir, 'stale.part');
+      const freshPart = join(ownerDir, 'fresh.part');
+      await writeFile(stalePart, Buffer.from('leftover-part'));
+      await writeFile(freshPart, Buffer.from('active-part'));
+      await utimes(stalePart, new Date(clock - 16 * 60 * 1000), new Date(clock - 16 * 60 * 1000));
+      await utimes(freshPart, new Date(clock - 60 * 1000), new Date(clock - 60 * 1000));
 
-    clock += exported.BOT_FILE_RETENTION_MS! + 1000;
-    const afterExpiry = await putAt(Buffer.from('after-retention-prune'));
-    assert.equal(afterExpiry.res.status, 200);
-    const remainingFiles = await readdir(ownerFolder(hub.deps.config.dataDir, user.principal.id));
-    assert.deepEqual(remainingFiles, [afterExpiry.sha]);
+      const stagingDir = join(hub.deps.config.dataDir, 'bot-runtime', 'channel-staging', 'deadbeef');
+      await mkdir(stagingDir, { recursive: true, mode: 0o700 });
+      const stagedLeftover = join(stagingDir, 'a'.repeat(64));
+      const stagedFresh = join(stagingDir, 'b'.repeat(64));
+      await writeFile(stagedLeftover, Buffer.from('leftover-staged'));
+      await writeFile(stagedFresh, Buffer.from('fresh-staged'));
+      await utimes(stagedLeftover, new Date(clock - 16 * 60 * 1000), new Date(clock - 16 * 60 * 1000));
+      await utimes(stagedFresh, new Date(clock - 60 * 1000), new Date(clock - 60 * 1000));
 
-    const byteReq = (payload: Buffer) => {
-      const req = Object.assign(new EventEmitter(), {
-        method: 'PUT',
-        headers: { 'content-length': String(payload.length) },
-        async *[Symbol.asyncIterator]() {
-          yield payload;
+      await exported.cleanupBotRuntimeTempFiles!(hub.deps.config.dataDir, { now: clock });
+      await assert.rejects(stat(stalePart));
+      await assert.rejects(stat(stagedLeftover));
+      assert.equal((await readFile(freshPart)).toString(), 'active-part');
+      assert.equal((await readFile(stagedFresh)).toString(), 'fresh-staged');
+      assert.equal((await readFile(join(ownerDir, afterExpiry.sha))).toString(), 'after-retention-prune');
+
+      // S11: handleBotFile checks vault.has('personal-bot.model') without calling vault.get(...)
+      let hasCalls = 0;
+      let getCalls = 0;
+      const spyDeps = {
+        ...hub.deps,
+        records: {
+          ...hub.deps.records,
+          vault: {
+            ...hub.deps.records.vault,
+            has: async (key: string) => {
+              if (key === 'personal-bot.model') hasCalls += 1;
+              return false;
+            },
+            get: async (key: string) => {
+              if (key === 'personal-bot.model') getCalls += 1;
+              return null;
+            },
+          },
         },
+      };
+      const spyReq = Object.assign(new EventEmitter(), {
+        method: 'GET',
+        headers: { authorization: 'Bearer ' + user.token },
         resume() {},
       }) as unknown as IncomingMessage;
-      let status = 0;
-      let sent = false;
-      let body = '';
-      const res = {
+      let spyStatus = 0;
+      let spyBody = '';
+      let spySent = false;
+      let spyEnded = false;
+      const spyRes = {
         get headersSent() {
-          return sent;
+          return spySent;
         },
+        get writableEnded() {
+          return spyEnded;
+        },
+        destroyed: false,
         setHeader() {},
         writeHead(code: number) {
-          status = code;
-          sent = true;
+          spyStatus = code;
+          spySent = true;
         },
         end(chunk?: string | Buffer) {
-          body = chunk ? String(chunk) : '';
+          spyBody = chunk ? String(chunk) : '';
+          spyEnded = true;
         },
       } as unknown as ServerResponse;
-      return { req, res, result: () => ({ status, json: body ? JSON.parse(body) : null }) };
-    };
+      await exported.handleBotFile(spyReq, spyRes, spyDeps, afterExpiry.sha);
+      assert.equal(spyStatus, 503);
+      assert.equal((JSON.parse(spyBody) as { code?: string }).code, 'BOT_DISABLED');
+      assert.equal(hasCalls, 1);
+      assert.equal(getCalls, 0);
+    } finally {
+      await hub.close();
+    }
+  },
+);
 
-    const bigBytePayload = Buffer.alloc(600, 65);
-    const bigSha = createHash('sha256').update(bigBytePayload).digest('hex');
-    const c1 = byteReq(bigBytePayload);
-    await exported.transferBotFile(c1.req, c1.res, hub.deps.config.dataDir, user.principal.id, bigSha, async () => true, {
-      now: () => clock,
-      maxMemberBytes: 1024,
-    });
-    assert.equal(c1.result().status, 200);
+test(
+  'R5: barrier-gated concurrent PUT uploads and channel-staging promotions enforce quotas without over-committing or leaking inFlight reservations',
+  { timeout: 30_000 },
+  async (t) => {
+    const hub = await createTestServer();
+    try {
+      await setBotProfile(hub.records.vault, sampleProfile);
+      const user = await hub.createUser('并发配额成员');
+      const nowMs = Date.UTC(2026, 10, 5, 0, 0, 0);
 
-    const secondBig = Buffer.alloc(500, 66);
-    const secondSha = createHash('sha256').update(secondBig).digest('hex');
-    const c2 = byteReq(secondBig);
-    await exported.transferBotFile(
-      c2.req,
-      c2.res,
-      hub.deps.config.dataDir,
-      user.principal.id,
-      secondSha,
-      async () => true,
-      { now: () => clock, maxMemberBytes: 1024 },
-    );
-    assert.equal(c2.result().status, 413);
-    assert.equal(c2.result().json.code, 'BOT_QUOTA_EXCEEDED');
+      const makeGatedReq = (payload: Buffer, options: { abortSecond?: boolean } = {}) => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        t.after(() => release.resolve());
+        const req = Object.assign(new EventEmitter(), {
+          method: 'PUT',
+          headers: { 'content-length': String(payload.length) },
+          async *[Symbol.asyncIterator]() {
+            yield payload.subarray(0, 10);
+            entered.resolve();
+            await release.promise;
+            if (options.abortSecond) throw new Error('simulated client abort');
+            yield payload.subarray(10);
+          },
+          resume() {},
+        }) as unknown as IncomingMessage;
+        let status = 0;
+        let body = '';
+        let sent = false;
+        let ended = false;
+        const res = {
+          get headersSent() {
+            return sent;
+          },
+          get writableEnded() {
+            return ended;
+          },
+          destroyed: false,
+          setHeader() {},
+          writeHead(code: number) {
+            status = code;
+            sent = true;
+          },
+          end(chunk?: string | Buffer) {
+            body = chunk ? String(chunk) : '';
+            ended = true;
+          },
+        } as unknown as ServerResponse;
+        return {
+          req,
+          res,
+          entered: entered.promise,
+          release: release.resolve,
+          result: () => ({ status, json: body ? JSON.parse(body) : null }),
+        };
+      };
 
-    const ownerDir = ownerFolder(hub.deps.config.dataDir, user.principal.id);
-    const stalePart = join(ownerDir, 'stale.part');
-    await writeFile(stalePart, Buffer.from('leftover-part'));
-    const stagingDir = join(hub.deps.config.dataDir, 'bot-runtime', 'channel-staging', 'deadbeef');
-    await mkdir(stagingDir, { recursive: true, mode: 0o700 });
-    const stagedLeftover = join(stagingDir, 'a'.repeat(64));
-    await writeFile(stagedLeftover, Buffer.from('leftover-staged'));
-    await utimes(stagedLeftover, new Date(clock - 1000), new Date(clock - 1000));
+      const p1 = Buffer.alloc(600, 1);
+      const sha1 = createHash('sha256').update(p1).digest('hex');
+      const p2 = Buffer.alloc(600, 2);
+      const sha2 = createHash('sha256').update(p2).digest('hex');
 
-    await exported.cleanupBotRuntimeTempFiles!(hub.deps.config.dataDir);
-    await assert.rejects(stat(stalePart));
-    await assert.rejects(stat(stagedLeftover));
-    assert.equal((await readFile(join(ownerDir, afterExpiry.sha))).toString(), 'after-retention-prune');
-  } finally {
-    await hub.close();
-  }
-});
+      // 1. Concurrent PUTs gated at barrier: first reserves 600/1024; second must immediately reject 413 BOT_QUOTA_EXCEEDED
+      const firstAbort = makeGatedReq(p1, { abortSecond: true });
+      const firstPromise = botFiles.transferBotFile(
+        firstAbort.req,
+        firstAbort.res,
+        hub.deps.config.dataDir,
+        user.principal.id,
+        sha1,
+        async () => true,
+        { now: () => nowMs, maxMemberBytes: 1024, maxMemberFiles: 10 },
+      );
+      await firstAbort.entered;
+
+      const secondWhileActive = makeGatedReq(p2);
+      const secondUploadPromise = botFiles.transferBotFile(
+        secondWhileActive.req,
+        secondWhileActive.res,
+        hub.deps.config.dataDir,
+        user.principal.id,
+        sha2,
+        async () => true,
+        { now: () => nowMs, maxMemberBytes: 1024, maxMemberFiles: 10 },
+      );
+      await Promise.race([secondUploadPromise, secondWhileActive.entered]);
+      secondWhileActive.release();
+      await secondUploadPromise;
+      assert.equal(secondWhileActive.result().status, 413);
+      assert.equal(secondWhileActive.result().json.code, 'BOT_QUOTA_EXCEEDED');
+
+      // 2. Abort first upload -> inFlight reservation released -> retry upload of sha2 succeeds
+      firstAbort.release();
+      await assert.rejects(firstPromise);
+
+      const thirdGated = makeGatedReq(p1);
+      const thirdPromise = botFiles.transferBotFile(
+        thirdGated.req,
+        thirdGated.res,
+        hub.deps.config.dataDir,
+        user.principal.id,
+        sha1,
+        async () => true,
+        { now: () => nowMs, maxMemberBytes: 1024, maxMemberFiles: 10 },
+      );
+      await thirdGated.entered;
+
+      // 3. Barrier-gated file + staging concurrent quotas: stage p2 and verifyChannelStagedFiles must see inFlight from thirdPromise -> 413
+      const ownerDirHash = createHash('sha256').update(user.principal.id).digest('hex');
+      const stagingDir = join(hub.deps.config.dataDir, 'bot-runtime', 'channel-staging', ownerDirHash);
+      await mkdir(stagingDir, { recursive: true, mode: 0o700 });
+      await writeFile(join(stagingDir, sha2), p2);
+      const stagedWhilePutActive = await botFiles.verifyChannelStagedFiles(
+        hub.deps.config.dataDir,
+        user.principal.id,
+        [{ sha256: sha2, size: p2.length, name: 'staged.bin' }],
+        { now: () => nowMs, maxMemberBytes: 1024, maxMemberFiles: 10 },
+      );
+      assert.equal(stagedWhilePutActive.ok, false);
+      if (!stagedWhilePutActive.ok) {
+        assert.equal(stagedWhilePutActive.status, 413);
+        assert.equal(stagedWhilePutActive.code, 'BOT_QUOTA_EXCEEDED');
+      }
+
+      // Finish thirdPromise (600 bytes on disk, limit 1024), or test staging reservation blocking PUT
+      thirdGated.release();
+      await thirdPromise;
+      assert.equal(thirdGated.result().status, 200);
+
+      // Reverse direction: staging reserves 600 bytes for another member -> concurrent PUT 500 bytes hits 413 until staging releases
+      const userB = await hub.createUser('并发暂存成员');
+      const userBHash = createHash('sha256').update(userB.principal.id).digest('hex');
+      const userBStaging = join(hub.deps.config.dataDir, 'bot-runtime', 'channel-staging', userBHash);
+      await mkdir(userBStaging, { recursive: true, mode: 0o700 });
+      await writeFile(join(userBStaging, sha2), p2);
+      const stagedReserve = await botFiles.verifyChannelStagedFiles(
+        hub.deps.config.dataDir,
+        userB.principal.id,
+        [{ sha256: sha2, size: p2.length, name: 'staged.bin' }],
+        { now: () => nowMs, maxMemberBytes: 1024, maxMemberFiles: 10 },
+      );
+      assert.equal(stagedReserve.ok, true);
+      if (stagedReserve.ok) {
+        try {
+          const putBlockedByStaging = makeGatedReq(Buffer.alloc(500, 3));
+          const blockedSha = createHash('sha256').update(Buffer.alloc(500, 3)).digest('hex');
+          const blockedPromise = botFiles.transferBotFile(
+            putBlockedByStaging.req,
+            putBlockedByStaging.res,
+            hub.deps.config.dataDir,
+            userB.principal.id,
+            blockedSha,
+            async () => true,
+            { now: () => nowMs, maxMemberBytes: 1024, maxMemberFiles: 10 },
+          );
+          await Promise.race([blockedPromise, putBlockedByStaging.entered]);
+          putBlockedByStaging.release();
+          await blockedPromise;
+          assert.equal(putBlockedByStaging.result().status, 413);
+          assert.equal(putBlockedByStaging.result().json.code, 'BOT_QUOTA_EXCEEDED');
+
+          await stagedReserve.release();
+          const putAfterRelease = makeGatedReq(Buffer.alloc(500, 3));
+          putAfterRelease.release();
+          await botFiles.transferBotFile(
+            putAfterRelease.req,
+            putAfterRelease.res,
+            hub.deps.config.dataDir,
+            userB.principal.id,
+            blockedSha,
+            async () => true,
+            { now: () => nowMs, maxMemberBytes: 1024, maxMemberFiles: 10 },
+          );
+          assert.equal(putAfterRelease.result().status, 200);
+        } finally {
+          await stagedReserve.release();
+        }
+      }
+    } finally {
+      await hub.close();
+    }
+  },
+);

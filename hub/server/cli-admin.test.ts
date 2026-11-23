@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
+import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { BotSecretChangeAudit, MemberExternalIdentityAudit } from '../../contracts/src/resources.ts';
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { sha256Hex } from '../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { memoryOperatorTokens } from './assemble/operator-token.ts';
 import { createCommandBridge } from './command-bridge.ts';
+import { wordingProblems } from './console/testing-wording.ts';
 import { createTestServer, testConsoleCredentials } from './testing.ts';
 
 let postgres: TemporaryPostgres;
@@ -16,7 +20,7 @@ after(async () => {
   await postgres?.stop();
 });
 
-test('D1 + H1 CLI & Console: bot-secret-change@1 audits, reviewer removal, and admin bot identity-unbind flow', async (t) => {
+test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer removal, admin bot identity-unbind, and bot settings page', { timeout: 60_000 }, async (t) => {
   const bridgeEnv = (records: { dataDir: string; database: { host: string; port: number; database: string; user: string } }) => ({
     CIRCLE_HUB_DATA_DIR: records.dataDir,
     CIRCLE_HUB_LOG_DIR: join(records.dataDir, 'logs'),
@@ -44,7 +48,7 @@ test('D1 + H1 CLI & Console: bot-secret-change@1 audits, reviewer removal, and a
 
   const bridge = createCommandBridge({
     cwd: hub.deps.config.dataDir,
-    env: bridgeEnv({ dataDir: hub.deps.config.dataDir, database: hub.records.database }),
+    env: { ...bridgeEnv({ dataDir: hub.deps.config.dataDir, database: hub.records.database }), CIRCLE_HUB_PORT: String(hub.port) },
     overrides: {
       keyProvider: () => hub.records.keyProvider,
       operatorTokens: () => memoryOperatorTokens(null, '测试空令牌存储'),
@@ -113,6 +117,76 @@ test('D1 + H1 CLI & Console: bot-secret-change@1 audits, reviewer removal, and a
   assert.equal((await bridge.run(['bot', 'identity-remove'], { token: hub.admin.token })).code, 0);
   assert.equal((await bridge.run(['bot', 'channel-remove'], { token: hub.admin.token })).code, 0);
 
+  // S8: channel-start & channel-stop record start_channel / stop_channel when adapter confirms
+  await bridge.run(['bot', 'identity-set'], {
+    token: hub.admin.token,
+    secrets: {
+      'personal-bot.identity': JSON.stringify({ tenant: 'demo-tenant', application: 'demo-app', secret: appSecret }),
+    },
+  });
+  await bridge.run(['bot', 'channel-set'], {
+    token: hub.admin.token,
+    secrets: {
+      'personal-bot.channel': JSON.stringify({ bot: 'demo-bot', hub: hub.url + '/', secret: chanSecret }),
+    },
+  });
+  const botRuntimeDir = join(hub.deps.config.dataDir, 'bot-runtime');
+  await mkdir(botRuntimeDir, { recursive: true, mode: 0o700 });
+  const channelSockServer = createServer(async (req, res) => {
+    for await (const _ of req) {
+      // drain
+    }
+    res.end(JSON.stringify({ ok: true }));
+  });
+  await new Promise<void>((resolve) => channelSockServer.listen(join(botRuntimeDir, 'channel.sock'), resolve));
+  let hostMode: 'secret_error' | 'ok' = 'secret_error';
+  const hostSockServer = createServer(async (req, res) => {
+    for await (const _ of req) {
+      // drain
+    }
+    if (hostMode === 'secret_error') {
+      res.statusCode = 502;
+      res.end(JSON.stringify({ message: `host exploded with ${modelKey}` }));
+      return;
+    }
+    res.end(JSON.stringify({ tested: true }));
+  });
+  await new Promise<void>((resolve) => hostSockServer.listen(join(botRuntimeDir, 'host.sock'), resolve));
+
+  try {
+    const startRes = await bridge.run(['bot', 'channel-start'], { token: hub.admin.token });
+    assert.equal(startRes.code, 0, startRes.stderr.join('\n'));
+    const stopRes = await bridge.run(['bot', 'channel-stop'], { token: hub.admin.token });
+    assert.equal(stopRes.code, 0, stopRes.stderr.join('\n'));
+
+    // S5 + S10: bot test masks vault secrets on host error and surfaces bot-runtime mode error to admin
+    await bridge.run(['bot', 'set'], {
+      token: hub.admin.token,
+      secrets: {
+        'bot-model': JSON.stringify({
+          name: '测试机器人',
+          protocol: 'openai',
+          model: 'demo-model',
+          endpoint: 'https://model.example.invalid/v1',
+          key: modelKey,
+        }),
+      },
+    });
+    const testMaskedFail = await bridge.run(['bot', 'test'], { token: hub.admin.token });
+    assert.notEqual(testMaskedFail.code, 0);
+    assert.ok(!testMaskedFail.stderr.join('\n').includes(modelKey));
+    assert.ok(testMaskedFail.stderr.join('\n').includes('[REDACTED]'));
+
+    await chmod(botRuntimeDir, 0o755);
+    const testDirFail = await bridge.run(['bot', 'test'], { token: hub.admin.token });
+    assert.notEqual(testDirFail.code, 0);
+    assert.ok(testDirFail.stderr.join('\n').includes('权限为 0755（须为 0700）'));
+    await chmod(botRuntimeDir, 0o700);
+  } finally {
+    await new Promise<void>((resolve) => channelSockServer.close(() => resolve()));
+    await new Promise<void>((resolve) => hostSockServer.close(() => resolve()));
+  }
+
   const actions = (await hub.records.store.list({ kind: 'action', limit: 100 })).items;
   const secretChanges = actions
     .filter((item) => item.schema === 'bot-secret-change@1')
@@ -126,6 +200,11 @@ test('D1 + H1 CLI & Console: bot-secret-change@1 audits, reviewer removal, and a
       ['model', 'remove', hub.admin.principal.id],
       ['identity', 'remove', hub.admin.principal.id],
       ['channel', 'remove', hub.admin.principal.id],
+      ['identity', 'set', hub.admin.principal.id],
+      ['channel', 'set', hub.admin.principal.id],
+      ['channel', 'start_channel', hub.admin.principal.id],
+      ['channel', 'stop_channel', hub.admin.principal.id],
+      ['model', 'set', hub.admin.principal.id],
     ],
   );
   const rawAuditJson = JSON.stringify(secretChanges);
@@ -133,7 +212,46 @@ test('D1 + H1 CLI & Console: bot-secret-change@1 audits, reviewer removal, and a
   assert.ok(!rawAuditJson.includes(appSecret));
   assert.ok(!rawAuditJson.includes(chanSecret));
 
-  // 3. Console login + verify /console/settings?tab=bot has no reviewer card/actions.
+  // S8: If audit append fails after vault write, botCommand warns explicitly and fails non-zero
+  const { botCommand } = await import('./cli-admin.ts');
+  const { Session } = await import('./cli-session.ts');
+  const failingStore = new Proxy(hub.records.store, {
+    get(target, prop) {
+      if (prop === 'put') {
+        return async () => {
+          throw new Error('simulated audit write failure');
+        };
+      }
+      const value = Reflect.get(target, prop);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  const failingSession = new Session(
+    {
+      io: { stdout() {}, stderr() {}, env: { CIRCLE_HUB_TOKEN: hub.admin.token }, cwd: hub.deps.config.dataDir },
+      config: () => hub.deps.config,
+      records: async () => ({ ...hub.records, store: failingStore }),
+      deps: async () => hub.deps,
+      actingAdmin: async () => hub.admin.principal,
+    },
+    {
+      tokens: () => memoryOperatorTokens(hub.admin.token, '测试令牌'),
+      readSecret: async () =>
+        JSON.stringify({
+          name: '审计失败测试',
+          protocol: 'openai',
+          model: 'demo-model',
+          endpoint: 'https://model.example.invalid/v1',
+          key: modelKey,
+        }),
+    },
+  );
+  await assert.rejects(
+    () => botCommand(failingSession, ['set']),
+    (err: unknown) => err instanceof Error && /审计记录写入失败/.test(err.message) && /机器人模型/.test(err.message),
+  );
+
+  // 3. Console login + S12 verify /console/settings?tab=bot has pure Chinese labels, status box, recent audit box, callback URL, and passes wordingProblems
   const send = (path: string, init: RequestInit = {}) => fetch(hub.url + path, { redirect: 'manual', ...init });
   const firstCookie = (r: Response) => r.headers.getSetCookie()[0].split(';')[0];
   const csrf = (body: string) => /name="csrf" value="([^"]+)"/.exec(body)![1];
@@ -150,9 +268,78 @@ test('D1 + H1 CLI & Console: bot-secret-change@1 audits, reviewer removal, and a
   const botTab = await send('/console/settings?tab=bot', { headers: { cookie: adminCookie } });
   assert.equal(botTab.status, 200);
   const botHtml = await botTab.text();
+  assert.deepEqual(wordingProblems(botHtml), [], 'bot settings page must pass wordingProblems when healthy');
   assert.ok(!botHtml.includes('独立复核模型'));
   assert.ok(!botHtml.includes('bot-review-'));
+  assert.ok(!botHtml.includes('个人助手'));
   assert.ok(botHtml.includes('OpenAI 对话补全协议') && botHtml.includes('Anthropic 消息协议') && botHtml.includes('OpenAI Responses 协议'));
+  for (const label of [
+    '机器人名称',
+    '接口协议',
+    '模型服务地址',
+    '模型标识',
+    '模型系列标识（选填）',
+    '模型密钥',
+    '租户标识',
+    '登录应用标识',
+    '登录应用密钥',
+    '机器人标识',
+    '适配器访问 Hub 的地址',
+    '通道机器人密钥',
+    '运行状态',
+    '最近配置变更',
+    labelOf('bot_secret_slot', 'model'),
+    labelOf('bot_secret_action', 'start_channel'),
+    labelOf('bot_secret_action', 'stop_channel'),
+    hub.url + '/console/identity/callback',
+  ]) {
+    assert.ok(botHtml.includes(label), `expected ${label} on /console/settings?tab=bot`);
+  }
+  assert.equal((botHtml.match(/ch-btn--primary/g) ?? []).length, 3, 'all 3 forms must use primary submit buttons');
+
+  // Verify wordingProblems also passes when bot-runtime has wrong mode (0o755) or is a regular file
+  await chmod(botRuntimeDir, 0o755);
+  const badModeHtml = await (await send('/console/settings?tab=bot', { headers: { cookie: adminCookie } })).text();
+  assert.ok(badModeHtml.includes('权限为 0755（须为 0700）'));
+  assert.deepEqual(wordingProblems(badModeHtml), [], 'bot settings page must pass wordingProblems on 0755');
+  await rm(botRuntimeDir, { recursive: true, force: true });
+  await writeFile(botRuntimeDir, 'not-a-dir');
+  const badTypeHtml = await (await send('/console/settings?tab=bot', { headers: { cookie: adminCookie } })).text();
+  assert.ok(badTypeHtml.includes('不是普通目录'));
+  assert.deepEqual(wordingProblems(badTypeHtml), [], 'bot settings page must pass wordingProblems on non-dir');
+  await rm(botRuntimeDir, { force: true });
+
+  // S12: channel-hub default value uses originOf(ctx) for HTTPS/loopback and falls back to http://127.0.0.1:<port> for non-loopback HTTP
+  const { settingsPage } = await import('./console/settings.ts');
+  const { pageContext } = await import('./console/console-http.ts');
+  const { SessionStore } = await import('./console/session.ts');
+  const { JobStore } = await import('./console/manage.ts');
+  const { PackStaging } = await import('./console/staging.ts');
+  const makeChannelDefaultTest = async (origin: string, secure: boolean) => {
+    await hub.records.vault.remove('personal-bot.channel');
+    const urlObj = new URL(origin + '/console/settings?tab=bot');
+    const ctx = pageContext(
+      {
+        deps: { ...hub.deps, config: { ...hub.deps.config, port: 4321 } },
+        sessions: new SessionStore(),
+        ownOrigins: () => new Set([origin]),
+        log() {},
+        jobs: new JobStore(),
+        staging: new PackStaging(),
+        secureRequest: () => secure,
+      },
+      { headers: { host: urlObj.host } } as never,
+      urlObj,
+      hub.admin.principal,
+      { id: 's1', token: hub.admin.token, csrf: 'c1', expires: Date.now() + 60_000, created: Date.now() } as never,
+      secure,
+    );
+    const rendered = await settingsPage({ ...ctx, origin, secure }, null);
+    return /id="channel-hub"[^>]*value="([^"]*)"/.exec(rendered.body.text)?.[1];
+  };
+  assert.equal(await makeChannelDefaultTest('http://localhost:4321', false), 'http://localhost:4321');
+  assert.equal(await makeChannelDefaultTest('https://hub.example.invalid', true), 'https://hub.example.invalid');
+  assert.equal(await makeChannelDefaultTest('http://hub.example.invalid:4321', false), 'http://127.0.0.1:4321');
 
   const reviewPost = await send('/console/admin/do/bot-review-set', {
     method: 'POST',
