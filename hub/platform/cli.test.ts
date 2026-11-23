@@ -344,7 +344,8 @@ describe('platform CLI', () => {
     assert.ok(dir);
     assert.match(backup.out, /数据库 1 张表 1 行/);
     assert.match(backup.out, /清单含每个文件的 SHA-256/);
-    assert.match(backup.out, /注意：备份不含 bot-runtime/);
+    assert.match(backup.out, /注意：备份不含 bot-runtime（机器人私聊附件、通道暂存与运行套接字）；如需保留机器人私聊附件/);
+    assert.ok(!backup.out.includes('私聊成员附件') && !backup.out.includes('成员私聊附件'));
     const refused = await run('restore', dir);
     assert.equal(refused.code, 1);
     assert.equal(refused.lines[0], `数据根：${root}`);
@@ -364,7 +365,8 @@ describe('platform CLI', () => {
     try {
       const restored = await runPlatformCommand(['restore', dir], restoredCapture.io, overrides);
       assert.equal(restored, 0, restoredCapture.err.join('\n'));
-      assert.match(restoredCapture.out.join('\n'), /注意：恢复不含 bot-runtime/);
+      assert.match(restoredCapture.out.join('\n'), /注意：恢复不含 bot-runtime（机器人私聊附件、通道暂存与运行套接字）；机器人配置密文已随 vault\/ 恢复，但机器人私聊附件/);
+      assert.ok(!restoredCapture.out.join('\n').includes('私聊成员附件') && !restoredCapture.out.join('\n').includes('成员私聊附件'));
     } finally {
       await runPlatformCommand(['db', 'stop'], captureIo({ CIRCLE_HUB_DATA_DIR: restoredRoot, CIRCLE_HUB_DATABASE_PORT: restoredDbPort }, parent).io, overrides).catch(() => {});
     }

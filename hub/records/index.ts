@@ -3,8 +3,8 @@ import {PgMemberDeletions} from './member-deletions.ts';
 import {PgPersonalSync} from './personal-sync.ts';
 // Entry point of the records package: everything in api.ts plus openRecords, which connects, migrates and wires the kit, and
 // migrateRecords, which applies migrations as the owner role and grants the runtime role (README decision 16).
-import { createHmac, randomBytes } from 'node:crypto';
-import { mkdir, open, readFile } from 'node:fs/promises';
+import { createHmac } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import type { OpenRecordsOptions, RecordsConfig, RecordsKit } from './api.ts';
 import { VaultError } from './errors.ts';
@@ -44,46 +44,22 @@ export async function migrateRecords(config: Pick<RecordsConfig, 'database'>, op
 }
 
 const EXTERNAL_IDENTITY_AUDIT_KEY_CONTEXT = 'circle-hub:external-identity-audit:v1';
+const EXTERNAL_IDENTITY_AUDIT_KEY_ERROR = '密钥库主密钥不可用，无法写入外部身份审计记录；请先初始化或恢复主密钥';
 
 async function resolveExternalIdentityAuditKey(
-  dataDir: string,
   keyProvider: OpenRecordsOptions['keyProvider'],
 ): Promise<Uint8Array> {
-  if (keyProvider) {
-    try {
-      const masterKey = await keyProvider.getKey();
-      return new Uint8Array(createHmac('sha256', masterKey).update(EXTERNAL_IDENTITY_AUDIT_KEY_CONTEXT).digest());
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException | undefined)?.code;
-      const message = error instanceof Error ? error.message : '';
-      const missingVaultKey =
-        code === 'ENOENT' ||
-        message.startsWith('没有') ||
-        (error instanceof VaultError && message.includes('不存在'));
-      if (!missingVaultKey) throw error;
-    }
-  }
-  const keysDir = join(dataDir, 'keys');
-  await mkdir(keysDir, { recursive: true, mode: 0o700 });
-  const keyPath = join(keysDir, 'external-identity-audit.key');
+  if (!keyProvider) throw new VaultError(EXTERNAL_IDENTITY_AUDIT_KEY_ERROR);
+  let masterKey: Uint8Array;
   try {
-    const handle = await open(keyPath, 'wx', 0o600);
-    try {
-      const key = randomBytes(32);
-      await handle.writeFile(key);
-      await handle.sync();
-      return new Uint8Array(key);
-    } finally {
-      await handle.close();
-    }
+    masterKey = await keyProvider.getKey();
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    const existing = await readFile(keyPath);
-    if (existing.byteLength !== 32) {
-      throw new VaultError('外部身份审计密钥长度不对（应为 32 字节）');
-    }
-    return new Uint8Array(existing);
+    throw new VaultError(EXTERNAL_IDENTITY_AUDIT_KEY_ERROR, { cause: error });
   }
+  if (masterKey.byteLength !== 32) {
+    throw new VaultError(EXTERNAL_IDENTITY_AUDIT_KEY_ERROR);
+  }
+  return new Uint8Array(createHmac('sha256', masterKey).update(EXTERNAL_IDENTITY_AUDIT_KEY_CONTEXT).digest());
 }
 
 /**
@@ -98,7 +74,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   for (const directory of [config.dataDir, objectsDir, config.logDir]) await mkdir(directory, { recursive: true, mode: 0o700 });
   let cachedAuditKey: Promise<Uint8Array> | undefined;
   const getAuditKey = (): Promise<Uint8Array> => {
-    cachedAuditKey ??= resolveExternalIdentityAuditKey(config.dataDir, options.keyProvider).catch((error) => {
+    cachedAuditKey ??= resolveExternalIdentityAuditKey(options.keyProvider).catch((error) => {
       cachedAuditKey = undefined;
       throw error;
     });

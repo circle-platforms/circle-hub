@@ -38,7 +38,7 @@ Circle Hub 用**重置和重建**处理不兼容版本更新、配置混乱或�
 
 - **引用保护**：如果未选中的保留范围中仍有记录正式引用了即将被清掉的对象（例如保留的配置中仍指向待清理的包），预检会直接阻止此次重置（`blocked`），而**不会**悄悄扩大清理范围。
 - **密钥与根凭据独立留存**：无论选择单个范围还是 `all`（全部初始化），数据目录下的 `keys/`（主密钥与操作员令牌）与 `vault/`（按大写密钥名存放的加密密钥密文与元数据）都**不会被删除**。
-- **`bot-runtime` 的清理与备份恢复边界**：当使用 `config` 或 `all`（且未带 `--keep-config`）清空成员账户时，重置完成并确认服务拉起后会自动清理 `<数据目录>/bot-runtime/files`（私聊成员附件）与 `<数据目录>/bot-runtime/channel-staging`（通道入站暂存），失败回滚时自动恢复，避免清空账户后残留孤立私聊文件；而选择 `history`、`knowledge`、`packs` 或 `--keep-config` 保留账户时则保留上述文件（命令行输出会明确写明已清理或保留）。另外，标准 `circle-hub backup` / `restore` 不覆盖 `<数据目录>/bot-runtime`（仅覆盖数据库、`objects/`、`vault/`、`config/`），恢复前如须保留成员附件请另行归档 `bot-runtime/files`。
+- **`bot-runtime` 的清理与备份恢复边界**：当使用 `config` 或 `all`（且未带 `--keep-config`）清空成员账户时，重置完成并确认服务拉起后会自动清理 `<数据目录>/bot-runtime/files`（机器人私聊附件）与 `<数据目录>/bot-runtime/channel-staging`（通道入站暂存），失败回滚时自动恢复，避免清空账户后残留孤立私聊文件；而选择 `history`、`knowledge`、`packs` 或 `--keep-config` 保留账户时则保留上述文件（命令行输出会明确写明已清理或保留）。另外，标准 `circle-hub backup` / `restore` 不覆盖 `<数据目录>/bot-runtime`（仅覆盖数据库、`objects/`、`vault/`、`config/`），恢复前如须保留机器人私聊附件请另行归档 `bot-runtime/files`。
 - **CLI 与控制台接口现状**：
   - 控制台已有两个入口：受限状态下访问 `/console/rebuild`（「需要重建」页面），正常运维状态下访问 `/console/settings?tab=hub#reset-rebuild`（Hub 设置页中的重置与重建区域）；两处确认词均为 **`重建`**。
   - `contracts/src/reset.ts` 与控制台界面（`hub/server/console/reset.ts`）均已对齐 `history`、`knowledge`、`packs`、`config`、`all` 五个范围值（控制台单次表单为单选，CLI `--scope` 可多次传入）；`reset`、`apply`、`export` 也已接入 `circle-hub` 主命令。

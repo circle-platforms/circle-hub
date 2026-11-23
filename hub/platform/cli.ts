@@ -407,7 +407,7 @@ const backup: Handler = async (args, context, io) => {
       io.stdout(`数据库 ${manifest.database.tables.length} 张表 ${rows} 行；文件 ${manifest.files.length - 1} 个；清单含每个文件的 SHA-256`);
       if (reused > 0) io.stdout(`其中 ${reused} 个对象与上一份备份相同，用硬链接共用一份（SHA-256 已重新核对）`);
       if (skipped.length > 0) io.stdout(`备份期间消失、没有备份的文件 ${skipped.length} 个：${skipped.slice(0, 5).join('、')}${skipped.length > 5 ? ' 等' : ''}`);
-      io.stdout('注意：备份不含 bot-runtime（私聊成员附件、通道暂存与运行套接字）；如需保留成员私聊附件，请另行归档 <数据目录>/bot-runtime/files');
+      io.stdout('注意：备份不含 bot-runtime（机器人私聊附件、通道暂存与运行套接字）；如需保留机器人私聊附件，请另行归档 <数据目录>/bot-runtime/files');
       const removed = await pruneBackups(context.layout, keep, await protectedBackups(context));
       if (removed.length > 0) io.stdout(`按保留 ${keep} 份删除了 ${removed.length} 份旧备份`);
     } finally {
@@ -455,7 +455,7 @@ const restore: Handler = async (args, context, io) => {
     io.stdout(`已从 ${dir} 恢复：${report.tables} 张表 ${report.rows} 行，与清单一致；文件 ${report.files} 个；数据库在运行`);
     io.stdout(`数据库与表属于角色 ${cluster.target.user}；应用角色 ${cluster.application.user} 的 ${report.privileges} 项权限与备份时一致，不拥有任何对象`);
     if (report.keptConfig.length > 0) io.stdout(`这些设置文件与备份里的不同，保留了数据根里现有的：${report.keptConfig.join('、')}`);
-    io.stdout('注意：恢复不含 bot-runtime（私聊成员附件、通道暂存与运行套接字）；机器人配置密文已随 vault/ 恢复，但成员私聊附件需由另行归档恢复或重新上传');
+    io.stdout('注意：恢复不含 bot-runtime（机器人私聊附件、通道暂存与运行套接字）；机器人配置密文已随 vault/ 恢复，但机器人私聊附件需由另行归档恢复或重新上传');
     return 0;
   });
 };
