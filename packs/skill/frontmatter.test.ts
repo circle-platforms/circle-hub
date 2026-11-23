@@ -4,6 +4,7 @@ import { test } from 'node:test';
 
 const SKILLS: ReadonlyArray<[string, string]> = [
   ['skill/plumb/SKILL.md', 'plumb'],
+  ['skill/jev-judge/SKILL.md', 'jev-judge'],
   ['skill/command-tools/SKILL.md', 'command-tools'],
   ['skill/run-tools/SKILL.md', 'run-tools'],
   ['skill/runner-workbook/SKILL.md', 'runner-workbook'],
