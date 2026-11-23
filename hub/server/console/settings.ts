@@ -232,8 +232,8 @@ function settingsTabs(first: string, hub: boolean, total?: number, bot = false):
   ], 'data-settings-tabs');
 }
 
-function botModelForm(profile: BotProfile | null, review: boolean, csrf: string): Html {
-  const id = review ? 'review' : 'bot';
+function botModelForm(profile: BotProfile | null, csrf: string): Html {
+  const id = 'bot';
   const fields = html`<div data-fields>
     ${field('机器人名称', html`<input id="${id}-name" name="name" required maxlength="256" value="${profile?.name ?? ''}">`)}
     ${field('API 协议', html`<select id="${id}-protocol" name="protocol">${['openai', 'responses', 'anthropic'].map((p) => html`<option value="${p}"${profile?.protocol === p ? html` selected` : ''}>${p}</option>`)}</select>`)}
@@ -242,26 +242,15 @@ function botModelForm(profile: BotProfile | null, review: boolean, csrf: string)
     ${field('模型族 ID', html`<input id="${id}-family" name="family" maxlength="256" spellcheck="false" value="${profile?.family ?? ''}">`)}
     ${field('API Key', html`<input id="${id}-key" name="value" type="password" autocomplete="new-password" required>`)}
   </div>`;
-  return actionForm(review ? 'bot-review-set' : 'bot-set', csrf, fields, profile ? '保存并轮换密钥' : '保存配置', { primary: true });
+  return actionForm('bot-set', csrf, fields, profile ? '保存并轮换密钥' : '保存配置', { primary: true });
 }
 
 async function adminBotSettings(ctx: PageContext): Promise<PageResult> {
   const vault = typeof ctx.deps.records.vault?.get === 'function' ? ctx.deps.records.vault : null;
   const csrf = ctx.csrf ?? '';
   const profile = vault ? await readBotProfile(vault) : null;
-  const review = vault ? await readBotProfile(vault, true) : null;
   const identity = vault ? await readIdentity(vault) : null;
   const channel = vault ? await readChannel(vault) : null;
-  const declared = Boolean(
-    profile?.family &&
-    review?.family &&
-    profile.family !== review.family &&
-    (profile.model !== review.model || profile.endpoint !== review.endpoint),
-  );
-  const reviewCard = card(
-    { title: '独立复核模型' },
-    html`<p>${declared ? '已配置不同模型族' : '尚未完成独立配置：需要为机器人与独立复核模型配置不同模型族'}</p>${botModelForm(review, true, csrf)}${review ? actionForm('bot-review-test', csrf, '', '测试复核连接') : ''}${review ? actionForm('bot-review-disable', csrf, '', '停用复核模型') : ''}`,
-  );
   const applicationForm = actionForm(
     'bot-identity',
     csrf,
@@ -284,7 +273,7 @@ async function adminBotSettings(ctx: PageContext): Promise<PageResult> {
   );
   const channelCards = html`${card({ title: '扫码登录应用' }, html`<p>${identity ? '已配置' : '未配置'}</p>${applicationForm}${identity ? html`<form method="post" action="/console/identity/bind"><input type="hidden" name="csrf" value="${csrf}"><button class="ch-btn" type="submit">扫码绑定本人身份</button></form>` : ''}`)}
     ${card({ title: '私聊机器人通道' }, html`<p>${channel ? (channel.enabled ? '已请求启用' : '已配置，已停用') : '未配置'}</p>${channelForm}${channel && identity ? actionForm(channel.enabled ? 'bot-channel-stop' : 'bot-channel-start', csrf, '', channel.enabled ? '停止私聊通道' : '启动私聊通道') : ''}`)}`;
-  const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', false, undefined, true)}<div class="ch-stack" data-settings-tab="bot">${card({ title: '机器人模型' }, html`<p>${profile ? '已配置' : '未配置'}</p>${botModelForm(profile, false, csrf)}${profile ? actionForm('bot-test', csrf, '', '测试连接') : ''}${profile ? actionForm('bot-disable', csrf, '', '停用') : ''}`)}${reviewCard}${channelCards}</div></div>`;
+  const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', false, undefined, true)}<div class="ch-stack" data-settings-tab="bot">${card({ title: '机器人模型' }, html`<p>${profile ? '已配置' : '未配置'}</p>${botModelForm(profile, csrf)}${profile ? actionForm('bot-test', csrf, '', '测试连接') : ''}${profile ? actionForm('bot-disable', csrf, '', '停用') : ''}`)}${channelCards}</div></div>`;
   return { status: 200, body: page(ctx.chrome('设置', { active: 'settings' }), pageLayout(body, { inspector: null })) };
 }
 

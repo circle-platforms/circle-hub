@@ -138,8 +138,10 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   }
   const enableConsequence='启用后，私人空间和仍有效的分享恢复可用，已收回的分享不会恢复。未吊销且未过期的客户端访问令牌恢复可用；已关闭的控制台会话需要重新登录。';
   const disableConsequence='停用后，该成员无法访问 Hub，私人空间冻结，已分享的私人内容暂停访问。团队已取得的内容保留。重新启用后恢复仍有效的分享；不会清除内容或停止远程客户端。';
+  const boundIssuers=ctx.admin&&typeof ctx.deps.records.principals.externalIdentities==='function'?await ctx.deps.records.principals.externalIdentities(user.id):[];
   const memberOps=ctx.admin?html`<div class="ch-stack" data-member-ops>
 ${card({title:user.disabled?'启用账户':'停用账户',meta:user.disabled?enableConsequence:disableConsequence},registeredActionForm(user.disabled?'user-enable':'user-disable',csrf,user.disabled?'启用':'停用',{values:{user:user.id},primary:!!user.disabled}))}
+${boundIssuers.length>0?card({title:'外部扫码身份',meta:`已绑定 ${boundIssuers.length} 项外部身份，解除后原外部身份可立即重新绑定其他账户。`},actionForm('bot-identity-unbind',csrf,html`<input type="hidden" name="user" value="${user.id}">`,'解除外部身份绑定')):''}
 ${user.disabled?'':html`${card({title:'签发邀请码',hint:'邀请码 24 小时内有效，仅可使用一次，只在结果页显示。'},registeredActionForm('user-invite',csrf,'签发邀请码',{values:{user:user.id},primary:true}))}
 ${card({title:'签发客户端访问令牌',hint:'新令牌仅在结果页显示一次，只用于连接客户端。'},registeredActionForm('token-issue',csrf,'签发令牌',{values:{user:user.id,label:'客户端'},primary:true}))}`}
 ${card({title:'重置密码',hint:'生成仅显示一次的初始密码；下次登录必须修改。'},registeredActionForm('password-reset',csrf,'重置密码',{values:{user:user.id}}))}

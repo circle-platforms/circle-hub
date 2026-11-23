@@ -11,6 +11,7 @@ import { ADMIN_COMMANDS } from './command-registry.ts';
 // enabled admin goes straight into the file and is never shown. Output is Chinese, made safe for a terminal, and never shows a token
 // or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
+import { BotSecretChangeAudit } from '../../contracts/src/resources.ts';
 import { readUploadedSource } from './cli-job.ts';
 import { DOC_MEDIA_TYPES, DOC_SUFFIXES, docMediaType, docSuffixOf } from './docs.ts';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
@@ -448,14 +449,40 @@ const BOT_COMMANDS = [
   'set',
   'disable',
   'test',
-  'review-set',
-  'review-test',
-  'review-disable',
   'identity-set',
+  'identity-remove',
+  'identity-unbind',
   'channel-set',
+  'channel-remove',
   'channel-start',
   'channel-stop',
 ] as const;
+
+async function appendBotSecretChange(
+  store: Pick<RecordsKit['store'], 'put'>,
+  slot: 'personal-bot.model' | 'personal-bot.channel' | 'personal-bot.identity',
+  action: 'set' | 'remove',
+  by: string,
+  at: string,
+): Promise<void> {
+  const body = BotSecretChangeAudit.parse({
+    schema: 'bot-secret-change@1',
+    action,
+    slot,
+    by,
+    at,
+  });
+  await store.put({
+    kind: 'action',
+    schema: 'bot-secret-change@1',
+    provenance: 'observed',
+    body,
+    index: [
+      { key: 'bot.secret.slot', value: slot },
+      { key: 'bot.secret.by', value: by },
+    ],
+  });
+}
 
 async function readSecretJson(
   readSecret: (label: string) => Promise<string>,
@@ -470,12 +497,28 @@ async function readSecretJson(
 }
 
 export async function botCommand(session: Session, args: readonly string[]): Promise<number> {
-  const [sub] = args;
-  if (args.length !== 1 || !BOT_COMMANDS.includes(sub as (typeof BOT_COMMANDS)[number])) {
+  const [sub, ...rest] = args;
+  if (!sub || !BOT_COMMANDS.includes(sub as (typeof BOT_COMMANDS)[number])) {
+    throw new UsageError(`bot ${BOT_COMMANDS.join(' | ')}`);
+  }
+  if (sub === 'identity-unbind') {
+    const { values, positionals } = parse(rest, { issuer: { type: 'string' } }, 1, 1);
+    const admin = await session.admin();
+    const { principals } = await session.records();
+    const userArg = positionals[0]!;
+    const target = /^usr_[0-9a-z]{26}$/.test(userArg) ? await principals.get(userArg) : await principals.findByName(userArg);
+    if (!target) throw new CliError(`没有用户 ${userArg}`);
+    const issuer = values.issuer;
+    if (issuer !== undefined && issuer.length === 0) throw new UsageError('--issuer 不能为空');
+    const removed = await decided(() => principals.unbindExternalIdentity(admin, target.id, issuer));
+    session.out(removed > 0 ? `已解除成员 ${target.name}（${target.id}）的 ${removed} 项外部身份绑定` : `成员 ${target.name}（${target.id}）当前没有外部身份绑定`);
+    return 0;
+  }
+  if (args.length !== 1) {
     throw new UsageError(`bot ${BOT_COMMANDS.join(' | ')}`);
   }
   const admin = await session.admin();
-  const { vault } = await session.records();
+  const { vault, store } = await session.records();
   const readSecret = session.options.readSecret ?? readSecretFromStdin;
   if (sub === 'identity-set' || sub === 'channel-set') {
     const identity = sub === 'identity-set';
@@ -485,13 +528,23 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
       const parsed = identityProfile.safeParse(value);
       if (!parsed.success) throw new UsageError('通道配置字段无效');
       await vault.put(name, JSON.stringify(parsed.data));
+      await appendBotSecretChange(store, 'personal-bot.identity', 'set', admin.id, new Date().toISOString());
       session.out('登录应用配置已保存');
     } else {
       const parsed = channelProfile.safeParse(value);
       if (!parsed.success) throw new UsageError('通道配置字段无效');
       await vault.put(name, JSON.stringify(newChannel(parsed.data)));
+      await appendBotSecretChange(store, 'personal-bot.channel', 'set', admin.id, new Date().toISOString());
       session.out('私聊机器人配置已保存');
     }
+    return 0;
+  }
+  if (sub === 'identity-remove' || sub === 'channel-remove') {
+    const identity = sub === 'identity-remove';
+    const slot = identity ? 'personal-bot.identity' : 'personal-bot.channel';
+    await vault.remove(slot);
+    await appendBotSecretChange(store, slot, 'remove', admin.id, new Date().toISOString());
+    session.out(identity ? '登录应用配置已移除' : '私聊机器人配置已移除');
     return 0;
   }
   if (sub === 'channel-start' || sub === 'channel-stop') {
@@ -506,20 +559,20 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
     session.out(enabled ? '适配器已接收启动请求' : '适配器已断开');
     return 0;
   }
-  const reviewer = sub.startsWith('review-');
-  const command = reviewer ? sub.slice('review-'.length) : sub;
-  if (command === 'disable') {
-    await disableBot(vault, reviewer);
+  if (sub === 'disable') {
+    await disableBot(vault);
+    await appendBotSecretChange(store, 'personal-bot.model', 'remove', admin.id, new Date().toISOString());
     session.out('机器人模型已停用');
     return 0;
   }
-  if (command === 'set') {
+  if (sub === 'set') {
     const settings = await readSecretJson(readSecret, 'bot-model', '请输入机器人模型配置 JSON');
-    await setBotProfile(vault, settings, reviewer);
+    await setBotProfile(vault, settings);
+    await appendBotSecretChange(store, 'personal-bot.model', 'set', admin.id, new Date().toISOString());
     session.out('机器人模型配置已保存');
     return 0;
   }
-  const config = await readBotProfile(vault, reviewer);
+  const config = await readBotProfile(vault);
   if (!config) throw new CliError('机器人模型尚未启用');
   const result = await callBot(session.config().dataDir, { owner: admin.id, op: { action: 'test' }, config });
   if (result.status !== 200 || !(result.body as { tested?: boolean })?.tested) {

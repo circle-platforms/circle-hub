@@ -51,7 +51,7 @@ const administrative: { name: string; summary: string; handler: AdminHandler; br
   { name: 'secret', reserved: '管理密钥库条目', bridge: true, summary: SECRET_USAGE.slice('secret '.length), handler: namedSecretCommand },
   { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.originalCommand(session,args)) },
   { name: 'lease', summary: LEASE_USAGE.slice('lease '.length), bridge: true, handler: (session,args) => import('./cli-admin.ts').then(module => module.leaseCommand(session,args)) },
-  { name: 'bot', summary: 'set | test | disable | review-set | review-test | review-disable | identity-set | channel-set | channel-start | channel-stop', bridge: true, handler: (session, args) => import('./cli-admin.ts').then(module => module.botCommand(session, args)) },
+  { name: 'bot', summary: 'set | test | disable | identity-set | identity-remove | identity-unbind <用户> [--issuer <issuer>] | channel-set | channel-remove | channel-start | channel-stop', bridge: true, handler: (session, args) => import('./cli-admin.ts').then(module => module.botCommand(session, args)) },
   { name: 'knowledge', reserved: '读取和管理知识树', bridge: true, summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },
   { name: 'team', reserved: '管理团队', bridge: true, summary: TEAM_USAGE.slice('team '.length), handler: teamCommand },
   { name: 'trace', summary: TRACE_USAGE.slice('trace '.length), handler: traceCommand },

@@ -99,15 +99,15 @@ export function pairs(form: Form, name: string, label: string): string[] {
   return lines;
 }
 
-function botModelAction(review: boolean): Action {
+function botModelAction(): Action {
   return {
-    title: review ? '保存复核模型' : '保存模型配置',
+    title: '保存模型配置',
     back: '/console/settings?tab=bot',
     active: 'settings',
     build: (form) => {
       const family = form.get('family').trim();
       return {
-        argv: ['bot', review ? 'review-set' : 'set'],
+        argv: ['bot', 'set'],
         secrets: {
           'bot-model': JSON.stringify({
             name: form.get('name'),
@@ -320,20 +320,7 @@ export const ACTIONS: Record<string, Action> = {
     background: true,
     build: (form) => fromRegistration('knowledge-sync', form),
   },
-  'bot-set': botModelAction(false),
-  'bot-review-set': botModelAction(true),
-  'bot-review-test': {
-    title: '测试复核模型连接',
-    back: '/console/settings?tab=bot',
-    active: 'settings',
-    build: () => ({ argv: ['bot', 'review-test'] }),
-  },
-  'bot-review-disable': {
-    title: '停用复核模型',
-    back: '/console/settings?tab=bot',
-    active: 'settings',
-    build: () => ({ argv: ['bot', 'review-disable'] }),
-  },
+  'bot-set': botModelAction(),
   'bot-identity': {
     title: '保存登录应用',
     back: '/console/settings?tab=bot',
@@ -348,6 +335,15 @@ export const ACTIONS: Record<string, Action> = {
         }),
       },
     }),
+  },
+  'bot-identity-unbind': {
+    title: '解除外部身份绑定',
+    back: USERS,
+    build: (form) => {
+      const user = word(form, 'user', '成员');
+      const issuer = form.get('issuer').trim();
+      return { argv: ['bot', 'identity-unbind', user, ...(issuer ? ['--issuer', issuer] : [])] };
+    },
   },
   'bot-channel': {
     title: '保存私聊通道',

@@ -168,21 +168,9 @@ test('bot settings reach the CLI vault through the admin bridge without renderin
   assert.doesNotMatch(JSON.stringify(bad), new RegExp(key));
   const refused = await bridge.run(['bot', 'disable'], { token: 'invalid' });
   assert.equal(refused.code, 1);
-  const review = await bridge.run(['bot', 'review-set'], {
-    token: adminToken,
-    secrets: {
-      'bot-model': JSON.stringify({
-        ...profile,
-        family: 'synthetic-verifier',
-        model: 'fixture-verifier',
-        key: 'other-synthetic-key',
-      }),
-    },
-  });
-  assert.equal(review.code, 0);
-  assert.doesNotMatch(JSON.stringify(review), /other-synthetic-key/);
-  assert.equal((await bridge.run(['bot', 'review-disable'], { token: adminToken })).code, 0);
-  assert.match((await bridge.run(['bot', 'review-test'], { token: adminToken })).stderr.join('\n'), /尚未启用/);
+  for (const removedCmd of ['review-set', 'review-test', 'review-disable']) {
+    assert.equal((await bridge.run(['bot', removedCmd], { token: adminToken })).code, 2);
+  }
   const disabled = await bridge.run(['bot', 'disable'], { token: adminToken });
   assert.equal(disabled.code, 0);
   assert.match((await bridge.run(['bot', 'test'], { token: adminToken })).stderr.join('\n'), /尚未启用/);
