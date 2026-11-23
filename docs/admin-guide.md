@@ -6,11 +6,12 @@ nav_order: 3
 
 > **适用范围与基线声明**：本手册面向部署并日常管理 Circle Hub 的管理员，基于 `wp/codex/integration` 收口基线编写（核对至冻结提交 `777fee3752`，含第一、二批实装控制台界面、平滑退场与基线 1 服务模型；参见[兼容矩阵](compatibility.md)）。注：对照实测中前半（步 1–14）运行在较早基线 `9d842b79e7ee` 上，后续管理员重做、平滑退场与重启核对运行在 `7c5f72c600` 上，文中对新旧行为差异与尚未实测重走的部分均已注明。控制台现已补齐工作流批量分配、通用技能安装/卸载、产品知识来源启用/停用、成员账户内联表单与视角预览，以及测试环境清单与执行器上传登记；但须特别留意：**测试环境按团队/账户的分配只决定成员的「我能做的事」与 `list_task_packs` 列出哪些测试环境，不作为预订或上机许可——谁能预订和上机按工作流的分配和预订规则判断，已获分配 `test-bed` 工作流的成员均可按既有规则预订测试环境**；在途请求平滑退场已支持（未入场请求返回 `503` 与 `Retry-After`，已受理请求及运行资料响应在预算内等待发完），且本版维持基线 1（未合入 `upgrade-production` / M2 自动升级路径），跨不兼容库结构仍走 `/console/rebuild` 与 `reset` 重建规程。
 
-如果你还没有搭起实例、初始化首个管理员并建立基本配置，先走[十分钟上手](quickstart.md)完成初始化（或使用发行版 `install.sh` 一键安装 + `/console/setup` 完成首次初始化）。本手册接在「服务已启动、管理员已登录」之后，讲清楚日常最常做的三件事：
+如果还没有搭起实例、初始化首个管理员并建立基本配置，先走[十分钟上手](quickstart.md)完成初始化（或使用发行版 `install.sh` 一键安装 + `/console/setup` 完成首次初始化）。本手册接在「服务已启动、管理员已登录」之后，讲清楚日常最常做的四件事：
 
 1. [加成员和分权限](#一加成员和分权限)
 2. [加一个技能、工作流、测试环境](#二加一个技能工作流测试环境)
 3. [升级和降级](#三升级和降级)
+4. [机器人（bot-runtime）配置、备份、清理与配额边界](#四机器人bot-runtime配置备份清理与配额边界)
 
 ---
 
@@ -285,12 +286,16 @@ curl -sS http://127.0.0.1:7420/healthz
   2. `./bin/circle-hub init-admin <管理员> --password-stdin`（原子替换失效操作令牌文件）
   3. `./bin/circle-hub apply <部署定义.json>`，然后按 [reset.md — 重建之后要补登记的东西（F1–F13）](reset.md#重建之后要补登记的东西) 逐项补写 `doc put`、历史证据原件、`bed baseline record` 并重发成员客户端邀请。
 
-### 4. 个人助手运行数据（`bot-runtime`）的备份、恢复、清理与配额边界
+---
 
+## 四、机器人（`bot-runtime`）配置、备份、清理与配额边界
+
+- **管理命令与配置槽位（`circle-hub bot`）**：提供十个子命令——`set`、`disable`、`test`、`identity-set`、`identity-remove`、`identity-unbind <用户> [--issuer]`、`channel-set`、`channel-remove`、`channel-start`、`channel-stop`。执行 `bot set` 或 `bot disable` 保存或停用机器人模型配置时，Hub 会自动清除历史遗留的 `personal-bot.reviewer` 槽位。
+- **运行目录自动建权（`0700`）**：`<数据目录>/bot-runtime` 会在服务启动或首次使用时以权限 `0700` 自动创建；发送密钥或文件写入前会通过 `lstat` 核对路径非符号链接、为目录、权限 `0700` 且属主为当前服务账户。
 - **标准备份与恢复边界（`backup` / `restore`）**：`circle-hub backup` 与 `circle-hub restore` 仅覆盖数据库、`objects/`、`vault/` 与 `config/`，**不包含** `<数据目录>/bot-runtime`（含成员私聊附件 `bot-runtime/files/<sha256(userId)>`、通道入站暂存 `bot-runtime/channel-staging` 与运行套接字）。执行 `backup` / `restore` 时终端会明确打印该提示。后果如下：`vault/` 会备份并恢复模型、登录应用和私聊通道的加密配置，但已上传的成员私聊附件不会随备份恢复，如需跨机迁移或长期留存请另行归档 `<数据目录>/bot-runtime/files`，否则恢复后需重新上传。
-- **成员删除与外部身份清理（`user delete`）**：删除前检查会统计待删成员的 `bot_files` 数量与字节数（不影响既有的 `member-deletion@1` 计数与模式兼容性）；执行完成删除时，Hub 会清理该成员目录 `<数据目录>/bot-runtime/files/<sha256(userId)>`，并在同一事务内解除该成员的全部外部身份绑定（写入含摘要的 `member-external-identity@1` 记录，`reason: "deleted"`）。
-- **重置清理边界（`reset`）**：以 `--scope all` 或 `--scope config`（且未传 `--keep-config`）清空成员账户时，会在重启成功后清理 `<数据目录>/bot-runtime/files` 与 `channel-staging`，同时保留 `keys/` 与 `vault/`；仅清理 `history`、`knowledge`、`packs` 或使用 `--keep-config` 时保留 `bot-runtime/`（详见 [reset.md](reset.md)）。
-- **成员附件配额与保留期常数**：单次文件上传上限 **`100 MiB`**，单成员在 `bot-runtime/files` 中累计至多保留 **`256` 份（256 files）** 或总容量 **`512 MiB`**，文件保留期限 **`30 days`（30 天）**；超出成员文件数或总容量配额时接口以 `BOT_QUOTA_EXCEEDED` 拒绝，过期附件按保留期限清理。
+- **成员删除与外部身份清理（`user delete`）**：删除前检查会统计待删成员在 `bot-runtime/files` 与 `bot-runtime/channel-staging` 中的 `bot_files` 数量与字节数（不影响既有的 `member-deletion@1` 计数与模式兼容性）；执行完成删除时，Hub 会清理该成员在 `<数据目录>/bot-runtime/files/<sha256(userId)>` 与 `<数据目录>/bot-runtime/channel-staging/<sha256(userId)>` 下的目录，并在同一事务内解除该成员的全部外部身份绑定（写入带密钥 HMAC 摘要的 `member-external-identity@1` 记录，`reason: "deleted"`）。
+- **重置清理边界（`reset`）**：以 `--scope all` 或 `--scope config`（且未传 `--keep-config`）清空成员账户时，会在重启成功后清理 `<数据目录>/bot-runtime/files` 与 `channel-staging`（若重建中止，恢复流程可从 `set-aside` 阶段目录还原这两个目录），同时保留 `keys/` 与 `vault/`；仅清理 `history`、`knowledge`、`packs` 或使用 `--keep-config` 时保留 `bot-runtime/`（详见 [reset.md](reset.md)）。
+- **成员附件配额与 30 天清理**：单次文件上传上限 **`100 MiB`**，单成员在 `bot-runtime/files` 中累计至多保留 **`256 份`** 或总容量 **`512 MiB`**，文件保留期限 **`30 天`**。Hub 在每次上传或暂存提升前，以及服务启动和每小时的定时清扫任务中都会执行 30 天过期清理（同时对残留 `.part` 与 `channel-staging` 临时文件按 `15` 分钟门槛清理）；过期清理后仍超出成员文件数或总容量配额时接口以 `BOT_QUOTA_EXCEEDED` 拒绝。
 
 ---
 

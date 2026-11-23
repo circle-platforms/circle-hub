@@ -53,8 +53,15 @@ describe('the pack files', () => {
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
     // start_run returns the full Chinese SKILL.md procedure; alongside frontmatter, 1.8.12 must keep full positive/negative knowledge URI examples (case-sensitive ORBIT and delimiter mistakes).
     assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 3800);
+    assert.ok(text('SKILL.md').includes('Hub 按两个构建的影响视图直接算出较早构建里需要维护的用例。不需要你提交结果。'));
     assert.match(text('SKILL.md'), /不要写成 orbit，也不要换成别的分隔符/);
-    assert.match(text('SKILL.md'), /三种写错：[\s\S]*错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30\?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30\?kind=case&by=commands`。/);
+    for (const example of [
+      '（1）分隔符用了 @。错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。',
+      '（2）缺构建。错 `knowledge:facets:ORBIT?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。',
+      '（3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。',
+    ]) {
+      assert.ok(text('SKILL.md').includes(example), example);
+    }
     assert.match(text('SKILL.md'), /阻断/);
     assert.match(text('SKILL.md'), /提示/);
   });

@@ -14,6 +14,7 @@ import { withSession } from '../../platform/api.ts';
 import { exit, recordingRunner, freePort, socketPort, libpqAvailable, LIBPQ_MISSING } from '../../platform/test-support.ts';
 import { createResetConfigurationPorts } from '../api.ts';
 import { resetData, previewReset, resetRecordTally } from './host.ts';
+import { recoverPendingReset } from './recovery.ts';
 import { protectedFiles } from './protected-files.ts';
 import { ResetFailure, type ResetStage } from './operation.ts';
 import type { ResetDataScope } from './types.ts';
@@ -260,5 +261,42 @@ test('H2: all/config reset without keepConfig cleans bot-runtime files and stagi
   assert.match(cliOut.join('\n'), /已清理 <数据目录>\/bot-runtime 下的私聊成员附件与通道暂存/);
   await assert.rejects(stat(join(f.layout.root, 'bot-runtime', 'files')));
   await assert.rejects(stat(join(f.layout.root, 'bot-runtime', 'channel-staging')));
+  assert.deepEqual(await protectedFiles(f.layout), f.originals);
+});
+
+test('S7: recoverPendingReset restores bot-runtime files and channel-staging from set-aside stage when journal carries botRuntimeStage', { timeout: 120_000 }, async t => {
+  const f = await fixture(); t.after(() => f.close());
+  const stageName = 'reset-bot-01234567-89ab-cdef-0123-456789abcdef';
+  const stageDir = join(f.layout.setAside, stageName);
+  const stagedFiles = join(stageDir, 'files', '0'.repeat(64));
+  const stagedStaging = join(stageDir, 'channel-staging', '1'.repeat(64));
+  await mkdir(stagedFiles, { recursive: true, mode: 0o700 });
+  await mkdir(stagedStaging, { recursive: true, mode: 0o700 });
+  await writeFile(join(stagedFiles, 'a'.repeat(64)), 'staged-bot-file');
+  await writeFile(join(stagedStaging, 'b'.repeat(64)), 'staged-channel-file');
+
+  const [identity] = await withSession(f.postgres.connector, 'postgres', session =>
+    session.query('SELECT oid::text FROM pg_database WHERE datname=$1', [f.postgres.target.database]),
+  );
+  const dbPrefix = f.postgres.target.database.slice(0, 20);
+  const journalPath = join(f.layout.run, 'reset-operation.json');
+  await writeFile(journalPath, JSON.stringify({
+    database: f.postgres.target.database,
+    archive: `${dbPrefix}_archive_01234567`,
+    failed: `${dbPrefix}_failed_01234567`,
+    originalOid: String(identity!.oid),
+    wasLoaded: false,
+    wasRunning: false,
+    botRuntimeStage: stageName,
+    originals: f.originals,
+  }), { mode: 0o600 });
+
+  await recoverPendingReset(f.context);
+
+  assert.equal((await stat(join(f.layout.root, 'bot-runtime'))).mode & 0o777, 0o700);
+  assert.equal(await readFile(join(f.layout.root, 'bot-runtime', 'files', '0'.repeat(64), 'a'.repeat(64)), 'utf8'), 'staged-bot-file');
+  assert.equal(await readFile(join(f.layout.root, 'bot-runtime', 'channel-staging', '1'.repeat(64), 'b'.repeat(64)), 'utf8'), 'staged-channel-file');
+  await assert.rejects(stat(stageDir));
+  await assert.rejects(stat(journalPath));
   assert.deepEqual(await protectedFiles(f.layout), f.originals);
 });

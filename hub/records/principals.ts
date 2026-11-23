@@ -7,7 +7,7 @@ import {retireReadScope} from './read-scope.ts';
 // by the client it authorized; a token issued through the authorization names its client.
 // Model 38 (R01 R[12], decision 136 ⑫): every issuance, use and revocation also appends a token_issuance record in the
 // same transaction as the row change (token-issuance.ts); the rows remain the working state and the earlier history.
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { MemberExternalIdentityAudit } from '../../contracts/src/resources.ts';
 import { TokenActionSchema, isPermissionRole, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
@@ -66,10 +66,17 @@ function invitationCode(): string {
 
 type ExternalIdentityAuditBody = ReturnType<typeof MemberExternalIdentityAudit.parse>;
 
-/** Records a hashed bind or unbind audit event without leaking plaintext external issuer/subject values. */
+/** Derives a keyed SHA-256 HMAC hex digest for external-identity audit fields. */
+export function externalIdentityAuditDigest(auditKey: Uint8Array, value: string): string {
+  if (auditKey.byteLength !== 32) throw new TypeError('external identity audit key must be 32 bytes');
+  return createHmac('sha256', auditKey).update(value).digest('hex');
+}
+
+/** Records a keyed-HMAC bind or unbind audit event without leaking plaintext external issuer/subject values. */
 export async function appendExternalIdentityAudit(
   store: Pick<RecordStore, 'put'>,
   input: {
+    auditKey: Uint8Array;
     action: ExternalIdentityAuditBody['action'];
     by: string;
     member: string;
@@ -85,8 +92,8 @@ export async function appendExternalIdentityAudit(
     action: input.action,
     by: input.by,
     member: input.member,
-    issuer: sha256Hex(input.issuer),
-    subject: sha256Hex(input.subject),
+    issuer: externalIdentityAuditDigest(input.auditKey, input.issuer),
+    subject: externalIdentityAuditDigest(input.auditKey, input.subject),
     at: input.at,
     ...(input.reason === undefined ? {} : { reason: input.reason }),
   });
@@ -164,12 +171,14 @@ export class PgPrincipals implements Principals {
   readonly #db: Database;
   readonly #now: () => Date;
   readonly #store: Pick<RecordStore, 'put'>;
+  readonly #auditKey: Uint8Array;
 
   /** `store` is the kit's record store; without one, a store on the same database writes the token_issuance records. */
-  constructor(db: Database, now: () => Date, store?: Pick<RecordStore, 'put'>) {
+  constructor(db: Database, now: () => Date, store?: Pick<RecordStore, 'put'>, auditKey?: Uint8Array) {
     this.#db = db;
     this.#now = now;
     this.#store = store ?? createRecordStore(db, { maxRecordBytes: TOKEN_RECORD_BYTES, now });
+    this.#auditKey = auditKey ?? randomBytes(32);
   }
 
   async bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }): Promise<{ user: User; token: IssuedToken }> {
@@ -294,6 +303,7 @@ export class PgPrincipals implements Principals {
           await appendExternalIdentityAudit(
             this.#store,
             {
+              auditKey: this.#auditKey,
               action: 'unbind',
               by: by.id,
               member: userId,
@@ -363,6 +373,7 @@ export class PgPrincipals implements Principals {
         await appendExternalIdentityAudit(
           this.#store,
           {
+            auditKey: this.#auditKey,
             action: 'bind',
             by: by.id,
             member: by.id,
@@ -408,6 +419,7 @@ export class PgPrincipals implements Principals {
         await appendExternalIdentityAudit(
           this.#store,
           {
+            auditKey: this.#auditKey,
             action: 'unbind',
             by: by.id,
             member: userId,

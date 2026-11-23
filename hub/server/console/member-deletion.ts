@@ -3,6 +3,7 @@ import {deletionCheck,deletionRetryCommand,DELETION_EFFECT_GROUPS,handoverLines}
 import {RecordsError} from '../../records/api.ts';
 import type {MemberDeletionBody} from '../../../contracts/src/spaces.ts';
 import type { PageContext } from './context.ts';
+import { size } from './format.ts';
 import {html,definitions,code,type Html} from './html.ts';
 import {dialog,technical,actionLink,tooltip} from './presentation.ts';
 export const deletionDialogId='delete-member-confirm';
@@ -12,7 +13,7 @@ function manifestSummary(manifest:string,c:MemberDeletionBody['counts']):Html{
 export async function memberDeletionDialog(ctx:PageContext,member:string):Promise<Html>{
  try{
   const check=await deletionCheck(ctx.deps.records,ctx.principal,member),c=check.preview.scope_counts;
-  const categories=[['知识',c.knowledge],['记忆',c.memory],['原文',c.originals],['来源确认',c.attributions],['归档的原文',c.archived_originals]];
+  const categories=[['知识',c.knowledge],['记忆',c.memory],['原文',c.originals],['来源确认',c.attributions],['归档的原文',c.archived_originals],['机器人私聊附件',`${check.preview.bot_files.count} 份（${size(check.preview.bot_files.bytes)}）`]];
   const handover=check.preview.handover,to=handover?.to?await ctx.userName(handover.to):null,lines=handoverLines(check.preview);
   const transfer=html`<section class="ch-section" data-deletion-handover><h3>${tooltip('转给管理员的私人工作流与技能','按版本计数；原清单、文件和检查报告原样追加到管理员的私人空间，分享不随之转移。')}</h3><p>${to?html`接收人：${to}（执行删除的管理员）`:handover?'不转移':'未记录'}</p>${lines.length?html`<ul class="ch-feed">${lines.map(line=>html`<li>${line}</li>`)}</ul>`:html`<p class="ch-meta">该成员没有私人工作流或技能。</p>`}</section>`;
   const effects=html`<div data-deletion-effects>${DELETION_EFFECT_GROUPS.map(group=>html`<section class="ch-section"><h3>${group.title}</h3><ul class="ch-feed">${group.items.map(item=>html`<li>${item}</li>`)}</ul></section>`)}</div>`;

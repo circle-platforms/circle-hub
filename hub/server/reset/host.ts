@@ -1,7 +1,7 @@
 import { archiveResetDatabase, createResetDatabase } from '../../platform/api.ts';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { migrateRecords, FileVault } from '../../records/api.ts';
 import { VariableName } from '../../../contracts/src/variables.ts';
 import { agentFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from '../../platform/api.ts';
@@ -143,7 +143,7 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
       await session.query(`ALTER DATABASE ${quoteIdentifier(name)} ALLOW_CONNECTIONS false`);
       await session.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()', [name]);
     };
-    const save = async () => writeFileAtomic(journal, JSON.stringify({ database, archive, failed, wasLoaded, wasRunning, archived, created, backup: backup?.directory, request, originalOid, originals }), 0o600);
+    const save = async () => writeFileAtomic(journal, JSON.stringify({ database, archive, failed, wasLoaded, wasRunning, archived, created, backup: backup?.directory, botRuntimeStage: botRuntimeStage ? basename(botRuntimeStage) : undefined, request, originalOid, originals }), 0o600);
     const buildReport = (): CountedResetReport => {
       if (!observedTally) throw new Error('恢复后的记录数量尚未观测，不能生成完成报告');
       const before = state ? resetRecordTally(state.records, new Set(state.selection.cleared)) : undefined;
