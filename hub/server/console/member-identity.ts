@@ -1,12 +1,16 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { AccessError, ConflictError } from '../../records/api.ts';
 import { cookiesOf, readBody, sendText, setCommonHeaders } from '../http.ts';
-import { issuerOf } from '../oauth.ts';
+import { issuerOf, peerOf } from '../oauth.ts';
 import { callBot, identityIssuer, readIdentity } from '../personal-bot.ts';
 import { principalOfConsoleSession, type ConsoleOptions } from './console-http.ts';
 import { cookie, safeNext, SECURE_SESSION_COOKIE, SESSION_COOKIE, type ConsoleSession } from './session.ts';
 
 const callback = '/console/identity/callback';
+const STATES_PER_PEER = 20;
+const MAX_PENDING_STATES = 1000;
+const STATE_TTL_MS = 300_000;
 
 type Challenge = {
   session: string | null;
@@ -14,6 +18,7 @@ type Challenge = {
   issuer: string;
   origin: string;
   next: string;
+  peer: string;
   expires: number;
 };
 
@@ -23,9 +28,12 @@ export class IdentityChallenges {
   issue(input: Omit<Challenge, 'expires'>): string | null {
     const now = Date.now();
     for (const [id, item] of this.states) if (item.expires <= now) this.states.delete(id);
-    if (this.states.size >= 1000) return null;
+    const samePeer: string[] = [];
+    for (const [id, item] of this.states) if (item.peer === input.peer) samePeer.push(id);
+    while (samePeer.length >= STATES_PER_PEER) this.states.delete(samePeer.shift()!);
+    if (this.states.size >= MAX_PENDING_STATES) return null;
     const state = randomBytes(32).toString('base64url');
-    this.states.set(state, { ...input, expires: now + 300000 });
+    this.states.set(state, { ...input, expires: now + STATE_TTL_MS });
     return state;
   }
 
@@ -44,9 +52,9 @@ export async function handleIdentity(
   session: ConsoleSession | null,
 ): Promise<void> {
   const { deps, identityChallenges: states } = options;
-  const unavailable = (status = 403) => {
+  const unavailable = (status = 403, message = '扫码身份不可用。请使用成员账号登录。') => {
     req.resume();
-    return sendText(res, status, '扫码身份不可用。请使用成员账号登录。');
+    return sendText(res, status, message);
   };
   const secure = options.secureRequest(req);
   const origin = issuerOf(req, secure);
@@ -56,7 +64,7 @@ export async function handleIdentity(
   const profile = await readIdentity(deps.records.vault);
   if (!profile) return unavailable(404);
   const issuer = identityIssuer(profile.tenant);
-  const cookieName = secure ? '__Secure-circle_identity' : 'circle_identity';
+  const cookieName = secure ? '__Secure-hub_identity' : 'hub_identity';
   const redirect = (to: string, values: string[]) => {
     setCommonHeaders(res);
     res.writeHead(303, { location: to, 'set-cookie': values });
@@ -87,15 +95,26 @@ export async function handleIdentity(
       if (!actor || actor.id !== issued.owner) return unavailable();
       try {
         await deps.records.principals.bindExternalIdentity(actor, issuer, subject);
-      } catch {
-        return unavailable();
+      } catch (error) {
+        if (error instanceof ConflictError || error instanceof AccessError) {
+          return unavailable(403);
+        }
+        options.log(`扫码身份绑定失败（成员 ${actor.id}）：${error instanceof Error ? error.message : String(error)}`);
+        return unavailable(503, '服务暂时不可用，请稍后重试');
       }
       return redirect('/console/settings', [clear]);
     }
-    const member = await deps.records.principals.externalMember(issuer, subject);
-    if (!member) return unavailable();
-    const revision = await deps.records.principals.passwordState(member.id);
-    const login = await deps.records.principals.openConsoleSession(member.id, revision.revision);
+    let member;
+    let login;
+    try {
+      member = await deps.records.principals.externalMember(issuer, subject);
+      if (!member) return unavailable();
+      const revision = await deps.records.principals.passwordState(member.id);
+      login = await deps.records.principals.openConsoleSession(member.id, revision.revision);
+    } catch (error) {
+      options.log(`扫码身份查询失败：${error instanceof Error ? error.message : String(error)}`);
+      return unavailable(503, '服务暂时不可用，请稍后重试');
+    }
     if (!login) return unavailable();
     const signed = options.sessions.open(login.token, secure);
     return redirect(issued.next, [
@@ -118,6 +137,7 @@ export async function handleIdentity(
     issuer,
     origin,
     owner,
+    peer: peerOf(req),
     session: owner ? session!.id : null,
     next: safeNext(url.searchParams.get('next')),
   });
