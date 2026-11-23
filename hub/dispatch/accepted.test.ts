@@ -8,6 +8,8 @@ import { setup } from './testing/context.ts';
 import { setupJournal } from './testing/journal.ts';
 import { acceptedDispatch, MAX_NOTE_TEXT, MAX_NOTES, runnerNote } from './accepted.ts';
 import { definition } from './testing/definition.ts';
+import { addSyntheticExecutor } from './testing/credentials.ts';
+import { refusalRankOf } from './service.ts';
 import { readRunJobs } from './read-runs.ts';
 import { canUseEnvironment, newId, type ActionBody, type Principal } from '../records/api.ts';
 import type { JobStatus } from './service.ts';
@@ -46,6 +48,74 @@ test('without an enabled administrator, or when the release does not hold, the H
   assert.equal(held.started, false); assert.match(held.reason ?? '', /放行条件里有/);
   assert.match(held.reason ?? '', /核验结果没有未消除错误/); assert.doesNotMatch(held.reason ?? '', /circle-hub|job dispatch|已记下|原样重交/);
   assert.equal(c.calls.includes('send_blob'), false);
+});
+
+test('when every executor refuses, the runner is told the conditions of the executor the run was verified for, not of the first one registered', async (t) => {
+  const c = await setup(); t.after(() => c.close());
+  // The run was verified by version 1.1.0 of the workflow's function, for the test environment whose manifest it binds.
+  const fresh = 'synthetic-workflow.sheet_verified@1.1.0', old = 'synthetic-workflow.sheet_verified@1.0.0';
+  c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].warrant.id = fresh;
+  const base = c.executor.definition;
+  // elsewhere: names the right function but declares another test environment. behind: the run's own environment, still naming the older version.
+  const elsewhere = { ...base, target: 'synthetic-other-bed', proof: { ...base.proof, warrant_id: fresh } };
+  const behind = { ...base, proof: { ...base.proof, warrant_id: old } };
+  const second = await addSyntheticExecutor(c.kit, c.registry, c.admin, behind, 'synthetic-second-secret');
+  // Whichever of the two is registered first, the answer comes from the one that is behind: both orders are tried.
+  for (const [first, own] of [[c.executor.id, second.id], [second.id, c.executor.id]] as const) {
+    await c.registry.update(c.admin, first, elsewhere);
+    await c.registry.update(c.admin, own, behind);
+    const refused = await c.service.dispatchAccepted(c.run);
+    assert.equal(refused.started, false, JSON.stringify(refused));
+    assert.equal(refused.executor, own, 'the executor of the run\'s own test environment');
+    assert.match(refused.reason ?? '', /放行条件里有 1 条错误/);
+    assert.match(refused.reason ?? '', /这次核验用的核验函数是 synthetic-workflow\.sheet_verified@1\.1\.0，执行器指定的是更早的版本/);
+    assert.match(refused.reason ?? '', /请管理员把这个测试环境的执行器更新到这次核验所用的版本/);
+    assert.doesNotMatch(refused.reason ?? '', /核验目标与清单等于执行器声明|先确认预订的是哪个测试环境|circle-hub|1\.0\.0/);
+    // Two that are both behind and declare the same environment: the one whose manifest the run binds speaks.
+    await c.registry.update(c.admin, first, { ...behind, manifest_sha256: 'e'.repeat(64) });
+    assert.equal((await c.service.dispatchAccepted(c.run)).executor, own, 'the manifest the run binds');
+    // One that holds the run's identity and refuses for a reason of its own speaks before one that is only behind.
+    await c.registry.update(c.admin, first, behind);
+    await c.registry.update(c.admin, own, { ...base, proof: { ...base.proof, warrant_id: fresh } });
+    c.detail.run.build = 'synthetic-other-build';
+    const mine = await c.service.dispatchAccepted(c.run);
+    assert.equal(mine.executor, own, 'the identity held');
+    assert.match(mine.reason ?? '', /核验构建等于运行锁定构建/);
+    assert.doesNotMatch(mine.reason ?? '', /更早的版本/);
+    delete c.detail.run.build;
+  }
+  assert.equal(c.calls.includes('send_blob'), false);
+  // With no executor of the run's own environment left, the identity refusal is what there is to say.
+  await c.registry.update(c.admin, c.executor.id, elsewhere);
+  await c.registry.update(c.admin, second.id, elsewhere);
+  const nowhere = await c.service.dispatchAccepted(c.run);
+  assert.match(nowhere.reason ?? '', /这次核验的是：测试环境 synthetic-bed/);
+});
+
+test('an administrator who reads a member\'s refused run gets the administrator\'s wording, the member gets which side is behind', async (t) => {
+  const c = await setup(); t.after(() => c.close());
+  const fresh = 'synthetic-workflow.sheet_verified@1.1.0', old = 'synthetic-workflow.sheet_verified@1.0.0';
+  c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].warrant.id = fresh;
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, proof: { ...c.executor.definition.proof, warrant_id: old } });
+  const [member] = await acceptedDispatch(c.kit, c.service, c.run, true, undefined, c.owner);
+  assert.equal(member.outcome, 'not_dispatched');
+  assert.match(member.text, /这次核验所用的工作流版本和执行器指定的不一致/);
+  assert.match(member.text, /请管理员把这个测试环境的执行器更新到这次核验所用的版本；更新后再发起上机验证，自动化用例不用改/);
+  assert.doesNotMatch(JSON.stringify(member), /circle-hub|exe_|1\.0\.0/);
+  const [admin] = await acceptedDispatch(c.kit, c.service, c.run, true, undefined, c.admin);
+  assert.equal(admin.executor, c.executor.id);
+  assert.match(admin.text, new RegExp(`执行器指定的核验函数是 ${old.replaceAll('.', '\\.')}，这次核验用的是 ${fresh.replaceAll('.', '\\.')}`));
+  assert.match(admin.text, new RegExp(`circle-hub executor update ${c.executor.id} <定义文件> 把 /proof/warrant_id 改成 ${fresh.replaceAll('.', '\\.')}`));
+  assert.equal(c.calls.includes('send_blob'), false);
+});
+
+test('the nearest refusing executor: the identity held, then not judged, then failed; within each a bound manifest first', () => {
+  const check = (condition: string, satisfied: boolean | null) => ({ condition, label: condition, satisfied, fields: [] });
+  const held = [check('proof.executor_identity', true), check('proof.build', false)];
+  const behind = [check('proof.claims.warrant_id', false), check('proof.executor_identity', null)];
+  const elsewhere = [check('proof.executor_identity', false)];
+  const thrown = [check('release.execution', null)];
+  assert.deepEqual([held, behind, thrown, elsewhere].flatMap((checks) => [refusalRankOf(checks, true), refusalRankOf(checks, false)]), [0, 1, 2, 3, 2, 3, 4, 5]);
 });
 
 test('a refusal at the final boundary, after the target was reached, is read and never tried again', async (t) => {

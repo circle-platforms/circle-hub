@@ -8,6 +8,7 @@ import { reportOutcome, runStop } from './report-outcome.ts';
 import { REPORT_READ_ATTEMPTS, REPORT_READ_WINDOW_MS, reportPending, reportReadDelay, trustedStatus } from './report-read.ts';
 import { releaseDigest, releaseField, releaseFailure, type ReleaseCheck } from './release-diagnostics.ts';
 import { formatReleaseRefusal } from './refusal-text.ts';
+import { parseReference } from '../refs/api.ts';
 import { BOOKING_NEXT, readConditionFact } from './reasons.ts';
 import type { AdminLogEntry } from '../runs/api.ts';
 import { RETRY_RULES } from './retry-policy.ts';
@@ -128,6 +129,26 @@ export class AlreadyDispatchedError extends Error {
 }
 function releaseChecksOf(explanation: { checks: ReleaseCheck[]; rows: Array<{ applicable: boolean; checks: ReleaseCheck[] }> }): ReleaseCheck[] {
   return [...explanation.checks, ...explanation.rows.filter((row) => row.applicable).flatMap((row) => row.checks)];
+}
+/** Digests of the sources a run binds (`src:` references only). */
+function boundSourceDigests(sources: ReadonlyArray<{ reference: string }> | undefined): Set<string> {
+  const digests = new Set<string>();
+  for (const source of sources ?? []) {
+    try { const ref = parseReference(source.reference); if (ref.scheme === 'src') digests.add(ref.sha256); } catch { /* not a reference: it binds nothing */ }
+  }
+  return digests;
+}
+/**
+ * How near a refusing executor is to a run, lower being nearer. The identity condition decides first: held, the executor
+ * declares the very test environment and manifest the run was verified for; not judged (another condition stopped the
+ * inspection before it, or the inspection threw), nothing is known; failed, the executor declares another one. Then an
+ * executor whose manifest the run binds comes before one whose manifest it does not. dispatchAccepted tells the runner the
+ * conditions of the nearest, so that the executor of the run's own test environment speaks and not whichever was
+ * registered first.
+ */
+export function refusalRankOf(checks: readonly ReleaseCheck[], manifestBound: boolean): number {
+  const identity = checks.find((check) => check.condition === 'proof.executor_identity')?.satisfied;
+  return (identity === true ? 0 : identity === false ? 4 : 2) + (manifestBound ? 0 : 1);
 }
 function unmetReleaseLabels(explanation: { checks: ReleaseCheck[]; rows: Array<{ applicable: boolean; checks: ReleaseCheck[] }> }): string[] {
   return [...new Set(releaseChecksOf(explanation).filter((check) => check.satisfied !== true).map((check) => check.label))];
@@ -437,18 +458,21 @@ export class DispatchService {
     const released: typeof candidates = [];
     let refusalChecks: ReleaseCheck[] | undefined;
     let refusalExecutor: string | undefined;
+    let refusalRank = Number.POSITIVE_INFINITY;
+    // When every candidate refuses, the runner is told the conditions of the nearest (refusalRankOf); the registry order
+    // decides only among equals.
+    const bound = boundSourceDigests(detail.run.sources);
     for (const candidate of candidates) {
+      const manifestBound = typeof candidate.definition.manifest_sha256 === 'string' && bound.has(candidate.definition.manifest_sha256);
       try {
         const explanation = await this.explainRelease(admin, run, candidate.id);
         if (explanation.satisfied) { released.push(candidate); continue; }
-        const checks = releaseChecksOf(explanation);
-        if (refusalChecks === undefined) { refusalChecks = checks; refusalExecutor = candidate.id; }
+        const checks = releaseChecksOf(explanation), rank = refusalRankOf(checks, manifestBound);
+        if (rank < refusalRank) { refusalRank = rank; refusalChecks = checks; refusalExecutor = candidate.id; }
         log('release unmet', `${candidate.id}: ${unmetReleaseLabels(explanation).join('；')}`);
       } catch (error) {
-        if (refusalChecks === undefined) {
-          refusalChecks = releaseFailure(error);
-          refusalExecutor = candidate.id;
-        }
+        const checks = releaseFailure(error), rank = refusalRankOf(checks, manifestBound);
+        if (rank < refusalRank) { refusalRank = rank; refusalChecks = checks; refusalExecutor = candidate.id; }
         log('release error', `${candidate.id}: ${described(error)}`);
       }
     }
