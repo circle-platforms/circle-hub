@@ -4,7 +4,7 @@ import { secretUseLabels } from './secret-use-labels.ts';
 import { parseArgs } from 'node:util';
 import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
-import { ExecutorNames, ExecutorRegistry, ExecutorSource, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
+import { ExecutorNames, ExecutorRegistry, ExecutorSource, registrationMissing, observationHashes, staleWarrant, type DispatchService, type JobStatus } from '../dispatch/api.ts';
 import type { BuildKnowledge } from '../dispatch/api.ts';
 import {VariableInputError,referencesIn} from '../../contracts/src/variables.ts';
 import { isSha256, sha256Hex, VariableError, type Principal, type RecordsKit } from '../records/api.ts';
@@ -16,6 +16,38 @@ import { teamOf } from './cli-team.ts';
 import type { DispatchView } from './api.ts';
 export const EXECUTOR_USAGE = 'add --name=<名字> (<定义文件> | --reference=src:<摘要>) | name <现有执行器编号> <明确名字> | update <执行器> (<定义文件> | --reference=src:<摘要>) | assign|unassign <执行器> (--team=<团队名或ID> | --user=<账户>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
 export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | explain-release --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
+/** The version of a pack that is in use (the highest published and not retired); null when there is none. */
+export interface PackVersionsInUse { latestVersion(packId: string): Promise<{ version: string } | null> }
+/**
+ * One line for an executor whose verification function is not the version of its workflow that is in use, null otherwise.
+ * A workflow version verifies with its own function, so until the executor's definition names it the Hub releases no
+ * device verification of that version on this executor.
+ */
+export function staleWarrantLine(id: string, proof: { package?: unknown; warrant_id?: unknown } | undefined, inUse: string | null | undefined, target?: unknown): string | null {
+  const pack = typeof proof?.package === 'string' ? proof.package : null;
+  const stale = pack === null ? null : staleWarrant(proof?.warrant_id, pack, inUse);
+  if (stale === null) return null;
+  // The test environment comes first: the console shows these lines without executor numbers, and there it is what tells
+  // two executors apart. The identity to name follows the version in use; a version that renamed the check names its own.
+  const where = typeof target === 'string' && target !== '' && !target.includes('${') ? `测试环境 ${target} 的` : '';
+  return `${where}执行器 ${id}：指定的核验函数是 ${stale.named}，工作流 ${pack} 现行的版本是 ${inUse}；${inUse} 核验的结果在这个执行器上不放行上机验证。更新：对这个执行器执行 circle-hub executor update，把定义里的 /proof/warrant_id 改成 ${stale.wanted}（新版本改了检查名时以新版本的为准），并核对定义里随版本变化的其余部分`;
+}
+/**
+ * After a workflow version is published: the enabled executors of that workflow that name another version of its
+ * verification function. Reads source definitions; the test environment is added where the definition resolves.
+ */
+export async function staleExecutorLines(records: RecordsKit, by: Principal, pack: string, inUse: string | null): Promise<string[]> {
+  const lines: string[] = [];
+  const registry = new ExecutorRegistry(records);
+  for (const entry of await registry.sources(by)) {
+    const source = entry.source as { enabled?: unknown; target?: unknown; proof?: { package?: unknown; warrant_id?: unknown } };
+    if (source.enabled !== true || source.proof?.package !== pack || staleWarrantLine(entry.id, source.proof, inUse) === null) continue;
+    let target: unknown = source.target;
+    try { target = (await registry.get(entry.id))?.definition.target ?? target; } catch { /* a variable without a value: the line goes without the test environment */ }
+    lines.push(staleWarrantLine(entry.id, source.proof, inUse, target)!);
+  }
+  return lines;
+}
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
   options: { readSecret?: (label: string) => Promise<string> };
@@ -23,7 +55,7 @@ export interface JobCommandSession {
   err(line: string): void;
   admin(): Promise<Principal>;
   records(): Promise<RecordsKit>;
-  hub(requireVaultKey?: boolean): Promise<{ dispatch: DispatchService | null; records: RecordsKit; knowledge?: BuildKnowledge; deps?: { dispatch?: Pick<DispatchView, 'readiness'> } }>;
+  hub(requireVaultKey?: boolean): Promise<{ dispatch: DispatchService | null; records: RecordsKit; knowledge?: BuildKnowledge; deps?: { dispatch?: Pick<DispatchView, 'readiness'> }; registry?: PackVersionsInUse }>;
 }
 async function service(s: JobCommandSession, requireKey = true): Promise<DispatchService> {
   const hub = await s.hub(requireKey); if (hub.dispatch && hub.knowledge) hub.dispatch.options.knowledge = hub.knowledge; if (!hub.dispatch) throw new Error('作业服务没有可用的租约服务'); return hub.dispatch;
@@ -111,10 +143,16 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
   }
   if (sub === 'list' && !parsed.positionals.length) {
     const entries=await registry.sources(by);
+    // The version of a workflow that is in use, read once per workflow. A read that fails costs the lines about executors left
+    // behind, said once, never the list itself.
+    const inUse=new Map<string,string|null>();let unread=false;
+    const versionInUse=async(pack:string):Promise<string|null>=>{if(!inUse.has(pack)){let version:string|null=null;try{version=(await hub.registry?.latestVersion(pack))?.version??null;}catch{unread=true;}inUse.set(pack,version);}return inUse.get(pack)??null;};
     for(const source of entries){
-      try{const e=await registry.get(source.id);if(e){await executorLine(s,registry,by,e);if(!e.definition.calls.submit.write)s.out(`执行器 ${e.id}：写声明未写；请 executor update 补齐`);}}
+      try{const e=await registry.get(source.id);if(e){await executorLine(s,registry,by,e);if(!e.definition.calls.submit.write)s.out(`执行器 ${e.id}：写声明未写；请 executor update 补齐`);
+        const stale=e.definition.enabled?staleWarrantLine(e.id,e.definition.proof,await versionInUse(e.definition.proof.package),e.definition.target):null;if(stale!==null)s.out(stale);}}
       catch(error){if(!(error instanceof VariableError)&&!(error instanceof VariableInputError))throw error;const names=[...new Set(referencesIn(source.source).filter(ref=>ref.kind==='var').map(ref=>ref.name))];s.out(`执行器编号 ${source.id}；定义摘要 ${source.digest}；启用 ${Number(source.source.enabled)}；具备派发登记 0；解析后摘要 未解析；普通变量 ${names.join('、')} 缺决定或取值不合定义：先 var show <名字> --value 核对并 var set，再重做 executor list`);}
     }
+    if(unread)s.err('注意：没有读到工作流现行的版本，没有核对执行器指定的核验函数是不是现行版本的');
     s.out(`执行器 ${entries.length}`); return 0;
   }
   if (sub === 'disable' && parsed.positionals.length === 1) {

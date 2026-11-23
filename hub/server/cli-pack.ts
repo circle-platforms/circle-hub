@@ -9,6 +9,7 @@ import { packChanges, unruledShapes, parsePackRef, type PackProblem, type Publis
 import { CliError, UsageError } from './errors.ts';
 import { parse, decided } from './cli-arguments.ts';
 import type { Session } from './cli-session.ts';
+import { staleExecutorLines } from './cli-job.ts';
 export const PACK_USAGE =
   'pack install <通用技能@版本> | uninstall <通用技能> | publish <目录> [--stage] [--dry-run] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <工作流> | assign <工作流> --team=<团队名或ID> | unassign <用户> <工作流> | unassign <工作流> --team=<团队名或ID> | retire <发布版本> | activate <产品知识来源> | deactivate <产品知识来源> | list | shapes <工作流>';
 function problemLine(problem: PackProblem): string {
@@ -141,6 +142,14 @@ export async function packCommand(session: Session, args: readonly string[]): Pr
       for (const warning of outcome.report.warnings) session.err(`注意：${problemLine(warning).slice(2)}`);
       if (version.kind === 'product' && !(await hub.registry.isActive(version.id))) session.out(`产品知识来源启用后才生效：circle-hub pack activate ${version.id}`);
       if (version.kind === 'workflow') session.out(`工作流分配给用户后才能用：circle-hub pack assign <用户> ${version.id}`);
+      if (version.kind === 'workflow') {
+        // The publication stands whatever this read does: an executor that still names another version is only pointed out.
+        try {
+          for (const line of await staleExecutorLines(hub.records, admin, version.id, (await hub.registry.latestVersion(version.id))?.version ?? null)) session.out(line);
+        } catch {
+          session.err('注意：没有读到执行器登记或工作流现行的版本，没有核对执行器指定的核验函数是不是现行版本的；用 circle-hub executor list 核对');
+        }
+      }
       if (version.kind === 'system') session.out(`业务系统接入实例化为资源后才读取：circle-hub resource add ${version.id} --name <名字> --environment <环境> --origin <角色>=<地址>`);
       return 0;
     }

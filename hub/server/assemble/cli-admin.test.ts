@@ -33,6 +33,8 @@ import { assembleHub, createAssembly } from './hub.ts';
 import { OPERATOR_TOKEN_VARIABLE, fileOperatorTokens, memoryOperatorTokens, type OperatorTokenStore } from './operator-token.ts';
 import { openCliHarness, type CliHarness, type Deployment, type RunResult } from './test-cli.ts';
 import { LeaseService } from '../../leases/service.ts';
+import { ExecutorRegistry } from '../../dispatch/api.ts';
+import { definition as executorDefinition } from '../../dispatch/testing/definition.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { AGILE_PACK, PRODUCT_PACK, REVIEW_PACK, SITE_PACK, reviewPack, syncSiteFiles, writeTestPacks } from './test-packs.ts';
 
@@ -1014,6 +1016,36 @@ describe('pack publish --dry-run', () => {
 });
 
 describe('pack', () => {
+  test('publishing a workflow version names the enabled executors that name another version of its verification function', async () => {
+    const admin = await setup();
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    const base = executorDefinition('http://127.0.0.1:9/mcp');
+    const ids = await withKit(admin, async (kit) => {
+      const by = (await kit.principals.findByName('根管理员'))!;
+      const registry = new ExecutorRegistry(kit);
+      const add = async (warrant: string, enabled = true) => (await registry.add(by, { ...base, enabled, credential: '${secret:DEMO_EXECUTOR_KEY}', proof: { ...base.proof, package: 'demo-check', warrant_id: warrant } })).id;
+      return { behind: await add('demo-check.sheet_verified@0.9.0'), current: await add('demo-check.sheet_verified@1.0.0'), off: await add('demo-check.sheet_verified@0.9.0', false) };
+    });
+    const published = await expectOk(admin, ['pack', 'publish', packs.review]);
+    assert.match(published.text, /已发布 demo-check@1\.0\.0/);
+    assert.ok(published.out.includes(`测试环境 synthetic-bed 的执行器 ${ids.behind}：指定的核验函数是 demo-check.sheet_verified@0.9.0，工作流 demo-check 现行的版本是 1.0.0；1.0.0 核验的结果在这个执行器上不放行上机验证。更新：对这个执行器执行 circle-hub executor update，把定义里的 /proof/warrant_id 改成 demo-check.sheet_verified@1.0.0（新版本改了检查名时以新版本的为准），并核对定义里随版本变化的其余部分`), published.text);
+    assert.ok(!published.text.includes(ids.current) && !published.text.includes(ids.off), 'an executor that names this version, and a disabled one, are not mentioned');
+    // The same publication again changes nothing and still says which executor is behind; another workflow's publication says nothing of it.
+    assert.ok((await expectOk(admin, ['pack', 'publish', packs.review])).text.includes(ids.behind));
+    assert.ok(!(await expectOk(admin, ['pack', 'publish', packs.agile])).text.includes('指定的核验函数'));
+  });
+
+  test('a publication stands when the executors cannot be read: one line says what was not checked', async (t) => {
+    const admin = await setup();
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    t.mock.method(ExecutorRegistry.prototype, 'sources', async () => { throw new Error('synthetic executor registry failure'); });
+    const published = await expectOk(admin, ['pack', 'publish', packs.review]);
+    assert.match(published.text, /已发布 demo-check@1\.0\.0/);
+    assert.match(published.text, /注意：没有读到执行器登记或工作流现行的版本，没有核对执行器指定的核验函数是不是现行版本的；用 circle-hub executor list 核对/);
+    assert.doesNotMatch(published.text, /synthetic executor registry failure/);
+    await withKit(admin, async (kit) => assert.equal((await kit.store.list({ kind: 'pack_version' })).items.length, 1));
+  });
+
   test('publish needs the publish right; then publish, list, assign, activate, unassign and retire', async () => {
     const admin = await setup();
     const userToken = await userWithToken(admin, '甲');

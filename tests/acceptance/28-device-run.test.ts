@@ -8,7 +8,7 @@ import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgre
 import { osIsolationAvailable } from '../../hub/rules/api.ts';
 import { recognize } from '../../hub/refs/api.ts';
 import { sha256Hex, type ActionBody } from '../../hub/records/api.ts';
-import { ExecutorDefinition, readRunJobs, type JobStatus, type DispatchNote } from '../../hub/dispatch/api.ts';
+import { ExecutorDefinition, readRunJobs, staleWarrant, type JobStatus, type DispatchNote } from '../../hub/dispatch/api.ts';
 import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
 import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DOC as BASE_MANIFEST, goodData } from '../../packs/workflow/case-compile/functions/test-support.ts';
@@ -219,6 +219,10 @@ before(async () => {
     probes:{devices:'/beds/0/devices',command_pattern:'^inspect (?:version|interfaces)$',call:{tool:'inspect_seat',arguments:{seat:{$value:'seat_index'},command:{$value:'command'},ticket:{$value:'lease_id'}}},output:'/output',
       seats:MANIFEST_DOC.beds[0].devices.map((device,index)=>({seat:device.name,index,manifest:{device:`/beds/0/devices/${index}`,addresses:'/interfaces',address:''},version:{command:'inspect version',pattern:'^version: (?<value>.+)$'},interfaces:{command:'inspect interfaces',pattern:'^address: (?<value>.+)$'}}))},
     result:{...raw.result,request_id:'/request'},proof:{...raw.proof,package:'case-compile',slot:'workbook',warrant_id:`case-compile.workbook_verified@${CASE_COMPILE_PACK.version}`} });
+  // The dispatches below release only if this identity is the one the engine gives the pack's function, so the reading of it
+  // that the lines about an executor left behind by a new version rest on is checked against the engine's own form here.
+  assert.equal(staleWarrant(configured.proof.warrant_id,'case-compile',CASE_COMPILE_PACK.version),null);
+  assert.deepEqual(staleWarrant(configured.proof.warrant_id,'case-compile','999.0.0'),{named:configured.proof.warrant_id,wanted:'case-compile.workbook_verified@999.0.0'});
   executor = (await addSyntheticExecutor(bed.hub.records,dispatch().registry,bed.hub.admin.principal,configured,'synthetic-dispatch-key')).id;
   await bed.hub.records.authorizations.assignResource(bed.hub.admin.principal,executor,bed.reviewer.principal.id);
 });
