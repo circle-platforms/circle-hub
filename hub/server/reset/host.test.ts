@@ -251,6 +251,16 @@ test('H2: all/config reset without keepConfig cleans bot-runtime files and stagi
 
   // 3. Successful all reset removes bot-runtime/files and bot-runtime/channel-staging while keeping keys/ and vault/.
   const { resetCommand } = await import('./cli.ts');
+  const historyOut: string[] = [];
+  const historyCode = await resetCommand(
+    ['--scope', 'history'],
+    f.context,
+    { cwd: f.layout.root, env: {}, stdout: line => historyOut.push(line), stderr: () => {} },
+  );
+  assert.equal(historyCode, 0);
+  assert.match(historyOut.join('\n'), /保留 <数据目录>\/bot-runtime 下的机器人私聊附件与通道暂存/);
+  assert.ok(!historyOut.join('\n').includes('私聊成员附件'));
+
   const cliOut: string[] = [];
   const cliCode = await resetCommand(
     ['--scope', 'all'],
@@ -258,7 +268,8 @@ test('H2: all/config reset without keepConfig cleans bot-runtime files and stagi
     { cwd: f.layout.root, env: {}, stdout: line => cliOut.push(line), stderr: () => {} },
   );
   assert.equal(cliCode, 0);
-  assert.match(cliOut.join('\n'), /已清理 <数据目录>\/bot-runtime 下的私聊成员附件与通道暂存/);
+  assert.match(cliOut.join('\n'), /已清理 <数据目录>\/bot-runtime 下的机器人私聊附件与通道暂存/);
+  assert.ok(!cliOut.join('\n').includes('私聊成员附件'));
   await assert.rejects(stat(join(f.layout.root, 'bot-runtime', 'files')));
   await assert.rejects(stat(join(f.layout.root, 'bot-runtime', 'channel-staging')));
   assert.deepEqual(await protectedFiles(f.layout), f.originals);
@@ -299,4 +310,170 @@ test('S7: recoverPendingReset restores bot-runtime files and channel-staging fro
   await assert.rejects(stat(stageDir));
   await assert.rejects(stat(journalPath));
   assert.deepEqual(await protectedFiles(f.layout), f.originals);
+});
+
+test('T5-S7: real resetData crash during restart persists botRuntimeStage via host.ts and recoverPendingReset returns bot-runtime attachments', { timeout: 120_000, skip: libpq ? false : LIBPQ_MISSING }, async t => {
+  const f = await fixture(); t.after(() => f.close());
+  const memberHash = '0'.repeat(64);
+  const fileSha = 'a'.repeat(64);
+  const stageSha = 'b'.repeat(64);
+  const filesDir = join(f.layout.root, 'bot-runtime', 'files', memberHash);
+  const stagingDir = join(f.layout.root, 'bot-runtime', 'channel-staging', memberHash);
+  await mkdir(filesDir, { recursive: true, mode: 0o700 });
+  await mkdir(stagingDir, { recursive: true, mode: 0o700 });
+  await writeFile(join(filesDir, fileSha), 'real-reset-staged-bot-file');
+  await writeFile(join(stagingDir, stageSha), 'real-reset-staged-channel-file');
+
+  await assert.rejects(
+    resetData(f.context, { scopes: 'all', keepConfig: false }, {
+      hostTransform(host) {
+        return {
+          ...host,
+          restart: async () => { throw new Error('SyntheticCrashAtRestart'); },
+          rollback: async () => {},
+        };
+      },
+    }),
+    (error: unknown) => error instanceof ResetFailure && error.stage === 'restart',
+  );
+
+  const journalPath = join(f.layout.run, 'reset-operation.json');
+  const journal = JSON.parse(await readFile(journalPath, 'utf8')) as { botRuntimeStage?: string };
+  await assert.rejects(stat(join(filesDir, fileSha)), { code: 'ENOENT' });
+
+  await recoverPendingReset(f.context);
+
+  assert.equal(await readFile(join(filesDir, fileSha), 'utf8'), 'real-reset-staged-bot-file');
+  assert.equal(await readFile(join(stagingDir, stageSha), 'utf8'), 'real-reset-staged-channel-file');
+  assert.match(String(journal.botRuntimeStage), /^reset-bot-[0-9a-f-]+$/);
+  await assert.rejects(stat(join(f.layout.setAside, journal.botRuntimeStage!)), { code: 'ENOENT' });
+  await assert.rejects(stat(journalPath), { code: 'ENOENT' });
+  const [users] = await withSession(f.postgres.connector, f.postgres.target.database, session => session.query('SELECT count(*)::int AS n FROM users'));
+  assert.equal(users!.n, 1);
+  assert.deepEqual(await protectedFiles(f.layout), f.originals);
+});
+
+test('F6: recoverPendingReset merges staged bot-runtime directories into recreated non-empty directories and deduplicates identical files', { timeout: 120_000 }, async t => {
+  const f = await fixture(); t.after(() => f.close());
+  const stageName = 'reset-bot-11111111-2222-4333-8444-555555555555';
+  const stageDir = join(f.layout.setAside, stageName);
+  const memberA = 'a'.repeat(64);
+  const memberB = 'b'.repeat(64);
+  const fileOnlyStaged = '1'.repeat(64);
+  const fileShared = '2'.repeat(64);
+  const fileOnlyRecreated = '3'.repeat(64);
+  const fileOtherMember = '4'.repeat(64);
+  const stageFileStaged = '5'.repeat(64);
+  const stageFileRecreated = '6'.repeat(64);
+
+  await mkdir(join(stageDir, 'files', memberA), { recursive: true, mode: 0o700 });
+  await mkdir(join(stageDir, 'files', memberB), { recursive: true, mode: 0o700 });
+  await mkdir(join(stageDir, 'channel-staging', memberA), { recursive: true, mode: 0o700 });
+  await writeFile(join(stageDir, 'files', memberA, fileOnlyStaged), 'from-stage-only');
+  await writeFile(join(stageDir, 'files', memberA, fileShared), 'identical-shared-bytes');
+  await writeFile(join(stageDir, 'files', memberB, fileOtherMember), 'other-member-staged');
+  await writeFile(join(stageDir, 'channel-staging', memberA, stageFileStaged), 'staged-channel-entry');
+
+  // Simulate Hub restarted after crash and recreated non-empty bot-runtime/files & channel-staging.
+  await mkdir(join(f.layout.root, 'bot-runtime', 'files', memberA), { recursive: true, mode: 0o700 });
+  await mkdir(join(f.layout.root, 'bot-runtime', 'channel-staging', memberA), { recursive: true, mode: 0o700 });
+  await writeFile(join(f.layout.root, 'bot-runtime', 'files', memberA, fileShared), 'identical-shared-bytes');
+  await writeFile(join(f.layout.root, 'bot-runtime', 'files', memberA, fileOnlyRecreated), 'from-recreated-only');
+  await writeFile(join(f.layout.root, 'bot-runtime', 'channel-staging', memberA, stageFileRecreated), 'recreated-channel-entry');
+
+  const [identity] = await withSession(f.postgres.connector, 'postgres', session =>
+    session.query('SELECT oid::text FROM pg_database WHERE datname=$1', [f.postgres.target.database]),
+  );
+  const dbPrefix = f.postgres.target.database.slice(0, 20);
+  const journalPath = join(f.layout.run, 'reset-operation.json');
+  await writeFile(journalPath, JSON.stringify({
+    database: f.postgres.target.database,
+    archive: `${dbPrefix}_archive_11111111`,
+    failed: `${dbPrefix}_failed_11111111`,
+    originalOid: String(identity!.oid),
+    wasLoaded: false,
+    wasRunning: false,
+    botRuntimeStage: stageName,
+    originals: f.originals,
+  }), { mode: 0o600 });
+
+  await recoverPendingReset(f.context);
+
+  assert.equal(await readFile(join(f.layout.root, 'bot-runtime', 'files', memberA, fileOnlyStaged), 'utf8'), 'from-stage-only');
+  assert.equal(await readFile(join(f.layout.root, 'bot-runtime', 'files', memberA, fileShared), 'utf8'), 'identical-shared-bytes');
+  assert.equal(await readFile(join(f.layout.root, 'bot-runtime', 'files', memberA, fileOnlyRecreated), 'utf8'), 'from-recreated-only');
+  assert.equal(await readFile(join(f.layout.root, 'bot-runtime', 'files', memberB, fileOtherMember), 'utf8'), 'other-member-staged');
+  assert.equal(await readFile(join(f.layout.root, 'bot-runtime', 'channel-staging', memberA, stageFileStaged), 'utf8'), 'staged-channel-entry');
+  assert.equal(await readFile(join(f.layout.root, 'bot-runtime', 'channel-staging', memberA, stageFileRecreated), 'utf8'), 'recreated-channel-entry');
+  await assert.rejects(stat(stageDir), { code: 'ENOENT' });
+  await assert.rejects(stat(journalPath), { code: 'ENOENT' });
+});
+
+test('F6: recoverPendingReset throws explicit conflict error naming path when bot-runtime cannot be merged safely', { timeout: 120_000 }, async t => {
+  const f = await fixture(); t.after(() => f.close());
+  const stageName = 'reset-bot-22222222-3333-4444-8555-666666666666';
+  const stageDir = join(f.layout.setAside, stageName);
+  const memberA = 'c'.repeat(64);
+  const collidingFile = 'd'.repeat(64);
+  await mkdir(join(stageDir, 'files', memberA), { recursive: true, mode: 0o700 });
+  await writeFile(join(stageDir, 'files', memberA, collidingFile), 'staged-bytes-alpha');
+
+  const [identity] = await withSession(f.postgres.connector, 'postgres', session =>
+    session.query('SELECT oid::text FROM pg_database WHERE datname=$1', [f.postgres.target.database]),
+  );
+  const dbPrefix = f.postgres.target.database.slice(0, 20);
+  const journalPath = join(f.layout.run, 'reset-operation.json');
+  await writeFile(journalPath, JSON.stringify({
+    database: f.postgres.target.database,
+    archive: `${dbPrefix}_archive_22222222`,
+    failed: `${dbPrefix}_failed_22222222`,
+    originalOid: String(identity!.oid),
+    wasLoaded: false,
+    wasRunning: false,
+    botRuntimeStage: stageName,
+    originals: f.originals,
+  }), { mode: 0o600 });
+
+  // 1. Non-directory file at bot-runtime/files.
+  const botRuntimeFilesPath = join(f.layout.root, 'bot-runtime', 'files');
+  await mkdir(join(f.layout.root, 'bot-runtime'), { recursive: true, mode: 0o700 });
+  await writeFile(botRuntimeFilesPath, 'blocking-non-directory-file');
+  await assert.rejects(
+    recoverPendingReset(f.context),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /^上次重建的原库或原文件恢复冲突（/);
+      assert.ok(error.message.includes(botRuntimeFilesPath), error.message);
+      assert.match(error.message, /请核对后清理或移走冲突目录再重试，全部归档和恢复记录已保留$/);
+      return true;
+    },
+  );
+  await stat(stageDir);
+  await stat(journalPath);
+
+  // 2. Replace with directory containing a colliding file whose bytes differ.
+  await rm(botRuntimeFilesPath, { force: true });
+  const conflictingFilePath = join(botRuntimeFilesPath, memberA, collidingFile);
+  await mkdir(join(botRuntimeFilesPath, memberA), { recursive: true, mode: 0o700 });
+  await writeFile(conflictingFilePath, 'different-recreated-bytes');
+  await assert.rejects(
+    recoverPendingReset(f.context),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /^上次重建的原库或原文件恢复冲突（/);
+      assert.ok(error.message.includes(conflictingFilePath), error.message);
+      assert.match(error.message, /同名文件内容不一致/);
+      assert.match(error.message, /请核对后清理或移走冲突目录再重试，全部归档和恢复记录已保留$/);
+      return true;
+    },
+  );
+  await stat(stageDir);
+  await stat(journalPath);
+
+  // 3. Once the conflicting file is removed, retrying recoverPendingReset completes cleanly.
+  await rm(conflictingFilePath, { force: true });
+  await recoverPendingReset(f.context);
+  assert.equal(await readFile(conflictingFilePath, 'utf8'), 'staged-bytes-alpha');
+  await assert.rejects(stat(stageDir), { code: 'ENOENT' });
+  await assert.rejects(stat(journalPath), { code: 'ENOENT' });
 });
