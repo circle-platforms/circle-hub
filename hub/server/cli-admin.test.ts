@@ -120,12 +120,12 @@ test('D1 + H1 CLI & Console: bot-secret-change@1 audits, reviewer removal, and a
   assert.deepEqual(
     secretChanges.map((entry) => [entry.slot, entry.action, entry.by]),
     [
-      ['personal-bot.model', 'set', hub.admin.principal.id],
-      ['personal-bot.identity', 'set', hub.admin.principal.id],
-      ['personal-bot.channel', 'set', hub.admin.principal.id],
-      ['personal-bot.model', 'remove', hub.admin.principal.id],
-      ['personal-bot.identity', 'remove', hub.admin.principal.id],
-      ['personal-bot.channel', 'remove', hub.admin.principal.id],
+      ['model', 'set', hub.admin.principal.id],
+      ['identity', 'set', hub.admin.principal.id],
+      ['channel', 'set', hub.admin.principal.id],
+      ['model', 'remove', hub.admin.principal.id],
+      ['identity', 'remove', hub.admin.principal.id],
+      ['channel', 'remove', hub.admin.principal.id],
     ],
   );
   const rawAuditJson = JSON.stringify(secretChanges);

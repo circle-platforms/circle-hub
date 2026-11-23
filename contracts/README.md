@@ -86,6 +86,8 @@ a tool. Generated skill mirrors/manifests are html-format/mindmap-format 1.0.7 a
 no skill business code changes. The phase-2 temporary personal-ground code remains registered for old receipts, while
 phase 3 uses the complete current-reader rule.
 
+Model 89 aligns the bot and external-identity contracts without changing the six MCP tools or introducing any new record kind. It renames `bot_model_protocol`'s axis label to `机器人模型协议` (removing `个人助手` wording), adds five generated vocabulary axes (`external_identity_action` and `external_identity_unbind_reason` under `R01`, `bot_secret_action` and `bot_secret_slot` under `D01`, and `bot_message_role` under `D06`) so `member-external-identity@1`, `bot-secret-change@1`, and bot message payloads derive their enums from `generated/vocabulary.ts`, and updates/expands `formatProposals.protocolCodes` to 11 `BOT_*` codes (`BOT_DISABLED`, `BOT_UNAUTHENTICATED`, `BOT_CLIENT_FORBIDDEN`, `BOT_NOT_FOUND`, `BOT_VERSION_INVALID`, `BOT_VERSION_MISMATCH`, `BOT_QUOTA_EXCEEDED`, `BOT_UPSTREAM_UNAVAILABLE`, `BOT_REQUEST_TIMEOUT`, `BOT_CONFLICT`, `BOT_INVALID_REQUEST`) using `机器人` terminology, single-condition `when` clauses, and HTTP-aligned `callErrorCategory` values.
+
 ## Editing `contracts/codes.json`
 
 One entry per core interpreter result: `{ "code": "core.<interpreter>.<name>", "interpreter": "<interpreter>", "when": "…", "fix": "…" }`.

@@ -4,7 +4,7 @@ import { request as unixRequest, type IncomingMessage, type ServerResponse } fro
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { ProtocolCode } from '../../contracts/generated/protocol-codes.ts';
-import { ActionKindSchema, BotModelProtocolSchema, EffectOutcomeSchema, ProvenanceTypeSchema } from '../../contracts/generated/vocabulary.ts';
+import { ActionKindSchema, BotMessageRoleSchema, BotModelProtocolSchema, EffectOutcomeSchema, ProvenanceTypeSchema } from '../../contracts/generated/vocabulary.ts';
 import { MemberBotInbound, MemberNotificationIntent, MemberNotificationReceipt } from '../../contracts/src/resources.ts';
 import type { Principal, Vault } from '../records/api.ts';
 import { authenticateAccessOnly, requireDirectAccessBearer } from './access-auth.ts';
@@ -406,7 +406,7 @@ const deliverySchema = z.strictObject({
   owner: z.string().min(1),
   subject: word,
   receipt: z.uuid(),
-  role: z.enum(['user', 'assistant']),
+  role: BotMessageRoleSchema,
   text: z.string().max(64000),
   file: fileDescriptor.optional(),
 });

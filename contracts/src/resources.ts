@@ -16,7 +16,7 @@ import {isIP} from 'node:net';
 import {X509Certificate} from 'node:crypto';
 import { SecretReference, VariableUse, referencesIn, resolve as resolveExecutorReferences, VariableInputError } from './variables.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../generated/protocol.ts';
-import { AcceptanceSchema,EffectMarkSchema,EffectClassSchema,EffectOutcomeSchema,DynamicTerminalSchema,RetrySafetySchema,SigningSchema,WriteInteractionSchema,ActionKindSchema, ActionResultSchema, EnvironmentSchema, DigestRuleSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
+import { AcceptanceSchema,BotSecretActionSchema,BotSecretSlotSchema,EffectMarkSchema,EffectClassSchema,EffectOutcomeSchema,DynamicTerminalSchema,ExternalIdentityActionSchema,ExternalIdentityUnbindReasonSchema,RetrySafetySchema,SigningSchema,WriteInteractionSchema,ActionKindSchema, ActionResultSchema, EnvironmentSchema, DigestRuleSchema, REFERENCE_SCHEME } from '../generated/vocabulary.ts';
 import { Coverage, idOf, IsoTime, JsonPointer, PackId, PackVersion, RunId, Sha256, UserId, Versioned } from './common.ts';
 import { PackFunctionRef } from './product.ts';
 import { ExternalObjectId } from './reference.ts';
@@ -1320,13 +1320,13 @@ export const MemberBotInbound = z.strictObject({
 /** Audit record for external identity binding or unbinding; issuer and subject are SHA-256 digests. */
 export const MemberExternalIdentityAudit = z.strictObject({
   schema: z.literal('member-external-identity@1'),
-  action: z.enum(['bind', 'unbind']),
+  action: ExternalIdentityActionSchema,
   by: UserId,
   member: UserId,
   issuer: Sha256,
   subject: Sha256,
   at: IsoTime,
-  reason: z.enum(['manual', 'disabled', 'deleted']).optional(),
+  reason: ExternalIdentityUnbindReasonSchema.optional(),
 }).superRefine((v, ctx) => {
   if (v.action === 'unbind' && v.reason === undefined) {
     ctx.addIssue({ code: 'custom', path: ['reason'], message: 'Unbind audit requires reason' });
@@ -1339,8 +1339,8 @@ export const MemberExternalIdentityAudit = z.strictObject({
 /** Audit record for admin secret configuration changes without ever recording secret values. */
 export const BotSecretChangeAudit = z.strictObject({
   schema: z.literal('bot-secret-change@1'),
-  action: z.enum(['set', 'remove']),
-  slot: z.enum(['personal-bot.model', 'personal-bot.channel', 'personal-bot.identity']),
+  action: BotSecretActionSchema,
+  slot: BotSecretSlotSchema,
   by: UserId,
   at: IsoTime,
 });

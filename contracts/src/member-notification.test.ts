@@ -63,6 +63,7 @@ test('private notification declarations bind exactly one checked member and targ
   assert.equal(MemberNotificationIntent.safeParse({ ...base, size: 6 }).success, false);
   assert.equal(MemberNotificationIntent.safeParse({ ...base, text_sha256: null }).success, false);
   assert.equal(MemberNotificationIntent.safeParse({ ...base, file_sha256: digest3 }).success, false);
+  assert.equal(MemberNotificationIntent.safeParse({ ...base, file_sha256: null, file_size: null, name_sha256: digest4 }).success, false);
   for (const change of [
     { effect_class: 'sync_write' },
     { audience: 'usr_0' + 'c'.repeat(25) },
@@ -89,8 +90,51 @@ test('a platform acknowledgment, a target refusal, and an unresolved delivery re
   assert.ok(MemberNotificationReceipt.safeParse({ ...base, supersedes: digest2 }).success);
   assert.equal(MemberNotificationReceipt.safeParse({ ...base, acknowledgment: null }).success, false);
   assert.equal(MemberNotificationReceipt.safeParse({ ...base, outcome: 'target_rejected' }).success, false);
+  assert.equal(MemberNotificationReceipt.safeParse({ ...base, outcome: 'issued', reached_target: false }).success, false);
+  assert.equal(MemberNotificationReceipt.safeParse({ ...base, outcome: 'issued', reached_target: null }).success, false);
+  assert.equal(
+    MemberNotificationReceipt.safeParse({ ...base, outcome: 'not_dispatched', reached_target: true, acknowledgment: null }).success,
+    false,
+  );
+  assert.equal(
+    MemberNotificationReceipt.safeParse({ ...base, outcome: 'not_dispatched', reached_target: null, acknowledgment: null }).success,
+    false,
+  );
   assert.equal(
     MemberNotificationReceipt.safeParse({ ...base, outcome: 'unknown', reached_target: null, acknowledgment: null }).success,
+    false,
+  );
+  assert.equal(
+    MemberNotificationReceipt.safeParse({
+      ...base,
+      outcome: 'unknown',
+      reached_target: null,
+      acknowledgment: null,
+      missing: ['缺平台确认回执'],
+      next: null,
+    }).success,
+    false,
+  );
+  assert.equal(
+    MemberNotificationReceipt.safeParse({
+      ...base,
+      outcome: 'unknown',
+      reached_target: true,
+      acknowledgment: null,
+      missing: ['缺平台确认回执'],
+      next: '核对目标',
+    }).success,
+    false,
+  );
+  assert.equal(
+    MemberNotificationReceipt.safeParse({
+      ...base,
+      outcome: 'unknown',
+      reached_target: false,
+      acknowledgment: null,
+      missing: ['缺平台确认回执'],
+      next: '核对目标',
+    }).success,
     false,
   );
   assert.equal(
@@ -117,36 +161,43 @@ test('a platform acknowledgment, a target refusal, and an unresolved delivery re
 });
 
 test('bot inbound and audit record contracts enforce required invariants', () => {
-  assert.ok(
+  const inbound = {
+    schema: 'member-bot-inbound@1',
+    kind: 'dispatch',
+    request: uuid,
+    member,
+    issuer: digest,
+    subject: digest2,
+    channel: digest3,
+    platform_id_sha256: digest4,
+    text_sha256: digest,
+    text_size: 4,
+    files: [],
+    at: timestamp,
+  };
+  assert.ok(MemberBotInbound.safeParse(inbound).success);
+  assert.equal(
     MemberBotInbound.safeParse({
-      schema: 'member-bot-inbound@1',
-      kind: 'dispatch',
-      request: uuid,
-      member,
-      issuer: digest,
-      subject: digest2,
-      channel: digest3,
-      platform_id_sha256: digest4,
-      text_sha256: digest,
-      text_size: 4,
-      files: [],
-      at: timestamp,
+      ...inbound,
+      text_sha256: null,
+      text_size: 0,
     }).success,
+    false,
   );
   assert.equal(
     MemberBotInbound.safeParse({
-      schema: 'member-bot-inbound@1',
-      kind: 'dispatch',
-      request: uuid,
-      member,
-      issuer: digest,
-      subject: digest2,
-      channel: digest3,
-      platform_id_sha256: digest4,
-      text_sha256: null,
+      ...inbound,
+      text_sha256: digest,
       text_size: 0,
-      files: [],
-      at: timestamp,
+      files: [{ sha256: digest, size: 1, name_sha256: digest2 }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    MemberBotInbound.safeParse({
+      ...inbound,
+      text_sha256: null,
+      text_size: 5,
     }).success,
     false,
   );
@@ -185,7 +236,18 @@ test('bot inbound and audit record contracts enforce required invariants', () =>
     }).success,
     false,
   );
-  assert.ok(
+  for (const action of ['set', 'start_channel'] as const) {
+    assert.ok(
+      BotSecretChangeAudit.safeParse({
+        schema: 'bot-secret-change@1',
+        action,
+        slot: 'model',
+        by: admin,
+        at: timestamp,
+      }).success,
+    );
+  }
+  assert.equal(
     BotSecretChangeAudit.safeParse({
       schema: 'bot-secret-change@1',
       action: 'set',
@@ -193,5 +255,16 @@ test('bot inbound and audit record contracts enforce required invariants', () =>
       by: admin,
       at: timestamp,
     }).success,
+    false,
+  );
+  assert.equal(
+    BotSecretChangeAudit.safeParse({
+      schema: 'bot-secret-change@1',
+      action: 'rotate',
+      slot: 'model',
+      by: admin,
+      at: timestamp,
+    }).success,
+    false,
   );
 });

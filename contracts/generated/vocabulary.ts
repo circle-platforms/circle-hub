@@ -120,7 +120,12 @@ export const AXES = {
   capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
   reset_scope: { label: '重置范围', owner: 'D04', values: [{ code: 'history', label: '运行历史' }, { code: 'knowledge', label: '知识' }, { code: 'packs', label: '包' }, { code: 'config', label: '配置' }, { code: 'all', label: '全部' }] },
   call_error_category: { label: '调用错误类别', owner: 'D05', values: [{ code: 'invalid_parameters', label: '参数无效' }, { code: 'permission_denied', label: '无权限' }, { code: 'not_found', label: '不存在' }, { code: 'occupied', label: '已被占用' }, { code: 'temporarily_unavailable', label: '暂时不可用' }] },
-  bot_model_protocol: { label: '个人助手模型协议', owner: 'D06', values: [{ code: 'openai', label: 'OpenAI 对话补全协议' }, { code: 'anthropic', label: 'Anthropic 消息协议' }, { code: 'responses', label: 'OpenAI Responses 协议' }] },
+  bot_model_protocol: { label: '机器人模型协议', owner: 'D06', values: [{ code: 'openai', label: 'OpenAI 对话补全协议' }, { code: 'anthropic', label: 'Anthropic 消息协议' }, { code: 'responses', label: 'OpenAI Responses 协议' }] },
+  external_identity_action: { label: '外部身份绑定操作', owner: 'R01', values: [{ code: 'bind', label: '绑定' }, { code: 'unbind', label: '解除绑定' }] },
+  external_identity_unbind_reason: { label: '外部身份解绑原因', owner: 'R01', values: [{ code: 'manual', label: '人工解除' }, { code: 'disabled', label: '停用账户' }, { code: 'deleted', label: '删除账户' }] },
+  bot_secret_action: { label: '机器人配置密钥操作', owner: 'D01', values: [{ code: 'set', label: '设置' }, { code: 'remove', label: '移除' }, { code: 'start_channel', label: '启用通道' }, { code: 'stop_channel', label: '停用通道' }] },
+  bot_secret_slot: { label: '机器人配置密钥槽位', owner: 'D01', values: [{ code: 'model', label: '机器人模型' }, { code: 'identity', label: '扫码登录应用' }, { code: 'channel', label: '私聊机器人通道' }] },
+  bot_message_role: { label: '机器人对话角色', owner: 'D06', values: [{ code: 'user', label: '成员' }, { code: 'assistant', label: '机器人' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1295,7 +1300,7 @@ export function isCallErrorCategory(value: unknown): value is CallErrorCategory 
   return (CALL_ERROR_CATEGORY as readonly unknown[]).includes(value);
 }
 
-/** 个人助手模型协议 (D06) */
+/** 机器人模型协议 (D06) */
 export const BOT_MODEL_PROTOCOL = ['openai', 'anthropic', 'responses'] as const;
 export type BotModelProtocol = (typeof BOT_MODEL_PROTOCOL)[number];
 export const BOT_MODEL_PROTOCOL_LABEL = { 'openai': 'OpenAI 对话补全协议', 'anthropic': 'Anthropic 消息协议', 'responses': 'OpenAI Responses 协议' } as const satisfies { readonly [K in BotModelProtocol]: string };
@@ -1303,6 +1308,56 @@ export const BOT_MODEL_PROTOCOL_UI = { 'openai': 'OpenAI 对话补全协议', 'a
 export const BotModelProtocolSchema = z.enum(BOT_MODEL_PROTOCOL);
 export function isBotModelProtocol(value: unknown): value is BotModelProtocol {
   return (BOT_MODEL_PROTOCOL as readonly unknown[]).includes(value);
+}
+
+/** 外部身份绑定操作 (R01) */
+export const EXTERNAL_IDENTITY_ACTION = ['bind', 'unbind'] as const;
+export type ExternalIdentityAction = (typeof EXTERNAL_IDENTITY_ACTION)[number];
+export const EXTERNAL_IDENTITY_ACTION_LABEL = { 'bind': '绑定', 'unbind': '解除绑定' } as const satisfies { readonly [K in ExternalIdentityAction]: string };
+export const EXTERNAL_IDENTITY_ACTION_UI = { 'bind': '绑定', 'unbind': '解除绑定' } as const satisfies { readonly [K in ExternalIdentityAction]: string };
+export const ExternalIdentityActionSchema = z.enum(EXTERNAL_IDENTITY_ACTION);
+export function isExternalIdentityAction(value: unknown): value is ExternalIdentityAction {
+  return (EXTERNAL_IDENTITY_ACTION as readonly unknown[]).includes(value);
+}
+
+/** 外部身份解绑原因 (R01) */
+export const EXTERNAL_IDENTITY_UNBIND_REASON = ['manual', 'disabled', 'deleted'] as const;
+export type ExternalIdentityUnbindReason = (typeof EXTERNAL_IDENTITY_UNBIND_REASON)[number];
+export const EXTERNAL_IDENTITY_UNBIND_REASON_LABEL = { 'manual': '人工解除', 'disabled': '停用账户', 'deleted': '删除账户' } as const satisfies { readonly [K in ExternalIdentityUnbindReason]: string };
+export const EXTERNAL_IDENTITY_UNBIND_REASON_UI = { 'manual': '人工解除', 'disabled': '停用账户', 'deleted': '删除账户' } as const satisfies { readonly [K in ExternalIdentityUnbindReason]: string };
+export const ExternalIdentityUnbindReasonSchema = z.enum(EXTERNAL_IDENTITY_UNBIND_REASON);
+export function isExternalIdentityUnbindReason(value: unknown): value is ExternalIdentityUnbindReason {
+  return (EXTERNAL_IDENTITY_UNBIND_REASON as readonly unknown[]).includes(value);
+}
+
+/** 机器人配置密钥操作 (D01) */
+export const BOT_SECRET_ACTION = ['set', 'remove', 'start_channel', 'stop_channel'] as const;
+export type BotSecretAction = (typeof BOT_SECRET_ACTION)[number];
+export const BOT_SECRET_ACTION_LABEL = { 'set': '设置', 'remove': '移除', 'start_channel': '启用通道', 'stop_channel': '停用通道' } as const satisfies { readonly [K in BotSecretAction]: string };
+export const BOT_SECRET_ACTION_UI = { 'set': '设置', 'remove': '移除', 'start_channel': '启用通道', 'stop_channel': '停用通道' } as const satisfies { readonly [K in BotSecretAction]: string };
+export const BotSecretActionSchema = z.enum(BOT_SECRET_ACTION);
+export function isBotSecretAction(value: unknown): value is BotSecretAction {
+  return (BOT_SECRET_ACTION as readonly unknown[]).includes(value);
+}
+
+/** 机器人配置密钥槽位 (D01) */
+export const BOT_SECRET_SLOT = ['model', 'identity', 'channel'] as const;
+export type BotSecretSlot = (typeof BOT_SECRET_SLOT)[number];
+export const BOT_SECRET_SLOT_LABEL = { 'model': '机器人模型', 'identity': '扫码登录应用', 'channel': '私聊机器人通道' } as const satisfies { readonly [K in BotSecretSlot]: string };
+export const BOT_SECRET_SLOT_UI = { 'model': '机器人模型', 'identity': '扫码登录应用', 'channel': '私聊机器人通道' } as const satisfies { readonly [K in BotSecretSlot]: string };
+export const BotSecretSlotSchema = z.enum(BOT_SECRET_SLOT);
+export function isBotSecretSlot(value: unknown): value is BotSecretSlot {
+  return (BOT_SECRET_SLOT as readonly unknown[]).includes(value);
+}
+
+/** 机器人对话角色 (D06) */
+export const BOT_MESSAGE_ROLE = ['user', 'assistant'] as const;
+export type BotMessageRole = (typeof BOT_MESSAGE_ROLE)[number];
+export const BOT_MESSAGE_ROLE_LABEL = { 'user': '成员', 'assistant': '机器人' } as const satisfies { readonly [K in BotMessageRole]: string };
+export const BOT_MESSAGE_ROLE_UI = { 'user': '成员', 'assistant': '机器人' } as const satisfies { readonly [K in BotMessageRole]: string };
+export const BotMessageRoleSchema = z.enum(BOT_MESSAGE_ROLE);
+export function isBotMessageRole(value: unknown): value is BotMessageRole {
+  return (BOT_MESSAGE_ROLE as readonly unknown[]).includes(value);
 }
 
 export interface AxisValues {
@@ -1424,6 +1479,11 @@ export interface AxisValues {
   reset_scope: ResetScope;
   call_error_category: CallErrorCategory;
   bot_model_protocol: BotModelProtocol;
+  external_identity_action: ExternalIdentityAction;
+  external_identity_unbind_reason: ExternalIdentityUnbindReason;
+  bot_secret_action: BotSecretAction;
+  bot_secret_slot: BotSecretSlot;
+  bot_message_role: BotMessageRole;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1545,6 +1605,11 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   reset_scope: RESET_SCOPE_LABEL,
   call_error_category: CALL_ERROR_CATEGORY_LABEL,
   bot_model_protocol: BOT_MODEL_PROTOCOL_LABEL,
+  external_identity_action: EXTERNAL_IDENTITY_ACTION_LABEL,
+  external_identity_unbind_reason: EXTERNAL_IDENTITY_UNBIND_REASON_LABEL,
+  bot_secret_action: BOT_SECRET_ACTION_LABEL,
+  bot_secret_slot: BOT_SECRET_SLOT_LABEL,
+  bot_message_role: BOT_MESSAGE_ROLE_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1666,6 +1731,11 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   reset_scope: RESET_SCOPE_UI,
   call_error_category: CALL_ERROR_CATEGORY_UI,
   bot_model_protocol: BOT_MODEL_PROTOCOL_UI,
+  external_identity_action: EXTERNAL_IDENTITY_ACTION_UI,
+  external_identity_unbind_reason: EXTERNAL_IDENTITY_UNBIND_REASON_UI,
+  bot_secret_action: BOT_SECRET_ACTION_UI,
+  bot_secret_slot: BOT_SECRET_SLOT_UI,
+  bot_message_role: BOT_MESSAGE_ROLE_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

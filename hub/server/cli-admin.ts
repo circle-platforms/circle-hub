@@ -16,7 +16,7 @@ import { readUploadedSource } from './cli-job.ts';
 import { DOC_MEDIA_TYPES, DOC_SUFFIXES, docMediaType, docSuffixOf } from './docs.ts';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, resolve } from 'node:path';
-import { isLeaseOp, labelOf } from '../../contracts/generated/vocabulary.ts';
+import { isLeaseOp, labelOf, type BotSecretAction, type BotSecretSlot } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError } from '../config/index.ts';
 import { productionShareKey, isSha256, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
 import { parsePackRef } from '../runs/api.ts';
@@ -460,8 +460,8 @@ const BOT_COMMANDS = [
 
 async function appendBotSecretChange(
   store: Pick<RecordsKit['store'], 'put'>,
-  slot: 'personal-bot.model' | 'personal-bot.channel' | 'personal-bot.identity',
-  action: 'set' | 'remove',
+  slot: BotSecretSlot,
+  action: BotSecretAction,
   by: string,
   at: string,
 ): Promise<void> {
@@ -528,21 +528,22 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
       const parsed = identityProfile.safeParse(value);
       if (!parsed.success) throw new UsageError('通道配置字段无效');
       await vault.put(name, JSON.stringify(parsed.data));
-      await appendBotSecretChange(store, 'personal-bot.identity', 'set', admin.id, new Date().toISOString());
+      await appendBotSecretChange(store, 'identity', 'set', admin.id, new Date().toISOString());
       session.out('登录应用配置已保存');
     } else {
       const parsed = channelProfile.safeParse(value);
       if (!parsed.success) throw new UsageError('通道配置字段无效');
       await vault.put(name, JSON.stringify(newChannel(parsed.data)));
-      await appendBotSecretChange(store, 'personal-bot.channel', 'set', admin.id, new Date().toISOString());
+      await appendBotSecretChange(store, 'channel', 'set', admin.id, new Date().toISOString());
       session.out('私聊机器人配置已保存');
     }
     return 0;
   }
   if (sub === 'identity-remove' || sub === 'channel-remove') {
     const identity = sub === 'identity-remove';
-    const slot = identity ? 'personal-bot.identity' : 'personal-bot.channel';
-    await vault.remove(slot);
+    const vaultKey = identity ? identityProfileName : channelProfileName;
+    const slot: BotSecretSlot = identity ? 'identity' : 'channel';
+    await vault.remove(vaultKey);
     await appendBotSecretChange(store, slot, 'remove', admin.id, new Date().toISOString());
     session.out(identity ? '登录应用配置已移除' : '私聊机器人配置已移除');
     return 0;
@@ -561,14 +562,14 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
   }
   if (sub === 'disable') {
     await disableBot(vault);
-    await appendBotSecretChange(store, 'personal-bot.model', 'remove', admin.id, new Date().toISOString());
+    await appendBotSecretChange(store, 'model', 'remove', admin.id, new Date().toISOString());
     session.out('机器人模型已停用');
     return 0;
   }
   if (sub === 'set') {
     const settings = await readSecretJson(readSecret, 'bot-model', '请输入机器人模型配置 JSON');
     await setBotProfile(vault, settings);
-    await appendBotSecretChange(store, 'personal-bot.model', 'set', admin.id, new Date().toISOString());
+    await appendBotSecretChange(store, 'model', 'set', admin.id, new Date().toISOString());
     session.out('机器人模型配置已保存');
     return 0;
   }

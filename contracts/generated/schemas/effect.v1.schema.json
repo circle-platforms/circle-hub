@@ -318,11 +318,14 @@
                 "SYNC_PURGE_CONFIRMATION_REQUIRED",
                 "GROUNDS_PURGED",
                 "BOT_DISABLED",
+                "BOT_UNAUTHENTICATED",
                 "BOT_CLIENT_FORBIDDEN",
+                "BOT_NOT_FOUND",
                 "BOT_VERSION_INVALID",
                 "BOT_VERSION_MISMATCH",
                 "BOT_QUOTA_EXCEEDED",
                 "BOT_UPSTREAM_UNAVAILABLE",
+                "BOT_REQUEST_TIMEOUT",
                 "BOT_CONFLICT",
                 "BOT_INVALID_REQUEST"
               ]

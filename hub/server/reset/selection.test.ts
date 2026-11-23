@@ -304,7 +304,7 @@ test('personal-bot notification intents and receipts classify into history and a
   const secretAudit = record(5, 'action', 'bot-secret-change@1', {
     schema: 'bot-secret-change@1',
     action: 'set',
-    slot: 'personal-bot.model',
+    slot: 'model',
     by: user,
     at,
   });
