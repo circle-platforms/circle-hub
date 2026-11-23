@@ -10,7 +10,7 @@ test('typed refusal preserves fact and next action as independent fields', () =>
 });
 
 test('unknown error prose never determines a category, cause or next step', () => {
-  for (const text of ['需要参数：--file', '无权限：令牌不足', 'network conflict not found', '你传入的 undefined 不合法。任务包未完成']) {
+  for (const text of ['需要参数：--file', '无权限：令牌不足', 'network conflict not found', '你传入的 undefined 不合法。工作流未完成']) {
     const error = new Error(text);
     assert.equal(callFailureData(error).category, null);
     const shown = formatCallError(error);

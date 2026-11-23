@@ -1,6 +1,3 @@
-// The bed-install pack as files: pack.json lists exactly the pack's files, every declaration has its contract shape, the
-// effect row releases on both requirements, the samples cover both checks in both polarities, and the staged pack passes
-// the registry's validation and publish check (offline; publish.test.ts publishes it for real).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -23,7 +20,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['bed-install', '1.0.4', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['bed-install', '1.0.5', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/install.ts') && files.includes('policies/install.json') && files.includes('samples/negative/install-booking-missing.json') && files.includes('examples/bed-install-profile.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'README.md' || f === 'pack-files.ts'));
@@ -49,7 +46,6 @@ describe('the pack files', () => {
       ['dispatch_policy', 'item', 'artifact_under_verification', 'blocking', 'policies/install.json'],
     ]);
     assert.deepEqual(Object.keys(SlotsFile.parse(json('slots.schema.json')).item), ['reason']);
-    // The table carries the shape of the deployment data, never its values (decision 144).
     assert.deepEqual(Object.keys(json('policies/install.json') as object).sort(), ['basis', 'device_types', 'parameters', 'profile_schema', 'schema']);
     assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').includes('未排除本地操作'));
   });

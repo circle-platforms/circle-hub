@@ -265,7 +265,7 @@ export async function runLocalChecks(input: LocalChecksInput): Promise<LocalChec
           refused.add(entry.item);
           const field = LITE_FIELD.find(([prefix]) => issue.pointer === prefix || issue.pointer.startsWith(prefix + '/'));
           const where = field ? `${field[1]}（记录里的 ${issue.pointer}）` : issue.pointer === '' ? '整条记录' : `记录里的 ${issue.pointer}`;
-          const statement = `${where}：${issue.found}；任务包声明的形状要的是 ${issue.expected}；改成允许的写法后重新自检`;
+          const statement = `${where}：${issue.found}；工作流声明的形状要的是 ${issue.expected}；改成允许的写法后重新自检`;
           result.outcomes.push({ check: 'slots', item: entry.item, outcome: { verdict: 'refute', code: 'SUBMISSION_SCHEMA_VIOLATION', statement, grounds: [], tier: 'blocking', pointer: `/slots/${key}/${index}/data${issue.pointer}` } });
         }
       }
@@ -313,7 +313,7 @@ export async function runLocalChecks(input: LocalChecksInput): Promise<LocalChec
       result.checks.push(check.id);
     } else if (check.applies === 'run') {
       if (input.complete !== true || refused.size > 0) {
-        result.not_run.push({ check: check.id, why: input.complete !== true ? input.complete : '还有记录没有通过任务包声明的形状检查，整批封批无从核对' });
+        result.not_run.push({ check: check.id, why: input.complete !== true ? input.complete : '还有记录没有通过工作流声明的形状检查，整批封批无从核对' });
         continue;
       }
       const targets = requirements.filter((row) => Array.isArray(row.checks) && row.checks.includes(check.id));

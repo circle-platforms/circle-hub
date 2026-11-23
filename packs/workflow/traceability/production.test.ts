@@ -1,6 +1,3 @@
-// A production run end to end: the published traceability pack, the real run engine, and hand-built index views served by a
-// fake knowledge reader. start_run computes and stores the validation result with no submission; each per-defect answer,
-// written down here first, comes back as the data of a fact claim, and the run-level counts as a cross-item claim.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { StartRunOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
@@ -33,7 +30,6 @@ function terminalFields(layers: LayerResult[]): Omit<LayerResult, 'missing' | 'e
 const DEFECTS_ID = `knowledge:index:famx:${BUILD.name}?kind=defect&key=bug`;
 const CASES_ID = `knowledge:index:famx:${BUILD.name}?kind=case&key=defects&fields=document,node,title`;
 
-// The corpus: a traced fixed defect, a traced known one, an untraced one, and one in a status conflict.
 const DEFECTS = [
   defectEntry({ bug: '71001', statement: '告警阈值修改后不生效' }),
   defectEntry({ bug: '71002', status: 'known', statement: '会话保持在切换后失效' }),
@@ -64,7 +60,6 @@ before(async () => {
   hub = await openHub(postgres);
   hub.views.put(DEFECTS_ID, indexViewOf('defect', 'bug', DEFECTS));
   hub.views.put(`${DEFECTS_ID}&fields=bug`, indexViewOf('defect', 'bug', DEFECTS));
-  // The cases view is served slim, as the reader answers the pack's fields=document,node,title request.
   hub.views.put(CASES_ID, indexViewOf('case', 'defects', CASES, {}, ['document', 'node', 'title']));
 });
 after(async () => {
@@ -78,7 +73,6 @@ describe('a production run of traceability', { skip }, () => {
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.ok(StartRunOutput.safeParse({ ...detail.answer, trace: '4bf92f3577b34da6a3ce929d0e0e4736' }).success);
     const run = detail.answer.run!;
-    // The pack binds no product line: the views' external ids name the product and the build, and no build is locked.
     assert.deepEqual([run.product, run.version, run.build, run.root], [undefined, undefined, undefined, undefined]);
     assert.deepEqual(
       run.requirements.map((r) => [r.key, r.accepted_producer]),
@@ -87,7 +81,6 @@ describe('a production run of traceability', { skip }, () => {
         ['counts', 'fact'],
       ],
     );
-    // The defects view is the judged source, the cases view the expectation read against it.
     assert.deepEqual(
       run.sources.map((s) => [s.slot, s.role]),
       [
@@ -119,7 +112,6 @@ describe('a production run of traceability', { skip }, () => {
     assert.deepEqual(production.counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 1 });
     assert.deepEqual(production.counts, partitionCountsOf(result.partitions));
 
-    // The answers, written down before the run: layers, status and the claim data of every defect.
     const EXPECTED: Record<string, { layers: unknown[]; status: string; verdict: string; cases: string[] }> = {
       '71001': { layers: [{ layer: 'static', terminal: 'pass' }], status: 'satisfied', verdict: 'support', cases: ['C-101', 'C-102'] },
       '71002': { layers: [{ layer: 'static', terminal: 'pass' }], status: 'satisfied', verdict: 'support', cases: ['C-103'] },
@@ -141,7 +133,7 @@ describe('a production run of traceability', { skip }, () => {
       assert.equal(requirement.claims.length, 1, id);
       const [claim] = requirement.claims;
       assert.equal(claim.statement.verdict, expected.verdict, id);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.13', independence: 'judge_not_author' }, id);
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.14', independence: 'judge_not_author' }, id);
       assert.equal(claim.qualifier.nature, expected.verdict === 'unknown' ? 'unknown' : 'fact', id);
       const data = claim.statement.data as unknown as MatrixRow & { case_count: number; status: string | null };
       assert.deepEqual(
@@ -158,7 +150,6 @@ describe('a production run of traceability', { skip }, () => {
       assert.deepEqual(claim.grounds, [...defectRefs, ...caseRefs], id);
     }
 
-    // The run-level counts are a cross-item fact claim.
     const counts = result.cross_item.find((c) => c.requirement === 'counts');
     assert.ok(counts, 'the counts claim');
     assert.equal(counts.statement.verdict, 'support');
@@ -168,7 +159,6 @@ describe('a production run of traceability', { skip }, () => {
     assert.match(counts.statement.text, /缺陷 4 个：已追溯 3 个，未追溯 1 个/);
     assert.deepEqual(counts.grounds.length, 2);
 
-    // The result is the run's latest and readable by reference.
     const view = (await hub.service.getRun(hub.alice, run.run))!;
     assert.deepEqual(view.latest, { record: production.record, result });
   });

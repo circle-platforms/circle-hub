@@ -1,6 +1,5 @@
 import {createTestParserRegistry as createDefaultRegistry} from '../../hub/testing/parsers.ts';
 import {addSyntheticExecutor} from '../../hub/dispatch/testing/credentials.ts';
-// All endpoints, documents, models and workbook bytes in this suite are synthetic.
 import assert from 'node:assert/strict';
 import CASE_COMPILE_PACK from '../../packs/workflow/case-compile/pack.json' with { type: 'json' };
 import { after, before, beforeEach, describe, test } from 'node:test';
@@ -27,6 +26,10 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stage } from '../../packs/workflow/case-compile/pack-files.ts';
+import { stageRecompose } from '../../packs/workflow/case-compile/testing/stage-recompose.ts';
+import { attachRecompositionFields } from '../../packs/workflow/case-compile/testing/recompose-hub-helper.ts';
+import { recordFor } from '../../packs/workflow/case-compile/recompose/tools/submit-records.ts';
+import { INDEX } from '../../hub/runs/engine/store.ts';
 import { productSite, twoNameProduct, type ProductSite, type ProductPack } from './support/env.ts';
 import { connect, type McpClient } from './support/mcp.ts';
 import type { StartRunOutput, SubmitResultOutput } from '../../contracts/src/tools.ts';
@@ -35,12 +38,10 @@ import type { z } from 'zod';
 const inspectEntry = { ...entry('widget-seat', 'inspect', [{ name: 'query', kind: 'positional_only', required: true, default: null }]),
   typed_authority: { source: BASE_CONTRACT.effects.effect_0.source, parameters: {query:{type:'text',role:'device_cli'}}, effects:['effect_0'] } };
 const CONTRACT_DOC = { ...structuredClone(BASE_CONTRACT), entries: [...structuredClone(BASE_CONTRACT.entries), inspectEntry] };
-// R5: extensions change the original runner identity, not just the @2 declaration digest.
 const recovered = stripAdditions(CONTRACT_DOC)!;
 recovered.contract_sha256 = runtimeDigest(recovered);
 CONTRACT_DOC.original = {contract_sha256:String(recovered.contract_sha256),sha256:sha256Hex(Buffer.from(contractCanonical(recovered)))};
 CONTRACT_DOC.contract_sha256 = runtimeDigest(CONTRACT_DOC);
-// Keep both address families in the single interface list used by declared per-device probes.
 const MANIFEST_DOC={...BASE_MANIFEST,beds:BASE_MANIFEST.beds.map(bed=>({...bed,devices:bed.devices.map(device=>({...device,interfaces:[...device.ipv4,...device.ipv6]}))}))};
 const PROFILE_DOC = { ...BASE_PROFILE, device_count:MANIFEST_DOC.beds[0].devices.length, runtime: { ...BASE_PROFILE.runtime }, workbook: { ...BASE_PROFILE.workbook, template: templateDocument(BASE_PROFILE.workbook, BASE_PROFILE.runtime.minimum_version, CONTRACT_DOC.original.contract_sha256) }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' }, reviewed: true }] };
 const skip = await osIsolationAvailable() ? false : 'sandbox-exec absent: real isolated pack execution unavailable';
@@ -79,14 +80,13 @@ async function release(booked: string) {
 function submission(run: string, index: number, bad = false) {
   return { run, model: 'synthetic-scripted-model', items: [planItem(index, itemIds.get(run)!, bad)] };
 }
-function planItem(index: number, item: string, bad = false) {
+function planItem(index: number, item: string, bad = false, frozenItem?: any, receipt?: string) {
   const data = goodData(); data.steps[0].args = bad ? 'synthetic-invalid' as unknown as string[] : [line];
-  // Second authored case also exercises another enabled, role-resolvable method.
-  // dut0's 192.0.2.74/26 shares its segment with client0, so the address is reachable at compile time.
   if (index === 1) {data.steps.push({ object: 'widget-seat', method: 'inspect', args: ['relay endpoint add 192.0.2.74 80'], keywords: {} });data.steps.push({object:'widget-seat',method:'configure',args:['no relay endpoint add 192.0.2.74 80'],keywords:{},cleanup:true});}
   data.steps.push({object:'widget-seat',method:'configure',args:['no widget health interval pool-a'],keywords:{},cleanup:true});
   data.expects[0].text = expected;
   data.expects[0].quote = { reference: `src:${sha256Hex(original)}/kityminder@1/${model.nodes.find(n => n.selector === `n/expected-${index}`)!.selector}`, text: expected };
+  if (frozenItem && receipt) attachRecompositionFields(frozenItem, receipt, data);
   return { item, handling: 'handled', slots: { plan: [{ text: '合成计划', quotes: [data.expects[0].quote], data }] } };
 }
 async function plan(booked: string, index = 0, repair = false) {
@@ -94,7 +94,6 @@ async function plan(booked: string, index = 0, repair = false) {
   const started = await start(input); const run = started.run!.run;
   let sent = submission(run, index); let accepted: z.infer<typeof SubmitResultOutput>;
   if (repair) {
-    // The model is an actual loopback Messages API; its tool calls are executed by this synthetic client.
     const scripted = createScriptedModel({ respond: turn => [{ tool: 'submit_result', input: submission(run, index, turn.index === 0) }] });
     await new Promise<void>(resolve => scripted.listen(0, '127.0.0.1', resolve));
     const port = (scripted.address() as import('node:net').AddressInfo).port;
@@ -119,7 +118,6 @@ async function plan(booked: string, index = 0, repair = false) {
   const argv: string[] = [];
   for (const [name, contents] of Object.entries(artifacts)) { const file = join(directory, `${name}.json`); await writeFile(file, contents, { mode: 0o600 }); argv.push(`--${name}`, name === 'run' ? directory : file); }
   const output = join(directory, 'case.xlsx');
-  // Execute the published tools/ entry, not a source-directory shortcut or Hub generation.
   const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
   const payload = await readFile(output); assert.equal(receipt.sha256, sha256Hex(payload));
   return { input, run, recipe, sent, payload };
@@ -135,14 +133,11 @@ async function verify(p: Awaited<ReturnType<typeof plan>>, index = 0, changed = 
   const ref = await client.upload(payload, 'synthetic.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   const input = { ...p.input, predecessor: p.run, parameters: { autoid: ids[index], plan_run: p.run }, inputs: { ...startInputs(), workbook: { reference: ref } } };
   const second = await start(input);
-  // Decision 105: the Hub dispatches when this submission is accepted, so the conditions of that dispatch are set before it.
   beforeSubmit();
   const sent = submission(second.run!.run, index);
   const result = (await client.call('submit_result', sent)).out;
   return { run: second.run!.run, result, ref, sent };
 }
-// The job the Hub dispatched for an accepted verification run. It runs on after the answer, so it is read, as the runner's
-// repeated submission reads it, until the journal records its end (never inferred from the name of the last phase).
 async function settled(v: { run: string; result: z.infer<typeof SubmitResultOutput> | null }): Promise<JobStatus> {
   const note = v.result?.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(v.result?.dispatch)); assert.match(note.text, /已按工作流的规定自动开始上机验证/);
   let read: unknown;
@@ -165,17 +160,14 @@ before(async () => {
   if (skip) return;
   postgres = await startPostgres(); staged = await mkdtemp(join(tmpdir(), 'synthetic-device-packs-'));
   const site = await productSite(); const product = await twoNameProduct();
-  // This synthetic deployment declares reversible native commands; inverse arities come from this locked tree.
   const files=site.site();const treeKey=`${site.SITE_BASE}/command_tree-${site.RELEASED}.xml`;
   const inverse='<menu name="no"><menu name="widget"><menu name="health"><item name="interval"><arguments><arg name="pool" type="STRING"/></arguments></item></menu></menu><menu name="relay"><menu name="endpoint"><item name="add"><arguments><arg name="address" type="IPADDR"/><arg name="port" type="U16"/></arguments></item></menu></menu></menu>';
   const xml=Buffer.from(files[treeKey].body).toString('latin1');files[treeKey]={...files[treeKey],body:Buffer.from(xml.replace('</scope>',inverse+'</scope>'),'latin1')};
-  const hub = await createTestHub({ postgres, repositoryPacks: ['famx', 'build-site', 'test-bed'], packs: [await stage(join(staged, 'case-compile'))], buildSite: files, requireOsIsolation: true }); opened = hub;
+  const hub = await createTestHub({ postgres, repositoryPacks: ['famx', 'build-site', 'test-bed'], packs: [await stage(join(staged, 'case-compile')), await stageRecompose('recompose', join(staged, 'recompose'))], buildSite: files, requireOsIsolation: true }); opened = hub;
   const resource = await hub.addResource({ system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${hub.stubs!.buildSite.origin}${site.SITE_BASE}` }, settings: { index_page: 'index.html' } });
   assert.ok(resource.id);
   for(const active of await hub.hub.registry.activeProducts())for(const variable of active.product.variables??[])await hub.records.variables.setVariable(hub.admin.principal,variable.name,variable.default,'合成自动化测试环境验收显式部署设置');
   const synced = await hub.knowledgeSync(product.line, { options: { case_index: false } }); assert.equal(synced.error, null, JSON.stringify(synced));
-  // Provision this synthetic deployment's exact effect closure from its locked tree, rather than
-  // carrying identities of the unrelated package unit fixture into a different product root.
   const root = synced.builds.find(build => build.name === site.RELEASED)?.root;
   assert.ok(root);
   const catalog = await hub.hub.knowledge.catalog(root, 'commands@1', {base:'/commands',lines:[line,'relay endpoint add 192.0.2.74 80','no widget health interval pool-a','no relay endpoint add 192.0.2.74 80']});
@@ -189,9 +181,8 @@ before(async () => {
   CONTRACT_DOC.effects.effect_0.command_roles = [1,3].map(index=>({signature:commands[index].signature,position:0,role:'bed_address'}));
   CONTRACT_DOC.contract_sha256 = runtimeDigest(CONTRACT_DOC);
   bed = { hub, product, site, reviewer: await hub.createUser('合成运行用户') };
-  await bed.hub.assignPack(bed.reviewer.principal, 'test-bed'); await bed.hub.assignPack(bed.reviewer.principal, 'case-compile');
+  await bed.hub.assignPack(bed.reviewer.principal, 'test-bed'); await bed.hub.assignPack(bed.reviewer.principal, 'recompose'); await bed.hub.assignPack(bed.reviewer.principal, 'case-compile');
   client = await connect(bed.hub, bed.reviewer.token);
-  // The three deployment documents pass the real administrator publication boundary.
   for (const [id, value] of [['runner-contract', CONTRACT_DOC], ['runtime-profile', PROFILE_DOC], ['bed-topology', MANIFEST_DOC]] as const) await bed.hub.hub.docs.put(bed.hub.admin.principal, id, bytes(value), { fileName: `${id}.json` });
   subject = await client.upload(original, 'synthetic-cases.json');
   endpoint = await startEndpoint([...definition('x').allowed_tools,'inspect_seat'], async (name, args, response) => {
@@ -219,8 +210,6 @@ before(async () => {
     probes:{devices:'/beds/0/devices',command_pattern:'^inspect (?:version|interfaces)$',call:{tool:'inspect_seat',arguments:{seat:{$value:'seat_index'},command:{$value:'command'},ticket:{$value:'lease_id'}}},output:'/output',
       seats:MANIFEST_DOC.beds[0].devices.map((device,index)=>({seat:device.name,index,manifest:{device:`/beds/0/devices/${index}`,addresses:'/interfaces',address:''},version:{command:'inspect version',pattern:'^version: (?<value>.+)$'},interfaces:{command:'inspect interfaces',pattern:'^address: (?<value>.+)$'}}))},
     result:{...raw.result,request_id:'/request'},proof:{...raw.proof,package:'case-compile',slot:'workbook',warrant_id:`case-compile.workbook_verified@${CASE_COMPILE_PACK.version}`} });
-  // The dispatches below release only if this identity is the one the engine gives the pack's function, so the reading of it
-  // that the lines about an executor left behind by a new version rest on is checked against the engine's own form here.
   assert.equal(staleWarrant(configured.proof.warrant_id,'case-compile',CASE_COMPILE_PACK.version),null);
   assert.deepEqual(staleWarrant(configured.proof.warrant_id,'case-compile','999.0.0'),{named:configured.proof.warrant_id,wanted:'case-compile.workbook_verified@999.0.0'});
   executor = (await addSyntheticExecutor(bed.hub.records,dispatch().registry,bed.hub.admin.principal,configured,'synthetic-dispatch-key')).id;
@@ -238,13 +227,11 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       const booked = await booking(); bookings.push(booked);
       const p = await plan(booked, index, index === 0); const v = await verify(p, index);
       assert.ok(v.result!.result!.partitions.delivered[0].requirements.every(r => r.status === 'satisfied'));
-      // Decision 105: the runner's own accepted verification run dispatches, with an administrator answerable for an unknown outcome.
       const state = await settled(v); const job = state.job;
       assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
       const binding = await dispatch().journal.binding(job); assert.equal(binding.initiated_by, bed.reviewer.principal.id); assert.equal(binding.acting_by, bed.hub.admin.principal.id);
       assert.deepEqual(latest.payload, p.payload); hashes.push(latest.digest);
       const report = await resultReport(state); assert.equal(report.rows[0].reported_terminal, 'pass'); assert.equal(report.rows[0].dynamic_terminal, 'no_verdict'); assert.ok(report.rows[0].limits.includes('未排除本地操作'));
-      // Like the task id the reference compile skill prints: repeating the same submission reads this job and its result, it never dispatches again.
       const count = submissions; const again = (await client.call('submit_result', v.sent!)).out;
       assert.equal(again.dispatch?.length, 1); assert.match(again.dispatch![0].text, /设备返回 src:[a-f0-9]{64}/); assert.equal(again.dispatch![0].job, job); assert.equal(again.dispatch![0].result, state.result); assert.equal(submissions, count);
       const read = await client.call('get_nodes', { reference: state.result }); assert.equal(read.isError, false);
@@ -253,20 +240,33 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.equal(new Set(hashes).size, 2); assert.equal(new Set(bookings).size, 2);
   });
   test('a whole mindmap compiles into one workbook that the Hub dispatches once, with one verdict row per case', async () => {
-    // Decisions 104 and 105 at the user's unit of work, as the reference compile skill runs a mindmap batch: no autoid, one plan submission for every
-    // case, the generation inputs fetched with the runner's own token, one workbook, one verification run, one dispatch.
-    // The real devices echo another family's name of the locked build (dotted, based on it): the Hub's own dispatch accepts the
-    // knowledge base's aliases of that build, as the administrator command always did.
     aliasEcho = true;
     const booked = await booking(); const before = submissions;
     const scope = { pack: 'case-compile', product: bed.product.names[0], build: bed.site.RELEASED };
-    const whole = await start({ ...scope, predecessor: booked, inputs: startInputs(), parameters: { pipeline: 'legacy' } });
+    const recomposeStart = await start({ pack: 'recompose', product: bed.product.names[0], build: bed.site.RELEASED, inputs: { subject: { reference: subject } } });
+    const recompRun = recomposeStart.run!.run;
+    const recompSubmit = await client.call('submit_result', {
+      run: recompRun,
+      model: 'synthetic-scripted-model',
+      items: recomposeStart.run!.items.map((item) => {
+        const atoms = Array.isArray((item.fields as Record<string, unknown>)?.atoms)
+          ? ((item.fields as Record<string, unknown>).atoms as Array<{ reference?: string }>)
+          : [];
+        const data = recordFor(item, { method: { kind: 'declared', text: '配置健康检查命令后核对预期输出', sources: [atoms[0]?.reference ?? item.location], basis: '作者步骤已给出可执行命令和预期输出' } }, 'synthetic-scripted-model');
+        return { item: item.id, handling: 'handled', slots: { record: [{ text: '合成重组判断', quotes: (data.atoms as Array<{ quote_ref: string; text: string }>).map((a) => ({ reference: a.quote_ref, text: a.text })), data }] } };
+      }),
+    });
+    assert.equal(recompSubmit.out.acceptance, 'accepted', JSON.stringify(recompSubmit.out.errors));
+    const recompRunRec = (await bed.hub.records.store.find({ kind: 'run', key: INDEX.runId, value: recompRun })).items[0];
+    const recompResultRec = (await bed.hub.records.store.find({ kind: 'validation_result', key: INDEX.resultRun, value: recompRun, newestFirst: true })).items[0];
+    const receiptRef = `rec:${recompResultRec.digest}`;
+    const wholeInputs = { ...startInputs(), recomposition_run: { reference: `rec:${recompRunRec.digest}` }, recomposition_result: { reference: receiptRef } };
+    const whole = await start({ ...scope, predecessor: booked, inputs: wholeInputs });
     const planRun = whole.run!.run; const items = whole.run!.items.map(item => item.id);
     assert.equal(items.length, ids.length, 'every textual-autoid case of the document is an item');
-    const planned = (await client.call('submit_result', { run: planRun, model: 'synthetic-scripted-model', items: items.map((item, index) => planItem(index, item)) })).out;
+    const planned = (await client.call('submit_result', { run: planRun, model: 'synthetic-scripted-model', items: whole.run!.items.map((item, index) => planItem(index, item.id, false, item, receiptRef)) })).out;
     assert.equal(planned.acceptance, 'accepted', JSON.stringify(planned.errors));
     for (const row of planned.result!.partitions.delivered) assert.ok(row.requirements.filter(r => r.requirement !== 'workbook_verified').every(r => r.status === 'satisfied'), JSON.stringify(row.requirements));
-    // The client's own published tools: fetch-run reads the token from standard input only, generate-workbook writes one file.
     // fetch-run calls this in-process Hub back, so it runs asynchronously: a synchronous child would block the Hub that answers it.
     const directory = await mkdtemp(join(staged, 'whole-mindmap-'));
     const fetching = promisify(execFile)(process.execPath, [join(staged, 'case-compile/tools/fetch-run.ts'), '--hub', bed.hub.mcpUrl, '--run', planRun, '--out', directory], { encoding: 'utf8' });
@@ -285,8 +285,8 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
     const payload = await readFile(output); assert.equal(receipt.sha256, sha256Hex(payload));
     const ref = await client.upload(payload, 'synthetic-whole.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    const verification = await start({ ...scope, predecessor: planRun, parameters: { plan_run: planRun, pipeline: 'legacy' }, inputs: { ...startInputs(), workbook: { reference: ref }, plan_result: { run: planRun } } });
-    const sent = { run: verification.run!.run, model: 'synthetic-scripted-model', items: verification.run!.items.map((item, index) => planItem(index, item.id)) };
+    const verification = await start({ ...scope, predecessor: planRun, parameters: { plan_run: planRun }, inputs: { ...wholeInputs, workbook: { reference: ref }, plan_result: { run: planRun } } });
+    const sent = { run: verification.run!.run, model: 'synthetic-scripted-model', items: verification.run!.items.map((item, index) => planItem(index, item.id, false, item, receiptRef)) };
     const result = (await client.call('submit_result', sent)).out;
     assert.equal(result.acceptance, 'accepted', JSON.stringify(result.errors));
     assert.equal(result.result!.partitions.delivered.length, ids.length);
@@ -304,8 +304,6 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     await release(booked);
   });
   test('a booking of part of the bed dispatches nothing and the runner is told why', async () => {
-    // The first real whole-mindmap run booked one load balancer: the executor's target is the whole bed, so the Hub refuses
-    // at the effect boundary, and its answer must say that nothing was sent and what is missing, never that it dispatched.
     const partial = (await start({ pack: 'test-bed', inputs: { inventory: startInputs().inventory }, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 1 }] } } })).run!.run;
     assert.ok((await bed.hub.leases.view('bed/')).entries.length > 0);
     const before = submissions; const v = await verify(await plan(partial));
@@ -323,8 +321,6 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const explanation=await dispatch().explainRelease(bed.hub.admin.principal,v.run,executor);
     for (const key of missing) assert.ok(explanation.lease_coverage?.missing_fact?.includes(key),`administrator receives ${key}`);
     assert.equal(note.text.includes(note.job!),false);assert.doesNotMatch(note.text,/boundary_refused/);
-    // Nothing was sent, so repeating the ready submission checks the boundary again (as the reference compile skill resubmits a refused workbook).
-    // The answer that tries again says first what the refused job came to (issue 142), then what the new attempt came to.
     const [earlier, again] = (await client.call('submit_result', v.sent!)).out.dispatch ?? [];
     assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /^不存在：.*未发出.*预订.*这次重交 Hub 已再试/);
     assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^不存在：.*预订/);
@@ -334,8 +330,6 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
   test('a frozen workflow without its allowed effect row cannot submit a verified workbook',async()=>{
     const booked=await booking(),p=await plan(booked),before=submissions;
     const workflows=dispatch().options.workflows,read=workflows.byDigest.bind(workflows);
-    // An older workflow port has no effects declaration; all source and result fixtures remain the real run's. It is in place
-    // before the verification run is submitted, which is when the Hub would dispatch it (decision 105).
     const legacy=()=>{workflows.byDigest=async digest=>{const workflow=await read(digest);if(!workflow)return workflow;return {...workflow,readJson:async path=>{const value=await workflow.readJson(path);if(path!=='requirements.json')return value;const {effects,...legacy}=value as Record<string,unknown>;return legacy;}};};};
     try{const v=await verify(p,0,false,legacy);assert.ok((v.result?.dispatch??[]).every(note=>/^上机验证没有发出/.test(note.text)),JSON.stringify(v.result?.dispatch));assert.equal(submissions,before,'the accepted submission dispatched nothing');
       const state=await dispatch().dispatch(bed.hub.admin.principal,v.run,executor);assert.equal(state.outcome,'not_dispatched');const event=(await dispatch().journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;assert.equal(event.body.error_code,'EFFECT_NOT_ALLOWED');assert.equal(event.body.detail.boundary_clause,1);assert.equal(submissions,before);}
@@ -352,7 +346,6 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
   });
   test('a parseable but altered workbook fails semantic verification and cannot dispatch', async () => {
     const booked = await booking(); const p = await plan(booked); const changed = structuredClone(p.recipe);
-    // Change an observable expectation within the existing quote; the command receipt stays valid.
     changed.slots.expects[0].text = expected.slice(0, -2); p.payload = Buffer.from(generateWorkbook(changed));
     const v = await verify(p); const before = submissions;
     assert.ok(v.result?.result);
@@ -368,8 +361,6 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       // The target lease is released after the job's end record, so its release is awaited rather than raced.
       for (let i = 0; i < 200 && releases === closed; i++) await new Promise(resolve => setTimeout(resolve, 50));
       assert.equal(releases, closed + 1);
-      // the reference compile skill reports a failed bed check to the user as it is and submits nothing past it: the runner's repeat reads which check
-      // failed, and that the job has ended rather than that it still runs.
       assert.deepEqual(state.failed_conditions, [{ pointer: '/seats', operator: 'at_least' }], JSON.stringify(state));
       const text = (await client.call('submit_result', v.sent!)).out.dispatch?.[0]?.text ?? '';
       assert.match(text, /已结束/); assert.doesNotMatch(text, /还在进行/);
@@ -390,7 +381,6 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.equal(refusal.body.error_code,'EFFECT_BUDGET_EXHAUSTED');assert.equal(refusal.body.detail.boundary_clause,4);assert.equal(refusal.body.detail.effect_row,'submit_verified_workbook');
     assert.equal((await dispatch().status(bed.hub.admin.principal,frozen.job)).frozen,true,'a new budget refusal never unfreezes the original effect');
     const whileFrozen=await verify(await plan(booked,1),1);
-    // While the first effect is unresolved the Hub dispatches nothing for the next case and says why in the runner's answer.
     assert.ok(!whileFrozen.result?.dispatch?.some(note=>note.job),JSON.stringify(whileFrozen.result?.dispatch));assert.match(String(whileFrozen.result?.dispatch?.[0]?.text),/上机验证没有发出|没有发出/);
     await assert.rejects(dispatch().dispatch(bed.hub.admin.principal,whileFrozen.run,executor),/冻结|占用/);
     assert.equal(submissions,before+1);

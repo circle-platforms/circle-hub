@@ -48,8 +48,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "af502c5549bfc72e2434a6aaee74a80a19beade3bfc75a1d348e9be80e44ab0b",
-      "size": 17335
+      "sha256": "74613a239df268c1c4a6934ed2c3be8c12bbd21385066dbf974dd68f59d4449e",
+      "size": 17290
     },
     {
       "path": "agents/compile-attributor.md",
@@ -508,8 +508,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "e0444d820e92d4c50a93e218a9e1b97df90004023a492efc6b151fb8210982a2",
-      "size": 34035
+      "sha256": "51cdf9b0939d899fbfffd380ee96dd018a0e5473d22e25daecabe6624ed62435",
+      "size": 32295
     },
     {
       "path": "functions/quote-sources.ts",
@@ -933,12 +933,12 @@
     },
     {
       "path": "tables/blocks-format.json",
-      "sha256": "77f92ff5785a3963e9926fe7a83549247e070bc1fa16668eeece7315ecc9cb31",
+      "sha256": "23633c1f1282216ce0e17a6646c23e1275656124a6265823b133d63814dff325",
       "size": 21850
     },
     {
       "path": "tables/codes.json",
-      "sha256": "891462dafdc871aa39bf894ae2df24a238ac467cdaf7752f2af3d0651e946ec8",
+      "sha256": "113ca951980369ba4f3862b97f9cf6c4ba7cb238982ccfbe463151b6caba0fd5",
       "size": 14538
     },
     {
@@ -983,8 +983,8 @@
     },
     {
       "path": "tables/recompose-format.json",
-      "sha256": "b95d35af0113024ed0f00630b091c8cd9350d1b50fb8406d5bae32fd4dd28ab7",
-      "size": 1453
+      "sha256": "e40cb38424a2e4e9c5a9b576e9228e6bd9bf42a051ae3ba245354f3da75e07cd",
+      "size": 1439
     },
     {
       "path": "tables/recompose-product.schema.json",
@@ -1223,8 +1223,8 @@
     },
     {
       "path": "tools/open-compile.ts",
-      "sha256": "470cdee4df5694e25a1b73dc21f40cefbcdbb288c31408b2ffbaf5b127710086",
-      "size": 20694
+      "sha256": "1ee42ac79dcfb0db2ea13a542658cf7e9d9bc9a178bd4c44910b270ff1297dab",
+      "size": 20163
     },
     {
       "path": "tools/open-merge.cli.json",
@@ -1303,8 +1303,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "6221e3c8ad5b747244948a85206c2933e0360ed10c56ed9491da972b8a6661f5",
-      "size": 8358
+      "sha256": "b0cdd500cc2965d975c71d53b2e52261a7a7824d5c5ddbf53d07d35564d71671",
+      "size": 8304
     },
     {
       "path": "workflows/compile-loop.js",

@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "785a9a1dd5f5bcd8e091576ae755a5b11f1abead7055673cc12f0e38455c60e6",
-      "size": 293
+      "sha256": "c8e78f21a15fe5db9840c82c7061c5a76274a99ae31409949f43195b10edffba",
+      "size": 476
     },
     {
       "path": "functions/format.ts",

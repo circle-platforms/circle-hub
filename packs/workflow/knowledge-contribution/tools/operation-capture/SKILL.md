@@ -5,7 +5,7 @@ description: 在用户明确开启共享的客户端会话里，由工具后钩�
 
 # 操作采集与整合
 
-本技能目前只支持 macOS 和 Linux：Circle Hub 及其任务包暂不支持 Windows，在 Windows 上命令直接报错，钩子不采集。
+本技能目前只支持 macOS 和 Linux：Circle Hub 及其工作流与技能暂不支持 Windows，在 Windows 上命令直接报错，钩子不采集。
 
 先用 `/skill operation-capture` 加载本技能；只安装或只读 SKILL.md 不会启动钩子。共享默认关闭，每个会话单独开启。技能不读客户端密钥库、环境密钥或真实配置，不上传人的说法、模型转述或其他工具原文。
 

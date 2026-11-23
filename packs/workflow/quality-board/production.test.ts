@@ -1,7 +1,4 @@
 import { labelOf } from './functions/generated/vocabulary.ts';
-// A production run end to end: the published quality-board pack, the real run engine, and a hand-built facet view served by
-// a fake knowledge reader. start_run computes and stores the validation result with no submission; every group's metrics
-// come back as fact claims, the threshold violations as advisory refutations, and the totals as a cross-item claim.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { StartRunOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
@@ -21,8 +18,6 @@ const FACETS_BY = ['line', 'module', 'has_expected', 'negative', 'test_type_stat
 const FACETS_ID = `knowledge:facets:famx:${BUILD.name}?kind=case&by=${FACETS_BY.join(',')}`;
 const TAGS_BY = ['line', 'module', 'tags', 'resource_empty', 'tag_valid'];
 
-// The view: SSL within the thresholds (20 cases: 1 missing, 1 vague, 1 negative — exactly at both maxima, not violations),
-// WebUI outside them (10 cases: 4 missing, 3 vague, 0 negative), and a group without a module.
 const ROWS = [
   facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: false }, 1),
   facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: true, negative: false }, 1),
@@ -60,7 +55,6 @@ describe('a production run of quality-board', { skip }, () => {
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     assert.ok(StartRunOutput.safeParse({ ...detail.answer, trace: '4bf92f3577b34da6a3ce929d0e0e4736' }).success);
     const run = detail.answer.run!;
-    // The pack binds no product line: the view's external id names the product and the build, and no build is locked.
     assert.deepEqual([run.product, run.version, run.build, run.root], [undefined, undefined, undefined, undefined]);
     assert.deepEqual(
       run.requirements.map((r) => [r.key, r.accepted_producer]),
@@ -97,7 +91,6 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(production.counts, { delivered: 3, rejected: 0, quarantined: 0, incomplete: 0, unknown: 2, pending_unknown: 1 });
     assert.deepEqual(production.counts, partitionCountsOf(result.partitions));
 
-    // The answers, written down before the run.
     const ssl = located(result, '10.6.1/SSL');
     assert.deepEqual(
       ssl.requirements.map((r) => [r.requirement, r.status]),
@@ -113,7 +106,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(metrics.ratios.missing, { num: 1, den: 20 });
     assert.deepEqual([metrics.display.missing, metrics.display.negative], [0.05, 0.05]);
     assert.equal(board.claims[0].statement.verdict, 'support');
-    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@2.0.12', independence: 'judge_not_author' });
+    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@2.0.13', independence: 'judge_not_author' });
     // 没有绑定评审时含糊分母是 0，阈值检查是 unknown，不是支持。
     assert.deepEqual(ssl.requirements[1].claims.map((c) => c.statement.verdict), ['unknown']);
 
@@ -136,7 +129,6 @@ describe('a production run of quality-board', { skip }, () => {
       [undefined, 'quality-board.missing_expected', 'quality-board.negative_share'],
     );
 
-    // The totals are a cross-item fact claim and say what the board cannot see.
     const totals = result.cross_item.find((c) => c.requirement === 'totals');
     assert.ok(totals, 'the totals claim');
     assert.equal(totals.statement.verdict, 'support');
@@ -148,7 +140,6 @@ describe('a production run of quality-board', { skip }, () => {
     assert.match(totals.statement.text, /不是整套测试/);
     assert.ok(totals.statement.text.includes(labelOf('knowledge_count', 'commandless_cases')));
 
-    // The result is the run's latest and readable by reference.
     const view = (await hub.service.getRun(hub.alice, run.run))!;
     assert.deepEqual(view.latest, { record: production.record, result });
   });

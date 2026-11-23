@@ -5,6 +5,7 @@ import {startPostgres,type TemporaryPostgres} from '../../../hub/testing/postgre
 import {createTestParserRegistry} from '../../../hub/testing/parsers.ts';
 import {recognize} from '../../../hub/refs/api.ts';
 import {call,openHub,sha,ROOT,type Hub} from './testing/hub.ts';
+import {attachRecompositionFields,runSyntheticRecomposition,type RecompositionResult} from './testing/recompose-hub-helper.ts';
 import {PairKnowledge} from './testing/pair-knowledge.ts';
 import {hubProblems,unique} from './testing/hub-answer.ts';
 import {lockedTreeOf} from './testing/locked-tree.ts';
@@ -16,7 +17,7 @@ import {checkPlanObject} from './tools/check-plan.ts';
 type Doc=Record<string,any>;
 type Step=Parameters<typeof fixture>[0][number];
 const skip=(await osIsolationAvailable())?false:'no OS network isolation on this machine (sandbox-exec)';
-let postgres:TemporaryPostgres,hub:Hub;
+let postgres:TemporaryPostgres,hub:Hub,recomp:RecompositionResult;
 
 const clearAll={words:['clear','demo','all'],signatures:[{id:'1',reference:`src:${'b'.repeat(64)}/xml@1/x/clear/arguments`,params:[]}]};
 const ENTRIES=[...catalog.entries.map(entry=>({words:entry.words,signatures:entry.signatures})),clearAll];
@@ -50,6 +51,7 @@ before(async()=>{
  hub=await openHub(postgres,{knowledge:new PairKnowledge(ENTRIES,POLICY)});
  const put=(id:string,value:Uint8Array)=>hub.external.put(id,{bytes:value,mediaType:'application/json'});
  put('agile:mindmap:doc-inv',bytes);for(const [id,value] of [['inv-contract',CONTRACT],['inv-profile',PROFILE_DOC],['inv-bed',MANIFEST_DOC]] as const)put('doc:doc:'+id,Buffer.from(JSON.stringify(value)));
+ recomp=await runSyntheticRecomposition(hub,{product:'widget',build:'Fixture_Build_A',subject:{external:'agile:mindmap:doc-inv'}});
 });
 after(async()=>{await hub?.close();await postgres?.stop();});
 
@@ -62,13 +64,13 @@ function claim(index:number,steps:Step[]){
 
 describe('check-plan against the real Hub: the cleanup a declared pair owes',{skip},()=>{
  it('refuses a plan that turns a switch on and never off, accepts it with the inverse, and says the same here and there',{timeout:180_000},async()=>{
-  const started=await hub.service.startRunDetailed(hub.alice,{pack:'case-compile',product:'widget',build:'Fixture_Build_A',inputs:{subject:{external:'agile:mindmap:doc-inv'},contract:{external:'doc:doc:inv-contract'},profile:{external:'doc:doc:inv-profile'},inventory:{external:'doc:doc:inv-bed'}},parameters:{pipeline:'legacy'}} as never,call());
+  const started=await hub.service.startRunDetailed(hub.alice,{pack:'case-compile',product:'widget',build:'Fixture_Build_A',inputs:{subject:{external:'agile:mindmap:doc-inv'},contract:{external:'doc:doc:inv-contract'},profile:{external:'doc:doc:inv-profile'},inventory:{external:'doc:doc:inv-bed'},recomposition_run:{reference:recomp.runRef},recomposition_result:{reference:recomp.resultRef}}} as never,call());
   assert.equal(started.answer.call_result,'ok',JSON.stringify(started.answer.errors));
   const run=started.answer.run!,exported=await hub.service.exportRun!(hub.alice,run.run);assert.ok(exported);
   const frozen=JSON.parse(JSON.stringify(exported.run)) as Record<string,unknown>;
   assert.equal(frozen.root,ROOT);assert.ok(frozen.command_policy,'the frozen run carries the product\'s command policy');
   const tree=lockedTreeOf({root:ROOT,complete:true,entries:ENTRIES},String(frozen.run));
-  const items=run.items.map((item,index)=>({item:item.id,handling:'handled' as const,slots:{plan:[claim(index,VARIANTS[index][1])]}}));
+  const items=run.items.map((item,index)=>{const slot=claim(index,VARIANTS[index][1]);attachRecompositionFields(item,recomp.resultRef,slot.data);return {item:item.id,handling:'handled' as const,slots:{plan:[slot]}};});
   const answer=await hub.service.submitResult(hub.alice,{run:run.run,model:'synthetic-model',items} as never,call());
   assert.ok(hub.knowledge.selectedCatalogReads>0&&hub.knowledge.fullCatalogReads===0,'the engine reads the catalog through the selection of the check');
   for(const [index,[label,,owed]] of VARIANTS.entries()){

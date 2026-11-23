@@ -95,7 +95,7 @@
     },
     {
       "path": "functions/local-checks.ts",
-      "sha256": "16a31124a36ea31b0fb8863432955accacb1078a15236904d19b681629545d82",
+      "sha256": "9f37065fc6d31ee2cac3192be2fb1f1b12e527c4724911ee55feafc31de6ecb3",
       "size": 19742
     },
     {
@@ -205,8 +205,8 @@
     },
     {
       "path": "tables/recompose-format.json",
-      "sha256": "b95d35af0113024ed0f00630b091c8cd9350d1b50fb8406d5bae32fd4dd28ab7",
-      "size": 1453
+      "sha256": "e40cb38424a2e4e9c5a9b576e9228e6bd9bf42a051ae3ba245354f3da75e07cd",
+      "size": 1439
     },
     {
       "path": "tables/recompose-record.schema.json",

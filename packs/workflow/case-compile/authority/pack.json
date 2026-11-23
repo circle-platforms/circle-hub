@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "d96ca0745ea0aaaaab476d9987254efb800a9c7069d9b82f858d3a31602cf711",
-      "size": 152
+      "sha256": "dfd01b1ad6702ca57f9e4062dd7a1d56453630fc524299ab317ee3390309660f",
+      "size": 348
     },
     {
       "path": "checks.json",
@@ -83,8 +83,8 @@
     },
     {
       "path": "tables/recompose-format.json",
-      "sha256": "b95d35af0113024ed0f00630b091c8cd9350d1b50fb8406d5bae32fd4dd28ab7",
-      "size": 1453
+      "sha256": "e40cb38424a2e4e9c5a9b576e9228e6bd9bf42a051ae3ba245354f3da75e07cd",
+      "size": 1439
     },
     {
       "path": "tables/recompose-product.schema.json",

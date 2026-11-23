@@ -5,6 +5,7 @@ import {startPostgres,type TemporaryPostgres} from '../../../hub/testing/postgre
 import {createTestParserRegistry} from '../../../hub/testing/parsers.ts';
 import {recognize} from '../../../hub/refs/api.ts';
 import {call,openHub,sha,ROOT,type Hub} from './testing/hub.ts';
+import {attachRecompositionFields,runSyntheticRecomposition,type RecompositionResult} from './testing/recompose-hub-helper.ts';
 import {CONTRACT_DOC,PROFILE_DOC,MANIFEST_DOC,AUTOID,goodData} from './functions/test-support.ts';
 import {checkPlanObject} from './tools/check-plan.ts';
 import {lockedTreeOf} from './testing/locked-tree.ts';
@@ -16,18 +17,19 @@ import {CHAPTER,FLAGS_INTRO,HOST_ROW,MANUAL,PUBLISH,SIGN,manualReference} from '
 import CHECKS from './checks.json' with {type:'json'};
 
 const skip=(await osIsolationAvailable())?false:'no OS network isolation on this machine (sandbox-exec)';
-let postgres:TemporaryPostgres,hub:Hub;
+let postgres:TemporaryPostgres,hub:Hub,recomp:RecompositionResult;
 const CASES=6;
 const document={root:{data:{id:'doc-par',text:'合成文档'},children:Array.from({length:CASES},(_,i)=>({data:{id:'case-'+i,text:'健康检查间隔配置测试'+i,resource:['功能'],priority:2,autoid:String(BigInt(AUTOID)+BigInt(i)),auto:'1'},children:[{data:{id:'step-'+i,text:'widget health interval 60'},children:[{data:{id:'expected-'+i,text:'健康检查间隔设置成功'}}]}]}))}};
 const bytes=Buffer.from(JSON.stringify(document));
 const nodes=(recognize(createTestParserRegistry(),bytes,'application/json')!.document.model as {nodes:Array<{data:{id?:string};selector:string}>}).nodes;
 const leaf=(i:number)=>`src:${sha(bytes.toString())}/kityminder@1/${nodes.find(node=>node.data.id==='expected-'+i)!.selector}`;
-const start=()=>({pack:'case-compile',product:'widget',build:'Fixture_Build_A',inputs:{subject:{external:'agile:mindmap:doc-par'},contract:{external:'doc:doc:par-contract'},profile:{external:'doc:doc:par-profile'},inventory:{external:'doc:doc:par-bed'}},parameters:{pipeline:'legacy'}});
+const start=()=>({pack:'case-compile',product:'widget',build:'Fixture_Build_A',inputs:{subject:{external:'agile:mindmap:doc-par'},contract:{external:'doc:doc:par-contract'},profile:{external:'doc:doc:par-profile'},inventory:{external:'doc:doc:par-bed'},recomposition_run:{reference:recomp.runRef},recomposition_result:{reference:recomp.resultRef}}});
 before(async()=>{
  postgres=await startPostgres();if(skip)return;
  hub=await openHub(postgres);
  const put=(id:string,value:Uint8Array)=>hub.external.put(id,{bytes:value,mediaType:'application/json'});
  put('agile:mindmap:doc-par',bytes);for(const [id,value] of [['par-contract',CONTRACT_DOC],['par-profile',PROFILE_DOC],['par-bed',MANIFEST_DOC]] as const)put('doc:doc:'+id,Buffer.from(JSON.stringify(value)));
+ recomp=await runSyntheticRecomposition(hub,{product:'widget',build:'Fixture_Build_A',subject:{external:'agile:mindmap:doc-par'}});
 });
 after(async()=>{await hub?.close();await postgres?.stop();});
 
@@ -61,7 +63,7 @@ async function parity(variants:typeof STRUCTURE){
  const frozen=JSON.parse(JSON.stringify(exported.run)) as Record<string,unknown>;
  const view=await hub.knowledge.catalog(ROOT,'commands@1');assert.ok(view);
  const catalog=lockedTreeOf({root:ROOT,complete:view.complete,entries:view.entries()});
- const items=run.items.map((item,index)=>({item:item.id,handling:'handled' as const,slots:{plan:[claim(index,variants[index][1])]}}));
+ const items=run.items.map((item,index)=>{const slot=claim(index,variants[index][1]);attachRecompositionFields(item,recomp.resultRef,slot.data);return {item:item.id,handling:'handled' as const,slots:{plan:[slot]}};});
  const answer=await hub.service.submitResult(hub.alice,{run:run.run,model:'synthetic-model',items} as never,call());
  return {run,frozen,catalog,items,answer};
 }
@@ -118,7 +120,7 @@ describe('check-plan against the real Hub: the quotation check',{skip},()=>{
   ['a quote of white space',{reference:ref(PUBLISH),text:' '}],
   ['no quote at all',null],
  ];
- let quoteHub:Hub;
+ let quoteHub:Hub,quoteRecomp:RecompositionResult;
  const document={root:{data:{id:'doc-quote',text:'合成文档'},children:VARIANTS.map((_,i)=>({data:{id:'case-'+i,text:'健康检查间隔配置测试'+i,resource:['功能'],priority:2,autoid:String(BigInt(AUTOID)+BigInt(i)),auto:'1'},children:[{data:{id:'step-'+i,text:'widget health interval 60'},children:[{data:{id:'expected-'+i,text:'健康检查间隔设置成功'}}]}]}))}};
  const quoteBytes=Buffer.from(JSON.stringify(document));
  const quoteNodes=(recognize(createTestParserRegistry(),quoteBytes,'application/json')!.document.model as {nodes:Array<{data:{id?:string};selector:string}>}).nodes;
@@ -128,6 +130,7 @@ describe('check-plan against the real Hub: the quotation check',{skip},()=>{
   quoteHub=await openHub(postgres,{knowledge:new PairKnowledge(ENTRIES,SYNTHETIC_COMMAND_POLICY,MANUAL)});
   const put=(id:string,value:Uint8Array)=>quoteHub.external.put(id,{bytes:value,mediaType:'application/json'});
   put('agile:mindmap:doc-quote',quoteBytes);for(const [id,value] of [['quote-contract',CONTRACT_DOC],['quote-profile',PROFILE_DOC],['quote-bed',MANIFEST_DOC]] as const)put('doc:doc:'+id,Buffer.from(JSON.stringify(value)));
+  quoteRecomp=await runSyntheticRecomposition(quoteHub,{product:'widget',build:'Fixture_Build_A',subject:{external:'agile:mindmap:doc-quote'}});
  });
  after(async()=>{await quoteHub?.close();});
  const claimOf=(index:number)=>{
@@ -136,13 +139,13 @@ describe('check-plan against the real Hub: the quotation check',{skip},()=>{
   return {text:'合成计划槽位',quotes:data.expects.map(row=>row.quote),data};
  };
  it('refuses the quotes the Hub refuses, with the Hub\'s words first, and passes the ones it passes',{timeout:240_000},async()=>{
-  const started=await quoteHub.service.startRunDetailed(quoteHub.alice,{pack:'case-compile',product:'widget',build:'Fixture_Build_A',inputs:{subject:{external:'agile:mindmap:doc-quote'},contract:{external:'doc:doc:quote-contract'},profile:{external:'doc:doc:quote-profile'},inventory:{external:'doc:doc:quote-bed'}},parameters:{pipeline:'legacy'}} as never,call());
+  const started=await quoteHub.service.startRunDetailed(quoteHub.alice,{pack:'case-compile',product:'widget',build:'Fixture_Build_A',inputs:{subject:{external:'agile:mindmap:doc-quote'},contract:{external:'doc:doc:quote-contract'},profile:{external:'doc:doc:quote-profile'},inventory:{external:'doc:doc:quote-bed'},recomposition_run:{reference:quoteRecomp.runRef},recomposition_result:{reference:quoteRecomp.resultRef}}} as never,call());
   assert.equal(started.answer.call_result,'ok',JSON.stringify(started.answer.errors));
   const run=started.answer.run!,exported=await quoteHub.service.exportRun!(quoteHub.alice,run.run);assert.ok(exported);
   const frozen=JSON.parse(JSON.stringify(exported.run)) as Record<string,unknown>;
   assert.equal(frozen.root,ROOT);
   const tree=lockedTreeOf({root:ROOT,complete:true,entries:ENTRIES,manual:MANUAL},String(frozen.run));
-  const items=run.items.map((item,index)=>({item:item.id,handling:'handled' as const,slots:{plan:[claimOf(index)]}}));
+  const items=run.items.map((item,index)=>{const slot=claimOf(index);attachRecompositionFields(item,quoteRecomp.resultRef,slot.data);return {item:item.id,handling:'handled' as const,slots:{plan:[slot]}};});
   const answer=await quoteHub.service.submitResult(quoteHub.alice,{run:run.run,model:'synthetic-model',items} as never,call());
   let refused=0;
   for(const [index,[label]] of VARIANTS.entries()){

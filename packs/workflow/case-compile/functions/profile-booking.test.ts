@@ -17,7 +17,7 @@ const lease = (key: string, mine = true) => ({ key, until: null, mine });
 const startInput = (entries: unknown[], profile: unknown = profileDocument()) => ({ inputs: [
   { slot: 'subject', sha256: 'a'.repeat(64), parser: 'kityminder@1', model },
   { slot: 'contract', model: runtimeDocument() }, { slot: 'profile', model: profile }, { slot: 'inventory', model: MANIFEST_DOC },
-], parameters: { pipeline: 'legacy', autoid: AUTOID }, context: { leases: { now: '2026-10-23T02:00:00.000Z', entries } } });
+], parameters: { autoid: AUTOID }, context: { leases: { now: '2026-10-23T02:00:00.000Z', entries } } });
 const profileBed = (profileDocument() as { bed: string }).bed;
 
 test('the booked beds are the beds of the device leases the lineage holds, not address keys or leases of others', () => {

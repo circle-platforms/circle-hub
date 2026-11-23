@@ -1,9 +1,14 @@
+---
+name: traceability
+description: 核对构建修复缺陷在用例索引中是否已追溯时使用：不绑定产品线。
+---
+
 # 追溯矩阵
 
-Hub 直接算出一个构建的缺陷到用例的追溯矩阵：构建的 release notes 列出的每个缺陷，有没有已索引的用例携带它的编号。不需要你提交结果。
+由 Hub 直接算出缺陷到用例的追溯矩阵（release notes 缺陷是否已有索引用例携带编号），无需提交结果。
 
 0. 缺陷编号来自该构建的修复清单。开始前先让 Hub 读一次：`{"pack":"source-read","product":"<产品>","build":"<构建>","inputs":{"build_page":{"external":"buildsite:file:<链接>"}}}`，<链接> 是构建站列表页上该构建条目的修复缺陷清单链接（去掉协议和主机）。product 和 build 两项都写，读到的缺陷才按这个构建进喂入层。回执显示投影进行中时，稍后用该运行号 get_nodes 查看，完成后再开始；回执写明原件缺失的事实时照实转述，不重复读。
-1. 开始运行：pack 写 traceability。inputs.defects 写 `{"external": "knowledge:index:<产品>:<构建>?kind=defect&key=bug"}`，inputs.cases 写 `{"external": "knowledge:index:<产品>:<构建>?kind=case&key=defects"}`。两个视图要指向同一个知识根（构建名写任一名称族的写法都可以）。不要在这两个标识里写 only= 或 fields=，也不要向用户索取缺陷编号。编号是第 0 步读进喂入层的修复清单（以及知识根里已有的缺陷条目），Hub 绑定 cases 时按这些编号自动加上 only=，并加上追溯用到的 fields=（case、defects、document、node、system、title）。这个任务包不绑定产品线：不要写 product、version、build（顶层和 parameters 都不要）——输入里的外部标识已经写明产品和构建，运行不会去锁定别的构建。可选参数 statuses 写 `["fixed"]` 或 `["known"]` 只看一种状态的缺陷，不写则两个都算。
+1. 开始运行：pack 写 traceability。inputs.defects 写 `{"external": "knowledge:index:<产品>:<构建>?kind=defect&key=bug"}`，inputs.cases 写 `{"external": "knowledge:index:<产品>:<构建>?kind=case&key=defects"}`。两个视图要指向同一个知识根（构建名写任一名称族的写法都可以）。不要在这两个标识里写 only= 或 fields=，也不要向用户索取缺陷编号。编号是第 0 步读进喂入层的修复清单（以及知识根里已有的缺陷条目），Hub 绑定 cases 时按这些编号自动加上 only=，并加上追溯用到的 fields=（case、defects、document、node、system、title）。这个工作流不绑定产品线：不要在顶层或 parameters 写 product、version、build（外部标识已含产品与构建）。可选参数 statuses 写 `["fixed"]` 或 `["known"]` 只看一种状态的缺陷，不写则两个都算。
 2. 缺陷系统状态与期望来源：开始运行时由 expected_sources 将缺陷编号按数值排序去重后分组（每组至多 50 个）生成外部标识 `plm:bugs:<编号>+<编号>+…` 批量查询缺陷系统状态（只查询系统明确包含 plm 的缺陷；系统不明或为 bugzilla 的不查，避免张冠李戴）。Bugzilla 明确写“状态未读：系统未接入”，这是确定的数据缺口，不算临时未知。其他读不到状态时记未知并写明原因（缺陷系统不明不按编号查、整份缺陷系统来源不可用、记录中无状态、编号未返回），绝不假定为未关闭。
 3. 结果在开始运行时就算好了：每个条目是一个缺陷（已知系统时条目编号是系统加缺陷编号，系统未给出时保留编号），摘要是“状态；用例数”，完整结论在 result.reference 指向的校验结果里。逐条结论用 get_nodes 读取：条目多时回答放不下所有条目，末尾的说明会写明略去了哪些、怎么接着读，照它读完再转述。矩阵按（系统，编号）连接，两个系统的同号分别列项并记确定的撞号反驳。用例系统未给出时，仅在编号唯一归属一个已读系统时连接；撞号用例须补取系统来源，不能强行归到任一系统。
 4. 原样转述每个条目的结论，结论文字均以“缺陷 X（发布说明：…；缺陷系统：…）：…”开头，不补全、不猜测：
@@ -13,7 +18,7 @@ Hub 直接算出一个构建的缺陷到用例的追溯矩阵：构建的 releas
 5. 运行级的计数（要求项 counts）在结果的 cross_item 里：缺陷数、已追溯数、未追溯数、已关闭缺陷数及其中已追溯/未追溯数（按 tables/closed-statuses.json 定义的已关闭状态计算，初值 closed）、缺陷系统状态未知数（不算已关闭也不算未关闭）、状态矛盾数，以及两个视图各自声明的总数、有没有截断、有没有列出的来源没有读取。视图被截断时计数只覆盖列出的部分，转述时照写。
 6. submit_result 不是必需的；要补充看法时可以提交，看法记为模型转述的判断，不改变 Hub 算出的矩阵。
 
-不要向用户索取缺陷编号，也不要自己列举 only=。cases 的 only= 和 fields= 由 Hub 按构建修复清单补上；调用方已经写了 only= 或 fields= 时 Hub 保留原样。来源未读、条目内容缺失和所选状态为零分别按回执事实处理，不猜发布说明不存在。
+保留已有 only=/fields= 原样（否则由 Hub 补上）；来源未读、缺内容或所选状态为零均按回执事实转述，不猜发布说明不存在。
 当前完整范围和缺席观察仍待 hub-view-scope / hub-read-absence；未追溯的确定缺席反驳在这两个接口合入后完成，不将当前未知当作验收通过。
 
 喂入层：这个包读到的用例、缺陷、构建、规格凡经 Hub 读的都由程序自动进喂入层（带锁定树苗和冻结序号），视图按"锁定树苗 + 冻结序号之前的喂入层"读；版本未声明和矛盾的对象单列计数，不进版本差。Circle 只经 knowledge-contribution 回注补程序填不了的语义（带逐字引文），运行中不问人；结构契约见该包 tables/knowledge-structure.json 或 get_nodes 根路径。
