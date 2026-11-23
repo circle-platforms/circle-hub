@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -111,30 +111,50 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     const channelFileUrl = hub.url + '/api/bot-channel/v1/files/' + fileSha;
     assert.equal((await fetch(channelFileUrl, { method: 'GET', headers: { authorization: 'Bearer ' + stored.token } })).status, 403);
     const subjectHeader = Buffer.from('ext-user-1', 'utf8').toString('base64url');
+    assert.equal(
+      (
+        await fetch(channelFileUrl, {
+          method: 'PUT',
+          headers: {
+            authorization: 'Bearer ' + stored.token,
+            'circle-member-subject': subjectHeader,
+            'content-length': String(fileBytes.length),
+          },
+          body: fileBytes,
+        })
+      ).status,
+      403,
+    );
     const putFile = await fetch(channelFileUrl, {
       method: 'PUT',
       headers: {
         authorization: 'Bearer ' + stored.token,
-        'circle-member-subject': subjectHeader,
+        'bot-member-subject': subjectHeader,
         'content-length': String(fileBytes.length),
       },
       body: fileBytes,
     });
     assert.equal(putFile.status, 200);
     assert.deepEqual(await putFile.json(), { sha256: fileSha, size: fileBytes.length });
-    const getByMember = await fetch(hub.url + botFilesPath + fileSha, {
+
+    // H3: PUT went to channel-staging only, NOT into member files dir yet
+    const memberHash = createHash('sha256').update(member.principal.id).digest('hex');
+    const stagedPath = join(hub.deps.config.dataDir, 'bot-runtime', 'channel-staging', memberHash, fileSha);
+    assert.equal((await stat(stagedPath)).isFile(), true);
+    const getBeforeInbound = await fetch(hub.url + botFilesPath + fileSha, {
       headers: { authorization: 'Bearer ' + member.token },
     });
-    assert.equal(getByMember.status, 200);
-    assert.equal(await getByMember.text(), 'channel-attachment');
-    const getByChannel = await fetch(channelFileUrl, {
+    assert.equal(getBeforeInbound.status, 404);
+
+    // H3: Channel GET without Bot-Delivery-Receipt is forbidden
+    const getNoReceipt = await fetch(channelFileUrl, {
       headers: {
         authorization: 'Bearer ' + stored.token,
-        'circle-member-subject': subjectHeader,
+        'bot-member-subject': subjectHeader,
       },
     });
-    assert.equal(getByChannel.status, 200);
-    assert.equal(await getByChannel.text(), 'channel-attachment');
+    assert.equal(getNoReceipt.status, 403);
+    assert.equal(((await getNoReceipt.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
 
     const inboundPayload = {
       action: 'inbound',
@@ -155,6 +175,19 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     assert.equal(op1.request, op2.request);
     assert.equal(hostCalls[0].owner, member.principal.id);
 
+    // H3: Inbound verified & promoted staged file into member files and appended member-bot-inbound@1 declared record
+    await assert.rejects(stat(stagedPath));
+    const getByMember = await fetch(hub.url + botFilesPath + fileSha, {
+      headers: { authorization: 'Bearer ' + member.token },
+    });
+    assert.equal(getByMember.status, 200);
+    assert.equal(await getByMember.text(), 'channel-attachment');
+    const inboundRecord = await hub.records.store.getByKey('action', 'chat-inbound:' + op1.request);
+    assert.equal(inboundRecord?.schema, 'member-bot-inbound@1');
+    assert.equal(inboundRecord?.provenance, 'declared');
+    assert.ok(!JSON.stringify(inboundRecord?.body).includes('note.txt'));
+    assert.ok(!JSON.stringify(inboundRecord?.body).includes('你好'));
+
     assert.deepEqual(await (await postChannel(stored.token, { action: 'next' })).json(), { delivery: null });
 
     const receiptGood = '11111111-1111-4111-8111-111111111111';
@@ -168,7 +201,17 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     };
     const mismatchRes = await postChannel(stored.token, { action: 'next' });
     assert.deepEqual(await mismatchRes.json(), { delivery: null });
-    assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'refused');
+    assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'not_dispatched');
+
+    // H3: Channel GET before intent exists for receiptGood is refused
+    const getUnintended = await fetch(channelFileUrl, {
+      headers: {
+        authorization: 'Bearer ' + stored.token,
+        'bot-member-subject': subjectHeader,
+        'bot-delivery-receipt': receiptGood,
+      },
+    });
+    assert.equal(getUnintended.status, 403);
 
     nextDelivery = {
       id: '33333333-3333-4333-8333-333333333333',
@@ -181,41 +224,164 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     };
     const nextRes = await postChannel(stored.token, { action: 'next' });
     assert.equal(nextRes.status, 200);
-    const nextJson = (await nextRes.json()) as { delivery: { text: string; receipt: string; sha256: string } };
-    assert.equal(nextJson.delivery.text, '来自 Mac：\n已同步结果');
+    const nextJson = (await nextRes.json()) as {
+      delivery: {
+        text: string;
+        receipt: string;
+        role: string;
+        sha256: string;
+        size: number;
+        intent: {
+          sha256: string;
+          size: number;
+          text_sha256: string | null;
+          text_size: number;
+          file_sha256: string | null;
+          file_size: number | null;
+          name_sha256: string | null;
+        };
+      };
+    };
+    assert.equal(nextJson.delivery.text, '已同步结果');
+    assert.equal(nextJson.delivery.role, 'user');
     assert.equal(nextJson.delivery.receipt, receiptGood);
-    assert.equal(nextJson.delivery.sha256, fileSha);
+    assert.equal(nextJson.delivery.intent.text_sha256, createHash('sha256').update('已同步结果').digest('hex'));
+    assert.equal(nextJson.delivery.intent.text_size, Buffer.byteLength('已同步结果'));
+    assert.equal(nextJson.delivery.intent.file_sha256, fileSha);
+    assert.equal(nextJson.delivery.intent.file_size, fileBytes.length);
+    assert.equal(nextJson.delivery.sha256, nextJson.delivery.intent.sha256);
+    assert.equal(nextJson.delivery.size, nextJson.delivery.intent.text_size + fileBytes.length);
 
     const intentRecord = await hub.records.store.getByKey('action', 'chat-intent:' + receiptGood);
     assert.equal(intentRecord?.schema, 'member-notification-intent@1');
 
+    // H3: Now channel GET with matching intent, member, and receipt succeeds; wrong sha or wrong member fails
+    const getByChannel = await fetch(channelFileUrl, {
+      headers: {
+        authorization: 'Bearer ' + stored.token,
+        'bot-member-subject': subjectHeader,
+        'bot-delivery-receipt': receiptGood,
+      },
+    });
+    assert.equal(getByChannel.status, 200);
+    assert.equal(await getByChannel.text(), 'channel-attachment');
+
+    const getWrongSha = await fetch(hub.url + '/api/bot-channel/v1/files/' + '9'.repeat(64), {
+      headers: {
+        authorization: 'Bearer ' + stored.token,
+        'bot-member-subject': subjectHeader,
+        'bot-delivery-receipt': receiptGood,
+      },
+    });
+    assert.equal(getWrongSha.status, 403);
+    const getWrongShaJson = await getWrongSha.json();
+    const getMissingIntentFile = await fetch(channelFileUrl, {
+      headers: {
+        authorization: 'Bearer ' + stored.token,
+        'bot-member-subject': subjectHeader,
+        'bot-delivery-receipt': '00000000-0000-4000-8000-000000000000',
+      },
+    });
+    assert.equal(getMissingIntentFile.status, 403);
+    assert.deepEqual(await getMissingIntentFile.json(), getWrongShaJson);
+
     const replayNext = await postChannel(stored.token, { action: 'next' });
     assert.deepEqual(await replayNext.json(), { delivery: null });
 
-    assert.equal(
-      (
-        await postChannel(stored.token, {
-          action: 'receipt',
-          receipt: '44444444-4444-4444-8444-444444444444',
-          state: 'sent',
-          acknowledgment: { request: fileSha, code: 0 },
-          reached_target: true,
-        })
-      ).status,
-      404,
-    );
+    // H12: Existing vs nonexistent receipt cross-member/channel error responses are indistinguishable
+    const otherReceipt = '44444444-4444-4444-8444-444444444444';
+    const missingReceiptRes = await postChannel(stored.token, {
+      action: 'receipt',
+      receipt: otherReceipt,
+      state: 'issued',
+      acknowledgment: { request: fileSha, code: 0 },
+      reached_target: true,
+    });
+    assert.equal(missingReceiptRes.status, 404);
+    const missingReceiptJson = await missingReceiptRes.json();
 
-    const badAckRes = await postChannel(stored.token, {
+    // Insert intent belonging to a different channel and check indistinguishable 404 payload
+    await hub.records.store.put({
+      kind: 'action',
+      schema: 'member-notification-intent@1',
+      provenance: 'declared',
+      unique_key: 'chat-intent:99999999-9999-4999-8999-999999999999',
+      body: {
+        ...(intentRecord!.body as Record<string, unknown>),
+        receipt: '99999999-9999-4999-8999-999999999999',
+        channel: 'f'.repeat(64),
+      },
+    });
+    const crossChannelReceiptRes = await postChannel(stored.token, {
+      action: 'receipt',
+      receipt: '99999999-9999-4999-8999-999999999999',
+      state: 'issued',
+      acknowledgment: { request: fileSha, code: 0 },
+      reached_target: true,
+    });
+    assert.equal(crossChannelReceiptRes.status, 404);
+    assert.deepEqual(await crossChannelReceiptRes.json(), missingReceiptJson);
+
+    // H4: Legacy state strings rejected cleanly
+    const legacyStateRes = await postChannel(stored.token, {
       action: 'receipt',
       receipt: receiptGood,
       state: 'sent',
+      acknowledgment: { request: fileSha, code: 0 },
+      reached_target: true,
+    });
+    assert.equal(legacyStateRes.status, 400);
+    assert.equal(((await legacyStateRes.json()) as { code?: string }).code, 'BOT_INVALID_REQUEST');
+
+    // H4: Degraded unknown receipt uses provenance declared + non-empty missing[] & next, then can be confirmed with supersedes
+    const badAckRes = await postChannel(stored.token, {
+      action: 'receipt',
+      receipt: receiptGood,
+      state: 'issued',
       acknowledgment: { request: fileSha, code: 42 },
       reached_target: false,
     });
     assert.equal(badAckRes.status, 200);
     assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'unknown');
     const receiptDegraded = await hub.records.store.getByKey('effect', 'chat-receipt:' + receiptGood);
-    assert.equal((receiptDegraded?.body as { outcome?: string }).outcome, 'unknown');
+    assert.equal(receiptDegraded?.provenance, 'declared');
+    const degradedBody = receiptDegraded?.body as { outcome?: string; missing?: string[]; next?: string };
+    assert.equal(degradedBody.outcome, 'unknown');
+    assert.ok(Array.isArray(degradedBody.missing) && degradedBody.missing.length > 0);
+    assert.ok(typeof degradedBody.next === 'string' && degradedBody.next.length > 0);
+
+    const confirmedRes = await postChannel(stored.token, {
+      action: 'receipt',
+      receipt: receiptGood,
+      state: 'issued',
+      acknowledgment: { request: fileSha, code: 0 },
+      reached_target: true,
+    });
+    assert.equal(confirmedRes.status, 200);
+    assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'issued');
+    const receiptConfirmed = await hub.records.store.getByKey('effect', 'chat-receipt:' + receiptGood + ':confirmed');
+    assert.equal(receiptConfirmed?.provenance, 'declared');
+    assert.equal((receiptConfirmed?.body as { outcome?: string; supersedes?: string }).outcome, 'issued');
+    assert.equal((receiptConfirmed?.body as { supersedes?: string }).supersedes, receiptDegraded?.digest);
+
+    // Idempotent retry on terminal receipt -> 200; conflicting update -> 409 BOT_CONFLICT
+    const idempotentRetry = await postChannel(stored.token, {
+      action: 'receipt',
+      receipt: receiptGood,
+      state: 'issued',
+      acknowledgment: { request: fileSha, code: 0 },
+      reached_target: true,
+    });
+    assert.equal(idempotentRetry.status, 200);
+    const conflictRetry = await postChannel(stored.token, {
+      action: 'receipt',
+      receipt: receiptGood,
+      state: 'target_rejected',
+      acknowledgment: { request: fileSha, code: 99 },
+      reached_target: true,
+    });
+    assert.equal(conflictRetry.status, 409);
+    assert.equal(((await conflictRetry.json()) as { code?: string }).code, 'BOT_CONFLICT');
 
     const receiptIssuedId = '55555555-5555-4555-8555-555555555555';
     nextDelivery = {
@@ -230,14 +396,15 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     const issuedRes = await postChannel(stored.token, {
       action: 'receipt',
       receipt: receiptIssuedId,
-      state: 'sent',
+      state: 'issued',
       acknowledgment: { request: fileSha, code: 0 },
       reached_target: true,
     });
     assert.equal(issuedRes.status, 200);
-    assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'sent');
+    assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'issued');
     const receiptIssued = await hub.records.store.getByKey('effect', 'chat-receipt:' + receiptIssuedId);
     assert.equal((receiptIssued?.body as { outcome?: string }).outcome, 'issued');
+    assert.equal(receiptIssued?.provenance, 'declared');
 
     const receiptRefusedNoAckId = '77777777-7777-4777-8777-777777777777';
     nextDelivery = {
@@ -252,13 +419,86 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     const refusedNoAckRes = await postChannel(stored.token, {
       action: 'receipt',
       receipt: receiptRefusedNoAckId,
-      state: 'refused',
+      state: 'target_rejected',
       reached_target: false,
     });
     assert.equal(refusedNoAckRes.status, 200);
     assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'unknown');
     const receiptRefusedNoAck = await hub.records.store.getByKey('effect', 'chat-receipt:' + receiptRefusedNoAckId);
     assert.equal((receiptRefusedNoAck?.body as { outcome?: string }).outcome, 'unknown');
+
+    // H4: Valid target_rejected supersedes prior unknown, and valid not_dispatched records properly
+    const rejectedConfirm = await postChannel(stored.token, {
+      action: 'receipt',
+      receipt: receiptRefusedNoAckId,
+      state: 'target_rejected',
+      acknowledgment: { request: fileSha, code: 4001 },
+      reached_target: true,
+    });
+    assert.equal(rejectedConfirm.status, 200);
+    assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'target_rejected');
+    const confirmedRejected = await hub.records.store.getByKey(
+      'effect',
+      'chat-receipt:' + receiptRefusedNoAckId + ':confirmed',
+    );
+    assert.equal((confirmedRejected?.body as { outcome?: string }).outcome, 'target_rejected');
+    assert.equal((confirmedRejected?.body as { supersedes?: string }).supersedes, receiptRefusedNoAck?.digest);
+
+    const notDispatchedReceiptId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    nextDelivery = {
+      id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      owner: member.principal.id,
+      subject: 'ext-user-1',
+      receipt: notDispatchedReceiptId,
+      role: 'assistant',
+      text: '未发送',
+    };
+    assert.equal((await postChannel(stored.token, { action: 'next' })).status, 200);
+    const notDispatchedRes = await postChannel(stored.token, {
+      action: 'receipt',
+      receipt: notDispatchedReceiptId,
+      state: 'not_dispatched',
+      reached_target: false,
+    });
+    assert.equal(notDispatchedRes.status, 200);
+    assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'not_dispatched');
+    const notDispatchedRec = await hub.records.store.getByKey('effect', 'chat-receipt:' + notDispatchedReceiptId);
+    assert.equal(notDispatchedRec?.provenance, 'declared');
+    assert.equal((notDispatchedRec?.body as { outcome?: string; reached_target?: boolean }).outcome, 'not_dispatched');
+    assert.equal((notDispatchedRec?.body as { reached_target?: boolean }).reached_target, false);
+
+    // H4: Missing item.file on disk notifies host state='not_dispatched' BEFORE returning 409 BOT_CONFLICT
+    const missingFileReceipt = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    nextDelivery = {
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      owner: member.principal.id,
+      subject: 'ext-user-1',
+      receipt: missingFileReceipt,
+      role: 'assistant',
+      text: '附件遗失',
+      file: { sha256: 'e'.repeat(64), size: 42, name: 'missing.bin' },
+    };
+    const missingFileNext = await postChannel(stored.token, { action: 'next' });
+    assert.equal(missingFileNext.status, 409);
+    assert.equal(((await missingFileNext.json()) as { code?: string }).code, 'BOT_CONFLICT');
+    assert.deepEqual(hostCalls.at(-1)!.op, { action: 'receipt', receipt: missingFileReceipt, state: 'not_dispatched' });
+
+    // H13: Malformed delivery from host logs no raw text/file name
+    const secretPayloadText = 'CONFIDENTIAL_RAW_DELIVERY_TEXT_123';
+    const secretFileName = 'CONFIDENTIAL_FILE_NAME_456.txt';
+    nextDelivery = {
+      id: 'not-a-uuid',
+      owner: member.principal.id,
+      subject: 'ext-user-1',
+      receipt: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      role: 'assistant',
+      text: secretPayloadText,
+      file: { sha256: fileSha, size: fileBytes.length, name: secretFileName },
+    };
+    const malformedNext = await postChannel(stored.token, { action: 'next' });
+    assert.equal(malformedNext.status, 502);
+    assert.ok(!hub.logs.join('\n').includes(secretPayloadText));
+    assert.ok(!hub.logs.join('\n').includes(secretFileName));
 
     await assert.rejects(
       refreshChannel(hub.deps.config.dataDir, hub.records.vault, new Set(['https://other.example.invalid'])),

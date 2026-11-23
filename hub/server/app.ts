@@ -23,7 +23,7 @@ import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import {handlePersonalSync,personalSyncTarget,SyncAdmission} from './personal-sync.ts';
 import { handleRunExport, runExportTarget } from './run-export.ts';
 import { IdentityChallenges } from './console/member-identity.ts';
-import { botFilesPath, handleBotFile } from './bot-files.ts';
+import { botFilesPath, cleanupBotRuntimeTempFiles, handleBotFile } from './bot-files.ts';
 import { chatPath, handleBot, handleBotChannel, refreshChannel } from './personal-bot.ts';
 import { handleMcp } from './mcp.ts';
 import { AuthorizationStore, RegistrationWindow, handleOAuth, issuerOf, oauthTarget, resourceMetadataUrl } from './oauth.ts';
@@ -93,7 +93,13 @@ function printable(target: string | undefined): string {
   return String(target ?? '').slice(0, 200).replace(/[\u0000-\u001f\u007f]/g, '?');
 }
 
-export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
+export interface BotAppTimeoutOptions {
+  requestTimeoutMs?: number;
+  botFileUploadTimeoutMs?: number;
+  channelSyncIntervalMs?: number;
+}
+
+export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutOptions = {}): HubApp {
   const host = deps.config.host;
   const declared = deps.config.allowedHosts;
   const refusedHost = declared ? REFUSED_HOST : '拒绝：Host 必须是本机地址 127.0.0.1:<端口> 或 localhost:<端口>';
@@ -242,18 +248,52 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     const target = parseTarget(request.url);
     const label = target&&personalSyncTarget(target.url.pathname)?'/api/sync':target === null ? printable(request.url) : printable(target.url.pathname);
     const finished = beginRequest(options.health?.requests, request, target?.url.pathname ?? null);
+    const pathname = target?.url.pathname ?? '';
+    const isBotFileUpload =
+      request.method === 'PUT' &&
+      (pathname.startsWith(botFilesPath) || pathname.startsWith('/api/bot-channel/v1/files/'));
+    const perRequestTimeoutMs = isBotFileUpload
+      ? (options.botFileUploadTimeoutMs ?? 15 * 60 * 1000)
+      : (options.requestTimeoutMs ?? 120_000);
+    const reqTimer = setTimeout(() => {
+      if (response.writableFinished || response.destroyed) return;
+      try {
+        request.destroy();
+        if (!response.headersSent) {
+          sendJson(
+            response,
+            408,
+            pathname.startsWith('/api/bot')
+              ? { code: 'BOT_UPSTREAM_UNAVAILABLE', message: '请求处理超时' }
+              : { error: '请求处理超时' },
+            { connection: 'close' },
+          );
+        } else {
+          response.destroy();
+        }
+      } catch {
+        response.destroy();
+      }
+    }, perRequestTimeoutMs);
+    reqTimer.unref();
     // `task` never rejects: fail() catches everything, so no request can leave a rejection nobody handles. Its trace ends
     // with it, the last-resort 500 included.
     const remote = traceContextFrom(request.headers.traceparent);
     const answered = new Promise<void>(resolve => {
-      const done = () => { response.off('finish', done); response.off('close', done); resolve(); };
-      response.once('finish', done); response.once('close', done);
+      const done = () => {
+        clearTimeout(reqTimer);
+        response.off('finish', done);
+        response.off('close', done);
+        resolve();
+      };
+      response.once('finish', done);
+      response.once('close', done);
       if (response.writableFinished || response.destroyed) done();
     });
     const task: Promise<void> = startTrace({ ...requestEntry(target?.url.pathname), traceId: remote?.traceId, parentSpanId: remote?.parentSpanId }, () =>
       route(request, response, target).catch((error: unknown) => fail(request, response, label, error)).finally(() => noteAnswer(response))).then(() => answered);
     inflight.add(task);
-    void task.finally(() => { finished(); inflight.delete(task); }).catch(() => {});
+    void task.finally(() => { clearTimeout(reqTimer); finished(); inflight.delete(task); }).catch(() => {});
   };
 
   /** Waits until no request is in flight (new ones arriving meanwhile included); false when `ms` ran out first. */
@@ -276,7 +316,10 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const listen = async (): Promise<ListenInfo> => {
     if (server !== null) throw new Error('already listening');
     if (closing !== null) throw new Error('the app is closed');
-    const created = createServer({ requestTimeout: 120_000, headersTimeout: 30_000, keepAliveTimeout: 5_000 }, handler);
+    if (typeof deps.config.dataDir === 'string' && deps.config.dataDir.length > 0) {
+      await cleanupBotRuntimeTempFiles(deps.config.dataDir);
+    }
+    const created = createServer({ requestTimeout: 0, headersTimeout: 30_000, keepAliveTimeout: 5_000 }, handler);
     await new Promise<void>((resolve, reject) => {
       created.once('error', reject);
       created.listen(deps.config.port, host, () => {
@@ -288,7 +331,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     const port = (created.address() as AddressInfo).port;
     let secure: ListenInfo['https'];
     if (https && options.tls) {
-      const tls = createSecureServer({ cert: options.tls.cert, key: options.tls.key, minVersion: 'TLSv1.2', requestTimeout: 120_000, headersTimeout: 30_000, keepAliveTimeout: 5_000 }, handler);
+      const tls = createSecureServer({ cert: options.tls.cert, key: options.tls.key, minVersion: 'TLSv1.2', requestTimeout: 0, headersTimeout: 30_000, keepAliveTimeout: 5_000 }, handler);
       try {
         await new Promise<void>((resolve, reject) => {
           tls.once('error', reject);
@@ -319,11 +362,13 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     if (typeof deps.records?.vault?.has === 'function') {
       const syncChannel = () => {
         channelSync ??= refreshChannel(deps.config.dataDir, deps.records.vault, origins)
-          .catch(() => undefined)
+          .catch((error) => {
+            log(`个人助手通道同步失败（refreshChannel）：${describeError(error)}`);
+          })
           .finally(() => { channelSync = undefined; });
       };
       syncChannel();
-      channelTimer = setInterval(syncChannel, 30_000);
+      channelTimer = setInterval(syncChannel, options.channelSyncIntervalMs ?? 30_000);
       channelTimer.unref();
     }
     const literal = host.includes(':') ? `[${host}]` : host;
