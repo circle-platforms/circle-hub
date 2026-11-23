@@ -51,7 +51,10 @@ describe('the pack files', () => {
     assert.equal(checks[1].tier, 'advisory');
     assert.equal(checks[1].basis, undefined);
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
-    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 3600);
+    // start_run returns the full Chinese SKILL.md procedure; alongside frontmatter, 1.8.12 must keep full positive/negative knowledge URI examples (case-sensitive ORBIT and delimiter mistakes).
+    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 3800);
+    assert.match(text('SKILL.md'), /不要写成 orbit，也不要换成别的分隔符/);
+    assert.match(text('SKILL.md'), /三种写错：[\s\S]*错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30\?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30\?kind=case&by=commands`。/);
     assert.match(text('SKILL.md'), /阻断/);
     assert.match(text('SKILL.md'), /提示/);
   });

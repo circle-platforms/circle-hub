@@ -9,17 +9,17 @@ Hub 按影响视图直接算出回归范围（后一构建新增或修改路径�
 
 ## 知识视图标识
 
-写法为 `knowledge:<视图>:<产品>:<构建>[?参数]`（四段冒号，产品按登记大小写），下以合成产品 ORBIT、构建 Rel_ORBIT_7_1_0_30 为例。
+写法是 `knowledge:<视图>:<产品>:<构建>[?参数]`，四段用冒号，参数在问号后。产品按登记的大小写照抄。下面用合成产品 ORBIT、构建 Rel_ORBIT_7_1_0_30，不要写成 orbit，也不要换成别的分隔符。
 
 - facets：`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。必填 kind、by。
 - index：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。必填 kind、key。
 - impact：`knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=definition&attached=case`。构建段写成 `<起始>..<目标>`；changed、attached、catalog 可以不写。
 - links：`knowledge:links:ORBIT:Rel_ORBIT_7_1_0_30`。没有必填参数，prefix 默认 /。
 
-错例（切勿写成）：
-（1）@ 分隔：`knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30?kind=case&by=commands`（应对 `:`）。
-（2）缺构建：`knowledge:facets:ORBIT?kind=case&by=commands`。
-（3）缺参数：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。
+三种写错：
+（1）分隔符用了 @。错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（2）缺构建。错 `knowledge:facets:ORBIT?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。
 
 本包照抄（目标构建 Rel_ORBIT_7_1_0_30，起始构建 Rel_ORBIT_7_1_0_29）：
 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`

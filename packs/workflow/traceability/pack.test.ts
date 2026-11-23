@@ -61,7 +61,8 @@ describe('the pack files', () => {
       ],
     );
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
-    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 2500, 'a short Chinese procedure (it is in every start_run answer)');
+    // 1.0.10 的规程写明了精确指针；1.0.12 加了读修复清单的第 0 步；1.0.14 增加 frontmatter 后仍需保留完整的 only=/fields= 与缺陷列表指导全文（供 start_run 交给模型），因此将长度上限从 2500 放宽到 2700。
+    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 2700, 'a short Chinese procedure (it is in every start_run answer)');
   });
 
   it('declares a parameter schema the engine can enforce (no regular expressions, zod reads it)', () => {
