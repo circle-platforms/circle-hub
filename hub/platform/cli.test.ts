@@ -344,12 +344,30 @@ describe('platform CLI', () => {
     assert.ok(dir);
     assert.match(backup.out, /数据库 1 张表 1 行/);
     assert.match(backup.out, /清单含每个文件的 SHA-256/);
+    assert.match(backup.out, /注意：备份不含 bot-runtime/);
     const refused = await run('restore', dir);
     assert.equal(refused.code, 1);
     assert.equal(refused.lines[0], `数据根：${root}`);
     assert.match(refused.err, /只能恢复到空的数据根/);
     assert.match(refused.out,/恢复清除之前的备份会带回已清除的个人内容/);
     assert.match((await run('status')).out, /备份：1 份/);
+
+    const restoredRoot = join(parent, 'restored-root');
+    const restoredLayout = layoutAt(restoredRoot);
+    await ensureLayout(restoredLayout);
+    const restoredDbPort = String(socketPort());
+    await writeFile(
+      settingsPath(restoredLayout),
+      JSON.stringify(newSettingsFile({ environment: ENVIRONMENT[0], port: await freePort(), database: { port: Number(restoredDbPort) } })),
+    );
+    const restoredCapture = captureIo({ CIRCLE_HUB_DATA_DIR: restoredRoot, CIRCLE_HUB_DATABASE_PORT: restoredDbPort }, parent);
+    try {
+      const restored = await runPlatformCommand(['restore', dir], restoredCapture.io, overrides);
+      assert.equal(restored, 0, restoredCapture.err.join('\n'));
+      assert.match(restoredCapture.out.join('\n'), /注意：恢复不含 bot-runtime/);
+    } finally {
+      await runPlatformCommand(['db', 'stop'], captureIo({ CIRCLE_HUB_DATA_DIR: restoredRoot, CIRCLE_HUB_DATABASE_PORT: restoredDbPort }, parent).io, overrides).catch(() => {});
+    }
   });
 
   test('restore refuses while the service is loaded, because launchd would race it for the database', async () => {

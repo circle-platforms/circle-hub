@@ -285,6 +285,13 @@ curl -sS http://127.0.0.1:7420/healthz
   2. `./bin/circle-hub init-admin <管理员> --password-stdin`（原子替换失效操作令牌文件）
   3. `./bin/circle-hub apply <部署定义.json>`，然后按 [reset.md — 重建之后要补登记的东西（F1–F13）](reset.md#重建之后要补登记的东西) 逐项补写 `doc put`、历史证据原件、`bed baseline record` 并重发成员客户端邀请。
 
+### 4. 个人助手运行数据（`bot-runtime`）的备份、恢复、清理与配额边界
+
+- **标准备份与恢复边界（`backup` / `restore`）**：`circle-hub backup` 与 `circle-hub restore` 仅覆盖数据库、`objects/`、`vault/` 与 `config/`，**不包含** `<数据目录>/bot-runtime`（含成员私聊附件 `bot-runtime/files/<sha256(userId)>`、通道入站暂存 `bot-runtime/channel-staging` 与运行套接字）。执行 `backup` / `restore` 时终端会明确打印该提示。后果如下：`vault/` 会备份并恢复模型、登录应用和私聊通道的加密配置，但已上传的成员私聊附件不会随备份恢复，如需跨机迁移或长期留存请另行归档 `<数据目录>/bot-runtime/files`，否则恢复后需重新上传。
+- **成员删除与外部身份清理（`user delete`）**：删除前检查会统计待删成员的 `bot_files` 数量与字节数（不影响既有的 `member-deletion@1` 计数与模式兼容性）；执行完成删除时，Hub 会清理该成员目录 `<数据目录>/bot-runtime/files/<sha256(userId)>`，并在同一事务内解除该成员的全部外部身份绑定（写入含摘要的 `member-external-identity@1` 记录，`reason: "deleted"`）。
+- **重置清理边界（`reset`）**：以 `--scope all` 或 `--scope config`（且未传 `--keep-config`）清空成员账户时，会在重启成功后清理 `<数据目录>/bot-runtime/files` 与 `channel-staging`，同时保留 `keys/` 与 `vault/`；仅清理 `history`、`knowledge`、`packs` 或使用 `--keep-config` 时保留 `bot-runtime/`（详见 [reset.md](reset.md)）。
+- **成员附件配额与保留期常数**：单次文件上传上限 **`100 MiB`**，单成员在 `bot-runtime/files` 中累计至多保留 **`256` 份（256 files）** 或总容量 **`512 MiB`**，文件保留期限 **`30 days`（30 天）**；超出成员文件数或总容量配额时接口以 `BOT_QUOTA_EXCEEDED` 拒绝，过期附件按保留期限清理。
+
 ---
 
 ## 相关页面

@@ -1,7 +1,7 @@
 import { archiveResetDatabase, createResetDatabase } from '../../platform/api.ts';
 import { randomUUID } from 'node:crypto';
-import { readFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, rename, rm } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { migrateRecords, FileVault } from '../../records/api.ts';
 import { VariableName } from '../../../contracts/src/variables.ts';
 import { agentFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from '../../platform/api.ts';
@@ -16,7 +16,7 @@ import { inspectCurrentState, clearOfflineSelection, assertCurrentForeignKeys, t
 import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordScopes, type CurrentRecord } from './selection.ts';
 import { inspectReset, resetRequestProblems } from './inspection.ts';
 import { runReset, ResetFailure, type ResetHost } from './operation.ts';
-import { parseResetRequest, RESET_DATA_SCOPE, type ResetPlan, type ResetPorts, type ResetProblem, type ResetRequest, type ResetReport, type ResetCount, type ResetDataScope } from './types.ts';
+import { parseResetRequest, resetScopes, RESET_DATA_SCOPE, type ResetPlan, type ResetPorts, type ResetProblem, type ResetRequest, type ResetReport, type ResetCount, type ResetDataScope } from './types.ts';
 
 export class ResetBlocked extends Error {
   readonly problems: readonly ResetProblem[];
@@ -119,6 +119,17 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
     const journal = join(context.layout.run, 'reset-operation.json');
     const resultPath = join(context.layout.logs, 'reset-' + id + '.json');
     const snapshot = request.keepConfig ? join(context.layout.root, 'private-config-snapshots', id + '.json') : undefined;
+    const cleansBotRuntime = resetScopes(request).has('config') && !request.keepConfig;
+    const botRuntimeStage = cleansBotRuntime ? join(context.layout.setAside, 'reset-bot-' + id) : undefined;
+    const botRuntimeDirs = ['files', 'channel-staging'] as const;
+    const moveIfPresent = async (from: string, to: string) => {
+      try {
+        await mkdir(dirname(to), { recursive: true, mode: 0o700 });
+        await rename(from, to);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    };
     let observedTally: ResetRecordTally | undefined;
     let state: CurrentResetState | undefined, plan: ResetPlan | undefined;
     let backup: ResetBackup | undefined, wasRunning = false, wasLoaded = false, archived = false, created = false;
@@ -137,7 +148,7 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
       if (!observedTally) throw new Error('恢复后的记录数量尚未观测，不能生成完成报告');
       const before = state ? resetRecordTally(state.records, new Set(state.selection.cleared)) : undefined;
       const counts = observedTally.counts.map(count => ({ ...count, cleared: before?.counts.find(row => row.scope === count.scope)?.cleared ?? null }));
-      return { archive, backup: backup!.directory, ...(snapshot ? { configurationSnapshot: snapshot } : {}), ...observedTally, counts, notices,
+      return { archive, backup: backup!.directory, ...(snapshot ? { configurationSnapshot: snapshot } : {}), botRuntime: cleansBotRuntime ? 'cleaned' : 'retained', ...observedTally, counts, notices,
         archivedTables: backup!.tables.map(({ schema, table, rows }) => ({ schema, table, rows })) };
     };
     const host: ResetHost = {
@@ -184,6 +195,11 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
       },
       async prepare() {
         checkpoint();
+        if (botRuntimeStage) {
+          for (const dir of botRuntimeDirs) {
+            await moveIfPresent(join(context.layout.root, 'bot-runtime', dir), join(botRuntimeStage, dir));
+          }
+        }
         if (request.scopes !== 'all') {
           if (!state) throw new Error('停服后的选择不存在');
           await withSession(postgres.connector, database, session => clearOfflineSelection(session, state!));
@@ -215,6 +231,7 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
         await assertProtectedFiles(context.layout, originals);
         const report = buildReport();
         await writeFileAtomic(resultPath, JSON.stringify({ completed: true, report }), 0o600);
+        if (botRuntimeStage) await rm(botRuntimeStage, { recursive: true, force: true });
         await rm(journal, { force: true });
       },
       async rollback() {
@@ -228,6 +245,12 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
           }
           await session.query(`ALTER DATABASE ${quoteIdentifier(database)} ALLOW_CONNECTIONS true`);
         });
+        if (botRuntimeStage) {
+          for (const dir of botRuntimeDirs) {
+            await moveIfPresent(join(botRuntimeStage, dir), join(context.layout.root, 'bot-runtime', dir));
+          }
+          await rm(botRuntimeStage, { recursive: true, force: true }).catch(() => {});
+        }
         await assertProtectedFiles(context.layout, originals);
         if (wasLoaded || wasRunning) { await agent.start(); if (wasRunning) await waitForHealth(settings.port, { host: settings.listenHost, authority: settings.allowedHosts?.[0], timeoutMs: context.healthTimeoutMs }); }
         await rm(journal, { force: true });

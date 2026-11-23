@@ -31,7 +31,8 @@ export const MANIFEST_FILE = 'manifest.json';
 export const DEFAULT_LIBPQ_BIN = '/opt/homebrew/opt/libpq/bin';
 /**
  * Data root areas copied as files. Not packs/: the extracted pack trees are derived from the objects, and the server's
- * registry builds them again from the restored objects at their first use.
+ * registry builds them again from the restored objects at their first use. Not bot-runtime/: private bot attachments,
+ * channel staging, and runtime Unix sockets are excluded from standard backups; vault/ keeps encrypted bot credentials.
  */
 export const FILE_AREAS = ['objects', 'vault', 'config'] as const;
 export type FileArea = (typeof FILE_AREAS)[number];

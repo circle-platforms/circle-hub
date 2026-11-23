@@ -132,13 +132,17 @@ test('a manifest without the application role privileges is not a current backup
   await assert.rejects(verifyBackup(dir), /不符合 circle-hub-backup@3/);
 });
 
-test('extracted pack trees are derived data: no backup area holds them, and a manifest that lists them is refused', async () => {
+test('extracted pack trees and bot-runtime are excluded from backup areas, and a manifest that lists them is refused', async () => {
   assert.ok(!(FILE_AREAS as readonly string[]).includes('packs'));
+  assert.ok(!(FILE_AREAS as readonly string[]).includes('bot-runtime'));
   const layout = await scratchLayout();
   assert.equal(layout.packs, join(layout.root, 'packs'));
   const dir = join(layout.backups, 'with-packs');
   await syntheticBackup(dir, { ...goodFiles, 'packs/0123/pack.json': '{}' });
   await assert.rejects(verifyBackup(dir), /备份清单里有不允许的路径：packs\/0123\/pack\.json/);
+  const withBot = join(layout.backups, 'with-bot-runtime');
+  await syntheticBackup(withBot, { ...goodFiles, 'bot-runtime/files/0123/file': '{}' });
+  await assert.rejects(verifyBackup(withBot), /备份清单里有不允许的路径：bot-runtime\/files\/0123\/file/);
 });
 
 test('names of in-flight temporaries and metadata are never part of a backup', () => {

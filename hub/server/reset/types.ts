@@ -13,7 +13,7 @@ export interface ResetProblem { scope?: ResetDataScope; table?: string; row?: nu
 export interface ResetInspection { available: boolean; compatible: boolean; needsRebuild: boolean; diagnostics: readonly ResetProblem[]; canKeepConfig: boolean; choices: readonly { scopes: readonly ResetDataScope[] | 'all'; keepConfig: boolean; definitionAllowed: boolean }[]; }
 export interface ResetCount { scope: ResetDataScope; retained: number; cleared: number | null; }
 export interface ResetPlan { request: ResetRequest; inspection: ResetInspection; counts: readonly ResetCount[]; blocked: readonly ResetProblem[]; }
-export interface ResetReport { archive: string; backup: string; configurationSnapshot?: string; counts: readonly ResetCount[]; notices: readonly ResetProblem[]; archivedTables?: readonly { schema: string; table: string; rows: number }[]; }
+export interface ResetReport { archive: string; backup: string; configurationSnapshot?: string; botRuntime?: 'cleaned' | 'retained'; counts: readonly ResetCount[]; notices: readonly ResetProblem[]; archivedTables?: readonly { schema: string; table: string; rows: number }[]; }
 export interface ResetPorts {
   exportConfiguration?(path: string): Promise<void>;
   restoreConfiguration?(path: string): Promise<void>;

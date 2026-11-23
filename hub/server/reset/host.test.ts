@@ -216,3 +216,49 @@ test('native reset refuses a role-owned table before accepting a standard backup
   assert.equal(row!.n, 1);
   assert.deepEqual(await protectedFiles(f.layout), f.originals);
 });
+
+test('H2: all/config reset without keepConfig cleans bot-runtime files and staging while history reset and failed rollback preserve them', { timeout: 120_000, skip: libpq ? false : LIBPQ_MISSING }, async t => {
+  const f = await fixture(); t.after(() => f.close());
+  const botFiles = join(f.layout.root, 'bot-runtime', 'files', '0'.repeat(64));
+  const staging = join(f.layout.root, 'bot-runtime', 'channel-staging', 'sub1');
+  await mkdir(botFiles, { recursive: true });
+  await mkdir(staging, { recursive: true });
+  await writeFile(join(botFiles, 'a'.repeat(64)), 'synthetic-bot-attachment');
+  await writeFile(join(staging, 'b'.repeat(64)), 'synthetic-bot-staging');
+
+  // 1. history-only reset keeps bot-runtime files and staging.
+  const historyReport = await resetData(f.context, { scopes: ['history'], keepConfig: false });
+  assert.equal(historyReport.botRuntime, 'retained');
+  assert.equal(await readFile(join(botFiles, 'a'.repeat(64)), 'utf8'), 'synthetic-bot-attachment');
+
+  // 2. Rolled-back all reset restores bot-runtime files and staging.
+  await assert.rejects(
+    resetData(f.context, { scopes: 'all', keepConfig: false }, {
+      hostTransform(host) {
+        return {
+          ...host,
+          restart: async () => {
+            throw new Error('SyntheticRestartFail');
+          },
+        };
+      },
+    }),
+    ResetFailure,
+  );
+  assert.equal(await readFile(join(botFiles, 'a'.repeat(64)), 'utf8'), 'synthetic-bot-attachment');
+  assert.equal(await readFile(join(staging, 'b'.repeat(64)), 'utf8'), 'synthetic-bot-staging');
+
+  // 3. Successful all reset removes bot-runtime/files and bot-runtime/channel-staging while keeping keys/ and vault/.
+  const { resetCommand } = await import('./cli.ts');
+  const cliOut: string[] = [];
+  const cliCode = await resetCommand(
+    ['--scope', 'all'],
+    f.context,
+    { cwd: f.layout.root, env: {}, stdout: line => cliOut.push(line), stderr: () => {} },
+  );
+  assert.equal(cliCode, 0);
+  assert.match(cliOut.join('\n'), /已清理 <数据目录>\/bot-runtime 下的私聊成员附件与通道暂存/);
+  await assert.rejects(stat(join(f.layout.root, 'bot-runtime', 'files')));
+  await assert.rejects(stat(join(f.layout.root, 'bot-runtime', 'channel-staging')));
+  assert.deepEqual(await protectedFiles(f.layout), f.originals);
+});
