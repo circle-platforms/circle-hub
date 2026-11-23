@@ -43,7 +43,46 @@
     "size": {
       "type": "integer",
       "minimum": 0,
-      "maximum": 104857600
+      "maximum": 9007199254740991
+    },
+    "text_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "text_size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "file_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "file_size": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "name_sha256": {
       "anyOf": [
@@ -214,6 +253,10 @@
     "channel",
     "sha256",
     "size",
+    "text_sha256",
+    "text_size",
+    "file_sha256",
+    "file_size",
     "name_sha256",
     "write"
   ],

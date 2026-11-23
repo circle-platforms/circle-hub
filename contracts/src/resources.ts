@@ -1214,6 +1214,8 @@ export const EffectRecord=z.strictObject({
 }).superRefine((effect,ctx)=>{if(effect.outcome==='unknown'){if(!effect.missing)ctx.addIssue({code:'custom',path:['missing'],message:'an unknown effect names its missing fact'});if(!effect.exit)ctx.addIssue({code:'custom',path:['exit'],message:'an unknown effect names its next action'});}}).meta(recoveryCondition('outcome',['unknown'],['missing','exit']));
 export type EffectRecord=z.infer<typeof EffectRecord>;
 
+const NonNegativeInt = z.number().int().nonnegative();
+
 export const MemberNotificationIntent = z.strictObject({
   schema: z.literal('member-notification-intent@1'),
   kind: z.literal(ActionKindSchema.enum.dispatch),
@@ -1224,7 +1226,11 @@ export const MemberNotificationIntent = z.strictObject({
   subject: Sha256,
   channel: Sha256,
   sha256: Sha256,
-  size: z.number().int().min(0).max(100 * 1024 * 1024),
+  size: NonNegativeInt,
+  text_sha256: Sha256.nullable(),
+  text_size: NonNegativeInt,
+  file_sha256: Sha256.nullable(),
+  file_size: NonNegativeInt.nullable(),
   name_sha256: Sha256.nullable(),
   write: WriteDeclaration.extend({
     effect_class: z.literal(EffectClassSchema.enum.notification),
@@ -1239,6 +1245,18 @@ export const MemberNotificationIntent = z.strictObject({
   if (v.write.audience !== v.member || v.write.target_key !== v.subject) {
     ctx.addIssue({ code: 'custom', path: ['write'], message: 'Notification must target the bound member' });
   }
+  if ((v.text_sha256 === null) !== (v.text_size === 0)) {
+    ctx.addIssue({ code: 'custom', path: ['text_sha256'], message: 'Text digest must be present iff text_size is non-zero' });
+  }
+  if ((v.file_sha256 === null) !== (v.file_size === null)) {
+    ctx.addIssue({ code: 'custom', path: ['file_sha256'], message: 'File digest and file size must both be set or both be null' });
+  }
+  if (v.file_sha256 === null && v.name_sha256 !== null) {
+    ctx.addIssue({ code: 'custom', path: ['name_sha256'], message: 'File name digest requires a file' });
+  }
+  if (v.size !== v.text_size + (v.file_size ?? 0)) {
+    ctx.addIssue({ code: 'custom', path: ['size'], message: 'Combined size must equal text_size plus file_size' });
+  }
 });
 
 export const MemberNotificationReceipt = z.strictObject({
@@ -1249,14 +1267,20 @@ export const MemberNotificationReceipt = z.strictObject({
   outcome: EffectOutcomeSchema.extract(['issued', 'target_rejected', 'unknown', 'not_dispatched']),
   acknowledgment: z.strictObject({ request: Sha256, code: z.number().int() }).nullable(),
   reached_target: z.boolean().nullable(),
-  missing: z.string().min(1).nullable(),
+  missing: z.array(z.string().min(1)).min(1).nullable(),
   next: z.string().min(1).nullable(),
+  supersedes: Sha256.optional(),
 }).superRefine((v, ctx) => {
   if (v.reached_target !== (v.outcome === 'not_dispatched' ? false : v.outcome === 'unknown' ? null : true)) {
     ctx.addIssue({ code: 'custom', path: ['reached_target'], message: 'Reachability must agree with the observed stage' });
   }
-  if (v.outcome === 'unknown' && (!v.missing || !v.next)) {
-    ctx.addIssue({ code: 'custom', path: ['missing'], message: 'Unknown delivery requires the missing receipt and a next action' });
+  if (v.outcome === 'unknown') {
+    if (!v.missing || v.missing.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['missing'], message: 'Unknown delivery requires non-empty missing items' });
+    }
+    if (!v.next) {
+      ctx.addIssue({ code: 'custom', path: ['next'], message: 'Unknown delivery requires a next action' });
+    }
   }
   if (v.outcome === 'issued' && v.acknowledgment?.code !== 0) {
     ctx.addIssue({ code: 'custom', path: ['acknowledgment'], message: 'Issued requires a successful platform acknowledgment' });
@@ -1266,9 +1290,67 @@ export const MemberNotificationReceipt = z.strictObject({
   }
 });
 
+/** Declared audit record for an inbound external channel message after staged file verification. */
+export const MemberBotInbound = z.strictObject({
+  schema: z.literal('member-bot-inbound@1'),
+  kind: z.literal(ActionKindSchema.enum.dispatch),
+  request: z.uuid(),
+  member: UserId,
+  issuer: Sha256,
+  subject: Sha256,
+  channel: Sha256,
+  platform_id_sha256: Sha256,
+  text_sha256: Sha256.nullable(),
+  text_size: NonNegativeInt,
+  files: z.array(z.strictObject({
+    sha256: Sha256,
+    size: NonNegativeInt,
+    name_sha256: Sha256,
+  })).max(8),
+  at: IsoTime,
+}).superRefine((v, ctx) => {
+  if ((v.text_sha256 === null) !== (v.text_size === 0)) {
+    ctx.addIssue({ code: 'custom', path: ['text_sha256'], message: 'Text digest must be present iff text_size is non-zero' });
+  }
+  if (v.text_size === 0 && v.files.length === 0) {
+    ctx.addIssue({ code: 'custom', path: ['files'], message: 'Inbound delivery requires text or at least one file' });
+  }
+});
+
+/** Audit record for external identity binding or unbinding; issuer and subject are SHA-256 digests. */
+export const MemberExternalIdentityAudit = z.strictObject({
+  schema: z.literal('member-external-identity@1'),
+  action: z.enum(['bind', 'unbind']),
+  by: UserId,
+  member: UserId,
+  issuer: Sha256,
+  subject: Sha256,
+  at: IsoTime,
+  reason: z.enum(['manual', 'disabled', 'deleted']).optional(),
+}).superRefine((v, ctx) => {
+  if (v.action === 'unbind' && v.reason === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['reason'], message: 'Unbind audit requires reason' });
+  }
+  if (v.action === 'bind' && v.reason !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['reason'], message: 'Bind audit must not specify reason' });
+  }
+});
+
+/** Audit record for admin secret configuration changes without ever recording secret values. */
+export const BotSecretChangeAudit = z.strictObject({
+  schema: z.literal('bot-secret-change@1'),
+  action: z.enum(['set', 'remove']),
+  slot: z.enum(['personal-bot.model', 'personal-bot.channel', 'personal-bot.identity']),
+  by: UserId,
+  at: IsoTime,
+});
+
 export const schemas: Record<string, z.ZodType> = {
   'member-notification-intent@1': MemberNotificationIntent,
   'member-notification-receipt@1': MemberNotificationReceipt,
+  'member-bot-inbound@1': MemberBotInbound,
+  'member-external-identity@1': MemberExternalIdentityAudit,
+  'bot-secret-change@1': BotSecretChangeAudit,
   'effect@1':EffectRecord,
   'write-declaration@1':WriteDeclaration,
   'executor@1':ExecutorSource,

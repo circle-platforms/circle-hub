@@ -63,8 +63,12 @@
     "missing": {
       "anyOf": [
         {
-          "type": "string",
-          "minLength": 1
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         {
           "type": "null"
@@ -81,6 +85,10 @@
           "type": "null"
         }
       ]
+    },
+    "supersedes": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
     }
   },
   "required": [

@@ -120,6 +120,7 @@ export const AXES = {
   capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
   reset_scope: { label: '重置范围', owner: 'D04', values: [{ code: 'history', label: '运行历史' }, { code: 'knowledge', label: '知识' }, { code: 'packs', label: '包' }, { code: 'config', label: '配置' }, { code: 'all', label: '全部' }] },
   call_error_category: { label: '调用错误类别', owner: 'D05', values: [{ code: 'invalid_parameters', label: '参数无效' }, { code: 'permission_denied', label: '无权限' }, { code: 'not_found', label: '不存在' }, { code: 'occupied', label: '已被占用' }, { code: 'temporarily_unavailable', label: '暂时不可用' }] },
+  bot_model_protocol: { label: '个人助手模型协议', owner: 'D06', values: [{ code: 'openai', label: 'OpenAI 对话补全协议' }, { code: 'anthropic', label: 'Anthropic 消息协议' }, { code: 'responses', label: 'OpenAI Responses 协议' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1294,6 +1295,16 @@ export function isCallErrorCategory(value: unknown): value is CallErrorCategory 
   return (CALL_ERROR_CATEGORY as readonly unknown[]).includes(value);
 }
 
+/** 个人助手模型协议 (D06) */
+export const BOT_MODEL_PROTOCOL = ['openai', 'anthropic', 'responses'] as const;
+export type BotModelProtocol = (typeof BOT_MODEL_PROTOCOL)[number];
+export const BOT_MODEL_PROTOCOL_LABEL = { 'openai': 'OpenAI 对话补全协议', 'anthropic': 'Anthropic 消息协议', 'responses': 'OpenAI Responses 协议' } as const satisfies { readonly [K in BotModelProtocol]: string };
+export const BOT_MODEL_PROTOCOL_UI = { 'openai': 'OpenAI 对话补全协议', 'anthropic': 'Anthropic 消息协议', 'responses': 'OpenAI Responses 协议' } as const satisfies { readonly [K in BotModelProtocol]: string };
+export const BotModelProtocolSchema = z.enum(BOT_MODEL_PROTOCOL);
+export function isBotModelProtocol(value: unknown): value is BotModelProtocol {
+  return (BOT_MODEL_PROTOCOL as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1412,6 +1423,7 @@ export interface AxisValues {
   capacity_unit: CapacityUnit;
   reset_scope: ResetScope;
   call_error_category: CallErrorCategory;
+  bot_model_protocol: BotModelProtocol;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1532,6 +1544,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   capacity_unit: CAPACITY_UNIT_LABEL,
   reset_scope: RESET_SCOPE_LABEL,
   call_error_category: CALL_ERROR_CATEGORY_LABEL,
+  bot_model_protocol: BOT_MODEL_PROTOCOL_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1652,6 +1665,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   capacity_unit: CAPACITY_UNIT_UI,
   reset_scope: RESET_SCOPE_UI,
   call_error_category: CALL_ERROR_CATEGORY_UI,
+  bot_model_protocol: BOT_MODEL_PROTOCOL_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

@@ -91,6 +91,14 @@ export const PROTOCOL_CODES = {
   SYNC_RATE_LIMITED: { when: '同步请求过于频繁', fix: '等待答复中的重试时间后重试' },
   SYNC_PURGE_CONFIRMATION_REQUIRED: { when: '清除 Hub 上的私人空间需要本人在控制台确认', fix: '10 分钟内在 Hub 控制台的同步方式中确认这次清除，再用同一请求重试' },
   GROUNDS_PURGED: { when: '运行引用的私人原文已随所有者清除 Hub 上的私人空间而清除', fix: '由原文所有者重新上传后重新运行；原有回执和摘要保留' },
+  BOT_DISABLED: { when: '个人助手功能未启用或当前已被停用', fix: '由管理员在控制台或命令行启用并配置个人助手后重试' },
+  BOT_CLIENT_FORBIDDEN: { when: '当前凭证、客户端类型或成员身份无权访问该个人助手接口', fix: '改用成员直接持有的访问令牌并核对绑定身份与投递意图后重试' },
+  BOT_VERSION_INVALID: { when: '缺少 Bot-Client-Version 请求头或版本号不符合严格的 SemVer 2.0.0 格式', fix: '在请求头中提供格式为 major.minor.patch 的有效客户端版本号后重试' },
+  BOT_VERSION_MISMATCH: { when: '客户端主次版本号与当前 Hub 支持的个人助手协议版本不匹配', fix: '升级或切换至匹配当前 Hub 协议版本的客户端后重试' },
+  BOT_QUOTA_EXCEEDED: { when: '上传的个人助手文件大小或成员累计保留文件数与总字节数超过配额上限', fix: '清理无需保留的个人助手文件，或将单文件限制在配额内后重试' },
+  BOT_UPSTREAM_UNAVAILABLE: { when: '个人助手宿主服务或上游模型服务当前不可用、超时或返回异常', fix: '检查个人助手宿主状态与上游模型配置后稍后重试' },
+  BOT_CONFLICT: { when: '个人助手投递状态、回执终态、文件存在性或当前会话状态存在冲突', fix: '核对当前投递意图、回执终态或文件状态后使用一致请求重试' },
+  BOT_INVALID_REQUEST: { when: '个人助手请求的头字段、摘要、文件范围或载荷结构无效', fix: '修正请求参数、请求头或请求体后重试' },
 } as const satisfies Record<ProtocolCode, { readonly when: string; readonly fix: string }>;
 
 /** Formats caller-supplied facts and actions; never classifies a message or invents missing facts. */
