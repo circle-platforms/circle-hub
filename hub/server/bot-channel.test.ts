@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { botFilesPath } from './bot-files.ts';
 import {
   channelProfileName,
+  disableBot,
   identityIssuer,
   identityProfileName,
   newChannel,
@@ -539,6 +540,61 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     assert.equal(malformedNext.status, 502);
     assert.ok(!hub.logs.join('\n').includes(secretPayloadText));
     assert.ok(!hub.logs.join('\n').includes(secretFileName));
+
+    // R10 + R11: notice delivery role + optional code forwarding without altering computeIntentPayload, and config sync on claim/receipt
+    const noticeReceipt = '13131313-1313-4131-8131-131313131313';
+    nextDelivery = {
+      id: '24242424-2424-4242-8242-242424242424',
+      owner: member.principal.id,
+      subject: 'ext-user-1',
+      receipt: noticeReceipt,
+      role: 'notice',
+      code: 'new_conversation',
+      text: '内部提示文本',
+    };
+    const noticeNext = await postChannel(stored.token, { action: 'next' });
+    assert.equal(noticeNext.status, 200);
+    const noticeBody = (await noticeNext.json()) as {
+      delivery?: {
+        role?: string;
+        code?: string;
+        text?: string;
+        sha256?: string;
+        intent?: { sha256?: string; text_sha256?: string; file_sha256?: string | null };
+      };
+    };
+    assert.equal(noticeBody.delivery?.role, 'notice');
+    assert.equal(noticeBody.delivery?.code, 'new_conversation');
+    assert.equal(noticeBody.delivery?.text, '内部提示文本');
+    const noticeTextSha = createHash('sha256').update(Buffer.from('内部提示文本', 'utf8')).digest('hex');
+    const expectedNoticeDigest = createHash('sha256')
+      .update(
+        JSON.stringify({
+          file_sha256: null,
+          file_size: null,
+          name_sha256: null,
+          text_sha256: noticeTextSha,
+          text_size: Buffer.byteLength('内部提示文本', 'utf8'),
+        }),
+      )
+      .digest('hex');
+    assert.equal(noticeBody.delivery?.sha256, expectedNoticeDigest);
+    assert.equal(noticeBody.delivery?.intent?.sha256, expectedNoticeDigest);
+    assert.equal((hostCalls.at(-1)?.config as { key?: string } | undefined)?.key, 'synthetic-key');
+
+    await disableBot(hub.records.vault);
+    nextDelivery = null;
+    assert.equal((await postChannel(stored.token, { action: 'next' })).status, 200);
+    assert.equal(hostCalls.at(-1)?.config, null);
+    const noticeReceiptRes = await postChannel(stored.token, {
+      action: 'receipt',
+      receipt: noticeReceipt,
+      state: 'issued',
+      acknowledgment: { request: fileSha, code: 0 },
+      reached_target: true,
+    });
+    assert.equal(noticeReceiptRes.status, 200);
+    assert.equal(hostCalls.at(-1)?.config, null);
 
     await assert.rejects(
       refreshChannel(hub.deps.config.dataDir, hub.records.vault, new Set(['https://other.example.invalid'])),

@@ -136,11 +136,31 @@ export async function setBotProfile(vault: Vault, data: unknown): Promise<void> 
   }
 }
 
-export async function disableBot(vault: Vault): Promise<void> {
+export async function refreshHost(dataDir: string, vault: Vault): Promise<void> {
+  try {
+    const profile = await readBotProfile(vault);
+    await callBot(
+      dataDir,
+      profile
+        ? { owner: '_hub', op: { action: 'configure' }, config: profile }
+        : { owner: '_hub', op: { action: 'disable' } },
+    );
+  } catch {
+    // Best-effort runtime notification: an offline host syncs via config on the next call.
+  }
+}
+
+export async function disableBot(
+  vaultOrDeps: Vault | Pick<ServerDeps, 'config' | 'records'>,
+  dataDir?: string,
+): Promise<void> {
+  const vault = 'records' in vaultOrDeps ? vaultOrDeps.records.vault : vaultOrDeps;
+  const dir = 'config' in vaultOrDeps ? vaultOrDeps.config.dataDir : dataDir;
   await vault.remove(profileName);
   if (await vault.has(reviewerProfileName)) {
     await vault.remove(reviewerProfileName);
   }
+  if (dir) await refreshHost(dir, vault);
 }
 
 async function vaultSecrets(vault: Vault): Promise<string[]> {
@@ -215,6 +235,18 @@ function mapHostError(
   }
   if (status === 404) {
     return { status: 404, code: 'BOT_NOT_FOUND', fact: '会话不存在或已不可用', rawCode };
+  }
+  if (status === 429 && rawCode === 'bot_busy') {
+    return { status: 429, code: 'BOT_BUSY', fact: '当前机器人会话排队消息已满', rawCode };
+  }
+  if (status === 503 && rawCode === 'bot_not_enabled') {
+    return { status: 503, code: 'BOT_DISABLED', fact: '机器人尚未配置启用', rawCode };
+  }
+  if (status === 413) {
+    return { status: 413, code: 'BOT_INVALID_REQUEST', fact: '机器人请求体超过允许大小上限', rawCode };
+  }
+  if (status === 422 && (rawCode === 'attachment_integrity_failed' || rawCode === 'invalid_request')) {
+    return { status: 422, code: 'BOT_INVALID_REQUEST', fact: '机器人附件完整性校验未通过', rawCode };
   }
   const upstreamStatus = status === 502 || status === 503 ? status : 502;
   const upstreamMessages: Record<string, { fact: string; nextAction?: string }> = {
@@ -399,7 +431,7 @@ export async function handleBot(req: IncomingMessage, res: ServerResponse, deps:
       return sendBotJson(res, 400, botError('BOT_VERSION_INVALID'));
     }
     const nowMs = (deps.now?.() ?? new Date()).getTime();
-    const config = op.data.action === 'send' ? await readBotProfile(deps.records.vault) : undefined;
+    const profile = await readBotProfile(deps.records.vault);
     if (
       op.data.action === 'send' &&
       ((!op.data.text.trim() && !op.data.files?.length) ||
@@ -407,14 +439,15 @@ export async function handleBot(req: IncomingMessage, res: ServerResponse, deps:
     ) {
       return sendBotJson(res, 400, botError('BOT_INVALID_REQUEST', '消息或附件不可用'));
     }
-    if (config === null) return sendBotJson(res, 503, botError('BOT_DISABLED', '机器人模型尚未启用'));
+    if (op.data.action === 'send' && !profile) return sendBotJson(res, 503, botError('BOT_DISABLED', '机器人模型尚未启用'));
+    const config = profile ?? null;
     const identity =
       op.data.action === 'send' && (await deps.records.vault.has(identityProfileName))
         ? await readIdentity(deps.records.vault)
         : null;
     const issuer = identity ? identityIssuer(identity.tenant) : null;
     const route = issuer
-      ? { source: 'desktop', issuer, subject: await deps.records.principals.externalSubject(principal.id, issuer) }
+      ? { source: 'client', issuer, subject: await deps.records.principals.externalSubject(principal.id, issuer) }
       : undefined;
     const result = await callBot(deps.config.dataDir, { owner: principal.id, op: op.data, version, config, route });
     if (result.status >= 400) {
@@ -487,6 +520,7 @@ const deliverySchema = z.strictObject({
   subject: word,
   receipt: z.uuid(),
   role: BotMessageRoleSchema,
+  code: z.string().min(1).max(64).optional(),
   text: z.string().max(64000),
   file: fileDescriptor.optional(),
 });
@@ -678,9 +712,11 @@ async function handleChannelReceipt(
   }
   const effective = outcome.effective;
 
+  const config = (await readBotProfile(deps.records.vault)) ?? null;
   const result = await callBot(deps.config.dataDir, {
     owner: 'channel',
     op: { action: 'receipt', receipt: op.receipt, state: effective.outcome },
+    config,
   });
   if (result.status >= 400) {
     const mapped = mapHostError(result.status, result.body);
@@ -695,7 +731,8 @@ async function handleChannelNext(
   issuer: string,
   channelId: string,
 ): Promise<void> {
-  const result = await callBot(deps.config.dataDir, { owner: 'channel', op: { action: 'claim', issuer } });
+  const config = (await readBotProfile(deps.records.vault)) ?? null;
+  const result = await callBot(deps.config.dataDir, { owner: 'channel', op: { action: 'claim', issuer }, config });
   if (result.status !== 200) {
     const mapped = mapHostError(result.status, result.body);
     return sendBotJson(res, mapped.status, botError(mapped.code, mapped.fact, mapped.nextAction));
@@ -713,6 +750,7 @@ async function handleChannelNext(
     await callBot(deps.config.dataDir, {
       owner: 'channel',
       op: { action: 'receipt', receipt: item.receipt, state: EffectOutcomeSchema.enum.not_dispatched },
+      config,
     });
     return sendBotJson(res, 200, { delivery: null });
   }
@@ -721,6 +759,7 @@ async function handleChannelNext(
     await callBot(deps.config.dataDir, {
       owner: 'channel',
       op: { action: 'receipt', receipt: item.receipt, state: EffectOutcomeSchema.enum.not_dispatched },
+      config,
     });
     return sendBotJson(res, 409, botError('BOT_CONFLICT', '待投递的附件在本地不存在或已失效'));
   }
@@ -775,6 +814,7 @@ async function handleChannelNext(
       subject: item.subject,
       receipt: item.receipt,
       role: item.role,
+      ...(item.code ? { code: item.code } : {}),
       text: item.text,
       sha256: intentPayload.sha256,
       size: intentPayload.size,

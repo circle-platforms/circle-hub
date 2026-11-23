@@ -327,6 +327,7 @@
                 "BOT_UPSTREAM_UNAVAILABLE",
                 "BOT_REQUEST_TIMEOUT",
                 "BOT_CONFLICT",
+                "BOT_BUSY",
                 "BOT_INVALID_REQUEST"
               ]
             },

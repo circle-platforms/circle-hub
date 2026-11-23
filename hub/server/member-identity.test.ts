@@ -29,7 +29,7 @@ test('QR binding requires both identities; callbacks are one-time and disabled m
   const csrf = (body: string) => /name="csrf" value="([^"]+)"/.exec(body)![1];
   try {
     const dir = join(hub.deps.config.dataDir, 'bot-runtime');
-    await mkdir(dir, { mode: 0o700 });
+    await mkdir(dir, { recursive: true, mode: 0o700 });
     await new Promise<void>((r) => adapter.listen(join(dir, 'channel.sock'), r));
     await hub.records.vault.put(
       identityProfileName,

@@ -125,7 +125,7 @@ export const AXES = {
   external_identity_unbind_reason: { label: '外部身份解绑原因', owner: 'R01', values: [{ code: 'manual', label: '人工解除' }, { code: 'disabled', label: '停用账户' }, { code: 'deleted', label: '删除账户' }] },
   bot_secret_action: { label: '机器人配置密钥操作', owner: 'D01', values: [{ code: 'set', label: '设置' }, { code: 'remove', label: '移除' }, { code: 'start_channel', label: '启用通道' }, { code: 'stop_channel', label: '停用通道' }] },
   bot_secret_slot: { label: '机器人配置密钥槽位', owner: 'D01', values: [{ code: 'model', label: '机器人模型' }, { code: 'identity', label: '扫码登录应用' }, { code: 'channel', label: '私聊机器人通道' }] },
-  bot_message_role: { label: '机器人对话角色', owner: 'D06', values: [{ code: 'user', label: '成员' }, { code: 'assistant', label: '机器人' }] },
+  bot_message_role: { label: '机器人对话角色', owner: 'D06', values: [{ code: 'user', label: '成员' }, { code: 'assistant', label: '机器人' }, { code: 'notice', label: '状态提示' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1351,10 +1351,10 @@ export function isBotSecretSlot(value: unknown): value is BotSecretSlot {
 }
 
 /** 机器人对话角色 (D06) */
-export const BOT_MESSAGE_ROLE = ['user', 'assistant'] as const;
+export const BOT_MESSAGE_ROLE = ['user', 'assistant', 'notice'] as const;
 export type BotMessageRole = (typeof BOT_MESSAGE_ROLE)[number];
-export const BOT_MESSAGE_ROLE_LABEL = { 'user': '成员', 'assistant': '机器人' } as const satisfies { readonly [K in BotMessageRole]: string };
-export const BOT_MESSAGE_ROLE_UI = { 'user': '成员', 'assistant': '机器人' } as const satisfies { readonly [K in BotMessageRole]: string };
+export const BOT_MESSAGE_ROLE_LABEL = { 'user': '成员', 'assistant': '机器人', 'notice': '状态提示' } as const satisfies { readonly [K in BotMessageRole]: string };
+export const BOT_MESSAGE_ROLE_UI = { 'user': '成员', 'assistant': '机器人', 'notice': '状态提示' } as const satisfies { readonly [K in BotMessageRole]: string };
 export const BotMessageRoleSchema = z.enum(BOT_MESSAGE_ROLE);
 export function isBotMessageRole(value: unknown): value is BotMessageRole {
   return (BOT_MESSAGE_ROLE as readonly unknown[]).includes(value);

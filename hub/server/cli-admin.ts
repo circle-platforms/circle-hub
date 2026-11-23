@@ -43,6 +43,7 @@ import {
   readBotProfile,
   readChannel,
   refreshChannel,
+  refreshHost,
   setBotProfile,
 } from './personal-bot.ts';
 export type { AdminCommandOptions, OperatorAct } from './cli-session.ts';
@@ -588,6 +589,7 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
   if (sub === 'disable') {
     await disableBot(vault);
     await recordBotSecretChange(store, 'model', 'remove', admin.id, new Date().toISOString());
+    await refreshHost(session.config().dataDir, vault);
     session.out('机器人模型已停用');
     return 0;
   }
@@ -595,6 +597,7 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
     const settings = await readSecretJson(readSecret, 'bot-model', '请输入机器人模型配置 JSON');
     await setBotProfile(vault, settings);
     await recordBotSecretChange(store, 'model', 'set', admin.id, new Date().toISOString());
+    await refreshHost(session.config().dataDir, vault);
     session.out('机器人模型配置已保存');
     return 0;
   }

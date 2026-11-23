@@ -101,6 +101,7 @@ export const PROTOCOL_CODES = {
   BOT_UPSTREAM_UNAVAILABLE: { when: '机器人后端服务当前不可用', fix: '请管理员检查机器人宿主进程与模型服务配置后稍后重试' },
   BOT_REQUEST_TIMEOUT: { when: '接收机器人请求体超时', fix: '检查网络连接后重新发送完整请求' },
   BOT_CONFLICT: { when: '机器人请求与现有记录状态冲突', fix: '核对当前记录状态后使用一致的请求重试' },
+  BOT_BUSY: { when: '当前机器人会话排队消息已满', fix: '等待排队中的消息处理完成后再发送' },
   BOT_INVALID_REQUEST: { when: '机器人请求内容不符合接口格式与大小约束', fix: '按接口要求修正请求参数与内容长度后重试' },
 } as const satisfies Record<ProtocolCode, { readonly when: string; readonly fix: string }>;
 

@@ -10,10 +10,13 @@ import {
   chatPath,
   disableBot,
   ensureBotRuntimeDir,
+  identityIssuer,
+  identityProfileName,
   inspectBotRuntimeDir,
   maskVaultSecrets,
   newChannel,
   readBotProfile,
+  refreshHost,
   setBotProfile,
 } from './personal-bot.ts';
 import { createTestServer } from './testing.ts';
@@ -47,6 +50,7 @@ test('chat authenticates every request, fixes the owner, confines model credenti
     assert.equal((await send(member.token, { action: 'discover', owner: hub.admin.principal.id })).status, 400);
     assert.equal((await send(member.token, { action: 'discover' })).status, 200);
     assert.equal(seen[0].owner, member.principal.id);
+    assert.equal(seen[0].config, null);
     const profile = {
       name: '测试机器人',
       protocol: 'openai',
@@ -61,16 +65,30 @@ test('chat authenticates every request, fixes the owner, confines model credenti
       setBotProfile(hub.records.vault, { ...profile, endpoint: 'https://example.invalid/?key=secret' }),
     );
     assert.equal((await readBotProfile(hub.records.vault))?.name, profile.name);
+    await refreshHost(hub.deps.config.dataDir, hub.records.vault);
+    const configureFrame = seen.at(-1) as { owner?: unknown; op?: { action?: string }; config?: typeof profile };
+    assert.equal(configureFrame.owner, '_hub');
+    assert.deepEqual(configureFrame.op, { action: 'configure' });
+    assert.equal(configureFrame.config?.key, profile.key);
+
     const response = await send(member.token, op);
     assert.equal(response.status, 200);
     assert.ok(!(await response.text()).includes(profile.key));
-    assert.equal((seen[1].config as typeof profile).key, profile.key);
-    assert.equal((seen[1].owner), member.principal.id);
-    await disableBot(hub.records.vault);
+    assert.equal((seen.at(-1)!.config as typeof profile).key, profile.key);
+    assert.equal((seen.at(-1)!.owner), member.principal.id);
+
+    await disableBot(hub.deps);
+    const disableFrame = seen.at(-1) as { owner?: unknown; op?: { action?: string } };
+    assert.equal(disableFrame.owner, '_hub');
+    assert.deepEqual(disableFrame.op, { action: 'disable' });
+    assert.equal((await send(member.token, { action: 'discover' })).status, 200);
+    assert.equal(seen.at(-1)!.config, null);
     assert.equal((await send(member.token, op)).status, 503);
+    // Offline refreshHost never throws when host.sock does not exist
+    await refreshHost(join(hub.deps.config.dataDir, 'no-such-dir'), hub.records.vault);
     await hub.records.principals.setDisabled(hub.admin.principal, member.principal.id, true);
     assert.equal((await send(member.token, { action: 'discover' })).status, 401);
-    assert.equal(seen.length, 2);
+    assert.equal(seen.length, 5);
     assert.ok(!hub.logs.join('').includes(profile.key));
   } finally {
     await new Promise<void>((resolve) => host.close(() => resolve()));
@@ -206,6 +224,7 @@ test(
     const echoedKey = 'fixture-secret-model-key-999999';
     const channelSecret = 'fixture-channel-secret-888';
     let seenHostCalls = 0;
+    const seenHostBodies: Array<Record<string, unknown>> = [];
     let hostReply: { status: number; body: unknown } = {
       status: 502,
       body: {
@@ -214,9 +233,11 @@ test(
       },
     };
     const host = createServer(async (req, res) => {
-      for await (const _ of req) {
-        // drain
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
       }
+      seenHostBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>);
       seenHostCalls += 1;
       res.statusCode = hostReply.status;
       res.end(JSON.stringify(hostReply.body));
@@ -349,6 +370,72 @@ test(
       const missingConvBody = (await missingConv.json()) as { code?: string; message?: string };
       assert.equal(missingConvBody.code, 'BOT_NOT_FOUND');
       assert.match(missingConvBody.message ?? '', /^不存在：/);
+
+      // R6 route.source = 'client' + S14 host error mappings (429 BOT_BUSY, 503 BOT_DISABLED, 413/422 BOT_INVALID_REQUEST)
+      await hub.records.vault.put(
+        identityProfileName,
+        JSON.stringify({ tenant: 'client-route-tenant', application: 'client-app', secret: 'app-route-sec' }),
+      );
+      const routeIssuer = identityIssuer('client-route-tenant');
+      await hub.records.principals.bindExternalIdentity(user.principal, routeIssuer, 'ext-client-route');
+
+      for (const s14Case of [
+        {
+          hostStatus: 429,
+          hostBody: { code: 'bot_busy', message: 'queue full' },
+          expectStatus: 429,
+          expectCode: 'BOT_BUSY',
+          expectPattern: /^暂时不可用：.*当前机器人会话排队消息已满/,
+        },
+        {
+          hostStatus: 503,
+          hostBody: { code: 'bot_not_enabled', message: 'not enabled' },
+          expectStatus: 503,
+          expectCode: 'BOT_DISABLED',
+          expectPattern: /^暂时不可用：.*机器人尚未配置启用/,
+        },
+        {
+          hostStatus: 413,
+          hostBody: { code: 'payload_too_large', message: 'too big' },
+          expectStatus: 413,
+          expectCode: 'BOT_INVALID_REQUEST',
+          expectPattern: /^参数无效：.*机器人请求体超过允许大小上限/,
+        },
+        {
+          hostStatus: 422,
+          hostBody: { code: 'attachment_integrity_failed', message: 'bad digest' },
+          expectStatus: 422,
+          expectCode: 'BOT_INVALID_REQUEST',
+          expectPattern: /^参数无效：.*机器人附件完整性校验未通过/,
+        },
+        {
+          hostStatus: 422,
+          hostBody: { code: 'invalid_request', message: 'bad attachment' },
+          expectStatus: 422,
+          expectCode: 'BOT_INVALID_REQUEST',
+          expectPattern: /^参数无效：.*机器人附件完整性校验未通过/,
+        },
+      ]) {
+        hostReply = { status: s14Case.hostStatus, body: s14Case.hostBody };
+        const s14Res = await fetch(hub.url + chatPath, {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer ' + user.token,
+            'content-type': 'application/json',
+            'bot-client-version': '1.18.1',
+          },
+          body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: '宿主错误映射测试' }),
+        });
+        assert.equal(s14Res.status, s14Case.expectStatus);
+        const s14Body = (await s14Res.json()) as { code?: string; message?: string };
+        assert.equal(s14Body.code, s14Case.expectCode);
+        assert.match(s14Body.message ?? '', s14Case.expectPattern);
+        assert.deepEqual(seenHostBodies.at(-1)?.route, {
+          source: 'client',
+          issuer: routeIssuer,
+          subject: 'ext-client-route',
+        });
+      }
 
       // S10: wrong directory permissions (0o755) -> member gets generic 503 while call_log gets exact adminDetail
       const callsBeforeChmod = seenHostCalls;

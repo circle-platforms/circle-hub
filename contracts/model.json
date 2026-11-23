@@ -5249,6 +5249,12 @@
         "callErrorCategory": "occupied"
       },
       {
+        "code": "BOT_BUSY",
+        "when": "当前机器人会话排队消息已满",
+        "fix": "等待排队中的消息处理完成后再发送",
+        "callErrorCategory": "temporarily_unavailable"
+      },
+      {
         "code": "BOT_INVALID_REQUEST",
         "when": "机器人请求内容不符合接口格式与大小约束",
         "fix": "按接口要求修正请求参数与内容长度后重试",
@@ -12140,6 +12146,10 @@
         {
           "code": "assistant",
           "label": "机器人"
+        },
+        {
+          "code": "notice",
+          "label": "状态提示"
         }
       ]
     }

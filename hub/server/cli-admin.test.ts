@@ -140,16 +140,24 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
   });
   await new Promise<void>((resolve) => channelSockServer.listen(join(botRuntimeDir, 'channel.sock'), resolve));
   let hostMode: 'secret_error' | 'ok' = 'secret_error';
+  const hostRequests: Array<{ owner?: unknown; op?: { action?: string }; config?: { key?: string } | null }> = [];
   const hostSockServer = createServer(async (req, res) => {
-    for await (const _ of req) {
-      // drain
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
     }
-    if (hostMode === 'secret_error') {
+    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+      owner?: unknown;
+      op?: { action?: string };
+      config?: { key?: string } | null;
+    };
+    hostRequests.push(parsed);
+    if (parsed.op?.action === 'test' && hostMode === 'secret_error') {
       res.statusCode = 502;
       res.end(JSON.stringify({ message: `host exploded with ${modelKey}` }));
       return;
     }
-    res.end(JSON.stringify({ tested: true }));
+    res.end(JSON.stringify(parsed.op?.action === 'test' ? { tested: true } : { ok: true }));
   });
   await new Promise<void>((resolve) => hostSockServer.listen(join(botRuntimeDir, 'host.sock'), resolve));
 
@@ -159,7 +167,7 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
     const stopRes = await bridge.run(['bot', 'channel-stop'], { token: hub.admin.token });
     assert.equal(stopRes.code, 0, stopRes.stderr.join('\n'));
 
-    // S5 + S10: bot test masks vault secrets on host error and surfaces bot-runtime mode error to admin
+    // S5 + S10 + R11: bot set notifies host.sock with configure frame; bot test masks vault secrets and surfaces bot-runtime mode error
     await bridge.run(['bot', 'set'], {
       token: hub.admin.token,
       secrets: {
@@ -172,6 +180,9 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
         }),
       },
     });
+    assert.equal(hostRequests.at(-1)?.owner, '_hub');
+    assert.deepEqual(hostRequests.at(-1)?.op, { action: 'configure' });
+    assert.equal(hostRequests.at(-1)?.config?.key, modelKey);
     const testMaskedFail = await bridge.run(['bot', 'test'], { token: hub.admin.token });
     assert.notEqual(testMaskedFail.code, 0);
     assert.ok(!testMaskedFail.stderr.join('\n').includes(modelKey));
@@ -391,11 +402,33 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
   const identityAudits = (await hub.records.store.find({ kind: 'action', key: 'member.external_identity.member', value: alice.principal.id, limit: 20 })).items
     .filter((item) => item.schema === 'member-external-identity@1')
     .map((item) => MemberExternalIdentityAudit.parse(item.body));
+  const binds = identityAudits.filter((a) => a.action === 'bind');
   const unbinds = identityAudits.filter((a) => a.action === 'unbind');
+  assert.equal(binds.length, 2);
   assert.equal(unbinds.length, 2);
   assert.ok(unbinds.every((u) => u.reason === 'manual' && u.by === hub.admin.principal.id));
+  assert.ok(unbinds.every((u) => /^[0-9a-f]{64}$/.test(u.issuer) && u.issuer !== sha256Hex(issuerA) && u.issuer !== sha256Hex(issuerB)));
   assert.deepEqual(
     unbinds.map((u) => u.issuer).sort(),
-    [sha256Hex(issuerA), sha256Hex(issuerB)].sort(),
+    binds.map((b) => b.issuer).sort(),
   );
+
+  // R11: bot disable sends best-effort { owner: '_hub', op: { action: 'disable' } } when host.sock is present
+  await mkdir(botRuntimeDir, { recursive: true, mode: 0o700 });
+  const disableRequests: Array<{ owner?: unknown; op?: { action?: string } }> = [];
+  const disableHostServer = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk);
+    disableRequests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as { owner?: unknown; op?: { action?: string } });
+    res.end(JSON.stringify({ ok: true }));
+  });
+  await new Promise<void>((resolve) => disableHostServer.listen(join(botRuntimeDir, 'host.sock'), resolve));
+  try {
+    const disableRes = await bridge.run(['bot', 'disable'], { token: hub.admin.token });
+    assert.equal(disableRes.code, 0, disableRes.stderr.join('\n'));
+    assert.equal(disableRequests.length, 1);
+    assert.deepEqual(disableRequests[0], { owner: '_hub', op: { action: 'disable' } });
+  } finally {
+    await new Promise<void>((resolve) => disableHostServer.close(() => resolve()));
+  }
 });
