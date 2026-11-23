@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildFidelityVerdictDocument, fidelityPromptOf, mapPlumbSequenceToFidelityRow, type BoundStepDecision } from '../functions/fidelity-bind.ts';
 import { FIDELITY_MAX_EST_TOKENS, partitionFidelityBlocks, renderFidelityStepState, type LiteralSubstitution, type PartitionedFidelityBlocks } from '../functions/fidelity-render.ts';
+import { JEV_STATE_BUDGET_EST_TOKENS } from '../functions/jev-judge.ts';
 import {
   createCaseJudge,
   extractPlumbCliOptions,
@@ -68,6 +69,10 @@ const readTextOrNull = async (path: string): Promise<string | null> => {
   }
 };
 
+// What one step's state may weigh for the judge that is asked: the limit of Plumb's gateway, or the budget of ours for a Jev state. The rest of the
+// rendering is ours and the same for both: the order in which earlier steps and repeated long literals are given up, and no cut inside a command block.
+const stateBudgetOf = (judge: JudgeName): number => (judge === 'jev' ? JEV_STATE_BUDGET_EST_TOKENS : FIDELITY_MAX_EST_TOKENS);
+
 function overBudgetStop(waiting: readonly OverBudgetCase[], judgedByPlumb: number, judge: JudgeName = 'plumb'): string {
   const name = judge === 'jev' ? 'Jev' : 'Plumb';
   const steps = (c: OverBudgetCase): string => {
@@ -80,8 +85,10 @@ function overBudgetStop(waiting: readonly OverBudgetCase[], judgedByPlumb: numbe
     const reduced = w.reduced_est_tokens === null ? '没有逐字重复的长字面量可换名' : `重复的长字面量换成名字后仍约 ${w.reduced_est_tokens}`;
     return `${c.file}（步骤 ${steps(c)} token；候选命令块约 ${w.command_blocks}、豁免依据约 ${w.exemptions}，${reduced}；简报 ${c.brief}）`;
   };
-  const limit = judge === 'jev' ? `给 Jev 的题面上限（与给 Plumb 的相同，${FIDELITY_MAX_EST_TOKENS} token）` : `Plumb 的 ${FIDELITY_MAX_EST_TOKENS} token 上限`;
-  const fact = `${waiting.length} 条自动化用例的保真核对题面超过 ${limit}，工具不在命令块中间截断，这些用例没有交给 ${name}：${waiting.map(describe).join('；')}${judgedByPlumb > 0 ? `。其余 ${judgedByPlumb} 条已由 ${name} 核对并写入核对目录` : ''}`;
+  const exceeded = judge === 'jev'
+    ? `超过给 Jev 的题面预算（${JEV_STATE_BUDGET_EST_TOKENS} 个估算 token，取自 InfoTest 给 Jev 题面定的预算，不是实测的服务上限）`
+    : `超过 Plumb 的 ${FIDELITY_MAX_EST_TOKENS} token 上限`;
+  const fact = `${waiting.length} 条自动化用例的保真核对题面${exceeded}，工具不在命令块中间截断，这些用例没有交给 ${name}：${waiting.map(describe).join('；')}${judgedByPlumb > 0 ? `。其余 ${judgedByPlumb} 条已由 ${name} 核对并写入核对目录` : ''}`;
   const next = [
     '这些用例改走独立模型盲审：对上面每份简报运行 node \'<技能目录>/tools/task-brief.ts\' --role \'保真核对\' --case \'<用例文件名>\' --brief \'<简报>\' --out \'<同前缀的 .verdict.json>\' --task-file \'<任务文件>\'，派 compile-fidelity 写出判断（只用这种单条形式，不要对整个核对目录用 --batch，它会覆盖 NAME 已写的判断）'.replace('NAME', name),
     '写完运行 fidelity-apply.ts 并入自动化用例',
@@ -114,6 +121,7 @@ export async function runFidelityPlumb(
     // Jev answers only advise: the review gate of one never releases a step, so every step of a Jev audit goes to the blind audit.
     const strictReview = parsed.flags.get('--strict-review') === true || judge === 'jev';
     const promptVersion = fidelityPromptOf(judge);
+    const stateBudget = stateBudgetOf(judge);
 
     const { cases, skipped } = await planCases(runDirectory, plansDir);
     await mkdir(briefsDir, { recursive: true, mode: 0o700 });
@@ -132,7 +140,7 @@ export async function runFidelityPlumb(
       const stepQueries: PendingStepQuery[] = [];
       const tooBig: OverBudgetCase['steps'] = [];
       for (const [stepIdx, authorStep] of planCase.brief.author_steps.entries()) {
-        const rendered = renderFidelityStepState(planCase.brief, stepIdx, partitioned);
+        const rendered = renderFidelityStepState(planCase.brief, stepIdx, partitioned, stateBudget);
         if (rendered.overBudget) {
           tooBig.push({
             n: authorStep.n,

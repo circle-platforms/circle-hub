@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord, parseCliOptions } from '../functions/text.ts';
-import { JEV_LOG_FAILED } from '../functions/jev-judge.ts';
+import { JEV_LOG_FAILED, JEV_STATE_BUDGET_EST_TOKENS } from '../functions/jev-judge.ts';
 import { collapseJsonText } from '../functions/length-literals.ts';
 import { chooseSiblings, neededShapes, planCommandLines, siblingNote, type SiblingPlan } from '../functions/sibling-reference.ts';
 import { deviceReadNote, readableLines, readFileName, READ_LINES_PER_CASE, READS_DIRECTORY } from '../functions/device-read-lines.ts';
@@ -309,6 +309,16 @@ function stepsWithoutJev(run: ToolRun): { steps: string; reason: string } | null
     return { steps: [...new Set(steps.map((step) => String(step.n)))].join('、'), reason: String(steps[0]!.reason ?? '没有说明原因').slice(0, 200) };
   } catch { return null; }
 }
+// A case whose fidelity state is over the budget of a Jev state was not put to Jev at all: the largest step of it, as the tool measured it (after the
+// repeated long literals were replaced by names, where that was tried).
+function overJevBudget(run: ToolRun): { largest: number } | null {
+  try {
+    const summary: unknown = JSON.parse(run.stdout);
+    const cases = isRecord(summary) && Array.isArray(summary.over_budget) ? summary.over_budget.filter(isRecord) : [];
+    const sizes = cases.flatMap((row) => (Array.isArray(row.steps) ? row.steps.filter(isRecord) : [])).map((step) => (typeof step.reduced_est_tokens === 'number' ? step.reduced_est_tokens : step.est_tokens)).filter((size): size is number => typeof size === 'number');
+    return sizes.length ? { largest: Math.max(...sizes) } : null;
+  } catch { return null; }
+}
 // What a verdict that was held back for the blind audit is saved as, and what the note about it says.
 const reviewSuffix = (state: PipelineState): string => (state.judge === 'jev' ? '.jev-review.json' : '.plumb-review.json');
 function reviewNote(state: PipelineState, c: CaseState, kept: string): string {
@@ -476,6 +486,8 @@ async function writeEnded(state: PipelineState, c: CaseState, g: Gates, finished
     if (keyRefused(audited)) return stopped('场景保真审计', audited);
     const auditWithoutJev = stepsWithoutJev(audited);
     if (auditWithoutJev) noteOnce(c, `场景保真：第 ${c.attempts.write} 版计划的步骤 ${auditWithoutJev.steps} 没有 Jev 的答复（${auditWithoutJev.reason}）；Jev 对它们没有给出判断，这条用例整个交独立盲审给出结论`);
+    const overBudget = overJevBudget(audited);
+    if (overBudget) noteOnce(c, `场景保真：第 ${c.attempts.write} 版计划的题面约 ${overBudget.largest} 个估算 token，超过给 Jev 的题面预算（${JEV_STATE_BUDGET_EST_TOKENS}），没有问 Jev；这条用例整个交独立盲审给出结论`);
     if (audited.code !== 0) {
       if ((await pendingBriefs(audits)).length) return dispatchAudit(c, g);
       if (/^参数无效/.test(words(audited))) return again(`场景保真审计做不了：${words(audited)}`);

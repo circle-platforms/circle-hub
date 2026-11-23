@@ -1649,6 +1649,24 @@ test('judge jev: a question the service rejected is said in the review notes wit
   assert.ok(c.review!.every((line) => !/Jev 的判断（未确认）一律只作参考，逐条交独立盲审/.test(line)), 'no note says that Jev judged the case: it did not');
 });
 
+test('judge jev: a case whose fidelity state is over the budget of a Jev state was not put to Jev: the review notes say so with its size and the budget, the blind audit is asked, and nothing goes back to the writer', async () => {
+  await world(1);
+  const report = { judge: 'jev', review_required_count: 1, results: [{ steps: [{ review_required: true }] }] };
+  // The tool measured three steps: the largest after the repeated long literals were replaced by names is the one the note names.
+  const summary = { judge: 'jev', checked: 1, written: [], over_budget: [{ file: '00.json', item: 'doc:00', verdict_present: false, steps: [{ n: '1', est_tokens: 40100, reduced_est_tokens: 39000 }, { n: '2', est_tokens: 41000, reduced_est_tokens: 39500 }, { n: '3', est_tokens: 33000, reduced_est_tokens: null }] }] };
+  const stopped: ToolRun = { code: 1, stdout: JSON.stringify(summary), stderr: '参数无效：1 条自动化用例的保真核对题面超过给 Jev 的题面预算（32768 个估算 token，取自 InfoTest 给 Jev 题面定的预算，不是实测的服务上限），工具不在命令块中间截断，这些用例没有交给 Jev：00.json。' };
+  const t = tools((tool) => (tool === 'cmd-verify-plumb.ts' ? ok(JSON.stringify(report)) : tool === 'fidelity-plumb.ts' ? stopped : undefined));
+  const state = await initState('recompose-run', 'plan-run', { ...OPEN, judge: 'jev' }, 'synthetic-model');
+  await writingCases(state);
+  const c = state.cases[0]!, audits = join('cases', '00', 'audit');
+  // The fidelity tool wrote the brief of the case and no verdict, as it does for a case it does not put to Jev.
+  await mkdir(audits, { recursive: true }); await writeFile(join(audits, '00.aaaa1111.brief.json'), '{}');
+  const step = await next(state, '编写 00', jevGates(t.run, clockAt()));
+  assert.deepEqual([step.actions.map((a) => [a.label, a.subagent_type]), c.stage, c.attempts.write, c.jev_unanswered, c.pending], [[['审计 00', 'case-compile:compile-fidelity']], 'auditing', 1, undefined, undefined], 'the blind audit is asked, and nothing goes back to the writer');
+  assert.equal(c.review!.at(-1), '场景保真：第 1 版计划的题面约 39500 个估算 token，超过给 Jev 的题面预算（32768），没有问 Jev；这条用例整个交独立盲审给出结论');
+  assert.ok(c.review!.every((line) => !/Jev 的判断（未确认）一律只作参考，逐条交独立盲审/.test(line)), 'no note says that Jev judged the case: it did not');
+});
+
 test('the stdin lines of the pipeline are read by position: a blank line stays a line', () => {
   const module = new URL('./pipeline.ts', import.meta.url).href;
   const read = (input: string) => JSON.parse(spawnSync(process.execPath, ['--input-type=module', '-e', `import { readStdinLines } from ${JSON.stringify(module)}; console.log(JSON.stringify(await readStdinLines()));`], { input, encoding: 'utf8' }).stdout) as string[];

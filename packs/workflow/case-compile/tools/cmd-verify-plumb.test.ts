@@ -11,7 +11,8 @@ import { frozenRun, writeDownload } from '../testing/frozen-run.ts';
 import type { FlatCatalog } from '../testing/locked-tree.ts';
 import { FakeCallError, JEV_WIRE_KEY, JEV_WIRE_VERSION, filesBelow, jevFake, jevWire, sha256Text, textForms, validAnswer } from '../testing/jev-fake.ts';
 import { JEV_ENDPOINT } from '../functions/generated/skills/jev-judge/jev-client/index.ts';
-import { COMMAND_CRITERIA, SINGLE_INSTRUCTIONS } from '../functions/jev-judge.ts';
+import { COMMAND_CRITERIA, JEV_STATE_BUDGET_EST_TOKENS, SINGLE_INSTRUCTIONS } from '../functions/jev-judge.ts';
+import { estimateTokens } from '../functions/generated/skills/plumb/plumb-client/index.ts';
 import { runCmdVerifyPlumb } from './cmd-verify-plumb.ts';
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
@@ -925,6 +926,103 @@ test('--judge jev with the real embedded client: what the service refuses, echoe
     assert.doesNotMatch(bad.stderr, /拒绝了密钥/);
     assert.ok(!bad.stderr.includes('bad key!'));
     assert.equal(idle.calls.length, 0);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+// ---- the size of a Jev state: its own budget, not the 1800 that the Plumb gateway reads ----
+
+const WIDE_STEP = '健康检查间隔的说明';
+
+test('--judge jev: a context over the 1800 of Plumb and under the Jev budget is asked whole, and the same plan is refused for Plumb at 1800', async () => {
+  const description = WIDE_STEP.repeat(400);
+  const w = await frozenWorkspace([seat('widget health interval 60', description)]);
+  try {
+    const wire = jevWire();
+    const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { stdinText: `${WIRE_KEY}\n`, jevTransport: wire.transport });
+    assert.equal(res.code, 0, res.stderr);
+    assert.equal(wire.calls.length, 1);
+    const state = wire.calls[0]!.sent.state as { context: string; command: string };
+    assert.ok(state.context.includes(description), 'the whole description of the step is in the context');
+    const size = estimateTokens(state.context) + estimateTokens(state.command);
+    assert.ok(size > 1800 && size < JEV_STATE_BUDGET_EST_TOKENS, `the state is ${size} estimated tokens`);
+    assert.equal(JSON.parse(res.stdout).results[0].steps[0].earlier_steps_shortened, undefined);
+
+    const plumb = await runCmdVerifyPlumb(['--file', w.file, '--run', w.dir, '--base-url', baseUrl, '--key-stdin'], KEY);
+    assert.equal(plumb.code, 1);
+    assert.match(plumb.stderr, /^参数无效：以下命令上下文超过 Plumb @1800 token 上限，拒绝截断并停用：.*00\.json:\/steps\/0\(\d+ tokens\)/su);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev: a context of about thirty thousand estimated tokens is still asked whole', async () => {
+  const description = WIDE_STEP.repeat(3300);
+  const w = await frozenWorkspace([seat('widget health interval 60', description)]);
+  try {
+    const wire = jevWire();
+    const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { stdinText: `${WIRE_KEY}\n`, jevTransport: wire.transport });
+    assert.equal(res.code, 0, res.stderr);
+    assert.equal(wire.calls.length, 1);
+    const state = wire.calls[0]!.sent.state as { context: string; command: string };
+    assert.ok(state.context.includes(description));
+    const size = estimateTokens(state.context) + estimateTokens(state.command);
+    assert.ok(size > 29000 && size < JEV_STATE_BUDGET_EST_TOKENS, `the state is ${size} estimated tokens`);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev: a context over the Jev budget is refused as it always was, under the Jev wording, and nothing is sent', async () => {
+  const w = await frozenWorkspace([VALID[0]!, seat('widget health interval 61', WIDE_STEP.repeat(4000))]);
+  try {
+    const wire = jevWire();
+    const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { stdinText: `${WIRE_KEY}\n`, jevTransport: wire.transport });
+    assert.equal(res.code, 1);
+    assert.equal(res.stdout, '');
+    assert.match(res.stderr, /^参数无效：以下命令上下文超过给 Jev 的题面预算（32768 个估算 token，取自 InfoTest 给 Jev 题面定的预算，不是实测的服务上限），拒绝截断并停用：.*00\.json:\/steps\/1\(\d+ tokens\)。请拆短单步命令列表或精简当前步骤描述/su);
+    assert.doesNotMatch(res.stderr, /@1800|与给 Plumb 的相同/u);
+    assert.equal(wire.calls.length, 0, 'nothing is asked of a service when a context is refused');
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev: a question the service refuses for its size is asked again with a fifth less of its characters, measured against the Jev budget and not cut down to the 1800 of Plumb', async () => {
+  // Four hundred valid steps: the last ones have thousands of tokens of earlier steps in their context, far over what Plumb reads.
+  const w = await frozenWorkspace(Array.from({ length: 400 }, (_, k) => seat(k % 2 === 0 ? 'widget health interval 60' : 'widget health interval 61', `配置第 ${k + 1} 组间隔`)));
+  try {
+    const contextOf = (call: { sent: { state: unknown } }): string => (call.sent.state as { context: string }).context;
+    const stepOf = (context: string): number => Number(/步骤意图: 配置第 (\d+) 组间隔/u.exec(context)![1]);
+    let limit = Number.MAX_SAFE_INTEGER;
+    const script: Parameters<typeof jevWire>[0] = (question, call) => (contextOf(call).length > limit ? { status: 413, body: 'too large' } : validAnswer(question));
+    const first = jevWire(script);
+    // The tree of this fixture lets a plan call the command ten times, so it blocks the later steps and the tool ends with code 1; what is asked of Jev
+    // and what the report says about the steps is the same, and that is what is looked at here.
+    const whole = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { stdinText: `${WIRE_KEY}\n`, jevTransport: first.transport });
+    assert.equal(whole.code, 1);
+    assert.match(JSON.parse(whole.stdout).results[0].steps[399].tree_check.problems[0].message, /超过声明预算 10 次/u);
+    const lengths = new Map(first.calls.map((call) => [stepOf(contextOf(call)), contextOf(call).length]));
+    assert.equal(lengths.size, 400);
+    const wholeTokens = estimateTokens(first.calls.map(contextOf).find((context) => stepOf(context) === 400)!);
+    assert.ok(wholeTokens > 1800 * 1.5, `the last step is ${wholeTokens} estimated tokens: far over what Plumb reads`);
+
+    limit = lengths.get(399)!;   // the last step is refused whole, the one before it is not
+    const second = jevWire(script);
+    const res = await runCmdVerifyPlumb(jevArgs(w.file, w.dir), { stdinText: `${WIRE_KEY}\n`, jevTransport: second.transport });
+    assert.equal(res.code, 1);
+    const steps = JSON.parse(res.stdout).results[0].steps as Array<Record<string, unknown>>;
+    assert.deepEqual(steps.map((step) => step.earlier_steps_shortened === true), [...Array.from({ length: 399 }, () => false), true]);
+    const ofLast = second.calls.map(contextOf).filter((context) => stepOf(context) === 400);
+    assert.equal(ofLast.length, 2, 'the whole one, refused, and the shortened one');
+    const [refused, again] = ofLast as [string, string];
+    assert.equal(refused.length, lengths.get(400));
+    assert.ok(again.length <= Math.floor(lengths.get(400)! * 0.8), 'a fifth less of the characters at most');
+    assert.ok(estimateTokens(again) > 1800 * 1.3, `the shortened context is still ${estimateTokens(again)} estimated tokens: it was cut by a fifth, not down to what Plumb reads`);
+    assert.match(again, /\[已执行的步骤\]\n（前面 \d+ 步已省略）\n\d+\. widget health interval 6[01]\n/u);
+    assert.ok((again.match(/^\d+\. widget health interval/gmu) ?? []).length > 300, 'most of the earlier steps stay');
+    assert.match(again, /\[当前步骤\]\n步骤位置: \/steps\/399\n步骤意图: 配置第 400 组间隔\n候选命令: widget health interval 61$/u, 'the step itself is whole');
   } finally {
     await rm(w.dir, { recursive: true, force: true });
   }

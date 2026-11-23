@@ -9,7 +9,8 @@ import { localFidelityBlocks } from './submit-plans.ts';
 import { main as applyMain } from './fidelity-apply.ts';
 import { FakeCallError, JEV_WIRE_KEY, JEV_WIRE_VERSION, filesBelow, jevFake, jevWire, sha256Text, textForms, validAnswer } from '../testing/jev-fake.ts';
 import { JEV_ENDPOINT } from '../functions/generated/skills/jev-judge/jev-client/index.ts';
-import { FIDELITY_CRITERIA, fidelityInstructions } from '../functions/jev-judge.ts';
+import { FIDELITY_CRITERIA, JEV_STATE_BUDGET_EST_TOKENS, fidelityInstructions } from '../functions/jev-judge.ts';
+import { estimateTokens } from '../functions/generated/skills/plumb/plumb-client/index.ts';
 import { runFidelityPlumb } from './fidelity-plumb.ts';
 
 let mode: 'pass' | 'review' | 'reject' | 'service_down' = 'pass';
@@ -635,6 +636,165 @@ test('--judge jev with the real embedded client: what the service refuses, echoe
       }
     }
     for (const file of await filesBelow(w.dir)) assert.ok(!(await readFile(file, 'utf8')).includes(JEV_WIRE_KEY), `the key is in no file: ${relative(w.dir, file)}`);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+// ---- the size of a Jev state: its own budget, not the Plumb gateway's limit ----
+
+const stateOf = (call: { sent: { state: unknown } }): string => String(call.sent.state);
+const stepOf = (state: string): string => /\[当前作者步骤 (\d+)\]/u.exec(state)![1]!;
+const WIRE_IN = { stdinText: `${JEV_WIRE_KEY}\n` };
+
+test('--judge jev: a case the Plumb gateway cannot read (over 2400) is asked of Jev whole while it is under the Jev budget, and Plumb still refuses the same case at 2400', async () => {
+  const w = await setupWorkspace(0);
+  try {
+    await addCase(w, 'big', BIG_ARGS);
+    const wire = jevWire();
+    const res = await runFidelityPlumb(jevArgs(w), { ...WIRE_IN, jevTransport: wire.transport });
+    assert.equal(res.code, 0, res.stderr);
+    const summary = JSON.parse(res.stdout);
+    assert.deepEqual([summary.over_budget, summary.written.length, summary.jev_requests, summary.written[0].literal_substitutions], [[], 1, 3, []]);
+
+    // One request for each author step, and the state of each is the whole one: its earlier steps, its current step and the block with its whole command.
+    assert.equal(wire.calls.length, 3);
+    const states = new Map(wire.calls.map((call) => [stepOf(stateOf(call)), stateOf(call)]));
+    assert.deepEqual([...states.keys()].sort(), ['1', '2', '3']);
+    for (const [step, state] of states) {
+      const size = estimateTokens(state);
+      assert.ok(size > 2400 && size < JEV_STATE_BUDGET_EST_TOKENS, `step ${step} is ${size} estimated tokens`);
+      assert.ok(state.includes(BIG_ARGS[0]!.trim()), `step ${step} holds the whole command of its block`);
+      assert.ok(!state.includes('已省略') && !state.includes('[长字面量对照]'), `step ${step} was neither cut nor renamed`);
+    }
+    assert.match(states.get('3')!, /\[前序步骤\]\n1\. 配置超长名字\n2\. 启用签名功能\n\n\[当前作者步骤 3\]/u, 'every earlier step is there');
+    assert.equal(JSON.parse(await readFile(summary.written[0].verdict, 'utf8')).model_disclosure.prompt_version, 'jev-choice@fidelity-v1');
+
+    // The same plans and the Plumb gateway: over its limit, as before; nothing is asked.
+    mode = 'pass';
+    postCount = 0;
+    const plumb = await runFidelityPlumb(['--run', w.dir, '--plans', w.plans, '--briefs', join(w.dir, 'briefs-plumb'), '--base-url', baseUrl, '--no-cache', '--key-stdin'], keyed);
+    assert.equal(plumb.code, 1);
+    assert.equal(postCount, 0);
+    assert.match(plumb.stderr, /^参数无效：1 条自动化用例的保真核对题面超过 Plumb 的 2400 token 上限/u);
+    assert.equal(JSON.parse(plumb.stdout).over_budget.length, 1);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev: a case over the Jev budget is not asked: it is listed in over_budget with the same fields, the line that stops the tool names the Jev budget, and the case that fits is judged', async () => {
+  const w = await setupWorkspace(1);
+  try {
+    await addCase(w, 'huge', Array.from({ length: 14 }, () => BIG_ARGS[0]!));
+    const wire = jevWire();
+    const res = await runFidelityPlumb(jevArgs(w), { ...WIRE_IN, jevTransport: wire.transport });
+    assert.equal(res.code, 1);
+    assert.equal(wire.calls.length, 2, 'the two steps of the case that fits, and nothing of the other one');
+    for (const call of wire.calls) assert.ok(!stateOf(call).includes('longtoken'), 'no text of the case that is over the budget leaves');
+
+    const summary = JSON.parse(res.stdout);
+    assert.deepEqual([summary.judge, summary.jev_requests, summary.written.length, summary.over_budget.length], ['jev', 2, 1, 1]);
+    const over = summary.over_budget[0];
+    assert.deepEqual(Object.keys(over), ['file', 'item', 'brief', 'verdict', 'verdict_present', 'steps']);
+    assert.deepEqual(Object.keys(over.steps[0]), ['n', 'est_tokens', 'reduced_est_tokens', 'command_blocks', 'exemptions']);
+    assert.deepEqual([over.file, over.verdict_present, over.steps.length], ['huge.json', false, 3]);
+    assert.ok(over.steps.every((step: { est_tokens: number; command_blocks: number; exemptions: number }) => step.est_tokens > JEV_STATE_BUDGET_EST_TOKENS && step.command_blocks > step.exemptions));
+    assert.ok(await readFile(over.brief, 'utf8').then(() => true), 'the brief the blind audit needs is written');
+    await assert.rejects(readFile(over.verdict, 'utf8'), /ENOENT/);
+
+    assert.match(res.stderr, /^参数无效：1 条自动化用例的保真核对题面超过给 Jev 的题面预算（32768 个估算 token，取自 InfoTest 给 Jev 题面定的预算，不是实测的服务上限），工具不在命令块中间截断，这些用例没有交给 Jev：/u);
+    assert.doesNotMatch(res.stderr, /2400|与给 Plumb 的相同/u);
+    assert.ok(res.stderr.includes('huge.json') && res.stderr.includes(over.brief));
+    assert.match(res.stderr, /其余 1 条已由 Jev 核对/u);
+    assert.match(res.stderr, /task-brief\.ts.*--role '保真核对'.*--case.*--brief.*--out.*--task-file/u);
+    assert.match(res.stderr, /不要对整个核对目录用 --batch/u);
+    assert.doesNotMatch(res.stderr, /不要对整个核对目录用 --batch，它会覆盖 Plumb/u, 'it names the judge that was asked');
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev: earlier steps are cut only past the Jev budget, where Plumb has to give them up at 2400, and a repeated long literal stays whole under the Jev budget', async () => {
+  const w = await setupWorkspace(0);
+  try {
+    // Three author steps of about a thousand tokens each: the third has two thousand tokens of earlier steps before it.
+    await addCase(w, 'long', ['cmd show 1', 'cmd show 2', 'cmd show 3']);
+    const run = JSON.parse(await readFile(w.runPath, 'utf8'));
+    const atoms = run.items.find((item: { id: string }) => item.id === 'doc:long').fields.recomposition.record.atoms as Array<{ text: string }>;
+    for (const [k, atom] of atoms.entries()) atom.text = `${'步骤说明'.repeat(250)}（第${k + 1}步）`;
+    await writeFile(w.runPath, JSON.stringify(run));
+
+    const wire = jevWire();
+    const res = await runFidelityPlumb(jevArgs(w), { ...WIRE_IN, jevTransport: wire.transport });
+    assert.equal(res.code, 0, res.stderr);
+    const third = wire.calls.map(stateOf).find((state) => stepOf(state) === '3')!;
+    assert.ok(third.includes('（第1步）') && third.includes('（第2步）') && !third.includes('已省略'), 'Jev reads both earlier steps');
+    assert.ok(estimateTokens(third) > 2400);
+
+    mode = 'pass';
+    postCount = 0;
+    seenStates.length = 0;
+    const plumb = await runFidelityPlumb(['--run', w.dir, '--plans', w.plans, '--briefs', join(w.dir, 'briefs-plumb'), '--base-url', baseUrl, '--no-cache', '--key-stdin'], keyed);
+    assert.equal(plumb.code, 0, plumb.stderr);
+    const plumbThird = seenStates.find((state) => stepOf(state) === '3')!;
+    assert.ok(!plumbThird.includes('（第1步）') && plumbThird.includes('（第3步）'), 'Plumb has to give up the earlier steps to stay under 2400');
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+
+  const dns = await setupWorkspace(0);
+  try {
+    await addCase(dns, 'dns', Array.from({ length: 48 }, (_, i) => (i % 3 === 0 ? `zone host name "${LONG_NAME}" 60` : `zone feature ${i} on`)));
+    const wire = jevWire();
+    const res = await runFidelityPlumb(jevArgs(dns), { ...WIRE_IN, jevTransport: wire.transport });
+    assert.equal(res.code, 0, res.stderr);
+    assert.equal(wire.calls.length, 3);
+    for (const call of wire.calls) {
+      assert.equal(stateOf(call).split(LONG_NAME).length - 1, 16, 'the long name is written out in every place');
+      assert.ok(!stateOf(call).includes('«L'));
+    }
+    const summary = JSON.parse(res.stdout);
+    assert.deepEqual(summary.written[0].literal_substitutions, []);
+    assert.doesNotMatch(JSON.parse(await readFile(summary.written[0].verdict, 'utf8')).disclosure, /长字面量换名/u);
+  } finally {
+    await rm(dns.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev: the Plumb gateway\'s limits on one batch (32 questions) do not apply: each step is a request of its own, however many there are', async () => {
+  const w = await setupWorkspace(18);
+  try {
+    const wire = jevWire();
+    const res = await runFidelityPlumb(jevArgs(w), { ...WIRE_IN, jevTransport: wire.transport });
+    assert.equal(res.code, 0, res.stderr);
+    assert.equal(wire.calls.length, 36, '18 cases of 2 steps: more than the 32 questions that one request of the gateway takes');
+    assert.ok(wire.calls.every((call) => Object.keys(call.sent.questions).length === 1));
+    assert.deepEqual([JSON.parse(res.stdout).written.length, JSON.parse(res.stdout).jev_requests], [18, 36]);
+  } finally {
+    await rm(w.dir, { recursive: true, force: true });
+  }
+});
+
+test('--judge jev: the budget is 32768 estimated tokens, not a figure near it: twelve long commands (about 31000) are asked whole, thirteen (about 33000) are not', async () => {
+  const w = await setupWorkspace(0);
+  try {
+    await addCase(w, 'twelve', Array.from({ length: 12 }, () => BIG_ARGS[0]!));
+    await addCase(w, 'thirteen', Array.from({ length: 13 }, () => BIG_ARGS[0]!));
+    const wire = jevWire();
+    const res = await runFidelityPlumb(jevArgs(w), { ...WIRE_IN, jevTransport: wire.transport });
+    assert.equal(res.code, 1);
+    assert.equal(wire.calls.length, 3, 'the three steps of the case that fits');
+    for (const call of wire.calls) {
+      const size = estimateTokens(stateOf(call));
+      assert.ok(size > 30000 && size < JEV_STATE_BUDGET_EST_TOKENS, `${size} estimated tokens`);
+      for (let k = 1; k <= 12; k += 1) assert.ok(stateOf(call).includes(`block[${k}] (cmd_config, host=dut1)\n  ${BIG_ARGS[0]!.trim()}`), `block ${k} is there with its whole command`);
+      assert.ok(!stateOf(call).includes('block[13]'));
+    }
+    const summary = JSON.parse(res.stdout);
+    assert.deepEqual(summary.over_budget.map((row: { file: string }) => row.file), ['thirteen.json']);
+    assert.ok(summary.over_budget[0].steps.every((step: { est_tokens: number }) => step.est_tokens > JEV_STATE_BUDGET_EST_TOKENS && step.est_tokens < 35000));
+    assert.deepEqual(summary.written.map((row: { file: string }) => row.file), ['twelve.json']);
   } finally {
     await rm(w.dir, { recursive: true, force: true });
   }

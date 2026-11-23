@@ -8,6 +8,7 @@ import {
   partitionFidelityBlocks,
   renderFidelityStepState,
 } from './fidelity-render.ts';
+import { JEV_STATE_BUDGET_EST_TOKENS } from './jev-judge.ts';
 
 const RECORD = {
   schema: 'recompose-record@1',
@@ -244,4 +245,69 @@ test('a state the long literal does not explain stays over budget and says where
   assert.deepEqual(res.substitutions, []);
   assert.ok(res.parts !== null && res.parts.commandBlocks > res.parts.exemptions && res.parts.exemptions > 0 && res.parts.currentStep > 0);
   assert.ok(!res.state.includes('[长字面量对照]'), 'a state that is refused is not rewritten');
+});
+
+// ---- the budget of a Jev state: the same rendering, measured against the budget of ours instead of the Plumb gateway's limit ----
+
+test('the budget of a Jev state is 32768 estimated tokens, far above what the Plumb gateway reads', () => {
+  assert.equal(JEV_STATE_BUDGET_EST_TOKENS, 32768);
+  assert.ok(JEV_STATE_BUDGET_EST_TOKENS > FIDELITY_MAX_EST_TOKENS * 10);
+});
+
+test('against the budget of a Jev state a state that the Plumb gateway cannot read is left as it is: every earlier step, every block, no literal renamed', () => {
+  const brief = repeatedNameBrief(48);
+  const part = partitionFidelityBlocks(brief);
+  const plain = renderFidelityStepState(brief, 2, part, 1_000_000);
+  assert.ok(plain.estTokensAfter > FIDELITY_MAX_EST_TOKENS && plain.estTokensAfter < JEV_STATE_BUDGET_EST_TOKENS, `plain is ${plain.estTokensAfter}`);
+  assert.equal(renderFidelityStepState(brief, 2, part).substitutions.length, 1, 'for Plumb the long literal has to be named');
+
+  const res = renderFidelityStepState(brief, 2, part, JEV_STATE_BUDGET_EST_TOKENS);
+  assert.deepEqual([res.truncated, res.overBudget, res.substitutions, res.reducedEstTokens, res.parts], [false, false, [], null, null]);
+  assert.equal(res.state, plain.state);
+  assert.equal(res.state.split(LONG_NAME).length - 1, 16, 'every occurrence of the literal is there in full');
+  assert.ok(!res.state.includes('[长字面量对照]') && !res.state.includes('已省略'));
+});
+
+test('against the budget of a Jev state earlier steps are given up only past that budget, oldest first, and the current step and every block stay whole', () => {
+  const atoms = Array.from({ length: 420 }, (_, i) => ({ id: String(i + 1), kind: 'action', text: `第 ${i + 1} 步配置策略规则并检查参数 ${'alpha '.repeat(55)}` }));
+  const brief = fidelityBrief('doc:long-flow', { schema: 'recompose-record@1', contract: { intent: { text: '长流程用例意图' } }, atoms, ledgers: { original: [], adapted: [], rebindings: [] } }, {
+    bucket: 'bed-1', blocks: [], steps: [{ object: 'dut1', method: 'cmd_show', args: ['show running-config'], keywords: {} }], expects: [], replacements: [],
+  })!;
+  const part = partitionFidelityBlocks(brief);
+
+  // The hundredth step has ninety-nine steps before it: far over what Plumb reads, well under the budget of a Jev state.
+  const middle = renderFidelityStepState(brief, 99, part, JEV_STATE_BUDGET_EST_TOKENS);
+  assert.deepEqual([middle.truncated, middle.overBudget, middle.substitutions], [false, false, []]);
+  assert.ok(middle.estTokensAfter > FIDELITY_MAX_EST_TOKENS && middle.estTokensAfter <= JEV_STATE_BUDGET_EST_TOKENS);
+  assert.ok(middle.state.includes('1. 第 1 步配置策略规则') && middle.state.includes('99. 第 99 步配置策略规则') && !middle.state.includes('已省略'));
+  const asPlumb = renderFidelityStepState(brief, 99, part);
+  assert.equal(asPlumb.truncated, true, 'the same step is cut down for Plumb');
+  assert.ok(!asPlumb.state.includes('1. 第 1 步配置策略规则'));
+
+  // The last step has more before it than the budget holds: the oldest go, by the order the Plumb path knows, and nothing is cut inside a block.
+  const last = renderFidelityStepState(brief, 419, part, JEV_STATE_BUDGET_EST_TOKENS);
+  assert.deepEqual([last.truncated, last.overBudget], [true, false]);
+  assert.ok(last.estTokensAfter <= JEV_STATE_BUDGET_EST_TOKENS && last.estTokensAfter > JEV_STATE_BUDGET_EST_TOKENS * 0.9, `kept ${last.estTokensAfter}`);
+  assert.match(last.state, /\[前序步骤\]\n（前面 \d+ 步已省略）\n\d+\. 第 \d+ 步配置策略规则/u);
+  assert.ok(!last.state.includes('\n1. 第 1 步配置策略规则') && last.state.includes('419. 第 419 步配置策略规则'));
+  assert.ok(last.state.includes('[候选命令块]\nblock[1] (cmd_show, host=dut1)\n  show running-config'));
+});
+
+test('against the budget of a Jev state a repeated long literal is named once the state is over that budget, and a state that is over it even then is refused with the figures', () => {
+  const brief = repeatedNameBrief(900);
+  const part = partitionFidelityBlocks(brief);
+  const plain = renderFidelityStepState(brief, 2, part, 1_000_000);
+  assert.ok(plain.estTokensAfter > JEV_STATE_BUDGET_EST_TOKENS, `plain is ${plain.estTokensAfter}`);
+  assert.equal(renderFidelityStepState(brief, 2, part).overBudget, true, 'Plumb cannot read it, named or not');
+  const named = renderFidelityStepState(brief, 2, part, JEV_STATE_BUDGET_EST_TOKENS);
+  assert.equal(named.overBudget, false);
+  assert.ok(named.estTokensAfter <= JEV_STATE_BUDGET_EST_TOKENS && named.estTokensPlain > JEV_STATE_BUDGET_EST_TOKENS);
+  assert.deepEqual(named.substitutions.map((s) => [s.name, s.length, s.occurrences]), [['«L1»', 253, 300]]);
+  assert.equal(named.state.split(LONG_NAME).length - 1, 1, 'the literal stays in the state exactly once');
+
+  const refused = renderFidelityStepState(repeatedNameBrief(2000), 2, partitionFidelityBlocks(repeatedNameBrief(2000)), JEV_STATE_BUDGET_EST_TOKENS);
+  assert.equal(refused.overBudget, true);
+  assert.ok(refused.estTokensPlain > JEV_STATE_BUDGET_EST_TOKENS && refused.reducedEstTokens! > JEV_STATE_BUDGET_EST_TOKENS && refused.reducedEstTokens! < refused.estTokensPlain);
+  assert.ok(refused.parts !== null && refused.parts.commandBlocks > refused.parts.exemptions);
+  assert.ok(!refused.state.includes('[长字面量对照]'), 'a state that is refused is not rewritten');
 });

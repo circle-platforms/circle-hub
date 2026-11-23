@@ -13,6 +13,7 @@ import { isRecord } from './text.ts';
 
 export const CMD_RECALL_LIMIT = 40;
 export const CMD_CHOICE_CHUNK_SIZE = 24;
+/** The budget of one command state for Plumb, and the default of truncateCmdVerifyState: a caller whose judge is another one passes that judge's budget. */
 export const CMD_VERIFY_MAX_EST_TOKENS = 1800;
 export const NONE_CANDIDATE_NAME = '都不是';
 export const NONE_CANDIDATE: PlumbCandidate = {

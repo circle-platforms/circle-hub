@@ -30,6 +30,16 @@ export const JEV_NAME = 'Jev';
 export const JEV_FIRST_MODEL = 'jev-latest';
 /** What an answered model name must look like to be recorded as a version: a name and three numbers. A moving alias such as jev-latest is not one. */
 export const JEV_EXACT_VERSION = /^[A-Za-z][A-Za-z0-9_-]*-\d+\.\d+\.\d+$/u;
+/**
+ * The budget of one state put to Jev, in estimated tokens: the text of a fidelity step, or the context, the command and the syntax reference of a
+ * command. The number is the budget InfoTest gives every state it puts to Jev. Its estimator counts one token per CJK character and one per four
+ * other characters; the estimator of this pack (the Plumb client's estimateTokens) counts one per 3.5 other characters, so for the Chinese and ASCII
+ * text of a case ours counts at least as many, and a text is no nearer the budget there than here.
+ * It is a budget of ours, not a limit measured on the service. What the service itself refuses (max_tokens_exceeded, which the client reports as
+ * context_too_long, and HTTP 413, request_too_large) is handled as it was: a command question is asked again with fewer earlier steps, any
+ * other question that is turned down has no Jev opinion.
+ */
+export const JEV_STATE_BUDGET_EST_TOKENS = 32_768;
 export const JEV_COMMAND_PROMPT = 'jev-noul@command-v1';
 export const JEV_FIDELITY_PROMPT = 'jev-choice@fidelity-v1';
 /** The verdict words of a fidelity question, as the audit's own rules name them. */

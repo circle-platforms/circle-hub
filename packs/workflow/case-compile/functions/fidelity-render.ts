@@ -3,6 +3,7 @@ import { literalLengths, type AuthorStep, type FidelityBrief } from './fidelity.
 import { PLUMB_GATEWAY_LIMITS, estimateTokens } from './generated/skills/plumb/plumb-client/index.ts';
 import { isRecord } from './text.ts';
 
+/** What the Plumb gateway reads of one fidelity state, and the default of renderFidelityStepState: a caller whose judge is another one passes that judge's budget. */
 export const FIDELITY_MAX_EST_TOKENS = PLUMB_GATEWAY_LIMITS.fidelityStateEstTokens;
 
 export interface PartitionedFidelityBlocks {

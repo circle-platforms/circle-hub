@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { policyOf, type BriefKnowledge, type BriefPolicy } from '../functions/authoring-brief.ts';
 import {
   buildPlumbNode,
+  CMD_VERIFY_MAX_EST_TOKENS,
   lookupCommandDefinition,
   truncateCmdVerifyState,
 } from '../functions/cmd-recall.ts';
@@ -24,7 +25,7 @@ import {
   type JudgeName,
   type PlumbToolIo,
 } from '../functions/plumb-cli.ts';
-import { JEV_COMMAND_PROMPT, type JevUnanswered } from '../functions/jev-judge.ts';
+import { JEV_COMMAND_PROMPT, JEV_STATE_BUDGET_EST_TOKENS, type JevUnanswered } from '../functions/jev-judge.ts';
 import { parseProfile, type RuntimeProfile } from '../functions/profile.ts';
 import { parseRuntimeContract, type RuntimeContract } from '../functions/runtime-contract.ts';
 import { readSlots, type PlanStep } from '../functions/slots.ts';
@@ -256,6 +257,9 @@ function extractUnitsForPlan(params: {
   const executedSoFar: string[] = [];
   const units: ExtractedCommandUnit[] = [];
   const overBudgetList: string[] = [];
+  // What one command's state may weigh for the judge that is asked, the first time and again when the service refuses it for its size: Plumb's
+  // @1800, or the budget of ours for a Jev state. Everything else of the rendering (the order in which earlier steps are given up) is the same.
+  const budget = params.judge === 'jev' ? JEV_STATE_BUDGET_EST_TOKENS : CMD_VERIFY_MAX_EST_TOKENS;
 
   for (const [stepIdx, step] of checked.slots.steps.entries()) {
     const groups = stepCommandGroups(step, stepIdx, dialogueAnswers, devicePointers);
@@ -297,6 +301,7 @@ function extractUnitsForPlan(params: {
           executedSteps: executedSoFar,
           currentStepSection,
           overheadText: `${commandText}\n${definition}`,
+          maxEstTokens: budget,
         });
         if (rendered.overBudget) {
           overBudgetList.push(`${params.file}:${pointer}(${rendered.estTokensAfter} tokens)`);
@@ -306,7 +311,7 @@ function extractUnitsForPlan(params: {
         let given = rendered.state;
         const shorter = (): string | null => {
           if (given === alone) return null;
-          const next = truncateCmdVerifyState({ caseTitle, executedSteps: earlier, currentStepSection, overheadText: `${commandText}\n${definition}`, maxChars: Math.floor(given.length * 0.8) }).state;
+          const next = truncateCmdVerifyState({ caseTitle, executedSteps: earlier, currentStepSection, overheadText: `${commandText}\n${definition}`, maxEstTokens: budget, maxChars: Math.floor(given.length * 0.8) }).state;
           given = next === given ? alone : next;
           return given;
         };
@@ -329,9 +334,12 @@ function extractUnitsForPlan(params: {
   }
 
   if (overBudgetList.length > 0) {
+    const exceeded = params.judge === 'jev'
+      ? `超过给 Jev 的题面预算（${JEV_STATE_BUDGET_EST_TOKENS} 个估算 token，取自 InfoTest 给 Jev 题面定的预算，不是实测的服务上限）`
+      : '超过 Plumb @1800 token 上限';
     throw plumbFailure(
       '参数无效',
-      `以下命令上下文超过 ${params.judge === 'jev' ? '给 Jev 的 @1800 token 题面（与给 Plumb 的相同）' : 'Plumb @1800 token'} 上限，拒绝截断并停用：${overBudgetList.join('；')}`,
+      `以下命令上下文${exceeded}，拒绝截断并停用：${overBudgetList.join('；')}`,
       '请拆短单步命令列表或精简当前步骤描述',
     );
   }

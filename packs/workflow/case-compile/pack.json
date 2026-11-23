@@ -238,8 +238,8 @@
     },
     {
       "path": "functions/cmd-recall.ts",
-      "sha256": "fbf6302177460853160548746b20e276d15b24051789917809b2d54d64dbfec4",
-      "size": 14125
+      "sha256": "cc1f4abecbc4565ce0ccfc8039c13240e2b634ac6b7ee8311ccbbb61bdbec66a",
+      "size": 14282
     },
     {
       "path": "functions/command-domain-precheck.ts",
@@ -293,8 +293,8 @@
     },
     {
       "path": "functions/fidelity-render.ts",
-      "sha256": "86c72e85098fe87f843597551735cd336ac1d9eccba90d839685bb24ce0e3598",
-      "size": 10537
+      "sha256": "63bcdffbb00cabb44a1238a8beda04d51e009b0f51db5e47a855e1a7dd079b49",
+      "size": 10704
     },
     {
       "path": "functions/fidelity.ts",
@@ -448,8 +448,8 @@
     },
     {
       "path": "functions/jev-judge.ts",
-      "sha256": "351d69c00f31d5714a330bdc58f81e08ac07dea843c60cd6a5c94886da91ee82",
-      "size": 23193
+      "sha256": "106c9b42e57fc28785a8d7f9c843eca468af679a1e8e98ba8d9b2928c9ba0e77",
+      "size": 24139
     },
     {
       "path": "functions/knowledge-text.ts",
@@ -1103,8 +1103,8 @@
     },
     {
       "path": "tools/cmd-verify-plumb.ts",
-      "sha256": "e4de9be58e926fa9cc672671bca2ad570db6bc532063492cd4ee2a2ef07cf048",
-      "size": 37716
+      "sha256": "94e5fc600031c751537fdc16fb27702cc01c4bc6cb2be81ae049789c7b700fbf",
+      "size": 38357
     },
     {
       "path": "tools/command-domain-precheck.cli.json",
@@ -1188,13 +1188,13 @@
     },
     {
       "path": "tools/fidelity-plumb.ts",
-      "sha256": "3815a2936fbe8b9b96cd5f20d7a018049dc1c71bb47159d9b2c457419e5035cc",
-      "size": 14566
+      "sha256": "f869889de2098c3eac9c3dca3b82fb47424bbdb042b231b2bcc76f20c2217a93",
+      "size": 15212
     },
     {
       "path": "tools/fidelity.md",
-      "sha256": "082c8b36e1bafdb498c96aa5bf8b9960125198e7b517ef03163a60d9df12ca6f",
-      "size": 5544
+      "sha256": "77c0ccca784e00dc111c02a9a2e4148f18da78969390ff8823d5bfaaf7d3c0f6",
+      "size": 6401
     },
     {
       "path": "tools/generate-workbook.cli.json",
@@ -1243,8 +1243,8 @@
     },
     {
       "path": "tools/pipeline.ts",
-      "sha256": "2b4f4588c72385d47833e02f8aae6ed321772be749e087b2e0040eeb6de34034",
-      "size": 84031
+      "sha256": "7e13737221d873de9748879123d143f115157f4bdc9df340d15ddb3ed277692a",
+      "size": 85208
     },
     {
       "path": "tools/plan-fields.md",
