@@ -71,6 +71,7 @@ export const identityProfile = z.strictObject({
   tenant: word,
   application: word,
   secret: z.string().min(1).max(4096),
+  adminLogin: z.boolean().optional(),
 });
 export const channelProfile = z.strictObject({
   bot: word,
@@ -1259,7 +1260,8 @@ export async function refreshChannel(directory: string, vault: Vault, origins: R
   if (channel.enabled && !origins.has(new URL(channel.hub).origin)) {
     throw new CliError('适配器须访问本部署声明的 Hub 地址');
   }
-  const identity = channel.enabled ? await readIdentity(vault) : null;
+  const stored = channel.enabled ? await readIdentity(vault) : null;
+  const identity = stored ? { tenant: stored.tenant, application: stored.application, secret: stored.secret } : null;
   return callBot(
     directory,
     channel.enabled && identity ? { action: 'configure', identity, channel } : { action: 'disconnect' },

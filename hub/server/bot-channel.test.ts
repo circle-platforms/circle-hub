@@ -763,8 +763,10 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
       refreshChannel(hub.deps.config.dataDir, hub.records.vault, new Set(['https://other.example.invalid'])),
       /适配器须访问本部署声明的 Hub 地址/,
     );
+    await hub.records.vault.put(identityProfileName, JSON.stringify({ ...identity, adminLogin: true }));
     await refreshChannel(hub.deps.config.dataDir, hub.records.vault, new Set([hub.url]));
     assert.equal(channelCalls.at(-1)!.action, 'configure');
+    assert.deepEqual(channelCalls.at(-1)!.identity, identity);
     const disabled = { ...(await readChannel(hub.records.vault))!, enabled: false };
     await hub.records.vault.put(channelProfileName, JSON.stringify(disabled));
     await refreshChannel(hub.deps.config.dataDir, hub.records.vault, new Set([hub.url]));

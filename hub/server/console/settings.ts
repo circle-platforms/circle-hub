@@ -332,6 +332,8 @@ async function adminBotSettings(
       ${field('租户标识', html`<input name="tenant" id="bot-tenant" required value="${identity?.tenant ?? ''}">`, '填写外部身份平台中的组织或企业租户标识。')}
       ${field('登录应用标识', html`<input name="application" id="bot-app" required value="${identity?.application ?? ''}">`, '填写外部扫码登录应用的应用标识。')}
       ${field('登录应用密钥', html`<input name="value" id="bot-app-secret" type="password" autocomplete="new-password" required>`, '从外部应用管理后台获取密钥；保存时加密写入密钥库，不回显旧密钥。')}
+      <label class="check" data-wide-field><input type="checkbox" name="adminLogin" value="1"${identity?.adminLogin ? html` checked` : ''}> 允许管理员账号用扫码登录控制台</label>
+      <p class="ch-meta" data-wide-field>默认不允许：管理员账号用账号和密码登录，绑定的外部身份只用于私聊通道。勾选并保存后，绑定了外部身份的管理员也可以用扫码登录。</p>
     </div>`,
     '保存登录应用',
     { primary: true },

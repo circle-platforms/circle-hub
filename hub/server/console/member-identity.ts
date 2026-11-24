@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { AccessError, ConflictError } from '../../records/api.ts';
+import { AccessError, ConflictError, isAdmin } from '../../records/api.ts';
 import { cookiesOf, readBody, sendText, setCommonHeaders } from '../http.ts';
 import { issuerOf, peerOf } from '../oauth.ts';
 import { callBot, identityIssuer, readIdentity } from '../personal-bot.ts';
@@ -8,6 +8,7 @@ import { principalOfConsoleSession, type ConsoleOptions } from './console-http.t
 import { cookie, safeNext, SECURE_SESSION_COOKIE, SESSION_COOKIE, type ConsoleSession } from './session.ts';
 
 const callback = '/console/identity/callback';
+export const ADMIN_SCAN_LOGIN_OFF = '无权限：这个部署没有开启管理员账号的扫码登录。请使用账号和密码登录。';
 const STATES_PER_PEER = 20;
 const MAX_PENDING_STATES = 1000;
 const STATE_TTL_MS = 300_000;
@@ -109,6 +110,7 @@ export async function handleIdentity(
     try {
       member = await deps.records.principals.externalMember(issuer, subject);
       if (!member) return unavailable();
+      if (isAdmin(member) && profile.adminLogin !== true) return unavailable(403, ADMIN_SCAN_LOGIN_OFF);
       const revision = await deps.records.principals.passwordState(member.id);
       login = await deps.records.principals.openConsoleSession(member.id, revision.revision);
     } catch (error) {

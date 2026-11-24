@@ -3,6 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { ADMIN_SCAN_LOGIN_OFF } from './console/member-identity.ts';
 import { identityIssuer, identityProfileName } from './personal-bot.ts';
 import { createTestServer, testConsoleCredentials } from './testing.ts';
 
@@ -67,6 +68,63 @@ test('QR binding requires both identities; callbacks are one-time and disabled m
     await hub.records.principals.setDisabled(hub.admin.principal, member.principal.id, true);
     assert.equal((await signIn()).status, 403);
     assert.equal(await hub.records.principals.externalMember(issuer, 'platform-member'), null);
+  } finally {
+    await new Promise<void>((r) => adapter.close(() => r()));
+    await hub.close();
+  }
+});
+
+test('an administrator bound to an external identity signs in by scan only when the deployment allows it', async () => {
+  const hub = await createTestServer();
+  const administrator = await hub.createUser('扫码管理员', 'admin');
+  const member = await hub.createUser('扫码普通成员');
+  let scanned = 'platform-administrator';
+  const adapter = createServer(async (req, res) => {
+    const parts: Buffer[] = [];
+    for await (const p of req) parts.push(p);
+    const input = JSON.parse(Buffer.concat(parts).toString());
+    res.end(
+      JSON.stringify(
+        input.action === 'qr' ? { location: 'https://login.example.invalid/?state=' + input.state } : { subject: scanned },
+      ),
+    );
+  });
+  const send = (path: string, options: RequestInit = {}) => fetch(hub.url + path, { redirect: 'manual', ...options });
+  const signIn = async () => {
+    const begin = await send('/console/identity/login');
+    const state = new URL(begin.headers.get('location')!).searchParams.get('state');
+    return send('/console/identity/callback?code=one-test-code&state=' + state, {
+      headers: { cookie: begin.headers.getSetCookie()[0].split(';')[0] },
+    });
+  };
+  const opensSession = (r: Response) => r.headers.getSetCookie().some((value) => value.startsWith('circle_hub_session='));
+  const profile = { tenant: 'demo', application: 'app', secret: 'test-app-secret' };
+  try {
+    const dir = join(hub.deps.config.dataDir, 'bot-runtime');
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    await new Promise<void>((r) => adapter.listen(join(dir, 'channel.sock'), r));
+    const issuer = identityIssuer('demo');
+    await hub.records.principals.bindExternalIdentity(administrator.principal, issuer, 'platform-administrator');
+    await hub.records.principals.bindExternalIdentity(member.principal, issuer, 'platform-ordinary-member');
+
+    for (const stored of [profile, { ...profile, adminLogin: false }]) {
+      await hub.records.vault.put(identityProfileName, JSON.stringify(stored));
+      const refused = await signIn();
+      assert.equal(refused.status, 403);
+      assert.equal(await refused.text(), ADMIN_SCAN_LOGIN_OFF);
+      assert.equal(opensSession(refused), false);
+    }
+
+    scanned = 'platform-ordinary-member';
+    const ordinary = await signIn();
+    assert.equal(ordinary.status, 303);
+    assert.equal(opensSession(ordinary), true);
+
+    scanned = 'platform-administrator';
+    await hub.records.vault.put(identityProfileName, JSON.stringify({ ...profile, adminLogin: true }));
+    const allowed = await signIn();
+    assert.equal(allowed.status, 303);
+    assert.equal(opensSession(allowed), true);
   } finally {
     await new Promise<void>((r) => adapter.close(() => r()));
     await hub.close();

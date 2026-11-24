@@ -332,6 +332,7 @@ export const ACTIONS: Record<string, Action> = {
           tenant: form.get('tenant'),
           application: form.get('application'),
           secret: form.get('value'),
+          ...(form.get('adminLogin') === '1' ? { adminLogin: true } : {}),
         }),
       },
     }),

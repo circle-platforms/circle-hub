@@ -520,6 +520,23 @@ test('bot actions dispatch through the admin bridge with secrets out of argv and
   assert.equal(idRes.status, 200);
   assert.deepEqual(calls.at(-1)!.argv, ['bot', 'identity-set']);
   assert.ok(!idRes.body.includes('app-secret'));
+  assert.deepEqual(JSON.parse(calls.at(-1)!.input.secrets!['personal-bot.identity']), {
+    tenant: 'demo-tenant',
+    application: 'demo-app',
+    secret: 'app-secret',
+  });
+  for (const other of ['0', 'false', 'on']) {
+    await post('bot-identity', { tenant: 'demo-tenant', application: 'demo-app', value: 'app-secret', adminLogin: other });
+    assert.equal('adminLogin' in JSON.parse(calls.at(-1)!.input.secrets!['personal-bot.identity']), false);
+  }
+  const idAdminRes = await post('bot-identity', { tenant: 'demo-tenant', application: 'demo-app', value: 'app-secret', adminLogin: '1' });
+  assert.equal(idAdminRes.status, 200);
+  assert.deepEqual(JSON.parse(calls.at(-1)!.input.secrets!['personal-bot.identity']), {
+    tenant: 'demo-tenant',
+    application: 'demo-app',
+    secret: 'app-secret',
+    adminLogin: true,
+  });
 
   const chanRes = await post('bot-channel', { bot: 'demo-bot', hub: 'https://hub.example.invalid/', value: 'chan-secret' });
   assert.equal(chanRes.status, 200);

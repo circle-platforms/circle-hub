@@ -349,6 +349,8 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
     '填写外部身份平台中的组织或企业租户标识。',
     '填写外部扫码登录应用的应用标识。',
     '从外部应用管理后台获取密钥；保存时加密写入密钥库，不回显旧密钥。',
+    '允许管理员账号用扫码登录控制台',
+    '默认不允许：管理员账号用账号和密码登录，绑定的外部身份只用于私聊通道。勾选并保存后，绑定了外部身份的管理员也可以用扫码登录。',
     '填写外部消息平台中创建的机器人标识。',
     '填写通道适配器在本地或内网访问当前 Hub 的根地址，须为 HTTPS 或回环 HTTP 地址。',
     '从外部消息平台机器人详情页获取通道密钥；保存时加密写入密钥库，不回显旧密钥。',
@@ -356,8 +358,18 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
     assert.ok(botHtml.includes(label), `expected ${label} on /console/settings?tab=bot`);
   }
   assert.match(botHtml, /凭据 <span class="ch-count">\d+<\/span>/);
+  assert.match(botHtml, /<input type="checkbox" name="adminLogin" value="1"> 允许管理员账号用扫码登录控制台/);
   assert.ok(CSS.includes('.ch-kv--wide { grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--space-4); }'));
   assert.equal((botHtml.match(/ch-btn--primary/g) ?? []).length, 3, 'all 3 forms must use primary submit buttons');
+
+  const identitySecrets = (extra: Record<string, unknown>) => ({
+    'personal-bot.identity': JSON.stringify({ tenant: 'demo-tenant', application: 'demo-app', secret: appSecret, ...extra }),
+  });
+  assert.equal((await bridge.run(['bot', 'identity-set'], { token: hub.admin.token, secrets: identitySecrets({ adminLogin: true }) })).code, 0);
+  const switchedOnHtml = await (await send('/console/settings?tab=bot', { headers: { cookie: adminCookie } })).text();
+  assert.match(switchedOnHtml, /<input type="checkbox" name="adminLogin" value="1" checked> 允许管理员账号用扫码登录控制台/);
+  assert.notEqual((await bridge.run(['bot', 'identity-set'], { token: hub.admin.token, secrets: identitySecrets({ adminLogin: 'yes' }) })).code, 0);
+  assert.equal((await bridge.run(['bot', 'identity-set'], { token: hub.admin.token, secrets: identitySecrets({}) })).code, 0);
 
   // T5(b): Verify "运行中" status chips appear when host.sock and channel.sock ARE listening
   const liveHostSock = createServer((_req, res) => res.end('{}'));
