@@ -9,6 +9,7 @@ import {
   MAX_DEVICE_CODE_ATTEMPTS, MAX_INVITATION_FAILURES, authorizeSecurityPolicy,
   confirmPage, deviceCodePage, endedPage, expiredPage, identityPage, invitationProblem, refusedPage,
 } from './authorize.ts';
+import { isBotEnabled } from '../personal-bot.ts';
 import { html, page } from './html.ts';
 import {
   DEVICE_COOKIE, SECURE_DEVICE_COOKIE, cookie, type ConsoleSession,
@@ -32,9 +33,10 @@ export async function authorizePage(request: IncomingMessage, response: ServerRe
   const principals = options.deps.records.principals;
   const signedIn = session === null ? null : await (principals.authenticateConsoleSession?.(`Bearer ${session.token}`) ?? principals.authenticate(`Bearer ${session.token}`));
   const named = open.invitation !== null ? { id: open.invitation.user, name: open.invitation.name, role: open.invitation.role, via: 'invitation' as const } : signedIn !== null ? { ...signedIn, via: 'session' as const } : null;
-  const show = (status: number, error: string | null): void => {
+  const show = async (status: number, error: string | null): Promise<void> => {
     if (named === null) return sendHtml(response, status, identityPage(open, error));
-    sendHtml(response, status, confirmPage(open, { id: named.id, name: named.name, role: uiLabelOf('permission_role', named.role) }, named.via, open.csrf, error), { 'content-security-policy': authorizeSecurityPolicy(open.redirectUri) });
+    const botEnabled = await isBotEnabled(options.deps.records?.vault);
+    sendHtml(response, status, confirmPage(open, { id: named.id, name: named.name, role: uiLabelOf('permission_role', named.role) }, named.via, open.csrf, error, botEnabled), { 'content-security-policy': authorizeSecurityPolicy(open.redirectUri) });
   };
   const go = (location: string): void => {
     setCommonHeaders(response);
@@ -96,7 +98,7 @@ export async function authorizePage(request: IncomingMessage, response: ServerRe
       open.invitation = null;
       return { status: 409, error: `邀请码已失效（已使用、已过期，或账号${uiLabelOf('account_status', 'disabled')}）：请管理员重新签发` };
     }
-    const consented: readonly TokenScope[] = (open.requestedScopes ?? []).includes('bot') && form.get('scope_bot') === '1' ? ['bot'] : [];
+    const consented: readonly TokenScope[] = (await isBotEnabled(options.deps.records?.vault)) && (open.requestedScopes ?? []).includes('bot') && form.get('scope_bot') === '1' ? ['bot'] : [];
     if (open.device !== null) {
       if (!store!.decideDevice(open, named.id, consented)) return deviceGone;
       options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）获设备码授权，账号 ${named.id}`);

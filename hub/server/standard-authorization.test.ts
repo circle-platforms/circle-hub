@@ -11,7 +11,10 @@ import { UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotoc
 import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { TOKEN_SCOPE } from '../../contracts/generated/vocabulary.ts';
 import { AUTHORIZATION_CODE_TTL_MS, AUTHORIZATION_REQUEST_TTL_MS, AuthorizationStore, DEVICE_CODE_GRANT, RegistrationWindow, normalizeUserCode } from './oauth.ts';
+import { disableBot, setBotProfile } from './personal-bot.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
+
+const BOT_FIXTURE = { name: '合成机器人', protocol: 'openai', endpoint: 'http://127.0.0.1:1234', model: 'demo', key: 'fixture-bot-secret' } as const;
 
 let server: TestServer;
 let clock = Date.parse('2026-11-01T09:00:00.000Z');
@@ -19,6 +22,7 @@ let counter = 0;
 
 before(async () => {
   server = await createTestServer({ now: () => new Date(clock) });
+  await setBotProfile(server.records.vault, BOT_FIXTURE);
 });
 after(async () => {
   await server?.close();
@@ -551,39 +555,40 @@ describe('console sign-in return path', () => {
   });
 });
 
+interface DeviceCodes { device_code: string; user_code: string; verification_uri: string; verification_uri_complete: string; expires_in: number; interval: number }
+async function deviceCodes(client: string, extra: Record<string, string> = {}): Promise<DeviceCodes> {
+  const reply = await send('/oauth/device_authorization', { method: 'POST', headers: FORM, body: form({ client_id: client, ...extra }) });
+  assert.equal(reply.status, 200, reply.body);
+  assert.equal(reply.headers['cache-control'], 'no-store');
+  return JSON.parse(reply.body) as DeviceCodes;
+}
+const poll = (client: string, deviceCode: string, extra: Record<string, string> = {}): Promise<Reply> => exchange({ grant_type: DEVICE_CODE_GRANT, device_code: deviceCode, client_id: client, ...extra });
+const errorOf = (reply: Reply): string => JSON.parse(reply.body).error as string;
+/** Types `typed` on the device page as a browser with `session` (a console session cookie, or none). */
+async function typeCode(typed: string, session = ''): Promise<Reply> {
+  const pageReply = await send(`/console/device?user_code=${encodeURIComponent(typed)}`, { headers: session ? { cookie: session } : {} });
+  assert.equal(pageReply.status, 200, pageReply.body);
+  const nonce = cookieOf(pageReply, 'circle_hub_device');
+  assert.match(nonce ?? '', /^circle_hub_device=[A-Za-z0-9_-]{43}; Path=\/console\/device; HttpOnly; SameSite=Strict; Max-Age=900$/);
+  return post('/console/device', { csrf: csrfOf(pageReply.body), user_code: typed }, [session, `circle_hub_device=${valueOf(nonce)}`].filter(Boolean).join('; '));
+}
+/** A typed code leads to an authorization page bound to this browser; the page and the browser's cookies. */
+async function devicePage(typed: string, session = ''): Promise<{ path: string; page: Reply; cookie: string }> {
+  const reply = await typeCode(typed, session);
+  assert.equal(reply.status, 303, reply.body);
+  const path = pathOf(reply.headers.location);
+  assert.match(path, /^\/console\/authorize\/[A-Za-z0-9_-]{43}$/);
+  const bound = cookieOf(reply, 'circle_hub_authorize');
+  assert.match(bound ?? '', new RegExp(`^circle_hub_authorize=[A-Za-z0-9_-]{43}; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=600$`));
+  const cookie = [session, `circle_hub_authorize=${valueOf(bound)}`].filter(Boolean).join('; ');
+  return { path, page: await send(path, { headers: { cookie } }), cookie };
+}
+// Codes typed count per sender for fifteen minutes: each test starts a new window.
+const newWindow = (): void => {
+  clock += 16 * 60 * 1000;
+};
+
 describe('the device authorization grant (RFC 8628)', () => {
-  interface DeviceCodes { device_code: string; user_code: string; verification_uri: string; verification_uri_complete: string; expires_in: number; interval: number }
-  async function deviceCodes(client: string, extra: Record<string, string> = {}): Promise<DeviceCodes> {
-    const reply = await send('/oauth/device_authorization', { method: 'POST', headers: FORM, body: form({ client_id: client, ...extra }) });
-    assert.equal(reply.status, 200, reply.body);
-    assert.equal(reply.headers['cache-control'], 'no-store');
-    return JSON.parse(reply.body) as DeviceCodes;
-  }
-  const poll = (client: string, deviceCode: string, extra: Record<string, string> = {}): Promise<Reply> => exchange({ grant_type: DEVICE_CODE_GRANT, device_code: deviceCode, client_id: client, ...extra });
-  const errorOf = (reply: Reply): string => JSON.parse(reply.body).error as string;
-  /** Types `typed` on the device page as a browser with `session` (a console session cookie, or none). */
-  async function typeCode(typed: string, session = ''): Promise<Reply> {
-    const pageReply = await send(`/console/device?user_code=${encodeURIComponent(typed)}`, { headers: session ? { cookie: session } : {} });
-    assert.equal(pageReply.status, 200, pageReply.body);
-    const nonce = cookieOf(pageReply, 'circle_hub_device');
-    assert.match(nonce ?? '', /^circle_hub_device=[A-Za-z0-9_-]{43}; Path=\/console\/device; HttpOnly; SameSite=Strict; Max-Age=900$/);
-    return post('/console/device', { csrf: csrfOf(pageReply.body), user_code: typed }, [session, `circle_hub_device=${valueOf(nonce)}`].filter(Boolean).join('; '));
-  }
-  /** A typed code leads to an authorization page bound to this browser; the page and the browser's cookies. */
-  async function devicePage(typed: string, session = ''): Promise<{ path: string; page: Reply; cookie: string }> {
-    const reply = await typeCode(typed, session);
-    assert.equal(reply.status, 303, reply.body);
-    const path = pathOf(reply.headers.location);
-    assert.match(path, /^\/console\/authorize\/[A-Za-z0-9_-]{43}$/);
-    const bound = cookieOf(reply, 'circle_hub_authorize');
-    assert.match(bound ?? '', new RegExp(`^circle_hub_authorize=[A-Za-z0-9_-]{43}; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=600$`));
-    const cookie = [session, `circle_hub_authorize=${valueOf(bound)}`].filter(Boolean).join('; ');
-    return { path, page: await send(path, { headers: { cookie } }), cookie };
-  }
-  // Codes typed count per sender for fifteen minutes: each test starts a new window.
-  const newWindow = (): void => {
-    clock += 16 * 60 * 1000;
-  };
 
   test('user codes are eight letters of twenty consonants, typed in any case with a space or a dash', () => {
     assert.equal(normalizeUserCode('bcdf-ghjk'), 'BCDFGHJK');
@@ -815,5 +820,225 @@ describe('bot scope consent in authorization code flow', () => {
     const consentJson = JSON.parse(consentExchanged.body);
     assert.equal(consentJson.scope, 'bot');
     assert.deepEqual((await server.records.principals.authenticateAccessToken?.(`Bearer ${consentJson.access_token}`))?.scope, ['bot']);
+  });
+});
+
+describe('bot scope gating when bot is disabled, toggled, or unreadable', () => {
+  const normalizeConfirmHtml = (htmlBody: string, reqPath: string): string => {
+    const id = reqPath.split('/').pop()!;
+    return htmlBody.replaceAll(id, 'REQ_ID').replace(/name="csrf" value="[^"]+"/g, 'name="csrf" value="CSRF"').replace(/nonce="[^"]+"/g, 'nonce="NONCE"');
+  };
+
+  test('omits scopes_supported from metadata and ignores requested bot scope across auth-code and device flows when bot is disabled', async () => {
+    const user = await member();
+    const session = await signIn(user.token);
+    const client = await register(undefined, '无机器人客户端');
+    await disableBot(server.records.vault);
+    try {
+      for (const path of ['/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-protected-resource', '/.well-known/oauth-authorization-server']) {
+        const reply = await send(path);
+        assert.equal(reply.status, 200, path);
+        const doc = JSON.parse(reply.body) as Record<string, unknown>;
+        assert.equal('scopes_supported' in doc, false, `${path} must omit scopes_supported per RFC 8414/9728 when disabled`);
+      }
+
+      const plainPair = pkce();
+      const plainOpened = await openPage(authorizeUrl(client, plainPair.challenge), session);
+      const botPair = pkce();
+      const botOpened = await openPage(authorizeUrl(client, botPair.challenge, { scope: 'mcp bot' }), session);
+      assert.doesNotMatch(botOpened.page.body, /name="scope_bot"/);
+      assert.doesNotMatch(botOpened.page.body, /允许这个客户端使用我的机器人/);
+      assert.equal(
+        normalizeConfirmHtml(botOpened.page.body, botOpened.path),
+        normalizeConfirmHtml(plainOpened.page.body, plainOpened.path),
+      );
+      const botApproved = await post(botOpened.path, { ...approval(botOpened.page.body), scope_bot: '1' }, botOpened.cookie);
+      assert.equal(botApproved.status, 303);
+      const botCode = new URL(String(botApproved.headers.location)).searchParams.get('code')!;
+      const botExchanged = await exchange({
+        grant_type: 'authorization_code',
+        code: botCode,
+        client_id: client,
+        redirect_uri: 'http://127.0.0.1:43123/callback',
+        code_verifier: botPair.verifier,
+      });
+      assert.equal(botExchanged.status, 200, botExchanged.body);
+      const botTokJson = JSON.parse(botExchanged.body) as { access_token: string; scope?: string };
+      assert.equal(botTokJson.scope, '');
+      assert.deepEqual((await server.records.principals.authenticateAccessToken?.(`Bearer ${botTokJson.access_token}`))?.scope, []);
+      assert.equal(
+        (await send('/mcp', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${botTokJson.access_token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'c', version: '1.0.0' } } }),
+        })).status,
+        200,
+      );
+
+      newWindow();
+      const devPlain = await deviceCodes(client, { resource: `${origin()}/mcp` });
+      const devPlainPage = await devicePage(devPlain.user_code, session);
+      const devBot = await deviceCodes(client, { resource: `${origin()}/mcp`, scope: 'bot' });
+      const devBotPage = await devicePage(devBot.user_code, session);
+      assert.doesNotMatch(devBotPage.page.body, /name="scope_bot"/);
+      assert.doesNotMatch(devBotPage.page.body, /允许这个客户端使用我的机器人/);
+      assert.equal(
+        normalizeConfirmHtml(devBotPage.page.body, devBotPage.path).replace(devBot.user_code, 'USER_CODE'),
+        normalizeConfirmHtml(devPlainPage.page.body, devPlainPage.path).replace(devPlain.user_code, 'USER_CODE'),
+      );
+      assert.equal((await post(devBotPage.path, { ...approval(devBotPage.page.body), scope_bot: '1' }, devBotPage.cookie)).status, 303);
+      const devTok = await poll(client, devBot.device_code, { resource: `${origin()}/mcp` });
+      assert.equal(devTok.status, 200, devTok.body);
+      const devTokJson = JSON.parse(devTok.body) as { access_token: string; scope?: string };
+      assert.equal(devTokJson.scope, '');
+      assert.deepEqual((await server.records.principals.authenticateAccessToken?.(`Bearer ${devTokJson.access_token}`))?.scope, []);
+    } finally {
+      await setBotProfile(server.records.vault, BOT_FIXTURE);
+    }
+  });
+
+  test('evaluates bot enablement at decision time for both toggle orders in auth-code and device flows', async () => {
+    const user = await member();
+    const session = await signIn(user.token);
+    const client = await register(undefined, '切换竞态客户端');
+    try {
+      // Order 1: enabled when confirm page opens -> disabled before approve is submitted (bot must NOT be granted).
+      const pair1 = pkce();
+      const opened1 = await openPage(authorizeUrl(client, pair1.challenge, { scope: 'bot' }), session);
+      assert.match(opened1.page.body, /name="scope_bot"/);
+      await disableBot(server.records.vault);
+      const approved1 = await post(opened1.path, { ...approval(opened1.page.body), scope_bot: '1' }, opened1.cookie);
+      const code1 = new URL(String(approved1.headers.location)).searchParams.get('code')!;
+      const tok1 = JSON.parse((await exchange({
+        grant_type: 'authorization_code',
+        code: code1,
+        client_id: client,
+        redirect_uri: 'http://127.0.0.1:43123/callback',
+        code_verifier: pair1.verifier,
+      })).body) as { access_token: string; scope?: string };
+      assert.equal(tok1.scope, '');
+      assert.deepEqual((await server.records.principals.authenticateAccessToken?.(`Bearer ${tok1.access_token}`))?.scope, []);
+
+      await setBotProfile(server.records.vault, BOT_FIXTURE);
+      newWindow();
+      const dev1 = await deviceCodes(client, { resource: `${origin()}/mcp`, scope: 'bot' });
+      const devPage1 = await devicePage(dev1.user_code, session);
+      assert.match(devPage1.page.body, /name="scope_bot"/);
+      await disableBot(server.records.vault);
+      assert.equal((await post(devPage1.path, { ...approval(devPage1.page.body), scope_bot: '1' }, devPage1.cookie)).status, 303);
+      const devTok1 = JSON.parse((await poll(client, dev1.device_code, { resource: `${origin()}/mcp` })).body) as { access_token: string; scope?: string };
+      assert.equal(devTok1.scope, '');
+      assert.deepEqual((await server.records.principals.authenticateAccessToken?.(`Bearer ${devTok1.access_token}`))?.scope, []);
+
+      // Order 2: disabled when confirm page opens -> enabled before approve.
+      const pair2a = pkce();
+      const opened2a = await openPage(authorizeUrl(client, pair2a.challenge, { scope: 'bot' }), session);
+      assert.doesNotMatch(opened2a.page.body, /name="scope_bot"/);
+      const pair2b = pkce();
+      const opened2b = await openPage(authorizeUrl(client, pair2b.challenge, { scope: 'bot' }), session);
+      assert.doesNotMatch(opened2b.page.body, /name="scope_bot"/);
+
+      await setBotProfile(server.records.vault, BOT_FIXTURE);
+
+      // Submitting the previously opened form as-is (unchecked) still omits bot.
+      const approved2a = await post(opened2a.path, approval(opened2a.page.body), opened2a.cookie);
+      const code2a = new URL(String(approved2a.headers.location)).searchParams.get('code')!;
+      const tok2a = JSON.parse((await exchange({
+        grant_type: 'authorization_code',
+        code: code2a,
+        client_id: client,
+        redirect_uri: 'http://127.0.0.1:43123/callback',
+        code_verifier: pair2a.verifier,
+      })).body) as { access_token: string; scope?: string };
+      assert.equal(tok2a.scope, '');
+
+      // Reloading the open confirmation page after bot is enabled renders scope_bot and lets the member consent.
+      const reloaded2b = await send(opened2b.path, { headers: { cookie: opened2b.cookie } });
+      assert.match(reloaded2b.body, /name="scope_bot"/);
+      const approved2b = await post(opened2b.path, { ...approval(reloaded2b.body), scope_bot: '1' }, opened2b.cookie);
+      const code2b = new URL(String(approved2b.headers.location)).searchParams.get('code')!;
+      const tok2b = JSON.parse((await exchange({
+        grant_type: 'authorization_code',
+        code: code2b,
+        client_id: client,
+        redirect_uri: 'http://127.0.0.1:43123/callback',
+        code_verifier: pair2b.verifier,
+      })).body) as { access_token: string; scope?: string };
+      assert.equal(tok2b.scope, 'bot');
+      assert.deepEqual((await server.records.principals.authenticateAccessToken?.(`Bearer ${tok2b.access_token}`))?.scope, ['bot']);
+
+      // Device flow for Order 2 as well.
+      await disableBot(server.records.vault);
+      const dev2 = await deviceCodes(client, { resource: `${origin()}/mcp`, scope: 'bot' });
+      const devPage2 = await devicePage(dev2.user_code, session);
+      assert.doesNotMatch(devPage2.page.body, /name="scope_bot"/);
+      await setBotProfile(server.records.vault, BOT_FIXTURE);
+      const devReloaded2 = await send(devPage2.path, { headers: { cookie: devPage2.cookie } });
+      assert.match(devReloaded2.body, /name="scope_bot"/);
+      assert.equal((await post(devPage2.path, { ...approval(devReloaded2.body), scope_bot: '1' }, devPage2.cookie)).status, 303);
+      const devTok2 = JSON.parse((await poll(client, dev2.device_code, { resource: `${origin()}/mcp` })).body) as { access_token: string; scope?: string };
+      assert.equal(devTok2.scope, 'bot');
+      assert.deepEqual((await server.records.principals.authenticateAccessToken?.(`Bearer ${devTok2.access_token}`))?.scope, ['bot']);
+    } finally {
+      await setBotProfile(server.records.vault, BOT_FIXTURE);
+    }
+  });
+
+  test('falls back to disabled without failing metadata or authorization when bot vault entry is unreadable or vault fails', async () => {
+    const user = await member();
+    const session = await signIn(user.token);
+    const client = await register(undefined, '密钥库异常客户端');
+    const origGet = server.records.vault.get.bind(server.records.vault);
+    try {
+      // Corrupt profile payload in vault: readBotProfile throws, metadata & authorize treat as disabled.
+      await server.records.vault.put('personal-bot.model', '{not-valid-json');
+      for (const path of ['/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-authorization-server']) {
+        const reply = await send(path);
+        assert.equal(reply.status, 200, path);
+        assert.equal('scopes_supported' in (JSON.parse(reply.body) as Record<string, unknown>), false);
+      }
+      const corruptPair = pkce();
+      const corruptOpened = await openPage(authorizeUrl(client, corruptPair.challenge, { scope: 'bot' }), session);
+      assert.equal(corruptOpened.page.status, 200);
+      assert.doesNotMatch(corruptOpened.page.body, /name="scope_bot"/);
+      const corruptApproved = await post(corruptOpened.path, { ...approval(corruptOpened.page.body), scope_bot: '1' }, corruptOpened.cookie);
+      const corruptCode = new URL(String(corruptApproved.headers.location)).searchParams.get('code')!;
+      const corruptTok = JSON.parse((await exchange({
+        grant_type: 'authorization_code',
+        code: corruptCode,
+        client_id: client,
+        redirect_uri: 'http://127.0.0.1:43123/callback',
+        code_verifier: corruptPair.verifier,
+      })).body) as { access_token: string; scope?: string };
+      assert.equal(corruptTok.scope, '');
+      assert.deepEqual((await server.records.principals.authenticateAccessToken?.(`Bearer ${corruptTok.access_token}`))?.scope, []);
+
+      // Vault I/O failure: get() rejects; metadata & authorize still succeed as disabled.
+      server.records.vault.get = async () => {
+        throw new Error('vault unavailable');
+      };
+      for (const path of ['/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-authorization-server']) {
+        const reply = await send(path);
+        assert.equal(reply.status, 200, path);
+        assert.equal('scopes_supported' in (JSON.parse(reply.body) as Record<string, unknown>), false);
+      }
+      const errPair = pkce();
+      const errOpened = await openPage(authorizeUrl(client, errPair.challenge, { scope: 'bot' }), session);
+      assert.equal(errOpened.page.status, 200);
+      assert.doesNotMatch(errOpened.page.body, /name="scope_bot"/);
+      const errApproved = await post(errOpened.path, { ...approval(errOpened.page.body), scope_bot: '1' }, errOpened.cookie);
+      const errCode = new URL(String(errApproved.headers.location)).searchParams.get('code')!;
+      const errTok = JSON.parse((await exchange({
+        grant_type: 'authorization_code',
+        code: errCode,
+        client_id: client,
+        redirect_uri: 'http://127.0.0.1:43123/callback',
+        code_verifier: errPair.verifier,
+      })).body) as { access_token: string; scope?: string };
+      assert.equal(errTok.scope, '');
+    } finally {
+      server.records.vault.get = origGet;
+      await setBotProfile(server.records.vault, BOT_FIXTURE);
+    }
   });
 });

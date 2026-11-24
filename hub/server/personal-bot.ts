@@ -134,6 +134,16 @@ export async function readBotProfile(vault: Vault): Promise<BotProfile | null> {
   return result.data;
 }
 
+export async function isBotEnabled(vault: Vault | null | undefined): Promise<boolean> {
+  if (!vault) return false;
+  try {
+    return (await readBotProfile(vault)) !== null;
+  } catch (error) {
+    void error;
+    return false;
+  }
+}
+
 async function readStoredConfigVersion(vault: Vault): Promise<number> {
   const versionRaw = await vault.getText(configVersionName);
   if (versionRaw !== null && /^\d+$/.test(versionRaw)) {
