@@ -3506,7 +3506,7 @@
       "definition": "Hub 是标准 MCP 服务器，本地 Circle、bot 与其他客户端共用同一组工具。因里只定职能；第一个里程碑只用用户 10-21 确认的六个工具；回答请求不加工具（决定 35 第 25 项）；其余职能的工具名和是否新增，待你决定。",
       "rules": [
         "工具类别按 MCP 注解，由效果类与是否写 Hub 记录推出（D03）",
-        "Circle 只做 6 项通用 MCP 改进，不出现 Hub 专用界面",
+        "Circle 做 6 项通用 MCP 改进；与 Hub 有关的界面只有两处：按地址连接 Hub 的 Hub 扩展（连接卡和 /hub 命令），以及成员私人机器人的对话页；此外不出现 Hub 专用界面，再加要有新的决定（决定 194）",
         "知识方面必需的交互只有三次：锁定根、取子树、交付时核引用；resolve_reference 是可选预览；按引用读取用于运行的输入和结果，不计入这三次",
         "语言服务（补全、签名提示、诊断）只经只读工具提供：resolve_reference 给诊断与可能所指，get_nodes 给目录叶的签名与带类型参数；结果只作预览；这是已定的扩展语义",
         "Hub 按模板派发的作业（W03）在 submit_result 受理、放行条件满足时由 Hub 发起，这是已定的扩展语义。submit_result 的注解按调用者被分配的任务包推出（含经团队分配的；管理员的默认可用不算分配）：其中有由 Hub 按模板派发的行时，openWorldHint=true，destructiveHint 取这些行里最宽的，idempotentHint 仍为 true（派发按（运行, 提交摘要）去重）；没有时按只写 Hub 记录标注。分配变动时，服务器发 notifications/tools/list_changed（声明 tools.listChanged）。以本人名义的写只经效果写入职能发起",
@@ -4101,7 +4101,7 @@
       ]
     },
     {
-      "rule": "Circle 中不出现 Hub 专用界面或标签：Hub 调用按普通 MCP 工具显示，content 为按上述顺序写的纯文本，structuredContent 为 JSON。",
+      "rule": "Hub 调用在 Circle 中按普通 MCP 工具显示，不加 Hub 专用的标签：content 为按上述顺序写的纯文本，structuredContent 为 JSON。Circle 里与 Hub 有关的界面限于 D06 R[1] 列出的两处。",
       "tracedTo": [
         "E3-109",
         "E3-118"
