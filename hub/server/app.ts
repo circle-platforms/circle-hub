@@ -31,7 +31,7 @@ import {
   pruneExpiredBotFiles,
 } from './bot-files.ts';
 import { botError } from './access-auth.ts';
-import { chatPath, handleBot, handleBotChannel, maskVaultSecrets, refreshChannel, syncHostOnStartup } from './personal-bot.ts';
+import { chatPath, handleBot, handleBotChannel, isBotEnabled, maskVaultSecrets, refreshChannel, syncHostOnStartup } from './personal-bot.ts';
 import { handleMcp } from './mcp.ts';
 import { AuthorizationStore, RegistrationWindow, handleOAuth, issuerOf, oauthTarget, resourceMetadataUrl } from './oauth.ts';
 import { SYNC_DISCOVERY_PATH, handleSyncDiscovery } from './sync-discovery.ts';
@@ -151,7 +151,7 @@ export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutO
   const clients = new DeclaredClients(deps);
   const mcpOptions = { deps, traces: options.observation?.traces, serverVersion: packageVersion(), log, budget, clients, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)), ...(options.keepalive ? { keepalive: options.keepalive } : {}), ...(options.health ? { sessions: options.health.sessions } : {}) };
   // Read when a request comes: an app may be created before its records are (the listener checks build one without).
-  const oauthOptions = { get principals() { return deps.records.principals; }, store: authorizations, registrations, secureRequest, log };
+  const oauthOptions = { get principals() { return deps.records.principals; }, botEnabled: () => isBotEnabled(deps.records?.vault), store: authorizations, registrations, secureRequest, log };
   const jobs = new JobStore(clock);
   const live = new LiveEvents({ records: deps.records, sessions, log }, options.live);
   jobs.watch((job) => live.publish({ name: 'import.progress', data: { job: job.id } }));
@@ -231,7 +231,7 @@ export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutO
       return sendText(response, 503, message, headers);
     }
     const url = target.url;
-    if (url.pathname.startsWith(botFilesPath)) return handleBotFile(request, response, deps, url.pathname.slice(botFilesPath.length));
+    if (url.pathname.startsWith(botFilesPath)) return handleBotFile(request, response, deps, url.pathname.slice(botFilesPath.length), () => isBotEnabled(deps.records?.vault));
     if (url.pathname.startsWith('/api/bot-channel/v1/files/')) return handleBotChannel(request, response, deps, budget, url.pathname.slice('/api/bot-channel/v1/files/'.length));
     if (url.pathname === '/api/bot-channel/v1') return handleBotChannel(request, response, deps, budget);
     if (url.pathname === chatPath) return handleBot(request, response, deps, budget);

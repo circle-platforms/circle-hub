@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { chmod, link, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { botFilesPath } from './bot-files.ts';
+import { BodyBudget } from './http.ts';
 import {
   callBot,
   channelProfileName,
   chatPath,
   disableBot,
   ensureBotRuntimeDir,
+  handleBot,
   identityIssuer,
   identityProfileName,
   inspectBotRuntimeDir,
@@ -153,6 +156,45 @@ test('personal-bot enforces H5 direct bearer, H8/H9 strict SemVer Bot-Client-Ver
       await hub.records.principals.issueToken(user.principal, user.principal.id, client.name, client.id)
     ).token;
 
+    const disabledOAuthRes = await fetch(hub.url + chatPath, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer ' + oauthToken,
+        'content-type': 'application/json',
+        'bot-client-version': '1.18.1',
+      },
+      body: JSON.stringify({ action: 'discover' }),
+    });
+    assert.equal(disabledOAuthRes.status, 503);
+    assert.equal(disabledOAuthRes.headers.get('www-authenticate'), null);
+    const disabledOAuthJson = (await disabledOAuthRes.json()) as { code?: string; message?: string };
+    assert.equal(disabledOAuthJson.code, 'BOT_DISABLED');
+    assert.equal(
+      disabledOAuthJson.message,
+      '暂时不可用：机器人模型尚未启用。请管理员在控制台配置并启用机器人模型后重试。',
+    );
+
+    const disabledOAuthTextPlain = await fetch(hub.url + chatPath, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer ' + oauthToken,
+        'content-type': 'text/plain',
+        'bot-client-version': '1.18.1',
+      },
+      body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: 'oauth' }),
+    });
+    assert.equal(disabledOAuthTextPlain.status, 503);
+    assert.equal(disabledOAuthTextPlain.headers.get('www-authenticate'), null);
+    assert.equal(((await disabledOAuthTextPlain.json()) as { code?: string }).code, 'BOT_DISABLED');
+
+    await setBotProfile(hub.records.vault, {
+      name: '鉴权切换机器人',
+      protocol: 'openai',
+      endpoint: 'https://model.example.invalid/v1',
+      model: 'demo',
+      key: 'auth-toggle-key',
+    });
+
     const oauthRes = await fetch(hub.url + chatPath, {
       method: 'POST',
       headers: {
@@ -163,9 +205,9 @@ test('personal-bot enforces H5 direct bearer, H8/H9 strict SemVer Bot-Client-Ver
       body: JSON.stringify({ action: 'discover' }),
     });
     assert.equal(oauthRes.status, 403);
+    assert.equal(oauthRes.headers.get('www-authenticate'), 'Bearer error="insufficient_scope", scope="bot"');
     assert.equal(((await oauthRes.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
 
-    // T2: OAuth token on action: 'send' with text/plain MUST be refused at requireDirectAccessBearer (403) before mediaTypeOf (415)
     const oauthTextPlain = await fetch(hub.url + chatPath, {
       method: 'POST',
       headers: {
@@ -176,7 +218,9 @@ test('personal-bot enforces H5 direct bearer, H8/H9 strict SemVer Bot-Client-Ver
       body: JSON.stringify({ action: 'send', conversation: randomUUID(), request: randomUUID(), text: 'oauth' }),
     });
     assert.equal(oauthTextPlain.status, 403);
+    assert.equal(oauthTextPlain.headers.get('www-authenticate'), 'Bearer error="insufficient_scope", scope="bot"');
     assert.equal(((await oauthTextPlain.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
+    await disableBot(hub.records.vault);
 
     const legacyHeaderRes = await fetch(hub.url + chatPath, {
       method: 'POST',
@@ -842,6 +886,323 @@ test('personal-bot rejects unconsented OAuth tokens with insufficient_scope, all
     assert.equal(deviceRevoked.status, 200);
     assert.equal((await callBotApi(deviceConsentedToken, 'discover')).status, 401);
     assert.equal((await callMcp(deviceConsentedToken)).status, 401);
+  } finally {
+    await new Promise<void>((resolve) => host.close(() => resolve()));
+    await hub.close();
+  }
+});
+
+test('bot scope gating end-to-end: disabled omits bot, late enablement grants bot via scope=bot re-auth, and disable/re-enable preserves existing bot tokens', async () => {
+  const hub = await createTestServer();
+  const host = createServer(async (req, res) => {
+    for await (const _ of req) {
+      // drain
+    }
+    res.end(JSON.stringify({ id: 'bot-1', current: convId, binding: 'b-1', events: [], active: null }));
+  });
+  const convId = randomUUID();
+  const fileBytes = Buffer.from('scope-gating-attachment');
+  const fileSha = createHash('sha256').update(fileBytes).digest('hex');
+  try {
+    const folder = join(hub.deps.config.dataDir, 'bot-runtime');
+    await mkdir(folder, { recursive: true, mode: 0o700 });
+    await new Promise<void>((resolve) => host.listen(join(folder, 'host.sock'), resolve));
+
+    const user = await hub.createUser('阶段切换成员');
+    const redirect = 'http://127.0.0.1:43123/callback';
+    const reg = await fetch(hub.url + '/oauth/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        client_name: 'Desktop Client',
+        redirect_uris: [redirect],
+        grant_types: ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code'],
+        token_endpoint_auth_method: 'none',
+      }),
+    });
+    assert.equal(reg.status, 201);
+    const clientId = ((await reg.json()) as { client_id: string }).client_id;
+
+    // 1) Before bot is enabled: metadata omits scopes_supported; confirm page has no scope_bot; token gets scope: "" and is rejected on /api/bot/v1.
+    for (const metaPath of ['/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-authorization-server']) {
+      const metaRes = await fetch(hub.url + metaPath);
+      assert.equal(metaRes.status, 200);
+      assert.equal('scopes_supported' in ((await metaRes.json()) as Record<string, unknown>), false);
+    }
+
+    async function runAuthCode(expectCheckbox: boolean): Promise<string> {
+      const verifier = randomUUID() + '-' + randomUUID();
+      const challenge = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))).toString('base64url');
+      const authRes = await fetch(
+        hub.url +
+          `/oauth/authorize?${new URLSearchParams({
+            response_type: 'code',
+            client_id: clientId,
+            redirect_uri: redirect,
+            code_challenge: challenge,
+            code_challenge_method: 'S256',
+            state: 'st',
+            resource: hub.mcpUrl,
+            scope: 'bot',
+          })}`,
+        { redirect: 'manual' },
+      );
+      assert.equal(authRes.status, 303);
+      const authPath = authRes.headers.get('location')!;
+      const bound = (authRes.headers.getSetCookie?.() ?? [authRes.headers.get('set-cookie') ?? '']).join('; ').split(';')[0];
+      const inv = await hub.records.principals.invite(hub.admin.principal, user.user.id);
+      const p1 = await fetch(hub.url + authPath, { headers: { cookie: bound } });
+      const csrf1 = /name="csrf" value="([^"]+)"/.exec(await p1.text())![1];
+      const idRes = await fetch(hub.url + authPath, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: bound, origin: hub.url },
+        body: new URLSearchParams({ csrf: csrf1, step: 'identity', code: inv.code }),
+      });
+      assert.equal(idRes.status, 303);
+      const p2 = await fetch(hub.url + authPath, { headers: { cookie: bound } });
+      const html2 = await p2.text();
+      if (expectCheckbox) assert.match(html2, /name="scope_bot"/);
+      else assert.doesNotMatch(html2, /name="scope_bot"/);
+      const csrf2 = /name="csrf" value="([^"]+)"/.exec(html2)![1];
+      const account = /name="account" value="([^"]+)"/.exec(html2)![1];
+      const decision = await fetch(hub.url + authPath, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: bound, origin: hub.url },
+        body: new URLSearchParams({ csrf: csrf2, step: 'decide', decision: 'approve', account, scope_bot: '1' }),
+      });
+      assert.equal(decision.status, 303);
+      const code = new URL(decision.headers.get('location')!).searchParams.get('code')!;
+      const tokRes = await fetch(hub.url + '/oauth/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          client_id: clientId,
+          redirect_uri: redirect,
+          code_verifier: verifier,
+          resource: hub.mcpUrl,
+        }),
+      });
+      assert.equal(tokRes.status, 200);
+      const tokJson = (await tokRes.json()) as { access_token: string; scope?: string };
+      assert.equal(tokJson.scope, expectCheckbox ? 'bot' : '');
+      return tokJson.access_token;
+    }
+
+    const callBotApi = (token: string, action: 'discover' | 'history' | 'send' | 'new' | 'stop') => {
+      const op =
+        action === 'discover'
+          ? { action: 'discover' }
+          : action === 'history'
+            ? { action: 'history', conversation: convId, after: 0 }
+            : action === 'send'
+              ? { action: 'send', conversation: convId, request: randomUUID(), text: 'hello' }
+              : action === 'new'
+                ? { action: 'new', request: randomUUID() }
+                : { action: 'stop', conversation: convId, request: randomUUID() };
+      return fetch(hub.url + chatPath, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer ' + token,
+          'content-type': 'application/json',
+          'bot-client-version': '1.18.1',
+        },
+        body: JSON.stringify(op),
+      });
+    };
+    const callMcp = (token: string) =>
+      fetch(hub.mcpUrl, {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'c', version: '1.0.0' } } }),
+      });
+    const invokeRenewedDropCheck = async (token: string) => {
+      let authCalls = 0;
+      const basePrincipals = hub.deps.records.principals;
+      const fakeDeps = {
+        ...hub.deps,
+        records: {
+          ...hub.deps.records,
+          principals: {
+            ...basePrincipals,
+            authenticateAccessToken: async (authorization: string | null | undefined) => {
+              const auth = await basePrincipals.authenticateAccessToken?.(authorization);
+              if (!auth) return null;
+              authCalls += 1;
+              return { ...auth, scope: authCalls === 1 ? (['bot'] as const) : ([] as const) };
+            },
+          },
+        },
+      };
+      const budget = new BodyBudget(1024 * 1024);
+      const renewedServer = createServer((req, res) => {
+        void handleBot(req, res, fakeDeps, budget);
+      });
+      await new Promise<void>((resolve) => renewedServer.listen(0, '127.0.0.1', resolve));
+      try {
+        const addr = renewedServer.address() as { port: number };
+        const res = await fetch(`http://127.0.0.1:${addr.port}${chatPath}`, {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer ' + token,
+            'content-type': 'application/json',
+            'bot-client-version': '1.18.1',
+          },
+          body: JSON.stringify({ action: 'discover' }),
+        });
+        assert.equal(authCalls, 2);
+        return {
+          status: res.status,
+          wwwAuthenticate: res.headers.get('www-authenticate'),
+          json: (await res.json()) as { code?: string; message?: string },
+        };
+      } finally {
+        renewedServer.closeAllConnections();
+        await new Promise<void>((resolve) => renewedServer.close(() => resolve()));
+      }
+    };
+
+    const disabledOAuthToken = await runAuthCode(false);
+    assert.equal((await callMcp(disabledOAuthToken)).status, 200);
+    for (const op of ['discover', 'history', 'send', 'new', 'stop'] as const) {
+      const botRes = await callBotApi(disabledOAuthToken, op);
+      assert.equal(botRes.status, 503, `expected 503 for ${op} while disabled`);
+      assert.equal(botRes.headers.get('www-authenticate'), null, `must omit www-authenticate for ${op}`);
+      const botJson = (await botRes.json()) as { code?: string; message?: string };
+      assert.equal(botJson.code, 'BOT_DISABLED');
+      assert.equal(
+        botJson.message,
+        '暂时不可用：机器人模型尚未启用。请管理员在控制台配置并启用机器人模型后重试。',
+      );
+    }
+    for (const method of ['PUT', 'GET'] as const) {
+      const fileRes = await fetch(hub.url + botFilesPath + fileSha, {
+        method,
+        headers: {
+          authorization: 'Bearer ' + disabledOAuthToken,
+          ...(method === 'PUT' ? { 'content-length': String(fileBytes.length) } : {}),
+        },
+        ...(method === 'PUT' ? { body: fileBytes } : {}),
+      });
+      assert.equal(fileRes.status, 503, `expected 503 for ${method} bot file while disabled`);
+      assert.equal(fileRes.headers.get('www-authenticate'), null);
+      const fileJson = (await fileRes.json()) as { code?: string; message?: string };
+      assert.equal(fileJson.code, 'BOT_DISABLED');
+      assert.equal(fileJson.message, '暂时不可用：机器人尚未启用。请管理员在控制台配置并启用机器人模型后重试。');
+    }
+
+    const renewedDisabled = await invokeRenewedDropCheck(disabledOAuthToken);
+    assert.equal(renewedDisabled.status, 503);
+    assert.equal(renewedDisabled.wwwAuthenticate, null);
+    assert.equal(renewedDisabled.json.code, 'BOT_DISABLED');
+    assert.equal(
+      renewedDisabled.json.message,
+      '暂时不可用：机器人模型尚未启用。请管理员在控制台配置并启用机器人模型后重试。',
+    );
+
+    // Corrupt vault entry also evaluates isBotEnabled() as disabled on both bot endpoints.
+    await hub.records.vault.put('personal-bot.model', '{not-json');
+    const corruptBotRes = await callBotApi(disabledOAuthToken, 'discover');
+    assert.equal(corruptBotRes.status, 503);
+    assert.equal(corruptBotRes.headers.get('www-authenticate'), null);
+    assert.equal(((await corruptBotRes.json()) as { code?: string }).code, 'BOT_DISABLED');
+    const corruptFileRes = await fetch(hub.url + botFilesPath + fileSha, {
+      headers: { authorization: 'Bearer ' + disabledOAuthToken },
+    });
+    assert.equal(corruptFileRes.status, 503);
+    assert.equal(corruptFileRes.headers.get('www-authenticate'), null);
+    assert.equal(((await corruptFileRes.json()) as { code?: string }).code, 'BOT_DISABLED');
+    await hub.records.vault.remove('personal-bot.model');
+
+    // Direct token, console session, and unauthenticated requests remain unchanged while disabled.
+    assert.equal((await callBotApi(user.token, 'discover')).status, 200);
+    assert.equal(((await (await callBotApi(user.token, 'send')).json()) as { code?: string }).code, 'BOT_DISABLED');
+    assert.equal((await fetch(hub.url + botFilesPath + fileSha, { headers: { authorization: 'Bearer ' + user.token } })).status, 503);
+    const consoleSess = await hub.records.principals.openConsoleSession(
+      user.user.id,
+      (await hub.records.principals.passwordState(user.user.id)).revision,
+    );
+    assert.ok(consoleSess);
+    const disabledConsole = await callBotApi(consoleSess.token, 'discover');
+    assert.equal(disabledConsole.status, 403);
+    assert.equal(disabledConsole.headers.get('www-authenticate'), null);
+    assert.equal(((await disabledConsole.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
+    const unauthBot = await fetch(hub.url + chatPath, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'bot-client-version': '1.18.1' },
+      body: JSON.stringify({ action: 'discover' }),
+    });
+    assert.equal(unauthBot.status, 401);
+    assert.equal(unauthBot.headers.get('www-authenticate'), 'Bearer');
+    assert.equal(((await unauthBot.json()) as { code?: string }).code, 'BOT_UNAUTHENTICATED');
+
+    // 2) Enable bot later: direct scope=bot re-login shows checkbox and grants usable bot token; previously issued unscoped token transitions from 503 to 403 insufficient_scope.
+    const profile = {
+      name: '后启用机器人',
+      protocol: 'openai',
+      endpoint: 'https://model.example.invalid/v1',
+      model: 'demo',
+      key: 'secret-demo-key',
+    };
+    await setBotProfile(hub.records.vault, profile);
+    const metaEnabled = (await (await fetch(hub.url + '/.well-known/oauth-authorization-server')).json()) as { scopes_supported?: string[] };
+    assert.deepEqual(metaEnabled.scopes_supported, ['bot']);
+
+    for (const op of ['discover', 'history', 'send', 'new', 'stop'] as const) {
+      const enabledUnscoped = await callBotApi(disabledOAuthToken, op);
+      assert.equal(enabledUnscoped.status, 403, `expected 403 for ${op} after enable`);
+      assert.equal(enabledUnscoped.headers.get('www-authenticate'), 'Bearer error="insufficient_scope", scope="bot"');
+      assert.equal(((await enabledUnscoped.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
+    }
+    for (const method of ['PUT', 'GET'] as const) {
+      const fileEnabledUnscoped = await fetch(hub.url + botFilesPath + fileSha, {
+        method,
+        headers: {
+          authorization: 'Bearer ' + disabledOAuthToken,
+          ...(method === 'PUT' ? { 'content-length': String(fileBytes.length) } : {}),
+        },
+        ...(method === 'PUT' ? { body: fileBytes } : {}),
+      });
+      assert.equal(fileEnabledUnscoped.status, 403, `expected 403 for ${method} bot file after enable`);
+      assert.equal(
+        fileEnabledUnscoped.headers.get('www-authenticate'),
+        'Bearer error="insufficient_scope", scope="bot"',
+      );
+      assert.equal(((await fileEnabledUnscoped.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
+    }
+    const renewedEnabled = await invokeRenewedDropCheck(disabledOAuthToken);
+    assert.equal(renewedEnabled.status, 403);
+    assert.equal(renewedEnabled.wwwAuthenticate, 'Bearer error="insufficient_scope", scope="bot"');
+    assert.equal(renewedEnabled.json.code, 'BOT_CLIENT_FORBIDDEN');
+
+    const botOAuthToken = await runAuthCode(true);
+    const putFile = await fetch(hub.url + botFilesPath + fileSha, {
+      method: 'PUT',
+      headers: { authorization: 'Bearer ' + botOAuthToken },
+      body: fileBytes,
+    });
+    assert.equal(putFile.status, 200);
+    const getFile = await fetch(hub.url + botFilesPath + fileSha, { headers: { authorization: 'Bearer ' + botOAuthToken } });
+    assert.equal(getFile.status, 200);
+    assert.deepEqual(Buffer.from(await getFile.arrayBuffer()), fileBytes);
+    assert.equal((await callBotApi(botOAuthToken, 'send')).status, 200);
+
+    // 3) Disable bot: existing bot token keeps ['bot'] in DB, still works on /mcp, and /api/bot/v1 answers 503 BOT_DISABLED.
+    await disableBot(hub.deps);
+    assert.deepEqual((await hub.records.principals.authenticateAccessToken?.('Bearer ' + botOAuthToken))?.scope, ['bot']);
+    assert.equal((await callMcp(botOAuthToken)).status, 200);
+    const whileDisabled = await callBotApi(botOAuthToken, 'send');
+    assert.equal(whileDisabled.status, 503);
+    assert.equal(((await whileDisabled.json()) as { code?: string }).code, 'BOT_DISABLED');
+    assert.equal((await fetch(hub.url + botFilesPath + fileSha, { headers: { authorization: 'Bearer ' + botOAuthToken } })).status, 503);
+
+    // 4) Re-enable bot: the same already-issued token works again without re-login.
+    await setBotProfile(hub.records.vault, profile);
+    assert.equal((await callBotApi(botOAuthToken, 'send')).status, 200);
+    assert.equal((await fetch(hub.url + botFilesPath + fileSha, { headers: { authorization: 'Bearer ' + botOAuthToken } })).status, 200);
   } finally {
     await new Promise<void>((resolve) => host.close(() => resolve()));
     await hub.close();

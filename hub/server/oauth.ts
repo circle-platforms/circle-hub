@@ -428,6 +428,7 @@ export class AuthorizationStore {
 
 export interface OAuthOptions {
   principals: Principals;
+  botEnabled?: () => Promise<boolean>;
   store: AuthorizationStore;
   /** Registrations per sender, in this process. */
   registrations?: RegistrationWindow;
@@ -505,12 +506,18 @@ async function formBody(request: IncomingMessage, response: ServerResponse): Pro
 }
 
 /** RFC 9728: the resource is /mcp, its authorization server this Hub on the same origin. */
-function protectedResource(issuer: string): Record<string, unknown> {
-  return { resource: `${issuer}/mcp`, authorization_servers: [issuer], scopes_supported: [...TOKEN_SCOPE], bearer_methods_supported: ['header'], resource_name: 'circle-hub' };
+function protectedResource(issuer: string, botEnabled: boolean): Record<string, unknown> {
+  return {
+    resource: `${issuer}/mcp`,
+    authorization_servers: [issuer],
+    ...(botEnabled ? { scopes_supported: [...TOKEN_SCOPE] } : {}),
+    bearer_methods_supported: ['header'],
+    resource_name: 'circle-hub',
+  };
 }
 
 /** RFC 8414: public clients only, the authorization code with PKCE S256 or the device code (RFC 8628 4), no refresh token. */
-function authorizationServer(issuer: string): Record<string, unknown> {
+function authorizationServer(issuer: string, botEnabled: boolean): Record<string, unknown> {
   return {
     issuer,
     authorization_endpoint: `${issuer}/oauth/authorize`,
@@ -518,7 +525,7 @@ function authorizationServer(issuer: string): Record<string, unknown> {
     token_endpoint: `${issuer}/oauth/token`,
     registration_endpoint: `${issuer}/oauth/register`,
     revocation_endpoint: `${issuer}/oauth/revoke`,
-    scopes_supported: [...TOKEN_SCOPE],
+    ...(botEnabled ? { scopes_supported: [...TOKEN_SCOPE] } : {}),
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
     grant_types_supported: ['authorization_code', DEVICE_CODE_GRANT],
@@ -541,7 +548,8 @@ export async function handleOAuth(request: IncomingMessage, response: ServerResp
   if (path.startsWith('/.well-known/')) {
     if (request.method !== 'GET' && request.method !== 'HEAD') return methodNotAllowed(request, response, 'GET, HEAD');
     request.resume();
-    const body = path === '/.well-known/oauth-authorization-server' ? authorizationServer(issuer) : protectedResource(issuer);
+    const botEnabled = (await options.botEnabled?.()) === true;
+    const body = path === '/.well-known/oauth-authorization-server' ? authorizationServer(issuer, botEnabled) : protectedResource(issuer, botEnabled);
     return sendJson(response, 200, body, { 'cache-control': 'max-age=60' });
   }
   if (path === '/oauth/authorize') {

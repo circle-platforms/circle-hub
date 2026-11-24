@@ -205,7 +205,7 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
   (then 503 `temporarily_unavailable`); a client that obtained no token and used no invitation within a day is removed at
   a later registration. The self-chosen `client_name` loses control and format characters, keeps 100 characters, and
   labels the client's token.
-- **Metadata (`/.well-known/oauth-protected-resource*` and `/.well-known/oauth-authorization-server`)**: both documents advertise `scopes_supported: [...TOKEN_SCOPE]` (`["bot"]`).
+- **Metadata (`/.well-known/oauth-protected-resource*` and `/.well-known/oauth-authorization-server`)**: both documents advertise `scopes_supported: [...TOKEN_SCOPE]` (`["bot"]`) only when a bot model is configured and enabled in the vault (`isBotEnabled`, matching `readBotProfile` on `POST /api/bot/v1`, treating vault read errors as disabled); when disabled, `scopes_supported` is omitted from both metadata responses per RFC 8414 3.2 and RFC 9728 3.2.
 - **Authorization** (`GET /oauth/authorize`): every refusal (an unknown client, a redirect URI that is not registered, a
   response type other than `code`, no PKCE S256, a resource that is not this Hub's `/mcp`) is an error page and never a
   redirect: a client registers its redirect URIs itself, so redirecting before anybody looked at the request would make the
@@ -214,16 +214,14 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
   5000 in all, beyond which new ones are refused rather than evicting others) and the browser goes to the console's authorization page `/console/authorize/<request>`
   (under `/console`, so the console session cookie is sent) with a cookie scoped to that page (`circle_hub_authorize`,
   SameSite=Lax, 10 minutes): the request belongs to that browser, and to every other one it does not exist, so nobody can
-  finish, or watch, a request another browser identified itself on. When the request asked for `bot`, the confirmation page
-  also renders an unchecked checkbox (`scope_bot`) letting the member grant `/api/bot/v1` and `/api/bot/v1/files/<sha256>` access; omitting `bot` keeps the page unchanged, and approving without checking still connects `/mcp`.
+  finish, or watch, a request another browser identified itself on. When the request asked for `bot` and `isBotEnabled` is true, the confirmation page
+  also renders an unchecked checkbox (`scope_bot`) letting the member grant `/api/bot/v1` and `/api/bot/v1/files/<sha256>` access; omitting `bot` or keeping the bot disabled leaves the page unchanged, and approving without checking (or approving while the bot is disabled at decision time) still connects `/mcp`.
 - **Token** (`POST /oauth/token`, form encoding, each parameter once): the code is used once, within
   `AUTHORIZATION_CODE_TTL_MS` (2 minutes), by the client it was issued to, with the same resource, the PKCE verifier of
   its challenge, and the same redirect URI when the authorization request named one (RFC 6749 4.1.3); an account that
   went away meanwhile is `invalid_grant`, never a 500; a code presented again, by any client, is refused and the token it gave is revoked
   (RFC 6749 4.1.2), also when the first exchange is still under way (it then revokes what it issues) and whatever the
-  account's state. Client-supplied `scope` on `/oauth/token` is ignored; only the scope consented by the member at authorization
-  is stored on the issued token and returned in the response (`"scope": "bot"` when checked, `"scope": ""` per RFC 6749 5.1 when
-  `bot` was requested and left unchecked, or omitted when `bot` was not requested).
+  account's state. Client-supplied `scope` on `/oauth/token` is ignored; `bot` is recorded at approval only if `isBotEnabled` is true when the member submits approval, and only the recorded scope is stored on the issued token and returned in the response (`"scope": "bot"` when consented while enabled, `"scope": ""` per RFC 6749 5.1 when `bot` was requested while disabled or left unchecked, or omitted when `bot` was not requested). Already-issued `bot` tokens remain untouched across bot disable/re-enable (returning `503 BOT_DISABLED` on bot endpoints while disabled). While `isBotEnabled` is false, personal bot endpoints (`POST /api/bot/v1` across every operation including the post-body `canAccessBot(renewed)` re-check, and `GET`/`PUT /api/bot/v1/files/<sha256>`) return `503 BOT_DISABLED` (using each endpoint's existing fact and nextAction, with no `insufficient_scope` header) to OAuth access tokens carrying `client_id` without `bot`, transitioning to `403 BOT_CLIENT_FORBIDDEN` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="bot"` once enabled; direct tokens, `bot`-scoped tokens, console sessions, and unauthenticated requests keep their existing behavior.
   The answer is an ordinary Hub token (`Bearer`, no `expires_in`, no refresh token) issued by the account to itself,
   labelled with the client's name and bound to the client (`tokens.client_id`). Hub tokens are checked against the records
   on every request, so revocation is immediate: disconnecting a Circle is revoking its token (`circle-hub token revoke`).
@@ -232,7 +230,7 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
 - **Device code** (RFC 8628; owner, 2026-11-09: a client signs in without opening a browser itself or taking a redirect,
   as GitHub's device login does). `POST /oauth/device_authorization` (form encoding) takes a registered `client_id`,
   optionally the `resource`, which must be this Hub's `/mcp` (`invalid_target` otherwise), and optionally space-separated `scope`
-  (recognizing `bot` and ignoring any other value). It answers
+  (recognizing `bot` and ignoring any other value; confirmation display and grant issuance are gated on `isBotEnabled` at the time of page render and approval). It answers
   a 43-character `device_code`, a `user_code` of eight letters of twenty consonants shown as `XXXX-XXXX` (about 34 bits),
   `verification_uri` `<origin>/console/device`, `verification_uri_complete` with `?user_code=`, `expires_in` 600 and
   `interval` 5. Device requests live in memory for `DEVICE_REQUEST_TTL_MS` (10 minutes) with the same bounds as

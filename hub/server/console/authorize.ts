@@ -97,8 +97,8 @@ export function identityPage(request: AuthorizationRequest, error: string | null
  * The confirm step for `account`; `via` says whether it comes from an invitation or the console session. The form names the
  * account, and the approval is refused when it is no longer the one the page showed.
  */
-export function confirmPage(request: AuthorizationRequest, account: { id: string; name: string; role: string }, via: 'invitation' | 'session', csrf: string, error: string | null): Html {
-  const asksBot = (request.requestedScopes ?? []).includes('bot');
+export function confirmPage(request: AuthorizationRequest, account: { id: string; name: string; role: string }, via: 'invitation' | 'session', csrf: string, error: string | null, botEnabled = false): Html {
+  const asksBot = botEnabled && (request.requestedScopes ?? []).includes('bot');
   const botChoice = asksBot
     ? html`<div data-fields><label class="check" data-wide-field><input type="checkbox" name="scope_bot" value="1"> 允许这个客户端使用我的机器人</label><p class="ch-meta" data-wide-field>同意之后这个客户端可以读写当前账号和机器人的私聊与附件。</p></div>`
     : '';

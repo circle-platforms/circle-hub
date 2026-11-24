@@ -90,6 +90,8 @@ Model 89 aligns the bot and external-identity contracts without changing the six
 
 Model 90 (decision 194 item 4, 2026-11-24) adds the R01 vocabulary axis `token_scope` (`授权范围`, value `bot`: `允许使用机器人`), adds optional `scope` (`TokenScope[]`) to the `issue` shape of `token-issuance@1` (backward-compatible against `release/2026-11-23`; omitted unless consented so existing records stay valid), and records R01's rule that personal bot endpoints accept direct member tokens or OAuth sign-in tokens consented with `bot` while returning `403 BOT_CLIENT_FORBIDDEN` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="bot"` otherwise.
 
+Model 91 (decision 197 item 2, 2026-11-24) adds `R01.changes91` recording that standard MCP authorization advertises `scopes_supported: ["bot"]` (omitting `scopes_supported` per RFC 8414 3.2 and RFC 9728 3.2 when disabled) and renders/records `bot` consent only when a bot model is configured and enabled on the deployment, while personal bot endpoints return `503 BOT_DISABLED` (without `insufficient_scope`) to OAuth tokens carrying `client_id` without `bot` when disabled and `403 BOT_CLIENT_FORBIDDEN` with `insufficient_scope` once enabled; `MODEL_VERSION` advances to `91` in `generated/protocol-codes.ts` with no vocabulary, protocol code, schema, or tool change.
+
 ## Editing `contracts/codes.json`
 
 One entry per core interpreter result: `{ "code": "core.<interpreter>.<name>", "interpreter": "<interpreter>", "when": "…", "fix": "…" }`.

@@ -1,5 +1,5 @@
 {
-  "version": 90,
+  "version": 91,
   "elements": [
     {
       "id": "B01",
@@ -3740,6 +3740,9 @@
       ],
       "changes90": [
         "新增 R01 词表轴 token_scope（bot：允许使用机器人）；MCP 标准授权（授权码与设备码）请求带 bot 时确认页提供默认不勾选的同意框，签发令牌时在 tokens.scope 与 token-issuance@1 记录经成员同意的 scope；成员私人机器人接口放行没有 client_id 或 scope 含 bot 的访问令牌，其余返回 403 BOT_CLIENT_FORBIDDEN 与 WWW-Authenticate: Bearer error=\"insufficient_scope\", scope=\"bot\"（来源：决定 194 第四条，所有者 2026-11-24）"
+      ],
+      "changes91": [
+        "MCP 标准授权只在本部署配置并启用了机器人模型时公布 bot、在确认页提供同意框：没有启用时两份授权元数据不带 scopes_supported，请求里的 bot 与不认识的值一样被忽略，成员点允许的那一刻没有启用就不记录 bot；没有启用时，成员私人机器人接口对有 client_id 且 scope 不含 bot 的访问令牌返回 503 BOT_DISABLED，不带 insufficient_scope，启用后仍返回 403 BOT_CLIENT_FORBIDDEN 与 insufficient_scope（来源：决定 197 第二条，所有者 2026-11-24；没有启用时机器人接口返回什么，由集成者据此裁定）"
       ]
     },
     {

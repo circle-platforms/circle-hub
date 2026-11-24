@@ -84,10 +84,16 @@ export async function authenticateAccessOnly(principals: Principals, authorizati
     : { ok: false, reason: 'unauthenticated' };
 }
 
+export interface BotGate {
+  enabled: () => Promise<boolean>;
+  disabledBody: () => { code: ProtocolCode; message: string };
+}
+
 export async function requireDirectAccessBearer(
   request: IncomingMessage,
   response: ServerResponse,
   principals: Principals,
+  botGate: BotGate,
 ): Promise<Principal | null> {
   const access = await authenticateAccessOnly(principals, request.headers.authorization ?? null);
   if (!access.ok) {
@@ -105,6 +111,10 @@ export async function requireDirectAccessBearer(
   }
   if (!canAccessBot(access)) {
     request.resume();
+    if (!(await botGate.enabled())) {
+      sendBotJson(response, 503, botGate.disabledBody());
+      return null;
+    }
     sendBotInsufficientScope(response);
     return null;
   }

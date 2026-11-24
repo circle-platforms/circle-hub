@@ -6,7 +6,7 @@ import { request as httpRequest, type IncomingMessage, type ServerResponse } fro
 import { join } from 'node:path';
 import { test } from 'node:test';
 import * as botFiles from './bot-files.ts';
-import { setBotProfile } from './personal-bot.ts';
+import { isBotEnabled, setBotProfile } from './personal-bot.ts';
 import { createTestServer } from './testing.ts';
 
 const { botFilesPath, fileLimit } = botFiles;
@@ -92,11 +92,32 @@ test('bot-files returns 503 BOT_DISABLED when bot profile is absent or disabled,
     assert.equal(putDisabled.status, 503);
     assert.equal(((await putDisabled.json()) as { code?: string }).code, 'BOT_DISABLED');
 
-    await setBotProfile(hub.records.vault, sampleProfile);
     const client = await hub.records.principals.registerClient('mcp-oauth-client', ['http://127.0.0.1:43123/cb']);
     const oauthToken = (
       await hub.records.principals.issueToken(user.principal, user.principal.id, client.name, client.id)
     ).token;
+
+    const putDisabledOAuth = await fetch(hub.url + botFilesPath + sha, {
+      method: 'PUT',
+      headers: { authorization: 'Bearer ' + oauthToken, 'content-length': String(data.length) },
+      body: data,
+    });
+    assert.equal(putDisabledOAuth.status, 503);
+    assert.equal(putDisabledOAuth.headers.get('www-authenticate'), null);
+    const putDisabledOAuthJson = (await putDisabledOAuth.json()) as { code?: string; message?: string };
+    assert.equal(putDisabledOAuthJson.code, 'BOT_DISABLED');
+    assert.equal(putDisabledOAuthJson.message, '暂时不可用：机器人尚未启用。请管理员在控制台配置并启用机器人模型后重试。');
+
+    const getDisabledOAuth = await fetch(hub.url + botFilesPath + sha, {
+      headers: { authorization: 'Bearer ' + oauthToken },
+    });
+    assert.equal(getDisabledOAuth.status, 503);
+    assert.equal(getDisabledOAuth.headers.get('www-authenticate'), null);
+    const getDisabledOAuthJson = (await getDisabledOAuth.json()) as { code?: string; message?: string };
+    assert.equal(getDisabledOAuthJson.code, 'BOT_DISABLED');
+    assert.equal(getDisabledOAuthJson.message, '暂时不可用：机器人尚未启用。请管理员在控制台配置并启用机器人模型后重试。');
+
+    await setBotProfile(hub.records.vault, sampleProfile);
 
     const putOAuth = await fetch(hub.url + botFilesPath + sha, {
       method: 'PUT',
@@ -104,12 +125,14 @@ test('bot-files returns 503 BOT_DISABLED when bot profile is absent or disabled,
       body: data,
     });
     assert.equal(putOAuth.status, 403);
+    assert.equal(putOAuth.headers.get('www-authenticate'), 'Bearer error="insufficient_scope", scope="bot"');
     assert.equal(((await putOAuth.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
 
     const getOAuth = await fetch(hub.url + botFilesPath + sha, {
       headers: { authorization: 'Bearer ' + oauthToken },
     });
     assert.equal(getOAuth.status, 403);
+    assert.equal(getOAuth.headers.get('www-authenticate'), 'Bearer error="insufficient_scope", scope="bot"');
     assert.equal(((await getOAuth.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
 
     const mcpRes = await fetch(hub.mcpUrl, {
@@ -343,7 +366,13 @@ test(
       BOT_FILE_RETENTION_MS?: number;
       cleanupBotRuntimeTempFiles?: (dataDir: string, options?: { maxAgeMs?: number; now?: number }) => Promise<void>;
       pruneExpiredBotFiles?: (dataDir: string, options?: { now?: number; retentionMs?: number }) => Promise<void>;
-      handleBotFile: (req: IncomingMessage, res: ServerResponse, deps: unknown, sha: string) => Promise<void>;
+      handleBotFile: (
+        req: IncomingMessage,
+        res: ServerResponse,
+        deps: unknown,
+        sha: string,
+        botEnabled: () => Promise<boolean>,
+      ) => Promise<void>;
       transferBotFile: (
         req: IncomingMessage,
         res: ServerResponse,
@@ -546,7 +575,7 @@ test(
           spyEnded = true;
         },
       } as unknown as ServerResponse;
-      await exported.handleBotFile(spyReq, spyRes, spyDeps, afterExpiry.sha);
+      await exported.handleBotFile(spyReq, spyRes, spyDeps, afterExpiry.sha, () => isBotEnabled(spyDeps.records.vault));
       assert.equal(spyStatus, 503);
       assert.equal((JSON.parse(spyBody) as { code?: string }).code, 'BOT_DISABLED');
       assert.equal(hasCalls, 1);

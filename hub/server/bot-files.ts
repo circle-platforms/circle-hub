@@ -767,17 +767,25 @@ export async function transferBotFile(
   }
 }
 
-export async function handleBotFile(req: IncomingMessage, res: ServerResponse, deps: ServerDeps, sha: string): Promise<void> {
-  const actor = await requireDirectAccessBearer(req, res, deps.records.principals);
+const botFilesDisabledBody = () =>
+  botError('BOT_DISABLED', '机器人尚未启用', '请管理员在控制台配置并启用机器人模型后重试');
+
+export async function handleBotFile(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: ServerDeps,
+  sha: string,
+  botEnabled: () => Promise<boolean>,
+): Promise<void> {
+  const actor = await requireDirectAccessBearer(req, res, deps.records.principals, {
+    enabled: botEnabled,
+    disabledBody: botFilesDisabledBody,
+  });
   if (!actor) return;
   const configured = await deps.records.vault.has('personal-bot.model');
   if (!configured) {
     req.resume();
-    return sendBotJson(
-      res,
-      503,
-      botError('BOT_DISABLED', '机器人尚未启用', '请管理员在控制台配置并启用机器人模型后重试'),
-    );
+    return sendBotJson(res, 503, botFilesDisabledBody());
   }
   return transferBotFile(
     req,
