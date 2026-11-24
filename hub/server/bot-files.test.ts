@@ -6,7 +6,7 @@ import { request as httpRequest, type IncomingMessage, type ServerResponse } fro
 import { join } from 'node:path';
 import { test } from 'node:test';
 import * as botFiles from './bot-files.ts';
-import { setBotProfile } from './personal-bot.ts';
+import { isBotEnabled, setBotProfile } from './personal-bot.ts';
 import { createTestServer } from './testing.ts';
 
 const { botFilesPath, fileLimit } = botFiles;
@@ -366,7 +366,13 @@ test(
       BOT_FILE_RETENTION_MS?: number;
       cleanupBotRuntimeTempFiles?: (dataDir: string, options?: { maxAgeMs?: number; now?: number }) => Promise<void>;
       pruneExpiredBotFiles?: (dataDir: string, options?: { now?: number; retentionMs?: number }) => Promise<void>;
-      handleBotFile: (req: IncomingMessage, res: ServerResponse, deps: unknown, sha: string) => Promise<void>;
+      handleBotFile: (
+        req: IncomingMessage,
+        res: ServerResponse,
+        deps: unknown,
+        sha: string,
+        botEnabled: () => Promise<boolean>,
+      ) => Promise<void>;
       transferBotFile: (
         req: IncomingMessage,
         res: ServerResponse,
@@ -569,7 +575,7 @@ test(
           spyEnded = true;
         },
       } as unknown as ServerResponse;
-      await exported.handleBotFile(spyReq, spyRes, spyDeps, afterExpiry.sha);
+      await exported.handleBotFile(spyReq, spyRes, spyDeps, afterExpiry.sha, () => isBotEnabled(spyDeps.records.vault));
       assert.equal(spyStatus, 503);
       assert.equal((JSON.parse(spyBody) as { code?: string }).code, 'BOT_DISABLED');
       assert.equal(hasCalls, 1);

@@ -775,10 +775,10 @@ export async function handleBotFile(
   res: ServerResponse,
   deps: ServerDeps,
   sha: string,
-  botEnabled?: () => Promise<boolean>,
+  botEnabled: () => Promise<boolean>,
 ): Promise<void> {
   const actor = await requireDirectAccessBearer(req, res, deps.records.principals, {
-    enabled: botEnabled ?? (() => deps.records.vault.has('personal-bot.model')),
+    enabled: botEnabled,
     disabledBody: botFilesDisabledBody,
   });
   if (!actor) return;

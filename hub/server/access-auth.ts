@@ -93,7 +93,7 @@ export async function requireDirectAccessBearer(
   request: IncomingMessage,
   response: ServerResponse,
   principals: Principals,
-  botGate?: BotGate,
+  botGate: BotGate,
 ): Promise<Principal | null> {
   const access = await authenticateAccessOnly(principals, request.headers.authorization ?? null);
   if (!access.ok) {
@@ -111,7 +111,7 @@ export async function requireDirectAccessBearer(
   }
   if (!canAccessBot(access)) {
     request.resume();
-    if (botGate && !(await botGate.enabled())) {
+    if (!(await botGate.enabled())) {
       sendBotJson(response, 503, botGate.disabledBody());
       return null;
     }
