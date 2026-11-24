@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { existsSync, readdirSync } from 'node:fs';
 import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
@@ -52,6 +53,7 @@ function gapRun(kind: 'recorded' | 'exhausted' | 'skipped' | 'skipped-spent' | '
 const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/${k}`, fields: { case_id: autoid, atoms: [{ id: 'a1', kind: 'intent', content: `合成意图 ${k + 1}`, after: [] }, { id: 'a2', kind: 'action', content: '合成动作', after: [] }, { id: 'a3', kind: 'expectation', content: '合成期望', after: ['a2'] }] } })) };
 const job = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, verdicts: string[]) => ({ job: id.repeat(64), verification_run: run, plan_run: plan, items, sha256: sha256(workbook), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}`, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(log)}` } } : {}) })) });
 
+type McpAnswer = { kind: 'ok' } | { kind: 'refused'; errors: Array<Record<string, unknown>> } | { kind: 'http'; status: number; body: string } | { kind: 'drop' };
 async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = [], gap: Gap = 'recorded', knowledge: 'served' | 'absent' | 'tampered' | 'other-root' = 'served', recomposeRecord: Record<string, unknown> = recomposed, sourceBehavior?: {sha:string; mode:'absent'|'tampered'}) {
   const all: Record<string, unknown[]> = { [WHOLE]: [job('a', WHOLE, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0], CASES[2]], finalWorkbook, finalVerdicts)], ...extraJobs };
   const runsInOrder = order ?? Object.keys(all);
@@ -85,9 +87,25 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
   for (const record of Object.values(records)) if (typeof record.predecessor === 'string') (successors[record.predecessor] ??= []).push({ run: record.run, pack: record.pack, started_at: record.started_at, predecessor: record.predecessor, parameters: record.parameters, sources: (record.sources as Array<{ slot: string; reference: string }>).map((s) => ({ slot: s.slot, reference: s.reference })) });
   const originals = new Map([contract, profile, inventory, log, ...extraOriginals].map((bytes) => [sha256(bytes), bytes]));
   const requests: string[]=[];
+  // What the Hub is asked through MCP (the release of the booking): every call is kept with the files that stood in the watched directory at that moment.
+  const mcp: { calls: Array<{ name: string; arguments: Record<string, unknown>; delivered: string[] | null }>; watch?: string; answer: McpAnswer } = { calls: [], answer: { kind: 'ok' } };
   const server = createServer((request, response) => {
     const url = request.url ?? ''; requests.push(url);
     if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end(); return; }
+    if (request.method === 'POST' && url === '/mcp') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        const sent = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { params: { name: string; arguments: Record<string, unknown> } };
+        mcp.calls.push({ name: sent.params.name, arguments: sent.params.arguments, delivered: mcp.watch !== undefined && existsSync(mcp.watch) ? readdirSync(mcp.watch).sort() : null });
+        const answer = mcp.answer;
+        if (answer.kind === 'drop') { request.socket.destroy(); return; }
+        if (answer.kind === 'http') { response.statusCode = answer.status; response.end(answer.body); return; }
+        const text = answer.kind === 'refused' ? `合成：运行没有开出来\n供模型引用\n${JSON.stringify({ call_result: 'error', errors: answer.errors })}` : `合成：已释放\n供模型引用\n${JSON.stringify({ call_result: 'ok', run: { run: 'run_01releasedreleasedreleased' } })}`;
+        response.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text }], isError: answer.kind === 'refused' } }));
+      });
+      return;
+    }
     const jobsOf = /^\/run-export\/(run_\w+)\/jobs$/.exec(url); if (jobsOf && jobs[jobsOf[1]]) { response.end(JSON.stringify({ schema: 'run-jobs@1', run: jobsOf[1], jobs: jobs[jobsOf[1]] })); return; }
     const next = /^\/run-export\/(run_\w+)\/successors$/.exec(url); if (next) { response.end(JSON.stringify({ schema: 'run-successors@1', run: next[1], successors: successors[next[1]] ?? [] })); return; }
     const whole = /^\/run-export\/(run_\w+)$/.exec(url); if (whole && plans[whole[1]]) { const p = plans[whole[1]]; response.end(JSON.stringify({ schema: 'run-export@1', run: records[whole[1]] ?? p.record, result: p.result, submission: p.submission })); return; }
@@ -106,7 +124,7 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as { port: number };
-  return { url: `http://127.0.0.1:${port}/mcp`, requests, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+  return { url: `http://127.0.0.1:${port}/mcp`, requests, mcp, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
 }
 async function outputOf(run: () => Promise<number>) {
   const out: string[] = [], err: string[] = [];
@@ -1143,4 +1161,156 @@ test('--open says who judged: the report and the reply carry the line of the jud
   assert.equal(withoutRecompose.code, 1);
   assert.match(withoutRecompose.stderr, /^参数无效：--open 的开运行记录不是这次编译的/);
   await assert.rejects(readdir(join(dir, 'out-bare')));
+});
+
+// What the open record says about the booking, and what the delivery then does with it (decision 195).
+const openWith = async (extra: Record<string, unknown>) => { const dir = await mkdtemp(join(tmpdir(), 'cc-open-')); const path = join(dir, 'open-compile.json'); await writeFile(path, JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: BOOKING, recompose_run: RECOMPOSE, plan_run: PLAN1, ...extra })); return path; };
+const RELEASE_CALL = { name: 'start_run', arguments: { pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:bed-topology' } }, predecessor: BOOKING, parameters: { action: 'release', booking: BOOKING } } };
+const ALL_FILES = ['case.xlsx', 'delivery.json', 'delivery_report.md', 'unsuccessful_cases.md', 'unsuccessful_cases.xlsx'];
+const PLAIN_MESSAGE = '交付目录已组好：最后回复原样用 reply，不另加表格或逐条重述';
+const bookingOf = async (extra: string[], openExtra: Record<string, unknown>, setup?: (h: Awaited<ReturnType<typeof hub>>) => void, notesOf: Record<string, unknown> = NOTES) => {
+  const h = await hub(); setup?.(h);
+  try {
+    const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out'); h.mcp.watch = out;
+    const result = await run(h, await notes(notesOf), out, undefined, undefined, ['--open', await openWith(openExtra), ...extra]);
+    return { h, out, ...result, answer: result.stdout ? JSON.parse(result.stdout) as Record<string, any> : {} };
+  } finally { await h.close(); }
+};
+
+test('a compile that took its booking itself has it released when the delivery is complete: one test-bed release call after the files are written, and the reply and the message say so', async () => {
+  const done = await bookingOf([], { booking_acquired: true });
+  assert.equal(done.code, 0, done.stderr);
+  assert.deepEqual(done.h.mcp.calls, [{ ...RELEASE_CALL, delivered: ALL_FILES }], 'one call, shaped as the test-bed skill gives it, and every file stood there already');
+  assert.deepEqual(done.answer.booking, { run: BOOKING, state: 'released' });
+  const lines = String(done.answer.reply).split('\n');
+  assert.deepEqual([lines.at(-2)!.startsWith('交付报告：'), lines.at(-1)], [true, '测试环境的预订已释放。'], 'the sentence is the last line of the reply, after the line of the report');
+  assert.equal(done.answer.message, PLAIN_MESSAGE, 'a release that went through adds nothing to the message');
+  assert.ok(!String(done.answer.reply).includes(BOOKING), 'no run number in what the user reads');
+  assert.deepEqual((await readdir(done.out)).sort(), ALL_FILES);
+  assert.equal(JSON.parse(await readFile(join(done.out, 'delivery.json'), 'utf8')).booking, undefined, 'the summary was written before the Hub answered, so it says nothing of it');
+  assert.deepEqual(done.answer.files && Object.keys(done.answer.files).sort(), ALL_FILES);
+});
+
+test('the release names the inventory the compile was opened with; a record that names none means the default one', async () => {
+  const done = await bookingOf([], { booking_acquired: true, inventory: 'doc:doc:other-topology' });
+  assert.equal(done.code, 0, done.stderr);
+  assert.deepEqual(done.h.mcp.calls.map((call) => call.arguments), [{ ...RELEASE_CALL.arguments, inputs: { inventory: { external: 'doc:doc:other-topology' } } }]);
+  assert.deepEqual(done.answer.booking, { run: BOOKING, state: 'released' });
+});
+
+test('a record that does not say the compile took the booking leaves it where it is and says so in the reply and, with the run, in the message; a record with no booking says nothing', async () => {
+  const kept = await bookingOf([], {});
+  assert.equal(kept.code, 0, kept.stderr);
+  assert.deepEqual(kept.h.mcp.calls, []);
+  assert.deepEqual(kept.answer.booking, { run: BOOKING, state: 'kept' });
+  assert.equal(String(kept.answer.reply).split('\n').at(-1), '测试环境的预订仍保留（不是这次编译预订的）。不再使用时请要求释放。');
+  assert.equal(kept.answer.message, `${PLAIN_MESSAGE}。预订 ${BOOKING} 不是这次编译预订的，没有释放；使用者要求时在重跑时加 --release-booking yes，或按 test-bed 技能的 release 释放`);
+  assert.ok(!String(kept.answer.reply).includes(BOOKING));
+  const none = await bookingOf([], { booking: undefined });
+  assert.equal(none.code, 0, none.stderr);
+  assert.deepEqual([none.h.mcp.calls, none.answer.booking, String(none.answer.reply).includes('预订'), none.answer.message], [[], undefined, false, PLAIN_MESSAGE]);
+});
+
+test('--keep-booking leaves the booking, as asked, whether or not the compile took it; nothing is called and the message adds nothing', async () => {
+  for (const [name, open] of [['taken', { booking_acquired: true }], ['not taken', {}]] as const) {
+    const done = await bookingOf(['--keep-booking', 'yes'], open);
+    assert.equal(done.code, 0, `${name}: ${done.stderr}`);
+    assert.deepEqual(done.h.mcp.calls, [], name);
+    assert.deepEqual(done.answer.booking, { run: BOOKING, state: 'kept' }, name);
+    assert.equal(String(done.answer.reply).split('\n').at(-1), '测试环境的预订按要求保留。', name);
+    assert.equal(done.answer.message, PLAIN_MESSAGE, name);
+  }
+});
+
+test('--release-booking releases the booking of a record that does not say the compile took it, with the same one call', async () => {
+  const done = await bookingOf(['--release-booking', 'yes'], {});
+  assert.equal(done.code, 0, done.stderr);
+  assert.deepEqual(done.h.mcp.calls, [{ ...RELEASE_CALL, delivered: ALL_FILES }]);
+  assert.deepEqual(done.answer.booking, { run: BOOKING, state: 'released' });
+  assert.equal(String(done.answer.reply).split('\n').at(-1), '测试环境的预订已释放。');
+});
+
+test('a delivery that still has hints releases nothing and says nothing of the booking, whatever the record and the options say', async () => {
+  const unverified = { ...NOTES, [CASES[1]]: { ...NOTES[CASES[1]], evidence: '这句话设备没有输出过' } };
+  for (const [name, extra, open] of [['taken', [], { booking_acquired: true }], ['not taken', [], {}], ['forced', ['--release-booking', 'yes'], {}], ['kept', ['--keep-booking', 'yes'], { booking_acquired: true }]] as const) {
+    const done = await bookingOf([...extra], open, undefined, unverified);
+    assert.equal(done.code, 1, `${name}: ${done.stderr}`);
+    assert.ok(done.answer.hints.length > 0, name);
+    assert.deepEqual(done.h.mcp.calls, [], name);
+    assert.equal(done.answer.booking, undefined, name);
+    assert.ok(!/预订/.test(`${done.answer.reply}${done.answer.message}`), name);
+    assert.equal(done.answer.message, `交付目录还缺 ${done.answer.hints.length} 项（见 hints）：逐条补齐后在新的输出目录重跑 assemble-delivery.ts，这次的 reply 不作最后回复`, name);
+  }
+});
+
+test('a Hub that refuses the release or cannot be reached does not undo the delivery: the files are written, the exit code is the one it would have had, and the reply gives the words; a refusal is not released, no answer is unknown', async () => {
+  const refusals: Array<[string, McpAnswer, string, 'not_released' | 'unknown']> = [
+    ['refused', { kind: 'refused', errors: [{ code: 'LEASE_UNAVAILABLE', message: '合成：Hub 拒绝释放', fix: '合成：请管理员核对', path: '/parameters/booking' }] }, '合成：Hub 拒绝释放（位置 /parameters/booking）；下一步：合成：请管理员核对', 'not_released'],
+    ['another code of the same words', { kind: 'refused', errors: [{ code: 'test-bed.release_mismatch', message: '你没有持有这个预订（run_01zzzzzzzzzzzzzzzzzzzzzzzz）：这次运行的血缘里没有未过期的租约行' }] }, '你没有持有这个预订（run_01zzzzzzzzzzzzzzzzzzzzzzzz）：这次运行的血缘里没有未过期的租约行', 'not_released'],
+    ['http', { kind: 'http', status: 503, body: '合成：维护中' }, 'Hub 答复 503：合成：维护中', 'unknown'],
+    ['unreachable', { kind: 'drop' }, 'Hub 不可达（fetch failed）', 'unknown'],
+  ];
+  for (const [name, answer, words, state] of refusals) {
+    const done = await bookingOf([], { booking_acquired: true }, (h) => { h.mcp.answer = answer; });
+    assert.equal(done.code, 0, `${name}: the delivery stays what it was: ${done.stderr}`);
+    assert.deepEqual((await readdir(done.out)).sort(), ALL_FILES, name);
+    assert.equal(done.h.mcp.calls.length, 1, `${name}: asked once, not again`);
+    assert.deepEqual(done.answer.booking, { run: BOOKING, state, reason: words }, name);
+    assert.equal(String(done.answer.reply).split('\n').at(-1), `测试环境的预订${state === 'unknown' ? '是否已释放未知' : '没有释放'}：${words}。请再要求释放一次，或请管理员核对。`, name);
+    assert.equal(done.answer.message, `${PLAIN_MESSAGE}。预订 ${BOOKING} ${state === 'unknown' ? '是否已释放未知（原因见 booking.reason）：按 test-bed 技能的 release 再试一次，答复没有持有这个预订就是已经释放' : '没有释放（原因见 booking.reason）：按 test-bed 技能的 release 再试一次，仍被拒绝就把原话告诉使用者'}`, name);
+  }
+  const long = await bookingOf([], { booking_acquired: true }, (h) => { h.mcp.answer = { kind: 'refused', errors: [{ code: 'x.y', message: '字'.repeat(400) }] }; });
+  assert.equal(long.answer.booking.reason, '字'.repeat(300), 'at most 300 characters of the words');
+  assert.equal(String(long.answer.reply).split('\n').at(-1), `测试环境的预订没有释放：${'字'.repeat(300)}。请再要求释放一次，或请管理员核对。`);
+});
+
+test('a Hub that says the booking holds nothing has nothing left to release: it is reported as released, with its words kept in the machine part only', async () => {
+  const words = '你没有持有这个预订（run_01zzzzzzzzzzzzzzzzzzzzzzzz）：这次运行的血缘里没有未过期的租约行；下一步：booking 写你自己的预订运行的编号';
+  const done = await bookingOf([], { booking_acquired: true }, (h) => { h.mcp.answer = { kind: 'refused', errors: [{ code: 'test-bed.not_holder', message: '你没有持有这个预订（run_01zzzzzzzzzzzzzzzzzzzzzzzz）：这次运行的血缘里没有未过期的租约行', fix: 'booking 写你自己的预订运行的编号' }] }; });
+  assert.equal(done.code, 0, done.stderr);
+  assert.deepEqual(done.answer.booking, { run: BOOKING, state: 'released', reason: words });
+  assert.equal(String(done.answer.reply).split('\n').at(-1), '测试环境的预订已释放。');
+  assert.ok(!String(done.answer.reply).includes('run_0'), 'the words of the Hub are not in what the user reads');
+  assert.equal(done.answer.message, PLAIN_MESSAGE);
+});
+
+test('the two booking options exclude each other and take only yes, and --release-booking needs a booking to release; each is refused before the Hub is read', async (t) => {
+  const h = await hub(); t.after(h.close); const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-')); const path = await notes(NOTES), open = await openWith({ booking_acquired: true });
+  const refuse = async (name: string, extra: string[], said: RegExp, openPath = open) => {
+    const out = join(dir, name), asked = h.requests.length;
+    const res = await outputOf(() => main(['--hub', h.url, '--runs', `${WHOLE},${FINAL}`, '--recompose', RECOMPOSE, '--notes', path, '--out', out, '--open', openPath, ...extra], async () => TOKEN));
+    assert.equal(res.code, 1, name); assert.match(res.stderr, said, name);
+    await assert.rejects(readdir(out), name);
+    assert.equal(h.requests.length, asked, `${name}: the Hub was not read`); assert.deepEqual(h.mcp.calls, [], name);
+  };
+  await refuse('both', ['--keep-booking', 'yes', '--release-booking', 'yes'], /^参数无效：--keep-booking 和 --release-booking 不能一起写：一个要保留预订，一个要释放它。只写其中一个后重试/);
+  await refuse('no value', ['--keep-booking'], /^参数无效：参数写法：--hub --runs --notes --out --open 必填，--recompose --name 可选，每个只写一次；预订另有可选的 --keep-booking yes（保留）和 --release-booking yes（释放），不能一起写/);
+  await refuse('bad keep', ['--keep-booking', 'true'], /^参数无效：--keep-booking 只能写 yes。要保留预订就写 --keep-booking yes，不要就不写这个选项/);
+  await refuse('bad release', ['--release-booking', 'no'], /^参数无效：--release-booking 只能写 yes。要释放预订就写 --release-booking yes，不要就不写这个选项/);
+  await refuse('twice', ['--keep-booking', 'yes', '--keep-booking', 'yes'], /^参数无效：参数写法：/);
+  await refuse('no booking', ['--release-booking', 'yes'], /^参数无效：--release-booking 没有预订可释放：--open 的开运行记录里没有预订的运行编号（booking）/, PLAIN_OPEN);
+  await refuse('mangled', [], /^参数无效：--open 里的 booking_acquired 是 "yes"，只能是 true（没有这一项就是这次编译没有自己预订测试环境）/, await openWith({ booking_acquired: 'yes' }));
+  await refuse('taken without a booking', [], /^参数无效：--open 说这次编译自己预订了测试环境，却没有写预订的运行编号（booking）/, await openWith({ booking_acquired: true, booking: undefined }));
+});
+
+test('a tab inside a quote of the device output goes through the delivery as it is: the verbatim check, the report, the log tail and delivery.json; the same quote with spaces is refused', async (t) => {
+  const TAB_LOG = Buffer.from('合成日志：\t第 3 步断言\t没有命中\n');
+  const verdicts = ['pass', 'fail', 'pass'];
+  const jobs = { [WHOLE]: [{ ...job('a', WHOLE, PLAN1, CASES.slice(0, 3), plan1.workbook, verdicts), rows: CASES.slice(0, 3).map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(TAB_LOG)}` } } : {}) })) }] };
+  const h = await hub(undefined, undefined, jobs, {}, undefined, false, [TAB_LOG]); t.after(h.close);
+  const quoted = '第 3 步断言\t没有命中';
+  const withTab = { ...NOTES, [CASES[1]]: { ...NOTES[CASES[1]], evidence: quoted, defect_candidate: { ...CANDIDATE, actual: quoted } } };
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out'), done = await run(h, await notes(withTab), out);
+  assert.equal(done.code, 0, done.stderr);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.ok(report.includes(`\n\`\`\`\n${quoted}\n\`\`\`\n`), 'the quote is fenced with its tab');
+  assert.ok((await readFile(join(out, 'unsuccessful_cases.md'), 'utf8')).includes('合成日志：\t第 3 步断言\t没有命中'), 'the tail of the device log keeps its tabs');
+  const row = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8')).cases[1];
+  assert.deepEqual([row.model_claims.evidence, row.model_claims.defect_candidate.actual, row.pending], [quoted, quoted, undefined]);
+  assert.match(await readFile(join(out, 'delivery.json'), 'utf8'), /"evidence": "第 3 步断言\\t没有命中"/, 'in the file the tab is the escape JSON gives it');
+  assert.ok((await readdir(out)).includes('unsuccessful_cases.xlsx'));
+  const spaced = { ...NOTES, [CASES[1]]: { ...NOTES[CASES[1]], evidence: quoted.replace('\t', ' ') } };
+  const refused = await run(h, await notes(spaced), join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out'));
+  assert.equal(refused.code, 1, refused.stderr);
+  assert.ok(JSON.parse(refused.stdout).hints.some((hint: { missing: string }) => hint.missing === '设备引文未通过逐字核对'), 'the quote with spaces is not what the device printed');
 });

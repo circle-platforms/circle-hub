@@ -340,7 +340,9 @@ test('a quarantined live owner releases by identity before another waiter can en
     await gate;
     order.push('first:end');
   });
-  await delay(10);
+  // The first holder is in once it has pushed its mark; a fixed pause was too short on a crowded machine and the owner file was not there yet.
+  for (let waited = 0; order.length === 0 && waited < 500; waited += 1) await delay(10);
+  assert.deepEqual(order, ['first:start']);
   await rename(join(dir, '.lock', 'owner.json'), join(dir, '.lock', '.stale-deadbeef'));
   const second = withLock(dir, async () => { order.push('second'); });
   await delay(50);

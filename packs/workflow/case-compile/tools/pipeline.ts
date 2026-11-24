@@ -714,7 +714,7 @@ async function newPlanRun(state: PipelineState, open: Record<string, unknown>, b
   // The scope is the user's own words and cases, written as the record has them; the cases left out are the record's and the ones this pipeline dropped, each once, in the order met.
   const scope = recordedScope(open), left = [...new Set([...recordedExclude(open), ...exclude])];
   if (scope) { await mkdir(base, { recursive: true }); await writeFile(scopeFile, JSON.stringify(scope, null, 2) + '\n'); }
-  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' || state.judge === 'jev' ? ['--judge', state.judge] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...recordedNames(open), ...(scope ? ['--scope', scopeFile] : []), ...(left.length ? ['--exclude', left.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], standardInput(state, g));
+  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' || state.judge === 'jev' ? ['--judge', state.judge] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...recordedBooking(open), ...recordedNames(open), ...(scope ? ['--scope', scopeFile] : []), ...(left.length ? ['--exclude', left.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], standardInput(state, g));
   if (opened.code !== 0 || !existsSync(openFile)) throw new Error(`${what}没有开成：${words(opened) || '没有输出'}`);
   const target = String(((await readJson(openFile)) as Record<string, unknown>).plan_run ?? '');
   if (!target || target === state.plan_run) throw new Error(`open-compile.ts 没有给出新的脚本编写运行（看到 ${target || '空'}）`);
@@ -746,12 +746,12 @@ function checkOpen(state: PipelineState, open: Record<string, unknown>): void {
   if (recorded !== chosen) throw new Error(`--open 记的判断方式是 ${recorded}，这次编译的状态文件里是 ${chosen}；--open 写这一轮用的 open-compile 文件，不手改`);
   if (open.plan_run !== state.plan_run) throw new Error(`--open 写这一轮用的 open-compile 文件（它的脚本编写运行应是 ${state.plan_run}）；新的那个由本工具开`);
   for (const field of ['subject', 'product', 'build', 'booking', 'recompose_run', 'recompose_record']) if (typeof open[field] !== 'string' || !open[field]) throw new Error(`--open 不是 open-compile.ts 写的文件（缺 ${field}）`);
-  recordedScope(open); recordedExclude(open); recordedNames(open);
+  recordedScope(open); recordedExclude(open); recordedNames(open); recordedBooking(open);
 }
 
 // What the first open was given and a later plan run must be given again: open-compile.ts writes the scope (the user's words and the cases they
 // name, which the recomposition run froze), the cases left out, the version line and the three named documents into its record when it has
-// them. A record without them has none.
+// them, and whether this compile took the booking itself (the delivery releases only that one). A record without them has none.
 function recordedScope(open: Record<string, unknown>): { words: string; cases: string[] } | null {
   const scope = open.scope;
   if (scope === undefined) return null;
@@ -768,6 +768,12 @@ function recordedNames(open: Record<string, unknown>): string[] {
     options.push(`--${name}`, value);
   }
   return options;
+}
+function recordedBooking(open: Record<string, unknown>): string[] {
+  const acquired = open.booking_acquired;
+  if (acquired === undefined) return [];
+  if (acquired !== true) throw new Error('--open 里的 booking_acquired 不是 true；--open 写 open-compile.ts 写的文件，不手改');
+  return ['--booking-acquired', 'yes'];
 }
 function recordedExclude(open: Record<string, unknown>): string[] {
   const left = open.exclude;

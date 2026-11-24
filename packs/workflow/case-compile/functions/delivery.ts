@@ -33,6 +33,8 @@ const SHA = /^[0-9a-f]{64}$/;
 const RUN = /^run_[0-9a-z]{26}$/;
 const CAUSE_MAX = 200;
 const NOTE_MAX = 4000;
+// What a note text may not hold: the control characters except the tab, the line feed and the carriage return (which is taken out of what is kept).
+const NOTE_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((v) => typeof v === 'string' && v.length > 0);
 
 export function parseRunJobs(value: unknown, run: string): ExportedJob[] {
@@ -293,8 +295,12 @@ export function readNotes(value: unknown, undelivered: string[]): Notes {
     return v;
   };
   const text = (v: unknown, where: string): string => {
-    if (typeof v !== 'string' || !v.trim() || v.length > NOTE_MAX || /[\u0000-\u0009\u000b-\u001f\u007f]/.test(v)) failCall('invalid_parameters', `${where} 要是 1 到 ${NOTE_MAX} 字的文字（可换行，不含其他控制字符）`, '请按交付说明提供模型说明文件并保留原句');
-    return v.trim();
+    const given = typeof v === 'string' ? v : '', said = given.replace(/\r/g, '');
+    if (!said.trim()) failCall('invalid_parameters', `${where}没有写`, '请按交付说明提供模型说明文件并保留原句');
+    if (said.length > NOTE_MAX) failCall('invalid_parameters', `${where}有 ${said.length} 字，上限 ${NOTE_MAX} 字`, '只引用说明问题的那一段，逐字复制，不改写');
+    const control = given.search(NOTE_CONTROL);
+    if (control >= 0) failCall('invalid_parameters', `${where}的第 ${control + 1} 个字符是控制字符 U+${given.charCodeAt(control).toString(16).toUpperCase().padStart(4, '0')}，这里只能有换行和制表符`, '去掉这个字符后重试；引用设备输出时逐字复制，制表符照原样保留');
+    return said.trim();
   };
   const sentence = (v: unknown, where: string): string => {
     const said = text(v, where);

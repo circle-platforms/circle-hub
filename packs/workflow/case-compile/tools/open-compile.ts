@@ -9,8 +9,8 @@ import { parseHubOrigin } from '../functions/client-cli.ts';
 import { isRecord, parseCliOptions } from '../functions/text.ts';
 
 const CALL_TIMEOUT_MS = 180_000;
-const DEFAULT_DOCS = { contract: 'doc:doc:runner-contract', inventory: 'doc:doc:bed-topology', profile: 'doc:doc:runtime-profile' } as const;
-const USAGE = "open-compile.ts --hub <MCP地址> [--plumb <Plumb地址>] --subject <脑图外部标识或 src: 引用> --product <产品> --build <构建> --booking <test-bed 预订号> --out <新文件> [--version <版本线>] [--scope <范围文件>] [--exclude <autoid,...>] [--contract <doc:doc:名字>] [--inventory <doc:doc:名字>] [--profile <doc:doc:名字>] [--recompose-run <重组运行编号> --recompose-record <rec:引用>] [--judge plumb|jev|model]";
+export const DEFAULT_DOCS = { contract: 'doc:doc:runner-contract', inventory: 'doc:doc:bed-topology', profile: 'doc:doc:runtime-profile' } as const;
+const USAGE = "open-compile.ts --hub <MCP地址> [--plumb <Plumb地址>] --subject <脑图外部标识或 src: 引用> --product <产品> --build <构建> --booking <test-bed 预订号> [--booking-acquired yes] --out <新文件> [--version <版本线>] [--scope <范围文件>] [--exclude <autoid,...>] [--contract <doc:doc:名字>] [--inventory <doc:doc:名字>] [--profile <doc:doc:名字>] [--recompose-run <重组运行编号> --recompose-record <rec:引用>] [--judge plumb|jev|model]";
 
 export class NotReady extends Error {}
 
@@ -203,7 +203,7 @@ function scopeFrom(path: string | undefined): OpenOptions['scope'] {
 export async function main(argv: string[], readStdin: () => Promise<string[]> = readStdinByPosition, connect: (origin: string, bearer: string) => CallTool = hubTools, skillsRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'), plumbStatus: PlumbStatus = plumbStatusVia(skillsRoot)): Promise<number> {
   let args: Record<string, string>;
   try {
-    args = parseCliOptions(argv, { hub: true, plumb: false, judge: false, subject: true, product: true, build: true, booking: true, out: true, version: false, scope: false, exclude: false, contract: false, inventory: false, profile: false, 'recompose-run': false, 'recompose-record': false }, USAGE) as Record<string, string>;
+    args = parseCliOptions(argv, { hub: true, plumb: false, judge: false, subject: true, product: true, build: true, booking: true, 'booking-acquired': false, out: true, version: false, scope: false, exclude: false, contract: false, inventory: false, profile: false, 'recompose-run': false, 'recompose-record': false }, USAGE) as Record<string, string>;
   } catch (error) {
     process.stdout.write(`无法编译：开运行工具的参数不对（${error instanceof Error ? error.message : String(error)}）；写法：${USAGE}\n`);
     return 1;
@@ -213,6 +213,7 @@ export async function main(argv: string[], readStdin: () => Promise<string[]> = 
     if (judge !== 'plumb' && judge !== 'jev' && judge !== 'model') throw new NotReady('--judge 只能写 plumb、jev 或 model；不写就是 plumb');
     if (judge === 'plumb' && !args.plumb) throw new NotReady('缺 --plumb <Plumb地址>；只有使用者明确说这次不经 Plumb 时才写 --judge model 或 --judge jev');
     if (!RUN_ID.test(args.booking)) throw new NotReady('--booking 不是运行编号；写 test-bed 预订运行的编号（run_ 开头）');
+    if (args['booking-acquired'] !== undefined && args['booking-acquired'] !== 'yes') throw new NotReady('--booking-acquired 只能写 yes：这次编译自己预订了测试环境才写，沿用使用者已有的预订就不写这个选项');
     for (const slot of ['contract', 'inventory', 'profile'] as const) if (args[slot] !== undefined && !/^doc:doc:[a-z][a-z0-9-]{0,63}(@[0-9a-f]{64})?$/.test(args[slot])) throw new NotReady(`--${slot} 不是命名文档；写 doc:doc:<名字>`);
     if ((args['recompose-run'] === undefined) !== (args['recompose-record'] === undefined)) throw new NotReady('--recompose-run 和 --recompose-record 要一起写（沿用已有重组时），或都不写');
     if (args['recompose-run'] !== undefined && !RUN_ID.test(args['recompose-run'])) throw new NotReady('--recompose-run 不是运行编号');
@@ -225,7 +226,7 @@ export async function main(argv: string[], readStdin: () => Promise<string[]> = 
     const exclude = args.exclude ? args.exclude.split(',').map((v) => v.trim()).filter(Boolean) : undefined;
     const scope = args.scope ? scopeFrom(args.scope) : undefined;
     const opened = await openCompile(connect(origin, bearer), { subject: args.subject, product: args.product, build: args.build, booking: args.booking, ...(args.version ? { version: args.version } : {}), ...(scope ? { scope } : {}), ...(exclude ? { exclude } : {}), ...(args.contract ? { contract: args.contract } : {}), ...(args.inventory ? { inventory: args.inventory } : {}), ...(args.profile ? { profile: args.profile } : {}), ...(args['recompose-run'] ? { reuse: { run: args['recompose-run'], record: args['recompose-record']! } } : {}) }, skillsRoot, judge === 'plumb' ? { url: args.plumb, key, status: plumbStatus } : undefined, judge === 'jev' ? { key: jevKey } : undefined);
-    const record = { schema: 'open-compile@1', ready: true, subject: args.subject, product: args.product, build: args.build, booking: args.booking, recompose_run: opened.recomposeRun, recompose_record: opened.recomposeRecord, plan_run: opened.planRun, plan_record: opened.planRecord, items: opened.items, ...(args.version ? { version: args.version } : {}), ...(args.contract ? { contract: args.contract } : {}), ...(args.inventory ? { inventory: args.inventory } : {}), ...(args.profile ? { profile: args.profile } : {}), ...(scope ? { scope } : {}), ...(exclude?.length ? { exclude } : {}), ...(judge === 'model' || judge === 'jev' ? { judge } : {}) };
+    const record = { schema: 'open-compile@1', ready: true, subject: args.subject, product: args.product, build: args.build, booking: args.booking, ...(args['booking-acquired'] ? { booking_acquired: true } : {}), recompose_run: opened.recomposeRun, recompose_record: opened.recomposeRecord, plan_run: opened.planRun, plan_record: opened.planRecord, items: opened.items, ...(args.version ? { version: args.version } : {}), ...(args.contract ? { contract: args.contract } : {}), ...(args.inventory ? { inventory: args.inventory } : {}), ...(args.profile ? { profile: args.profile } : {}), ...(scope ? { scope } : {}), ...(exclude?.length ? { exclude } : {}), ...(judge === 'model' || judge === 'jev' ? { judge } : {}) };
     await writeFile(resolve(args.out), JSON.stringify(record, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     process.stdout.write(`就绪：用例重组运行 ${opened.recomposeRun}、脚本编写运行 ${opened.planRun}，共 ${opened.items} 条用例${judge === 'model' ? '；判断方式 model：这次不经 Plumb，命令核验只做命令树的程序核对，场景保真由独立盲审判断，结论都要在最后报告里照实写' : judge === 'jev' ? '；判断方式 jev：命令核验和场景保真由 Jev（TypeSafe 的线上判断服务）判断，原始用例的步骤、写出的命令和手册片段会发到 TypeSafe；Jev 的回答是模型的判断，未经确认，一律只作参考、逐条进复核，结论都要在最后报告里照实写' : ''}。下一步下载两个运行（download-run.ts），再按编排开始编译。\n${JSON.stringify(record)}\n`);
     return 0;

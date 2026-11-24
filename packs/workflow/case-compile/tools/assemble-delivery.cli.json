@@ -61,6 +61,22 @@
       "multiple": false,
       "placeholder": "open-compile.json",
       "type": "path"
+    },
+    {
+      "name": "keep-booking",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "yes",
+      "type": "text"
+    },
+    {
+      "name": "release-booking",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "yes",
+      "type": "text"
     }
   ],
   "forms": [
