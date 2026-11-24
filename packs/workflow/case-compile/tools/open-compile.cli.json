@@ -55,6 +55,14 @@
       "type": "run"
     },
     {
+      "name": "booking-acquired",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "yes",
+      "type": "text"
+    },
+    {
       "name": "out",
       "required": true,
       "kind": "string",
@@ -168,6 +176,11 @@
           "name": "booking",
           "placeholder": "<test-bed 预订号>",
           "optional": false
+        },
+        {
+          "name": "booking-acquired",
+          "placeholder": "yes",
+          "optional": true
         },
         {
           "name": "out",

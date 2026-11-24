@@ -377,3 +377,31 @@ test('the three stdin lines are read by position: a blank line stays a line, so 
   assert.deepEqual(read('tok\n  plumb \r\n\r\n'), ['tok', 'plumb', '']);
   assert.deepEqual(read(''), []);
 });
+
+test('the booking the compile took itself is written into open-compile.json only when the option says so, and nothing else in the record changes', async () => {
+  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}, {}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}, {}] } }) };
+  const taken = await run(argv(join(dir, 'taken.json'), ['--booking-acquired', 'yes']), hub(answers).connect, root);
+  const reused = await run(argv(join(dir, 'reused.json')), hub(answers).connect, root);
+  assert.equal(taken.code, 0, taken.out); assert.equal(reused.code, 0, reused.out);
+  const read = async (name: string) => JSON.parse(await readFile(join(dir, name), 'utf8')) as Record<string, unknown>;
+  const [withFlag, withoutFlag] = [await read('taken.json'), await read('reused.json')];
+  assert.deepEqual([withFlag.booking, withFlag.booking_acquired], [BOOKING, true]);
+  assert.equal(Object.hasOwn(withoutFlag, 'booking_acquired'), false, 'a booking the user already had is not said to be the compile\'s');
+  assert.deepEqual(Object.keys(withFlag).filter((key) => key !== 'booking_acquired'), Object.keys(withoutFlag), 'the record has the same fields besides that one');
+  assert.equal(withFlag.schema, 'open-compile@1', 'the schema keeps its name');
+  assert.equal((JSON.parse(taken.out.split('\n')[1]!) as Record<string, unknown>).booking_acquired, true, 'the record printed beside the answer says it too');
+});
+
+test('--booking-acquired takes only yes; any other value is said in one line and nothing is asked of the Hub', async () => {
+  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  for (const value of ['true', 'no', 'YES']) {
+    const h = hub({});
+    const refused = await run(argv(join(dir, `${value}.json`), ['--booking-acquired', value]), h.connect, root);
+    assert.equal(refused.code, 1);
+    assert.equal(refused.out, '无法编译：--booking-acquired 只能写 yes：这次编译自己预订了测试环境才写，沿用使用者已有的预订就不写这个选项\n', value);
+    assert.equal(h.calls.length, 0, value); assert.equal(existsSync(join(dir, `${value}.json`)), false, value);
+  }
+  const twice = await run(argv(join(dir, 'twice.json'), ['--booking-acquired', 'yes', '--booking-acquired', 'yes']), hub({}).connect, root);
+  assert.match(twice.out, /^无法编译：开运行工具的参数不对（选项 --booking-acquired 必须只写一次且紧跟一个值）；写法：open-compile\.ts .* --booking <test-bed 预订号> \[--booking-acquired yes\] --out <新文件>/);
+});

@@ -53,6 +53,7 @@
 
 ## 历史
 
+- 2026-11-24：`case-compile` 3.26.11（决定 195，相对 main）：`tools/open-compile.ts` 新增可选参数 `--booking-acquired yes`（`--booking` 是这次编译自己取得的预订时写），记录 `open-compile@1` 多一个可选字段 `booking_acquired`（只会是 `true`），`pipeline.ts` 的返工、重新开和交付卷新开脚本编写运行时照带；没有这个字段的旧记录行为不变，预订不释放。`tools/assemble-delivery.ts` 新增可选参数 `--keep-booking yes` 和 `--release-booking yes`（不能一起写）：交付完整时，它在交付文件写完之后用一次 `test-bed` 的 `release` 释放记录里标了 `booking_acquired` 的预订；答复多一个字段 `booking`（`run`，`state` 为 `released`、`kept`、`not_released` 或 `unknown`（Hub 没有答复，是否已释放未知），可选的 `reason`），`reply` 末尾多一行说明预订的结果，`delivery.json` 不变。说明文件里的文字被拒绝时的句子从一句改为三句（没有写；超长，带字数；含控制字符，带它在原文的位置和码位），回车被去掉，制表符可以写。技能文字随之改了：交付完整后由工具释放这次编译自己取得的预订，不再等使用者说话。
 - 2026-11-24：合并整合分支之前的裁定（决定 194）。登录应用的配置（密钥库条目 `personal-bot.identity`）新增可选字段 `adminLogin`：绑定了外部身份的管理员账号默认不能用扫码登录控制台（`403`），在设置页「扫码登录应用」勾选「允许管理员账号用扫码登录控制台」，或在 `circle-hub bot identity-set` 的 JSON 里写 `"adminLogin": true` 才允许；发给通道适配器的配置不带这个字段。更早的提交按严格格式读这个条目，不认识这个字段：回滚到那样的提交之后要重新保存一次登录应用配置，否则扫码登录和私聊通道读不出配置。D06 R[1] 修订：Circle 里与 Hub 有关的界面限于按地址连接 Hub 的 Hub 扩展和成员私人机器人的对话页。机器人接口仍只接受成员自己的访问令牌；授权时由成员同意、此后登录令牌也可使用的机制已定要做，尚未做。
 - 2026-11-24：机器人与外部通道安全与协议对齐（模型第 89 版、`release/2026-11-23` 之后未发布新兼容破坏）：
   - 入口鉴权与客户端隔离：`POST /api/bot/v1` 与 `GET`/`PUT /api/bot/v1/files/<sha256>` 强制直连成员 Bearer 令牌，拒绝 OAuth 授权应用令牌（`403 BOT_CLIENT_FORBIDDEN`）；`/mcp` 与 `/local-tools/*` 继续接受 OAuth 令牌。`/api/bot/v1` 要求请求头 `Bot-Client-Version` 满足严格 SemVer 2.0.0（缺失或格式无效返回 `400 BOT_VERSION_INVALID`，主次版本不兼容返回 `400 BOT_VERSION_MISMATCH`，接受预发布号与构建元数据）；发送给宿主的路由标识统一写为 `route.source = 'client'`，不暴露客户端名称。

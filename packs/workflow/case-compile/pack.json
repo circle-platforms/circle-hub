@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.26.10",
+  "version": "3.26.11",
   "kind": "workflow",
   "dependencies": [
     {
@@ -48,8 +48,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "74613a239df268c1c4a6934ed2c3be8c12bbd21385066dbf974dd68f59d4449e",
-      "size": 17290
+      "sha256": "087ad174aa997d988733cabf210d0b3c67111c24f15c563a83a620cb1a9b4737",
+      "size": 17743
     },
     {
       "path": "agents/compile-attributor.md",
@@ -263,8 +263,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "7451969ee8e3be0751fcfd8a2008e43d2f8992fa4b4945a1b4da7e8c879224b6",
-      "size": 71782
+      "sha256": "b080d96dad860c8d1410687b734f478898e167209dc73ec5d185292d33b8113c",
+      "size": 72476
     },
     {
       "path": "functions/device-history.ts",
@@ -738,7 +738,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "ecca1154310d67fbf92d8fc53c45387389961d1ba5608325fd02c8670676f3a1",
+      "sha256": "59b8b30871dc756a94ae30b52021e974c6cbabc9c9b65d4cb3c8a8b73d1a0d0c",
       "size": 202562
     },
     {
@@ -783,7 +783,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "996ab3b6d8c2d6e63b1aa355d40484314c391234b1c25bb9ae27448b93100f79",
+      "sha256": "4c7940a31d675d946c40bb9c2f998d6ac08c1c24ff462ba2d09a31f402cb095a",
       "size": 202566
     },
     {
@@ -873,7 +873,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "bad5a0405c2fc4cd551fac1204659b311405bc2eb9312e8d1db3845817810405",
+      "sha256": "841623fec2d63b3e6ab8562fdd5d022e24d29f03d629b9f97d5e03af40dbacfa",
       "size": 202516
     },
     {
@@ -918,7 +918,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "947cbd4187a5e9df48b01533047d10de072a5677c00cdcd0c57e2597bcce614e",
+      "sha256": "c98a3d5c7f3a122796072e4019037664aff64c45e9085f0c3a5984ef45cf058e",
       "size": 202520
     },
     {
@@ -1018,18 +1018,18 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "446dea468392a5ad8214967c2032e5cdd0474bb3d148bfaaa051eda54980eb1e",
+      "sha256": "4f0f12548311db007b71517777f4d85250c1680c9079be60dba9532d03706c45",
       "size": 407
     },
     {
       "path": "tools/assemble-delivery.cli.json",
-      "sha256": "4d007093a456645dae7437f4bdb354bbdf35206e98b5c686985e31cc41ddc0b9",
-      "size": 2147
+      "sha256": "66e6cada0a9c1a02d756077d328ceef2f05e72b253e8fe5d818f9b0bdda7a23d",
+      "size": 2482
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "259bfa4e17a379e41b2602b1883da023e8dcf82058a4e0ecd139930a5e3536ee",
-      "size": 51481
+      "sha256": "cb6188b04253f773d5a43a078f9e2053e98a3e2ae3357c7f650502a68cb25d06",
+      "size": 57911
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -1118,8 +1118,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "0612f4d1bc8c27c5c870972a761843fd2ff65083e7f9db2fb4cf91fed515372e",
-      "size": 22669
+      "sha256": "c7f523c1b35520771ff9ef9cbf52a27a9b447ba36a0bdf4021412e9783b20f22",
+      "size": 23515
     },
     {
       "path": "tools/device-read.cli.json",
@@ -1218,13 +1218,13 @@
     },
     {
       "path": "tools/open-compile.cli.json",
-      "sha256": "3d734986cd74fc4190d2a280a56f1797538204ef37074e9d813da09a5d79c10b",
-      "size": 4876
+      "sha256": "a310511bec812dbd3bc1ab161c828bed8b8ec8872ff266aee76218bcabf33600",
+      "size": 5164
     },
     {
       "path": "tools/open-compile.ts",
-      "sha256": "1ee42ac79dcfb0db2ea13a542658cf7e9d9bc9a178bd4c44910b270ff1297dab",
-      "size": 20163
+      "sha256": "bf312150d488d5153dbc5ec9ba8dd7a7b1d2e549679f00ac3c1bb5e955ac7d30",
+      "size": 20531
     },
     {
       "path": "tools/open-merge.cli.json",
@@ -1243,8 +1243,8 @@
     },
     {
       "path": "tools/pipeline.ts",
-      "sha256": "7e13737221d873de9748879123d143f115157f4bdc9df340d15ddb3ed277692a",
-      "size": 85208
+      "sha256": "0475e8346667b214b13928f12637f439fe8d532774dc667104b60b21f3e2dbf3",
+      "size": 85680
     },
     {
       "path": "tools/plan-fields.md",

@@ -15,19 +15,23 @@ import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 import { afterDelivery } from '../functions/next-step.ts';
+import { DEFAULT_DOCS, hubTools, NotReady, refusalWords, type CallTool } from './open-compile.ts';
 
-const OPTIONS = { hub: true, runs: true, notes: true, out: true, open: true, recompose: false, name: false } as const;
+const OPTIONS = { hub: true, runs: true, notes: true, out: true, open: true, recompose: false, name: false, 'keep-booking': false, 'release-booking': false } as const;
+const BOOKING_OPTIONS = '；预订另有可选的 --keep-booking yes（保留）和 --release-booking yes（释放），不能一起写';
 function options(argv: string[]): Record<string, string> {
   const values: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i]?.startsWith('--') ? argv[i].slice(2) : '';
-    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) failCall('invalid_parameters', '参数写法：--hub --runs --notes --out --open 必填，--recompose --name 可选，每个只写一次', '请使用 --hub、--runs、--notes、--out 和 --open 的合法写法重试');
+    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) failCall('invalid_parameters', `参数写法：--hub --runs --notes --out --open 必填，--recompose --name 可选，每个只写一次${BOOKING_OPTIONS}`, '请使用 --hub、--runs、--notes、--out 和 --open 的合法写法重试');
     values[key] = argv[i + 1];
   }
   const missing = Object.entries(OPTIONS).filter(([key, required]) => required && !values[key]).map(([key]) => '--' + key);
   if (missing.length) {
-    failCall('invalid_parameters', `缺少参数：${missing.join('、')}${missing.includes('--notes') ? '（--notes 为模型手写的说明 JSON 文件路径）' : ''}${missing.includes('--open') ? '（--open 为这一轮用的开运行记录，pipeline.json 的 open）' : ''}。参数写法：--hub --runs --notes --out --open 必填，--recompose --name 可选，每个只写一次`, '请使用 --hub、--runs、--notes、--out 和 --open 的合法写法重试');
+    failCall('invalid_parameters', `缺少参数：${missing.join('、')}${missing.includes('--notes') ? '（--notes 为模型手写的说明 JSON 文件路径）' : ''}${missing.includes('--open') ? '（--open 为这一轮用的开运行记录，pipeline.json 的 open）' : ''}。参数写法：--hub --runs --notes --out --open 必填，--recompose --name 可选，每个只写一次${BOOKING_OPTIONS}`, '请使用 --hub、--runs、--notes、--out 和 --open 的合法写法重试');
   }
+  if (values['keep-booking'] !== undefined && values['release-booking'] !== undefined) failCall('invalid_parameters', '--keep-booking 和 --release-booking 不能一起写：一个要保留预订，一个要释放它', '只写其中一个后重试');
+  for (const key of ['keep-booking', 'release-booking']) if (values[key] !== undefined && values[key] !== 'yes') failCall('invalid_parameters', `--${key} 只能写 yes`, `要${key === 'keep-booking' ? '保留' : '释放'}预订就写 --${key} yes，不要就不写这个选项`);
   return values;
 }
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
@@ -174,6 +178,52 @@ async function citedStatements(origin: string, bearer: string, cited: ReadonlySe
   return { statements, unavailable };
 }
 
+const RELEASE_TIMEOUT_MS = 60_000;
+// What the client adds to its own words when the Hub does not answer: it tells to run the opening tool again, which is not what a release needs.
+const CLIENT_ADVICE = /；(?:读运行列表确认有没有开出运行，再重跑本工具|核对 --hub 和网络后重跑本工具)$/u;
+interface OpenedBooking { run: string; acquired: boolean; inventory: string }
+/** The booking the open record names and whether this compile took it itself; a record that names no booking says nothing about one. */
+function openedBooking(record: unknown): OpenedBooking | null {
+  if (!isRecord(record)) return null;
+  const acquired = record.booking_acquired;
+  if (acquired !== undefined && acquired !== true) failCall('invalid_parameters', `--open 里的 booking_acquired 是 ${JSON.stringify(acquired).slice(0, 40)}，只能是 true（没有这一项就是这次编译没有自己预订测试环境）`, '--open 写 open-compile.ts 写的文件，不手改');
+  if (typeof record.booking === 'string' && RUN_ID.test(record.booking)) return { run: record.booking, acquired: acquired === true, inventory: typeof record.inventory === 'string' && record.inventory ? record.inventory : DEFAULT_DOCS.inventory };
+  if (acquired === true) failCall('invalid_parameters', '--open 说这次编译自己预订了测试环境，却没有写预订的运行编号（booking）', '--open 写 open-compile.ts 写的文件，不手改');
+  return null;
+}
+type Settled = { run: string; state: 'released'; reason?: string } | { run: string; state: 'kept'; asked: boolean } | { run: string; state: 'not_released'; reason: string } | { run: string; state: 'unknown'; reason: string };
+/** One start_run of the test-bed release action as the test-bed skill gives it: the booking is the predecessor and the booking released, with the inventory the compile was opened with. */
+async function releaseBooking(call: CallTool, run: string, inventory: string): Promise<Settled> {
+  try {
+    const answer = await call('start_run', { pack: 'test-bed', inputs: { inventory: { external: inventory } }, predecessor: run, parameters: { action: 'release', booking: run } });
+    if (!answer.failed) return { run, state: 'released' };
+    const words = refusalWords(answer).slice(0, 300);
+    const errors = Array.isArray(answer.envelope?.errors) ? answer.envelope.errors.filter(isRecord) : [];
+    // test-bed answers a release of a booking that holds nothing with not_holder: nothing is left to release.
+    return errors.some((error) => error.code === 'test-bed.not_holder') ? { run, state: 'released', reason: words } : { run, state: 'not_released', reason: words };
+  } catch (error) {
+    // No answer to go by (no reply in time, no connection, an HTTP error, a broken body): whether the Hub released the booking is not known.
+    return { run, state: 'unknown', reason: (error instanceof NotReady ? error.message.replace(CLIENT_ADVICE, '') : `释放没有做成：${error instanceof Error ? error.message : String(error)}`).slice(0, 300) };
+  }
+}
+async function settleBooking(booking: OpenedBooking, args: Record<string, string>, call: CallTool): Promise<Settled> {
+  if (args['keep-booking'] !== undefined) return { run: booking.run, state: 'kept', asked: true };
+  if (!booking.acquired && args['release-booking'] === undefined) return { run: booking.run, state: 'kept', asked: false };
+  return releaseBooking(call, booking.run, booking.inventory);
+}
+const bookingJson = (settled: Settled) => ({ run: settled.run, state: settled.state, ...('reason' in settled && settled.reason ? { reason: settled.reason } : {}) });
+function bookingReply(settled: Settled): string {
+  if (settled.state === 'released') return '测试环境的预订已释放。';
+  if (settled.state === 'kept') return settled.asked ? '测试环境的预订按要求保留。' : '测试环境的预订仍保留（不是这次编译预订的）。不再使用时请要求释放。';
+  return `测试环境的预订${settled.state === 'unknown' ? '是否已释放未知' : '没有释放'}：${settled.reason.replace(/。+$/u, '')}。请再要求释放一次，或请管理员核对。`;
+}
+function bookingNext(settled: Settled): string[] {
+  if (settled.state === 'kept' && !settled.asked) return [`预订 ${settled.run} 不是这次编译预订的，没有释放；使用者要求时在重跑时加 --release-booking yes，或按 test-bed 技能的 release 释放`];
+  if (settled.state === 'not_released') return [`预订 ${settled.run} 没有释放（原因见 booking.reason）：按 test-bed 技能的 release 再试一次，仍被拒绝就把原话告诉使用者`];
+  if (settled.state === 'unknown') return [`预订 ${settled.run} 是否已释放未知（原因见 booking.reason）：按 test-bed 技能的 release 再试一次，答复没有持有这个预订就是已经释放`];
+  return [];
+}
+
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, now: () => Date = () => new Date(), retry?: RetryControl): Promise<number> {
   try {
     const args = options(argv);
@@ -183,6 +233,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     // The record that opened this compile says who judged its commands and scenarios (no field means Plumb); the report says it in a line the program writes.
     const openRecord = parsedPlanFile(`开运行记录 ${basename(args.open)}`, await readSubmittedFileBytes(args.open, 'open'));
     const judge = openedJudge(openRecord);
+    const booking = openedBooking(openRecord);
+    if (args['release-booking'] !== undefined && booking === null) failCall('invalid_parameters', '--release-booking 没有预订可释放：--open 的开运行记录里没有预订的运行编号（booking）', '--open 写这一轮用的 open-compile.json（pipeline.json 的 open），不手改');
     await emptyOrAbsent(args.out);
     const origin = parseHubOrigin(args.hub);
     const bearer = await requireBearerToken(readToken);
@@ -556,6 +608,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     try { for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }); written.push(path); files[name] = sha256(bytes); } if (canonicalJson(Object.keys(files).sort()) !== canonicalJson(input.artifacts.slice().sort())) failCall('invalid_parameters', '实际写出的文件与报告清单不一致，交付目录已撤回', '请核对运行、范围、产物身份和原始输入，修正后重试'); }
     catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
     const out = resolve(args.out);
+    const bookingOutcome = booking && !hints.length ? await settleBooking(booking, args, hubTools(origin, bearer, RELEASE_TIMEOUT_MS)) : null;
     process.stdout.write(JSON.stringify({
       out,
       totals: assembly.totals,
@@ -564,8 +617,9 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       runs: dispatches.map((d) => d.run),
       added_runs: added,
       hints,
-      reply: replyText(out, Object.keys(files), assembly.cases, input),
-      message: afterDelivery(hints.length),
+      ...(bookingOutcome ? { booking: bookingJson(bookingOutcome) } : {}),
+      reply: [replyText(out, Object.keys(files), assembly.cases, input), ...(bookingOutcome ? [bookingReply(bookingOutcome)] : [])].join('\n'),
+      message: [afterDelivery(hints.length), ...(bookingOutcome ? bookingNext(bookingOutcome) : [])].join('。'),
     }) + '\n');
     return hints.length ? 1 : 0;
   } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }

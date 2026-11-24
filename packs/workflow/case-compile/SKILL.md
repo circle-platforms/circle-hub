@@ -17,10 +17,10 @@ description: 使用者要把一份测试脑图的原始用例编成自动化用�
 
 ## 0. 开运行即核对与逐条流水线
 
-取得或沿用 test-bed 预订后，第一步只跑开运行工具；技能版本、Plumb 或 Jev 的配置、命名文档、预订和脑图是否就绪由它和 Hub 用代码判定：
+取得或沿用 test-bed 预订后，第一步只跑开运行工具（`--booking-acquired yes` 表示预订是这次编译自己取得的，交付完整后由交付工具释放；沿用使用者已有的预订时去掉它）；技能版本、Plumb 或 Jev 的配置、命名文档、预订和脑图是否就绪由它和 Hub 用代码判定：
 
 ```sh
-node '<技能目录>/tools/open-compile.ts' --hub %HUB_URL% --plumb %PLUMB_URL% --subject 'agile:mindmap:<文档号>' --product '<产品>' --build '<构建>' --booking '<test-bed 预订号>' --out 'open-compile.json' <<'EOF'
+node '<技能目录>/tools/open-compile.ts' --hub %HUB_URL% --plumb %PLUMB_URL% --subject 'agile:mindmap:<文档号>' --product '<产品>' --build '<构建>' --booking '<test-bed 预订号>' --booking-acquired yes --out 'open-compile.json' <<'EOF'
 %HUB_TOKEN%
 %PLUMB_API_KEY%
 %JEV_API_KEY%
@@ -113,7 +113,7 @@ node '<技能目录>/tools/download-returns.ts' --hub %HUB_URL% --run '<合并�
 EOF
 ```
 
-带 `--wait 3600` 的下载按 tools/delivery.md 第 1 节后台启动，等结束通知。结束后照它的 `message` 办：全部通过就按 tools/delivery.md 第 5 节组交付目录，有没通过或报告不完整的进下节。设备只经 Hub 或 `test-bed` 到达，严禁终端工具直连（`terminal_connect`/`telnet`/`ssh`）。有失败不停在报告、不问使用者，直接按下节返工；不释放 `test-bed` 预订（返工可复用）；仅使用者要求时发 `{"pack":"test-bed","inputs":{"inventory":{"external":"doc:doc:bed-topology"}},"predecessor":"<预订号>","parameters":{"action":"release","booking":"<同一预订号>"}}`。
+带 `--wait 3600` 的下载按 tools/delivery.md 第 1 节后台启动，等结束通知。结束后照它的 `message` 办：全部通过就按 tools/delivery.md 第 5 节组交付目录，有没通过或报告不完整的进下节。设备只经 Hub 或 `test-bed` 到达，严禁终端工具直连（`terminal_connect`/`telnet`/`ssh`）。有失败不停在报告、不问使用者，直接按下节返工；返工期间不释放 `test-bed` 预订（返工可复用）。交付完整后组交付工具自己释放这次编译取得的预订，沿用使用者已有的预订它不释放；使用者说保留预订时给它加 `--keep-booking yes`，要求释放沿用的预订时加 `--release-booking yes`。别的时候要释放，使用者要求了才发 `{"pack":"test-bed","inputs":{"inventory":{"external":"doc:doc:bed-topology"}},"predecessor":"<预订号>","parameters":{"action":"release","booking":"<同一预订号>"}}`。
 
 ## 5. 失败分析
 

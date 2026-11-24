@@ -6,13 +6,13 @@
 
 每条原始用例独立推进，关口都由 `tools/pipeline.ts` 跑，子代理由编写循环 `workflows/compile-loop.js` 派发：
 
-1. 开运行：`tools/open-compile.ts` 先由代码判定技能版本、Plumb 或 Jev 的配置、命名文档、test-bed 预订和脑图是否就绪，再开用例重组运行（子包 `recompose`）和脚本编写运行，写 `open-compile.json`；给了 `--scope`、`--exclude`、`--version`、`--contract`、`--inventory` 或 `--profile` 的，记录里另有同名的可选字段（`scope` 是 `{words, cases}`，原话照录；`exclude` 是 autoid 列表；`version` 是版本线；`contract`、`inventory`、`profile` 是命名文档），`pipeline.ts` 以后新开脚本编写运行（返工、重新开、交付卷）时照它们带上，新的 `open-compile.json` 再记一遍，记录的 schema 仍是 `open-compile@1`。
+1. 开运行：`tools/open-compile.ts` 先由代码判定技能版本、Plumb 或 Jev 的配置、命名文档、test-bed 预订和脑图是否就绪，再开用例重组运行（子包 `recompose`）和脚本编写运行，写 `open-compile.json`；给了 `--scope`、`--exclude`、`--version`、`--contract`、`--inventory` 或 `--profile` 的，记录里另有同名的可选字段（`scope` 是 `{words, cases}`，原话照录；`exclude` 是 autoid 列表；`version` 是版本线；`contract`、`inventory`、`profile` 是命名文档），`pipeline.ts` 以后新开脚本编写运行（返工、重新开、交付卷）时照它们带上，新的 `open-compile.json` 再记一遍，记录的 schema 仍是 `open-compile@1`。给了 `--booking-acquired yes`（`--booking` 是这次编译自己取得的预订，不是使用者已有的）的，记录里另有 `booking_acquired: true`，`pipeline.ts` 新开脚本编写运行时同样带上，交付工具据此释放预订。
 2. 用例重组：每条原始用例由 `compile-recomposer` 写成重组后的用例，离线自检（`recompose/tools/check-record.ts`）后单条提交，受理后即可编写。
 3. 脚本编写：`compile-writer` 按任务文件、同构建手册和命令树写计划；计划自检（`tools/check-plan.ts`）、命令核验（`tools/cmd-verify-plumb.ts`）和场景保真审计（`tools/fidelity-plumb.ts`，判不了的交 `compile-fidelity` 盲审）都过了才算就绪。
 4. 脚本合并：`pipeline.ts collect` 收拢就绪的计划，`tools/open-merge.ts` 交计划、生成并上传工作簿、开脚本合并运行并提交。
 5. 上机验证：Hub 核对工作簿后派发到测试环境；`tools/download-returns.ts` 等待并下载设备输出。
 6. 失败分析与返工：`compile-attributor` 只读分析失败原因，`pipeline.ts rework` 新开运行、结转通过的计划（`tools/carry-plans.ts`）、重派没过的；每条最多 3 轮。交给重派的编写的上一轮计划（`rework-<n>/prior-plans/`）把展开了的长名字写回定长占位，让同一个名字是同一个占位、长度不同的名字是另一个占位（名字夹在更长的串里时，也按文本里别处找到的固定部分写，如 `x1.` 加占位）；`source-plans`、结转和就绪的副本仍逐字节不变。
-7. 交付：`tools/assemble-delivery.ts` 组交付目录（工作簿、`delivery_report.md`、`delivery.json`）并写最后的回复。
+7. 交付：`tools/assemble-delivery.ts` 组交付目录（工作簿、`delivery_report.md`、`delivery.json`）并写最后的回复；交付完整（没有 hints）时，它在文件写完之后用一次 `test-bed` 的 `release` 释放开运行记录里 `booking_acquired` 的预订（`--keep-booking yes` 保留，`--release-booking yes` 释放沿用的预订，两个不能一起写），结果写进答复的 `booking`、最后回复的末行和 `message`；Hub 拒绝（没有释放）或没有答复（是否已释放未知）都不改变交付和退出码。
 
 开运行的就绪判定把没满足的条件一次说全，写在同一行 `无法编译：…` 里，用“；另：”隔开，什么都不开；只有一个问题时就是它自己的那一句。顺序是：工作流没分配、没装或版本不是 Hub 发布的（先 `recompose`，后 `case-compile`），然后（判断方式是 Plumb 时）没装 `plumb` 技能、第二行标准输入没有 Plumb 密钥、Plumb 没就绪，或（判断方式是 Jev 时）第三行标准输入没有 Jev 密钥（`jev-judge` 技能不用装）。某一项要靠前一项才查得了（工作流没分配就没有版本可比，没有 `plumb` 技能或密钥就问不了 Plumb），就不单独算一个问题。Hub 不可达或读不到工作流列表，以及参数不对，仍单独说。技能没装时的下一步写明用客户端的技能安装从 Hub 装上；Hub 上没有 `plumb` 技能时由管理员先在 Hub 上安装。
 

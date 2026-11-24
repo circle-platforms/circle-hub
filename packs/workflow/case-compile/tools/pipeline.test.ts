@@ -485,7 +485,7 @@ async function afterDevice(rows: (autoids: string[]) => unknown[], options: { ju
   const t = tools((tool, args) => {
     const at = (name: string) => args[args.indexOf(name) + 1]!;
     // The record the tool writes keeps what it was given besides the mind map: the scope it read, the cases left out, the version line and the named documents.
-    if (tool === 'open-compile.ts') { opens++; writeFileSync(at('--out'), JSON.stringify({ ...OPENED, plan_run: opens === 1 ? NEXT_PLAN : `run_01planplanplanplanplan0${opens}`, ...(args.includes('--judge') ? { judge: at('--judge') } : {}), ...Object.fromEntries(['version', 'contract', 'inventory', 'profile'].filter((name) => args.includes(`--${name}`)).map((name) => [name, at(`--${name}`)])), ...(args.includes('--scope') ? { scope: JSON.parse(readFileSync(at('--scope'), 'utf8')) } : {}), ...(args.includes('--exclude') ? { exclude: at('--exclude').split(',') } : {}) })); return ok('就绪'); }
+    if (tool === 'open-compile.ts') { opens++; writeFileSync(at('--out'), JSON.stringify({ ...OPENED, plan_run: opens === 1 ? NEXT_PLAN : `run_01planplanplanplanplan0${opens}`, ...(args.includes('--judge') ? { judge: at('--judge') } : {}), ...Object.fromEntries(['version', 'contract', 'inventory', 'profile'].filter((name) => args.includes(`--${name}`)).map((name) => [name, at(`--${name}`)])), ...(args.includes('--scope') ? { scope: JSON.parse(readFileSync(at('--scope'), 'utf8')) } : {}), ...(args.includes('--exclude') ? { exclude: at('--exclude').split(',') } : {}), ...(args.includes('--booking-acquired') && at('--booking-acquired') === 'yes' ? { booking_acquired: true } : {}) })); return ok('就绪'); }
     if (tool === 'download-run.ts') { mkdirSync(join(at('--out'), 'briefs'), { recursive: true }); writeFileSync(join(at('--out'), 'run.json'), JSON.stringify({ run: NEXT_PLAN })); for (const k of ['00', '01', '02']) writeFileSync(join(at('--out'), 'briefs', `${k}.md`), '合成简报'); return ok(); }
     if (tool === 'carry-plans.ts') {
       mkdirSync(at('--plans'), { recursive: true });
@@ -1673,4 +1673,64 @@ test('the stdin lines of the pipeline are read by position: a blank line stays a
   assert.deepEqual(read('tok\nplumb\njev\n'), ['tok', 'plumb', 'jev']);
   assert.deepEqual(read('tok\n\njev\n'), ['tok', '', 'jev']);
   assert.deepEqual(read('tok\n\n\n'), ['tok', '', '']);
+});
+
+// The compile took its booking itself: the first open said so, and every plan run the pipeline opens afterwards says so again, so that the delivery of the last one still knows.
+const ACQUIRED = { ...OPENED, booking_acquired: true };
+const bookingOptions = (args: string[]) => args.slice(args.indexOf('--booking'), args.indexOf('--booking') + 4);
+const TAKEN = ['--booking', OPENED.booking, '--booking-acquired', 'yes'];
+const writtenOpen = (state: { open?: string }) => JSON.parse(readFileSync(state.open!, 'utf8')) as Record<string, unknown>;
+
+test('a rework of a compile that took its booking itself opens its plan run with that said, and the record of that run says it for the next rework', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+  const [a, b, c] = state.cases.map((row) => row.autoid);
+  await rework(state, ACQUIRED, 'returns-1', 'notes', gates(t.run));
+  assert.deepEqual(bookingOptions(openCalls(t.calls)[0]!), TAKEN);
+  const record = writtenOpen(state);
+  assert.equal(record.booking_acquired, true);
+  await writeFile(join('cases', '01', 'plan', '01.json'), '{"plan":"01 round 2"}');
+  assert.deepEqual((await next(state, '编写 01', gates(t.run))).ready, ['00', '01', '02']);
+  await returned('returns-2', [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+  await rework(state, record, 'returns-2', undefined, gates(t.run));
+  assert.deepEqual(openCalls(t.calls).map(bookingOptions), [TAKEN, TAKEN], 'the second rework is opened from the record of the first');
+  assert.equal(writtenOpen(state).booking_acquired, true);
+  assert.equal(state.open, join('rework-3', 'open-compile.json'));
+});
+
+test('a delivery volume, and the next one opened from the record of the first, are opened with the booking said to be the compile\'s', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+  state.cases[1]!.device_rounds = 2;
+  const [a, , c] = state.cases.map((row) => row.autoid);
+  await rework(state, ACQUIRED, 'returns-1', undefined, gates(t.run));
+  assert.equal(state.open, join('deliver-1', 'open-compile.json'));
+  const first = writtenOpen(state);
+  assert.equal(first.booking_acquired, true);
+  await returned('returns-2', [{ item: a, verdict: 'pass' }, { item: c, verdict: 'fail' }]);
+  await rework(state, first, 'returns-2', undefined, gates(t.run));
+  assert.equal(state.open, join('deliver-2', 'open-compile.json'));
+  assert.deepEqual(openCalls(t.calls).map(bookingOptions), [TAKEN, TAKEN]);
+  assert.equal(writtenOpen(state).booking_acquired, true);
+});
+
+test('a reopen of a compile that took its booking itself says so to the plan run it opens, and the record of that run keeps it', async () => {
+  const { state, t } = await afterDevice(() => []);
+  state.open = 'open-compile.json';
+  await writeFile('refused.json', JSON.stringify({ schema: 'merge-refused@1', plan_run: OPEN.plan_run, merge_run: 'run_01mergemergemergemerge0', cases: [{ item: 'doc:01', requirement: 'workbook_verified', words: '合成：工作簿第 3 行和计划不一致' }] }));
+  await reopen(state, ACQUIRED, 'refused.json', gates(t.run));
+  assert.deepEqual(bookingOptions(openCalls(t.calls)[0]!), TAKEN);
+  assert.equal(state.open, join('reopen-1', 'open-compile.json'));
+  assert.equal(writtenOpen(state).booking_acquired, true);
+});
+
+test('a booking the user already had is not said to be the compile\'s by any later open, and a record that says it in another way is refused before anything is opened', async () => {
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+  const calls = t.calls.length, before = structuredClone(state);
+  for (const mangled of ['yes', 'true', false, 1, null]) {
+    await assert.rejects(rework(state, { ...OPENED, booking_acquired: mangled }, 'returns-1', undefined, gates(t.run)), /--open 里的 booking_acquired 不是 true；--open 写 open-compile\.ts 写的文件，不手改/, String(mangled));
+    await assert.rejects(reopen(state, { ...OPENED, booking_acquired: mangled }, undefined, gates(t.run)), /--open 里的 booking_acquired 不是 true/, String(mangled));
+  }
+  assert.deepEqual([t.calls.length, state], [calls, before], 'nothing was opened and no round was counted');
+  await rework(state, OPENED, 'returns-1', undefined, gates(t.run));
+  assert.equal(openCalls(t.calls)[0]!.includes('--booking-acquired'), false);
+  assert.equal(Object.hasOwn(writtenOpen(state), 'booking_acquired'), false);
 });
