@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { chmod, lstat, mkdir, readFile, stat, utimes, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -14,7 +14,7 @@ import {
   DEFAULT_REQUEST_RECEIVE_TIMEOUT_MS,
 } from './app.ts';
 import { BOT_FILE_RETENTION_MS, botFilesPath } from './bot-files.ts';
-import { channelProfileName, newChannel, setBotProfile } from './personal-bot.ts';
+import { channelProfileName, disableBot, newChannel, setBotProfile } from './personal-bot.ts';
 import { fakeDeps } from './testing.ts';
 
 test(
@@ -571,8 +571,8 @@ test(
 );
 
 test(
-  'T4 + T5(a): default createApp creates 0700 bot-runtime on listen() and keeps default 120s/900s receive timeouts',
-  { timeout: 15_000 },
+  'T4 + T5(a) + S2: default createApp creates 0700 bot-runtime on listen() and keeps default 120s/900s receive timeouts',
+  { timeout: 30_000 },
   async () => {
     const records = await openTestRecords();
     const config: HubConfig = {
@@ -585,6 +585,17 @@ test(
     };
     const { deps } = fakeDeps(config, records);
     const app = createApp(deps, { codeRoot: records.dataDir, closeTimeoutMs: 5000 });
+    const observedTimeouts: number[] = [];
+    const timeoutSpyApp = createApp(deps, {
+      codeRoot: records.dataDir,
+      closeTimeoutMs: 5000,
+      scheduleReceiveTimeout: (fn, ms) => {
+        observedTimeouts.push(ms);
+        const timer = setTimeout(fn, ms);
+        timer.unref();
+        return timer;
+      },
+    });
     const hostServer = createServer(async (req, res) => {
       for await (const _ of req) {
         // drain
@@ -635,7 +646,7 @@ test(
       } as unknown as RequestInit);
       assert.equal(slowBodyRes.status, 200);
 
-      // T4: Default botFileUploadTimeoutMs (900_000) allows an upload > 10ms without 408
+      // T4 + S2: Default botFileUploadTimeoutMs (900_000) allows an upload > 1050ms without 408 and passes 900_000 to scheduleReceiveTimeout
       const filePayload = Buffer.from('default-upload-timeout-ok');
       const fileSha = createHash('sha256').update(filePayload).digest('hex');
       const slowFileRes = await fetch(info.url + botFilesPath + fileSha, {
@@ -646,16 +657,173 @@ test(
         },
         body: (async function* () {
           yield filePayload.subarray(0, 5);
-          await new Promise((r) => setTimeout(r, 25));
+          await new Promise((r) => setTimeout(r, 1100));
           yield filePayload.subarray(5);
         })(),
         duplex: 'half',
       } as unknown as RequestInit);
       assert.equal(slowFileRes.status, 200);
+
+      for (const probe of [
+        { method: 'PUT', url: `${botFilesPath}${fileSha}` },
+        { method: 'PUT', url: `/api/bot-channel/v1/files/${fileSha}` },
+        { method: 'POST', url: '/api/bot/v1' },
+      ]) {
+        const fakeReq = Object.assign(new EventEmitter(), {
+          url: probe.url,
+          method: probe.method,
+          headers: { host: new URL(info.url).host },
+          complete: false,
+          socket: Object.assign(new EventEmitter(), { remoteAddress: '127.0.0.1', destroy() {} }),
+          resume() {},
+          destroy() {},
+        });
+        const fakeRes = Object.assign(new EventEmitter(), {
+          statusCode: 0,
+          headersSent: false,
+          writableEnded: false,
+          writableFinished: false,
+          destroyed: false,
+          setHeader() {},
+          writeHead(code: number) {
+            fakeRes.statusCode = code;
+            fakeRes.headersSent = true;
+          },
+          end() {
+            fakeRes.writableEnded = true;
+            fakeRes.writableFinished = true;
+            fakeRes.emit('finish');
+          },
+          destroy() {
+            fakeRes.destroyed = true;
+          },
+        });
+        timeoutSpyApp.handler(fakeReq as unknown as IncomingMessage, fakeRes as unknown as ServerResponse);
+        fakeReq.emit('end');
+        await new Promise((r) => setImmediate(r));
+      }
+      assert.deepEqual(observedTimeouts, [
+        DEFAULT_BOT_FILE_UPLOAD_RECEIVE_TIMEOUT_MS,
+        DEFAULT_BOT_FILE_UPLOAD_RECEIVE_TIMEOUT_MS,
+        DEFAULT_REQUEST_RECEIVE_TIMEOUT_MS,
+      ]);
       assert.ok(randomUUID());
     } finally {
+      await timeoutSpyApp.close();
       await new Promise<void>((resolve) => hostServer.close(() => resolve()));
       await app.close();
+      await records.close();
+    }
+  },
+);
+
+test(
+  'M2: listen() syncs restored bot config on startup, stays silent when unconfigured or socket absent, and logs masked error without aborting',
+  { timeout: 30_000 },
+  async () => {
+    const records = await openTestRecords();
+    const config: HubConfig = {
+      dataDir: records.dataDir,
+      logDir: join(records.dataDir, 'logs'),
+      host: '127.0.0.1',
+      port: 0,
+      database: records.database,
+      limits: { ...records.config.limits },
+    };
+    const { deps } = fakeDeps(config, records);
+    const runtimeDir = join(records.dataDir, 'bot-runtime');
+    const hostFrames: Array<{ owner?: unknown; op?: { action?: string }; config?: { key?: string } | null; configVersion?: number }> = [];
+    let hostMode: 'ok' | '500' = 'ok';
+    const secretKey = 'startup-sync-secret-999';
+    const hostSock = createServer(async (req, res) => {
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c);
+      hostFrames.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      if (hostMode === '500') {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ message: `startup failed ${secretKey}` }));
+        return;
+      }
+      res.end(JSON.stringify({ ok: true }));
+    });
+    await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
+    await new Promise<void>((resolve) => hostSock.listen(join(runtimeDir, 'host.sock'), resolve));
+
+    try {
+      // 1. Neither personal-bot.model nor personal-bot.model-version -> sends nothing on listen()
+      const logsUnconfigured: string[] = [];
+      const app1 = createApp(deps, { codeRoot: records.dataDir, closeTimeoutMs: 5000, log: (l) => logsUnconfigured.push(l) });
+      await app1.listen();
+      await app1.close();
+      assert.equal(hostFrames.length, 0);
+      assert.equal(logsUnconfigured.length, 0);
+
+      // 2. Configured model (version 2) -> listen() sends configure with configVersion=2
+      const profile = {
+        name: '启动同步机器人',
+        protocol: 'openai',
+        endpoint: 'https://model.example.invalid/v1',
+        model: 'demo',
+        key: secretKey,
+      };
+      await setBotProfile(records.vault, profile);
+      await setBotProfile(records.vault, { ...profile, name: '启动同步机器人v2' });
+      const logsConfigured: string[] = [];
+      const app2 = createApp(deps, { codeRoot: records.dataDir, closeTimeoutMs: 5000, log: (l) => logsConfigured.push(l) });
+      await app2.listen();
+      await app2.close();
+      assert.equal(hostFrames.length, 1);
+      assert.equal(hostFrames[0]?.owner, '_hub');
+      assert.deepEqual(hostFrames[0]?.op, { action: 'configure' });
+      assert.equal(hostFrames[0]?.config?.key, secretKey);
+      assert.equal(hostFrames[0]?.configVersion, 2);
+      assert.equal(logsConfigured.length, 0);
+
+      // 3. Disabled model (version 3 still in vault) -> listen() sends disable with configVersion=3
+      await disableBot(records.vault);
+      const logsDisabled: string[] = [];
+      const app3 = createApp(deps, { codeRoot: records.dataDir, closeTimeoutMs: 5000, log: (l) => logsDisabled.push(l) });
+      await app3.listen();
+      await app3.close();
+      assert.equal(hostFrames.length, 2);
+      assert.equal(hostFrames[1]?.owner, '_hub');
+      assert.deepEqual(hostFrames[1]?.op, { action: 'disable' });
+      assert.equal(hostFrames[1]?.configVersion, 3);
+      assert.equal(logsDisabled.length, 0);
+
+      // 4. Host returns 500 with vault secret -> listen() succeeds and logs 1 masked line
+      await setBotProfile(records.vault, profile);
+      hostMode = '500';
+      const logs500: string[] = [];
+      const app4 = createApp(deps, { codeRoot: records.dataDir, closeTimeoutMs: 5000, log: (l) => logs500.push(l) });
+      await app4.listen();
+      await app4.close();
+      assert.equal(logs500.length, 1);
+      assert.match(logs500[0]!, /^通知机器人宿主配置变更失败（版本 4）：/);
+      assert.ok(logs500[0]!.includes('[REDACTED]'));
+      assert.ok(!logs500[0]!.includes(secretKey));
+
+      // 5. bot-runtime 0755 -> listen() succeeds and logs 1 failure line without aborting
+      await chmod(runtimeDir, 0o755);
+      const logsBadMode: string[] = [];
+      const app5 = createApp(deps, { codeRoot: records.dataDir, closeTimeoutMs: 5000, log: (l) => logsBadMode.push(l) });
+      await app5.listen();
+      await app5.close();
+      assert.equal(logsBadMode.length, 1);
+      assert.match(logsBadMode[0]!, /^通知机器人宿主配置变更失败（版本 4）：bot-runtime 异常：权限为 0755（须为 0700）/);
+      await chmod(runtimeDir, 0o700);
+
+      // 6. Missing host.sock -> listen() succeeds and logs NOTHING
+      await new Promise<void>((resolve) => hostSock.close(() => resolve()));
+      await rm(join(runtimeDir, 'host.sock'), { force: true });
+      const logsMissingSock: string[] = [];
+      const app6 = createApp(deps, { codeRoot: records.dataDir, closeTimeoutMs: 5000, log: (l) => logsMissingSock.push(l) });
+      await app6.listen();
+      await app6.close();
+      assert.equal(logsMissingSock.length, 0);
+    } finally {
+      hostSock.closeAllConnections?.();
+      await new Promise<void>((resolve) => hostSock.close(() => resolve()));
       await records.close();
     }
   },

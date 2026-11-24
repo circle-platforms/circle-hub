@@ -104,7 +104,7 @@ export async function ensureBotRuntimeDir(dataDir: string): Promise<void> {
 
 export type BotRuntimeDirInspection =
   | { ok: true; path: string }
-  | { ok: false; path: string; reason: string };
+  | { ok: false; path: string; reason: string; missing: boolean };
 
 export async function inspectBotRuntimeDir(dataDir: string): Promise<BotRuntimeDirInspection> {
   const runtimeDir = join(dataDir, 'bot-runtime');
@@ -113,19 +113,20 @@ export async function inspectBotRuntimeDir(dataDir: string): Promise<BotRuntimeD
     info = await lstat(runtimeDir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { ok: false, path: runtimeDir, reason: '不存在' };
+      return { ok: false, path: runtimeDir, reason: '不存在', missing: true };
     }
     return {
       ok: false,
       path: runtimeDir,
       reason: `读取状态失败（${(error as NodeJS.ErrnoException).code ?? 'ERROR'}）`,
+      missing: false,
     };
   }
   if (info.isSymbolicLink()) {
-    return { ok: false, path: runtimeDir, reason: '是符号链接' };
+    return { ok: false, path: runtimeDir, reason: '是符号链接', missing: false };
   }
   if (!info.isDirectory()) {
-    return { ok: false, path: runtimeDir, reason: '不是普通目录' };
+    return { ok: false, path: runtimeDir, reason: '不是普通目录', missing: false };
   }
   const mode = info.mode & 0o777;
   if (mode !== 0o700) {
@@ -133,10 +134,11 @@ export async function inspectBotRuntimeDir(dataDir: string): Promise<BotRuntimeD
       ok: false,
       path: runtimeDir,
       reason: `权限为 0${mode.toString(8).padStart(3, '0')}（须为 0700）`,
+      missing: false,
     };
   }
   if (typeof process.getuid === 'function' && info.uid !== process.getuid()) {
-    return { ok: false, path: runtimeDir, reason: '属主不匹配' };
+    return { ok: false, path: runtimeDir, reason: '属主不匹配', missing: false };
   }
   return { ok: true, path: runtimeDir };
 }
@@ -238,6 +240,8 @@ export interface BotFileTransferOptions {
   maxMemberBytes?: number;
   maxMemberFiles?: number;
   retentionMs?: number;
+  onBeforeQuotaLock?: () => Promise<void> | void;
+  onQuotaInspected?: () => Promise<void> | void;
 }
 
 export type ChannelStagingVerifyResult =
@@ -275,7 +279,7 @@ export async function verifyChannelStagedFiles(
     return {
       ok: false,
       status: 503,
-      ...botError('BOT_UPSTREAM_UNAVAILABLE', '机器人附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
+      ...botError('BOT_UPSTREAM_UNAVAILABLE', '机器人私聊附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
     };
   }
   return withQuotaLock(root, 'files', ownerKey, async (key) => {
@@ -363,7 +367,7 @@ export async function commitChannelStagedFiles(
     return {
       ok: false,
       status: 503,
-      ...botError('BOT_UPSTREAM_UNAVAILABLE', '机器人附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
+      ...botError('BOT_UPSTREAM_UNAVAILABLE', '机器人私聊附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
     };
   }
   return withQuotaLock(root, 'files', ownerKey, async (key) => {
@@ -563,12 +567,12 @@ export async function transferBotFile(
   }
   if (req.method === 'GET') {
     const dirCheck = await inspectBotRuntimeDir(root);
-    if (!dirCheck.ok && dirCheck.reason !== '不存在') {
+    if (!dirCheck.ok && !dirCheck.missing) {
       req.resume();
       return sendBotJson(
         res,
         503,
-        botError('BOT_UPSTREAM_UNAVAILABLE', '机器人附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
+        botError('BOT_UPSTREAM_UNAVAILABLE', '机器人私聊附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
       );
     }
     const file = await verifiedBotFile(root, owner, sha, undefined, { now: nowMs, retentionMs });
@@ -635,9 +639,10 @@ export async function transferBotFile(
     return sendBotJson(
       res,
       503,
-      botError('BOT_UPSTREAM_UNAVAILABLE', '机器人附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
+      botError('BOT_UPSTREAM_UNAVAILABLE', '机器人私聊附件运行目录当前不可用', '请管理员检查运行文件夹权限与类型后重试'),
     );
   }
+  await options.onBeforeQuotaLock?.();
   const reservationCheck = await withQuotaLock(root, scope, ownerKey, async (key) => {
     const usage = await pruneAndMeasureDir(dir, nowMs, retentionMs);
     const existing = await verifyFileInDir(dir, sha, declaredLength);
@@ -655,6 +660,7 @@ export async function transferBotFile(
     ) {
       return { ok: false as const };
     }
+    await options.onQuotaInspected?.();
     if (hasExisting) {
       await utimes(join(dir, sha), timestamp, timestamp).catch(() => undefined);
     }

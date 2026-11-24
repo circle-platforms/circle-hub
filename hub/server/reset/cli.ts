@@ -4,6 +4,7 @@ import type { PlatformContext } from '../../platform/api.ts';
 import { RESET_DATA_SCOPE, RESET_SCOPE_LABEL, RESET_ALL_LABEL, parseResetRequest, type ResetPorts, type ResetRequest } from './types.ts';
 import { resetData, ResetBlocked } from './host.ts';
 import { ResetFailure } from './operation.ts';
+import { RecoveryConflictError } from './recovery.ts';
 import { runResetWorker } from './worker.ts';
 
 export function resetUsage(): string {
@@ -41,6 +42,7 @@ export async function resetCommand(args: readonly string[], context: PlatformCon
     return 0;
   } catch (error) {
     if (error instanceof ResetBlocked) for (const problem of error.problems) { io.stderr(problem.reason); io.stderr('下一步：'); io.stderr(problem.nextAction); }
+    else if (error instanceof RecoveryConflictError) io.stderr(error.message);
     else if (error instanceof ResetFailure) io.stderr(error.message);
     else io.stderr('重建未完成：执行条件未能核对；检查私有备份和恢复状态后重试，未输出原始异常');
     return 1;

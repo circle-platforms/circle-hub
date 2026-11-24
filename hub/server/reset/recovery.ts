@@ -7,9 +7,9 @@ import { portOccupied, waitForHealth } from '../../platform/api.ts';
 import { quoteIdentifier, withSession } from '../../platform/api.ts';
 import { assertProtectedFiles } from './protected-files.ts';
 
-class RecoveryConflictError extends Error {
+export class RecoveryConflictError extends Error {
   constructor(conflictPath: string, reason: string) {
-    super(`上次重建的原库或原文件恢复冲突（${conflictPath}：${reason}）；请核对后清理或移走冲突目录再重试，全部归档和恢复记录已保留`);
+    super(`上次重建的原库或原文件恢复冲突（${conflictPath}：${reason}）；服务当前已停止且没有重新启动，请核对后清理或移走冲突目录再重试，全部归档和恢复记录已保留`);
     this.name = 'RecoveryConflictError';
   }
 }

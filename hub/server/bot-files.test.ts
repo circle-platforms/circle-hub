@@ -619,28 +619,61 @@ test(
       const p2 = Buffer.alloc(600, 2);
       const sha2 = createHash('sha256').update(p2).digest('hex');
 
-      // T3(b): Symmetric concurrent existing-file PUTs race between verifyFileInDir / utimes and addInFlight
-      // if withQuotaLock is a no-op (order-independent when serialized: always exactly one 200 and rest 413)
+      // T3(b) + M6: Deterministic concurrency check proving withQuotaLock serializes quota checks before addInFlight.
       const lockUser = await hub.createUser('锁并发测试成员');
       const lockDir = ownerFolder(hub.deps.config.dataDir, lockUser.principal.id);
       await mkdir(lockDir, { recursive: true, mode: 0o700 });
       const lockPayloads = Array.from({ length: 6 }, (_, i) => Buffer.alloc(400, 10 + i));
       const lockShas = lockPayloads.map((buf) => createHash('sha256').update(buf).digest('hex'));
-      for (let i = 0; i < lockPayloads.length; i++) {
-        await writeFile(join(lockDir, lockShas[i]), lockPayloads[i]);
-      }
       const lockReqs = lockPayloads.map((buf) => makeGatedReq(buf));
-      const lockPromises = lockReqs.map((gated, i) =>
+      const req0Inspected = Promise.withResolvers<void>();
+      const allFiveBeforeLock = Promise.withResolvers<void>();
+      let arrivedBeforeLock = 0;
+      t.after(() => {
+        req0Inspected.resolve();
+        allFiveBeforeLock.resolve();
+      });
+      const req0Promise = botFiles.transferBotFile(
+        lockReqs[0].req,
+        lockReqs[0].res,
+        hub.deps.config.dataDir,
+        lockUser.principal.id,
+        lockShas[0],
+        async () => true,
+        {
+          now: () => nowMs,
+          maxMemberBytes: 500,
+          maxMemberFiles: 20,
+          onQuotaInspected: async () => {
+            req0Inspected.resolve();
+            await allFiveBeforeLock.promise;
+            for (let step = 0; step < 10; step++) {
+              await lstat(lockDir);
+            }
+          },
+        },
+      );
+      await Promise.race([req0Inspected.promise, req0Promise]);
+      const otherPromises = lockReqs.slice(1).map((gated, idx) =>
         botFiles.transferBotFile(
           gated.req,
           gated.res,
           hub.deps.config.dataDir,
           lockUser.principal.id,
-          lockShas[i],
+          lockShas[idx + 1],
           async () => true,
-          { now: () => nowMs, maxMemberBytes: 2500, maxMemberFiles: 20 },
+          {
+            now: () => nowMs,
+            maxMemberBytes: 500,
+            maxMemberFiles: 20,
+            onBeforeQuotaLock: () => {
+              arrivedBeforeLock += 1;
+              if (arrivedBeforeLock === 5) allFiveBeforeLock.resolve();
+            },
+          },
         ),
       );
+      const lockPromises = [req0Promise, ...otherPromises];
       await Promise.all(lockReqs.map((gated, i) => Promise.race([lockPromises[i], gated.entered])));
       for (const gated of lockReqs) gated.release();
       await Promise.all(lockPromises);
@@ -883,10 +916,17 @@ test(
         }
       }
 
-      // F10: Enforce inspectBotRuntimeDir on file transfer (0755 and symlink bot-runtime rejected 503 BOT_UPSTREAM_UNAVAILABLE)
+      // F10 + M5 + S1 + S3: Enforce inspectBotRuntimeDir on PUT and GET file transfer (0755 & symlink -> 503 BOT_UPSTREAM_UNAVAILABLE, absent -> 404 BOT_NOT_FOUND)
       const runtimeDir = join(hub.deps.config.dataDir, 'bot-runtime');
       const probeBytes = Buffer.from('runtime-dir-check');
       const probeSha = createHash('sha256').update(probeBytes).digest('hex');
+      const seedRes = await fetch(hub.url + botFilesPath + probeSha, {
+        method: 'PUT',
+        headers: { authorization: 'Bearer ' + user.token, 'content-length': String(probeBytes.length) },
+        body: probeBytes,
+      });
+      assert.equal(seedRes.status, 200);
+
       await chmod(runtimeDir, 0o755);
       const putBadMode = await fetch(hub.url + botFilesPath + probeSha, {
         method: 'PUT',
@@ -894,7 +934,17 @@ test(
         body: probeBytes,
       });
       assert.equal(putBadMode.status, 503);
-      assert.equal(((await putBadMode.json()) as { code?: string }).code, 'BOT_UPSTREAM_UNAVAILABLE');
+      const putBadModeJson = (await putBadMode.json()) as { code?: string; message?: string };
+      assert.equal(putBadModeJson.code, 'BOT_UPSTREAM_UNAVAILABLE');
+      assert.match(putBadModeJson.message ?? '', /机器人私聊附件运行目录当前不可用/);
+
+      const getBadMode = await fetch(hub.url + botFilesPath + probeSha, {
+        headers: { authorization: 'Bearer ' + user.token },
+      });
+      assert.equal(getBadMode.status, 503);
+      const getBadModeJson = (await getBadMode.json()) as { code?: string; message?: string };
+      assert.equal(getBadModeJson.code, 'BOT_UPSTREAM_UNAVAILABLE');
+      assert.match(getBadModeJson.message ?? '', /机器人私聊附件运行目录当前不可用/);
       await chmod(runtimeDir, 0o700);
 
       const symTarget = join(hub.deps.config.dataDir, 'bot-runtime-sym-target');
@@ -908,7 +958,19 @@ test(
       });
       assert.equal(putSymlink.status, 503);
       assert.equal(((await putSymlink.json()) as { code?: string }).code, 'BOT_UPSTREAM_UNAVAILABLE');
+
+      const getSymlink = await fetch(hub.url + botFilesPath + probeSha, {
+        headers: { authorization: 'Bearer ' + user.token },
+      });
+      assert.equal(getSymlink.status, 503);
+      assert.equal(((await getSymlink.json()) as { code?: string }).code, 'BOT_UPSTREAM_UNAVAILABLE');
+
       await rm(runtimeDir, { force: true });
+      const getMissingRuntimeDir = await fetch(hub.url + botFilesPath + probeSha, {
+        headers: { authorization: 'Bearer ' + user.token },
+      });
+      assert.equal(getMissingRuntimeDir.status, 404);
+      assert.equal(((await getMissingRuntimeDir.json()) as { code?: string }).code, 'BOT_NOT_FOUND');
     } finally {
       await hub.close();
     }

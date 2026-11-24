@@ -193,8 +193,16 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
     assert.equal(hostRequests.at(-1)?.configVersion, 3);
     const testMaskedFail = await bridge.run(['bot', 'test'], { token: hub.admin.token });
     assert.notEqual(testMaskedFail.code, 0);
+    assert.equal(hostRequests.at(-1)?.op?.action, 'test');
+    assert.equal(hostRequests.at(-1)?.configVersion, 3);
     assert.ok(!testMaskedFail.stderr.join('\n').includes(modelKey));
     assert.ok(testMaskedFail.stderr.join('\n').includes('[REDACTED]'));
+
+    hostMode = 'ok';
+    const testOk = await bridge.run(['bot', 'test'], { token: hub.admin.token });
+    assert.equal(testOk.code, 0, testOk.stderr.join('\n'));
+    assert.equal(hostRequests.at(-1)?.op?.action, 'test');
+    assert.equal(hostRequests.at(-1)?.configVersion, 3);
 
     await chmod(botRuntimeDir, 0o755);
     const testDirFail = await bridge.run(['bot', 'test'], { token: hub.admin.token });
@@ -499,4 +507,85 @@ test('D1 + H1 + S8 + S12 CLI & Console: bot-secret-change@1 audits, reviewer rem
   } finally {
     await new Promise<void>((resolve) => disableHostServer.close(() => resolve()));
   }
+
+  // M2: bot set & bot disable report 通知宿主失败：<原因> (masked) when host returns 500 or bot-runtime is 0755, and 宿主当前未连接 ONLY when socket is absent
+  const err500Host = createServer(async (req, res) => {
+    for await (const _ of req) {
+      // drain
+    }
+    res.statusCode = 500;
+    res.end(JSON.stringify({ message: `host 500 with ${modelKey}` }));
+  });
+  await new Promise<void>((resolve) => err500Host.listen(join(botRuntimeDir, 'host.sock'), resolve));
+  try {
+    const set500 = await bridge.run(['bot', 'set'], {
+      token: hub.admin.token,
+      secrets: {
+        'bot-model': JSON.stringify({
+          name: '报错测试',
+          protocol: 'openai',
+          model: 'demo-model',
+          endpoint: 'https://model.example.invalid/v1',
+          key: modelKey,
+        }),
+      },
+    });
+    assert.equal(set500.code, 0);
+    assert.match(set500.stdout.join('\n'), /机器人模型配置已保存（通知宿主失败：.*\[REDACTED\].*）/);
+    assert.ok(!set500.stdout.join('\n').includes(modelKey));
+    assert.ok(!set500.stdout.join('\n').includes('宿主当前未连接'));
+    assert.match(set500.stderr.join('\n'), /^通知机器人宿主配置变更失败（版本 7）：/);
+    assert.ok(!set500.stderr.join('\n').includes(modelKey));
+
+    const disable500 = await bridge.run(['bot', 'disable'], { token: hub.admin.token });
+    assert.equal(disable500.code, 0);
+    assert.match(disable500.stdout.join('\n'), /机器人模型已停用（通知宿主失败：.*\[REDACTED\].*）/);
+    assert.ok(!disable500.stdout.join('\n').includes(modelKey));
+    assert.ok(!disable500.stdout.join('\n').includes('宿主当前未连接'));
+
+    await chmod(botRuntimeDir, 0o755);
+    const setBadDir = await bridge.run(['bot', 'set'], {
+      token: hub.admin.token,
+      secrets: {
+        'bot-model': JSON.stringify({
+          name: '目录错误测试',
+          protocol: 'openai',
+          model: 'demo-model',
+          endpoint: 'https://model.example.invalid/v1',
+          key: modelKey,
+        }),
+      },
+    });
+    assert.equal(setBadDir.code, 0);
+    assert.match(setBadDir.stdout.join('\n'), /机器人模型配置已保存（通知宿主失败：bot-runtime 异常：权限为 0755（须为 0700））/);
+    assert.ok(!setBadDir.stdout.join('\n').includes('宿主当前未连接'));
+
+    const disableBadDir = await bridge.run(['bot', 'disable'], { token: hub.admin.token });
+    assert.equal(disableBadDir.code, 0);
+    assert.match(disableBadDir.stdout.join('\n'), /机器人模型已停用（通知宿主失败：bot-runtime 异常：权限为 0755（须为 0700））/);
+    assert.ok(!disableBadDir.stdout.join('\n').includes('宿主当前未连接'));
+    await chmod(botRuntimeDir, 0o700);
+  } finally {
+    await new Promise<void>((resolve) => err500Host.close(() => resolve()));
+  }
+
+  // With 0700 bot-runtime and ENOENT host.sock, bot set & bot disable report 宿主当前未连接
+  await rm(join(botRuntimeDir, 'host.sock'), { force: true });
+  const setMissingSock = await bridge.run(['bot', 'set'], {
+    token: hub.admin.token,
+    secrets: {
+      'bot-model': JSON.stringify({
+        name: '缺失套接字测试',
+        protocol: 'openai',
+        model: 'demo-model',
+        endpoint: 'https://model.example.invalid/v1',
+        key: modelKey,
+      }),
+    },
+  });
+  assert.equal(setMissingSock.code, 0);
+  assert.ok(setMissingSock.stdout.join('\n').includes('机器人模型配置已保存（宿主当前未连接，将在下次调用时同步）'));
+  const disableMissingSock = await bridge.run(['bot', 'disable'], { token: hub.admin.token });
+  assert.equal(disableMissingSock.code, 0);
+  assert.ok(disableMissingSock.stdout.join('\n').includes('机器人模型已停用（宿主当前未连接，将在下次调用时同步）'));
 });

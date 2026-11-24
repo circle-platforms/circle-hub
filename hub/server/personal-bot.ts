@@ -161,12 +161,14 @@ export interface RefreshHostResult {
   notified: boolean;
   configVersion: number;
   detail?: string;
+  socketAbsent?: boolean;
 }
 
 export async function refreshHost(
   dataDir: string,
   vault: Vault,
   log?: (line: string) => void,
+  extraSecrets: readonly string[] = [],
 ): Promise<RefreshHostResult> {
   let configVersion = 0;
   try {
@@ -189,14 +191,42 @@ export async function refreshHost(
         : typeof bodyObj.error === 'string'
           ? bodyObj.error
           : `状态 ${result.status}`);
-    const detail = await maskVaultSecrets(vault, rawDetail).catch(() => rawDetail);
+    const detail = await maskVaultSecrets(vault, rawDetail, extraSecrets).catch(() => rawDetail);
     log?.(`通知机器人宿主配置变更失败（版本 ${configVersion}）：${detail}`);
-    return { notified: false, configVersion, detail };
+    return { notified: false, configVersion, detail, socketAbsent: Boolean(result.socketAbsent) };
+  } catch (error) {
+    const rawDetail = error instanceof Error ? error.message : String(error);
+    const detail = await maskVaultSecrets(vault, rawDetail, extraSecrets).catch(() => rawDetail);
+    log?.(`通知机器人宿主配置变更失败（版本 ${configVersion}）：${detail}`);
+    return { notified: false, configVersion, detail, socketAbsent: false };
+  }
+}
+
+export async function syncHostOnStartup(
+  dataDir: string,
+  vault: Vault,
+  log?: (line: string) => void,
+): Promise<void> {
+  try {
+    const hasEntry = async (name: string): Promise<boolean> => {
+      if (typeof vault.has === 'function') return await vault.has(name);
+      if (typeof vault.getText === 'function') return (await vault.getText(name)) !== null;
+      return false;
+    };
+    const [hasModel, hasVersion] = await Promise.all([hasEntry(profileName), hasEntry(configVersionName)]);
+    if (!hasModel && !hasVersion) return;
+    const res = await refreshHost(dataDir, vault);
+    if (!res.notified && !res.socketAbsent) {
+      log?.(`通知机器人宿主配置变更失败（版本 ${res.configVersion}）：${res.detail ?? '未知错误'}`);
+    }
   } catch (error) {
     const rawDetail = error instanceof Error ? error.message : String(error);
     const detail = await maskVaultSecrets(vault, rawDetail).catch(() => rawDetail);
-    log?.(`通知机器人宿主配置变更失败（版本 ${configVersion}）：${detail}`);
-    return { notified: false, configVersion, detail };
+    try {
+      log?.(`通知机器人宿主配置变更失败：${detail}`);
+    } catch {
+      // Startup sync must never abort server listen.
+    }
   }
 }
 
@@ -206,20 +236,22 @@ export async function disableBot(
 ): Promise<void> {
   const vault = 'records' in vaultOrDeps ? vaultOrDeps.records.vault : vaultOrDeps;
   const dir = 'config' in vaultOrDeps ? vaultOrDeps.config.dataDir : dataDir;
+  const prior = await readBotProfile(vault).catch(() => null);
   const prev = await readStoredConfigVersion(vault);
   await vault.remove(profileName);
   if (await vault.has(reviewerProfileName)) {
     await vault.remove(reviewerProfileName);
   }
   await vault.put(configVersionName, String(prev + 1));
-  if (dir) await refreshHost(dir, vault);
+  if (dir) await refreshHost(dir, vault, undefined, prior ? [prior.key] : undefined);
 }
 
-async function vaultSecrets(vault: Vault): Promise<string[]> {
+async function vaultSecrets(vault: Vault, extraSecrets: readonly string[] = []): Promise<string[]> {
   const found = new Set<string>();
   const add = (value: unknown) => {
     if (typeof value === 'string' && value.length >= 4) found.add(value);
   };
+  for (const extra of extraSecrets) add(extra);
   if (typeof vault.getText === 'function') {
     const modelRaw = await vault.getText(profileName).catch(() => null);
     if (modelRaw) {
@@ -262,8 +294,12 @@ function maskSecrets(text: string, secrets: readonly string[]): string {
   return out;
 }
 
-export async function maskVaultSecrets(vault: Vault, text: string): Promise<string> {
-  const secrets = await vaultSecrets(vault);
+export async function maskVaultSecrets(
+  vault: Vault,
+  text: string,
+  extraSecrets: readonly string[] = [],
+): Promise<string> {
+  const secrets = await vaultSecrets(vault, extraSecrets);
   return maskSecrets(text, secrets);
 }
 
@@ -301,7 +337,7 @@ function mapHostError(
     return {
       status: 422,
       code: 'BOT_INVALID_REQUEST',
-      fact: '机器人附件完整性校验未通过',
+      fact: '机器人私聊附件完整性校验未通过',
       nextAction: '请重新上传附件后重试',
       rawCode,
     };
@@ -382,22 +418,24 @@ export async function callBot(
   directory: string,
   frame: unknown,
   service: 'host' | 'channel' = 'host',
-): Promise<{ status: number; body: unknown; adminDetail?: string }> {
+): Promise<{ status: number; body: unknown; adminDetail?: string; socketAbsent?: boolean }> {
   const dirCheck = await inspectBotRuntimeDir(directory);
   if (!dirCheck.ok) {
     return {
       status: 503,
       body: botError('BOT_UPSTREAM_UNAVAILABLE', '机器人宿主当前不可用', '请管理员检查运行文件夹与宿主进程后稍后重试'),
       adminDetail: `bot-runtime 异常：${dirCheck.reason}`,
+      socketAbsent: dirCheck.missing,
     };
   }
   const bytes = Buffer.from(JSON.stringify(frame));
   return new Promise((resolve) => {
-    const unavailable = (detail?: string) =>
+    const unavailable = (detail?: string, socketAbsent = false) =>
       resolve({
         status: 503,
         body: botError('BOT_UPSTREAM_UNAVAILABLE', '机器人宿主暂不可用', '请管理员检查宿主进程后稍后重试'),
         ...(detail ? { adminDetail: detail } : {}),
+        socketAbsent,
       });
     const req = unixRequest(
       {
@@ -410,7 +448,7 @@ export async function callBot(
       (res) => {
         let length = 0;
         const chunks: Buffer[] = [];
-        res.on('error', (error) => unavailable(error instanceof Error ? error.message : String(error)));
+        res.on('error', (error) => unavailable(error instanceof Error ? error.message : String(error), false));
         res.on('data', (chunk: Buffer) => {
           length += chunk.length;
           if (length > 8 * 1024 * 1024) res.destroy();
@@ -418,14 +456,23 @@ export async function callBot(
         });
         res.on('end', () => {
           try {
-            resolve({ status: res.statusCode ?? 503, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) });
+            resolve({
+              status: res.statusCode ?? 503,
+              body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+              socketAbsent: false,
+            });
           } catch {
-            unavailable('机器人宿主返回了无效的 JSON 响应');
+            unavailable('机器人宿主返回了无效的 JSON 响应', false);
           }
         });
       },
     );
-    req.on('error', (error) => unavailable(error instanceof Error ? error.message : String(error)));
+    req.on('error', (error) =>
+      unavailable(
+        error instanceof Error ? error.message : String(error),
+        (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT',
+      ),
+    );
     req.end(bytes);
   });
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -116,6 +116,13 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     assert.equal(authRes.status, 200);
     assert.deepEqual(await authRes.json(), { bound: true });
 
+    await setBotProfile(hub.records.vault, {
+      name: '合成机器人',
+      protocol: 'openai',
+      endpoint: 'https://model.example.invalid/v1',
+      model: 'demo',
+      key: 'synthetic-key-v1',
+    });
     await setBotProfile(hub.records.vault, {
       name: '合成机器人',
       protocol: 'openai',
@@ -251,6 +258,7 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     assert.match(op1.request, /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.equal(op1.request, op2.request);
     assert.equal(hostCalls[0].owner, member.principal.id);
+    assert.equal(hostCalls[0].configVersion, 2);
 
     // H3: Inbound verified & promoted staged file into member files and appended member-bot-inbound@1 declared record
     await assert.rejects(stat(stagedPath));
@@ -266,6 +274,7 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     assert.ok(!JSON.stringify(inboundRecord?.body).includes('你好'));
 
     assert.deepEqual(await (await postChannel(stored.token, { action: 'next' })).json(), { delivery: null });
+    assert.equal(hostCalls.at(-1)?.configVersion, 2);
 
     const receiptGood = '11111111-1111-4111-8111-111111111111';
     nextDelivery = {
@@ -279,6 +288,8 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     const mismatchRes = await postChannel(stored.token, { action: 'next' });
     assert.deepEqual(await mismatchRes.json(), { delivery: null });
     assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'not_dispatched');
+    assert.equal(hostCalls.at(-2)?.configVersion, 2);
+    assert.equal(hostCalls.at(-1)?.configVersion, 2);
 
     // H3: Channel GET before intent exists for receiptGood is refused
     const getUnintended = await fetch(channelFileUrl, {
@@ -570,6 +581,7 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     });
     assert.equal(issuedRes.status, 200);
     assert.equal((hostCalls.at(-1)!.op as { state?: string }).state, 'issued');
+    assert.equal(hostCalls.at(-1)?.configVersion, 2);
     const receiptIssued = await hub.records.store.getByKey('effect', 'chat-receipt:' + receiptIssuedId);
     assert.equal((receiptIssued?.body as { outcome?: string }).outcome, 'issued');
     assert.equal(receiptIssued?.provenance, 'declared');
@@ -654,6 +666,7 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     assert.ok(!String(missingFileJson.message).includes('不存在'));
     assert.ok(!String(missingFileJson.message).includes('已失效'));
     assert.deepEqual(hostCalls.at(-1)!.op, { action: 'receipt', receipt: missingFileReceipt, state: 'not_dispatched' });
+    assert.equal(hostCalls.at(-1)?.configVersion, 2);
 
     // H13: Malformed delivery from host logs no raw text/file name
     const secretPayloadText = 'CONFIDENTIAL_RAW_DELIVERY_TEXT_123';
@@ -734,6 +747,7 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     nextDelivery = null;
     assert.equal((await postChannel(stored.token, { action: 'next' })).status, 200);
     assert.equal(hostCalls.at(-1)?.config, null);
+    assert.equal(hostCalls.at(-1)?.configVersion, 3);
     const noticeReceiptRes = await postChannel(stored.token, {
       action: 'receipt',
       receipt: noticeReceipt,
@@ -743,6 +757,7 @@ test('bot channel enforces guards, handles inbound/next/receipt records and file
     });
     assert.equal(noticeReceiptRes.status, 200);
     assert.equal(hostCalls.at(-1)?.config, null);
+    assert.equal(hostCalls.at(-1)?.configVersion, 3);
 
     await assert.rejects(
       refreshChannel(hub.deps.config.dataDir, hub.records.vault, new Set(['https://other.example.invalid'])),
@@ -976,6 +991,104 @@ test(
       assert.equal(healRetry.status, 200);
       await assert.rejects(stat(stagedPath2));
       assert.equal((await stat(filesPath2)).isFile(), true);
+
+      // M5 + M3: verifyChannelStagedFiles (bot-files.ts:274) rejects 0755 & symlink bot-runtime before store.put,
+      // and commitChannelStagedFiles failures after store.put (:1101) & on existingInbound retry (:1062) return single-layer { code, message }.
+      const m3Bytes = Buffer.from('m3-m5-inbound-runtime-check');
+      const m3Sha = createHash('sha256').update(m3Bytes).digest('hex');
+      const putM3 = await fetch(hub.url + '/api/bot-channel/v1/files/' + m3Sha, {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer ' + stored.token,
+          'bot-member-subject': subjectHeader,
+          'content-length': String(m3Bytes.length),
+        },
+        body: m3Bytes,
+      });
+      assert.equal(putM3.status, 200);
+
+      const m5Payload = {
+        action: 'inbound',
+        subject: 'ext-r3',
+        platformId: 'msg-m5-verify-dir',
+        text: 'verify dir check',
+        files: [{ sha256: m3Sha, size: m3Bytes.length, name: 'm5.txt' }],
+      };
+      const inboundBeforeM5 = await countAllInbound();
+      await chmod(folder, 0o755);
+      try {
+        const m5BadMode = await postChannel(m5Payload);
+        assert.equal(m5BadMode.status, 503);
+        const m5BadModeJson = (await m5BadMode.json()) as { code?: string; message?: string };
+        assert.equal(m5BadModeJson.code, 'BOT_UPSTREAM_UNAVAILABLE');
+        assert.equal((m5BadModeJson.message?.match(/暂时不可用：/g) ?? []).length, 1);
+        assert.match(m5BadModeJson.message ?? '', /机器人私聊附件运行目录当前不可用/);
+        assert.equal(await countAllInbound(), inboundBeforeM5);
+      } finally {
+        await chmod(folder, 0o700);
+      }
+
+      const symTarget = join(hub.deps.config.dataDir, 'bot-runtime-channel-sym-target');
+      await rename(folder, symTarget);
+      await symlink(symTarget, folder);
+      try {
+        const m5Symlink = await postChannel({
+          ...m5Payload,
+          platformId: 'msg-m5-verify-symlink',
+        });
+        assert.equal(m5Symlink.status, 503);
+        const m5SymlinkJson = (await m5Symlink.json()) as { code?: string; message?: string };
+        assert.equal(m5SymlinkJson.code, 'BOT_UPSTREAM_UNAVAILABLE');
+        assert.equal((m5SymlinkJson.message?.match(/暂时不可用：/g) ?? []).length, 1);
+        assert.equal(await countAllInbound(), inboundBeforeM5);
+      } finally {
+        await rm(folder, { force: true });
+        await rename(symTarget, folder);
+      }
+
+      const m3Payload = {
+        action: 'inbound',
+        subject: 'ext-r3',
+        platformId: 'msg-m3-commit-fail',
+        text: 'commit fail retry',
+        files: [{ sha256: m3Sha, size: m3Bytes.length, name: 'm3.txt' }],
+      };
+      let flippedTo0755 = false;
+      hub.deps.records.store.put = (async (input, tx) => {
+        const putRes = await originalPut(input, tx);
+        if (!flippedTo0755 && input.schema === 'member-bot-inbound@1') {
+          flippedTo0755 = true;
+          await chmod(folder, 0o755);
+        }
+        return putRes;
+      }) as typeof hub.deps.records.store.put;
+
+      try {
+        // Post-store.put commitChannelStagedFiles failure -> hits personal-bot.ts:1101
+        const postPutFail = await postChannel(m3Payload);
+        assert.equal(postPutFail.status, 503);
+        const postPutJson = (await postPutFail.json()) as { code?: string; message?: string };
+        assert.equal(postPutJson.code, 'BOT_UPSTREAM_UNAVAILABLE');
+        assert.equal((postPutJson.message?.match(/暂时不可用：/g) ?? []).length, 1);
+        assert.ok(!String(postPutJson.message).includes('暂时不可用：暂时不可用：'));
+        assert.match(postPutJson.message ?? '', /机器人私聊附件运行目录当前不可用/);
+
+        // Retry while still 0755 -> existingInbound commitChannelStagedFiles failure -> hits personal-bot.ts:1062
+        const existingRetryFail = await postChannel(m3Payload);
+        assert.equal(existingRetryFail.status, 503);
+        const existingRetryJson = (await existingRetryFail.json()) as { code?: string; message?: string };
+        assert.equal(existingRetryJson.code, 'BOT_UPSTREAM_UNAVAILABLE');
+        assert.equal((existingRetryJson.message?.match(/暂时不可用：/g) ?? []).length, 1);
+        assert.ok(!String(existingRetryJson.message).includes('暂时不可用：暂时不可用：'));
+        assert.match(existingRetryJson.message ?? '', /机器人私聊附件运行目录当前不可用/);
+      } finally {
+        hub.deps.records.store.put = originalPut;
+        await chmod(folder, 0o700);
+      }
+
+      const m3Healed = await postChannel(m3Payload);
+      assert.equal(m3Healed.status, 200);
+      assert.deepEqual(await m3Healed.json(), { accepted: true });
 
       // S6: concurrent { unknown, issued } receipt pair serializes deterministically inside withTransaction + store.lock without spurious 409s
       const s6Receipt = 'eeeeeeee-1111-4111-8111-111111111111';

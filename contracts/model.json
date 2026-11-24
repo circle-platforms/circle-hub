@@ -5226,7 +5226,7 @@
       },
       {
         "code": "BOT_QUOTA_EXCEEDED",
-        "when": "成员机器人附件存储已达到配额上限",
+        "when": "成员机器人私聊附件存储已达到配额上限",
         "fix": "等待旧附件到期清理释放配额后再上传",
         "callErrorCategory": "temporarily_unavailable"
       },

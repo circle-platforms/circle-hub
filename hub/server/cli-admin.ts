@@ -40,6 +40,7 @@ import {
   identityProfileName,
   maskVaultSecrets,
   newChannel,
+  readBotConfigState,
   readBotProfile,
   readChannel,
   refreshChannel,
@@ -587,13 +588,21 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
     return 0;
   }
   if (sub === 'disable') {
+    const prior = await readBotProfile(vault).catch(() => null);
     await disableBot(vault);
-    const hostSync = await refreshHost(session.config().dataDir, vault, (msg) => session.err(msg));
+    const hostSync = await refreshHost(
+      session.config().dataDir,
+      vault,
+      (msg) => session.err(msg),
+      prior ? [prior.key] : undefined,
+    );
     await recordBotSecretChange(store, 'model', 'remove', admin.id, new Date().toISOString());
     session.out(
       hostSync.notified
         ? '机器人模型已停用，已通知宿主'
-        : '机器人模型已停用（宿主当前未连接，将在下次调用时同步）',
+        : hostSync.socketAbsent
+          ? '机器人模型已停用（宿主当前未连接，将在下次调用时同步）'
+          : `机器人模型已停用（通知宿主失败：${hostSync.detail ?? '未知错误'}）`,
     );
     return 0;
   }
@@ -605,13 +614,20 @@ export async function botCommand(session: Session, args: readonly string[]): Pro
     session.out(
       hostSync.notified
         ? '机器人模型配置已保存，已通知宿主'
-        : '机器人模型配置已保存（宿主当前未连接，将在下次调用时同步）',
+        : hostSync.socketAbsent
+          ? '机器人模型配置已保存（宿主当前未连接，将在下次调用时同步）'
+          : `机器人模型配置已保存（通知宿主失败：${hostSync.detail ?? '未知错误'}）`,
     );
     return 0;
   }
-  const config = await readBotProfile(vault);
+  const { config, configVersion } = await readBotConfigState(vault);
   if (!config) throw new CliError('机器人模型尚未启用');
-  const result = await callBot(session.config().dataDir, { owner: admin.id, op: { action: 'test' }, config });
+  const result = await callBot(session.config().dataDir, {
+    owner: admin.id,
+    op: { action: 'test' },
+    config,
+    configVersion,
+  });
   if (result.status !== 200 || !(result.body as { tested?: boolean })?.tested) {
     const rawMsg =
       result.adminDetail ??

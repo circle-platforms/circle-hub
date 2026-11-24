@@ -1,3 +1,5 @@
+import { RecoveryConflictError } from './recovery.ts';
+
 export interface ResetHost {
   inspect(): Promise<void>;
   backup(): Promise<void>;
@@ -58,7 +60,8 @@ export async function runReset(host: ResetHost): Promise<ResetOperationReport> {
       await host[stage]();
     }
     return { completed: true };
-  } catch {
+  } catch (error) {
+    if (error instanceof RecoveryConflictError) throw error;
     let rollback: ResetRollbackOutcome = 'not-needed';
     if (stopAttempted) {
       try {

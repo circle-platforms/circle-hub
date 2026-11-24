@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, symlink, writeFile } from 'node:fs/promises';
+import { chmod, link, lstat, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
@@ -466,14 +467,14 @@ test(
           hostBody: { code: 'attachment_integrity_failed', message: 'bad digest' },
           expectStatus: 422,
           expectCode: 'BOT_INVALID_REQUEST',
-          expectPattern: /^参数无效：.*机器人附件完整性校验未通过/,
+          expectPattern: /^参数无效：.*机器人私聊附件完整性校验未通过/,
         },
         {
           hostStatus: 422,
           hostBody: { code: 'invalid_request', message: 'bad attachment' },
           expectStatus: 422,
           expectCode: 'BOT_INVALID_REQUEST',
-          expectPattern: /^参数无效：.*机器人附件完整性校验未通过/,
+          expectPattern: /^参数无效：.*机器人私聊附件完整性校验未通过/,
         },
       ]) {
         hostReply = { status: s14Case.hostStatus, body: s14Case.hostBody };
@@ -527,37 +528,79 @@ test(
       const sockRes = await callBot(symDataDir, { action: 'send', config: { key: echoedKey } });
       assert.equal(sockRes.status, 503);
       assert.equal((sockRes.body as { code?: string }).code, 'BOT_UPSTREAM_UNAVAILABLE');
+      assert.equal(sockRes.socketAbsent, false);
       assert.equal(symConnected, false, 'must NEVER connect through symlinked bot-runtime');
       assert.match(sockRes.adminDetail ?? '', /是符号链接/);
 
-      // S10: inspectBotRuntimeDir & ensureBotRuntimeDir checks
-      const missingDir = join(hub.deps.config.dataDir, 'missing-data');
-      await mkdir(missingDir, { mode: 0o700 });
-      assert.deepEqual(await inspectBotRuntimeDir(missingDir), {
-        ok: false,
-        path: join(missingDir, 'bot-runtime'),
-        reason: '不存在',
-      });
-      await ensureBotRuntimeDir(missingDir);
-      assert.deepEqual(await inspectBotRuntimeDir(missingDir), {
-        ok: true,
-        path: join(missingDir, 'bot-runtime'),
-      });
-      assert.equal(((await lstat(join(missingDir, 'bot-runtime'))).mode & 0o777), 0o700);
+      // S10 + S3 + M2: inspectBotRuntimeDir, ensureBotRuntimeDir, and callBot socketAbsent checks
+      const shortRoot = await mkdtemp(join(tmpdir(), 'pb-'));
+      try {
+        const missingDir = join(shortRoot, 'm');
+        await mkdir(missingDir, { mode: 0o700 });
+        assert.deepEqual(await inspectBotRuntimeDir(missingDir), {
+          ok: false,
+          path: join(missingDir, 'bot-runtime'),
+          reason: '不存在',
+          missing: true,
+        });
+        assert.equal((await callBot(missingDir, { action: 'discover' })).socketAbsent, true);
+        await ensureBotRuntimeDir(missingDir);
+        assert.deepEqual(await inspectBotRuntimeDir(missingDir), {
+          ok: true,
+          path: join(missingDir, 'bot-runtime'),
+        });
+        assert.equal(((await lstat(join(missingDir, 'bot-runtime'))).mode & 0o777), 0o700);
+        assert.equal((await callBot(missingDir, { action: 'discover' })).socketAbsent, true);
 
-      const fileDataDir = join(hub.deps.config.dataDir, 'file-data');
-      await mkdir(fileDataDir, { mode: 0o700 });
-      await writeFile(join(fileDataDir, 'bot-runtime'), 'not-a-dir');
-      assert.equal((await inspectBotRuntimeDir(fileDataDir)).ok, false);
-      const fileInspect = await inspectBotRuntimeDir(fileDataDir);
-      assert.equal(fileInspect.ok ? '' : fileInspect.reason, '不是普通目录');
+        const fileDataDir = join(shortRoot, 'f');
+        await mkdir(fileDataDir, { mode: 0o700 });
+        await writeFile(join(fileDataDir, 'bot-runtime'), 'not-a-dir');
+        const fileInspect = await inspectBotRuntimeDir(fileDataDir);
+        assert.equal(fileInspect.ok, false);
+        assert.equal(fileInspect.ok ? '' : fileInspect.reason, '不是普通目录');
+        assert.equal(fileInspect.ok ? true : fileInspect.missing, false);
+        assert.equal((await callBot(fileDataDir, { action: 'discover' })).socketAbsent, false);
 
-      // ensureBotRuntimeDir never chmods a pre-existing wrong-mode directory
-      const wrongModeDataDir = join(hub.deps.config.dataDir, 'wrong-mode-data');
-      await mkdir(join(wrongModeDataDir, 'bot-runtime'), { recursive: true, mode: 0o755 });
-      await chmod(join(wrongModeDataDir, 'bot-runtime'), 0o755);
-      await ensureBotRuntimeDir(wrongModeDataDir);
-      assert.equal(((await lstat(join(wrongModeDataDir, 'bot-runtime'))).mode & 0o777), 0o755);
+        // ensureBotRuntimeDir never chmods a pre-existing wrong-mode directory
+        const wrongModeDataDir = join(shortRoot, 'w');
+        await mkdir(join(wrongModeDataDir, 'bot-runtime'), { recursive: true, mode: 0o755 });
+        await chmod(join(wrongModeDataDir, 'bot-runtime'), 0o755);
+        await ensureBotRuntimeDir(wrongModeDataDir);
+        assert.equal(((await lstat(join(wrongModeDataDir, 'bot-runtime'))).mode & 0o777), 0o755);
+        const wrongModeInspect = await inspectBotRuntimeDir(wrongModeDataDir);
+        assert.equal(wrongModeInspect.ok ? true : wrongModeInspect.missing, false);
+        assert.equal((await callBot(wrongModeDataDir, { action: 'discover' })).socketAbsent, false);
+
+        // M2: HTTP 500, invalid JSON, and ECONNREFUSED all report socketAbsent: false
+        hostReply = { status: 500, body: { message: 'boom' } };
+        const err500 = await callBot(hub.deps.config.dataDir, { action: 'discover' });
+        assert.equal(err500.status, 500);
+        assert.equal(err500.socketAbsent, false);
+
+        const badJsonDir = join(shortRoot, 'j');
+        await mkdir(join(badJsonDir, 'bot-runtime'), { recursive: true, mode: 0o700 });
+        const badJsonSock = createServer((_req, res) => res.end('not-json'));
+        await new Promise<void>((resolve) => badJsonSock.listen(join(badJsonDir, 'bot-runtime', 'host.sock'), resolve));
+        const badJsonRes = await callBot(badJsonDir, { action: 'discover' });
+        assert.equal(badJsonRes.status, 503);
+        assert.equal(badJsonRes.socketAbsent, false);
+        await new Promise<void>((resolve) => badJsonSock.close(() => resolve()));
+
+        // Stale unix socket file left on disk produces ECONNREFUSED -> socketAbsent: false
+        const staleSockDir = join(shortRoot, 's');
+        await mkdir(join(staleSockDir, 'bot-runtime'), { recursive: true, mode: 0o700 });
+        const tempSock = createServer((_req, res) => res.end('{}'));
+        const tempSockPath = join(staleSockDir, 'bot-runtime', 'temp.sock');
+        const staleHostSock = join(staleSockDir, 'bot-runtime', 'host.sock');
+        await new Promise<void>((resolve) => tempSock.listen(tempSockPath, resolve));
+        await link(tempSockPath, staleHostSock);
+        await new Promise<void>((resolve) => tempSock.close(() => resolve()));
+        const connRefusedRes = await callBot(staleSockDir, { action: 'discover' });
+        assert.equal(connRefusedRes.status, 503);
+        assert.equal(connRefusedRes.socketAbsent, false);
+      } finally {
+        await rm(shortRoot, { recursive: true, force: true });
+      }
     } finally {
       await new Promise<void>((resolve) => symHost.close(() => resolve()));
       await new Promise<void>((resolve) => host.close(() => resolve()));

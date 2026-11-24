@@ -97,7 +97,7 @@ export const PROTOCOL_CODES = {
   BOT_NOT_FOUND: { when: '机器人接口请求的目标对象不存在', fix: '核对目标标识后重试' },
   BOT_VERSION_INVALID: { when: '请求头 Bot-Client-Version 不是有效的 SemVer 2.0.0 版本号', fix: '在请求头中提供符合 major.minor.patch 格式的客户端版本号后重试' },
   BOT_VERSION_MISMATCH: { when: '客户端主次版本号与当前机器人协议版本不兼容', fix: '将客户端更新到与当前 Hub 兼容的版本后重试' },
-  BOT_QUOTA_EXCEEDED: { when: '成员机器人附件存储已达到配额上限', fix: '等待旧附件到期清理释放配额后再上传' },
+  BOT_QUOTA_EXCEEDED: { when: '成员机器人私聊附件存储已达到配额上限', fix: '等待旧附件到期清理释放配额后再上传' },
   BOT_UPSTREAM_UNAVAILABLE: { when: '机器人后端服务当前不可用', fix: '请管理员检查机器人宿主进程与模型服务配置后稍后重试' },
   BOT_REQUEST_TIMEOUT: { when: '接收机器人请求体超时', fix: '检查网络连接后重新发送完整请求' },
   BOT_CONFLICT: { when: '机器人请求与现有记录状态冲突', fix: '核对当前记录状态后使用一致的请求重试' },

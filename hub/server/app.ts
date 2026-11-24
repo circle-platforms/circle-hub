@@ -31,7 +31,7 @@ import {
   pruneExpiredBotFiles,
 } from './bot-files.ts';
 import { botError } from './access-auth.ts';
-import { chatPath, handleBot, handleBotChannel, maskVaultSecrets, refreshChannel } from './personal-bot.ts';
+import { chatPath, handleBot, handleBotChannel, maskVaultSecrets, refreshChannel, syncHostOnStartup } from './personal-bot.ts';
 import { handleMcp } from './mcp.ts';
 import { AuthorizationStore, RegistrationWindow, handleOAuth, issuerOf, oauthTarget, resourceMetadataUrl } from './oauth.ts';
 import { SYNC_DISCOVERY_PATH, handleSyncDiscovery } from './sync-discovery.ts';
@@ -398,6 +398,9 @@ export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutO
       await ensureBotRuntimeDir(deps.config.dataDir);
       await cleanupBotRuntimeTempFiles(deps.config.dataDir, { now: clock().getTime() });
       await pruneExpiredBotFiles(deps.config.dataDir, { now: clock().getTime() });
+      if (typeof deps.records?.vault?.getText === 'function') {
+        await syncHostOnStartup(deps.config.dataDir, deps.records.vault, log);
+      }
     }
     const created = createServer({ requestTimeout: 0, headersTimeout: 30_000, keepAliveTimeout: 5_000 }, handler);
     await new Promise<void>((resolve, reject) => {
@@ -446,7 +449,7 @@ export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutO
           await pruneExpiredBotFiles(deps.config.dataDir, { now: clock().getTime() });
         })()
           .catch((error) => {
-            log(`机器人附件过期清理失败：${describeError(error)}`);
+            log(`机器人私聊附件过期清理失败：${describeError(error)}`);
           })
           .finally(() => {
             retentionSweep = undefined;

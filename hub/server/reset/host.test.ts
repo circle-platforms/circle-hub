@@ -6,15 +6,16 @@ import { tmpdir } from 'node:os';
 import { PackManifest } from '../../../contracts/src/pack.ts';
 import { DEFAULT_LIMITS } from '../../config/index.ts';
 import { migrateRecords, openRecords, canonicalBytes, digestOf } from '../../records/api.ts';
-import { createContext, postgresFor, nativeResetBackup, verifyBackup, restoreBackup } from '../../platform/api.ts';
+import { createContext, postgresFor, nativeResetBackup, verifyBackup, restoreBackup, agentFor, settingsOf } from '../../platform/api.ts';
 import { layoutAt, ensureLayout } from '../../platform/api.ts';
 import { newSettingsFile, writeSettingsFile } from '../../platform/api.ts';
 import { ensureDatabaseRunning } from '../../platform/api.ts';
 import { withSession } from '../../platform/api.ts';
 import { exit, recordingRunner, freePort, socketPort, libpqAvailable, LIBPQ_MISSING } from '../../platform/test-support.ts';
 import { createResetConfigurationPorts } from '../api.ts';
+import { resetCommand } from './cli.ts';
 import { resetData, previewReset, resetRecordTally } from './host.ts';
-import { recoverPendingReset } from './recovery.ts';
+import { RecoveryConflictError, recoverPendingReset } from './recovery.ts';
 import { protectedFiles } from './protected-files.ts';
 import { ResetFailure, type ResetStage } from './operation.ts';
 import type { ResetDataScope } from './types.ts';
@@ -476,4 +477,94 @@ test('F6: recoverPendingReset throws explicit conflict error naming path when bo
   assert.equal(await readFile(conflictingFilePath, 'utf8'), 'staged-bytes-alpha');
   await assert.rejects(stat(stageDir), { code: 'ENOENT' });
   await assert.rejects(stat(journalPath), { code: 'ENOENT' });
+});
+
+test('M1: resetCommand surfaces RecoveryConflictError with path, reason, remediation, and stopped service state', { timeout: 120_000, skip: libpq ? false : LIBPQ_MISSING }, async t => {
+  const f = await fixture(); t.after(() => f.close());
+  let serviceLoaded = true;
+  let serviceRunning = true;
+  const launchctlCalls: string[][] = [];
+  const { runner } = recordingRunner(call => {
+    if (!call.command.endsWith('launchctl')) return undefined;
+    launchctlCalls.push([...call.args]);
+    const sub = call.args[0];
+    if (sub === 'print') {
+      return serviceLoaded
+        ? exit(0, serviceRunning ? 'state = running\npid = 42424\n' : 'state = waiting\n')
+        : exit(113, 'not loaded');
+    }
+    if (sub === 'bootout') {
+      serviceLoaded = false;
+      serviceRunning = false;
+      return exit(0);
+    }
+    if (sub === 'bootstrap') {
+      serviceLoaded = true;
+      serviceRunning = true;
+      return exit(0);
+    }
+    if (sub === 'kickstart') {
+      serviceRunning = true;
+      return exit(0);
+    }
+    return exit(0);
+  });
+  const settings = await settingsOf(f.context);
+  await mkdir(join(f.parent, 'agents'), { recursive: true });
+  await writeFile(join(f.parent, 'agents', `${settings.label}.plist`), '<plist/>');
+  const context = createContext(
+    { CIRCLE_HUB_DATA_DIR: f.layout.root },
+    { platform: 'darwin', home: f.parent, launchAgentsDir: join(f.parent, 'agents'), layout: f.layout, runner, libpqBin: libpq },
+  );
+
+  const memberHash = '0'.repeat(64);
+  const fileSha = 'e'.repeat(64);
+  const filesDir = join(f.layout.root, 'bot-runtime', 'files', memberHash);
+  const conflictingFilePath = join(filesDir, fileSha);
+  await mkdir(filesDir, { recursive: true, mode: 0o700 });
+  await writeFile(conflictingFilePath, 'staged-original-bytes');
+
+  await assert.rejects(
+    resetData(context, { scopes: 'all', keepConfig: false }, {
+      hostTransform(host) {
+        return {
+          ...host,
+          restart: async () => { throw new Error('SyntheticCrashAtRestart'); },
+          rollback: async () => {},
+        };
+      },
+    }),
+    (error: unknown) => error instanceof ResetFailure && error.stage === 'restart',
+  );
+
+  // Simulate service running again and recreating a conflicting file under bot-runtime/files/...
+  serviceLoaded = true;
+  serviceRunning = true;
+  launchctlCalls.length = 0;
+  await mkdir(filesDir, { recursive: true, mode: 0o700 });
+  await writeFile(conflictingFilePath, 'conflicting-recreated-bytes');
+
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const code = await resetCommand(
+    ['--scope', 'history'],
+    context,
+    { cwd: f.layout.root, env: {}, stdout: line => stdout.push(line), stderr: line => stderr.push(line) },
+    {},
+  );
+  assert.equal(code, 1);
+  const errText = stderr.join('\n');
+  assert.match(errText, /^上次重建的原库或原文件恢复冲突（/);
+  assert.ok(errText.includes(conflictingFilePath), errText);
+  assert.ok(errText.includes('同名文件内容不一致'), errText);
+  assert.ok(errText.includes('服务当前已停止且没有重新启动'), errText);
+  assert.ok(errText.includes('请核对后清理或移走冲突目录再重试，全部归档和恢复记录已保留'), errText);
+  assert.ok(!errText.includes('尚未尝试停止服务'), errText);
+  assert.equal(RecoveryConflictError.name, 'RecoveryConflictError');
+
+  const statusAfter = await agentFor(context, settings).status();
+  assert.equal(statusAfter.running, false);
+  assert.equal(statusAfter.loaded, false);
+  assert.ok(launchctlCalls.some(args => args[0] === 'bootout'));
+  assert.ok(!launchctlCalls.some(args => args[0] === 'bootstrap' || args[0] === 'kickstart'));
 });
