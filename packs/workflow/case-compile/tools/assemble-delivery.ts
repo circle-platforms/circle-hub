@@ -45,9 +45,6 @@ interface FrozenScope { words: string; cases: string[] }
 function frozenScopeOf(run: Record<string, unknown>, label: string): FrozenScope | null {
   const p = run.parameters;
   if (!isRecord(p) || p.scope === undefined) return null;
-  if (Array.isArray(p.exclude) && p.exclude.length > 0) {
-    failCall('invalid_parameters', `Hub 运行记录 ${label} 同时写入了 parameters.scope 与 parameters.exclude，二者互斥。请重新用 start_run 单独使用其中一项后重试`, '请重新开运行并传入一致的冻结范围后重试');
-  }
   const raw = p.scope;
   if (!isRecord(raw) || Object.keys(raw).some((k) => k !== 'words' && k !== 'cases') || typeof raw.words !== 'string' || !raw.words.trim() || !Array.isArray(raw.cases) || !raw.cases.length || raw.cases.some((v) => typeof v !== 'string' || !v) || new Set(raw.cases).size !== raw.cases.length) {
     failCall('invalid_parameters', `Hub 运行记录 ${label} 中的 parameters.scope 不完整或格式无效。请重新用 start_run 按规范传入 parameters.scope 并完成上机验证后重试`, '请重新开运行并传入一致的冻结范围后重试');

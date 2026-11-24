@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.26.11",
+  "version": "3.26.12",
   "kind": "workflow",
   "dependencies": [
     {
@@ -508,8 +508,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "51cdf9b0939d899fbfffd380ee96dd018a0e5473d22e25daecabe6624ed62435",
-      "size": 32295
+      "sha256": "a53435908a0b62e17da4334f871fe9b238e2c0d7fcb4ca00987a0011f614aa91",
+      "size": 32952
     },
     {
       "path": "functions/quote-sources.ts",
@@ -738,7 +738,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "59b8b30871dc756a94ae30b52021e974c6cbabc9c9b65d4cb3c8a8b73d1a0d0c",
+      "sha256": "c6bef79e200020fab293f30ca3513b12c4171578fbbbdf50cd1f23ee42c5dade",
       "size": 202562
     },
     {
@@ -783,7 +783,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "4c7940a31d675d946c40bb9c2f998d6ac08c1c24ff462ba2d09a31f402cb095a",
+      "sha256": "1882ffc4c18d27bb23f8ff11e3198bda269674b029d641e32219acc7976d756a",
       "size": 202566
     },
     {
@@ -873,7 +873,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "841623fec2d63b3e6ab8562fdd5d022e24d29f03d629b9f97d5e03af40dbacfa",
+      "sha256": "0c6660e187023247f56de70928beaa63ca6f01832f47c4ad14b827ab5a5692b8",
       "size": 202516
     },
     {
@@ -918,7 +918,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "c98a3d5c7f3a122796072e4019037664aff64c45e9085f0c3a5984ef45cf058e",
+      "sha256": "76c8a783fcf09ed0fbe6c0fb2f82b32008711939df4ec5a9bf768feaca503a01",
       "size": 202520
     },
     {
@@ -1018,7 +1018,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "4f0f12548311db007b71517777f4d85250c1680c9079be60dba9532d03706c45",
+      "sha256": "3a4ea55dae4e74da88dda4aea00f59e843a5fa5a609d5292d7a85551e7d0e02a",
       "size": 407
     },
     {
@@ -1028,8 +1028,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "cb6188b04253f773d5a43a078f9e2053e98a3e2ae3357c7f650502a68cb25d06",
-      "size": 57911
+      "sha256": "0633538c47aaa787c7051c3381036e17763b4e67a48836e98abce3bf34a76b6a",
+      "size": 57593
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -1043,8 +1043,8 @@
     },
     {
       "path": "tools/carry-plans.ts",
-      "sha256": "1c364db37ae7caaf378a9f5566a1164d30954553b70a813cb08d720a1666b042",
-      "size": 26020
+      "sha256": "ec105fa9cc332d46167fdcbe99108c1d113f423247f25949de9c7a7a32e789b9",
+      "size": 25745
     },
     {
       "path": "tools/case-writers/extension.json",
@@ -1303,8 +1303,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "b0cdd500cc2965d975c71d53b2e52261a7a7824d5c5ddbf53d07d35564d71671",
-      "size": 8304
+      "sha256": "134a9af7dbaadd4d5b7463ecdfa9f6d0c852fd3832ae19f35ad44323793aba3e",
+      "size": 8517
     },
     {
       "path": "workflows/compile-loop.js",

@@ -224,6 +224,15 @@ test('carry-plans fails closed on mismatched build/root/sources, changed item sp
     assert.ok(scopedOut.skipped.out_of_scope.includes('100000000000000002'));
     assert.deepEqual((await readdir(join(w.root, 'plans_scoped'))).sort(), ['00.json']);
 
+    run2BadBuild.parameters = { scope: { words: '只要 1 号', cases: ['100000000000000001', '100000000000000004'] }, exclude: ['100000000000000004'] };
+    await writeFile(join(w.targetDir, 'run.json'), JSON.stringify(run2BadBuild));
+    const scopedExcluded = await runCli(['--source', 'run1', '--target', 'run2', '--source-plans', 'plans1', '--plans', 'plans_scoped_excluded']);
+    assert.equal(scopedExcluded.code, 0, scopedExcluded.stderr);
+    const scopedExcludedOut = JSON.parse(scopedExcluded.stdout);
+    assert.ok(scopedExcludedOut.skipped.excluded.includes('100000000000000004'), JSON.stringify(scopedExcludedOut.skipped));
+    assert.ok(scopedExcludedOut.skipped.out_of_scope.includes('100000000000000002'));
+    assert.deepEqual((await readdir(join(w.root, 'plans_scoped_excluded'))).sort(), ['00.json']);
+
     const collision = await runCli(['--source', 'run1', '--target', 'run2', '--source-plans', 'plans1', '--plans', 'plans_scoped']);
     assert.equal(collision.code, 1);
     assert.match(collision.stderr, /^已被占用：.*已存在/);

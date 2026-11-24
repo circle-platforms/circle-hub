@@ -234,6 +234,21 @@ test('a product publication, genuine independent adjudication and append-only re
         assert.equal(matchingCompile.answer.call_result, 'ok', JSON.stringify(matchingCompile.answer.errors));
         assert.deepEqual(matchingCompile.answer.run!.items.map((i: any) => i.fields.autoid), [firstId]);
         assert.equal((await lateOf(matchingCompile.answer.run!))(matchingCompile.answer.run!.items[0])?.recomposition?.record?.status, 'complete');
+
+        const bothScope = { words: '本次范围是这两条', cases: [firstId, secondId] };
+        const bothStart = await h.service.startRunDetailed(h.alice, { ...start, pack: 'recompose', inputs: { subject: { external: multiExternal } }, parameters: { case_depths: [1], scope: bothScope } }, call());
+        assert.equal(bothStart.answer.call_result, 'ok', JSON.stringify(bothStart.answer.errors));
+        const bothRun = bothStart.answer.run!;
+        const bothDone = await h.service.submitResult(h.alice, submissionFor(bothRun as any, bothRun.items.map((item: any) => ({ item: item.id, method: { kind: 'recomposed', text: '从作者动作取验证方法', sources: [item.fields.atoms[0].reference], basis: '合成范围验证' } })), 'scripted-recomposer') as any, call());
+        assert.equal(bothDone.acceptance, 'accepted', JSON.stringify(bothDone.errors));
+        const bothRecord = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: bothRun.run })).items[0];
+        const bothCompileInputs = { ...compileInputs, subject: { external: multiExternal }, recomposition_run: { reference: 'rec:' + bothRecord.digest }, recomposition_result: { run: bothRun.run } };
+        const laterPlanRun = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: bothCompileInputs, parameters: { scope: bothScope, exclude: [secondId] } }, call());
+        assert.equal(laterPlanRun.answer.call_result, 'ok', JSON.stringify(laterPlanRun.answer.errors));
+        assert.deepEqual(laterPlanRun.answer.run!.items.map((i: any) => i.fields.autoid), [firstId], 'the excluded case of the scope is not compiled');
+        const outsideExclude = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: scopedCompileInputs, parameters: { scope: { words: '本次仅范围验证第一条', cases: [firstId] }, exclude: [secondId] } }, call());
+        assert.equal(outsideExclude.answer.call_result, 'error', 'an exclude that names a case outside the scope is refused');
+        assert.match(JSON.stringify(outsideExclude.answer.errors), /case-compile\.invalid_parameter.*\/parameters\/exclude|\/parameters\/exclude.*case-compile\.invalid_parameter/);
     }
     finally {
         await h?.close();

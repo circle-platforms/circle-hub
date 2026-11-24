@@ -118,9 +118,6 @@ async function readRunRecord(cwd: ResolvedCwd, dirRel: string, label: string): P
   );
   let scopeCases: Set<string> | null = null;
   if (params.scope !== undefined) {
-    if (excluded.size > 0) {
-      throw new CallFailure('invalid_parameters', `参数无效：${label}/run.json 同时存在 parameters.scope 与 parameters.exclude`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
-    }
     if (
       !isRecord(params.scope) ||
       !Array.isArray(params.scope.cases) ||
