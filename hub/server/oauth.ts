@@ -21,7 +21,7 @@
 // ordinary Hub token; a refusal answers it with access_denied. Device requests live in memory for DEVICE_REQUEST_TTL_MS.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { isTokenScope, type PermissionRole, type TokenScope } from '../../contracts/generated/vocabulary.ts';
+import { TOKEN_SCOPE, isTokenScope, type PermissionRole, type TokenScope } from '../../contracts/generated/vocabulary.ts';
 import { LimitError, RecordsError, type IssuedToken, type OAuthClient, type Principals } from '../records/api.ts';
 import { cookie } from './console/session.ts';
 import { mediaTypeOf, readBody, sendJson, setCommonHeaders } from './http.ts';
@@ -506,7 +506,7 @@ async function formBody(request: IncomingMessage, response: ServerResponse): Pro
 
 /** RFC 9728: the resource is /mcp, its authorization server this Hub on the same origin. */
 function protectedResource(issuer: string): Record<string, unknown> {
-  return { resource: `${issuer}/mcp`, authorization_servers: [issuer], scopes_supported: ['bot'], bearer_methods_supported: ['header'], resource_name: 'circle-hub' };
+  return { resource: `${issuer}/mcp`, authorization_servers: [issuer], scopes_supported: [...TOKEN_SCOPE], bearer_methods_supported: ['header'], resource_name: 'circle-hub' };
 }
 
 /** RFC 8414: public clients only, the authorization code with PKCE S256 or the device code (RFC 8628 4), no refresh token. */
@@ -518,7 +518,7 @@ function authorizationServer(issuer: string): Record<string, unknown> {
     token_endpoint: `${issuer}/oauth/token`,
     registration_endpoint: `${issuer}/oauth/register`,
     revocation_endpoint: `${issuer}/oauth/revoke`,
-    scopes_supported: ['bot'],
+    scopes_supported: [...TOKEN_SCOPE],
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
     grant_types_supported: ['authorization_code', DEVICE_CODE_GRANT],

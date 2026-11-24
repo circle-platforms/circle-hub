@@ -636,31 +636,17 @@ test('personal-bot rejects unconsented OAuth tokens with insufficient_scope, all
     const reg = await fetch(hub.url + '/oauth/register', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ client_name: 'Desktop Client', redirect_uris: [redirect], token_endpoint_auth_method: 'none' }),
+      body: JSON.stringify({
+        client_name: 'Desktop Client',
+        redirect_uris: [redirect],
+        grant_types: ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code'],
+        token_endpoint_auth_method: 'none',
+      }),
     });
     assert.equal(reg.status, 201);
     const clientId = ((await reg.json()) as { client_id: string }).client_id;
 
-    async function authorizeWithChoice(checkBot: boolean): Promise<string> {
-      const verifier = randomUUID() + '-' + randomUUID();
-      const challenge = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))).toString('base64url');
-      const authRes = await fetch(
-        hub.url +
-          `/oauth/authorize?${new URLSearchParams({
-            response_type: 'code',
-            client_id: clientId,
-            redirect_uri: redirect,
-            code_challenge: challenge,
-            code_challenge_method: 'S256',
-            state: 'st',
-            resource: hub.mcpUrl,
-            scope: 'bot',
-          })}`,
-        { redirect: 'manual' },
-      );
-      assert.equal(authRes.status, 303);
-      const authPath = authRes.headers.get('location')!;
-      const bound = (authRes.headers.getSetCookie?.() ?? [authRes.headers.get('set-cookie') ?? '']).join('; ').split(';')[0];
+    async function approveRequest(authPath: string, bound: string, checkBot: boolean): Promise<Response> {
       const inv = await hub.records.principals.invite(hub.admin.principal, user.user.id);
       const page1 = await fetch(hub.url + authPath, { headers: { cookie: bound } });
       const csrf1 = /name="csrf" value="([^"]+)"/.exec(await page1.text())![1];
@@ -688,6 +674,30 @@ test('personal-bot rejects unconsented OAuth tokens with insufficient_scope, all
         }),
       });
       assert.equal(decision.status, 303);
+      return decision;
+    }
+
+    async function authorizeWithChoice(checkBot: boolean): Promise<string> {
+      const verifier = randomUUID() + '-' + randomUUID();
+      const challenge = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))).toString('base64url');
+      const authRes = await fetch(
+        hub.url +
+          `/oauth/authorize?${new URLSearchParams({
+            response_type: 'code',
+            client_id: clientId,
+            redirect_uri: redirect,
+            code_challenge: challenge,
+            code_challenge_method: 'S256',
+            state: 'st',
+            resource: hub.mcpUrl,
+            scope: 'bot',
+          })}`,
+        { redirect: 'manual' },
+      );
+      assert.equal(authRes.status, 303);
+      const authPath = authRes.headers.get('location')!;
+      const bound = (authRes.headers.getSetCookie?.() ?? [authRes.headers.get('set-cookie') ?? '']).join('; ').split(';')[0];
+      const decision = await approveRequest(authPath, bound, checkBot);
       const code = new URL(decision.headers.get('location')!).searchParams.get('code')!;
       const tokRes = await fetch(hub.url + '/oauth/token', {
         method: 'POST',
@@ -699,11 +709,53 @@ test('personal-bot rejects unconsented OAuth tokens with insufficient_scope, all
           redirect_uri: redirect,
           code_verifier: verifier,
           resource: hub.mcpUrl,
+          ...(!checkBot ? { scope: 'bot' } : {}),
         }),
       });
       assert.equal(tokRes.status, 200);
       const tokJson = (await tokRes.json()) as { access_token: string; scope?: string };
       assert.equal(tokJson.scope, checkBot ? 'bot' : '');
+      assert.deepEqual((await hub.records.principals.authenticateAccessToken?.('Bearer ' + tokJson.access_token))?.scope, checkBot ? ['bot'] : []);
+      return tokJson.access_token;
+    }
+
+    async function deviceAuthorizeWithChoice(checkBot: boolean): Promise<string> {
+      const devRes = await fetch(hub.url + '/oauth/device_authorization', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: clientId, resource: hub.mcpUrl, scope: 'bot' }),
+      });
+      assert.equal(devRes.status, 200);
+      const dev = (await devRes.json()) as { device_code: string; user_code: string };
+      const devPage = await fetch(hub.url + `/console/device?user_code=${encodeURIComponent(dev.user_code)}`);
+      assert.equal(devPage.status, 200);
+      const devNonce = /name="csrf" value="([^"]+)"/.exec(await devPage.text())![1];
+      const devCookie = (devPage.headers.getSetCookie?.() ?? [devPage.headers.get('set-cookie') ?? '']).join('; ').split(';')[0];
+      const submitted = await fetch(hub.url + '/console/device', {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: devCookie, origin: hub.url },
+        body: new URLSearchParams({ csrf: devNonce, user_code: dev.user_code }),
+      });
+      assert.equal(submitted.status, 303);
+      const authPath = submitted.headers.get('location')!;
+      const bound = (submitted.headers.getSetCookie?.() ?? [submitted.headers.get('set-cookie') ?? '']).join('; ').split(';')[0];
+      await approveRequest(authPath, bound, checkBot);
+      const tokRes = await fetch(hub.url + '/oauth/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+          device_code: dev.device_code,
+          client_id: clientId,
+          resource: hub.mcpUrl,
+          ...(!checkBot ? { scope: 'bot' } : {}),
+        }),
+      });
+      assert.equal(tokRes.status, 200);
+      const tokJson = (await tokRes.json()) as { access_token: string; scope?: string };
+      assert.equal(tokJson.scope, checkBot ? 'bot' : '');
+      assert.deepEqual((await hub.records.principals.authenticateAccessToken?.('Bearer ' + tokJson.access_token))?.scope, checkBot ? ['bot'] : []);
       return tokJson.access_token;
     }
 
@@ -768,6 +820,28 @@ test('personal-bot rejects unconsented OAuth tokens with insufficient_scope, all
     assert.equal(revoked.status, 200);
     assert.equal((await callBotApi(consented, 'discover')).status, 401);
     assert.equal((await callMcp(consented)).status, 401);
+
+    const deviceDeniedToken = await deviceAuthorizeWithChoice(false);
+    const deviceDenied = await callBotApi(deviceDeniedToken);
+    assert.equal(deviceDenied.status, 403);
+    assert.equal(deviceDenied.headers.get('www-authenticate'), 'Bearer error="insufficient_scope", scope="bot"');
+    const deviceDeniedBody = (await deviceDenied.json()) as { code?: string; message?: string };
+    assert.equal(deviceDeniedBody.code, 'BOT_CLIENT_FORBIDDEN');
+    assert.match(deviceDeniedBody.message ?? '', /允许这个客户端使用我的机器人/);
+    assert.equal((await callMcp(deviceDeniedToken)).status, 200);
+
+    const deviceConsentedToken = await deviceAuthorizeWithChoice(true);
+    assert.equal((await callBotApi(deviceConsentedToken, 'discover')).status, 200);
+    assert.equal((await callBotApi(deviceConsentedToken, 'send')).status, 200);
+    assert.equal((await callMcp(deviceConsentedToken)).status, 200);
+    const deviceRevoked = await fetch(hub.url + '/oauth/revoke', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: deviceConsentedToken }),
+    });
+    assert.equal(deviceRevoked.status, 200);
+    assert.equal((await callBotApi(deviceConsentedToken, 'discover')).status, 401);
+    assert.equal((await callMcp(deviceConsentedToken)).status, 401);
   } finally {
     await new Promise<void>((resolve) => host.close(() => resolve()));
     await hub.close();

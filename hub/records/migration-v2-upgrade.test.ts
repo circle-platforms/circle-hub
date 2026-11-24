@@ -10,7 +10,7 @@ import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { Database, createPool } from './db.ts';
 import { FileKeyProvider, MIGRATIONS, openRecords } from './index.ts';
 import { grantRuntime, migrate } from './migrations.ts';
-import { PgPrincipals } from './principals.ts';
+import { newId } from './ids.ts';
 import { createRecordStore } from './store.ts';
 import { sha256Hex } from './digest.ts';
 
@@ -72,14 +72,24 @@ test('H10a: upgrading from Migration 1 preserves users, tokens and records and g
   await keyProvider.initKey();
   const v1Now = () => new Date();
   const v1Store = createRecordStore(ownerDb, { maxRecordBytes: DEFAULT_LIMITS.maxRecordBytes, now: v1Now });
-  const v1Principals = new PgPrincipals(ownerDb, v1Now, v1Store);
-  const { user: adminUser, token: adminToken } = await v1Principals.bootstrapAdmin('迁移管理员');
+  const now = v1Now().toISOString();
+  const adminUser = { id: newId('usr'), name: '迁移管理员', role: 'admin' as const };
+  const member = { id: newId('usr'), name: '迁移测试成员', role: 'user' as const };
+  const adminToken = { id: newId('tok'), token: randomBytes(32).toString('base64url') };
+  const memberToken = { id: newId('tok'), token: randomBytes(32).toString('base64url') };
+  await ownerDb.query(
+    'INSERT INTO users (id, name, role, created_at, updated_at) VALUES ($1, $2, $3, $4, $4), ($5, $6, $7, $4, $4)',
+    [adminUser.id, adminUser.name, adminUser.role, now, member.id, member.name, member.role],
+  );
+  await ownerDb.query(
+    'INSERT INTO user_history (user_id, name, role, disabled, changed_by, changed_at) VALUES ($1, $2, $3, false, NULL, $4), ($5, $6, $7, false, $1, $4)',
+    [adminUser.id, adminUser.name, adminUser.role, now, member.id, member.name, member.role],
+  );
+  await ownerDb.query(
+    'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by) VALUES ($1, $2, $3, $4, $5, NULL), ($6, $7, $8, $9, $5, $2)',
+    [adminToken.id, adminUser.id, sha256Hex(adminToken.token), 'bootstrap', now, memberToken.id, member.id, sha256Hex(memberToken.token), 'v1-token'],
+  );
   const adminPrincipal = { id: adminUser.id, name: adminUser.name, role: adminUser.role };
-  const member = await v1Principals.createUser(adminPrincipal, '迁移测试成员', 'user', {
-    password: 'Synthetic-v1-password-1!',
-    mustChange: false,
-  });
-  const memberToken = await v1Principals.issueToken(adminPrincipal, member.id, 'v1-token');
   const rec = await v1Store.put({
     kind: 'memory_version',
     schema: 'memory-version@1',

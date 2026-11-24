@@ -748,7 +748,7 @@ error. A source reference without the authorized run continues to use the reader
 
 - `oauth_clients`：客户端自己登记的名字（1–100 字，无控制字符）和 1–10 个回调地址；`registerClient` 在 10 分钟窗口内最多接受 100 次登记，超出抛 `LimitError`（按 `CLIENT_LOCK` 串行，并发时也不超），并顺带删除一天内既没换到令牌、也没用过邀请码的客户端（每次至多 100 个）。`client(id)` 查找。
 - `invitations`：管理员签发的邀请码，`invite(by, userId)` 只返回一次明文，表里只存规范化后（大写，去掉空格和连字符，O、I、L 读作 0、1、1）的 SHA-256；`INVITATION_TTL_MS` 为 24 小时。`checkInvitation(code)` 只查不用，给出账号或原因（不存在、已使用、已过期、账号已停用）；`takeInvitation(id, clientId)` 在一个事务里以条件更新取用一次，并记下用它授权的客户端，账号已停用时整笔回滚、邀请码保持未用。
-- `tokens.client_id`：`issueToken(by, userId, label, client)` 签发的令牌属于哪个已登记的客户端，`TokenInfo.client` 读出；不存在的客户端拒签。`revokeTokenValue(token)` 按令牌值吊销（RFC 7009：持有者可吊销），吊销人记为令牌所属账号。
+- `tokens.client_id`、`tokens.scope`：`issueToken(by, userId, label, client, scope)` 签发的令牌属于哪个已登记的客户端与经成员同意的 `token_scope`（迁移 3 `token_scope` 新增 `scope text[] NOT NULL DEFAULT '{}'`，只允许 `'bot'`），`TokenInfo.client`、`TokenInfo.scope` 读出；不存在的客户端或未注册的 scope 拒签。`revokeTokenValue(token)` 按令牌值吊销（RFC 7009：持有者可吊销），吊销人记为令牌所属账号。
 
 运行角色对 `oauth_clients` 有 `SELECT, INSERT, DELETE`（只为删除没用上的客户端；被令牌或邀请码引用的，外键不让删），对 `invitations` 另有 `UPDATE (used_at, used_by_client)`；令牌标签的 100 字按码点计，与 PostgreSQL 的 `length()` 一致；`hub/platform/ownership.test.ts` 的逐表拒绝清单含这两张表。令牌和邀请码的签发、使用与吊销当时只记在这些可变存储里，合约里没有对应的记录类型；模型 38 起另写 `token_issuance` 记录，见下文“Token and invitation issuance records”。测试：`standard-authorization.test.ts`。
 
@@ -1226,7 +1226,7 @@ so no second axis is needed. The body is a closed union of four shapes:
 
 | Action | Body |
 | --- | --- |
-| token `issue` | `token`, `user`, `by` (null only for the bootstrapped first administrator), `at`, `label`, `client` (`cli_…` or null), `console_session`, `expires_at` (console sessions only) |
+| token `issue` | `token`, `user`, `by` (null only for the bootstrapped first administrator), `at`, `label`, `client` (`cli_…` or null), `console_session`, `expires_at` (console sessions only), optional `scope` (`token_scope[]`, model 90: written when non-empty) |
 | token `revoke` | `token`, `user`, `by` (the holder itself for a revocation by value, RFC 7009), `at`, optional `member_deletion` (the deletion's `operation_id`) |
 | invitation `issue` | `invitation`, `user`, `by`, `at`, `expires_at` |
 | invitation `use` | `invitation`, `user`, `client`, `at` |

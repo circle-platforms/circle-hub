@@ -264,26 +264,40 @@ test('console client lists mark bot-scoped OAuth tokens separately from MCP-only
   const memberUser = await person(['review'], 'user', '客户端显示成员');
   const memberSession = await signIn(memberUser.token);
   const adminSession = await signIn(server.admin.token);
-  const client = await server.records.principals.registerClient('控制台展示客户端', ['http://127.0.0.1:43123/cb']);
-  const mcpOnly = await server.records.principals.issueToken(server.admin.principal, memberUser.user.id, '仅MCP', client.id, []);
-  const botCapable = await server.records.principals.issueToken(server.admin.principal, memberUser.user.id, '含机器人', client.id, ['bot']);
+  const mcpClient = await server.records.principals.registerClient('仅工具客户端', ['http://127.0.0.1:43123/cb-mcp']);
+  const botClient = await server.records.principals.registerClient('含机器人客户端', ['http://127.0.0.1:43123/cb-bot']);
+  const mcpOnly = await server.records.principals.issueToken(server.admin.principal, memberUser.user.id, '仅MCP', mcpClient.id, []);
+  const botCapable = await server.records.principals.issueToken(server.admin.principal, memberUser.user.id, '含机器人', botClient.id, ['bot']);
+  const rowFor = (body: string, clientName: string): string => {
+    const escaped = clientName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const found = new RegExp(`<tr\\b[^>]*>(?:(?!</tr>).)*?${escaped}(?:(?!</tr>).)*?</tr>`, 's').exec(body);
+    assert.ok(found, `expected table row for ${clientName}`);
+    return found[0];
+  };
 
   const connectionsPage = await get('/console/connections', memberSession);
   assert.equal(connectionsPage.status, 200);
-  assert.match(connectionsPage.body, new RegExp(`标准连接确认[^\\n]*控制台展示客户端[^\\n]*${uiLabelOf('token_scope', 'bot')}`));
+  const connMcpRow = rowFor(connectionsPage.body, '仅工具客户端');
+  const connBotRow = rowFor(connectionsPage.body, '含机器人客户端');
+  assert.match(connMcpRow, /标准连接确认/);
+  assert.doesNotMatch(connMcpRow, new RegExp(uiLabelOf('token_scope', 'bot')));
+  assert.match(connBotRow, new RegExp(`标准连接确认[^]*${uiLabelOf('token_scope', 'bot')}`));
 
   const mcpInspector = await get(`/console/connections?circle=${mcpOnly.id}`, memberSession);
   assert.equal(mcpInspector.status, 200);
-  assert.match(mcpInspector.body, /<dt>令牌许可范围<\/dt><dd>仅 MCP 工具<\/dd>/);
+  assert.doesNotMatch(mcpInspector.body, /仅 MCP 工具|令牌许可范围|<dt>授权范围<\/dt>/);
 
   const botInspector = await get(`/console/connections?circle=${botCapable.id}`, adminSession);
   assert.equal(botInspector.status, 200);
-  assert.match(botInspector.body, new RegExp(`<dt>令牌许可范围</dt><dd>${uiLabelOf('token_scope', 'bot')}</dd>`));
+  assert.doesNotMatch(botInspector.body, /仅 MCP 工具|令牌许可范围|<dt>授权范围<\/dt>/);
   assert.match(botInspector.body, new RegExp(`circle-hub token revoke ${botCapable.id}`));
 
   const adminClientsPage = await get(`/console/team?tab=clients&circle=${botCapable.id}`, adminSession);
   assert.equal(adminClientsPage.status, 200);
-  assert.match(adminClientsPage.body, new RegExp(uiLabelOf('token_scope', 'bot')));
+  const adminMcpRow = rowFor(adminClientsPage.body, '仅工具客户端');
+  const adminBotRow = rowFor(adminClientsPage.body, '含机器人客户端');
+  assert.doesNotMatch(adminMcpRow, new RegExp(uiLabelOf('token_scope', 'bot')));
+  assert.match(adminBotRow, new RegExp(uiLabelOf('token_scope', 'bot')));
   assert.match(adminClientsPage.body, new RegExp(`circle-hub token revoke ${botCapable.id}`));
 
   await server.records.principals.revokeToken(server.admin.principal, botCapable.id);

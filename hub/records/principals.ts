@@ -129,10 +129,10 @@ function userOf(row: Row): User {
 }
 
 function tokenScopeOf(raw: unknown): TokenScope[] {
-  if (!Array.isArray(raw)) throw new IntegrityError('令牌许可范围格式不对');
+  if (!Array.isArray(raw)) throw new IntegrityError('授权范围格式不对');
   const out: TokenScope[] = [];
   for (const item of raw) {
-    if (!isTokenScope(item)) throw new IntegrityError('令牌许可范围不在词表里', { detail: { scope: item } });
+    if (!isTokenScope(item)) throw new IntegrityError('授权范围不在词表里', { detail: { scope: item } });
     if (!out.includes(item)) out.push(item);
   }
   return out;
@@ -756,19 +756,11 @@ export class PgPrincipals implements Principals {
     const now = this.#now();
     const at = now.toISOString();
     const expires = consoleSession ? new Date(now.getTime() + CONSOLE_SESSION_MS).toISOString() : null;
-    if (scope.length > 0) {
-      await this.#db.query(
-        'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by, client_id, console_session, expires_at, scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
-        [id, userId, sha256Hex(token), label, at, by, client, consoleSession, expires, [...scope]],
-        tx,
-      );
-    } else {
-      await this.#db.query(
-        'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by, client_id, console_session, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-        [id, userId, sha256Hex(token), label, at, by, client, consoleSession, expires],
-        tx,
-      );
-    }
+    await this.#db.query(
+      'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by, client_id, console_session, expires_at, scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+      [id, userId, sha256Hex(token), label, at, by, client, consoleSession, expires, [...scope]],
+      tx,
+    );
     await appendTokenIssuance(this.#store, { action: ISSUE, token: id, user: userId, by, at, label, client, console_session: consoleSession, expires_at: expires, ...(scope.length > 0 ? { scope: [...scope] } : {}) }, tx);
     return { id, user: userId, token, label, created_at: at };
   }

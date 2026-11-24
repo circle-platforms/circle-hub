@@ -9,6 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { TOKEN_SCOPE } from '../../contracts/generated/vocabulary.ts';
 import { AUTHORIZATION_CODE_TTL_MS, AUTHORIZATION_REQUEST_TTL_MS, AuthorizationStore, DEVICE_CODE_GRANT, RegistrationWindow, normalizeUserCode } from './oauth.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
@@ -165,12 +166,12 @@ describe('the MCP standard authorization', () => {
     for (const path of ['/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-protected-resource']) {
       const reply = await send(path);
       assert.equal(reply.status, 200);
-      assert.deepEqual(JSON.parse(reply.body), { resource: `${origin()}/mcp`, authorization_servers: [origin()], scopes_supported: ['bot'], bearer_methods_supported: ['header'], resource_name: 'circle-hub' });
+      assert.deepEqual(JSON.parse(reply.body), { resource: `${origin()}/mcp`, authorization_servers: [origin()], scopes_supported: [...TOKEN_SCOPE], bearer_methods_supported: ['header'], resource_name: 'circle-hub' });
     }
     const server_ = JSON.parse((await send('/.well-known/oauth-authorization-server')).body);
     assert.equal(server_.issuer, origin());
     assert.equal(server_.authorization_endpoint, `${origin()}/oauth/authorize`);
-    assert.deepEqual(server_.scopes_supported, ['bot']);
+    assert.deepEqual(server_.scopes_supported, [...TOKEN_SCOPE]);
     assert.deepEqual(server_.code_challenge_methods_supported, ['S256']);
     assert.deepEqual(server_.grant_types_supported, ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code']);
     assert.equal(server_.device_authorization_endpoint, `${origin()}/oauth/device_authorization`);
@@ -748,9 +749,11 @@ describe('the device authorization grant (RFC 8628)', () => {
     assert.match(declinedPage.page.body, /允许这个客户端使用我的机器人/);
     assert.match(declinedPage.page.body, /同意之后这个客户端可以读写当前账号和机器人的私聊与附件。/);
     assert.equal((await post(declinedPage.path, approval(declinedPage.page.body), declinedPage.cookie)).status, 303);
-    const declinedTok = await poll(client, declinedReq.device_code, { resource: `${origin()}/mcp` });
+    const declinedTok = await poll(client, declinedReq.device_code, { resource: `${origin()}/mcp`, scope: 'bot' });
     assert.equal(declinedTok.status, 200, declinedTok.body);
-    assert.equal(JSON.parse(declinedTok.body).scope, '');
+    const declinedJson = JSON.parse(declinedTok.body);
+    assert.equal(declinedJson.scope, '');
+    assert.deepEqual((await server.records.principals.authenticateAccessToken?.(`Bearer ${declinedJson.access_token}`))?.scope, []);
 
     const consentedReq = await deviceCodes(client, { resource: `${origin()}/mcp`, scope: 'bot' });
     const consentedPage = await devicePage(consentedReq.user_code, session);
@@ -797,9 +800,11 @@ describe('bot scope consent in authorization code flow', () => {
     assert.match(noConsentOpened.page.body, /同意之后这个客户端可以读写当前账号和机器人的私聊与附件。/);
     const noConsentApproved = await post(noConsentOpened.path, approval(noConsentOpened.page.body), noConsentOpened.cookie);
     const noConsentCode = new URL(String(noConsentApproved.headers.location)).searchParams.get('code')!;
-    const noConsentExchanged = await exchange({ grant_type: 'authorization_code', code: noConsentCode, client_id: client, redirect_uri: 'http://127.0.0.1:43123/callback', code_verifier: noConsentPair.verifier });
+    const noConsentExchanged = await exchange({ grant_type: 'authorization_code', code: noConsentCode, client_id: client, redirect_uri: 'http://127.0.0.1:43123/callback', code_verifier: noConsentPair.verifier, scope: 'bot' });
     assert.equal(noConsentExchanged.status, 200, noConsentExchanged.body);
-    assert.equal(JSON.parse(noConsentExchanged.body).scope, '');
+    const noConsentJson = JSON.parse(noConsentExchanged.body);
+    assert.equal(noConsentJson.scope, '');
+    assert.deepEqual((await server.records.principals.authenticateAccessToken?.(`Bearer ${noConsentJson.access_token}`))?.scope, []);
 
     const consentPair = pkce();
     const consentOpened = await openPage(authorizeUrl(client, consentPair.challenge, { scope: 'bot' }), session);
