@@ -223,6 +223,40 @@ test('a held source request is resubmitted by a round once its source is availab
   } finally { await h.close(); }
 });
 
+test('an unchanged source recovery is attempted once even when its request stays open', { skip }, async () => {
+  const h = await openRetryHarness(pg, { review: { dynamicFindings: true }, dataQuotes: true });
+  try {
+    const doc = standardDocument(); doc.groups = [{ ...doc.groups[0], cases: [doc.groups[0].cases[0]] }];
+    const source = await h.upload(h.alice, toyMap(doc));
+    const run = (await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '10.6.1', build: 'Rel_MEADOW_10_6_1_7', inputs: { map: { reference: source } } }, h.call())).run!;
+    const ref = run.sources.find((row) => row.external?.startsWith('toy:story:'))!.reference;
+    const sha = ref.slice(4).split('/')[0], original = h.kit.artifacts.source.bind(h.kit.artifacts);
+    h.kit.artifacts.source = async (...args) => { const value = await original(...args); return args[1] === sha && value ? { ...value, bytes: null, readTier: 'retain_only' } : value; };
+    const submission = { run: run.run, model: 'synthetic-model', items: [{ item: run.items[0].id, handling: 'handled', slots: { findings: [{ text: '合成引文', code: 'edge_case_gap', rank: 'major', quotes: [{ reference: run.items[0].location, text: run.items[0].label }], data: { expected_quote: { reference: ref, text: '分区编号 1 到 8' } } }] } }], cross_item: [{ nature: 'judgment', statement: '一般', grounds: [], code: 'draft_level', rank: 'P4' }] };
+    assert.equal((await h.service.submitResult(h.alice, submission, h.call())).acceptance, 'accepted');
+    for (let n = 0; n < 4; n++) await h.service.maintain({ incremental: true });
+    h.kit.artifacts.source = async (...args) => { const value = await original(...args); return args[0].role !== 'admin' && args[1] === sha && value ? { ...value, bytes: null, readTier: 'retain_only' } : value; };
+    await h.kit.authorizations.configureResource(h.admin, 'synthetic-acceptance', 'c'.repeat(64), '合成接受');
+    await h.service.maintain({ incremental: true });
+    const observed = async () => (await actionsOf(h.kit.store, run.run)).filter((action) => action.body.detail.sources_available === true).length;
+    const first = await observed();
+    assert.ok(first > 0, 'the administrator can read the source, but the runner still cannot close every request');
+    await h.service.maintain({ incremental: true });
+    await h.service.maintain({ incremental: true });
+    assert.equal(await observed(), first, 'the same proof and request do not cause another recovery record');
+    assert.ok((await h.service.listRequests!(h.admin, run.run)).some((request) => request.kind === 'disposition' && request.sources?.includes(ref) && request.answered_by === null), 'a request is still open before the new evidence');
+    const changed = await h.kit.authorizations.configureResource(h.admin, 'synthetic-acceptance', 'd'.repeat(64), '合成新的授权证据');
+    const available = h.kit.artifacts.source;
+    h.kit.artifacts.source = async (...args) => {
+      const value = await available(...args);
+      if (args[0].role === 'admin' && args[1] === sha && value) return { ...value, artifact: { ...value.artifact, digest: changed.digest } };
+      return value;
+    };
+    await h.service.maintain();
+    assert.ok(await observed() > first, 'new capture evidence permits a new bounded recovery attempt');
+  } finally { await h.close(); }
+});
+
 test('what a visit writes is swept in the same round, as it is in a pass over everything', async (t) => {
   const w = await world(t);
   const run = await storeQuietRun(w.h, { submission_due: w.at(5 * MINUTE) });

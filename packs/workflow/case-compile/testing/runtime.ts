@@ -1,3 +1,4 @@
+import { templateDocument } from './template.ts';
 import TYPED from '../examples/runtime-contract-v2.json' with {type:'json'};
 // Invented original-format runner contract. No real runner identifiers or source contents.
 import { runtimeDigest } from '../functions/runtime-contract.ts';
@@ -19,8 +20,11 @@ export function runtimeDocument() {
 }
 type TypedFixture=Omit<ReturnType<typeof runtimeDocument>,'entries'>&{original:{contract_sha256:string;sha256:string};types:Record<string,any>;roles:Record<string,any>;effects:Record<string,any>;entries:Array<ReturnType<typeof entry>&{typed_authority?:{source:string;parameters:Record<string,{type:string;role:string}>;effects:string[]};certification_candidate?:boolean}>};
 export function typedRuntimeDocument():TypedFixture{return structuredClone(TYPED) as unknown as TypedFixture;}
+function withTemplate<T extends { sheet: string; header: string[]; identity_marker: string; range_name: string }>(book: T, contract: { runtime: { minimum_version: string }; contract_sha256: string; original?: { contract_sha256: string } }) {
+  return { ...book, template: templateDocument(book, contract.runtime.minimum_version, contract.original?.contract_sha256 ?? contract.contract_sha256) };
+}
 export function profileDocument(contract:{runtime:{minimum_version:string};contract_sha256:string;original?:{contract_sha256:string}} = runtimeDocument()) {
-  return { schema: 'runtime-profile@1', synthetic: true, max_wait_seconds: 300, runtime: { minimum_version: contract.runtime.minimum_version, contract_sha256: contract.original?.contract_sha256??contract.contract_sha256 }, bed: 'bed-a', device_count: 2, fold_newlines: [] as Array<{ object: string; method: string }>, workbook: { sheet: 'FixtureSheet', header: ['FixtureId', 'FixturePriority', 'FixtureType', 'FixtureDescription', 'FixtureObject', 'FixtureMethod', 'FixtureData', 'FixtureOutput', 'FixtureInput'], identity_marker: 'FixtureIdentity', range_name: 'FixtureRange', closing_row: ['FixtureEnd', '', '', '', '', '', '', '', ''], autoid_pattern: '^\\d{18}$' }, seats: [{ object: 'widget-seat', device: 'dut0', ordinal: 0 }], hosts: [{ object: 'widget-host', method: 'shell', device: 'client0' }], allowed: [
+  return { schema: 'runtime-profile@1', synthetic: true, max_wait_seconds: 300, runtime: { minimum_version: contract.runtime.minimum_version }, bed: 'bed-a', device_count: 2, fold_newlines: [] as Array<{ object: string; method: string }>, workbook: withTemplate({ sheet: 'FixtureSheet', header: ['FixtureId', 'FixturePriority', 'FixtureType', 'FixtureDescription', 'FixtureObject', 'FixtureMethod', 'FixtureData', 'FixtureOutput', 'FixtureInput'], identity_marker: 'FixtureIdentity', range_name: 'FixtureRange', closing_row: ['FixtureEnd', '', '', '', '', '', '', '', ''], autoid_pattern: '^\\d{18}$' }, contract), seats: [{ object: 'widget-seat', device: 'dut0', ordinal: 0 }], hosts: [{ object: 'widget-host', method: 'shell', device: 'client0' }], allowed: [
     { object: 'widget-seat', method: 'configure', parameters: { line: 'device_cli' },reviewed:true },
     { object: 'widget-host', method: 'shell', parameters: { command: 'host_shell' },reviewed:true },
     { object: 'widget-check', method: 'literal', parameters: { expected: 'literal_assertion' },reviewed:true },

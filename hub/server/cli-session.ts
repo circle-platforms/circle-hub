@@ -1,0 +1,193 @@
+import { isAdmin } from '../records/api.ts';
+import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
+import { updateTrace } from '../telemetry/api.ts';
+import { LeaseService } from '../leases/api.ts';
+import { createPool, Database } from '../records/api.ts';
+import { type HubConfig } from '../config/index.ts';
+import { type Principal, type RecordsKit, type User } from '../records/api.ts';
+import type { CliContext } from './api.ts';
+import { hintOf, messageOf } from './assemble/errors.ts';
+import { assembleHub, type AssembledHub, type AssemblyOptions } from './assemble/hub.ts';
+import { OPERATOR_TOKEN_VARIABLE, deploymentKeyService, fileOperatorTokens, takeEnvironmentToken, type OperatorTokenStore } from './assemble/operator-token.ts';
+import { DEFAULT_ADMIN_NAME } from '../records/api.ts';
+import { terminalSafe } from './assemble/terminal.ts';
+import { CliError } from './errors.ts';
+
+export interface AdminCommandOptions {
+  tokens?: (config: HubConfig, service: string) => OperatorTokenStore;
+  readSecret?: (label: string) => Promise<string>;
+  assembly?: AssemblyOptions;
+}
+
+const USER_ID = /^usr_[0-9a-z]{26}$/;
+export const REISSUE_LABEL = '操作令牌（重新签发）';
+export const REISSUE = 'circle-hub operator-token reissue';
+export const REMOVE_ITEM = '运行 circle-hub operator-token remove --confirm-only-operator-token（仅删除本地操作令牌，不改密钥库主密钥；不会撤销数据库令牌）';
+export const DEAD_ITEM = `${REMOVE_ITEM}，再运行 ${REISSUE}（有几位管理员时加 --as <管理员>）`;
+
+export const ONE_COMMAND_TOKEN = `只给这一条命令一个令牌：${OPERATOR_TOKEN_VARIABLE}="$T" circle-hub <命令>（先用 read -rs T 读入，令牌不进命令历史）；不要 export ${OPERATOR_TOKEN_VARIABLE}：serve 见到它会拒绝启动，留在 shell 里的令牌也会传给这个 shell 启动的每个程序`;
+export const RUNNING_HUB_LOGIN = '正在运行的 Hub 下一次读取会核对密钥版本及重置代数，旧令牌、停止和冷却不再沿用，用当前版本登录一次；不用重启 Hub';
+
+export interface OperatorAct {
+  admin: Principal;
+  noticeIfLost(): Promise<string | null>;
+}
+
+export class Session {
+  readonly ctx: CliContext;
+  readonly options: AdminCommandOptions;
+  readonly envToken: string | null;
+  #hub: Promise<AssembledHub> | null = null;
+  #tokens: Promise<OperatorTokenStore> | null = null;
+  #leases: Promise<LeaseService> | null = null;
+  #leaseDatabase: Database | null = null;
+
+  constructor(ctx: CliContext, options: AdminCommandOptions) {
+    this.ctx = ctx;
+    this.options = options;
+    // Taken out of the environment, so no child process this command starts (a pack function, a tool) inherits the token.
+    this.envToken = takeEnvironmentToken(ctx.io.env);
+  }
+
+  out(line: string): void {
+    this.ctx.io.stdout(terminalSafe(line));
+  }
+
+  err(line: string): void {
+    this.ctx.io.stderr(terminalSafe(line));
+  }
+
+  config(): HubConfig {
+    return this.ctx.config();
+  }
+
+  records(): Promise<RecordsKit> {
+    return this.ctx.records();
+  }
+
+  leases(): Promise<LeaseService> {
+    this.#leases ??= (async () => {
+      const records = await this.records();
+      this.#leaseDatabase = new Database(createPool(this.config().database, 2));
+      return new LeaseService(this.#leaseDatabase, { records: records.store });
+    })();
+    return this.#leases;
+  }
+
+  async close(): Promise<void> {
+    const hub = this.#hub === null ? null : await this.#hub.catch(() => null);
+    await hub?.dispatch?.close().catch(() => {});
+    await this.#leases?.catch(() => null);
+    await this.#leaseDatabase?.end().catch(() => {});
+  }
+
+  tokens(): Promise<OperatorTokenStore> {
+    this.#tokens ??= (async () => {
+      const config = this.config();
+      const service = await deploymentKeyService(this.ctx.io.env);
+      return this.options.tokens?.(config, service) ?? fileOperatorTokens(config.dataDir, service);
+    })();
+    return this.#tokens;
+  }
+
+  hub(requireVaultKey = false, quiet?: boolean): Promise<AssembledHub> {
+    this.#hub ??= (async () =>
+      assembleHub(this.config(), await this.records(), { log: (line) => this.err(line), ...this.options.assembly, ...(quiet === undefined ? {} : { log: quiet ? () => {} : (line: string) => this.err(line) }), requireVaultKey, command: true }))();
+    return this.#hub;
+  }
+
+  async operatorToken(): Promise<string | null> {
+    if (this.envToken !== null) return this.envToken;
+    const store = await this.tokens();
+    try {
+      return await store.read();
+    } catch (error) {
+      throw new CliError(`读不出${store.where}里的操作令牌：${messageOf(error)}`, `${hintOf(error) ?? '检查数据根的 keys 目录（当前服务账户拥有，权限 0700，文件 0600）后重试'}；或者${ONE_COMMAND_TOKEN}`);
+    }
+  }
+
+  async admin(): Promise<Principal> {
+    return (await this.#operator()).admin;
+  }
+
+  async #operator(requireAdmin=true): Promise<{ admin: Principal; token: string }> {
+    const kit = await this.records();
+    const token = await this.operatorToken();
+    if (token === null) {
+      if(!requireAdmin)throw new CliError('这个命令会改变运行状态，需要有效操作令牌',`通过 ${OPERATOR_TOKEN_VARIABLE} 提供运行者本人或管理员的令牌；不采用只读命令的身份回退`);
+      throw new CliError(
+        '这个命令会改变 Hub 的状态，要管理员令牌，没有找到',
+        `已有管理员而操作令牌文件丢了时，用 ${REISSUE} 给一位启用中的管理员签发新令牌存进${(await this.tokens()).where}（不显示），手里有管理员令牌时也可以用 circle-hub operator-token set 从标准输入存进去；第一位管理员用 circle-hub init-admin [<名字>]（省略时为 ${DEFAULT_ADMIN_NAME}）建立；或者${ONE_COMMAND_TOKEN}`,
+      );
+    }
+    const principal = await kit.principals.authenticate(`Bearer ${token}`);
+    if (principal === null || requireAdmin&&!isAdmin(principal)) {
+      if(!requireAdmin)throw new CliError('操作令牌无效或账号已停用','用运行者本人或管理员的有效令牌重试');
+      const hint =
+        this.envToken === null
+          ? `${(await this.tokens()).where}里的操作令牌已不能用（已撤销、账号已停用或不再是管理员）：${DEAD_ITEM}`
+          : `给这条命令一个启用中的管理员的有效令牌（${OPERATOR_TOKEN_VARIABLE}）`;
+      throw new CliError('令牌无效，或者不属于启用中的管理员；这个命令只有管理员能执行', hint);
+    }
+    updateTrace({ userId: principal.id });
+    return { admin: principal, token };
+  }
+
+  async member():Promise<Principal>{return (await this.#operator(false)).admin;}
+
+  async act(): Promise<OperatorAct> {
+    const { admin, token } = await this.#operator();
+    const lost =
+      this.envToken !== null
+        ? `${OPERATOR_TOKEN_VARIABLE} 给这条命令的管理员令牌现在已不能用（令牌已撤销或账号已停用）`
+        : `${(await this.tokens()).where}里的操作令牌现在已不能用（令牌已撤销或账号已停用）：之后改变状态的命令会被拒绝；恢复：${DEAD_ITEM}`;
+    return {
+      admin,
+      noticeIfLost: async () => {
+        const still = await (await this.records()).principals.authenticate(`Bearer ${token}`);
+        return still !== null && isAdmin(still) ? null : lost;
+      },
+    };
+  }
+
+  async viewer(as: string | undefined, quietTokenRead = false): Promise<Principal> {
+    const principal = await this.#reader(as, quietTokenRead);
+    updateTrace({ userId: principal.id });
+    return principal;
+  }
+
+  async #reader(as: string | undefined, quietTokenRead: boolean): Promise<Principal> {
+    let token = this.envToken;
+    let source = `${OPERATOR_TOKEN_VARIABLE} 的令牌`;
+    let hint: string | null = null;
+    if (token === null) {
+      const store = await this.tokens();
+      source = `${store.where}里的操作令牌`;
+      hint = `${REMOVE_ITEM}后，只读命令按 --as 或唯一启用的管理员读取；改变状态的命令要的新操作令牌用 ${REISSUE} 签发`;
+      try {
+        token = await store.read();
+      } catch (error) {
+        if (!quietTokenRead) this.err(`注意：读不出${source}（${messageOf(error)}）；这个只读命令按${as === undefined ? '唯一启用的管理员' : ` --as ${as} `}读取`);
+        return this.ctx.actingAdmin(as);
+      }
+    }
+    if (token === null) return this.ctx.actingAdmin(as);
+    const principal = await (await this.records()).principals.authenticate(`Bearer ${token}`);
+    if (principal === null) throw new CliError(`${source}无效（不存在、已撤销，或者账号已停用）`, hint);
+    if (as !== undefined && as !== principal.name && as !== principal.id) {
+      throw new CliError(`--as ${as} 与令牌的账号 ${principal.name} 不一致：有令牌时只读命令以令牌的账号读取`, '去掉 --as；要以另一个账号读取，就只给这一条命令那个账号的令牌');
+    }
+    return principal;
+  }
+
+  async user(nameOrId: string): Promise<User> {
+    const kit = await this.records();
+    const user = USER_ID.test(nameOrId) ? await kit.principals.get(nameOrId) : await kit.principals.findByName(nameOrId);
+    if (user === null) throw new CliError(`没有用户 ${nameOrId}`);
+    return user;
+  }
+
+  async names(): Promise<Map<string, string>> {
+    return new Map((await (await this.records()).principals.list()).map((user) => [user.id, user.deleted_at?`${uiLabelOf('account_display_name','deleted_member')}（${user.id}）`:user.name]));
+  }
+}

@@ -94,12 +94,16 @@
             "additionalProperties": false
           },
           "from_runs": {
-            "description": "Bindings may be run ids of this workflow. The Hub replaces each run id with that run’s latest accepted submitted validation record. An omitted required slot walks the predecessor lineage for runs of this workflow",
+            "description": "Bindings may be run ids of this workflow. Without after_start the Hub replaces each run id with that run’s latest accepted submitted validation record at start_run; with after_start it freezes the run id only and every evaluation and run export reads that run’s latest accepted submitted validation record then. An explicit rec: binding is frozen either way. An omitted required slot walks the predecessor lineage for runs of this workflow",
             "type": "object",
             "properties": {
               "pack": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              },
+              "after_start": {
+                "description": "true: start_run freezes the run id only; every evaluation and run export re-resolves its latest accepted submitted validation record, passes it to workflow.refresh and records the reference in locks.late. An explicit rec: binding stays frozen",
+                "type": "boolean"
               }
             },
             "required": [
@@ -270,6 +274,34 @@
       ],
       "additionalProperties": false,
       "description": "ProjectionInput -> ProjectionOutput: the items of the run (W01)"
+    },
+    "refresh": {
+      "description": "ItemRefreshInput -> ItemRefreshOutput: the per-item overlay item.late from the run results bound after the start (W06 R[7]), called once per evaluation and run export; required exactly when an input declares from_runs.after_start",
+      "type": "object",
+      "properties": {
+        "module": {
+          "type": "string",
+          "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+        },
+        "export": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+        },
+        "reads": {
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "description": "frozen input slots the function also receives (never one bound after the start)"
+        }
+      },
+      "required": [
+        "module",
+        "reads"
+      ],
+      "additionalProperties": false
     },
     "expected_sources": {
       "description": "ExpectedSourcesInput -> ExpectedSourcesOutput: external objects to bind as expected sources",

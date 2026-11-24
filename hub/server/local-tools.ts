@@ -1,20 +1,23 @@
-// Read-only distribution of author-published bytes, independently authorized on every request.
 import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PackManifest, packPathProblem } from '../../contracts/src/pack.ts';
 import { canonicalBytes, sha256Hex, type CallLogInput, type Principal } from '../records/api.ts';
-import { parsePackRef } from '../runs/packs/versions.ts';
+import { parsePackRef } from '../runs/api.ts';
 import type { ServerDeps } from './api.ts';
+import { authenticateAccessOnly, CONSOLE_SESSION_REFUSED } from './access-auth.ts';
 import { setCommonHeaders } from './http.ts';
+import { absentPackRefusal, unassignedPackRefusal, uninstalledPackRefusal, withdrawnPackRefusal } from './pack-words.ts';
 import { newTraceId } from './trace.ts';
 const PREFIX = '/local-tools/';
 const ABSENT = Buffer.from('没有这个本地工具版本或文件\n');
-/** D05 R[3]: the version exists and is not assigned to the reader; the fix names who can assign it. */
-const UNASSIGNED = Buffer.from('这个版本存在，没有分配给你；请管理员把这个任务包分配给你\n');
+function unassignedBytes(packId: string): Buffer {
+  return Buffer.from(`${unassignedPackRefusal(packId, 'workflow')}\n`);
+}
+const ABSENT_WORDS = { unknown: absentPackRefusal, withdrawn: withdrawnPackRefusal, uninstalled: uninstalledPackRefusal } as const;
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
-/** One verified open per user and version. Later requests in this window re-check assignment without extracting again. */
+const CONSOLE_REFUSED = Buffer.from(CONSOLE_SESSION_REFUSED + '\n');
 const DISTRIBUTION_REUSE_MS = 60_000;
 const DISTRIBUTION_CACHE_MAX = 32;
 type LoadedForDownload = Pick<NonNullable<Awaited<ReturnType<ServerDeps['workflows']['forUser']>>>, 'pack' | 'manifest'>;
@@ -59,16 +62,23 @@ async function openForDownload(deps: ServerDeps, principal: Principal, ref: stri
   return loaded;
 }
 
-/** Why a version is not handed out: the admin note, and the answer D05 R[3] gives (absent, not assigned, not a valid account). */
+/**
+ * Why a version is not handed out: the admin note, and the answer D05 R[3] gives (absent, not assigned, not a valid account).
+ * A version that is unknown, retired or a skill that is not installed is absent for the member in all three cases (404), and each
+ * says which it is, so that a client does not go on to try other version numbers.
+ */
 async function absence(deps: ServerDeps, principal: Principal, ref: string): Promise<{ note: string; status: number; bytes: Buffer }> {
   const ask = deps.workflows.absence;
   if (ask === undefined) return { note: '版本不存在、未分配或已退役', status: 404, bytes: ABSENT };
   const why = await ask(principal, ref);
   if (why === null) return { note: '版本已发布并分配，但不能作为本地工具下发', status: 404, bytes: ABSENT };
-  if (why === 'unassigned') return { note: ABSENCE_NOTE[why], status: 403, bytes: UNASSIGNED };
+  if (why === 'unassigned') {
+    const id = ref.includes('@') ? ref.slice(0, ref.indexOf('@')) : ref;
+    return { note: ABSENCE_NOTE[why], status: 403, bytes: unassignedBytes(id) };
+  }
   // An account disabled after it authenticated: the same neutral answer as an unusable token.
   if (why === 'disabled') return { note: ABSENCE_NOTE[why], status: 401, bytes: UNAUTHENTICATED };
-  return { note: ABSENCE_NOTE[why], status: 404, bytes: ABSENT };
+  return { note: ABSENCE_NOTE[why], status: 404, bytes: Buffer.from(`${ABSENT_WORDS[why](ref)}\n`) };
 }
 export const digestHeader = (bytes: Uint8Array): string => `sha-256=:${Buffer.from(sha256Hex(bytes), 'hex').toString('base64')}:`;
 export function localToolsTarget(target: string | undefined): boolean { return /^(?:http:\/\/[^/]+)?\/local-tools(?:[\/\\%]|$)/i.test(target ?? ''); }
@@ -90,9 +100,11 @@ export async function handleLocalTools(request: IncomingMessage, response: Serve
   const headers: Record<string, string> = {};
   request.resume();
   try {
-    principal = await deps.records.principals.authenticate(typeof request.headers.authorization === 'string' ? request.headers.authorization : null);
-    if (principal === null) { status = 401; bytes = UNAUTHENTICATED; note = '令牌不可用'; headers['www-authenticate'] = 'Bearer realm="circle-hub"'; }
-    else if (request.method !== 'GET' && request.method !== 'HEAD') { status = 405; bytes = Buffer.from('只接受 GET 和 HEAD\n'); note = '方法不可用'; headers.allow = 'GET, HEAD'; }
+    const access = await authenticateAccessOnly(deps.records.principals, typeof request.headers.authorization === 'string' ? request.headers.authorization : null);
+    if (!access.ok) {
+      if (access.reason === 'console_session') { status = 403; bytes = CONSOLE_REFUSED; note = '控制台会话令牌'; }
+      else { status = 401; bytes = UNAUTHENTICATED; note = '令牌不可用'; headers['www-authenticate'] = 'Bearer realm="circle-hub"'; }
+    } else if ((principal = access.principal) && request.method !== 'GET' && request.method !== 'HEAD') { status = 405; bytes = Buffer.from('只接受 GET 和 HEAD\n'); note = '方法不可用'; headers.allow = 'GET, HEAD'; }
     else {
       status = 404; bytes = ABSENT;
       const parsed = parsePackRef(ref);

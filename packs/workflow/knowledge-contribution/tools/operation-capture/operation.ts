@@ -37,7 +37,7 @@ async function main(args: string[]): Promise<number> {
     if (!windows) await captureAfterTool(value);
     return 0;
   }
-  if (windows) throw new OperationError('unsupported_platform', '操作采集暂不支持 Windows：Circle Hub 及其任务包目前只支持 macOS 和 Linux');
+  if (windows) throw new OperationError('unsupported_platform', '操作采集暂不支持 Windows：Circle Hub 及其工作流与技能目前只支持 macOS 和 Linux');
   if (command === 'enable') {
     const values = options(rest, ['--session', '--hub', '--token-file']);
     const session = required(values, '--session');

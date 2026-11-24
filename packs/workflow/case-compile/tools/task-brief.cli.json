@@ -1,0 +1,560 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "task-file",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<任务文件路径>",
+      "type": "path"
+    },
+    {
+      "name": "role",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<用例重组|脚本编写|保真核对|失败分析>",
+      "type": "text"
+    },
+    {
+      "name": "case",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<用例或范围>",
+      "type": "text"
+    },
+    {
+      "name": "brief",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<简报或输入路径>",
+      "type": "path"
+    },
+    {
+      "name": "out",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<目标路径>",
+      "type": "path"
+    },
+    {
+      "name": "scope",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "scope.md",
+      "type": "path"
+    },
+    {
+      "name": "note",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<补充>",
+      "type": "text"
+    },
+    {
+      "name": "round",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<轮次>",
+      "type": "int"
+    },
+    {
+      "name": "run",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<运行目录>",
+      "type": "path"
+    },
+    {
+      "name": "item",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<条目JSON>",
+      "type": "path"
+    },
+    {
+      "name": "prior-plans",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<路径...>",
+      "type": "path",
+      "separator": ",",
+      "trimValues": true
+    },
+    {
+      "name": "prior-returns",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<目录...>",
+      "type": "path",
+      "separator": ",",
+      "trimValues": true
+    },
+    {
+      "name": "prior-answers",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<路径...>",
+      "type": "path",
+      "separator": ",",
+      "trimValues": true
+    },
+    {
+      "name": "prior-notes",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<路径...>|--brief-json",
+      "type": "path",
+      "separator": ",",
+      "trimValues": true
+    },
+    {
+      "name": "batch",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "核对目录），将短输出按同法前台并行",
+      "type": "path"
+    },
+    {
+      "name": "task-dir",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<核对任务目录>",
+      "type": "path"
+    },
+    {
+      "name": "brief-json",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<结构简报JSON>",
+      "type": "path"
+    },
+    {
+      "name": "out-dir",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<目标输出目录>",
+      "type": "path"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "task-file",
+          "placeholder": "<任务文件路径>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "role",
+          "placeholder": "<用例重组|脚本编写|保真核对|失败分析>",
+          "optional": false
+        },
+        {
+          "name": "case",
+          "placeholder": "<用例或范围>",
+          "optional": false
+        },
+        {
+          "name": "brief",
+          "placeholder": "<简报或输入路径>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<目标路径>",
+          "optional": false
+        },
+        {
+          "name": "task-file",
+          "placeholder": "<任务文件路径>",
+          "optional": false
+        },
+        {
+          "name": "scope",
+          "placeholder": "scope.md",
+          "optional": true
+        },
+        {
+          "name": "note",
+          "placeholder": "<补充>",
+          "optional": true
+        },
+        {
+          "name": "round",
+          "placeholder": "<轮次>",
+          "optional": true
+        },
+        {
+          "name": "run",
+          "placeholder": "<运行目录>",
+          "optional": false
+        },
+        {
+          "name": "item",
+          "placeholder": "<条目JSON>",
+          "optional": false
+        },
+        {
+          "name": "prior-plans",
+          "placeholder": "<路径...>",
+          "optional": false
+        },
+        {
+          "name": "prior-returns",
+          "placeholder": "<目录...>",
+          "optional": false
+        },
+        {
+          "name": "prior-answers",
+          "placeholder": "<路径...>",
+          "optional": false
+        },
+        {
+          "name": "prior-notes",
+          "placeholder": "<路径...>|--brief-json",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "role",
+          "placeholder": "用例重组",
+          "optional": false
+        },
+        {
+          "name": "task-file",
+          "placeholder": "<文件>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "role",
+          "placeholder": "脚本编写",
+          "optional": false
+        },
+        {
+          "name": "task-file",
+          "placeholder": "<文件>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "round",
+          "placeholder": "<n>",
+          "optional": false
+        },
+        {
+          "name": "task-file",
+          "placeholder": "<文件>",
+          "optional": false
+        },
+        {
+          "name": "prior-plans",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "prior-returns",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "prior-answers",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "prior-notes",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": null,
+          "optional": false
+        },
+        {
+          "name": "brief",
+          "placeholder": "briefs/<序号>.md",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "role",
+          "placeholder": "保真核对",
+          "optional": false
+        },
+        {
+          "name": "task-file",
+          "placeholder": "<文件>（或用",
+          "optional": false
+        },
+        {
+          "name": "batch",
+          "placeholder": "核对目录），将短输出按同法前台并行",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "role",
+          "placeholder": "失败分析",
+          "optional": false
+        },
+        {
+          "name": "case",
+          "placeholder": "<autoid>",
+          "optional": false
+        },
+        {
+          "name": "brief",
+          "placeholder": "returns/index.json",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<失败分析输出>",
+          "optional": false
+        },
+        {
+          "name": "task-file",
+          "placeholder": "<任务文件>",
+          "optional": false
+        },
+        {
+          "name": "round",
+          "placeholder": "<n>",
+          "optional": false
+        },
+        {
+          "name": "item",
+          "placeholder": "items/<序号>.json",
+          "optional": false
+        },
+        {
+          "name": "prior-plans",
+          "placeholder": "...",
+          "optional": false
+        },
+        {
+          "name": "prior-returns",
+          "placeholder": "...",
+          "optional": false
+        },
+        {
+          "name": "prior-answers",
+          "placeholder": "...",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "role",
+          "placeholder": "保真核对",
+          "optional": false
+        },
+        {
+          "name": "batch",
+          "placeholder": "<核对目录>",
+          "optional": false
+        },
+        {
+          "name": "task-dir",
+          "placeholder": "<核对任务目录>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "role",
+          "placeholder": "保真核对",
+          "optional": false
+        },
+        {
+          "name": "case",
+          "placeholder": "<autoid>",
+          "optional": false
+        },
+        {
+          "name": "brief",
+          "placeholder": "<核对目录>/<前缀>.<8位摘要>.brief.json",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<核对目录>/<前缀>.<8位摘要>.verdict.json",
+          "optional": false
+        },
+        {
+          "name": "task-file",
+          "placeholder": "<任务文件路径>；不得附带编写理由、设备输出、手册或期望结论。）",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "role",
+          "placeholder": "<用例重组|脚本编写|保真核对|失败分析>",
+          "optional": false
+        },
+        {
+          "name": "case",
+          "placeholder": "<用例或范围>",
+          "optional": false
+        },
+        {
+          "name": "brief",
+          "placeholder": "<简报或输入路径>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<目标文件路径>",
+          "optional": false
+        },
+        {
+          "name": "task-file",
+          "placeholder": "<任务文件路径>",
+          "optional": false
+        },
+        {
+          "name": "scope",
+          "placeholder": "<范围文件>",
+          "optional": true
+        },
+        {
+          "name": "note",
+          "placeholder": "<补充说明>",
+          "optional": true
+        },
+        {
+          "name": "round",
+          "placeholder": "<轮次>",
+          "optional": true
+        },
+        {
+          "name": "run",
+          "placeholder": "<运行目录>",
+          "optional": true
+        },
+        {
+          "name": "item",
+          "placeholder": "<条目JSON>",
+          "optional": true
+        },
+        {
+          "name": "brief-json",
+          "placeholder": "<结构简报JSON>",
+          "optional": true
+        },
+        {
+          "name": "prior-plans",
+          "placeholder": "<路径...>",
+          "optional": true
+        },
+        {
+          "name": "prior-returns",
+          "placeholder": "<目录...>",
+          "optional": true
+        },
+        {
+          "name": "prior-answers",
+          "placeholder": "<路径...>",
+          "optional": true
+        },
+        {
+          "name": "prior-notes",
+          "placeholder": "<路径...>",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "role",
+          "placeholder": "<用例重组|脚本编写|保真核对|失败分析>",
+          "optional": false
+        },
+        {
+          "name": "batch",
+          "placeholder": "<批量清单JSON或核对目录>",
+          "optional": false
+        },
+        {
+          "name": "task-dir",
+          "placeholder": "<任务目录>",
+          "optional": false
+        },
+        {
+          "name": "out-dir",
+          "placeholder": "<目标输出目录>",
+          "optional": true
+        },
+        {
+          "name": "scope",
+          "placeholder": "<范围文件>",
+          "optional": true
+        },
+        {
+          "name": "note",
+          "placeholder": "<补充说明>",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

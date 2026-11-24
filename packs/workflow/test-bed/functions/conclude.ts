@@ -11,7 +11,7 @@ import { bedFacts, declaredSurface } from './facts.ts';
 import { parseManifest, DEVICE_TYPE_LABEL, DEVICE_TYPES, type ManifestBed } from './manifest.ts';
 import { matchNeed, pickDevices, unmatchedBuildExit, type BedMatch, type Installed, type LeaseEntry, type Need, type NeedDevice, type UnmatchedBuild } from './match.ts';
 
-export type Action = 'search' | 'facts' | Extract<LeaseOp, 'acquire' | 'release' | 'register' | 'unregister' | 'force_release'>;
+export type Action = 'search' | 'facts' | 'help' | 'read' | Extract<LeaseOp, 'acquire' | 'release' | 'register' | 'unregister' | 'force_release'>;
 
 /** A need as the projection and the check see it (parameters normalized). */
 export interface BedNeed {
@@ -31,10 +31,12 @@ export interface Normalized {
   need: BedNeed;
   bed: string | null;
   addresses: { segment: string; count: number } | null;
-  /** The booking run's id (extend and release; required there, ignored elsewhere). */
   booking: string | null;
   reason: string;
   devices: string[] | null;
+  device?: string | null;
+  line?: string | null;
+  mode?: string | null;
 }
 
 export interface PlanFailure {
@@ -49,7 +51,7 @@ export interface PlanFailure {
 }
 
 
-export const ACTION_LABEL: Record<Action, string> = { search: '搜索自动化测试环境', facts: '环境事实', acquire: '预订自动化测试环境', release: '释放预订', register:'登记自动化测试环境', unregister:'注销自动化测试环境', force_release:'强制释放' };
+export const ACTION_LABEL: Record<Action, string> = { search: '搜索自动化测试环境', facts: '环境事实', help: '问设备命令行', read: '读设备输出', acquire: '预订自动化测试环境', release: '释放预订', register:'登记自动化测试环境', unregister:'注销自动化测试环境', force_release:'强制释放' };
 
 export function isAction(value: unknown): value is Action {
   return typeof value === 'string' && Object.hasOwn(ACTION_LABEL, value);
@@ -68,7 +70,7 @@ export function leaseRecord(frozen: FrozenLeases | undefined): Record<string, Le
 export function readParameters(params: Record<string, unknown>): Normalized | PlanFailure {
   const needRaw = isRecord(params.need) ? params.need : {};
   if (params.action === 'extend' || Object.hasOwn(params,'hours') || Object.hasOwn(needRaw,'hours')) return {code:'test-bed.duration_removed',message:'不再接受 hours 或 extend',fix:'自动化测试环境预订不限时长，用完由运行释放'};
-  if (params.action !== undefined && !isAction(params.action)) return {code:'test-bed.bad_action',message:'不认识的自动化测试环境动作',fix:'使用 search、facts、acquire、release、register、unregister 或 force_release'};
+  if (params.action !== undefined && !isAction(params.action)) return {code:'test-bed.bad_action',message:'不认识的自动化测试环境动作',fix:'使用 search、facts、help、read、acquire、release、register、unregister 或 force_release'};
   const action: Action = isAction(params.action) ? params.action : 'search';
   const devices: NeedDevice[] = [];
   const rawDevices = Array.isArray(needRaw.devices) ? needRaw.devices : [];
@@ -100,14 +102,26 @@ export function readParameters(params: Record<string, unknown>): Normalized | Pl
     addresses = { segment: params.addresses.segment, count };
   }
   const booking = typeof params.booking === 'string' && params.booking !== '' ? params.booking : null;
-  if ((action === 'release') && booking === null) {
+  if ((action === 'release' || action === 'help' || action === 'read') && booking === null) {
     return { code: 'test-bed.bad_booking', message: `${ACTION_LABEL[action]}要 booking 参数（预订那次运行的编号）`, fix: 'booking 写预订运行的编号（run_…），开始这次运行时 predecessor 写同一个编号' };
+  }
+  const device = typeof params.device === 'string' && params.device !== '' ? params.device : null;
+  const line = typeof params.line === 'string' ? params.line : null;
+  const mode = typeof params.mode === 'string' && params.mode !== '' ? params.mode : null;
+  if (action === 'help') {
+    if (device === null) return { code: 'test-bed.bad_help', message: '问设备要 device 参数（清单里这台设备的名字）', fix: 'device 写你预订的某台设备的名字', pointer: '/parameters/device' };
+    if (line === null || line.trim() === '') return { code: 'test-bed.bad_help', message: '问设备要 line 参数（要问的命令行，不带问号）', fix: 'line 写要问的命令行；Hub 会从最长的前缀起逐个前缀问设备，不按回车', pointer: '/parameters/line' };
+  }
+  if (action === 'read') {
+    if (device === null) return { code: 'test-bed.bad_read', message: '读设备要 device 参数（清单里这台设备的名字）', fix: 'device 写你预订的某台设备的名字', pointer: '/parameters/device' };
+    if (line === null || line.trim() === '') return { code: 'test-bed.bad_read', message: '读设备要 line 参数（一条只读命令）', fix: 'line 写一条只读命令，一次一行；整行要符合管理员在执行器里声明的命令形状', pointer: '/parameters/line' };
+    if (mode !== null) return { code: 'test-bed.bad_read', message: '读设备不分级别，不带 mode 参数', fix: '去掉 mode 再读', pointer: '/parameters/mode' };
   }
   const reason=typeof params.reason==='string'?params.reason:'';
   if ((action==='unregister'||action==='force_release')&&!reason.trim()) return {code:'test-bed.reason_required',message:'必须写释放或注销的理由',fix:'reason 照用户原话填写'};
   if ((action==='register'||action==='unregister'||action==='force_release')&&bed===null) return {code:'test-bed.unknown_bed',message:'必须指定自动化测试环境',fix:'bed 写当前清单里的自动化测试环境名'};
   if(params.devices!==undefined && (!Array.isArray(params.devices)||params.devices.length===0||params.devices.some(d=>typeof d!=='string')||new Set(params.devices).size!==params.devices.length))return {code:'test-bed.bad_devices',message:'devices 须为不重复的设备名数组',fix:'devices 写清单里的设备名，不写表示整个自动化测试环境'};
-  return { action, need: { devices, build }, bed, addresses, booking, reason, devices:Array.isArray(params.devices)?params.devices as string[]:null };
+  return { action, need: { devices, build }, bed, addresses, booking, reason, devices:Array.isArray(params.devices)?params.devices as string[]:null, device: action === 'help' || action === 'read' ? device : null, line: action === 'help' || action === 'read' ? line : null, mode: action === 'help' ? mode : null };
 }
 
 const matchNeedOf = (need: BedNeed): Need => ({ devices: need.devices, ...(need.build === undefined ? {} : { build: need.build }) });
@@ -356,4 +370,59 @@ export function releasePlan(frozen: FrozenLeases | undefined, booking: string): 
   if (held.length === 0) return { ok: false, failure: NOT_HELD(booking) };
   const split = splitKeys(held);
   return { ok: true, plan: { booking, bed: split.bed, devices: split.devices, addresses: split.addresses, keys: split.keys, conclusion: heldParts('释放', split, booking).join('，') } };
+}
+
+export interface HelpPlan {
+  booking: string;
+  bed: string;
+  device: string;
+  key: string;
+  line: string;
+  mode: string | null;
+  conclusion: string;
+}
+
+function heldDevice(beds: ManifestBed[], normalized: Normalized, frozen: FrozenLeases | undefined, words: { code: string; verb: string }): { ok: true; bed: string; key: string; device: string } | { ok: false; failure: PlanFailure } {
+  const device = normalized.device ?? '';
+  const held = heldKeys(frozen).flatMap((key) => {
+    const parts = key.split('/');
+    return parts.length === 3 && parts[0] === 'bed' && parts[2] === device && (normalized.bed === null || parts[1] === normalized.bed) ? [{ key, bed: parts[1] as string }] : [];
+  });
+  if (held.length === 0) {
+    return { ok: false, failure: { code: 'test-bed.not_holder', message: `你没有持有设备 ${device} 的预订：这次运行的血缘里没有它的租约行`, fix: `booking 写你自己的预订运行的编号，开始这次运行时 predecessor 写同一个编号；device 写你预订的某台设备的名字；别人预订的设备不能${words.verb}`, pointer: '/parameters/device' } };
+  }
+  if (held.length > 1) {
+    return { ok: false, failure: { code: words.code, message: `设备名 ${device} 在你持有的不止一个自动化测试环境里`, fix: 'bed 写这台设备所在的自动化测试环境', pointer: '/parameters/bed' } };
+  }
+  const chosen = held[0] as { key: string; bed: string };
+  const bed = beds.find((b) => b.name === chosen.bed);
+  if (bed === undefined || !bed.devices.some((d) => d.name === device)) {
+    return { ok: false, failure: { code: 'test-bed.unknown_bed', message: `清单里没有自动化测试环境 ${chosen.bed} 的设备 ${device}`, fix: '用当前清单重开运行；清单换过以后要重新预订', pointer: '/parameters/device' } };
+  }
+  return { ok: true, bed: chosen.bed, key: chosen.key, device };
+}
+
+export function helpPlan(beds: ManifestBed[], normalized: Normalized, frozen: FrozenLeases | undefined): { ok: true; plan: HelpPlan } | { ok: false; failure: PlanFailure } {
+  const held = heldDevice(beds, normalized, frozen, { code: 'test-bed.bad_help', verb: '问' });
+  if (!held.ok) return held;
+  const line = normalized.line ?? '';
+  const conclusion = `向 ${held.bed} 的设备 ${held.device} 问命令行“${line}”各个位置的说明${normalized.mode == null ? '' : `（级别 ${normalized.mode}）`}：只问、不按回车、不执行`;
+  return { ok: true, plan: { booking: normalized.booking ?? '', bed: held.bed, device: held.device, key: held.key, line, mode: normalized.mode ?? null, conclusion } };
+}
+
+export interface ReadPlan {
+  booking: string;
+  bed: string;
+  device: string;
+  key: string;
+  line: string;
+  conclusion: string;
+}
+
+export function readPlan(beds: ManifestBed[], normalized: Normalized, frozen: FrozenLeases | undefined): { ok: true; plan: ReadPlan } | { ok: false; failure: PlanFailure } {
+  const held = heldDevice(beds, normalized, frozen, { code: 'test-bed.bad_read', verb: '读' });
+  if (!held.ok) return held;
+  const line = normalized.line ?? '';
+  const conclusion = `在 ${held.bed} 的设备 ${held.device} 上读只读命令“${line}”的输出：一次一行，整行要符合执行器声明的命令形状`;
+  return { ok: true, plan: { booking: normalized.booking ?? '', bed: held.bed, device: held.device, key: held.key, line, conclusion } };
 }

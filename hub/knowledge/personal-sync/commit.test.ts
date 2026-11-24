@@ -202,3 +202,20 @@ for(const kind of ['archive','attribution'])test(`a queued ${kind} cannot recrea
  try{await reaches(entered,pending);await w.kit.personalPayloads!.purge(w.user,state.epoch);const local=await w.kit.personalSync!.state(w.user);await w.kit.personalSync!.resume(w.user,local.epoch,local.state_version);}finally{release.release();}
  await refused;assert.equal(await spaces.current(w.user.id),null);
 });
+
+test('personal sync verifies entries citing a kityminder@1 mindmap fragment without a run or refs.legacy-parser',{timeout:60_000},async t=>{
+ const w=await makeWorld(pg,{mindmapSkill:true});t.after(w.close);const s=await session(w),directory=randomUUID(),source=randomUUID(),entry=randomUUID();
+ assert.equal((await w.kit.store.find({kind:'action',key:'refs.legacy-parser',value:'kityminder@1',limit:10})).items.length,0);
+ const raw=Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成脑图'},children:[{data:{id:'n1',text:'每次保留两份配置'},children:[]}]}})),quote=Buffer.from('每次保留两份配置');
+ const {sha256Hex}=await import('../../records/api.ts');const chunk=object('bytes',{bytes_base64:raw.toString('base64')}),quotation=object('bytes',{bytes_base64:quote.toString('base64')});
+ const dir=object('directory_revision',{item_id:directory,parents:[],parent_directory:null,name:''});
+ const src=object('source_revision',{item_id:source,parents:[],directory_id:directory,name:'synthetic.km.json',media_type:'application/json',raw_sha256:sha256Hex(raw),size:raw.length,chunks:[personalSyncObjectId(chunk)]});
+ const fact=object('entry_revision',{item_id:entry,parents:[],directory_id:directory,content:{kind:'observation',statement:'合成个人同步脑图条目',data:{},applicability:null},grounds:[{source:personalSyncObjectId(src),parser:'kityminder@1',selector:'n/n1',quotation:personalSyncObjectId(quotation)}]});
+ const inventory=snapshot([{kind:'directory_revision',item_id:directory,heads:[personalSyncObjectId(dir)]},{kind:'source_revision',item_id:source,heads:[personalSyncObjectId(src)]},{kind:'entry_revision',item_id:entry,heads:[personalSyncObjectId(fact)]}]);
+ await upload(w,s,[chunk,quotation,dir,src,fact,inventory.page,inventory.snapshot]);
+ const result=await s.sync.commit(w.user,s.session,{schema:'personal-sync-commit@1',epoch:s.state.epoch,operation_id:randomUUID(),expected_state:s.state.state_version,base_snapshot:s.state.snapshot,snapshot:personalSyncObjectId(inventory.snapshot)});
+ assert.equal(result.verification.length,1);assert.equal(result.verification[0].status,'verified',JSON.stringify(result.verification));
+ const current=await w.knowledge.spaces!.current(w.user.id);assert.ok(current);
+ const view=await w.knowledge.spaces!.entry(w.user,current.root,'/',current.body.entries[0].entry);
+ assert.equal(view?.row.status,'verified');assert.equal(view?.body.grounds[0].quotation,'每次保留两份配置');
+});

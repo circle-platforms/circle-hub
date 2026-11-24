@@ -9,16 +9,16 @@ R[5]). They hold no inputs, outputs, arguments or business text.
 
 | File | What it holds | Who imports it |
 | --- | --- | --- |
-| `usage.ts` | the trace context on `AsyncLocalStorage`: `startTrace`, `background`, `step`, `addUsage`, `recordQuery`, `recordSourceRead`, `addEvent`, `updateTrace`, `setTraceStatus` | everyone, also `hub/records`, `hub/refs` and `hub/rules`: it depends on Node and on types only |
-| `names.ts` | `STEP_NAMES` and `USAGE_NAMES`, the one list of names, and the mapping of what arrives to an entry of it | `usage.ts` (types), `api.ts` |
+| `usage.ts` | the trace context on `AsyncLocalStorage`: `startTrace`, `background`, `step`, `addUsage`, `recordQuery`, `recordSourceRead`, `addEvent`, `updateTrace`, `setTraceStatus` | re-exports the context from `hub/records/api.ts` |
+| `names.ts` | re-exports the names and mappings owned by records | `usage.ts` (types), `api.ts` |
 | `writer.ts` | `TraceWriter`: the bounded queue and the batch insert | `api.ts` |
 | `retention.ts` | `purgeExpired`, `scheduleRetention` | `api.ts` |
 | `reader.ts` | `TraceReader`: `list`, `show`, `top` with the permission rule; `background`, `clients`, `releases` for the console's 运行状况 page, administrators only | `api.ts` |
 | `api.ts` | the public surface, `startTelemetry`, `openTraceReader` | everything above records |
 
-Dependency direction: `hub/records/db.ts`, `hub/records/objects.ts`, `hub/refs/parser.ts` and `hub/rules/sandbox` call
-`usage.ts` and nothing else of this package, so they never pull in the writer. `writer.ts` and `reader.ts` sit above
-records: they use its `createPool` and `Database`. `usage.ts` imports neither.
+Dependency direction: telemetry imports records only through `hub/records/api.ts`. The process context
+and its names live in records; telemetry owns the writer, reader and retention job. The `usage.ts` and
+`names.ts` exports refer to that same context and registry, with no second state.
 
 ## How a trace works
 
@@ -184,3 +184,5 @@ nothing else (decision 147: all MCP calls, not per tool). A task's gap is the me
 `hub/server/assemble/cli-trace.test.ts`, `hub/rules/sandbox/usage.test.ts`, `hub/runs/engine/trace-steps.test.ts` and one
 test each in `hub/connectors/http.test.ts`, `hub/knowledge/sync-schedule.test.ts`, `hub/knowledge/feeding-bounds.test.ts`,
 `hub/dispatch/results.test.ts` and `hub/server/console/staging.test.ts`. No test asserts a duration.
+
+The authenticated MCP skill uses `TraceReader.show` with origin `mcp` and a 200-step cap. The server projects diagnostic metadata and usage without status text. The CLI keeps its existing default bound.

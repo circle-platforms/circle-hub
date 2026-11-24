@@ -1,0 +1,21 @@
+{
+  "state": {
+    "scenario": "创建后端池 pool_demo 并把后端服务器 rs1 加进去",
+    "commands": [
+      "server create rs1 rs1.example.test 8080",
+      "pool create pool_demo http",
+      "member add pool_demo rs1 5"
+    ]
+  },
+  "questions": {
+    "list_quality": {
+      "type": "score",
+      "instructions": "Rate the ordered list of CLI commands in `commands` against the configuration scenario in `scenario`.",
+      "criteria": [
+        "The list contains a command that is wrong for the scenario or unrelated to it",
+        "Every command is relevant, but at least one command that the scenario needs is missing",
+        "The list is complete and correct for the scenario"
+      ]
+    }
+  }
+}

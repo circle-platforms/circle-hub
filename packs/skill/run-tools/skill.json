@@ -1,0 +1,11 @@
+{
+  "schema": "skill@1",
+  "parsers": [],
+  "modules": [
+    {
+      "id": "hub-client",
+      "title": "客户端取运行与提交",
+      "family": "围绕 Hub 运行的客户端本地工具：取运行导出、分文件提交，不判断内容"
+    }
+  ]
+}

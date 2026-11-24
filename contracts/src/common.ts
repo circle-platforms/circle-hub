@@ -20,12 +20,18 @@ export const idOf = (prefix: string) => {
 };
 export const RunId = idOf('run');
 export const UserId = idOf('usr');
+export const TeamId = idOf('tm');
+export const TeamAssignmentSubject = z.union([TeamId, z.literal('*')]);
+export const ResourceAssignmentSubject = z.union([TeamAssignmentSubject, UserId]);
 export const TokenId = idOf('tok');
 export const RecordId = idOf('rcd');
 /** A lease identity: `lse_` plus a 26 character lowercase ULID (the identity the keys of one grant are held under). */
 export const LeaseId = idOf('lse');
 export type RunId = z.infer<typeof RunId>;
 export type UserId = z.infer<typeof UserId>;
+export type TeamId = z.infer<typeof TeamId>;
+export type TeamAssignmentSubject = z.infer<typeof TeamAssignmentSubject>;
+export type ResourceAssignmentSubject = z.infer<typeof ResourceAssignmentSubject>;
 export type TokenId = z.infer<typeof TokenId>;
 export type RecordId = z.infer<typeof RecordId>;
 export type LeaseId = z.infer<typeof LeaseId>;
@@ -110,6 +116,7 @@ export const ProtocolError = z.strictObject({
   code: z.string().min(1),
   message: z.string(),
   fix: z.string().optional(),
+  recommendation_warrant: z.string().min(1).optional().describe('the versioned component deciding this recommendation, independent of the error claim warrant'),
   path: JsonPointer.optional().describe('JSON Pointer into the call arguments; for submit_result, into the submission'),
   item: ItemId.optional(),
   requirement: z.string().optional(),

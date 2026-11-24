@@ -1,3 +1,4 @@
+import { CallFailure } from './functions/text.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../../../hub/testing/parsers.ts';
 import {readAddress} from './functions/bed.ts';
 import {bedsOf} from './functions/test-support.ts';
@@ -5,7 +6,6 @@ import { createHash } from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import { satisfiedRecipe, satisfiedRecipes } from './tools/generate-workbook.ts';
 import { generateWorkbook, generateWorkbookSet, GENERATOR } from './functions/generate.ts';
-// Real run engine and temporary PostgreSQL; every contract, profile, document, device and model is synthetic.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { join } from 'node:path';
@@ -22,6 +22,8 @@ import { planSubject } from './functions/subject.ts';
 import {parseRuntimeContract,runtimeDigest,stripAdditions} from './functions/runtime-contract.ts';
 import {profileDocument} from './testing/runtime.ts';
 import { call, openHub, sha, ROOT, type Hub } from './testing/hub.ts';
+import { attachRecompositionFields, runSyntheticRecomposition } from './testing/recompose-hub-helper.ts';
+import { TEMPLATE_HEADER_ROW, templateDocument } from './testing/template.ts';
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres; let hub: Hub;
 const map = (duplicate = false) => ({ root: { data: { id: 'doc-1', text: '合成文档' }, children: [
@@ -56,7 +58,7 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     assert.ok(StartRunOutput.safeParse({ ...detail.answer, trace: 'a'.repeat(32) }).success);
     const run = detail.answer.run!; assert.deepEqual(run.items.map((v) => v.id), ['doc-1:c-1']);
     assert.deepEqual([run.items[0].fields.autoid, run.items[0].fields.auto, run.items[0].fields.priority], [AUTOID, '1', '2']);
-    assert.deepEqual(run.requirements.map((v) => v.key), ['plan', 'contract_methods', 'bed_addresses', 'commands_known', 'expected_grounded', 'workbook_verified']);
+    assert.deepEqual(run.requirements.map((v) => v.key), ['plan', 'contract_methods', 'bed_addresses', 'commands_known', 'expected_grounded', 'scenario_kept', 'workbook_verified']);
     const answer = await hub.service.submitResult(hub.alice, submission(run.run), call());
     assert.ok(SubmitResultOutput.safeParse({ ...answer, trace: 'a'.repeat(32) }).success, JSON.stringify(answer));
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors)); const result = ValidationResult.parse(answer.result);
@@ -88,17 +90,20 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const contractRequirement=rows[0].requirements.find(row=>row.requirement==='contract_methods')!;assert.equal(contractRequirement.status,'unsatisfied');
     const problems=contractRequirement.claims.flatMap(claim=>(claim.statement.data?.problems??[]) as Array<{document:string;pointer:string}>);
     assert.deepEqual(problems.map(problem=>[problem.document,problem.pointer]),[0,2,3,4].map(index=>['catalog',`/steps/${index}/args/0`]));
-    assert.throws(()=>satisfiedRecipes({run:first.answer,result:answer,submission:submitted,...inputBytes}),/计划仍有工作簿缺输入以外的错误/);
+    assert.throws(()=>satisfiedRecipes({run:first.answer,result:answer,submission:submitted,...inputBytes}),(error: unknown) => error instanceof CallFailure && error.category === 'invalid_parameters' && error.fact.includes('case-compile.method_forbidden'));
     const quotes=submitted.items.flatMap((item:{slots:{plan:Array<{quotes:Array<{reference:string;text:string}>}>}})=>item.slots.plan.flatMap(claim=>claim.quotes));
     for(const quote of quotes){const resolved=await hub.service.resolveReference(hub.alice,{run:plan.run,text:quote.text,expect:'quotation'},call());assert.equal(resolved.resolution,'resolved',JSON.stringify(resolved));assert.ok(JSON.stringify(resolved).includes(quote.reference));}
   });
-  /** One frozen contract of this many bytes, a whole mind map of this many cases verified in one plan and one workbook, then again against that workbook. */
   async function verifyWholeWorkbook(cases: number, repeats: number, size: {min: number; max: number}): Promise<void> {
     const contract=structuredClone(CONTRACT_DOC);contract.entries[0].h_semantics='synthetic contract documentation '.repeat(repeats);
     const original=stripAdditions(contract)!;contract.original.contract_sha256=runtimeDigest(original);original.contract_sha256=contract.original.contract_sha256;
     contract.original.sha256=sha(JSON.stringify(original));contract.contract_sha256=runtimeDigest(contract);
     const parsedContract=parseRuntimeContract(contract);assert.ok(parsedContract.ok,JSON.stringify(parsedContract));
-    const profile=profileDocument(contract),contractBytes=Buffer.from(JSON.stringify(contract));assert.ok(contractBytes.length>size.min&&contractBytes.length<size.max,String(contractBytes.length));
+    const profile=profileDocument(contract);
+    const book=profile.workbook;
+    const templateRows=Math.max(80, TEMPLATE_HEADER_ROW + 1 + cases * 6 + 8);
+    profile.workbook={...book,template:templateDocument({sheet:book.sheet,header:book.header,identity_marker:book.identity_marker,range_name:book.range_name},contract.runtime.minimum_version,contract.original?.contract_sha256??contract.contract_sha256,TEMPLATE_HEADER_ROW,templateRows)};
+    const contractBytes=Buffer.from(JSON.stringify(contract));assert.ok(contractBytes.length>size.min&&contractBytes.length<size.max,String(contractBytes.length));
     const document=map();document.root.data.id='batch-doc';document.root.children=Array.from({length:cases},(_,i)=>{
       const node=structuredClone(map().root.children[0]);node.data.id='case-'+i;node.data.autoid=String(BigInt(AUTOID)+BigInt(i));
       const step=node.children[0];assert.ok('children' in step);step.data.id='step-'+i;step.children[0].data.id='expected-'+i;return node;
@@ -107,20 +112,23 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const nodes=(parsed.document.model as {nodes:Array<{data:{id?:string};selector:string}>}).nodes;
     const put=(external:string,bytes:Uint8Array)=>hub.external.put(external,{bytes,mediaType:'application/json'});
     put('agile:mindmap:synthetic-batch',sourceBytes);put('doc:doc:synthetic-large-contract',contractBytes);put('doc:doc:synthetic-large-profile',Buffer.from(JSON.stringify(profile)));
-    const args=start();delete (args.inputs as Partial<typeof args.inputs>).case_index;delete (args.parameters as Partial<typeof args.parameters>).autoid;
-    args.inputs.subject.external='agile:mindmap:synthetic-batch';args.inputs.contract.external='doc:doc:synthetic-large-contract';args.inputs.profile.external='doc:doc:synthetic-large-profile';
+    const recomp=await runSyntheticRecomposition(hub,{product:'widget',build:'Fixture_Build_A',subject:{external:'agile:mindmap:synthetic-batch'}});
+    const started=start();delete (started.inputs as Partial<typeof started.inputs>).case_index;
+    started.inputs.subject.external='agile:mindmap:synthetic-batch';started.inputs.contract.external='doc:doc:synthetic-large-contract';started.inputs.profile.external='doc:doc:synthetic-large-profile';
+    const args={...started,inputs:{...started.inputs,recomposition_run:{reference:recomp.runRef},recomposition_result:{reference:recomp.resultRef}},parameters:{}};
     const first=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const plan=first.answer.run!;assert.equal(plan.items.length,cases);
-    const send=(run:string)=>({run,model:'synthetic-model',items:plan.items.map((item,i)=>{
+    const send=(targetRun:typeof plan)=>({run:targetRun.run,model:'synthetic-model',items:targetRun.items.map((item,i)=>{
       const data=goodData(),leaf=nodes.find(node=>node.data.id==='expected-'+i)!;assert.ok(leaf);data.expects[0].quote.reference=`src:${sha(sourceBytes.toString())}/kityminder@1/${leaf.selector}`;
+      attachRecompositionFields(item,recomp.resultRef,data);
       return {item:item.id,handling:'handled' as const,slots:{plan:[{text:'合成整卷计划',quotes:data.expects.map(row=>row.quote),data}]}};
     })});
-    const submitted=send(plan.run),answer=await hub.service.submitResult(hub.alice,submitted,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
+    const submitted=send(plan),answer=await hub.service.submitResult(hub.alice,submitted,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
     const rows=Object.values(answer.result!.partitions).flat();assert.equal(rows.length,cases);
     for(const row of rows)for(const requirement of row.requirements.filter(value=>value.requirement!=='workbook_verified'))assert.equal(requirement.status,'satisfied',JSON.stringify(requirement));
     const recipes=satisfiedRecipes({run:first.answer,result:answer,submission:submitted,contract:contractBytes,profile:Buffer.from(JSON.stringify(profile)),inventory:Buffer.from(JSON.stringify(MANIFEST_DOC))});assert.equal(recipes.length,cases);
     const workbook=generateWorkbookSet(recipes);const artifact=await hub.kit.artifacts.ingest({bytes:workbook,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',origin:{read:{object:'fixture:workbook:four-cases'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});
     const second=await hub.service.startRunDetailed(hub.alice,{...args,predecessor:plan.run,parameters:{plan_run:plan.run},inputs:{...args.inputs,plan_result:{run:plan.run},workbook:{reference:'src:'+artifact.body.sha256}}},call());assert.equal(second.answer.call_result,'ok',JSON.stringify(second.answer.errors));
-    const verified=await hub.service.submitResult(hub.alice,send(second.answer.run!.run),call());assert.equal(verified.acceptance,'accepted',JSON.stringify(verified.errors));
+    const verified=await hub.service.submitResult(hub.alice,send(second.answer.run!),call());assert.equal(verified.acceptance,'accepted',JSON.stringify(verified.errors));
     const verifiedRows=Object.values(verified.result!.partitions).flat();assert.equal(verifiedRows.length,cases);
     for(const row of verifiedRows){assert.ok(row.requirements.every(requirement=>requirement.status==='satisfied'),JSON.stringify(row.requirements));const proofs=row.requirements.filter(requirement=>requirement.requirement==='workbook_verified').flatMap(requirement=>requirement.claims).filter(claim=>claim.statement.data?.sha256);assert.ok(proofs.length);for(const proof of proofs){assert.equal(proof.statement.data!.sha256,artifact.body.sha256);assert.equal((proof.statement.data!.autoids as string[]).length,cases);}}
   }
@@ -234,6 +242,22 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const verified=await hub.service.submitResult(hub.alice,send(second.answer.run!),call());assert.equal(verified.acceptance,'accepted',JSON.stringify(verified.errors));
     const requirements=Object.values(verified.result!.partitions).flat().flatMap(item=>item.requirements);assert.ok(requirements.every(row=>row.status==='satisfied'),JSON.stringify(requirements));
     const proof=requirements.find(row=>row.requirement==='workbook_verified')!;assert.ok(proof.claims.some(claim=>claim.warrant.producer==='function'&&claim.statement.verdict==='support'));assert.ok(requirements.find(row=>row.requirement==='expected_grounded')!.claims.some(claim=>claim.warrant.producer==='model'&&claim.qualifier.marks.includes('conditional_on_judgment')));
+  });
+  it('points workbook start_run refusals at /parameters/plan_run rather than /inputs/subject', async () => {
+    const args = start(); delete (args.inputs as Partial<typeof args.inputs>).case_index;
+    const first = await hub.service.startRunDetailed(hub.alice, args, call()); const planRun = first.answer.run!;
+    const sent = submission(planRun.run); const answer = await hub.service.submitResult(hub.alice, sent, call()); assert.equal(answer.acceptance, 'accepted');
+    const recipe = satisfiedRecipe({ run: first.answer, result: answer, submission: sent, contract: Buffer.from(JSON.stringify(CONTRACT_DOC)), profile: Buffer.from(JSON.stringify(PROFILE_DOC)), inventory: Buffer.from(JSON.stringify(MANIFEST_DOC)) });
+    const bytes = generateWorkbook(recipe);
+    const artifact = await hub.kit.artifacts.ingest({ bytes, mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', origin: { read: { object: 'fixture:workbook:missing-plan-run' } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [hub.alice.id], admins: true, packs: [], shareable: false }, name: 'missing-plan-run.xlsx' });
+    const missingPlanRun = await hub.service.startRunDetailed(hub.alice, { ...args, predecessor: planRun.run, inputs: { ...args.inputs, workbook: { reference: `src:${artifact.body.sha256}` } } }, call());
+    assert.equal(missingPlanRun.answer.call_result, 'error');
+    const err = missingPlanRun.answer.errors[0];
+    assert.equal(err?.code, 'case-compile.workbook_context');
+    assert.equal(err?.path, '/parameters/plan_run');
+    assert.match(err?.fix ?? '', /parameters\.plan_run/);
+    assert.match(err?.fix ?? '', /predecessor/);
+    assert.match(err?.fix ?? '', /inputs\.plan_result/);
   });
   it('keeps the pack unavailable to an unassigned user', async () => { const result = await hub.service.startRunDetailed(hub.bob, start(), call()); assert.equal(result.answer.call_result, 'error'); });
 });

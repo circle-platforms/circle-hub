@@ -22,71 +22,35 @@ import { libpqAvailable, LIBPQ_MISSING, removeDir, socketPort, sqlState, tempDir
 
 const libpq = await libpqAvailable();
 
-/** A column per table that a statement may name; for users, tokens and pointers one the runtime role may not update. */
-const COLUMN: Record<string, string> = {
-  schema_migrations: 'sha256',
-  member_deletion_intents:'member',
-  personal_cache_installs:'owner',run_upload_declarations:'run_record',run_pack_records:'record',held_objects:'sha256',held_object_targets:'sha256',original_targets:'artifact',
-  records: 'body',
-  object_holds:'record',
-  run_originals:'artifact',
-  personal_sync_mode_operations:'owner',
-  personal_sync_heads:'owner',
-  personal_sync_bindings:'owner',personal_sync_notes:'owner',personal_sync_native_credits:'owner',personal_sync_exports:'owner',personal_sync_memory_reservations:'owner',
-  personal_sync_identities:'identity',
-  personal_sync_clients:'name_payload',
-  personal_sync_sessions:'snapshot',
-  personal_sync_objects:'bytes',
-  personal_sync_edges:'child',
-  personal_sync_session_objects:'object_id',
-  personal_sync_retained:'object_id',
-  personal_sync_operations:'receipt',
-  personal_sync_aborts:'at',
-  personal_spaces:'owner',
-  personal_payloads:'owner',
-  personal_record_bindings:'owner',
-  personal_objects:'owner',
-  personal_purges:'owner',
-  personal_legacy_ready:'record',
-  personal_legacy_candidates:'record',
-  personal_legacy_retire:'sha256',
-  personal_legacy_retired:'sha256',
-  record_index: 'value',
-  record_keys: 'key',
-  objects: 'media_type',
-  user_history: 'name',
-  call_logs: 'tool',
-  call_notes: 'note',
-  call_reasons: 'note',
-  users: 'created_at', // name is updatable since migration 25 (rename)
-  tokens: 'label',
-  oauth_clients: 'name',
-  invitations: 'user_id',
-  pointers: 'name',
-  leases: 'key',
-  lease_registrations: 'owner',
-  memory_heads:'space',
-  memory_space_usage:'space',
-  knowledge_space_search: 'space',
-  knowledge_space_search_documents: 'token_bytes',
-  knowledge_space_search_ready: 'row_count',
-  knowledge_space_search_totals:'quota_space',
-  run_original_purges:'at',
-  trace_spans:'name',
-  resource_samples:'boot',
-  process_events:'kind',
-};
-
 /** Everything the application role must never do, each to be refused with 42501 (insufficient_privilege). */
-function tamperingStatements(): string[] {
+async function tamperingStatements(session: SqlSession): Promise<string[]> {
+  const columns = await session.query(`SELECT c.relname AS table_name, a.attname AS column_name
+    FROM pg_catalog.pg_attribute a
+    JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+      AND a.attnum > 0 AND NOT a.attisdropped AND a.attidentity = '' AND a.attgenerated = ''
+    ORDER BY c.relname, a.attnum`);
   const out: string[] = [];
-  for (const table of Object.keys(RUNTIME_GRANTS)) {
-    const column = COLUMN[table];
-    assert.ok(column, `a column for ${table}`);
+  for (const [table, grants] of Object.entries(RUNTIME_GRANTS)) {
+    const mutable = table === 'teams' || table === 'lease_registrations';
+    let updateProbe: string[] = [];
+    if (!mutable) {
+      const writable = new Set<string>();
+      for (const part of grants.split(/,\s*(?![^(]*\))/)) {
+        const match = /^UPDATE(?:\s*\(([^)]*)\))?$/.exec(part.trim());
+        if (!match) continue;
+        assert.ok(match[1], `${table}: whole-table UPDATE needs an explicitly approved mutable exception`);
+        for (const column of match[1].split(',')) writable.add(column.trim());
+      }
+      const column = columns.find(row => row.table_name === table && !writable.has(String(row.column_name)))?.column_name;
+      assert.equal(typeof column, 'string', `${table}: a real column without registered UPDATE permission is required`);
+      const quoted = '"' + String(column).replaceAll('"', '""') + '"';
+      updateProbe = [`UPDATE ${table} SET ${quoted} = ${quoted}`];
+    }
     out.push(
-      // The ownership registry is mutable derived state; registered clients that never led to a token and diagnostic rows
-      // past their retention are removed (still never updated); every other table keeps its original forbidden-row probes.
-      ...(table === 'lease_registrations' ? [] : ['oauth_clients', 'trace_spans', 'resource_samples', 'process_events'].includes(table) ? [`UPDATE ${table} SET ${column} = ${column}`] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
+      ...(['lease_registrations', 'oauth_clients', 'trace_spans', 'resource_samples', 'process_events', 'team_members', 'external_member_identities'].includes(table) ? [] : [`DELETE FROM ${table}`]),
+      ...updateProbe,
       `TRUNCATE ${table}`,
       `TRUNCATE ${table} CASCADE`,
       `DROP TABLE ${table}`,
@@ -142,6 +106,12 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
   /** The statements the application role ran or that failed with another SQLSTATE than 42501. */
   const notRefused = () =>
     withSession(control.applicationConnector, control.target.database, async (session) => {
+      assert.equal(RUNTIME_GRANTS.teams, 'SELECT, INSERT, UPDATE', 'the approved projection grant, never a history grant');
+      assert.equal(RUNTIME_GRANTS.team_members, 'SELECT, INSERT, DELETE', 'membership projection cannot be updated');
+      assert.equal(RUNTIME_GRANTS.external_member_identities, 'SELECT, INSERT, DELETE', 'external identities can be unbound by deletion without allowing UPDATE');
+      assert.equal(await sqlState(session, 'UPDATE teams SET deleted_at = deleted_at'), null);
+      assert.equal(await sqlState(session, 'DELETE FROM team_members WHERE false'), null);
+      assert.equal(await sqlState(session, 'DELETE FROM external_member_identities WHERE false'), null);
       // The registered-prefix projection must remain writable before and after restoration, without granting DDL.
       await session.query("INSERT INTO lease_registrations (prefix, owner, registered_at) VALUES ('test/ownership/', 'synthetic-owner', now())");
       await session.query("UPDATE lease_registrations SET owner = 'synthetic-next' WHERE prefix = 'test/ownership/'");
@@ -149,7 +119,7 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       await session.query("DELETE FROM lease_registrations WHERE prefix = 'test/ownership/'");
       assert.deepEqual(await session.query("SELECT owner FROM lease_registrations WHERE prefix = 'test/ownership/'"), []);
       const out: string[] = [];
-      for (const statement of tamperingStatements()) {
+      for (const statement of await tamperingStatements(session)) {
         const code = await sqlState(session, statement);
         if (code !== '42501') out.push(`${statement} -> ${code ?? 'ran'}`);
       }
@@ -201,6 +171,26 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       await kit.vault.initKey();
       const { user } = await kit.principals.bootstrapAdmin('管理员');
       privateOwner=user;
+      const team = await kit.teams.create(user, '合成权限团队');
+      const member = await kit.principals.createUser(user, '合成权限成员');
+      const outsider = await kit.principals.createUser(user, '合成未授权成员');
+      const membership = await kit.teams.add(user, team.id, member.id);
+      await kit.authorizations.assignResource(user, 'synthetic-team-resource', team.id);
+      await withSession(control.applicationConnector, control.target.database, async session => {
+        try {
+          await session.query('UPDATE teams SET name=$2,deleted_at=now() WHERE id=$1', [team.id, '合成投影改写']);
+          await session.query('DELETE FROM team_members WHERE team_id=$1 AND user_id=$2', [team.id, member.id]);
+          await session.query('INSERT INTO team_members(team_id,user_id,added_at,added_by) VALUES($1,$2,$3,$4)', [team.id, outsider.id, membership.added_at, user.id]);
+          assert.equal((await kit.teams.get(user, team.id))?.name, team.name, 'mutable projection cannot rewrite the verified team definition');
+          assert.deepEqual((await kit.teams.members(user, team.id)).map(row => row.user.id), [member.id], 'projection writes cannot grant or revoke membership');
+          assert.equal(await kit.authorizations.canUseResource(member.id, 'synthetic-team-resource'), true);
+          assert.equal(await kit.authorizations.canUseResource(outsider.id, 'synthetic-team-resource'), false, 'inserting a projection row cannot mint authority');
+        } finally {
+          await session.query('DELETE FROM team_members WHERE team_id=$1 AND user_id=$2', [team.id, outsider.id]);
+          await session.query('INSERT INTO team_members(team_id,user_id,added_at,added_by) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING', [team.id, member.id, membership.added_at, user.id]);
+          await session.query('UPDATE teams SET name=$2,deleted_at=NULL WHERE id=$1', [team.id, team.name]);
+        }
+      });
       await kit.store.withTransaction(async tx=>{
         const source=await kit.artifacts.ingest({personalOwner:user.id,bytes:runOriginalBytes,mediaType:'text/plain',name:'synthetic-held.txt',origin:{upload:{session:null,message:null}},author:{user:user.id},provenanceType:'declared',visibility:{readers:[user.id],admins:false,packs:[],shareable:false}},tx);
         heldOriginal=source.digest;heldOriginalSha=source.body.sha256;

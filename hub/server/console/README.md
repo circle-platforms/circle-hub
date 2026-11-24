@@ -198,8 +198,8 @@ PostgreSQL、独立浏览器目录和模拟钥匙串，不读取个人配置。�
   只改来源不会产生新版本，实际出现的是“更新了内容和来源”。被取代的条目显示生成词表的状态名和“查看取代它的条目”链接，
   先在本文件夹找，再在快照里最多查 1000 条。
 - 空状态（`html.ts` 的 `EmptyState`/`emptyAction`）写一句事实、一句这里会出现什么和一个主要按钮；知识首页、文件夹、
-  分享到团队记录、记忆、原文和已连接客户端已改用。成功提示由 `feedback.ts` 按动作写明结果，例如“已新建文件夹 · 方法”
-  “已分享到团队 · 2 条；已拒收 1 条”；管理操作写“已”加操作名。不再出现“操作已完成”。
+  分享到公共空间记录、记忆、原文和已连接客户端已改用。成功提示由 `feedback.ts` 按动作写明结果，例如“已新建文件夹 · 方法”
+  “已分享到公共空间 · 2 条；已拒收 1 条”；管理操作写“已”加操作名。不再出现“操作已完成”。
 - 文案守卫加了一条：渲染出的界面文字里 `Circle` 不能作为客户端名（`circle-hub`、`Circle CJK` 和 `data-evidence`、
   `pre`、`code` 里的原文不算）。命令对话框、主机操作、令牌默认标签（`--label=客户端`）与 OAuth 拒绝说明一并改为中立写法。
 - 与设计页的出入：设计页第 1 节的状态写“已被取代”，生成词表里是“被取代”；控制台照词表显示，改词表要经集成者改模型。
@@ -223,5 +223,9 @@ PostgreSQL、独立浏览器目录和模拟钥匙串，不读取个人配置。�
 
 ## Task page history window (B1, #200)
 
-The task page (`/console/runs/<id>`) asks the runs service for the newest `RUN_HISTORY_LIMIT` (50) submissions and reaches older ones with `?older=<cursor>` (the cursor is the service's opaque token; one longer than 512 characters is ignored). Under the submissions table it says how many it lists, that the first row is the submission behind the current result when one is pinned, and that the withdrawn-grounds notice follows the results shown; it links to older submissions and back to the newest. The other task views keep the whole read.
+The task page (`/console/runs/<id>`) asks the runs service for the newest `RUN_HISTORY_LIMIT` (10) submissions and reaches older ones with `?older=<cursor>` (the cursor is the service's opaque token; one longer than 512 characters is ignored). Under the submissions table it says how many it lists, that the first row is the submission behind the current result when one is pinned, and that the withdrawn-grounds notice follows the results shown; it links to older submissions and back to the newest. The other task views keep the whole read.
+
+## 收回测试环境分配确认（Boss 15:02）
+
+团队详情「测试环境分配」的撤回改为确认对话框：写明撤回后成员的「我能做的事」不再列出这个测试环境、谁能预订和上机按工作流的分配和预订规则判断、进行中的上机跑完、预订留在持有人名下；用 `heldOccupancyForEnvironment`（`leases.view` ∩ 执行器 resources ∩ 团队成员）列出仍占着的测试环境与起始时间，勾选 `force_release` 后 `executor-unassign` 再串跑 `lease-release`。词用「测试环境」。无 leases 端口时写「占用暂不可读」，仍可只撤回分配。直接分给账户的收回确认页尚未接。
 

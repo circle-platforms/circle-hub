@@ -13,7 +13,10 @@
         "id",
         "kind",
         "call",
-        "cleanup"
+        "cleanup",
+        "input_register",
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -29,7 +32,9 @@
         "id",
         "kind",
         "call",
-        "assertions"
+        "assertions",
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -43,7 +48,9 @@
       "fields": [
         "id",
         "kind",
-        "call"
+        "call",
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -59,7 +66,35 @@
         "id",
         "kind",
         "call",
-        "register"
+        "register",
+        "author_step_refs",
+        "description"
+      ]
+    },
+    {
+      "kind": "SELECT_CELL",
+      "enabled": true,
+      "required": [
+        "id",
+        "kind",
+        "call",
+        "from",
+        "register",
+        "table",
+        "column",
+        "select"
+      ],
+      "fields": [
+        "id",
+        "kind",
+        "call",
+        "from",
+        "register",
+        "table",
+        "column",
+        "select",
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -84,7 +119,9 @@
         "output",
         "quote",
         "expectation",
-        "criterion"
+        "criterion",
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -109,7 +146,9 @@
         "output",
         "quote",
         "expectation",
-        "criterion"
+        "criterion",
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -123,7 +162,9 @@
       "fields": [
         "id",
         "kind",
-        "call"
+        "call",
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -140,7 +181,10 @@
         "call",
         "output",
         "register",
-        "cleanup"
+        "cleanup",
+        "input_register",
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -158,7 +202,9 @@
         "kind",
         "call",
         "register",
-        "for"
+        "for",
+        "author_step_refs",
+        "description"
       ]
     },
     {
@@ -172,7 +218,8 @@
       "fields": [
         "id",
         "kind",
-        "payload"
+        "payload",
+        "description"
       ],
       "missing": "缺已发布的分布区间、守恒派生规则及运行器能力",
       "next_action": "工作包与执行器维护者补结构声明、来源及合成正反例，升版发布后重开运行；不从回显猜结论"
@@ -188,7 +235,8 @@
       "fields": [
         "id",
         "kind",
-        "payload"
+        "payload",
+        "description"
       ],
       "missing": "缺已发布的成员关系派生规则及运行器能力",
       "next_action": "工作包与执行器维护者补结构声明、来源及合成正反例，升版发布后重开运行；不从回显猜结论"
@@ -204,7 +252,8 @@
       "fields": [
         "id",
         "kind",
-        "payload"
+        "payload",
+        "description"
       ],
       "missing": "缺受认证的退出状态观察通道",
       "next_action": "工作包与执行器维护者补结构声明、来源及合成正反例，升版发布后重开运行；不从回显猜结论"
@@ -302,7 +351,8 @@
           },
           "criterion": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Id of the typed criterion in criteria[] that holds your own checkpoint for this author expectation. Write it only when the expectation node carries no literal declaration. The checkpoint is a model judgment, status 未确认, decided by the device run; no independent review is needed and none is started. The criterion's quote, operator and literal (or count, or relation) must equal this assertion's."
           }
         },
         "required": [
@@ -369,18 +419,120 @@
     },
     "criterion": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "Id of the typed criterion in criteria[] that holds your own checkpoint for this author expectation. Write it only when the expectation node carries no literal declaration. The checkpoint is a model judgment, status 未确认, decided by the device run; no independent review is needed and none is started. The criterion's quote, operator and literal (or count, or relation) must equal this assertion's."
     },
     "for": {
       "type": "string",
       "minLength": 1
     },
     "cleanup": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "true 将步骤标为末尾清理段；仅放置非只读、正文未净抵消且未命中 contract.cleanup 运行器自动清理的改配步骤，按产品声明逆序执行对应逆操作，不能从文字猜测；存盘等由执行器在收尾时做的命令禁止标为 cleanup:true"
     },
     "payload": {
       "type": "object",
       "additionalProperties": true
+    },
+    "from": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_register": {
+      "type": "string",
+      "minLength": 1
+    },
+    "author_step_refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "description": "本块实现的作者步骤编号列表（本块不实现作者步骤时省略）：写本条重组记录里作者步骤的 id（items/<n>.json 的 atoms 里 kind 为 action 的 id，如 [\"a2\"] 或 [\"a2\", \"a3\"]），不是序号；每条作者动作原句至少要有一块写它的编号，没有的 check-plan 拒绝并点名；保真核对按它确定性定位步骤，写了不存在的编号会在生成保真简报时被点名拒绝；不改变命令语义"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "一行中文，说明这一块做什么（不是抄作者步骤），写进工作簿 D 列；单行，无首尾空白，不以 = 开头。只是说明，不是命令、断言或期望的依据，场景保真核对也看不到它"
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "separator",
+        "columns",
+        "header"
+      ],
+      "properties": {
+        "format": {
+          "type": "string"
+        },
+        "separator": {
+          "type": "string"
+        },
+        "columns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "header": {
+          "type": "boolean"
+        }
+      }
+    },
+    "column": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "select": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "row"
+          ],
+          "properties": {
+            "row": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "where"
+          ],
+          "properties": {
+            "where": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "column",
+                  "value"
+                ],
+                "properties": {
+                  "column": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   },
   "assertion_ops": [
@@ -494,6 +646,7 @@
       "scope_root"
     ]
   },
+  "criteria_description": "Checkpoints you chose yourself for author expectations that carry no literal declaration (the author wrote a sentence, not the text to look for). Each entry is a model judgment, status 未确认: the Hub only checks that quote is the author's expectation word for word, that literal is a single line and that the entry equals its assertion; no independent review is needed and none is started, and the device run decides whether the checkpoint holds. quote: the author's expectation, copied verbatim from the original case. literal (or count, or relation): text the device output can contain. rationale: why you chose it. scope_root: the locked root of the command tree. A criteria_review input is read only when one is bound; leave it unbound.",
   "context_schema": {
     "type": "object",
     "additionalProperties": false,
@@ -607,15 +760,18 @@
           "properties": {
             "output": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "description": "The id of the observation block this row explains: a blocks[].id of a block that returns device text (OBSERVE_ASSERT, OBSERVE_ONLY, CAPTURE, EXPECT_FROM, or a STEP that declares output). It is never a register name (the register of a CAPTURE or STEP is only the name its text is saved under), never the name of a selected cell and never a device name."
             },
             "kind": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "description": "Who answers: device (a frozen environment seat), fixture (an earlier step block of this plan), bed_service (a service declared in the frozen environment inventory) or undetermined (not known yet; also write missing and next_action)."
             },
             "ref": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "description": "Identifies the answerer, by kind. device: one frozen runtime-profile device identity, exactly one of profile.seats[].device (not an executor object name and not a block id). fixture: the id of an earlier step block of this plan that provides the answer. bed_service: the host of a service of the frozen environment inventory (services[].host). undetermined: any non-empty text."
             },
             "quote": {
               "type": "object",
@@ -633,15 +789,18 @@
               "required": [
                 "reference",
                 "text"
-              ]
+              ],
+              "description": "Verbatim source text that grounds the answerer; copy reference and text from the source."
             },
             "missing": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "description": "Only for kind=undetermined: the fact that is missing."
             },
             "next_action": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "description": "Only for kind=undetermined: the next step that would settle it."
             }
           },
           "required": [
@@ -650,7 +809,8 @@
             "ref",
             "quote"
           ]
-        }
+        },
+        "description": "Who answers the request a host-command observation sends. One row per host observation block; every row's output must be the id of an observation block of this plan."
       }
     },
     "required": [
@@ -695,7 +855,7 @@
   },
   "review_pack": {
     "id": "case-compile-criterion-review",
-    "version": "1.0.1"
+    "version": "1.0.2"
   },
   "limits": {
     "blocks": 256,
@@ -713,5 +873,9 @@
     "exact_text"
   ],
   "raw_output": "raw_text",
-  "restore_role": "captured_restore"
+  "restore_role": "captured_restore",
+  "cell_formats": [
+    "delimited",
+    "key_value"
+  ]
 }

@@ -1,6 +1,6 @@
 # Object standard: the five-element checklist
 
-> **Rewritten 2026-10-21**: the previous version treated the five elements (records, assets, approval policy, evidence, extension points) as storage partitions of each of the four objects. That is superseded. By the decision on the generic model's pending item 3, the five elements are a design checklist and a record-page layout, not storage partitions. The previous partition table, data flow and adaptation sheet are in [this page at ca66002](https://github.com/circle-platforms/circle-hub/blob/ca66002fb6bfc3220547d0fdd895bfae83345943/docs/design/en/object-standard.md). This page translates the [Chinese original](../object-standard.md); where they differ, the Chinese text is authoritative.
+> **Rewritten 2026-10-21**: the previous version treated the five elements (records, assets, approval policy, evidence, extension points) as storage partitions of each of the four objects. That is superseded. By the decision on the generic model's pending item 3, the five elements are a design checklist and a record-page layout, not storage partitions. The previous partition table, data flow and adaptation sheet are preserved in Git history at commit `ca66002fb6bfc3220547d0fdd895bfae83345943` of this page. This page translates the [Chinese original](../object-standard.md); where they differ, the Chinese text is authoritative.
 
 ## 1. The four objects are the four homes
 
@@ -49,7 +49,7 @@ A record on the console (read-only, planned) is laid out in the same five parts:
 4. Evidence: the source fragments and Hub records the grounds point at, the Hub's action records, and the rule's samples;
 5. Extension points: the task pack it comes from and its ownership class.
 
-A failed read is shown as D05 R[3] says: team, product and business-system content shows “X 不存在” (X does not exist) or “X 存在，你没有读取权限” (X exists, you have no read permission, with who can share or assign it); another member's personal-space content and credential or login failures show only “对你不可用” (not available to you) and an empty result of the same shape, with the real cause only in the administrator-visible call log.
+A failed read is shown as D05 R[3] says: team, product and business-system content shows “X 不存在” (X does not exist) or “X 存在，你没有读取权限” (X exists, you have no read permission, with who can share or assign it); a product knowledge entry whose source has no effective acceptance is still listed, and its text shows “没有权限阅读” (no permission to read); another member's personal-space content and credential or login failures show only “对你不可用” (not available to you) and an empty result of the same shape, with the real cause only in the administrator-visible call log.
 
 ## 4. B's rules for originals and Evidence
 

@@ -1,8 +1,7 @@
 // The device and bed an operation record was captured on: its identity, nothing about leases. Beds, devices and their leases
-// belong to the test-bed pack (owner's decision, 2026-10-30): a record says which bed and device it touched and never claims
-// a lease, as InfoTest's probe records name their bed and leave the lease empty.
+// belong to the test-bed pack: a record says which bed and device it touched and never claims a lease.
 import type { RecordStore } from '../records/api.ts';
-import { runById } from '../runs/api.ts';
+import type { KnowledgeRunReadPort } from '../ports.ts';
 import { frozenBeds } from '../../packs/workflow/test-bed/api.ts';
 import { operationSchema } from './declaration-grade.ts';
 import { KnowledgeError } from './errors.ts';
@@ -19,11 +18,11 @@ function refuse(message: string): never {
  * The beds this run froze, or else those of the booking it continues, as `reproductionLease` reads its lease. Null when
  * neither froze a manifest; a manifest the test-bed pack cannot read is refused, never taken for an empty or absent one.
  */
-async function runBeds(store: RecordStore, runId: string | null): Promise<Map<string, string[]> | null> {
+async function runBeds(runs: KnowledgeRunReadPort, store: RecordStore, runId: string | null): Promise<Map<string, string[]> | null> {
   if (runId === null) return null;
-  const run = await runById(store, runId);
+  const run = await runs.runById(store, runId);
   const own = frozenBeds(run?.body);
-  const found = own ?? (typeof run?.body.predecessor === 'string' ? frozenBeds((await runById(store, run.body.predecessor))?.body) : null);
+  const found = own ?? (typeof run?.body.predecessor === 'string' ? frozenBeds((await runs.runById(store, run.body.predecessor))?.body) : null);
   if (found === null) return null;
   if (!found.ok) refuse(`${found.problem}；台架清单的形状由台架包定义，请管理员核对台架包版本后重试`);
   return found.beds;
@@ -37,7 +36,7 @@ function wellFormed(value: unknown): value is string {
  * The device and bed of an operation record. With a bed manifest frozen by the run or its booking, both are checked against
  * it and the bed is taken from it when only one bed has the device; without one, the declaration is kept as written.
  */
-export async function completeOperationDevice(store: RecordStore, input: { run: string | null; device: unknown; bed?: unknown }): Promise<{ device: string; bed?: string } | Record<string, never>> {
+export async function completeOperationDevice(runs: KnowledgeRunReadPort, store: RecordStore, input: { run: string | null; device: unknown; bed?: unknown }): Promise<{ device: string; bed?: string } | Record<string, never>> {
   const { device, bed: declared } = input;
   if (device === undefined) {
     if (declared !== undefined) refuse('台架声明必须同时带设备声明；补齐 device，或删掉 bed 后重交');
@@ -45,7 +44,7 @@ export async function completeOperationDevice(store: RecordStore, input: { run: 
   }
   if (!wellFormed(device)) refuse('设备名须是 1 到 200 个字符的完整声明，不含控制字符或首尾空白；按运行绑定的台架清单修正');
   if (declared !== undefined && !wellFormed(declared)) refuse('台架名须是 1 到 200 个字符的完整声明，不含控制字符或首尾空白；按运行绑定的台架清单修正');
-  const beds = await runBeds(store, input.run);
+  const beds = await runBeds(runs, store, input.run);
   if (!beds) return { device, ...(declared === undefined ? {} : { bed: declared }) };
   if (declared !== undefined) {
     const devices = beds.get(declared);
@@ -62,5 +61,5 @@ export async function completeOperationDevice(store: RecordStore, input: { run: 
 /** What a view says about an operation record's device and bed, or null when it names none. */
 export function operationDeviceNote(body: unknown): string | null {
   if (!object(body) || !operationSchema(body.schema) || typeof body.device !== 'string' || body.device.length === 0) return null;
-  return `设备 ${body.device}${typeof body.bed === 'string' ? `（台架 ${body.bed}）` : ''}`;
+  return `测试环境 ${body.device}${typeof body.bed === 'string' ? `，${body.bed}` : ''}`;
 }

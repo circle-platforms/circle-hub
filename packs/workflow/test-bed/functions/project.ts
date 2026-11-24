@@ -17,9 +17,11 @@ import { isRecord } from './common.ts';
 import {
   acquirePlan,
   factsFields,
+  helpPlan,
   leaseRecord,
   manifestBeds,
   readParameters,
+  readPlan,
   releasePlan,
   searchFields,
   unmatchedBuild,
@@ -48,6 +50,8 @@ interface Out {
   lease_requests?: LeaseRequest[];
   /** The booked devices the Hub looks at once the booking is granted (decision 112), by the inventory digest and pointer. */
   observe?: Array<{ inventory: string; device: string; label: string }>;
+  ask?: Array<{ inventory: string; device: string; label: string; line: string; mode?: string; keys: string[] }>;
+  read?: Array<{ inventory: string; device: string; label: string; line: string; keys: string[] }>;
 }
 
 interface Failure {
@@ -111,6 +115,9 @@ export default function project(input: unknown): Out | Failure {
       booking: normalized.booking,
       reason: normalized.reason,
       devices: normalized.devices,
+      device: normalized.device ?? null,
+      line: normalized.line ?? null,
+      mode: normalized.mode ?? null,
       manifest: slot.model,
       inventory,
       observations,
@@ -151,6 +158,30 @@ export default function project(input: unknown): Out | Failure {
       })),
       groups,
       warnings,
+    };
+  }
+  if (action === 'help' || action === 'read') {
+    const planned = action === 'help' ? helpPlan(beds, normalized, frozenLeases) : readPlan(beds, normalized, frozenLeases);
+    if (!planned.ok) return failure(planned.failure.code, planned.failure.message, planned.failure.fix, [], planned.failure.pointer === undefined ? {} : { pointer: planned.failure.pointer });
+    const plan = planned.plan;
+    const pointer = inventory === null ? null : devicePointer(slot.model, plan.bed, plan.device);
+    if (inventory === null || pointer === null) return failure('test-bed.unknown_bed', `清单里找不到设备 ${plan.device} 的位置`, '用当前清单重开运行');
+    const mode = 'mode' in plan && typeof plan.mode === 'string' ? plan.mode : null;
+    const label = `${plan.bed}/${plan.device}`;
+    const target = { inventory, device: pointer, label, line: plan.line, ...(mode === null ? {} : { mode }), keys: [plan.key] };
+    return {
+      items: [
+        {
+          id: label,
+          label: `${action === 'help' ? '问' : '读'} ${label}`,
+          summary: plan.conclusion,
+          location: locationOf(slot.model, plan.bed),
+          fields: { action, booking: plan.booking, bed: plan.bed, device: plan.device, line: plan.line, ...(action === 'help' ? { mode } : {}), key: plan.key, conclusion: plan.conclusion },
+        },
+      ],
+      groups,
+      warnings,
+      ...(action === 'help' ? { ask: [target] } : { read: [target] }),
     };
   }
   if(action==='register'||action==='unregister'||action==='force_release'){

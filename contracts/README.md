@@ -17,9 +17,12 @@ Two files are the only sources:
 | Generated file | Content |
 | --- | --- |
 | `vocabulary.ts` | per axis: `NAME` (codes), type `Name`, `NAME_LABEL`, `NameSchema` (zod enum), `isName`; `AXES`, `labelOf(axis, code)`, `axisLabel(axis)` |
-| `protocol.ts` | `PROTOCOL_CODES`, `CORE_VIOLATION_CODES`, `REFERENCE_FORMS`, `RECORD_KINDS`, `PACK_FILE_PATHS`, `DISPLAY_ORDER`, `MODEL_VERSION` |
+| `protocol-codes.ts` | machine tables only (no prose sentences): `PROTOCOL_CODE_NAMES`, `type ProtocolCode`, `isProtocolCode`, `CALL_ERROR_CATEGORY_BY_CODE`, `callErrorCategory`, `CORE_VIOLATION_CODE_NAMES`, `type CoreViolationCode`, `CORE_VIOLATION_CODE_INTERPRETERS`, `isCoreViolationCode`, `RECORD_KINDS`, `type RecordKind`, `PACK_FILE_PATHS`, `MODEL_VERSION` |
+| `protocol.ts` | human sentences & layout (`PROTOCOL_CODES`, `CORE_VIOLATION_CODES`, `REFERENCE_FORMS`, `DISPLAY_ORDER`, `formatCallError`), re-exporting all symbols and types from `./protocol-codes.ts` for backwards compatibility |
 | `tools.json` | the six MCP tools: name, title, description, input and output JSON Schema (2020-12), annotations from `annotationsFor` |
 | `schemas/<name>.v<major>.schema.json` | JSON Schema of every shape in `SCHEMA_REGISTRY` |
+
+Format skill packs mirror only their declared protocol-code subset (`SKILL_PROTOCOL_TARGETS` in `tools/gen-contracts.ts`) into `functions/generated/protocol.ts` as `PROTOCOL_CODES` (tuple of code names) and `ProtocolCode`, with no `when`/`fix` sentences and failing contract generation/checking if a pack throws or references an undeclared code.
 
 Read the model with `node tools/show-element.ts B01 w08` (ids are case-insensitive), `--list`, `--vocab [axis ...]`, `--pending`.
 
@@ -82,6 +85,8 @@ runtime. The six tools gain sharing, withdrawal and authorized pack-file reads w
 a tool. Generated skill mirrors/manifests are html-format/mindmap-format 1.0.7 and xml-format/workbook-format 1.0.8;
 no skill business code changes. The phase-2 temporary personal-ground code remains registered for old receipts, while
 phase 3 uses the complete current-reader rule.
+
+Model 89 aligns the bot and external-identity contracts without changing the six MCP tools or introducing any new record kind. It renames `bot_model_protocol`'s axis label to `机器人模型协议` (retiring the former assistant wording), adds five generated vocabulary axes (`external_identity_action` and `external_identity_unbind_reason` under `R01`, `bot_secret_action` and `bot_secret_slot` under `D01`, and `bot_message_role` (`user`, `assistant`, `notice`) under `D06`) so `member-external-identity@1`, `bot-secret-change@1`, and bot message payloads derive their enums from `generated/vocabulary.ts`, and updates/expands `formatProposals.protocolCodes` to 12 `BOT_*` codes (`BOT_DISABLED`, `BOT_UNAUTHENTICATED`, `BOT_CLIENT_FORBIDDEN`, `BOT_NOT_FOUND`, `BOT_VERSION_INVALID`, `BOT_VERSION_MISMATCH`, `BOT_QUOTA_EXCEEDED`, `BOT_UPSTREAM_UNAVAILABLE`, `BOT_REQUEST_TIMEOUT`, `BOT_CONFLICT`, `BOT_BUSY`, `BOT_INVALID_REQUEST`) using `机器人` terminology, single-condition `when` clauses, and HTTP-aligned `callErrorCategory` values.
 
 ## Editing `contracts/codes.json`
 
@@ -374,7 +379,7 @@ The source language is the closed `model-shape@1` structural subset listed in th
 
 Verification: `node --test "contracts/**/*.test.ts" "tools/gen-contracts*.test.ts"`, `npm run typecheck`, `npm run test:docs`, and `node tools/gen-contracts.ts --check`. Shared-interface examples are synthetic. JSON/Zod parity tests prove shape consistency, not source existence, accepted judgment truth, target behavior or deployed availability.
 
-R7 增加生成词表 release_status（K02，fixed/known），CatalogParam.native_type 保存原始类型名、声明引用和 grammar；它是来源证据，不进入语法影响比较。catalog@1 的 strict_signatures 让成员主张必须完整匹配执行签名，目录菜单及缺参数命令头不算执行成员。
+R7 增加生成词表 release_status（K02，fixed/known），CatalogParam.native_type 保存原始类型名、声明引用和 grammar；它是来源证据，不进入语法影响比较。catalog@1 的 strict_signatures 让成员主张必须完整匹配执行签名，目录菜单及缺参数命令名不算执行成员。
 
 适用条件主张沿 document_output_kind.applicability_claim 与 ContributionInput 的受限载荷进入现有回注运行；admission 由 Hub 填写，客户端不得自报。ProducerInput.known_builds 与 tree_root 的构建记录/条件上下文冻结同一名册，生产器缓存键包含该输入。受控 ProducerOutput.incomplete 保留缺失事实与下一步，并产生具名、有期限的现有澄清请求。knowledge-contribution/slots.schema.json 由 gen-contracts 从单一 ContributionInput 与生成枚举产生，不手改。
 
@@ -613,83 +618,104 @@ generated inputs and function views do not name the held answer, and a named adm
 read field `object_route`, the JSON route whose answer is the object itself; a read without it, an answer that cannot show the
 object and an echo of a credential the Hub sent stay neutral (B02 R[6]). R02 R[0], the display rule and `SOURCE_UNAVAILABLE`
 follow. The four skill packs that mirror the protocol codes advance with them. No read tier, record kind or MCP tool changes.
-D05 `changes42` states the change.
+D05 `changes41` states the change.
 
-Decision 153 (owner, 2026-11-11) sets model 43: W08 R[6] says that a result summary record is appended, in the same
-transaction, when a validation result is stored. One record kind, `result_summary` (`result-summary@1`,
-`contracts/src/result-summary.ts`): the run, the digest of the result it summarizes, the result's submission, receipt and
-whether it carries a system-delivery input, what the result comes to when it is the run's current one (`ResultStatistics`:
-task result, pending count, counts by layer terminal, counts by blocker), the grounds it names, the digests its validity
-conditions bind, and its unavailable references. The result record is not rewritten and stays the authority; W08 R[0] still
-holds, the counts are not stored in the result. The task list and the overview read the summary, verified by its own
-digest, instead of the whole result. A result without a summary is read whole with the same answer. No protocol code, MCP
-tool or vocabulary axis changes. W08 `changes43` states the change.
+Decisions 150 and 151 (owner, 2026-11-06) set model 42: teams become real, and the acceptance of credential scan findings can
+cover one business-system resource. A team is a named group of enabled accounts, kept as B04 assignment decisions only
+(registration, membership, assignment of workflows and of resources), so no table, record kind or vocabulary axis is added.
+R01 R[13] states the rule and R01 R[0] to R[2] and R[10] follow; an administrator may use every published workflow by
+default, which is not an assignment and stays out of the tool annotations (R01 R[1], D06 R[4]). A business-system resource
+is assigned to a team or to all members; the assignment governs new reads and an original's way into a team space (R01
+R[13], D05 R[3]). Each team has its own knowledge space and memory, the team `team` being the existing space (K01 DEF, R[4],
+R[9], R[13], R[15]; K02 R[6]); the sync protocol gets the capability name `team-spaces` and the request member `team`.
+B02 R[4] and C04 R[6] let an administrator accept findings per source or per resource (B04 F[0], F[1], R[1]): within an
+accepted resource a source is read at its own tier, the findings stay recorded and what rests on them carries
+`possible_credentials` (B01 R[7]). When an acceptance is withdrawn or lapses, a product knowledge entry that rests on the
+source shows 没有权限阅读 and gives no text (K02 R[8], D05 R[3], D06 F[3], R02 R[1], display rule 9). The axis
+`audience_scope` gains `team_members`. No protocol code or MCP tool changes, so `protocol.ts` changes by `MODEL_VERSION`
+only. `changes42` of the 17 changed elements states the change. Decision 152, the sandbox watchdog and the wording of the
+dispatch refusal, changes no model text.
 
-Decision 154 (owner, 2026-11-11, issue 194) sets model 44: B02 R[4] is rewritten. The content of a source is not scanned
-for credentials and is not kept at `retain_only`, refused or sent to an administrator for review because it looks like one:
-what a business system answers, what a member uploads, what is written into a knowledge space or a memory, the parameters
-of a run and what is dispatched reach whoever may read them, the pack functions and the model as they are. Credentials
-needed for use come from the client's own variables, not from content. What the Hub itself writes down (call log, notes,
-resource and executor settings, variables, pack files) still carries no credential, and an echo of a credential the Hub
-itself sent is still B02 R[6]. Records stored under `credential-scan@3` are not rewritten: one with a hit keeps its stored
-read tier and its review and acceptance rules when a read names it, and the same content read or uploaded again makes a
-readable record. The rules elsewhere in the model about ordinary-source hits (retain only, `possible_credentials`, review
-requests, refused uploads, refused memory and space writes) apply to those earlier records only. No record kind, protocol
-code, MCP tool or vocabulary axis changes; the codes of the old refusals stay registered. The administrator's masking
-dictionary is a later step. B02 `changes44` states the change.
+Decisions 153 and 154 (owner, 2026-11-06) set model 43: a workflow is made of skill modules, acceptance requirements and data
+bindings. `skill@1` gains `modules`, `pack@1` gains `embeds`, and both stay optional, so every published pack still parses.
+A module is the folder `functions/modules/<module>/` of a skill pack; `tools/gen-contracts.ts` copies it to
+`functions/generated/skills/<skill>/<module>/` of each pack that embeds it, refuses an import that leaves the folder, and
+`--check` reports drift and stale copies. No protocol code, record kind or vocabulary axis is added.
 
-Decision 157 (owner, 2026-11-11, issue 34) sets model 45: the generic skill pack is written into the prose. C02's
-definition and R[2] say that a capability of the generic class that is deterministic, reusable and independent of any
-product (parsing a file format, walking a directory) lands in a generic skill pack with its own version and digest; T01's
-definition names the generic skill pack as a distribution unit (the `skill` value of `pack_kind` was in the vocabulary
-already). C02 R[3] is new: the Hub core imports no product pack code; what is particular to a product is declared by the
-product pack and carried out by the skill; where the core needs a generic capability directly it uses the skill pack
-through its public entry and writes the pack's id, version and the SHA-256 of the module it used into the record that
-results. A knowledge production whose sources the Hub's own directory walk bound carries `directory_skill`; the same
-capability run inside a product pack's sandbox is the product pack's generated copy, covered by the product pack digest
-the production already records. Productions recorded before have no such field and are not rewritten. There is no
-transition form, and an old product pack must reproduce the same trees under the new implementation. No record kind,
-protocol code, MCP tool or vocabulary axis changes. C02 and T01 `changes45` state the change.
+`CatalogSignature.access` (2026-11-10, optional, so every stored catalog entry still parses): the access level the source
+grammar declares for a command, by its native name, with the reference of its declaration and the grammar, shaped like
+`CatalogParam.native_type`. It is source evidence: `catalogCanon` builds a signature from its parameters only, so the level
+is not part of the syntax an impact view compares. No code, record kind or vocabulary axis is added; which prompt accepts
+which level is declared by a runner contract and checked by the workflow pack, not by the core.
 
-Decision 158 (owner, 2026-11-12, the review of the console's wording, rows W1 to W39 adopted as recommended) sets model
-46: words only. The axis `attribution` and V04 are named 原因归类 instead of 归责 (the six values stay; the verb in 按来源归责
-stays); `pitfall` of `entry_kind` is labelled 常见误区 instead of 教训; the team source's 署名 is called 确认 in the label and
-the two values of `source_attribution_status`, in B02 R[7], R[9] and R[10], in K02 R[6] and R[7] and in the text of the
-protocol code `SHARE_UPLOAD_UNSIGNED` (the code, the record kind `knowledge_source_attribution` and the value codes
-stay); `local` of `sync_mode` gains the interface term 仅保存在客户端设备 and keeps the label the client's own messages use;
-display rule 17 calls the console's task page the complete record instead of 权威视图; and retiring a pack version is called
-退役 wherever the prose said 下架 (T02 R[4] to R[6], B04, T01, K01, R01 and the notes that mention it; `retired` of
-`pack_status` was 已退役 already). `contracts/src/validation.ts` exports the two notices of an older result,
-`EXIT_NOT_RECORDED` (下一步处理安排未记录) and `MISSING_NOT_RECORDED` (未写明缺少什么), so that what writes them and what
-compares them share one text. No record kind, value code, protocol code, MCP tool or migration changes. V04, K02, B02,
-K01 and T02 `changes46` state the change; the four skill protocol mirrors are regenerated and their packs signed again.
+Decision 159 on this line (owner, 2026-11-07) sets model 44: when a knowledge entry has no declared, judged, conflicting or
+unread applicability field, the Hub stores and shows no applicability block and no per-field status (K02). Partly declared
+entries still disclose the rest as undeclared. K02 `changes44` states the change.
 
-Decision 159 (owner, 2026-11-11 and 2026-11-12, issue 194, the second step) sets model 47: the masking dictionary. B02
-gains F[6] (masking) and R[11]: an administrator configures rules, each a name, a label for the reader and a regular
-expression; when the Hub reads a business system through a connector, what a rule matches in a text answer is replaced by
-`[<label>已遮盖 *****]` before the answer is stored (only the group named `secret` where the pattern has one), only the
-replaced bytes are kept, and the source artifact says so. An answer in which nothing matches is stored as it was sent,
-with the record it always had. Bytes that are not text, the answer of a login, uploads, what members write into a
-knowledge space or a memory, synchronised content, run parameters and dispatched content are not replaced. A rule changes
-later reads only. R[11] names this as the one exception to B02's "stored as they are", and R[4]'s last sentence now points
-to it. `contracts/src/masking.ts` holds the dictionary's schema (`masking-dictionary@1`), the check a rule passes when it
-is set and the replacement itself; the dictionary is put in force by a resource configuration (B04), so there is no new
-record kind, permission kind, protocol code or vocabulary axis. B02 `changes47` states the change.
+Decision 153 on main (owner, 2026-11-11) sets model 43 there: W08 R[6] and record kind `result_summary` (`result-summary@1`)
+append a projected summary beside each stored validation result so lists read the summary instead of the whole result.
+W08 `changes43` states the change.
 
-Decision 160 (issue 241, under the backlog plan the owner approved on 2026-11-09) sets model 48: display rules only.
-Rule 5 keeps the unknown's own symbol and colour and adds that a dynamic layer that never ran is an unknown with a mark
-of its own (`SYMBOL.not_run` in `hub/server/claims.ts`), the question mark being for a look that reached no conclusion;
-it also names the notice of an older result by the words the code writes (下一步处理安排未记录, decision 158). Rule 22
-is new: in the console and in the text returned to a model an absent value says why it is absent (未记录, 不适用, 暂无数据,
-or a more particular fact) and is never a dash; the columns of the command line and notes already written into records
-are outside it. Nothing generated changes but `MODEL_VERSION`.
+Decision 154 on main (owner, 2026-11-11, issue 194) sets model 44 there: B02 R[4] stops scanning source content for
+credentials and stops retaining, refusing or sending it for review because it looks like one. Older `credential-scan@3`
+records are not rewritten. B02 `changes44` states the change. In the merge this supersedes the scan-acceptance sentences of
+this line's model-42 B02 R[4]; team spaces, `audience_scope.team_members`, K02 R[8] and B01 R[7] stay.
 
-Decision 161 (issue 194, step three; the owner chose 保持扣留，重读取得 on 2026-11-12) sets model 49. B02 R[4] says the
-review, acceptance and withdrawal of credential findings are gone: records held under credential-scan@3 stay held and
-are not rewritten (an administrator alone can export their originals), records accepted before stay readable, a later
-read of the same bytes neither lifts nor withdraws anything, and reading the object again is the way to a readable
-record. B02 R[6] speaks of an acceptance recorded before instead of the acceptance channels. C04 R[6], D05 R[3] (no new
-“X 存在，内容待核看”; an observation stored before is read as it is), R02 R[0], V03 R[12] and display rule 9 follow. The
-protocol code `SOURCE_PENDING_REVIEW` keeps its code with new text (an observation stored before; read the object
-again), so `contracts/generated/protocol.ts` and the four skill packs' copies change with `MODEL_VERSION`; every code
-stays registered.
+Decision 157 on main (owner, 2026-11-11, issue 34) sets model 45 there: C02 and T01 name the generic skill pack in prose;
+C02 R[3] says the core imports no product-pack code and records `directory_skill` when it uses a skill through its public
+entry. C02 and T01 `changes45` state the change. This line's model-43 skill modules and embeds remain.
+
+Decision 158 on main (owner, 2026-11-12) sets model 46 there: shared console words only — `attribution`/V04 原因归类,
+`pitfall` 常见误区, team-source 确认, `sync_mode.local` ui 仅保存在客户端设备, display rule 完整记录以它为准, and 退役
+instead of 下架. V04/K02/B02/K01/T02 `changes46` state the change.
+
+Decision 159 on main (owner, 2026-11-11/12, issue 194 step two) sets model 47 there: B02 F[6]/R[11] masking dictionary
+(`masking-dictionary@1` in `contracts/src/masking.ts`), applied when reading a business system through a connector.
+B02 `changes47` states the change.
+
+Decision 160 on main (issue 241) sets model 48 there: display rules only — a dynamic layer that never ran keeps the unknown's
+own mark, and absent values say why they are absent (never a dash).
+
+### Model 50 (merge 2026-11-12)
+
+Merge of this line's models 42–44 with main's 41–48 into unused version 50 (49 reserved for #341). Keeps this line's teams,
+skill-module composition, empty-applicability omission and `team_members`; takes main's request void, result summary,
+directory_skill, no credential scan, masking dictionary and display rules; takes main's six shared vocabulary labels for the
+console; keeps 裁定清单 (not 台账). Decision-number collisions (this line 150–159 vs main 150–160) are listed for the docs
+agent. B02 `changes50` carries the merge note.
+
+### Model 51 (merge #341, 2026-11-12)
+
+Merges decision 161 (mainline model 49) into model 50: B02 R[4]/R[6], C04 R[6], D05 R[3], R02 R[0], V03 R[12] and display
+rule 9 drop the review, acceptance, withdrawal and pending-review request of credential findings; old holds stay held,
+old acceptances stand, and reading the object again is the way out. Protocol code `SOURCE_PENDING_REVIEW` keeps its code
+with new text. Team spaces, skill-module composition, empty-applicability omission and `team_members` from model 50 stay.
+B02/C04/D05/R02/V03 `changes51` state the change.
+
+## Team identity and assignment boundaries
+
+The approved team identity contracts export `TeamId` and `TeamAssignmentSubject` through `contracts/api.ts`.
+Their generated schemas are `team-id@1` and `team-assignment-subject@1`; team IDs match
+`^tm_[0-7][0-9a-hjkmnp-tv-z]{25}$`. Resource use assignments use generated `resource_assign`.
+
+The approved cipher-identity completion adds mandatory sealed_sha256 to SecretUse and exposes
+SecretCipherIdentity (name, version, sealed_sha256) for vault material and cache-key consumers.
+It identifies authenticated ciphertext bytes, not a digest of the value; it never becomes rec: or
+src:. Metadata schemas and ordinary variable uses stay unchanged. No sequence/UUID field is added.
+Missing cipher identity is refused rather than using a name/version fallback. The records owner
+supplies the same authenticated row identity in material; cache/stop callers consume the whole tuple.
+Model wording remains untouched pending separate Boss review; runtime cache behavior is tested by
+its owners, while contracts tests cover required identity and unchanged metadata/ordinary bytes.
+
+## C7：六工具输出扩展（2026-11-13）
+
+现有 `TOOLS: ToolDefinition[]` 只克隆各工具的 `output`，根对象和嵌套对象均接受并保留额外字段；
+已知字段、union 分支与 refinement 仍校验。输入及共享 record schema 保持严格；六工具输入 JSON、
+标题、描述、`SERVER_INSTRUCTIONS` 和 `hub/server/text.ts` 的基线 SHA 在 `tool-shapes.test.ts` 校验。
+不引入工具名 registry、枚举或 C5 依赖，也不更改模型文本。
+
+克隆依据锁定的 Zod 4.6.7 源码：`core/util.ts` 的 `clone` 保留构造器，`parent: true` 保留描述元数据，
+`core/schemas.ts` 从 `def.checks` 执行 refinement。当前六输出图有 220 个对象、62 个 union，
+没有 lazy 或递归 schema；本实现不宣称支持将来的 lazy/递归输出，增加此类形状时须重新核验克隆。
+旧 C7 的 lazy getter 不会深克隆、递归后才登记副本的问题不在当前图上。生成使用当前 210 文件集，
+仅 `tools.json` 的输出对象 `additionalProperties` 改为开放。AJV 无法表达的 refinement 仍明确只由 Zod 拒绝。

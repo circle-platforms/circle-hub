@@ -1,3 +1,4 @@
+import { CallFailure } from './functions/text.ts';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
@@ -8,7 +9,7 @@ import {satisfiedRecipes} from './tools/generate-workbook.ts';
 import {generateWorkbookSet} from './functions/generate.ts';
 import {createTestParserRegistry} from '../../../hub/testing/parsers.ts';
 import {recognize} from '../../../hub/refs/api.ts';
-import {readWorkbookModel} from './functions/xlsx-model.ts';
+import {readWorkbookModel} from './functions/generated/skills/runner-workbook/workbook-writer/xlsx-model.ts';
 
 const skip=await osIsolationAvailable()?false:'no OS network isolation';
 const bytes=(name:string)=>readFileSync(new URL('./examples/'+name,import.meta.url));
@@ -36,5 +37,5 @@ test('the previous richer example remains refused for its four undeclared comman
  const postgres=await startPostgres();t.after(()=>postgres.stop());const hub=await openHub(postgres);t.after(()=>hub.close());const documents={contract:bytes('runtime-contract-v2.json'),profile:bytes('runtime-profile-v2.json'),inventory:bytes('bed-topology.json')};const inputs:Record<string,{external:string}|{reference:string}>={};for(const [slot,document] of Object.entries(documents)){const external='doc:doc:rejected-'+slot;hub.external.put(external,{bytes:document,mediaType:'application/json'});inputs[slot]={external};}
  const source=await hub.kit.artifacts.ingest({bytes:Buffer.from(fixture.subject),mediaType:'application/json',origin:{read:{object:'synthetic:example:undeclared'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});assert.equal(source.body.sha256,sha(fixture.subject));inputs.subject={reference:'src:'+source.body.sha256};
  const first=await hub.service.startRunDetailed(hub.alice,{pack:'case-compile',product:'widget',build:'Fixture_Build_A',inputs,parameters:json('start-run.json').arguments.parameters},call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const submission={...JSON.parse(fixture.submission),run:first.answer.run!.run};assert.ok(submission.items[0].slots.plan[0].quotes.every((quote:{reference:string})=>quote.reference.startsWith('src:'+source.body.sha256+'/')));
- const answer=await hub.service.submitResult(hub.alice,submission,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));const requirements=Object.values(answer.result!.partitions).flat()[0].requirements,contract=requirements.find(row=>row.requirement==='contract_methods');assert.ok(contract);assert.equal(contract.status,'unsatisfied');const problems=contract.claims.flatMap(claim=>(claim.statement.data?.problems??[]) as Array<{document:string;pointer:string}>);assert.deepEqual(problems.map(problem=>[problem.document,problem.pointer]),[0,2,3,4].map(index=>['catalog',`/steps/${index}/args/0`]));assert.throws(()=>satisfiedRecipes({run:first.answer,result:answer,submission,...documents}),/计划仍有工作簿缺输入以外的错误/);
+ const answer=await hub.service.submitResult(hub.alice,submission,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));const requirements=Object.values(answer.result!.partitions).flat()[0].requirements,contract=requirements.find(row=>row.requirement==='contract_methods');assert.ok(contract);assert.equal(contract.status,'unsatisfied');const problems=contract.claims.flatMap(claim=>(claim.statement.data?.problems??[]) as Array<{document:string;pointer:string}>);assert.deepEqual(problems.map(problem=>[problem.document,problem.pointer]),[0,2,3,4].map(index=>['catalog',`/steps/${index}/args/0`]));assert.throws(()=>satisfiedRecipes({run:first.answer,result:answer,submission,...documents}),(error: unknown) => error instanceof CallFailure && error.category === 'invalid_parameters' && error.fact.includes('case-compile.method_forbidden'));
 });

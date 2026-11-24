@@ -17,12 +17,19 @@ import { createEngineContext, type EngineContext, type RunsEngineDeps } from './
 import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
 import { getResult, getRun, getRunStatistics, getRunSummary, listRuns, runHeader, runsFor, resultState, runVisible, type StoredResult } from './queries.ts';
-import { submissionByDigest } from './store.ts';
+import { runById, submissionByDigest, successorsOf } from './store.ts';
+import { latestSubmittedResult } from './predecessor-defaults.ts';
+import { resultReadableBy, runReadableBy } from './grounds.ts';
+import { recReference } from '../../refs/api.ts';
+import { exportedJobs } from './dispatch-results.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { backfillCitations } from './store.ts';
 import { summarizeStored, summarizeStoredResults } from './result-summary.ts';
 import { submitResult, type SubmitAnswer } from './submit.ts';
 import { packContext } from './pack-context.ts';
+import { exportLateOf } from './late-inputs.ts';
+import { exportHistoryOf, mayExport } from './run-history.ts';
+import { checkContextOf } from './evaluate.ts';
 import { wellFormed } from './util.ts';
 
 /** Longest single message one call's admin note takes from the engine, in code points (the server clips the joined note again). */
@@ -37,8 +44,10 @@ function clipped(text: string): string {
  * The engine context of one call: what it logs also goes to the call's admin note, as `<what>: <detail>`, so that a reason
  * reaches the call it belongs to even when two calls share a trace id. A note that cannot be kept never changes an answer.
  */
+export const ENGINE_CALL_DOCUMENT_MS = 30 * 60_000;
+
 function forCall(ctx: EngineContext, call: CallContext|undefined): EngineContext {
-  const scoped={...ctx,documents:createDocumentCache(32)};
+  const scoped={...ctx,documents:createDocumentCache(32, undefined, ENGINE_CALL_DOCUMENT_MS)};
   const note = call?.adminNote;
   if (typeof note !== 'function') return scoped;
   return {
@@ -152,10 +161,51 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     exportRun(user, run) {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
         const detail = await getRun(current, user, run);
-        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
-        const result = detail.latest?.result.acceptance === 'accepted' ? detail.latest.result : null;
+        if (!detail || !mayExport(user, detail.run)) return null;
+        const stored = await runById(current.deps.records.store, run);
+        if (stored === null) return null;
+        const selected = await latestSubmittedResult(current, stored);
+        const readable = selected !== null && await resultReadableBy(current, stored.body, selected.body, user);
+        const result = readable ? selected.body : null;
         const submission = result ? (await submissionByDigest(current.deps.records.store, run, result.submission))?.body ?? null : null;
-        return { run: detail.run, result, submission };
+        return { run: detail.run, run_reference: recReference(stored.digest), accepted_result_reference: readable ? recReference(selected.digest) : null, result, submission };
+      }));
+    },
+    exportLate(user, run) {
+      return withRequestPermissions(ctx.deps.records.artifacts, user, async () => {
+        const detail = await withQueryReads(ctx, current => getRun(current, user, run));
+        if (!detail || !mayExport(user, detail.run)) return null;
+        return withDocuments(ctx, undefined, async current => {
+          const stored = await runById(current.deps.records.store, run);
+          if (stored === null) return null;
+          if (!stored.body.late_inputs?.length) return { ok: false as const, reason: 'no_late' as const };
+          if (current.parsers.forRun) current = { ...current, parsers: await current.parsers.forRun(stored.body.run) };
+          const workflow = await current.deps.workflows.byDigest(stored.body.pack_digest, stored.body.pack_space);
+          const scoped = current;
+          return { ok: true as const, body: await exportLateOf(scoped, stored, workflow, record => checkContextOf(scoped, record)) };
+        });
+      });
+    },
+    exportHistory(user, run, options) {
+      return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
+        const stored = await runById(current.deps.records.store, run);
+        if (stored === null || !mayExport(user, stored.body) || !await runReadableBy(current, user, stored.body)) return null;
+        return exportHistoryOf(current, user, stored, options);
+      }));
+    },
+    exportJobs(user, run) {
+      return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
+        const detail = await getRun(current, user, run);
+        if (!detail || !mayExport(user, detail.run)) return null;
+        return { run, jobs: await exportedJobs(current, run, user) };
+      }));
+    },
+    exportSuccessors(user, run) {
+      return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
+        const detail = await getRun(current, user, run);
+        if (!detail || !mayExport(user, detail.run)) return null;
+        const visible = (await successorsOf(current.deps.records.store, run)).map((stored) => stored.body).filter((r) => mayExport(user, r));
+        return { run, successors: visible.map((r) => ({ run: r.run, pack: r.pack, started_at: r.started_at, predecessor: r.predecessor ?? null, parameters: r.parameters, sources: (r.sources ?? []).map((source) => ({ slot: source.slot ?? null, reference: source.reference })) })) };
       }));
     },
     getRunSummary(user,run){return withQueryReads(ctx,current=>getRunSummary(current,user,run));},

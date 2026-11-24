@@ -17,7 +17,8 @@ import { createApp } from './app.ts';
 import type { CommandBridge, CommandInput } from './command-bridge.ts';
 import { manifestDigest } from '../runs/api.ts';
 import { ACTIONS } from './console/manage.ts';
-import { NEUTRAL } from './console/pages.ts';
+import './console/team-actions.ts';
+import { NEUTRAL } from './console/context.ts';
 import { withoutNonces } from './console/testing-security.ts';
 import { issueSetupCode } from './setup-code.ts';
 import { DEFAULT_ADMIN_NAME } from '../records/api.ts';
@@ -85,6 +86,17 @@ const principals = {
     const id = TOKENS.get(String(header).replace(/^Bearer /, ''));
     const user = users.find((u) => u.id === id && !u.disabled);
     return user ? { id: user.id, name: user.name, role: user.role } : null;
+  },
+  async authenticateConsoleSession(header: string | null | undefined) {
+    const token = String(header).replace(/^Bearer /, '');
+    if (!consoleTokens.has(token)) return null;
+    return this.authenticate(header);
+  },
+  async revokeTokenValue(token: string) {
+    if (!TOKENS.has(token)) return false;
+    TOKENS.delete(token);
+    consoleTokens.delete(token);
+    return true;
   },
   async list() { return structuredClone(users); },
   async get(id: string) { return users.find((u) => u.id === id) ?? null; },
@@ -197,7 +209,7 @@ test('the first administrator is created with the setup code; the token shown on
   assert.equal(done.status, 200, done.body);
   assert.equal(done.body.split('A'.repeat(43)).length - 1, 1, 'the token is on the page once');
   assert.match(done.body, /访问令牌，只用于连接客户端，不能登录控制台；只显示这一次/);
-  assert.match(done.body, /mcp_servers/);
+  assert.match(done.body, /mcpServers/);
   assert.ok(!done.cookies.some((c) => c.startsWith('circle_hub_session=')), 'creating the administrator opens no session');
   assert.match(done.body, /<a [^>]*href="\/console\/login"[^>]*>前往登录<\/a>/);
   await assert.rejects(access(join(dataDir, 'config', 'setup-code.json')), 'the code is used up');
@@ -242,14 +254,11 @@ test('the four operation pages carry the management forms of the console, and ev
     assert.match(page.body, new RegExp(`action="/console/admin/do/${action}"`), operation);
     csrf = csrfOf(page.body);
   }
-  const admin = await send('GET', '/console/admin', { cookie: `circle_hub_session=${session}` });
-  assert.equal(admin.status, 200);
-  assert.doesNotMatch(admin.body, /action="\/console\/admin\/do\/(?:user-disable|token-revoke|token-issue)"/, 'no form for an operation the Circle runs');
+  assert.equal((await send('GET', '/console/admin', { cookie: `circle_hub_session=${session}` })).status, 404);
   for (const path of ['packs', 'resources', 'secrets', 'knowledge']) {
-    const page = await send('GET', `/console/admin/${path}`, { cookie: `circle_hub_session=${session}` });
-    assert.equal(page.status, 200, path);
+    assert.equal((await send('GET', `/console/admin/${path}`, { cookie: `circle_hub_session=${session}` })).status, 404, path);
   }
-  assert.match((await send('GET', '/console/admin/secrets', { cookie: `circle_hub_session=${session}` })).body, /DEMO 第 1 版/);
+  assert.match((await send('GET', '/console/settings', { cookie: `circle_hub_session=${session}` })).body, /DEMO 第 1 版/);
 });
 
 test('actions become exact argv as the signed-in administrator; flag values cannot become flags', async () => {
@@ -283,7 +292,7 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   const member = await post('member-add', { name: 'carol', role: 'user', label: 'MacBook' });
   assert.equal(member.status, 200, member.body);
   assert.deepEqual(calls.slice(-2).map((call) => call.argv), [['user', 'create', 'carol', '--role=user'], ['user', 'invite', 'carol']]);
-  assert.ok(/邀请码只显示这一次/.test(member.body) && /mcp_servers/.test(member.body) && /连接确认页/.test(member.body));
+  assert.ok(/邀请码只显示这一次/.test(member.body) && /mcpServers/.test(member.body) && /连接确认页/.test(member.body));
   assert.ok(!member.body.includes('CIRCLE_HUB_TOKEN'), 'the standard authorization needs no token in the Circle entry');
   const withToken = await post('member-add', { name: 'dave', role: 'user', label: 'MacBook', connect: 'token' });
   assert.equal(withToken.status, 200, withToken.body);
@@ -292,12 +301,19 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   assert.equal((await post('member-add', { name: 'erin', role: 'user', connect: 'password' })).status, 400);
 
   // Connecting a business system adds the resource first, then sets its credential; the value never enters argv.
-  await post('system-add', { system_pack: 'synthetic-system', name: '合成系统', environment: 'shared', origins: 'api=https://192.0.2.20', plaintext: '', settings: '', credentials: 'token=DEMO', secret_name_1: 'DEMO', value_1: ' synthetic value ' });
+  const noneAdd = await post('system-add', { system_pack: 'synthetic-system', name: '合成系统', environment: 'shared', origins: 'api=https://192.0.2.20', plaintext: '', settings: '', credentials: 'token=DEMO', secret_name_1: 'DEMO', value_1: ' synthetic value ', audience: 'none' });
+  assert.equal(noneAdd.status, 200, noneAdd.body);
+  assert.match(noneAdd.body, /还没有分配，暂时谁都不能使用/);
   const [added, secretSet] = calls.slice(-2);
   assert.deepEqual(added.argv, ['resource', 'add', 'synthetic-system', '--name=合成系统', '--environment=shared', '--origin=api=https://192.0.2.20', '--credential=token=DEMO']);
   assert.deepEqual(secretSet.argv, ['secret', 'set', '--name=DEMO', '--reason=接入业务系统 合成系统']);
   assert.deepEqual(secretSet.input.secrets, { DEMO: ' synthetic value ' }, 'the content is taken as typed');
   assert.ok(!calls.some((call) => call.argv.join(' ').includes('synthetic value')));
+  await post('system-add', { system_pack: 'synthetic-system', name: '全体系统', environment: 'shared', origins: 'api=https://192.0.2.20', audience: 'all' });
+  assert.deepEqual(calls.at(-1)!.argv, ['resource', 'add', 'synthetic-system', '--name=全体系统', '--environment=shared', '--origin=api=https://192.0.2.20', '--all']);
+  await post('system-add', { system_pack: 'synthetic-system', name: '团队系统', environment: 'shared', origins: 'api=https://192.0.2.20', audience: 'team', team: 'tm_syntheticteam00000000000001' });
+  assert.deepEqual(calls.at(-1)!.argv, ['resource', 'add', 'synthetic-system', '--name=团队系统', '--environment=shared', '--origin=api=https://192.0.2.20', '--team=tm_syntheticteam00000000000001']);
+  assert.equal((await post('system-add', { system_pack: 'synthetic-system', name: '缺团队', environment: 'shared', origins: 'api=https://192.0.2.20', audience: 'team' })).status, 400);
   const halfSecret = await post('system-add', { system_pack: 'synthetic-system', name: '合成', environment: 'shared', origins: 'api=https://192.0.2.20', secret_name_1: 'DEMO', value_1: '' });
   assert.equal(halfSecret.status, 400, 'a credential needs both its name and its content');
 
@@ -375,7 +391,7 @@ test('发布工作流 checks the upload with the dry run first, then publishes t
   const check = calls.at(-1)!;
   assert.deepEqual([check.argv[0], check.argv[1], check.argv[3], check.argv[4]], ['pack', 'publish', '--stage', '--dry-run'], 'the check is the dry run of publish');
   assert.ok(actsAs(check.input, 'usr_admin'), 'as the signed-in administrator');
-  assert.match(answer.body, /发布校验已通过/);
+  assert.match(answer.body, /发布校验正确/);
   assert.match(answer.body, /还没有已发布的版本，没有可比较的当前版本/, 'the comparison with the version in use is on the page');
   assert.match(answer.body, /action="\/console\/admin\/do\/pack-publish"/);
   assert.match(answer.body, /等待发布中/);
@@ -403,7 +419,7 @@ test('a failing check offers no 发布 step and keeps nothing; content already p
   const cookie = `circle_hub_session=${session}`;
   const failing = await stage(cookie, { ...PACK, id: 'failing-pack' });
   assert.equal(failing.answer.status, 409);
-  assert.match(failing.answer.body, /未通过发布校验/);
+  assert.match(failing.answer.body, /发布校验有错误/);
   assert.match(failing.answer.body, /publish\.unsampled/);
   assert.doesNotMatch(failing.answer.body, /pack-publish/, 'no 发布 form');
   await assert.rejects(access(failing.dir), 'nothing is kept');
@@ -468,7 +484,71 @@ test('a stage expires after 30 minutes: its 发布 step reads like an unknown st
 });
 
 test('every action is declared with a page to return to', () => {
-  for (const [name, action] of Object.entries(ACTIONS)) assert.ok(action.title && /^\/console\/(?:admin|operations|team)(?:\/|$)/.test(action.back), name);
+  for (const [name, action] of Object.entries(ACTIONS)) {
+    assert.ok(action.title && /^\/console\/(?:admin|operations|teams?|connections|workflows|skills|settings|knowledge)(?:\/|\?|$)/.test(action.back), name);
+  }
+});
+
+test('bot actions dispatch through the admin bridge with secrets out of argv and HTML', async () => {
+  calls.length = 0;
+  const post = (name: string, fields: Record<string, string>) =>
+    send('POST', `/console/admin/do/${name}`, { cookie: `circle_hub_session=${session}`, body: form({ csrf, ...fields }) });
+  const key = 'synthetic-console-bot-key';
+  const modelRes = await post('bot-set', {
+    name: '合成助手',
+    protocol: 'openai',
+    endpoint: 'https://model.example.invalid/v1',
+    model: 'demo-model',
+    family: 'demo-family',
+    value: key,
+  });
+  assert.equal(modelRes.status, 200);
+  const modelCall = calls.at(-1)!;
+  assert.deepEqual(modelCall.argv, ['bot', 'set']);
+  assert.ok(!modelCall.argv.join(' ').includes(key));
+  assert.ok(!modelRes.body.includes(key));
+  assert.deepEqual(JSON.parse(modelCall.input.secrets!['bot-model']), {
+    name: '合成助手',
+    protocol: 'openai',
+    model: 'demo-model',
+    family: 'demo-family',
+    endpoint: 'https://model.example.invalid/v1',
+    key,
+  });
+
+  const idRes = await post('bot-identity', { tenant: 'demo-tenant', application: 'demo-app', value: 'app-secret' });
+  assert.equal(idRes.status, 200);
+  assert.deepEqual(calls.at(-1)!.argv, ['bot', 'identity-set']);
+  assert.ok(!idRes.body.includes('app-secret'));
+  assert.deepEqual(JSON.parse(calls.at(-1)!.input.secrets!['personal-bot.identity']), {
+    tenant: 'demo-tenant',
+    application: 'demo-app',
+    secret: 'app-secret',
+  });
+  for (const other of ['0', 'false', 'on']) {
+    await post('bot-identity', { tenant: 'demo-tenant', application: 'demo-app', value: 'app-secret', adminLogin: other });
+    assert.equal('adminLogin' in JSON.parse(calls.at(-1)!.input.secrets!['personal-bot.identity']), false);
+  }
+  const idAdminRes = await post('bot-identity', { tenant: 'demo-tenant', application: 'demo-app', value: 'app-secret', adminLogin: '1' });
+  assert.equal(idAdminRes.status, 200);
+  assert.deepEqual(JSON.parse(calls.at(-1)!.input.secrets!['personal-bot.identity']), {
+    tenant: 'demo-tenant',
+    application: 'demo-app',
+    secret: 'app-secret',
+    adminLogin: true,
+  });
+
+  const chanRes = await post('bot-channel', { bot: 'demo-bot', hub: 'https://hub.example.invalid/', value: 'chan-secret' });
+  assert.equal(chanRes.status, 200);
+  assert.deepEqual(calls.at(-1)!.argv, ['bot', 'channel-set']);
+  assert.ok(!chanRes.body.includes('chan-secret'));
+
+  assert.equal((await post('bot-channel-start', {})).status, 200);
+  assert.deepEqual(calls.at(-1)!.argv, ['bot', 'channel-start']);
+  assert.equal((await post('bot-test', {})).status, 200);
+  assert.deepEqual(calls.at(-1)!.argv, ['bot', 'test']);
+  assert.equal((await post('bot-disable', {})).status, 200);
+  assert.deepEqual(calls.at(-1)!.argv, ['bot', 'disable']);
 });
 
 test('closing the app removes every staged directory', async () => {

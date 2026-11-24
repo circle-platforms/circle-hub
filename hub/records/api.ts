@@ -1,3 +1,15 @@
+export { exportConfigurationSnapshot, validateConfigurationSnapshot, restoreConfigurationSnapshot } from './configuration-snapshot.ts';
+export type { ConfigurationSnapshot, ConfigurationClosure, ConfigurationObject, ConfigurationPackage, ConfigurationAuthentication } from './configuration-snapshot-types.ts';
+import type { SecretCipherIdentity } from '../../contracts/src/variables.ts';
+export { diagnoseRecordsSchema, currentRecordMigrations, type RecordsSchemaCompatibility, type RecordMigrationReceipt } from './schema-compatibility.ts';
+export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type TeamDeletion, type Teams } from './teams.ts';
+export { canUseEnvironment } from './environment-permissions.ts';
+export { isAdmin, canSeeRun, memberCapabilities, type MemberCapabilities, type MemberCapabilitySources, type MemberPackCapability, type MemberConnectionCapability, type MemberEnvironmentCapability } from './permissions.ts';
+export { RECORD_ACCESS, runOfRecord, mayReadRecord, type RecordVisibilityPorts } from './record-visibility.ts';
+export { MIGRATIONS, openRecords, migrateRecords } from './index.ts';
+export { SLOW_QUERY_MS, MAX_TRACE_STEPS, MAX_STATUS_LENGTH, installTraceSink, traceSinkInstalled, tracing, currentTrace, addUsage, startTrace, background, step, addEvent, updateTrace, setTraceStatus, withoutTrace, recordQuery, recordSourceRead, type Usage, type SpanRow, type TraceSink, type TraceOptions, type TraceFields } from './trace-usage.ts';
+export { BACKGROUND_STEPS, TIMED_BACKGROUND_STEPS, STEP_NAMES, USAGE_NAMES, ACCOUNTED_USAGE, isUsageName, mcpStep, consoleStep, syncStep, commandStep, type BackgroundStep, type StepName, type UsageName } from './trace-names.ts';
+export { createPool, Database, iso, normalizeTime, pageLimit, type Row, type PgTransaction } from './db.ts';
 export {historyUsage,chargedBytes,safeBytes,forgetCapacityCharges,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
 export {INITIAL_PERSONAL_EPOCH,disclosedExistence,personalOwnerOf,recordExistence} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
@@ -34,17 +46,19 @@ export type { NamedVersion, VariableSnapshot, SecretWrite, SecretMaterial, Prepa
 export { recordIntegrityNotes, noteRecordIntegrity, type RecordIntegrityNote } from './integrity-notes.ts';
 export { createRecordStore, verifiedBodyDigest, type StoreOptions } from './store.ts';
 export { parseStrictJson } from './strict-json.ts';
+export { decodeCursor } from './db.ts';
 export { canonicalize, canonicalBytes, canonicalByteLength, createCanonicalEncoder, CanonicalizationError } from './canonical.ts';
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';
 export { newId, ulid, idTime, isId } from './ids.ts';
 export { INVITATION_TTL_MS, normalizeInvitation } from './principals.ts';
 export { initialPassword, validPassword } from './password.ts';
-export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
+export type { VaultReadinessIssue } from './errors.ts';
+export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError, VaultReadinessError } from './errors.ts';
 export { scanContent, CONTENT_SCANNER } from './content-scan.ts';
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
 export { argumentDigest } from './calllog.ts';
 export { textPreview, stripNul } from './text.ts';
-export { maskedForDisplay, FileKeyProvider } from './vault.ts';
+export { maskedForDisplay, FileKeyProvider, FileVault } from './vault.ts';
 export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding } from './authorizations.ts';
 export { personalPackKey, personalPackGrants, mayUsePersonalPack } from './personal-packs.ts';
 export { withRequestPermissions, requestRead } from './request-permissions.ts';
@@ -134,6 +148,11 @@ export type InvitationCheck = { ok: true; invitation: string; user: User; expire
 export const DEFAULT_ADMIN_NAME = 'admin';
 
 export interface Principals {
+  bindExternalIdentity(by: Principal, issuer: string, subject: string): Promise<void>;
+  unbindExternalIdentity(by: Principal, userId: string, issuer?: string): Promise<number>;
+  externalIdentities(owner: string): Promise<readonly string[]>;
+  externalSubject(owner: string, issuer: string): Promise<string | null>;
+  externalMember(issuer: string, subject: string): Promise<User | null>;
   /** Creates the first admin and its token. Refused (ConflictError) once any admin exists. */
   bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }): Promise<{ user: User; token: IssuedToken }>;
   createUser(by: Principal, name: string, role?: PermissionRole, credential?: { password: string; mustChange: boolean }): Promise<User>;
@@ -182,6 +201,7 @@ export interface Principals {
   clientsMany?(clientIds:readonly string[]):Promise<Map<string,OAuthClient>>;
   /** Live access Bearer only, excluding console sessions; metadata comes from the server's token binding. */
   authenticateAccessToken?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
+  authenticateConsoleSession?(authorization:string|null|undefined):Promise<Principal|null>;
   /** Internal authentication also supports the console's bounded password-session credential. */
   authenticate(authorization: string | null | undefined): Promise<Principal | null>;
   /** Like authenticate, with the server token that authenticated (console sessions included). */
@@ -576,7 +596,7 @@ export interface ArtifactSource {
 
 export interface Artifacts {
   /** Capture the reader's direct and pack-audience permissions for one request. */
-  capturePermissionSnapshot?(principal: Principal): Promise<import('./request-permissions.ts').RequestPermissions>;
+  capturePermissionSnapshot?(principal: Principal, tx?: Transaction): Promise<import('./request-permissions.ts').RequestPermissions>;
   /**
    * Stores the bytes and a source_artifact record. Nothing is refused, held or covered for looking like a credential
    * (decisions 154 and 161): the scan written into the record is the content scan (credential-scan@4), which looks for
@@ -643,10 +663,50 @@ export interface VaultVerification {
   unknown: boolean;
 }
 
+export type VaultSecretMetadata = import('../../contracts/src/variables.ts').SecretRecord;
+export interface VaultSecretMaterial extends SecretCipherIdentity {
+  metadata: VaultSecretMetadata;
+  value: string;
+}
+export interface VaultArchiveEntry {
+  readonly entry: string;
+  readonly archived_entry: string;
+  readonly sealed_sha256: string;
+}
+export interface VaultArchiveReceipt {
+  readonly name: string;
+  readonly by: string;
+  readonly at: string;
+  readonly directory: string;
+  readonly previous_version: number | null;
+  readonly new_version: number;
+  readonly entries: readonly VaultArchiveEntry[];
+}
+export interface VaultSecretWriteResult extends VaultSecretMetadata {
+  readonly archive?: VaultArchiveReceipt;
+}
+export interface VaultSecretWrite {
+  reason?: string;
+  name: string;
+  value: string;
+  digest_rule: import('../../contracts/generated/vocabulary.ts').DigestRule;
+  set_by: string;
+  set_at: string;
+}
+
 /** AES-256-GCM sealed entries under <data>/vault, the entry name bound as associated data. Values never leave except by get. */
 export interface Vault {
   /** Explicit key creation through the key provider. The vault never creates a key on its own. */
   initKey(): Promise<void>;
+  putSecret(input: VaultSecretWrite): Promise<VaultSecretWriteResult>;
+  secretMetadata(name: string): Promise<VaultSecretMetadata | null>;
+  secretIdentity(name: string): Promise<SecretCipherIdentity | null>;
+  secretHistoryIdentities(name: string): Promise<SecretCipherIdentity[]>;
+  secretHistory(name: string): Promise<VaultSecretMetadata[]>;
+  secretNames(): Promise<string[]>;
+  readSecret(name: string): Promise<VaultSecretMaterial | null>;
+  recentSecrets(names?: readonly string[]): Promise<VaultSecretMaterial[]>;
+  unsetSecret(name: string, by: string, at: string): Promise<VaultSecretMetadata>;
   put(name: string, value: string | Uint8Array): Promise<void>;
   /** Null when there is no entry of that name. Throws VaultError when the key is wrong or the entry was altered or renamed. */
   get(name: string): Promise<Uint8Array | null>;
@@ -716,13 +776,20 @@ export interface Authorizations {
    * publication is the owner or an admin. Every other permission is decided by an admin.
    */
   grant(by: Principal, input: AuthorizationInput, tx?: Transaction): Promise<AuthorizationRecord>;
-  revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>): Promise<AuthorizationRecord>;
+  revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>, tx?: Transaction): Promise<AuthorizationRecord>;
   /** Latest record for the triple, revoked or not. */
   latest(permission: PermissionKind, subject: string, object: string): Promise<AuthorizationRecord | null>;
   /** True when the latest record is a grant that has not expired. */
   isActive(permission: PermissionKind, subject: string, object: string): Promise<boolean>;
   history(query: { permission?: PermissionKind; subject?: string; object?: string } & PageQuery): Promise<Page<AuthorizationRecord>>;
 
+  teamsOf(by: Principal, kind: 'pack' | 'resource', object: string): Promise<{teams:import('./teams.ts').Team[];all:boolean}>;
+  packSources(by: Principal, userId: string): Promise<Array<{pack:string;via:'user'|{team:string}}>>;
+  assignTeam(by: Principal, teamId: string, packId: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
+  unassignTeam(by: Principal, teamId: string, packId: string, note?: string | null): Promise<AuthorizationRecord>;
+  assignResource(by: Principal, resourceId: string, subject: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
+  unassignResource(by: Principal, resourceId: string, subject: string, note?: string | null): Promise<AuthorizationRecord>;
+  canUseResource(userId: string, resourceId: string): Promise<boolean>;
   assign(by: Principal, userId: string, packId: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
   unassign(by: Principal, userId: string, packId: string, note?: string | null): Promise<AuthorizationRecord>;
   grantPublishRight(by: Principal, userId: string, note?: string | null): Promise<AuthorizationRecord>;
@@ -894,6 +961,7 @@ export interface CallLogLine extends CallLogEntry {
 
 export interface CallLogQuery extends PageQuery {
   userId?: string;
+  sessionId?: string;
   tool?: string;
   runId?: string;
   /** The W3C trace id of one call. */
@@ -903,6 +971,16 @@ export interface CallLogQuery extends PageQuery {
   /** Inclusive lower and exclusive upper bound on `at`. */
   from?: string;
   to?: string;
+}
+
+export interface CallLogErrorCountQuery {
+  userId: string;
+  tool: string;
+  errorCode: string;
+  since: string;
+  path?: string;
+  objectKey?: string;
+  requestDigest?: string;
 }
 
 export interface CallLog {
@@ -916,6 +994,7 @@ export interface CallLog {
    * on every query (a disabled account sees nothing, a demoted admin only their own calls). Newest first by default.
    */
   query(principal: Principal, query?: CallLogQuery): Promise<Page<CallLogLine>>;
+  countRecentErrors?(query: CallLogErrorCountQuery): Promise<number>;
   /** The initialize declaration of this account, token and Hub-issued Mcp-Session-Id; null when the session declared none. */
   declaredClient?(userId:string,mcpSession:string|null,tokenId:string|null):Promise<{name:string;version:string|null}|null>;
   /** The newest initialize declaration made with this account and token, for showing a connection; it binds no write. */
@@ -930,7 +1009,7 @@ export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
 export type {PurgeRequester,PurgePending,PurgeRequestBody} from './personal-sync.ts';
 export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'purgeRequests'|'confirmPurge'|'usageForSpace'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
 export interface RecordsKit {
-  memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'|'registerHandover'>;
+  memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'|'registerBotFilesRoot'|'registerHandover'>;
   personalSync?:PersonalSyncStore;
   personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'withStagingSlot'|'stage'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'|'purgedRunOriginals'>;
   memoryIndex?:import('./memory-index.ts').MemoryIndex;
@@ -944,6 +1023,7 @@ export interface RecordsKit {
   /** The masking dictionary (B02 R[11]); absent on a fake that reads no business system. */
   masking?: import('./masking.ts').MaskingRules;
   principals: Principals;
+  teams: import('./teams.ts').Teams;
   authorizations: Authorizations;
   pointers: Pointers;
   callLog: CallLog;

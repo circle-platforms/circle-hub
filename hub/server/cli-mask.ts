@@ -1,11 +1,8 @@
-// `circle-hub mask`: the masking dictionary (B02 R[11], decision 159, issue 194 step two). An administrator lists, sets,
-// removes and tries rules. A rule's pattern is not a secret and is shown; what a pattern matched in a sample never is:
-// `test` prints the replaced text only.
 import { readFile } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
-import { parseArgs } from 'node:util';
 import { MASKING_DICTIONARY_SCHEMA, MASK_GROUP, MaskingRuleError, checkMaskingRule, compileMasking, maskPlaceholder, type MaskingRule } from '../../contracts/src/masking.ts';
 import { VariableError, type Principal, type RecordsKit } from '../records/api.ts';
+import { parse } from './cli-arguments.ts';
 import { CliError, UsageError } from './errors.ts';
 
 export interface MaskCommandSession {
@@ -18,7 +15,6 @@ export interface MaskCommandSession {
 
 export const MASK_USAGE = 'mask list [--json] | set <规则名> --label <标签> (--pattern <正则> | --pattern-file <文件>) [--ignore-case] --reason <理由> | remove <规则名> --reason <理由> | test (<规则名> | --all | --pattern <正则> [--label <标签>] [--ignore-case]) --file <样本文件>';
 const usage = (): never => { throw new UsageError(`用法：circle-hub ${MASK_USAGE}`); };
-/** How much of a sample `test` reads and how many changed lines it prints. */
 const MAX_SAMPLE_BYTES = 4 * 1024 * 1024, MAX_SHOWN_LINES = 40;
 
 const line = (rule: MaskingRule): string => `${rule.name}  ${maskPlaceholder(rule.label)}  /${rule.pattern}/${rule.ignore_case ? 'i' : ''}${new RegExp(`\\(\\?<${MASK_GROUP}>`).test(rule.pattern) ? '（只替换 secret 分组）' : ''}`;
@@ -26,11 +22,9 @@ const line = (rule: MaskingRule): string => `${rule.name}  ${maskPlaceholder(rul
 async function patternOf(session: MaskCommandSession, values: { pattern?: string; 'pattern-file'?: string }): Promise<string> {
   if ((values.pattern === undefined) === (values['pattern-file'] === undefined)) usage();
   if (values.pattern !== undefined) return values.pattern;
-  // A pattern kept in a file: no shell quoting to get wrong. A single trailing line break is the file's, not the pattern's.
   return (await readFile(resolvePath(session.ctx.io.cwd, values['pattern-file']!), 'utf8')).replace(/\r?\n$/, '');
 }
 
-/** The dictionary's store; a records kit without one cannot have been opened by a running command. */
 async function dictionary(session: MaskCommandSession): Promise<NonNullable<RecordsKit['masking']>> {
   const masking = (await session.records()).masking;
   if (masking === undefined) throw new CliError('这个 Hub 的记录存储没有遮盖字典');
@@ -46,10 +40,10 @@ export async function maskCommand(session: MaskCommandSession, args: readonly st
   const [verb, ...rest] = args;
   const parsed = (() => {
     try {
-      return parseArgs({ args: [...rest], allowPositionals: true, strict: true, options: {
+      return parse(rest, {
         json: { type: 'boolean' }, label: { type: 'string' }, pattern: { type: 'string' }, 'pattern-file': { type: 'string' }, 'ignore-case': { type: 'boolean' },
         reason: { type: 'string' }, file: { type: 'string' }, all: { type: 'boolean' },
-      } });
+      }, 0, 1);
     } catch { return usage(); }
   })();
   const { values, positionals } = parsed;

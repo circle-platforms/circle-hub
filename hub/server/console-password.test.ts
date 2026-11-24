@@ -34,7 +34,7 @@ test('initial passwords cannot bypass the first change through pages, APIs, mana
   const session=cookie(signed,'circle_hub_session');
   const elsewhere=cookie(await login({username:user.name,password:initial}),'circle_hub_session');assert.ok(elsewhere && elsewhere!==session);
   assert.equal((await send('/console/overview','GET',undefined,session)).status,303);
-  assert.equal((await send('/console/api/status','GET',undefined,session)).status,403);
+  assert.equal((await send('/console/api/stream','GET',undefined,session)).status,403);
   assert.equal((await send('/console/admin/do/member-add','POST',{name:'禁止创建'},session)).status,303);
   const form=await send('/console/password','GET',undefined,session);assert.equal(form.status,200);
   assert.ok(!form.body.includes(initial));assert.match(form.body,/首次登录必须修改密码/);
@@ -48,7 +48,7 @@ test('initial passwords cannot bypass the first change through pages, APIs, mana
   assert.equal((await send('/console/team','GET',undefined,session)).status,303,'old console session is revoked');
   assert.equal((await send('/console/team','GET',undefined,elsewhere)).status,303,'every other console session of the account is revoked');
   assert.equal((await login({username:user.name,password:initial})).status,401);
-  const fresh=await login({username:user.name,password:next});assert.equal(fresh.headers.location,'/console/overview');
+  const fresh=await login({username:user.name,password:next});assert.equal(fresh.headers.location,'/console/me','a member signs in to 我能做的事');
   assert.equal((await server.records.principals.authenticate('Bearer '+circle.token))?.id,user.id,'MCP token stays bound to its account');
 });
 test('only administrators reset a member password and the generated value is returned once',async()=>{
@@ -85,7 +85,7 @@ test('the failure limit also applies to unknown accounts and cannot be bypassed 
 test('a valid administrator token and a valid member token are both refused by the console sign-in, with no session',async()=>{
   assert.doesNotMatch((await send('/console/login')).body,/name="token"/,'the sign-in has no token field');
   const admin=await server.createUser('合成令牌管理员','admin'), member=await server.createUser('合成令牌成员');
-  for(const user of [admin,member]){
+  for(const [user,landing] of [[admin,'/console/overview'],[member,'/console/me']] as const){
     assert.equal((await server.records.principals.authenticate('Bearer '+user.token))?.id,user.user.id,'the token is valid: it connects a Circle');
     for(const fields of [{token:user.token},{username:user.user.name,password:user.token}] as Record<string,string>[]){
       const refused=await login(fields), what=`${user.user.role}: ${Object.keys(fields).join(' and ')}`;
@@ -94,7 +94,7 @@ test('a valid administrator token and a valid member token are both refused by t
       assert.equal(cookie(refused,'circle_hub_session'),'',`${what}: no session`);
     }
     const signed=await login(testConsoleCredentials(user.token));
-    assert.equal(signed.status,303);assert.equal(signed.headers.location,'/console/overview','the account signs in with its password');
+    assert.equal(signed.status,303);assert.equal(signed.headers.location,landing,'the account signs in with its password');
   }
 });
 test('only a successful bridged password reset clears the target account login lock',async()=>{
@@ -123,7 +123,7 @@ test('an administrator who must change the password signs in with it and can nei
   const admin=await server.records.principals.createUser(server.admin.principal,'合成初始管理员','admin',{password:initial,mustChange:true});
   const signed=await login({username:admin.name,password:initial});assert.match(String(signed.headers.location),/^\/console\/password/);
   const session=cookie(signed,'circle_hub_session');
-  assert.equal((await send('/console/api/me','GET',undefined,session)).status,403);
+  assert.equal((await send('/console/api/stream','GET',undefined,session)).status,403);
   const form=await send('/console/password','GET',undefined,session);
   assert.equal((await send('/console/admin/do/password-reset','POST',{csrf:csrf(form.body),user:server.admin.user.id},session)).status,303);
 });
@@ -132,7 +132,7 @@ test('login preserves passwords as typed and accepts the same Unicode username l
   await server.records.principals.createUser(server.admin.principal,name,'user',{password,mustChange:false});
   assert.equal((await login({username:name,password:password.trim()})).status,401);
   const signed=await login({username:name,password});
-  assert.equal(signed.status,303);assert.equal(signed.headers.location,'/console/overview');
+  assert.equal(signed.status,303);assert.equal(signed.headers.location,'/console/me','a member signs in to 我能做的事');
 });
 
 test('username failures lock a source for every account and an account from every source, and neither lock reaches the other',async t=>{

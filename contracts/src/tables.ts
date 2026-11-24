@@ -234,6 +234,7 @@ export const CatalogSignature = z
     id: z.string().min(1).optional().describe('Stable identity of the overload; derived from the position when absent. Per root: excluded when an impact view compares catalog members by syntax (overloads compare as a set)'),
     params: z.array(CatalogParam).describe('Positional parameters in order'),
     reference: ReferenceUri.optional().describe('Where this argument list is defined; references differ per root and are excluded when an impact view compares catalog members by syntax'),
+    access: z.strictObject({name:z.string().min(1),declaration:Ground,grammar:Versioned}).optional().describe('The access level the source grammar declares for the command, by its native name, with where it is declared; source evidence like a parameter native_type, excluded when an impact view compares catalog members by syntax'),
   })
   .describe('One overload of a catalog entry');
 export type CatalogSignature = z.infer<typeof CatalogSignature>;

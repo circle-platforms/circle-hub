@@ -5,7 +5,7 @@ import type { Verdict } from '../../../../contracts/generated/vocabulary.ts';
 // frozen fields equal the recomputation; refute (test-bed.<action>_mismatch) with the fields that differ. Grounds are
 // the item's location (its bed in the inventory document) and the fields it was checked against.
 import { isRecord } from './common.ts';
-import { isAction, acquirePlan, factsFields, installsOf, leaseRecord, manifestBeds, observationsOf, readParameters, releasePlan, searchFields, unmatchedBuild, type Action, type BedNeed, type FrozenLeases, type Observation } from './conclude.ts';
+import { isAction, acquirePlan, factsFields, helpPlan, installsOf, leaseRecord, manifestBeds, observationsOf, readParameters, readPlan, releasePlan, searchFields, unmatchedBuild, type Action, type BedNeed, type FrozenLeases, type Observation } from './conclude.ts';
 
 const TIER = 'advisory' as const;
 
@@ -56,14 +56,14 @@ function support(item: string, at: number, statement: string, location: unknown,
 }
 
 /** The frozen run context: the groups' first record carries the manifest, the parameters and the lease view. */
-function frozenOf(subject: unknown): { action: Action; need: BedNeed; bed: string | null; addresses: { segment: string; count: number } | null; booking: string | null; reason:string; devices:string[]|null; manifest: unknown; inventory: string | null; observations: Observation[]; leases: FrozenLeases; surface: { declaration: unknown; probes: unknown } | null } | null {
+function frozenOf(subject: unknown): { action: Action; need: BedNeed; bed: string | null; addresses: { segment: string; count: number } | null; booking: string | null; reason:string; devices:string[]|null; device: string | null; line: string | null; mode: string | null; manifest: unknown; inventory: string | null; observations: Observation[]; leases: FrozenLeases; surface: { declaration: unknown; probes: unknown } | null } | null {
   const raw = isRecord(subject) && isRecord(subject.context) && Array.isArray(subject.context.groups) ? subject.context.groups[0] : undefined;
   if (!isRecord(raw) || raw.manifest === undefined) return null;
-  const read = readParameters({ action: raw.action, need: raw.need, reason:raw.reason,devices:Array.isArray(raw.devices)?raw.devices:undefined, bed: raw.bed, addresses: raw.addresses, booking: raw.booking });
+  const read = readParameters({ action: raw.action, need: raw.need, reason:raw.reason,devices:Array.isArray(raw.devices)?raw.devices:undefined, bed: raw.bed, addresses: raw.addresses, booking: raw.booking, device: raw.device ?? undefined, line: raw.line ?? undefined, mode: raw.mode ?? undefined });
   if ('code' in read) return null;
   const leases = isRecord(raw.leases) && typeof raw.leases.now === 'string' && Array.isArray(raw.leases.entries) ? (raw.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
   const surface = raw.surface !== undefined ? { declaration: raw.surface, probes: raw.probes } : null;
-  return { action: read.action, need: read.need, bed: read.bed, addresses: read.addresses, booking: read.booking, reason:read.reason, devices:read.devices, manifest: raw.manifest, leases, surface, inventory: typeof raw.inventory === 'string' ? raw.inventory : null, observations: observationsOf(raw.observations) };
+  return { action: read.action, need: read.need, bed: read.bed, addresses: read.addresses, booking: read.booking, reason:read.reason, devices:read.devices, device: read.device ?? null, line: read.line ?? null, mode: read.mode ?? null, manifest: raw.manifest, leases, surface, inventory: typeof raw.inventory === 'string' ? raw.inventory : null, observations: observationsOf(raw.observations) };
 }
 
 /** Outcomes of the bed check for a subject: one per item whose fields carry an action. */
@@ -143,6 +143,25 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
         const diff=differing(fields,plan.fields,Object.keys(plan.fields));
         if(diff.length)out.push(refute(id,at,code,'结论与冻结的登记或租约视图不符（'+diff.join('、')+'）',item.location,{differing:diff}));
         else out.push(support(id,at,plan.fields.conclusion,item.location,plan.fields));
+        continue;
+      }
+      if (isAction(action) && (action === 'help' || action === 'read')) {
+        const normalized = { action: frozen.action, need: frozen.need, bed: frozen.bed, addresses: frozen.addresses, booking: frozen.booking, reason: frozen.reason, devices: frozen.devices, device: frozen.device, line: frozen.line, mode: frozen.mode };
+        const planned = action === 'help' ? helpPlan(manifest.beds, normalized, frozen.leases) : readPlan(manifest.beds, normalized, frozen.leases);
+        const code = action === 'help' ? 'test-bed.help_mismatch' : 'test-bed.read_mismatch';
+        const verb = action === 'help' ? '问' : '读';
+        if (!planned.ok) {
+          out.push(refute(id, at, code, `按冻结内容重算${verb}设备失败：${planned.failure.message}`, item.location, { failure: planned.failure.code }));
+          continue;
+        }
+        const plan = planned.plan;
+        const expected: Record<string, unknown> = { booking: plan.booking, bed: plan.bed, device: plan.device, line: plan.line, ...('mode' in plan ? { mode: plan.mode } : {}), key: plan.key, conclusion: plan.conclusion };
+        const diff = differing(fields as Record<string, unknown>, expected, Object.keys(expected));
+        if (diff.length > 0) {
+          out.push(refute(id, at, code, `${verb} ${plan.bed}/${plan.device} 的结论与冻结的清单或租约视图不符（${diff.join('、')}）`, item.location, { differing: diff }));
+          continue;
+        }
+        out.push(support(id, at, plan.conclusion, item.location, expected));
         continue;
       }
       if (isAction(action) && (action === 'release')) {

@@ -1,5 +1,3 @@
-// The publish check (T02) of the real pack registry on the staged pack: the samples run in the sandbox and pass, both
-// polarities per check are present, and a pack whose samples are wrong or missing is refused.
 import assert from 'node:assert/strict';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -59,7 +57,7 @@ describe('publishing the quality-board pack', { skip }, () => {
       report.warnings.map((w) => w.rule),
       ['publish.author_samples_only', 'publish.author_samples_only', 'publish.author_samples_only'],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['quality-board', '2.0.12', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['quality-board', '2.0.13', 'workflow']);
     const again = await registry.publish(owner, await staged());
     assert.ok(again.ok && again.created === false);
   });

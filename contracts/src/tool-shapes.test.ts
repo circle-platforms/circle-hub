@@ -2,13 +2,17 @@
 // with the published schema in tools.json the way an MCP client checks it (the SDK's Ajv validator). A case marked
 // `refinement` is one the published schema cannot express: zod refuses it, the client's validator lets it through.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
-import type { z } from 'zod';
+import { z } from 'zod';
+import { RunSummary } from './run.ts';
+import { ValidationResult } from './validation.ts';
+import { ProtocolError } from './common.ts';
 import { PARTITION } from '../generated/vocabulary.ts';
 import { accepted, acceptedCounts, copy, H, H2, H3, notAccepted, packSummary, partitions, RUN, submission, summary, TRACE, TRACE2, unavailable } from './fixtures.ts';
-import { MAX_UPLOAD_BASE64_LENGTH, TOOLS } from './tools.ts';
+import { MAX_UPLOAD_BASE64_LENGTH, SERVER_INSTRUCTIONS, TOOLS } from './tools.ts';
 
 type Case = { why: string; value: unknown; refinement?: true };
 type Sides = { valid: Case[]; invalid: Case[] };
@@ -38,11 +42,12 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
       invalid: [{ why: 'kind outside the vocabulary', value: { kind: 'plugin' } }, { why: 'misspelled key', value: { knd: 'workflow' } }],
     },
     output: {
-      valid: [{ why: 'packs', value: { ...ok, packs: [packSummary] } }, { why: 'error with the empty list', value: { ...failed(), packs: [] } }],
+      valid: [
+        { why: 'extra key', value: { ...ok, packs: [], total: 1 } },
+        { why: 'packs', value: { ...ok, packs: [packSummary] } }, { why: 'error with the empty list', value: { ...failed(), packs: [] } }],
       invalid: [
         { why: 'an error answer that lists packs', value: { ...failed(), packs: [packSummary] }, refinement: true },
         { why: 'an error without a code', value: { ...ok, call_result: 'error', packs: [] }, refinement: true },
-        { why: 'extra key', value: { ...ok, packs: [], total: 1 } },
       ],
     },
   },
@@ -92,6 +97,7 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
     },
     output: {
       valid: [
+        { why: 'run with an unknown key', value: { ...ok, run: { ...summary, phase: 'running' } } },
         { why: 'the run', value: { ...ok, run: summary } },
         { why: 'the run with the result the Hub computed', value: { ...ok, run: summary, result: { reference: `rec:${H}`, counts: { delivered: 3, rejected: 0, quarantined: 0, incomplete: 1, unknown: 1 } } } },
         { why: 'neutral answer', value: failed() },
@@ -101,7 +107,6 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
         { why: 'a result without a run', value: { ...failed(), result: { reference: `rec:${H}`, counts: { delivered: 0, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } }, refinement: true },
         { why: 'a result that points at a source', value: { ...ok, run: summary, result: { reference: `src:${H}`, counts: { delivered: 0, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } } },
         { why: 'an error with a run', value: { ...failed(), run: summary }, refinement: true },
-        { why: 'run with an unknown key', value: { ...ok, run: { ...summary, phase: 'running' } } },
       ],
     },
   },
@@ -176,6 +181,7 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
     },
     output: {
       valid: [
+        { why: 'result with an unknown key', value: { ...ok, acceptance: 'accepted', result: { ...accepted, items: [] }, counts: acceptedCounts() } },
         { why: 'accepted', value: { ...ok, trace: TRACE2, acceptance: 'accepted', result: accepted, counts: acceptedCounts() } },
         { why: 'not accepted, validated against the run', value: { ...failed(notAccepted.errors[0]), acceptance: 'not_accepted', result: notAccepted } },
         { why: 'neutral answer for an absent or unavailable run (D05 R[3])', value: { ...failed(), acceptance: 'not_accepted' } },
@@ -192,7 +198,6 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
           value: { ...ok, acceptance: 'accepted', result: { ...accepted, partitions: { ...accepted.partitions, rejected: [{ ...(accepted.partitions.delivered[0] as object), code: 'x' }] } }, counts: acceptedCounts() },
           refinement: true,
         },
-        { why: 'result with an unknown key', value: { ...ok, acceptance: 'accepted', result: { ...accepted, items: [] }, counts: acceptedCounts() } },
         { why: 'result bound to a malformed run id', value: { ...failed(malformedRun), acceptance: 'not_accepted', result: { ...notAccepted, run: 'run_123' } } },
         { why: 'receipt missing', value: failed() },
       ],
@@ -230,6 +235,95 @@ describe('tool shapes: zod and the published schema agree', () => {
       });
     }
   }
+  test('every output preserves root and nested error extensions; all inputs stay strict', () => {
+    for (const tool of TOOLS) {
+      for (const c of CASES[tool.name].output.valid) {
+        const value = { ...(c.value as object), future_output: { nested: ['synthetic'] } };
+        assert.deepEqual(tool.output.parse(copy(value)), value, tool.name);
+        const clientValue = copy(value);
+        assert.equal(validators.get(tool.name)!.output(clientValue).valid, true, tool.name);
+        assert.deepEqual(clientValue, value, `${tool.name}: AJV retains extensions`);
+      }
+      const neutral = CASES[tool.name].output.valid.find(c => (c.value as typeof ok).call_result === 'error')!.value as typeof ok;
+      const value = { ...neutral, errors: [{ ...unavailable, future_error: { detail: [1, true] } }], future_output: null };
+      assert.deepEqual(tool.output.parse(copy(value)), value, tool.name);
+      assert.equal(validators.get(tool.name)!.output(copy(value)).valid, true, tool.name);
+      const wrong = { ...value, call_result: 'future_result' };
+      assert.equal(tool.output.safeParse(wrong).success, false, tool.name);
+      assert.equal(validators.get(tool.name)!.output(wrong).valid, false, tool.name);
+      const input = { ...(CASES[tool.name].input.valid[0].value as object), future_argument: true };
+      assert.equal(tool.input.safeParse(input).success, false, tool.name);
+      assert.equal(validators.get(tool.name)!.input(input).valid, false, tool.name);
+    }
+  });
+  test('nested arrays, optional objects and discriminated union branches retain extensions', () => {
+    for (const only_from of [
+      { source: 'build_defects', future_branch: { retained: true } },
+      { source: 'input_ids', slot: 'mindmap', future_branch: { retained: true } },
+    ]) {
+      const value = { ...ok, packs: [{ ...packSummary, future_pack: true, inputs: [{ ...packSummary.inputs[0], index_default: { only_from, fields: ['id'], future_default: true } }] }] };
+      const tool = TOOLS.find(t => t.name === 'list_task_packs')!;
+      assert.deepEqual(tool.output.parse(copy(value)), value);
+      assert.equal(validators.get(tool.name)!.output(copy(value)).valid, true);
+      const wrong = { ...value, packs: [{ ...value.packs[0], inputs: [{ ...value.packs[0].inputs[0], index_default: { only_from: { source: 'unknown', future_branch: true }, fields: ['id'] } }] }] };
+      assert.equal(tool.output.safeParse(wrong).success, false);
+      assert.equal(validators.get(tool.name)!.output(wrong).valid, false);
+    }
+    const cases = [
+      { name: 'start_run', value: { ...ok, run: { ...summary, requirements: summary.requirements.map(row => ({ ...row, future_rule: { retained: true } })) } } },
+      { name: 'get_nodes', value: { ...ok, root: H, nodes: [{ ...node, future_node: true, children: node.children.map(child => ({ ...child, future_child: true })), entries: node.entries.map(entry => ({ ...entry, future_entry: [1] })) }] } },
+      { name: 'resolve_reference', value: { ...ok, resolution: 'resolved', references: [{ reference: `src:${H}`, text: 'synthetic', future_referent: true }], diagnostics: [] } },
+      { name: 'submit_result', value: { ...ok, acceptance: 'accepted', result: { ...accepted, rounds: { ...accepted.rounds, future_rounds: true }, partitions: { ...accepted.partitions, delivered: accepted.partitions.delivered.map(row => ({ ...(row as object), future_item: { retained: true } })) } }, counts: { ...acceptedCounts(), future_counts: 1 } } },
+    ];
+    for (const { name, value } of cases) {
+      assert.deepEqual(TOOLS.find(t => t.name === name)!.output.parse(copy(value)), value, name);
+      assert.equal(validators.get(name)!.output(copy(value)).valid, true, name);
+    }
+  });
+  test('extensions cannot bypass known values or refinements', () => {
+    for (const tool of TOOLS) {
+      for (const c of CASES[tool.name].output.invalid) {
+        const value = { ...(c.value as object), future_output: true };
+        assert.equal(tool.output.safeParse(copy(value)).success, false, `${tool.name}: ${c.why}`);
+        assert.equal(validators.get(tool.name)!.output(copy(value)).valid, c.refinement === true, `${tool.name}: ${c.why}`);
+      }
+    }
+  });
+  test('a recursive output object retains extensions at every depth and still checks its members', () => {
+    const step = {
+      span_id: '00f067aa0ba902b7', parent_span_id: null as string | null, is_root: true, name: 'get_nodes', type: 'span',
+      started_at: '2026-11-19T00:00:00.000Z', ended_at: '2026-11-19T00:00:00.010Z', duration_ms: 10 as unknown, level: 'default',
+      user_id: null, session_id: null, run_id: null, client_name: null, client_version: null, client_platform: null,
+      release: null, environment: null, usage: { 'db.queries': 1 },
+    };
+    const leaf = { ...step, span_id: '00f067aa0ba902b9', parent_span_id: '00f067aa0ba902b8', is_root: false, future_leaf: true, children: [] };
+    const child = { ...step, span_id: '00f067aa0ba902b8', parent_span_id: step.span_id, is_root: false, future_child: [1], children: [leaf] };
+    const value = { ...ok, observability: { trace: { trace_id: TRACE, roots: [{ ...step, future_step: true, children: [child] }], truncated: false, future_trace: 1 } } };
+    const tool = TOOLS.find(t => t.name === 'get_nodes')!;
+    assert.deepEqual(tool.output.parse(copy(value)), value);
+    assert.equal(validators.get(tool.name)!.output(copy(value)).valid, true);
+    const wrong = copy(value);
+    wrong.observability.trace.roots[0].children[0].children[0].duration_ms = 'slow';
+    assert.equal(tool.output.safeParse(wrong).success, false);
+    assert.equal(validators.get(tool.name)!.output(wrong).valid, false);
+    const outputSchema = JSON.stringify(published.find(t => t.name === 'get_nodes')!.outputSchema);
+    assert.doesNotMatch(outputSchema, /"additionalProperties":false/, 'no closed copy of the step is published beside the open one');
+  });
+  test('output cloning leaves shared input and record objects strict', () => {
+    assert.equal(ProtocolError.safeParse({ ...unavailable, future_error: true }).success, false);
+    assert.equal(RunSummary.safeParse({ ...summary, future_run: true }).success, false);
+    assert.equal(ValidationResult.safeParse({ ...accepted, future_result: true }).success, false);
+    const input = { ...submission, items: [{ ...submission.items[0], future_item: true }] };
+    assert.equal(TOOLS.find(t => t.name === 'submit_result')!.input.safeParse(input).success, false);
+  });
+  test('the C7 baseline includes authorized E4 descriptions and run30 T1/T6 and run31 T8 dispatch presentation', () => {
+    const hash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
+    assert.equal(hash(JSON.stringify(published.map(({ name, inputSchema }) => ({ name, inputSchema })))), 'add0560b5800e34133a3347ece40df319269c509805d97db2938f02e9799e727');
+    assert.deepEqual(TOOLS.map(({ name, input }) => ({ name, inputSchema: z.toJSONSchema(input, { target: 'draft-2020-12', io: 'input', unrepresentable: 'throw' }) })), published.map(({ name, inputSchema }) => ({ name, inputSchema })));
+    assert.equal(hash(JSON.stringify(TOOLS.map(({ name, title, description }) => ({ name, title, description })))), '1cb501e66426544276347082f42c4003cadd4264c5ce3fe291cf7b2fd127b83b');
+    assert.equal(hash(SERVER_INSTRUCTIONS), '735c07c7ebbf5df506b7bea6e32b86994c7486c047b77783a29ceb7c81b229a3');
+    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), '9d6b6dd717ec71a66c7fd62237a3a62643660ff461d08e9800039d251e4cea2a');
+  });
   test('a protocol error never needs invented run, lock or digest values (D05 R[3], T03 R[3])', () => {
     const submit = TOOLS.find((t) => t.name === 'submit_result');
     const neutral = { ...failed(), acceptance: 'not_accepted' };

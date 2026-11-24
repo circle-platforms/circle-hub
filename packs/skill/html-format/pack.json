@@ -1,25 +1,25 @@
 {
   "schema": "pack@1",
   "id": "html-format",
-  "version": "1.0.21",
+  "version": "1.0.24",
   "kind": "skill",
   "title": "HTML 格式",
   "description": "按原件结构读取通用 HTML 块盒与链接，不承担工作角色判断",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "c4e3e942c720426bfc3235c5f45dda4d063ef82b9cd68bef7544b4fc60b4530b",
-      "size": 328
+      "sha256": "9b22b0f3adb121ca31b366ca2196bc07fd56267fe54e54c1dcc34485c5aa0fc9",
+      "size": 513
     },
     {
       "path": "functions/format.ts",
-      "sha256": "6301b0027baa598be00f3e103648aaa151407787ed6c932db0a6e70f723b780f",
-      "size": 9644
+      "sha256": "3b7dccb461e8c5543a27ddae7da95381ba9a3b4011af074ece77f5b10b2d3c64",
+      "size": 9558
     },
     {
       "path": "functions/generated/protocol.ts",
-      "sha256": "0621c599cb7fddd912ef303dd4e00a220c8ff95f6ebec44deb37c8394fa511aa",
-      "size": 13821
+      "sha256": "ae29107e817a335b6fea62b616d96f3ce49ff79341d1dd51dadd2467933ad809",
+      "size": 259
     },
     {
       "path": "functions/html.ts",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/selectors.ts",
-      "sha256": "4eb68ce5a3893c8fb3d32d146da71180960b9c8b515353132a9520893db05b32",
-      "size": 7836
+      "sha256": "2bad7714b6e7bb3a37fd1402717194b82c616739c7b45b354d2e73be60fab669",
+      "size": 7783
     },
     {
       "path": "functions/text-decoding.ts",
@@ -43,8 +43,8 @@
     },
     {
       "path": "skill.json",
-      "sha256": "43b164c0d794accb89b63827738bbb342c4ee7f977937ea8693c091c0c0877bf",
-      "size": 588
+      "sha256": "717bec7b6f9c99bedd4f77086bdac8dfb45275ff88e0ff97aba188ebfbd3d493",
+      "size": 499
     }
   ]
 }

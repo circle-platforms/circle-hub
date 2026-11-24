@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { normalizeMindmap } from './normalize-mindmap.ts';
 import { satisfiedRecipe } from './generate-workbook.ts';
-import { sha256 } from './files.ts';
+import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { GENERATOR, generateWorkbook } from '../functions/generate.ts';
 import { CONTRACT_DOC, PROFILE_DOC, MANIFEST_DOC } from '../functions/test-support.ts';
@@ -45,10 +45,10 @@ for (const [name, mutate] of Object.entries({
 test('client CLI imports the same generator, writes only a new file and prints digest metadata', () => {
   const dir = mkdtempSync(join(tmpdir(), 'workbook-cli-')); try {
     const f = fixture(); const args: string[] = [];
-    for (const [key, value] of Object.entries(f)) { const path = join(dir, `${key}.json`); writeFileSync(path, value instanceof Uint8Array ? value : JSON.stringify(value)); args.push(`--${key}`, path); }
+    for (const [key, value] of Object.entries(f)) { const path = join(dir, `${key}.json`); writeFileSync(path, value instanceof Uint8Array ? value : JSON.stringify(value)); args.push(`--${key}`, key === 'run' ? dir : path); }
     const out = join(dir, 'artifact.xlsx'); const result = spawnSync(process.execPath, ['packs/workflow/case-compile/tools/generate-workbook.ts', ...args, '--out', out], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr); const printed = JSON.parse(result.stdout); assert.equal(printed.generator, GENERATOR); assert.equal(printed.sha256, sha256(readFileSync(out))); assert.deepEqual(readFileSync(out), Buffer.from(generateWorkbook(generationFixture()))); assert.ok(!result.stdout.includes(dir));
-    const again = spawnSync(process.execPath, ['packs/workflow/case-compile/tools/generate-workbook.ts', ...args, '--out', out], { encoding: 'utf8' }); assert.equal(again.status, 1); assert.ok(!again.stderr.includes(dir)); assert.equal(sha256(readFileSync(out)), printed.sha256);
+    const again = spawnSync(process.execPath, ['packs/workflow/case-compile/tools/generate-workbook.ts', ...args, '--out', out], { encoding: 'utf8' }); assert.equal(again.status, 1); assert.match(again.stderr, /^已被占用：/); assert.ok(again.stderr.includes(`位置：${out}。`), 'the refusal identifies the exact conflicting artifact'); assert.match(again.stderr, /另选未占用位置/); assert.equal(again.stdout, ''); assert.equal(sha256(readFileSync(out)), printed.sha256); assert.deepEqual(readFileSync(out), Buffer.from(generateWorkbook(generationFixture())));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test('normalizer CLI reports both digests and a client-normalization disclosure', () => {
@@ -61,9 +61,9 @@ test('staging publishes identical client bytes under tools and the staged entry 
   const { stage } = await import('../pack-files.ts'); const dir = mkdtempSync(join(tmpdir(), 'staged-workbook-cli-'));
   try {
     const root = await stage(join(dir, 'pack')); const manifest = JSON.parse(readFileSync(join(root, 'pack.json'), 'utf8'));
-    for (const name of ['files.ts', 'normalize-mindmap.ts', 'generate-workbook.ts']) { const entry = manifest.files.find((v: { path: string }) => v.path === `tools/${name}`); assert.ok(entry); assert.equal(entry.sha256, sha256(readFileSync(join(root, 'tools', name)))); assert.equal(entry.sha256, sha256(readFileSync(`packs/workflow/case-compile/tools/${name}`))); }
+    for (const name of ['submit-plans.ts', 'normalize-mindmap.ts', 'generate-workbook.ts']) { const entry = manifest.files.find((v: { path: string }) => v.path === `tools/${name}`); assert.ok(entry); assert.equal(entry.sha256, sha256(readFileSync(join(root, 'tools', name)))); assert.equal(entry.sha256, sha256(readFileSync(`packs/workflow/case-compile/tools/${name}`))); }
     const f = fixture(); const args: string[] = [];
-    for (const [key, value] of Object.entries(f)) { const path = join(dir, `${key}.json`); writeFileSync(path, value instanceof Uint8Array ? value : JSON.stringify(value)); args.push(`--${key}`, path); }
+    for (const [key, value] of Object.entries(f)) { const path = join(dir, `${key}.json`); writeFileSync(path, value instanceof Uint8Array ? value : JSON.stringify(value)); args.push(`--${key}`, key === 'run' ? dir : path); }
     const result = spawnSync(process.execPath, [join(root, 'tools/generate-workbook.ts'), ...args, '--out', join(dir, 'artifact.xlsx')], { encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).generator, GENERATOR);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

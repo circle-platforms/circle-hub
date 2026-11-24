@@ -1,3 +1,8 @@
+---
+name: case-review-report
+description: 每次脑图评审复核结束后汇总已受理复核记录与目标原文、核对最终对照表与总评结论时使用：不绑定产品线。
+---
+
 # 评审终稿（case-review-report）
 
 每次用例评审的最后一步都开这个终稿运行；不分块也开，verifications 只写一条。
@@ -6,7 +11,7 @@
 
 ## 1. 开始运行
 
-- 这个任务包不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。
+- 这个工作流不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。
 - verifications 每块一条：写那次复核的运行编号，或省略。省略时 Hub 按 predecessor 血缘里的 case-review-verify 运行缺省。Hub 把该运行的已受理结果解析成 rec:，并在回答里写明。不要问人要摘要。运行不存在、没有已受理提交、或不是 case-review-verify 运行时，按修正说明改。仍可直接写复核 submit_result 回执中的 rec:<摘要>，不带 # 指针。每块都必须带初评冻结、复核承接的完整识别范围；旧记录没有这份 Hub 事实时，用当前版本重做初评和复核，不把已有块当作整份覆盖。
 - target 必填，绑定各块评审的同一份脑图；被拒时按修正说明改用 src:<摘要>。
 - 所有块的 case_rule、case_priority、group_priority、precondition_priority 和整份预期条目必须相同；终稿不写时可继承 precondition_priority，显式写出时必须等于冻结值（默认 3，关闭时为 null）。
@@ -45,9 +50,9 @@ statement 写简短的总体意见和等级理由。grounds 不要求逐条引�
 接着写“## 评审意见”，贴你提交并被受理的简短报告正文和证据缺口。
 最后一行给出控制台运行页。你另外加的话明确标“模型转述，未经校验”。
 
-表中的“Hub 核对”只列已有的字面和目录事实中归责于源文件的反驳。
+表中的“Hub 核对”只列已有的字面和目录事实中原因归类到源文件的错误。
 模型发现和建议仍是复核方的判断，表头已写明模型及性质；不要把它们说成 Hub 验证了业务正确性。
 
 本包的跳过不是完成：handling=skipped 必须附 reason，列入待续做清单，按回执继续本条目或以当前运行为前驱续做；不能因跳过而省略发现、处置、结论或等级。缺判定时按修正说明补齐并重交；初评缺等级、报告缺块或有未交付条目时先修复所列块或条目，再用新回执重开后续运行。
 
-喂入层：这个包读到的用例、缺陷、构建、规格凡经 Hub 读的都由程序自动进喂入层（带锁定树苗和冻结序号），视图按"锁定树苗 + 冻结序号之前的喂入层"读；版本未声明和矛盾的对象单列计数，不进版本差。Circle 只经 knowledge-contribution 回注补程序填不了的语义（带逐字引文），运行中不问人；结构契约见该包 tables/knowledge-structure.json 或 get_nodes 根路径。
+喂入层：这个包读到的用例、缺陷、构建、规格凡经 Hub 读的都由程序自动进喂入层（带锁定树苗和冻结序号），视图按"锁定树苗 + 冻结序号之前的喂入层"读；版本未声明和矛盾的对象单列计数，不进版本差。Circle 只经 knowledge-contribution 回注补程序填不了的语义（带逐字引文），运行中不问人；结构契约见该工作流 tables/knowledge-structure.json 或 get_nodes 根路径。

@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { executorCommand, jobCommand, bedCommand } from '../server/cli-job.ts';
+import { executorCommand, jobCommand, bedCommand, staleExecutorLines, staleWarrantLine } from '../server/cli-job.ts';
 import { adminCommands } from '../server/cli-admin.ts';
 import { setup } from './testing/context.ts';
 import { definition } from './testing/definition.ts';
+import { scrubInternalIds } from '../server/console/manage.ts';
 
 function session(c: Awaited<ReturnType<typeof setup>>) {
   const lines: string[] = [];
@@ -15,11 +16,56 @@ function session(c: Awaited<ReturnType<typeof setup>>) {
 test('executor registration never reads stdin and accepts named credential references and prints no endpoint or secret', async t => {
   const c = await setup(); t.after(() => c.close()); const s = session(c);
   const file = join(c.kit.dataDir, 'executor.json'); await writeFile(file, JSON.stringify({...definition(c.endpoint.endpoint),credential:'${secret:DEMO_AUTH}'}));
-  assert.equal(await executorCommand(s, ['add', file]), 0);
+  assert.equal(await executorCommand(s, ['add', file, '--name=synthetic-cli-runner']), 0);
   assert.equal(await executorCommand(s, ['list']), 0);
   assert.match(s.lines.join('\n'),/写声明未写/);
   assert.ok(!s.lines.join('\n').includes(c.endpoint.endpoint)); assert.ok(!s.lines.join('\n').includes('synthetic-second-key'));
   assert.ok(adminCommands().some(c => c.name === 'executor')); assert.ok(adminCommands().some(c => c.name === 'job')); assert.ok(adminCommands().some(c => c.name === 'bed'));
+});
+
+test('executor list and the lines after a publication name an enabled executor whose verification function is not the version in use', async t => {
+  const c = await setup(); t.after(() => c.close());
+  const base = session(c);
+  const asked: string[] = [];
+  const s = { ...base, hub: async () => ({ dispatch: c.service, records: c.kit, registry: { latestVersion: async (pack: string) => { asked.push(pack); return pack === 'synthetic-workflow' ? { version: '1.1.0' } : null; } } }) };
+  // The fixture's own identity is no pack function, so nothing is said about it.
+  assert.equal(await executorCommand(s, ['list']), 0);
+  assert.doesNotMatch(base.lines.join('\n'), /指定的核验函数/);
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, proof: { ...c.executor.definition.proof, warrant_id: 'synthetic-workflow.sheet_verified@1.0.0' } });
+  base.lines.length = 0;
+  assert.equal(await executorCommand(s, ['list']), 0);
+  const line = base.lines.find(text => text.includes('指定的核验函数'));
+  assert.equal(line, `测试环境 synthetic-bed 的执行器 ${c.executor.id}：指定的核验函数是 synthetic-workflow.sheet_verified@1.0.0，工作流 synthetic-workflow 现行的版本是 1.1.0；1.1.0 核验的结果在这个执行器上不放行上机验证。更新：对这个执行器执行 circle-hub executor update，把定义里的 /proof/warrant_id 改成 synthetic-workflow.sheet_verified@1.1.0（新版本改了检查名时以新版本的为准），并核对定义里随版本变化的其余部分`);
+  // The console shows command output without executor numbers: the line still says which test environment and what to change.
+  const shown = scrubInternalIds(line!);
+  assert.match(shown, /^测试环境 synthetic-bed 的执行器 指定的核验函数是 synthetic-workflow\.sheet_verified@1\.0\.0/);
+  assert.match(shown, /把定义里的 \/proof\/warrant_id 改成 synthetic-workflow\.sheet_verified@1\.1\.0/);
+  assert.doesNotMatch(shown, /exe_/);
+  assert.deepEqual(asked.filter(pack => pack === 'synthetic-workflow').length, 2, 'the version in use is read once per list');
+  assert.deepEqual(await staleExecutorLines(c.kit, c.admin, 'synthetic-workflow', '1.1.0'), [line]);
+  assert.deepEqual(await staleExecutorLines(c.kit, c.admin, 'synthetic-workflow', '1.0.0'), [], 'the executor names the version in use');
+  assert.deepEqual(await staleExecutorLines(c.kit, c.admin, 'other-workflow', '1.1.0'), [], 'an executor of another workflow');
+  assert.deepEqual(await staleExecutorLines(c.kit, c.admin, 'synthetic-workflow', null), [], 'no version in use');
+  assert.equal(staleWarrantLine(c.executor.id, undefined, '1.1.0'), null);
+  assert.doesNotMatch(staleWarrantLine(c.executor.id, { package: 'synthetic-workflow', warrant_id: 'synthetic-workflow.sheet_verified@1.0.0' }, '1.1.0', '${var:SYNTHETIC_TARGET}')!, /测试环境|\$\{/, 'a target that is still a reference is not printed');
+  // The version in use cannot be read: the list is whole, and one line says what was not checked.
+  const failing = { ...base, hub: async () => ({ dispatch: c.service, records: c.kit, registry: { latestVersion: async () => { throw new Error('synthetic registry failure'); } } }) };
+  base.lines.length = 0;
+  assert.equal(await executorCommand(failing, ['list']), 0);
+  assert.ok(base.lines.some(text => text.startsWith(`执行器编号 ${c.executor.id}；`)));
+  assert.ok(base.lines.includes('注意：没有读到工作流现行的版本，没有核对执行器指定的核验函数是不是现行版本的'));
+  assert.doesNotMatch(base.lines.join('\n'), /指定的核验函数是 synthetic|synthetic registry failure/);
+  assert.equal(base.lines.at(-1), '执行器 1');
+  // A disabled executor releases nothing in any version: nothing to point out.
+  assert.equal(await executorCommand(s, ['disable', c.executor.id]), 0);
+  base.lines.length = 0;
+  assert.equal(await executorCommand(s, ['list']), 0);
+  assert.doesNotMatch(base.lines.join('\n'), /指定的核验函数/);
+  assert.deepEqual(await staleExecutorLines(c.kit, c.admin, 'synthetic-workflow', '1.1.0'), []);
+  // Without a pack registry (a session that has none) the list is as before.
+  base.lines.length = 0;
+  assert.equal(await executorCommand(base, ['list']), 0);
+  assert.doesNotMatch(base.lines.join('\n'), /指定的核验函数/);
 });
 
 test('precheck exports only to scratch files, dispatch prints a result reference and status is read-only', async t => {

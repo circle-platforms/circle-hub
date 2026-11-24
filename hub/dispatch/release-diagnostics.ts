@@ -1,12 +1,40 @@
 // Controlled condition identifiers and hash-only field observations, never exception text or source fragments.
 import {canonicalize,sha256Hex} from '../records/api.ts';
-export interface ReleaseField {field:string;matches:boolean|null;expected_sha256:string;actual_sha256:string}
-export interface ReleaseCheck {condition:string;label:string;satisfied:boolean|null;fields:ReleaseField[];missing_fact?:string;next_action?:string}
+export interface ReleaseField {
+  field:string;
+  matches:boolean|null;
+  expected_sha256:string;
+  actual_sha256:string;
+  expected?:string;
+  actual?:string;
+}
+export interface ReleaseCheck {
+  condition:string;
+  label:string;
+  satisfied:boolean|null;
+  fields:ReleaseField[];
+  missing_fact?:string;
+  next_action?:string;
+  blocked_by?:string;
+}
 export const releaseDigest=(value:unknown):string=>{try{return sha256Hex(canonicalize(value===undefined?{present:false}:{present:true,value}));}catch{return sha256Hex('unserializable');}};
-export const releaseField=(field:string,expected:unknown,actual:unknown,matches:boolean|null):ReleaseField=>({field,matches,expected_sha256:releaseDigest(expected),actual_sha256:releaseDigest(actual)});
+export const releaseField=(field:string,expected:unknown,actual:unknown,matches:boolean|null,plain?:{expected?:string;actual?:string}):ReleaseField=>({
+  field,matches,expected_sha256:releaseDigest(expected),actual_sha256:releaseDigest(actual),
+  ...(plain?.expected!==undefined?{expected:plain.expected}:{}),
+  ...(plain?.actual!==undefined?{actual:plain.actual}:{}),
+});
 export class ReleaseTrace {
  readonly checks:ReleaseCheck[]=[];
- check(condition:string,label:string,satisfied:boolean|null,fields:ReleaseField[]=[]):void{this.checks.push({condition,label,satisfied,fields,...(satisfied===null?{missing_fact:'尚缺完成“'+label+'”所需的前置事实或可读记录',next_action:'管理员恢复该条件所列字段及记录的可读性，再运行 job explain-release；条件齐备后重新核验'}:{})});}
+ check(condition:string,label:string,satisfied:boolean|null,fields:ReleaseField[]=[],extra?:{blocked_by?:string}):void{
+  this.checks.push({
+    condition,label,satisfied,fields,
+    ...(satisfied===null?{
+      missing_fact:'尚缺完成“'+label+'”所需的前置事实或可读记录',
+      next_action:'管理员恢复该条件所列字段及记录的可读性，再运行 job explain-release；条件齐备后重新核验',
+      ...(extra?.blocked_by?{blocked_by:extra.blocked_by}:{}),
+    }:{}),
+  });
+ }
  async read<T>(condition:string,label:string,work:()=>Promise<T>):Promise<T|null>{
   try{const value=await work();this.check(condition,label,true);return value;}
   catch(error){this.check(condition,label,null,[releaseField('exception',undefined,error instanceof Error?{name:error.name,message:error.message}:error,null)]);return null;}

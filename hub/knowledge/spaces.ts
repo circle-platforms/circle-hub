@@ -8,7 +8,7 @@ import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } f
 import { SpaceId, SpaceEntryInput, SpaceEntryContent, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, TeamSourceAttributionBody,SourceAttributionBody, type SpaceRow, type ClientDeclaration, } from '../../contracts/src/spaces.ts';
 import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee, type SourceAttributionStatus } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
-import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanContent, RecordsError, PRODUCT_QUOTA_PREFIX, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput, type SpaceIndexScope, type SpaceIndexState } from '../records/api.ts';
+import { noteRecordIntegrity,requestRead,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanContent, RecordsError, PRODUCT_QUOTA_PREFIX, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput, type SpaceIndexScope, type SpaceIndexState } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
 import type { NodesPage, NodesQuery } from '../ports.ts';
 import { WriteQueue, type KnowledgeContext } from './context.ts';
@@ -93,19 +93,19 @@ export class KnowledgeSpaces {
     return {...ctx,records:{...ctx.records,store:scopedRecordStore(ctx.records.store),...(ctx.records.personalPayloads?{personalPayloads:memoReadPort(ctx.records.personalPayloads,['mode','cleared'])}:{}),principals:memoReadPort(ctx.records.principals,['get','list'])}};
   }
   #writes=new Map<string,WriteQueue>();
-  #legacy: TreeReader;
+  #productTree: TreeReader;
   #mounts: () => Promise<SpaceVersionBody['products']>;
-  #legacyNodes: (query: NodesQuery, by: Principal) => Promise<NodesPage | null>;
-  #legacyIndex: ProductIndex;
+  #productNodes: (query: NodesQuery, by: Principal) => Promise<NodesPage | null>;
+  #productIndex: ProductIndex;
   #indexer: SearchIndexer;
-  #legacyPaths: (root: string) => Promise<Array<{
+  #productPaths: (root: string) => Promise<Array<{
     path: string;
     entry: string;
   }>>;
-  constructor(ctx: KnowledgeContext, legacy: TreeReader, mounts: () => Promise<SpaceVersionBody['products']> = async () => [], legacyNodes: (query: NodesQuery, by: Principal) => Promise<NodesPage | null> = async () => null, legacyIndex: ProductIndex = async () => null, legacyPaths: (root: string) => Promise<Array<{
+  constructor(ctx: KnowledgeContext, productTree: TreeReader, mounts: () => Promise<SpaceVersionBody['products']> = async () => [], productNodes: (query: NodesQuery, by: Principal) => Promise<NodesPage | null> = async () => null, productIndex: ProductIndex = async () => null, productPaths: (root: string) => Promise<Array<{
     path: string;
     entry: string;
-  }>> = async () => []) { this.#rawCtx = ctx; this.#legacy = legacy; this.#mounts = mounts; this.#legacyNodes = legacyNodes; this.#legacyIndex = legacyIndex; this.#legacyPaths = legacyPaths; this.#indexer = new SearchIndexer({ scopes: (spaces, failed) => this.#indexScopes(spaces, failed), marker: () => this.#rootsMarker() }, () => this.#rawCtx.records.spaceIndex); }
+  }>> = async () => []) { this.#rawCtx = ctx; this.#productTree = productTree; this.#mounts = mounts; this.#productNodes = productNodes; this.#productIndex = productIndex; this.#productPaths = productPaths; this.#indexer = new SearchIndexer({ scopes: (spaces, failed) => this.#indexScopes(spaces, failed), marker: () => this.#rootsMarker() }, () => this.#rawCtx.records.spaceIndex); }
   #write<T>(space:string,work:()=>Promise<T>):Promise<T>{
     let queue=this.#writes.get(space);if(!queue){queue=new WriteQueue();this.#writes.set(space,queue);}
     return queue.run(work);
@@ -745,7 +745,7 @@ export class KnowledgeSpaces {
     if(ref.scheme!=='tree'||!ref.entry)fail('SHARE_GROUND_UNRESOLVED');
     const version=await this.version(ref.root);
     if(version){const row=version.body.entries.find(row=>row.entry===ref.entry&&row.path===ref.path);const body=row?await this.#entry(row):null;if(!body||!body.grounds.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of body.grounds)await this.#shareSource(by,ground.reference,sources,seen,depth+1,ground.quotation,tx);}
-    else{const read=await this.#legacy.read(ref.root,ref.path,ref.entry,{user:by.id,role:by.role});if(!read?.grounds?.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of read.grounds)await this.#shareSource(by,ground,sources,seen,depth+1,undefined,tx);}
+    else{const read=await this.#productTree.read(ref.root,ref.path,ref.entry,{user:by.id,role:by.role});if(!read?.grounds?.length)fail('SHARE_GROUND_UNRESOLVED');for(const ground of read.grounds)await this.#shareSource(by,ground,sources,seen,depth+1,undefined,tx);}
   }
   /** Freeze only readable private dependencies; unrelated equal-byte captures confer no authority. */
   async #sharingOwners(by:Principal,references:readonly string[],owners=new Set<string>(),seen=new Set<string>(),depth=0):Promise<Set<string>>{
@@ -759,7 +759,7 @@ export class KnowledgeSpaces {
       }else if(ref.scheme==='tree'&&ref.entry){
         const version=await this.version(ref.root);
         if(version){if(!await this.mayRead(by,version.body.space,ref.path))continue;if(version.body.space!=='team')owners.add(version.body.space);const row=version.body.entries.find(row=>row.entry===ref.entry&&row.path===ref.path),body=row?await this.#entry(row):null;if(body)await this.#sharingOwners(by,body.grounds.map(ground=>ground.reference),owners,seen,depth+1);}
-        else{const read=await this.#legacy.read(ref.root,ref.path,ref.entry,{user:by.id,role:by.role});if(read?.grounds)await this.#sharingOwners(by,read.grounds,owners,seen,depth+1);}
+        else{const read=await this.#productTree.read(ref.root,ref.path,ref.entry,{user:by.id,role:by.role});if(read?.grounds)await this.#sharingOwners(by,read.grounds,owners,seen,depth+1);}
       }
     }
     return owners;
@@ -817,7 +817,7 @@ export class KnowledgeSpaces {
         }
         if((previous?.body.entries??[]).some(row=>row.entry===input.entry&&row.record!==replacement?.record))fail('SHARE_DUPLICATE');
         const readable=await this.#ctx.packs.readableProducts(by);
-        for(const mount of (previous?.body.products??[]).filter(mount=>readable.has(mount.product)))if((await this.#legacyPaths(mount.root)).some(row=>row.entry===input.entry))fail('SHARE_DUPLICATE');
+        for(const mount of (previous?.body.products??[]).filter(mount=>readable.has(mount.product)))if((await this.#productPaths(mount.root)).some(row=>row.entry===input.entry))fail('SHARE_DUPLICATE');
         checks[phase++].state='pass';
         try{this.#scan(teamPath);this.#scan(view.body);for(const source of sources.values()){const bytes=await this.source(by,source.sha256,undefined,'model',source.artifact);if(!bytes?.bytes)fail('SHARE_GROUND_UNRESOLVED');this.#inspectSource(bytes.bytes);}}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')fail('SHARE_CREDENTIALS');throw error;}
         checks[phase].state='pass';
@@ -953,7 +953,7 @@ export class KnowledgeSpaces {
         }
         if(previous.body.entries.some(row=>row.entry===entry&&row.record!==replacement?.record))fail('SHARE_DUPLICATE');
         const readable=await this.#ctx.packs.readableProducts(by);
-        for(const mount of previous.body.products.filter(mount=>readable.has(mount.product)))if((await this.#legacyPaths(mount.root)).some(row=>row.entry===entry))fail('SHARE_DUPLICATE');
+        for(const mount of previous.body.products.filter(mount=>readable.has(mount.product)))if((await this.#productPaths(mount.root)).some(row=>row.entry===entry))fail('SHARE_DUPLICATE');
         try{this.#scan(teamPath);this.#scan({content,grounds});for(const sent of input.sources.values()){this.#scan({name:sent.name});this.#inspectSource(sent.bytes);}for(const source of sources.values()){const bytes=await this.source(by,source.sha256,undefined,'model',source.artifact);if(!bytes?.bytes)fail('SHARE_GROUND_UNRESOLVED');this.#inspectSource(bytes.bytes);}}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')fail('SHARE_CREDENTIALS');throw error;}
       }catch(error){if(error instanceof KnowledgeError&&error.code&&(error.code.startsWith('SHARE_')||error.code==='GROUNDS_WITHDRAWN'||error.code==='SPACE_CONTENT_UNINSPECTABLE'||error.code==='TEAM_PARSER_REQUIRED'))return receipt('rejected',error.code,error.message,null);throw error;}
       const body=SpaceEntryBody.parse({space:'team',entry,content,grounds,status:'verified',by:by.id,at,session,replaces:replacement?.entry??null,...([...sources.values()].some(source=>source.attribution)?{source_attributions:[...new Set([...sources.values()].flatMap(source=>source.attribution?[source.attribution]:[]))]}:{})});
@@ -1029,7 +1029,7 @@ export class KnowledgeSpaces {
     const map = async (v: SpaceVersion) => {
       const rows = v.body.entries.filter(row => active(row) && paths.some(prefix => withinSpacePath(row.path, prefix)));
       for (const mount of v.body.products.filter(m => readable.has(m.product))) {
-        for (const row of await this.#legacyPaths(mount.root))
+        for (const row of await this.#productPaths(mount.root))
           rows.push({ ...row, path: mount.path + (row.path === '/' ? '' : row.path), status: 'verified', record: '' });
       }
       const grouped = new Map<string, string[]>();
@@ -1117,7 +1117,7 @@ export class KnowledgeSpaces {
         team=await this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:team',tx);return this.#registerProducts(products,tx);});
     }catch(error){failed(error);}
     const scopes:IndexScope[]=[],versions=team?[team]:[];
-    for(const mount of team?.body.products??[])try{const source=await this.#legacyIndex(mount);if(source)scopes.push(this.#productScope(mount,source));}catch(error){failed(error);}
+    for(const mount of team?.body.products??[])try{const source=await this.#productIndex(mount);if(source)scopes.push(this.#productScope(mount,source));}catch(error){failed(error);}
     const members=spaces??((await this.#ctx.records.principals.list?.())??[]).filter(user=>!user.deleted_at).map(user=>user.id);
     for(const member of members)try{const version=await this.current(member);if(version)versions.push(version);}catch(error){failed(error);}
     return [...versions.filter(version=>version.body.entries.some(active)).map(version=>this.#spaceScope(version)),...scopes];
@@ -1162,7 +1162,7 @@ export class KnowledgeSpaces {
       const readable = await this.#ctx.packs.readableProducts(by);
       for (const mount of space.version.body.products.filter(m => readable.has(m.product))) {
         try{
-        const source = await this.#legacyIndex(mount);
+        const source = await this.#productIndex(mount);
         if (!source||!index)
           throw new KnowledgeError('产品知识索引暂不可用');
         candidates.push({scope:{version:source.version,path:mount.path,quotaSpace:PRODUCT_QUOTA_PREFIX+mount.path},space:'team',accept:()=>products.push({ version: source.version, path: mount.path, team: space.version.root })});
@@ -1247,9 +1247,9 @@ export class KnowledgeSpaces {
     }
     let height = Math.max(0, ...version.body.directories.filter(p => withinSpacePath(p, path)).map(p => pathSegments(p).length - pathSegments(path).length));
     for (const mount of version.body.products.filter(p => withinSpacePath(p.path, path))) {
-      const legacy = await this.#ctx.store.node(mount.root);
-      if (legacy)
-        height = Math.max(height, pathSegments(mount.path).length - pathSegments(path).length + legacy.height);
+      const productTree = await this.#ctx.store.node(mount.root);
+      if (productTree)
+        height = Math.max(height, pathSegments(mount.path).length - pathSegments(path).length + productTree.height);
     }
     return { digest, node, level: levelOfHeight(height) };
   }
@@ -1281,7 +1281,7 @@ export class KnowledgeSpaces {
         }
       }
       const relative = query.paths[0].slice(mount.path.length) || '/';
-      const page = await this.#legacyNodes({ ...query, root: mount.root, paths: [relative], cursor }, by);
+      const page = await this.#productNodes({ ...query, root: mount.root, paths: [relative], cursor }, by);
       if (!page)
         return null;
       const alias = (path: string) => mount.path + (path === '/' ? '' : path);
@@ -1330,7 +1330,7 @@ export class KnowledgeSpaces {
       for (let i=0;i<pageRows.length;i++) {
         const row=pageRows[i],view=pageViews[i];
         if (view)
-          entries.push({ entry: row.entry, kind: view.body.content.kind, statement: view.body.content.statement, reference: view.reference, applicability: view.body.content.applicability ? canonicalize(view.body.content.applicability) : '未声明', data: view.body.content.data, status: view.row.status, grounds: view.body.grounds, grounds_withdrawn:view.grounds_withdrawn,...(view.grounds_withdrawn_hidden_count?{grounds_withdrawn_hidden_count:view.grounds_withdrawn_hidden_count}:{}), cited_count: view.cited_count });
+          entries.push({ entry: row.entry, kind: view.body.content.kind, statement: view.body.content.statement, reference: view.reference, ...(view.body.content.applicability ? { applicability: canonicalize(view.body.content.applicability) } : {}), data: view.body.content.data, status: view.row.status, grounds: view.body.grounds, grounds_withdrawn:view.grounds_withdrawn,...(view.grounds_withdrawn_hidden_count?{grounds_withdrawn_hidden_count:view.grounds_withdrawn_hidden_count}:{}), cited_count: view.cited_count });
       }
       const children = stored.node.children.map(child => ({ ...child, path: pathOf([...pathSegments(path), child.name]) })).filter(child => (!withinSpacePath(child.path, PRODUCTS_PATH) || child.path === PRODUCTS_PATH && visibleProducts.length > 0 || visibleProducts.some(m => withinSpacePath(m.path, child.path))) && allowed.some(a => withinSpacePath(child.path, a)));
       const node = { path, reference: refOf(query.root, path), name: stored.node.name, level: stored.level, digest: stored.digest, children, entries };
@@ -1467,6 +1467,14 @@ export class KnowledgeSpaces {
   }
   /** Preserve independently authorized captures; a space import never takes authority over equal bytes. */
   async source(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model',capture?:string): Promise<ArtifactSource | null> {
+    const reader:Principal={id:by.id,name:by.name,role:by.role};
+    return requestRead(reader.id, JSON.stringify(['knowledge.space.source',sha256,reader.role,runId??null,consumer,capture??null]),
+      () => this.#source(reader,sha256,runId,consumer,capture), source => {
+        const scan=source?.artifact?.body?.scan;
+        return source?.bytes!==null && source?.bytes!==undefined && source.acceptance===undefined && scan?.inspected===true && !scan.truncated && scan.findings.length===0 ? source.bytes.byteLength : -1;
+      });
+  }
+  async #source(by: Principal, sha256: string, runId: string | undefined,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind,capture:string | undefined): Promise<ArtifactSource | null> {
     const artifacts=this.#ctx.records.artifacts;
     const records=await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',sha256,'knowledge_space_source');
     const captures=new Set(records.filter(row=>row.body.space!=='team').map(row=>row.body.artifact));
@@ -1560,12 +1568,12 @@ export class KnowledgeSpaces {
         if (!by)
           return false;
         const version = await this.version(root);
-        return version ? (await this.paths(by, version.body.space)).length > 0 : this.#legacy.hasRoot?.(root, reader) ?? false;
+        return version ? (await this.paths(by, version.body.space)).length > 0 : this.#productTree.hasRoot?.(root, reader) ?? false;
       },
       read: async (root, path, entry, reader): Promise<TreeRead | null> => {
         const version = await this.version(root);
         if (!version)
-          return this.#legacy.read(root, path, entry, reader);
+          return this.#productTree.read(root, path, entry, reader);
         const by = await principal(reader);
         if (!by)
           return null;
@@ -1575,7 +1583,7 @@ export class KnowledgeSpaces {
         if (mount) {
           if (!(await this.#ctx.packs.readableProducts(by)).has(mount.product))
             return null;
-          return this.#legacy.read(mount.root, path.slice(mount.path.length) || '/', entry, reader);
+          return this.#productTree.read(mount.root, path.slice(mount.path.length) || '/', entry, reader);
         }
         if (entry) {
           const found = await this.entry(by, root, path, entry);
@@ -1584,7 +1592,7 @@ export class KnowledgeSpaces {
         const page = await this.getNodes({ root, paths: [path], depth: 0 }, by);
         return page?.nodes.length ? { text: canonicalize(page.nodes[0]), mediaType: 'application/json', readTier: 'model_readable' } : null;
       },
-      readEntry: (entry, reader) => this.#legacy.readEntry(entry, reader),
+      readEntry: (entry, reader) => this.#productTree.readEntry(entry, reader),
     };
   }
 }

@@ -598,3 +598,20 @@ test('V07: a frozen round count above one needs an effect row that authorizes it
   await refused(dynamic({ count: 3, aggregation: 'k_of_n' }), 'requirements.shape');
   await refused(dynamic({ count: 11, aggregation: 'all' }), 'requirements.shape');
 });
+
+test('W06 R[7]: the refresh function is a function entry, and a fact-only workflow binds nothing after the start', async () => {
+  const late = (w: Json) => {
+    w.inputs.push({ slot: 'stage', role: 'expected', description: '前序阶段的运行（开运行后再绑定）', accepts: ['application/json'], required: true, many: false, from_runs: { pack: 'synthetic-stage', after_start: true } });
+    w.refresh = { module: 'functions/refresh.ts', reads: ['target'] };
+  };
+  const refresh = { 'functions/refresh.ts': 'export default function refresh(_input: unknown): unknown {\n  return { items: [] };\n}\n' };
+  await accepted(withFiles(workflow(late), refresh));
+  await refused(workflow(late), 'functions.missing_module', { file: 'workflow.json', field: '/refresh/module' });
+  await refused(withFiles(workflow((w) => { late(w); w.refresh.export = 'nope'; }), refresh), 'functions.missing_export', { file: 'workflow.json', field: '/refresh' });
+  await refused(withFiles(workflow((w) => { late(w); delete w.refresh; }), refresh), 'workflow.shape');
+  const factOnly = editJson<Json>(editJson<Json>(editJson<Json>(withFiles(workflow(late), refresh), 'requirements.json', (f) => {
+    f.requirements = f.requirements.filter((r: Json) => r.accepted_producer === 'fact');
+  }), 'slots.schema.json', (f) => { f.item = {}; f.run = {}; }), 'checks.json', (f) => { f.checks = f.checks.filter((c: Json) => c.id !== 'codes'); });
+  const p = await refused(factOnly, 'workflow.late_binding', { file: 'workflow.json', field: '/inputs/1/from_runs/after_start' });
+  assert.match(p.message, /stage/);
+});

@@ -102,7 +102,7 @@ administrator commands of `cli-admin.ts`.
 | `app.ts` | `createApp(deps, options)` → `{ handler, listen(), close(), release }`: the request target parsed once, routes, Host and Origin checks, `/healthz`, the body budget, graceful close |
 | `mcp.ts` | `POST /mcp`: bearer token per request, bounded body, one JSON-RPC request per POST, one SDK `Server` + stateless JSON transport per request, call-log lines |
 | `tools.ts` | the six tools: input parsing, server-owned semantics, delegation, output validation, isError, annotations per caller, the text context of each answer |
-| `text.ts`, `budget.ts`, `claims.ts` | the Chinese content text within `TEXT_BUDGET` (30,000 characters), page cursors, the fallback text of an answer whose text cannot be laid out, claims in `DISPLAY_ORDER`, terminal symbols and kinds, item cells |
+| `text.ts`, `budget.ts`, `claims.ts` | the Chinese content text, whole (decisions 157 and 158), page cursors, the fallback text of an answer whose text cannot be laid out, claims in `DISPLAY_ORDER`, terminal symbols and kinds, item cells |
 | `readers.ts` | the refs `SourceReader` on `Artifacts.source` and the `RecordReader` with R02 visibility |
 | `notes.ts` | admin notes and operator log text that records accept (no NUL, no lone surrogate, cut between code points) |
 | `upload.ts` | strict base64, media types (given, by name, sniffed), the parser structure summary |
@@ -111,7 +111,7 @@ administrator commands of `cli-admin.ts`.
 | `main.ts` | `serve [--migrate-only] [--migrate]`, `loadServerConfig` (serve refuses the operator token, commands accept it) |
 | `cli.ts` | `main(argv)`: user, token, logs, run, platform delegation, `registerCommand` |
 | `assemble.ts`, `assemble/`, `cli-admin.ts`, `testing-real.ts` | the assembly module (`assemble` for serve, `assembleCommand` for one command, `registerCommands`), the administrator commands and `operatorAdmin`, the real Hub for acceptance tests: see `assemble/README.md` |
-| `docs.ts` | named documents (C4 of the device-pack core): `doc put/list/show` and the `doc:doc:` external ids answered by the Hub's own reader for runs of packs that declare them; see the module's header |
+| `docs.ts` | named documents (C4 of the device-pack core): `doc put/list/show` and the `doc:doc:` external ids answered by the Hub's own reader for runs of packs that declare them; a name that is not there is refused with the names the caller may read, an identity written wrong with what is wrong in it (never as a missing resource); see the module's header |
 | `errors.ts` | `AssemblyMissingError` (a placeholder module, or one without the part a command needs), `UsageError`, `CliError` |
 | `fakes.ts`, `testing.ts` | in-memory fakes of the ports and of the engine's extras, `createTestServer()` / `fakeDeps()` for tests |
 
@@ -156,7 +156,7 @@ session, so use network restrictions or the explicitly configured TLS proxy. A t
 not authentication of a particular process. The proxy must terminate TLS, preserve the declared HTTPS authority, and
 never forward plaintext client traffic under that authority; the Hub does not inspect TLS on its HTTP backend socket.
 
-For a Circle MCP connection, select transport `streamable_http`, use this service's `/mcp` endpoint, and ensure the URL's
+For a Circle MCP connection, use Streamable HTTP (`"type": "http"` in `mcpServers`), use this service's `/mcp` endpoint, and ensure the URL's
 host exactly matches the deployment's allowed-host declaration (and its HTTPS proxy origin, when applicable). MCP still
 requires a valid Bearer token on every request; a client gets one through the MCP standard authorization (below) or from
 an administrator (`circle-hub token issue`). `/healthz` and the authorization's metadata and endpoints are unauthenticated.
@@ -247,7 +247,7 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
   handled and spends no invitation.
 - **Invitations**: `circle-hub user invite <user>` (an administrator; the console's 添加成员) prints a twelve-character
   code once; the records keep its SHA-256 (`invitations`, migration 7), valid 24 hours, used once by the client it
-  authorized. Requests, codes and login links live in memory and end with the process, like console sessions.
+  authorized. Requests and codes live in memory and end with the process, like console sessions.
 
 Wire errors and descriptions are OAuth's own (ASCII, RFC 6749 5.2), not Hub codes. Circle's own client (the frozen
 baseline) has no OAuth yet; until the generic MCP-client improvement lands in the Circle repository, Circle connects with
@@ -255,7 +255,7 @@ an issued token, while any client with the standard authorization connects with 
 
 ## MCP (D05, D06)
 
-Official SDK 1.32.1, streamable HTTP in stateless JSON mode: one low-level `Server` and one
+Official SDK 1.32.2, streamable HTTP in stateless JSON mode: one low-level `Server` and one
 `WebStandardStreamableHTTPServerTransport` per HTTP request; the body is read by the server (cap
 `limits.maxRequestBytes`, declared or streamed; over it is 413 before parsing, `connection: close`), decoded as strict
 UTF-8 (anything else is 400 / -32700, never decoded with replacement characters: RFC 8259), parsed, and handed to the
@@ -292,10 +292,10 @@ Every tool call:
 4. returns `structuredContent` (the validated answer), `isError = (call_result === 'error')` (the envelope makes this
    exactly "protocol error or a receipt that is not accepted"; unknown never is), and **one** content block of Chinese
    plain text (D05 R[0], display rule 11: content is plain text, the JSON is structuredContent). The real Circle client
-   hands the model this text only (structuredContent never reaches it, and a result over about 50,000 characters does not
-   reach it at all), so every text is laid out within `TEXT_BUDGET` (30,000 characters, `budget.ts`): the facts a model
-   works from first, long lists cut by whole entries, and one note before the trace line naming what was left out and the
-   exact call that reads it; the trace line `追踪 <trace>` is always last. A text that cannot be laid out (a defect, for
+   hands the model this text only (structuredContent never reaches it). No text is cut to a length (decisions 157 and
+   158, `budget.ts`): Circle 1.14 keeps a result over 80,000 characters in a file and gives the model its path and start.
+   The facts a model works from come first, a field longer than its cap keeps its start and names where the whole is, one
+   note before the trace line names what was shortened, and the trace line `追踪 <trace>` is always last. A text that cannot be laid out (a defect, for
    example a production result the engine handed over without its partitions) never costs a valid answer: the call gets
    `fallbackText` (outcome, receipt and counts, the run, the error codes, the stored result, the console page, the trace)
    and the reason goes to the admin note. What the texts say:
@@ -641,15 +641,13 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   (`form-action 'self' <origin>`). Approving takes the invitation (if one named the account), issues the code and sends the
   browser to the redirect URI with `code`, `state` and `iss`; refusing sends `access_denied`. Back on the page, the browser
   sees that the request ended.
-- **One-time login links** (decisions 125 and 130): the existing Bearer endpoint and five-minute lifetime remain.
-  An administrator can confirm a link as a backup sign-in, still subject to a forced password change. A member's link
-  leads to username/password sign-in at the requested console path and never opens a token-authenticated browser session.
-  Spent and expired links disclose no account. Return paths remain local to this console.
+- **One-time login links** (decisions 125 and 130): retired with U5 — no production caller for
+  `POST /console/api/login-links` or `/console/login/<code>`; both answer as absent.
 
 - **Sign-in**: `GET /console/login` issues a one-time nonce (server-side, 15 minutes) in the form and in a cookie
   scoped to `/console/login`; `POST /console/login` (form encoding, at most 8 KiB, from this server's own origin) needs
   the nonce in both and a username and password. Every account, administrators included, signs in this way; the console
-  never accepts a token (owner, 2026-11-02), and a one-time link from Circle only leads to this form at its page. The session cookie `circle_hub_session` is a random id,
+  never accepts a token (owner, 2026-11-02). The session cookie `circle_hub_session` is a random id,
   `Path=/console; HttpOnly; SameSite=Strict` (no `Secure`: plain HTTP on loopback); the token stays in server memory and
   every page re-authenticates it, so a revoked token or a disabled account ends the session at the next page. Sessions
   end after 2 hours idle or 12 hours. Password changes/resets revoke password sessions; Circle disconnects do not.
@@ -847,6 +845,28 @@ the migrations as the owner role and grants the runtime role (`CIRCLE_HUB_DATABA
 hub/platform's peer map). When the owner and the runtime role are the same, it migrates without granting and warns.
 `--migrate` migrates with the connecting role before serving (a single-role development setup).
 
+## Teams, team spaces and per-resource acceptance (model 42, decisions 150 to 152)
+
+Model 42 asks the following of this package. None of it is implemented yet: the commits that follow do it, and the commands,
+pages and tools described elsewhere in this README are what exists.
+
+- **CLI.** `team list|show|create|delete|add|remove`; `pack assign|unassign` take `--team <team>` instead of a user;
+  `resource assign|unassign <resource> (--team <team> | --all)`; `resource accept|withdraw <resource>`. `user add` and the
+  add-member dialog tell the administrator that a member who is in no team reads no team knowledge and memory. `pack unassign`
+  names where a use that remains comes from (a team, or the administrator's default).
+- **Console.** The team page lists the teams with their members, workflows and resources; the connection page shows who may
+  read a resource. Creating a team, assigning, accepting and withdrawing an acceptance are command dialogs, as decision 124
+  has it: the console writes the command and an administrator runs it.
+- **Tools.** The annotations of `submit_result` follow the workflows assigned to the caller, not an administrator's default
+  use of every workflow (D06 R[4]). `get_nodes`, the memory tools and the share tools take an optional `team`; `GET /state`
+  carries `teams`, the teams the account belongs to, and the discovery document names `team-spaces` (section 15 of the sync
+  protocol).
+- **Upgrade of a deployment.** Take `circle-hub backup` before the deployment that applies migration 32, the one that keeps a
+  space for each team: an older program refuses to start on it, so the backup is the only way back. Before the assignment
+  of business-system resources is enforced on reads, register the team `team`, add every enabled account to it (the existing
+  team space belongs to it) and assign the existing resources to all members. No rule makes an unassigned resource open to
+  everyone.
+
 ## Decisions
 
 1. `submit_result` is never refused by the server on its schema: the arguments as received go to
@@ -856,9 +876,10 @@ hub/platform's peer map). When the owner and the runtime role are the same, it m
    not JSON-RPC -32602, as the brief asks; unknown tool names are -32602.
 3. An answer that would violate its output schema, and an untyped exception, are JSON-RPC -32603: an internal failure is
    not a tool result, and no registered code exists for it.
-4. The content is one plain-text block (D05 R[0] and display rule 11 outrank the MCP specification's SHOULD of a second
-   block with the serialized JSON for clients that ignore structuredContent); the text is written to be enough on its
-   own. Open question for the owner below.
+4. The content carries two plain-text blocks alongside `structuredContent` (`tools.ts`): first the reader-facing summary
+   from `toolText` (or `fallbackText`), followed by the `modelReferencesText` JSON block (`供模型引用\n...` with
+   `original_cases` and `source_context` when present), matching the MCP specification's backwards-compatibility SHOULD
+   for clients that ignore `structuredContent`. Open question for the owner below.
 5. One SDK `Server` per request and one JSON-RPC message per POST: stateless mode, no session state, no batches, no
    server-initiated notifications (`listChanged: false`); a client re-lists tools to see assignment changes.
 6. Console sessions live in memory: a restart signs everyone out. The token is kept server-side, the cookie is a random id.
@@ -1019,15 +1040,15 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
   and grants `CIRCLE_HUB_DATABASE_USER`.
 - **records/contracts**: a protocol code for an upload over the size limit (already requested by records); the server
   answers `SUBMISSION_SCHEMA_VIOLATION` at `/file_path` until then.
-- **owner**: confirm decision 4 (content is plain text only, no second block with the JSON of the answer) against the MCP
-  specification's backwards-compatibility SHOULD; if clients that ignore structuredContent must be served, a size-capped
-  JSON block can be added back. Measured on the real Circle client: only the text reaches the model.
+- **owner**: confirm decision 4 (returning two text blocks — reader-facing plain text plus the `供模型引用` serialized
+  JSON block alongside `structuredContent` — measured on the real Circle client where only text blocks reach the model)
+  or whether to cap the size of the second block.
 
 ## 包内本地工具的原字节下载
 
-`/local-tools/<包>@<版本>` 返回发布清单的规范 JSON 字节，包号是其 SHA-256；后接清单路径时返回该文件的原字节，连同 Content-Digest 和 ETag。每次请求先核 Bearer 令牌，再经 WorkflowStore.forUser 核对版本分配和退役状态；版本必须带 tools/。无权、不存在、退役、没有工具、清单外路径、穿越路径和编码斜杠的回答字节相同。真实原因只写在管理员日志：版本不存在、未分配、已退役、账号停用、没有本地工具、清单外路径、路径含 `..`、编码或保留字符、版本引用格式不对，各记各的。同一进程里，一个用户和一个版本在一分钟内复用已经核对过的解包，避免按文件把整包再哈希一遍；这一分钟里每次请求仍问分配和退役，发出去的那个文件仍重算 SHA-256。共享 Host/Origin 检查先行，出口只收 GET/HEAD，不经过 MCP、不增加工具。
+`/local-tools/<包>@<版本>` 返回发布清单的规范 JSON 字节，包号是其 SHA-256；后接清单路径时返回该文件的原字节，连同 Content-Digest 和 ETag。每次请求先核 Bearer 令牌，再经 WorkflowStore.forUser 核对版本分配和退役状态；版本必须带 tools/。没有本地工具、清单外路径、穿越路径、编码斜杠和版本引用格式不对的回答字节相同（404）。版本不存在、已退役、技能包没有安装这三种也答 404，但各说各的一行话：事实加下一步，用的是 `pack-words.ts` 里 `list_task_packs` 和 `start_run` 说同一件事的句子（三处的下一步都以哪里查看可用的工作流和技能收尾，`assemble/testing-real.test.ts` 把引擎、`list_task_packs` 和下载出口的整句并排比对），引用写完整的 `<包>@<版本>`，免得客户端把三件事当成一件去试别的版本号；版本存在而没有分配答 403，说明谁能分配（D05 R[3]）；账号停用答 401，与令牌不可用相同。真实原因另写在管理员日志：版本不存在、未分配、已退役、技能包没有安装、账号停用、没有本地工具、清单外路径、路径含 `..`、编码或保留字符、版本引用格式不对，各记各的。同一进程里，一个用户和一个版本在一分钟内复用已经核对过的解包，避免按文件把整包再哈希一遍；这一分钟里每次请求仍问分配和退役，发出去的那个文件仍重算 SHA-256。共享 Host/Origin 检查先行，出口只收 GET/HEAD，不经过 MCP、不增加工具。
 
-`/run-export/<运行>`（决定 104）把运行、最近一次已受理结果和该结果的原样提交以规范 JSON 交给运行发起人和管理员，供客户端在本地生成产物；`/run-export/<运行>/sources/<sha256>` 返回绑定在该运行上的一份原件的原字节（`artifacts.sourceForRun`：只给运行可见者、只给绑定的原件、只在读取层级允许时给字节），带 Content-Digest。每次请求先核 Bearer 令牌，只接受 GET 和 HEAD；别人的运行、未绑定的原件和形状不对的路径都答 404，没有已受理提交时答 409。每次请求写一行调用日志（工具名 run-export），不含令牌和正文。
+`/run-export/<运行>`（决定 104）把运行、最近一次已受理结果和该结果的原样提交以规范 JSON 交给运行发起人和管理员，供客户端在本地生成产物；`/run-export/<运行>/run` 只给运行本身，第一次受理之前也能取，供客户端工具读冻结的条目（决定 155）；`/run-export/<运行>/sources/<sha256>` 返回绑定在该运行上的一份原件的原字节（`artifacts.sourceForRun`：只给运行可见者、只给绑定的原件、只在读取层级允许时给字节），带 Content-Digest。每次请求先核 Bearer 令牌，只接受 GET 和 HEAD；别人的运行、未绑定的原件和形状不对的路径都答 404，没有已受理提交时答 409。`/run-export/<运行>/history`（决定 182，模型 W06 R[8]）列出同一被判对象此前在目标上的核验（`run-history@1`）：读者按同一条规则读得到的运行里，作业已结束且已生效的那些，每个运行给锁定的构建，每个作业给计划运行、结束时刻和逐条目的动态层终态；晚的在前，缺省至多 8 个，`?limit=<1-8>` 只能调低（这是这些路由里唯一的查询参数，别的查询答 400）；没有此前的核验答空列表。只交已记录的事实，不判断。每次请求写一行调用日志（工具名 run-export），不含令牌和正文。 `/run-export/<运行>/knowledge`（模型 K05、D06 R[2]）一次给出运行锁定的产品知识根：每个节点到叶子、照这位读者读子树时看到的样子，首行之后每行一个节点（`run-knowledge@1`），带 `content-digest`；同一个根的内容对所有可读者相同，进程留着最近两个根的结果，每次仍核对读者能否读这个根；没有锁定根、读者读不到或根是知识空间时答 404。客户端按摘要留在本地读，不再逐页用 get_nodes 读同一个不变的根。每个条目另带 `fragments`：组成里列的来源片段，顺序与读引用时给的 `grounds` 相同（`get_nodes` 的节点视图不带）。知识树没有记录原文的先后（一个节点的条目按类别、原文、摘要排），先后只留在来源片段里，客户端按其中的行号把一个节点的条目排回原文的先后。
 
 发送前重新核对摘要和大小，存储被改动时不给文件字节并记管理员日志；调用日志只留包号、引用及路径的摘要与长度，不留令牌、文件内容或原路径。下发不改写、不重新打包；客户端运行结果仅为“客户端预览”，Hub 沙箱中的重算核验算数。Circle 没有为此新增界面。
 
@@ -1047,7 +1068,7 @@ Needs：登录停止的具名管理员请求、处置后的自动重读等 hub-u
 
 可重试读取的下一次时刻统一由本次调用的 Hub 时钟计算；get_nodes 按引用读取也向解析器传入同一时钟，不另取 Date.now。
 
-喂入清单、冻结序号与未知出口也受同一个 30,000 字符回答预算约束；它们在正文渲染和降级渲染后统一布局，保留回执、原有补读说明与追踪尾行。超长说明明确标记省略，完整结构仍在 structuredContent。
+喂入清单、冻结序号与未知出口在正文渲染和降级渲染后整份放在追踪尾行之前（决定 158，原来的 6,000 字符上限把其余部分指向模型看不到的 structuredContent）。
 
 Independent integration review: Antigravity reviewed fixed merge `2967a45b` without executing tests or contacting a
 system. The reviewer found no static blocker in the procfs header fix, service ownership checks, or integration of the
@@ -1335,3 +1356,20 @@ and the same restriction is enforced on service reads, writes and capacity-error
 Team/member management pages omit capacity metadata and controls when a management-only host has no knowledge port
 or has not enabled spaces. Password sign-in and member-management forms remain available; absent capacity is not
 reported as zero usage. Errors from a present capacity service still propagate rather than hiding failed accounting.
+
+## 通用技能和工作流的组成（模型 43，决定 153、154）
+
+控制台的“通用技能”是独立入口（`/console/skills`），工作流页只列工作流。技能页写它提供的模块、解析器和用到它的工作流；工作流详情的“组成”列内嵌的模块（发布时核对过）、声明的连接、知识和命名文档。技能的安装和卸载是对应 `pack install`、`pack uninstall` 的命令对话框。命名文档列在“连接”页，只给管理员看，写入仍用 `circle-hub doc put`。界面不用“插件”一词。
+
+
+## Reset orchestration ownership (2026-11-13)
+
+The owner's 18:40 decision moves reset orchestration into `hub/server/reset`. The server classifies current records, checks references, invokes migrations and protected export/apply, controls the dedicated worker and restores the original database after a failed operation. The CLI and console use these same operations. Platform provides only verified native backup, database archival and empty-database creation; no platform module reads Hub records or configuration shapes. Protocol schema identities use their declared contract constants, including `KNOWLEDGE_CONTRIBUTION_SCHEMA`. No dependency exception is added for reset.
+
+T8：submit_result 的未派发/目标拒绝/已证明未执行注记按 outcome 保留具名原因与下一步；带预检 result 引用不再显示为设备输出已取回，不由未执行推断用例判断错误。
+
+## Bundled call observability
+
+`list_task_packs` includes the manifest-pinned `hub-observability` team skill for every caller: it is added after the member-capability filter, is not an assignment and is left out of the pack context. `get_nodes` reads its declared text files directly from the verified release bytes. These are built-in method files, separate from the publication registry and from sources admitted as evidence.
+
+`get_nodes.observability` reads call metadata or a bounded MCP trace tree using the authenticated caller. The records and telemetry readers resolve the live account role. The response omits call payload fields, administrative notes and trace status messages; diagnostic replies bypass read recovery. On this line the session filter reads the call log without a dedicated index; the indexes are left to the next schema migration.

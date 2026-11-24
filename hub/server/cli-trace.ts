@@ -1,12 +1,10 @@
-// `circle-hub trace`: reads the traces (B08, decision 146), for administrators. list shows traces by their root step, show
-// one trace's step tree with its usage, top the totals per step name, so a background loop that reads a lot ranks itself.
-// Output is Chinese and made safe for a terminal; --json gives the same data. The rows hold no inputs or outputs.
-import { parseArgs } from 'node:util';
+import { isAdmin } from '../records/api.ts';
 import { TRACE_ORIGIN, isTraceOrigin, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { HubConfig } from '../config/index.ts';
 import type { Principal, User } from '../records/api.ts';
 import { USAGE_NAMES, isUsageName, openTraceReader, type TraceNode, type TraceReader, type TraceStep, type UsageName } from '../telemetry/api.ts';
 import { jsonSafe } from './assemble/terminal.ts';
+import { parse as parseCliArgs } from './cli-arguments.ts';
 import { CliError, UsageError } from './errors.ts';
 
 export const TRACE_USAGE = `trace list [--origin ${TRACE_ORIGIN.join('|')}] [--name <名字>] [--user <用户>] [--since <ISO时间>] [--min-ms <毫秒>] [--limit <条数>] [--json] [--as <管理员>] | show <追踪号> [--json] [--as <管理员>] | top [--by <用量名>] [--since <ISO时间>] [--limit <条数>] [--json] [--as <管理员>]（默认按 db.rows 排最近 24 小时；一个步骤的用量含它的子步骤）`;
@@ -24,17 +22,8 @@ export interface TraceCommandSession {
   names(): Promise<Map<string, string>>;
 }
 
-type Flags = Record<string, { type: 'string' | 'boolean' }>;
-
-function parse<T extends Flags>(args: readonly string[], options: T, positionals: number) {
-  let parsed;
-  try {
-    parsed = parseArgs({ args: [...args], options: { json: { type: 'boolean' }, as: { type: 'string' }, ...options }, allowPositionals: true, strict: true });
-  } catch (error) {
-    throw new UsageError(error instanceof Error ? error.message : String(error));
-  }
-  if (parsed.positionals.length !== positionals) throw new UsageError(`需要 ${positionals} 个参数，给了 ${parsed.positionals.length} 个`);
-  return parsed;
+function parse<T extends Record<string, { type: 'string' | 'boolean' }>>(args: readonly string[], options: T, positionals: number) {
+  return parseCliArgs(args, { json: { type: 'boolean' }, as: { type: 'string' }, ...options }, positionals);
 }
 
 function sinceOf(value: string | undefined): string | undefined {
@@ -101,7 +90,7 @@ async function withReader<T>(session: TraceCommandSession, read: (reader: TraceR
 
 async function administrator(session: TraceCommandSession, as: string | undefined): Promise<Principal> {
   const viewer = await session.viewer(as);
-  if (viewer.role !== 'admin') throw new CliError('只有管理员能读运行观测', '用管理员的操作令牌执行这一条命令');
+  if (!isAdmin(viewer)) throw new CliError('只有管理员能读运行观测', '用管理员的操作令牌执行这一条命令');
   return viewer;
 }
 

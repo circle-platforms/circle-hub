@@ -6,19 +6,26 @@ import { parseProfile } from './profile.ts';
 import { bedsOf } from './test-support.ts';
 const read = parseRuntimeContract(runtimeDocument()); if (!read.ok) throw new Error('fixture');
 const contract = read.contract;
-test('profile binds runtime identity, workbook literals, seats and allowed parameter roles', () => {
+test('profile binds the runtime version, workbook literals, seats and allowed parameter roles', () => {
   const result = parseProfile(profileDocument(), contract, bedsOf()); assert.equal(result.ok, true, JSON.stringify(result));
 });
 for (const [name, mutate] of Object.entries({
-  identity: (v: any) => { v.runtime.contract_sha256 = 'b'.repeat(64); }, seat: (v: any) => { v.seats[0].device = 'absent'; }, host: (v: any) => { v.hosts[0].device = 'absent'; },
+  version: (v: any) => { v.runtime.minimum_version = 'another-runtime'; }, seat: (v: any) => { v.seats[0].device = 'absent'; }, host: (v: any) => { v.hosts[0].device = 'absent'; },
   allowed: (v: any) => { v.allowed[0].method = 'hidden'; }, role: (v: any) => { v.allowed[0].parameters.line = 'unknown-role'; },
   ordinal: (v: any) => { v.seats[0].ordinal = -1; }, header: (v: any) => { v.workbook.header.pop(); }, pattern: (v: any) => { v.workbook.autoid_pattern = '['; }, synthetic: (v: any) => { delete v.synthetic; },
 })) test(`whole-profile refusal with pointer: ${name}`, () => {
   const raw = profileDocument(); mutate(raw); const result = parseProfile(raw, contract, bedsOf()); assert.equal(result.ok, false); if (!result.ok) assert.ok(result.problems.every((p) => p.pointer.startsWith('/') && p.fix.length));
 });
 test('profile lists all independent problems in one refusal', () => {
-  const raw = profileDocument(); raw.seats[0].device = 'missing'; raw.runtime.contract_sha256 = 'b'.repeat(64); raw.allowed[0].parameters.line = 'missing';
+  const raw = profileDocument(); raw.seats[0].device = 'missing'; raw.runtime.minimum_version = 'another-runtime'; raw.allowed[0].parameters.line = 'missing';
   const result = parseProfile(raw, contract, bedsOf()); assert.equal(result.ok, false); if (!result.ok) assert.ok(result.problems.length >= 3);
+});
+test('a runtime key the profile shape does not define is refused with its pointer', () => {
+  const raw = profileDocument() as unknown as { runtime: Record<string, unknown> };
+  raw.runtime.contract_sha256 = contract.pinned.identity;
+  raw.runtime['a/b'] = 'x';
+  const result = parseProfile(raw, contract, bedsOf()); assert.equal(result.ok, false);
+  if (!result.ok) assert.deepEqual(result.problems.map((p) => p.pointer), ['/runtime/contract_sha256', '/runtime/a~1b']);
 });
 test('a signature name matching an object prototype member retains its declared role', () => {
   const raw = runtimeDocument(); raw.entries[0].signature.parameters[0].name = '__proto__'; raw.entries[0].signature.required[0] = '__proto__';

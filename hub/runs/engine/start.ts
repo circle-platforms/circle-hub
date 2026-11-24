@@ -3,11 +3,11 @@ import {isPersonalSpace,personalWorkflowProblems,personalCapabilityError} from '
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
-import { observationClaims } from './observations.ts';
-import type { DeviceObservation } from '../../../contracts/src/pack.ts';
+import { deviceHelpClaims, deviceReadClaims, observationClaims } from './observations.ts';
+import type { DeviceHelpResult, DeviceHelpTarget, DeviceObservation, DeviceReadResult, DeviceReadTarget } from '../../../contracts/src/pack.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
-import {defaultPredecessorInputs} from './predecessor-defaults.ts';
+import {defaultPredecessorInputs,predecessorInputRefusal} from './predecessor-defaults.ts';
 import { PublishableRequirementsFile } from '../../../contracts/src/pack.ts';
 import { recordResultRequests, putRequest, answerSuccessorRequests } from './requests.ts';
 import { authorOriginOf } from './lineage.ts';
@@ -42,6 +42,7 @@ import { bindInputs } from './inputs.ts';
 import { foreignArtifacts, packIdOf } from './lineage.ts';
 import { bindExpected, projectItems } from './projection.ts';
 import { canSeeRun, canViewRun, identityOf, runOfRecord, sourceReader } from './readers.ts';
+import { suggestNames, type NameCandidate } from './names.ts';
 import { reuseOffers } from './reuse.ts';
 import { issuesOf, packSchema, schemaProblems, slotSchemaOf } from './slots.ts';
 import {actionsOf,keyOwner,putAction,putRun,resultFor,runByClientKey,runById,runRecordDigest} from './store.ts';
@@ -179,6 +180,55 @@ async function lineageOf(ctx: EngineContext, runId: string, predecessor: string 
     at = record?.body.predecessor_access==='view'?undefined:record?.body.predecessor;
   }
   return lineage;
+}
+
+async function lineageHolds(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, keys: readonly string[], runId: string, predecessor: string | undefined, words: { wants: string; prefix: string; unheld: string; again: string }): Promise<Date> {
+  const declared = workflow.workflow.leases;
+  const service = ctx.deps.leases;
+  if (declared === undefined || service === undefined) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影${words.wants}，但这个 Hub 没有配置租约服务或工作流没有声明 leases`, { path: '/pack', fix: '请管理员配置租约服务，或联系任务包作者在 workflow.json 里声明 leases' })]);
+  function refuse(code: ProtocolError['code'], message: string, fix: string): never { throw new Refusal([{ code, message, fix }]); }
+  if (keys.some((key) => !key.startsWith(declared.prefix))) refuse('LEASE_PREFIX', words.prefix, `键以前缀 ${declared.prefix} 开头`);
+  const lineage = await lineageOf(ctx, runId, predecessor);
+  const rows = await service.holders([...keys]);
+  const now = ctx.now();
+  for (const key of keys) {
+    const row = rows.find((r) => r.key === key);
+    if (!row || row.user !== user.id || !lineage.has(row.run)) refuse('LEASE_UNAVAILABLE', `设备的租约 ${key} 不在这次运行的血缘持有之下，${words.unheld}`, '先预订这台设备，开始这次运行时 predecessor 写预订那次运行的编号');
+    if (row.released || (row.expires_at !== null && Date.parse(row.expires_at) <= now.getTime())) refuse('LEASE_EXPIRED', `设备的租约 ${key} 已释放或过期`, words.again);
+  }
+  return now;
+}
+
+export async function askClaims(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, asks: ReadonlyArray<DeviceHelpTarget>, runId: string, predecessor: string | undefined, traceId: string): Promise<Claim[]> {
+  if (asks.length === 0) return [];
+  const now = await lineageHolds(ctx, user, workflow, [...new Set(asks.flatMap((ask) => ask.keys))], runId, predecessor, { wants: '要向设备问一行', prefix: '要问的设备的租约键不在声明的前缀下', unheld: '不能往它的终端里打字', again: '重新预订后再问' });
+  const at = now.toISOString();
+  let results: DeviceHelpResult[];
+  try {
+    if (ctx.deps.observations?.ask === undefined) throw new Error('Hub 没有接问设备的端口（派发服务）');
+    results = await ctx.deps.observations.ask(user, runId, asks);
+  } catch (error) {
+    ctx.log({ traceId, run: runId, what: 'device_help', detail: describe(error) });
+    const fact = 'Hub 这次没能向设备问（原因在管理员记录里）';
+    results = asks.map((ask) => ({ inventory: ask.inventory, device: ask.device, label: ask.label, line: ask.line, mode: ask.mode ?? null, words: 0, positions: [], missing: { fact: `${ask.label}：${fact}`, next_action: '稍后再问一次；连续出现时请管理员检查派发服务' } }));
+  }
+  return deviceHelpClaims(results, at);
+}
+
+export async function readClaims(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, reads: ReadonlyArray<DeviceReadTarget>, runId: string, predecessor: string | undefined, traceId: string): Promise<Claim[]> {
+  if (reads.length === 0) return [];
+  const now = await lineageHolds(ctx, user, workflow, [...new Set(reads.flatMap((read) => read.keys))], runId, predecessor, { wants: '要读设备的输出', prefix: '要读的设备的租约键不在声明的前缀下', unheld: '不能往它发命令', again: '重新预订后再读' });
+  const at = now.toISOString();
+  let results: DeviceReadResult[];
+  try {
+    if (ctx.deps.observations?.read === undefined) throw new Error('Hub 没有接读设备的端口（派发服务）');
+    results = await ctx.deps.observations.read(user, runId, reads);
+  } catch (error) {
+    ctx.log({ traceId, run: runId, what: 'device_read', detail: describe(error) });
+    const fact = 'Hub 这次没能读设备（原因在管理员记录里）';
+    results = reads.map((read) => ({ inventory: read.inventory, device: read.device, label: read.label, line: read.line, sent: false, answer: null, missing: { fact: `${read.label}：${fact}`, next_action: '稍后再读一次；连续出现时请管理员检查派发服务' } }));
+  }
+  return deviceReadClaims(results, at);
 }
 
 export async function grantLeases(
@@ -426,22 +476,50 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
   }
 }
 
+async function nameHint(ctx: EngineContext, user: Principal, asked: string, space?: string): Promise<string> {
+  let candidates: NameCandidate[];
+  try {
+    candidates = (await ctx.deps.workflows.summaries(user))
+      .filter((summary) => summary.kind === 'workflow' && (summary.space ?? 'team') === (space ?? 'team'))
+      .map((summary) => ({ shown: summary.pack, key: summary.id }));
+  } catch {
+    return '';
+  }
+  const { nearest, listed, total } = suggestNames(asked.includes('@') ? asked.slice(0, asked.indexOf('@')) : asked, candidates);
+  if (nearest !== null) return `当前账户可用的名称里最接近的是 ${nearest.shown}`;
+  return listed.length === 0 ? '' : `当前账户可用的工作流：${listed.join('、')}${total > listed.length ? ` 等 ${total} 个` : ''}`;
+}
+
 /**
  * Why the caller cannot use this pack (D05 R[3], decision 112): no such pack or only withdrawn versions, a pack not assigned to
  * the caller, or a pack that is not a workflow pack. A disabled account stays the neutral answer (the identity class).
  */
 async function packMissing(ctx: EngineContext, user: Principal, pack: string, found: LoadedWorkflow | null, space?: string): Promise<Refusal> {
-  const LIST = '用 list_task_packs 看你能用的任务包';
-  if (found !== null) return new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `${pack} 是${found.pack.kind === 'skill' ? '技能包' : '产品或系统包'}，不是任务包`, { path: '/pack', fix: LIST })]);
+  const LIST = '当前账户可用的工作流和技能用 list_task_packs 查看';
+  const id = pack.includes('@') ? pack.slice(0, pack.indexOf('@')) : pack;
+  if (found !== null) {
+    const kindWord = found.pack.kind === 'skill' ? '技能' : found.pack.kind === 'product' ? '产品知识来源' : found.pack.kind === 'system' ? '业务系统接入' : '工作流或技能';
+    const hint = await nameHint(ctx, user, pack, space);
+    return new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `${pack} 是${kindWord}，不是可启动的工作流${hint === '' ? '' : `，${hint}`}`, { path: '/pack', fix: LIST })]);
+  }
   const absence = await ctx.deps.workflows.absence?.(user, pack, space) ?? null;
   const note = absence === null ? `pack ${pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack` : `pack ${pack} is ${absence} for ${user.id}${space ? ` in space ${space}` : ''}`;
   // Another account's personal workflow is answered neutrally whether it is missing, ungranted or withdrawn (D05 R[3], T01 R[1]).
   if (space !== undefined && space !== 'team' && space !== user.id) return unavailable('/pack', note);
-  if (absence === 'unknown') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack}`, { path: '/pack', fix: `核对任务包名；${LIST}` })], note);
-  if (absence === 'withdrawn') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack} 的可用版本（已退役）`, { path: '/pack', fix: LIST })], note);
-  if (absence === 'unassigned') return new Refusal([protocolError('SOURCE_NOT_PERMITTED', `任务包 ${pack} 存在，没有分配给你`, { path: '/pack', fix: `请管理员把它分配给你；${LIST}` })], note);
+  if (absence === 'unknown') {
+    const hint = await nameHint(ctx, user, pack, space);
+    return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有名为「${id}」的工作流或技能${hint === '' ? '' : `，${hint}`}`, { path: '/pack', fix: `请核对名称；${LIST}` })], note);
+  }
+  if (absence === 'withdrawn') {
+    return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有名为「${id}」的工作流或技能的可用版本（已退役）`, { path: '/pack', fix: LIST })], note);
+  }
+  if (absence === 'unassigned') {
+    return new Refusal([protocolError('SOURCE_NOT_PERMITTED', `当前账户未获授权使用工作流「${id}」`, { path: '/pack', fix: `请联系管理员为该账户或所在团队分配此工作流；${LIST}` })], note);
+  }
   // A skill pack is installed for the whole Hub, never assigned to one user (decision 113).
-  if (absence === 'uninstalled') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有安装技能包 ${pack}`, { path: '/pack', fix: `请管理员安装它；${LIST}` })], note);
+  if (absence === 'uninstalled') {
+    return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有安装技能「${id}」`, { path: '/pack', fix: `请联系管理员安装此技能；${LIST}` })], note);
+  }
   return unavailable('/pack', note);
 }
 
@@ -583,7 +661,7 @@ async function startFresh(
 
   const feedingOffset=await ctx.deps.knowledge.feeding?.freeze(user,runId,target.root?.root??null);
   const feedingScope={composition:target.root?.composition??null,product:target.product?.product.id??null,root:target.root?.root??null,run:runId,line:target.line,feeding_offset:feedingOffset,declaredLine:workflow.workflow.feeding?.declared_line_parameter?parameters[workflow.workflow.feeding.declared_line_parameter] as string:undefined};
-  const bound = await step('bind-inputs', () => bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null,feedingScope));
+  const bound = await step('bind-inputs', () => bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null,feedingScope,new Set(defaulted.late.map(row=>row.slot)))).catch(error=>predecessorInputRefusal(error,predecessor?.body??null,workflow));
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const {criterionReview,criterionSnapshot,builds}=await step('read-context',async()=>({
@@ -620,17 +698,20 @@ async function startFresh(
     root: target.root?.root ?? null,
     parameters,
     groups: [],
+    ...(defaulted.late.length ? { late_inputs: defaulted.late.map(({ slot, run }) => ({ slot, run })) } : {}),
     ...(observationContext !== null ? { observations: observationContext } : {}),
     ...(builds !== null ? { builds } : {}),
     ...(leaseRows !== null ? { leases: { now: startedAt, registrations: leaseView!.registrations, entries: leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
-  const projection = await step('project-items', () => projectItems(ctx, user, workflow, bound, parameters, context, call.traceId));
+  const projection = await step('project-items', () => projectItems(ctx, user, workflow, bound, parameters, context, call.traceId)).catch(error=>predecessorInputRefusal(error,predecessor?.body??null,workflow));
   if(isPersonalSpace(workflow.pack.space)&&projection.leaseRequests.length)throw new Refusal([personalCapabilityError()]);
   const expected = await step('bind-expected', () => bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null));
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<LeaseDone> = [];
   let deviceClaims: Claim[] = [];
+  let helpClaims: Claim[] = [];
+  let deviceReads: Claim[] = [];
   try {
     grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId, workflow.workflow.predecessor_access==='view'?undefined:predecessor?.body.run);
     // Once an acquire is granted, the Hub looks at the booked devices the projection named (decision 112); it never throws.
@@ -638,6 +719,8 @@ async function startFresh(
       const looked = ctx.deps.observations ? await ctx.deps.observations.observe(user, runId, projection.observe) : { observed: [], missing: 'Hub 没有接设备观察（派发服务）' };
       deviceClaims = observationClaims(looked, ctx.now().toISOString());
     }
+    helpClaims = await askClaims(ctx, user, workflow, projection.ask, runId, workflow.workflow.predecessor_access==='view'?undefined:predecessor?.body.run, call.traceId);
+    deviceReads = await readClaims(ctx, user, workflow, projection.read, runId, workflow.workflow.predecessor_access==='view'?undefined:predecessor?.body.run, call.traceId);
   let items = projection.items;
   const packId = workflow.pack.id;
   const previous = predecessor;
@@ -706,6 +789,7 @@ async function startFresh(
     ...(target.unversionedRoot ? { unversioned_root: target.unversionedRoot.root } : {}),
     sources: [...bound.map((b) => b.binding), ...expected.sources],
     ...(defaulted.defaults.length?{input_defaults:defaulted.defaults}:{}),
+    ...(defaulted.late.length?{late_inputs:defaulted.late}:{}),
     requirements: workflow.requirements.map(t=>requirementSummary(t,workflow.ledger,workflow.checks,`${workflow.pack.id}@${workflow.pack.version}`,{workClass:workflow.workflow.work_class,effects:workflow.effects ?? []})),
     items,
     ...(slots !== undefined ? { slots } : {}),
@@ -730,6 +814,8 @@ async function startFresh(
     ...(frozenLeaseRows !== null ? { lease_context: frozenLeaseRows, lease_registrations: leaseView!.registrations } : {}),
     ...(observationContext !== null ? { observation_context: observationContext } : {}),
     ...(deviceClaims.length > 0 ? { device_observations: deviceClaims } : {}),
+    ...(helpClaims.length > 0 ? { device_help: helpClaims } : {}),
+    ...(deviceReads.length > 0 ? { device_reads: deviceReads } : {}),
   } satisfies RunRecord);
   const subjectPath = `/inputs/${workflow.workflow.subject}`;
   const runTooLarge = tooLarge(ctx, record, `这个被判对象投影出 ${items.length} 个条目，运行记录`, subjectPath);

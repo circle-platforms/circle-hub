@@ -1,7 +1,3 @@
-// The pack as files: pack.json lists exactly the pack's files, every declaration has its contract shape, the parameter
-// schemas are ones the engine enforces, the codes the functions give are declared, the samples have both polarities per
-// check, and the staged pack passes the registry's validation and publish check (offline; publish.test.ts publishes it
-// for real).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -25,7 +21,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['traceability', '1.0.13', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['traceability', '1.0.14', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/matrix.ts') && files.includes('samples/negative/status-conflict.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -65,8 +61,10 @@ describe('the pack files', () => {
       ],
     );
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
-    // 1.0.10 的规程写明了精确指针，长于旧的 2000 字试探上限；1.0.12 加了读修复清单的第 0 步，仍在上限内，是 start_run 交给模型的中文全文。
-    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 2500, 'a short Chinese procedure (it is in every start_run answer)');
+    // 1.0.10 added exact pointers in the procedure; 1.0.12 added step 0 for reading the fix list; after adding YAML frontmatter in 1.0.14, SKILL.md still preserves the complete only=/fields= and defect-list guidance returned by start_run to the model, raising the length cap from 2500 to 2700.
+    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 2700, 'a short Chinese procedure (it is in every start_run answer)');
+    assert.ok(text('SKILL.md').includes('不要向用户索取缺陷编号，也不要自己列举 only='));
+    assert.ok(text('SKILL.md').includes('运行不会去锁定别的构建'));
   });
 
   it('declares a parameter schema the engine can enforce (no regular expressions, zod reads it)', () => {

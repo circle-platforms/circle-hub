@@ -19,8 +19,7 @@ export function addressFixture(){
  for(const effect of [doc.effects.command,doc.effects.restore])effect.roles.push('bed_endpoint');
  for(const call of profile.allowed)if(call.object==='ORBIT_0'&&(call.method==='command'||call.method==='restore_checked'))call.parameters.endpoint='bed_endpoint';
  doc.runtime.block_model.output_methods.push({object:'ORBIT_0',method:'restore_checked',output:'raw_text'});
- const signed=signTypedRuntime(doc);profile.runtime.contract_sha256=signed.original.contract_sha256;
- const parsed=parseRuntimeContract(signed),beds=parseManifest(f.inventory);if(!parsed.ok||!beds.ok)throw Error('invalid synthetic address contract');
+ const signed=signTypedRuntime(doc); const parsed=parseRuntimeContract(signed),beds=parseManifest(f.inventory);if(!parsed.ok||!beds.ok)throw Error('invalid synthetic address contract');
  const p=parseProfile(profile,parsed.contract,beds.beds);if(!p.ok)throw Error(JSON.stringify(p.problems));
  const data=(kind:keyof ReturnType<typeof positiveBlocks>='OBSERVE_ASSERT',value='192.0.2.10',index?:number):PlanSlots=>{
   const plan=positiveBlocks()[kind];for(const block of plan.blocks)if(block.call?.object==='ORBIT_0')block.call.keywords.endpoint='192.0.2.10';

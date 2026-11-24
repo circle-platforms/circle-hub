@@ -55,6 +55,22 @@ describe('oracle', () => {
     assert.deepEqual(e.rounds, { used: 0, max: 2 });
   });
 
+  it('counts only distinct other submissions charged to this requirement (owner run30 #4, T7)', () => {
+    const withHistory = (current: string, earlier: Array<{ submission: string; requirements: string[] }>) =>
+      expected(run({ checks: [{ id: 'c1', judges: 'artifact_under_verification', tier: null }], repairHistory: { current, earlier } }), handled, refuteX);
+    assert.deepEqual(withHistory('A', [{ submission: 'A', requirements: ['r1'] }]).rounds, { used: 0, max: 2 });
+    const earlier = [
+      { submission: 'A', requirements: ['r1'] }, { submission: 'A', requirements: ['r1'] },
+      { submission: 'B', requirements: ['r1'] }, { submission: 'other', requirements: ['another-requirement'] },
+    ];
+    assert.deepEqual(withHistory('A', earlier).rounds, { used: 1, max: 2 });
+    assert.deepEqual(withHistory('B', earlier).rounds, { used: 1, max: 2 });
+    const fresh = withHistory('C', earlier);
+    assert.deepEqual(fresh.rounds, { used: 2, max: 2 });
+    assert.equal(fresh.items[0].reason, 'repair_exhausted');
+    assert.deepEqual(fresh.errors, [{ kind: 'refutation', code: 'p.x', item: 'i1', requirement: 'r1', rounds_left: 0 }, { kind: 'unknown', code: 'repair_exhausted', item: 'i1', requirement: 'r1', rounds_left: 0 }]);
+  });
+
   it('a refutation of the subject does not enter repair even when the error table has a repair row (T03 R[4], W02 F[7])', () => {
     const onSubject = run({ checks: [{ id: 'c1', judges: 'subject', tier: null }] });
     const first = expected(onSubject, handled, refuteX);

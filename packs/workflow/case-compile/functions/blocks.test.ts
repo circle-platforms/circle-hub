@@ -33,7 +33,7 @@ test('last configuration, explicit causal links and W07 declarations are indepen
 test('found_times uses an explicit runner capability and the I count role',()=>{
  const data=plan([{kind:'OBSERVE_ASSERT',id:'observe',call:call(),assertions:[assertion('count','observe','found_times')]}]);const parsed=readSlots(data);assert.ok(parsed.ok);if(!parsed.ok)return;
  assert.deepEqual(typedAuthorityGaps(f.contract,f.profile,parsed.slots,undefined,f.catalog,[],f.manifest_sha256),[]);
- const document=structuredClone(f.contractDoc) as any;document.runtime.found_times_supported=false;const changed=signTypedRuntime(document);const subject=f.subject(data);subject.subject.contract=changed;subject.subject.profile={...f.profileDoc,runtime:{...f.profileDoc.runtime,contract_sha256:changed.original.contract_sha256}};
+ const document=structuredClone(f.contractDoc) as any;document.runtime.found_times_supported=false;const changed=signTypedRuntime(document);const subject=f.subject(data);subject.subject.contract=changed;subject.subject.profile={...f.profileDoc,runtime:{...f.profileDoc.runtime }};
  assert.ok(checkContractShape(subject).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('found_times_supported')));
  const invalid=structuredClone(data);invalid.blocks[0].assertions[0].count=0;assert.equal(readSlots(invalid).ok,false);
 });
@@ -42,7 +42,7 @@ test('captured regex metacharacters stay raw and use literal comparison; differs
  const data=positiveBlocks().CAPTURE_COMPARE,parsed=readSlots(data);assert.ok(parsed.ok);if(!parsed.ok)return;
  assert.equal(parsed.slots.expects.length,2);assert.ok(parsed.slots.expects.every(expect=>expect.operator==='abs_found'&&expect.register&&expect.actual_register));
  const differs=structuredClone(data);differs.blocks[2].relation='differs';differs.obligations![0].assertions=['comparison'];assert.ok(readSlots(differs).ok);
- const doc=structuredClone(f.contractDoc) as any;delete doc.runtime.block_model.differs;const contract=signTypedRuntime(doc);const subject=f.subject(differs);subject.subject.contract=contract;subject.subject.profile={...f.profileDoc,runtime:{...f.profileDoc.runtime,contract_sha256:contract.original.contract_sha256}};assert.ok(checkContractShape(subject).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('全值字面不等')));
+ const doc=structuredClone(f.contractDoc) as any;delete doc.runtime.block_model.differs;const contract=signTypedRuntime(doc);const subject=f.subject(differs);subject.subject.contract=contract;subject.subject.profile={...f.profileDoc,runtime:{...f.profileDoc.runtime }};assert.ok(checkContractShape(subject).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('全值字面不等')));
 });
 test('author expectation coverage never substitutes one quoted node for another',()=>{
  const data=positiveBlocks().OBSERVE_ASSERT;
@@ -50,10 +50,30 @@ test('author expectation coverage never substitutes one quoted node for another'
  assert.ok(checkExpectedSources(f.subject(data,{expected_nodes:[...f.fields.expected_nodes,{reference:EXPECTED_REF+'other',text:'another'}]})).some(outcome=>outcome.verdict==='refute'));
  const unmet=structuredClone(data);unmet.obligations![0]={expectation:EXPECTED_REF,status:'unmet',assertions:[],missing:'合成缺事实',next_action:'合成维护者补证'};assert.ok(checkExpectedSources(f.subject(unmet)).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('合成维护者')));
  const description=f.subject(data,{expected_nodes:[{reference:EXPECTED_REF,text:EXPECTED}]});assert.ok(checkExpectedSources(description).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('类型化判据')));
+ const negativeQuote={reference:EXPECTED_REF,text:'删除后无残留'},negative=plan([{kind:'OBSERVE_ASSERT',id:'observe',call:call(),assertions:[{...assertion('absent','observe','not_found'),literal:'synthetic-record',quote:negativeQuote}]}]);
+ assert.deepEqual(checkExpectedSources(f.subject(negative,{expected_nodes:[negativeQuote]})).map(outcome=>outcome.verdict),['support']);
+ assert.ok(checkExpectedSources(f.subject(negative,{expected_nodes:[{...negativeQuote,declaration:{op:'abs_found',literal:'synthetic-record'}}]})).some(outcome=>outcome.verdict==='refute'));
+ const captured=plan([{kind:'CONFIG',id:'create',call:call('demo set 5')},{kind:'CAPTURE',id:'before',call:call(),register:'removed_record'},{kind:'CONFIG',id:'remove',call:call('no demo set')},{kind:'EXPECT_FROM',id:'observe',call:call(),expected_from:'removed_record',op:'not_found',output:'observe',quote:negativeQuote,expectation:EXPECTED_REF}]);
+ captured.block_context!.causal_links=[{from:'create',to:'before',quote:negativeQuote},{from:'remove',to:'observe',quote:negativeQuote}];
+ const document=structuredClone(f.contractDoc) as any;document.runtime.block_model.operators.push({op:'not_found',expected:'register',object:'check',method:'not_found',matching:'literal'});
+ const contract=signTypedRuntime(document),subject=f.subject(captured,{expected_nodes:[negativeQuote],contract,profile:{...f.profileDoc,runtime:{...f.profileDoc.runtime }}});
+ assert.deepEqual(checkExpectedSources(subject).map(outcome=>outcome.verdict),['support']);
 });
 test('restore requires a pre-change capture, exact target and guarded executor capability',()=>{
  const early=positiveBlocks().RESTORE_FROM;[early.blocks[0],early.blocks[1]]=[early.blocks[1],early.blocks[0]];assert.equal(readSlots(early).ok,false);
  const wrong=positiveBlocks().RESTORE_FROM;wrong.blocks[3].call.method='command';assert.ok(checkContractShape(f.subject(wrong)).some(outcome=>outcome.verdict==='refute'||outcome.verdict==='unknown'));
- const document=structuredClone(f.contractDoc) as any;document.runtime.block_model.restore_methods=[];const contract=signTypedRuntime(document),subject=f.subject(positiveBlocks().RESTORE_FROM);subject.subject.contract=contract;subject.subject.profile={...f.profileDoc,runtime:{...f.profileDoc.runtime,contract_sha256:contract.original.contract_sha256}};assert.ok(checkContractShape(subject).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('守卫')));
+ const document=structuredClone(f.contractDoc) as any;document.runtime.block_model.restore_methods=[];const contract=signTypedRuntime(document),subject=f.subject(positiveBlocks().RESTORE_FROM);subject.subject.contract=contract;subject.subject.profile={...f.profileDoc,runtime:{...f.profileDoc.runtime }};assert.ok(checkContractShape(subject).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('守卫')));
 });
 for(const kind of ['OBSERVE_DIST','OBSERVE_MEMBER','OBSERVE_EXIT'])test(kind+' is declared but remains unknown with a named capability exit',()=>{const data=plan([{kind,id:'deferred',payload:{}}]);const result=checkContractShape(f.subject(data));assert.ok(result.some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('下一步')));const absent=structuredClone(data);delete absent.blocks[0].payload;assert.equal(readSlots(absent).ok,false);const mixed=structuredClone(data);mixed.expects=[{text:'x',quote:quote(),after:1}];assert.equal(readSlots(mixed).ok,false);});
+
+test('a checkpoint literal matches the device line whatever the number of blanks between its words, and nothing else changes', () => {
+  const pattern = new RegExp(escapedLiteral('Widget Name: w1 (a+b)'));
+  assert.equal(escapedLiteral('Widget Name: w1 (a+b)'), 'Widget[ \\t]+Name:[ \\t]+w1[ \\t]+\\(a\\+b\\)');
+  assert.ok(pattern.test('Widget Name:                 w1 (a+b)'), 'a listing aligned in columns');
+  assert.ok(pattern.test('Widget Name: w1 (a+b)'), 'the manual example as written');
+  assert.ok(pattern.test('Widget\tName:\tw1  (a+b)'));
+  assert.ok(!pattern.test('Widget Name:\n w1 (a+b)'), 'not across lines');
+  assert.ok(!pattern.test('WidgetName: w1 (a+b)'), 'a blank the literal has is still required');
+  assert.ok(!pattern.test('Widget Name: w1 (aab)'), 'the other characters stay literal');
+  assert.equal(escapedLiteral('192.0.2.213'), '192\\.0\\.2\\.213');
+});

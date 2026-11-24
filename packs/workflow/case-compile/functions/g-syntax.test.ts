@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { encodeG, decodeG, GSyntaxError } from './g-syntax.ts';
+import { encodeG, decodeG, GSyntaxError } from './generated/skills/runner-workbook/workbook-writer/g-syntax.ts';
 const round = (args: string[], keywords: Record<string, string | number> = {}, options = {}) => {
   const expected = { args, keywords }; const cell = encodeG(expected, { keywordNames: Object.keys(keywords), ...options });
   const back = decodeG(cell, options); assert.deepEqual(back.args, args); assert.deepEqual({ ...back.keywords }, keywords); return cell;

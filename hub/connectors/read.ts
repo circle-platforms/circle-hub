@@ -1,3 +1,4 @@
+import { secretVersionKey } from './secret-version.ts';
 // The read plugins (D01 R[1], R[2]; B02; B05). executeRead plans the requests of one read with the system pack's planner
 // function (sandboxed, pure, called again with the responses so far, at most five rounds, until it answers done) or with the
 // read's one declared request; sends them through the resource's HttpSource (allow-list, login once per expiry); stores
@@ -221,7 +222,7 @@ function stringMap(value: Record<string, string> | undefined, key: string): Reco
 }
 
 /** What a function is told of a request that failed for a credential or login reason (D05 R[3], decision 112). */
-const NEUTRAL_PHASE_MESSAGE = '应答对你不可用（原因只记在管理员记录里）';
+const NEUTRAL_PHASE_MESSAGE = '应答对当前账户不可用（原因只记在管理员记录里）';
 const NEUTRAL_CODE = 'SOURCE_UNAVAILABLE';
 
 function zodProblem(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): string {
@@ -1045,7 +1046,7 @@ export class ReadEngine {
 
   /** The configuration in force and the pack are part of the key: a moved or re-bound resource never sees old entries. */
   #cacheKey(runtime: ResourceRuntime, reader: string, target: ReadSubject): string {
-    return `${runtime.resource.id}|${runtime.decision}|${runtime.pack.digest}|${runtime.dependencies?.join(",") ?? ""}|${reader}|${target.id}${target.revision === null ? '' : `@${target.revision}`}`;
+    return `${runtime.resource.id}|${runtime.decision}|${runtime.pack.digest}|${runtime.dependencies?.join(",") ?? ""}|${JSON.stringify((runtime.variables??[]).filter(use=>use.kind==='secret').map(secretVersionKey))}|${reader}|${target.id}${target.revision === null ? '' : `@${target.revision}`}`;
   }
 
   #forget(key: string): void {

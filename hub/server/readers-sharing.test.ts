@@ -5,6 +5,7 @@ import { openHarness, sandboxSkip } from '../runs/engine/testing/harness.ts';
 import { standardDocument, toyMap } from '../runs/engine/testing/mindmap.ts';
 import { sourceReaderFor, recordReaderFor } from './readers.ts';
 import { recordDigest } from '../refs/api.ts';
+import { disclosedExistence, recordExistence, sha256Hex } from '../records/api.ts';
 let postgres: TemporaryPostgres;
 const skip = await sandboxSkip();
 before(async () => { postgres = await startPostgres(); });
@@ -89,4 +90,105 @@ test('deletion audits have a dedicated administrator metadata port and never bec
  assert.equal((await port.status(h.admin,h.alice.id))?.result?.record,receipt.record);await assert.rejects(port.status(h.bob,h.alice.id));await assert.rejects(port.status(h.alice,h.alice.id));
  const proof=await h.kit.store.put({kind:'knowledge_team_source_attribution',schema:'knowledge-team-source-attribution@1',provenance:'declared',body:{team_source:'a'.repeat(64),declaration:'b'.repeat(64),uploader:h.alice.id,declared_at:receipt.at,artifact:'c'.repeat(64),sha256:'d'.repeat(64),by:h.admin.id,at:receipt.at}});
  assert.equal(await reader.read(proof.digest,context),null);
+});
+
+test('S1: bot notification intent/receipt and inbound records are readable only by their owner and report neutral existence to others', { skip }, async t => {
+  const h = await openHarness(postgres); t.after(() => h.close());
+  const issuer = sha256Hex('https://work.example.invalid/s1');
+  const subject = sha256Hex('ext-user-s1');
+  const channel = sha256Hex('channel-s1');
+  const textSha = sha256Hex('synthetic-bot-message');
+  const receiptId = '11111111-1111-4111-8111-111111111111';
+  const intent = await h.kit.store.put({
+    kind: 'action',
+    schema: 'member-notification-intent@1',
+    provenance: 'declared',
+    body: {
+      schema: 'member-notification-intent@1',
+      kind: 'dispatch',
+      receipt: receiptId,
+      event: '22222222-2222-4222-8222-222222222222',
+      member: h.alice.id,
+      issuer,
+      subject,
+      channel,
+      role: 'assistant',
+      sha256: textSha,
+      size: 21,
+      text_sha256: textSha,
+      text_size: 21,
+      file_sha256: null,
+      file_size: null,
+      name_sha256: null,
+      write: {
+        interaction: 'submit_then_read',
+        effect_class: 'notification',
+        retry_safety: 'unsafe',
+        signing: 'service_on_behalf',
+        reversible: false,
+        target_key: subject,
+        audience: h.alice.id,
+        evidence: { call: 'receipt', pointer: '/acknowledgment/code' },
+        refusal: { stage: '/state', reached_device: '/reached_target' },
+        writes_hub_records: true,
+      },
+    },
+  });
+  const receipt = await h.kit.store.put({
+    kind: 'effect',
+    schema: 'member-notification-receipt@1',
+    provenance: 'declared',
+    body: {
+      schema: 'member-notification-receipt@1',
+      member: h.alice.id,
+      intent: intent.digest,
+      receipt: receiptId,
+      outcome: 'issued',
+      acknowledgment: { request: sha256Hex('ack'), code: 0 },
+      reached_target: true,
+      missing: null,
+      next: null,
+    },
+  });
+  const inbound = await h.kit.store.put({
+    kind: 'action',
+    schema: 'member-bot-inbound@1',
+    provenance: 'declared',
+    body: {
+      schema: 'member-bot-inbound@1',
+      kind: 'dispatch',
+      request: '33333333-3333-4333-8333-333333333333',
+      member: h.alice.id,
+      issuer,
+      subject,
+      channel,
+      platform_id_sha256: sha256Hex('platform-msg-s1'),
+      text_sha256: textSha,
+      text_size: 21,
+      files: [],
+      at: '2026-11-24T00:00:00.000Z',
+    },
+  });
+
+  const aliceReader = recordReaderFor(h.kit, h.service, h.alice);
+  const bobReader = recordReaderFor(h.kit, h.service, h.bob);
+  const adminReader = recordReaderFor(h.kit, h.service, h.admin);
+  const aliceCtx = { user: h.alice.id, role: h.alice.role };
+  const bobCtx = { user: h.bob.id, role: h.bob.role };
+  const adminCtx = { user: h.admin.id, role: h.admin.role };
+
+  for (const rec of [intent, receipt, inbound]) {
+    const owned = await aliceReader.read(rec.digest, aliceCtx);
+    assert.ok(owned, `owner should read ${rec.schema}`);
+    assert.equal(owned.schema, rec.schema);
+    assert.equal(await bobReader.read(rec.digest, bobCtx), null);
+    assert.equal(await adminReader.read(rec.digest, adminCtx), null);
+    assert.equal(disclosedExistence(h.bob.id, [rec]), 'neutral');
+    assert.equal(await recordExistence(h.kit.store, h.bob.id, rec), 'neutral');
+    assert.equal(await bobReader.exists!(rec.digest), null);
+    assert.equal(await adminReader.exists!(rec.digest), null);
+  }
+  const missingDigest = '0'.repeat(64);
+  assert.equal(await recordExistence(h.kit.store, h.bob.id, null), 'absent');
+  assert.equal(await bobReader.exists!(missingDigest), false);
 });

@@ -2,8 +2,7 @@
   "schema": "runtime-profile@1",
   "synthetic": true,
   "runtime": {
-    "minimum_version": "synthetic-runtime-v2",
-    "contract_sha256": "99d9621bc6c882fb1d7104e7b22c1122b27ab1128069860736a8f19719d7a6cb"
+    "minimum_version": "synthetic-runtime-v2"
   },
   "bed": "bed-a",
   "workbook": {

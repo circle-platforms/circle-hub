@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "member-notification-receipt@1"
+    },
+    "member": {
+      "type": "string",
+      "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "intent": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "receipt": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "issued",
+        "target_rejected",
+        "unknown",
+        "not_dispatched"
+      ]
+    },
+    "acknowledgment": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "request": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "code": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "request",
+            "code"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reached_target": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "missing": {
+      "anyOf": [
+        {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "next": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "supersedes": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "schema",
+    "member",
+    "intent",
+    "receipt",
+    "outcome",
+    "acknowledgment",
+    "reached_target",
+    "missing",
+    "next"
+  ],
+  "additionalProperties": false
+}

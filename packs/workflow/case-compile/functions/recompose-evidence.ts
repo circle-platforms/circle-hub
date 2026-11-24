@@ -3,12 +3,16 @@ import { isRecord } from './text.ts';
 import { canonicalJson } from './canonical-json.ts';
 import T from '../tables/recompose-format.json' with { type: 'json' };
 export const object = (value: any): boolean => isRecord(value);
+export function acceptsPack(reference: string, pack: string): boolean {
+    const versions = pack === T.packs.stage ? ['1.1.3', '1.2.0', '1.2.1', '1.2.2', '1.2.3', '1.2.4', '1.2.5', '1.2.6', '1.2.7', '1.2.8', '1.2.9', '1.2.10', '1.2.11', '1.3.0', '1.3.1', '1.3.2', '1.3.3'] : ['1.1.3', '1.1.4', '1.1.5', '1.1.6', '1.1.7', '1.1.8', '1.1.9', '1.1.10', '1.1.11', '1.1.12', '1.1.13', '1.1.14', '1.1.15', '1.1.16', '1.1.17', '1.1.18', '1.1.19'];
+    return versions.some(version => reference === pack + '@' + version);
+}
 export function envelope(bound: any, kind: string): any | null { return object(bound) && bound.external === null && bound.meta?.kind === kind && typeof bound.meta.record === 'string' && bound.meta.pointer === undefined && bound.model?.kind === kind && object(bound.model.body) ? { body: bound.model.body, reference: 'rec:' + bound.meta.record } : null; }
 export function acceptedPair(runInput: any, resultInput: any, pack: string): {
     run: any;
     result: any;
     reference: string;
-} | null { const r = envelope(runInput, 'run'), v = envelope(resultInput, 'validation_result'); if (!r || !v || r.body.pack !== pack + '@1.0.3' || v.body.schema !== 'validation@1' || v.body.run !== r.body.run || v.body.acceptance !== 'accepted' || v.body.locks?.pack !== r.body.pack || v.body.locks?.pack_digest !== r.body.pack_digest)
+} | null { const r = envelope(runInput, 'run'), v = envelope(resultInput, 'validation_result'); if (!r || !v || !acceptsPack(r.body.pack, pack) || v.body.schema !== 'validation@1' || v.body.run !== r.body.run || v.body.acceptance !== 'accepted' || v.body.locks?.pack !== r.body.pack || v.body.locks?.pack_digest !== r.body.pack_digest)
     return null; return { run: r.body, result: v.body, reference: v.reference }; }
 export function satisfied(result: any, key: string, item?: string) { const rows = item === undefined ? result.cross_item ?? [] : Object.values(result.partitions ?? {}).flatMap((v: any) => Array.isArray(v) ? v : []).find((v: any) => v.item === item)?.requirements?.find((r: any) => r.requirement === key)?.claims ?? []; if (item !== undefined) {
     const row = Object.values(result.partitions ?? {}).flatMap((v: any) => Array.isArray(v) ? v : []).find((v: any) => v.item === item)?.requirements?.find((r: any) => r.requirement === key);

@@ -1,3 +1,4 @@
+import { primeStartupSecrets } from './secret-readiness.ts';
 import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight, runReservations } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
@@ -9,7 +10,7 @@ import { productVariableNameAvailable } from '../variables.ts';
 // left in the vault is never read.
 // Nothing here reads the environment, a file outside the data directory, or a credential value.
 import { join } from 'node:path';
-import { DispatchService, ExecutorRegistry, freezeEffectRegistry } from '../../dispatch/api.ts';
+import { DispatchService, ExecutorRegistry, MemberEnvironments, freezeEffectRegistry, createEnvironmentReadiness } from '../../dispatch/api.ts';
 import type { HubConfig } from '../../config/index.ts';
 import {
   createConnectors,
@@ -20,13 +21,17 @@ import {
 } from '../../connectors/api.ts';
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
-import type { Principal, RecordsKit } from '../../records/api.ts';
-import { LeaseService } from '../../leases/service.ts';
-import { createPool, Database } from '../../records/db.ts';
+import { canUseEnvironment, memberCapabilities, type Principal, type RecordsKit } from '../../records/api.ts';
+import { LeaseService } from '../../leases/api.ts';
+import { createPool, Database } from '../../records/api.ts';
 import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
 import { isolationFailureText, osIsolationAvailable, osIsolationFailure, type SandboxOptions } from '../../rules/api.ts';
 import { AssemblyError } from './errors.ts';
 import {
+  runById,
+  canViewRun,
+  readPackDirectory,
+  packSchema,
   createPackCatalog,
   createPackRegistry,
   sweepPackStages,
@@ -174,13 +179,17 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     parsers,
     ...(options.resourceCacheMs === undefined ? {} : { resourceCacheMs: options.resourceCacheMs }),
   });
-  if(options.requireVaultKey !== false)await connectors.primeSecrets();
+  const startupSecretIssues = options.requireVaultKey !== false
+    ? await primeStartupSecrets(connectors, notices, line => notes.log(line))
+    : [];
   const external = createExternalReader(connectors);
   const resources = createResourceCatalog(connectors);
 
   // 5. Knowledge: it reads its sources through the connectors alone. No placer: the Hub calls no model, so spans the
   // code cannot place stay unplaced at the root (a producer may declare them for the bot's placement proposals).
   const knowledge = createKnowledge({
+    runReads: { runById, canViewRun },
+    packReads: { readPackDirectory, packSchema },
     records,
     parsers,
     packs,
@@ -203,10 +212,11 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // keep a read-only command from opening a pool it does not need.
   const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
   const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
+  const environments = leases ? new MemberEnvironments(records, new ExecutorRegistry(records), leases, (actor, id) => canUseEnvironment(records, actor, id)) : null;
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
     effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},
-    dispatch:{jobs:(by,run,reservations)=>dispatch?readRunJobs(records,dispatch,by,run,reservations?{reservations}:{}):Promise.resolve([]),reservations:()=>runReservations(records),runs:(jobs)=>dispatch?dispatchedRuns(records,jobs):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready)=>dispatch?acceptedDispatch(records,dispatch,run,ready):Promise.resolve([]),inFlight:(run)=>dispatch?runInFlight(records,dispatch,run):Promise.resolve(null)},
+    dispatch:{jobs:(by,run,reservations)=>dispatch?readRunJobs(records,dispatch,by,run,reservations?{reservations}:{}):Promise.resolve([]),reservations:()=>runReservations(records),runs:(jobs)=>dispatch?dispatchedRuns(records,jobs):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready,caller)=>dispatch?acceptedDispatch(records,dispatch,run,ready,undefined,caller):Promise.resolve([]),inFlight:(run,caller)=>dispatch?runInFlight(records,dispatch,run,caller):Promise.resolve(null)},
     records,
     personalPacks:registry.personal,
     workflows,
@@ -229,6 +239,14 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         if (!dispatch) throw new Error('设备观察端口未就绪，请管理员检查装配');
         return dispatch.observeDevices(user, run, targets);
       },
+      ask: async (user, run, targets) => {
+        if (!dispatch) throw new Error('设备观察端口未就绪，请管理员检查装配');
+        return dispatch.askDevices(user, run, targets);
+      },
+      read: async (user, run, targets) => {
+        if (!dispatch) throw new Error('设备观察端口未就绪，请管理员检查装配');
+        return dispatch.readDevices(user, run, targets);
+      },
     } } : {}),
     adminLog: notes.engine,
   };
@@ -237,8 +255,24 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   dispatch = leases ? new DispatchService({ records, leases, runs, workflows, knowledge, adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
+    startupSecretIssues: () => startupSecretIssues,
+    documents: docs,
     config,
+    close: () => dispatch?.close() ?? Promise.resolve(),
     records,
+    memberCapabilities: (by, userId, packSummaries) => memberCapabilities(records, {
+      canUsePack: (target, pack) => registry.canUse(target.id, pack),
+      publicWorkflowIds: async () => (await registry.listPacks()).filter(pack => pack.kind === 'workflow' && pack.latest !== null).map(pack => pack.id),
+      packs: target => packSummaries !== undefined ? Promise.resolve(packSummaries) : workflows.summaries(target),
+      connections: async target => (await resources.list(target)).map(item => ({
+        id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,
+      })),
+      personalPackUse: async (target, owner, pack) => await registry.personal?.mayUse(target, owner, pack) ?? false,
+      environments: async target => environments === null ? {
+        ready: false, items: [], missing: '测试环境租约服务未接线',
+        nextAction: '请管理员恢复测试环境租约服务后重新查询',
+      } : { ready: true, items: await environments.list(target), missing: null, nextAction: null },
+    }, by, userId),
     runs,
     runsDetail: runs,
     registry,
@@ -258,6 +292,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     systems: { trial: (by, input) => connectors.admin.trial(by, input), forgetTrialLogin: (by, input) => connectors.admin.forgetTrialLogin(by, input) },
     // The console's read-only view of dispatch: the registry and readRunJobs recheck the administrator themselves.
     dispatch: {
+      ...(dispatch && leases ? { readiness: createEnvironmentReadiness(records, new ExecutorRegistry(records), dispatch, leases, (actor, id) => canUseEnvironment(records, actor, id), now) } : {}),
       executors: async (by) => {
         const views: ExecutorView[] = [];
         for (const entry of await new ExecutorRegistry(records).sources(by)) {
@@ -276,6 +311,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         ...(job.status.next_action === undefined ? {} : { next_action: job.status.next_action }),
       }))),
     },
+    ...(leases !== undefined ? { leases: { view: (prefix: string, withHolder?: true) => withHolder === true ? leases.view(prefix, true) : leases.view(prefix) } } : {}),
   };
   return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, docs, knowledge, runs, leases: leases as LeaseService, dispatch, notes, notices };
 }

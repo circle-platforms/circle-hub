@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {newId,type User} from '../../records/api.ts';
 import {memberSpaceMetadata} from './member-space-metadata.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 
 test('administrator metadata counts only current all-administrator grants and discloses no private titles or counts',async()=>{
  const owner=newId('usr'),other=newId('usr'),user={id:owner,name:'合成成员',disabled:false} as User;

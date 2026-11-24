@@ -21,6 +21,23 @@ export function ownOrigins(hosts: ReadonlySet<string>, scheme: 'http' | 'https' 
   return new Set([...hosts].map((host) => `${scheme}://${host}`));
 }
 
+export function serverOrigins(config: {
+  host: string;
+  port: number;
+  allowedHosts?: readonly string[];
+  https?: { host: string; port: number };
+  proxyOrigin?: string;
+}): Set<string> {
+  const origins = ownOrigins(allowedHosts(config.host, config.port, config.allowedHosts));
+  if (config.https) {
+    for (const origin of ownOrigins(allowedHosts(config.https.host, config.https.port, config.allowedHosts, 443), 'https')) {
+      origins.add(origin);
+    }
+  }
+  if (config.proxyOrigin) origins.add(config.proxyOrigin);
+  return origins;
+}
+
 export function hostAllowed(request: IncomingMessage, hosts: ReadonlySet<string>): boolean {
   const host = request.headers.host;
   return typeof host === 'string' && hosts.has(host.toLowerCase());

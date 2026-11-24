@@ -234,6 +234,139 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "persistence_channels": {
+              "description": "Places where a command leaves state that survives the per-case cleanup of the runner (the device's disk, the peer unit's saved configuration): a case holding a command of any declared channel runs after the other cases of its volume",
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  },
+                  "commands": {
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "prefix": {
+                          "type": "string",
+                          "maxLength": 8192,
+                          "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                          "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+                        },
+                        "with_parameter": {
+                          "description": "Counts only a command written with the parameter at this zero-based position of its signature, for an optional parameter that changes what the command does when it is given; absent: the prefix alone decides",
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 255
+                        }
+                      },
+                      "required": [
+                        "prefix"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 400,
+                    "pattern": "^[^\\r\\n]+$",
+                    "description": "The statement of the product documentation the declaration rests on; the Hub quotes it when it refuses or reorders"
+                  }
+                },
+                "required": [
+                  "id",
+                  "commands",
+                  "source"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "forbidden_combinations": {
+              "description": "Pairs of command sets the product documentation forbids on one device together: a volume holding a command of side A and a command of side B, in one case or in two, is refused",
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  },
+                  "side_a": {
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "prefix": {
+                          "type": "string",
+                          "maxLength": 8192,
+                          "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                          "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+                        },
+                        "with_parameter": {
+                          "description": "Counts only a command written with the parameter at this zero-based position of its signature, for an optional parameter that changes what the command does when it is given; absent: the prefix alone decides",
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 255
+                        }
+                      },
+                      "required": [
+                        "prefix"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "side_b": {
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "prefix": {
+                          "type": "string",
+                          "maxLength": 8192,
+                          "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                          "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+                        },
+                        "with_parameter": {
+                          "description": "Counts only a command written with the parameter at this zero-based position of its signature, for an optional parameter that changes what the command does when it is given; absent: the prefix alone decides",
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 255
+                        }
+                      },
+                      "required": [
+                        "prefix"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 400,
+                    "pattern": "^[^\\r\\n]+$",
+                    "description": "The statement of the product documentation the declaration rests on; the Hub quotes it when it refuses or reorders"
+                  }
+                },
+                "required": [
+                  "id",
+                  "side_a",
+                  "side_b",
+                  "source"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -766,6 +899,38 @@
               "run",
               "job",
               "reference"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "late_inputs": {
+          "description": "the inputs bound after the start (W06 R[7]): at projection only slot and run; at an evaluation or a run export also the reference to the result read then, or the missing fact when none was readable; absent when the workflow declares none",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "slot": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "run": {
+                "type": "string",
+                "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+              },
+              "reference": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+              },
+              "missing": {
+                "description": "why no record was read, in Chinese (D05 R[3] words for a record the runner may not read)",
+                "type": "string",
+                "pattern": "\\S"
+              }
+            },
+            "required": [
+              "slot",
+              "run"
             ],
             "additionalProperties": false
           }

@@ -33,12 +33,12 @@ test('personal entry writes, scoped full-text search and revoked tree references
   const entry = saved.out.personal_entry;
   assert.ok(entry);
   assert.equal(entry.status, 'unverified');
-  assert.match(saved.text, /个人条目已保存/);
-  assert.ok(saved.text.includes(entry.reference));
+  assert.match(saved.text, /个人资料已保存/);
+  assert.doesNotMatch(saved.text, /tree:|rec:/);
   const read = await client.call('get_nodes', { space: owner.user.id, paths: ['/notes'] });
   assert.equal(read.isError, false, read.text);
   assert.equal(read.out.nodes?.[0].entries[0].entry, entry.entry);
-  assert.match(read.text, /未核验/);
+  assert.equal(read.out.nodes?.[0].entries[0].status, 'unverified');
   const search = await client.call('get_nodes', { search: '可检索观察', scope: 'personal' });
   assert.equal(search.isError, false, search.text);
   assert.equal(search.out.matches?.length, 1);
@@ -72,7 +72,8 @@ test('private source imports verify exact quotations and capacity errors keep th
   assert.equal(saved.out.personal_entry?.status, 'verified');
   const fullEntry = await client.call('get_nodes', { reference: saved.out.personal_entry!.reference });
   assert.match(fullEntry.text, /已验证/);
-  assert.ok(fullEntry.text.includes('处理两项'));
+  assert.equal(fullEntry.out.content?.structure?.entry_status, 'verified');
+  assert.deepEqual(fullEntry.out.content?.structure?.grounds, [{ reference: source.out.reference, quotation: '处理两项' }]);
   assert.equal((await client.call('resolve_reference', { root: saved.out.personal_entry!.root, text: '处理两项', expect: 'quotation' })).out.resolution, 'resolved');
   const bad = await client.call('upload_file', { personal_entry: { kind: 'observation', statement: '合成错误引文', grounds: [{ reference: source.out.reference, quotation: '处理三项' }] } });
   assert.equal(bad.out.errors[0].code, 'SPACE_ENTRY_INVALID');
@@ -166,7 +167,7 @@ test('console password sessions browse the three spaces and owner forms enforce 
   const ownConsole = await openConsole(hub, owner.token), otherConsole = await openConsole(hub, other.token), adminConsole = await openConsole(hub, hub.admin.token);
   const home = await ownConsole.get('/console/knowledge');
   assert.equal(home.status, 200);
-  for (const text of ['全部', '我的', '团队', '服务器备份', '最近变化', '分享到团队记录'])
+  for (const text of ['全部', '我的', '公共空间', '服务器备份', '最近变化', '分享到公共空间记录'])
     assert.ok(home.body.includes(text), text);
   assert.ok(!home.body.includes('与我共享'),'the empty received group is hidden');
   assert.match((await ownConsole.get('/console/knowledge?scope=personal')).body,/导入我的知识/);
@@ -220,11 +221,17 @@ test('console password sessions browse the three spaces and owner forms enforce 
   const citation={reference:`tree:${cited.root}/合成/目录@${currentEntry.entry}`};
   await hub.records.store.put({kind:'submission',schema:'submission@1',provenance:'declared',body:citation,index:citationIndex(citation,'1',new Map([[cited.root,owner.user.id]]))});
   const nodeQuery='?'+new URLSearchParams({root:cited.root,path:'/合成/目录'});
-  const ownNode=await ownConsole.get('/console/api/knowledge/node'+nodeQuery);
-  assert.equal(ownNode.status,200,ownNode.body);assert.equal(JSON.parse(ownNode.body).citations.entries[0].count,1);
-  const sharedNode=await otherConsole.get('/console/api/knowledge/node'+nodeQuery);
-  assert.equal(sharedNode.status,200,sharedNode.body);assert.equal(JSON.parse(sharedNode.body).citations,null);
-  assert.ok(JSON.parse(sharedNode.body).entries[0].cited_count==null);
+  const entryPage=spacePath(owner.user.id,'/合成/目录',cited.root)+'&entry='+currentEntry.entry;
+  const ownNode=await ownConsole.get(entryPage);
+  assert.equal(ownNode.status,200,ownNode.body);
+  assert.match(ownNode.body,/合成控制台观察（修订）/);
+  assert.match(ownNode.body,/class="ch-stat-label">被引用次数<\/span><span class="ch-stat-value">1<\/span>/);
+  assert.match(ownNode.body,/data-label="被引用"><span class="num nowrap">1<\/span>/);
+  const sharedNode=await otherConsole.get(entryPage);
+  assert.equal(sharedNode.status,200,sharedNode.body);
+  assert.match(sharedNode.body,/合成控制台观察（修订）/);
+  assert.doesNotMatch(sharedNode.body,/被引用次数|data-label="被引用"/);
+  assert.equal((await adminConsole.get(entryPage)).status,404);
   const sharedTree=await otherConsole.get('/console/knowledge/tree'+nodeQuery);
   assert.equal(sharedTree.status,200,sharedTree.body);assert.ok(!sharedTree.body.includes('被引用'));
   const found = await otherConsole.get('/console/search?q=' + encodeURIComponent('控制台观察') + '&scope=shared');
@@ -232,6 +239,7 @@ test('console password sessions browse the three spaces and owner forms enforce 
   assert.ok(found.body.includes('合成控制台观察'));
   assert.equal((await ownConsole.post('/console/knowledge/do/revoke', { csrf: nonce, path: '/合成', audience: 'member', member_id: other.user.id })).status, 303);
   assert.equal((await otherConsole.get(spacePath(owner.user.id, '/合成/目录'))).status, 404);
+  assert.equal((await otherConsole.get(entryPage)).status,404);
   // Text that looks like a credential is written like any other (decisions 154, 161): the space does not refuse it.
   const credentialLike = await ownConsole.post('/console/knowledge/do/entry', { ...fields, statement: 'DB_PASSWORD=hunter22x' });
   assert.equal(credentialLike.status, 303);
@@ -302,7 +310,7 @@ test('private input labels follow actual reader rights and automatic production 
   const references=[{reference:'src:'+source.body.sha256},{reference:'src:'+source.body.sha256,artifact:source.digest},{reference:'rec:'+source.digest}];
   for(const reference of references){
     const started=await client.call('start_run',{pack:REVIEW_PACK,inputs:{map:reference}});
-    if(reference.reference.startsWith('rec:')){assert.equal(started.out.errors[0]?.code,'SOURCE_UNAVAILABLE',started.text);continue;}
+    if(reference.reference.startsWith('rec:')){assert.equal(started.out.errors[0]?.code,'demo-check.invalid_input',started.text);assert.equal(started.out.run,undefined);continue;}
     assert.equal(started.isError,false,started.text);assert.ok(started.out.run);
     assert.equal(await hub.hub.runs.getRun(hub.admin.principal,started.out.run.run),null,'administrator run queries never expose private projected labels');
     const stored=(await hub.records.store.find({key:'runs.id',value:started.out.run.run,kind:'run',limit:1})).items[0];
@@ -312,13 +320,16 @@ test('private input labels follow actual reader rights and automatic production 
   const before=(await hub.records.store.list({kind:'run',limit:500})).items.length;
   for(const reference of references){
     const refused=await client.call('start_run',{pack:LOCATE_PACK,inputs:{map:reference}});
-    assert.equal(refused.out.errors[0]?.code,reference.reference.startsWith('rec:')?'SOURCE_UNAVAILABLE':'RESULT_GROUNDS_UNREADABLE',refused.text);
+    if(reference.reference.startsWith('rec:')){assert.equal(refused.out.errors[0]?.code,'SUBMISSION_SCHEMA_VIOLATION',refused.text);assert.match(refused.text,/demo-check\.invalid_input/);}
+    else assert.equal(refused.out.errors[0]?.code,'RESULT_GROUNDS_UNREADABLE',refused.text);
     assert.equal(refused.out.run,undefined);assert.equal(refused.out.result,undefined);
   }
   assert.equal((await hub.records.store.list({kind:'run',limit:500})).items.length,before,'a refused automatic result does not leave its run');
   // An unassigned team pack is answered as not permitted at /pack first (D05 R[3], model 37); assigned, the private input stays neutral.
   await hub.assignPack(hub.admin.principal,LOCATE_PACK);
   const adminInput=await admin.call('start_run',{pack:LOCATE_PACK,inputs:{map:{reference:'rec:'+source.digest}}});assert.equal(adminInput.out.errors[0]?.code,'SOURCE_UNAVAILABLE');
+  await hub.assignPack(other.principal,LOCATE_PACK);
+  const outsiderInput=await outsider.call('start_run',{pack:LOCATE_PACK,inputs:{map:{reference:'rec:'+source.digest}}});assert.equal(outsiderInput.out.errors[0]?.code,'SOURCE_UNAVAILABLE');
   const ordinary=await hub.records.artifacts.ingest({bytes,mediaType:'application/json',name:'synthetic-common-map.json',origin:{upload:{session:null,message:null}},author:{user:owner.user.id},provenanceType:'declared',visibility:{readers:[owner.user.id],admins:true,packs:[],shareable:true}});
   const allowed=await client.call('start_run',{pack:REVIEW_PACK,inputs:{map:{reference:'src:'+ordinary.body.sha256,artifact:ordinary.digest}}});assert.equal(allowed.isError,false,allowed.text);assert.ok(allowed.out.run);
   assert.ok(await hub.hub.runs.getRun(hub.admin.principal,allowed.out.run.run),'a private duplicate does not hide an independent authorized input');
@@ -338,7 +349,8 @@ test('MCP and console search report skipped over-limit scopes while retaining av
   try{
     const found=await client.call('get_nodes',{search:'降级检索',scope:'all'});
     assert.equal(found.isError,false,found.text);assert.ok(found.out.matches?.some(hit=>hit.statement===input.statement));
-    assert.equal(found.out.warnings?.[0].code,'SPACE_INDEX_LIMIT');assert.match(found.text,/部分范围未检索/);
+    assert.equal(found.out.warnings?.[0].code,'SPACE_INDEX_LIMIT');assert.match(found.text,/未检索该范围/);
+    assert.ok(found.text.includes(failure.fix!));
     const response=await browser.get('/console/search?'+new URLSearchParams({q:'降级检索',scope:'all'}));
     assert.equal(response.status,200,response.body);assert.match(response.body,/未检索该范围/);assert.ok(response.body.includes(input.statement));
     spaces.search=async()=>{throw failure;};

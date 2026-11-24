@@ -20,7 +20,7 @@ export const AXES = {
   dynamic_terminal: { label: '动态层终态', ui: '沙箱复验结果', owner: 'V03', values: [{ code: 'pass', label: '通过' }, { code: 'fail', label: '失败', ui: '未通过' }, { code: 'no_verdict', label: '无判定', ui: '无结论' }, { code: 'not_run', label: '未运行' }, { code: 'incomplete', label: '未完成', ui: '检查未完成' }] },
   requirement_status: { label: '要求满足状态', ui: '要求项状态', owner: 'V03', values: [{ code: 'satisfied', label: '满足' }, { code: 'unsatisfied', label: '未满足' }, { code: 'pending', label: '未决' }] },
   unsatisfied_reason: { label: '未满足原因', owner: 'V03', values: [{ code: 'no_producer', label: '无生产者', ui: '无产出方' }, { code: 'abandoned', label: '已放弃' }, { code: 'outcome_mismatch', label: '终态不符合期望', ui: '结果不符合期望' }, { code: 'independence_unknown', label: '独立性未知' }] },
-  attribution: { label: '原因归类', owner: 'V04', values: [{ code: 'data_gap', label: '数据缺口' }, { code: 'author_input', label: '作者输入' }, { code: 'producer_error', label: '生产者错误' }, { code: 'transient', label: '瞬态' }, { code: 'target_side', label: '目标侧' }, { code: 'unattributed', label: '待归因' }] },
+  attribution: { label: '原因归类', owner: 'V04', values: [{ code: 'data_gap', label: '数据缺口', ui: '缺资料' }, { code: 'author_input', label: '作者输入', ui: '原始用例的问题' }, { code: 'producer_error', label: '生产者错误' }, { code: 'transient', label: '瞬态', ui: '临时故障' }, { code: 'target_side', label: '目标侧' }, { code: 'unattributed', label: '待归因', ui: '还没查清' }] },
   partition: { label: '分区', ui: '结果分类', owner: 'V05', values: [{ code: 'delivered', label: '已交付' }, { code: 'rejected', label: '已拒收' }, { code: 'quarantined', label: '已隔离', ui: '派发结果未确认' }, { code: 'incomplete', label: '未完成' }] },
   task_result: { label: '任务结果', owner: 'V05', values: [{ code: 'passed', label: '已通过' }, { code: 'delivered_pending', label: '已交付（含未决项）' }, { code: 'delivered_unsatisfied', label: '已交付（含未满足项）' }, { code: 'rejected', label: '已拒收' }, { code: 'incomplete', label: '未完成' }, { code: 'held', label: '派发结果未确认' }, { code: 'awaiting', label: '等待提交中' }, { code: 'abandoned', label: '已放弃' }] },
   environment_state: { label: '自动化测试环境状态', owner: 'D07', values: [{ code: 'available', label: '可用' }, { code: 'in_use', label: '使用中' }, { code: 'frozen', label: '已冻结' }, { code: 'deactivated', label: '已停用' }, { code: 'unknown', label: '未知' }] },
@@ -47,7 +47,7 @@ export const AXES = {
   disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '带期限的暂缓' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
   request_kind: { label: '请求种类', ui: '请求类型', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置', ui: '处置决策' }, { code: 'judgment', label: '判断', ui: '独立判定' }] },
   request_status: { label: '请求状态', owner: 'B07', values: [{ code: 'waiting', label: '等待回应中' }, { code: 'overdue', label: '已逾期' }, { code: 'answered', label: '已回答' }, { code: 'superseded', label: '已作废' }] },
-  permission_kind: { label: '许可种类', ui: '许可类型', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '工作流分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
+  permission_kind: { label: '许可种类', ui: '许可类型', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '工作流分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }, { code: 'resource_assign', label: '业务系统资源分配' }] },
   knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
   entry_kind: { label: '知识条目种类', ui: '知识条目类型', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }, { code: 'procedure', label: '步骤' }, { code: 'pitfall', label: '常见误区' }] },
   node_level: { label: '节点位置', owner: 'K01', values: [{ code: 'trunk', label: '干', ui: '大类' }, { code: 'branch', label: '枝', ui: '分类' }, { code: 'leaf', label: '叶', ui: '条目' }] },
@@ -55,7 +55,7 @@ export const AXES = {
   read_tier: { label: '读取档位', owner: 'B02', values: [{ code: 'model_readable', label: '模型可读' }, { code: 'function_bytes_only', label: '只许函数按引用读字节' }, { code: 'retain_only', label: '只保留' }] },
   home: { label: '家', owner: 'C01', values: [{ code: 'knowledge', label: '知识' }, { code: 'policy', label: '政策' }, { code: 'method', label: '方法' }, { code: 'resource', label: '资源' }] },
   ownership: { label: '归属', owner: 'C02', values: [{ code: 'generic', label: '通用' }, { code: 'product', label: '产品专用' }, { code: 'system_adapter', label: '系统适配器' }, { code: 'workflow', label: '工作流专用' }] },
-  producer_kind: { label: '生产者种类', ui: '生产者类型', owner: 'C08', values: [{ code: 'function', label: '函数' }, { code: 'model', label: '模型' }, { code: 'human', label: '人' }] },
+  producer_kind: { label: '生产者种类', ui: '生产者类型', owner: 'C08', values: [{ code: 'function', label: '函数', ui: '程序' }, { code: 'model', label: '模型' }, { code: 'human', label: '人', ui: '使用者' }] },
   determinism: { label: '确定性类', owner: 'C08', values: [{ code: 'deterministic', label: '确定性' }, { code: 'nondeterministic', label: '非确定性' }] },
   error_handling: { label: '错误处理', owner: 'W02', values: [{ code: 'repair', label: '修复' }, { code: 'reject', label: '进已拒收' }, { code: 'request', label: '发请求' }, { code: 'unknown', label: '记未知' }] },
   check_tier: { label: '检查档位', ui: '检查级别', owner: 'C05', values: [{ code: 'blocking', label: '阻断', ui: '阻断项' }, { code: 'advisory', label: '提示', ui: '提示项' }] },
@@ -95,13 +95,13 @@ export const AXES = {
   composition_basis: { label: '组成依据', ui: '组成来源', owner: 'K01', values: [{ code: 'release_record', label: '发布记录' }, { code: 'device_echo', label: '设备回显' }, { code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
   binding_status: { label: '版本绑定状态', owner: 'K03', values: [{ code: 'bound', label: '已绑定' }, { code: 'undeclared', label: '未声明' }, { code: 'conflict', label: '冲突' }] },
   binding_basis: { label: '版本绑定依据', ui: '版本绑定来源', owner: 'K03', values: [{ code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
-  knowledge_space_kind: { label: '知识空间', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '团队' }] },
+  knowledge_space_kind: { label: '知识空间', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '公共空间' }] },
   knowledge_entry_status: { label: '条目状态', owner: 'K02', values: [{ code: 'verified', label: '已核验', ui: '已验证' }, { code: 'unverified', label: '未核验', ui: '待验证' }, { code: 'withdrawn', label: '已撤回' }, { code: 'superseded', label: '被取代' }] },
-  knowledge_search_scope: { label: '搜索范围', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '团队' }, { code: 'shared', label: '共享给我的', ui: '与我共享' }, { code: 'all', label: '全部' }] },
+  knowledge_search_scope: { label: '搜索范围', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '公共空间' }, { code: 'shared', label: '共享给我的', ui: '与我共享' }, { code: 'all', label: '全部' }] },
   knowledge_grantee: { label: '授权对象', ui: '分享对象', owner: 'R01', values: [{ code: 'member', label: '指定成员' }, { code: 'administrators', label: '全体管理员' }] },
   knowledge_grant_action: { label: '授权操作', ui: '分享操作', owner: 'R01', values: [{ code: 'grant', label: '授权', ui: '已分享' }, { code: 'revoke', label: '收回授权', ui: '已收回分享' }] },
   knowledge_share_status: { label: '提交共享状态', ui: '分享到团队状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
-  audience_scope: { label: '可见范围', ui: '分享范围', owner: 'R01', values: [{ code: 'owner', label: '仅本人', ui: '仅自己可见' }, { code: 'members', label: '本人及 {n} 名成员', ui: '已分享给 {n} 名成员' }, { code: 'administrators', label: '本人及全体管理员（当前 {n} 人）', ui: '已分享给全体管理员（当前 {n} 人）' }, { code: 'combined', label: '本人及 {m} 名成员、全体管理员（当前 {n} 人）', ui: '已分享给 {m} 名成员、全体管理员（当前 {n} 人）' }, { code: 'received', label: '来自 {name}' }, { code: 'team', label: '全体成员（团队）', ui: '全员可见' }, { code: 'team_unassigned', label: '尚未指定成员' }, { code: 'product', label: '该产品线的读者' }] },
+  audience_scope: { label: '可见范围', ui: '分享范围', owner: 'R01', values: [{ code: 'owner', label: '仅本人', ui: '仅自己可见' }, { code: 'members', label: '本人及 {n} 名成员', ui: '已分享给 {n} 名成员' }, { code: 'administrators', label: '本人及全体管理员（当前 {n} 人）', ui: '已分享给全体管理员（当前 {n} 人）' }, { code: 'combined', label: '本人及 {m} 名成员、全体管理员（当前 {n} 人）', ui: '已分享给 {m} 名成员、全体管理员（当前 {n} 人）' }, { code: 'received', label: '来自 {name}' }, { code: 'team', label: '全体成员（团队）', ui: '全员可见' }, { code: 'team_unassigned', label: '尚未指定成员' }, { code: 'product', label: '该产品线的读者' }, { code: 'team_members', label: '该团队的成员', ui: '团队成员可见' }] },
   share_check: { label: '自动检查', owner: 'K02', values: [{ code: 'grounds', label: '依据可解析', ui: '来源可解析' }, { code: 'quotations', label: '引文逐字一致' }, { code: 'sources', label: '来源可共享' }, { code: 'duplicates', label: '与团队条目不重复' }, { code: 'credentials', label: '凭据扫描' }, { code: 'permission', label: '发布权' }, { code: 'structure', label: '结构校验' }, { code: 'sandbox', label: '沙箱运行（正反样例）' }, { code: 'references', label: '引用可解析' }, { code: 'size', label: '大小检查' }, { code: 'team_memory_status', label: '团队记忆状态' }, { code: 'personal_sources', label: '引用个人凭据来源的条目', ui: '引用私人凭据来源的条目' }, { code: 'local_only', label: '仅本机内容' }, { code: 'dependencies', label: '依赖的个人条目或技能可读', ui: '依赖的私人条目或技能可读' }] },
   knowledge_view: { label: '知识库内容', owner: 'K01', values: [{ code: 'knowledge', label: '知识' }, { code: 'memory', label: '记忆' }, { code: 'sources', label: '原文' }] },
   memory_status: { label: '记忆状态', owner: 'K01', values: [{ code: 'enabled', label: '已启用' }, { code: 'disabled', label: '已停用' }, { code: 'superseded', label: '被取代' }] },
@@ -118,6 +118,14 @@ export const AXES = {
   source_attribution_status: { label: '团队来源确认', owner: 'B02', values: [{ code: 'unsigned', label: '未确认' }, { code: 'attributed', label: '已确认为团队来源' }] },
   source_location_status: { label: '原文定位状态', owner: 'B03', values: [{ code: 'resolved', label: '已定位' }, { code: 'ambiguous', label: '多处匹配' }, { code: 'unresolved', label: '未定位' }] },
   capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
+  reset_scope: { label: '重置范围', owner: 'D04', values: [{ code: 'history', label: '运行历史' }, { code: 'knowledge', label: '知识' }, { code: 'packs', label: '包' }, { code: 'config', label: '配置' }, { code: 'all', label: '全部' }] },
+  call_error_category: { label: '调用错误类别', owner: 'D05', values: [{ code: 'invalid_parameters', label: '参数无效' }, { code: 'permission_denied', label: '无权限' }, { code: 'not_found', label: '不存在' }, { code: 'occupied', label: '已被占用' }, { code: 'temporarily_unavailable', label: '暂时不可用' }] },
+  bot_model_protocol: { label: '机器人模型协议', owner: 'D06', values: [{ code: 'openai', label: 'OpenAI 对话补全协议' }, { code: 'anthropic', label: 'Anthropic 消息协议' }, { code: 'responses', label: 'OpenAI Responses 协议' }] },
+  external_identity_action: { label: '外部身份绑定操作', owner: 'R01', values: [{ code: 'bind', label: '绑定' }, { code: 'unbind', label: '解除绑定' }] },
+  external_identity_unbind_reason: { label: '外部身份解绑原因', owner: 'R01', values: [{ code: 'manual', label: '人工解除' }, { code: 'disabled', label: '停用账户' }, { code: 'deleted', label: '删除账户' }] },
+  bot_secret_action: { label: '机器人配置密钥操作', owner: 'D01', values: [{ code: 'set', label: '设置' }, { code: 'remove', label: '移除' }, { code: 'start_channel', label: '启用通道' }, { code: 'stop_channel', label: '停用通道' }] },
+  bot_secret_slot: { label: '机器人配置密钥槽位', owner: 'D01', values: [{ code: 'model', label: '机器人模型' }, { code: 'identity', label: '扫码登录应用' }, { code: 'channel', label: '私聊机器人通道' }] },
+  bot_message_role: { label: '机器人对话角色', owner: 'D06', values: [{ code: 'user', label: '成员' }, { code: 'assistant', label: '机器人' }, { code: 'notice', label: '状态提示' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -296,7 +304,7 @@ export function isUnsatisfiedReason(value: unknown): value is UnsatisfiedReason 
 export const ATTRIBUTION = ['data_gap', 'author_input', 'producer_error', 'transient', 'target_side', 'unattributed'] as const;
 export type Attribution = (typeof ATTRIBUTION)[number];
 export const ATTRIBUTION_LABEL = { 'data_gap': '数据缺口', 'author_input': '作者输入', 'producer_error': '生产者错误', 'transient': '瞬态', 'target_side': '目标侧', 'unattributed': '待归因' } as const satisfies { readonly [K in Attribution]: string };
-export const ATTRIBUTION_UI = { 'data_gap': '数据缺口', 'author_input': '作者输入', 'producer_error': '生产者错误', 'transient': '瞬态', 'target_side': '目标侧', 'unattributed': '待归因' } as const satisfies { readonly [K in Attribution]: string };
+export const ATTRIBUTION_UI = { 'data_gap': '缺资料', 'author_input': '原始用例的问题', 'producer_error': '生产者错误', 'transient': '临时故障', 'target_side': '目标侧', 'unattributed': '还没查清' } as const satisfies { readonly [K in Attribution]: string };
 export const AttributionSchema = z.enum(ATTRIBUTION);
 export function isAttribution(value: unknown): value is Attribution {
   return (ATTRIBUTION as readonly unknown[]).includes(value);
@@ -563,10 +571,10 @@ export function isRequestStatus(value: unknown): value is RequestStatus {
 }
 
 /** 许可种类 (B04) */
-export const PERMISSION_KIND = ['publish', 'assign', 'publish_right', 'resource_config', 'share'] as const;
+export const PERMISSION_KIND = ['publish', 'assign', 'publish_right', 'resource_config', 'share', 'resource_assign'] as const;
 export type PermissionKind = (typeof PERMISSION_KIND)[number];
-export const PERMISSION_KIND_LABEL = { 'publish': '发布记录', 'assign': '工作流分配', 'publish_right': '发布权授予', 'resource_config': '资源配置', 'share': '分享' } as const satisfies { readonly [K in PermissionKind]: string };
-export const PERMISSION_KIND_UI = { 'publish': '发布记录', 'assign': '使用范围', 'publish_right': '维护人', 'resource_config': '资源配置', 'share': '分享' } as const satisfies { readonly [K in PermissionKind]: string };
+export const PERMISSION_KIND_LABEL = { 'publish': '发布记录', 'assign': '工作流分配', 'publish_right': '发布权授予', 'resource_config': '资源配置', 'share': '分享', 'resource_assign': '业务系统资源分配' } as const satisfies { readonly [K in PermissionKind]: string };
+export const PERMISSION_KIND_UI = { 'publish': '发布记录', 'assign': '使用范围', 'publish_right': '维护人', 'resource_config': '资源配置', 'share': '分享', 'resource_assign': '业务系统资源分配' } as const satisfies { readonly [K in PermissionKind]: string };
 export const PermissionKindSchema = z.enum(PERMISSION_KIND);
 export function isPermissionKind(value: unknown): value is PermissionKind {
   return (PERMISSION_KIND as readonly unknown[]).includes(value);
@@ -646,7 +654,7 @@ export function isOwnership(value: unknown): value is Ownership {
 export const PRODUCER_KIND = ['function', 'model', 'human'] as const;
 export type ProducerKind = (typeof PRODUCER_KIND)[number];
 export const PRODUCER_KIND_LABEL = { 'function': '函数', 'model': '模型', 'human': '人' } as const satisfies { readonly [K in ProducerKind]: string };
-export const PRODUCER_KIND_UI = { 'function': '函数', 'model': '模型', 'human': '人' } as const satisfies { readonly [K in ProducerKind]: string };
+export const PRODUCER_KIND_UI = { 'function': '程序', 'model': '模型', 'human': '使用者' } as const satisfies { readonly [K in ProducerKind]: string };
 export const ProducerKindSchema = z.enum(PRODUCER_KIND);
 export function isProducerKind(value: unknown): value is ProducerKind {
   return (PRODUCER_KIND as readonly unknown[]).includes(value);
@@ -1045,8 +1053,8 @@ export function isBindingBasis(value: unknown): value is BindingBasis {
 /** 知识空间 (K01) */
 export const KNOWLEDGE_SPACE_KIND = ['personal', 'team'] as const;
 export type KnowledgeSpaceKind = (typeof KNOWLEDGE_SPACE_KIND)[number];
-export const KNOWLEDGE_SPACE_KIND_LABEL = { 'personal': '个人', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
-export const KNOWLEDGE_SPACE_KIND_UI = { 'personal': '我的', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
+export const KNOWLEDGE_SPACE_KIND_LABEL = { 'personal': '个人', 'team': '公共空间' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
+export const KNOWLEDGE_SPACE_KIND_UI = { 'personal': '我的', 'team': '公共空间' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
 export const KnowledgeSpaceKindSchema = z.enum(KNOWLEDGE_SPACE_KIND);
 export function isKnowledgeSpaceKind(value: unknown): value is KnowledgeSpaceKind {
   return (KNOWLEDGE_SPACE_KIND as readonly unknown[]).includes(value);
@@ -1065,8 +1073,8 @@ export function isKnowledgeEntryStatus(value: unknown): value is KnowledgeEntryS
 /** 搜索范围 (K01) */
 export const KNOWLEDGE_SEARCH_SCOPE = ['personal', 'team', 'shared', 'all'] as const;
 export type KnowledgeSearchScope = (typeof KNOWLEDGE_SEARCH_SCOPE)[number];
-export const KNOWLEDGE_SEARCH_SCOPE_LABEL = { 'personal': '个人', 'team': '团队', 'shared': '共享给我的', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
-export const KNOWLEDGE_SEARCH_SCOPE_UI = { 'personal': '我的', 'team': '团队', 'shared': '与我共享', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
+export const KNOWLEDGE_SEARCH_SCOPE_LABEL = { 'personal': '个人', 'team': '公共空间', 'shared': '共享给我的', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
+export const KNOWLEDGE_SEARCH_SCOPE_UI = { 'personal': '我的', 'team': '公共空间', 'shared': '与我共享', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
 export const KnowledgeSearchScopeSchema = z.enum(KNOWLEDGE_SEARCH_SCOPE);
 export function isKnowledgeSearchScope(value: unknown): value is KnowledgeSearchScope {
   return (KNOWLEDGE_SEARCH_SCOPE as readonly unknown[]).includes(value);
@@ -1103,10 +1111,10 @@ export function isKnowledgeShareStatus(value: unknown): value is KnowledgeShareS
 }
 
 /** 可见范围 (R01) */
-export const AUDIENCE_SCOPE = ['owner', 'members', 'administrators', 'combined', 'received', 'team', 'team_unassigned', 'product'] as const;
+export const AUDIENCE_SCOPE = ['owner', 'members', 'administrators', 'combined', 'received', 'team', 'team_unassigned', 'product', 'team_members'] as const;
 export type AudienceScope = (typeof AUDIENCE_SCOPE)[number];
-export const AUDIENCE_SCOPE_LABEL = { 'owner': '仅本人', 'members': '本人及 {n} 名成员', 'administrators': '本人及全体管理员（当前 {n} 人）', 'combined': '本人及 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全体成员（团队）', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
-export const AUDIENCE_SCOPE_UI = { 'owner': '仅自己可见', 'members': '已分享给 {n} 名成员', 'administrators': '已分享给全体管理员（当前 {n} 人）', 'combined': '已分享给 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全员可见', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者' } as const satisfies { readonly [K in AudienceScope]: string };
+export const AUDIENCE_SCOPE_LABEL = { 'owner': '仅本人', 'members': '本人及 {n} 名成员', 'administrators': '本人及全体管理员（当前 {n} 人）', 'combined': '本人及 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全体成员（团队）', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者', 'team_members': '该团队的成员' } as const satisfies { readonly [K in AudienceScope]: string };
+export const AUDIENCE_SCOPE_UI = { 'owner': '仅自己可见', 'members': '已分享给 {n} 名成员', 'administrators': '已分享给全体管理员（当前 {n} 人）', 'combined': '已分享给 {m} 名成员、全体管理员（当前 {n} 人）', 'received': '来自 {name}', 'team': '全员可见', 'team_unassigned': '尚未指定成员', 'product': '该产品线的读者', 'team_members': '团队成员可见' } as const satisfies { readonly [K in AudienceScope]: string };
 export const AudienceScopeSchema = z.enum(AUDIENCE_SCOPE);
 export function isAudienceScope(value: unknown): value is AudienceScope {
   return (AUDIENCE_SCOPE as readonly unknown[]).includes(value);
@@ -1272,6 +1280,86 @@ export function isCapacityUnit(value: unknown): value is CapacityUnit {
   return (CAPACITY_UNIT as readonly unknown[]).includes(value);
 }
 
+/** 重置范围 (D04) */
+export const RESET_SCOPE = ['history', 'knowledge', 'packs', 'config', 'all'] as const;
+export type ResetScope = (typeof RESET_SCOPE)[number];
+export const RESET_SCOPE_LABEL = { 'history': '运行历史', 'knowledge': '知识', 'packs': '包', 'config': '配置', 'all': '全部' } as const satisfies { readonly [K in ResetScope]: string };
+export const RESET_SCOPE_UI = { 'history': '运行历史', 'knowledge': '知识', 'packs': '包', 'config': '配置', 'all': '全部' } as const satisfies { readonly [K in ResetScope]: string };
+export const ResetScopeSchema = z.enum(RESET_SCOPE);
+export function isResetScope(value: unknown): value is ResetScope {
+  return (RESET_SCOPE as readonly unknown[]).includes(value);
+}
+
+/** 调用错误类别 (D05) */
+export const CALL_ERROR_CATEGORY = ['invalid_parameters', 'permission_denied', 'not_found', 'occupied', 'temporarily_unavailable'] as const;
+export type CallErrorCategory = (typeof CALL_ERROR_CATEGORY)[number];
+export const CALL_ERROR_CATEGORY_LABEL = { 'invalid_parameters': '参数无效', 'permission_denied': '无权限', 'not_found': '不存在', 'occupied': '已被占用', 'temporarily_unavailable': '暂时不可用' } as const satisfies { readonly [K in CallErrorCategory]: string };
+export const CALL_ERROR_CATEGORY_UI = { 'invalid_parameters': '参数无效', 'permission_denied': '无权限', 'not_found': '不存在', 'occupied': '已被占用', 'temporarily_unavailable': '暂时不可用' } as const satisfies { readonly [K in CallErrorCategory]: string };
+export const CallErrorCategorySchema = z.enum(CALL_ERROR_CATEGORY);
+export function isCallErrorCategory(value: unknown): value is CallErrorCategory {
+  return (CALL_ERROR_CATEGORY as readonly unknown[]).includes(value);
+}
+
+/** 机器人模型协议 (D06) */
+export const BOT_MODEL_PROTOCOL = ['openai', 'anthropic', 'responses'] as const;
+export type BotModelProtocol = (typeof BOT_MODEL_PROTOCOL)[number];
+export const BOT_MODEL_PROTOCOL_LABEL = { 'openai': 'OpenAI 对话补全协议', 'anthropic': 'Anthropic 消息协议', 'responses': 'OpenAI Responses 协议' } as const satisfies { readonly [K in BotModelProtocol]: string };
+export const BOT_MODEL_PROTOCOL_UI = { 'openai': 'OpenAI 对话补全协议', 'anthropic': 'Anthropic 消息协议', 'responses': 'OpenAI Responses 协议' } as const satisfies { readonly [K in BotModelProtocol]: string };
+export const BotModelProtocolSchema = z.enum(BOT_MODEL_PROTOCOL);
+export function isBotModelProtocol(value: unknown): value is BotModelProtocol {
+  return (BOT_MODEL_PROTOCOL as readonly unknown[]).includes(value);
+}
+
+/** 外部身份绑定操作 (R01) */
+export const EXTERNAL_IDENTITY_ACTION = ['bind', 'unbind'] as const;
+export type ExternalIdentityAction = (typeof EXTERNAL_IDENTITY_ACTION)[number];
+export const EXTERNAL_IDENTITY_ACTION_LABEL = { 'bind': '绑定', 'unbind': '解除绑定' } as const satisfies { readonly [K in ExternalIdentityAction]: string };
+export const EXTERNAL_IDENTITY_ACTION_UI = { 'bind': '绑定', 'unbind': '解除绑定' } as const satisfies { readonly [K in ExternalIdentityAction]: string };
+export const ExternalIdentityActionSchema = z.enum(EXTERNAL_IDENTITY_ACTION);
+export function isExternalIdentityAction(value: unknown): value is ExternalIdentityAction {
+  return (EXTERNAL_IDENTITY_ACTION as readonly unknown[]).includes(value);
+}
+
+/** 外部身份解绑原因 (R01) */
+export const EXTERNAL_IDENTITY_UNBIND_REASON = ['manual', 'disabled', 'deleted'] as const;
+export type ExternalIdentityUnbindReason = (typeof EXTERNAL_IDENTITY_UNBIND_REASON)[number];
+export const EXTERNAL_IDENTITY_UNBIND_REASON_LABEL = { 'manual': '人工解除', 'disabled': '停用账户', 'deleted': '删除账户' } as const satisfies { readonly [K in ExternalIdentityUnbindReason]: string };
+export const EXTERNAL_IDENTITY_UNBIND_REASON_UI = { 'manual': '人工解除', 'disabled': '停用账户', 'deleted': '删除账户' } as const satisfies { readonly [K in ExternalIdentityUnbindReason]: string };
+export const ExternalIdentityUnbindReasonSchema = z.enum(EXTERNAL_IDENTITY_UNBIND_REASON);
+export function isExternalIdentityUnbindReason(value: unknown): value is ExternalIdentityUnbindReason {
+  return (EXTERNAL_IDENTITY_UNBIND_REASON as readonly unknown[]).includes(value);
+}
+
+/** 机器人配置密钥操作 (D01) */
+export const BOT_SECRET_ACTION = ['set', 'remove', 'start_channel', 'stop_channel'] as const;
+export type BotSecretAction = (typeof BOT_SECRET_ACTION)[number];
+export const BOT_SECRET_ACTION_LABEL = { 'set': '设置', 'remove': '移除', 'start_channel': '启用通道', 'stop_channel': '停用通道' } as const satisfies { readonly [K in BotSecretAction]: string };
+export const BOT_SECRET_ACTION_UI = { 'set': '设置', 'remove': '移除', 'start_channel': '启用通道', 'stop_channel': '停用通道' } as const satisfies { readonly [K in BotSecretAction]: string };
+export const BotSecretActionSchema = z.enum(BOT_SECRET_ACTION);
+export function isBotSecretAction(value: unknown): value is BotSecretAction {
+  return (BOT_SECRET_ACTION as readonly unknown[]).includes(value);
+}
+
+/** 机器人配置密钥槽位 (D01) */
+export const BOT_SECRET_SLOT = ['model', 'identity', 'channel'] as const;
+export type BotSecretSlot = (typeof BOT_SECRET_SLOT)[number];
+export const BOT_SECRET_SLOT_LABEL = { 'model': '机器人模型', 'identity': '扫码登录应用', 'channel': '私聊机器人通道' } as const satisfies { readonly [K in BotSecretSlot]: string };
+export const BOT_SECRET_SLOT_UI = { 'model': '机器人模型', 'identity': '扫码登录应用', 'channel': '私聊机器人通道' } as const satisfies { readonly [K in BotSecretSlot]: string };
+export const BotSecretSlotSchema = z.enum(BOT_SECRET_SLOT);
+export function isBotSecretSlot(value: unknown): value is BotSecretSlot {
+  return (BOT_SECRET_SLOT as readonly unknown[]).includes(value);
+}
+
+/** 机器人对话角色 (D06) */
+export const BOT_MESSAGE_ROLE = ['user', 'assistant', 'notice'] as const;
+export type BotMessageRole = (typeof BOT_MESSAGE_ROLE)[number];
+export const BOT_MESSAGE_ROLE_LABEL = { 'user': '成员', 'assistant': '机器人', 'notice': '状态提示' } as const satisfies { readonly [K in BotMessageRole]: string };
+export const BOT_MESSAGE_ROLE_UI = { 'user': '成员', 'assistant': '机器人', 'notice': '状态提示' } as const satisfies { readonly [K in BotMessageRole]: string };
+export const BotMessageRoleSchema = z.enum(BOT_MESSAGE_ROLE);
+export function isBotMessageRole(value: unknown): value is BotMessageRole {
+  return (BOT_MESSAGE_ROLE as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1388,6 +1476,14 @@ export interface AxisValues {
   source_attribution_status: SourceAttributionStatus;
   source_location_status: SourceLocationStatus;
   capacity_unit: CapacityUnit;
+  reset_scope: ResetScope;
+  call_error_category: CallErrorCategory;
+  bot_model_protocol: BotModelProtocol;
+  external_identity_action: ExternalIdentityAction;
+  external_identity_unbind_reason: ExternalIdentityUnbindReason;
+  bot_secret_action: BotSecretAction;
+  bot_secret_slot: BotSecretSlot;
+  bot_message_role: BotMessageRole;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1506,6 +1602,14 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   source_attribution_status: SOURCE_ATTRIBUTION_STATUS_LABEL,
   source_location_status: SOURCE_LOCATION_STATUS_LABEL,
   capacity_unit: CAPACITY_UNIT_LABEL,
+  reset_scope: RESET_SCOPE_LABEL,
+  call_error_category: CALL_ERROR_CATEGORY_LABEL,
+  bot_model_protocol: BOT_MODEL_PROTOCOL_LABEL,
+  external_identity_action: EXTERNAL_IDENTITY_ACTION_LABEL,
+  external_identity_unbind_reason: EXTERNAL_IDENTITY_UNBIND_REASON_LABEL,
+  bot_secret_action: BOT_SECRET_ACTION_LABEL,
+  bot_secret_slot: BOT_SECRET_SLOT_LABEL,
+  bot_message_role: BOT_MESSAGE_ROLE_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1624,6 +1728,14 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   source_attribution_status: SOURCE_ATTRIBUTION_STATUS_UI,
   source_location_status: SOURCE_LOCATION_STATUS_UI,
   capacity_unit: CAPACITY_UNIT_UI,
+  reset_scope: RESET_SCOPE_UI,
+  call_error_category: CALL_ERROR_CATEGORY_UI,
+  bot_model_protocol: BOT_MODEL_PROTOCOL_UI,
+  external_identity_action: EXTERNAL_IDENTITY_ACTION_UI,
+  external_identity_unbind_reason: EXTERNAL_IDENTITY_UNBIND_REASON_UI,
+  bot_secret_action: BOT_SECRET_ACTION_UI,
+  bot_secret_slot: BOT_SECRET_SLOT_UI,
+  bot_message_role: BOT_MESSAGE_ROLE_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

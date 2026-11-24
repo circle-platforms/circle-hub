@@ -406,6 +406,10 @@ if [ "${DRY_RUN}" != 1 ]; then
 fi
 
 HOST_FOR_URL="${HTTPS_HOST:-127.0.0.1}"
+QUICKSTART_DEFINITION="${DATA}/current/docs/examples/quickstart-deployment.json"
+QUICKSTART_APPLY="${DATA}/quickstart-first-apply.json"
+QUICKSTART_PACK_DIR="${DATA}/current/packs/workflow/test-bed"
+QUICKSTART_WRITER="${DATA}/current/hub/platform/quickstart-first-apply.ts"
 say ""
 say "circle-hub 已安装。"
 say "  控制台：https://${HOST_FOR_URL}:${HTTPS_PORT}/console/"
@@ -416,6 +420,11 @@ if [ "${HUB_INSTALL_ADMIN_CREATED}" = 1 ]; then
 fi
 if [ "${OS}" = darwin ]; then
   case ":${PATH}:" in *":${WRAPPER_DIR}:"*) ;; *) say "  把 ${WRAPPER_DIR} 加进 PATH 后就能直接用 circle-hub 命令" ;; esac
+fi
+if [ "${HUB_INSTALL_ADMIN_CREATED}" = 1 ] && as_hub test -f "${QUICKSTART_DEFINITION}" && as_hub test -d "${QUICKSTART_PACK_DIR}" && as_hub test -f "${QUICKSTART_WRITER}"; then
+  as_hub "${NODE}" "${QUICKSTART_WRITER}" "${QUICKSTART_DEFINITION}" "${HUB_INSTALL_ADMIN_NAME}" "${QUICKSTART_PACK_DIR}" "${QUICKSTART_APPLY}" \
+    || fail "无法生成首次 apply 用的部署定义"
+  say "  下一步：circle-hub apply \"${QUICKSTART_APPLY}\""
 fi
 if [ -z "${HTTPS_HOST}" ]; then
   say "  现在只能在本机访问。要让内网其他电脑访问，重新安装时加 --https-host <这台机器的内网 IP>（已有部署时要先改部署设置，见文档）。"

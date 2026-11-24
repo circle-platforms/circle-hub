@@ -1,3 +1,4 @@
+import { TEST_KNOWLEDGE_READ_PORTS } from '../../../../hub/knowledge/testing/read-ports.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 import { labelOf } from '../../../../contracts/generated/vocabulary.ts';
 import {productVariableNameAvailable} from '../../../../hub/server/variables.ts';
@@ -105,7 +106,7 @@ before(async () => {
   await setSyntheticCredential(kit, connectors, admin, resource.id, 'username', CASE_INDEX_ACCOUNT.username);
   await setSyntheticCredential(kit, connectors, admin, resource.id, 'password', CASE_INDEX_ACCOUNT.password);
   await addSyntheticResource(kit, packs, connectors, admin, { system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${buildSite.origin}/builds` }, settings: { index_page: 'index.html' } });
-  knowledge = createKnowledge({ records: kit, parsers: createDefaultRegistry(), packs, external: connectors.reader, jev: null, sandbox: { requireOsIsolation: isolation }, clock: now, admin });
+  knowledge = createKnowledge({ ...TEST_KNOWLEDGE_READ_PORTS, records: kit, parsers: createDefaultRegistry(), packs, external: connectors.reader, jev: null, sandbox: { requireOsIsolation: isolation }, clock: now, admin });
   views = createKnowledgeReader(knowledge);
   famx = (await packs.productById('famx')) as ProductHandle;
   for(const variable of famx.product.variables??[])await kit.variables.setVariable(admin,variable.name,variable.default,'合成用例测试显式部署设置');

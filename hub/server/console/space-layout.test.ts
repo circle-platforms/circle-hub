@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {spaceLayout,inScope,knowledgeTabs} from './space-layout.ts';
 import {html,pageLayout,type Html} from './html.ts';
 const render=(content:Html)=>content.text+(content.layout.sidebar?.text??'');
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 test('the shared panel groups only current authorized paths and keeps displayed directories slash-free',async()=>{
  const visible=[{space:'owner',paths:['/allowed'],version:{body:{directories:['/','/allowed','/allowed/child','/private'],products:[],entries:[{path:'/allowed/child'},{path:'/private'}]}}}];
  const ctx={principal:{id:'reader'},url:new URL('http://127.0.0.1/console/knowledge?scope=shared'),userName:async()=> '合成授权人',deps:{packs:{},knowledge:{spaces:{visible:async()=>visible}}}} as unknown as PageContext;

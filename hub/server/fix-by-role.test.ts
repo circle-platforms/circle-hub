@@ -1,0 +1,172 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
+import { StartRunOutput, GetNodesOutput } from '../../contracts/src/tools.ts';
+import { COMMAND_METADATA } from './command-registry.ts';
+import {
+  circleHubFromMetadata,
+  circleHubFromParameters,
+  circleHubNamesIn,
+  fixByRole,
+  proseByRole,
+  registeredCommandName,
+} from './fix-by-role.ts';
+import { toolText } from './text.ts';
+
+const TRACE = 'a'.repeat(32);
+
+const ADMIN_PROTOCOL_CODES = [
+  'SOURCE_UNAVAILABLE',
+  'IDENTITY_UNMAPPED',
+  'LEASE_UNAVAILABLE',
+  'SOURCE_RETRYABLE',
+  'SOURCE_INTEGRITY_UNPROVEN',
+  'SOURCE_READ_FAILED',
+  'SOURCE_READ_LIMIT',
+  'SOURCE_REDIRECT_REFUSED',
+  'AUDIENCE_VISIBILITY_EXCEEDED',
+  'SPACE_CAPACITY_EXCEEDED',
+  'SPACE_INDEX_LIMIT',
+  'PACK_PERSONAL_CAPABILITY_DENIED',
+  'MEMORY_DOCUMENT_LIMIT',
+  'MEMORY_SPACE_LIMIT',
+  'MEMORY_TEAM_DISABLED',
+] as const;
+
+function assertCommandsRegistered(text: string): void {
+  for (const name of circleHubNamesIn(text)) {
+    assert.ok(
+      COMMAND_METADATA.some((command) => command.name === name),
+      `circle-hub ${name} must be in COMMAND_METADATA`,
+    );
+  }
+}
+
+test('registered helpers refuse unknown command names', () => {
+  assert.equal(registeredCommandName('pack'), 'pack');
+  assert.throws(() => registeredCommandName('not-a-real-command'), /COMMAND_METADATA/);
+  assert.match(circleHubFromParameters('pack.assign'), /^circle-hub pack assign /);
+  assert.match(circleHubFromMetadata('restore'), /^circle-hub restore /);
+  assertCommandsRegistered(circleHubFromParameters('lease.release'));
+  assertCommandsRegistered(circleHubFromMetadata('records'));
+});
+
+test('SOURCE_NOT_PERMITTED preserves the exact producer action for every role until object context is known', () => {
+  for (const memberFix of ['请管理员把它分配给你；用 list_task_packs 看你能用的任务包', '请主人分享这份原件', '请管理员核对命名文档输入']) {
+    assert.equal(fixByRole('SOURCE_NOT_PERMITTED', 'user', memberFix), memberFix);
+    assert.equal(fixByRole('SOURCE_NOT_PERMITTED', 'admin', memberFix), memberFix);
+  }
+  const unknown='请管理员 pack 分享读取权限；这段内容不能决定授权对象';
+  assert.equal(fixByRole('synthetic.unknown', 'admin', unknown), unknown);
+});
+
+test('LEASE_UNAVAILABLE member keeps contract; admin gets lease.release from registry', () => {
+  const member = PROTOCOL_CODES.LEASE_UNAVAILABLE.fix;
+  assert.equal(fixByRole('LEASE_UNAVAILABLE', 'user'), member);
+  const admin = fixByRole('LEASE_UNAVAILABLE', 'admin')!;
+  assert.doesNotMatch(admin, /请管理员/);
+  assert.match(admin, /circle-hub lease release /);
+  assert.doesNotMatch(admin, /控制台「连接」页/);
+  assert.doesNotMatch(admin, /不补造到期时刻/);
+  assertCommandsRegistered(admin);
+});
+
+test('SOURCE_INTEGRITY_UNPROVEN admin points at restore and records from registry', () => {
+  assert.equal(fixByRole('SOURCE_INTEGRITY_UNPROVEN', 'user'), PROTOCOL_CODES.SOURCE_INTEGRITY_UNPROVEN.fix);
+  const admin = fixByRole('SOURCE_INTEGRITY_UNPROVEN', 'admin')!;
+  assert.doesNotMatch(admin, /请管理员/);
+  assert.match(admin, /circle-hub restore /);
+  assert.match(admin, /circle-hub records /);
+  assertCommandsRegistered(admin);
+});
+
+test('every admin-ask protocol code has an admin fix without imperative 请管理员', () => {
+  for (const code of ADMIN_PROTOCOL_CODES) {
+    const member = PROTOCOL_CODES[code].fix;
+    assert.match(member, /管理员/);
+    const admin = fixByRole(code, 'admin', member)!;
+    assert.doesNotMatch(admin, /请管理员/);
+    assertCommandsRegistered(admin);
+  }
+});
+
+test('toolText and structured-style fix stay role-split for SOURCE_NOT_PERMITTED', () => {
+  const errors = [{
+    code: 'SOURCE_NOT_PERMITTED' as const,
+    message: '当前账户未获授权使用工作流「recompose」',
+    fix: '请联系管理员为该账户或所在团队分配此工作流',
+    path: '/pack',
+  }];
+  const answer = StartRunOutput.parse({ call_result: 'error', errors, trace: TRACE });
+  const memberText = toolText('start_run', answer, { caller: { role: 'user' } });
+  assert.match(memberText, /^无权限：/);
+  assert.match(memberText, /请联系管理员为该账户或所在团队分配此工作流/);
+  assert.doesNotMatch(memberText, /circle-hub pack assign|状态|判断|决定者/);
+
+  const adminFix = fixByRole('SOURCE_NOT_PERMITTED', 'admin', errors[0].fix)!;
+  const adminAnswer = StartRunOutput.parse({
+    call_result: 'error',
+    errors: [{ ...errors[0], fix: adminFix }],
+    trace: TRACE,
+  });
+  const adminText = toolText('start_run', adminAnswer, { caller: { role: 'admin' } });
+  assert.doesNotMatch(adminText, /请管理员|状态|判断|决定者/);
+  assert.match(adminText, /^无权限：/);
+  assert.match(adminText, /控制台「团队」页/);
+  assert.doesNotMatch(adminText, /pack assign .*recompose/);
+  assert.equal(adminAnswer.errors[0].fix, adminFix);
+  assertCommandsRegistered(adminText);
+  assertCommandsRegistered(adminFix);
+});
+
+test('toolText role-split for LEASE_UNAVAILABLE', () => {
+  const memberFix = PROTOCOL_CODES.LEASE_UNAVAILABLE.fix;
+  const message = '键 bed/合成环境/client0 上有未到期的占用（持有运行 run_abc，取得于 2026-11-14T05:00:00.000Z，是你自己的运行）';
+  const answer = StartRunOutput.parse({
+    call_result: 'error',
+    errors: [{ code: 'LEASE_UNAVAILABLE', message, fix: memberFix }],
+    trace: TRACE,
+  });
+  const memberText = toolText('start_run', answer, { caller: { role: 'user' } });
+  assert.ok(memberText.includes(message));
+  assert.doesNotMatch(memberText, /^已被占用：|合成环境」正由当前账户/);
+  const adminFix = fixByRole('LEASE_UNAVAILABLE', 'admin', memberFix)!;
+  const adminText = toolText('start_run', StartRunOutput.parse({
+    call_result: 'error',
+    errors: [{ code: 'LEASE_UNAVAILABLE', message, fix: adminFix }],
+    trace: TRACE,
+  }), { caller: { role: 'admin' } });
+  assert.ok(adminText.includes(message));
+  assert.doesNotMatch(adminText, /lease release bed\/合成环境/);
+  assertCommandsRegistered(adminText);
+});
+
+test('proseByRole covers the five hardcoded text.ts ask-admin lines', () => {
+  const memberList = proseByRole('user', 'unassigned_packs', { usable: 0, unassigned: 5 });
+  assert.equal(memberList, '当前账户可用的工作流和技能共 0 个。另有 5 个未分配给当前账户，名称不列出。请联系管理员把该账户加入团队或分配工作流。');
+  const adminList = proseByRole('admin', 'unassigned_packs', { usable: 0, unassigned: 5 });
+  assert.match(adminList, /该成员可用的工作流和技能共 0 个。另有 5 个未分配给该成员，名称不列出。请联系管理员把该账户加入团队或分配工作流。/);
+  assert.match(adminList, /circle-hub pack assign /);
+  assert.doesNotMatch(adminList, /请管理员/);
+  assertCommandsRegistered(adminList);
+  for (const kind of ['context_unread', 'contribution_unreadable', 'content_unread', 'missing_result_record', 'fallback'] as const) {
+    const member = proseByRole('user', kind, { usable: 0, unassigned: 5 });
+    const admin = proseByRole('admin', kind, { usable: 0, unassigned: 5 });
+    assert.match(member, /请管理员|或请管理员/);
+    assert.doesNotMatch(admin, /请管理员/);
+    assertCommandsRegistered(admin);
+  }
+});
+
+test('get_nodes integrity error text for admin uses registry commands', () => {
+  const adminFix = fixByRole('SOURCE_INTEGRITY_UNPROVEN', 'admin')!;
+  const text = toolText('get_nodes', GetNodesOutput.parse({
+    call_result: 'error',
+    errors: [{ code: 'SOURCE_INTEGRITY_UNPROVEN', message: '缺少经摘要核验的知识原件', fix: adminFix }],
+    trace: TRACE,
+  }), { caller: { role: 'admin' } });
+  assert.doesNotMatch(text, /请管理员|状态|判断|决定者/);
+  assert.match(text, /^暂时不可用：/);
+  assert.match(text, /circle-hub restore /);
+  assertCommandsRegistered(text);
+});

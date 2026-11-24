@@ -70,7 +70,6 @@
     "safety_defect_projection"
   ],
   "pipelines": [
-    "legacy",
     "recomposed"
   ],
   "declaration_roles": [

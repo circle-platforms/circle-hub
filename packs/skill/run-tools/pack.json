@@ -1,0 +1,25 @@
+{
+  "schema": "pack@1",
+  "id": "run-tools",
+  "version": "1.0.3",
+  "kind": "skill",
+  "title": "运行工具",
+  "description": "客户端本地工具围绕 Hub 运行要做的事：取运行导出、分文件提交。工作流内嵌使用，不判断内容",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "ed9ace6d1f1efbe561c4ad6013ecfc4713b7eab7422577a8e879407f1e9dc1c4",
+      "size": 443
+    },
+    {
+      "path": "functions/modules/hub-client/index.ts",
+      "sha256": "a108ab67eca392a3c59fa57fb1ff99f5e7bebfccbc1fad15181857fb85fdc4fc",
+      "size": 15494
+    },
+    {
+      "path": "skill.json",
+      "sha256": "c6555e8654daf6ee5cb55e0679715267baaa83dfa2f828554ff8c47451b36d5d",
+      "size": 261
+    }
+  ]
+}

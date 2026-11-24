@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-compile-criterion-review",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "kind": "workflow",
   "title": "编译判据独立复核",
   "description": "由非作者账号复核类型化判据，机械核原声明与逐字引文",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "dc5bfcbfc74fe8af6c43b2960e84bdb93a45565a34dbdc98782f54448e676b2b",
-      "size": 791
+      "sha256": "267b683b93769a328f18a5b526d4e8e9f63eaa3a3008ad59577b8c95428c8473",
+      "size": 988
     },
     {
       "path": "checks.json",

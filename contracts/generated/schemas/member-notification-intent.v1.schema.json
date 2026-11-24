@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "member-notification-intent@1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "dispatch"
+    },
+    "receipt": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "event": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "member": {
+      "type": "string",
+      "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "issuer": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "subject": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "channel": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "user",
+        "assistant",
+        "notice"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]{1,64}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "text_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "text_size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "file_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "file_size": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "name_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "write": {
+      "type": "object",
+      "properties": {
+        "interaction": {
+          "type": "string",
+          "enum": [
+            "submit_then_read"
+          ]
+        },
+        "effect_class": {
+          "type": "string",
+          "const": "notification"
+        },
+        "retry_safety": {
+          "type": "string",
+          "const": "unsafe"
+        },
+        "signing": {
+          "type": "string",
+          "const": "service_on_behalf"
+        },
+        "reversible": {
+          "type": "boolean",
+          "const": false
+        },
+        "target_key": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "audience": {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "evidence": {
+          "type": "object",
+          "properties": {
+            "call": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "pointer": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+              "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+            }
+          },
+          "required": [
+            "call",
+            "pointer"
+          ],
+          "additionalProperties": false
+        },
+        "before_state": {
+          "type": "object",
+          "properties": {
+            "call": {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "arguments": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "timeout_ms": {
+                  "default": 30000,
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 600000
+                }
+              },
+              "required": [
+                "tool",
+                "arguments",
+                "timeout_ms"
+              ],
+              "additionalProperties": false
+            },
+            "pointer": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+              "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+            },
+            "expected": {},
+            "conditional_write": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "call",
+            "pointer",
+            "expected",
+            "conditional_write"
+          ],
+          "additionalProperties": false
+        },
+        "refusal": {
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+              "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+            },
+            "reached_device": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+              "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+            }
+          },
+          "required": [
+            "stage",
+            "reached_device"
+          ],
+          "additionalProperties": false
+        },
+        "writes_hub_records": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "interaction",
+        "effect_class",
+        "retry_safety",
+        "signing",
+        "reversible",
+        "target_key",
+        "audience",
+        "evidence",
+        "refusal",
+        "writes_hub_records"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "receipt",
+    "event",
+    "member",
+    "issuer",
+    "subject",
+    "channel",
+    "role",
+    "sha256",
+    "size",
+    "text_sha256",
+    "text_size",
+    "file_sha256",
+    "file_size",
+    "name_sha256",
+    "write"
+  ],
+  "additionalProperties": false
+}

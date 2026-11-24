@@ -7,7 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { HubConfig, Limits } from '../config/index.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
-import type { Principal, RecordsKit, User } from '../records/api.ts';
+import { memberCapabilities, type Principal, type RecordsKit, type User } from '../records/api.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
@@ -29,6 +29,7 @@ export interface TestServerOptions {
   withoutRunsDetail?: boolean;
   /** Intervals and limits of the console's live updates. */
   live?: AppOptions['live'];
+  observation?: (records: TestRecordsKit) => NonNullable<AppOptions['observation']>;
   /** A command bridge over this test's scratch records, created before its HTTP listener starts. */
   bridge?: (records: TestRecordsKit) => NonNullable<AppOptions['bridge']>;
   /** Keepalive timing for long tool calls (see AppOptions). */
@@ -123,6 +124,16 @@ export function fakeDeps(
   const deps: ServerDeps = {
     config,
     records,
+    memberCapabilities: (by, userId, packSummaries) => memberCapabilities(records, {
+      canUsePack: (target, pack) => records.authorizations.canUse(target.id, pack),
+      publicWorkflowIds: async () => workflows.packs.filter(pack => pack.kind === 'workflow' && pack.summary !== null).map(pack => pack.id),
+      packs: target => packSummaries !== undefined ? Promise.resolve(packSummaries) : workflows.summaries(target),
+      connections: async target => (await fakes.resources.list(target)).map(item => ({
+        id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,
+      })),
+      personalPackUse: async () => false,
+      environments: async () => ({ ready: false, items: [], missing: '合成环境权限端口未配置', nextAction: '配置合成环境权限端口后查询' }),
+    }, by, userId),
     runs: fakes.runs,
     knowledge: fakes.knowledge,
     workflows,
@@ -149,7 +160,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       limits: { ...records.config.limits },
     };
     const { deps, fakes } = fakeDeps(config, records, options);
-    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.live === undefined ? {} : { live: options.live }), ...(options.bridge ? { bridge: options.bridge(records) } : {}), ...(options.keepalive ? { keepalive: options.keepalive } : {}) });
+    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.live === undefined ? {} : { live: options.live }), ...(options.bridge ? { bridge: options.bridge(records) } : {}), ...(options.observation ? { observation: options.observation(records) } : {}), ...(options.keepalive ? { keepalive: options.keepalive } : {}) });
     const info = await app.listen();
     // Administrators sign in to the console with a password too (owner, 2026-11-02); the synthetic one never needs changing.
     const boot = await records.principals.bootstrapAdmin('管理员', { password: SYNTHETIC_CONSOLE_PASSWORD, mustChange: false });

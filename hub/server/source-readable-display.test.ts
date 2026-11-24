@@ -11,15 +11,17 @@ test('source text shows two access outcomes while preserving the detailed tier a
     {reference,read_tier:'function_bytes_only',readable:false,structure:{summary:{count:1}},note:'只许函数按引用读字节'},
     {reference,read_tier:'retain_only',readable:false,note:'含凭据，原文不可读'},
   ] as const;
-  const expected=['模型可读','原文不可读','原文不可读'];
-  for (const [i,content] of contents.entries()) {
+  for (const content of contents) {
     const answer=GetNodesOutput.parse({call_result:'ok',errors:[],content,trace:TRACE});
     const before=JSON.stringify(answer);
     const text=toolText('get_nodes',answer,{paging:true});
-    assert.ok(text.startsWith(`内容 ${reference}：${expected[i]}\n`));
     if ('note' in content) assert.ok(text.includes(content.note));
-    if ('text' in content) assert.ok(text.includes(content.text));
-    else assert.ok(!text.includes('合成原文'));
+    if ('text' in content) assert.equal(text,`原文（${content.text.length} 个字符）：\n${content.text}`);
+    else {
+      assert.match(text,/原文尚未读出；状态未知；原因缺资料；下一步/);
+      assert.ok(!text.includes('合成原文'));
+    }
+    assert.ok(!text.includes(reference));
     assert.equal(answer.content?.read_tier,content.read_tier);
     assert.equal(JSON.stringify(answer),before,'rendering does not change structured answers or historical bytes');
   }
@@ -36,5 +38,5 @@ test('a source held back at retain_only says it is not released and that reading
     assert.match(text,step);assert.ok(!/circle-hub /.test(text),'the caller text names no administrator command');
   }
   for (const content of [{reference,read_tier:'model_readable',readable:true,text:'合成原文'},{reference,read_tier:'function_bytes_only',readable:false,structure:{summary:{count:1}},note:'只许函数按引用读字节'}] as const)
-    assert.doesNotMatch(toolText('get_nodes',GetNodesOutput.parse({call_result:'ok',errors:[],content,trace:TRACE}),{paging:true}),/下一步：请管理员核看/);
+    assert.doesNotMatch(toolText('get_nodes',GetNodesOutput.parse({call_result:'ok',errors:[],content,trace:TRACE}),{paging:true}),/下一步请管理员核看/);
 });

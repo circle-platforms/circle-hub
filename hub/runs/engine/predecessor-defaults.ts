@@ -11,9 +11,8 @@ import {isAbandonedResult} from './management.ts';
 import {canSeeRun} from './readers.ts';
 import {INDEX,runById,submissionByDigest} from './store.ts';
 
-/** Newest accepted submitted validation, never a production result or a system/management delivery. */
-export async function latestSubmittedResult(ctx:EngineContext,predecessor:StoredRecord<RunRecord>):Promise<StoredRecord<ValidationResult>|null>{
-  return ctx.lock('submit:'+predecessor.body.run,async()=>{
+export async function latestSubmittedResult(ctx:EngineContext,predecessor:StoredRecord<RunRecord>,options:{locked?:boolean}={}):Promise<StoredRecord<ValidationResult>|null>{
+  const read=async()=>{
     const store=ctx.deps.records.store;
     let cursor:string|null=null;
     do{
@@ -25,7 +24,8 @@ export async function latestSubmittedResult(ctx:EngineContext,predecessor:Stored
       cursor=page.next;
     }while(cursor!==null);
     return null;
-  });
+  };
+  return options.locked===false?read():ctx.lock('submit:'+predecessor.body.run,read);
 }
 
 const REVISION=/@([0-9a-f]{64}(?:\.\.[0-9a-f]{64})?)$/;
@@ -60,9 +60,19 @@ async function acceptedOf(ctx:EngineContext,user:Principal,runId:string,expected
   return{run:record.body.run,reference:recReference(result.digest)};
 }
 
-export async function defaultPredecessorInputs(ctx:EngineContext,workflow:LoadedWorkflow,predecessor:StoredRecord<RunRecord>|null,inputs:Record<string,InputBinding|InputBinding[]>,user:Principal):Promise<{inputs:Record<string,InputBinding|InputBinding[]>;defaults:InputDefault[]}>{
+async function lateRunOf(ctx:EngineContext,user:Principal,workflow:LoadedWorkflow,slot:string,runId:string,expected:string,path:string):Promise<StoredRecord<RunRecord>>{
+  const record=await runById(ctx.deps.records.store,runId);
+  if(record===null||!canSeeRun(user,record.body))throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION',`运行 ${runId} 不存在或当前用户不可见`,{path,fix:`改为一个可见的 ${expected} 运行编号；这个槽开运行后才取该运行的已受理结果，开始时不要求已有受理`})]);
+  if(packIdOf(record.body.pack)!==expected)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION',`运行 ${runId} 的任务包是 ${record.body.pack}，输入槽 ${slot} 只接受 ${expected} 的运行`,{path,fix:`改为 ${expected} 的运行编号，或直接给出已受理结果的 rec:`})]);
+  if(expected===workflow.pack.id)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION',`输入槽 ${slot} 开运行后再绑定的运行 ${runId} 是本工作流 ${workflow.pack.id} 自己的运行；这个槽只接受别的工作流的运行`,{path,fix:`本工作流的前一版本用 predecessor 接续；请任务包作者把 from_runs.pack 改为前序阶段的工作流`})]);
+  return record;
+}
+
+export async function defaultPredecessorInputs(ctx:EngineContext,workflow:LoadedWorkflow,predecessor:StoredRecord<RunRecord>|null,inputs:Record<string,InputBinding|InputBinding[]>,user:Principal):Promise<{inputs:Record<string,InputBinding|InputBinding[]>;defaults:InputDefault[];late:NonNullable<RunRecord['late_inputs']>}>{
   let current={...inputs};
   const defaults:InputDefault[]=[];
+  const late:NonNullable<RunRecord['late_inputs']>=[];
+  const without=(slot:string)=>{const {[slot]:_dropped,...rest}=current;current=rest;};
   const resultSlots=workflow.workflow.inputs.filter(slot=>slot.default_from_predecessor?.slot===undefined&&slot.role==='artifact_under_verification'&&slot.default_from_predecessor!==undefined&&!Object.hasOwn(current,slot.slot));
   if(predecessor!==null&&resultSlots.length>0){
     for(const slot of resultSlots){
@@ -107,6 +117,12 @@ export async function defaultPredecessorInputs(ctx:EngineContext,workflow:Loaded
       const matches=(await ancestors(ctx,predecessor)).filter(record=>packIdOf(record.body.pack)===expected);
       if(matches.length===0)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION',`血缘里没有 ${expected} 的运行`,{path:'/inputs/'+slot.slot,fix:`在 predecessor 中给出 ${expected} 的运行，或在 inputs.${slot.slot} 按运行编号给出`})]);
       if(!slot.many&&matches.length>1)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION',`血缘里有多个 ${expected} 运行`,{path:'/inputs/'+slot.slot,fix:`在 inputs.${slot.slot} 给出要绑定的那一个运行编号`})]);
+      if(slot.from_runs.after_start===true){
+        const record=await lateRunOf(ctx,user,workflow,slot.slot,matches[0].body.run,expected,'/inputs/'+slot.slot);
+        late.push({slot:slot.slot,run:record.body.run,defaulted:true});
+        without(slot.slot);
+        continue;
+      }
       const resolved=[];
       for(const record of matches){
         const result=await latestSubmittedResult(ctx,record);
@@ -116,6 +132,16 @@ export async function defaultPredecessorInputs(ctx:EngineContext,workflow:Loaded
         defaults.push({slot:slot.slot,predecessor:record.body.run,reference});
       }
       current={...current,[slot.slot]:slot.many?resolved:resolved[0]};
+      continue;
+    }
+    if(slot.from_runs.after_start===true&&listOf(given).some(binding=>'run' in binding)){
+      const list=listOf(given);
+      const path=Array.isArray(given)?`/inputs/${slot.slot}/0`:`/inputs/${slot.slot}`;
+      if(list.length!==1)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION',`输入槽 ${slot.slot} 开运行后只绑定一个运行，给了 ${list.length} 个绑定`,{path:'/inputs/'+slot.slot,fix:`只给一个 ${expected} 的运行编号 {run}；要冻结某一份已受理结果，改给它的 rec:`})]);
+      const binding=list[0] as {run:string};
+      const record=await lateRunOf(ctx,user,workflow,slot.slot,binding.run,expected,path);
+      late.push({slot:slot.slot,run:record.body.run});
+      without(slot.slot);
       continue;
     }
     const resolved:InputBinding[]=[];
@@ -128,5 +154,14 @@ export async function defaultPredecessorInputs(ctx:EngineContext,workflow:Loaded
     }
     current={...current,[slot.slot]:Array.isArray(given)||slot.many?resolved:resolved[0]};
   }
-  return{inputs:current,defaults};
+  return{inputs:current,defaults,late};
+}
+
+export function predecessorInputRefusal(error:unknown,predecessor:RunRecord|null,workflow:LoadedWorkflow):never{
+ if(!(error instanceof Refusal)||!predecessor)throw error;
+ const slots=new Set(workflow.workflow.inputs.map(input=>input.slot));
+ const sources=predecessor.sources.filter(source=>source.slot!==undefined&&slots.has(source.slot));
+ if(!sources.length)throw error;
+ const hint=`前序冻结输入：${sources.map(source=>`${source.slot}=${source.external??source.reference}`).join('；')}。按本工作流输入说明核对后显式填写，未自动沿用或改变绑定`;
+ throw new Refusal(error.errors.map(row=>({...row,fix:`${row.fix??''}；${hint}`})),error.adminNote);
 }

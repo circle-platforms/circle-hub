@@ -1,5 +1,5 @@
 import {time} from './format.ts';
-import {technicalCode,stat} from './presentation.ts';
+import {technicalCode} from './presentation.ts';
 import {packTitles,taskTitle} from './tasks.ts';
 // Read-only production results computed at start_run, separate from later model commentary; every value under its
 // interface term (display rule 20).
@@ -8,13 +8,15 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import { INTERFACE_LABELS, NOT_APPLICABLE, coverageText, statusText, terminalKind, terminalText } from '../claims.ts';
 import { countsLine } from '../text.ts';
+import { errorLine, filterForm, nextPage, selectControl } from './components.ts';
 import { code, definitions, html, link, page, section, table } from './html.ts';
-import { ruleWithdrawalNotice, claimBlockAtRead, sharedRunNotice, neutralPage, missingProductionResult, type PageContext, type PageResult } from './pages.ts';
+import { neutralPage, type PageContext, type PageResult } from './context.ts';
+import { ruleWithdrawalNotice, claimBlockAtRead, sharedRunNotice, missingProductionResult } from './pages.ts';
+import { RUN_ID, param } from './params.ts';
 /** What 生产结果 is: a product of the workflow, not a result from the production environment (issue 230). */
 const PRODUCTION_RESULT_HINT = '开始任务时由规则直接算出的结果，是工作流的产物，与生产环境无关';
 
 const production = (run: RunRecord): boolean => run.requirements.length > 0 && run.requirements.every((r) => r.accepted_producer === 'fact');
-const param = (ctx: PageContext, key: string): string | undefined => ctx.url.searchParams.get(key) || undefined;
 
 export async function resultsPage(ctx: PageContext): Promise<PageResult> {
   const pack = param(ctx, 'pack');
@@ -23,9 +25,9 @@ export async function resultsPage(ctx: PageContext): Promise<PageResult> {
   const runs = listing.items.filter((run) => production(run) && (build === undefined || run.build === build));
   const partial=listing.next !== null || param(ctx,'cursor') !== undefined;
   const empty=partial ? `这一页的 ${listing.items.length} 个任务里没有符合筛选的生产结果` : '没有符合筛选的生产结果';
-  const filter = html`<form class="ch-actions" data-filters method="get" action="/console/results"><label>工作流 <input name="pack" value="${pack ?? ''}"></label><label>构建 <input name="build" value="${build ?? ''}"></label><button class="ch-btn ch-btn--secondary" type="submit">筛选</button></form>`;
+  const filter = filterForm('/console/results', html`<label>工作流 <input name="pack" value="${pack ?? ''}"></label><label>构建 <input name="build" value="${build ?? ''}"></label>`);
   const titles=await packTitles(ctx);
-  const next = listing.next === null ? '' : html`<p>${link('/console/results', '下一页', { pack, build, cursor: listing.next })}</p>`;
+  const next = listing.next === null ? '' : nextPage('/console/results', { pack, build, cursor: listing.next });
   return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: link('/console/runs', '任务'), hint: PRODUCTION_RESULT_HINT }), html`${filter}${partial || runs.length !== listing.items.length ? html`<p class="notice">${partial?'部分：':''}本页检查了 ${listing.items.length} 个任务，列出 ${runs.length} 个有生产结果且符合筛选的任务${listing.next !== null ? '；继续查看下一页' : ''}</p>` : ''}${table(
     ['任务', uiLabelOf('pack_kind', 'workflow'), '产品 / 版本 / 构建', '开始时间', '条目'],
     runs.map((run) => [html`${link(`/console/results/${run.run}`,taskTitle(run,titles))}${sharedRunNotice(ctx,run)}`, taskTitle(run,titles), [run.product, run.version, run.build].filter(Boolean).join(' / '), time(run.started_at), run.items.length]),
@@ -34,19 +36,19 @@ export async function resultsPage(ctx: PageContext): Promise<PageResult> {
 }
 
 export async function resultPage(ctx: PageContext, runId: string): Promise<PageResult> {
-  if (!/^run_[0-9a-z]{26}$/.test(runId)) return neutralPage(ctx);
+  if (!RUN_ID.test(runId)) return neutralPage(ctx);
   const detail = await ctx.deps.runs.getRun(ctx.principal, runId);
   if (detail === null || !production(detail.run)) return neutralPage(ctx);
   const renderClaim=claimBlockAtRead(detail.rule_withdrawn===true);
   const terminal = param(ctx, 'terminal');
   const rawOffset = param(ctx, 'offset') ?? '0';
   if ((terminal !== undefined && !isStaticTerminal(terminal) && !isDynamicTerminal(terminal)) || !/^(0|[1-9][0-9]*)$/.test(rawOffset) || !Number.isSafeInteger(Number(rawOffset))) {
-    return { status: 400, body: page(ctx.chrome('请求有误', { active: 'tasks' }), html`<p class="error">筛选终态或分页位置不对</p>`) };
+    return { status: 400, body: page(ctx.chrome('请求有误', { active: 'tasks' }), errorLine('筛选终态或分页位置不对')) };
   }
   const authority = html`<p>${link(`/console/runs/${runId}`, '查看任务完整记录（以任务页的记录为准）')}</p>`;
   if (detail.production === null) return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: html`${link(`/console/runs/${runId}`, '任务')} · 运行 ${technicalCode(runId)}`, hint: PRODUCTION_RESULT_HINT }), html`${sharedRunNotice(ctx,detail.run)}${ruleWithdrawalNotice(detail)}${authority}${missingProductionResult(detail)}`) };
   const commentary=detail.latest!==null&&detail.latest.record!==detail.production.record
-    ? html`<p class="notice">另有后续受理的模型评论，结果记录 ${technicalCode(detail.latest.record)}；任务页在“模型评论（判断）”中单列，不替代本页生产结果。</p>`:'';
+    ? html`<p class="notice">另有后续已核对的模型评论，结果记录 ${technicalCode(detail.latest.record)}；任务页在“模型评论（判断）”中单列，不替代本页生产结果。</p>`:'';
   const result = detail.production.result;
   const items = PARTITION.flatMap((partition) => result.partitions[partition].map(item=>({partition,item})));
   const filtered = terminal === undefined ? items : items.filter(({item}) => item.requirements.some((r) => r.layers.some((l) => l.terminal === terminal)));
@@ -64,7 +66,11 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
     })}`,
   ]);
   const terminals=[...new Set([...STATIC_TERMINAL,...DYNAMIC_TERMINAL])];
-  const filter = html`<form class="ch-actions" data-filters method="get" action="/console/results/${runId}"><label>任一层终态 <select name="terminal"><option value="">全部</option>${terminals.map((value) => html`<option value="${value}"${value === terminal ? html` selected` : ''}>${isStaticTerminal(value) ? uiLabelOf('static_terminal',value) : uiLabelOf('dynamic_terminal',value)}</option>`)}</select></label><button class="ch-btn ch-btn--secondary" type="submit">筛选</button></form>`;
+  const filter = filterForm(`/console/results/${runId}`, html`<label>任一层终态 ${selectControl('terminal', terminals.map((value) => ({
+    value,
+    label: isStaticTerminal(value) ? uiLabelOf('static_terminal', value) : uiLabelOf('dynamic_terminal', value),
+    selected: value === terminal,
+  })), { value: '', label: '全部', selected: terminal === undefined })}</label>`);
   const nav = html`<p>${offset > 0 ? link(`/console/results/${runId}`, '上一页', { terminal, offset: Math.max(0, offset - 500) }) : ''} ${offset + 500 < filtered.length ? link(`/console/results/${runId}`, '下一页', { terminal, offset: offset + 500 }) : ''}</p>`;
   return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: html`${link(`/console/runs/${runId}`, '任务')} · 运行 ${technicalCode(runId)}`, hint: PRODUCTION_RESULT_HINT }), html`${sharedRunNotice(ctx,detail.run)}${ruleWithdrawalNotice(detail)}${authority}${commentary}
 <p><strong>${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}</strong></p>

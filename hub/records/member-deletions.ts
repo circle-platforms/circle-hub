@@ -1,6 +1,8 @@
+import {randomBytes} from 'node:crypto';
 import {retireReadScope} from './read-scope.ts';
 import {retirePersonalCaches} from './personal-caches.ts';
-import {isAbsolute} from 'node:path';
+import {lstat,readdir,rm} from 'node:fs/promises';
+import {isAbsolute,join} from 'node:path';
 // Administrator coordination shares the native payload purger; progress contains digests and counts only.
 import {MemberDeletionBody,MemberDeletionCounts,type MemberDeletionBody as Receipt} from '../../contracts/src/spaces.ts';
 import {PermissionRoleSchema,TokenActionSchema,type MemberHandoverStatus} from '../../contracts/generated/vocabulary.ts';
@@ -14,21 +16,52 @@ import type {Database} from './db.ts';
 import type {Principal,RecordStore,Transaction} from './api.ts';
 import {AccessError,ConflictError,IntegrityError,RecordsError} from './errors.ts';
 import {appendTokenIssuance} from './token-issuance.ts';
-import {lockAdministratorSet} from './principals.ts';
+import {appendExternalIdentityAudit,lockAdministratorSet} from './principals.ts';
 import {INITIAL_PERSONAL_EPOCH} from './personal-payloads.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
 export interface MemberDeletionScopeCounts {knowledge:number;memory:number;originals:number;attributions:number;archived_originals:number;private_versions:number}
+export interface MemberBotFilesSummary {count:number;bytes:number}
 /** One private workflow or skill version of the member and what deletion does with it (owner ruling 4, issue 141). */
 export interface MemberHandoverItem {pack:string;version:string;kind:PersonalPackVersionBody['kind'];title:string;digest:string;status:MemberHandoverStatus}
 /** The packs port registers how private versions are handed to the deleting administrator. */
 export interface MemberHandover {plan(admin:string,member:string,tx?:Transaction):Promise<MemberHandoverItem[]>;transfer(by:Principal,member:string,tx:Transaction):Promise<number>}
-export interface MemberDeletionPreview {member:string;epoch:string;state:string;purge_manifest:string;counts:Receipt['counts'];scope_counts:MemberDeletionScopeCounts;
+export interface MemberDeletionPreview {member:string;epoch:string;state:string;purge_manifest:string;counts:Receipt['counts'];scope_counts:MemberDeletionScopeCounts;bot_files:MemberBotFilesSummary;
  /** The deleting administrator receives these versions; null when an administrator deletes their own account. */
  handover?:{to:string|null;items:MemberHandoverItem[]}}
+
+async function countBotFiles(member:string,roots:ReadonlySet<string>):Promise<MemberBotFilesSummary>{
+ const folder=sha256Hex(member);let count=0,bytes=0;
+ const walk=async(dir:string):Promise<void>=>{
+  let entries;
+  try{entries=await readdir(dir,{withFileTypes:true});}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}
+  for(const entry of entries){
+   if(entry.name.startsWith('.'))continue;
+   const full=join(dir,entry.name);
+   const st=await lstat(full).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;});
+   if(!st||st.isSymbolicLink())continue;
+   if(st.isDirectory())await walk(full);
+   else if(st.isFile()){count++;bytes+=st.size;}
+  }
+ };
+ for(const root of roots)await walk(join(root,folder));
+ return {count,bytes};
+}
+
+async function retireMemberBotFiles(member:string,roots:ReadonlySet<string>):Promise<void>{
+ const folder=sha256Hex(member);
+ for(const root of roots){
+  const target=join(root,folder);
+  const st=await lstat(target).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;});
+  if(!st)continue;
+  await rm(target,{recursive:true,force:true});
+ }
+}
 export class PgMemberDeletions {
  readonly cacheRoots=new Set<string>();
  readonly sharedCacheRoots=new Set<string>();
+ readonly botFilesRoots=new Set<string>();
  registerCacheRoot(root:string,options:{shared?:boolean}={}){if(!isAbsolute(root))throw new TypeError('private cache root');this.cacheRoots.add(root);if(options.shared)this.sharedCacheRoots.add(root);}
+ registerBotFilesRoot(root:string){if(!isAbsolute(root))throw new TypeError('bot files root');this.botFilesRoots.add(root);}
  #handover?:MemberHandover;
  registerHandover(handover:MemberHandover){this.#handover=handover;}
  /** The plan is part of the checked state, so a changed plan makes the administrator check again. */
@@ -37,8 +70,8 @@ export class PgMemberDeletions {
   const to=by.id===preview.member?null:by.id,items=to?await this.#handover.plan(to,preview.member,tx):[];
   return {...preview,handover:{to,items},state:sha256Hex(canonicalize({state:preview.state,handover:{to,items}}))};
  }
- readonly db:Database;readonly store:RecordStore;readonly payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>;readonly retire:()=>Promise<void>;readonly now:()=>Date;
- constructor(db:Database,store:RecordStore,payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>,retire:()=>Promise<void>,now:()=>Date){this.db=db;this.store=store;this.payloads=payloads;this.retire=retire;this.now=now;}
+ readonly db:Database;readonly store:RecordStore;readonly payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>;readonly now:()=>Date;readonly #resolveAuditKey:()=>Promise<Uint8Array>;
+ constructor(db:Database,store:RecordStore,payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>,now:()=>Date,auditKey?:Uint8Array|(()=>Promise<Uint8Array>)){this.db=db;this.store=store;this.payloads=payloads;this.now=now;if(typeof auditKey==='function'){this.#resolveAuditKey=auditKey;}else{const staticKey=auditKey??randomBytes(32);this.#resolveAuditKey=async()=>staticKey;}}
  async #admin(by:Principal,tx?:Transaction){const user=(await this.db.query('SELECT * FROM users WHERE id=$1'+(tx?' FOR SHARE':''),[by.id],tx)).rows[0];if(!user||user.disabled||user.role!==PermissionRoleSchema.enum.admin)throw new AccessError('对象不存在或无权读取');}
  async #preview(member:string,tx?:Transaction):Promise<MemberDeletionPreview>{
   const user=(await this.db.query('SELECT * FROM users WHERE id=$1',[member],tx)).rows[0];if(!user||user.deleted_at)throw new AccessError('对象不存在或无权读取');
@@ -69,7 +102,8 @@ export class PgMemberDeletions {
   }
   const scope_counts:MemberDeletionScopeCounts={knowledge:records.filter(r=>r.kind===RecordKindSchema.enum.knowledge_space_entry).length,memory:records.filter(r=>r.kind===RecordKindSchema.enum.memory_version).length,originals:records.filter(r=>r.kind===RecordKindSchema.enum.source_artifact&&!packFiles.has(r.record as string)).length,attributions:counts.attributions,archived_originals:counts.archives,private_versions:counts.private_versions};
   const purge_manifest=sha256Hex(canonicalize({records:records.map(r=>r.record),payloads,objects,caches})),epoch=scope?String(scope.epoch):INITIAL_PERSONAL_EPOCH;
-  return {member,epoch,purge_manifest,counts,scope_counts,state:sha256Hex(canonicalize({member,epoch,purge_manifest,counts,holders,role:user.role,disabled:user.disabled,updated_at:iso(user.updated_at)}))};
+  const bot_files=await countBotFiles(member,this.botFilesRoots);
+  return {member,epoch,purge_manifest,counts,scope_counts,bot_files,state:sha256Hex(canonicalize({member,epoch,purge_manifest,counts,holders,role:user.role,disabled:user.disabled,updated_at:iso(user.updated_at)}))};
  }
  async preview(by:Principal,member:string){await this.#admin(by);return this.store.withTransaction(async tx=>{await this.store.lock('knowledge-space:'+member,tx);await this.#admin(by,tx);return this.#withHandover(by,await this.#preview(member,tx),tx);});}
  async status(by:Principal,member:string){return this.store.withTransaction(async tx=>{
@@ -77,7 +111,7 @@ export class PgMemberDeletions {
   const row=await this.store.getByKey<Receipt>('member_deletion',intent.operation_id,tx);
   return {intent,result:row?{record:row.digest,...MemberDeletionBody.parse(row.body)}:null};
  });}
- async prepare(by:Principal,input:Omit<MemberDeletionPreview,'scope_counts'|'handover'>&{operation_id:string}):Promise<Receipt>{
+ async prepare(by:Principal,input:Omit<MemberDeletionPreview,'scope_counts'|'handover'|'bot_files'>&{operation_id:string}):Promise<Receipt>{
   // Parse the operation and immutable manifest before touching an identity.
   MemberDeletionBody.parse({operation_id:input.operation_id,member:input.member,epoch:input.epoch,purge_manifest:input.purge_manifest,counts:input.counts,by:by.id,at:this.now().toISOString()});
   return this.store.withTransaction(async tx=>{
@@ -112,14 +146,23 @@ export class PgMemberDeletions {
   const intent=await this.intent(member);if(!intent||intent.operation_id!==operation_id)throw new ConflictError('没有对应的删除操作');
   // Self-deletion may finish only its already authorized operation; no new operation is admitted by a tombstone.
   if(by.id!==member||intent.by!==by.id)await this.#admin(by);
-  try{await this.retire();await retirePersonalCaches(this.db,member,this.cacheRoots,this.sharedCacheRoots);}catch(cause){throw new RecordsError('私人内容的存储清理未完成，请修复存储后重试同一删除操作',{cause});}
+  try{await retirePersonalCaches(this.db,member,this.cacheRoots,this.sharedCacheRoots);await retireMemberBotFiles(member,this.botFilesRoots);}catch(cause){throw new RecordsError('私人内容的存储清理未完成，请修复存储后重试同一删除操作',{cause});}
   return this.store.withTransaction(async tx=>{
    await this.store.lock('knowledge-space:'+member,tx);
    if(by.id!==member||intent.by!==by.id)await this.#admin(by,tx);
    const existing=await this.store.getByKey<Receipt>('member_deletion',operation_id,tx);if(existing)return {record:existing.digest,...MemberDeletionBody.parse(existing.body)};
    await this.payloads.beforePurge?.(member,by,tx);
    try{await this.db.query('SELECT hub_finish_member_deletion($1,$2)',[member,operation_id],tx);}catch(cause){throw new ConflictError('私人内容尚未完成清除，请修复存储后重试同一删除操作',{cause});}
-   const record=await this.store.put({kind:'member_deletion',schema:'member-deletion@1',provenance:'observed',body:{...intent,by:by.id,at:this.now().toISOString()},unique_key:operation_id,index:[{key:'member.deletion.member',value:member}]},tx);
+   const removedIdentities=await this.db.query<{issuer:string;subject:string}>('DELETE FROM external_member_identities WHERE owner = $1 RETURNING issuer, subject',[member],tx);
+   const at=this.now().toISOString();
+   const sortedIdentities=[...removedIdentities.rows].sort((a,b)=>String(a.issuer).localeCompare(String(b.issuer))||String(a.subject).localeCompare(String(b.subject)));
+   if(sortedIdentities.length>0){
+    const auditKey=await this.#resolveAuditKey();
+    for(const row of sortedIdentities){
+     await appendExternalIdentityAudit(this.store,{auditKey,action:'unbind',by:by.id,member,issuer:String(row.issuer),subject:String(row.subject),at,reason:'deleted'},tx);
+    }
+   }
+   const record=await this.store.put({kind:'member_deletion',schema:'member-deletion@1',provenance:'observed',body:{...intent,by:by.id,at},unique_key:operation_id,index:[{key:'member.deletion.member',value:member}]},tx);
    return {record:record.digest,...MemberDeletionBody.parse(record.body)};
   }).finally(retireReadScope);
  }

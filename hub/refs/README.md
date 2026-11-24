@@ -10,9 +10,7 @@ through the same sandbox, limits, extraction and lazy lookup code as team parser
 
 `forRun(run, reader)` reopens frozen versions and rechecks personal-skill grants for both the initiator and reader.
 Revocation prevents subsequent use without editing the historical lock. Team history continues to load its frozen
-published version after uninstall/retirement. Standalone `forReference` prefers the existing team or explicit legacy
-binding; otherwise it uses a currently granted personal parser and its authorized dependency closure. Ambiguous personal
-parser names require a frozen run. This cannot replace another reader's existing public parser through a private copy.
+published version after uninstall/retirement. Standalone `forReference` prefers the currently installed team parser; otherwise it uses a currently granted personal parser and its authorized dependency closure. Ambiguous personal parser names require a frozen run. This cannot replace another reader's existing public parser through a private copy.
 
 
 Model elements: **B03** (references), **T04** (resolution, the verbatim quote check), and the read tiers of **B02**.
@@ -351,7 +349,7 @@ and reads the shared vectors; ordinary rules table matching retains its original
 
 ## Independent gold quotation alignment
 
-`compile-check.ts` checkVerbatimQuote and expected-text containment independently use exact contiguous substring
+`compile-check.ts` checkVerbatimQuote independently uses exact contiguous substring
 matching from `scripts/real/gold/quote-widths.ts`, with no Hub or pack imports. Empty, whitespace-only and ill-formed
 quotes are rejected. Missing exported source bytes still produce the existing unknown receipt; unavailable evidence
 never passes.
@@ -367,10 +365,10 @@ file versions below scripts/real/gold before this follow-up), plus quotation-rel
 
 | Snapshot | Implementation / caller | Current rule and integration action |
 | --- | --- | --- |
-| Current branch | `scripts/real/gold/compile-check.ts`: checkVerbatimQuote and compileCheck expected-text containment (`case-compile.expect_not_in_quote`) | Both use exact contiguous matching without whitespace normalization. Pack-specific changes are outside this core task. |
+| Current branch | `scripts/real/gold/compile-check.ts`: checkVerbatimQuote | Exact contiguous matching without whitespace normalization. Pack-specific changes are outside this core task. |
 | `gold-d2c` at `49e5f13c` | `scripts/real/gold/quotes.ts`: quoteMatches; judgeQuote/quotesReport; called by `scripts/real/accept/defect-to-case-compare.ts` and its batch driver | Unicode White_Space collapses to one space; Chinese hard wraps still differ. After merge, independently align it with decision 37 and run the shared vectors. |
 | `gold-review` at `e41dafd6`, `gold-catalog` at `c50ecb72` | `scripts/real/lib/inject.ts`: noWhiteSpace and the contradict_manual quotation precondition | Deletes all whitespace, including Latin word boundaries. This is an injection guard, not a gold verdict; after merge, have its owner align the guard where it promises a verbatim quotation. |
-| Other local branch snapshots carrying `scripts/real/gold/compile-check.ts` | checkVerbatimQuote and compileCheck expected-text containment | Same old generic checkVerbatimQuote implementation, not an additional independent rule. Preserve this branch's generic quotation fix when merging; no other branch was edited. |
+| Other local branch snapshots carrying `scripts/real/gold/compile-check.ts` | checkVerbatimQuote | Same old generic checkVerbatimQuote implementation, not an additional independent rule. Preserve this branch's generic quotation fix when merging; no other branch was edited. |
 | `gold-catalog` at `c50ecb72` | `scripts/real/gold/catalog-marks.ts`: quoteFromCase | Command excerpt matching uses NFKC, case folding and token/argument boundaries. It is not the generic verbatim quotation rule; do not replace its command semantics with decision 37. |
 
 The older defect-to-case comparison in this branch reports Hub grounding claims rather than independently matching
@@ -546,13 +544,9 @@ relationship is skipped merely because its part uses .RELS or _RELS. External ta
 
 KityMinder 与 XLSX 实现已分别迁到独立的 `packs/skill/mindmap-format` 与 `packs/skill/workbook-format`，不再由核心默认注册表提供。生产程序集以 `createSkillParserRegistry` 按管理员安装记录装载；包函数经现有沙箱调用，消费方使用 `parseDocument` / `recognizeAsync`。核心保留引用语法、原件身份与逐字核对。其余内置格式在 B5 按模板继续迁移。
 
-工作包依赖、运行 skills 锁及结果锁使用包清单摘要。旧运行缺锁不允许以当前安装版本推定：管理员用 `circle-hub skill bind-legacy <parser@version> <pack@version>` 追加迁移时点事后声明（单个运行的显式声明仍可用 `pack bind-skills`），原运行、原结果均不改；解析结果附事后声明披露。未绑定时返回缺失摘要与补绑定出口。单元测试显式注入测试解析器，不构成生产自动安装。
+工作包依赖、运行 `skills` 锁及结果锁使用包清单摘要。`forReference` 按当前已安装的团队通用技能包（或授权个人通用技能包）在沙箱内解析内容寻址原件并复核；`forRun` 只使用该运行记录上冻结的 `skills` 摘要（不再读写事后迁移绑定或 `refs.legacy-parser`、`runs.skills` 兼容声明）。未安装或运行未锁定所需解析器时直接返回明确缺失事实及安装或重开运行指引。单元测试显式注入测试解析器，不构成生产自动安装。
 
-### A1 补充：运行级迁移记录
-
-`circle-hub skill bind-legacy <parser@version> <pack@version>` 为每个引用该解析器、缺少其技能摘要的历史运行单独追加绑定；全局迁移声明不再作为运行的隐式补锁。判断只使用完整结构引用（包括关联提交、核验结果和动作中的引用），不会从说明文字中捞片段。原运行、原结果和已有技能锁保持原字节。空技能集合或仅锁其他解析器的运行仍可补足目标解析器，已锁定该解析器的摘要不覆盖。
-
-每条运行绑定引用原运行记录和发布记录，标明迁移时点事后声明、管理员、时间和迁移验证测试名；复核的结果锁与有效条件包含追加摘要及声明记录。未补绑时明确返回“运行未锁定技能包摘要”和 `skill bind-legacy` 出口。同一摘要重复执行只补缺失记录，不重复追加；改变映射拒绝。扫描按页处理，整批事务失败不留下半批绑定。
+`packs/skill/*/skill.json` 中的 `migration_test` 字段以及 `packs/skill/*/README.md` 中的旧 `bind-legacy` 说明已在新版包中清除并同步更新包版本；`contracts/src/pack.ts`（`SkillParser`）保留可选的 `migration_test` 作为已发布 v1 形状的一部分（Hub 启动重读已发布包版本时需要），运行时没有任何代码读取该字段。
 
 Team verification uses `ResolveContext.teamParsersOnly`: the current team parser set is used without personal run locks or personal-namespace fallback. Missing team capability returns `TEAM_PARSER_REQUIRED`. Personal reference reads keep their current grant and frozen-skill checks.
 

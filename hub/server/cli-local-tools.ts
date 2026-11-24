@@ -1,4 +1,3 @@
-// Local client commands: no database, key files, MCP, or execution of downloaded code.
 import { request as httpRequest, Agent as HttpAgent, type IncomingMessage } from 'node:http';
 import { request as httpsRequest, Agent as HttpsAgent } from 'node:https';
 import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises';
@@ -8,14 +7,12 @@ import { PackManifest, type PackManifest as Manifest } from '../../contracts/src
 import { canonicalBytes, sha256Hex } from '../records/api.ts';
 import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress } from '../listen.ts';
-import { resolveLayout } from '../platform/layout.ts';
-import { readSettingsFileSync, resolveSettings, type PlatformSettings } from '../platform/settings.ts';
-import { readPackDirectory } from '../runs/packs/directory.ts';
-import { DEFAULT_PACK_LIMITS } from '../runs/packs/types.ts';
-import { parsePackRef } from '../runs/packs/versions.ts';
+import { readSettingsFileSync, resolveLayout, resolveSettings, type PlatformSettings } from '../platform/api.ts';
+import { DEFAULT_PACK_LIMITS, parsePackRef, readPackDirectory } from '../runs/api.ts';
 import { readSecret, type SecretInput } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import type { CliIo } from './api.ts';
+import { unassignedPackRefusal } from './pack-words.ts';
 
 const LIMITS = DEFAULT_PACK_LIMITS;
 const LISTED_FILE = new Set(['manifest.digest_mismatch', 'manifest.size_mismatch', 'manifest.missing_file']);
@@ -32,7 +29,7 @@ export type LocalToolsReason =
   | { kind: 'unreachable'; address: string }
   | { kind: 'unauthorized' }
   | { kind: 'unavailable' }
-  | { kind: 'unassigned' }
+  | { kind: 'unassigned'; pack?: string }
   | { kind: 'integrity'; path: string }
   | { kind: 'redirect' }
   | { kind: 'filesystem'; path: string; code: string };
@@ -62,8 +59,10 @@ export function localToolsRefusal(reason: LocalToolsReason): string {
       return '令牌无效或已撤销；重新领取令牌后再试';
     case 'unavailable':
       return 'Hub 里没有这个版本的本地工具（版本不存在、已退役、技能包没有安装或这个版本没有本地工具）；核对包号后再试';
-    case 'unassigned':
-      return '这个版本存在，没有分配给你；请管理员把这个任务包分配给你后再试';
+    case 'unassigned': {
+      const name = reason.pack && reason.pack.length > 0 ? reason.pack : '该版本';
+      return unassignedPackRefusal(name, 'workflow');
+    }
     case 'integrity':
       return `完整性核对未通过；第一处不符 ${reason.path}；重新取这一份后再试`;
     case 'redirect':
@@ -196,7 +195,10 @@ function download(url: URL, token: string, max: number, path: string, authority?
         };
         if (status === 401) return refuse(new LocalToolsError({ kind: 'unauthorized' }));
         if (status === 404) return refuse(new LocalToolsError({ kind: 'unavailable' }));
-        if (status === 403) return refuse(new LocalToolsError({ kind: 'unassigned' }));
+        if (status === 403) {
+          const pack = /\/local-tools\/([^/?#]+)/.exec(url.pathname)?.[1]?.split('@')[0];
+          return refuse(new LocalToolsError({ kind: 'unassigned', pack }));
+        }
         if (status >= 300 && status < 400) return refuse(new LocalToolsError({ kind: 'redirect' }));
         if (status !== 200) return refuse(new LocalToolsError({ kind: 'integrity', path }));
         const declared = res.headers['content-length'];

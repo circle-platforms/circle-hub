@@ -1,0 +1,14 @@
+{
+  "state": "[前序步骤]\n1. 创建后端服务器 rs1\n\n[当前作者步骤 2]\n把 rs1 加入后端池 pool_demo，权重 5\n\n[候选命令块]\nblock[0] (config, host=dut1)\n  server create rs1 rs1.example.test 8080\nblock[1] (config, host=dut1)\n  member add pool_demo rs1 5",
+  "questions": {
+    "step_2": {
+      "type": "choice",
+      "instructions": "Do the blocks realize author step 2's scenario as the author wrote it? Judge only scenario fidelity of this step; pick exactly one verdict.",
+      "criteria": {
+        "preserved": "the bound blocks realize this step's scenario as the author wrote it",
+        "changed": "the blocks realize a different scenario or alter a condition the author stated",
+        "unrealized": "no block realizes this step"
+      }
+    }
+  }
+}

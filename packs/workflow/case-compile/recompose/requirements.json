@@ -51,6 +51,11 @@
           "code": "recompose.atom_dropped",
           "action": "repair",
           "max_rounds": 2
+        },
+        {
+          "code": "recompose.command_syntax",
+          "action": "repair",
+          "max_rounds": 2
         }
       ]
     },

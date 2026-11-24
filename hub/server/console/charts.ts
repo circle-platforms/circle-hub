@@ -1,5 +1,6 @@
 // Chart geometry and its accessible table are derived together from the caller's observed values.
 import {html,table,type Html} from './html.ts';
+import {count} from './numbers.ts';
 import {tooltip} from './presentation.ts';
 
 /**
@@ -11,7 +12,7 @@ export interface Series {label:string;className?:string;unit?:string;column?:str
 export interface Point {label:string;values:readonly number[]}
 const W=480,H=224,L=38,R=20,T=24,B=32;
 const finite=(n:number)=>{if(!Number.isFinite(n)||n<0)throw new RangeError('Chart values must be finite non-negative observations');return n;};
-const fmt=(n:number)=>n.toLocaleString('en-US');
+const fmt=(n:number)=>count(n);
 const withUnit=(value:number,series:Series|undefined)=>fmt(value)+(series?.unit?' '+series.unit:'');
 /** A point read alone (issue 240): what it is, then each value with its unit; a title is never used as a unit. */
 export const pointText=(point:Point,series:readonly Series[]):string=>series.length===1&&series[0].unit

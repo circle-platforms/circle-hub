@@ -7,7 +7,8 @@ import type {ProtocolCode} from '../../contracts/generated/protocol.ts';
 import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
 import {canonicalize} from '../records/api.ts';
 import type {VerifiedInput} from './proof.ts';
-export interface BoundaryFailure {admin_checks?:ReleaseCheck[];ok:false;clause:number;code:ProtocolCode;message:string;fix:string;row?:string;requirements?:string[]}
+export interface BoundaryFailure {member_missing_facts?:Array<{fact:string;next_action:string}>;admin_checks?:ReleaseCheck[];ok:false;clause:number;code:ProtocolCode;message:string;fix:string;row?:string;requirements?:string[];
+ no_conclusion?:true}
 export interface BoundaryContext {
  effects:readonly AllowedEffect[];write:Pick<WriteDeclaration,'effect_class'|'signing'|'retry_safety'>;trigger:EffectTrigger;
  parameters:Record<string,unknown>;started_at:string;now:()=>Date;duration_ms:number;
@@ -17,13 +18,14 @@ export interface BoundaryContext {
  budget:(row:AllowedEffect)=>Promise<{count:number;duration_ms:number}>;
  lease:()=>Promise<{ok:boolean;code?:Extract<ProtocolCode,'LEASE_UNAVAILABLE'|'LEASE_EXPIRED'|'FENCING_STALE'>;message?:string}>;
  global:(row:AllowedEffect)=>Promise<boolean>;
- /** true: every replayed policy check supports; false: one refutes; 'unknown': no refutation, but not all concluded (decision 116). */
  policies:(row:AllowedEffect)=>Promise<boolean|'unknown'>;
  content:(input:VerifiedInput)=>Promise<boolean>;
  audience:()=>Promise<boolean>;
  until?:4;
 }
 export function deny(clause:number,code:ProtocolCode,message:string,row?:AllowedEffect):BoundaryFailure{return {ok:false,clause,code,message,fix:PROTOCOL_CODES[code].fix,...(row?{row:row.id,requirements:row.release.requirements}:{})};}
+export function unconcluded(clause:number,what:string,fix:string,row?:AllowedEffect):BoundaryFailure{return {...deny(clause,'PACK_POLICY_DENIED',`${what}；不是计划、工作簿或包被驳回`,row),fix,no_conclusion:true};}
+export function refusalText(failure:BoundaryFailure,sent:boolean):string{return failure.no_conclusion?`${failure.message}；${sent?'提交已调用，原请求是否执行须对账':'什么都没发出'}`:failure.message;}
 /** A preflight result is not a release grant for writing or retransmitting. */
 export function incompleteEffectBoundary(result:{checked:number;row:AllowedEffect}):BoundaryFailure {
  return {...deny(3,'EFFECT_RELEASE_UNMET',`缺少完整九款效果放行核对事实，当前仅核到 ${result.checked} 款；不得据此写意图或重发`,result.row),fix:'请 Hub 管理员修复完整边界入口后重核九款；已有投递只读对账，不重交'};
@@ -49,10 +51,9 @@ export async function checkEffectBoundary(ctx:BoundaryContext):Promise<{ok:true;
  if(!lease.ok)return deny(5,lease.code??'LEASE_UNAVAILABLE',lease.message??'当前租约或围栏没有通过',row);
  try{if(!await ctx.global(row))return deny(6,'BOUNDARY_POLICY_DENIED','核心政策、所用执行器登记或声明环境与运行快照不符；请开新修订',row);}catch{return deny(6,'BOUNDARY_POLICY_DENIED','缺少可回读的核心政策或所用执行器快照；请恢复记录后开新修订',row);}
  try{const verdict=await ctx.policies(row);
-  // A recheck that reached no conclusion refutes nothing: say so, never ask to fix the plan or the pack (decision 116).
-  if(verdict==='unknown')return deny(7,'PACK_POLICY_DENIED','派发前用冻结包重核时有检查没出结论（原因只记在管理员记录里，Hub 的沙箱没能运行检查时也会这样），不是计划、工作簿或包被驳回；什么都没发出；原样重交，或开新的核验运行再派发',row);
+  if(verdict==='unknown')return unconcluded(7,'用冻结包重核时有检查没出结论（原因只记在管理员记录里，Hub 的沙箱没能运行检查时也会这样）','原样重核；仍出现时请 Hub 管理员按管理员日志处理没出结论的检查',row);
   if(verdict!==true)return deny(7,'PACK_POLICY_DENIED','冻结包的同脚本同政策表重核未通过；请修正后重核',row);}
- catch{return deny(7,'PACK_POLICY_DENIED','冻结包的政策重核没有完整结论；请修复检查及来源后重核',row);}
+ catch(error){return error instanceof EffectBoundaryError?error.failure:deny(7,'PACK_POLICY_DENIED','冻结包的政策重核没有完整结论；请修复检查及来源后重核',row);}
  try{if(!await ctx.content(input))return deny(8,'EFFECT_CONTENT_UNVERIFIED','外发字节未通过摘要、重算依据或完整凭据扫描；请修复产物后重新核验',row);}catch{return deny(8,'EFFECT_CONTENT_UNVERIFIED','缺少可回读并完整检查的外发内容；请修复原件或解析能力后重新核验',row);}
  try{if(!await ctx.audience())return deny(9,'AUDIENCE_VISIBILITY_EXCEEDED','所引内容不能覆盖声明的目标受众；请收窄受众或取得有效分享',row);}catch{return deny(9,'AUDIENCE_VISIBILITY_EXCEEDED','缺少完整受众与引用可见性事实；请管理员补齐映射后重新核验',row);}
  return {ok:true,row,input,checked:9};

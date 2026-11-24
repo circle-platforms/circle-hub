@@ -56,7 +56,7 @@ describe('scenario 2: quote mismatch', () => {
     assert.match(err.path ?? '', /quotes\/0\/text/);
     assert.equal(err.requirement, 'findings');
     assert.equal(err.rounds_left, 2, '2 repair rounds remaining');
-    assert.ok(answer.text.includes('QUOTE_MISMATCH'), 'receipt text mentions QUOTE_MISMATCH');
+    assert.doesNotMatch(answer.text, /QUOTE_MISMATCH/, 'the error code stays in the machine-readable answer');
     assert.ok(answer.text.includes('按原文逐字引用，或先调用 resolve_reference'), 'receipt text contains fix');
 
     // Real effects: stored verbatim in records store

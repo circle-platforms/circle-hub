@@ -71,7 +71,8 @@ test('a bridged command acts as the administrator of the given token, exactly as
   const bridge = createCommandBridge({ env, cwd: scratch, overrides: overrides() });
   const created = await bridge.run(['user', 'create', 'alice', '--role=user'], { token: adminToken });
   assert.equal(created.code, 0, created.stderr.join('\n'));
-  assert.match(created.stdout.join('\n'), /已建立用户 alice/);
+  assert.match(created.stdout.join('\n'), /已建立用户 alice（用户）/);
+  assert.doesNotMatch(created.stdout.join('\n'), /usr_|token issue/);
   const issued = await bridge.run(['token', 'issue', 'alice', '--label=web'], { token: adminToken });
   assert.equal(issued.code, 0, issued.stderr.join('\n'));
   assert.match(issued.stdout.at(-1)!, /^[A-Za-z0-9_-]{43}$/, 'the issued token is the last line, shown once');
@@ -145,4 +146,32 @@ test('setup-code prints a code only while no administrator exists', async () => 
   } finally {
     env = saved;
   }
+});
+
+test('bot settings reach the CLI vault through the admin bridge without rendering the model key', async () => {
+  const bridge = createCommandBridge({ env, cwd: scratch, overrides: overrides() });
+  await new FileKeyProvider(join(scratch, 'vault.key')).initKey();
+  const key = 'synthetic-private-model-key';
+  const profile = {
+    name: '合成成员机器人',
+    protocol: 'openai',
+    model: 'fixture',
+    endpoint: 'https://model.example.invalid/v1',
+    key,
+  };
+  const settings = { token: adminToken, secrets: { 'bot-model': JSON.stringify(profile) } };
+  const saved = await bridge.run(['bot', 'set'], settings);
+  assert.equal(saved.code, 0, saved.stderr.join('\n'));
+  assert.doesNotMatch(JSON.stringify(saved), new RegExp(key));
+  const bad = await bridge.run(['bot', 'set'], { ...settings, secrets: { 'bot-model': 'bad ' + key } });
+  assert.equal(bad.code, 2);
+  assert.doesNotMatch(JSON.stringify(bad), new RegExp(key));
+  const refused = await bridge.run(['bot', 'disable'], { token: 'invalid' });
+  assert.equal(refused.code, 1);
+  for (const removedCmd of ['review-set', 'review-test', 'review-disable']) {
+    assert.equal((await bridge.run(['bot', removedCmd], { token: adminToken })).code, 2);
+  }
+  const disabled = await bridge.run(['bot', 'disable'], { token: adminToken });
+  assert.equal(disabled.code, 0);
+  assert.match((await bridge.run(['bot', 'test'], { token: adminToken })).stderr.join('\n'), /尚未启用/);
 });

@@ -4,10 +4,12 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { drift, generate, LOCK_FILE, REPO_ROOT, validateInputs } from '../../tools/gen-contracts.ts';
+import { drift, embeddedPackFiles, generate, LOCK_FILE, REPO_ROOT, validateInputs } from '../../tools/gen-contracts.ts';
+import { versionReuseProblems } from '../../.github/checks/pack-version.ts';
+import { digestOf } from '../../hub/records/digest.ts';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const run = (script: string, args: string[], cwd = repo) => spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8' });
@@ -33,7 +35,7 @@ test('the repository generated files match the model (same as --check)', () => {
 test('generate() in this process equals the files on disk', async () => {
   const files = await generate(REPO_ROOT);
   assert.deepEqual(drift(REPO_ROOT, files), []);
-  for (const name of ['vocabulary.ts', 'protocol.ts', 'tools.json']) assert.ok(name in files, `${name} is generated`);
+  for (const name of ['vocabulary.ts', 'protocol-codes.ts', 'protocol.ts', 'tools.json']) assert.ok(name in files, `${name} is generated`);
   assert.ok(Object.keys(files).some((n) => n.startsWith('schemas/')), 'schemas are generated');
 });
 
@@ -117,7 +119,7 @@ describe('on a temporary copy', () => {
     const write = run(script, [], root);
     assert.equal(write.status, 0, write.stderr);
     assert.equal(run(script, ['--check'], root).status, 0);
-    for (const name of ['vocabulary.ts', 'protocol.ts']) {
+    for (const name of ['vocabulary.ts', 'protocol-codes.ts', 'protocol.ts']) {
       assert.equal(readFileSync(generated(name), 'utf8'), readFileSync(join(repo, 'contracts', 'generated', name), 'utf8'), `${name} equals the repository copy`);
     }
   });
@@ -327,4 +329,193 @@ describe('on a temporary copy', () => {
     assert.equal(unsafe.status, 2);
     assert.match(unsafe.stderr, /schema key "\.\.\/escape@1" is not name@major/);
   });
+});
+
+test('a pack embeds exactly the module it names, from the version it names (T01 R[6])', () => {
+  const root = mkdtempSync(join(tmpdir(), 'embed-'));
+  const write = (path: string, text: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), text); };
+  const pack = (embeds: unknown) => write('packs/workflow/work/pack.json', JSON.stringify({ embeds }));
+  try {
+    write('packs/skill/format/pack.json', JSON.stringify({ version: '1.0.0' }));
+    write('packs/skill/format/functions/modules/reader/index.ts', "import './table.json';\n");
+    write('packs/skill/format/functions/modules/reader/table.json', '{}\n');
+    write('packs/skill/format/functions/modules/reader/index.test.ts', 'tests stay in the skill\n');
+    pack([{ pack: 'format', version: '1.0.0', module: 'reader' }]);
+    assert.deepEqual(Object.keys(embeddedPackFiles(root)).sort(), ['packs/workflow/work/functions/generated/skills/format/reader/index.ts', 'packs/workflow/work/functions/generated/skills/format/reader/table.json']);
+    pack([{ pack: 'format', version: '0.9.0', module: 'reader' }]);
+    assert.throws(() => embeddedPackFiles(root), /embeds format@0\.9\.0, the skill is at 1\.0\.0/);
+    pack([{ pack: 'format', version: '1.0.0', module: 'writer' }]);
+    assert.throws(() => embeddedPackFiles(root), /has no folder/);
+    pack([{ pack: 'format', version: '1.0.0', module: 'reader' }]);
+    write('packs/skill/format/functions/modules/reader/index.ts', "import '../../outside.ts';\n");
+    assert.throws(() => embeddedPackFiles(root), /outside its module/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('an embedded file no pack.json names any more is reported as stale', () => {
+  const root = mkdtempSync(join(tmpdir(), 'embed-stale-'));
+  try {
+    mkdirSync(join(root, 'contracts/generated'), { recursive: true });
+    mkdirSync(join(root, 'packs/workflow/work/functions/generated/skills/format/reader'), { recursive: true });
+    writeFileSync(join(root, 'packs/workflow/work/pack.json'), '{}');
+    writeFileSync(join(root, 'packs/workflow/work/functions/generated/skills/format/reader/index.ts'), 'old\n');
+    writeFileSync(join(root, 'packs/workflow/work/kept.ts'), 'kept\n');
+    assert.deepEqual(drift(root, {}, { 'packs/workflow/work/kept.ts': 'kept\n' }), ['stale: packs/workflow/work/functions/generated/skills/format/reader/index.ts']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('protocol-codes.ts exports machine tables only and stays isolated from sentence edits', async () => {
+  const machine = await import('../generated/protocol-codes.ts');
+  assert.ok(Array.isArray(machine.PROTOCOL_CODE_NAMES) && machine.PROTOCOL_CODE_NAMES.includes('SOURCE_UNPARSEABLE'));
+  assert.equal(machine.isProtocolCode('SOURCE_UNPARSEABLE'), true);
+  assert.equal(machine.isProtocolCode('NOT_A_CODE'), false);
+  assert.equal(typeof machine.CALL_ERROR_CATEGORY_BY_CODE, 'object');
+  assert.equal(typeof machine.callErrorCategory, 'function');
+  assert.ok(Array.isArray(machine.CORE_VIOLATION_CODE_NAMES) && machine.CORE_VIOLATION_CODE_NAMES.length > 0);
+  assert.equal(typeof machine.CORE_VIOLATION_CODE_INTERPRETERS, 'object');
+  assert.equal(machine.isCoreViolationCode(machine.CORE_VIOLATION_CODE_NAMES[0]), true);
+  assert.equal(machine.isCoreViolationCode('core.not_a_real_code'), false);
+  assert.ok(Array.isArray(machine.RECORD_KINDS));
+  assert.ok(Array.isArray(machine.PACK_FILE_PATHS));
+  assert.equal(typeof machine.MODEL_VERSION, 'number');
+  for (const proseExport of ['PROTOCOL_CODES', 'CORE_VIOLATION_CODES', 'REFERENCE_FORMS', 'DISPLAY_ORDER', 'formatCallError']) {
+    assert.equal(proseExport in machine, false, `${proseExport} belongs in protocol.ts, not protocol-codes.ts`);
+  }
+});
+
+const FORMAT_SKILL_PACKS = ['mindmap-format', 'workbook-format', 'xml-format', 'html-format'] as const;
+
+function copyGeneratorWorkspace(prefix: string): { root: string; scriptPath: string } {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  cpSync(join(repo, 'contracts'), join(root, 'contracts'), { recursive: true });
+  mkdirSync(join(root, 'tools'), { recursive: true });
+  cpSync(join(repo, 'tools', 'gen-contracts.ts'), join(root, 'tools', 'gen-contracts.ts'));
+  cpSync(join(repo, 'tools', 'slot-schema.ts'), join(root, 'tools', 'slot-schema.ts'));
+  cpSync(join(repo, 'packs'), join(root, 'packs'), { recursive: true });
+  writeFileSync(join(root, 'package.json'), '{ "type": "module" }\n');
+  symlinkSync(join(repo, 'node_modules'), join(root, 'node_modules'), 'dir');
+  return { root, scriptPath: join(root, 'tools', 'gen-contracts.ts') };
+}
+
+test('changing protocol when/fix prose leaves format-pack digests unchanged and requires no version bump', () => {
+  const { root: gitRoot, scriptPath } = copyGeneratorWorkspace('protocol-prose-git-');
+  const git = (args: string[]) => {
+    const res = spawnSync('git', args, { cwd: gitRoot, encoding: 'utf8' });
+    assert.equal(res.status, 0, `git ${args.join(' ')} failed: ${res.stderr}`);
+  };
+  try {
+    const firstGen = run(scriptPath, [], gitRoot);
+    assert.equal(firstGen.status, 0, firstGen.stderr);
+    git(['init']);
+    git(['config', 'user.name', 'Contract Test']);
+    git(['config', 'user.email', 'contract-test@example.invalid']);
+    git(['add', 'contracts', 'tools', 'packs', 'package.json']);
+    git(['commit', '-m', 'Baseline']);
+
+    const beforeCodes = readFileSync(join(gitRoot, 'contracts', 'generated', 'protocol-codes.ts'), 'utf8');
+    const beforeProse = readFileSync(join(gitRoot, 'contracts', 'generated', 'protocol.ts'), 'utf8');
+    const beforePacks = Object.fromEntries(
+      FORMAT_SKILL_PACKS.map((pack) => {
+        const manifestText = readFileSync(join(gitRoot, 'packs', 'skill', pack, 'pack.json'), 'utf8');
+        const protoText = readFileSync(join(gitRoot, 'packs', 'skill', pack, 'functions', 'generated', 'protocol.ts'), 'utf8');
+        return [pack, { manifestText, manifestDigest: digestOf(JSON.parse(manifestText)), protoText }];
+      }),
+    );
+
+    const modelPath = join(gitRoot, 'contracts', 'model.json');
+    const model = JSON.parse(readFileSync(modelPath, 'utf8'));
+    for (const code of ['SOURCE_UNPARSEABLE', 'REFERENCE_UNRESOLVED', 'RUN_SUPERSEDED']) {
+      const entry = model.formatProposals.protocolCodes.find((c: { code: string }) => c.code === code);
+      assert.ok(entry);
+      entry.when = `${entry.when}（合成改写测试）`;
+      entry.fix = `${entry.fix}（合成改法测试）`;
+    }
+    writeFileSync(modelPath, `${JSON.stringify(model, null, 2)}\n`);
+
+    const check = run(scriptPath, ['--check'], gitRoot);
+    assert.equal(check.status, 1);
+    assert.match(check.stderr, /out of date: contracts\/generated\/protocol\.ts/);
+    assert.doesNotMatch(check.stderr, /protocol-codes\.ts/);
+    assert.doesNotMatch(check.stderr, /packs\/skill\/.*protocol\.ts/);
+
+    const regenerate = run(scriptPath, [], gitRoot);
+    assert.equal(regenerate.status, 0, regenerate.stderr);
+    assert.notEqual(readFileSync(join(gitRoot, 'contracts', 'generated', 'protocol.ts'), 'utf8'), beforeProse);
+    assert.equal(readFileSync(join(gitRoot, 'contracts', 'generated', 'protocol-codes.ts'), 'utf8'), beforeCodes);
+
+    for (const pack of FORMAT_SKILL_PACKS) {
+      const manifestText = readFileSync(join(gitRoot, 'packs', 'skill', pack, 'pack.json'), 'utf8');
+      const protoText = readFileSync(join(gitRoot, 'packs', 'skill', pack, 'functions', 'generated', 'protocol.ts'), 'utf8');
+      assert.equal(protoText, beforePacks[pack].protoText, `${pack} generated/protocol.ts unchanged`);
+      assert.equal(manifestText, beforePacks[pack].manifestText, `${pack} pack.json unchanged`);
+      assert.equal(digestOf(JSON.parse(manifestText)), beforePacks[pack].manifestDigest, `${pack} digest unchanged`);
+      assert.doesNotMatch(protoText, /合成改法测试/);
+    }
+    assert.deepEqual(versionReuseProblems(gitRoot), [], 'no pack version bump required after sentence edit');
+  } finally {
+    rmSync(gitRoot, { recursive: true, force: true });
+  }
+});
+
+test('adding a new protocol code outside format-pack subsets leaves all format packs unchanged', () => {
+  const { root: workRoot, scriptPath } = copyGeneratorWorkspace('protocol-new-code-');
+  try {
+    assert.equal(run(scriptPath, [], workRoot).status, 0);
+
+    const beforePacks = Object.fromEntries(
+      FORMAT_SKILL_PACKS.map((pack) => {
+        const manifestText = readFileSync(join(workRoot, 'packs', 'skill', pack, 'pack.json'), 'utf8');
+        const protoText = readFileSync(join(workRoot, 'packs', 'skill', pack, 'functions', 'generated', 'protocol.ts'), 'utf8');
+        return [pack, { manifestDigest: digestOf(JSON.parse(manifestText)), protoText }];
+      }),
+    );
+
+    const modelPath = join(workRoot, 'contracts', 'model.json');
+    const model = JSON.parse(readFileSync(modelPath, 'utf8'));
+    model.formatProposals.protocolCodes.push({
+      code: 'SYNTHETIC_ENV_UNALLOCATED',
+      when: '合成的新错误码触发条件',
+      fix: '合成的新错误码修改建议',
+      callErrorCategory: 'permission_denied',
+    });
+    writeFileSync(modelPath, `${JSON.stringify(model, null, 2)}\n`);
+
+    const check = run(scriptPath, ['--check'], workRoot);
+    assert.equal(check.status, 1);
+    assert.match(check.stderr, /out of date: contracts\/generated\/protocol-codes\.ts/);
+    assert.match(check.stderr, /out of date: contracts\/generated\/protocol\.ts/);
+    assert.doesNotMatch(check.stderr, /packs\/skill\/.*protocol\.ts/);
+
+    const regenerate = run(scriptPath, [], workRoot);
+    assert.equal(regenerate.status, 0, regenerate.stderr);
+    assert.equal(run(scriptPath, ['--check'], workRoot).status, 0);
+    assert.match(readFileSync(join(workRoot, 'contracts', 'generated', 'protocol-codes.ts'), 'utf8'), /'SYNTHETIC_ENV_UNALLOCATED'/);
+
+    for (const pack of FORMAT_SKILL_PACKS) {
+      const protoText = readFileSync(join(workRoot, 'packs', 'skill', pack, 'functions', 'generated', 'protocol.ts'), 'utf8');
+      const manifestDigest = digestOf(JSON.parse(readFileSync(join(workRoot, 'packs', 'skill', pack, 'pack.json'), 'utf8')));
+      assert.equal(protoText, beforePacks[pack].protoText);
+      assert.equal(manifestDigest, beforePacks[pack].manifestDigest);
+      assert.doesNotMatch(protoText, /SYNTHETIC_ENV_UNALLOCATED/);
+    }
+  } finally {
+    rmSync(workRoot, { recursive: true, force: true });
+  }
+});
+
+test('a format pack throwing or referencing an undeclared protocol code fails generate and --check', () => {
+  const { root: workRoot, scriptPath } = copyGeneratorWorkspace('protocol-undeclared-');
+  try {
+    const badFile = join(workRoot, 'packs', 'skill', 'mindmap-format', 'functions', 'undeclared.ts');
+    writeFileSync(badFile, "export const refused = { code: 'SOURCE_ABSENT' };\n");
+
+    for (const args of [['--check'], []]) {
+      const res = run(scriptPath, args, workRoot);
+      assert.equal(res.status, 2, res.stderr);
+      assert.match(res.stderr, /mindmap-format\/functions\/undeclared\.ts/);
+      assert.match(res.stderr, /SOURCE_ABSENT/);
+    }
+  } finally {
+    rmSync(workRoot, { recursive: true, force: true });
+  }
 });

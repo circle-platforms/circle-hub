@@ -1,3 +1,8 @@
+---
+name: maintenance-sweep
+description: 对照两个构建命令变更找出需维护用例时使用：不绑定产品线。
+---
+
 # 维护巡检
 
 Hub 按两个构建的影响视图直接算出较早构建里需要维护的用例。不需要你提交结果。
@@ -20,7 +25,7 @@ Hub 按两个构建的影响视图直接算出较早构建里需要维护的用�
 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_29?kind=case&by=commands`
 `knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1`
 
-1. 开始运行时必须在 inputs.facets 绑定 `{"external":"knowledge:facets:<产品>:<起始构建>?kind=case&by=commands"}`，与 impact 的起始根相同。分面只因用例命令归属未知而截断（unknown_only=true）时照常启动，按“客户端必须读取”一步披露；其他截断拒绝启动：自动读取该视图 notes 和根引用，将原因报告当前用户供集成者定位预算或来源排除问题；同一根重复读取不会完整，不自动重试。待修复后取得完整输入再启动。开始运行：pack 写 maintenance-sweep；inputs.impact 绑定一个影响视图，例如 `{"external":"knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1"}`（必须带 catalog=commands@1：限定到命令目录的成员按语法比，手册说明的改动不算）。这个任务包不绑定产品线：不要写 product、version、build（顶层和 parameters 都不要）。
+1. 开始运行时必须在 inputs.facets 绑定 `{"external":"knowledge:facets:<产品>:<起始构建>?kind=case&by=commands"}`，与 impact 的起始根相同。分面只因用例命令归属未知而截断（unknown_only=true）时照常启动，按“客户端必须读取”一步披露；其他截断拒绝启动：自动读取该视图 notes 和根引用，将原因报告当前用户供集成者定位预算或来源排除问题；同一根重复读取不会完整，不自动重试。待修复后取得完整输入再启动。开始运行：pack 写 maintenance-sweep；inputs.impact 绑定一个影响视图，例如 `{"external":"knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title&catalog=commands@1"}`（必须带 catalog=commands@1：限定到命令目录的成员按语法比，手册说明的改动不算）。这个工作流不绑定产品线：不要写 product、version、build（顶层和 parameters 都不要）。
 2. 结果在开始运行时就算好了。每个条目是一条需要维护的用例。完整结论在 result.reference 指向的校验结果里，用 get_nodes 按这个 rec: 引用读取。条目多时照回答末尾的说明翻页。
 3. 原样转述每条结论，不补全、不猜测。两条不通过要分开读：
    - `maintenance-sweep.case.command_removed` 是阻断：用例所在的命令已删除。处理是“按替代命令改写这条用例，或者停用它”。

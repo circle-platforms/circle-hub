@@ -213,9 +213,9 @@ export async function runBatch(config:Pairings,options:BatchOptions,deps:BatchDe
   }
   const ratio=(a:number,b:number)=>b?`${(100*a/b).toFixed(1)}%`:'集合为空';
   lines.push(`汇总：配对 ${totals.pairs}；已处理 ${totals.completed}；待补证 ${totals.design_gaps}；确定缺陷 ${totals.defects}；不通过 ${totals.failed}；草稿 ${totals.drafts}；命令 ${totals.commands}；自动补证动作 ${totals.recovery_actions}`);
-  lines.push(`命令头双向重叠 ${ratio(totals.head_shared,totals.head_draft)}/${ratio(totals.head_shared,totals.head_doc)}；命令参数组合双向重叠 ${ratio(totals.pair_shared,totals.pair_draft)}/${ratio(totals.pair_shared,totals.pair_doc)}（只报告）`);
+  lines.push(`命令名双向重叠 ${ratio(totals.head_shared,totals.head_draft)}/${ratio(totals.head_shared,totals.head_doc)}；命令参数组合双向重叠 ${ratio(totals.pair_shared,totals.pair_draft)}/${ratio(totals.pair_shared,totals.pair_doc)}（只报告）`);
   lines.push(`取值域：支持 ${totals.domain_support}；反驳 ${totals.domain_refute}；暂态待补证 ${totals.domain_unknown}；引文：支持 ${totals.quote_support}；反驳 ${totals.quote_refute}；暂态待补证 ${totals.quote_unknown}；改写 ${totals.paraphrased}`);
-  lines.push(`参数组合累计：相同 ${totals.parameter_same}；同头异参 ${totals.parameter_different}；文档无命令头 ${totals.parameter_absent}；期望文字逐字 ${totals.expected_verbatim}；仅必要条件 ${totals.necessary_only}`);
+  lines.push(`参数组合累计：相同 ${totals.parameter_same}；同命令名异参 ${totals.parameter_different}；文档无命令名 ${totals.parameter_absent}；期望文字逐字 ${totals.expected_verbatim}；仅必要条件 ${totals.necessary_only}`);
   for(const target of ['fix','defect_other','manual','other','unknown_defect_field','unknown_target'])lines.push(`引文来源累计 ${target}：支持 ${totals[`quote_${target}_support`]??0}；反驳 ${totals[`quote_${target}_refute`]??0}；暂态待补证 ${totals[`quote_${target}_unknown`]??0}`);
   lines.push(`命令与参数：${totals.command_gate_pass===totals.pairs?'通过':'不通过'}；通过配对 ${totals.command_gate_pass}/${totals.pairs}；逐步判差异条目 ${totals.known_step_rule_items}；简化匹配差异条目 ${totals.known_simplified_match_items}（默认非零退出）`);
   lines.push(`引文：${totals.quote_gate_pass===totals.pairs?'通过':'不通过'}；通过配对 ${totals.quote_gate_pass}/${totals.pairs}`);

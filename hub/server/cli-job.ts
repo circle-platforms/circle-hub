@@ -1,15 +1,53 @@
+import { ExecutorStableName } from '../../contracts/api.ts';
+import { secretUseLabels } from './secret-use-labels.ts';
 // Administrator CLI only. Remote content is retained as sources; terminal output carries no remote body or resource names.
 import { parseArgs } from 'node:util';
 import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
-import { ExecutorRegistry, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
+import { ExecutorNames, ExecutorRegistry, ExecutorSource, registrationMissing, observationHashes, staleWarrant, type DispatchService, type JobStatus } from '../dispatch/api.ts';
 import type { BuildKnowledge } from '../dispatch/api.ts';
 import {VariableInputError,referencesIn} from '../../contracts/src/variables.ts';
-import { sha256Hex, VariableError, type Principal, type RecordsKit } from '../records/api.ts';
+import { isSha256, sha256Hex, VariableError, type Principal, type RecordsKit } from '../records/api.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
-import { UsageError } from './errors.ts';
-export const EXECUTOR_USAGE = 'add <定义文件> | update <执行器> <定义文件> | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
+import { ResourceAssignmentSubject, UserId } from '../../contracts/src/common.ts';
+import { CliError, UsageError } from './errors.ts';
+import { decided } from './cli-arguments.ts';
+import { teamOf } from './cli-team.ts';
+import type { DispatchView } from './api.ts';
+export const EXECUTOR_USAGE = 'add --name=<名字> (<定义文件> | --reference=src:<摘要>) | name <现有执行器编号> <明确名字> | update <执行器> (<定义文件> | --reference=src:<摘要>) | assign|unassign <执行器> (--team=<团队名或ID> | --user=<账户>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
 export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | explain-release --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
+/** The version of a pack that is in use (the highest published and not retired); null when there is none. */
+export interface PackVersionsInUse { latestVersion(packId: string): Promise<{ version: string } | null> }
+/**
+ * One line for an executor whose verification function is not the version of its workflow that is in use, null otherwise.
+ * A workflow version verifies with its own function, so until the executor's definition names it the Hub releases no
+ * device verification of that version on this executor.
+ */
+export function staleWarrantLine(id: string, proof: { package?: unknown; warrant_id?: unknown } | undefined, inUse: string | null | undefined, target?: unknown): string | null {
+  const pack = typeof proof?.package === 'string' ? proof.package : null;
+  const stale = pack === null ? null : staleWarrant(proof?.warrant_id, pack, inUse);
+  if (stale === null) return null;
+  // The test environment comes first: the console shows these lines without executor numbers, and there it is what tells
+  // two executors apart. The identity to name follows the version in use; a version that renamed the check names its own.
+  const where = typeof target === 'string' && target !== '' && !target.includes('${') ? `测试环境 ${target} 的` : '';
+  return `${where}执行器 ${id}：指定的核验函数是 ${stale.named}，工作流 ${pack} 现行的版本是 ${inUse}；${inUse} 核验的结果在这个执行器上不放行上机验证。更新：对这个执行器执行 circle-hub executor update，把定义里的 /proof/warrant_id 改成 ${stale.wanted}（新版本改了检查名时以新版本的为准），并核对定义里随版本变化的其余部分`;
+}
+/**
+ * After a workflow version is published: the enabled executors of that workflow that name another version of its
+ * verification function. Reads source definitions; the test environment is added where the definition resolves.
+ */
+export async function staleExecutorLines(records: RecordsKit, by: Principal, pack: string, inUse: string | null): Promise<string[]> {
+  const lines: string[] = [];
+  const registry = new ExecutorRegistry(records);
+  for (const entry of await registry.sources(by)) {
+    const source = entry.source as { enabled?: unknown; target?: unknown; proof?: { package?: unknown; warrant_id?: unknown } };
+    if (source.enabled !== true || source.proof?.package !== pack || staleWarrantLine(entry.id, source.proof, inUse) === null) continue;
+    let target: unknown = source.target;
+    try { target = (await registry.get(entry.id))?.definition.target ?? target; } catch { /* a variable without a value: the line goes without the test environment */ }
+    lines.push(staleWarrantLine(entry.id, source.proof, inUse, target)!);
+  }
+  return lines;
+}
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
   options: { readSecret?: (label: string) => Promise<string> };
@@ -17,7 +55,7 @@ export interface JobCommandSession {
   err(line: string): void;
   admin(): Promise<Principal>;
   records(): Promise<RecordsKit>;
-  hub(requireVaultKey?: boolean): Promise<{ dispatch: DispatchService | null; records: RecordsKit; knowledge?: BuildKnowledge }>;
+  hub(requireVaultKey?: boolean): Promise<{ dispatch: DispatchService | null; records: RecordsKit; knowledge?: BuildKnowledge; deps?: { dispatch?: Pick<DispatchView, 'readiness'> }; registry?: PackVersionsInUse }>;
 }
 async function service(s: JobCommandSession, requireKey = true): Promise<DispatchService> {
   const hub = await s.hub(requireKey); if (hub.dispatch && hub.knowledge) hub.dispatch.options.knowledge = hub.knowledge; if (!hub.dispatch) throw new Error('作业服务没有可用的租约服务'); return hub.dispatch;
@@ -40,37 +78,92 @@ function output(s: JobCommandSession, state: JobStatus): void {
   if (state.result) s.out(`结果引用 ${state.result}`);
   if (state.next_action) s.out(`下一步：${state.next_action}`);
 }
-async function readDefinition(s: JobCommandSession, file: string): Promise<unknown> {
-  try { return JSON.parse(await readFile(resolve(s.ctx.io.cwd, file), 'utf8')); } catch { throw new UsageError('执行器定义不是可读取的 JSON 文件'); }
+export async function readUploadedCommandBytes(records: Pick<RecordsKit, 'artifacts'>, by: Principal, reference: string): Promise<Uint8Array> {
+  return (await readUploadedSource(records, by, reference)).bytes;
+}
+export async function readUploadedSource(records: Pick<RecordsKit, 'artifacts'>, by: Principal, reference: string): Promise<{ bytes: Uint8Array; mediaType: string }> {
+  if (!reference.startsWith('src:') || !isSha256(reference.slice(4))) throw new UsageError('上传引用须为 src:<完整摘要>，不接受片段或记录引用');
+  const source = await records.artifacts.source(by, reference.slice(4), { consumer: 'function' });
+  if (!source?.bytes) throw new CliError('上传原件不可读取；请核对当前账户的读取权限和原件读取策略');
+  return { bytes: source.bytes, mediaType: source.mediaType };
+}
+async function readDefinition(s: JobCommandSession, records: RecordsKit, by: Principal, file?: string, reference?: string): Promise<unknown> {
+  let bytes: Uint8Array;
+  if (reference !== undefined) bytes = await readUploadedCommandBytes(records, by, reference);
+  else {
+    try { bytes = await readFile(resolve(s.ctx.io.cwd, file!)); } catch { throw new UsageError('执行器定义不是可读取的 JSON 文件'); }
+  }
+  let input: unknown;
+  try { input = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { throw new UsageError('执行器定义不是有效的 UTF-8 JSON'); }
+  const parsed = ExecutorSource.safeParse(input);
+  if (!parsed.success) {
+    const paths = [...new Set(parsed.error.issues.map(issue => '/' + issue.path.map(segment => String(segment).replaceAll('~', '~0').replaceAll('/', '~1')).join('/')))];
+    throw new UsageError('执行器源定义字段无效：' + paths.join('、') + '；请按字段修正定义，凭据只使用命名密钥引用');
+  }
+  return input;
 }
 async function executorLine(s:JobCommandSession,registry:ExecutorRegistry,by:import('../records/api.ts').Principal,e:import('../dispatch/api.ts').RegisteredExecutor) {
- const uses=[];for(const use of e.variables) {const version=(await registry.records.variables.history(by,'var',use.name)).find(v=>v.decision.digest===use.decision);uses.push(use.name+' 第 '+(version?.version??0)+' 版');}
- s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length===0)}；解析后摘要 ${e.resolved_digest}；变量 ${uses.join('、')||'无'}`);
+ const uses = await secretUseLabels(registry.records, by, e.variables);
+ s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length===0)}；解析后摘要 ${e.resolved_digest}；引用 ${uses.join('、')||'无'}`);
 }
 export async function executorCommand(s: JobCommandSession, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   let parsed;
-  try { parsed = parseArgs({ args: [...rest], options: { secret: { type: 'boolean' } }, allowPositionals: true, strict: true }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
+  try { parsed = parseArgs({ args: [...rest], options: { secret: { type: 'boolean' }, reference: { type: 'string' }, name: { type: 'string' }, team: { type: 'string' }, user: { type: 'string' } }, allowPositionals: true, strict: true }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
   if(parsed.values.secret)throw new UsageError('--secret 已退役：用 circle-hub secret set --name <名字> 换钥匙，引用它的执行器下次开会话用新版本');
+  const assignment = sub === 'assign' || sub === 'unassign';
+  if (assignment) {
+    if (parsed.positionals.length !== 1 || parsed.values.reference !== undefined || (parsed.values.team !== undefined) === (parsed.values.user !== undefined)) throw new UsageError('执行器分配须且只能指定 --team=<团队名或ID> 或 --user=<账户>');
+  } else if (parsed.values.team !== undefined || parsed.values.user !== undefined) throw new UsageError('团队和账户参数只用于 assign/unassign');
+  if (sub==='add' && !ExecutorStableName.safeParse(parsed.values.name).success) throw new UsageError('新执行器须用 --name 明确指定名字；名字不能使用内部编号');
+  if (sub!=='add' && parsed.values.name!==undefined) throw new UsageError('--name 只用于登记新执行器；给现有执行器命名用 executor name <编号> <名字>');
+  if (sub==='name' && (parsed.positionals.length!==2 || !ExecutorStableName.safeParse(parsed.positionals[1]).success)) throw new UsageError('给现有执行器命名：executor name <现有编号> <明确名字>');
+  const reference = parsed.values.reference;
+  const fileCount = sub === 'add' ? 1 : sub === 'update' ? 2 : null;
+  if (reference !== undefined && (fileCount === null || parsed.positionals.length !== fileCount - 1) || fileCount !== null && reference === undefined && parsed.positionals.length !== fileCount) throw new UsageError('定义文件和 --reference 必须且只能提供一种；引用只用于 add/update');
+  if (reference !== undefined && (!reference.startsWith('src:') || !isSha256(reference.slice(4)))) throw new UsageError('上传引用须为 src:<完整摘要>');
   const by = await s.admin();
   const hub = await s.hub(sub === 'add' || sub === 'update'); const registry = new ExecutorRegistry(hub.records);
+  if(sub==='name'){
+    const result=await new ExecutorNames(hub.records).assign(by,parsed.positionals[0],parsed.positionals[1]);
+    s.out(`执行器名字 ${result.binding.name} ${result.created?'已登记':'已存在'}；源定义和历史未改变`);return 0;
+  }
+  if (assignment) {
+    const current = await registry.readSource(parsed.positionals[0]);
+    if (!current) throw new CliError('执行器不可用');
+    const recipient = parsed.values.team !== undefined
+      ? await hub.records.teams.get(by, await teamOf(hub.records.teams, by, parsed.values.team))
+      : UserId.safeParse(parsed.values.user).success ? await hub.records.principals.get(parsed.values.user!) : await hub.records.principals.findByName(parsed.values.user!);
+    if (!recipient) throw new CliError(parsed.values.team !== undefined ? '团队不可用' : '账户不可用');
+    const subject = ResourceAssignmentSubject.parse(recipient.id);
+    if (sub === 'assign') await decided(() => hub.records.authorizations.assignResource(by, current.id, subject));
+    else await decided(() => hub.records.authorizations.unassignResource(by, current.id, subject));
+    s.out(sub === 'assign' ? `测试环境 ${current.source.target} 已分配给 ${recipient.name}` : `已撤回测试环境 ${current.source.target} 给 ${recipient.name} 的分配`);
+    return 0;
+  }
   if (sub === 'list' && !parsed.positionals.length) {
     const entries=await registry.sources(by);
+    // The version of a workflow that is in use, read once per workflow. A read that fails costs the lines about executors left
+    // behind, said once, never the list itself.
+    const inUse=new Map<string,string|null>();let unread=false;
+    const versionInUse=async(pack:string):Promise<string|null>=>{if(!inUse.has(pack)){let version:string|null=null;try{version=(await hub.registry?.latestVersion(pack))?.version??null;}catch{unread=true;}inUse.set(pack,version);}return inUse.get(pack)??null;};
     for(const source of entries){
-      try{const e=await registry.get(source.id);if(e){await executorLine(s,registry,by,e);if(!e.definition.calls.submit.write)s.out(`执行器 ${e.id}：写声明未写；请 executor update 补齐`);}}
+      try{const e=await registry.get(source.id);if(e){await executorLine(s,registry,by,e);if(!e.definition.calls.submit.write)s.out(`执行器 ${e.id}：写声明未写；请 executor update 补齐`);
+        const stale=e.definition.enabled?staleWarrantLine(e.id,e.definition.proof,await versionInUse(e.definition.proof.package),e.definition.target):null;if(stale!==null)s.out(stale);}}
       catch(error){if(!(error instanceof VariableError)&&!(error instanceof VariableInputError))throw error;const names=[...new Set(referencesIn(source.source).filter(ref=>ref.kind==='var').map(ref=>ref.name))];s.out(`执行器编号 ${source.id}；定义摘要 ${source.digest}；启用 ${Number(source.source.enabled)}；具备派发登记 0；解析后摘要 未解析；普通变量 ${names.join('、')} 缺决定或取值不合定义：先 var show <名字> --value 核对并 var set，再重做 executor list`);}
     }
+    if(unread)s.err('注意：没有读到工作流现行的版本，没有核对执行器指定的核验函数是不是现行版本的');
     s.out(`执行器 ${entries.length}`); return 0;
   }
   if (sub === 'disable' && parsed.positionals.length === 1) {
     const e = await registry.disable(by, parsed.positionals[0]); s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 0`); return 0;
   }
-  if (sub === 'add' && parsed.positionals.length === 1) {
-    const input = await readDefinition(s, parsed.positionals[0]);
-    const e = await registry.add(by, input); await executorLine(s,registry,by,e); return 0;
+  if (sub === 'add') {
+    const input = await readDefinition(s, hub.records, by, parsed.positionals[0], reference);
+    const e = await registry.add(by, input, parsed.values.name); s.out(`执行器名字 ${parsed.values.name} 已登记`); await executorLine(s,registry,by,e); return 0;
   }
-  if (sub === 'update' && parsed.positionals.length === 2) {
-    const [id, file] = parsed.positionals; const definition = await readDefinition(s, file);
+  if (sub === 'update') {
+    const [id, file] = parsed.positionals; const definition = await readDefinition(s, hub.records, by, file, reference);
     const e = await registry.update(by, id, definition);
     await executorLine(s,registry,by,e); return 0;
   }
@@ -148,6 +241,15 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
   }
   if (sub === 'precheck' && values.executor && positionals.length === 0) {
     const state = await dispatch.precheck(by, values.executor, values.booking); output(s, state);
+    try {
+      const view = (await s.hub(false)).deps?.dispatch;
+      if (!view?.readiness) s.out('本地只读就绪报告未知：报告尚未接线；原预检结论不变');
+      else {
+        const entry = await dispatch.registry.get(values.executor);
+        if (!entry) s.out('本地只读就绪报告未知：目标配置不可读取；原预检结论不变');
+        else s.out('本地只读就绪报告（不作许可或拒绝）：' + JSON.stringify(await view.readiness(by, entry.definition.target)));
+      }
+    } catch { s.out('本地只读就绪报告未知：读取未完成；原预检结论不变'); }
     if (values.save) s.out(`已导出观察 ${await exportPrecheck(s, dispatch, state.job, values.save)} 份`);
     const events = await dispatch.journal.events(state.job); return events.some(e => e.body.detail.readonly_verified === true) ? 0 : 1;
   }

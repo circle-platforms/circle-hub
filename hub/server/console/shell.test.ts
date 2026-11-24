@@ -18,7 +18,7 @@ const member = { name: '合成成员', role: '成员', admin: false };
 const bodyOf = (source: string) => elements(parse(source), 'body')[0];
 
 test('all nine member areas use one three-column shell, the ordered navigation and a footer theme selector', () => {
-  const areas: NavKey[] = ['overview', 'tasks', 'knowledge', 'packs', 'skills', 'connections', 'team', 'records', 'settings'];
+  const areas: NavKey[] = ['overview', 'tasks', 'knowledge', 'workflows', 'skills', 'connections', 'team', 'records', 'settings'];
   for (const active of areas) {
     const source = page({ title: '合成页面', active, user: member, csrf: 'synthetic-csrf', actions: html`${button('/secondary', '查看')}${button('/primary', '新建', { primary: true })}` }, pageLayout(html`<p>合成内容</p>`, { inspector: html`<h2 class="ch-panel-title">合成概况</h2><p>知识 3 条</p>` })).text;
     const body = bodyOf(source), all = elements(body);
@@ -36,7 +36,7 @@ test('all nine member areas use one three-column shell, the ordered navigation a
     assert.equal(nav.filter((el) => attr(el, 'aria-current') === 'page').length, 1);
     assert.equal(nav[areas.indexOf(active)].attrs.some((a) => a.name === 'aria-current'), true);
     assert.equal((attr(shell, 'class') ?? '').includes('area-knowledge'), active === 'knowledge');
-    assert.equal((attr(shell, 'class') ?? '').includes('area-workflow'), active === 'packs' || active === 'skills', 'workflows and skills share one area colour');
+    assert.equal((attr(shell, 'class') ?? '').includes('area-workflow'), active === 'workflows' || active === 'skills', 'workflows and skills share one area colour');
     assert.equal((attr(shell, 'class') ?? '').includes('area-task'), active === 'tasks');
     const foot = all.find((el) => has(el, 'ch-nav-foot'))!;
     assert.match(text(foot), /合成成员.*成员/s);

@@ -1,11 +1,10 @@
-// Pack file integrity, schema compliance and publication checks for source-read.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
-import { ChecksFile, PackManifest, PublishableRequirementsFile, RequirementsFile, SlotsFile, WorkflowFile } from '../../../contracts/src/pack.ts';
+import { ChecksFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../../../contracts/src/pack.ts';
 import { readPackDirectory, runPublishCheck, validatePack } from '../../../hub/runs/api.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { PACK_DIR, computeManifest, manifestText, packFiles, stage } from './pack-files.ts';
@@ -21,7 +20,7 @@ describe('the source-read pack files', () => {
   it('pack.json lists exactly the pack files with their digests', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['source-read', '0.1.9', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['source-read', '0.1.10', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('workflow.json') && files.includes('requirements.json') && files.includes('checks.json') && files.includes('slots.schema.json') && files.includes('SKILL.md') && files.includes('functions/project.ts'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'README.md' || f === 'pack-files.ts' || f === 'api.ts'));
@@ -47,9 +46,6 @@ describe('the source-read pack files', () => {
     const requirements = RequirementsFile.parse(json('requirements.json'));
     assert.equal(requirements.schema, 'requirements@1');
     assert.deepEqual(requirements.requirements, []);
-
-    const publishable = PublishableRequirementsFile.parse(json('requirements.json'));
-    assert.deepEqual(publishable.requirements, []);
 
     const checks = ChecksFile.parse(json('checks.json'));
     assert.deepEqual(checks.checks, []);

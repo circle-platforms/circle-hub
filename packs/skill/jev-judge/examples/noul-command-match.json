@@ -1,0 +1,16 @@
+{
+  "state": {
+    "step": "给负载均衡配置一个名为 pool_demo 的 HTTP 后端池",
+    "command": "pool create pool_demo http"
+  },
+  "questions": {
+    "command_matches_step": {
+      "type": "noul",
+      "instructions": "The CLI command in `command` is the command that the test step in `step` requires the tester to execute.",
+      "criteria": {
+        "true": "It is exactly the command this step needs",
+        "false": "It is a different command, including a related command with the opposite or a different effect"
+      }
+    }
+  }
+}

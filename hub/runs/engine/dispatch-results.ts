@@ -1,48 +1,61 @@
 import { requestRecords } from './requests.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
-// Read existing dispatch observations only. No planning, dispatching or resubmission lives here.
 import { z } from 'zod';
 import { DYNAMIC_TERMINAL, DynamicTerminalSchema, NatureSchema, QualifierMarkSchema, ReasonSchema, labelOf, type DynamicTerminal, type QualifierMark, type Reason } from '../../../contracts/generated/vocabulary.ts';
 import { Claim } from '../../../contracts/src/claim.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult, LayerResult } from '../../../contracts/src/validation.ts';
-import type { RunJob } from '../../dispatch/api.ts';
+import type { Principal } from '../../records/api.ts';
+import { earlyStopSentence, statusDiagnostics, type RunJob, type RunReservations } from '../../dispatch/api.ts';
 import { parseReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
+import type { ExportedJob } from '../../ports.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
 import { bindRecovery, expectationFor, meets, requirementStatus } from './terminals.ts';
 import { aggregate, INTERMITTENT_MARK, repetitionSummary, type RoundOutcome } from './repetition.ts';
-import { earlyStopSentence } from '../../dispatch/rounds.ts';
 
-const Row=z.object({item:z.string(),dynamic_terminal:DynamicTerminalSchema,qualifier:z.object({nature:NatureSchema.extract(['judgment','unknown']),marks:z.array(QualifierMarkSchema)}),accepted_as_fact:z.literal(false),missing_facts:z.array(z.string()).optional(),code:z.string().optional(),judgment_premises:z.array(Claim).optional(),report_check:z.object({condition:z.string(),pointer:z.string(),declared_pointer:z.string(),resolved:z.boolean(),present:z.boolean(),actual_sha256:z.string(),result_definition_sha256:z.string(),mapped_terminal:DynamicTerminalSchema.optional(),missing_fact:z.string().optional(),next_action:z.string().optional()}).optional(),missing_fact:z.string().optional(),next_action:z.string().optional()});
+const Row=z.object({item:z.string(),dynamic_terminal:DynamicTerminalSchema,qualifier:z.object({nature:NatureSchema.extract(['judgment','unknown']),marks:z.array(QualifierMarkSchema)}),accepted_as_fact:z.literal(false),missing_facts:z.array(z.string()).optional(),code:z.string().optional(),judgment_premises:z.array(Claim).optional(),report_check:z.object({condition:z.string(),pointer:z.string(),declared_pointer:z.string(),resolved:z.boolean(),present:z.boolean(),actual_sha256:z.string(),result_definition_sha256:z.string(),mapped_terminal:DynamicTerminalSchema.optional(),missing_fact:z.string().optional(),next_action:z.string().optional()}).optional(),missing_fact:z.string().optional(),next_action:z.string().optional(),evidence:z.object({log:z.string().optional(),sessions:z.record(z.string(),z.string()).optional()}).optional()});
 const RoundNote=z.object({round:z.number().int(),terminal:DynamicTerminalSchema,code:z.string().optional(),meets:z.boolean().nullable().optional(),reason:ReasonSchema.optional(),early_stop:z.boolean().optional(),pending:z.boolean().optional(),lost:z.boolean().optional()});
 const Projection=z.object({job:z.string(),sha256:z.string(),rows:z.array(Row),rounds:z.array(RoundNote).optional()});
 export function appliesTo(job:RunJob,run:string,item:string):boolean{return job.verification_run===run?job.verification_item===item:job.plan_run===run&&job.items.includes(item);}
+type Admin={id:string;name:string;role:'admin'};
+async function activeAdmin(ctx:EngineContext):Promise<Admin|null>{const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);return admin?{id:admin.id,name:admin.name,role:'admin'}:null;}
+async function readProjection(ctx:EngineContext,reader:Principal,job:RunJob):Promise<z.infer<typeof Projection>|null>{
+  if(!job.status.result)return null;
+  const ref=parseReference(job.status.result);
+  if(ref.scheme!=='src')return null;
+  const source=await ctx.deps.records.artifacts.source(reader,ref.sha256,{consumer:'function'});
+  if(!(source?.bytes&&'generated'in source.artifact.body.origin&&source.artifact.body.origin.generated.generator==='dispatch@1'&&source.artifact.body.author.user===null&&source.artifact.body.provenance_type==='projected'))return null;
+  let json:unknown;try{json=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(source.bytes));}catch{json=null;}
+  const parsed=Projection.safeParse(json);
+  return parsed.success&&parsed.data.job===job.job&&parsed.data.sha256===job.sha256&&parsed.data.rows.length===job.items.length&&new Set(parsed.data.rows.map(r=>r.item)).size===job.items.length&&parsed.data.rows.every(r=>job.items.includes(r.item))?parsed.data:null;
+}
+export function exportedJobRow(row:z.infer<typeof Row>):NonNullable<ExportedJob['rows']>[number]{return structuredClone(row);}
+export async function exportedJobs(ctx:EngineContext,run:string,reader:Principal):Promise<ExportedJob[]>{return (await exportedJobsWithEnd(ctx,run,reader)).map(row=>row.exported);}
+export async function exportedJobsWithEnd(ctx:EngineContext,run:string,reader:Principal,reservations?:RunReservations):Promise<Array<{exported:ExportedJob;ended_at:string|null}>>{
+  if(!ctx.deps.dispatch)return [];
+  const journalReader=reader.role==='admin'?reader:await activeAdmin(ctx);
+  if(!journalReader)return [];
+  const out:Array<{exported:ExportedJob;ended_at:string|null}>=[];
+  for(const job of await ctx.deps.dispatch.jobs(journalReader,run,reservations)){
+    const report=await readProjection(ctx,reader,job);
+    const notRun=job.status.outcome==='not_dispatched'||job.status.outcome==='target_rejected'||job.status.outcome==='proven_not_executed';
+    const why=notRun?statusDiagnostics(job,reader.role==='admin').missing_facts:[];
+    out.push({ended_at:job.ended_at??null,exported:{job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,outcome:job.status.outcome,frozen:job.status.frozen,result:job.status.result??null,device_return:job.status.device_return??null,rows:report?report.rows.map(exportedJobRow):null,...(why.length?{missing_facts:why,next_action:why.map(f=>f.next_action).join('；')}:{}),...(notRun&&job.status.member_missing_facts?.length?{member_missing_facts:job.status.member_missing_facts.map(f=>({...f}))}:{})}});
+  }
+  return out;
+}
 export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,result:ValidationResult,jobs?:RunJob[]):Promise<boolean>{
   if(!ctx.deps.dispatch&&!jobs)return false;
-  const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+  const admin=await activeAdmin(ctx);
   if(!admin)throw new Error('派发观察缺少具名管理员');
-  jobs??=await ctx.deps.dispatch!.jobs({id:admin.id,name:admin.name,role:admin.role},run.run);
+  jobs??=await ctx.deps.dispatch!.jobs(admin,run.run);
   if(!jobs.length)return false;
   const workflow=await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space);
   if(!workflow)throw new Error('派发观察缺少锁定的要求项模板');
   const questions=await requestRecords(ctx,run.run);
   const reports=new Map<string,z.infer<typeof Projection>|null>();
-  for(const job of jobs){
-    let report:z.infer<typeof Projection>|null=null;
-    if(job.status.result){
-      const ref=parseReference(job.status.result);
-      if(ref.scheme==='src'){
-        const source=await ctx.deps.records.artifacts.source({id:admin.id,name:admin.name,role:admin.role},ref.sha256,{consumer:'function'});
-        if(source?.bytes&&'generated'in source.artifact.body.origin&&source.artifact.body.origin.generated.generator==='dispatch@1'&&source.artifact.body.author.user===null&&source.artifact.body.provenance_type==='projected'){
-          let json:unknown;try{json=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(source.bytes));}catch{json=null;}
-          const parsed=Projection.safeParse(json);
-          if(parsed.success&&parsed.data.job===job.job&&parsed.data.sha256===job.sha256&&parsed.data.rows.length===job.items.length&&new Set(parsed.data.rows.map(r=>r.item)).size===job.items.length&&parsed.data.rows.every(r=>job.items.includes(r.item)))report=parsed.data;
-        }
-      }
-    }
-    reports.set(job.job,report);
-  }
+  for(const job of jobs)reports.set(job.job,await readProjection(ctx,admin,job));
   const required=new Set(workflow.requirements.filter(r=>r.required).map(r=>r.key));
   const inputs:PartitionInput[]=[];
   for(const [partition,items] of Object.entries(result.partitions))for(const item of items){

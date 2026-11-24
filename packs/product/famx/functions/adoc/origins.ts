@@ -47,6 +47,25 @@ const BULLET = /^\s*(?:\*+|-|\+|\.+|[0-9]+[.)]|[a-z][.)])\s+/i;
 /** The narrow marker rule the exact pass has always used; the folded pass uses BULLET and the other variants. */
 const EXACT_BULLET = /^\s*(?:\*+|[-.]|[0-9]+[.)]) +/;
 const CELL = /(?<!\\)\|/;
+// The engine's specifier of the next cell (span, alignment, style) at the end of the text before a separator.
+const CELL_SPEC_END = /[ \t]+(?:(\d+(?:\.\d*)?|(?:\d*\.)?\d+)([*+]))?([<^>](?:\.[<^>]?)?|(?:[<^>]?\.)?[<^>])?([a-z])?$/;
+
+function cellTexts(source: string): string[] {
+  const pieces = source.split(CELL);
+  const out: string[] = [];
+  pieces.forEach((piece, index) => {
+    out.push(piece);
+    if (index === pieces.length - 1) return;
+    const spec = CELL_SPEC_END.exec(piece);
+    if (spec !== null && spec[0].trim() !== '') out.push(piece.slice(0, spec.index));
+  });
+  return out;
+}
+
+function opensCellBelow(line: string): boolean {
+  const pieces = line.split(CELL);
+  return pieces.length > 1 && (pieces[pieces.length - 1] as string).trim() === '';
+}
 /** A single-line comment (`// …`), which the reader drops; a `////` block-comment delimiter is not one. */
 const COMMENT_LINE = /^\s*\/\/(?!\/)/;
 
@@ -75,7 +94,7 @@ function variantsOf(kind: string, line: string): string[] {
       const described = DESCRIBED.exec(item);
       if (described !== null) queue.push(described[1] as string, described[2] as string);
     }
-    if (kind === 'table_cell') for (const cell of base.split(CELL)) queue.push(cell.replace(/\\\|/g, '|'));
+    if (kind === 'table_cell') for (const cell of cellTexts(base)) queue.push(cell.replace(/\\\|/g, '|'));
   }
   return out;
 }
@@ -84,7 +103,7 @@ function variantsOf(kind: string, line: string): string[] {
 function lineMatches(kind: string, expected: string, source: string, expand: (text: string) => string, folded: boolean): boolean {
   if (!folded) {
     if (kind === 'section' || kind === 'floating_title') return HEADING.test(source) && source.replace(HEADING, '') === expected;
-    if (kind === 'table_cell') return source.split(CELL).some((cell) => cell.trim() === expected);
+    if (kind === 'table_cell') return cellTexts(source).some((cell) => cell.trim() === expected);
     if (kind === 'list_item') return source.replace(EXACT_BULLET, '') === expected;
     if (kind === 'admonition') return source.replace(ADMONITION, '') === expected;
     return source === expected;
@@ -130,8 +149,17 @@ function noTextLine(index: number, mapped: MappedLine[], visible: Set<number>): 
  * before a checkbox item, a paragraph above an admonition — from being cited for a block the engine put elsewhere: the
  * text being equal does not show which line the block came from.
  */
-function reachableFrom(cursor: number, at: number, mapped: MappedLine[], visible: Set<number>): boolean {
+function reachableFrom(cursor: number, at: number, mapped: MappedLine[], visible: Set<number>, kind?: string): boolean {
   if (cursor === at) return true;
+  // A table cell whose separator ends the cursor's line starts below it: the lines between hold nothing but blank lines.
+  if (kind === 'table_cell' && at > cursor && visible.has(cursor) && mapped[cursor] !== undefined && opensCellBelow((mapped[cursor] as MappedLine).text)) {
+    for (let index = cursor + 1; index < at; index++) {
+      if (!visible.has(index)) continue;
+      const line = mapped[index];
+      if (line === undefined || line.text.trim() !== '') return false;
+    }
+    return true;
+  }
   if (!noTextLine(cursor, mapped, visible)) return false;
   for (let index = Math.min(cursor, at) + 1; index < Math.max(cursor, at); index++) {
     if (!visible.has(index)) continue;
@@ -214,7 +242,7 @@ export function verifyOrigin(
   const foldedOnly = exact.some((candidate) => candidate.flat === reported) ? [] : collectAt(true).filter((candidate) => !byFlat.has(candidate.flat));
   for (const candidate of foldedOnly) byFlat.set(candidate.flat, candidate);
   const matched = [...byFlat.values()].sort((a, b) => a.flat - b.flat);
-  const admissible = matched.filter((candidate) => reachableFrom(cursor, candidate.flat - 1, mapped, visible));
+  const admissible = matched.filter((candidate) => reachableFrom(cursor, candidate.flat - 1, mapped, visible, kind));
   if (admissible.length === 0) {
     return {
       origins: [],

@@ -9,7 +9,7 @@ test('the delivery rule head keeps its formal name and says what the two rules m
  const shown=String(doneRuleHead());
  assert.ok(shown.includes(axisUiLabel('done_rule')),'the formal name stays');
  assert.ok(shown.includes(`title="${DONE_RULE_NOTE}"`)&&shown.includes(`aria-description="${DONE_RULE_NOTE}"`));
- for(const part of ['记账型：','门禁型：','不要求每项都满足','不显示“通过”','全部必需的要求项都满足'])assert.ok(DONE_RULE_NOTE.includes(part),part);
+ for(const part of ['记账型：','门禁型：','不要求每项都正确','不显示“通过”','全部必需的要求项都正确'])assert.ok(DONE_RULE_NOTE.includes(part),part);
  assert.deepEqual(wordingProblems(shown),[]);
 });
 

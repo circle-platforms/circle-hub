@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkContractShape, checkExpectedSources } from './checks.ts';
+import { checkCommandsKnown, checkContractShape, checkExpectedSources } from './checks.ts';
+import { fixture, positiveBlocks } from '../testing/blocks.ts';
+import { profileDocument } from '../testing/runtime.ts';
+import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { commandSubject, quoteSubject } from './subject.ts';
+import { readSlots } from './slots.ts';
 import { COMMAND_CATALOG,goodData, subjectOf, CONTRACT_DOC, PROFILE_DOC, MANIFEST_DOC, COMMAND_IDENTITIES, QUOTE } from './test-support.ts';
 import { replacedQuote, deniedCommand } from './addresses.ts';
 const group = () => ({ kind: 'case-compile', contract: CONTRACT_DOC, profile: PROFILE_DOC, manifest: MANIFEST_DOC, leases: { now: '2026-10-23T02:00:00.000Z', entries: [] } });
@@ -47,4 +51,57 @@ test('expectation quotation follows contextual East Asian whitespace without joi
   ['a\ufeffb','a b',false],
  ] as const){const data=goodData();data.expects[0].quote.text=fragment;data.expects[0].text=text;const results=checkExpectedSources(subjectOf(data));assert.equal(results.every(v=>v.verdict==='support'),match,JSON.stringify({fragment,text,results}));if(!match)assert.ok(results.some(v=>v.code==='case-compile.expect_not_in_quote'&&v.pointer==='/data/expects/0/text'));}
  const replaced=goodData();replaced.replacements=[{case:'192.0.2.200',bed:'192.0.2.90'}];replaced.expects[0].quote.text='服务器\n192.0.2.200 成功';replaced.expects[0].text='服务器192.0.2.90成功';assert.equal(checkExpectedSources(subjectOf(replaced))[0].code,'case-compile.expect_not_in_quote');
+});
+
+test('checkCommandsKnown also separates downstream command refutes from block observation unknowns', () => {
+ const base = fixture(), doc = structuredClone(base.contractDoc) as Record<string, any>;
+ doc.runtime.block_model.output_methods = [];
+ const contract = signTypedRuntime(doc), profile = structuredClone(base.profileDoc) as Record<string, any>;
+ profile.workbook.template = (profileDocument(contract as Parameters<typeof profileDocument>[0]) as Record<string, any>).workbook.template;
+ const mixed = structuredClone(positiveBlocks().CONFIG);
+ mixed.blocks.pop();
+ const outcomes = checkCommandsKnown(base.subject(mixed, { contract, profile }));
+ assert.equal(outcomes.length, 2, JSON.stringify(outcomes));
+ const refused = outcomes.find((o) => o.verdict === 'refute');
+ const unknown = outcomes.find((o) => o.verdict === 'unknown');
+ assert.ok(refused && refused.code === 'case-compile.method_forbidden', JSON.stringify(outcomes));
+ assert.ok(unknown && unknown.reason === 'missing_input', JSON.stringify(outcomes));
+ assert.ok(((refused as any).data.problems as Array<{ verdict: string }>).every((p) => p.verdict === 'refute'));
+ assert.ok(((unknown as any).data.problems as Array<{ verdict: string }>).every((p) => p.verdict !== 'refute'));
+});
+
+test('precondition_source on flat steps passes readSlots and flows into quoteSubject for Hub verbatim check, while invalid shapes refute', () => {
+  const valid = goodData();
+  const manualQuote = { reference: 'knowledge:manual#widget-pair', text: 'Configure widget peer and challenge on both devices' };
+  (valid.steps[0] as unknown as Record<string, unknown>).precondition_source = manualQuote;
+  const parsed = readSlots(valid);
+  assert.equal(parsed.ok, true, JSON.stringify(parsed));
+  if (parsed.ok) {
+    assert.deepEqual(parsed.slots.steps[0].precondition_source, manualQuote);
+  }
+  const out = quoteSubject({
+    catalog: COMMAND_CATALOG.entries,
+    catalog_complete: true,
+    slots: { plan: [{ data: valid }] },
+    item: { id: 'doc-1:c-1', fields: { command_identities: COMMAND_IDENTITIES } },
+    context: { command_policy: COMMAND_CATALOG.policy, root: COMMAND_CATALOG.root, groups: [group()] },
+  }) as { quotes: Array<{ reference: string; text: string }> };
+  assert.ok(out.quotes.some((q) => q.reference === QUOTE.reference && q.text === QUOTE.text), 'retains expectation quote');
+  assert.ok(out.quotes.some((q) => q.reference === manualQuote.reference && q.text === manualQuote.text), 'routes step precondition_source into quote@1');
+
+  const badEmpty = goodData();
+  (badEmpty.steps[0] as unknown as Record<string, unknown>).precondition_source = { reference: 'knowledge:manual#widget-pair', text: '' };
+  assert.equal(readSlots(badEmpty).ok, false);
+  const badQuote = quoteSubject({
+    catalog: COMMAND_CATALOG.entries,
+    catalog_complete: true,
+    slots: { plan: [{ data: badEmpty }] },
+    item: { id: 'doc-1:c-1', fields: { command_identities: COMMAND_IDENTITIES } },
+    context: { command_policy: COMMAND_CATALOG.policy, root: COMMAND_CATALOG.root, groups: [group()] },
+  }) as { blocked?: Array<{ code: string; pointer: string }> };
+  assert.ok(badQuote.blocked?.some((b) => b.code === 'case-compile.slots_invalid' && b.pointer.includes('/precondition_source')), JSON.stringify(badQuote));
+
+  const badExtra = goodData();
+  (badExtra.steps[0] as unknown as Record<string, unknown>).precondition_source = { reference: 'knowledge:manual#widget-pair', text: 'ok', extra: 1 };
+  assert.equal(readSlots(badExtra).ok, false);
 });

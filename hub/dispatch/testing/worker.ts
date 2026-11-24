@@ -18,7 +18,8 @@ try {
   const parameters={target:proof.bed.id,manifest_sha256:proof.bed.manifest_sha256,build:proof.build,sha256:proof.sha256,items:proof.autoids,generator:proof.generator};
   const document=effectsDocument(parameters);
   if(typeof input.repetition==='number')(document.effects[0] as {repetition?:number}).repetition=input.repetition;
-  const service = new DispatchService({ beforeRound:typeof input.haltBeforeRound==='number'?async round=>{if(round>=input.haltBeforeRound)process.exit(86);}:undefined,recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策支持',grounds:[],tier:'blocking'}]])),records: kit, leases: new LeaseService(db, { now: async () => now() }),
+  const leases=new LeaseService(db,{now:async()=>now()});
+  const service = new DispatchService({ beforeRound:typeof input.haltBeforeRound==='number'?async round=>{if(round>=input.haltBeforeRound)process.exit(86);}:undefined,recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策支持',grounds:[],tier:'blocking'}]])),records: kit, leases,
     runs: { getRun: async (_by, id) => id === detail.run.run ? detail : id === detail.run.predecessor ? { ...detail, run: { ...detail.run, run: id, predecessor: undefined } } : null },
     workflows: { byDigest: async () => ({ pack: { id: 'synthetic-workflow', version: '1.0.0', digest: detail.run.pack_digest }, requirements: [{ key: 'workbook_verified', required: true, target: 'item', accepted_producer: 'fact' }],readJson:async()=>document } as unknown as LoadedWorkflow) }, now });
   if (process.send) { process.send({ ready: true }); await new Promise(resolve => process.once('message', resolve)); }

@@ -54,7 +54,7 @@ test('a nonempty production run persists grounded projection facts and renders p
   assert.ok(ValidationResult.safeParse(result).success);
   assert.deepEqual((await h.service.getResult(h.alice,detail.answer.run!.run))!.result,result);
   const text=toolText('start_run',{...detail.answer,trace:result.trace},{production:result,record:`rec:${detail.runRecord}`,paging:true});
-  assert.match(text,/有 2 个用例解析不出命令/);assert.match(text,/共 3 个用例/);assert.match(text,/生产运行说明/);
+  assert.match(text,/有 2 个用例解析不出命令；状态已确认；判断正确/);assert.equal(text.split('\n').filter(line=>line.startsWith('原始用例 ')).length,3);assert.doesNotMatch(text,/生产运行说明/);
   assert.ok(!text.includes('可能有遗漏的普通 warning'));
   const repeated=await h.service.startRunDetailed(h.alice,args,h.call('notes-session'));
   assert.deepEqual(repeated.production,detail.production);
@@ -113,5 +113,5 @@ test('projection facts disclose their advisory cross-item scope instead of prete
   assert.equal(note.requirement,undefined);
   for(const item of Object.values(result.partitions).flat())for(const requirement of item.requirements)assert.ok(!requirement.claims.some(c=>c.pointer==='/groups/0'));
   const text=toolText('start_run',{...detail.answer,trace:result.trace},{production:result});
-  assert.match(text,/投影说明（提示，不参与要求项）/);
+  assert.match(text,/有 2 个用例解析不出命令；状态已确认；判断正确/);assert.doesNotMatch(text,/投影说明|参与要求项/);
 });

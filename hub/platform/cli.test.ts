@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, before, describe, test } from 'node:test';
 import { ENVIRONMENT, labelOf } from '../../contracts/generated/vocabulary.ts';
-import { isPlatformCommand, PLATFORM_COMMANDS, runPlatformCommand } from './cli.ts';
+import { isPlatformCommand, platformCommands, PLATFORM_COMMAND_METADATA, PLATFORM_COMMANDS, runPlatformCommand } from './cli.ts';
 import { createContext, postgresFor, type PlatformContext } from './context.ts';
 import { isMissingOrEmpty } from './files.ts';
 import { ensureLayout, layoutAt } from './layout.ts';
@@ -100,6 +100,16 @@ describe('platform CLI', () => {
     assert.match(unknown.err, /未知命令：frobnicate/);
     assert.match((await run('serve')).err, /serve 由服务器包提供/);
     assert.ok(isPlatformCommand('deploy') && !isPlatformCommand('serve') && !isPlatformCommand('toString'));
+    const bound = platformCommands(captureIo({ ...env, CIRCLE_HUB_DATADIR: '/synthetic' }, parent).io, overrides);
+    assert.deepEqual(bound.map(({ run, ...metadata }) => metadata), PLATFORM_COMMAND_METADATA);
+    const beforeFactoryCommand = system.calls.length;
+    assert.equal(await bound.find(({ name }) => name === 'status')!.run([]), 1, 'factory commands preserve configuration checks');
+    assert.equal(system.calls.length, beforeFactoryCommand, 'invalid configuration never reaches the platform runner');
+    for (const entry of bound) {
+      assert.equal(entry.bridge, false);
+      assert.equal(entry.step, `run-${entry.name}`);
+      assert.ok(entry.summary.length > 0);
+    }
     assert.deepEqual([...PLATFORM_COMMANDS].sort(), ['backup', 'db', 'deploy', 'init', 'key', 'rehearse', 'restore', 'rollback', 'service', 'status', 'tls']);
     assert.equal((await run('db', 'explode')).code, 2);
     assert.equal((await run('service', 'explode')).code, 2, 'usage is checked before the settings are read');
@@ -334,12 +344,32 @@ describe('platform CLI', () => {
     assert.ok(dir);
     assert.match(backup.out, /数据库 1 张表 1 行/);
     assert.match(backup.out, /清单含每个文件的 SHA-256/);
+    assert.match(backup.out, /注意：备份不含 bot-runtime（机器人私聊附件、通道暂存与运行套接字）；如需保留机器人私聊附件/);
+    assert.ok(!backup.out.includes('私聊成员附件') && !backup.out.includes('成员私聊附件'));
     const refused = await run('restore', dir);
     assert.equal(refused.code, 1);
     assert.equal(refused.lines[0], `数据根：${root}`);
     assert.match(refused.err, /只能恢复到空的数据根/);
     assert.match(refused.out,/恢复清除之前的备份会带回已清除的个人内容/);
     assert.match((await run('status')).out, /备份：1 份/);
+
+    const restoredRoot = join(parent, 'restored-root');
+    const restoredLayout = layoutAt(restoredRoot);
+    await ensureLayout(restoredLayout);
+    const restoredDbPort = String(socketPort());
+    await writeFile(
+      settingsPath(restoredLayout),
+      JSON.stringify(newSettingsFile({ environment: ENVIRONMENT[0], port: await freePort(), database: { port: Number(restoredDbPort) } })),
+    );
+    const restoredCapture = captureIo({ CIRCLE_HUB_DATA_DIR: restoredRoot, CIRCLE_HUB_DATABASE_PORT: restoredDbPort }, parent);
+    try {
+      const restored = await runPlatformCommand(['restore', dir], restoredCapture.io, overrides);
+      assert.equal(restored, 0, restoredCapture.err.join('\n'));
+      assert.match(restoredCapture.out.join('\n'), /注意：恢复不含 bot-runtime（机器人私聊附件、通道暂存与运行套接字）；机器人配置密文已随 vault\/ 恢复，但机器人私聊附件/);
+      assert.ok(!restoredCapture.out.join('\n').includes('私聊成员附件') && !restoredCapture.out.join('\n').includes('成员私聊附件'));
+    } finally {
+      await runPlatformCommand(['db', 'stop'], captureIo({ CIRCLE_HUB_DATA_DIR: restoredRoot, CIRCLE_HUB_DATABASE_PORT: restoredDbPort }, parent).io, overrides).catch(() => {});
+    }
   });
 
   test('restore refuses while the service is loaded, because launchd would race it for the database', async () => {

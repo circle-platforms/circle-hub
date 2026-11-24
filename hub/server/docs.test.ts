@@ -6,24 +6,18 @@
 // `declared`, and only a run of a pack that declares the doc input type reads them, only for that run's user;
 // everyone else gets the same answer as for a doc that does not exist. Temporary PostgreSQL, synthetic content only.
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import type { LoadedWorkflow, WorkflowStore } from '../ports.ts';
-import { sha256Hex,newId, type ActionBody, type Principal, type SourceArtifactBody } from '../records/api.ts';
+import { canonicalBytes, sha256Hex, newId, type Principal, type SourceArtifactBody } from '../records/api.ts';
 import { osIsolationAvailable } from '../rules/api.ts';
 import { writePack } from '../runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
 import { assembleHub, type AssembledHub } from './assemble/hub.ts';
 import { removeTree } from './assemble/files.ts';
-import {Database,createPool} from '../records/db.ts';
-import {MIGRATIONS,migrate} from '../records/migrations.ts';
-import {PgPrincipals} from '../records/principals.ts';
-import {PgRecordStore} from '../records/store.ts';
-import {openRecords} from '../records/index.ts';
-import {DEFAULT_LIMITS} from '../config/index.ts';
 import { DOCS_PACK, docsPack, reviewPack } from './assemble/test-packs.ts';
 import { DOC_EXTERNAL_TYPE, MAX_DOC_BYTES, createDocs, docIdOf, type Docs } from './docs.ts';
 
@@ -37,27 +31,85 @@ after(async () => {
 
 const enc = new TextEncoder();
 
-test('an old personal run never unlocks an administrator named document, even with a matching input declaration',async t=>{
-  // The missing private package predates the holder guard; a new run with it is invalid.
-  const database=await postgres.createDatabase(undefined,{empty:true}),db=new Database(createPool(database));
-  t.after(async()=>{await db.end();await postgres.dropDatabase(database.database);});
-  await migrate(db,MIGRATIONS.slice(0,18));
-  const principals=new PgPrincipals(db,()=>new Date()),{user:admin}=await principals.bootstrapAdmin('合成旧管理员'),user=await principals.createUser(admin,'合成旧成员','user');
-  const store=new PgRecordStore(db,{maxRecordBytes:DEFAULT_LIMITS.maxRecordBytes,now:()=>new Date()}),runs=new Map<string,string>();
-  for(const principal of [user,admin]){
-    const run=newId('run');runs.set(principal.id,run);
-    await store.put({kind:'run',schema:'run@1',provenance:'declared',body:{run,runner:principal.id,pack_space:principal.id,pack_digest:'a'.repeat(64)},index:[{key:'runs.id',value:run}]});
+test('a personal run never unlocks an administrator named document, even with a matching input declaration', async (t) => {
+  const { kit, docs, admin, user } = await world();
+  t.after(() => kit.close());
+  await docs.put(admin, 'synthetic-restricted', enc.encode('合成管理员命名文档'));
+  const at = '2026-10-22T01:00:00.000Z';
+  const stub = enc.encode('{}');
+  const stubSha256 = sha256Hex(stub);
+  for (const principal of [user, admin]) {
+    const manifest = {
+      schema: 'pack@1' as const,
+      id: `synthetic-personal-${principal.role}`,
+      version: '1.0.0',
+      kind: 'workflow' as const,
+      title: '合成个人工作流',
+      description: '合成个人工作流',
+      files: ['SKILL.md', 'checks.json', 'requirements.json', 'slots.schema.json', 'workflow.json'].map((path) => ({
+        path,
+        sha256: stubSha256,
+        size: stub.byteLength,
+      })),
+    };
+    const manifestBytes = canonicalBytes(manifest);
+    const packDigest = sha256Hex(manifestBytes);
+    const run = newId('run');
+    await kit.store.withTransaction(async (tx) => {
+      await kit.objects.put(stub, 'application/json', tx, principal.id, true);
+      await kit.objects.put(manifestBytes, 'application/json', tx, principal.id, true);
+      await kit.store.put(
+        {
+          kind: 'personal_pack_version',
+          schema: 'personal-pack-version@1',
+          provenance: 'declared',
+          unique_key: `${principal.id}/${packDigest}`,
+          body: {
+            space: principal.id,
+            pack: manifest.id,
+            version: manifest.version,
+            kind: manifest.kind,
+            digest: packDigest,
+            title: manifest.title,
+            description: manifest.description,
+            manifest,
+            publisher: principal.id,
+            at,
+            files: {},
+            report: { samples: { sources: [] } },
+          },
+          index: [
+            { key: 'personal.pack.owner', value: principal.id },
+            { key: 'personal.pack.id', value: `${principal.id}/${manifest.id}` },
+            { key: 'personal.pack.digest', value: `${principal.id}/${packDigest}` },
+          ],
+        },
+        tx,
+      );
+      await kit.store.put(
+        {
+          kind: 'run',
+          schema: 'run@1',
+          provenance: 'declared',
+          body: { run, runner: principal.id, pack_space: principal.id, pack_digest: packDigest },
+          index: [{ key: 'runs.id', value: run }],
+        },
+        tx,
+      );
+    });
+    const result = await docs.reader.read('doc:doc:synthetic-restricted', { principal, run, purpose: '合成回归' });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.reason, /个人工作流/);
   }
-  assert.deepEqual(await migrate(db),MIGRATIONS.slice(18).map(m=>m.version));
-  const dataDir=await mkdtemp(join(tmpdir(),'synthetic-legacy-docs-'));t.after(()=>rm(dataDir,{recursive:true,force:true}));
-  const kit=await openRecords({database,dataDir,logDir:join(dataDir,'logs'),limits:{...DEFAULT_LIMITS}},{migrate:false});t.after(()=>kit.close());
-  const docs=createDocs({records:kit,workflows:fakeWorkflows(true),now:()=>new Date('2026-10-22T01:00:00.000Z')});
-  await docs.put(admin,'synthetic-restricted',enc.encode('合成管理员命名文档'));
-  for(const principal of [user,admin]){
-    const result=await docs.reader.read('doc:doc:synthetic-restricted',{principal,run:runs.get(principal.id)!,purpose:'合成回归'});
-    assert.equal(result.ok,false);if(!result.ok)assert.match(result.reason,/个人工作流/);
-  }
-  await assert.rejects(kit.store.put({kind:'run',schema:'run@1',provenance:'declared',body:{run:newId('run'),runner:user.id,pack_space:user.id,pack_digest:'a'.repeat(64)}}),/frozen private package unavailable/);
+  await assert.rejects(
+    kit.store.put({
+      kind: 'run',
+      schema: 'run@1',
+      provenance: 'declared',
+      body: { run: newId('run'), runner: user.id, pack_space: user.id, pack_digest: 'a'.repeat(64) },
+    }),
+    /frozen private package unavailable/,
+  );
 });
 
 function docJson(items: Array<{ title: string; expected: string[] }>): Uint8Array {
@@ -241,6 +293,15 @@ describe('runs over named documents', () => {
       const call = { traceId: '4bf92f3577b34da6a3ce929d0e0e4736', sessionId: null, adminNote: () => {} };
       const answer = await hub.runs.startRun(user, { pack: DOCS_PACK, inputs: { spec: { external: 'doc:doc:topology' } } }, call);
       assert.ok(answer.run !== undefined, JSON.stringify(answer.errors ?? []).slice(0, 400));
+      const malformedInput = await hub.runs.startRun(user, { pack: DOCS_PACK, inputs: { spec: { external: 'doc:doc:synthetic.json' } } }, call);
+      assert.equal(malformedInput.call_result, 'error');
+      assert.ok(malformedInput.errors.some(error => error.code === 'SUBMISSION_SCHEMA_VIOLATION' && error.path === '/inputs/spec' && error.message.includes('命名文档的名字「synthetic.json」不合法')));
+      assert.ok(malformedInput.errors.every(error => !error.message.includes('没有能读')));
+      const absentInput = await hub.runs.startRun(user, { pack: DOCS_PACK, inputs: { spec: { external: 'doc:doc:synthetic-missing' } } }, call);
+      const absentError = absentInput.errors.find(error => error.code === 'SOURCE_ABSENT');
+      assert.ok(absentError);
+      assert.deepEqual(absentError.options, ['doc:doc:topology']);
+      assert.deepEqual(absentError.options_coverage, { examined: 1, total: 1, complete: true });
       const run1 = answer.run.run;
       const frozen = answer.run.sources.find((s) => typeof s.external === 'string' && s.external.startsWith('doc:doc:topology@'));
       assert.ok(frozen, 'the doc input froze with its digest');
@@ -273,4 +334,42 @@ describe('runs over named documents', () => {
       await kit.close();
     }
   });
+});
+
+test('absent named documents list only names the current caller can actually read', async (t) => {
+  const { kit, docs, admin, user } = await world(); t.after(() => kit.close());
+  await docs.put(admin, 'synthetic-visible', docJson([]));
+  const allowed = await docs.reader.read('doc:doc:synthetic-missing', { principal: admin, purpose: 'synthetic options' });
+  assert.equal(allowed.ok, false);
+  if (!allowed.ok) {
+    assert.deepEqual(allowed.inputError?.options, ['doc:doc:synthetic-visible']);
+    assert.deepEqual(allowed.inputError?.options_coverage, { examined: 1, total: 1, complete: true });
+  }
+  const denied = await docs.reader.read('doc:doc:synthetic-missing', { principal: user, purpose: 'synthetic options' });
+  assert.equal(denied.ok, false);
+  if (!denied.ok) assert.deepEqual(denied.inputError?.options, []);
+});
+
+test('a routed named document with malformed name reaches the precise reader diagnostic', async (t) => {
+  const { kit, docs, admin } = await world(); t.after(() => kit.close());
+  assert.equal(await docs.reader.accepts('doc:doc:synthetic.json'), true);
+  const read = await docs.reader.read('doc:doc:synthetic.json', { principal: admin, purpose: 'synthetic malformed name' });
+  assert.equal(read.ok, false);
+  if (!read.ok) {
+    assert.equal(read.inputError?.code, 'SUBMISSION_SCHEMA_VIOLATION');
+    assert.equal(read.inputError!.message, '命名文档的名字「synthetic.json」不合法：要写成小写字母开头的字母、数字或连字符，1 到 64 个字符');
+    assert.match(read.inputError!.fix, /doc:doc:/);
+  }
+});
+
+test('readable named document options disclose their capped coverage', async (t) => {
+  const { kit, docs, admin } = await world(); t.after(() => kit.close());
+  for (let i = 0; i < 21; i++) await docs.put(admin, 'synthetic-option-' + i, docJson([]));
+  const answer = await docs.reader.read('doc:doc:synthetic-missing', { principal: admin, purpose: 'synthetic option coverage' });
+  assert.equal(answer.ok, false);
+  if (!answer.ok) {
+    assert.equal(answer.inputError?.options?.length, 20);
+    assert.deepEqual(answer.inputError?.options_coverage, { examined: 20, total: 21, complete: false, note: '仅列出本次已经核验可读的部分名称' });
+    for (const option of answer.inputError!.options!) assert.equal((await docs.reader.read(option, { principal: admin, purpose: 'synthetic option proof' })).ok, true);
+  }
 });

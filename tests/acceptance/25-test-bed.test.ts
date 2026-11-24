@@ -9,6 +9,7 @@ import {effectsDocument} from '../../hub/dispatch/testing/effects.ts';
 // SOURCE_UNAVAILABLE. Synthetic addresses only (192.0.2.0/24).
 import assert from 'node:assert/strict';
 import {addSyntheticExecutor} from '../../hub/dispatch/testing/credentials.ts';
+import {definition as bookingExecutorDefinition} from '../../hub/dispatch/testing/definition.ts';
 import { after, before, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { INDEX } from '../../hub/runs/engine/store.ts';
@@ -94,13 +95,30 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
   let bed: Bed;
   let client: McpClient;
 
+  let inventoryExecutors: string[] = [];
+  async function declareBookingEnvironments(manifest: { beds: Array<{name:string;devices:Array<{name:string}>}> }, document: string): Promise<string[]> {
+    const digest = (await bed.hub.hub.docs.show(document))!.sha256;
+    const out: string[] = [];
+    for (const environment of manifest.beds) {
+      const source = { ...bookingExecutorDefinition('http://127.0.0.1:1/mcp'), target: environment.name, manifest_sha256: digest, resources: environment.devices.map(device=>`bed/${environment.name}/${device.name}`) };
+      const registered = await addSyntheticExecutor(bed.hub.records, bed.hub.hub.dispatch!.registry, bed.hub.admin.principal, source, 'synthetic-booking-key');
+      out.push(registered.id);
+    }
+    return out;
+  }
+  async function allowBooking(user: {user:{id:string}}, executors = inventoryExecutors): Promise<void> {
+    for (const executor of executors) await bed.hub.records.authorizations.assignResource(bed.hub.admin.principal, executor, user.user.id);
+  }
+
   before(async () => {
     postgres = await startPostgres();
     bed = await openBed({ postgres });
     // The administrator publishes the inventory as a named document.
     await bed.hub.hub.docs.put(bed.hub.admin.principal, 'bed-topology', new TextEncoder().encode(JSON.stringify(INVENTORY)), { fileName: 'bed-topology.json' });
     await bed.hub.hub.docs.put(bed.hub.admin.principal, 'bed-topology-dup', new TextEncoder().encode(JSON.stringify(DUPLICATE)), { fileName: 'bed-topology-dup.json' });
+    inventoryExecutors = await declareBookingEnvironments(INVENTORY, 'bed-topology');
     const user = await bed.user('自动化测试环境用户', ['test-bed']);
+    await allowBooking(user);
     client = await bed.connect(user, 'sess-s25');
   });
 
@@ -161,6 +179,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     assert.ok(view.entries.some((e) => e.key === 'bed/bed-a/afamx0' && e.until === until), 'the lease table holds the rows');
 
     const other = await bed.user('自动化测试环境用户乙', ['test-bed']);
+    await allowBooking(other);
     const otherClient = await bed.connect(other, 'sess-s25-b');
     const refused = await otherClient.call('start_run', {
       pack: 'test-bed',
@@ -192,7 +211,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const released=await client.call('start_run',{pack:'test-bed',inputs,predecessor:booking,parameters:{action:'release',booking}});
     assert.equal(released.isError,false,released.text);
     assert.ok(!(await bed.hub.leases.view('bed/')).entries.some(r=>r.key==='bed/bed-b/afamx1'));
-    const other=await bed.user('合成后继预订人',['test-bed']);const next=await bed.connect(other,'s25-new-booking');
+    const other=await bed.user('合成后继预订人',['test-bed']);await allowBooking(other);const next=await bed.connect(other,'s25-new-booking');
     const rebooked=await next.call('start_run',{pack:'test-bed',inputs,parameters:{action:'acquire',bed:'bed-b',need:{devices:[{type:'load-balancer',count:1}]}}});
     assert.equal(rebooked.isError,false,rebooked.text);
   });
@@ -305,6 +324,8 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const admin=bed.hub.admin;
     await bed.hub.hub.docs.put(admin.principal,'ownership-topology',new TextEncoder().encode(JSON.stringify(inventory)),{fileName:'ownership.json'});
     const a=await bed.user('合成登记人',['test-bed']);const b=await bed.user('合成预订人',['test-bed']);const c=await bed.user('合成第三人',['test-bed']);
+    const ownedExecutors=await declareBookingEnvironments(inventory,'ownership-topology');
+    for(const member of [a,b,c])await allowBooking(member,ownedExecutors);
     const ca=await bed.connect(a,'ownership-a');const cb=await bed.connect(b,'ownership-b');const cc=await bed.connect(c,'ownership-c');
     const inputs={inventory:{external:'doc:doc:ownership-topology'}};
     const call=(client:McpClient,parameters:Record<string,unknown>)=>client.call('start_run',{pack:'test-bed',inputs,parameters});

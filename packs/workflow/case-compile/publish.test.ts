@@ -7,7 +7,9 @@ import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { createPackRegistry, temporaryDirectory } from '../../../hub/runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../hub/testing/records.ts';
+import { installMindmapFixture, publishEmbeddedSkills } from '../../../hub/testing/skills.ts';
 import { stage } from './pack-files.ts';
+import { publishJevSkill, publishPlumbSkill } from './testing/hub.ts';
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres;
@@ -32,27 +34,33 @@ describe('publishing the case-compile pack', { skip }, () => {
     const owner = await kit.principals.createUser(admin, '所有者');
     await kit.authorizations.grantPublishRight(admin, owner.id);
     const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted') });
+    await installMindmapFixture(registry, kit, admin);
+    await publishEmbeddedSkills(registry, kit, admin);
+    await publishPlumbSkill(registry, kit, admin);
+    await publishJevSkill(registry, kit, admin);
     const outcome = await registry.publish(owner, await stage(join(temp.path, 'staged')));
     assert.equal(outcome.ok, true, JSON.stringify(outcome.ok ? '' : outcome.problems));
     if (!outcome.ok) return;
     assert.equal(outcome.created, true);
     const report = outcome.report;
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [46, 46, 0, 46]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed, report.samples.sources.author], [54, 54, 0, 54]);
     assert.deepEqual(report.failures, []);
     assert.deepEqual(report.unsampled, []);
     assert.deepEqual(
       report.checks.map((check) => [check.check, check.positive, check.negative]),
       [
-        ['contract_shape', 12, 12],
+        ['contract_shape', 13, 13],
         ['bed_addresses', 2, 2],
-        ['commands_catalog', 4, 4],
+        ['commands_catalog', 5, 5],
         ['expected_sources', 2, 2],
         ['expected_quotes', 1, 1],
+        ['author_step_coverage', 1, 1],
+        ['scenario_fidelity', 1, 1],
         ['workbook_verified', 1, 1],
         ['dispatch_policy',1,1],
       ],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['case-compile', '3.9.19', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['case-compile', '3.26.10', 'workflow']);
     const again = await registry.publish(owner, await stage(join(temp.path, 'staged-again')));
     assert.equal(again.ok && again.created, false, '同样内容再发布不新建版本');
   });

@@ -5,7 +5,7 @@ import {createTestHub} from './testing-real.ts';
 import {openConsole} from '../../tests/acceptance/support/console.ts';
 import {taskSteps,taskWaterfall} from './console/tasks.ts';
 import {html} from './console/html.ts';
-import type {PageContext} from './console/pages.ts';
+import type { PageContext } from './console/context.ts';
 import type {RunDetail} from '../ports.ts';
 import type {CallLogLine} from '../records/api.ts';
 

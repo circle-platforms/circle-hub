@@ -4,25 +4,34 @@
 // listener with the certificate of <data root>/tls). Every request first passes the Host check of the listener it arrived
 // on (127.0.0.1:<port>, localhost:<port> and the declared names, against DNS rebinding) and the Origin check (absent, or
 // one of this server's own origins); then the route decides. The request target is parsed once and never throws:
-// a target that is neither a path nor an absolute http URL of this server is a 400. close() stops accepting, lets requests in
-// flight end (bounded), closes every connection, then waits (bounded again) for the handlers it cut off, so their call-log
-// lines are written before the caller closes the records; it never stops the database.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
 import type { TLSSocket } from 'node:tls';
 import type { AddressInfo } from 'node:net';
 import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
+import { isAdmin } from '../records/api.ts';
 import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { authorizeRefusal, handleConsole } from './console/index.ts';
 import { LiveEvents } from './console/live.ts';
 import { JobStore } from './console/manage.ts';
-import { LoginLinkStore, SessionStore } from './console/session.ts';
+import { SESSION_COOKIE, SECURE_SESSION_COOKIE, SessionStore } from './console/session.ts';
 import { PackStaging } from './console/staging.ts';
-import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
+import { BodyBudget, allowedHosts, cookiesOf, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
+import { createRebuildHandler } from './rebuild-http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import {handlePersonalSync,personalSyncTarget,SyncAdmission} from './personal-sync.ts';
 import { handleRunExport, runExportTarget } from './run-export.ts';
+import { IdentityChallenges } from './console/member-identity.ts';
+import {
+  botFilesPath,
+  cleanupBotRuntimeTempFiles,
+  ensureBotRuntimeDir,
+  handleBotFile,
+  pruneExpiredBotFiles,
+} from './bot-files.ts';
+import { botError } from './access-auth.ts';
+import { chatPath, handleBot, handleBotChannel, maskVaultSecrets, refreshChannel, syncHostOnStartup } from './personal-bot.ts';
 import { handleMcp } from './mcp.ts';
 import { AuthorizationStore, RegistrationWindow, handleOAuth, issuerOf, oauthTarget, resourceMetadataUrl } from './oauth.ts';
 import { SYNC_DISCOVERY_PATH, handleSyncDiscovery } from './sync-discovery.ts';
@@ -91,7 +100,17 @@ function printable(target: string | undefined): string {
   return String(target ?? '').slice(0, 200).replace(/[\u0000-\u001f\u007f]/g, '?');
 }
 
-export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
+export const DEFAULT_REQUEST_RECEIVE_TIMEOUT_MS = 120_000;
+export const DEFAULT_BOT_FILE_UPLOAD_RECEIVE_TIMEOUT_MS = 15 * 60 * 1000;
+const DEFAULT_BOT_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+
+export interface BotAppTimeoutOptions {
+  requestTimeoutMs?: number;
+  botFileUploadTimeoutMs?: number;
+  channelSyncIntervalMs?: number;
+}
+
+export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutOptions = {}): HubApp {
   const host = deps.config.host;
   const declared = deps.config.allowedHosts;
   const refusedHost = declared ? REFUSED_HOST : '拒绝：Host 必须是本机地址 127.0.0.1:<端口> 或 localhost:<端口>';
@@ -111,7 +130,6 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const sessions = new SessionStore(() => clock().getTime());
   const authorizations = new AuthorizationStore(() => clock().getTime());
   const registrations = new RegistrationWindow(() => clock().getTime());
-  const loginLinks = new LoginLinkStore(() => clock().getTime());
   const staging = new PackStaging(() => clock().getTime());
   const syncAdmission=new SyncAdmission();
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
@@ -131,26 +149,57 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     && request.headers.host?.toLowerCase() === proxyAuthority
     && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer);
   const clients = new DeclaredClients(deps);
-  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, clients, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)), ...(options.keepalive ? { keepalive: options.keepalive } : {}), ...(options.health ? { sessions: options.health.sessions } : {}) };
+  const mcpOptions = { deps, traces: options.observation?.traces, serverVersion: packageVersion(), log, budget, clients, resourceMetadata: (request: IncomingMessage) => resourceMetadataUrl(request, secureRequest(request)), ...(options.keepalive ? { keepalive: options.keepalive } : {}), ...(options.health ? { sessions: options.health.sessions } : {}) };
   // Read when a request comes: an app may be created before its records are (the listener checks build one without).
   const oauthOptions = { get principals() { return deps.records.principals; }, store: authorizations, registrations, secureRequest, log };
   const jobs = new JobStore(clock);
   const live = new LiveEvents({ records: deps.records, sessions, log }, options.live);
   jobs.watch((job) => live.publish({ name: 'import.progress', data: { job: job.id } }));
+  let channelTimer: ReturnType<typeof setInterval> | undefined;
+  let channelSync: Promise<unknown> | undefined;
+  let lastChannelFailureKey: string | null = null;
+  let retentionTimer: ReturnType<typeof setInterval> | undefined;
+  let retentionSweep: Promise<void> | undefined;
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log, jobs, live,
     staging,
+    ...(deps.rebuildNeeded === undefined ? {} : { rebuildNeeded: deps.rebuildNeeded }),
     hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
     ...(options.observation ? { observation: options.observation } : {}),
     ...(options.bridge ? { bridge: options.bridge } : {}),
-    authorizations, loginLinks, secureRequest,
+    authorizations, secureRequest,
+    identityChallenges: new IdentityChallenges(),
   };
+
+  let resetHandler: Promise<ReturnType<typeof createRebuildHandler>> | undefined;
+  const handleReset = async (request: IncomingMessage, response: ServerResponse, url: URL) => {
+    const reset = options.reset;
+    if (!reset) return sendText(response, 503, '重建执行端口未装配，请使用本机受控命令');
+    resetHandler ??= (async () => createRebuildHandler({
+      dataDir: deps.config.dataDir, rebuildNeeded: null, bridge: await reset.bridge(), render: reset.render,
+      originAllowed: request => originAllowed(request, origins), log, now: clock,
+      authenticateAdmin: async request => {
+        const secure = secureRequest(request);
+        const session = sessions.get(cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE), secure);
+        if (!session) return null;
+        const principal = await (deps.records.principals.authenticateConsoleSession?.('Bearer ' + session.token) ?? deps.records.principals.authenticate('Bearer ' + session.token));
+        if (!principal || !isAdmin(principal)) return null;
+        const password = await deps.records.principals.passwordState?.(principal.id);
+        if (password?.mustChange) return null;
+        return { session, principalId: principal.id };
+      },
+    }))();
+    return (await resetHandler)(request, response, url);
+  };
+
+  const isBotPath = (pathname: string | undefined): boolean => pathname !== undefined && pathname.startsWith('/api/bot');
 
   const route = async (request: IncomingMessage, response: ServerResponse, target: RequestTarget | null): Promise<void> => {
     if (stopping) response.setHeader('connection', 'close');
     // Each listener answers only to its own authorities: an HTTPS name sent over plain HTTP (or the reverse) is refused.
     const listenerHosts = encrypted(request) ? secureHosts : hosts;
     const isMcp = target?.url.pathname === '/mcp';
+    const isBot = isBotPath(target?.url.pathname);
     // An absolute-form target names an authority too: it must be this server, like the Host header.
     const usesProxy = proxyAuthority !== null && (request.headers.host?.toLowerCase() === proxyAuthority || target?.authority === proxyAuthority || request.headers.origin === proxyOrigin);
     const peer = request.socket.remoteAddress?.replace(/^::ffff:/, '');
@@ -160,6 +209,12 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       const message = hostOk ? refusedOrigin : refusedHost;
       if (isMcp) sendRpcError(response, 403, -32000, message, { connection: 'close' });
       else if(target&&personalSyncTarget(target.url.pathname))sendJson(response,403,{code:'SOURCE_UNAVAILABLE'},{connection:'close'});
+      else if (isBot) {
+        const nextAction = hostOk
+          ? '请确认请求来源在允许名单内后重试'
+          : '请使用本部署允许的访问地址与端口后重试';
+        sendJson(response, 403, botError('BOT_CLIENT_FORBIDDEN', message, nextAction), { connection: 'close' });
+      }
       else sendText(response, 403, message, { connection: 'close' });
       return;
     }
@@ -167,7 +222,23 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       request.resume();
       return sendText(response, 400, BAD_TARGET, { connection: 'close' });
     }
+    if (stopping) {
+      request.resume();
+      const headers = { connection: 'close', 'retry-after': '5' };
+      const message = 'Hub 正在重启，这次调用没有执行，稍后原样重试';
+      if (isMcp) return sendRpcError(response, 503, -32000, message, headers);
+      if (isBot) return sendJson(response, 503, botError('BOT_UPSTREAM_UNAVAILABLE', message, '请等待 Hub 重启完成后原样重试'), headers);
+      return sendText(response, 503, message, headers);
+    }
     const url = target.url;
+    if (url.pathname.startsWith(botFilesPath)) return handleBotFile(request, response, deps, url.pathname.slice(botFilesPath.length));
+    if (url.pathname.startsWith('/api/bot-channel/v1/files/')) return handleBotChannel(request, response, deps, budget, url.pathname.slice('/api/bot-channel/v1/files/'.length));
+    if (url.pathname === '/api/bot-channel/v1') return handleBotChannel(request, response, deps, budget);
+    if (url.pathname === chatPath) return handleBot(request, response, deps, budget);
+    if (isBot) {
+      request.resume();
+      return sendJson(response, 404, botError('BOT_NOT_FOUND', '没有这个机器人接口地址', '请核对请求路径后重试'));
+    }
     if (localToolsTarget(request.url)) return handleLocalTools(request, response, deps, log);
     if (runExportTarget(request.url)) return handleRunExport(request, response, deps, log);
     if (url.pathname === '/healthz') {
@@ -179,13 +250,14 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     if(url.pathname===SYNC_DISCOVERY_PATH)return handleSyncDiscovery(request,response,issuerOf(request,secureRequest(request)));
     if (isMcp) return handleMcp(request, response, mcpOptions, deps.config.limits.maxRequestBytes);
     if (oauthTarget(url.pathname)) return handleOAuth(request, response, url, oauthOptions, authorizeRefusal);
+    if (url.pathname === '/console/rebuild' || url.pathname.startsWith('/console/rebuild/') || url.pathname.startsWith('/console/reset/status/') || url.pathname === '/console/admin/do/reset') return handleReset(request, response, url);
     if (url.pathname === '/console' || url.pathname.startsWith('/console/')) return handleConsole(request, response, url, consoleOptions);
     request.resume();
     sendText(response, 404, '没有这个地址');
   };
 
   /** The last resort of a request: logs and answers 500 (or drops the connection); never throws. */
-  const fail = (request: IncomingMessage, response: ServerResponse, label: string, error: unknown): void => {
+  const fail = (request: IncomingMessage, response: ServerResponse, label: string, error: unknown, isBot = false): void => {
     setTraceStatus('error', 'Hub 内部错误');
     try {
       log(`请求处理出错（${printable(request.method)} ${label}）：${describeError(error)}`);
@@ -193,22 +265,111 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       // The operator's log itself failed; the answer below still goes out.
     }
     try {
-      if (!response.headersSent) sendJson(response, 500, { error: 'Hub 内部错误' }, { connection: 'close' });
-      else response.destroy();
+      if (!response.headersSent) {
+        sendJson(
+          response,
+          500,
+          isBot
+            ? botError('BOT_UPSTREAM_UNAVAILABLE', '机器人请求处理发生内部错误', '请稍后重试，若持续出现请联系管理员检查服务日志')
+            : { error: 'Hub 内部错误' },
+          { connection: 'close' },
+        );
+      } else {
+        response.destroy();
+      }
     } catch {
       response.destroy();
     }
   };
 
+  const scheduleTimeout = options.scheduleReceiveTimeout ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
     const target = parseTarget(request.url);
     const label = target&&personalSyncTarget(target.url.pathname)?'/api/sync':target === null ? printable(request.url) : printable(target.url.pathname);
     const finished = beginRequest(options.health?.requests, request, target?.url.pathname ?? null);
+    const pathname = target?.url.pathname ?? '';
+    const isBot = isBotPath(pathname);
+    const isBotFileUpload =
+      request.method === 'PUT' &&
+      (pathname.startsWith(botFilesPath) || pathname.startsWith('/api/bot-channel/v1/files/'));
+    const receiveTimeoutMs = isBotFileUpload
+      ? (options.botFileUploadTimeoutMs ?? DEFAULT_BOT_FILE_UPLOAD_RECEIVE_TIMEOUT_MS)
+      : (options.requestTimeoutMs ?? DEFAULT_REQUEST_RECEIVE_TIMEOUT_MS);
+    let receiveDone = request.complete;
+    let receiveTimer: ReturnType<typeof setTimeout> | undefined;
+    const cleanupReceiveListeners = () => {
+      request.off('end', onReceiveEnd);
+      request.socket?.off('close', onSocketClose);
+    };
+    const markReceiveDone = () => {
+      if (receiveDone) return;
+      receiveDone = true;
+      if (receiveTimer !== undefined) {
+        clearTimeout(receiveTimer);
+        receiveTimer = undefined;
+      }
+      cleanupReceiveListeners();
+    };
+    const onReceiveEnd = () => markReceiveDone();
+    const onSocketClose = () => markReceiveDone();
+    if (!receiveDone) {
+      request.once('end', onReceiveEnd);
+      request.socket?.once('close', onSocketClose);
+      receiveTimer = scheduleTimeout(() => {
+        receiveTimer = undefined;
+        if (receiveDone || request.complete) {
+          markReceiveDone();
+          return;
+        }
+        receiveDone = true;
+        cleanupReceiveListeners();
+        const destroyIncoming = () => {
+          try {
+            request.destroy();
+          } catch {}
+          try {
+            request.socket?.destroy();
+          } catch {}
+        };
+        try {
+          if (!response.headersSent && !response.writableEnded && !response.destroyed) {
+            response.once('finish', destroyIncoming);
+            response.once('close', destroyIncoming);
+            sendJson(
+              response,
+              408,
+              isBot ? botError('BOT_REQUEST_TIMEOUT') : { error: '请求处理超时' },
+              { connection: 'close' },
+            );
+            if (response.writableFinished) destroyIncoming();
+          } else {
+            destroyIncoming();
+          }
+        } catch {
+          destroyIncoming();
+          try {
+            response.destroy();
+          } catch {}
+        }
+      }, receiveTimeoutMs);
+      receiveTimer?.unref?.();
+    }
     // `task` never rejects: fail() catches everything, so no request can leave a rejection nobody handles. Its trace ends
     // with it, the last-resort 500 included.
     const remote = traceContextFrom(request.headers.traceparent);
+    const answered = new Promise<void>(resolve => {
+      const done = () => {
+        response.off('finish', done);
+        response.off('close', done);
+        resolve();
+      };
+      response.once('finish', done);
+      response.once('close', done);
+      if (response.writableFinished || response.destroyed) done();
+    });
     const task: Promise<void> = startTrace({ ...requestEntry(target?.url.pathname), traceId: remote?.traceId, parentSpanId: remote?.parentSpanId }, () =>
-      route(request, response, target).catch((error: unknown) => fail(request, response, label, error)).finally(() => noteAnswer(response)));
+      route(request, response, target).catch((error: unknown) => fail(request, response, label, error, isBot)).finally(() => noteAnswer(response))).then(() => answered);
     inflight.add(task);
     void task.finally(() => { finished(); inflight.delete(task); }).catch(() => {});
   };
@@ -233,7 +394,15 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const listen = async (): Promise<ListenInfo> => {
     if (server !== null) throw new Error('already listening');
     if (closing !== null) throw new Error('the app is closed');
-    const created = createServer({ requestTimeout: 120_000, headersTimeout: 30_000, keepAliveTimeout: 5_000 }, handler);
+    if (typeof deps.config.dataDir === 'string' && deps.config.dataDir.length > 0) {
+      await ensureBotRuntimeDir(deps.config.dataDir);
+      await cleanupBotRuntimeTempFiles(deps.config.dataDir, { now: clock().getTime() });
+      await pruneExpiredBotFiles(deps.config.dataDir, { now: clock().getTime() });
+      if (typeof deps.records?.vault?.getText === 'function') {
+        await syncHostOnStartup(deps.config.dataDir, deps.records.vault, log);
+      }
+    }
+    const created = createServer({ requestTimeout: 0, headersTimeout: 30_000, keepAliveTimeout: 5_000 }, handler);
     await new Promise<void>((resolve, reject) => {
       created.once('error', reject);
       created.listen(deps.config.port, host, () => {
@@ -245,7 +414,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     const port = (created.address() as AddressInfo).port;
     let secure: ListenInfo['https'];
     if (https && options.tls) {
-      const tls = createSecureServer({ cert: options.tls.cert, key: options.tls.key, minVersion: 'TLSv1.2', requestTimeout: 120_000, headersTimeout: 30_000, keepAliveTimeout: 5_000 }, handler);
+      const tls = createSecureServer({ cert: options.tls.cert, key: options.tls.key, minVersion: 'TLSv1.2', requestTimeout: 0, headersTimeout: 30_000, keepAliveTimeout: 5_000 }, handler);
       try {
         await new Promise<void>((resolve, reject) => {
           tls.once('error', reject);
@@ -273,6 +442,67 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     hosts = allowedHosts(host, port, declared);
     origins = new Set([...ownOrigins(hosts), ...ownOrigins(secureHosts, 'https')]);
     if (proxyOrigin) { hosts.add(new URL(proxyOrigin).host); origins.add(proxyOrigin); }
+    if (typeof deps.config.dataDir === 'string' && deps.config.dataDir.length > 0) {
+      const sweepRetention = () => {
+        retentionSweep ??= (async () => {
+          await cleanupBotRuntimeTempFiles(deps.config.dataDir, { now: clock().getTime() });
+          await pruneExpiredBotFiles(deps.config.dataDir, { now: clock().getTime() });
+        })()
+          .catch((error) => {
+            log(`机器人私聊附件过期清理失败：${describeError(error)}`);
+          })
+          .finally(() => {
+            retentionSweep = undefined;
+          });
+      };
+      retentionTimer = setInterval(
+        sweepRetention,
+        options.botRetentionSweepIntervalMs ?? DEFAULT_BOT_RETENTION_SWEEP_INTERVAL_MS,
+      );
+      retentionTimer.unref();
+    }
+    if (typeof deps.records?.vault?.has === 'function') {
+      const reportChannelFailure = async (key: string, detail: string) => {
+        if (lastChannelFailureKey === key) return;
+        lastChannelFailureKey = key;
+        const safeDetail = await maskVaultSecrets(deps.records.vault, detail).catch(() => detail);
+        log(`机器人通道同步失败（refreshChannel）：${safeDetail}`);
+      };
+      const syncChannel = () => {
+        channelSync ??= (async () => {
+          try {
+            const result = await refreshChannel(deps.config.dataDir, deps.records.vault, origins);
+            if (result === undefined) {
+              lastChannelFailureKey = null;
+              return;
+            }
+            if (result.status !== 200) {
+              const rawMsg =
+                result.adminDetail ??
+                (result.body &&
+                typeof result.body === 'object' &&
+                typeof (result.body as { message?: unknown }).message === 'string'
+                  ? (result.body as { message: string }).message
+                  : '通道适配器未返回成功状态');
+              await reportChannelFailure(`status:${result.status}:${rawMsg}`, `状态 ${result.status}：${rawMsg}`);
+              return;
+            }
+            if (lastChannelFailureKey !== null) {
+              lastChannelFailureKey = null;
+              log('机器人通道同步已恢复（refreshChannel）');
+            }
+          } catch (error) {
+            const msg = describeError(error);
+            await reportChannelFailure(`throw:${msg}`, msg);
+          }
+        })().finally(() => {
+          channelSync = undefined;
+        });
+      };
+      syncChannel();
+      channelTimer = setInterval(syncChannel, options.channelSyncIntervalMs ?? 30_000);
+      channelTimer.unref();
+    }
     const literal = host.includes(':') ? `[${host}]` : host;
     return { host, port, url: `http://${literal}:${port}`, ...(secure ? { https: secure } : {}) };
   };
@@ -280,19 +510,22 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const close = (): Promise<void> =>
     (closing ??= (async () => {
       stopping = true;
+      clearInterval(channelTimer);
+      clearInterval(retentionTimer);
+      await channelSync;
+      await retentionSweep;
       // An event stream is a request in flight that never ends by itself.
       live.close();
       const current = server;
       const listeners = [server, secureServer].filter((s): s is Server => s !== null);
       if (current !== null) {
+        const completed = await drained(closeTimeoutMs) || await drained(closeGraceMs);
         const closed = Promise.all(listeners.map((s) => new Promise<void>((resolve) => s.close(() => resolve()))));
-        for (const s of listeners) s.closeIdleConnections();
-        await drained(closeTimeoutMs);
-        for (const s of listeners) s.closeAllConnections();
-        // Cutting a connection does not stop its handler: wait for those too (bounded), so a call that is still running
-        // writes its call-log line before the caller stops the sandbox and closes the records.
-        if (!(await drained(closeGraceMs))) {
-          log(`停止时还有 ${inflight.size} 个请求没有结束（连接已断开，又等了 ${closeGraceMs} 毫秒）；它们的调用日志可能写不进去`);
+        if (completed) {
+          for (const s of listeners) s.closeIdleConnections();
+        } else {
+          for (const s of listeners) s.closeAllConnections();
+          log(`停止预算已用完，还有 ${inflight.size} 个请求没有结束；连接已断开，结果未知，调用日志可能写不进去；不要盲目重发，请按运行号、提交摘要或作业号核对`);
         }
         await closed;
       } else {
@@ -301,7 +534,6 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       sessions.clear();
       authorizations.clear();
       registrations.clear();
-      loginLinks.clear();
       await staging.clear();
     })());
 

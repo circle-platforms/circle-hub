@@ -21,6 +21,7 @@ export {
   OPERATOR_TOKEN_ACCOUNT,
   readSettings,
   readSettingsFile,
+  readSettingsFileSync,
   resolveDatabaseNames,
   resolveSettings,
   SERVICE_LABEL,
@@ -56,7 +57,7 @@ export {
 export { checkHealth, HEALTH_PATH, waitForHealth, type HealthResult } from './health.ts';
 export { rehearse, type RehearsalReport } from './rehearse.ts';
 export { verifyPostgres, type VerifyResult } from './verify.ts';
-export { isPlatformCommand, main, PLATFORM_COMMANDS, runPlatformCommand, type PlatformIo } from './cli.ts';
+export { isPlatformCommand, main, platformCommands, PLATFORM_COMMAND_METADATA, PLATFORM_COMMANDS, runPlatformCommand, type PlatformCommand, type PlatformCommandMetadata, type PlatformIo } from './cli.ts';
 export { fdIsKeyPipe, liveKeyPipe, readKeyStdin, type KeyPipe } from './key-transfer.ts';
 export { deploymentKeyNames, ensureHubDatabase, hubKeyProvider } from './service.ts';
 export {
@@ -75,3 +76,15 @@ export {
 } from './file-key.ts';
 export { RENEW_WITHIN_DAYS, daysLeft, readServerTls, tlsPaths, type ServerTls, type TlsPaths } from './tls.ts';
 export { runCommand, type CommandResult, type CommandRunner } from './process.ts';
+
+
+export { nativeResetBackup, type ResetBackup } from './reset/backup.ts';
+export { CODE_ROOT, agentFor, platformLockPath } from './context.ts';
+export { exists, listFiles, sha256File, withLock, writeFileAtomic } from './files.ts';
+export { guardSignals } from './deploy.ts';
+export { portOccupied } from './health.ts';
+export { quoteIdentifier, withSession, type SqlSession } from './sql.ts';
+export { toolEnvironment, type CommandOptions } from './process.ts';
+export { newSettingsFile, writeSettingsFile } from './settings.ts';
+
+export { archiveResetDatabase, createResetDatabase, type ResetDatabaseControl, type CreateResetDatabaseOptions } from './reset/database.ts';

@@ -1,7 +1,7 @@
 // `circle-hub` platform commands. The server CLI delegates these to runPlatformCommand; bin/circle-hub falls back to
 // main() here when the server package is absent. All output is Chinese; the vault master key is never printed.
 // The vault is 密钥库 (the design standard's term); its key is named by VAULT_KEY_ITEM.label.
-import { mkdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf } from '../../contracts/generated/vocabulary.ts';
@@ -407,6 +407,7 @@ const backup: Handler = async (args, context, io) => {
       io.stdout(`数据库 ${manifest.database.tables.length} 张表 ${rows} 行；文件 ${manifest.files.length - 1} 个；清单含每个文件的 SHA-256`);
       if (reused > 0) io.stdout(`其中 ${reused} 个对象与上一份备份相同，用硬链接共用一份（SHA-256 已重新核对）`);
       if (skipped.length > 0) io.stdout(`备份期间消失、没有备份的文件 ${skipped.length} 个：${skipped.slice(0, 5).join('、')}${skipped.length > 5 ? ' 等' : ''}`);
+      io.stdout('注意：备份不含 bot-runtime（机器人私聊附件、通道暂存与运行套接字）；如需保留机器人私聊附件，请另行归档 <数据目录>/bot-runtime/files');
       const removed = await pruneBackups(context.layout, keep, await protectedBackups(context));
       if (removed.length > 0) io.stdout(`按保留 ${keep} 份删除了 ${removed.length} 份旧备份`);
     } finally {
@@ -454,6 +455,7 @@ const restore: Handler = async (args, context, io) => {
     io.stdout(`已从 ${dir} 恢复：${report.tables} 张表 ${report.rows} 行，与清单一致；文件 ${report.files} 个；数据库在运行`);
     io.stdout(`数据库与表属于角色 ${cluster.target.user}；应用角色 ${cluster.application.user} 的 ${report.privileges} 项权限与备份时一致，不拥有任何对象`);
     if (report.keptConfig.length > 0) io.stdout(`这些设置文件与备份里的不同，保留了数据根里现有的：${report.keptConfig.join('、')}`);
+    io.stdout('注意：恢复不含 bot-runtime（机器人私聊附件、通道暂存与运行套接字）；机器人配置密文已随 vault/ 恢复，但机器人私聊附件需由另行归档恢复或重新上传');
     return 0;
   });
 };
@@ -586,24 +588,46 @@ const status: Handler = async (args, context, io) => {
   return 0;
 };
 
-const HANDLERS: Record<string, Handler> = {
-  init,
-  db,
-  key,
-  service,
-  backup,
-  restore,
-  deploy: deployCommand,
-  rollback: rollbackCommand,
-  rehearse: rehearseCommand,
-  status,
-  tls,
-};
+interface PlatformCommandDefinition {
+  readonly name: string;
+  readonly summary: string;
+  readonly bridge: false;
+  readonly step: `run-${string}`;
+  readonly handler: Handler;
+}
 
-export const PLATFORM_COMMANDS: readonly string[] = Object.keys(HANDLERS);
+const COMMANDS = [
+  { name: 'init', summary: '初始化数据根和部署设置', handler: init },
+  { name: 'db', summary: '管理本机 PostgreSQL', handler: db },
+  { name: 'key', summary: '管理密钥库主密钥', handler: key },
+  { name: 'service', summary: '管理用户服务', handler: service },
+  { name: 'backup', summary: '备份数据和设置', handler: backup },
+  { name: 'restore', summary: '恢复备份到空的数据根', handler: restore },
+  { name: 'deploy', summary: '部署提交或发布包', handler: deployCommand },
+  { name: 'rollback', summary: '恢复上一版及其部署前备份', handler: rollbackCommand },
+  { name: 'rehearse', summary: '演练备份、销毁和恢复', handler: rehearseCommand },
+  { name: 'status', summary: '汇总运行状态', handler: status },
+  { name: 'tls', summary: '管理内置 HTTPS 证书', handler: tls },
+].map((command): PlatformCommandDefinition => ({ ...command, bridge: false, step: `run-${command.name}` }));
+
+export type PlatformCommandMetadata = Omit<PlatformCommandDefinition, 'handler'>;
+
+export interface PlatformCommand extends PlatformCommandMetadata {
+  run(args: readonly string[]): Promise<number>;
+}
+
+export const PLATFORM_COMMAND_METADATA: readonly PlatformCommandMetadata[] = COMMANDS.map(({ handler, ...metadata }) => metadata);
+export const PLATFORM_COMMANDS: readonly string[] = PLATFORM_COMMAND_METADATA.map(({ name }) => name);
 
 export function isPlatformCommand(name: string | undefined): boolean {
-  return name !== undefined && Object.hasOwn(HANDLERS, name);
+  return COMMANDS.some((command) => command.name === name);
+}
+
+export function platformCommands(io: PlatformIo, overrides: Partial<PlatformContext> = {}): readonly PlatformCommand[] {
+  return PLATFORM_COMMAND_METADATA.map((metadata) => ({
+    ...metadata,
+    run: (args) => runPlatformCommand([metadata.name, ...args], io, overrides),
+  }));
 }
 
 /** Runs one platform command; returns the exit code (0 ok, 1 failure, 2 usage, 3 not running for status commands). */
@@ -615,7 +639,7 @@ export async function runPlatformCommand(argv: readonly string[], io: PlatformIo
       io.stdout(usage(overrides.platform));
       return command === undefined ? 2 : 0;
     }
-    const handler = isPlatformCommand(command) ? HANDLERS[command] : undefined;
+    const handler = COMMANDS.find((entry) => entry.name === command)?.handler;
     if (!handler) throw new UsageError(`未知命令：${command}${command === 'serve' ? '（serve 由服务器包提供，这份代码里没有 hub/server/cli.ts）' : ''}`);
     // A misspelled data root or port variable would silently act on the defaults.
     assertKnownHubVariables(io.env, io.allowVariables);

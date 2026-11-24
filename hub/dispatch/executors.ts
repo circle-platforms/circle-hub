@@ -1,7 +1,10 @@
+import { isAdmin } from '../records/api.ts';
 import { VariableError, WHOLE_HUB, canonicalBytes, canonicalize, newId, scanForCredentials, sha256Hex, type Principal, type RecordsKit, type VariableSnapshot, type AuthorizationRecord, type ActionBody, type RecordStore, type Transaction, type SecretWrite } from '../records/api.ts';
 import { VariableInputError, secretNameOf, referencesIn, resolve as maskReferences } from '../../contracts/src/variables.ts';
 import { Journal, isDone, isFrozen } from './journal.ts';
 import { ExecutorDefinition } from './definition.ts';
+import { ExecutorStableName } from '../../contracts/api.ts';
+import { ExecutorNames } from './executor-names.ts';
 import { ExecutorSource, resolveExecutor, checkedReferences } from './source.ts';
 export { ExecutorSource } from './source.ts';
 export type RegisteredExecutor = {
@@ -10,7 +13,7 @@ export type RegisteredExecutor = {
     source: ExecutorSource;
     definition: ExecutorDefinition;
     resolved_digest: string;
-    variables: import('../../contracts/src/variables.ts').VariableUse[];
+    variables: import('../../contracts/src/variables.ts').OrdinaryVariableUse[];
 };
 export class ExecutorAccessError extends Error {
     readonly next_action: string;
@@ -19,7 +22,6 @@ export class ExecutorAccessError extends Error {
 export class ExecutorCredentialError extends ExecutorAccessError {
     constructor(id: string, name?: string, fact?:string) { super(fact??(name ? `密钥 ${name} 没有可用的当前设置；未发请求` : `执行器 ${id} 还没有 credential 引用；未发请求`), name ? `circle-hub secret set --name ${name}，然后重做原操作` : `在定义里加 credential 引用后 circle-hub executor update ${id} <定义文件>；原来的钥匙会迁移过去`); }
 }
-export function executorConsumer(d: ExecutorDefinition | ExecutorSource) { return { definition: d.id!, item: 'credential', sends_to: sha256Hex(canonicalBytes({ endpoint: d.endpoint, ca: d.ca })) }; }
 /** An executor describes how to reach the bed, not which build it should run (decision 120): the build the devices run is what
  * they report, and only a run's locked build is compared against it. Refused when written; a definition registered before the
  * rule still reads, and the dispatcher never takes these values from it. */
@@ -65,14 +67,14 @@ async function assertUnused(store: RecordStore, tx: Transaction, id: string, gua
 export class ExecutorRegistry {
     readonly records: RecordsKit;
     constructor(records: RecordsKit) { this.records = records; }
-    async admin(by: Principal) { const user = await this.records.principals.get(by.id); if (!user || user.disabled || user.role !== 'admin')
+    async admin(by: Principal) { const user = await this.records.principals.get(by.id); if (!user || user.disabled || !isAdmin(user))
         throw new Error('只有启用中的管理员能操作执行器和作业'); }
-    async add(by: Principal, input: unknown): Promise<RegisteredExecutor> { await this.admin(by); refuseBuildBaseline(input); return this.configure(by, this.validate({ ...input as object, id: newId('exe') })); }
+    async add(by: Principal, input: unknown, name?:string): Promise<RegisteredExecutor> { await this.admin(by); refuseBuildBaseline(input); const explicit=name===undefined?undefined:ExecutorStableName.parse(name);return this.configure(by, this.validate({ ...input as object, id: newId('exe') }),undefined,undefined,explicit); }
     async update(by: Principal, id: string, input: unknown): Promise<RegisteredExecutor> {
         await this.admin(by);
         const current = await this.readSource(id);
         if (!current)
-            throw new Error('执行器对你不可用');
+            throw new Error('执行器对当前账户不可用');
         refuseBuildBaseline(input);
         const source = this.validate({ ...input as object, id });
         const rebind = current.source.target !== source.target || current.source.endpoint !== source.endpoint || current.source.ca !== source.ca || canonicalize([...current.source.resources].sort()) !== canonicalize([...source.resources].sort());
@@ -87,27 +89,21 @@ export class ExecutorRegistry {
         let migration: SecretWrite | undefined;
         const name = source.credential ? secretNameOf(source.credential) : null;
         if (!current.source.credential && name) {
-            if (current.source.endpoint !== source.endpoint || current.source.ca !== source.ca)
-                throw new Error('迁移密钥与修改 endpoint、ca 须分开做；改地址后要重新输入密钥');
             const value = await this.records.vault.getText(`executor.${id}.bearer`);
             if (value !== null) {
-                const previous = (await this.records.variables.list(by)).find(v => v.kind === 'secret' && v.name === name && v.definition);
-                let consumers = [executorConsumer(source)];
-                if (previous?.definition?.schema === 'secret@1') {
-                    const old = await this.records.vault.getText(previous.definition.entry);
-                    if (previous.definition.digest_rule !== 'plain' || old !== value)
+                const previous = await this.records.vault.readSecret(name);
+                if (previous) {
+                    const old = previous.value;
+                    if (previous.metadata.digest_rule !== 'plain' || old !== value)
                         throw new Error('旧执行器密钥与已有名字的值或规则不同：请换一个名字');
-                    consumers = [...previous.definition.consumers.filter(c => c.definition !== id || c.item !== 'credential'), executorConsumer(source)];
                 }
-                migration = { name, value, short: true, consumers };
+                migration = { name, value, short: true };
             }
         }
         const result = await this.configure(by, source, migration, { digest: current.digest, source: current.source, target: previousTarget, rebind });
         try {
             if (source.credential) {
                 await this.records.vault.remove(`executor.${id}.bearer`);
-                const name = secretNameOf(source.credential)!;
-                await this.records.variables.cleanupSecret(name);
             }
         }
         catch {
@@ -116,7 +112,7 @@ export class ExecutorRegistry {
         return result;
     }
     async disable(by: Principal, id: string) { await this.admin(by); const current = await this.readSource(id); if (!current)
-        throw new Error('执行器对你不可用'); return this.configure(by, { ...current.source, enabled: false }, undefined, { digest: current.digest, source: current.source, target: current.source.target, rebind: false }); }
+        throw new Error('执行器对当前账户不可用'); return this.configure(by, { ...current.source, enabled: false }, undefined, { digest: current.digest, source: current.source, target: current.source.target, rebind: false }); }
     async readSource(id: string): Promise<{
         id: string;
         digest: string;
@@ -163,7 +159,7 @@ export class ExecutorRegistry {
     async material(id: string, definition: ExecutorDefinition) { const current = await this.readSource(id); if (!current?.source.enabled)
         throw new ExecutorAccessError('执行器已禁用或不可用；未发请求', '管理员核对源定义并用 executor update 启用后重做原操作'); const name = definition.credential ? secretNameOf(definition.credential) : null; if (!name)
         throw new ExecutorCredentialError(id); try {
-        const [m] = await this.records.variables.readSecrets([{ name, consumer: executorConsumer({ ...definition, id }) }]);
+        const [m] = await this.records.variables.readSecrets([{ name }]);
         if (m.metadata.digest_rule !== 'plain')
             throw new ExecutorCredentialError(id,name,`密钥 ${name} 当前登记只存摘要；执行器需要原值，未发请求`);
         return m;
@@ -188,19 +184,17 @@ export class ExecutorRegistry {
         throw new Error('执行器源定义不是可规范化的 JSON；核对结构和取值');
     } if (scanForCredentials(bytes).findings.length)
         throw new Error('执行器定义不能含凭据原文；请使用 credential 密钥引用'); return structuredClone(parsed.data); }
-    private async configure(by: Principal, source: ExecutorSource, migration?: SecretWrite, guard?: UpdateGuard): Promise<RegisteredExecutor> {
-        for (const m of await this.records.variables.recentSecrets())
+    private async configure(by: Principal, source: ExecutorSource, migration?: SecretWrite, guard?: UpdateGuard, name?:string): Promise<RegisteredExecutor> {
+        const names = referencesIn(source).filter(ref => ref.kind === 'secret').map(ref => ref.name);
+        for (const m of await this.records.variables.recentSecrets(names))
             if (containsSecret(source, m.value))
-                throw new Error('执行器定义不能含任何当前或上一版密钥的原文');
+                throw new Error('执行器定义不能含所引用密钥的当前或上一版原文');
         const snapshot = await this.records.variables.snapshot(), resolved = await resolveExecutor(this.records, source, snapshot);
-        for (const m of await this.records.variables.recentSecrets())
+        for (const m of await this.records.variables.recentSecrets(names))
             if (containsSecret(resolved.definition, m.value))
-                throw new Error('解析后的执行器定义不能包含任何当前或上一版密钥的原文');
-        const stored = await this.records.objects.put(canonicalBytes(source), 'application/json');
-        const pinned = await this.records.objects.put(canonicalBytes(resolved.definition), 'application/json');
-        const expected = migration ? (await this.records.authorizations.resourceConfig('secret:' + migration.name))?.digest ?? null : null;
+                throw new Error('解析后的执行器定义不能包含所引用密钥的当前或上一版原文');
         const prepared = migration ? await this.records.variables.prepareSecrets(by, [migration], `从执行器 ${source.id} 迁移来`) : undefined;
-        await this.records.store.withTransaction(async (tx) => {
+        const configured=await this.records.store.withTransaction(async (tx) => {
             await lockExecutorConfiguration(this.records.store, tx, source.id!, [...source.resources, ...(guard?.source.resources ?? [])], [resolved.definition.target, ...(guard ? [guard.target] : [])], [new URL(source.endpoint).origin, ...(guard ? [new URL(guard.source.endpoint).origin] : [])]);
             if (guard) {
                 const current = await this.records.store.find<AuthorizationRecord['body']>({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|executor.${source.id}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
@@ -210,22 +204,23 @@ export class ExecutorRegistry {
                     await assertUnused(this.records.store, tx, source.id!, guard);
             }
             const refs = referencesIn(source);
-            await this.records.variables.lockNames(refs.map(r => r.name), tx);
+            await this.records.variables.lockNames(refs.filter(r=>r.kind==='var').map(r => r.name), tx);
             for (const ref of refs.filter(r => r.kind === 'var')) {
                 const rows = await this.records.store.find<AuthorizationRecord['body']>({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|var:${ref.name}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
                 if (rows.items[0]?.body.revoked || rows.items[0]?.digest !== snapshot.get(ref.name))
                     throw new Error('引用的变量在配置时已变；请先 var set 后重做 executor update');
             }
-            if (migration) {
-                const rows = await this.records.store.find<AuthorizationRecord['body']>({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|secret:${migration.name}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
-                if ((rows.items[0] && !rows.items[0].body.revoked ? rows.items[0].digest : null) !== expected)
-                    throw new Error('迁移期间密钥已变；核对后重新 update');
-            }
+            const names=name===undefined?undefined:new ExecutorNames(this.records);
+            if(names)await names.checkInTransaction(by,source.id!,name!,tx);
+            const stored=await this.records.objects.put(canonicalBytes(source),'application/json',tx);
+            const pinned=await this.records.objects.put(canonicalBytes(resolved.definition),'application/json',tx);
             if (prepared)
                 await this.records.variables.commitSecrets(by, prepared, tx);
             await this.records.authorizations.configureResourceInTransaction(by, 'executor.' + source.id, stored.sha256, '执行器定义配置', tx);
+            if(names)await names.assignInTransaction(by,source.id!,name!,tx);
+            return {stored,pinned};
         });
-        return { id: source.id!, digest: stored.sha256, source, ...resolved, resolved_digest: pinned.sha256 };
+        return { id: source.id!, digest: configured.stored.sha256, source, ...resolved, resolved_digest: configured.pinned.sha256 };
     }
 }
 export function containsSecret(value: unknown, secret: string): boolean { if (typeof value === 'string')

@@ -56,12 +56,20 @@ export function normaliseApplicability(applicability: Applicability | null): App
   return out;
 }
 
+function emptyConditionMarker(data: Record<string, unknown>, applicability: Applicability | null): boolean {
+  const marker = data.applicability_state;
+  if (applicability !== null || marker === null || typeof marker !== 'object' || Array.isArray(marker)) return false;
+  const m = marker as Record<string, unknown>;
+  const none = (list: unknown): boolean => list === undefined || (Array.isArray(list) && list.length === 0);
+  return m.schema === 'applicability-state@1' && Array.isArray(m.declared_fields) && none(m.declared_fields) && none(m.conflicted_fields);
+}
+
 /** The normalised content of a produced entry. Throws TypeError when data is not canonical JSON. */
 export function entryContentOf(entry: { kind: string; statement: string; data: Record<string, unknown>; applicability: Applicability | null }): EntryContent {
   const content: EntryContent = {
     kind: entry.kind.normalize('NFC'),
     statement: normaliseStatement(entry.statement),
-    data: entry.data,
+    data: emptyConditionMarker(entry.data, entry.applicability) ? Object.fromEntries(Object.entries(entry.data).filter(([key]) => key !== 'applicability_state')) : entry.data,
     applicability: normaliseApplicability(entry.applicability),
   };
   canonicalize(content.data);

@@ -4,7 +4,7 @@ import {runRecord,accepted,RECOVERY} from '../../contracts/src/fixtures.ts';
 import {RunRecord} from '../../contracts/src/run.ts';
 import {ValidationResult} from '../../contracts/src/validation.ts';
 import type {ServerDeps} from './api.ts';
-import type {PageContext} from './console/pages.ts';
+import type { PageContext } from './console/context.ts';
 import type {RunSummary} from '../ports.ts';
 import {loadTasks} from './console/tasks.ts';
 import {checkCounts,blockers} from './console/overview.ts';

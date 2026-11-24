@@ -1,10 +1,10 @@
-import type { DeviceObservation } from '../../../contracts/src/pack.ts';
+import type { DeviceHelpResult, DeviceHelpTarget, DeviceObservation, DeviceReadResult, DeviceReadTarget } from '../../../contracts/src/pack.ts';
 import type { ContributionLayer } from '../../knowledge/api.ts';
 // What the engine is built from: the records kit parts it writes and reads, the ports of the packages built beside it, the
 // parser registry, the sandbox options and the clock. createEngineContext adds the shared caches.
 import type { Principal, Principals, RecordsKit } from '../../records/api.ts';
 import type { ExternalReaderPort, KnowledgePort, PacksPort, WorkflowStore } from '../../ports.ts';
-import type { LeaseService } from '../../leases/service.ts';
+import type { LeaseService } from '../../leases/api.ts';
 import { createDefaultRegistry, createDocumentCache, type DocumentCache, type ParserRegistry } from '../../refs/api.ts';
 import type { SandboxLimits, SandboxOptions } from '../../rules/api.ts';
 import { createKeyedLock, wellFormed } from './util.ts';
@@ -28,15 +28,15 @@ export interface RunsEngineDeps {
     runs?(jobs:readonly string[]):Promise<ReadonlyMap<string,readonly string[]>>;
     /** Decision 105 (W03): for an accepted run with a hub_template effect row, report the jobs bound to the run, or, when there
      * is none and the result is ready (every item delivered, no error), let the Hub dispatch and report the reserved job. */
-    accepted?(run:string,ready:boolean):Promise<Array<{job?:string;executor?:string;result?:string;text:string}>>;
+    accepted?(run:string,ready:boolean,caller?:Principal):Promise<import('../../dispatch/api.ts').DispatchNote[]>;
     /** The run's jobs that have not ended and their notes, or null. While one runs, a different submission is stored but not
      * validated, so the run's latest accepted result (what the job verifies again before its submit) stays the one it took. */
-    inFlight?(run:string):Promise<{jobs:string[];notes:Array<{job?:string;executor?:string;result?:string;text:string}>}|null> };
+    inFlight?(run:string,caller?:Principal):Promise<{jobs:string[];notes:import('../../dispatch/api.ts').DispatchNote[]}|null> };
   /** The records kit parts the engine uses; with `config`, start_run knows the record size limit before it stores anything. */
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
     variables: Pick<RecordsKit['variables'], 'snapshot'>;
     config?: Pick<RecordsKit['config'], 'limits'>;
-    principals?: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'|'lockActive'>>;
+    principals: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'|'lockActive'>>;
     /** Purge facts of run-held personal copies (owner ruling 3, issue 141); absent in kits without personal payloads. */
     personalPayloads?: Pick<NonNullable<RecordsKit['personalPayloads']>,'purgedRunOriginals'>;
   };
@@ -64,6 +64,8 @@ export interface RunsEngineDeps {
   observations?: {
     latest(): Promise<DeviceObservation[]>;
     observe(user: Principal, run: string, targets: ReadonlyArray<{ inventory: string; device: string; label: string }>): Promise<{ observed: DeviceObservation[]; missing: string | null }>;
+    ask?(user: Principal, run: string, targets: ReadonlyArray<DeviceHelpTarget>): Promise<DeviceHelpResult[]>;
+    read?(user: Principal, run: string, targets: ReadonlyArray<DeviceReadTarget>): Promise<DeviceReadResult[]>;
   };
 }
 
@@ -71,6 +73,7 @@ export const ENGINE_COMPONENT = 'runs.engine@1';
 export const DEFAULT_CLIENT_KEY_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Pack function calls in flight per evaluation (the sandbox itself runs at most 8 children at a time). */
 export const CHECK_PARALLELISM = 8;
+export const CHECK_SANDBOX: Partial<SandboxLimits> = { memoryMb: 1024 };
 
 export interface EngineContext {
   /** Installed only by read-only entry points; never used by admission or commit paths. */

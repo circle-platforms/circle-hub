@@ -1,4 +1,4 @@
-import {packPurpose,packPath,PACK_PLACES,type PlaceKind} from './pack-display.ts';
+import {packPurpose,packPath,PACK_PLACES,PERSONAL_PUBLISH,type PlaceKind} from './pack-display.ts';
 import {memoReadPort} from '../../records/api.ts';
 import {currentAudience,spaceLayout,selectedScope,inScope} from './space-layout.ts';
 import {personalPackControls} from './personal-packs.ts';
@@ -13,12 +13,16 @@ import { acceptedProducerHead, doneRuleHead } from './pack-display.ts';
 import type { LoadedWorkflow, PackListing } from '../../ports.ts';
 import {KnowledgeSearchScopeSchema,type KnowledgeSearchScope} from '../../../contracts/generated/vocabulary.ts';
 import {timestamp} from './knowledge-display.ts';
-import {badge as chip,facts as kv,commandLink,commandModal,tooltip} from './presentation.ts';
+import {badge as chip,facts as kv,commandModal,tooltip} from './presentation.ts';
 import { compareVersions } from '../../runs/api.ts';
 import { commands } from './commands.ts';
 import { code, html, href, link, liveModule, page, pageLayout, table, type Html } from './html.ts';
-import { neutralPage, type PageContext, type PageResult } from './pages.ts';
-import { box, button, type CommandDialog, type Tone } from './ui.ts';
+import { neutralPage, type PageContext, type PageResult } from './context.ts';
+import { box, button, card, type CommandDialog, type Tone } from './ui.ts';
+import { registeredActionForm } from './command-form.ts';
+import { field } from './presentation.ts';
+import { selectControl, postForm, segments, submitButton } from './components.ts';
+import { connectionsPath, knowledgePath, knowledgeProductsPath, operationsPackPath } from './routes.ts';
 
 export function stateOf(pack: PackListing): { text: string; tone: Tone | 'plain' } {
   if (pack.withdrawn) return { text: uiLabelOf('pack_status', 'retired'), tone: 'unchecked' };
@@ -47,7 +51,12 @@ async function assignedNames(ctx: PageContext, pack: PackListing): Promise<strin
 async function usageAudience(ctx:PageContext,pack:PackListing):Promise<string>{
   if(pack.space&&pack.space!=='team')return (await currentAudience(ctx,pack.space,'/',false,pack.id)).text;
   if(pack.kind!=='workflow')return uiLabelOf('audience_scope','team');
-  if(!ctx.admin)return uiLabelOf('knowledge_search_scope','team');
+  if(!ctx.admin){
+    const teams=await ctx.deps.records.teams.memberships(ctx.principal);
+    return teams.length?teams.map((team)=>`团队 ${team.name}`).join('、'):`已分配给当前账户（${ctx.principal.name}）`;
+  }
+  const of=await ctx.deps.records.authorizations.teamsOf(ctx.principal,'pack',pack.id);
+  if(of.teams.length)return of.teams.map((team)=>`团队 ${team.name}`).join('、');
   const users=(await memoReadPort(ctx.deps.records.principals,['get','list']).list()).filter(user=>!user.disabled);
   const assigned=new Set(pack.assigned_to??await ctx.deps.records.authorizations.usersOf(pack.id));
   const eligible=users.filter(user=>assigned.has(user.id));
@@ -62,7 +71,7 @@ export async function packsPage(ctx: PageContext, kind: PlaceKind = 'workflow'):
   const body=await spaceLayout(ctx,liveModule('packs',['pack.published'],await packList(ctx,listings,scope,kind)),listings,kind);
   return { status: 200, body: page(ctx.chrome(place.title, {
     active: place.active, hint: packPurpose(kind)+'这里只列出当前账户可用的内容。',
-    actions:html`${button('/console/packs/-/publish',`发布我的${noun}`,{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload',...(kind==='workflow'?{}:{params:{kind}})}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的${noun}分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
+    actions:html`${button(PERSONAL_PUBLISH,`发布我的${noun}`,{icon:'upload'})}${canPublish?button(operationsPackPath(), '发布到团队', {primary:true,icon:'upload',...(kind==='workflow'?{}:{params:{kind}})}):html`<span title="没有发布权。可以先把我的${noun}分享给指定成员使用；发布权由管理员在团队页设置">${submitButton('发布到团队', { secondary: true, disabled: true })}</span>`}`,
   }), body) };
 }
 
@@ -123,7 +132,12 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
   const asked = ctx.url.searchParams.get('tab'), tab = tabsOf.find((key) => key === asked) ?? tabsOf[0];
   const counts: Partial<Record<PackTab, number>> = { ...(loaded === null ? {} : { requirements: loaded.requirements.length, checks: loaded.checks.length }), versions: versions.length };
   const kindTitle=uiLabelOf('pack_kind',pack.kind);
-  const tabs = html`<nav class="ch-seg" aria-label="${kindTitle}内容" data-pack-tabs>${tabsOf.map((key) => html`<a href="${href(path, { ...kept, ...(key === tabsOf[0] ? {} : { tab: key }) })}"${key === tab ? html` aria-current="page"` : ''}>${PACK_TAB_LABEL[key]}${counts[key] === undefined ? '' : html` <span class="ch-count">${counts[key]!.toLocaleString('en-US')}</span>`}</a>`)}</nav>`;
+  const tabs = segments(`${kindTitle}内容`, tabsOf.map((key) => ({
+    href: href(path, { ...kept, ...(key === tabsOf[0] ? {} : { tab: key }) }),
+    label: PACK_TAB_LABEL[key],
+    count: counts[key],
+    current: key === tab,
+  })), 'data-pack-tabs');
   const unreadable = box(null, html`<p class="notice">该版本的验收要求与检查项暂不可读；版本记录照常显示。</p>`);
   let content: Html;
   if (tab === 'requirements') {
@@ -133,7 +147,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
       '没有要求项', 'pack-requirements'), { flush: true });
   } else if (tab === 'checks') {
     content = loaded === null ? unreadable : box(null, table(
-      ['检查项', tooltip(axisUiLabel('check_tier'), '阻断项未通过时结果不可用；提示项仅作标记'), axisUiLabel('source_role'), '用于要求项'],
+      ['检查项', tooltip(axisUiLabel('check_tier'), '阻断项为错误时结果不可用；提示项仅作标记'), axisUiLabel('source_role'), '用于要求项'],
       loaded.checks.map((c) => [html`<b>${c.title ?? '检查项'}</b>`, c.tier === undefined ? '未声明' : chip(uiLabelOf('check_tier', c.tier), c.tier === 'blocking' ? 'fail' : 'plain'), uiLabelOf('source_role', c.judges), loaded?.requirements.filter((r) => r.checks.includes(c.id)).map((r) => r.name).join('、') || '无']),
       '没有检查项'), { flush: true });
   } else if (tab === 'versions') {
@@ -151,23 +165,47 @@ ${table(['发布时间', '版本', '内容哈希'], versions.map((v) => [timesta
   }
   // What the page opens with: the state, whose it is, who may use it, and the actions on exactly that.
   const personalControls=await personalPackControls(ctx,pack);
-  const access: Html[] = [];
+  const csrf = ctx.csrf ?? '';
+  const accessForms: Html[] = [];
   if (ctx.admin&&!pack.space) {
-    if (pack.kind === 'workflow' && !pack.withdrawn) { const d = commands.packAssign(pack.id); dialogs.push(d); access.push(html`<a href="#${d.id}">调整使用范围…</a>`); }
-    if (pack.kind === 'product' && !pack.withdrawn) { const d = commands.packActivate(pack.id, pack.active); dialogs.push(d); access.push(html`<a href="#${d.id}">${pack.active ? '停用产品知识来源…' : '启用产品知识来源…'}</a>`); }
-    const d = commands.packMaintainer(pack.id); dialogs.push(d); access.push(html`<a href="#${d.id}">调整维护人…</a>`);
+    if (pack.kind === 'workflow' && !pack.withdrawn) {
+      const teamsApi = (ctx.deps.records as { teams?: { list(by: typeof ctx.principal): Promise<Array<{ id: string; name: string; deleted_at: string | null }>> } }).teams;
+      const teams = teamsApi === undefined ? [] : (await teamsApi.list(ctx.principal)).filter((row) => row.id !== 'team' && row.deleted_at === null);
+      accessForms.push(card({ title: '分配给团队' }, teams.length === 0
+        ? html`<p class="ch-meta">尚无团队。</p>`
+        : postForm({
+          action: '/console/admin/do/pack-assign-team',
+          csrf,
+          fields: html`<input type="hidden" name="pack" value="${pack.id}">${field('团队', selectControl('team', teams.map((row) => ({ value: row.id, label: row.name })), undefined, { required: true }))}`,
+          submit: '分配',
+          primary: true,
+        })));
+    }
+    if (pack.kind === 'skill' && !pack.withdrawn) {
+      accessForms.push(card({ title: '安装这个版本' }, registeredActionForm('pack-install', csrf, '安装', { values: { pack: `${pack.id}@${pack.version}` }, primary: true })));
+      accessForms.push(card({ title: '卸载通用技能' }, registeredActionForm('pack-uninstall', csrf, '卸载', { values: { pack: pack.id } })));
+    }
+    if (pack.kind === 'product' && !pack.withdrawn) {
+      accessForms.push(card({ title: pack.active ? '停用产品知识来源' : '启用产品知识来源' },
+        registeredActionForm(pack.active ? 'pack-deactivate' : 'pack-activate', csrf, pack.active ? '停用' : '启用', { values: { pack: pack.id }, primary: !pack.active })));
+    }
+    const d = commands.packMaintainer(pack.id); dialogs.push(d); accessForms.push(html`<p class="ch-meta"><a href="#${d.id}">调整维护人…</a></p>`);
   }
-  const retire = ctx.admin&&!pack.space&&!pack.withdrawn ? commands.packRetire(`${pack.id}@${pack.version}`) : null;
-  if (retire) dialogs.push(retire);
+  const retireForm = ctx.admin&&!pack.space&&!pack.withdrawn
+    ? registeredActionForm('pack-retire', csrf, '退役这个版本', { values: { pack: `${pack.id}@${pack.version}` } })
+    : null;
   const current = shownVersion(versions);
   const head = html`<section class="ch-section" data-pack-head><p class="ch-meta" data-pack-facts>${chip(state.text, state.tone)} ${uiLabelOf('knowledge_search_scope', scopeOf(ctx, pack))} · 所有者 ${await ctx.userName(pack.owner)} · 发布于 ${timestamp(pack.published_at)}</p>
 ${pack === current ? '' : html`<p class="notice" data-pack-earlier>这里显示的是较早的版本。${link(path, '查看当前版本', place)}</p>`}
-<div class="ch-toolbar">${personalControls.body.text ? personalControls.body : html`<p>使用范围：${await usageAudience(ctx, pack)}</p>`}${access.length === 0 ? '' : html`<div class="ch-actions">${access}</div>`}</div></section>`;
-  const actions = html`${personalControls.actions}${retire ? commandLink(retire, '退役…', 'ch-btn ch-btn--danger') : ''}${ctx.admin&&!pack.space?button('/console/operations/pack','发布新版本…',{primary:true,params:{kind:pack.kind}}):''}`;
+<div class="ch-toolbar">${personalControls.body.text ? personalControls.body : html`<p>使用范围：${await usageAudience(ctx, pack)}</p>`}</div>
+${accessForms.length === 0 ? '' : html`<div class="ch-stack" data-pack-admin>${accessForms}</div>`}
+${retireForm === null ? '' : card({ title: '退役版本', hint: '退役后该版本不再用于新任务；已有任务照旧可读、可完成。' }, retireForm)}
+</section>`;
+  const actions = html`${personalControls.actions}${ctx.admin&&!pack.space?button(operationsPackPath(),'发布新版本…',{primary:true,params:{kind:pack.kind}}):''}`;
   const body = html`<div class="ch-stack" data-pack-page>${head}${tabs}<div data-pack-tab="${tab}">${content}</div>${dialogs.map(commandModal)}</div>`;
   // Where the kind is listed: a section of the knowledge page, a tab of the connections page, or a place of its own.
-  const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:'/console/knowledge',list:'/console/knowledge/products'}
-    : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:'/console/connections',list:'/console/connections?tab=packs'}
+  const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:knowledgePath(),list:knowledgeProductsPath()}
+    : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:connectionsPath(),list:connectionsPath()+'?tab=packs'}
     : {...PACK_PLACES[pack.kind],list:PACK_PLACES[pack.kind].path};
   // A place that lists one kind is not followed by that kind's name again.
   // The page itself, the pack's title, is the last place of the trail: page() adds it.

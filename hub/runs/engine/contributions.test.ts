@@ -4,7 +4,7 @@ import {createTestParserRegistry as createDefaultRegistry} from '../../testing/p
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { DOCUMENT_OUTPUT_KIND, TASK_OUTPUT_KIND, VALIDITY_STATUS_LABEL, labelOf } from '../../../contracts/generated/vocabulary.ts';
+import { DOCUMENT_OUTPUT_KIND, TASK_OUTPUT_KIND, VALIDITY_STATUS_LABEL } from '../../../contracts/generated/vocabulary.ts';
 import { GetNodesOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { KnowledgeContributionBody, KnowledgeContributionView } from '../../../contracts/src/contributions.ts';
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
@@ -201,10 +201,10 @@ test('all four document outputs enter only after requirements pass, remain outsi
   const page = await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
   assert.ok(GetNodesOutput.safeParse({call_result:'ok',errors:[],trace:call.traceId,root:w.root,...page}).success);
   const entries = page!.nodes[0].contributions!.map(view=>KnowledgeContributionView.parse(view));
-  assert.match(toolText('submit_result',{...answer,trace:call.traceId}),/回注：提交 4 条，入层 4 条，未入层 0 条/);
+  assert.match(toolText('submit_result',{...answer,trace:call.traceId}),/资料已保存 4 条，未保存 0 条/);
   const rendered=toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes});
-  assert.match(rendered,/回注层/);assert.match(rendered,/提交人/);assert.match(rendered,/依据/);assert.match(rendered,new RegExp(receipt.stored[0].record));
-  assert.match(rendered.split('\n').find(line=>line.includes(`rec:${receipt.stored[0].record}`))!,/适用 未声明/);
+  for(const kind of GENERIC_OUTPUTS)assert.ok(rendered.includes(`合成${kind}；状态未确认；决定者模型`));
+  assert.match(rendered,/证据show/);assert.doesNotMatch(rendered,/rec:|tree:|适用 未声明|提交人/);
   assert.deepEqual(entries.map(v=>v.contribution.kind).sort(),[...GENERIC_OUTPUTS].sort());
   assert.deepEqual(entries.map(v=>v.contribution.submitted_at),entries.map(v=>v.contribution.submitted_at).sort().reverse(),'node contribution pages are newest first');
   const storedRelation=entries.find(v=>v.contribution.kind==='relation')!.contribution.relation!;
@@ -233,7 +233,7 @@ test('a stored contradiction records its endpoints without editing the second no
   const relation=page!.nodes[0].contributions!.map(view=>KnowledgeContributionView.parse(view)).find(v=>v.contribution.kind==='relation')!.contribution.relation!;
   assert.equal(relation.kind,'contradicts');assert.equal(relation.other.reference,`tree:${w.root}/commands/net/ping`);
   assert.deepEqual((await w.knowledge.getNodes({root:w.root,paths:['/commands/net/ping'],depth:0},w.user))!.nodes,before!.nodes);
-  assert.match(toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes}),new RegExp(`关系 ${labelOf('relation_kind','contradicts')} →`));
+  assert.match(toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes}),/两份资料的说法有冲突；状态未知；原因还没查清；下一步由使用者核对两边原句/);
 });
 
 test('every kind reports its own path rule, and quotes use the strict boundary comparator',async t=>{
@@ -312,7 +312,7 @@ for(const kind of GENERIC_OUTPUTS) test(`${kind}: a non-verbatim quotation refus
   const result=await w.service.submitResult(w.admin,args,call);
   assert.equal(result.acceptance,'not_accepted');assert.ok(result.errors.some(e=>e.code==='QUOTE_MISMATCH'));
   assert.equal(result.result?.contributions?.not_stored.length,4);
-  assert.match(toolText('submit_result',{...result,trace:call.traceId}),/回注：提交 4 条，入层 0 条，未入层 4 条/);
+  assert.match(toolText('submit_result',{...result,trace:call.traceId}),/资料已保存 0 条，未保存 4 条/);
   assert.equal((await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user)).length,0);
 });
 
@@ -425,7 +425,7 @@ test('a handled artifact with a refuted requirement is not admitted',async t=>{
   assert.equal(result.acceptance,'accepted');
   assert.equal(result.result?.contributions?.stored.length,0);
   assert.equal(result.result?.contributions?.not_stored.length,4);
-  assert.match(toolText('submit_result',{...result,trace:call.traceId}),/未入层条目 classification：要求项尚未全部满足/);
+  assert.match(toolText('submit_result',{...result,trace:call.traceId}),/要求项尚未全部满足/);
   assert.equal((await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user)).length,0);
 });
 

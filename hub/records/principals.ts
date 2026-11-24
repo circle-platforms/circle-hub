@@ -1,3 +1,4 @@
+import { isAdmin } from './permissions.ts';
 import {retireReadScope} from './read-scope.ts';
 // Users and long-lived revocable tokens (R01; adapted from the earlier hashed-token auth). A token is 32 random bytes shown
 // once; only its SHA-256 is stored. Every change to a user is recorded as an append-only snapshot in user_history.
@@ -6,7 +7,8 @@ import {retireReadScope} from './read-scope.ts';
 // by the client it authorized; a token issued through the authorization names its client.
 // Model 38 (R01 R[12], decision 136 ⑫): every issuance, use and revocation also appends a token_issuance record in the
 // same transaction as the row change (token-issuance.ts); the rows remain the working state and the earlier history.
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
+import { MemberExternalIdentityAudit } from '../../contracts/src/resources.ts';
 import { TokenActionSchema, isPermissionRole, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, RecordStore, TokenInfo, User, UserChange, Transaction } from './api.ts';
@@ -60,6 +62,54 @@ export function normalizeInvitation(text: string): string {
 function invitationCode(): string {
   const plain = [...randomBytes(12)].map((byte) => CODE_ALPHABET[byte % 32]).join('');
   return `${plain.slice(0, 4)}-${plain.slice(4, 8)}-${plain.slice(8)}`;
+}
+
+type ExternalIdentityAuditBody = ReturnType<typeof MemberExternalIdentityAudit.parse>;
+
+/** Derives a keyed SHA-256 HMAC hex digest for external-identity audit fields. */
+export function externalIdentityAuditDigest(auditKey: Uint8Array, value: string): string {
+  if (auditKey.byteLength !== 32) throw new TypeError('external identity audit key must be 32 bytes');
+  return createHmac('sha256', auditKey).update(value).digest('hex');
+}
+
+/** Records a keyed-HMAC bind or unbind audit event without leaking plaintext external issuer/subject values. */
+export async function appendExternalIdentityAudit(
+  store: Pick<RecordStore, 'put'>,
+  input: {
+    auditKey: Uint8Array;
+    action: ExternalIdentityAuditBody['action'];
+    by: string;
+    member: string;
+    issuer: string;
+    subject: string;
+    at: string;
+    reason?: ExternalIdentityAuditBody['reason'];
+  },
+  tx: Transaction,
+): Promise<void> {
+  const body = MemberExternalIdentityAudit.parse({
+    schema: 'member-external-identity@1',
+    action: input.action,
+    by: input.by,
+    member: input.member,
+    issuer: externalIdentityAuditDigest(input.auditKey, input.issuer),
+    subject: externalIdentityAuditDigest(input.auditKey, input.subject),
+    at: input.at,
+    ...(input.reason === undefined ? {} : { reason: input.reason }),
+  });
+  await store.put(
+    {
+      kind: 'action',
+      schema: 'member-external-identity@1',
+      provenance: 'observed',
+      body,
+      index: [
+        { key: 'member.external_identity.member', value: input.member },
+        { key: 'member.external_identity.action', value: input.action },
+      ],
+    },
+    tx,
+  );
 }
 
 /** Reused by member deletion, keeping a single named administrator-set namespace. */
@@ -121,12 +171,24 @@ export class PgPrincipals implements Principals {
   readonly #db: Database;
   readonly #now: () => Date;
   readonly #store: Pick<RecordStore, 'put'>;
+  readonly #resolveAuditKey: () => Promise<Uint8Array>;
 
   /** `store` is the kit's record store; without one, a store on the same database writes the token_issuance records. */
-  constructor(db: Database, now: () => Date, store?: Pick<RecordStore, 'put'>) {
+  constructor(
+    db: Database,
+    now: () => Date,
+    store?: Pick<RecordStore, 'put'>,
+    auditKey?: Uint8Array | (() => Promise<Uint8Array>),
+  ) {
     this.#db = db;
     this.#now = now;
     this.#store = store ?? createRecordStore(db, { maxRecordBytes: TOKEN_RECORD_BYTES, now });
+    if (typeof auditKey === 'function') {
+      this.#resolveAuditKey = auditKey;
+    } else {
+      const staticKey = auditKey ?? randomBytes(32);
+      this.#resolveAuditKey = async () => staticKey;
+    }
   }
 
   async bootstrapAdmin(name: string, credential?: { password: string; mustChange: boolean }): Promise<{ user: User; token: IssuedToken }> {
@@ -197,11 +259,21 @@ export class PgPrincipals implements Principals {
     });
   }
 
+  async #revokeConsoleSessions(tx: PgTransaction, by: string, userId: string, at: string): Promise<void> {
+    const revoked = await this.#db.query(
+      'UPDATE tokens SET revoked_at=$2, revoked_by=$1 WHERE user_id=$3 AND console_session AND revoked_at IS NULL RETURNING id',
+      [by, at, userId],
+      tx,
+    );
+    for (const token of revoked.rows.map((row) => String(row.id)).sort()) {
+      await appendTokenIssuance(this.#store, { action: REVOKE, token, user: userId, by, at }, tx);
+    }
+  }
+
   async #replacePassword(tx: PgTransaction, by: Principal, userId: string, hash: string, mustChange: boolean): Promise<void> {
     const at=this.#now().toISOString();
     const row=(await this.#db.query('UPDATE users SET password_hash=$2, password_must_change=$3, password_revision=password_revision+1, updated_at=$4 WHERE id=$1 RETURNING *',[userId,hash,mustChange,at],tx)).rows[0];
-    const revoked=await this.#db.query('UPDATE tokens SET revoked_at=$2, revoked_by=$1 WHERE user_id=$3 AND console_session AND revoked_at IS NULL RETURNING id',[by.id,at,userId],tx);
-    for (const token of revoked.rows.map(row=>String(row.id)).sort()) await appendTokenIssuance(this.#store,{action:REVOKE,token,user:userId,by:by.id,at},tx);
+    await this.#revokeConsoleSessions(tx, by.id, userId, at);
     await this.#db.query('INSERT INTO user_history (user_id,name,role,disabled,changed_by,changed_at,password_changed) VALUES ($1,$2,$3,$4,$5,$6,true)',[userId,row.name,row.role,row.disabled,by.id,at],tx);
   }
 
@@ -212,7 +284,7 @@ export class PgPrincipals implements Principals {
       await this.#decider(tx, by, true);
       const current = await this.#locked(tx, userId);
       if (current.role === wanted) return current;
-      if (current.role === ADMIN && !current.disabled) await this.#keepAnAdmin(tx, current.id);
+      if (isAdmin(current) && !current.disabled) await this.#keepAnAdmin(tx, current.id);
       return this.#update(tx, current, { role: wanted, disabled: current.disabled }, by.id);
     }).finally(retireReadScope);
   }
@@ -224,8 +296,40 @@ export class PgPrincipals implements Principals {
       await this.#decider(tx, by, true);
       const current = await this.#locked(tx, userId);
       if (current.disabled === disabled) return current;
-      if (disabled && current.role === ADMIN) await this.#keepAnAdmin(tx, current.id);
-      return this.#update(tx, current, { role: current.role, disabled }, by.id);
+      if (disabled && isAdmin(current)) await this.#keepAnAdmin(tx, current.id);
+      const updated = await this.#update(tx, current, { role: current.role, disabled }, by.id);
+      if (disabled) {
+        const at = this.#now().toISOString();
+        await this.#revokeConsoleSessions(tx, by.id, userId, at);
+        const removed = await this.#db.query<{ issuer: string; subject: string }>(
+          'DELETE FROM external_member_identities WHERE owner = $1 RETURNING issuer, subject',
+          [userId],
+          tx,
+        );
+        const rows = [...removed.rows].sort(
+          (a, b) => String(a.issuer).localeCompare(String(b.issuer)) || String(a.subject).localeCompare(String(b.subject)),
+        );
+        if (rows.length > 0) {
+          const auditKey = await this.#resolveAuditKey();
+          for (const row of rows) {
+            await appendExternalIdentityAudit(
+              this.#store,
+              {
+                auditKey,
+                action: 'unbind',
+                by: by.id,
+                member: userId,
+                issuer: String(row.issuer),
+                subject: String(row.subject),
+                at,
+                reason: 'disabled',
+              },
+              tx,
+            );
+          }
+        }
+      }
+      return updated;
     }).finally(retireReadScope);
   }
 
@@ -270,6 +374,103 @@ export class PgPrincipals implements Principals {
     return row === undefined ? null : userOf(row);
   }
 
+  async bindExternalIdentity(by: Principal, issuer: string, subject: string): Promise<void> {
+    await this.#db.transaction(async (tx) => {
+      await this.lockActive(by, tx);
+      const inserted = await this.#db.query(
+        'INSERT INTO external_member_identities(issuer,subject,owner) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING 1',
+        [issuer, subject, by.id],
+        tx,
+      );
+      if (inserted.rowCount) {
+        const auditKey = await this.#resolveAuditKey();
+        await appendExternalIdentityAudit(
+          this.#store,
+          {
+            auditKey,
+            action: 'bind',
+            by: by.id,
+            member: by.id,
+            issuer,
+            subject,
+            at: this.#now().toISOString(),
+          },
+          tx,
+        );
+        return;
+      }
+      const match = await this.#db.query('SELECT 1 FROM external_member_identities WHERE issuer=$1 AND subject=$2 AND owner=$3', [issuer, subject, by.id], tx);
+      if (!match.rowCount) throw new ConflictError('此身份或当前成员已有不同绑定');
+    });
+  }
+
+  async unbindExternalIdentity(by: Principal, userId: string, issuer?: string): Promise<number> {
+    if (!USER_ID.test(userId)) throw new ConflictError('成员编号格式不对');
+    return this.#db.transaction(async (tx) => {
+      if (by.id === userId) {
+        await this.lockActive(by, tx);
+      } else {
+        await this.#decider(tx, by, true);
+        const found = await this.#db.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [userId], tx);
+        if (!found.rowCount) throw new ConflictError('成员不存在');
+      }
+      const removed = issuer === undefined
+        ? await this.#db.query<{ issuer: string; subject: string }>(
+            'DELETE FROM external_member_identities WHERE owner = $1 RETURNING issuer, subject',
+            [userId],
+            tx,
+          )
+        : await this.#db.query<{ issuer: string; subject: string }>(
+            'DELETE FROM external_member_identities WHERE owner = $1 AND issuer = $2 RETURNING issuer, subject',
+            [userId, issuer],
+            tx,
+          );
+      const at = this.#now().toISOString();
+      const rows = [...removed.rows].sort(
+        (a, b) => String(a.issuer).localeCompare(String(b.issuer)) || String(a.subject).localeCompare(String(b.subject)),
+      );
+      if (rows.length > 0) {
+        const auditKey = await this.#resolveAuditKey();
+        for (const row of rows) {
+          await appendExternalIdentityAudit(
+            this.#store,
+            {
+              auditKey,
+              action: 'unbind',
+              by: by.id,
+              member: userId,
+              issuer: String(row.issuer),
+              subject: String(row.subject),
+              at,
+              reason: 'manual',
+            },
+            tx,
+          );
+        }
+      }
+      return rows.length;
+    });
+  }
+
+  async externalIdentities(owner: string): Promise<readonly string[]> {
+    if (!USER_ID.test(owner)) return [];
+    const result = await this.#db.query<{ issuer: string }>(
+      'SELECT issuer FROM external_member_identities WHERE owner = $1 ORDER BY issuer',
+      [owner],
+    );
+    return result.rows.map((row) => String(row.issuer));
+  }
+
+  async externalSubject(owner: string, issuer: string): Promise<string | null> {
+    const result = await this.#db.query('SELECT e.subject FROM external_member_identities e JOIN users u ON u.id=e.owner WHERE u.id=$1 AND e.issuer=$2 AND NOT u.disabled AND u.deleted_at IS NULL', [owner, issuer]);
+    return result.rows.length ? String(result.rows[0].subject) : null;
+  }
+
+  async externalMember(issuer: string, subject: string): Promise<User | null> {
+    const result = await this.#db.query('SELECT u.* FROM external_member_identities e JOIN users u ON u.id=e.owner WHERE e.issuer=$1 AND e.subject=$2 AND NOT u.disabled AND u.deleted_at IS NULL', [issuer, subject]);
+    return result.rows.length ? userOf(result.rows[0]) : null;
+  }
+
   async findByName(name: string): Promise<User | null> {
     if (typeof name !== 'string') return null;
     const row = (await this.#db.query('SELECT * FROM users WHERE name = $1 AND deleted_at IS NULL', [name])).rows[0];
@@ -307,7 +508,7 @@ export class PgPrincipals implements Principals {
     if (client !== undefined && (typeof client !== 'string' || !CLIENT_ID.test(client))) throw new TypeError('client ids are cli_<ULID>');
     return this.#db.transaction(async (tx) => {
       const decider = await this.#decider(tx, by, false);
-      if (decider.role !== ADMIN && decider.id !== userId) throw new AccessError('只有管理员可以为别人签发令牌');
+      if (!isAdmin(decider) && decider.id !== userId) throw new AccessError('只有管理员可以为别人签发令牌');
       const target = await this.#locked(tx, userId);
       if (target.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}，不能签发令牌`);
       if (client !== undefined && (await this.#db.query('SELECT 1 FROM oauth_clients WHERE id = $1', [client], tx)).rowCount === 0) throw new ConflictError('没有这个客户端');
@@ -321,7 +522,7 @@ export class PgPrincipals implements Principals {
       const decider = await this.#decider(tx, by, false);
       const row = (await this.#db.query('SELECT user_id FROM tokens WHERE id = $1 FOR UPDATE', [tokenId], tx)).rows[0];
       // Someone else's token looks exactly like an absent one.
-      if (row === undefined || (decider.role !== ADMIN && row.user_id !== decider.id)) return false;
+      if (row === undefined || (!isAdmin(decider) && row.user_id !== decider.id)) return false;
       const at = this.#now().toISOString();
       const result = await this.#db.query(
         'UPDATE tokens SET revoked_at = $2, revoked_by = $3 WHERE id = $1 AND revoked_at IS NULL',
@@ -456,18 +657,20 @@ export class PgPrincipals implements Principals {
     return new Map((await this.#db.query('SELECT * FROM oauth_clients WHERE id=ANY($1::text[])',[ids])).rows.map(row=>{const client=clientOf(row);return [client.id,client];}));
   }
 
-  async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,false))?.principal??null;}
-  authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,true);}
-  identify(authorization:string|null|undefined){return this.#authenticate(authorization,false);}
-  async #authenticate(authorization:string|null|undefined,accessOnly:boolean):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
+  async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,'any'))?.principal??null;}
+  authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,'access');}
+  async authenticateConsoleSession(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,'console'))?.principal??null;}
+  identify(authorization:string|null|undefined){return this.#authenticate(authorization,'any');}
+  async #authenticate(authorization:string|null|undefined,kind:'any'|'access'|'console'):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
     if (typeof authorization !== 'string' || authorization.length > 200) return null;
     const match = BEARER.exec(authorization);
     if (match === null) return null;
     const row = (
       await this.#db.query(
         `SELECT t.id AS token_id, t.client_id, u.id, u.name, u.role FROM tokens t JOIN users u ON u.id = t.user_id
-          WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2) AND (NOT $3 OR NOT t.console_session)`,
-        [sha256Hex(match[1]),this.#now().toISOString(),accessOnly],
+          WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2)
+            AND ($3 = 'any' OR ($3 = 'access' AND NOT t.console_session) OR ($3 = 'console' AND t.console_session))`,
+        [sha256Hex(match[1]),this.#now().toISOString(),kind],
       )
     ).rows[0];
     if (row === undefined || !isPermissionRole(row.role)) return null;
@@ -486,7 +689,7 @@ export class PgPrincipals implements Principals {
     const row = id === null ? undefined : (await this.#db.query('SELECT * FROM users WHERE id = $1', [id], tx)).rows[0];
     const user = row === undefined ? null : userOf(row);
     if (user === null || user.disabled) throw new AccessError('操作人不是有效的 Hub 账号');
-    if (adminOnly && user.role !== ADMIN) throw new AccessError('只有管理员可以管理用户和角色');
+    if (adminOnly && !isAdmin(user)) throw new AccessError('只有管理员可以管理用户和角色');
     return user;
   }
 

@@ -16,7 +16,8 @@ async function everyBounded<T>(values:readonly T[],check:(value:T)=>Promise<bool
 /** Return the old read only when current permissions and every included dynamic source can still be checked. */
 export async function recoverRead(deps:ServerDeps,user:Principal,args:Record<string,unknown>,raw:Record<string,unknown>,trace:string,at:string):Promise<Answer|null>{
   const input=GetNodesInput.safeParse(args),saved=GetNodesOutput.safeParse(raw);
-  if(!input.success||input.data.call_query!==undefined||!saved.success||saved.data.call_result!=='ok'||saved.data.call_status!==undefined)return null;
+  if (!input.success || input.data.call_query !== undefined || input.data.observability !== undefined) return null;
+  if (!saved.success || saved.data.call_result !== 'ok' || saved.data.call_status !== undefined || saved.data.observability !== undefined) return null;
   const answer=saved.data,request=input.data,reader:ReaderIdentity={user:user.id,role:user.role,...(request.run?{run:request.run}:{})};
   try{
     const run=request.run?await deps.runs.getRun(user,request.run):null;

@@ -10,8 +10,8 @@
     },
     {
       "code": "case-compile.method_forbidden",
-      "when": "组合不是合约启用条目",
-      "fix": "只用合约启用且非内部、非认证候选的组合"
+      "when": "组合不是合约启用条目，或计划未满足位置约束/清理义务（如把执行器收尾自动清理或保存写入了 cleanup:true）",
+      "fix": "只用合约启用且非内部、非认证候选的组合；cleanup:true 只放由本用例自行配置且未被执行器自动清理覆盖的同设备逆序逆操作，由执行器收尾执行的保存或整模块清理从 cleanup:true 删除（需在用例中保存时改放主步骤 main）"
     },
     {
       "code": "case-compile.param_arity",
@@ -59,6 +59,11 @@
       "fix": "环境不可达，整卷不跑。把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译"
     },
     {
+      "code": "case-compile.driver_no_path",
+      "when": "被断言读取输出的查询，执行它的清单主机没有接口在目标地址的网段（清单没有声明路由）",
+      "fix": "改由与目标同网段的主机发起查询，或把目标换成执行主机所在网段上的被测设备接口地址"
+    },
+    {
       "code": "case-compile.replacement_invalid",
       "when": "替换表不是一一对应的有效地址映射",
       "fix": "每个原地址和目标地址各出现一次，按数值去重"
@@ -84,6 +89,11 @@
       "fix": "after 写对应命令步骤从 1 开始的编号，不指向等待或断言"
     },
     {
+      "code": "case-compile.assertion_in_command",
+      "when": "断言文字出现在它读取输出的那一步命令里（运行器读取的输出以命令回显开头）",
+      "fix": "改成只会出现在设备输出数据行里的文字，或换一条不含该文字的观察命令"
+    },
+    {
       "code": "case-compile.assertion_in_steps",
       "when": "steps 里直接填写了 literal_assertion 调用，绕过唯一的溯源期望入口",
       "fix": "断言写进 expects，带引文和 after"
@@ -100,7 +110,7 @@
     },
     {
       "code": "case-compile.expect_value",
-      "when": "断言文字不符合工作簿 G 取值规则",
+      "when": "断言文字不符合自动化用例 Excel G 取值规则",
       "fix": "断言写成单行原文片段，去掉首尾空白、等号前缀和 {} 或 {0} 占位符"
     },
     {
@@ -120,13 +130,53 @@
     },
     {
       "code": "case-compile.workbook_invalid",
-      "when": "工作簿原件、行结构、绑定身份或重算字节与已核验计划不一致",
-      "fix": "按驳回指针修正计划或工作簿，在客户端用当前生成器重新生成并上传原件，以已满足计划运行为前驱开始新核验运行"
+      "when": "自动化用例 Excel、行结构、绑定身份、重算字节或引用运行与所核对脚本编写运行（generation.plan_run）已接收的计划不一致",
+      "fix": "若修改或返工了自动化用例，禁止重交到已被脚本合并核对锁定的旧脚本编写运行或当前脚本合并运行；必须先以 test-bed 预订为前驱用 start_run 新开脚本编写运行提交并核对，再重新生成自动化用例 Excel、上传并以新脚本编写运行为前驱开始新脚本合并运行；仅内容未改时才按驳回提示核对原运行或自动化用例 Excel"
+    },
+    {
+      "code": "case-compile.combination_forbidden",
+      "when": "产品命令规则声明互斥的两侧命令出现在同一卷里：同一个用例的计划里，或同一份自动化用例 Excel 的不同用例里；返回结果写明两侧的用例、命令和产品文档的依据",
+      "fix": "互斥的两侧不放同一卷：把其中一侧的用例写进 parameters.exclude 后重新开计划运行，另开运行用 autoid 单独编；作者要测的正是这个组合时，是作者步骤与产品文档冲突，按“问用户”处理，不自己改"
     },
     {
       "code": "case-compile.expect_not_in_criterion",
-      "when": "引用的期望与本运行冻结的已受理判据声明不一致",
+      "when": "引用的期望与本运行冻结的、已通过脚本合并核对的判据声明不一致",
       "fix": "逐字引用本运行冻结的新判据，或使用原件逐字引文"
+    },
+    {
+      "code": "case-compile.fidelity_missing",
+      "when": "计划没带场景保真审计判断（data.fidelity）",
+      "fix": "照 tools/fidelity.md 算简报、交新开的子代理审计，把判断原样写进 data.fidelity 再交卷"
+    },
+    {
+      "code": "case-compile.fidelity_stale",
+      "when": "审计判断针对的简报不是这份计划的",
+      "fix": "计划改过就重算简报、重新审计，再交卷"
+    },
+    {
+      "code": "case-compile.fidelity_shape",
+      "when": "审计判断的形状不对，或有作者步骤没判、判了两次",
+      "fix": "每条作者步骤恰好一行 {n, verdict, step_indices, rationale}，外加 brief_sha256 和 disclosure"
+    },
+    {
+      "code": "case-compile.scenario_changed",
+      "when": "审计判某条作者步骤的场景被改了",
+      "fix": "对照作者原文和审计引用的证据，保住作者写的约束，改计划后重新审计再交卷"
+    },
+    {
+      "code": "case-compile.author_step_unrealized",
+      "when": "审计判某条作者步骤没有计划步骤实现",
+      "fix": "补上实现它的步骤后重新审计再交卷，或报告它实现不了的原因"
+    },
+    {
+      "code": "case-compile.author_step_unbound",
+      "when": "审计判保住的作者步骤没指出实现它的计划步骤",
+      "fix": "在 step_indices 写上实现它的计划步骤号"
+    },
+    {
+      "code": "case-compile.author_step_unreferenced",
+      "when": "重组记录里某条作者动作原句，没有任何计划步骤（分块计划是块）的 author_step_refs 写了它的编号",
+      "fix": "在实现它的步骤或块的 author_step_refs 写上它的编号；现有步骤都不实现它就补上；确认实现不了的不要硬凑，在最终回复向主代理报告原因"
     }
   ],
   "refusals": [
@@ -193,7 +243,7 @@
     {
       "code": "case-compile.internal_error",
       "when": "投影函数内部出错",
-      "fix": "将输入交给任务包维护人，修复后重新开始运行"
+      "fix": "将输入交给工作流维护人，修复后重新开始运行"
     },
     {
       "code": "case-compile.autoid_imprecise",
@@ -202,13 +252,13 @@
     },
     {
       "code": "case-compile.workbook_input",
-      "when": "绑定工作簿不是完整的 xlsx@1 原件，或解析模型超过核验预算",
+      "when": "绑定自动化用例 Excel 不是完整的 xlsx@1 原件，或解析模型超过核验预算",
       "fix": "上传原始 xlsx 并按返回的 src: 绑定；超预算时减少用例的非必要内容，或把脑图拆成几份分别上传、各开一次运行后重新生成，不截断模型或删除执行行"
     },
     {
       "code": "case-compile.workbook_context",
-      "when": "绑定工作簿时没有合式的已满足计划运行号 plan_run；多于一个用例时缺计划运行的已受理结果 plan_result，或它没有受理每个用例的唯一计划和命令目录回执",
-      "fix": "从已满足的计划提交与结果复制运行号，以其为 predecessor，填写相同 plan_run 并开始绑定原件的新核验运行"
+      "when": "绑定自动化用例 Excel 时没有合式的已确认正确的脚本编写运行号 parameters.plan_run；多于一个用例时缺脚本编写运行经脚本合并核对的结果 inputs.plan_result，或它没有逐用例核对唯一计划和命令目录的记录",
+      "fix": "从已确认正确的脚本编写运行复制运行号，将其同时填入顶层 predecessor 与 parameters.plan_run（多于一个用例时并在 inputs.plan_result 填 {\"run\": \"<同一运行号>\"}），再绑定 inputs.workbook 开始脚本合并运行"
     },
     {
       "code": "case-compile.too_many_cases",

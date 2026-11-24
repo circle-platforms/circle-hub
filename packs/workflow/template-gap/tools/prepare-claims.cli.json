@@ -1,0 +1,38 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "located",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<located文件>",
+      "type": "path"
+    },
+    {
+      "name": "choices",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<choices文件>",
+      "type": "path"
+    },
+    {
+      "name": "identity",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<identity文件>",
+      "type": "path"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<out文件>",
+      "type": "path"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "subcommands": {
+    "ask": [
+      "%JEV_API_KEY%"
+    ]
+  },
+  "options": [
+    {
+      "name": "input",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<请求JSON>",
+      "type": "path"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<输出目录>",
+      "type": "path"
+    },
+    {
+      "name": "model",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<模型>",
+      "type": "text"
+    },
+    {
+      "name": "timeout-ms",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "int"
+    },
+    {
+      "name": "key-stdin",
+      "required": true,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    }
+  ],
+  "forms": []
+}

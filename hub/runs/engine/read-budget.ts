@@ -2,7 +2,7 @@
 // A budget is reserved before I/O, so rejected work cannot occupy database connections.
 import {HubReadFailure} from './retry-read.ts';
 export const CHECK_READ_CONCURRENCY=4;
-export const CHECK_READ_REFERENCES=256;
+export const CHECK_READ_REFERENCES=1024;
 export const CHECK_READ_TOTAL_BYTES=16*1024*1024;
 let active=0;
 const waiting:Array<()=>void>=[];
@@ -14,7 +14,7 @@ export class CheckReadBudget {
  readonly references=new Set<string>();
  readonly sizes=new Map<string,number>();
  bytes=0;
- fail(reference:string):never{throw new HubReadFailure(reference,'check_error',[],'检查来源读取预算已用尽，核验未完成（最多 256 个来源、合计 16 MiB）','运行者拆分计划或输入后开新修订；管理员核对读取预算，不能把未读取部分当作已通过；本次不计模型修复轮数');}
+ fail(reference:string):never{throw new HubReadFailure(reference,'check_error',[],`检查来源读取预算已用尽，核验未完成（最多 ${CHECK_READ_REFERENCES} 个来源、合计 16 MiB）`,'运行者拆分计划或输入后开新修订；管理员核对读取预算，不能把未读取部分当作已通过；本次不计模型修复轮数');}
  reserve(reference:string):void{
   if(this.references.has(reference))return;
   if(this.references.size>=CHECK_READ_REFERENCES)this.fail(reference);

@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import pg from 'pg';
@@ -38,13 +39,13 @@ for(const path of ['knowledge','source','memory'])test(`${path} charges the exac
  await spaces.setCapacity(w.admin,w.user.id,requested);await write();assert.equal((await spaces.usage(w.user)).used,requested);assert.equal((await spaces.usage(w.user)).remaining,0);
 });
 test('a quota reduction completed while a write is queued is rechecked inside the committing lock',async t=>{
- const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,entered=barrier(),release=barrier(),lock=w.kit.store.lock.bind(w.kit.store);let once=false;const other=createKnowledge({records:w.kit,packs:w.packs,external:w.external,parsers:createTestParserRegistry()}).spaces!;
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,entered=barrier(),release=barrier(),lock=w.kit.store.lock.bind(w.kit.store);let once=false;const other=createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,records:w.kit,packs:w.packs,external:w.external,parsers:createTestParserRegistry()}).spaces!;
  w.kit.store.lock=async(key,tx)=>{if(key==='knowledge-space:'+w.user.id&&!once){once=true;entered.release();await release.promise;}return lock(key,tx);};
  const write=spaces.write(w.user,{kind:'observation',statement:'合成并发调额'}),refused=assert.rejects(write,{code:'SPACE_CAPACITY_EXCEEDED'});void refused.catch(()=>{});
  try{await reaches(entered,write);await other.setCapacity(w.admin,w.user.id,0);}finally{release.release();}await refused;assert.equal(await spaces.current(w.user.id),null);
 });
 test('an already locked write commits first, then a lower quota preserves its content and refuses the next write',async t=>{
- const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,entered=barrier(),release=barrier(),lock=w.kit.store.lock.bind(w.kit.store);let locks=0;const other=createKnowledge({records:w.kit,packs:w.packs,external:w.external,parsers:createTestParserRegistry()}).spaces!;
+ const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,entered=barrier(),release=barrier(),lock=w.kit.store.lock.bind(w.kit.store);let locks=0;const other=createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,records:w.kit,packs:w.packs,external:w.external,parsers:createTestParserRegistry()}).spaces!;
  w.kit.store.lock=async(key,tx)=>{await lock(key,tx);if(key==='knowledge-space:'+w.user.id&&++locks===2){entered.release();await release.promise;}};
  const writing=spaces.write(w.user,{kind:'observation',statement:'合成先提交内容'});await reaches(entered,writing);const reducing=other.setCapacity(w.admin,w.user.id,0),client=new pg.Client({...w.kit.database,ssl:false});await client.connect();
  try{let blocked=false;for(let n=0;n<500;n++){const r=await client.query("SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query=$1 AND cardinality(pg_blocking_pids(pid))>0",['SELECT pg_advisory_xact_lock($1, hashtext($2))']);if(r.rowCount){blocked=true;break;}await new Promise(r=>setTimeout(r,10));}assert.ok(blocked,'the quota setter must wait for the committing space lock');}finally{release.release();await client.end();}

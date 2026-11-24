@@ -18,7 +18,7 @@ export interface FunctionAttempt {
 
 export function transientFunctionFailure(error: unknown): error is SandboxError {
   return error instanceof SandboxError && (error.code === 'SANDBOX_TIMEOUT'
-    || (error.code === 'SANDBOX_UNAVAILABLE' && ['queue_full', 'stopping', 'spawn_failed'].includes(String(error.detail.reason))));
+    || (error.code === 'SANDBOX_UNAVAILABLE' && ['queue_full', 'stopping', 'spawn_failed', 'resident_observation_unavailable'].includes(String(error.detail.reason))));
 }
 
 export async function retryFunction<T>(execute: () => Promise<T>, timeoutMs: number, observe?: (attempt: FunctionAttempt) => void, options: { retryWallTimeout?: boolean } = {}): Promise<T> {

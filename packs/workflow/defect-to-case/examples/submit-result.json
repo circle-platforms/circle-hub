@@ -8,7 +8,7 @@
       "slots": {
         "cases": [
           {
-            "text": "SLB健康检查间隔配置测试",
+            "text": "widget 健康检查间隔配置测试",
             "quotes": [
               {
                 "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
@@ -16,12 +16,12 @@
               }
             ],
             "data": {
-              "title": "SLB健康检查间隔配置测试",
+              "title": "widget 健康检查间隔配置测试",
               "priority": 2,
               "negative": false,
               "expects_refutation": false,
               "preconditions": [
-                "SLB正常运行"
+                "widget 服务正常运行"
               ],
               "steps": [
                 {

@@ -28,10 +28,6 @@ export interface JudgedOutcome {
   judges: SourceRole;
 }
 
-/**
- * runCheck turns a sandbox failure into an unknown outcome carrying `data.sandbox`. A display hint only: a pack function can
- * return the same data, so no terminal depends on it (the terminal follows the outcome's reason, V01 R[6]).
- */
 export function isSandboxFailure(outcome: CheckOutcome): boolean {
   return outcome.verdict === 'unknown' && typeof outcome.data?.sandbox === 'string';
 }

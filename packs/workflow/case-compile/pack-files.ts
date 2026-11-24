@@ -5,7 +5,7 @@
 //   node packs/workflow/case-compile/pack-files.ts --check   exits 1 when pack.json is stale
 //   node packs/workflow/case-compile/pack-files.ts --stage <empty directory>   copies the pack there, ready to publish
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, writeFile, lstat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,16 +14,17 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'case-compile',
-  version: '3.9.19',
+  version: '3.26.10',
   kind: 'workflow',
   dependencies: [{pack:'mindmap-format'},{pack:'workbook-format'}],
+  embeds: [{pack:'mindmap-format',version:'1.0.27',module:'case-structure'},{pack:'run-tools',version:'1.0.3',module:'hub-client'},{pack:'runner-workbook',version:'1.0.2',module:'workbook-writer'},{pack:'command-tools',version:'1.1.2',module:'command-check'},{pack:'plumb',version:'1.0.4',module:'plumb-client'},{pack:'jev-judge',version:'1.0.0',module:'jev-client'}],
   title: '用例编译',
   description: '把一整份测试脑图编译成自动化用例 Excel 工作簿，再交给自动化测试环境执行；需要这份脑图在敏捷平台上的文档号。每个用例的第一行写着它在脑图里的层级（AAA>BBB>CCC），方便人工对照原文。工作簿由客户端生成，Hub 只逐行核对并重算，不生成内容、不调用模型；核对通过不证明在真实设备上跑得通',
 } as const;
 
 /** Top-level declaration files and the folders whose files belong to the pack. */
 const TOP = ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'];
-const FOLDERS = ['functions', 'tables', 'policies', 'samples', 'examples', 'tools'];
+const FOLDERS = ['functions', 'tables', 'policies', 'samples', 'examples', 'tools', 'agents', 'workflows'];
 /** Tests and their helpers and the harness live beside the functions but are never loaded by a pack function. */
 const NOT_PUBLISHED = (path: string): boolean => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/');
 
@@ -71,6 +72,30 @@ export async function stage(target: string): Promise<string> {
   return target;
 }
 
+export async function verifyInstall(target: string): Promise<{ files: number; sha256: string }> {
+  const root = await lstat(target);
+  if (!root.isDirectory() || root.isSymbolicLink()) throw new Error('安装目录必须是普通目录');
+  const expected = await computeManifest();
+  const text = manifestText(expected);
+  const manifestInfo = await lstat(join(target, 'pack.json'));
+  if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || await readFile(join(target, 'pack.json'), 'utf8') !== text) throw new Error('安装清单与已审查版本不一致');
+  const wanted = new Set(['pack.json', ...expected.files.map(entry => entry.path)]);
+  const walkInstalled = async (folder: string): Promise<void> => {
+    for (const entry of await readdir(join(target, folder), { withFileTypes: true })) {
+      const relative = folder ? `${folder}/${entry.name}` : entry.name;
+      if (entry.isSymbolicLink()) throw new Error('安装目录包含符号链接');
+      if (entry.isDirectory()) await walkInstalled(relative);
+      else if (!entry.isFile() || !wanted.has(relative)) throw new Error('安装目录包含未声明文件');
+    }
+  };
+  await walkInstalled('');
+  for (const entry of expected.files) {
+    const bytes = await readFile(join(target, entry.path));
+    if (bytes.byteLength !== entry.size || createHash('sha256').update(bytes).digest('hex') !== entry.sha256) throw new Error('安装文件与发布摘要不符：' + entry.path);
+  }
+  return { files: expected.files.length, sha256: createHash('sha256').update(text).digest('hex') };
+}
+
 async function main(): Promise<void> {
   const arg = process.argv[2];
   if (arg === '--write') {
@@ -89,13 +114,18 @@ async function main(): Promise<void> {
     console.log('pack.json is fresh');
     return;
   }
+  if (arg === '--verify-install') {
+    if (!process.argv[3]) throw new Error('--verify-install 需要安装目录');
+    console.log(JSON.stringify(await verifyInstall(process.argv[3])));
+    return;
+  }
   if (arg === '--stage') {
     const target = process.argv[3];
     if (target === undefined) throw new Error('--stage needs an empty directory');
     console.log(await stage(target));
     return;
   }
-  throw new Error('usage: pack-files.ts --write | --check | --stage <directory>');
+  throw new Error('usage: pack-files.ts --write | --check | --stage <directory> | --verify-install <directory>');
 }
 
 if (process.argv[1] !== undefined && process.argv[1].endsWith('pack-files.ts')) await main();

@@ -56,7 +56,7 @@
 
 ## 不在本任务
 
-- Circle 工作台的视觉统一：见 [`circle-visual.md`](circle-visual.md)，用同一份设计规范。
+- Circle 工作台的视觉统一：见 `circle-visual.md`，用同一份设计规范。
 - 第四阶段同步的界面（同步方式、上次同步）：由同步任务（`kw-sync.md`）按本规范接入。
 
 ## 实施方案

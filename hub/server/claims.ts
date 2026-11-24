@@ -1,12 +1,10 @@
-// Display of claims (B01, D05 R[6]) and layer terminals (V03) for the MCP content text and the console. Claims are shown in
-// DISPLAY_ORDER; every enumeration value is shown through the generated vocabulary: the model's labels for the text models
-// read, the interface terms for the console (display rule 20). Unknown terminals have their own symbol and are never shown
-// as success or failure.
+import { ATTRIBUTION, PRODUCER_KIND } from '../../contracts/generated/vocabulary.ts';
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
-import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, labelOf, uiLabelOf, type DynamicTerminal, type Layer, type StaticTerminal } from '../../contracts/generated/vocabulary.ts';
+import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, labelOf, uiLabelOf, type Attribution, type DynamicTerminal, type ExitAction, type Layer, type ProducerKind, type Reason, type StaticTerminal, type Verdict } from '../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { Coverage } from '../../contracts/src/common.ts';
 import { EXIT_NOT_RECORDED, isUnknownTerminal, type LayerResult, type RequirementResult } from '../../contracts/src/validation.ts';
+import { toolLocalMinute } from '../telemetry/api.ts';
 
 type DisplayLabel = (typeof DISPLAY_ORDER)[number];
 
@@ -16,7 +14,6 @@ export interface Labels {
   axis: typeof axisLabel;
 }
 
-/** The model's labels: the MCP content text and the CLI. */
 export const MODEL_LABELS: Labels = { of: labelOf, axis: axisLabel };
 /** The interface terms of the console (display rule 20); a value without one shows its label. */
 export const INTERFACE_LABELS: Labels = { of: uiLabelOf, axis: axisUiLabel };
@@ -48,7 +45,7 @@ const fieldsOf = ({ of: labelOf }: Labels) => ({
       c.qualifier.source_role && labelOf('source_role', c.qualifier.source_role),
       ...c.qualifier.marks.map((mark) => labelOf('qualifier_mark', mark)),
       coverageText(c.qualifier.coverage),
-      c.qualifier.collected_at && `采集于 ${c.qualifier.collected_at}`,
+      c.qualifier.collected_at && `采集于 ${toolLocalMinute(c.qualifier.collected_at)}`,
       c.qualifier.control && labelOf('control', c.qualifier.control),
       c.qualifier.discriminating_power && labelOf('discriminating_power', c.qualifier.discriminating_power),
     ]),
@@ -167,4 +164,49 @@ export function requirementText(r: RequirementResult, labels: Labels = MODEL_LAB
   const declared = r.layers.map((layer) => terminalText(layer, labels));
   const others = LAYER.filter((layer) => !r.layers.some((l) => l.layer === layer)).map((layer) => `${labels.of('layer', layer)}：${NOT_APPLICABLE}`);
   return `${r.requirement}：${[...declared, ...others].join('；')}；${statusText(r, labels)}`;
+}
+
+export const USER_REASON = Object.fromEntries(ATTRIBUTION.map(code => [code, uiLabelOf('attribution', code)])) as Record<Attribution, string>;
+
+export const USER_DECIDER = Object.fromEntries(PRODUCER_KIND.map(code => [code, uiLabelOf('producer_kind', code)])) as Record<ProducerKind, string>;
+
+export const USER_VERDICT = { support: '正确', refute: '错误', unknown: null, abstain: null } as const satisfies Record<Verdict, string | null>;
+
+export function userVerdict(verdict: Verdict | undefined): string | null | undefined {
+  return verdict === undefined ? undefined : USER_VERDICT[verdict];
+}
+
+const REASON_ATTRIBUTION = {
+  no_check: 'data_gap', check_error: 'unattributed', timeout: 'transient', missing_input: 'data_gap',
+  declared_skip: 'unattributed', not_covered: 'data_gap', awaiting_step: 'data_gap', output_failed: 'unattributed',
+  repair_exhausted: 'unattributed', budget_exhausted: 'unattributed', integrity_unproven: 'data_gap',
+} as const satisfies Record<Reason, Attribution>;
+
+const NEXT_STEP = {
+  reread: '程序重新读取资料', reconcile: '程序重新核对资料', observe: '程序重新观察',
+  request: '使用者补齐资料', rerun: '使用者重新核对原始用例', reevaluate: '程序重新核对结论',
+} as const satisfies Record<ExitAction, string>;
+
+export function userReason(layer: Pick<LayerResult, 'attribution' | 'reason'>): string {
+  return USER_REASON[layer.attribution ?? (layer.reason !== undefined ? REASON_ATTRIBUTION[layer.reason] : 'unattributed')];
+}
+
+export function userNextStep(layer: Pick<LayerResult, 'exit'>): string {
+  return layer.exit === undefined ? '使用者核对资料后重新交给 Hub 检查' : NEXT_STEP[layer.exit.action];
+}
+
+export function userClaimText(claim: Claim): string {
+  const verdict = userVerdict(claim.statement.verdict);
+  const partial = claim.qualifier.coverage?.complete === false || claim.qualifier.marks.includes('partial');
+  const unknown = partial || claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || verdict === null;
+  const status = unknown ? '未知' : claim.qualifier.nature === 'judgment' || claim.warrant.producer === 'model' ? '未确认' : '已确认';
+  const judgment = unknown ? undefined : verdict;
+  const parts = [claim.statement.text, `状态${status}`, judgment === undefined ? undefined : `判断${judgment}`];
+  if (unknown || judgment === '错误') {
+    parts.push(`原因${USER_REASON[partial ? 'data_gap' : claim.statement.reason === undefined ? 'unattributed' : REASON_ATTRIBUTION[claim.statement.reason]]}`, '下一步由使用者核对原始用例和资料');
+  }
+  const quotes = claim.resolutions?.filter(value => !value.references.includes(value.text)).map(value => value.text) ?? [];
+  if (quotes.length) parts.push(`证据${quotes.join('；')}`);
+  parts.push(`决定者${USER_DECIDER[claim.warrant.producer]}`);
+  return join(parts, '；');
 }
