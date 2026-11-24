@@ -138,8 +138,7 @@ export async function isBotEnabled(vault: Vault | null | undefined): Promise<boo
   if (!vault) return false;
   try {
     return (await readBotProfile(vault)) !== null;
-  } catch (error) {
-    void error;
+  } catch {
     return false;
   }
 }
@@ -537,6 +536,9 @@ async function readJsonBody(
   }
 }
 
+const botDisabledBody = () =>
+  botError('BOT_DISABLED', '机器人模型尚未启用', '请管理员在控制台配置并启用机器人模型后重试');
+
 export async function handleBot(req: IncomingMessage, res: ServerResponse, deps: ServerDeps, budget: BodyBudget): Promise<void> {
   if (req.method !== 'POST') {
     req.resume();
@@ -547,7 +549,10 @@ export async function handleBot(req: IncomingMessage, res: ServerResponse, deps:
       { allow: 'POST' },
     );
   }
-  const principal = await requireDirectAccessBearer(req, res, deps.records.principals);
+  const principal = await requireDirectAccessBearer(req, res, deps.records.principals, {
+    enabled: () => isBotEnabled(deps.records.vault),
+    disabledBody: botDisabledBody,
+  });
   if (!principal) return;
   if (mediaTypeOf(req) !== 'application/json') {
     req.resume();
@@ -574,6 +579,9 @@ export async function handleBot(req: IncomingMessage, res: ServerResponse, deps:
       return sendBotJson(res, 401, botError('BOT_UNAUTHENTICATED'), { 'www-authenticate': 'Bearer' });
     }
     if (!canAccessBot(renewed)) {
+      if (!(await isBotEnabled(deps.records.vault))) {
+        return sendBotJson(res, 503, botDisabledBody());
+      }
       sendBotInsufficientScope(res);
       return;
     }
@@ -595,11 +603,7 @@ export async function handleBot(req: IncomingMessage, res: ServerResponse, deps:
       );
     }
     if (op.data.action === 'send' && !config) {
-      return sendBotJson(
-        res,
-        503,
-        botError('BOT_DISABLED', '机器人模型尚未启用', '请管理员在控制台配置并启用机器人模型后重试'),
-      );
+      return sendBotJson(res, 503, botDisabledBody());
     }
     const identity =
       op.data.action === 'send' && (await deps.records.vault.has(identityProfileName))

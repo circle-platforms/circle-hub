@@ -118,6 +118,48 @@ test('requireAccessBearer is removed and requireDirectAccessBearer accepts direc
   assert.match(missing.result().json.message, /^无权限：/);
   assert.ok(!String(missing.result().json.message).includes('个人助手'));
 
+  let gateEnabled = false;
+  const botGate: accessAuth.BotGate = {
+    enabled: async () => gateEnabled,
+    disabledBody: () => botError('BOT_DISABLED', '机器人模型尚未启用', '请管理员在控制台配置并启用机器人模型后重试'),
+  };
+
+  const disabledDirect = fakePair('Bearer direct');
+  assert.deepEqual(await requireDirectAccessBearer(disabledDirect.req, disabledDirect.res, principals, botGate), admin);
+
+  const disabledOAuthBot = fakePair('Bearer oauth-bot');
+  assert.deepEqual(await requireDirectAccessBearer(disabledOAuthBot.req, disabledOAuthBot.res, principals, botGate), admin);
+
+  const disabledConsole = fakePair('Bearer console');
+  assert.equal(await requireDirectAccessBearer(disabledConsole.req, disabledConsole.res, principals, botGate), null);
+  assert.equal(disabledConsole.result().status, 403);
+  assert.equal(disabledConsole.result().headers['www-authenticate'], undefined);
+  assert.equal(disabledConsole.result().json.code, 'BOT_CLIENT_FORBIDDEN');
+  assert.equal(disabledConsole.result().json.message, CONSOLE_SESSION_REFUSED);
+
+  const disabledMissing = fakePair();
+  assert.equal(await requireDirectAccessBearer(disabledMissing.req, disabledMissing.res, principals, botGate), null);
+  assert.equal(disabledMissing.result().status, 401);
+  assert.equal(disabledMissing.result().headers['www-authenticate'], 'Bearer');
+  assert.equal(disabledMissing.result().json.code, 'BOT_UNAUTHENTICATED');
+
+  const disabledOAuth = fakePair('Bearer oauth');
+  assert.equal(await requireDirectAccessBearer(disabledOAuth.req, disabledOAuth.res, principals, botGate), null);
+  assert.equal(disabledOAuth.result().status, 503);
+  assert.equal(disabledOAuth.result().headers['www-authenticate'], undefined);
+  assert.equal(disabledOAuth.result().json.code, 'BOT_DISABLED');
+  assert.equal(
+    disabledOAuth.result().json.message,
+    '暂时不可用：机器人模型尚未启用。请管理员在控制台配置并启用机器人模型后重试。',
+  );
+
+  gateEnabled = true;
+  const enabledOAuth = fakePair('Bearer oauth');
+  assert.equal(await requireDirectAccessBearer(enabledOAuth.req, enabledOAuth.res, principals, botGate), null);
+  assert.equal(enabledOAuth.result().status, 403);
+  assert.equal(enabledOAuth.result().headers['www-authenticate'], BOT_INSUFFICIENT_SCOPE_HEADER);
+  assert.equal(enabledOAuth.result().json.code, 'BOT_CLIENT_FORBIDDEN');
+
   // F2: botError default fallback and situational override behavior
   const defaultErr = botError('BOT_DISABLED');
   assert.equal(defaultErr.code, 'BOT_DISABLED');

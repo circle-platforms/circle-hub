@@ -231,7 +231,7 @@ export function createApp(deps: ServerDeps, options: AppOptions & BotAppTimeoutO
       return sendText(response, 503, message, headers);
     }
     const url = target.url;
-    if (url.pathname.startsWith(botFilesPath)) return handleBotFile(request, response, deps, url.pathname.slice(botFilesPath.length));
+    if (url.pathname.startsWith(botFilesPath)) return handleBotFile(request, response, deps, url.pathname.slice(botFilesPath.length), () => isBotEnabled(deps.records?.vault));
     if (url.pathname.startsWith('/api/bot-channel/v1/files/')) return handleBotChannel(request, response, deps, budget, url.pathname.slice('/api/bot-channel/v1/files/'.length));
     if (url.pathname === '/api/bot-channel/v1') return handleBotChannel(request, response, deps, budget);
     if (url.pathname === chatPath) return handleBot(request, response, deps, budget);
