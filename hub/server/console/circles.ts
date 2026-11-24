@@ -1,3 +1,4 @@
+import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { CallLog, Principals, TokenInfo } from '../../records/api.ts';
 import { UNNAMED_CLIENT } from '../oauth.ts';
 import { UNREPORTED_CLIENT } from './client-provenance.ts';
@@ -49,7 +50,10 @@ export async function connectedClients(records: { principals: Pick<Principals, '
 
 /** How a connection was made, in words: the standard authorization's registration or an issued token, with its own name. */
 export function connectionText(client: ConnectedClient): Html {
-  if (client.connection.kind === 'oauth') return client.connection.name ? html`标准连接确认 · ${evidence(client.connection.name)}` : html`标准连接确认`;
+  if (client.connection.kind === 'oauth') {
+    const base = client.connection.name ? html`标准连接确认 · ${evidence(client.connection.name)}` : html`标准连接确认`;
+    return client.token.scope.includes('bot') ? html`${base} · ${uiLabelOf('token_scope', 'bot')}` : base;
+  }
   return client.connection.label ? html`访问令牌 · ${evidence(client.connection.label)}` : html`访问令牌`;
 }
 

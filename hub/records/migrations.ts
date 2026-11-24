@@ -1863,6 +1863,7 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
    bound_at timestamptz NOT NULL DEFAULT now(),
    PRIMARY KEY (issuer,subject), UNIQUE (issuer,owner)
  );` },
+  { version: 3, name: 'token_scope', sql: `ALTER TABLE public.tokens ADD COLUMN scope text[] NOT NULL DEFAULT '{}'::text[] CHECK (scope <@ ARRAY['bot']::text[] AND cardinality(scope) <= 1);` },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */

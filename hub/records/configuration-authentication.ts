@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { UserId, TokenId } from '../../contracts/api.ts';
 import { Sha256 } from '../../contracts/src/common.ts';
-import { PermissionRoleSchema } from '../../contracts/generated/vocabulary.ts';
+import { PermissionRoleSchema, TokenScopeSchema } from '../../contracts/generated/vocabulary.ts';
 import { RecordsError } from './errors.ts';
 import type { Database } from './db.ts';
 import type { Transaction } from './api.ts';
@@ -12,7 +12,7 @@ const schemas={
   users:z.strictObject({id:UserId,name:z.string(),role:PermissionRoleSchema,disabled:z.boolean(),created_at:time,updated_at:time,password_hash:z.string().nullable(),password_must_change:z.boolean(),password_revision:z.number().int().nonnegative(),deleted_at:optionalTime}),
   user_history:z.strictObject({seq:z.string().regex(/^[1-9][0-9]*$/),user_id:UserId,name:z.string(),role:PermissionRoleSchema,disabled:z.boolean(),changed_by:UserId.nullable(),changed_at:time,password_changed:z.boolean(),deleted_at:optionalTime}),
   oauth_clients:z.strictObject({id,name:z.string(),redirect_uris:z.array(z.string()),created_at:time}),
-  tokens:z.strictObject({id:TokenId,user_id:UserId,sha256:Sha256,label:z.string(),created_at:time,created_by:UserId.nullable(),last_used_at:optionalTime,revoked_at:optionalTime,revoked_by:UserId.nullable(),client_id:id.nullable(),console_session:z.boolean(),expires_at:optionalTime}),
+  tokens:z.strictObject({id:TokenId,user_id:UserId,sha256:Sha256,label:z.string(),created_at:time,created_by:UserId.nullable(),last_used_at:optionalTime,revoked_at:optionalTime,revoked_by:UserId.nullable(),client_id:id.nullable(),console_session:z.boolean(),expires_at:optionalTime,scope:z.array(TokenScopeSchema)}),
   invitations:z.strictObject({id,user_id:UserId,sha256:Sha256,created_at:time,created_by:UserId,expires_at:time,used_at:optionalTime,used_by_client:id.nullable()}),
 } as const;
 export const CONFIGURATION_AUTH_TABLES:readonly (keyof typeof schemas)[]=Object.freeze(Object.keys(schemas) as (keyof typeof schemas)[]);

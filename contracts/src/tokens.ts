@@ -2,7 +2,7 @@
 // Bodies carry identifiers, accounts, times, the label and the client id only: never a token, an invitation code or a hash
 // of either, so nothing in a record can be replayed as a credential.
 import { z } from 'zod';
-import { TokenActionSchema } from '../generated/vocabulary.ts';
+import { TokenActionSchema, TokenScopeSchema } from '../generated/vocabulary.ts';
 import { IsoTime, TokenId, UserId, idOf } from './common.ts';
 
 export const ClientId = idOf('cli');
@@ -18,6 +18,7 @@ const TokenIssue = z.strictObject({
   client: ClientId.nullable().describe('the registered client the standard authorization issued it to'),
   console_session: z.boolean(),
   expires_at: IsoTime.nullable(),
+  scope: z.array(TokenScopeSchema).optional().describe('scopes consented to when the token was authorized'),
 });
 const TokenRevoke = z.strictObject({
   action: TokenActionSchema.extract(['revoke']),

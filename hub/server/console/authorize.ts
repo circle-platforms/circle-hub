@@ -98,13 +98,17 @@ export function identityPage(request: AuthorizationRequest, error: string | null
  * account, and the approval is refused when it is no longer the one the page showed.
  */
 export function confirmPage(request: AuthorizationRequest, account: { id: string; name: string; role: string }, via: 'invitation' | 'session', csrf: string, error: string | null): Html {
+  const asksBot = (request.requestedScopes ?? []).includes('bot');
+  const botChoice = asksBot
+    ? html`<div data-fields><label class="check" data-wide-field><input type="checkbox" name="scope_bot" value="1"> 允许这个客户端使用我的机器人</label><p class="ch-meta" data-wide-field>同意之后这个客户端可以读写当前账号和机器人的私聊与附件。</p></div>`
+    : '';
   const decide = postForm({
     action: `/console/authorize/${request.id}`,
     csrf,
-    formClass: 'ch-actions',
-    fields: html`<input type="hidden" name="step" value="decide"><input type="hidden" name="account" value="${account.id}">`,
-    actions: html`${submitButton('拒绝', { secondary: true, name: 'decision', value: 'deny' })}
-${submitButton('允许连接', { name: 'decision', value: 'approve' })}`,
+    formClass: asksBot ? undefined : 'ch-actions',
+    fields: html`<input type="hidden" name="step" value="decide"><input type="hidden" name="account" value="${account.id}">${botChoice}`,
+    actions: html`${asksBot ? html`<div class="ch-actions">` : ''}${submitButton('拒绝', { secondary: true, name: 'decision', value: 'deny' })}
+${submitButton('允许连接', { name: 'decision', value: 'approve' })}${asksBot ? html`</div>` : ''}`,
   });
   const other = via === 'session'
     ? html`<details><summary>以其他账号连接</summary><div>${invitationForm(request, null, false)}</div></details>`

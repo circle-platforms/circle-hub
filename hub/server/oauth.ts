@@ -21,7 +21,7 @@
 // ordinary Hub token; a refusal answers it with access_denied. Device requests live in memory for DEVICE_REQUEST_TTL_MS.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
+import { TOKEN_SCOPE, isTokenScope, type PermissionRole, type TokenScope } from '../../contracts/generated/vocabulary.ts';
 import { LimitError, RecordsError, type IssuedToken, type OAuthClient, type Principals } from '../records/api.ts';
 import { cookie } from './console/session.ts';
 import { mediaTypeOf, readBody, sendJson, setCommonHeaders } from './http.ts';
@@ -168,6 +168,16 @@ export const formatUserCode = (code: string): string => `${code.slice(0, 4)}-${c
 
 // ---------------------------------------------------------------- authorization requests and codes
 
+/** Splits space-delimited OAuth `scope` and keeps only registered `token_scope` values (`bot`). */
+export function parseRequestedScopes(raw: string | null | undefined): TokenScope[] {
+  if (typeof raw !== 'string' || raw.trim() === '') return [];
+  const out: TokenScope[] = [];
+  for (const part of raw.split(' ')) {
+    if (part !== '' && isTokenScope(part) && !out.includes(part)) out.push(part);
+  }
+  return out;
+}
+
 export interface AuthorizationRequest {
   id: string;
   /** Only what the page shows and the code needs, not the client's whole registration. */
@@ -177,6 +187,8 @@ export interface AuthorizationRequest {
   redirectSent: boolean;
   state: string | null;
   challenge: string;
+  /** Recognized scopes requested by the client. */
+  requestedScopes?: readonly TokenScope[];
   /** The sender's address, for the bound on open requests per sender. */
   peer: string;
   /** The resource the token is for (RFC 8707): this Hub's /mcp on the origin of the request. */
@@ -212,6 +224,8 @@ export interface CodeGrant {
   redirectSent: boolean;
   challenge: string;
   resource: string;
+  requestedScopes: readonly TokenScope[];
+  scope: readonly TokenScope[];
   user: string;
   expires: number;
   used: boolean;
@@ -231,6 +245,8 @@ export interface DeviceRequest {
   codeDigest: string;
   resource: string;
   issuer: string;
+  requestedScopes: readonly TokenScope[];
+  scope: readonly TokenScope[];
   /** A request opened over HTTPS is decided only on a page reached over HTTPS. */
   secure: boolean;
   peer: string;
@@ -262,14 +278,14 @@ export class AuthorizationStore {
   }
 
   /** A new request, or null when too many are open (a flood is refused instead of evicting others' requests). */
-  open(fields: Pick<AuthorizationRequest, 'client' | 'redirectUri' | 'redirectSent' | 'state' | 'challenge' | 'peer' | 'resource' | 'issuer' | 'secure' | 'device'>): AuthorizationRequest | null {
+  open(fields: Pick<AuthorizationRequest, 'client' | 'redirectUri' | 'redirectSent' | 'state' | 'challenge' | 'peer' | 'resource' | 'issuer' | 'secure' | 'device' | 'requestedScopes'>): AuthorizationRequest | null {
     this.#prune();
     const own = [...this.#requests.values()].filter((request) => request.client.id === fields.client.id);
     if (own.length >= REQUESTS_PER_CLIENT) this.#requests.delete(own[0].id);
     const sender = [...this.#requests.values()].filter((request) => request.peer === fields.peer);
     if (sender.length >= REQUESTS_PER_PEER) this.#requests.delete(sender[0].id);
     if (this.#requests.size >= MAX_REQUESTS) return null;
-    const request: AuthorizationRequest = { ...fields, id: secret(), created: this.#now(), csrf: secret(), browser: secret(), invitation: null, failures: 0, ended: null, decision: null };
+    const request: AuthorizationRequest = { ...fields, requestedScopes: fields.requestedScopes ?? [], id: secret(), created: this.#now(), csrf: secret(), browser: secret(), invitation: null, failures: 0, ended: null, decision: null };
     this.#requests.set(request.id, request);
     return request;
   }
@@ -290,12 +306,12 @@ export class AuthorizationStore {
   }
 
   /** Approves an open request for `user`: the one-time code for the redirect; null for a request already decided. */
-  grant(request: AuthorizationRequest, user: string): string | null {
+  grant(request: AuthorizationRequest, user: string, scope: readonly TokenScope[] = []): string | null {
     if (request.ended !== null) return null;
     this.#prune();
     const code = secret();
     request.ended = 'approved';
-    this.#codes.set(digest(code), { client: request.client.id, redirectUri: request.redirectUri, redirectSent: request.redirectSent, challenge: request.challenge, resource: request.resource, user, expires: this.#now() + AUTHORIZATION_CODE_TTL_MS, used: false, token: null, compromised: false });
+    this.#codes.set(digest(code), { client: request.client.id, redirectUri: request.redirectUri, redirectSent: request.redirectSent, challenge: request.challenge, resource: request.resource, requestedScopes: request.requestedScopes ?? [], scope: [...scope], user, expires: this.#now() + AUTHORIZATION_CODE_TTL_MS, used: false, token: null, compromised: false });
     while (this.#codes.size > MAX_CODES) this.#codes.delete(this.#codes.keys().next().value!);
     return code;
   }
@@ -310,7 +326,7 @@ export class AuthorizationStore {
   }
 
   /** A new device request and its device code (RFC 8628 3.2), or null when too many are open. */
-  openDevice(fields: Pick<DeviceRequest, 'client' | 'resource' | 'issuer' | 'secure' | 'peer'>): { request: DeviceRequest; deviceCode: string } | null {
+  openDevice(fields: Pick<DeviceRequest, 'client' | 'resource' | 'issuer' | 'secure' | 'peer'> & { requestedScopes?: readonly TokenScope[] }): { request: DeviceRequest; deviceCode: string } | null {
     this.#prune();
     const own = [...this.#devices.values()].filter((device) => device.client.id === fields.client.id);
     if (own.length >= REQUESTS_PER_CLIENT) this.#dropDevice(own[0]);
@@ -320,7 +336,7 @@ export class AuthorizationStore {
     let userCode = newUserCode();
     while (this.#userCodes.has(userCode)) userCode = newUserCode();
     const deviceCode = secret();
-    const request: DeviceRequest = { ...fields, id: secret(), userCode, codeDigest: digest(deviceCode), created: this.#now(), interval: DEVICE_POLL_INTERVAL_S, lastPoll: null, status: 'pending', user: null };
+    const request: DeviceRequest = { ...fields, requestedScopes: fields.requestedScopes ?? [], scope: [], id: secret(), userCode, codeDigest: digest(deviceCode), created: this.#now(), interval: DEVICE_POLL_INTERVAL_S, lastPoll: null, status: 'pending', user: null };
     this.#devices.set(request.id, request);
     this.#deviceCodes.set(request.codeDigest, request.id);
     this.#userCodes.set(userCode, request.id);
@@ -343,12 +359,13 @@ export class AuthorizationStore {
    * Decides the device request an authorization page was opened for: approved for `user`, or refused when `user` is
    * null. False when that request was decided on another page, or expired, meanwhile.
    */
-  decideDevice(request: AuthorizationRequest, user: string | null): boolean {
+  decideDevice(request: AuthorizationRequest, user: string | null, scope: readonly TokenScope[] = []): boolean {
     if (!this.devicePending(request)) return false;
     const device = this.#devices.get(request.device!.id)!;
     request.ended = user === null ? 'denied' : 'approved';
     device.status = user === null ? 'denied' : 'approved';
     device.user = user;
+    device.scope = user === null ? [] : [...scope];
     return true;
   }
 
@@ -489,7 +506,7 @@ async function formBody(request: IncomingMessage, response: ServerResponse): Pro
 
 /** RFC 9728: the resource is /mcp, its authorization server this Hub on the same origin. */
 function protectedResource(issuer: string): Record<string, unknown> {
-  return { resource: `${issuer}/mcp`, authorization_servers: [issuer], bearer_methods_supported: ['header'], resource_name: 'circle-hub' };
+  return { resource: `${issuer}/mcp`, authorization_servers: [issuer], scopes_supported: [...TOKEN_SCOPE], bearer_methods_supported: ['header'], resource_name: 'circle-hub' };
 }
 
 /** RFC 8414: public clients only, the authorization code with PKCE S256 or the device code (RFC 8628 4), no refresh token. */
@@ -501,6 +518,7 @@ function authorizationServer(issuer: string): Record<string, unknown> {
     token_endpoint: `${issuer}/oauth/token`,
     registration_endpoint: `${issuer}/oauth/register`,
     revocation_endpoint: `${issuer}/oauth/revoke`,
+    scopes_supported: [...TOKEN_SCOPE],
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
     grant_types_supported: ['authorization_code', DEVICE_CODE_GRANT],
@@ -613,7 +631,8 @@ async function authorize(request: IncomingMessage, response: ServerResponse, url
   const resource = `${issuer}/mcp`;
   const asked = query.get('resource');
   if (asked !== null && asked !== resource) return refuse(response, 400, '授权请求无效：访问范围不是本 Hub 的 MCP 服务。请在客户端中重新连接。');
-  const opened = options.store.open({ client: { id: client.id, name: client.name }, redirectUri, redirectSent: sent !== null, state, challenge, peer: peerOf(request), resource, issuer, secure, device: null });
+  const requestedScopes = parseRequestedScopes(query.get('scope'));
+  const opened = options.store.open({ client: { id: client.id, name: client.name }, redirectUri, redirectSent: sent !== null, state, challenge, requestedScopes, peer: peerOf(request), resource, issuer, secure, device: null });
   if (opened === null) return refuse(response, 503, '当前待处理的授权请求过多，请稍后在客户端中重新连接。');
   const page = `${AUTHORIZE_PAGE}/${opened.id}`;
   setCommonHeaders(response);
@@ -628,8 +647,7 @@ async function authorize(request: IncomingMessage, response: ServerResponse, url
 }
 
 /**
- * RFC 8628 3.1, 3.2: a registered client asks for a device code and a user code for this Hub's /mcp. Scopes are not used
- * here, so a `scope` is ignored, as the authorization endpoint ignores it.
+ * RFC 8628 3.1, 3.2: a registered client asks for a device code and a user code for this Hub's /mcp.
  */
 async function deviceAuthorization(request: IncomingMessage, response: ServerResponse, options: OAuthOptions, issuer: string, secure: boolean): Promise<void> {
   const form = await formBody(request, response);
@@ -639,7 +657,8 @@ async function deviceAuthorization(request: IncomingMessage, response: ServerRes
   const resource = `${issuer}/mcp`;
   const asked = form.get('resource');
   if (asked !== null && asked !== resource) return oauthError(response, 400, 'invalid_target', "the resource is not this Hub's MCP service");
-  const opened = options.store.openDevice({ client: { id: client.id, name: client.name }, resource, issuer, secure, peer: peerOf(request) });
+  const requestedScopes = parseRequestedScopes(form.get('scope'));
+  const opened = options.store.openDevice({ client: { id: client.id, name: client.name }, resource, issuer, requestedScopes, secure, peer: peerOf(request) });
   if (opened === null) return oauthError(response, 503, 'temporarily_unavailable', 'too many open device requests; retry later', { 'retry-after': '60' });
   const userCode = formatUserCode(opened.request.userCode);
   options.log(`标准授权：客户端 ${client.id}（${client.name}）请求设备码`);
@@ -663,6 +682,14 @@ const DEVICE_POLL_ERRORS: Record<Exclude<DevicePoll['outcome'], 'approved'>, [st
   pending: ['authorization_pending', 'the request is not approved yet'],
 };
 
+function tokenResponseBody(accessToken: string, granted: readonly TokenScope[], requested: readonly TokenScope[]): Record<string, unknown> {
+  return {
+    access_token: accessToken,
+    token_type: 'Bearer',
+    ...(granted.length > 0 || requested.length > 0 ? { scope: granted.join(' ') } : {}),
+  };
+}
+
 /** RFC 8628 3.4, 3.5: a poll with a device code; once a person approved it, the token, once. */
 async function deviceToken(form: URLSearchParams, client: OAuthClient, response: ServerResponse, options: OAuthOptions): Promise<void> {
   const deviceCode = form.get('device_code') ?? '';
@@ -673,13 +700,13 @@ async function deviceToken(form: URLSearchParams, client: OAuthClient, response:
   if (user === null || user.disabled) return oauthError(response, 400, 'invalid_grant', 'the account is not available');
   let issued: IssuedToken;
   try {
-    issued = await options.principals.issueToken({ id: user.id, name: user.name, role: user.role }, user.id, client.name, client.id);
+    issued = await options.principals.issueToken({ id: user.id, name: user.name, role: user.role }, user.id, client.name, client.id, polled.device.scope);
   } catch (error) {
     if (error instanceof RecordsError && error.code === null && error.name !== 'IntegrityError') return oauthError(response, 400, 'invalid_grant', 'the account is not available');
     throw error;
   }
   options.log(`标准授权：${user.name}（${user.id}）的令牌 ${issued.id} 已按设备码签发给客户端 ${client.id}（${client.name}）`);
-  sendJson(response, 200, { access_token: issued.token, token_type: 'Bearer' }, NO_STORE);
+  sendJson(response, 200, tokenResponseBody(issued.token, polled.device.scope, polled.device.requestedScopes), NO_STORE);
 }
 
 function pkceMatches(verifier: string, challenge: string): boolean {
@@ -719,7 +746,7 @@ async function token(request: IncomingMessage, response: ServerResponse, options
   if (user === null || user.disabled) return oauthError(response, 400, 'invalid_grant', 'the account is not available');
   let issued: IssuedToken;
   try {
-    issued = await options.principals.issueToken({ id: user.id, name: user.name, role: user.role }, user.id, client.name, client.id);
+    issued = await options.principals.issueToken({ id: user.id, name: user.name, role: user.role }, user.id, client.name, client.id, grant.scope);
   } catch (error) {
     // The account was disabled meanwhile, or the client went away: not this request's fault, and no 500.
     if (error instanceof RecordsError && error.code === null && error.name !== 'IntegrityError') return oauthError(response, 400, 'invalid_grant', 'the account is not available');
@@ -731,7 +758,7 @@ async function token(request: IncomingMessage, response: ServerResponse, options
   }
   grant.token = issued.token;
   options.log(`标准授权：${user.name}（${user.id}）的令牌 ${issued.id} 已签发给客户端 ${client.id}（${client.name}）`);
-  sendJson(response, 200, { access_token: issued.token, token_type: 'Bearer' }, NO_STORE);
+  sendJson(response, 200, tokenResponseBody(issued.token, grant.scope, grant.requestedScopes), NO_STORE);
 }
 
 /** RFC 7009: the holder of a token revokes it by its value; an unknown token is answered the same way. */

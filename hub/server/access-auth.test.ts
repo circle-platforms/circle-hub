@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import * as accessAuth from './access-auth.ts';
 import type { Principal, Principals } from '../records/api.ts';
 
-const { authenticateAccessOnly, CONSOLE_SESSION_REFUSED } = accessAuth;
+const { authenticateAccessOnly, BOT_INSUFFICIENT_SCOPE_HEADER, canAccessBot, CONSOLE_SESSION_REFUSED } = accessAuth;
 const admin: Principal = { id: 'usr_' + '0'.repeat(26), name: '合成', role: 'admin' };
 
 function fakePair(authorization?: string) {
@@ -15,10 +15,18 @@ function fakePair(authorization?: string) {
   }) as unknown as IncomingMessage;
   let status = 0;
   let body = '';
+  const headers: Record<string, string> = {};
+  const recordHeader = (name: string, value: unknown) => {
+    headers[name.toLowerCase()] = Array.isArray(value) ? value.map(String).join(', ') : String(value);
+  };
   const res = {
-    setHeader() {},
-    writeHead(code: number) {
+    setHeader(name: string, value: unknown) {
+      recordHeader(name, value);
+    },
+    writeHead(code: number, maybeHeaders?: Record<string, unknown> | string, thirdHeaders?: Record<string, unknown>) {
       status = code;
+      const map = typeof maybeHeaders === 'object' && maybeHeaders !== null ? maybeHeaders : thirdHeaders;
+      if (map) for (const [name, value] of Object.entries(map)) recordHeader(name, value);
     },
     end(chunk?: string | Buffer) {
       body = chunk ? String(chunk) : '';
@@ -27,7 +35,7 @@ function fakePair(authorization?: string) {
   return {
     req,
     res,
-    result: () => ({ status, json: body ? JSON.parse(body) : null }),
+    result: () => ({ status, headers, json: body ? JSON.parse(body) : null }),
   };
 }
 
@@ -36,7 +44,7 @@ test('authenticateAccessOnly refuses console sessions with the 无权限 sentenc
   const principals = {
     authenticateAccessToken: async () => null,
     identify: async (authorization: string | null | undefined) =>
-      authorization === 'Bearer console' ? { principal: admin, token_id: 'tok_c', client_id: null } : null,
+      authorization === 'Bearer console' ? { principal: admin, token_id: 'tok_c', client_id: null, scope: [] } : null,
     authenticate: async () => null,
   } as unknown as Principals;
   assert.deepEqual(await authenticateAccessOnly(principals, 'Bearer console'), { ok: false, reason: 'console_session' });
@@ -47,46 +55,59 @@ test('authenticateAccessOnly refuses console sessions with the 无权限 sentenc
 test('authenticateAccessOnly accepts an access token identity', async () => {
   const principals = {
     authenticateAccessToken: async (authorization: string | null | undefined) =>
-      authorization === 'Bearer access' ? { principal: admin, token_id: 'tok_a', client_id: null } : null,
+      authorization === 'Bearer access' ? { principal: admin, token_id: 'tok_a', client_id: null, scope: [] } : null,
   } as unknown as Principals;
   assert.deepEqual(await authenticateAccessOnly(principals, 'Bearer access'), {
     ok: true,
     principal: admin,
     token_id: 'tok_a',
     client_id: null,
+    scope: [],
   });
 });
 
-test('requireAccessBearer is removed and requireDirectAccessBearer accepts direct tokens while returning BOT_UNAUTHENTICATED on 401 and BOT_CLIENT_FORBIDDEN on 403', async () => {
+test('requireAccessBearer is removed and requireDirectAccessBearer accepts direct and bot-scoped tokens while returning BOT_UNAUTHENTICATED on 401 and BOT_CLIENT_FORBIDDEN on 403', async () => {
   assert.equal('requireAccessBearer' in accessAuth, false);
   const { requireDirectAccessBearer, botError } = accessAuth;
   assert.equal(typeof requireDirectAccessBearer, 'function');
   assert.equal(typeof botError, 'function');
 
+  assert.equal(canAccessBot({ client_id: null, scope: [] }), true);
+  assert.equal(canAccessBot({ client_id: 'cli_oauth_1', scope: ['bot'] }), true);
+  assert.equal(canAccessBot({ client_id: 'cli_oauth_1', scope: [] }), false);
+
   const principals = {
     authenticateAccessToken: async (authorization: string | null | undefined) => {
-      if (authorization === 'Bearer direct') return { principal: admin, token_id: 'tok_d', client_id: null };
-      if (authorization === 'Bearer oauth') return { principal: admin, token_id: 'tok_o', client_id: 'cli_oauth_1' };
+      if (authorization === 'Bearer direct') return { principal: admin, token_id: 'tok_d', client_id: null, scope: [] };
+      if (authorization === 'Bearer oauth') return { principal: admin, token_id: 'tok_o', client_id: 'cli_oauth_1', scope: [] };
+      if (authorization === 'Bearer oauth-bot') return { principal: admin, token_id: 'tok_ob', client_id: 'cli_oauth_1', scope: ['bot'] };
       return null;
     },
     identify: async (authorization: string | null | undefined) =>
-      authorization === 'Bearer console' ? { principal: admin, token_id: 'tok_c', client_id: null } : null,
+      authorization === 'Bearer console' ? { principal: admin, token_id: 'tok_c', client_id: null, scope: [] } : null,
   } as unknown as Principals;
 
   const direct = fakePair('Bearer direct');
   assert.deepEqual(await requireDirectAccessBearer(direct.req, direct.res, principals), admin);
 
+  const oauthBot = fakePair('Bearer oauth-bot');
+  assert.deepEqual(await requireDirectAccessBearer(oauthBot.req, oauthBot.res, principals), admin);
+
   const oauth = fakePair('Bearer oauth');
   assert.equal(await requireDirectAccessBearer(oauth.req, oauth.res, principals), null);
   assert.equal(oauth.result().status, 403);
+  assert.equal(oauth.result().headers['www-authenticate'], BOT_INSUFFICIENT_SCOPE_HEADER);
+  assert.equal(BOT_INSUFFICIENT_SCOPE_HEADER, 'Bearer error="insufficient_scope", scope="bot"');
   assert.equal(oauth.result().json.code, 'BOT_CLIENT_FORBIDDEN');
   assert.match(oauth.result().json.message, /^无权限：/);
+  assert.match(oauth.result().json.message, /允许这个客户端使用我的机器人/);
   assert.ok(!String(oauth.result().json.message).includes('个人助手'));
   assert.ok(String(oauth.result().json.message).includes('机器人'));
 
   const consoleTok = fakePair('Bearer console');
   assert.equal(await requireDirectAccessBearer(consoleTok.req, consoleTok.res, principals), null);
   assert.equal(consoleTok.result().status, 403);
+  assert.equal(consoleTok.result().headers['www-authenticate'], undefined);
   assert.equal(consoleTok.result().json.code, 'BOT_CLIENT_FORBIDDEN');
   assert.equal(consoleTok.result().json.message, CONSOLE_SESSION_REFUSED);
 

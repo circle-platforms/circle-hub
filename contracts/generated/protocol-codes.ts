@@ -141,4 +141,4 @@ export type RecordKind = (typeof RECORD_KINDS)[number];
 
 export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 'slots.schema.json', 'checks.json', 'knowledge.json', 'policies/', 'capabilities.json', 'functions/', 'samples/positive/', 'samples/negative/', 'examples/', 'tools/', 'agents/', 'workflows/', 'tables/', 'product.json', 'workflow.json', 'system.json', 'ledger.json', 'skill.json'] as const;
 
-export const MODEL_VERSION = 89;
+export const MODEL_VERSION = 90;

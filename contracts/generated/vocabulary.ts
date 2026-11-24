@@ -126,6 +126,7 @@ export const AXES = {
   bot_secret_action: { label: '机器人配置密钥操作', owner: 'D01', values: [{ code: 'set', label: '设置' }, { code: 'remove', label: '移除' }, { code: 'start_channel', label: '启用通道' }, { code: 'stop_channel', label: '停用通道' }] },
   bot_secret_slot: { label: '机器人配置密钥槽位', owner: 'D01', values: [{ code: 'model', label: '机器人模型' }, { code: 'identity', label: '扫码登录应用' }, { code: 'channel', label: '私聊机器人通道' }] },
   bot_message_role: { label: '机器人对话角色', owner: 'D06', values: [{ code: 'user', label: '成员' }, { code: 'assistant', label: '机器人' }, { code: 'notice', label: '状态提示' }] },
+  token_scope: { label: '授权范围', owner: 'R01', values: [{ code: 'bot', label: '允许使用机器人' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1360,6 +1361,16 @@ export function isBotMessageRole(value: unknown): value is BotMessageRole {
   return (BOT_MESSAGE_ROLE as readonly unknown[]).includes(value);
 }
 
+/** 授权范围 (R01) */
+export const TOKEN_SCOPE = ['bot'] as const;
+export type TokenScope = (typeof TOKEN_SCOPE)[number];
+export const TOKEN_SCOPE_LABEL = { 'bot': '允许使用机器人' } as const satisfies { readonly [K in TokenScope]: string };
+export const TOKEN_SCOPE_UI = { 'bot': '允许使用机器人' } as const satisfies { readonly [K in TokenScope]: string };
+export const TokenScopeSchema = z.enum(TOKEN_SCOPE);
+export function isTokenScope(value: unknown): value is TokenScope {
+  return (TOKEN_SCOPE as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1484,6 +1495,7 @@ export interface AxisValues {
   bot_secret_action: BotSecretAction;
   bot_secret_slot: BotSecretSlot;
   bot_message_role: BotMessageRole;
+  token_scope: TokenScope;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1610,6 +1622,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   bot_secret_action: BOT_SECRET_ACTION_LABEL,
   bot_secret_slot: BOT_SECRET_SLOT_LABEL,
   bot_message_role: BOT_MESSAGE_ROLE_LABEL,
+  token_scope: TOKEN_SCOPE_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1736,6 +1749,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   bot_secret_action: BOT_SECRET_ACTION_UI,
   bot_secret_slot: BOT_SECRET_SLOT_UI,
   bot_message_role: BOT_MESSAGE_ROLE_UI,
+  token_scope: TOKEN_SCOPE_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

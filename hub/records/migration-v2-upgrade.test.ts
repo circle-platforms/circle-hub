@@ -10,7 +10,7 @@ import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { Database, createPool } from './db.ts';
 import { FileKeyProvider, MIGRATIONS, openRecords } from './index.ts';
 import { grantRuntime, migrate } from './migrations.ts';
-import { PgPrincipals } from './principals.ts';
+import { newId } from './ids.ts';
 import { createRecordStore } from './store.ts';
 import { sha256Hex } from './digest.ts';
 
@@ -72,14 +72,24 @@ test('H10a: upgrading from Migration 1 preserves users, tokens and records and g
   await keyProvider.initKey();
   const v1Now = () => new Date();
   const v1Store = createRecordStore(ownerDb, { maxRecordBytes: DEFAULT_LIMITS.maxRecordBytes, now: v1Now });
-  const v1Principals = new PgPrincipals(ownerDb, v1Now, v1Store);
-  const { user: adminUser, token: adminToken } = await v1Principals.bootstrapAdmin('迁移管理员');
+  const now = v1Now().toISOString();
+  const adminUser = { id: newId('usr'), name: '迁移管理员', role: 'admin' as const };
+  const member = { id: newId('usr'), name: '迁移测试成员', role: 'user' as const };
+  const adminToken = { id: newId('tok'), token: randomBytes(32).toString('base64url') };
+  const memberToken = { id: newId('tok'), token: randomBytes(32).toString('base64url') };
+  await ownerDb.query(
+    'INSERT INTO users (id, name, role, created_at, updated_at) VALUES ($1, $2, $3, $4, $4), ($5, $6, $7, $4, $4)',
+    [adminUser.id, adminUser.name, adminUser.role, now, member.id, member.name, member.role],
+  );
+  await ownerDb.query(
+    'INSERT INTO user_history (user_id, name, role, disabled, changed_by, changed_at) VALUES ($1, $2, $3, false, NULL, $4), ($5, $6, $7, false, $1, $4)',
+    [adminUser.id, adminUser.name, adminUser.role, now, member.id, member.name, member.role],
+  );
+  await ownerDb.query(
+    'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by) VALUES ($1, $2, $3, $4, $5, NULL), ($6, $7, $8, $9, $5, $2)',
+    [adminToken.id, adminUser.id, sha256Hex(adminToken.token), 'bootstrap', now, memberToken.id, member.id, sha256Hex(memberToken.token), 'v1-token'],
+  );
   const adminPrincipal = { id: adminUser.id, name: adminUser.name, role: adminUser.role };
-  const member = await v1Principals.createUser(adminPrincipal, '迁移测试成员', 'user', {
-    password: 'Synthetic-v1-password-1!',
-    mustChange: false,
-  });
-  const memberToken = await v1Principals.issueToken(adminPrincipal, member.id, 'v1-token');
   const rec = await v1Store.put({
     kind: 'memory_version',
     schema: 'memory-version@1',
@@ -87,8 +97,8 @@ test('H10a: upgrading from Migration 1 preserves users, tokens and records and g
     body: { space: member.id, markdown: 'synthetic-v1-preserved-content' },
   });
 
-  // Upgrade from Migration 1 to latest (Migration 2+) and apply runtime role grants.
-  assert.deepEqual(await migrate(ownerDb, MIGRATIONS), [2]);
+  // Upgrade from Migration 1 to latest (Migrations 2 and 3) and apply runtime role grants.
+  assert.deepEqual(await migrate(ownerDb, MIGRATIONS), [2, 3]);
   await grantRuntime(ownerDb, runtimeRole);
 
   // Open RecordsKit as the least-privilege runtime role against the upgraded database.
@@ -138,5 +148,27 @@ test('H10a: upgrading from Migration 1 preserves users, tokens and records and g
   assert.equal(
     (await rtDb.query('SELECT count(*)::int AS n FROM external_member_identities WHERE owner=$1', [member.id])).rows[0].n,
     0,
+  );
+
+  const upgradedTokens = await rtKit.principals.tokens(member.id);
+  assert.equal(upgradedTokens.length, 1);
+  assert.deepEqual(upgradedTokens[0].scope, []);
+  const client = await rtKit.principals.registerClient('迁移测试客户端', ['http://127.0.0.1:43123/callback']);
+  const botToken = await rtKit.principals.issueToken(adminPrincipal, member.id, client.name, client.id, ['bot']);
+  assert.deepEqual((await rtKit.principals.authenticateAccessToken?.('Bearer ' + botToken.token))?.scope, ['bot']);
+  assert.equal(
+    await sqlState(rtDb, "UPDATE tokens SET scope = '{}' WHERE id = $1", [botToken.id]),
+    '42501',
+    'runtime role must not UPDATE tokens.scope',
+  );
+  assert.equal(
+    await sqlState(ownerDb, 'UPDATE tokens SET scope = $1 WHERE id = $2', [['other'], botToken.id]),
+    '23514',
+    'CHECK constraint must reject unregistered token scopes',
+  );
+  assert.equal(
+    await sqlState(ownerDb, 'UPDATE tokens SET scope = $1 WHERE id = $2', [['bot', 'bot'], botToken.id]),
+    '23514',
+    'CHECK constraint must reject duplicate token scopes',
   );
 });
