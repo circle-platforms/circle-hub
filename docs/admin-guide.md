@@ -44,7 +44,7 @@ nav_order: 3
      - 成员控制台**初始密码**（仅显示一次；无过期倒计时，但首次登录 `/console/login` 必须到 `/console/password` 改密，改密后当前会话失效须用新密码重登）；
      - 24 小时有效的**一次性邀请码**（仅显示一次，用过一次即作废）；
      - 一段 `mcpServers` 示例片段。
-     - 给 Circle 成员发送 `mcpServers` 配置片段。保留 `placeholders`，让技能工具能使用 `%HUB_URL%` 和 `%HUB_TOKEN%`。成员在 MCP 连接授权页输入邀请码。
+     - 给 Circle 成员发送 `mcpServers` 配置片段。保留 `placeholders`，让技能工具能使用 `%HUB_URL%` 和 `%HUB_TOKEN%`。成员在 MCP 连接授权页输入邀请码；当客户端请求 `bot` 范围时，确认页还会提供默认未勾选的 **「允许这个客户端使用我的机器人」** 勾选项，只有成员主动勾选后该客户端的 OAuth 登录令牌才可读写本人与机器人的私聊及附件（未勾选时仍可正常使用 `/mcp` 与 `/local-tools/*`）。
    - **访问令牌**：仅在客户端不支持标准 MCP 连接确认时选用（填「令牌标签」方便区分多台设备），提交后同样仅显示一次完整令牌。
 4. 把初始密码、MCP 地址、一次性邀请码及上述连接提示发给成员本人（实测建议先写入权限设为 `0600` 的临时交接文件，成员登录改密后再删除，切勿写进仓库、群公共日志或命令行参数历史）；同时按客户端类型附带实测避坑提示：
    - **Circle 桌面版**：在 MCP 服务器页面添加连接，按提示打开授权页。
@@ -291,6 +291,7 @@ curl -sS http://127.0.0.1:7420/healthz
 ## 四、机器人（`bot-runtime`）配置、备份、清理与配额边界
 
 - **管理命令与配置槽位（`circle-hub bot`）**：提供十个子命令——`set`、`disable`、`test`、`identity-set`、`identity-remove`、`identity-unbind <用户> [--issuer]`、`channel-set`、`channel-remove`、`channel-start`、`channel-stop`。执行 `bot set` 或 `bot disable` 保存或停用机器人模型配置时，Hub 会自动清除历史遗留的 `personal-bot.reviewer` 槽位。
+- **OAuth 登录令牌使用机器人的成员同意与标识**：只有当客户端申请 `bot` 范围且成员在授权确认页主动勾选「允许这个客户端使用我的机器人」时，签出的登录令牌才可读写本人与机器人的私聊和附件（`/api/bot/v1` 与 `/api/bot/v1/files/<sha256>`）；成员直连持有的个人访问令牌仍可直接访问，未带 `bot` 范围的 OAuth 客户端令牌在机器人接口上被拒为 `403`（`BOT_CLIENT_FORBIDDEN`，不影响 `/mcp` 与 `/local-tools/*`）。控制台 `/console/team?tab=clients` 与 `/console/connections` 会把这类令牌标为「允许使用机器人」（其余客户端令牌为「仅 MCP 工具」），管理员仍按既有撤销按钮一键收回并同步终止其全部入口。
 - **管理员扫码登录的开关**：绑定了外部身份的管理员账号默认不能用扫码登录控制台，扫码后得到 `403` 和「无权限：这个部署没有开启管理员账号的扫码登录。请使用账号和密码登录。」；普通成员不受影响，管理员仍然可以绑定本人的外部身份，用于私聊通道。要允许，在「设置 › 机器人 › 扫码登录应用」勾选「允许管理员账号用扫码登录控制台」后保存（保存时要重新填登录应用密钥），或在 `circle-hub bot identity-set` 的 JSON 里写 `"adminLogin": true`；不写和写 `false` 都是不允许（决定 194）。关掉开关不会结束已经用扫码打开的管理员会话，它们照常在 12 小时内过期；要立刻结束，重置该管理员的密码。
 - **运行目录自动建权（`0700`）**：`<数据目录>/bot-runtime` 会在服务启动或首次使用时以权限 `0700` 自动创建；发送密钥或文件传输前会通过 `lstat` 核对路径非符号链接、为目录、权限 `0700` 且属主为当前服务账户（不符时以 `503 BOT_UPSTREAM_UNAVAILABLE` 拒绝）。
 - **标准备份与恢复边界（`backup` / `restore`）**：`circle-hub backup` 与 `circle-hub restore` 仅覆盖数据库、`objects/`、`vault/` 与 `config/`，**不包含** `<数据目录>/bot-runtime`（含机器人私聊附件 `bot-runtime/files/<sha256(userId)>`、通道入站暂存 `bot-runtime/channel-staging` 与运行套接字）。执行 `backup` / `restore` 时终端会明确打印该提示。后果如下：`vault/` 会备份并恢复模型、登录应用和私聊通道的加密配置，但已上传的机器人私聊附件不会随备份恢复，如需跨机迁移或长期留存请另行归档 `<数据目录>/bot-runtime/files`，否则恢复后需重新上传；此外，恢复备份后 Hub 服务启动（`listen`）时会自动向正在运行的 `circle remote-bot` 宿主发送恢复后的机器人配置通知，使宿主改用恢复出来的配置并覆盖其内存中可能更高的 `configVersion`。

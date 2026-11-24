@@ -976,3 +976,99 @@ test(
     }
   },
 );
+
+test('bot-files rejects unconsented OAuth tokens with insufficient_scope, allows consented OAuth tokens and revokes cleanly', async () => {
+  const hub = await createTestServer();
+  try {
+    await setBotProfile(hub.records.vault, sampleProfile);
+    const user = await hub.createUser('附件授权成员');
+    const client = await hub.records.principals.registerClient('mcp-bot-client', ['http://127.0.0.1:43123/cb']);
+    const unconsented = (await hub.records.principals.issueToken(user.principal, user.principal.id, client.name, client.id, [])).token;
+    const consented = (await hub.records.principals.issueToken(user.principal, user.principal.id, client.name, client.id, ['bot'])).token;
+    const payload = Buffer.from('consented-bot-attachment-bytes');
+    const sha = createHash('sha256').update(payload).digest('hex');
+
+    const putDenied = await fetch(hub.url + botFilesPath + sha, {
+      method: 'PUT',
+      headers: { authorization: 'Bearer ' + unconsented, 'content-length': String(payload.length) },
+      body: payload,
+    });
+    assert.equal(putDenied.status, 403);
+    assert.equal(putDenied.headers.get('www-authenticate'), 'Bearer error="insufficient_scope", scope="bot"');
+    assert.equal(((await putDenied.json()) as { code?: string }).code, 'BOT_CLIENT_FORBIDDEN');
+
+    const getDenied = await fetch(hub.url + botFilesPath + sha, {
+      headers: { authorization: 'Bearer ' + unconsented },
+    });
+    assert.equal(getDenied.status, 403);
+    assert.equal(getDenied.headers.get('www-authenticate'), 'Bearer error="insufficient_scope", scope="bot"');
+
+    const putAllowed = await fetch(hub.url + botFilesPath + sha, {
+      method: 'PUT',
+      headers: { authorization: 'Bearer ' + consented, 'content-length': String(payload.length) },
+      body: payload,
+    });
+    assert.equal(putAllowed.status, 200);
+
+    const getAllowed = await fetch(hub.url + botFilesPath + sha, {
+      headers: { authorization: 'Bearer ' + consented },
+    });
+    assert.equal(getAllowed.status, 200);
+    assert.deepEqual(Buffer.from(await getAllowed.arrayBuffer()), payload);
+
+    const mcpAllowed = await fetch(hub.mcpUrl, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer ' + consented,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'c', version: '1.0.0' } },
+      }),
+    });
+    assert.equal(mcpAllowed.status, 200);
+
+    const revoked = await fetch(hub.url + '/oauth/revoke', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: consented }),
+    });
+    assert.equal(revoked.status, 200);
+    assert.equal(
+      (
+        await fetch(hub.url + botFilesPath + sha, {
+          method: 'PUT',
+          headers: { authorization: 'Bearer ' + consented, 'content-length': String(payload.length) },
+          body: payload,
+        })
+      ).status,
+      401,
+    );
+    assert.equal((await fetch(hub.url + botFilesPath + sha, { headers: { authorization: 'Bearer ' + consented } })).status, 401);
+    assert.equal(
+      (
+        await fetch(hub.mcpUrl, {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer ' + consented,
+            'content-type': 'application/json',
+            accept: 'application/json, text/event-stream',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 2,
+            method: 'initialize',
+            params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'c', version: '1.0.0' } },
+          }),
+        })
+      ).status,
+      401,
+    );
+  } finally {
+    await hub.close();
+  }
+});

@@ -8,7 +8,7 @@ import { z } from 'zod';
 import type { ProtocolCode } from '../../contracts/generated/protocol-codes.ts';
 import { isSha256 } from '../records/api.ts';
 import type { ServerDeps } from './api.ts';
-import { authenticateAccessOnly, botError, requireDirectAccessBearer, sendBotJson } from './access-auth.ts';
+import { authenticateAccessOnly, botError, canAccessBot, requireDirectAccessBearer, sendBotJson } from './access-auth.ts';
 import { setCommonHeaders } from './http.ts';
 
 export const fileLimit = 100 * 1024 * 1024;
@@ -787,7 +787,7 @@ export async function handleBotFile(req: IncomingMessage, res: ServerResponse, d
     sha,
     async () => {
       const again = await authenticateAccessOnly(deps.records.principals, req.headers.authorization ?? null);
-      return again.ok && again.principal.id === actor.id && again.client_id === null;
+      return again.ok && again.principal.id === actor.id && canAccessBot(again);
     },
     { now: () => (deps.now?.() ?? new Date()).getTime() },
   );

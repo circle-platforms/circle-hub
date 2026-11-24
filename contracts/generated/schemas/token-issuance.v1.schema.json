@@ -66,6 +66,16 @@
               "type": "null"
             }
           ]
+        },
+        "scope": {
+          "description": "scopes consented to when the token was authorized",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "bot"
+            ]
+          }
         }
       },
       "required": [

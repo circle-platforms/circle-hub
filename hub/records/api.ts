@@ -32,6 +32,7 @@ import type {
   ProvenanceType,
   ReadTier,
   ShareAudience,
+  TokenScope,
 } from '../../contracts/generated/vocabulary.ts';
 import type { RecordKind } from '../../contracts/generated/protocol.ts';
 import type { HubConfig } from '../config/index.ts';
@@ -111,6 +112,7 @@ export interface TokenInfo {
   label: string;
   /** The registered client the token was issued to through the standard authorization; null for a token issued directly. */
   client: string | null;
+  scope: readonly TokenScope[];
   created_at: string;
   created_by: string | null;
   last_used_at: string | null;
@@ -180,7 +182,7 @@ export interface Principals {
   some(ids: readonly string[]): Promise<User[]>;
   history(userId: string): Promise<UserChange[]>;
   /** Admins issue tokens for anyone; a user only for themselves. `client` is the registered client it goes to, if any. */
-  issueToken(by: Principal, userId: string, label?: string, client?: string): Promise<IssuedToken>;
+  issueToken(by: Principal, userId: string, label?: string, client?: string, scope?: readonly TokenScope[]): Promise<IssuedToken>;
   /** Admins revoke any token; a user only their own. False when the token does not exist or was already revoked. */
   revokeToken(by: Principal, tokenId: string): Promise<boolean>;
   /** Revokes the live token with this value (RFC 7009: whoever holds a token may revoke it). False when there is none. */
@@ -200,12 +202,12 @@ export interface Principals {
   client(clientId: string): Promise<OAuthClient | null>;
   clientsMany?(clientIds:readonly string[]):Promise<Map<string,OAuthClient>>;
   /** Live access Bearer only, excluding console sessions; metadata comes from the server's token binding. */
-  authenticateAccessToken?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
+  authenticateAccessToken?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null;scope?:readonly TokenScope[]}|null>;
   authenticateConsoleSession?(authorization:string|null|undefined):Promise<Principal|null>;
   /** Internal authentication also supports the console's bounded password-session credential. */
   authenticate(authorization: string | null | undefined): Promise<Principal | null>;
   /** Like authenticate, with the server token that authenticated (console sessions included). */
-  identify?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
+  identify?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null;scope?:readonly TokenScope[]}|null>;
 }
 
 // ---------------------------------------------------------------- records

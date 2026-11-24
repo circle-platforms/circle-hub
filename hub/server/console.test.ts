@@ -260,6 +260,39 @@ describe('sign-in', () => {
   });
 });
 
+test('console client lists mark bot-scoped OAuth tokens separately from MCP-only tokens and revoke cleans all endpoints', async () => {
+  const memberUser = await person(['review'], 'user', '客户端显示成员');
+  const memberSession = await signIn(memberUser.token);
+  const adminSession = await signIn(server.admin.token);
+  const client = await server.records.principals.registerClient('控制台展示客户端', ['http://127.0.0.1:43123/cb']);
+  const mcpOnly = await server.records.principals.issueToken(server.admin.principal, memberUser.user.id, '仅MCP', client.id, []);
+  const botCapable = await server.records.principals.issueToken(server.admin.principal, memberUser.user.id, '含机器人', client.id, ['bot']);
+
+  const connectionsPage = await get('/console/connections', memberSession);
+  assert.equal(connectionsPage.status, 200);
+  assert.match(connectionsPage.body, new RegExp(`标准连接确认[^\\n]*控制台展示客户端[^\\n]*${uiLabelOf('token_scope', 'bot')}`));
+
+  const mcpInspector = await get(`/console/connections?circle=${mcpOnly.id}`, memberSession);
+  assert.equal(mcpInspector.status, 200);
+  assert.match(mcpInspector.body, /<dt>令牌许可范围<\/dt><dd>仅 MCP 工具<\/dd>/);
+
+  const botInspector = await get(`/console/connections?circle=${botCapable.id}`, adminSession);
+  assert.equal(botInspector.status, 200);
+  assert.match(botInspector.body, new RegExp(`<dt>令牌许可范围</dt><dd>${uiLabelOf('token_scope', 'bot')}</dd>`));
+  assert.match(botInspector.body, new RegExp(`circle-hub token revoke ${botCapable.id}`));
+
+  const adminClientsPage = await get(`/console/team?tab=clients&circle=${botCapable.id}`, adminSession);
+  assert.equal(adminClientsPage.status, 200);
+  assert.match(adminClientsPage.body, new RegExp(uiLabelOf('token_scope', 'bot')));
+  assert.match(adminClientsPage.body, new RegExp(`circle-hub token revoke ${botCapable.id}`));
+
+  await server.records.principals.revokeToken(server.admin.principal, botCapable.id);
+  assert.equal(await server.records.principals.authenticateAccessToken?.('Bearer ' + botCapable.token), null);
+  assert.ok(await server.records.principals.authenticateAccessToken?.('Bearer ' + mcpOnly.token));
+  const afterRevoke = await get('/console/connections', memberSession);
+  assert.doesNotMatch(afterRevoke.body, new RegExp(botCapable.id));
+});
+
 describe('pages', () => {
   test('a run page shows partitions with labels, not applicable layers, unknown with its own symbol and claims in display order', async () => {
     const user = await person();

@@ -87,8 +87,8 @@ test('H10a: upgrading from Migration 1 preserves users, tokens and records and g
     body: { space: member.id, markdown: 'synthetic-v1-preserved-content' },
   });
 
-  // Upgrade from Migration 1 to latest (Migration 2+) and apply runtime role grants.
-  assert.deepEqual(await migrate(ownerDb, MIGRATIONS), [2]);
+  // Upgrade from Migration 1 to latest (Migrations 2 and 3) and apply runtime role grants.
+  assert.deepEqual(await migrate(ownerDb, MIGRATIONS), [2, 3]);
   await grantRuntime(ownerDb, runtimeRole);
 
   // Open RecordsKit as the least-privilege runtime role against the upgraded database.
@@ -138,5 +138,27 @@ test('H10a: upgrading from Migration 1 preserves users, tokens and records and g
   assert.equal(
     (await rtDb.query('SELECT count(*)::int AS n FROM external_member_identities WHERE owner=$1', [member.id])).rows[0].n,
     0,
+  );
+
+  const upgradedTokens = await rtKit.principals.tokens(member.id);
+  assert.equal(upgradedTokens.length, 1);
+  assert.deepEqual(upgradedTokens[0].scope, []);
+  const client = await rtKit.principals.registerClient('迁移测试客户端', ['http://127.0.0.1:43123/callback']);
+  const botToken = await rtKit.principals.issueToken(adminPrincipal, member.id, client.name, client.id, ['bot']);
+  assert.deepEqual((await rtKit.principals.authenticateAccessToken?.('Bearer ' + botToken.token))?.scope, ['bot']);
+  assert.equal(
+    await sqlState(rtDb, "UPDATE tokens SET scope = '{}' WHERE id = $1", [botToken.id]),
+    '42501',
+    'runtime role must not UPDATE tokens.scope',
+  );
+  assert.equal(
+    await sqlState(ownerDb, 'UPDATE tokens SET scope = $1 WHERE id = $2', [['other'], botToken.id]),
+    '23514',
+    'CHECK constraint must reject unregistered token scopes',
+  );
+  assert.equal(
+    await sqlState(ownerDb, 'UPDATE tokens SET scope = $1 WHERE id = $2', [['bot', 'bot'], botToken.id]),
+    '23514',
+    'CHECK constraint must reject duplicate token scopes',
   );
 });

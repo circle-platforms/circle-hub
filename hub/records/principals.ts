@@ -9,8 +9,8 @@ import {retireReadScope} from './read-scope.ts';
 // same transaction as the row change (token-issuance.ts); the rows remain the working state and the earlier history.
 import { createHmac, randomBytes } from 'node:crypto';
 import { MemberExternalIdentityAudit } from '../../contracts/src/resources.ts';
-import { TokenActionSchema, isPermissionRole, labelOf } from '../../contracts/generated/vocabulary.ts';
-import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
+import { TokenActionSchema, isPermissionRole, isTokenScope, labelOf } from '../../contracts/generated/vocabulary.ts';
+import type { PermissionRole, TokenScope } from '../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, RecordStore, TokenInfo, User, UserChange, Transaction } from './api.ts';
 import { iso, isoOrNull } from './db.ts';
 import type { Database, PgTransaction, Row } from './db.ts';
@@ -128,12 +128,23 @@ function userOf(row: Row): User {
   };
 }
 
+function tokenScopeOf(raw: unknown): TokenScope[] {
+  if (!Array.isArray(raw)) throw new IntegrityError('令牌许可范围格式不对');
+  const out: TokenScope[] = [];
+  for (const item of raw) {
+    if (!isTokenScope(item)) throw new IntegrityError('令牌许可范围不在词表里', { detail: { scope: item } });
+    if (!out.includes(item)) out.push(item);
+  }
+  return out;
+}
+
 function tokenOf(row: Row): TokenInfo {
   return {
     id: String(row.id),
     user: String(row.user_id),
     label: String(row.label),
     client: row.client_id === null || row.client_id === undefined ? null : String(row.client_id),
+    scope: tokenScopeOf(row.scope),
     created_at: iso(row.created_at),
     created_by: row.created_by === null ? null : String(row.created_by),
     last_used_at: isoOrNull(row.last_used_at),
@@ -502,17 +513,20 @@ export class PgPrincipals implements Principals {
     }));
   }
 
-  async issueToken(by: Principal, userId: string, label = '', client?: string): Promise<IssuedToken> {
+  async issueToken(by: Principal, userId: string, label = '', client?: string, scope: readonly TokenScope[] = []): Promise<IssuedToken> {
     // Characters are code points, as PostgreSQL's length() and the name checks count them.
     if (typeof label !== 'string' || [...label].length > 100 || /\p{Cc}/u.test(label)) throw new TypeError('token labels are at most 100 characters without control characters');
     if (client !== undefined && (typeof client !== 'string' || !CLIENT_ID.test(client))) throw new TypeError('client ids are cli_<ULID>');
+    if (!Array.isArray(scope) || scope.some((item) => !isTokenScope(item))) throw new TypeError('token scopes must come from token_scope');
+    const scopes = [...new Set(scope)];
+    if (scopes.length > 0 && client === undefined) throw new TypeError('token scope requires a registered client');
     return this.#db.transaction(async (tx) => {
       const decider = await this.#decider(tx, by, false);
       if (!isAdmin(decider) && decider.id !== userId) throw new AccessError('只有管理员可以为别人签发令牌');
       const target = await this.#locked(tx, userId);
       if (target.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}，不能签发令牌`);
       if (client !== undefined && (await this.#db.query('SELECT 1 FROM oauth_clients WHERE id = $1', [client], tx)).rowCount === 0) throw new ConflictError('没有这个客户端');
-      return this.#issue(tx, target.id, label, decider.id, client ?? null);
+      return this.#issue(tx, target.id, label, decider.id, client ?? null, false, scopes);
     });
   }
 
@@ -557,7 +571,7 @@ export class PgPrincipals implements Principals {
   async tokensMany(userIds:readonly string[]):Promise<Map<string,TokenInfo[]>>{
     const ids=[...new Set(userIds.filter(id=>typeof id==='string'&&USER_ID.test(id)))],out=new Map<string,TokenInfo[]>(ids.map(id=>[id,[]]));
     if(!ids.length)return out;
-    const rows=(await this.#db.query('SELECT id,user_id,label,client_id,created_at,created_by,last_used_at,revoked_at FROM tokens WHERE user_id=ANY($1::text[]) AND NOT console_session ORDER BY created_at DESC,id DESC',[ids])).rows;
+    const rows=(await this.#db.query('SELECT id,user_id,label,client_id,scope,created_at,created_by,last_used_at,revoked_at FROM tokens WHERE user_id=ANY($1::text[]) AND NOT console_session ORDER BY created_at DESC,id DESC',[ids])).rows;
     for(const row of rows)out.get(String(row.user_id))!.push(tokenOf(row));return out;
   }
 
@@ -661,26 +675,27 @@ export class PgPrincipals implements Principals {
   authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,'access');}
   async authenticateConsoleSession(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,'console'))?.principal??null;}
   identify(authorization:string|null|undefined){return this.#authenticate(authorization,'any');}
-  async #authenticate(authorization:string|null|undefined,kind:'any'|'access'|'console'):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
+  async #authenticate(authorization:string|null|undefined,kind:'any'|'access'|'console'):Promise<{principal:Principal;token_id:string;client_id:string|null;scope:readonly TokenScope[]}|null>{
     if (typeof authorization !== 'string' || authorization.length > 200) return null;
     const match = BEARER.exec(authorization);
     if (match === null) return null;
     const row = (
       await this.#db.query(
-        `SELECT t.id AS token_id, t.client_id, u.id, u.name, u.role FROM tokens t JOIN users u ON u.id = t.user_id
+        `SELECT t.id AS token_id, t.client_id, t.scope, u.id, u.name, u.role FROM tokens t JOIN users u ON u.id = t.user_id
           WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2)
             AND ($3 = 'any' OR ($3 = 'access' AND NOT t.console_session) OR ($3 = 'console' AND t.console_session))`,
         [sha256Hex(match[1]),this.#now().toISOString(),kind],
       )
     ).rows[0];
     if (row === undefined || !isPermissionRole(row.role)) return null;
+    const scope = tokenScopeOf(row.scope);
     const now = this.#now();
     await this.#db.query('UPDATE tokens SET last_used_at = $2 WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $3)', [
       row.token_id,
       now.toISOString(),
       new Date(now.getTime() - LAST_USED_STEP_MS).toISOString(),
     ]);
-    return {principal:{id:String(row.id),name:String(row.name),role:row.role},token_id:String(row.token_id),client_id:row.client_id===null?null:String(row.client_id)};
+    return {principal:{id:String(row.id),name:String(row.name),role:row.role},token_id:String(row.token_id),client_id:row.client_id===null?null:String(row.client_id),scope};
   }
 
   /** The acting account as stored now: it must exist and be enabled, and be an admin when `adminOnly`. */
@@ -735,18 +750,26 @@ export class PgPrincipals implements Principals {
     );
   }
 
-  async #issue(tx: PgTransaction, userId: string, label: string, by: string | null, client: string | null = null, consoleSession = false): Promise<IssuedToken> {
+  async #issue(tx: PgTransaction, userId: string, label: string, by: string | null, client: string | null = null, consoleSession = false, scope: readonly TokenScope[] = []): Promise<IssuedToken> {
     const token = randomBytes(32).toString('base64url');
     const id = newId('tok');
     const now = this.#now();
     const at = now.toISOString();
     const expires = consoleSession ? new Date(now.getTime() + CONSOLE_SESSION_MS).toISOString() : null;
-    await this.#db.query(
-      'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by, client_id, console_session, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-      [id, userId, sha256Hex(token), label, at, by, client, consoleSession, expires],
-      tx,
-    );
-    await appendTokenIssuance(this.#store, { action: ISSUE, token: id, user: userId, by, at, label, client, console_session: consoleSession, expires_at: expires }, tx);
+    if (scope.length > 0) {
+      await this.#db.query(
+        'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by, client_id, console_session, expires_at, scope) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+        [id, userId, sha256Hex(token), label, at, by, client, consoleSession, expires, [...scope]],
+        tx,
+      );
+    } else {
+      await this.#db.query(
+        'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by, client_id, console_session, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+        [id, userId, sha256Hex(token), label, at, by, client, consoleSession, expires],
+        tx,
+      );
+    }
+    await appendTokenIssuance(this.#store, { action: ISSUE, token: id, user: userId, by, at, label, client, console_session: consoleSession, expires_at: expires, ...(scope.length > 0 ? { scope: [...scope] } : {}) }, tx);
     return { id, user: userId, token, label, created_at: at };
   }
 }

@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { TokenScope } from '../../contracts/generated/vocabulary.ts';
 import {
   callErrorCategory,
   formatCallError,
@@ -7,6 +8,25 @@ import {
 } from '../../contracts/generated/protocol.ts';
 import type { Principal, Principals } from '../records/api.ts';
 import { sendJson } from './http.ts';
+
+export const BOT_INSUFFICIENT_SCOPE_HEADER = 'Bearer error="insufficient_scope", scope="bot"';
+
+export function canAccessBot(access: { client_id: string | null; scope?: readonly TokenScope[] }): boolean {
+  return access.client_id === null || Boolean(access.scope?.includes('bot'));
+}
+
+export function sendBotInsufficientScope(response: ServerResponse): void {
+  sendBotJson(
+    response,
+    403,
+    botError(
+      'BOT_CLIENT_FORBIDDEN',
+      '当前登录令牌未获同意使用机器人',
+      '请在客户端重新登录，并在确认页勾选「允许这个客户端使用我的机器人」',
+    ),
+    { 'www-authenticate': BOT_INSUFFICIENT_SCOPE_HEADER },
+  );
+}
 
 export function botError(
   code: ProtocolCode,
@@ -37,13 +57,21 @@ export const CONSOLE_SESSION_REFUSED = formatCallError(
 );
 
 export type AccessAuthResult =
-  | { ok: true; principal: Principal; token_id: string | null; client_id: string | null }
+  | { ok: true; principal: Principal; token_id: string | null; client_id: string | null; scope: readonly TokenScope[] }
   | { ok: false; reason: 'unauthenticated' | 'console_session' };
 
 export async function authenticateAccessOnly(principals: Principals, authorization: string | null | undefined): Promise<AccessAuthResult> {
   if (principals.authenticateAccessToken) {
     const access = await principals.authenticateAccessToken(authorization);
-    if (access) return { ok: true, principal: access.principal, token_id: access.token_id, client_id: access.client_id };
+    if (access) {
+      return {
+        ok: true,
+        principal: access.principal,
+        token_id: access.token_id,
+        client_id: access.client_id,
+        scope: access.scope ?? [],
+      };
+    }
     if (typeof authorization === 'string' && authorization.length > 0) {
       const any = principals.identify ? await principals.identify(authorization) : await principals.authenticate(authorization);
       if (any) return { ok: false, reason: 'console_session' };
@@ -52,7 +80,7 @@ export async function authenticateAccessOnly(principals: Principals, authorizati
   }
   const principal = await principals.authenticate(authorization);
   return principal
-    ? { ok: true, principal, token_id: null, client_id: null }
+    ? { ok: true, principal, token_id: null, client_id: null, scope: [] }
     : { ok: false, reason: 'unauthenticated' };
 }
 
@@ -75,13 +103,9 @@ export async function requireDirectAccessBearer(
     sendBotJson(response, 401, botError('BOT_UNAUTHENTICATED'), { 'www-authenticate': 'Bearer' });
     return null;
   }
-  if (access.client_id !== null) {
+  if (!canAccessBot(access)) {
     request.resume();
-    sendBotJson(
-      response,
-      403,
-      botError('BOT_CLIENT_FORBIDDEN', '第三方授权应用令牌不能访问机器人', '请使用成员直接持有的访问令牌'),
-    );
+    sendBotInsufficientScope(response);
     return null;
   }
   return access.principal;

@@ -47,7 +47,7 @@ export function clientRow(item: ConnectedClient, name: Html): unknown[] {
 }
 /** One connection in the Inspector: what it reported and how it connected; where the name came from only in the details. */
 export function clientInspector(item: ConnectedClient): Html {
-  return html`<span class="ch-tag">客户端</span><h2 class="ch-panel-title">${evidence(item.name)}</h2>${facts([['客户端版本', item.version ? evidence(item.version) : '未报告'], ['成员', item.owner], ['连接方式', connectionText(item)], ['最近凭据使用', item.token.last_used_at===null?'未记录':when(item.token.last_used_at)], ['最近报告名称', item.reported ? when(item.reported.at) : '未报告']])}<p class="ch-meta">此项来自有效凭据和客户端声明，不代表实时在线；未记录不表示离线。</p>${technical(facts([['名称来源', nameOrigin(item)], ['令牌', code(item.token.id)], ...(item.connection.kind === 'oauth' ? [['已登记的客户端', code(item.connection.client)] as [string, unknown]] : [])]))}`;
+  return html`<span class="ch-tag">客户端</span><h2 class="ch-panel-title">${evidence(item.name)}</h2>${facts([['客户端版本', item.version ? evidence(item.version) : '未报告'], ['成员', item.owner], ['连接方式', connectionText(item)], ...(item.connection.kind === 'oauth' ? [['令牌许可范围', item.token.scope.includes('bot') ? uiLabelOf('token_scope', 'bot') : '仅 MCP 工具'] as [string, unknown]] : []), ['最近凭据使用', item.token.last_used_at===null?'未记录':when(item.token.last_used_at)], ['最近报告名称', item.reported ? when(item.reported.at) : '未报告']])}<p class="ch-meta">此项来自有效凭据和客户端声明，不代表实时在线；未记录不表示离线。</p>${technical(facts([['名称来源', nameOrigin(item)], ['令牌', code(item.token.id)], ...(item.connection.kind === 'oauth' ? [['已登记的客户端', code(item.connection.client)] as [string, unknown]] : [])]))}`;
 }
 
 const shortJob = (job: string): string => job.slice(0, 12);

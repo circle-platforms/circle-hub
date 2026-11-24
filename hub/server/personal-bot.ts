@@ -8,7 +8,14 @@ import type { ProtocolCode } from '../../contracts/generated/protocol-codes.ts';
 import { ActionKindSchema, BotMessageRoleSchema, BotModelProtocolSchema, EffectOutcomeSchema, ProvenanceTypeSchema } from '../../contracts/generated/vocabulary.ts';
 import { MemberBotInbound, MemberNotificationIntent, MemberNotificationReceipt } from '../../contracts/src/resources.ts';
 import type { Principal, Vault } from '../records/api.ts';
-import { authenticateAccessOnly, botError, requireDirectAccessBearer, sendBotJson } from './access-auth.ts';
+import {
+  authenticateAccessOnly,
+  botError,
+  canAccessBot,
+  requireDirectAccessBearer,
+  sendBotInsufficientScope,
+  sendBotJson,
+} from './access-auth.ts';
 import type { ServerDeps } from './api.ts';
 import {
   commitChannelStagedFiles,
@@ -556,12 +563,9 @@ export async function handleBot(req: IncomingMessage, res: ServerResponse, deps:
     if (!renewed.ok || renewed.principal.id !== principal.id) {
       return sendBotJson(res, 401, botError('BOT_UNAUTHENTICATED'), { 'www-authenticate': 'Bearer' });
     }
-    if (renewed.client_id !== null) {
-      return sendBotJson(
-        res,
-        403,
-        botError('BOT_CLIENT_FORBIDDEN', '第三方授权应用令牌不能访问机器人', '请使用成员直接持有的访问令牌'),
-      );
+    if (!canAccessBot(renewed)) {
+      sendBotInsufficientScope(res);
+      return;
     }
     const version = req.headers['bot-client-version'];
     if (typeof version !== 'string' || !SEMVER_2_0_0.test(version)) {

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { uiLabelOf, type TokenScope } from '../../../contracts/generated/vocabulary.ts';
 import { cookiesOf, setCommonHeaders } from '../http.ts';
 import {
   AUTHORIZATION_REQUEST_TTL_MS, AUTHORIZE_COOKIE, AUTHORIZE_PAGE, DEVICE_PAGE,
@@ -96,12 +96,13 @@ export async function authorizePage(request: IncomingMessage, response: ServerRe
       open.invitation = null;
       return { status: 409, error: `邀请码已失效（已使用、已过期，或账号${uiLabelOf('account_status', 'disabled')}）：请管理员重新签发` };
     }
+    const consented: readonly TokenScope[] = (open.requestedScopes ?? []).includes('bot') && form.get('scope_bot') === '1' ? ['bot'] : [];
     if (open.device !== null) {
-      if (!store!.decideDevice(open, named.id)) return deviceGone;
+      if (!store!.decideDevice(open, named.id, consented)) return deviceGone;
       options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）获设备码授权，账号 ${named.id}`);
       return here;
     }
-    const code = store!.grant(open, named.id);
+    const code = store!.grant(open, named.id, consented);
     if (code === null) return { status: 409, error: '该连接请求已处理' };
     options.log(`标准授权：客户端 ${open.client.id}（${open.client.name}）获授权，账号 ${named.id}`);
     return to({ code });
@@ -145,7 +146,7 @@ export async function devicePage(request: IncomingMessage, response: ServerRespo
   if (!options.sessions.takeLoginAttempt('device:' + peer, MAX_DEVICE_CODE_ATTEMPTS)) return show(429, '', '设备码输入次数过多，请在 15 分钟后重试');
   const device = store.deviceByUserCode(typed);
   if (device === null || device.secure !== secure) return show(400, typed.slice(0, 20), '设备码不正确或已过期：请核对客户端显示的设备码，或在客户端中重新连接');
-  const opened = store.open({ client: device.client, redirectUri: '', redirectSent: false, state: null, challenge: '', peer, resource: device.resource, issuer: device.issuer, secure, device: { id: device.id, userCode: device.userCode } });
+  const opened = store.open({ client: device.client, redirectUri: '', redirectSent: false, state: null, challenge: '', requestedScopes: device.requestedScopes, peer, resource: device.resource, issuer: device.issuer, secure, device: { id: device.id, userCode: device.userCode } });
   if (opened === null) return show(503, typed.slice(0, 20), '当前待处理的授权请求过多，请稍后重试');
   const path = `${AUTHORIZE_PAGE}/${opened.id}`;
   setCommonHeaders(response);
