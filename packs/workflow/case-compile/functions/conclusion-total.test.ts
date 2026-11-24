@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { assemble, auditKey, auditPasses, caseBasisOf, closeFailed, closeUnrun, caseConclusion, deliveryReport, type Dispatch, type CaseOutcome, type ReportInput } from './delivery.ts';
+const before=process.env.TZ;
+process.env.TZ='Asia/Tokyo';
+after(()=>{if(before===undefined)delete process.env.TZ;else process.env.TZ=before;});
 const dispatch=(run:string,item:string):Dispatch=>({run,job:run,plan_run:run,sha256:'a'.repeat(64),items:[item],rows:[{item,dynamic_terminal:'pass',qualifier:{nature:'judgment',marks:['target_reported']},accepted_as_fact:false}]});
 test('a correct observation outside the verified volume only leaves that case pending',()=>{
   const a=assemble(['a','b'],[dispatch('first','a'),dispatch('last','b')]);
