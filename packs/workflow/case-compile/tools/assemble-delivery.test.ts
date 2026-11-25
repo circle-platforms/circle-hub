@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { testBedProjection } from '../testing/test-bed-projection.ts';
 import { createServer } from 'node:http';
 import { existsSync, readdirSync } from 'node:fs';
 import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -1200,6 +1201,7 @@ const bookingOf = async (extra: string[], openExtra: Record<string, unknown>, se
   try {
     const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out'); h.mcp.watch = out;
     const result = await run(h, await notes(notesOf), out, undefined, undefined, ['--open', await openWith(openExtra), ...extra]);
+    for (const call of h.mcp.calls) assert.deepEqual(testBedProjection(call.arguments).lease_requests, [{ op: 'release', keys: ['bed/bed-a/dev0'] }]);
     return { h, out, ...result, answer: result.stdout ? JSON.parse(result.stdout) as Record<string, any> : {} };
   } finally { await h.close(); }
 };

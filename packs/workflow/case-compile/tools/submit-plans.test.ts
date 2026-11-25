@@ -4,12 +4,39 @@ import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
+import { goodData, QUOTE, COMMAND_CATALOG, COMMAND_IDENTITIES, CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
+import { checkScenarioFidelity } from '../functions/checks.ts';
+import { planSubject } from '../functions/subject.ts';
+import { lockedTreeOf } from '../testing/locked-tree.ts';
+import { offlineValidation, type OfflineSubmissionItem } from '../testing/offline-hub.ts';
 import { fidelityBrief } from '../functions/fidelity.ts';
 import { main, planItems } from './submit-plans.ts';
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
 const TOKEN = 'synthetic-token-1234';
-const item = (name: string) => ({ item: name, handling: 'handled', slots: { plan: [{ text: name, quotes: [], data: {} }] } });
+const item = (name: string) => ({ item: name, handling: 'handled', slots: { plan: [{ text: name, quotes: [QUOTE], data: goodData() }] } });
+function checkSent(args: { run: string; items: OfflineSubmissionItem[] }, ids: string[]) {
+  assert.equal(args.run, RUN);
+  const run = {
+    run: RUN, root: COMMAND_CATALOG.root, command_policy: COMMAND_CATALOG.policy, pack_digest: 'b'.repeat(64),
+    items: ids.map(id => ({ id, location: QUOTE.reference, fields: { title: '合成用例', steps: [{ text: 'widget health interval 60', expected: [QUOTE.text] }], command_identities: COMMAND_IDENTITIES } })),
+    groups: [{ kind: 'case-compile', contract: CONTRACT_DOC, profile: PROFILE_DOC, manifest: MANIFEST_DOC, leases: { entries: [] } }],
+  };
+  const checked = offlineValidation(run, args.items, lockedTreeOf(COMMAND_CATALOG, RUN), ref => ref === QUOTE.reference ? QUOTE.text : undefined);
+  return checked.checked.map(({ item, rows }) => ({
+    item,
+    ran: rows.filter(row => row.ran).map(row => row.check),
+    problems: rows.flatMap(row => row.outcomes.filter(outcome => outcome.verdict !== 'support')),
+  }));
+}
+function sentFidelity(entry: { item: string; slots: unknown }, fields: Record<string, unknown>, late?: unknown) {
+  const subject = planSubject({
+    item: { id: entry.item, fields, late }, slots: entry.slots,
+    context: { groups: [{ kind: 'case-compile', contract: CONTRACT_DOC, profile: PROFILE_DOC, manifest: MANIFEST_DOC }] },
+  });
+  return checkScenarioFidelity({ subject });
+}
+const planChecks = ['contract_shape', 'bed_addresses', 'commands_catalog', 'expected_sources', 'expected_quotes', 'author_step_coverage', 'scenario_fidelity'];
 async function plans(files: Record<string, unknown>) {
   const directory = await mkdtemp(join(tmpdir(), 'plans-'));
   for (const [name, value] of Object.entries(files)) await writeFile(join(directory, name), typeof value === 'string' ? value : JSON.stringify(value));
@@ -66,6 +93,7 @@ test('the case files become one submit_result call in name order, with the token
   assert.equal(stub.seen[0].authorization, `Bearer ${TOKEN}`);
   assert.equal(stub.seen[0].body.params.name, 'submit_result');
   assert.deepEqual(stub.seen[0].body.params.arguments, { run: RUN, model: 'synthetic-model', items: [item('doc:a'), item('doc:b')] });
+  assert.deepEqual(checkSent(stub.seen[0].body.params.arguments, RUN_ITEMS), RUN_ITEMS.map(item => ({ item, ran: planChecks, problems: [] })));
   assert.doesNotMatch(result.out, new RegExp(TOKEN));
   assert.match(result.out, /2 份自动化用例已交给 Hub 做脚本合并/);
 });
@@ -82,6 +110,7 @@ test('a case handed in as skipped is answered with the closing rule after the Hu
   await stub.close();
   assert.equal(result.code, 0);
   assert.deepEqual(stub.seen[0].body.params.arguments.items, [item('doc:a'), skipped], 'the skip reaches the Hub as written');
+  assert.deepEqual(checkSent(stub.seen[0].body.params.arguments, RUN_ITEMS), [{ item: 'doc:a', ran: planChecks, problems: [] }]);
   assert.match(result.out, /未完成 1（修复轮数用完 1）\n全文在 .+\n原始用例 990000000000000102 合成用例 2，还没有完成脚本编写，状态未知。原因缺资料，下一步由编写模型按原始用例继续编写；声明跳过不是已核验的不可编写结论；已有具名缺失事实出口时按出口处理，否则继续编写或补齐证据；计数只陈述已记录尝试，不证明失败归因。决定者程序。\n$/);
   const plain = await hub(said('受理'));
   assert.doesNotMatch((await run(plain.url, await plans({ '01.json': item('doc:a') }))).out, /还没有完成脚本编写/);
@@ -152,6 +181,9 @@ test('a length placeholder is expanded, written back to its file and sent as wri
   assert.ok(literal.split('.').every((label: string) => label.length <= 63));
   assert.equal(query, `probe ${literal} A`);
   assert.deepEqual(stub.seen[0].body.params.arguments.items[0], written);
+  const [incomplete, complete] = checkSent(stub.seen[0].body.params.arguments, RUN_ITEMS);
+  assert.ok(incomplete!.problems.some(row => row.code === 'case-compile.slots_invalid'));
+  assert.deepEqual(complete!.problems, []);
   assert.match(result.out, /01\.json：\{\{domain:253\}\} → 253 字符，4 段，各段 63\/63\/63\/61/);
   assert.equal(JSON.parse(await readFile(join(directory, '02.json'), 'utf8')).item, 'doc:b');
   assert.deepEqual((await readdir(directory)).filter((name) => name.endsWith('.json')), ['01.json', '02.json']);
@@ -174,6 +206,7 @@ test('a final verification takes the same plan directory: files of items the run
     await stub.close();
     assert.equal(result.code, 0, result.err);
     assert.deepEqual(stub.seen[0].body.params.arguments.items, [item('doc:a')]);
+    assert.deepEqual(checkSent(stub.seen[0].body.params.arguments, RUN_ITEMS), [{ item: 'doc:a', ran: planChecks, problems: [] }]);
     assert.match(result.out, /另有 1 份自动化用例不属于本次脚本编写，未做脚本合并/);
     RUN_ITEMS = ['doc:z'];
     const stub2 = await hub(said('受理'));
@@ -258,6 +291,8 @@ test('local fidelity precheck blocks missing, stale, or malformed data.fidelity 
     await stubValid.close();
     assert.equal(resValid.code, 0, resValid.err);
     assert.equal(stubValid.seen.length, 1);
+    const [outcome] = sentFidelity(stubValid.seen[0].body.params.arguments.items[0], { recomposition: { record } });
+    assert.deepEqual([outcome!.verdict, outcome!.data?.brief_sha256], ['support', brief.brief_sha256]);
 
     const skippedDir = await plans({ '01.json': { item: 'doc:a', handling: 'skipped', reason: '缺执行器声明' } });
     const stubSkipped = await hub(said('受理'));
@@ -418,5 +453,7 @@ test('a record bound after the run started is the one the Hub resolves now: the 
     await waiting.close();
     assert.equal(sent.code, 0, sent.err);
     assert.equal(waiting.seen.length, 1);
+    const [outcome] = sentFidelity(waiting.seen[0].body.params.arguments.items[0], {}, (RUN_LATE.items as Array<{ late: unknown }>)[0]!.late);
+    assert.deepEqual([outcome!.verdict, outcome!.reason], ['unknown', 'awaiting_step']);
   } finally { RUN_ITEMS = ['doc:a', 'doc:b']; RUN_LATE = undefined; }
 });

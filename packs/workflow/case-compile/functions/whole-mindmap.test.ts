@@ -175,11 +175,8 @@ import { recognize } from '../../../../hub/refs/api.ts';
 import { fixture as blockFixture, positiveBlocks } from '../testing/blocks.ts';
 type Projected = { error?: { code: string; message: string; fix: string }; items: Array<{ id: string; location: { selector: string }; fields: { autoid: string; title: string; steps: Array<{ text: string }> } }>; groups: Array<{ message: string }> };
 const project = (input: unknown) => projectItems(input) as Projected;
-interface SyntheticCase { id: string; autoid?: unknown; auto?: string; title: string; step: string; expect: string }
-function parsed(cases: SyntheticCase[]): unknown {
-  const map = { root: { data: { id: 'synthetic-map', text: '合成用例' }, children: cases.map((c, i) => ({ data: { id: c.id, text: c.title, priority: 2, resource: ['合成'], auto: c.auto ?? 'YES', ...(c.autoid === undefined ? {} : { autoid: c.autoid }) }, children: [{ data: { id: `step-${i}`, text: c.step }, children: [{ data: { id: `expected-${i}`, text: c.expect } }] }] })) } };
-  return recognize(createTestParserRegistry(), Buffer.from(JSON.stringify(map)), 'application/json')!.document.model;
-}
+import { mindmapSubject, type SyntheticCase } from '../testing/parsed-mindmap.ts';
+const parsed = (cases: SyntheticCase[]) => mindmapSubject(cases).model;
 const caseOne: SyntheticCase = { id: 'case-a', autoid: AUTOID, title: '合成用例一', step: 'widget health interval pool-a 60', expect: '生效一' };
 
 test('a pasted case that kept the node id of its source is its own item with its own autoid', () => {
