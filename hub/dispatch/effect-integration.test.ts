@@ -41,10 +41,17 @@ test('changes to another executor do not invalidate the used frozen definition',
  await addSyntheticExecutor(c.kit,c.registry,c.admin,{...c.executor.definition,target:'synthetic-other-bed',resources:['synthetic/other/a'],endpoint:c.endpoint.endpoint+'/other'},'synthetic-other-key');
  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'effective');
 });
-test('changing the used executor after start requires a new revision',async t=>{
+test('a registration changed after the run started is the one its next job pins and uses',async t=>{
  const c=await setup();t.after(()=>c.close());await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,poll_ms:40});
- const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const event=(await c.service.journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;
- assert.equal(event.body.error_code,'BOUNDARY_POLICY_DENIED');assert.equal(c.calls.includes('send_blob'),false);
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+ assert.equal(state.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
+ const reservation=(await c.service.journal.events(state.job)).find(e=>e.body.detail.phase==='reservation')!;
+ assert.equal((reservation.body.detail.binding as {executor_digest:string}).executor_digest,(await c.registry.get(c.executor.id))!.resolved_digest);
+});
+test('an executor moved to another target after the run started is refused by the release conditions',async t=>{
+ const c=await setup();t.after(()=>c.close());await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,target:'synthetic-other-bed'});
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const refusal=(await c.service.journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;
+ assert.equal(refusal.body.error_code,'EFFECT_RELEASE_UNMET');assert.equal(refusal.body.detail.boundary_clause,3);assert.equal(c.calls.includes('send_blob'),false);
 });
 test('lost responses produce effect snapshots with the missing fact and a concrete reconciliation exit',async t=>{
  const c=await setup({mode:'disconnect'});t.after(()=>c.close());const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
@@ -123,8 +130,12 @@ test('a legacy executor without an environment cannot dispatch even after its de
  assert.equal(events.some(event=>event.body.detail.phase==='intent'),false);assert.equal(refusal.body.detail.boundary_clause,6);assert.equal(refusal.body.error_code,'BOUNDARY_POLICY_DENIED');
  const effects=await c.kit.store.findMany<{outcome:string;boundary:{clause:number;code:string}}>({kind:'effect',key:'effect.job',values:[state.job]});assert.equal(effects.length,1);assert.equal(effects[0].body.outcome,'not_dispatched');assert.equal(effects[0].body.boundary.clause,6);assert.equal(effects[0].body.boundary.code,'BOUNDARY_POLICY_DENIED');
 });
-test('a historical run without its frozen executor registry cannot dispatch',async t=>{
+test('a run that recorded no executor registry at its start uses the registration in force',async t=>{
  const c=await setup();t.after(()=>c.close());delete c.detail.run.executors;
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(state.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
+});
+test('a run that froze another version of the global policy table cannot dispatch',async t=>{
+ const c=await setup();t.after(()=>c.close());c.detail.run.policy='f'.repeat(64);
  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(c.calls.includes('send_blob'),false);assert.equal(state.outcome,'not_dispatched');
  const refusal=(await c.service.journal.events(state.job)).find(event=>event.body.detail.phase==='boundary_refused')!;assert.equal(refusal.body.detail.boundary_clause,6);assert.equal(refusal.body.error_code,'BOUNDARY_POLICY_DENIED');
  const effects=await c.kit.store.findMany<{outcome:string}>({kind:'effect',key:'effect.job',values:[state.job]});assert.equal(effects.length,1);assert.equal(effects[0].body.outcome,'not_dispatched');

@@ -120,9 +120,9 @@ test('the nearest refusing executor: the identity held, then not judged, then fa
 
 test('a refusal at the final boundary, after the target was reached, is read and never tried again', async (t) => {
   const c = await setup(); t.after(() => c.close());
-  // The executor changes after the verification run froze its snapshot, as at every release of the pack: the final boundary
-  // refuses after the connector session, the precheck and the probes.
-  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, limitations: ['合成：核验运行之后更新的执行器'] });
+  // The global policy table is another version than the one the verification run froze: the final boundary refuses after
+  // the connector session, the precheck and the probes.
+  c.detail.run.policy = 'f'.repeat(64);
   const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.ok(first?.job, JSON.stringify(first));
   const [job] = await settled(c);
@@ -133,6 +133,23 @@ test('a refusal at the final boundary, after the target was reached, is read and
   assert.equal(again.length, 1, JSON.stringify(again)); assert.equal(again[0].job, first.job, 'the refused job is read, no new job');
   assert.match(again[0].text, /不会再上机验证/); assert.doesNotMatch(again[0].text, /circle-hub/);
   assert.equal(c.calls.length, reached, 'a repeat does not reach the target again');
+});
+
+test('a final-boundary refusal whose cause is in the registration is tried again once an administrator corrects it', async (t) => {
+  const c = await setup(); t.after(() => c.close());
+  const { environment, ...withoutEnvironment } = c.executor.definition;
+  await c.registry.update(c.admin, c.executor.id, withoutEnvironment);
+  const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.ok(first?.job, JSON.stringify(first));
+  const [refused] = await settled(c);
+  assert.equal(refused.status.outcome, 'not_dispatched'); assert.equal(refused.status.error_code, 'BOUNDARY_POLICY_DENIED'); assert.equal(refused.status.not_sent, true);
+  assert.ok(!c.calls.includes('send_blob'), JSON.stringify(c.calls));
+  await c.registry.update(c.admin, c.executor.id, { ...withoutEnvironment, environment });
+  const again = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.notEqual(again.at(-1)!.job, first.job, 'the repeat started another job');
+  const jobs = await settled(c);
+  assert.deepEqual(jobs.map((job) => job.status.outcome).sort(), ['effective', 'not_dispatched']);
+  assert.equal(c.calls.filter((name) => name === 'send_blob').length, 1);
 });
 
 test('the notes of a run stay within the answer limits: the newest, after a line counting the older', async (t) => {
