@@ -5,12 +5,18 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
+import { compileMindmap, compileProjection } from '../testing/tool-projection.ts';
+import { boundRecord } from '../testing/late-binding.ts';
+import { coreModel } from '../testing/workbook-model.ts';
+import { generationFixture } from '../testing/workbook.ts';
+import { GENERATOR, generateWorkbook } from '../functions/generate.ts';
 import type { CallTool, ToolAnswer } from './open-compile.ts';
 import { main, unsatisfied } from './open-merge.ts';
 import type { RunTool, ToolRun } from './pipeline.ts';
 
 const PLAN = 'run_01planplanplanplanplan00', RECOMPOSE = 'run_01recomposerecompose00', MERGE = 'run_01mergemergemergemerge0';
-const WORKBOOK = Buffer.from('synthetic workbook bytes'), DIGEST = createHash('sha256').update(WORKBOOK).digest('hex');
+const WORKBOOK = Buffer.from(generateWorkbook(generationFixture())), DIGEST = createHash('sha256').update(WORKBOOK).digest('hex');
 const said = (envelope: Record<string, unknown>, failed = false): ToolAnswer => ({ failed, text: `合成答复\n供模型引用\n${JSON.stringify(envelope)}`, envelope });
 const requirement = (name: string, status = 'satisfied', text = '') => ({ requirement: name, status, claims: text ? [{ statement: { text, verdict: 'refute' } }] : [] });
 const answerOf = (rows: Array<{ item: string; requirements: unknown[] }>) => `合成答复\n供模型引用\n${JSON.stringify({ call_result: 'ok', acceptance: 'accepted', result: { partitions: { delivered: rows } } })}`;
@@ -22,7 +28,8 @@ async function world() {
   await writeFile(join(dir, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01bookingbookingbooking0', recompose_run: RECOMPOSE, recompose_record: 'rec:' + 'a'.repeat(64), plan_run: PLAN }));
   return dir;
 }
-function tools(answers: { plan: string; merge: string }, overrides: Partial<Record<string, ToolRun>> = {}) {
+const ids = ['990000000000000001', '990000000000000002', '990000000000000009'];
+function tools(answers: { plan: string; merge: string }, overrides: Partial<Record<string, ToolRun>> = {}, parameters: Record<string, unknown> = { exclude: [ids[2]] }, references = false) {
   const calls: Array<{ tool: string; args: string[]; stdin?: string }> = [];
   let n = 0;
   const run: RunTool = async (_skill, tool, args, stdin) => {
@@ -36,13 +43,13 @@ function tools(answers: { plan: string; merge: string }, overrides: Partial<Reco
     if (tool === 'fetch-run.ts') {
       const out = args[args.indexOf('--out') + 1]!;
       await mkdir(out, { recursive: true });
-      await writeFile(join(out, 'run.json'), JSON.stringify({ run: PLAN, parameters: { exclude: ['990000000000000009'] }, sources: [
-        { slot: 'subject', reference: 'src:' + '1'.repeat(64), external: 'agile:mindmap:900001@' + '5'.repeat(64) },
+      await writeFile(join(out, 'run.json'), JSON.stringify({ run: PLAN, parameters, sources: [
+        { slot: 'subject', reference: 'src:' + compileMindmap(ids).sha256, external: 'agile:mindmap:900001@' + '5'.repeat(64) },
         { slot: 'contract', reference: 'src:' + '2'.repeat(64), external: 'doc:doc:runner-contract@' + '2'.repeat(64) },
         { slot: 'inventory', reference: 'src:' + '3'.repeat(64), external: 'doc:doc:bed-topology@' + '3'.repeat(64) },
         { slot: 'profile', reference: 'src:' + '4'.repeat(64), external: 'doc:doc:runtime-profile@' + '4'.repeat(64) },
         { slot: 'recomposition_run', reference: 'rec:' + 'a'.repeat(64) },
-      ] }));
+      ].map(source => references ? { slot: source.slot, reference: source.reference } : source) }));
       await writeFile(join(out, 'result.json'), '{}'); await writeFile(join(out, 'submission.json'), '{}');
       return { code: 0, stdout: '{}', stderr: '' };
     }
@@ -51,9 +58,30 @@ function tools(answers: { plan: string; merge: string }, overrides: Partial<Reco
   };
   return { run, calls };
 }
-function hub(answers: Partial<Record<string, ToolAnswer>>) {
+function hub(answers: Partial<Record<string, ToolAnswer>>, planItems = ['900001:1', '900001:2']) {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
-  const call: CallTool = async (name, args) => { calls.push({ name, args }); const answer = answers[name]; if (!answer) throw new Error(`unexpected call ${name}`); return answer; };
+  const delivered = planItems.map(item => ({ item, requirements: [
+    { requirement: 'plan', status: 'satisfied', claims: [{ statement: { data: generationFixture().slots } }] },
+    { requirement: 'commands_known', status: 'satisfied', claims: [{ statement: { verdict: 'support', data: { command_catalog: generationFixture().fields.command_catalog } } }] },
+  ] }));
+  const project = compileProjection(ids, {
+    ['src:' + '2'.repeat(64)]: { model: CONTRACT_DOC },
+    ['src:' + '3'.repeat(64)]: { model: MANIFEST_DOC },
+    ['src:' + '4'.repeat(64)]: { model: PROFILE_DOC },
+    [`src:${DIGEST}`]: { sha256: DIGEST, parser: 'xlsx@1', model: coreModel(WORKBOOK) },
+    [PLAN]: boundRecord('plan_result', 'validation_result', { schema: 'validation@1', acceptance: 'accepted', run: PLAN, locks: { pack: GENERATOR }, partitions: { delivered } }, 'd'.repeat(64)),
+  });
+  const call: CallTool = async (name, args) => {
+    calls.push({ name, args });
+    const answer = answers[name];
+    assert.ok(answer, `unexpected call ${name}`);
+    if (name === 'start_run') {
+      const items = project(args);
+      assert.deepEqual(items.map(item => item.id), planItems);
+      if (!answer.failed) return said({ ...answer.envelope, run: { run: MERGE, items } });
+    }
+    return answer;
+  };
   return { calls, connect: () => call };
 }
 async function run(dir: string, connect: () => CallTool, runTool: RunTool) {
@@ -87,6 +115,20 @@ test('the merge goes through in one command: plans, workbook, upload as a workbo
     recomposition_run: { reference: 'rec:' + 'a'.repeat(64) }, recomposition_result: { run: RECOMPOSE }, plan_result: { run: PLAN }, workbook: { reference: 'src:' + DIGEST },
   });
   assert.deepEqual(JSON.parse(await readFile(join(dir, 'merge', 'open-merge.json'), 'utf8')), { schema: 'open-merge@1', plan_run: PLAN, merge_run: MERGE, workbook: 'src:' + DIGEST, xlsx: join('merge', 'case.xlsx'), items: 2 });
+});
+
+test('merge opens with the plan run parameters and reference-only sources through the pack projection', async () => {
+  const scope = { words: '前两条', cases: ids.slice(0, 2) };
+  for (const [parameters, ordinals] of [
+    [{}, [1, 2, 3]], [{ scope }, [1, 2]], [{ scope, exclude: [ids[1]] }, [1]],
+  ] as const) {
+    const planItems = ordinals.map(n => `synthetic-map:${n}`);
+    const t = tools({ plan: answerOf(ROWS('pending')), merge: answerOf(ROWS('satisfied')) }, {}, parameters, true);
+    const h = hub({ upload_file: UPLOADED, start_run: STARTED }, planItems);
+    const result = await run(await world(), h.connect, t.run);
+    assert.equal(result.code, 0, result.out);
+    assert.deepEqual(h.calls[1]!.args.parameters, { ...parameters, plan_run: PLAN });
+  }
 });
 
 test('plans that do not cover every case of the compile are not submitted at all: a short submission spends a repair round of the plan run', async () => {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { testBedProjection } from '../testing/test-bed-projection.ts';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,7 +17,7 @@ async function capture(run: () => Promise<number>) {
   process.stderr.write = ((chunk: string) => { errors += chunk; return true; }) as typeof process.stderr.write;
   try { return { code: await run(), out, errors }; } finally { process.stdout.write = write; process.stderr.write = err; }
 }
-const answering = (answer: ToolAnswer | Error, seen: Array<{ name: string; args: Record<string, unknown> }> = []) => (): CallTool => async (name, args) => { seen.push({ name, args }); if (answer instanceof Error) throw answer; return answer; };
+const answering = (answer: ToolAnswer | Error, seen: Array<{ name: string; args: Record<string, unknown> }> = []) => (): CallTool => async (name, args) => { seen.push({ name, args }); testBedProjection(args); if (answer instanceof Error) throw answer; return answer; };
 
 test('the claim that carries the device words is read; an unknown claim gives its own words', () => {
   assert.deepEqual(readClaim(observation('name  size\nwidget-a  1')), { output: 'name  size\nwidget-a  1', truncated: false, observed: '2026-01-02T03:04:05.000Z' });
@@ -33,6 +34,9 @@ test('a read is one start_run of the test-bed read action, and the output is kep
   assert.deepEqual(JSON.parse(got.out), { read: true, file: out, line: 'show widget name', device: 'dev0', lines: 2, chars: 22, truncated: true });
   const kept = await readFile(out, 'utf8');
   assert.equal(kept, '# 设备 dev0 对“show widget name”的输出（2026-01-02T03:04:05.000Z 读到）；目标自报，未排除本地操作；输出过长，已截断\n# 只说明输出的写法和排版，不能当期望值的依据。\nname  size\nwidget-a  1\n');
+  const other = await capture(() => main(['--hub', 'https://hub.example.invalid/mcp', '--booking', BOOKING, '--device', 'dev0', '--line', 'show widget name', '--inventory', 'doc:doc:other-topology', '--out', join(dir, 'other.txt')], async () => 'synthetic-token-1234', answering({ failed: false, text: '合成', envelope: observation('widget-a') }, seen)));
+  assert.equal(other.code, 0, other.errors);
+  assert.deepEqual(seen[1]!.args.inputs, { inventory: { external: 'doc:doc:other-topology' } });
   assert.equal(got.out.includes('synthetic-token-1234') || kept.includes('synthetic-token-1234'), false);
 });
 

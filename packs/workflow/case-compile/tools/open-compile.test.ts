@@ -1,34 +1,39 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { envelopeOf, main, NotReady, plumbProblem, plumbStatusVia, type CallTool, type PlumbStatus, type ToolAnswer } from './open-compile.ts';
+import { compileMindmap, compileProjection } from '../testing/tool-projection.ts';
+import { makeSkills } from '../testing/tool-skills.ts';
 import { SCOPED_REOPEN } from '../testing/scoped-reopen.ts';
 
 const BOOKING = 'run_01bookingbookingbooking0', RECOMPOSE = 'run_01recomposerecompose00', PLAN = 'run_01planplanplanplanplan00';
 const said = (envelope: Record<string, unknown>, failed = false): ToolAnswer => ({ failed, text: `合成答复\n供模型引用\n${JSON.stringify(envelope)}`, envelope });
-async function skills(versions: Record<string, string>, plumb = true) {
-  const root = await mkdtemp(join(tmpdir(), 'open-compile-skills-'));
-  for (const [pack, version] of Object.entries(versions)) { await mkdir(join(root, pack), { recursive: true }); await writeFile(join(root, pack, 'pack.json'), JSON.stringify({ id: pack, version })); }
-  // The Plumb status is injected in these tests, so the script of the Plumb skill is never run; only its presence is looked at.
-  if (plumb) { await mkdir(join(root, 'plumb', 'tools'), { recursive: true }); await writeFile(join(root, 'plumb', 'tools', 'plumb.ts'), '// synthetic Plumb skill\n'); }
-  return root;
-}
-function hub(answers: Partial<Record<string, ToolAnswer | ((args: Record<string, unknown>) => ToolAnswer)>>) {
+function hub(answers: Partial<Record<string, ToolAnswer>>, autoids = SCOPED_REOPEN.scope.cases) {
+  const project = compileProjection(autoids);
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
   const call: CallTool = async (name, args) => {
     calls.push({ name, args });
     const key = name === 'start_run' ? `start_run:${String(args.pack)}` : name;
     const answer = answers[key];
     if (!answer) throw new Error(`unexpected call ${key}`);
-    return typeof answer === 'function' ? answer(args) : answer;
+    if (name === 'start_run') {
+      const items = project(args);
+      if (!answer.failed) {
+        const run = answer.envelope!.run as { run: string };
+        return said({ ...answer.envelope, run: { run: run.run, items } });
+      }
+    }
+    return answer;
   };
   return { calls, connect: () => call };
 }
 const packs = (cc = '3.22.0', rc = '1.3.0') => said({ call_result: 'ok', packs: [{ pack: `case-compile@${cc}`, id: 'case-compile', version: cc }, { pack: `recompose@${rc}`, id: 'recompose', version: rc }] });
+const RECOMPOSED = said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE } });
+const PLANNED = said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN } });
 const READY = { status: 'ready', phase: 'ready', models_status: { 'judge-a': { model: 'judge-a', step: 'ready', state: '可用', self_check_passed: true } } };
 const argv = (out: string, extra: string[] = []) => ['--hub', 'http://127.0.0.1:9/mcp', '--plumb', 'https://127.0.0.1:9', '--subject', 'agile:mindmap:900001', '--product', 'widget', '--build', 'Fixture_Build_A', '--booking', BOOKING, '--out', out, ...extra];
 async function run(args: string[], connect: (o: string, b: string) => CallTool, root: string, plumb: PlumbStatus = async () => READY, stdin: string[] = ['synthetic-token-1234', 'synthetic-plumb-key']) {
@@ -38,8 +43,8 @@ async function run(args: string[], connect: (o: string, b: string) => CallTool, 
 }
 
 test('ready: both runs open in order, the plan run binds the recompose run after the start, and open-compile.json is written', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
-  const h = hub({ list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}, {}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}, {}] } }) });
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const h = hub({ list_task_packs: packs(), 'start_run:recompose': RECOMPOSED, 'start_run:case-compile': PLANNED });
   const result = await run(argv(join(dir, 'open-compile.json')), h.connect, root);
   assert.equal(result.code, 0, result.out);
   assert.match(result.out, new RegExp(`^就绪：用例重组运行 ${RECOMPOSE}、脚本编写运行 ${PLAN}，共 2 条用例`));
@@ -54,7 +59,7 @@ test('ready: both runs open in order, the plan run binds the recompose run after
 });
 
 test('not ready: an installed skill of another version than the Hub publishes stops it before any run is opened', async () => {
-  const root = await skills({ 'case-compile': '3.21.7', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const root = await makeSkills({ 'case-compile': '3.21.7', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const h = hub({ list_task_packs: packs() });
   const result = await run(argv(join(dir, 'o.json')), h.connect, root);
   assert.equal(result.code, 1);
@@ -63,9 +68,9 @@ test('not ready: an installed skill of another version than the Hub publishes st
 });
 
 test('not ready: the plan run refused at the start is said in the Hub\'s words with location and next step, nothing is retried', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const refused = said({ call_result: 'error', errors: [{ code: 'case-compile.profile_invalid', message: '运行环境配置有 1 个问题，整份拒绝：/bed：运行环境配置属于自动化测试环境 bed-a，本谱系预订的是 bed-b', fix: '/bed：绑定属于 bed-b 的运行环境配置命名文档', path: '/inputs/profile' }] }, true);
-  const h = hub({ list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [] } }), 'start_run:case-compile': refused });
+  const h = hub({ list_task_packs: packs(), 'start_run:recompose': RECOMPOSED, 'start_run:case-compile': refused });
   const result = await run(argv(join(dir, 'o.json')), h.connect, root);
   assert.equal(result.code, 1);
   assert.equal(result.out, `无法编译：运行环境配置有 1 个问题，整份拒绝：/bed：运行环境配置属于自动化测试环境 bed-a，本谱系预订的是 bed-b（位置 /inputs/profile）；下一步：/bed：绑定属于 bed-b 的运行环境配置命名文档。已开的用例重组运行 ${RECOMPOSE} 没有用到，不影响下一次\n`);
@@ -73,7 +78,7 @@ test('not ready: the plan run refused at the start is said in the Hub\'s words w
 });
 
 test('not ready: a refused recompose start and a bad argument are one line each and open nothing else', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const h = hub({ list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'error', errors: [{ code: 'SOURCE_ABSENT', message: '敏捷平台上没有文档 900001', path: '/inputs/subject', fix: '核对文档号' }] }, true) });
   const refused = await run(argv(join(dir, 'o.json')), h.connect, root);
   assert.equal(refused.code, 1);
@@ -93,7 +98,7 @@ test('the machine part of a tool answer is the JSON after the marker', () => {
 });
 
 test('not ready: a Plumb judge that is not ready, or no Plumb key on the second stdin line, stops it before any run is opened', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const asleep = hub({ list_task_packs: packs() });
   const sleeping = await run(argv(join(dir, 'a.json')), asleep.connect, root, async () => ({ status: 'stopped', phase: 'idle_shutdown', models_status: {} }));
   assert.equal(sleeping.code, 1);
@@ -111,8 +116,8 @@ test('a model still loading or failing its self check is named', () => {
 });
 
 test('a rework plan run reuses the accepted recompose run: no recompose start, the given run and record bound', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
-  const h = hub({ list_task_packs: packs(), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) });
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const h = hub({ list_task_packs: packs(), 'start_run:case-compile': PLANNED });
   const result = await run(argv(join(dir, 'r.json'), ['--recompose-run', RECOMPOSE, '--recompose-record', 'rec:' + 'c'.repeat(64)]), h.connect, root);
   assert.equal(result.code, 0, result.out);
   assert.deepEqual(h.calls.map((c) => c.name + ':' + String(c.args.pack ?? '')), ['list_task_packs:', 'start_run:case-compile']);
@@ -123,11 +128,11 @@ test('a rework plan run reuses the accepted recompose run: no recompose start, t
 });
 
 test('the record keeps what the compile was opened with: the scope as it was read and the left-out cases, each only when given, so that a later plan run can be opened with them again', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
-  const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const answers = { list_task_packs: packs(), 'start_run:recompose': RECOMPOSED, 'start_run:case-compile': PLANNED };
   const scope = { words: '只编这两条：“改密码”和 "退出"，a\\b（第二行\n还有一行 ）', cases: ['990000000000000001', '990000000000000002', '990000000000000008', '990000000000000009'] };
   await writeFile(join(dir, 'scope.json'), JSON.stringify({ ...scope, note: 'a field the tool does not read' }));
-  const h = hub(answers);
+  const h = hub(answers, scope.cases);
   const given = await run(argv(join(dir, 'open-compile.json'), ['--scope', join(dir, 'scope.json'), '--exclude', ' 990000000000000009 , 990000000000000008,']), h.connect, root);
   assert.equal(given.code, 0, given.out);
   const written = JSON.parse(await readFile(join(dir, 'open-compile.json'), 'utf8'));
@@ -135,6 +140,18 @@ test('the record keeps what the compile was opened with: the scope as it was rea
   assert.deepEqual(JSON.parse(given.out.trimEnd().split('\n').at(-1)!), written, 'the line printed is the record');
   const parameters = h.calls.filter((c) => c.name === 'start_run').map((c) => c.args.parameters);
   assert.deepEqual(parameters, [{ scope }, { scope, exclude: ['990000000000000009', '990000000000000008'] }], 'what the Hub was given: the scope for both runs, the left-out cases for the plan run');
+
+  for (const [name, flags, count] of [
+    ['scope-only', ['--scope', join(dir, 'scope.json')], 4],
+    ['exclude-only', ['--exclude', scope.cases[0]!], 3],
+  ] as const) {
+    const opened = await run(argv(join(dir, name), [...flags]), hub(answers, scope.cases).connect, root);
+    assert.equal(opened.code, 0, opened.out);
+    assert.equal(JSON.parse(await readFile(join(dir, name), 'utf8')).items, count);
+  }
+  const uploadedSubject = `src:${compileMindmap(SCOPED_REOPEN.scope.cases).sha256}`;
+  const uploaded = await run(argv(join(dir, 'uploaded')).map(value => value === 'agile:mindmap:900001' ? uploadedSubject : value), hub(answers).connect, root);
+  assert.equal(uploaded.code, 0, uploaded.out);
 
   // Nothing given, nothing written: an exclude that names no case is none.
   for (const [name, extra] of [['plain.json', []], ['blank.json', ['--exclude', ' , ']]] as const) {
@@ -161,8 +178,8 @@ test('the record keeps what the compile was opened with: the scope as it was rea
 });
 
 test('the record keeps the version line and each named document when the compile was opened with them, and nothing of them when it was not', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
-  const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const answers = { list_task_packs: packs(), 'start_run:recompose': RECOMPOSED, 'start_run:case-compile': PLANNED };
   const named = ['version', 'contract', 'inventory', 'profile'] as const;
   const DEFAULT_DOCS = { contract: 'doc:doc:runner-contract', inventory: 'doc:doc:bed-topology', profile: 'doc:doc:runtime-profile' };
   const given = { version: '3.2', contract: 'doc:doc:other-contract', inventory: `doc:doc:other-inventory@${'d'.repeat(64)}`, profile: 'doc:doc:other-profile' };
@@ -198,8 +215,8 @@ test('the record keeps the version line and each named document when the compile
 });
 
 test('judge model: the user chose to compile without Plumb, so no Plumb address, key or status is needed and the choice is written into open-compile.json', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
-  const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const answers = { list_task_packs: packs(), 'start_run:recompose': RECOMPOSED, 'start_run:case-compile': PLANNED };
   const asked: string[] = [];
   const never: PlumbStatus = async (url) => { asked.push(url); throw new Error('Plumb must not be asked'); };
   const withoutPlumb = (out: string) => argv(out, ['--judge', 'model']).filter((value, n, all) => value !== '--plumb' && all[n - 1] !== '--plumb');
@@ -214,8 +231,8 @@ test('judge model: the user chose to compile without Plumb, so no Plumb address,
 });
 
 test('judge defaults to plumb: the written file carries no judge, a missing Plumb address is refused, and another value is refused before any call', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
-  const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const answers = { list_task_packs: packs(), 'start_run:recompose': RECOMPOSED, 'start_run:case-compile': PLANNED };
   const usual = await run(argv(join(dir, 'open-compile.json')), hub(answers).connect, root);
   assert.equal(usual.code, 0, usual.out);
   assert.equal('judge' in JSON.parse(await readFile(join(dir, 'open-compile.json'), 'utf8')), false);
@@ -239,7 +256,7 @@ const modelArgv = (out: string) => argv(out, ['--judge', 'model']).filter((value
 test('not ready: every unmet local precondition is said in one line in the order recompose, case-compile, Plumb skill, Plumb key, and no run is started', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   // The Hub publishes case-compile only, an older case-compile is installed, the Plumb skill is not installed and stdin has one line.
-  const root = await skills({ 'case-compile': '3.21.7' }, false), asked: string[] = [];
+  const root = await makeSkills({ 'case-compile': '3.21.7' }, false), asked: string[] = [];
   const h = hub({ list_task_packs: said({ call_result: 'ok', packs: [{ pack: 'case-compile@3.22.0', id: 'case-compile', version: '3.22.0' }] }) });
   const result = await run(argv(join(dir, 'o.json')), h.connect, root, async (url) => { asked.push(url); return READY; }, ['synthetic-token-1234']);
   assert.equal(result.code, 1);
@@ -254,7 +271,7 @@ test('not ready: every unmet local precondition is said in one line in the order
   assert.equal(existsSync(join(dir, 'o.json')), false);
 
   // Recompose in another version, case-compile not installed, and a Plumb service that is not ready: the service comes last.
-  const second = await skills({ recompose: '1.2.0' }), seen: string[] = [];
+  const second = await makeSkills({ recompose: '1.2.0' }), seen: string[] = [];
   const again = hub({ list_task_packs: packs() });
   const later = await run(argv(join(dir, 'p.json')), again.connect, second, async (url, key) => { seen.push(`${url} ${key}`); return { status: 'stopped', phase: 'idle_shutdown', models_status: {} }; });
   assert.equal(later.out, [
@@ -269,7 +286,7 @@ test('not ready: every unmet local precondition is said in one line in the order
 test('not ready: a single problem is the one line of its own, and a check that cannot run for want of an earlier one is not a problem of its own', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const attempt = async (options: { versions?: Record<string, string>; plumbSkill?: boolean; stdin?: string[]; published?: ToolAnswer; realStatus?: boolean }) => {
-    const root = await skills(options.versions ?? { 'case-compile': '3.22.0', recompose: '1.3.0' }, options.plumbSkill ?? true), asked: string[] = [];
+    const root = await makeSkills(options.versions ?? { 'case-compile': '3.22.0', recompose: '1.3.0' }, options.plumbSkill ?? true), asked: string[] = [];
     const h = hub({ list_task_packs: options.published ?? packs() });
     const result = await run(argv(join(dir, 'o.json')), h.connect, root, options.realStatus ? plumbStatusVia(root) : async (url, key) => { asked.push(`${url} ${key}`); return READY; }, options.stdin);
     return { root, out: result.out, asked, calls: h.calls.map((c) => c.name) };
@@ -301,7 +318,7 @@ test('not ready: a single problem is the one line of its own, and a check that c
 });
 
 test('not ready: a Plumb service that cannot be asked is said after the workflow problems, in the words of the failed ask', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'open-compile-')), root = await skills({ 'case-compile': '3.22.0' });
+  const dir = await mkdtemp(join(tmpdir(), 'open-compile-')), root = await makeSkills({ 'case-compile': '3.22.0' });
   const h = hub({ list_task_packs: packs() });
   const cannot = '问不到 Plumb 状态：connection refused；下一步：核对 Plumb 地址和密钥，或请管理员唤醒 Plumb 后重跑';
   const result = await run(argv(join(dir, 'o.json')), h.connect, root, async () => { throw new NotReady(cannot); });
@@ -310,7 +327,7 @@ test('not ready: a Plumb service that cannot be asked is said after the workflow
 });
 
 test('judge model: only the problems of the workflows are said, never the Plumb skill, key or service, and the service is not asked', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'open-compile-')), root = await skills({ 'case-compile': '3.21.7' }, false), asked: string[] = [];
+  const dir = await mkdtemp(join(tmpdir(), 'open-compile-')), root = await makeSkills({ 'case-compile': '3.21.7' }, false), asked: string[] = [];
   const h = hub({ list_task_packs: packs() });
   const result = await run(modelArgv(join(dir, 'm.json')), h.connect, root, async (url) => { asked.push(url); return READY; }, ['synthetic-token-1234']);
   assert.equal(result.code, 1);
@@ -321,9 +338,9 @@ test('judge model: only the problems of the workflows are said, never the Plumb 
 });
 
 test('ready: the Hub is asked in the order it always was, and a Plumb judge is asked once between the list and the first run', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const events: string[] = [];
-  const h = hub({ list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) });
+  const h = hub({ list_task_packs: packs(), 'start_run:recompose': RECOMPOSED, 'start_run:case-compile': PLANNED });
   const connect = (): CallTool => { const call = h.connect(); return async (name, args) => { events.push(`hub ${name}${name === 'start_run' ? ` ${String(args.pack)}` : ''}`); return call(name, args); }; };
   const result = await run(argv(join(dir, 'open-compile.json')), connect, root, async (url, key) => { events.push(`plumb ${url} ${key}`); return READY; });
   assert.equal(result.code, 0, result.out);
@@ -337,14 +354,14 @@ const MISSING_JEV_KEY = "标准输入第三行没有 Jev 密钥；命令末尾�
 
 test('judge jev: the user chose Jev, so no Plumb address, key, skill or status is looked at, the jev-judge skill need not be installed, no service is probed, and the choice is written into open-compile.json', async () => {
   // Only the two workflows are installed: the compile asks Jev with the client inside case-compile, never with the jev-judge skill.
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }, false), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }, false), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const asked: string[] = [];
   const never: PlumbStatus = async (url) => { asked.push(url); throw new Error('Plumb must not be asked'); };
-  const h = hub({ list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) });
+  const h = hub({ list_task_packs: packs(), 'start_run:recompose': RECOMPOSED, 'start_run:case-compile': PLANNED });
   // The Plumb line is a literal placeholder, as a client without a Plumb key leaves it: it is not read in this mode.
   const result = await run(jevArgv(join(dir, 'open-compile.json')), h.connect, root, never, ['synthetic-token-1234', '%PLUMB_API_KEY%', JEV_KEY]);
   assert.equal(result.code, 0, result.out);
-  assert.match(result.out, /^就绪：用例重组运行 .*、脚本编写运行 .*，共 1 条用例；判断方式 jev：命令核验和场景保真由 Jev（TypeSafe 的线上判断服务）判断，原始用例的步骤、写出的命令和手册片段会发到 TypeSafe；Jev 的回答是模型的判断，未经确认，一律只作参考、逐条进复核/);
+  assert.match(result.out, /^就绪：用例重组运行 .*、脚本编写运行 .*，共 2 条用例；判断方式 jev：命令核验和场景保真由 Jev（TypeSafe 的线上判断服务）判断，原始用例的步骤、写出的命令和手册片段会发到 TypeSafe；Jev 的回答是模型的判断，未经确认，一律只作参考、逐条进复核/);
   assert.deepEqual(asked, []);
   assert.deepEqual(h.calls.map((c) => c.name), ['list_task_packs', 'start_run', 'start_run'], 'the Hub is asked as it always was, and Jev is not asked at all');
   const record = JSON.parse(await readFile(join(dir, 'open-compile.json'), 'utf8'));
@@ -354,7 +371,7 @@ test('judge jev: the user chose Jev, so no Plumb address, key, skill or status i
 });
 
 test('not ready for Jev: a third line that is no key is said in the one answer with the workflow problems, and the jev-judge skill is never mentioned, and nothing is opened', async () => {
-  const root = await skills({ 'case-compile': '3.21.7' }, false), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const root = await makeSkills({ 'case-compile': '3.21.7' }, false), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const h = hub({ list_task_packs: packs() });
   const workflow = `本机没有装 recompose 技能（${join(root, 'recompose')}）；下一步：使用者用客户端的技能安装从 Hub 装上 recompose 技能 1.3.0（Hub 发布的版本），再开编译；另：本机 case-compile 技能是 3.21.7，Hub 发布的是 3.22.0；下一步：重装 3.22.0 再开编译`;
   for (const [n, third] of [[1, undefined], [2, ''], [3, '%JEV_API_KEY%']] as const) {
@@ -366,7 +383,7 @@ test('not ready for Jev: a third line that is no key is said in the one answer w
   assert.deepEqual(h.calls.map((c) => c.name), ['list_task_packs', 'list_task_packs', 'list_task_packs']);
   assert.equal(existsSync(join(dir, 'j1.json')), false);
   // Only the key is missing: it is the one sentence, with the skill installed or not.
-  const installed = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0', 'jev-judge': '1.0.0' }, false);
+  const installed = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0', 'jev-judge': '1.0.0' }, false);
   const keyless = await run(jevArgv(join(dir, 'k.json')), hub({ list_task_packs: packs() }).connect, installed, async () => READY, ['synthetic-token-1234', 'plumb-key', '']);
   assert.equal(keyless.out, `无法编译：${MISSING_JEV_KEY}\n`);
 });
@@ -381,8 +398,8 @@ test('the three stdin lines are read by position: a blank line stays a line, so 
 });
 
 test('the booking the compile took itself is written into open-compile.json only when the option says so, and nothing else in the record changes', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
-  const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}, {}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}, {}] } }) };
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const answers = { list_task_packs: packs(), 'start_run:recompose': RECOMPOSED, 'start_run:case-compile': PLANNED };
   const taken = await run(argv(join(dir, 'taken.json'), ['--booking-acquired', 'yes']), hub(answers).connect, root);
   const reused = await run(argv(join(dir, 'reused.json')), hub(answers).connect, root);
   assert.equal(taken.code, 0, taken.out); assert.equal(reused.code, 0, reused.out);
@@ -396,7 +413,7 @@ test('the booking the compile took itself is written into open-compile.json only
 });
 
 test('--booking-acquired takes only yes; any other value is said in one line and nothing is asked of the Hub', async () => {
-  const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   for (const value of ['true', 'no', 'YES']) {
     const h = hub({});
     const refused = await run(argv(join(dir, `${value}.json`), ['--booking-acquired', value]), h.connect, root);
