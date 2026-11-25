@@ -12,7 +12,7 @@ import type { DispatchService, JobStatus } from './service.ts';
 import { readRunJobs, type RunJob } from './read-runs.ts';
 import { toolLocalMinute } from '../telemetry/api.ts';
 import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, type DispatchDiagnostics } from './reasons.ts';
-import { formatReleaseRefusal } from './refusal-text.ts';
+import { formatReleaseRefusal, hasSupersededManifest, UPDATE_MANIFEST } from './refusal-text.ts';
 export type { DispatchMissingFact, DispatchDiagnostics } from './reasons.ts';
 
 export interface DispatchNote extends Partial<DispatchDiagnostics> { run?: string; job?: string; executor?: string; result?: string; ended?: RunJob['ended']; text: string }
@@ -117,13 +117,14 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
     const diagnostics = statusDiagnostics({ job: status.job, status, ended: null, boundary_refused: false }, administrative);
     return answer([{ job: status.job, ...diagnostics, text: clip(`上机验证核对尚未完成；${diagnostics.next_action}`) }]);
   }
+  const updateManifest = hasSupersededManifest(settled.checks?.find(check => check.satisfied === false));
   const missing = !administrative ? settled.member_missing_facts ?? (settled.checks ? releaseMissingFacts(settled.checks) : []) : [];
   // dispatchAccepted worded its reason for the run's runner. An administrator who reads the run gets the administrator's
   // wording of the same conditions (declared values, the command to run) whoever started it.
   const reason = administrative && settled.executor && settled.checks?.some((check) => check.satisfied !== true)
-    ? formatReleaseRefusal({ checks: settled.checks, run, executor: settled.executor, callerIsAdmin: true })
+    ? formatReleaseRefusal({ checks: settled.checks, run, executor: settled.executor, callerIsAdmin: true }, !updateManifest)
     : settled.reason;
-  const facts = missing.length ? missing : [{fact:settled.error_code==='SOURCE_NOT_PERMITTED'?'运行发起账户没有可采用的测试环境使用授权；请核对有效分配及账户状态':settled.error_code==='SOURCE_UNAVAILABLE'?'本次环境权限尚未核对，缺少可读取的核对事实；请恢复权限检查接线或读取能力':administrative ? clip(reason ?? '上机验证前核对没有通过') : '上机前的放行条件尚未满足，未取得可采用的派发结果',next_action:'核对本次预订和核验结果；需要管理员处理的，联系管理员核对'}];
+  const facts = missing.length ? missing : [{fact:settled.error_code==='SOURCE_NOT_PERMITTED'?'运行发起账户没有可采用的测试环境使用授权；请核对有效分配及账户状态':settled.error_code==='SOURCE_UNAVAILABLE'?'本次环境权限尚未核对，缺少可读取的核对事实；请恢复权限检查接线或读取能力':administrative ? clip(reason ?? '上机验证前核对没有通过') : '上机前的放行条件尚未满足，未取得可采用的派发结果',next_action:updateManifest ? UPDATE_MANIFEST : '核对本次预订和核验结果；需要管理员处理的，联系管理员核对'}];
   const category=invocationCategory(settled);
   const fact=facts.map(row=>row.fact).join('；'),next=[...new Set(facts.map(row=>row.next_action))].join('；');
   return answer([{ ...(administrative && settled.executor ? { executor: settled.executor } : {}), outcome:'not_dispatched', ...(settled.error_code?{error_code:settled.error_code}:{}), missing_facts:facts,next_action:next,text:clip(category?formatCallError(category,fact,next):'上机验证没有发出：'+fact) }]);

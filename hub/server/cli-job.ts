@@ -1,3 +1,4 @@
+import { documentsByRevision, type DocumentsByRevision } from '../refs/api.ts';
 import { ExecutorStableName } from '../../contracts/api.ts';
 import { secretUseLabels } from './secret-use-labels.ts';
 // Administrator CLI only. Remote content is retained as sources; terminal output carries no remote body or resource names.
@@ -48,6 +49,10 @@ export async function staleExecutorLines(records: RecordsKit, by: Principal, pac
   }
   return lines;
 }
+export function staleManifestLine(executor: { id: string; definition: { target: string } }, name: string, current: string): string {
+  return `测试环境 ${executor.definition.target} 的执行器 ${executor.id}：登记的清单摘要与命名文档 ${name} 的旧修订相同。要使用现行修订 ${current}，请用 circle-hub executor update 重新登记执行器；清单由普通变量指定时，请更新该变量，再用 circle-hub executor list 核对`;
+}
+
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
   options: { readSecret?: (label: string) => Promise<string> };
@@ -147,10 +152,25 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
     // behind, said once, never the list itself.
     const inUse=new Map<string,string|null>();let unread=false;
     const versionInUse=async(pack:string):Promise<string|null>=>{if(!inUse.has(pack)){let version:string|null=null;try{version=(await hub.registry?.latestVersion(pack))?.version??null;}catch{unread=true;}inUse.set(pack,version);}return inUse.get(pack)??null;};
+    let revisions: DocumentsByRevision | undefined;
     for(const source of entries){
-      try{const e=await registry.get(source.id);if(e){await executorLine(s,registry,by,e);if(!e.definition.calls.submit.write)s.out(`执行器 ${e.id}：写声明未写；请 executor update 补齐`);
-        const stale=e.definition.enabled?staleWarrantLine(e.id,e.definition.proof,await versionInUse(e.definition.proof.package),e.definition.target):null;if(stale!==null)s.out(stale);}}
-      catch(error){if(!(error instanceof VariableError)&&!(error instanceof VariableInputError))throw error;const names=[...new Set(referencesIn(source.source).filter(ref=>ref.kind==='var').map(ref=>ref.name))];s.out(`执行器编号 ${source.id}；定义摘要 ${source.digest}；启用 ${Number(source.source.enabled)}；具备派发登记 0；解析后摘要 未解析；普通变量 ${names.join('、')} 缺决定或取值不合定义：先 var show <名字> --value 核对并 var set，再重做 executor list`);}
+      try {
+        const e = await registry.get(source.id);
+        if (!e) continue;
+        await executorLine(s, registry, by, e);
+        if (!e.definition.calls.submit.write) s.out(`执行器 ${e.id}：写声明未写；请 executor update 补齐`);
+        const stale = e.definition.enabled ? staleWarrantLine(e.id, e.definition.proof, await versionInUse(e.definition.proof.package), e.definition.target) : null;
+        if (stale !== null) s.out(stale);
+        if (e.definition.manifest_sha256) {
+          revisions ??= await documentsByRevision(hub.records.pointers).catch(() => {
+            s.err('注意：未能读取命名文档的修订记录，无法核对执行器登记的清单');
+            return new Map();
+          });
+          for (const doc of revisions.get(e.definition.manifest_sha256) ?? []) {
+            if (doc.current !== e.definition.manifest_sha256) s.out(staleManifestLine(e, doc.name, doc.current));
+          }
+        }
+      } catch(error){if(!(error instanceof VariableError)&&!(error instanceof VariableInputError))throw error;const names=[...new Set(referencesIn(source.source).filter(ref=>ref.kind==='var').map(ref=>ref.name))];s.out(`执行器编号 ${source.id}；定义摘要 ${source.digest}；启用 ${Number(source.source.enabled)}；具备派发登记 0；解析后摘要 未解析；普通变量 ${names.join('、')} 缺决定或取值不合定义：先 var show <名字> --value 核对并 var set，再重做 executor list`);}
     }
     if(unread)s.err('注意：没有读到工作流现行的版本，没有核对执行器指定的核验函数是不是现行版本的');
     s.out(`执行器 ${entries.length}`); return 0;

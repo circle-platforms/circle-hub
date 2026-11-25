@@ -8,6 +8,8 @@ import { isAdmin } from '../records/api.ts';
 // start (RunRecord.sources), and the provenance is `declared`. A read needs a run of a pack that declares the doc
 // input type (`accepts: ["doc:doc"]` on an input slot) and answers only that run's user; everyone else, and every
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
+import { docPointerName, documentRevisions, parseDocId } from '../refs/api.ts';
+export { docPointerName, parseDocId } from '../refs/api.ts';
 import { RunId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, WorkflowStore } from '../ports.ts';
@@ -33,26 +35,11 @@ const COMPONENT = 'server.docs@1';
 /** Retries of the pointer move when a concurrent put wins the compare-and-set in between. */
 const MOVE_ATTEMPTS = 3;
 
-const DOC_ID = /^doc:doc:([a-z][a-z0-9-]{0,63})(?:@([0-9a-f]{64}))?$/;
-
 const clipped = (text: string, max = 80): string => (text.length <= max ? text : `${text.slice(0, max)}…`);
 
 /** The external id of a named document, pinned when a digest is given. */
 export function docIdOf(name: string, sha256?: string): string {
   return `doc:doc:${name}${sha256 === undefined ? '' : `@${sha256}`}`;
-}
-
-/** Name and optional pinned digest of a doc external id; null when it is not one. */
-export function parseDocId(id: string): { name: string; sha256: string | null } | null {
-  if (typeof id !== 'string') return null;
-  const match = DOC_ID.exec(id);
-  if (match === null) return null;
-  return { name: match[1] as string, sha256: (match[2] as string | undefined) ?? null };
-}
-
-/** The pointer whose target is the current revision's digest. */
-export function docPointerName(name: string): string {
-  return `doc:${name}`;
 }
 
 /** A refusal of this module, in Chinese, mapped to a CliError by the CLI. */
@@ -78,6 +65,7 @@ export interface DocPutResult extends DocInfo {
   created: boolean;
   /** Credential scan findings of the stored bytes: above 0 they are held back until an admin accepts them. */
   findings: number;
+  previous?: string;
 }
 
 export interface Docs {
@@ -153,7 +141,7 @@ export function createDocs(deps: DocsDeps): Docs {
       const before = attempt === 0 ? current : await records.pointers.get(pointer);
       const moved = await records.pointers.move({ name: pointer, expected: before?.target ?? null, next: sha256, by: admin, component: COMPONENT });
       if (moved.moved) {
-        return { name, sha256, size: bytes.byteLength, version: moved.pointer.version, created: true, findings: stored.body.scan.findings.length };
+        return { name, sha256, size: bytes.byteLength, version: moved.pointer.version, created: true, findings: stored.body.scan.findings.length, ...(before ? { previous: before.target } : {}) };
       }
       if (attempt + 1 >= MOVE_ATTEMPTS) throw new DocsError(`命名文档 ${name} 正在被另一个发布改动，这一份没有存上`, '重新运行这条命令');
     }
@@ -165,18 +153,6 @@ export function createDocs(deps: DocsDeps): Docs {
     if (pointer === null) return null;
     const record = docRecord(await records.artifacts.records(pointer.target), name, pointer.target);
     return { name, sha256: pointer.target, size: record?.body.size ?? 0 };
-  }
-
-  /** The digests this doc ever pointed at (its current one included), for the pinned form. */
-  async function revisions(name: string): Promise<Set<string>> {
-    const out = new Set<string>();
-    let cursor: string | null = null;
-    do {
-      const page = await records.pointers.history(docPointerName(name), { limit: 500, ...(cursor === null ? {} : { cursor }) });
-      for (const record of page.items) for (const input of record.body.inputs) out.add(input);
-      cursor = page.next;
-    } while (cursor !== null);
-    return out;
   }
 
   async function read(id: string, context: ExternalReadContext, includeOptions = true): Promise<ExternalRead> {
@@ -253,7 +229,7 @@ export function createDocs(deps: DocsDeps): Docs {
     const why = await denial();
     if (why !== null) return forbidden(why);
     const target = parsed.sha256 ?? pointer.target;
-    if (parsed.sha256 !== null && target !== pointer.target && !(await revisions(parsed.name)).has(target)) {
+    if (parsed.sha256 !== null && target !== pointer.target && !(await documentRevisions(records.pointers, parsed.name)).has(target)) {
       return absent(`命名文档 ${parsed.name} 没有过这份摘要的内容`, '要读当前版本就不写 @ 和后面的部分；要读某一版，@ 后面写这份命名文档做过的那一版的 64 位摘要');
     }
     const bytes = await records.artifacts.trustedBytes(target);

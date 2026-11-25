@@ -79,3 +79,5 @@ export {readContainerMembers} from './container.ts';
 export {createSkillParserRegistry} from './skills.ts';
 export type {SkillParserOptions} from './skills.ts';
 export { sandboxReadDiagnostic } from './sandbox-diagnostic.ts';
+
+export { docPointerName, documentRevisions, documentsByRevision, parseDocId, type DocumentsByRevision } from './named-documents.ts';
