@@ -120,9 +120,9 @@ test('the nearest refusing executor: the identity held, then not judged, then fa
 
 test('a refusal at the final boundary, after the target was reached, is read and never tried again', async (t) => {
   const c = await setup(); t.after(() => c.close());
-  // The executor changes after the verification run froze its snapshot, as at every release of the pack: the final boundary
-  // refuses after the connector session, the precheck and the probes.
-  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, limitations: ['合成：核验运行之后更新的执行器'] });
+  // The global policy table is another version than the one the verification run froze: the final boundary refuses after
+  // the connector session, the precheck and the probes.
+  c.detail.run.policy = 'f'.repeat(64);
   const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.ok(first?.job, JSON.stringify(first));
   const [job] = await settled(c);

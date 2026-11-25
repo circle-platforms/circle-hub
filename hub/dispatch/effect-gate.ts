@@ -5,7 +5,7 @@ import {RequirementsFile,type AllowedEffect} from '../../contracts/src/pack.ts';
 import type {CheckOutcome} from '../../contracts/src/tables.ts';
 import {labelOf} from '../../contracts/generated/vocabulary.ts';
 import type {Principal,RecordsKit,Transaction,ActionBody} from '../records/api.ts';
-import {canonicalize,sha256Hex} from '../records/api.ts';
+import {canonicalize} from '../records/api.ts';
 import type {WorkflowStore,EffectCheckReplay,RunDetail} from '../ports.ts';
 import {at,type ExecutorDefinition} from './definition.ts';
 import {inspectInput,type VerificationPort,type VerifiedInput} from './proof.ts';
@@ -94,11 +94,9 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
      return report.input;
    },budget,
    global:async()=>{
-     const current=await new ExecutorRegistry(o.records).get(o.executor);if(!current?.definition.enabled||current.resolved_digest!==o.resolved_digest)return false;
-     const policy=await boundaryPolicy();if(detail.run.policy!==policy.version||!detail.run.executors||!d.environment)return false;
-     const bytes=await o.records.objects.get(detail.run.executors);if(!bytes||sha256Hex(bytes)!==detail.run.executors)return false;
-     const registry=JSON.parse(new TextDecoder().decode(bytes));
-     return registry[o.executor]===o.resolved_digest&&policyAllows(policy.document,{effect_class:context.write.effect_class,reversible:d.calls.submit.write?.reversible??false,environment:d.environment});
+     const current=await new ExecutorRegistry(o.records).get(o.executor);if(!current?.definition.enabled||current.resolved_digest!==o.resolved_digest)return 'executor';
+     const policy=await boundaryPolicy();if(detail.run.policy!==policy.version)return 'policy_version';
+     return !!d.environment&&policyAllows(policy.document,{effect_class:context.write.effect_class,reversible:d.calls.submit.write?.reversible??false,environment:d.environment})||'policy';
    },policies:row=>supports(row.policy_checks,row),
  };
  return {detail,context,inspectRelease,

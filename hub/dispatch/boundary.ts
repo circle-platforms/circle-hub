@@ -17,12 +17,13 @@ export interface BoundaryContext {
  release:(row:AllowedEffect)=>Promise<VerifiedInput>;
  budget:(row:AllowedEffect)=>Promise<{count:number;duration_ms:number}>;
  lease:()=>Promise<{ok:boolean;code?:Extract<ProtocolCode,'LEASE_UNAVAILABLE'|'LEASE_EXPIRED'|'FENCING_STALE'>;message?:string}>;
- global:(row:AllowedEffect)=>Promise<boolean>;
+ global:(row:AllowedEffect)=>Promise<true|keyof typeof GLOBAL_REFUSALS>;
  policies:(row:AllowedEffect)=>Promise<boolean|'unknown'>;
  content:(input:VerifiedInput)=>Promise<boolean>;
  audience:()=>Promise<boolean>;
  until?:4;
 }
+const GLOBAL_REFUSALS={executor:'所用执行器在本次核对开始后改动或停用；按现行登记重新核对',policy_version:'全局边界政策表的版本与运行开始时不同；请开新修订',policy:'全局边界政策表不放行这一效果（效果类、可逆性、执行器声明的环境类别）；请管理员核对执行器声明的环境类别和写声明'} as const;
 export function deny(clause:number,code:ProtocolCode,message:string,row?:AllowedEffect):BoundaryFailure{return {ok:false,clause,code,message,fix:PROTOCOL_CODES[code].fix,...(row?{row:row.id,requirements:row.release.requirements}:{})};}
 export function unconcluded(clause:number,what:string,fix:string,row?:AllowedEffect):BoundaryFailure{return {...deny(clause,'PACK_POLICY_DENIED',`${what}；不是计划、工作簿或包被驳回`,row),fix,no_conclusion:true};}
 export function refusalText(failure:BoundaryFailure,sent:boolean):string{return failure.no_conclusion?`${failure.message}；${sent?'提交已调用，原请求是否执行须对账':'什么都没发出'}`:failure.message;}
@@ -49,7 +50,7 @@ export async function checkEffectBoundary(ctx:BoundaryContext):Promise<{ok:true;
  if(ctx.until===4)return {ok:true,row,input,checked:4};
  let lease;try{lease=await ctx.lease();}catch{return deny(5,'LEASE_UNAVAILABLE','缺少当前租约与围栏事实；请恢复租约并重证基线',row);}
  if(!lease.ok)return deny(5,lease.code??'LEASE_UNAVAILABLE',lease.message??'当前租约或围栏没有通过',row);
- try{if(!await ctx.global(row))return deny(6,'BOUNDARY_POLICY_DENIED','核心政策、所用执行器登记或声明环境与运行快照不符；请开新修订',row);}catch{return deny(6,'BOUNDARY_POLICY_DENIED','缺少可回读的核心政策或所用执行器快照；请恢复记录后开新修订',row);}
+ try{const verdict=await ctx.global(row);if(verdict!==true)return deny(6,'BOUNDARY_POLICY_DENIED',GLOBAL_REFUSALS[verdict],row);}catch{return deny(6,'BOUNDARY_POLICY_DENIED','缺少可回读的全局边界政策表或所用执行器登记；请恢复记录后重新核对',row);}
  try{const verdict=await ctx.policies(row);
   if(verdict==='unknown')return unconcluded(7,'用冻结包重核时有检查没出结论（原因只记在管理员记录里，Hub 的沙箱没能运行检查时也会这样）','原样重核；仍出现时请 Hub 管理员按管理员日志处理没出结论的检查',row);
   if(verdict!==true)return deny(7,'PACK_POLICY_DENIED','冻结包的同脚本同政策表重核未通过；请修正后重核',row);}
