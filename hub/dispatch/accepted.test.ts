@@ -135,6 +135,23 @@ test('a refusal at the final boundary, after the target was reached, is read and
   assert.equal(c.calls.length, reached, 'a repeat does not reach the target again');
 });
 
+test('a final-boundary refusal whose cause is in the registration is tried again once an administrator corrects it', async (t) => {
+  const c = await setup(); t.after(() => c.close());
+  const { environment, ...withoutEnvironment } = c.executor.definition;
+  await c.registry.update(c.admin, c.executor.id, withoutEnvironment);
+  const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.ok(first?.job, JSON.stringify(first));
+  const [refused] = await settled(c);
+  assert.equal(refused.status.outcome, 'not_dispatched'); assert.equal(refused.status.error_code, 'BOUNDARY_POLICY_DENIED'); assert.equal(refused.status.not_sent, true);
+  assert.ok(!c.calls.includes('send_blob'), JSON.stringify(c.calls));
+  await c.registry.update(c.admin, c.executor.id, { ...withoutEnvironment, environment });
+  const again = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.notEqual(again.at(-1)!.job, first.job, 'the repeat started another job');
+  const jobs = await settled(c);
+  assert.deepEqual(jobs.map((job) => job.status.outcome).sort(), ['effective', 'not_dispatched']);
+  assert.equal(c.calls.filter((name) => name === 'send_blob').length, 1);
+});
+
 test('the notes of a run stay within the answer limits: the newest, after a line counting the older', async (t) => {
   const c = await setup({ mode: 'lineage' }); t.after(() => c.close());
   for (let i = 0; i < 18; i++) await acceptedDispatch(c.kit, c.service, c.run, true);

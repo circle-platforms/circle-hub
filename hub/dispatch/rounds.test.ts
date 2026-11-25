@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { observationLockFree, setup } from './testing/context.ts';
+import { definition } from './testing/definition.ts';
+import { startEndpoint } from './testing/server.ts';
 import { probesWithResidue } from './testing/probes.ts';
 import type { Aggregation } from '../../contracts/generated/vocabulary.ts';
 
@@ -167,8 +169,7 @@ test('an uncertified result ownership premise makes every round no_verdict', { t
   assert.deepEqual(state.rounds?.map(round => round.terminal), ['no_verdict', 'no_verdict', 'no_verdict']);
 });
 
-test('resume reconciles the started round and a new dispatch continues at the next one', { timeout: 60000 }, async t => {
-  const c = await setup(); t.after(() => c.close());
+async function firstRoundThenResume(c: Fixture, t: TestContext) {
   install(c, policy(3, 'all'));
   const child = spawn(process.execPath, [fileURLToPath(new URL('./testing/worker.ts', import.meta.url))], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
   let output = ''; child.stdout!.on('data', chunk => { output += chunk; });
@@ -189,10 +190,28 @@ test('resume reconciles the started round and a new dispatch continues at the ne
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
   assert.equal((await c.service.journal.events(String(first.body.detail.job))).some(event => event.body.detail.phase === 'intent' && event.body.detail.round === 2), false);
   assert.equal(resumed.outcome, 'effective');
+  return first;
+}
+
+test('resume reconciles the started round and a new dispatch continues at the next one', { timeout: 60000 }, async t => {
+  const c = await setup(); t.after(() => c.close());
+  const first = await firstRoundThenResume(c, t);
   const continued = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 3);
   assert.deepEqual((await intents(c)).map(row => row.body.detail.round).sort(), [1, 2, 3]);
   assert.notEqual(continued.job, first.body.detail.job);
+});
+
+test('a later round is not sent under another operation definition than the rounds before it', { timeout: 60000 }, async t => {
+  const c = await setup(); t.after(() => c.close());
+  const first = await firstRoundThenResume(c, t);
+  const reached: string[] = [];
+  const moved = await startEndpoint([...definition('x').allowed_tools], async name => { reached.push(name); return { ok: true }; }); t.after(() => moved.close());
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, endpoint: moved.endpoint });
+  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), (error: Error & { job?: string }) => error.job === first.body.detail.job && /另一份执行器操作定义/.test(error.message));
+  assert.deepEqual(reached, []);
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
+  assert.deepEqual((await intents(c)).map(row => row.body.detail.round), [1]);
 });
 
 
