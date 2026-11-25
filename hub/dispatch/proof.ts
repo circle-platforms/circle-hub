@@ -1,5 +1,5 @@
 import {ReleaseTrace,ReleaseDiagnosticError,releaseField,releaseDifferences,type ReleaseCheck} from './release-diagnostics.ts';
-import {parseReference} from '../refs/api.ts';
+import { documentsByRevision, parseDocId, parseReference } from '../refs/api.ts';
 import type { Principal, RecordsKit } from '../records/api.ts';
 import type { RunDetail, RunsService, WorkflowStore } from '../ports.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
@@ -16,6 +16,19 @@ export interface VerifiedInput {
 export class InputVerificationError extends ReleaseDiagnosticError {}
 function validClaim(c: Claim, now: Date): boolean {
   return c.statement.verdict === 'support' && c.validity.status === 'valid' && (!c.validity.expires_at || Date.parse(c.validity.expires_at) > now.getTime());
+}
+async function usesSupersededManifest(records: RecordsKit, sources: RunDetail['run']['sources'], declared: string, verified: string): Promise<boolean> {
+  const names = new Set<string>();
+  for (const source of sources) {
+    if (!source.external || source.reference !== `src:${verified}`) continue;
+    const doc = parseDocId(source.external);
+    if (doc?.sha256 === verified) names.add(doc.name);
+  }
+  if (names.size !== 1) return false;
+  const revisions = await documentsByRevision(records.pointers, new Set([declared, verified]));
+  const old = revisions.get(declared), current = revisions.get(verified);
+  return old?.length === 1 && current?.length === 1 && old[0].name === current[0].name
+    && names.has(current[0].name) && current[0].current === verified;
 }
 export function lockedBuildBase(run:RunDetail['run']):string|undefined {
   const bases=new Set((run.target_basis ?? []).flatMap(c=>{
@@ -85,9 +98,12 @@ export async function inspectInput(by:Principal,id:string,d:ExecutorDefinition,r
  const sourceHas=(sha:unknown,slot?:string)=>typeof sha==='string'&&!!detail?.run.sources.some(source=>{try{const ref=parseReference(source.reference);return ref.scheme==='src'&&ref.sha256===sha&&(slot===undefined||source.slot===slot&&source.role==='artifact_under_verification');}catch{return false;}});
  add('proof.artifact_slot','核验字节绑定在声明的待核验产物槽',hasData?sourceHas(sha256,d.proof.slot):null,[f('proof.slot',d.proof.slot,detail?.run.sources.filter(source=>source.slot===d.proof.slot).map(source=>({slot:source.slot,role:source.role,reference:source.reference})),hasData?sourceHas(sha256,d.proof.slot):null)]);
  add('proof.bound_sources','核验字节与清单都已绑定本运行',hasData?sourceHas(sha256)&&sourceHas(manifest):null,[f('run.sources.sha256',sha256,sourceHas(sha256)?sha256:undefined,hasData?sourceHas(sha256):null),f('run.sources.manifest_sha256',manifest,sourceHas(manifest)?manifest:undefined,hasData?sourceHas(manifest):null)]);
+ const superseded = hasData && detail && target === d.target && typeof manifest === 'string' && d.manifest_sha256 && manifest !== d.manifest_sha256
+   && await usesSupersededManifest(records, detail.run.sources, d.manifest_sha256, manifest).catch(() => false);
   add('proof.executor_identity','核验目标与清单等于执行器声明',hasData?target===d.target&&manifest===d.manifest_sha256:null,[
     f('target',d.target,target,hasData?target===d.target:null,typeof d.target==='string'&&typeof target==='string'?{expected:d.target,actual:target}:undefined),
     f('manifest_sha256',d.manifest_sha256,manifest,hasData?manifest===d.manifest_sha256:null,typeof d.manifest_sha256==='string'&&typeof manifest==='string'?{expected:d.manifest_sha256.slice(0,12),actual:manifest.slice(0,12)}:undefined),
+    ...(superseded ? [f('manifest_sha256.current_doc_revision',manifest,d.manifest_sha256,false)] : []),
   ]);
  add('proof.build','核验构建等于运行锁定构建',hasData?detail?.run.build===undefined||detail.run.build===build:null,[f('build',detail?.run.build,build,hasData?detail?.run.build===undefined||detail.run.build===build:null)]);
  const owner=detail?.run.runner?await trace.read('runner.read','发起用户读取完成',()=>records.principals.get(detail.run.runner!)):null;
