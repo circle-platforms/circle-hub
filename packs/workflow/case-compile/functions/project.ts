@@ -119,7 +119,6 @@ export function projectItems(input: unknown): unknown {
   let scoped: Set<string> | null = null;
   if (scopeAsked !== undefined) {
     if (!whole) return refusal('invalid_parameter', 'parameters.scope 只用于整份文档按范围编译，不能与 parameters.autoid 同时使用', '按范围编译时不填 autoid；只编一条时不填 scope', [], '/parameters/scope');
-    if (excludeAsked !== undefined) return refusal('invalid_parameter', 'parameters.scope 与 parameters.exclude 不能同时使用', '只用 parameters.scope 列出纳入本次范围的 autoid，或改用 parameters.exclude，不要同时填写', [], '/parameters/scope');
     if (!isRecord(scopeAsked) || Object.keys(scopeAsked).some((key) => key !== 'words' && key !== 'cases')) {
       return refusal('invalid_parameter', 'parameters.scope 只允许 words 与 cases 两个字段', '写成 {"words":"<范围原话>","cases":["<autoid>",...]}', [], '/parameters/scope');
     }
@@ -133,7 +132,10 @@ export function projectItems(input: unknown): unknown {
     const unknown = (scopeAsked.cases as string[]).filter((value) => !numbered.has(value));
     if (unknown.length) return refusal('autoid_not_found', `scope.cases 里的 ${unknown.slice(0, 5).join('、')} 在按规则取到的用例里找不到`, '核对文档、case_rule 和 autoid 原文后重新开始运行', [], '/parameters/scope/cases');
     frozenScope = { words: scopeAsked.words.trim(), cases: [...(scopeAsked.cases as string[])] };
-    scoped = new Set(frozenScope.cases);
+    const inScope = new Set(frozenScope.cases);
+    const outside = Array.isArray(excludeAsked) ? (excludeAsked as string[]).filter((value) => !inScope.has(value)) : [];
+    if (outside.length) return refusal('invalid_parameter', `exclude 里的 ${outside.slice(0, 5).join('、')} 不在 parameters.scope.cases 里`, 'exclude 只填 scope.cases 里这次先不编译的 autoid，改正后重新开始运行', [], '/parameters/exclude');
+    scoped = inScope;
   }
   const excluded=new Set<string>(Array.isArray(excludeAsked)?excludeAsked as string[]:[]);
   const outOfScopeCases = scoped
@@ -155,6 +157,7 @@ export function projectItems(input: unknown): unknown {
     const path:string[]=[];for(let at:number|undefined=c.node,guard=0;at!==undefined&&guard<=parents.size;guard++){const n=nodeAt(at);path.unshift(isRecord(n)&&typeof n.text==='string'?n.text:'');at=parents.get(at);}
     return {path,...(old??{id:c.id,title:raw.text,tags:Array.isArray(data.resource)?data.resource:[],priority:data.priority===undefined?null:String(data.priority),autoid:c.autoid,auto:data.auto===undefined?null:String(data.auto),negative:data.negative===true,selector:c.selector}),steps:c.atoms.filter(a=>a.kind==='action').map(a=>({text:a.text,expected:c.atoms.filter(e=>e.kind==='expectation'&&e.after.includes(a.id)).map(e=>e.text)})),expected:c.atoms.filter(a=>a.kind==='expectation'&&!a.after.length).map(a=>a.text),expected_nodes:expectedNodes,projection_unknowns:c.missing,source_atoms:c.atoms};
   });
+  if (selected.length === 0 && excluded.size > 0) return refusal('invalid_parameter', 'exclude 排除了本次能编译的全部用例', 'exclude 至少留下一条要编译的用例，改正后重新开始运行', [], '/parameters/exclude');
   if (selected.length === 0) return whole ? refusal('autoid_not_found', `整份文档里按规则取不到带文字 autoid 的自动化用例（${unnumbered.size} 个用例没有 autoid）`, '核对用例文档和 case_rule：自动化用例要有文字 autoid 且没有声明不自动化') : refusal('autoid_not_found', '指定 autoid 在按规则抽取的用例里找不到', '核对用例文档和 case_rule，取得该用例原始 autoid 文字后重新开始运行');
   if (new Set(selected.map((value) => value.autoid)).size !== selected.length) return refusal('autoid_ambiguous', whole ? '整份文档里有重复的 autoid，工作簿和派发结果无法一一对应用例' : '指定 autoid 在用例文档里重复，无法确定一个用例', '作者修正重复编号并重新上传文档，再开始新运行');
   if (selected.length > DISPATCH.max_items) return refusal('too_many_cases', `文档选出 ${selected.length} 个自动化用例，超过一次派发最多 ${DISPATCH.max_items} 个（派发政策 max_items）`, `把脑图拆成几份、每份至多 ${DISPATCH.max_items} 个自动化用例，分别上传并各开一次运行；或填 parameters.autoid 一次只编一条`);
@@ -274,11 +277,11 @@ export function projectItems(input: unknown): unknown {
       planSet.push({ item: item.id, fields: { autoid: item.fields.autoid, title: item.fields.title, path: item.fields.path, priority: item.fields.priority, steps: item.fields.steps.map((step: { text: string }) => ({ text: step.text })), source_atoms: item.fields.source_atoms, expected_nodes: item.fields.expected_nodes }, plan: (plans[0] as any).statement.data, command_catalog: data.command_catalog ?? null, ...(item.fields.command_identities !== undefined ? { command_identities: item.fields.command_identities } : {}) });
     }
     if (frozenScope && (accepted.partitions.delivered as unknown[]).length !== items.length) {
-      return refusal('workbook_context', '本次脚本合并运行的 parameters.scope 与所核对脚本编写运行的范围不一致', '脚本合并运行与脚本编写运行必须传入相同的 parameters.scope；若需更换范围，请重新用 start_run 开启新的脚本编写运行', [], '/parameters/scope');
+      return refusal('workbook_context', `本次脚本合并运行选出 ${items.length} 条用例，所核对的脚本编写运行受理了 ${(accepted.partitions.delivered as unknown[]).length} 条，两次运行的 parameters.scope 或 parameters.exclude 不一致`, '脚本合并运行与脚本编写运行必须传入相同的 parameters.scope 和 parameters.exclude；若需更换范围，请重新用 start_run 开启新的脚本编写运行', [], excluded.size ? '/parameters' : '/parameters/scope');
     }
   }
   const skipped = whole && unnumbered.size > 0 ? `；另有 ${unnumbered.size} 个用例没有 autoid，不编译（要编译请作者补 autoid 后重新上传）` : '';
-  const scopeNote = frozenScope ? `（按开运行 scope 纳入 ${items.length} 条，另有 ${outOfScopeCases.length} 条未纳入本次范围）` : '';
+  const scopeNote = frozenScope ? `（按开运行 scope 纳入 ${items.length} 条${excluded.size ? `，scope 里另有 ${excluded.size} 条由 exclude 排除` : ''}，另有 ${outOfScopeCases.length} 条未纳入本次范围）` : '';
   const message = `文档 ${documentId} 选出 ${items.length} 个用例（${extraction.ruleSummary}）${scopeNote}${skipped}。配置声明决定核对依据：${profileRead.profile.synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}，身份 ${contractRead.contract.pinned.identity.slice(0, 12)}；不证明在真实设备上跑得通。`;
   return {
     items,

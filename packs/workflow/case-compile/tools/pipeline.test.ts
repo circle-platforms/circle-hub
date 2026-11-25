@@ -781,8 +781,9 @@ test('no delivery volume when nothing passed; a carry that refuses leaves nothin
 });
 
 // A compile of part of a mind map: the words the user gave, kept as they were, and the cases they name; one case left out when it was opened.
-const SCOPE = { words: '只编这三条：“登录后改密码”、"退出" 和 a\\b（第二行\n还有一行 ）', cases: ['990000000000001000', '990000000000001001', '990000000000001002'] };
 const LEFT_OUT = '990000000000009001';
+const SCOPE = { words: '只编这三条：“登录后改密码”、"退出" 和 a\\b（第二行\n还有一行 ）', cases: ['990000000000001000', '990000000000001001', '990000000000001002', LEFT_OUT] };
+const outsideScope = (call: string[]) => flagOf(call, '--exclude')!.split(',').filter((autoid) => !(JSON.parse(readFileSync(flagOf(call, '--scope')!, 'utf8')) as typeof SCOPE).cases.includes(autoid));
 // The version line and the three named documents the first open may have been given instead of the defaults.
 const NAMES = ['version', 'contract', 'inventory', 'profile'] as const;
 const NAMED = { version: '3.2', contract: 'doc:doc:other-contract', inventory: `doc:doc:other-inventory@${'d'.repeat(64)}`, profile: 'doc:doc:other-profile' } as const;
@@ -827,6 +828,7 @@ test('a reopen and a delivery volume keep the scope too, and merge the left-out 
   assert.equal(flagOf(opened!, '--scope'), join('reopen-1', 'compile-scope.json'));
   assert.deepEqual(JSON.parse(readFileSync(join('reopen-1', 'compile-scope.json'), 'utf8')), SCOPE);
   assert.equal(flagOf(opened!, '--exclude'), `${LEFT_OUT},${b}`);
+  assert.deepEqual(outsideScope(opened!), [], 'every left-out case is a case of the scope the same call carries');
   const carry = t.calls.find((call) => call.tool === 'case-compile/carry-plans.ts')!.args;
   assert.equal(flagOf(carry, '--exclude'), b, 'only the case this pipeline dropped is left out of the carry, the record\'s one was never in the plans');
   // a later round: the record now lists the dropped case too, and it is still one entry
@@ -847,6 +849,7 @@ test('a reopen and a delivery volume keep the scope too, and merge the left-out 
   assert.equal(flagOf(deliver!, '--scope'), join('deliver-1', 'compile-scope.json'));
   assert.deepEqual(JSON.parse(readFileSync(join('deliver-1', 'compile-scope.json'), 'utf8')), SCOPE);
   assert.equal(flagOf(deliver!, '--exclude'), `${LEFT_OUT},${dropped}`, 'a case in both lists is named once');
+  assert.deepEqual(outsideScope(deliver!), [], 'every left-out case is a case of the scope the same call carries');
   assert.equal(volume.state.volume?.n, 1);
 });
 

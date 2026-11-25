@@ -6,6 +6,7 @@ import { generateWorkbook, generateWorkbookSet, type GenerationInput } from './g
 import { generationFixture } from '../testing/workbook.ts';
 import { coreModel, workbookCheckInput, digest } from '../testing/workbook-model.ts';
 import { AUTOID } from './test-support.ts';
+import { SCOPED_REOPEN } from '../testing/scoped-reopen.ts';
 import DISPATCH from '../policies/dispatch.json' with { type: 'json' };
 
 const SECOND = '990000000000000032';
@@ -279,15 +280,14 @@ test('parameters.exclude leaves cases out of a whole-document run, and only ther
   assert.equal(project(recomposedStartInput(two, { exclude: [AUTOID], autoid: SECOND })).error?.code, 'case-compile.invalid_parameter', 'exclude and autoid do not go together');
   for (const bad of [[], [AUTOID, AUTOID], ['not-an-autoid'], 'x']) assert.equal(project(recomposedStartInput(two, { exclude: bad })).error?.code, 'case-compile.invalid_parameter', JSON.stringify(bad));
   assert.equal(project(recomposedStartInput(two, { exclude: ['990000000000000099'] })).error?.code, 'case-compile.autoid_not_found', 'an autoid the rule does not take');
-  assert.equal(project(recomposedStartInput(two, { exclude: [AUTOID, SECOND] })).error?.code, 'case-compile.autoid_not_found', 'nothing left to compile');
+  const nothingLeft = project(recomposedStartInput(two, { exclude: [AUTOID, SECOND] })).error as { code: string; message: string; pointer?: string } | undefined;
+  assert.deepEqual([nothingLeft?.code, nothingLeft?.pointer], ['case-compile.invalid_parameter', '/parameters/exclude'], 'nothing left to compile');
+  assert.match(nothingLeft?.message ?? '', /exclude 排除了本次能编译的全部用例/);
 });
 
-test('parameters.scope projects only in-scope cases, freezes out_of_scope metadata, and refuses exclude/autoid/shape conflicts', () => {
+test('parameters.scope projects only in-scope cases, freezes out_of_scope metadata, and refuses autoid/shape conflicts', () => {
   const THIRD = '990000000000000033';
   const three = parsed([caseOne, { ...caseOne, id: 'case-b', autoid: SECOND }, { ...caseOne, id: 'case-c', autoid: THIRD }]);
-  const both = project(recomposedStartInput(three, { scope: { words: '本次只编译前两条', cases: [AUTOID] }, exclude: [SECOND] }));
-  assert.equal(both.error?.code, 'case-compile.invalid_parameter', 'scope and exclude must be mutually exclusive');
-  assert.match(both.error?.message ?? '', /scope.*exclude/);
   const withAutoid = project(recomposedStartInput(three, { scope: { words: '本次只编译一条', cases: [AUTOID] }, autoid: AUTOID }));
   assert.equal(withAutoid.error?.code, 'case-compile.invalid_parameter', 'scope and autoid must be mutually exclusive');
   for (const bad of [
@@ -320,6 +320,44 @@ test('parameters.scope projects only in-scope cases, freezes out_of_scope metada
   const planResult = { slot: 'plan_result', external: null, meta: { kind: 'validation_result', record: 'd'.repeat(64) }, model: { kind: 'validation_result', body: { schema: 'validation@1', acceptance: 'accepted', run: 'run_plan', locks: { pack: FORMAT.generator }, partitions: { delivered } } } };
   const narrowed = project(recomposedStartInput(three, { plan_run: 'run_plan', scope: { words: '中途改成一条', cases: [AUTOID] } }, [workbook, planResult]));
   assert.equal(narrowed.error?.code, 'case-compile.workbook_context');
+});
+
+test('parameters.exclude inside parameters.scope leaves those cases out of the run and keeps the scope as it was given: what tools/open-compile.ts sends for a later plan run', () => {
+  const THIRD = '990000000000000033';
+  const three = parsed([caseOne, { ...caseOne, id: 'case-b', autoid: SECOND }, { ...caseOne, id: 'case-c', autoid: THIRD }]);
+  assert.deepEqual([SCOPED_REOPEN.scope.cases, SCOPED_REOPEN.exclude], [[AUTOID, SECOND], [SECOND]], 'the shared example names the cases of this model');
+  type Scoped = { error?: { code: string; message: string; fix: string; pointer?: string }; items: Array<{ id: string; fields: { autoid: string } }>; groups: Array<{ scope?: { words: string; cases: string[]; out_of_scope: Array<{ autoid: string }> } }> };
+  const reopened = projectItems(recomposedStartInput(three, SCOPED_REOPEN)) as Scoped;
+  assert.equal(reopened.error, undefined, JSON.stringify(reopened.error));
+  assert.deepEqual(reopened.items.map((item) => item.fields.autoid), [AUTOID], 'the excluded case of the scope is not compiled');
+  assert.deepEqual([reopened.groups[0].scope?.words, reopened.groups[0].scope?.cases], [SCOPED_REOPEN.scope.words, SCOPED_REOPEN.scope.cases], 'the frozen scope is the whole one');
+  assert.deepEqual(reopened.groups[0].scope?.out_of_scope.map((entry) => entry.autoid), [THIRD], 'an excluded case of the scope is not out of scope');
+  assert.match(JSON.stringify(reopened), /按开运行 scope 纳入 1 条，scope 里另有 1 条由 exclude 排除，另有 1 条未纳入本次范围/);
+  const outside = projectItems(recomposedStartInput(three, { scope: { words: '本次只编译第一条', cases: [AUTOID] }, exclude: [SECOND] })) as Scoped;
+  assert.deepEqual([outside.error?.code, outside.error?.pointer], ['case-compile.invalid_parameter', '/parameters/exclude'], 'an exclude that names a case outside the scope is refused');
+  assert.match(outside.error?.message ?? '', new RegExp(`exclude 里的 ${SECOND} 不在 parameters\\.scope\\.cases 里`));
+  const nothingLeft = projectItems(recomposedStartInput(three, { ...SCOPED_REOPEN, exclude: [AUTOID, SECOND] })) as Scoped;
+  assert.deepEqual([nothingLeft.error?.code, nothingLeft.error?.pointer], ['case-compile.invalid_parameter', '/parameters/exclude'], 'nothing left to compile, as without a scope');
+  assert.deepEqual([(projectItems(recomposedStartInput(three, { ...SCOPED_REOPEN, exclude: ['990000000000000099'] })) as Scoped).error?.code], ['case-compile.autoid_not_found'], 'an exclude that names no case of the document is refused as before');
+
+  const workbook = { slot: 'workbook', parser: 'xlsx@1', sha256: 'b'.repeat(64), model: coreModel(generateWorkbook(generationFixture())) };
+  const planResultOf = (items: Scoped['items']) => ({ slot: 'plan_result', external: null, meta: { kind: 'validation_result', record: 'd'.repeat(64) }, model: { kind: 'validation_result', body: { schema: 'validation@1', acceptance: 'accepted', run: 'run_plan', locks: { pack: FORMAT.generator }, partitions: { delivered: items.map((item) => ({
+    item: item.id,
+    requirements: [
+      { requirement: 'plan', status: 'satisfied', claims: [{ item: item.id, requirement: 'plan', statement: { text: '合成计划', data: { plan: 1 } } }] },
+      { requirement: 'commands_known', status: 'satisfied', claims: [{ statement: { verdict: 'support', data: { command_catalog: { root: 'c'.repeat(64), entries: [] } } } }] },
+    ],
+  })) } } } });
+  const merged = projectItems(recomposedStartInput(three, { plan_run: 'run_plan', ...SCOPED_REOPEN }, [workbook, planResultOf(reopened.items)])) as Scoped;
+  assert.equal(merged.error, undefined, JSON.stringify(merged.error));
+  assert.deepEqual(merged.items.map((item) => item.fields.autoid), [AUTOID]);
+  const withoutExclude = project(recomposedStartInput(three, { plan_run: 'run_plan', scope: SCOPED_REOPEN.scope }, [workbook, planResultOf(reopened.items)]));
+  assert.equal(withoutExclude.error?.code, 'case-compile.workbook_context', 'a merge run that leaves the exclude out asks for a case the plan run did not take');
+  const whole = projectItems(recomposedStartInput(three, { scope: SCOPED_REOPEN.scope })) as Scoped;
+  const addedExclude = projectItems(recomposedStartInput(three, { plan_run: 'run_plan', ...SCOPED_REOPEN }, [workbook, planResultOf(whole.items)])) as Scoped;
+  assert.deepEqual([addedExclude.error?.code, addedExclude.error?.pointer], ['case-compile.workbook_context', '/parameters'], 'a merge run that excludes a case the plan run took is refused');
+  assert.match(addedExclude.error?.message ?? '', /选出 1 条用例，所核对的脚本编写运行受理了 2 条，两次运行的 parameters\.scope 或 parameters\.exclude 不一致/);
+  assert.match(addedExclude.error?.fix ?? '', /相同的 parameters\.scope 和 parameters\.exclude/);
 });
 
 import projectRecompose from '../recompose/functions/project.ts';
@@ -433,6 +471,10 @@ test('recompose parameters.scope filters items & seal batch while retaining full
   const autoidOutside = projectItems(compileWithRecomp({ autoid: SECOND, pipeline: 'recomposed' })) as { error?: { code: string; pointer?: string } };
   assert.equal(autoidOutside.error?.code, 'case-compile.invalid_parameter', JSON.stringify(autoidOutside));
   assert.equal(autoidOutside.error?.pointer, '/parameters/autoid');
+
+  const leftOut = projectItems(compileWithRecomp({ scope: { words: '本次仅编第一、三条', cases: [THIRD, AUTOID] }, exclude: [THIRD] })) as { error?: unknown; items: Array<{ fields: { autoid: string } }> };
+  assert.equal(leftOut.error, undefined, JSON.stringify(leftOut.error));
+  assert.deepEqual(leftOut.items.map((item) => item.fields.autoid), [AUTOID], 'a case of the scope the recompose run froze is left out of a later plan run');
 
   const exactOk = projectItems(compileWithRecomp({ pipeline: 'recomposed', scope: { words: '本次仅编第一、三条', cases: [AUTOID, THIRD] } })) as { error?: unknown; items: Array<{ fields: { autoid: string } }> };
   assert.equal(exactOk.error, undefined, JSON.stringify(exactOk.error));

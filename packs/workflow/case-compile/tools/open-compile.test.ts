@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { envelopeOf, main, NotReady, plumbProblem, plumbStatusVia, type CallTool, type PlumbStatus, type ToolAnswer } from './open-compile.ts';
+import { SCOPED_REOPEN } from '../testing/scoped-reopen.ts';
 
 const BOOKING = 'run_01bookingbookingbooking0', RECOMPOSE = 'run_01recomposerecompose00', PLAN = 'run_01planplanplanplanplan00';
 const said = (envelope: Record<string, unknown>, failed = false): ToolAnswer => ({ failed, text: `合成答复\n供模型引用\n${JSON.stringify(envelope)}`, envelope });
@@ -124,7 +125,7 @@ test('a rework plan run reuses the accepted recompose run: no recompose start, t
 test('the record keeps what the compile was opened with: the scope as it was read and the left-out cases, each only when given, so that a later plan run can be opened with them again', async () => {
   const root = await skills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
   const answers = { list_task_packs: packs(), 'start_run:recompose': said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE, items: [{}] } }), 'start_run:case-compile': said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN, items: [{}] } }) };
-  const scope = { words: '只编这两条：“改密码”和 "退出"，a\\b（第二行\n还有一行 ）', cases: ['990000000000000001', '990000000000000002'] };
+  const scope = { words: '只编这两条：“改密码”和 "退出"，a\\b（第二行\n还有一行 ）', cases: ['990000000000000001', '990000000000000002', '990000000000000008', '990000000000000009'] };
   await writeFile(join(dir, 'scope.json'), JSON.stringify({ ...scope, note: 'a field the tool does not read' }));
   const h = hub(answers);
   const given = await run(argv(join(dir, 'open-compile.json'), ['--scope', join(dir, 'scope.json'), '--exclude', ' 990000000000000009 , 990000000000000008,']), h.connect, root);
@@ -145,12 +146,13 @@ test('the record keeps what the compile was opened with: the scope as it was rea
 
   // A plan run opened again on the recomposition run of the first (rework): the record keeps both there too.
   const again = hub(answers);
-  const reopened = await run(argv(join(dir, 'again.json'), ['--scope', join(dir, 'scope.json'), '--exclude', '990000000000000009', '--recompose-run', RECOMPOSE, '--recompose-record', 'rec:' + 'c'.repeat(64)]), again.connect, root);
+  await writeFile(join(dir, 'scope-again.json'), JSON.stringify(SCOPED_REOPEN.scope));
+  const reopened = await run(argv(join(dir, 'again.json'), ['--scope', join(dir, 'scope-again.json'), '--exclude', SCOPED_REOPEN.exclude.join(','), '--recompose-run', RECOMPOSE, '--recompose-record', 'rec:' + 'c'.repeat(64)]), again.connect, root);
   assert.equal(reopened.code, 0, reopened.out);
   assert.deepEqual(again.calls.map((c) => c.name + ':' + String(c.args.pack ?? '')), ['list_task_packs:', 'start_run:case-compile']);
-  assert.deepEqual(again.calls[1]!.args.parameters, { scope, exclude: ['990000000000000009'] });
+  assert.deepEqual(again.calls[1]!.args.parameters, SCOPED_REOPEN);
   const second = JSON.parse(await readFile(join(dir, 'again.json'), 'utf8'));
-  assert.deepEqual([second.scope, second.exclude], [scope, ['990000000000000009']]);
+  assert.deepEqual([second.scope, second.exclude], [SCOPED_REOPEN.scope, SCOPED_REOPEN.exclude]);
 
   // A scope file that cannot be read is refused as before and nothing is written.
   const bad = await run(argv(join(dir, 'bad.json'), ['--scope', join(dir, 'missing.json')]), hub(answers).connect, root);

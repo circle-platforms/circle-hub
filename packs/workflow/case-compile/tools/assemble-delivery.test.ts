@@ -74,7 +74,7 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
       parameters: {
         plan_run: plan,
         ...(plans[plan]?.record?.parameters && (plans[plan].record.parameters as Record<string, unknown>).scope !== undefined
-          ? { scope: (plans[plan].record.parameters as Record<string, unknown>).scope }
+          ? { scope: (plans[plan].record.parameters as Record<string, unknown>).scope, ...((plans[plan].record.parameters as { exclude?: string[] }).exclude?.length ? { exclude: (plans[plan].record.parameters as { exclude: string[] }).exclude } : {}) }
           : {}),
       },
       sources: plans[plan].record.sources,
@@ -622,7 +622,7 @@ test('a --scope option is refused: the scope of a delivery is the one frozen in 
 function withScope(p: ReturnType<typeof planRun>, scope: { words: string; cases: string[]; out_of_scope?: Array<{ autoid: string; title: string }> } | undefined) {
   const copy = structuredClone(p);
   const params: Record<string, unknown> = { ...(copy.record.parameters as Record<string, unknown>) };
-  delete params.exclude;
+  if (Array.isArray(params.exclude) && params.exclude.length === 0) delete params.exclude;
   if (scope) {
     params.scope = { words: scope.words, cases: scope.cases };
     (copy.record as Record<string, unknown>).groups = [{ kind: 'case-compile', scope: { words: scope.words, cases: scope.cases, out_of_scope: scope.out_of_scope ?? [] } }];
@@ -692,6 +692,33 @@ test('assemble-delivery uses matching frozen Hub parameters.scope and discloses 
   assert.match(report, /未纳入本次范围的原始用例（2 条/);
   assert.match(report, new RegExp(`${CASES[2]} 合成意图 3`));
   assert.match(report, new RegExp(`${CASES[3]} 合成意图 4`));
+});
+
+test('assemble-delivery takes a later plan run of the same frozen scope that leaves one of its cases out with parameters.exclude', async (t) => {
+  const scope = { words: '只做 101 和 102 两条核心场景', cases: [CASES[0], CASES[1]] };
+  const scopedPlan1 = withScope(planRun(PLAN1, [CASES[0], CASES[1]], []), scope);
+  const scopedPlan2 = withScope(planRun(PLAN2, [CASES[0]], [CASES[1]]), scope);
+  const h = await hub(
+    ['pass'],
+    scopedPlan2.workbook,
+    { [WHOLE]: [job('a', WHOLE, PLAN1, [CASES[0], CASES[1]], scopedPlan1.workbook, ['pass', 'fail'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0]], scopedPlan2.workbook, ['pass'])] },
+    { [PLAN1]: scopedPlan1, [PLAN2]: scopedPlan2 },
+    [WHOLE, FINAL],
+    false,
+    [],
+    'none',
+  );
+  t.after(h.close);
+  const dir = await mkdtemp(join(tmpdir(), 'cc-scoped-excluded-delivery-'));
+  const out = join(dir, 'out');
+  const done = await run(h, await notes({ [CASES[1]]: NOTES[CASES[1]] }), out, `${WHOLE},${FINAL}`);
+  assert.equal(done.code, 0, done.stderr);
+  const payload = JSON.parse(done.stdout);
+  assert.deepEqual(payload.totals, { cases: 2, delivered: 1, failed: 1, unsettled: 0, unrun: 0 });
+  assert.deepEqual([payload.in_scope_total, payload.out_of_scope_total], [2, 2]);
+  assert.match(payload.reply, /^原始脑图共 4 条用例，本次范围 2 条：生成成功 1 条，失败 1 条；其余 2 条不在本次范围内。\n/);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.deepEqual([summary.scope.words, summary.scope.cases], [scope.words, scope.cases], 'the scope of the delivery is the frozen one, whole');
 });
 
 test('assemble-delivery refuses one scoped run paired with an unscoped run, and reads frozen out_of_scope when --recompose is omitted', async (t) => {

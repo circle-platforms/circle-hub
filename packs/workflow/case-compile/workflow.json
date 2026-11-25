@@ -148,7 +148,7 @@
     },
     {
       "name": "exclude",
-      "description": "整份文档编译时先不编译的 autoid 列表（按原始文字匹配，每个都要是按规则取到的用例，找不到拒绝开始运行；不与 autoid 同用）。用于某些用例暂时过不了、其余要先出簿：计划运行与核验运行填同一列表，最终报告要写明排除了哪些、缺什么、下一步",
+      "description": "整份文档编译或按范围编译时先不编译的 autoid 列表（按原始文字匹配，每个都要是按规则取到的用例，找不到拒绝开始运行；与 scope 同用时每个都要在 scope.cases 里；不与 autoid 同用）。用于某些用例暂时过不了、其余要先出簿：计划运行与核验运行填同一列表，最终报告要写明排除了哪些、缺什么、下一步",
       "required": false,
       "schema": {
         "type": "array",
@@ -163,7 +163,7 @@
     },
     {
       "name": "scope",
-      "description": "按范围编译时必传，开运行时冻结进运行记录（不可与 exclude 或 autoid 同用）：{\"words\":\"<范围原话>\",\"cases\":[\"<autoid>\",...]}。脚本编写运行与脚本合并运行须传相同 scope；组交付时只从 Hub 读取并逐运行核对一致，未纳入用例按原句披露、不阻塞其余用例；中途改范围须用 start_run 重开运行",
+      "description": "按范围编译时必传，开运行时冻结进运行记录（不可与 autoid 同用；与 exclude 同用时，本次运行编译 scope.cases 里没有被 exclude 排除的用例，scope 仍写完整的范围）：{\"words\":\"<范围原话>\",\"cases\":[\"<autoid>\",...]}。脚本编写运行与脚本合并运行须传相同 scope，有 exclude 时也要相同；组交付时只从 Hub 读取并逐运行核对一致，未纳入用例按原句披露、不阻塞其余用例；中途改范围须用 start_run 重开运行",
       "required": false,
       "schema": {
         "type": "object",
