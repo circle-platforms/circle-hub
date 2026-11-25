@@ -25,6 +25,7 @@ import { beginObservedCall } from './inflight-calls.ts';
 import { retainReadReply } from './read-replies.ts';
 import { authenticateAccessOnly, CONSOLE_SESSION_REFUSED } from './access-auth.ts';
 import { identifyRequest } from './request-entry.ts';
+import { privateDiagnosticScope, rejectedDiagnostics } from './call-diagnostics.ts';
 import { bearerToken } from './token-echo.ts';
 
 export interface McpOptions {
@@ -455,6 +456,11 @@ async function answer(
           if (own === null || idKey(r?.id) !== own.key) continue;
           if (r.error !== undefined) own.state.callResult = 'error';
           else own.state.callResult ??= 'ok';
+          if (own.state.method === 'tools/call' && own.state.callResult === 'error') {
+            const errors = isPlainObject(r.result) && isPlainObject(r.result.structuredContent) ? r.result.structuredContent.errors : [r.error];
+            const personal = await privateDiagnosticScope(deps, principal, own.state.tool, own.state.args).catch(() => true);
+            for (const reason of rejectedDiagnostics(own.state.tool, own.state.args, errors, personal)) own.state.notes.push(reason);
+          }
         }
       } catch {
         // An answer that is not JSON leaves the call without a result: counted as an error below.

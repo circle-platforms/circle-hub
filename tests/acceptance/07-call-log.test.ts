@@ -90,6 +90,92 @@ describe('scenario 7: call log', () => {
     assert.ok(oneCall.body.includes(SESSION_ID), 'and its session id');
   });
 
+  async function checkEchoedError(trace: string, errors: {code:string; path?:string; message:string}[], marker: string) {
+    assert.ok(errors.some(error => error.message.includes(marker)), 'the caller receives the reason including its input');
+    const [row] = (await bed.hub.records.callLog.query(bed.hub.admin.principal, { traceId:trace })).items;
+    const reasons = row.admin_reasons ?? [];
+    assert.ok(reasons.some(reason => reason.startsWith('参数预览 ')));
+    assert.ok(!reasons.join('\n').includes(marker), 'administrator reasons omit the echoed input');
+    const diagnostics = reasons.filter(reason => reason.startsWith('调用错误 ')).map(reason => JSON.parse(reason.slice('调用错误 '.length)));
+    assert.deepEqual(diagnostics, errors.map(({code, path}) => path === undefined ? {code} : {code, path}));
+  }
+
+  const encoded = Buffer.from('合成文件内容，用于核对被拒上传。').toString('base64');
+  for (const [input, marker, label] of [
+    ['folder/synthetic-local-marker/file.txt', 'synthetic-local-marker', 'local path'],
+    [encoded.slice(0, 16) + '\n' + encoded.slice(16), encoded.slice(0, 16), 'wrapped base64'],
+  ]) {
+    test('rejected upload omits echoed ' + label + ' from administrator reasons', async () => {
+      const member = await bed.connect(bed.reviewer);
+      const answer = await member.call('upload_file', {file_path:input});
+      assert.equal(answer.isError, true);
+      await checkEchoedError(answer.out.trace, answer.out.errors, marker);
+    });
+  }
+
+  test('rejected team pack omits echoed parameter from administrator reasons', async () => {
+    const { hub } = bed;
+    await hub.assignPack(bed.reviewer.principal, 'test-bed');
+    const inventory = {schema:'test-bed-manifest@1', beds:[{name:'synthetic', services:[], reserved:[],
+      devices:[{name:'client', type:'client', ipv4:['192.0.2.10/26'], ipv6:[]}] }]};
+    await hub.hub.docs.put(hub.admin.principal, 'synthetic-count', Buffer.from(JSON.stringify(inventory)), {fileName:'synthetic.json'});
+    const marker = 'synthetic-count-text';
+    const member = await bed.connect(bed.reviewer);
+    const answer = await member.call('start_run', {
+      pack:'test-bed', inputs:{inventory:{external:'doc:doc:synthetic-count'}},
+      parameters:{addresses:{segment:'192.0.2.0/26', count:marker}},
+    });
+    assert.equal(answer.isError, true);
+    await checkEchoedError(answer.out.trace, answer.out.errors, marker);
+  });
+
+  test('a rejected pack function has a private argument preview and the code and path of each returned error', async () => {
+    const { logsCommand } = await import('../../hub/server/cli.ts');
+    const { hub } = bed;
+    await hub.assignPack(bed.reviewer.principal, 'test-bed');
+    const inventory = { schema: 'test-bed-manifest@1', beds: [{ name: 'synthetic', services: [], reserved: [], devices: [
+      { name: 'a', type: 'client', ipv4: ['192.0.2.10/26'], ipv6: [] },
+      { name: 'b', type: 'client', ipv4: ['192.0.2.10/26'], ipv6: [] },
+    ] }] };
+    await hub.hub.docs.put(hub.admin.principal, 'synthetic-log', Buffer.from(JSON.stringify(inventory)), { fileName: 'synthetic.json' });
+    const member = await bed.connect(bed.reviewer);
+    const answer = await member.call('start_run', { pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:synthetic-log' } }, parameters: { action: 'search' } });
+    assert.equal(answer.out.errors[0].code, 'test-bed.manifest_invalid');
+    const lines: string[] = [];
+    const io = { cwd: hub.records.dataDir, env: { CIRCLE_HUB_TOKEN: hub.admin.token }, stdout: (s: string) => lines.push(s), stderr: (s: string) => assert.fail(s) };
+    assert.equal(await logsCommand(['export', '--tool', 'start_run'], {
+      io, records: async () => hub.records, config: () => assert.fail('the supplied token authenticates directly'), deps: async () => hub.deps, actingAdmin: async () => hub.admin.principal,
+    }, { io }), 0);
+    const row = lines.join('\n').split('\n').map(s => JSON.parse(s)).find(row => row.trace_id === answer.out.trace);
+    const reasons: string[] = row.admin_reasons ?? [];
+    const preview = reasons.find(reason => reason.startsWith('参数预览 '));
+    assert.ok(preview, 'administrator export has a redacted preview');
+    const args = JSON.parse(preview.slice('参数预览 '.length));
+    assert.equal(args.pack, 'test-bed');
+    assert.equal(args.inputs.inventory.external, 'doc:doc:synthetic-log');
+    assert.deepEqual(Object.keys(args.parameters), ['action']);
+    assert.equal(args.parameters.action.type, 'string');
+    assert.ok(!preview.includes('search'));
+    const errors = reasons.filter(reason => reason.startsWith('调用错误 ')).map(reason => JSON.parse(reason.slice('调用错误 '.length)));
+    assert.deepEqual(errors, answer.out.errors.map(({ code, path }) => path === undefined ? { code } : { code, path }));
+    const inspector = await consoleClient.get('/console/records?call=' + row.digest);
+    assert.ok(inspector.body.includes('参数预览') && inspector.body.includes(answer.out.errors[0].code));
+    assert.ok(!inspector.body.includes(answer.out.errors[0].message));
+    assert.ok(answer.out.errors[0].fix && !inspector.body.includes(answer.out.errors[0].fix));
+    assert.equal(row.args_preview, null);
+    const publicReceipt = await hub.records.store.get(row.digest);
+    const memberRow = (await hub.records.callLog.query(bed.reviewer.principal, { traceId: answer.out.trace })).items[0];
+    const observation = await member.call('get_nodes', { observability: { calls: { trace: answer.out.trace } } });
+    for (const view of [publicReceipt, memberRow, observation.out]) {
+      assert.doesNotMatch(JSON.stringify(view), /synthetic-log|参数预览|manifest_invalid.*自动化测试环境清单/);
+    }
+    const success = await member.call('list_task_packs', {});
+    const okRow = (await hub.records.callLog.query(hub.admin.principal, { traceId: success.out.trace })).items[0];
+    assert.equal(okRow.call_result, 'ok');
+    assert.equal(okRow.args_preview, null);
+    assert.ok(!okRow.admin_reasons?.some(reason => reason.startsWith('参数预览 ')));
+  });
+
   test('refused batch JSON-RPC request logs one call log line per request in batch', async () => {
     // Send a batch request (array of 3 JSON-RPC requests) to /mcp
     const batchBody = JSON.stringify([

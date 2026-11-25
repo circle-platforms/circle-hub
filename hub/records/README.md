@@ -277,12 +277,14 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
     idempotent. A client session header outside printable ASCII is kept as `sha256:<digest>`. **`adminNote`** (the real
     reason behind a neutral answer, scenario 6) is kept outside the `call_log` record, in `call_notes`: the digest a user
     sees covers exactly what the user sees, so no note can be tested against it. `query()` adds notes for admins only and
-    re-reads the account each time; a user sees only their own calls. The database is authoritative; the JSONL line (which
-    carries the note, the files are the admin's) is written after the commit; when that write fails, `append` throws
+    re-reads the account each time; a user sees only their own calls. The database is authoritative; the JSONL line carries the public receipt and
+    is written after the commit; when that write fails, `append` throws
     `RecordsError` and a retry with the same span id writes the missing line; `repairFiles({from, to})` appends every line
     a file misses (after a crash), leaving a line cut by a crash as it is. **B08 F[7]** (first 1 KB of the arguments after
     schema-based redaction): records accepts an optional `argsPreview` (at most 1024 bytes) and does not keep one the
-    credential scanner flags; producing it, or not, is the server's decision (see Deviations).
+    credential scanner flags. The MCP server puts its redacted preview and the code and optional path of each error in
+    private administrator reasons. Error messages and fixes can quote input values and remain in the caller's response.
+    The public receipt and JSONL stay free of argument text.
 12. **Configuration**: `CIRCLE_HUB_DATA_DIR`, `CIRCLE_HUB_PORT` and one of `CIRCLE_HUB_DATABASE_SOCKET_DIR` /
     `CIRCLE_HUB_DATABASE_HOST` are required; there is no default database and no default port (the earlier verification
     stack still runs on its port on the same Mac). Hosts are loopback IP literals only (`localhost` is refused). Any unknown
@@ -546,8 +548,8 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
 
 - **B08 F[7] versus the brief.** B08 lists "参数前 1 KB（按 schema 脱敏后）"; the brief says digest and size only, and
   scenario 7 checks that. By the brief's own rule the model wins, so records keeps an optional redacted preview when the
-  server gives one, and nothing otherwise; scenario 7 holds as long as the preview carries no case text. The owner should
-  confirm which way the server goes (Open questions).
+  server gives one, and nothing otherwise. The server keeps the public receipt at digest and size, and sends the redacted
+  preview and the code and optional path of each error of a rejected MCP tool call to the administrator reasons.
 - **API changes made for the review findings** (no other package imported them yet): `Artifacts.bytes()` is gone, replaced
   by `source()` (tier-aware) and `trustedBytes()`; `artifactShareKey` takes the source artifact record, not a sha256;
   `CredentialScan` gained `inspected` and the scanner is `credential-scan@2`; `CallLogEntry` gained `span_id` and
@@ -581,7 +583,8 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
 
 ## Open questions
 
-- **B08 F[7]**: does the server send a redacted preview (and which fields does its redaction keep)?
+- **B08 F[7]** (resolved on 2026-11-25): the server supplies the preview of a failed tool call in the private
+  administrator reasons. See the server README for the fields and visibility.
 - **Real manuals not sampled here**: which detectors and how many findings the real manuals give is not known to this
   package. A manual with more than 100 findings cannot be accepted (decision 18). If real manuals have that many example
   URLs, the owner decides between a new scanner version that keeps more findings per scan (an admin must still be able to

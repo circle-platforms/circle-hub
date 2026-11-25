@@ -411,7 +411,8 @@ the optional server stream, answered 405 as the specification prescribes for eve
 unauthenticated requests and Host/Origin refusals (no account to attribute; loopback only). Every admin note is clipped to
 what records accepts (no NUL, no lone surrogate, cut between code points); should records still refuse a note, the line
 is written once more without it and the operator's log says so. A call-log write that fails is reported to the operator's
-log and does not change the answer. No argument preview is sent (B08 F[7], see Deviations). `serve` calls
+log and does not change the answer. For failed tool calls the administrator reasons carry a schema-redacted argument
+preview and each returned error's code and optional path (B08 F[7], see Deviations). `serve` calls
 `CallLog.repairFiles` for the last three days at start.
 
 ## Traces (B08, decision 146)
@@ -1005,8 +1006,21 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 - **ensureHubDatabase** is called only when the database is the platform's own socket (`<data dir>/run`); a server
   configured with another database (tests, development) never touches a cluster.
 - **Call log**: protocol methods are logged too (B08: every MCP call), and transport refusals of authenticated callers;
-  a GET is not (it is the client's probe the specification answers 405, in every session); no `argsPreview` is produced
-  (brief: digest and size only; records' open question on B08 F[7]).
+  a GET is not (it is the client's probe the specification answers 405, in every session). A failed MCP tool call adds a
+  schema-redacted preview (at most 1,024 UTF-8 bytes) to the administrator reasons, visible in `logs export` and the
+  console. Each error is logged with its code and any supplied path. Its message and fix are omitted because they may
+  repeat an input or document text. The caller still receives the complete error. The preview keeps argument keys and
+  declared identifiers, numbers, booleans and enums. Other values, including workflow parameter values and values of
+  personal-space calls, are represented by type, length and a 12-digit digest prefix. Credential checks apply before
+  storage. Successful calls have no preview.
+
+  A personal workflow name supplied without `pack_space` is a team-catalog identifier on this call. A tree address
+  with a missing or mistyped root likewise has no established personal owner. The preview can show these identifiers.
+  The existing D05 R[3] administrator notes already describe the attempted pack or root lookup.
+  Outside personal-space calls, `product`, `version` and `build` appear as supplied. Free-form object keys are kept
+  even in personal-space previews. A `get_nodes` call without an argument object (`null`) is not classified as personal.
+  Its preview contains no supplied values and the logged error has only its code and optional path.
+  The receipt, service JSONL, observability skill and non-administrator views exclude the private diagnostics.
 - **Batches** are refused (decision 5). A client that negotiated protocol 2025-03-26, which still had batching, must send
   one request per POST; the SDK clients do.
 - **Console form posts** must come from this server's own origin (stricter than "a loopback origin"): SameSite does not

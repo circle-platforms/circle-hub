@@ -4,11 +4,26 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { runLocalChecks } from '../functions/local-checks.ts';
 import { main, recordFor, submissionFor } from './submit-records.ts';
 
 const atom = (id: string, kind: string, text: string, after: string[] = []) => ({ id, kind, text, content: text, reference: `src:${'a'.repeat(64)}/kityminder@1/n/${id}`, selector: `n/${id}`, node_id: id, start: 0, end: text.length, labels: [], explicit_labels: [], number_label: null, after });
 const item = (id = 'n/case') => ({ id, fields: { case_id: 'ORBIT-1', source_ref: 'src:' + 'a'.repeat(64), node: 'n/case', atoms: [atom('a1', 'action', '合成动作一'), atom('a2', 'action', '合成动作二'), atom('a3', 'expectation', '合成期望', ['a2'])] } });
 const method = { kind: 'declared', text: '合成方法', sources: ['ref'], basis: '合成依据' };
+
+async function checkSent(run: { run: string; items: ReturnType<typeof item>[] }, sent: ReturnType<typeof submissionFor>, seal: 'unknown' | 'support') {
+  assert.equal(sent.run, run.run);
+  const checks = await runLocalChecks({ run, items: sent.items, complete: true, nodes: new Map() });
+  assert.deepEqual(checks.checks, ['record', 'full_set']);
+  assert.deepEqual(checks.outcomes.filter(row => row.check === 'full_set').map(row => row.outcome.verdict), [seal]);
+  for (const { item } of sent.items) {
+    const outcomes = checks.outcomes.filter(row => row.check === 'record' && row.item === item);
+    assert.deepEqual(outcomes.map(({ outcome }) => [outcome.verdict, outcome.reason, outcome.pointer]), [
+      ['unknown', 'missing_input', '/record/contract/method/sources/0'],
+      ['unknown', 'missing_input', '/record'],
+    ]);
+  }
+}
 
 test('the tool fills what the projection knows, so the model never retypes author text', () => {
   const record = recordFor(item(), { method }, 'scripted');
@@ -39,11 +54,12 @@ test('a candidate never signs, and an atom the case does not have is refused', (
   assert.throws(() => recordFor(item(), {}, 'scripted'), /缺少用例重组的方法/);
 });
 
-test('a submission covers every frozen case, and only those', () => {
+test('a submission covers every frozen case, and only those', async () => {
   const run = { run: 'run_x', items: [item('one'), item('two')] };
   assert.throws(() => submissionFor(run, [{ item: 'one', method }], 'scripted'), /还有 1 条原始用例没有重组后的用例/);
   assert.throws(() => submissionFor(run, [{ item: 'one', method }, { item: 'two', method }, { item: 'three', method }], 'scripted'), /不属于本次用例重组的原始用例/);
   const sent = submissionFor(run, [{ item: 'one', method }, { item: 'two', method }], 'scripted');
+  await checkSent(run, sent, 'support');
   assert.equal(sent.items.length, 2);
   assert.equal(sent.items[0].slots.record[0].quotes.length, 3);
 });
@@ -83,6 +99,7 @@ test('submit-records main retries GET /run and explicit non-execution 503 on sub
   };
   const runPayload = { schema: 'run-export@1', run: { run: RUN, items: [item('n/case')] } };
 
+  const calls: ReturnType<typeof submissionFor>[] = [];
   let gets = 0, posts = 0;
   const serverRecover = createServer((request, response) => {
     if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end('unauth'); return; }
@@ -93,8 +110,10 @@ test('submit-records main retries GET /run and explicit non-execution 503 on sub
       response.end(JSON.stringify(runPayload));
       return;
     }
-    request.resume();
+    let body = '';
+    request.on('data', chunk => { body += chunk; });
     request.on('end', () => {
+      calls.push(JSON.parse(body).params.arguments);
       posts++;
       if (posts === 1) { response.writeHead(503); response.end('Hub 重启中，这次调用没有执行'); return; }
       response.writeHead(200, { 'content-type': 'application/json' });
@@ -119,6 +138,8 @@ test('submit-records main retries GET /run and explicit non-execution 503 on sub
   assert.equal(code1, 0, err1.join(''));
   assert.equal(gets, 2);
   assert.equal(posts, 2);
+  assert.deepEqual(calls[0], calls[1]);
+  await checkSent(runPayload.run, calls[1]!, 'support');
   assert.deepEqual(pauses1, [4_000, 2_000]);
   assert.match(out1.join(''), /1 条重组后的用例已交给 Hub 核对/);
 
@@ -216,10 +237,11 @@ test('H1/H3/H4: submit-records checks empty stdin, names --records and offending
   assert.match(noTokRes.err, /切勿在 <<'EOF' 前换行/);
 });
 
-test('a partial submission covers the cases written so far; a whole one still refuses a missing case', () => {
+test('a partial submission covers the cases written so far; a whole one still refuses a missing case', async () => {
   const run = { run: 'run_x', items: [item('one'), item('two')] };
   assert.throws(() => submissionFor(run, [{ item: 'one', method }], 'scripted'), /还有 1 条原始用例没有重组后的用例/);
   const sent = submissionFor(run, [{ item: 'one', method }], 'scripted', true);
+  await checkSent(run, sent, 'unknown');
   assert.deepEqual(sent.items.map((row: any) => row.item), ['one']);
   assert.throws(() => submissionFor(run, [{ item: 'three', method }], 'scripted', true), /不属于本次用例重组的原始用例/);
 });
@@ -227,7 +249,7 @@ test('a partial submission covers the cases written so far; a whole one still re
 test('parallel per-case submissions take turns, each reading the directory inside the lock, so the later one holds every record', async () => {
   const RUN = 'run_01lockedlockedlocked0000';
   const run = { run: RUN, items: [item('one'), item('two')] };
-  const seen: string[][] = [];
+  const seen: ReturnType<typeof submissionFor>[] = [];
   let release!: () => void; const firstHeld = new Promise<void>((done) => { release = done; });
   let calls = 0;
   const server = createServer((request, response) => {
@@ -235,7 +257,7 @@ test('parallel per-case submissions take turns, each reading the directory insid
     let body = ''; request.on('data', (c) => { body += c; });
     request.on('end', async () => {
       const sent = JSON.parse(body).params.arguments;
-      seen.push(sent.items.map((row: any) => row.item));
+      seen.push(sent);
       if (++calls === 1) await firstHeld;
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: '受理' }] } }));
@@ -257,7 +279,9 @@ test('parallel per-case submissions take turns, each reading the directory insid
     assert.equal(seen.length, 1, 'the second submission waits for the lock');
     release();
     assert.deepEqual([await first, await second], [0, 0]);
-    assert.deepEqual(seen, [['one'], ['one', 'two']]);
+    assert.deepEqual(seen.map(sent => sent.items.map((row: { item: string }) => row.item)), [['one'], ['one', 'two']]);
+    await checkSent(run, seen[0]!, 'unknown');
+    await checkSent(run, seen[1]!, 'support');
     await assert.rejects(readFile(join(directory, '.submit.lock')), 'the lock is gone afterwards');
   } finally { process.stdout.write = quiet; server.closeAllConnections(); await new Promise((done) => server.close(done)); }
 });

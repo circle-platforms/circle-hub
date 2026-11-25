@@ -6,6 +6,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { main as openCompile } from './open-compile.ts';
+import { makeSkills } from '../testing/tool-skills.ts';
+import { compileProjection } from '../testing/tool-projection.ts';
 import { expandText } from '../functions/length-literals.ts';
 import { JEV_ASK_SPACING_MS, JEV_UNANSWERED_LIMIT, collect, forLead, initState, main, next, recordStatus, reopen, resume, retry, rework, summary, type CaseState, type Gates, type PipelineState, type RunTool, type ToolRun } from './pipeline.ts';
 
@@ -25,13 +28,13 @@ async function world(cases: number) {
   }
   return dir;
 }
-function tools(script: (tool: string, args: string[]) => ToolRun | undefined) {
+function tools(script: (tool: string, args: string[], stdin?: string) => ToolRun | undefined | Promise<ToolRun | undefined>) {
   const calls: Array<{ tool: string; args: string[]; stdin?: string }> = [];
   const run: RunTool = async (skill, tool, args, stdin) => {
     calls.push({ tool: `${skill}/${tool}`, args, stdin });
     if (tool === 'task-brief.ts') return ok(`派发提示 ${args[args.indexOf('--role') + 1]} ${args[args.indexOf('--case') + 1]}`);
     if (tool === 'refresh-late.ts') { for (const name of ['00', '01', '02', '03', '04', '05', '06', '07']) await writeFile(join('plan-run', 'briefs', `${name}.md`), '合成简报'); return ok(); }
-    return script(tool, args) ?? ok();
+    return await script(tool, args, stdin) ?? ok();
   };
   return { run, calls };
 }
@@ -471,7 +474,7 @@ test('the record status is read from the answer partitions, and a refused submis
 
 const NEXT_PLAN = 'run_01planplanplanplanplan01';
 const OPENED = { ...OPEN, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01bookingbookingbooking0', recompose_record: 'rec:' + 'a'.repeat(64) };
-async function afterDevice(rows: (autoids: string[]) => unknown[], options: { judge?: 'model' | 'jev'; more?: (tool: string, args: string[]) => ToolRun | undefined } = {}) {
+async function afterDevice(rows: (autoids: string[]) => unknown[], options: { originalAutoids?: string[]; judge?: 'model' | 'jev'; more?: (tool: string, args: string[]) => ToolRun | undefined } = {}) {
   await world(3);
   const state = await initState('recompose-run', 'plan-run', options.judge === undefined ? OPEN : { ...OPEN, judge: options.judge }, 'synthetic-model');
   for (const c of state.cases) {
@@ -482,10 +485,28 @@ async function afterDevice(rows: (autoids: string[]) => unknown[], options: { ju
   await writeFile(join('returns-1', 'index.json'), JSON.stringify({ schema: 'device-returns@1', jobs: [{ outcome: 'effective', rows: rows(state.cases.map((c) => c.autoid)) }] }));
   let opens = 0;
   const uncarried: string[] = [];
-  const t = tools((tool, args) => {
+  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' });
+  const project = compileProjection(options.originalAutoids ?? state.cases.map(c => c.autoid));
+  const t = tools(async (tool, args, stdin) => {
     const at = (name: string) => args[args.indexOf(name) + 1]!;
-    // The record the tool writes keeps what it was given besides the mind map: the scope it read, the cases left out, the version line and the named documents.
-    if (tool === 'open-compile.ts') { opens++; writeFileSync(at('--out'), JSON.stringify({ ...OPENED, plan_run: opens === 1 ? NEXT_PLAN : `run_01planplanplanplanplan0${opens}`, ...(args.includes('--judge') ? { judge: at('--judge') } : {}), ...Object.fromEntries(['version', 'contract', 'inventory', 'profile'].filter((name) => args.includes(`--${name}`)).map((name) => [name, at(`--${name}`)])), ...(args.includes('--scope') ? { scope: JSON.parse(readFileSync(at('--scope'), 'utf8')) } : {}), ...(args.includes('--exclude') ? { exclude: at('--exclude').split(',') } : {}), ...(args.includes('--booking-acquired') && at('--booking-acquired') === 'yes' ? { booking_acquired: true } : {}) })); return ok('就绪'); }
+    if (tool === 'open-compile.ts') {
+      const write = process.stdout.write;
+      let stdout = '';
+      process.stdout.write = ((s: string) => { stdout += s; return true; }) as typeof write;
+      try {
+        const code = await openCompile(args, async () => stdin!.split('\n'), () => async (name, params) => {
+          if (name === 'list_task_packs') return { failed: false, text: '', envelope: { packs: [{ id: 'case-compile', version: '3.22.0' }, { id: 'recompose', version: '1.3.0' }] } };
+          assert.equal(name, 'start_run');
+          assert.equal(params.pack, 'case-compile');
+          const items = project(params);
+          opens++;
+          return { failed: false, text: '', envelope: { run: { run: opens === 1 ? NEXT_PLAN : `run_01planplanplanplanplan0${opens}`, items } } };
+        }, root, async () => ({ status: 'ready', phase: 'ready', models_status: { judge: { step: 'ready', state: '可用', self_check_passed: true } } }));
+        return { code, stdout, stderr: '' };
+      } finally {
+        process.stdout.write = write;
+      }
+    }
     if (tool === 'download-run.ts') { mkdirSync(join(at('--out'), 'briefs'), { recursive: true }); writeFileSync(join(at('--out'), 'run.json'), JSON.stringify({ run: NEXT_PLAN })); for (const k of ['00', '01', '02']) writeFileSync(join(at('--out'), 'briefs', `${k}.md`), '合成简报'); return ok(); }
     if (tool === 'carry-plans.ts') {
       mkdirSync(at('--plans'), { recursive: true });
@@ -792,7 +813,7 @@ const flagOf = (args: string[], name: string): string | undefined => args.includ
 const openCalls = (calls: Array<{ tool: string; args: string[] }>) => calls.filter((call) => call.tool === 'case-compile/open-compile.ts').map((call) => call.args);
 
 test('a compile of part of a mind map keeps its scope and its left-out cases in every plan run a rework opens, and the record of each open says so for the next', async () => {
-  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+  const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }], { originalAutoids: SCOPE.cases });
   const first = { ...OPENED, scope: SCOPE, exclude: [LEFT_OUT] };
   await rework(state, first, 'returns-1', 'notes', gates(t.run));
   const [opened] = openCalls(t.calls);
@@ -802,6 +823,7 @@ test('a compile of part of a mind map keeps its scope and its left-out cases in 
   assert.deepEqual(JSON.parse(text), SCOPE);
   assert.ok(text.includes(JSON.stringify(SCOPE.words)), 'the words are written as the user gave them');
   const recorded = JSON.parse(readFileSync(state.open!, 'utf8'));
+  assert.equal(recorded.items, 3);
   assert.deepEqual([recorded.scope, recorded.exclude], [SCOPE, [LEFT_OUT]], 'the next open wrote both down again');
 
   // The round after it starts from that record, and keeps both.
@@ -818,7 +840,7 @@ test('a compile of part of a mind map keeps its scope and its left-out cases in 
 
 test('a reopen and a delivery volume keep the scope too, and merge the left-out cases of the record with the ones this pipeline dropped, each once and in the order met', async () => {
   // reopen: the case that stopped again is dropped; the record's own left-out case stays first
-  const { state, t } = await afterDevice(() => []);
+  const { state, t } = await afterDevice(() => [], { originalAutoids: SCOPE.cases });
   state.open = 'open-compile.json';
   const [a, b, c] = state.cases.map((row) => row.autoid);
   const s = state.cases[1]!;
@@ -833,6 +855,7 @@ test('a reopen and a delivery volume keep the scope too, and merge the left-out 
   assert.equal(flagOf(carry, '--exclude'), b, 'only the case this pipeline dropped is left out of the carry, the record\'s one was never in the plans');
   // a later round: the record now lists the dropped case too, and it is still one entry
   const recorded = JSON.parse(readFileSync(state.open, 'utf8'));
+  assert.equal(recorded.items, 2);
   assert.deepEqual([recorded.scope, recorded.exclude], [SCOPE, [LEFT_OUT, b]]);
   await returned('returns-2', [{ item: a, verdict: 'pass' }, { item: c, verdict: 'fail' }]);
   await rework(state, recorded, 'returns-2', undefined, gates(t.run));
@@ -841,7 +864,7 @@ test('a reopen and a delivery volume keep the scope too, and merge the left-out 
   assert.deepEqual(JSON.parse(readFileSync(join('rework-2', 'compile-scope.json'), 'utf8')), SCOPE);
 
   // delivery volume: the case that used its last round is dropped
-  const volume = await afterDevice(([x, y, z]) => [{ item: x, verdict: 'pass' }, { item: y, verdict: 'fail' }, { item: z, verdict: 'pass' }]);
+  const volume = await afterDevice(([x, y, z]) => [{ item: x, verdict: 'pass' }, { item: y, verdict: 'fail' }, { item: z, verdict: 'pass' }], { originalAutoids: SCOPE.cases });
   volume.state.cases[1]!.device_rounds = 2;
   const dropped = volume.state.cases[1]!.autoid;
   await rework(volume.state, { ...OPENED, scope: SCOPE, exclude: [LEFT_OUT, dropped] }, 'returns-1', undefined, gates(volume.t.run));
@@ -850,6 +873,7 @@ test('a reopen and a delivery volume keep the scope too, and merge the left-out 
   assert.deepEqual(JSON.parse(readFileSync(join('deliver-1', 'compile-scope.json'), 'utf8')), SCOPE);
   assert.equal(flagOf(deliver!, '--exclude'), `${LEFT_OUT},${dropped}`, 'a case in both lists is named once');
   assert.deepEqual(outsideScope(deliver!), [], 'every left-out case is a case of the scope the same call carries');
+  assert.equal(JSON.parse(readFileSync(volume.state.open!, 'utf8')).items, 2);
   assert.equal(volume.state.volume?.n, 1);
 });
 
@@ -893,7 +917,7 @@ test('a reopen and a delivery volume open the next plan run with the version lin
   await reopen(reopened.state, { ...OPENED, ...NAMED }, undefined, gates(reopened.t.run));
   assert.deepEqual(namedFlags(openCalls(reopened.t.calls)[0]!), given);
   assert.deepEqual(NAMES.map((name) => JSON.parse(readFileSync(reopened.state.open!, 'utf8'))[name]), given, 'and the record of that open says so');
-  const volume = await afterDevice(([x, y, z]) => [{ item: x, verdict: 'pass' }, { item: y, verdict: 'fail' }, { item: z, verdict: 'pass' }]);
+  const volume = await afterDevice(([x, y, z]) => [{ item: x, verdict: 'pass' }, { item: y, verdict: 'fail' }, { item: z, verdict: 'pass' }], { originalAutoids: SCOPE.cases });
   volume.state.cases[1]!.device_rounds = 2;
   await rework(volume.state, { ...OPENED, ...NAMED, scope: SCOPE, exclude: [LEFT_OUT] }, 'returns-1', undefined, gates(volume.t.run));
   const [deliver] = openCalls(volume.t.calls);

@@ -12,7 +12,8 @@ import { ADMIN_COMMANDS } from './command-registry.ts';
 // or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { BotSecretChangeAudit } from '../../contracts/src/resources.ts';
-import { readUploadedSource } from './cli-job.ts';
+import { ExecutorRegistry } from '../dispatch/api.ts';
+import { readUploadedSource, staleManifestLine } from './cli-job.ts';
 import { DOC_MEDIA_TYPES, DOC_SUFFIXES, docMediaType, docSuffixOf } from './docs.ts';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, resolve } from 'node:path';
@@ -350,6 +351,18 @@ export async function docCommand(session: Session, args: readonly string[]): Pro
     const fileName = uploaded !== null ? `${name}${docSuffixOf(mediaType) ?? ''}` : basename(source!);
     const put = await decided(() => hub.docs.put(admin, name, new Uint8Array(bytes), { fileName, mediaType }));
     session.out(put.created ? `已发布命名文档 ${put.name}（摘要 ${put.sha256}，${put.size} 字节）` : `命名文档 ${put.name} 已经是这份（摘要 ${put.sha256}，${put.size} 字节）`);
+    if (put.previous) {
+      const registry = new ExecutorRegistry(hub.records);
+      let unread = false;
+      try {
+        for (const entry of await registry.sources(admin)) {
+          if (!entry.source.enabled) continue;
+          const executor = await registry.get(entry.id).catch(() => { unread = true; return null; });
+          if (executor?.definition.enabled && executor.definition.manifest_sha256 === put.previous) session.out(staleManifestLine(executor, put.name, put.sha256));
+        }
+      } catch { unread = true; }
+      if (unread) session.err('注意：有执行器的登记未能核对，请用 circle-hub executor list 核对清单修订');
+    }
     return 0;
   }
   if (sub === 'list') {

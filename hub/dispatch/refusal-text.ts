@@ -1,6 +1,8 @@
 import type { ReleaseCheck, ReleaseField } from './release-diagnostics.ts';
 import { versionOrder, versionsApart } from './warrant-version.ts';
 
+export const UPDATE_MANIFEST = '请管理员按清单的现行修订重新登记执行器';
+
 export interface RefusalTextInput {
   checks: readonly ReleaseCheck[];
   run: string;
@@ -157,7 +159,19 @@ function specFor(condition: string): RefusalConditionSpec | undefined {
   return REFUSAL_CONDITIONS.find((row) => condition === row.condition || (row.condition.endsWith('.') && condition.startsWith(row.condition)));
 }
 
-export function releaseNextStep(check: Pick<ReleaseCheck, 'condition' | 'satisfied'> & { fields?: readonly ReleaseField[] }, input: NextInput): string {
+type RefusedCheck = Pick<ReleaseCheck, 'condition' | 'satisfied'> & { fields?: readonly ReleaseField[] };
+
+export function hasSupersededManifest(check?: RefusedCheck): boolean {
+  return check?.condition === 'proof.executor_identity' && check.satisfied === false
+    && check.fields?.some(field => field.field === 'manifest_sha256.current_doc_revision' && field.matches === false) === true;
+}
+
+export function releaseNextStep(check: RefusedCheck, input: NextInput): string {
+  if (hasSupersededManifest(check)) {
+    return input.callerIsAdmin
+      ? withExplain(input, '用 circle-hub executor update 按清单的现行修订重新登记执行器；清单由普通变量指定时更新该变量，再发起上机验证')
+      : UPDATE_MANIFEST;
+  }
   if (check.satisfied === null) {
     return input.callerIsAdmin
       ? withExplain(input, '补齐缺失事实后再发起上机验证')
