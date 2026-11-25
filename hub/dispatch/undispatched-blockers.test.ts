@@ -6,7 +6,7 @@ import {setup} from './testing/context.ts';
 
 test('a clause-six refusal without an intent does not block a new verification run on the same physical target',async t=>{
  const c=await setup();t.after(()=>c.close());const policy=c.detail.run.policy,executors=c.detail.run.executors;
- c.detail.run.executors='f'.repeat(64);
+ c.detail.run.policy='f'.repeat(64);
  const refused=await c.service.dispatch(c.admin,c.run,c.executor.id);
  assert.equal(refused.phase,'boundary_refused');assert.equal(refused.outcome,'not_dispatched');assert.equal(refused.frozen,false);
  const history=await c.service.journal.events(refused.job);assert.ok(!history.some(event=>event.body.detail.phase==='intent'));
