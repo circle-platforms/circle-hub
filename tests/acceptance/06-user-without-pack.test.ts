@@ -101,6 +101,18 @@ describe('scenario 6: user without pack', () => {
     }
     const own = await ownerClient.call('start_run', { pack: asked, pack_space: owner.user.id, inputs: {} });
     assert.equal(own.out.errors[0]?.message, 'Hub 里没有名为「synthetic-private-sugestion」的工作流或技能，当前账户可用的名称里最接近的是 synthetic-private-suggestion@1.0.0');
+    const ownerCall = (await bed.hub.records.callLog.query(bed.hub.admin.principal, { traceId: own.out.trace })).items[0];
+    const reasons = ownerCall.admin_reasons ?? [];
+    assert.ok(reasons.some(reason => reason.startsWith('参数预览 ')));
+    assert.ok(!reasons.join('\n').includes(spec.id), 'admin diagnostics keep the personal workflow name private');
+    const error = JSON.parse(reasons.find(reason => reason.startsWith('调用错误 '))!.slice('调用错误 '.length));
+    assert.deepEqual(error, { code: own.out.errors[0].code, path: own.out.errors[0].path });
+    const badList = await ownerClient.call('list_task_packs', { pack_id:spec.id, offset:-1 });
+    assert.equal(badList.isError, true);
+    const listCall = (await bed.hub.records.callLog.query(bed.hub.admin.principal, { traceId:badList.out.trace })).items[0];
+    assert.ok(listCall.admin_reasons?.some(reason => reason.startsWith('参数预览 ')));
+    assert.ok(!listCall.admin_reasons!.join('\n').includes(spec.id), 'a filtered catalog also includes the caller’s personal packs');
+
     const denied = await otherClient.call('start_run', { pack: asked, pack_space: owner.user.id, inputs: {} });
     assert.equal(denied.out.errors[0]?.code, 'SOURCE_UNAVAILABLE');
     assert.equal(denied.out.run, undefined);
