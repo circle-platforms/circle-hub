@@ -1,13 +1,14 @@
 // The guard of decision 146 on scheduled maintenance: what a round costs follows what changed, not the history. Read from the
 // usage the trace of the round reports, so it counts what the database returned, never a clock. No pack function runs here.
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
+import { after, before, test, type TestContext } from 'node:test';
 import { createRequestService } from '../../requests/api.ts';
 import { installTraceSink, type SpanRow } from '../../telemetry/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openHarness, type Harness } from './testing/harness.ts';
-import { FAR_AHEAD, requestOf, storeQuietRun } from './testing/maintenance.ts';
-import { putAction } from './store.ts';
+import { engineOn, FAR_AHEAD, requestOf, storeQuietRun } from './testing/maintenance.ts';
+import { latestAccepted, putAction } from './store.ts';
+import { maintainRuns } from './maintenance.ts';
 
 let pg: TemporaryPostgres;
 // Its own cluster: an idle round costs its least once the cursor has settled, and any other test file's open transaction delays that.
@@ -83,3 +84,55 @@ test('a round reads a fixed small amount when nothing changed and what changed w
   assert.ok(small.change.rows > small.idle.rows, 'and it is read');
   assert.ok(large.full.rows > small.full.rows * 3 && large.full.queries > small.full.queries * 2, 'the counters do see history: a pass over everything grows with it');
 });
+
+test('full maintenance bounds each read of run bodies and derives the same results and requests across pages', async (t) => {
+  const before = await measureRunPages(t, true), after = await measureRunPages(t, false);
+  assert.deepEqual(after.outcomes, before.outcomes);
+  assert.ok(before.outcomes.every(run => run.requests.includes('disposition:rerun:publication')));
+  assert.equal(before.outcomes.filter(run => run.acceptance === 'accepted').length, 2);
+  for (const kind of ['all', 'pack'] as const) {
+    assert.equal(before.bytes[kind].length, 1);
+    assert.ok(Math.max(...after.bytes[kind]) < before.bytes[kind][0] / 2, kind + ': run bodies read together');
+  }
+});
+
+async function measureRunPages(t: TestContext, originalPageSize: boolean) {
+  const h = await openHarness(pg);
+  try {
+    const ctx = engineOn(h, () => new Date('2026-10-22T10:00:00Z'));
+    const store = h.kit.store, requests = createRequestService(h.kit, ctx.now);
+    const runs = [];
+    for (let n = 0; n < 11; n++) {
+      runs.push(await storeQuietRun(h, { parameters: { text: 'x'.repeat(8192) }, submission_due: n % 10 === 0 ? PAST : FAR_AHEAD }));
+    }
+    const repair = await requests.write(requestOf(runs[0], h.admin.id, FAR_AHEAD, '合成工作流修复', { kind: 'repair', pack_digest: h.review.pack.digest }));
+    const publication = await store.put({ kind: 'pack_version', schema: 'pack-version@1', provenance: 'declared', body: { pack: h.review.pack.id, version: '9.9.9', digest: 'b'.repeat(64) } });
+    await requests.answer(repair.digest, publication.digest);
+
+    const bytes = { all: [] as number[], pack: [] as number[] };
+    const list = store.list.bind(store), find = store.find.bind(store);
+    t.mock.method(store, 'list', async (...[query, tx]: Parameters<typeof list>) => {
+      if (query.kind !== 'run') return list(query, tx);
+      const page = await list(originalPageSize ? { ...query, limit: 200 } : query, tx);
+      bytes.all.push(Buffer.byteLength(JSON.stringify(page.items)));
+      return page;
+    });
+    t.mock.method(store, 'find', async (...[query, tx]: Parameters<typeof find>) => {
+      if (query.kind !== 'run' || query.key !== 'runs.pack') return find(query, tx);
+      const page = await find(originalPageSize ? { ...query, limit: 200 } : query, tx);
+      bytes.pack.push(Buffer.byteLength(JSON.stringify(page.items)));
+      return page;
+    });
+    await maintainRuns(ctx);
+    const answers = await requests.all(), outcomes = [];
+    for (const run of runs) {
+      const result = await latestAccepted(store, run.body.run);
+      const related = answers.filter(row => row.run === run.body.run);
+      outcomes.push({
+        acceptance: result?.body.acceptance, coverage: result?.body.coverage, partitions: result?.body.partitions,
+        requests: related.map(row => [row.kind, row.answer_action, row.source === publication.digest ? 'publication' : row.code].join(':')).sort(),
+      });
+    }
+    return { bytes, outcomes };
+  } finally { await h.close(); }
+}
