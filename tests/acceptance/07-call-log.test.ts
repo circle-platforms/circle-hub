@@ -90,6 +90,51 @@ describe('scenario 7: call log', () => {
     assert.ok(oneCall.body.includes(SESSION_ID), 'and its session id');
   });
 
+  test('a rejected pack function has a private argument preview and the errors the caller received', async () => {
+    const { logsCommand } = await import('../../hub/server/cli.ts');
+    const { hub } = bed;
+    await hub.assignPack(bed.reviewer.principal, 'test-bed');
+    const inventory = { schema: 'test-bed-manifest@1', beds: [{ name: 'synthetic', services: [], reserved: [], devices: [
+      { name: 'a', type: 'client', ipv4: ['192.0.2.10/26'], ipv6: [] },
+      { name: 'b', type: 'client', ipv4: ['192.0.2.10/26'], ipv6: [] },
+    ] }] };
+    await hub.hub.docs.put(hub.admin.principal, 'synthetic-log', Buffer.from(JSON.stringify(inventory)), { fileName: 'synthetic.json' });
+    const member = await bed.connect(bed.reviewer);
+    const answer = await member.call('start_run', { pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:synthetic-log' } }, parameters: { action: 'search' } });
+    assert.equal(answer.out.errors[0].code, 'test-bed.manifest_invalid');
+    const lines: string[] = [];
+    const io = { cwd: hub.records.dataDir, env: { CIRCLE_HUB_TOKEN: hub.admin.token }, stdout: (s: string) => lines.push(s), stderr: (s: string) => assert.fail(s) };
+    assert.equal(await logsCommand(['export', '--tool', 'start_run'], {
+      io, records: async () => hub.records, config: () => assert.fail('the supplied token authenticates directly'), deps: async () => hub.deps, actingAdmin: async () => hub.admin.principal,
+    }, { io }), 0);
+    const row = lines.join('\n').split('\n').map(s => JSON.parse(s)).find(row => row.trace_id === answer.out.trace);
+    const reasons: string[] = row.admin_reasons ?? [];
+    const preview = reasons.find(reason => reason.startsWith('参数预览 '));
+    assert.ok(preview, 'administrator export has a redacted preview');
+    const args = JSON.parse(preview.slice('参数预览 '.length));
+    assert.equal(args.pack, 'test-bed');
+    assert.equal(args.inputs.inventory.external, 'doc:doc:synthetic-log');
+    assert.deepEqual(Object.keys(args.parameters), ['action']);
+    assert.equal(args.parameters.action.type, 'string');
+    assert.ok(!preview.includes('search'));
+    const errors = reasons.filter(reason => reason.startsWith('调用错误 ')).map(reason => JSON.parse(reason.slice('调用错误 '.length)));
+    assert.deepEqual(errors, answer.out.errors.map(({ code, path, message, fix }) => ({ code, path, message, fix })));
+    const inspector = await consoleClient.get('/console/records?call=' + row.digest);
+    assert.ok(inspector.body.includes('参数预览') && inspector.body.includes(answer.out.errors[0].message));
+    assert.equal(row.args_preview, null);
+    const publicReceipt = await hub.records.store.get(row.digest);
+    const memberRow = (await hub.records.callLog.query(bed.reviewer.principal, { traceId: answer.out.trace })).items[0];
+    const observation = await member.call('get_nodes', { observability: { calls: { trace: answer.out.trace } } });
+    for (const view of [publicReceipt, memberRow, observation.out]) {
+      assert.doesNotMatch(JSON.stringify(view), /synthetic-log|参数预览|manifest_invalid.*自动化测试环境清单/);
+    }
+    const success = await member.call('list_task_packs', {});
+    const okRow = (await hub.records.callLog.query(hub.admin.principal, { traceId: success.out.trace })).items[0];
+    assert.equal(okRow.call_result, 'ok');
+    assert.equal(okRow.args_preview, null);
+    assert.ok(!okRow.admin_reasons?.some(reason => reason.startsWith('参数预览 ')));
+  });
+
   test('refused batch JSON-RPC request logs one call log line per request in batch', async () => {
     // Send a batch request (array of 3 JSON-RPC requests) to /mcp
     const batchBody = JSON.stringify([
