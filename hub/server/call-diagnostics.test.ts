@@ -71,13 +71,13 @@ test('personal modes, implicit spaces, and original calls inside call_query disc
   assert.ok(!notes.join('\n').includes(denied.message));
 });
 
-test('errors keep order and optional fields, neutral answers and credentials omit sensitive text', () => {
+test('all logged errors keep only their code and supplied path, in order', () => {
   const credential = 'password=SyntheticToken93711';
   const errors = [denied, { ...denied, code:'SOURCE_UNAVAILABLE' }, { code:'SYNTHETIC', message:credential }];
   const notes = rejectedDiagnostics('start_run', {pack:'synthetic',product:credential}, errors, false);
   assert.ok(!notes.some(note => note.startsWith('参数预览 ')), 'a credential matching the visible fields discards the whole preview');
   assert.ok(!notes.join('\n').includes('SyntheticToken93711'));
-  assert.deepEqual(notes.map(s => JSON.parse(s.slice('调用错误 '.length))), [denied, { code:'SOURCE_UNAVAILABLE', path:'/pack' }, { code:'SYNTHETIC' }]);
+  assert.deepEqual(notes.map(s => JSON.parse(s.slice('调用错误 '.length))), [{ code:denied.code, path:denied.path }, { code:'SOURCE_UNAVAILABLE', path:'/pack' }, { code:'SYNTHETIC' }]);
   const value = preview(rejectedDiagnostics('start_run', {parameters:{note:credential}}, [], false));
   assert.equal(value.parameters.note.type,'string');
 });

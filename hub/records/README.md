@@ -282,8 +282,9 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
     `RecordsError` and a retry with the same span id writes the missing line; `repairFiles({from, to})` appends every line
     a file misses (after a crash), leaving a line cut by a crash as it is. **B08 F[7]** (first 1 KB of the arguments after
     schema-based redaction): records accepts an optional `argsPreview` (at most 1024 bytes) and does not keep one the
-    credential scanner flags. The MCP server puts its redacted previews of rejected calls in private administrator reasons
-    so the public receipt and JSONL stay free of argument text.
+    credential scanner flags. The MCP server puts its redacted preview and the code and optional path of each error in
+    private administrator reasons. Error messages and fixes can quote input values and remain in the caller's response.
+    The public receipt and JSONL stay free of argument text.
 12. **Configuration**: `CIRCLE_HUB_DATA_DIR`, `CIRCLE_HUB_PORT` and one of `CIRCLE_HUB_DATABASE_SOCKET_DIR` /
     `CIRCLE_HUB_DATABASE_HOST` are required; there is no default database and no default port (the earlier verification
     stack still runs on its port on the same Mac). Hosts are loopback IP literals only (`localhost` is refused). Any unknown
@@ -548,7 +549,7 @@ repair, previews, admin and user views, tamper detection; cluster cleanup on SIG
 - **B08 F[7] versus the brief.** B08 lists "参数前 1 KB（按 schema 脱敏后）"; the brief says digest and size only, and
   scenario 7 checks that. By the brief's own rule the model wins, so records keeps an optional redacted preview when the
   server gives one, and nothing otherwise. The server keeps the public receipt at digest and size, and sends the redacted
-  preview and the reported errors of a rejected MCP tool call to the administrator reasons.
+  preview and the code and optional path of each error of a rejected MCP tool call to the administrator reasons.
 - **API changes made for the review findings** (no other package imported them yet): `Artifacts.bytes()` is gone, replaced
   by `source()` (tier-aware) and `trustedBytes()`; `artifactShareKey` takes the source artifact record, not a sha256;
   `CredentialScan` gained `inspected` and the scanner is `credential-scan@2`; `CallLogEntry` gained `span_id` and

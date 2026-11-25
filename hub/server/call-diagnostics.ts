@@ -128,8 +128,7 @@ function argumentPreview(tool: string, args: unknown, personal: boolean): string
       for (const key of Object.keys(value)) {
         yield (first ? '' : ',') + JSON.stringify(key) + ':';
         first = false;
-        const child = tool === 'start_run' && path.length === 0 && key === 'parameters' ? [] : properties(schemas, key, root);
-        yield* parts(value[key], [...path, key], child);
+        yield* parts(value[key], [...path, key], properties(schemas, key, root));
       }
       yield '}';
     } else if (Array.isArray(value) && schemas.some(schema => object(schema.items))) {
@@ -172,12 +171,6 @@ export function rejectedDiagnostics(tool: string, args: unknown, returned: unkno
     if (!object(error) || typeof error.code !== 'string' && typeof error.code !== 'number') continue;
     const fields: Row = { code: error.code };
     if (typeof error.path === 'string') fields.path = error.path;
-    if (!personal && error.code !== 'SOURCE_UNAVAILABLE') {
-      for (const field of ['message', 'fix']) {
-        const value = error[field];
-        if (typeof value === 'string' && !scanForCredentials(Buffer.from(value)).findings.length) fields[field] = value;
-      }
-    }
     notes.push('调用错误 ' + JSON.stringify(fields));
   }
   return notes;
