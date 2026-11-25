@@ -28,9 +28,17 @@ for (const scenario of ['superseded', 'unrelated', 'historical verification', 'd
       const [note] = await acceptedDispatch(c.kit, c.service, c.run, true, undefined, viewer);
       assert.equal(note.outcome, 'not_dispatched');
       if (scenario === 'superseded') {
-        assert.match(note.text, /请管理员按清单的现行修订重新登记执行器/);
         assert.doesNotMatch(note.text, /重新开始运行|先确认预订的是哪个测试环境/);
-        assert.equal(note.next_action, '请管理员按清单的现行修订重新登记执行器');
+        if (viewer === c.admin) {
+          assert.match(note.text, /现在可以做：用 circle-hub executor update 按清单的现行修订重新登记执行器/);
+          assert.match(note.text, /清单由普通变量指定时更新该变量/);
+          assert.ok(note.text.includes(`逐条对照：circle-hub job explain-release --run ${c.run} --executor ${c.executor.id}`));
+          assert.equal(note.next_action, '核对本次预订和核验结果；需要管理员处理的，联系管理员核对');
+        } else {
+          assert.match(note.text, /请管理员按清单的现行修订重新登记执行器/);
+          assert.doesNotMatch(note.text, /circle-hub|逐条对照/);
+          assert.equal(note.next_action, '请管理员按清单的现行修订重新登记执行器');
+        }
       } else {
         assert.match(note.text, viewer === c.admin ? /按执行器声明的测试环境和清单重新开始运行/ : /先确认预订的是哪个测试环境/);
         assert.doesNotMatch(note.text, /按清单的现行修订重新登记/);

@@ -9,7 +9,6 @@ import { isAdmin } from '../records/api.ts';
 // input type (`accepts: ["doc:doc"]` on an input slot) and answers only that run's user; everyone else, and every
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { docPointerName, documentRevisions, parseDocId } from '../refs/api.ts';
-export { docPointerName, parseDocId } from '../refs/api.ts';
 import { RunId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, WorkflowStore } from '../ports.ts';

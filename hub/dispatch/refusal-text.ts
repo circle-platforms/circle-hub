@@ -167,7 +167,11 @@ export function hasSupersededManifest(check?: RefusedCheck): boolean {
 }
 
 export function releaseNextStep(check: RefusedCheck, input: NextInput): string {
-  if (hasSupersededManifest(check)) return UPDATE_MANIFEST;
+  if (hasSupersededManifest(check)) {
+    return input.callerIsAdmin
+      ? withExplain(input, '用 circle-hub executor update 按清单的现行修订重新登记执行器；清单由普通变量指定时更新该变量，再发起上机验证')
+      : UPDATE_MANIFEST;
+  }
   if (check.satisfied === null) {
     return input.callerIsAdmin
       ? withExplain(input, '补齐缺失事实后再发起上机验证')
@@ -190,7 +194,7 @@ function flattenUnique(checks: readonly ReleaseCheck[]): ReleaseCheck[] {
   return out;
 }
 
-export function formatReleaseRefusal(input: RefusalTextInput, includeNextStep = true): string {
+export function formatReleaseRefusal(input: RefusalTextInput): string {
   const checks = flattenUnique(input.checks);
   const errors = checks.filter((check) => check.satisfied === false);
   const unchecked = checks.filter((check) => check.satisfied === null);
@@ -216,7 +220,7 @@ export function formatReleaseRefusal(input: RefusalTextInput, includeNextStep = 
     `放行条件里有 ${errors.length} 条错误。`,
     errorLines.join(''),
     uncheckedLine,
-    includeNextStep ? `现在可以做：${releaseNextStep(errors[0], input)}` : '',
+    `现在可以做：${releaseNextStep(errors[0], input)}`,
   ].filter((part) => part.length > 0).join('');
 }
 
