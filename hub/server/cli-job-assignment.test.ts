@@ -20,7 +20,7 @@ function fixture() {
     principals: { get: async (id: string) => id === user ? { id, name: '合成成员' } : null, findByName: async (name: string) => name === '合成成员' ? { id: user, name } : null },
     authorizations: { assignResource: async (...args: unknown[]) => { ResourceAssignmentSubject.parse(args[2]); calls.push(['assign', ...args]); }, unassignResource: async (...args: unknown[]) => { ResourceAssignmentSubject.parse(args[2]); calls.push(['unassign', ...args]); } },
   } as unknown as RecordsKit;
-  const session: JobCommandSession = { ctx: { io: { cwd: '/synthetic/commands' } }, options: {}, out: line => lines.push(line), err: line => lines.push(line), admin: async () => admin, records: async () => records, hub: async () => ({ records, dispatch: null }) };
+  const session: JobCommandSession = { ctx: { io: { cwd: '/synthetic/commands' } }, options: {}, out: line => lines.push(line), err: line => lines.push(line), admin: async () => admin, records: async () => records, hub: async () => ({ records, dispatch: null, executorRegistry: new ExecutorRegistry(records) }) };
   return { session, calls, lines, records };
 }
 

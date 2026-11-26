@@ -25,7 +25,7 @@ async function fixture(t: TestContext) {
   const lines: string[] = [];
   const session = {
     records: async () => kit, admin: async () => admin, viewer: async () => admin, ctx: { io: { cwd: kit.dataDir } }, options: {},
-    hub: async () => ({ docs, records: kit, dispatch: null }),
+    hub: async () => ({ docs, records: kit, dispatch: null, executorRegistry: registry }),
     out: (text: string) => lines.push(text), err: (text: string) => lines.push(text),
   };
   const put = async (content: string) => {

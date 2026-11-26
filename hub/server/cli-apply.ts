@@ -326,7 +326,7 @@ export async function applyDeployment(session: Session, input: unknown, base = s
       if (!resource.enabled) { await hub.connectors.admin.disable(by, created.id); report.created++; }
       current.resources.push({ ...resource, id: created.id });
     }
-    const executors = new ExecutorRegistry(records);
+    const executors = hub.executorRegistry;
     for (const [index, executor] of definition.executors.entries()) {
       const found = selectedExecutors[index];
       if (found) { const {id,...before}=found.source;compare('executors',index,before,executor.definition);continue; }

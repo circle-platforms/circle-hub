@@ -20,6 +20,7 @@ import { generateWorkbook } from '../../packs/workflow/case-compile/functions/ge
 import { reportLines, batchQualifications } from '../../scripts/real/accept/device-run.ts';
 import { createScriptedModel } from '../../scripts/real/scripted-model.ts';
 import { createTestHub, type TestHub, type TestUser } from '../../hub/server/testing-real.ts';
+import { executorCommand } from '../../hub/server/cli-job.ts';
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -295,6 +296,23 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.match(released.out.errors[0].fix ?? '',/重新预订/);
     await assert.rejects(openCompile(call,options,staged),error => error instanceof CallFailure
       && error.category === 'not_found' && error.next_action.includes('重新预订'));
+  });
+
+  test('the assembled registry checks input document slots against the published workflow before registration', async t => {
+    const registry = dispatch().registry, admin = bed.hub.admin.principal;
+    const original = await registry.readSource(executor); assert.ok(original);
+    const invalid = {...original.source, input_documents:{inventory:'not-a-declared-slot'}};
+    const showsSlots = (error:unknown) => error instanceof Error && ['inventory','contract','profile'].every(slot=>error.message.includes(slot));
+    await assert.rejects(registry.add(admin,invalid),showsSlots);
+    await assert.rejects(registry.update(admin,executor,invalid),showsSlots);
+    const dir = await mkdtemp(join(tmpdir(),'executor-slot-check-'));
+    t.after(()=>rm(dir,{recursive:true,force:true}));
+    await writeFile(join(dir,'definition.json'),JSON.stringify(invalid));
+    const session = {ctx:{io:{cwd:dir}},options:{},admin:async()=>admin,records:async()=>bed.hub.records,
+      hub:async()=>bed.hub.hub,out:()=>{},err:()=>{}};
+    await assert.rejects(executorCommand(session,['add','--name=synthetic-bad-slot','definition.json']),showsSlots);
+    await assert.rejects(executorCommand(session,['update',executor,'definition.json']),showsSlots);
+    assert.equal((await registry.readSource(executor))?.digest,original.digest);
   });
 
   test('the compile tool binds each active booking’s declared documents using the Hub response', async t => {

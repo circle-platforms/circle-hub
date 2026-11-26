@@ -1,4 +1,6 @@
-import { isAdmin } from '../records/api.ts';
+import { isAdmin, RecordsError } from '../records/api.ts';
+import type { WorkflowInput } from '../../contracts/src/pack.ts';
+import { packWarrant } from './warrant-version.ts';
 import { docPointerName, parseDocId } from '../refs/api.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import type { BookingDocuments } from '../../contracts/src/tools.ts';
@@ -71,12 +73,36 @@ async function assertUnused(store: RecordStore, tx: Transaction, id: string, gua
     if (blocked.length)
         throw new Error(`执行器身份或资源仍被作业 ${blocked.join('、')} 占用；先 circle-hub job dispose ${blocked[0]} … 完成具名处置`);
 }
+type WorkflowInputsReader = (ref: string) => Promise<readonly Pick<WorkflowInput, 'slot' | 'executor_document'>[] | null>;
+
 export class ExecutorRegistry {
     readonly records: RecordsKit;
-    constructor(records: RecordsKit) { this.records = records; }
+    private readonly workflowInputs?: WorkflowInputsReader;
+    constructor(records: RecordsKit, workflowInputs?: WorkflowInputsReader) {
+      this.records = records;
+      this.workflowInputs = workflowInputs;
+    }
+    private async checkDocumentSlots(source: ExecutorSource): Promise<void> {
+      const named = Object.keys(source.input_documents ?? {});
+      if (!named.length) return;
+      const warrant = packWarrant(source.proof.warrant_id);
+      const ref = warrant?.pack === source.proof.package ? warrant.pack + '@' + warrant.version : source.proof.package;
+      const inputs = await this.workflowInputs?.(ref);
+      if (!inputs) throw new RecordsError(`无法读取已发布工作流 ${ref} 的输入槽，请先发布对应工作流再登记执行器`, {code:'SOURCE_UNAVAILABLE'});
+      const allowed = inputs.filter(input => input.executor_document === true).map(input => input.slot);
+      const invalid = named.filter(slot => !allowed.includes(slot));
+      if (invalid.length) throw new RecordsError(`参数无效：input_documents 中的 ${invalid.join('、')} 未被工作流 ${ref} 声明为执行器文档槽。可声明的槽位：${allowed.join('、') || '无'}。`, {code:'SUBMISSION_SCHEMA_VIOLATION'});
+    }
     async admin(by: Principal) { const user = await this.records.principals.get(by.id); if (!user || user.disabled || !isAdmin(user))
         throw new Error('只有启用中的管理员能操作执行器和作业'); }
-    async add(by: Principal, input: unknown, name?:string): Promise<RegisteredExecutor> { await this.admin(by); refuseBuildBaseline(input); const explicit=name===undefined?undefined:ExecutorStableName.parse(name);return this.configure(by, this.validate({ ...input as object, id: newId('exe') }),undefined,undefined,explicit); }
+    async add(by: Principal, input: unknown, name?: string): Promise<RegisteredExecutor> {
+      await this.admin(by);
+      refuseBuildBaseline(input);
+      const explicit = name === undefined ? undefined : ExecutorStableName.parse(name);
+      const source = this.validate({ ...input as object, id: newId('exe') });
+      await this.checkDocumentSlots(source);
+      return this.configure(by,source,undefined,undefined,explicit);
+    }
     async update(by: Principal, id: string, input: unknown): Promise<RegisteredExecutor> {
         await this.admin(by);
         const current = await this.readSource(id);
@@ -84,6 +110,7 @@ export class ExecutorRegistry {
             throw new Error('执行器对当前账户不可用');
         refuseBuildBaseline(input);
         const source = this.validate({ ...input as object, id });
+        await this.checkDocumentSlots(source);
         const rebind = current.source.target !== source.target || current.source.endpoint !== source.endpoint || current.source.ca !== source.ca || canonicalize([...current.source.resources].sort()) !== canonicalize([...source.resources].sort());
         let previousTarget = current.source.target;
         if (rebind) {

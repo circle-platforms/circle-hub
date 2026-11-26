@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {setup} from './testing/context.ts';
 import {jobCommand} from '../server/cli-job.ts';
 
-const cli=(c:Awaited<ReturnType<typeof setup>>,lines:string[])=>({out:(s:string)=>lines.push(s),err:(s:string)=>lines.push(s),admin:async()=>c.admin,records:async()=>c.kit,hub:async()=>({dispatch:c.service,records:c.kit}),options:{},ctx:{io:{cwd:c.kit.dataDir}}});
+const cli=(c:Awaited<ReturnType<typeof setup>>,lines:string[])=>({out:(s:string)=>lines.push(s),err:(s:string)=>lines.push(s),admin:async()=>c.admin,records:async()=>c.kit,hub:async()=>({dispatch:c.service,executorRegistry:c.registry,records:c.kit}),options:{},ctx:{io:{cwd:c.kit.dataDir}}});
 
 // A seat's version and the product's build identity are judged against a run's locked build only, so those two causes take
 // the precheck with a run that locks one (decision 120).

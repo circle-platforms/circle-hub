@@ -60,7 +60,7 @@ export interface JobCommandSession {
   err(line: string): void;
   admin(): Promise<Principal>;
   records(): Promise<RecordsKit>;
-  hub(requireVaultKey?: boolean): Promise<{ dispatch: DispatchService | null; records: RecordsKit; knowledge?: BuildKnowledge; deps?: { dispatch?: Pick<DispatchView, 'readiness'> }; registry?: PackVersionsInUse }>;
+  hub(requireVaultKey?: boolean): Promise<{ dispatch: DispatchService | null; records: RecordsKit; executorRegistry: ExecutorRegistry; knowledge?: BuildKnowledge; deps?: { dispatch?: Pick<DispatchView, 'readiness'> }; registry?: PackVersionsInUse }>;
 }
 async function service(s: JobCommandSession, requireKey = true): Promise<DispatchService> {
   const hub = await s.hub(requireKey); if (hub.dispatch && hub.knowledge) hub.dispatch.options.knowledge = hub.knowledge; if (!hub.dispatch) throw new Error('作业服务没有可用的租约服务'); return hub.dispatch;
@@ -128,7 +128,7 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
   if (reference !== undefined && (fileCount === null || parsed.positionals.length !== fileCount - 1) || fileCount !== null && reference === undefined && parsed.positionals.length !== fileCount) throw new UsageError('定义文件和 --reference 必须且只能提供一种；引用只用于 add/update');
   if (reference !== undefined && (!reference.startsWith('src:') || !isSha256(reference.slice(4)))) throw new UsageError('上传引用须为 src:<完整摘要>');
   const by = await s.admin();
-  const hub = await s.hub(sub === 'add' || sub === 'update'); const registry = new ExecutorRegistry(hub.records);
+  const hub = await s.hub(sub === 'add' || sub === 'update'); const registry = hub.executorRegistry;
   if(sub==='name'){
     const result=await new ExecutorNames(hub.records).assign(by,parsed.positionals[0],parsed.positionals[1]);
     s.out(`执行器名字 ${result.binding.name} ${result.created?'已登记':'已存在'}；源定义和历史未改变`);return 0;

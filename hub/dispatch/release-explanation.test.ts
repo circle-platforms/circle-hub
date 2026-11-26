@@ -35,7 +35,7 @@ test('explain-release is an admin-only read with no storage writes, vault key, r
  c.kit.artifacts.ingest=async()=>{throw new Error('diagnostic attempted an artifact write');};
  c.service.options.recheckChecks=async()=>{throw new Error('diagnostic attempted policy replay');};
  c.service.registry.material=async()=>{throw new Error('diagnostic attempted secret access');};
- const output:string[]=[];const session:JobCommandSession={ctx:{io:{cwd:process.cwd()}},options:{},out:line=>output.push(line),err:line=>{throw new Error(line);},admin:async()=>c.admin,records:async()=>c.kit,hub:async requireKey=>{assert.equal(requireKey,false);return {dispatch:c.service,records:c.kit};}};
+ const output:string[]=[];const session:JobCommandSession={ctx:{io:{cwd:process.cwd()}},options:{},out:line=>output.push(line),err:line=>{throw new Error(line);},admin:async()=>c.admin,records:async()=>c.kit,hub:async requireKey=>{assert.equal(requireKey,false);return {dispatch:c.service,executorRegistry:c.registry,records:c.kit};}};
  try{
   assert.equal(await jobCommand(session,['explain-release','--run',c.run,'--executor',c.executor.id]),0);
   assert.ok(output.some(line=>line.includes('release.parameters.sha256')));assert.ok(output.some(line=>line.includes('release.artifact')));assert.ok(output.some(line=>line.includes('只读诊断')));
@@ -47,7 +47,7 @@ test('explain-release is an admin-only read with no storage writes, vault key, r
 });
 test('explain-release returns a nonzero CLI result with field-only diagnostics for a release mismatch',async t=>{
  const c=await setup();t.after(()=>c.close());c.effectDocument.requirements.push({...c.effectDocument.requirements[0],key:'private_source_marker',required:false});c.effectDocument.effects[0].release.artifact='private_source_marker';const output:string[]=[];
- const session:JobCommandSession={ctx:{io:{cwd:process.cwd()}},options:{},out:line=>output.push(line),err:()=>{},admin:async()=>c.admin,records:async()=>c.kit,hub:async()=>({dispatch:c.service,records:c.kit})};
+ const session:JobCommandSession={ctx:{io:{cwd:process.cwd()}},options:{},out:line=>output.push(line),err:()=>{},admin:async()=>c.admin,records:async()=>c.kit,hub:async()=>({dispatch:c.service,executorRegistry:c.registry,records:c.kit})};
  assert.equal(await jobCommand(session,['explain-release','--run',c.run,'--executor',c.executor.id]),1);
  assert.ok(output.some(line=>line.includes('"condition":"release.artifact"')&&line.includes('"satisfied":false')));assert.ok(!output.join('\n').includes('private_source_marker'));
  assert.equal(c.calls.length,0);
@@ -58,7 +58,7 @@ test('explain-release names a missing result_ownership premise without a session
  const absent=await c.service.explainRelease(c.admin,c.run,c.executor.id);
  assert.equal(absent.satisfied,true);assert.deepEqual(absent.no_verdict.map(gap=>gap.premise),['result_ownership']);assert.equal(c.calls.length,0);
  const output:string[]=[];
- const session:JobCommandSession={ctx:{io:{cwd:process.cwd()}},options:{},out:line=>output.push(line),err:line=>{throw new Error(line);},admin:async()=>c.admin,records:async()=>c.kit,hub:async requireKey=>{assert.equal(requireKey,false);return {dispatch:c.service,records:c.kit};}};
+ const session:JobCommandSession={ctx:{io:{cwd:process.cwd()}},options:{},out:line=>output.push(line),err:line=>{throw new Error(line);},admin:async()=>c.admin,records:async()=>c.kit,hub:async requireKey=>{assert.equal(requireKey,false);return {dispatch:c.service,executorRegistry:c.registry,records:c.kit};}};
  assert.equal(await jobCommand(session,['explain-release','--run',c.run,'--executor',c.executor.id]),0);
  assert.ok(output.some(line=>line.startsWith('无判定前提 result_ownership；')));assert.equal(c.calls.length,0);
  const proof=await c.kit.artifacts.ingest({bytes:new TextEncoder().encode('synthetic attribution certification'),mediaType:'text/plain',origin:{upload:{session:'synthetic'}},author:{user:c.admin.id},provenanceType:'declared',visibility:{readers:[c.admin.id],admins:true,packs:[],shareable:false}});
@@ -122,7 +122,7 @@ test('explain-release does not count a hold that ends before the dispatch window
 test('explain-release exits nonzero and says dispatch would be refused while the lineage lacks declared keys, and exits zero once it holds them',async t=>{
  for(const [mode,exit,covered] of [['lineage',1,'租约覆盖 0：派发会被边界拒绝'],[undefined,0,'租约覆盖 1']] as const){
   const c=await setup(mode?{mode}:{});t.after(()=>c.close());const output:string[]=[];
-  const session:JobCommandSession={ctx:{io:{cwd:process.cwd()}},options:{},out:line=>output.push(line),err:()=>{},admin:async()=>c.admin,records:async()=>c.kit,hub:async()=>({dispatch:c.service,records:c.kit})};
+  const session:JobCommandSession={ctx:{io:{cwd:process.cwd()}},options:{},out:line=>output.push(line),err:()=>{},admin:async()=>c.admin,records:async()=>c.kit,hub:async()=>({dispatch:c.service,executorRegistry:c.registry,records:c.kit})};
   assert.equal(await jobCommand(session,['explain-release','--run',c.run,'--executor',c.executor.id]),exit,String(mode));
   assert.ok(output.includes('放行条件满足 1'),'the release conditions are met in both cases');
   assert.ok(output.includes(covered),output.join('\n'));
