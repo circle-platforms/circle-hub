@@ -6,13 +6,14 @@ import { fileURLToPath } from 'node:url';
 import { RUN_ID } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { requireBearerToken } from '../functions/hub-retry.ts';
 import { parseHubOrigin } from '../functions/client-cli.ts';
-import { CallFailure, failCall, formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { CallFailure, formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
 
 const CALL_TIMEOUT_MS = 180_000;
 type CompileDocuments = Record<'contract' | 'inventory' | 'profile', string>;
 const USAGE = "open-compile.ts --hub <MCP地址> [--plumb <Plumb地址>] --subject <脑图外部标识或 src: 引用> --product <产品> --build <构建> --booking <test-bed 预订号> [--booking-acquired yes] --out <新文件> [--version <版本线>] [--scope <范围文件>] [--exclude <autoid,...>] [--contract <doc:doc:名字>] [--inventory <doc:doc:名字>] [--profile <doc:doc:名字>] [--recompose-run <重组运行编号> --recompose-record <rec:引用>] [--judge plumb|jev|model]";
 
 export class NotReady extends Error {}
+class BookingRefusal extends CallFailure {}
 
 export interface ToolAnswer { failed: boolean; text: string; envelope: Record<string, unknown> | null }
 export type CallTool = (name: string, args: Record<string, unknown>) => Promise<ToolAnswer>;
@@ -159,20 +160,20 @@ export function jevProblems(jev: JevJudgeInput): string[] {
 }
 
 function bookingDocuments(value: unknown, options: OpenOptions): CompileDocuments {
-  if (!Array.isArray(value) || !value.length) failCall('temporarily_unavailable', '没有找到覆盖本次预订资源的启用执行器', '请确认预订仍有效，并请管理员核对执行器登记');
-  if (value.length !== 1) failCall('temporarily_unavailable', '覆盖本次预订的执行器声明了不同的文档', '请管理员核对这些登记后再开编译');
+  if (!Array.isArray(value) || !value.length) throw new BookingRefusal('temporarily_unavailable', '没有找到覆盖本次预订资源的启用执行器', '请确认预订仍有效，并请管理员核对执行器登记');
+  if (value.length !== 1) throw new BookingRefusal('temporarily_unavailable', '覆盖本次预订的执行器声明了不同的文档', '请管理员核对这些登记后再开编译');
   const row = value[0];
   const labels = { contract: '执行器规则', inventory: '设备清单', profile: '运行环境配置' };
   function read(slot: keyof CompileDocuments): string {
     const ref = slot === 'inventory' ? row?.manifest : row?.inputs?.[slot];
     if (typeof ref !== 'string') {
-      if (slot === 'inventory') failCall('temporarily_unavailable', '预订绑定的命名文档与执行器登记的清单摘要无法唯一对应', '请管理员核对清单登记，再用相应清单预订');
-      failCall('temporarily_unavailable', `执行器没有声明${labels[slot]}文档`, `请管理员在执行器登记中填写 ${slot} 槽位的命名文档，再开编译`);
+      if (slot === 'inventory') throw new BookingRefusal('temporarily_unavailable', '预订绑定的命名文档与执行器登记的清单摘要无法唯一对应', '请管理员核对清单登记，再用相应清单预订');
+      throw new BookingRefusal('temporarily_unavailable', `执行器没有声明${labels[slot]}文档`, `请管理员在执行器登记中填写 ${slot} 槽位的命名文档，再开编译`);
     }
     const [name, revision] = ref.split('@');
-    if (!revision) failCall('not_found', `${labels[slot]}文档 ${name} 没有已发布的修订`, `请管理员发布 ${name} 后再开编译`);
+    if (!revision) throw new BookingRefusal('not_found', `${labels[slot]}文档 ${name} 没有已发布的修订`, `请管理员发布 ${name} 后再开编译`);
     const requested = options[slot];
-    if (requested !== undefined && requested !== name && requested !== ref) failCall('invalid_parameters', `--${slot} 与本次预订的${labels[slot]}文档不符`, `请使用 ${ref}，或省略该参数`);
+    if (requested !== undefined && requested !== name && requested !== ref) throw new BookingRefusal('invalid_parameters', `--${slot} 与本次预订的${labels[slot]}文档不符`, `请使用 ${ref}，或省略该参数`);
     return ref;
   }
   return { contract: read('contract'), inventory: read('inventory'), profile: read('profile') };
@@ -183,7 +184,7 @@ export async function openCompile(call: CallTool, options: OpenOptions, skillsRo
   if (listed.failed) {
     const error = Array.isArray(listed.envelope?.errors) ? listed.envelope.errors.find(isRecord) : undefined;
     const category = error?.code === 'SOURCE_NOT_PERMITTED' ? 'permission_denied' : error?.code === 'SOURCE_ABSENT' ? 'not_found' : 'temporarily_unavailable';
-    failCall(category, String(error?.message ?? '未能读取当前账户预订的工作流文档'), String(error?.fix ?? '请核对预订编号和工作流分配'));
+    throw new BookingRefusal(category, String(error?.message ?? '未能读取当前账户预订的工作流文档'), String(error?.fix ?? '请核对预订编号和工作流分配'));
   }
   const packs = Array.isArray(listed.envelope?.packs) ? listed.envelope.packs.filter(isRecord) : [];
   const problems = [...workflowProblems(packs, skillsRoot), ...(plumb ? await plumbProblems(plumb, skillsRoot) : []), ...(jev ? jevProblems(jev) : [])];
@@ -256,7 +257,7 @@ export async function main(argv: string[], readStdin: () => Promise<string[]> = 
     return 0;
   } catch (error) {
     const words = error instanceof NotReady ? error.message : `开运行工具出错：${error instanceof Error ? error.message : String(error)}`;
-    process.stdout.write(`${error instanceof CallFailure ? formatCallError(error) : '无法编译：' + words}\n`);
+    process.stdout.write(`${error instanceof BookingRefusal ? formatCallError(error) : '无法编译：' + words}\n`);
     return 1;
   }
 }

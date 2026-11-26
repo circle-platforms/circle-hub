@@ -1223,8 +1223,8 @@
     },
     {
       "path": "tools/open-compile.ts",
-      "sha256": "b5bcca12e37f6dee093e5b748c6b1f824d5f2a0b143cbaad0318699ff4e1aad0",
-      "size": 22365
+      "sha256": "30b31f316fe33f79342511043ade947723a6677da2d892256c4687f7a0d466e6",
+      "size": 22514
     },
     {
       "path": "tools/open-merge.cli.json",
