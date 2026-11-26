@@ -714,7 +714,8 @@ async function newPlanRun(state: PipelineState, open: Record<string, unknown>, b
   // The scope is the user's own words and cases, written as the record has them; the cases left out are the record's and the ones this pipeline dropped, each once, in the order met.
   const scope = recordedScope(open), left = [...new Set([...recordedExclude(open), ...exclude])];
   if (scope) { await mkdir(base, { recursive: true }); await writeFile(scopeFile, JSON.stringify(scope, null, 2) + '\n'); }
-  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' || state.judge === 'jev' ? ['--judge', state.judge] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...recordedBooking(open), ...recordedNames(open), ...(scope ? ['--scope', scopeFile] : []), ...(left.length ? ['--exclude', left.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], standardInput(state, g));
+  const names = await frozenDocumentOptions(open, state.plan_dir);
+  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' || state.judge === 'jev' ? ['--judge', state.judge] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...recordedBooking(open), ...names, ...(scope ? ['--scope', scopeFile] : []), ...(left.length ? ['--exclude', left.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], standardInput(state, g));
   if (opened.code !== 0 || !existsSync(openFile)) throw new Error(`${what}没有开成：${words(opened) || '没有输出'}`);
   const target = String(((await readJson(openFile)) as Record<string, unknown>).plan_run ?? '');
   if (!target || target === state.plan_run) throw new Error(`open-compile.ts 没有给出新的脚本编写运行（看到 ${target || '空'}）`);
@@ -749,9 +750,7 @@ function checkOpen(state: PipelineState, open: Record<string, unknown>): void {
   recordedScope(open); recordedExclude(open); recordedNames(open); recordedBooking(open);
 }
 
-// What the first open was given and a later plan run must be given again: open-compile.ts writes the scope (the user's words and the cases they
-// name, which the recomposition run froze), the cases left out, the version line and the three named documents into its record when it has
-// them, and whether this compile took the booking itself (the delivery releases only that one). A record without them has none.
+// Keep the original scope and exclusions. Older open records can get a missing document revision from the matching plan run.
 function recordedScope(open: Record<string, unknown>): { words: string; cases: string[] } | null {
   const scope = open.scope;
   if (scope === undefined) return null;
@@ -765,9 +764,27 @@ function recordedNames(open: Record<string, unknown>): string[] {
     const value = open[name];
     if (value === undefined) continue;
     if (typeof value !== 'string' || !value) throw new Error(`--open 里的 ${name} 不是${name === 'version' ? '版本线' : '命名文档'}的名字；--open 写 open-compile.ts 写的文件，不手改`);
-    options.push(`--${name}`, name === 'contract' || name === 'profile' ? value.split('@')[0]! : value);
+    options.push(`--${name}`, value);
   }
   return options;
+}
+async function frozenDocumentOptions(open: Record<string, unknown>, planDir: string): Promise<string[]> {
+  const slots = ['contract', 'inventory', 'profile'] as const;
+  const pinned = /^(doc:doc:[a-z][a-z0-9-]{0,63})@([0-9a-f]{64})$/;
+  if (slots.every(slot => typeof open[slot] === 'string' && pinned.test(open[slot]))) return recordedNames(open);
+
+  const run = await readJson(join(planDir, 'run.json')).catch(() => null);
+  if (!isRecord(run) || run.run !== open.plan_run || !Array.isArray(run.sources)) throw new Error('缺少上一轮脚本编写运行的冻结来源，请重新下载该运行后再返工');
+  const bound = { ...open };
+  for (const slot of slots) {
+    const rows = run.sources.filter(source => isRecord(source) && source.slot === slot);
+    const source = rows.length === 1 ? rows[0] : undefined;
+    const match = typeof source?.external === 'string' ? pinned.exec(source.external) : null;
+    if (!match || source.reference !== 'src:' + match[2]) throw new Error(`上一轮脚本编写运行缺少 ${slot} 槽位的冻结文档修订，请核对该运行的来源后再返工`);
+    if (open[slot] !== undefined && open[slot] !== match[1] && open[slot] !== source.external) throw new Error(`--open 的 ${slot} 与上一轮脚本编写运行绑定的 ${source.external} 不符，请使用该运行的开编译记录`);
+    bound[slot] = source.external;
+  }
+  return recordedNames(bound);
 }
 function recordedBooking(open: Record<string, unknown>): string[] {
   const acquired = open.booking_acquired;

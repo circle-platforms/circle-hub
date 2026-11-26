@@ -20,7 +20,7 @@ import { generateWorkbook } from '../../packs/workflow/case-compile/functions/ge
 import { reportLines, batchQualifications } from '../../scripts/real/accept/device-run.ts';
 import { createScriptedModel } from '../../scripts/real/scripted-model.ts';
 import { createTestHub, type TestHub, type TestUser } from '../../hub/server/testing-real.ts';
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -253,6 +253,59 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
         assert.equal(detail.run.sources.find(source => source.slot === slot)?.external,opened.documents[slot]);
       }
     }
+  });
+
+  test('a rework keeps the original revisions after named documents are republished and actually carries the source plan', async t => {
+    const admin = bed.hub.admin.principal;
+    const call = hubTools(new URL(bed.hub.url).origin, bed.reviewer.token);
+    const options = {subject, product:bed.product.names[0], build:bed.site.RELEASED, booking:await booking()};
+    const first = await openCompile(call, options, staged);
+    const docs = [['runner-contract', CONTRACT_DOC], ['runtime-profile', PROFILE_DOC]] as const;
+    t.after(async () => {
+      for (const [name, value] of docs) await bed.hub.hub.docs.put(admin,name,bytes(value),{fileName:name+'.json'});
+    });
+    for (const [name, value] of docs) {
+      await bed.hub.hub.docs.put(admin,name,Buffer.from(JSON.stringify(value,null,2)),{fileName:name+'.json'});
+    }
+    const fresh = await openCompile(call,options,staged);
+    assert.notEqual(fresh.documents.contract,first.documents.contract);
+    assert.notEqual(fresh.documents.profile,first.documents.profile);
+    await assert.rejects(openCompile(call,{...options, contract:first.documents.contract},staged), error =>
+      error instanceof CallFailure && error.next_action.includes(fresh.documents.contract));
+
+    const reopened = await openCompile(call,{...options,...first.documents,
+      reuse:{run:first.recomposeRun,record:first.recomposeRecord}},staged);
+    assert.deepEqual(reopened.documents,first.documents);
+    const run = async (id: string) => {
+      const detail = await bed.hub.deps.runs.getRun(bed.reviewer.principal,id);
+      assert.ok(detail);
+      return detail.run;
+    };
+    const source = await run(first.planRun);
+    const target = await run(reopened.planRun);
+    const directory = await mkdtemp(join(tmpdir(),'carry-frozen-docs-'));
+    t.after(() => rm(directory,{recursive:true,force:true}));
+    for (const [name,data] of [['source',source],['target',target]] as const) {
+      await mkdir(join(directory,name));
+      await writeFile(join(directory,name,'run.json'),JSON.stringify(data));
+      for (const slot of ['contract','inventory','profile'] as const) {
+        assert.equal(data.sources.find(s=>s.slot===slot)?.external,first.documents[slot]);
+      }
+    }
+    const plan = planItem(0,source.items[0]!.id);
+    await mkdir(join(directory,'plans'));
+    const originalPlan = JSON.stringify(plan);
+    await writeFile(join(directory,'plans','00.json'),originalPlan);
+    const carry = (targetDir: string, output: string) => promisify(execFile)(process.execPath,[
+      join(staged,'case-compile/tools/carry-plans.ts'), '--source','source','--target',targetDir,'--source-plans','plans','--plans',output,
+    ],{cwd:directory,encoding:'utf8'});
+    const carried = await carry('target','carried');
+    const manifest = JSON.parse(carried.stdout.slice(carried.stdout.indexOf('{')));
+    assert.deepEqual(manifest.carried.map((row:{item:string})=>row.item),[plan.item]);
+    assert.equal(await readFile(join(directory,'carried','00.json'),'utf8'),originalPlan);
+    await mkdir(join(directory,'fresh'));
+    await writeFile(join(directory,'fresh','run.json'),JSON.stringify(await run(fresh.planRun)));
+    await assert.rejects(carry('fresh','wrong-revision'), /绑定的输入（subject\/contract\/inventory\/profile）不一致/);
   });
 
   test('two authored cases use independent bookings, different S, terminal results and qualified reports', async () => {

@@ -173,6 +173,7 @@ function bookingDocuments(value: unknown, options: OpenOptions): CompileDocument
     const [name, revision] = ref.split('@');
     if (!revision) throw new BookingRefusal('not_found', `${labels[slot]}文档 ${name} 没有已发布的修订`, `请管理员发布 ${name} 后再开编译`);
     const requested = options[slot];
+    if (options.reuse && slot !== 'inventory' && requested?.match(/^(.+)@[0-9a-f]{64}$/)?.[1] === name) return requested;
     if (requested !== undefined && requested !== name && requested !== ref) throw new BookingRefusal('invalid_parameters', `--${slot} 与本次预订的${labels[slot]}文档不符`, `请使用 ${ref}，或省略该参数`);
     return ref;
   }

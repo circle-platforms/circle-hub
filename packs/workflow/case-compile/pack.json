@@ -48,8 +48,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "8928beb8df205d39e334ac33e8ffee6b5a12c8e52e78b259489dc5c281c50b20",
-      "size": 18156
+      "sha256": "d3ea72aee39a5972c9e80c6575f75708550e8c1a4a20d2e98589b878bba91558",
+      "size": 18300
     },
     {
       "path": "agents/compile-attributor.md",
@@ -1223,8 +1223,8 @@
     },
     {
       "path": "tools/open-compile.ts",
-      "sha256": "30b31f316fe33f79342511043ade947723a6677da2d892256c4687f7a0d466e6",
-      "size": 22514
+      "sha256": "378f574be63672c4be963cd7a4b918cc827eb25738526e2525280e209f8081f8",
+      "size": 22636
     },
     {
       "path": "tools/open-merge.cli.json",
@@ -1243,8 +1243,8 @@
     },
     {
       "path": "tools/pipeline.ts",
-      "sha256": "1c3983424e09f2d9194547dc3099435fc1b27049141d5ea8e0d841c978a9b3ca",
-      "size": 85882
+      "sha256": "1ecc3c80c7e1fad9e89ff8c2a13d044827636649dcac42f3711d2cb693d020f0",
+      "size": 87000
     },
     {
       "path": "tools/plan-fields.md",

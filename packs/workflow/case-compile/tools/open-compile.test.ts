@@ -207,6 +207,15 @@ test('wrong documents, absent declarations and ambiguous bookings stop before ei
     assert.equal(result.code,1); assert.match(result.out,/^参数无效：/); assert.ok(result.out.includes(BED_DOCS[slot]));
     assert.deepEqual(h.calls.map(c=>c.name), ['list_task_packs']);
   }
+  for (const [slot, value] of [
+    ['contract', OTHER_BED_DOCS.contract], ['profile','doc:doc:runtime-profile@short'],
+    ['inventory','doc:doc:bed-topology@' + '9'.repeat(64)],
+  ] as const) {
+    const h = hub({list_task_packs:packs()});
+    const result = await run(argv(out, ['--recompose-run',RECOMPOSE,'--recompose-record','rec:'+'c'.repeat(64),'--'+slot,value]),h.connect,root);
+    assert.equal(result.code,1); assert.match(result.out,/^参数无效：/); assert.ok(result.out.includes(BED_DOCS[slot]));
+    assert.deepEqual(h.calls.map(c=>c.name),['list_task_packs']);
+  }
   for (const rows of [[], [{inputs:{},manifest:BED_DOCS.inventory}], [bookingRow(), bookingRow(OTHER_BED_DOCS)]]) {
     const h = hub({list_task_packs:packs(undefined,undefined,rows)});
     const result = await run(argv(out), h.connect, root);
