@@ -28,7 +28,7 @@ test('the claim that carries the device words is read; an unknown claim gives it
 
 test('a read is one start_run of the test-bed read action, and the output is kept under a header that says what it is', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'device-read-')), out = join(dir, 'show-widget-name.txt'), seen: Array<{ name: string; args: Record<string, unknown> }> = [];
-  const got = await capture(() => main(['--hub', 'https://hub.example.invalid/mcp', '--booking', BOOKING, '--device', 'dev0', '--line', ' show widget name ', '--out', out, '--bed', 'bed-a'], async () => 'synthetic-token-1234', answering({ failed: false, text: '合成', envelope: observation('name  size\nwidget-a  1', true) }, seen)));
+  const got = await capture(() => main(['--hub', 'https://hub.example.invalid/mcp', '--booking', BOOKING, '--device', 'dev0', '--line', ' show widget name ', '--inventory', 'doc:doc:bed-topology', '--out', out, '--bed', 'bed-a'], async () => 'synthetic-token-1234', answering({ failed: false, text: '合成', envelope: observation('name  size\nwidget-a  1', true) }, seen)));
   assert.equal(got.code, 0);
   assert.deepEqual(seen, [{ name: 'start_run', args: { pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:bed-topology' } }, predecessor: BOOKING, parameters: { action: 'read', booking: BOOKING, device: 'dev0', line: 'show widget name', bed: 'bed-a' } } }]);
   assert.deepEqual(JSON.parse(got.out), { read: true, file: out, line: 'show widget name', device: 'dev0', lines: 2, chars: 22, truncated: true });
@@ -42,7 +42,7 @@ test('a read is one start_run of the test-bed read action, and the output is kep
 
 test('a read that cannot be made is said in one line with exit 0, and nothing is written', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'device-read-'));
-  const argv = (out: string) => ['--hub', 'https://hub.example.invalid/mcp', '--booking', BOOKING, '--device', 'dev0', '--line', 'show widget name', '--out', out];
+  const argv = (out: string) => ['--hub', 'https://hub.example.invalid/mcp', '--booking', BOOKING, '--device', 'dev0', '--line', 'show widget name', '--inventory', 'doc:doc:bed-topology', '--out', out];
   for (const [name, answer, why] of [
     ['no-read', { failed: false, text: '合成', envelope: unknown }, /^没有读设备：这台执行器没有声明可以按请求读设备/],
     ['refused', { failed: true, text: '运行没有开出来\n第二行', envelope: { errors: [{ code: 'test-bed.not_holder', message: '这台设备不是当前账户预订的', fix: '先预订' }] } }, /这台设备不是当前账户预订的/],
@@ -57,11 +57,12 @@ test('a read that cannot be made is said in one line with exit 0, and nothing is
   }
 });
 
-test('a booking that is no run number, or a line with a control character, is refused before any call', async () => {
+test('a booking that is no run number, a line with a control character, or a read without the booking\'s inventory is refused before any call', async () => {
   const seen: Array<{ name: string; args: Record<string, unknown> }> = [];
   for (const argv of [
-    ['--hub', 'https://hub.example.invalid/mcp', '--booking', 'nope', '--device', 'dev0', '--line', 'show widget name', '--out', 'x.txt'],
-    ['--hub', 'https://hub.example.invalid/mcp', '--booking', BOOKING, '--device', 'dev0', '--line', 'show widget\tname', '--out', 'x.txt'],
+    ['--hub', 'https://hub.example.invalid/mcp', '--booking', 'nope', '--device', 'dev0', '--line', 'show widget name', '--inventory', 'doc:doc:bed-topology', '--out', 'x.txt'],
+    ['--hub', 'https://hub.example.invalid/mcp', '--booking', BOOKING, '--device', 'dev0', '--line', 'show widget\tname', '--inventory', 'doc:doc:bed-topology', '--out', 'x.txt'],
+    ['--hub', 'https://hub.example.invalid/mcp', '--booking', BOOKING, '--device', 'dev0', '--line', 'show widget name', '--out', 'x.txt'],
   ]) {
     const got = await capture(() => main(argv, async () => 'synthetic-token-1234', answering({ failed: false, text: '合成', envelope: observation('x') }, seen)));
     assert.equal(got.code, 1); assert.match(got.errors, /^参数无效：/);

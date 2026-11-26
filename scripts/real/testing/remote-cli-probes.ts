@@ -142,7 +142,7 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
       'tools/open-compile.ts': [openProbe],
     },
     readCaseCompile: {
-      'tools/device-read.ts': probe(['--hub', origin + '/mcp', '--booking', PLAN, '--device', 'dev0', '--line', 'show widget name', '--out', join(workRoot, 'device-read.txt')], { status: 0, stdout: JSON.stringify({ read: false, why: 'Hub 答复 400' }) + '\n', stderr: '' }),
+      'tools/device-read.ts': probe(['--hub', origin + '/mcp', '--booking', PLAN, '--device', 'dev0', '--line', 'show widget name', '--inventory', 'doc:doc:bed-topology', '--out', join(workRoot, 'device-read.txt')], { status: 0, stdout: JSON.stringify({ read: false, why: 'Hub 答复 400' }) + '\n', stderr: '' }),
     },
     lateCaseCompile: {
       'tools/refresh-late.ts': probe(['--hub', origin + '/mcp', '--run', LATE, '--dir', 'late-run'], { status: 0, stdout: JSON.stringify(lateReport) + '\n', stderr: '' }),

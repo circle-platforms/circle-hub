@@ -1123,13 +1123,13 @@
     },
     {
       "path": "tools/device-read.cli.json",
-      "sha256": "6e0d8ef5b4902224bf9e81150f0f7245ba0399c7f6f96e57b0962fa2e51b4a9d",
+      "sha256": "31a050c34632eaf39998354321f2567495e47b646b3e031fe2fcab0e4da2ff7d",
       "size": 2178
     },
     {
       "path": "tools/device-read.ts",
-      "sha256": "0bb3834e02a3e946db282d0456460011840f6530a7084686178ec0b62e39e776",
-      "size": 5002
+      "sha256": "9dacd72c02fa50a344d97eacdad603913688fa9f2dbeec1ed53e3e1e87ef8486",
+      "size": 4973
     },
     {
       "path": "tools/download-returns.cli.json",

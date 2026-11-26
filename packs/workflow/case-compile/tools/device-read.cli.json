@@ -54,7 +54,7 @@
     },
     {
       "name": "inventory",
-      "required": false,
+      "required": true,
       "kind": "string",
       "multiple": false,
       "placeholder": "<doc:doc:名字>",
@@ -98,7 +98,7 @@
         {
           "name": "inventory",
           "placeholder": "<doc:doc:名字>",
-          "optional": true
+          "optional": false
         }
       ]
     }

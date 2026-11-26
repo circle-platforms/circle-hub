@@ -8,7 +8,7 @@ import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.t
 import { failCall, isRecord, parseCliOptions } from '../functions/text.ts';
 import { hubTools, NotReady, refusalWords, type CallTool } from './open-compile.ts';
 
-const USAGE = "device-read.ts --hub <MCP地址> --booking <test-bed 预订号> --device <设备名> --line <只读命令> --out <新文件> [--bed <测试环境名>] [--inventory <doc:doc:名字>]";
+const USAGE = "device-read.ts --hub <MCP地址> --booking <test-bed 预订号> --device <设备名> --line <只读命令> --inventory <doc:doc:名字> --out <新文件> [--bed <测试环境名>]";
 const READ_TIMEOUT_MS = 120_000;
 
 export interface DeviceRead { read: true; file: string; line: string; device: string; lines: number; chars: number; truncated: boolean }
@@ -34,13 +34,13 @@ export async function readDevice(call: CallTool, options: { booking: string; dev
 
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, tools: (origin: string, bearer: string) => CallTool = (origin, bearer) => hubTools(origin, bearer, READ_TIMEOUT_MS)): Promise<number> {
   try {
-    const args = parseCliOptions(argv, { hub: true, booking: true, device: true, line: true, out: true, bed: false, inventory: false }, USAGE) as Record<string, string>;
+    const args = parseCliOptions(argv, { hub: true, booking: true, device: true, line: true, out: true, bed: false, inventory: true }, USAGE) as Record<string, string>;
     if (!RUN_ID.test(args.booking)) failCall('invalid_parameters', '--booking 不是声明格式的运行编号', '写 test-bed 预订那次运行的编号后重试');
     if (/[\u0000-\u001f\u007f]/.test(args.line) || !args.line.trim()) failCall('invalid_parameters', '--line 要是一行普通文字', '写一条只读命令，不带换行和控制字符');
     const origin = parseHubOrigin(args.hub);
     const bearer = await requireBearerToken(readToken);
     let got: Awaited<ReturnType<typeof readDevice>>;
-    try { got = await readDevice(tools(origin, bearer), { booking: args.booking, device: args.device, line: args.line.trim(), inventory: args.inventory ?? 'doc:doc:bed-topology', ...(args.bed ? { bed: args.bed } : {}) }); }
+    try { got = await readDevice(tools(origin, bearer), { booking: args.booking, device: args.device, line: args.line.trim(), inventory: args.inventory, ...(args.bed ? { bed: args.bed } : {}) }); }
     catch (error) { if (!(error instanceof NotReady)) throw error; got = error.message.split('\n')[0]!.replace(/[：:]\s*$/, '').slice(0, 300); }
     if (typeof got === 'string') { process.stdout.write(JSON.stringify({ read: false, why: got } satisfies NoDeviceRead) + '\n'); return 0; }
     const head = `# 设备 ${args.device} 对“${args.line.trim()}”的输出${got.observed ? `（${got.observed} 读到）` : ''}；目标自报，未排除本地操作${got.truncated ? '；输出过长，已截断' : ''}\n# 只说明输出的写法和排版，不能当期望值的依据。\n`;
