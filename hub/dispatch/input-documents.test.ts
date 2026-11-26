@@ -51,11 +51,11 @@ test('the effect boundary checks the frozen document name even when the bytes ma
   assert.equal(refused.input, undefined);
   const check = refused.checks.find(check => check.condition === 'proof.input_document.rules')!;
   assert.equal(check.satisfied,false);
-  assert.equal(releaseNextStep(check,{callerIsAdmin:false}),'按测试环境声明的文档重新开编译');
+  assert.equal(releaseNextStep(check,{callerIsAdmin:false}),'按测试环境声明的文档重新开始运行');
   await c.registry.update(c.admin,c.executor.id,{...c.executor.source,input_documents:definition.input_documents});
   const automatic = await c.service.dispatchAccepted(c.run);
   assert.equal(automatic.started,false);
-  assert.match(automatic.reason ?? '',/按测试环境声明的文档重新开编译/);
+  assert.match(automatic.reason ?? '',/按测试环境声明的文档重新开始运行/);
   const job = await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(job.outcome,'not_dispatched');
   const refusal = (await c.service.journal.events(job.job)).find(event => event.body.detail.phase === 'boundary_refused');

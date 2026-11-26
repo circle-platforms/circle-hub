@@ -166,7 +166,7 @@ export function hasSupersededManifest(check?: RefusedCheck): boolean {
     && check.fields?.some(field => field.field === 'manifest_sha256.current_doc_revision' && field.matches === false) === true;
 }
 
-export const REOPEN_WITH_DECLARED_DOCUMENTS = '按测试环境声明的文档重新开编译';
+export const REOPEN_WITH_DECLARED_DOCUMENTS = '按测试环境声明的文档重新开始运行';
 export function wrongInputDocument(check: RefusedCheck): boolean {
   return check.satisfied === false && check.condition.startsWith('proof.input_document.');
 }
