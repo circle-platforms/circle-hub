@@ -223,6 +223,35 @@ after(async () => { await client?.close(); await endpoint?.close(); await opened
 beforeEach(async () => { aliasEcho = false; if (!skip && bed) { const keys = (await bed.hub.leases.view('bed/')).entries.map(e => e.key); if (keys.length) await bed.hub.leases.forceRelease({ keys, by: bed.hub.admin.principal.id, reason: '合成测试失败后的隔离清理' }); } });
 
 describe('scenario 28: published documents to real Hub workbook dispatch and release', { skip }, () => {
+  test('booking lookup skips an unreadable registration, records its reason privately and refuses when none can be resolved', async t => {
+    const admin = bed.hub.admin.principal, registry = dispatch().registry;
+    const held = await booking(), args = {booking:{run:held,workflow:'case-compile'}};
+    const base = await registry.readSource(executor); assert.ok(base);
+    const key = 'SYNTHETIC_BOOKING_MANIFEST';
+    await bed.hub.records.variables.setVariable(admin,key,base.source.manifest_sha256,'synthetic test');
+    const bad = await registry.add(admin,{...base.source,manifest_sha256:'${var:SYNTHETIC_BOOKING_MANIFEST}'});
+    t.after(async () => {
+      await bed.hub.records.variables.setVariable(admin,key,base.source.manifest_sha256,'synthetic restore');
+      await registry.disable(admin,bad.id);
+      await registry.update(admin,executor,base.source);
+    });
+    await bed.hub.records.variables.setVariable(admin,key,'invalid-digest','synthetic drift');
+    const good = await client.call('list_task_packs',args);
+    assert.equal(good.isError,false,JSON.stringify(good.out.errors));
+    assert.equal(good.out.booking_documents?.length,1);
+    const log = (await bed.hub.records.callLog.query(admin,{traceId:good.out.trace})).items;
+    assert.ok(log.some(row=>row.admin_reasons?.some(note=>note.includes(bad.id) && note.includes(key))));
+    assert.ok(!good.text.includes(bad.id) && !good.text.includes(key));
+    await registry.disable(admin,executor);
+    const none = await client.call('list_task_packs',args);
+    assert.equal(none.isError,true);
+    assert.equal(none.out.errors[0].code,'SOURCE_READ_FAILED');
+    assert.equal(none.text.split('供模型引用')[0].trim(),'暂时不可用：本次预订没有可用的执行器登记。请管理员核对执行器登记。');
+    assert.match(none.out.errors[0].message,/执行器登记/);
+    assert.equal(none.out.errors[0].fix,'请管理员核对执行器登记');
+    assert.ok(!none.text.includes(bad.id) && !none.text.includes(key));
+  });
+
   test('booking lookup distinguishes an absent run, another runner and unavailable dispatch', async t => {
     const admin = bed.hub.admin.principal;
     const request = (run:string) => ({booking:{run,workflow:'case-compile'}});

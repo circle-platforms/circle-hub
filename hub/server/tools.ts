@@ -661,7 +661,9 @@ const listTaskPacks: Handler = async (deps, call, args) => {
       call.context.adminNote(`预订 ${run} 存在，当前账户 ${call.principal.id} 未取得本人持有的运行记录`);
       return { answer: errorAnswer('list_task_packs', [unavailable()]) };
     }
-    bookingDocuments = await deps.dispatch.bookingDocuments(call.principal, detail.run, workflow);
+    const result = await deps.dispatch.bookingDocuments(call.principal, detail.run, workflow, call.context.adminNote);
+    if (!Array.isArray(result)) return { answer: errorAnswer('list_task_packs', [result]) };
+    bookingDocuments = result;
   }
   // Every choice is in the answer whatever the offset (A05 R[1]); only the details are paged (decision 113).
   const index = filtered.map((pack) => ({ pack: pack.pack, title: pack.title, kind: pack.kind }));

@@ -292,7 +292,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     systems: { trial: (by, input) => connectors.admin.trial(by, input), forgetTrialLogin: (by, input) => connectors.admin.forgetTrialLogin(by, input) },
     // The console's read-only view of dispatch: the registry and readRunJobs recheck the administrator themselves.
     dispatch: {
-      ...(leases ? { bookingDocuments: (by, booking, workflow) => new ExecutorRegistry(records).bookingDocuments(by, booking, workflow, leases, now?.() ?? new Date()) } : {}),
+      ...(dispatch && leases ? { bookingDocuments: (by, booking, workflow, adminNote) => new ExecutorRegistry(records).bookingDocuments(by, booking, workflow, leases, now?.() ?? new Date(), adminNote) } : {}),
       ...(dispatch && leases ? { readiness: createEnvironmentReadiness(records, new ExecutorRegistry(records), dispatch, leases, (actor, id) => canUseEnvironment(records, actor, id), now) } : {}),
       executors: async (by) => {
         const views: ExecutorView[] = [];

@@ -2,6 +2,7 @@ import { isAdmin } from '../records/api.ts';
 import { docPointerName, parseDocId } from '../refs/api.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import type { BookingDocuments } from '../../contracts/src/tools.ts';
+import type { ProtocolError } from '../../contracts/src/common.ts';
 import type { LeaseService } from '../leases/api.ts';
 import { VariableError, WHOLE_HUB, canonicalBytes, canonicalize, newId, scanForCredentials, sha256Hex, type Principal, type RecordsKit, type VariableSnapshot, type AuthorizationRecord, type ActionBody, type RecordStore, type Transaction, type SecretWrite } from '../records/api.ts';
 import { VariableInputError, secretNameOf, referencesIn, resolve as maskReferences } from '../../contracts/src/variables.ts';
@@ -11,6 +12,8 @@ import { ExecutorStableName } from '../../contracts/api.ts';
 import { ExecutorNames } from './executor-names.ts';
 import { ExecutorSource, resolveExecutor, checkedReferences } from './source.ts';
 export { ExecutorSource } from './source.ts';
+export type BookingDocumentLookup = BookingDocuments[] | ProtocolError;
+
 export type RegisteredExecutor = {
     id: string;
     digest: string;
@@ -159,7 +162,7 @@ export class ExecutorRegistry {
       }
       return (await this.records.objects.put(canonicalBytes(entries),'application/json')).sha256;
     }
-    async bookingDocuments(by: Principal, booking: RunRecord, workflow: string, leases: Pick<LeaseService, 'holderSnapshot'>, now: Date): Promise<BookingDocuments[]> {
+    async bookingDocuments(by: Principal, booking: RunRecord, workflow: string, leases: Pick<LeaseService, 'holderSnapshot'>, now: Date, adminNote: (note: string) => void): Promise<BookingDocumentLookup> {
       if (booking.runner !== by.id) return [];
       const grants = new Map((booking.leases ?? []).flatMap(grant =>
         grant.op === undefined || grant.op === 'acquire' ? grant.keys.map(key => [key, grant.lease] as const) : []));
@@ -168,10 +171,19 @@ export class ExecutorRegistry {
       const keys = new Set(holders.filter(h => !h.released && h.user === by.id && h.run === booking.run
         && h.lease === grants.get(h.key) && (h.expires_at === null || Date.parse(h.expires_at) > now.getTime())).map(h => h.key));
       const configurations = new Map<string, BookingDocuments>();
+      let unresolved = false;
       for (const entry of await this.internalSources()) {
         const source = entry.source;
         if (!source.enabled || source.proof.package !== workflow || !source.resources.length || !source.resources.every(key => keys.has(key))) continue;
-        const { definition } = await resolveExecutor(this.records, source);
+        let definition: ExecutorDefinition;
+        try {
+          ({ definition } = await resolveExecutor(this.records, source));
+        } catch (error) {
+          unresolved = true;
+          const variables = referencesIn(source).filter(ref => ref.kind === 'var').map(ref => ref.name+'（'+ref.at+'）');
+          adminNote(`执行器 ${entry.id} 缺少可用的解析后定义：${error instanceof Error ? error.message : '解析失败'}${variables.length ? '；引用的普通变量 '+[...new Set(variables)].join('、') : ''}`);
+          continue;
+        }
         const originals = new Set(booking.sources.flatMap(bound => {
           const doc = bound.external ? parseDocId(bound.external) : null;
           return doc?.sha256 && doc.sha256 === definition.manifest_sha256 && bound.reference === 'src:' + doc.sha256 ? [bound.external!] : [];
@@ -186,6 +198,7 @@ export class ExecutorRegistry {
       }
       const candidates = [...configurations.values()];
       const matching = candidates.filter(row => row.manifest !== null);
+      if (!matching.length && unresolved) return {code:'SOURCE_READ_FAILED',path:'/booking/run',message:'本次预订没有可用的执行器登记',fix:'请管理员核对执行器登记'};
       return matching.length ? matching : candidates;
     }
     async list(by: Principal): Promise<RegisteredExecutor[]> { const sources = await this.sources(by); const entries = await Promise.all(sources.map(e => this.get(e.id))); return entries.filter((e): e is RegisteredExecutor => e !== null); }

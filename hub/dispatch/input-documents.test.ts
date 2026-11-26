@@ -26,11 +26,11 @@ test('each active booking selects the documents of the executor whose resources 
     const holders = await c.leases.holderSnapshot(definition.resources);
     const detail = { ...c.detail.run, run, leases:[{lease:holders[0]!.lease, keys:definition.resources, until:holders[0]!.expires_at}],
       sources:c.detail.run.sources.map(source => source.reference === 'src:'+digest ? {...source,external:'doc:doc:inventory@'+digest} : source) };
-    const result = await c.registry.bookingDocuments(c.owner, detail, pack, c.leases,c.now());
+    const result = await c.registry.bookingDocuments(c.owner, detail, pack, c.leases,c.now(),()=>{});
     assert.deepEqual(result,[{inputs:{rules:'doc:doc:'+definition.input_documents.rules+'@'+current,profile:'doc:doc:'+definition.input_documents.profile+'@'+current},manifest:'doc:doc:inventory@'+digest}]);
-    assert.deepEqual(await c.registry.bookingDocuments(c.admin,detail,pack,c.leases,c.now()),[]);
+    assert.deepEqual(await c.registry.bookingDocuments(c.admin,detail,pack,c.leases,c.now(),()=>{}),[]);
     await c.leases.release({keys:definition.resources, holder:{user:c.owner.id,run}});
-    assert.deepEqual(await c.registry.bookingDocuments(c.owner,detail,pack,c.leases,c.now()),[]);
+    assert.deepEqual(await c.registry.bookingDocuments(c.owner,detail,pack,c.leases,c.now(),()=>{}),[]);
   }
 });
 
