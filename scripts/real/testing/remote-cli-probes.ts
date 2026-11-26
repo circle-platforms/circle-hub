@@ -59,7 +59,13 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
   await writeFile(join(records, '01.json'), JSON.stringify({ item: item.id, method: { kind: 'declared', text: '合成方法', sources: ['synthetic-reference'], basis: '合成依据' } }));
   const notes = join(workRoot, 'notes.json'); await writeFile(notes, '{"cases":{}}');
   // The record that opened the compile (a plain one: no judge field, which means Plumb); the delivery tool reads it before it reads the Hub.
-  const opened = join(workRoot, 'opened.json'); await writeFile(opened, JSON.stringify({ schema: 'open-compile@1', ready: true }));
+  const opened = join(workRoot, 'opened.json');
+  await writeFile(opened, JSON.stringify({
+    schema: 'open-compile@1', ready: true,
+    contract: `doc:doc:synthetic-rules@${digest(originals.contract)}`,
+    profile: `doc:doc:synthetic-profile@${digest(originals.profile)}`,
+    inventory: `doc:doc:synthetic-inventory@${digest(originals.inventory)}`,
+  }));
   const child = fork(fileURLToPath(new URL('./remote-cli-worker.ts', import.meta.url)), [], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'], env: { NODE_NO_WARNINGS: '1' } });
   const origin = await new Promise<string>((resolve, reject) => {
     child.once('error', reject); child.once('exit', code => reject(new Error(`Synthetic CLI responder exited before ready: ${code}`)));
