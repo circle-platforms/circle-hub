@@ -74,6 +74,11 @@
           "many": {
             "type": "boolean"
           },
+          "executor_document": {
+            "description": "The executor must declare the named document for this slot before dispatch",
+            "type": "boolean",
+            "const": true
+          },
           "default_from_predecessor": {
             "description": "When predecessor is supplied and this slot is absent: without slot, bind that workflow’s latest accepted submitted validation record; with slot, copy that frozen input. An explicit value for a named slot must be the same object",
             "type": "object",

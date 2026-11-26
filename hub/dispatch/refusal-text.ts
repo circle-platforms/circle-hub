@@ -166,7 +166,13 @@ export function hasSupersededManifest(check?: RefusedCheck): boolean {
     && check.fields?.some(field => field.field === 'manifest_sha256.current_doc_revision' && field.matches === false) === true;
 }
 
+export const REOPEN_WITH_DECLARED_DOCUMENTS = '按测试环境声明的文档重新开编译';
+export function wrongInputDocument(check: RefusedCheck): boolean {
+  return check.satisfied === false && check.condition.startsWith('proof.input_document.');
+}
+
 export function releaseNextStep(check: RefusedCheck, input: NextInput): string {
+  if (wrongInputDocument(check)) return REOPEN_WITH_DECLARED_DOCUMENTS;
   if (hasSupersededManifest(check)) {
     return input.callerIsAdmin
       ? withExplain(input, '用 circle-hub executor update 按清单的现行修订重新登记执行器；清单由普通变量指定时更新该变量，再发起上机验证')

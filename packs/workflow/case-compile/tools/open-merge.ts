@@ -57,7 +57,7 @@ const runOf = (answer: ToolAnswer) => isRecord(answer.envelope?.run) && typeof a
 function inputOf(sources: Array<Record<string, unknown>>, slot: string): Record<string, string> {
   const source = sources.find((row) => row.slot === slot);
   if (!source) throw new MergeRefused(`脚本编写运行没有输入槽 ${slot}，开不了脚本合并运行；重新下载这个运行核对`);
-  if (typeof source.external === 'string' && source.external) return { external: source.external.replace(/@[0-9a-f]{64}$/, '') };
+  if (typeof source.external === 'string' && source.external) return { external: slot === 'subject' ? source.external.replace(/@[0-9a-f]{64}$/, '') : source.external };
   if (typeof source.reference === 'string' && source.reference) return { reference: source.reference };
   throw new MergeRefused(`脚本编写运行的输入槽 ${slot} 没有外部名字也没有引用`);
 }

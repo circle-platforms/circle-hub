@@ -640,6 +640,18 @@ const listTaskPacks: Handler = async (deps, call, args) => {
       return { answer: errorAnswer('list_task_packs', [packIdAbsenceError(packId, absence)]) };
     }
   }
+  let bookingDocuments;
+  if (parsed.data.booking) {
+    const { run, workflow } = parsed.data.booking;
+    const visible = assigned.some(pack => pack.id === workflow && pack.kind === 'workflow' && (pack.space ?? 'team') === 'team');
+    if (!visible) {
+      const error = packIdAbsenceError(workflow, await deps.workflows.absence?.(call.principal, workflow) ?? 'unassigned');
+      return { answer: errorAnswer('list_task_packs', [{ ...error, path: '/booking/workflow' }]) };
+    }
+    const detail = await deps.runs.getRun(call.principal, run);
+    if (!detail || detail.run.runner !== call.principal.id || !deps.dispatch?.bookingDocuments) return { answer: errorAnswer('list_task_packs', [unavailable()]) };
+    bookingDocuments = await deps.dispatch.bookingDocuments(call.principal, detail.run, workflow);
+  }
   // Every choice is in the answer whatever the offset (A05 R[1]); only the details are paged (decision 113).
   const index = filtered.map((pack) => ({ pack: pack.pack, title: pack.title, kind: pack.kind }));
   let context: Awaited<ReturnType<NonNullable<ServerDeps['runs']['packContext']>>> = null;
@@ -654,7 +666,7 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   }
   checkReadCancellation(call);
   return {
-    answer: { call_result: 'ok', errors: [], member_capabilities: capabilities, packs: filtered.slice(offset), index, ...(context !== null ? { context } : {}) },
+    answer: { call_result: 'ok', errors: [], member_capabilities: capabilities, packs: filtered.slice(offset), index, ...(bookingDocuments ? { booking_documents: bookingDocuments } : {}), ...(context !== null ? { context } : {}) },
     text: { packList: { offset, ...(kind === undefined ? {} : { kind }), ...(packId === undefined ? {} : { packId }), ...(contextUnread ? { contextUnread } : {}) } },
   };
 };

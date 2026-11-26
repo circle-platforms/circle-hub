@@ -95,6 +95,16 @@ export async function inspectInput(by:Principal,id:string,d:ExecutorDefinition,r
  add('proof.plan_run','产物的计划运行等于本运行前驱',hasData?typeof planRun==='string'&&!!planRun&&planRun===detail?.run.predecessor:null,[f('proof.plan_run',detail?.run.predecessor,planRun,hasData?typeof planRun==='string'&&!!planRun&&planRun===detail?.run.predecessor:null)]);
  const shapes:Array<[string,unknown,string,boolean]>=[['sha256',sha256,'sha256',typeof sha256==='string'&&isSha256(sha256)],['items',ids,'unique_nonempty_strings_one_per_item',Array.isArray(ids)&&ids.length>=1&&ids.length===(detail?.run.items.length??-1)&&ids.every(value=>typeof value==='string'&&!!value&&value.length<=200)&&new Set(ids).size===ids.length],['target',target,'string',typeof target==='string'],['manifest_sha256',manifest,'sha256',typeof manifest==='string'&&isSha256(manifest)],['build',build,'nonempty_string',typeof build==='string'&&!!build],['generator',generator,'present_nonnull',generator!==undefined&&generator!==null]];
  for(const [key,value,shape,pass] of shapes)add('proof.fields.'+key,'派发身份字段符合声明形状',hasData?pass:null,[f('proof.'+key,shape,value,hasData?pass:null)]);
+ const requiredDocuments = workflow?.workflow?.inputs.filter(input => input.executor_document).map(input => input.slot) ?? [];
+ for (const slot of new Set([...requiredDocuments, ...Object.keys(d.input_documents ?? {})])) {
+   const name = d.input_documents?.[slot];
+   const sources = detail?.run.sources.filter(source => source.slot === slot) ?? [];
+   const source = sources[0];
+   const doc = source?.external ? parseDocId(source.external) : null;
+   const matches = sources.length === 1 && doc !== null && doc.name === name && doc.sha256 !== null && source!.reference === 'src:' + doc.sha256;
+   add('proof.input_document.' + slot, `槽位 ${slot} 冻结的文档符合执行器声明`, detail ? matches : null,
+     [f(slot, name, sources.map(bound => bound.external), detail ? matches : null)]);
+ }
  const sourceHas=(sha:unknown,slot?:string)=>typeof sha==='string'&&!!detail?.run.sources.some(source=>{try{const ref=parseReference(source.reference);return ref.scheme==='src'&&ref.sha256===sha&&(slot===undefined||source.slot===slot&&source.role==='artifact_under_verification');}catch{return false;}});
  add('proof.artifact_slot','核验字节绑定在声明的待核验产物槽',hasData?sourceHas(sha256,d.proof.slot):null,[f('proof.slot',d.proof.slot,detail?.run.sources.filter(source=>source.slot===d.proof.slot).map(source=>({slot:source.slot,role:source.role,reference:source.reference})),hasData?sourceHas(sha256,d.proof.slot):null)]);
  add('proof.bound_sources','核验字节与清单都已绑定本运行',hasData?sourceHas(sha256)&&sourceHas(manifest):null,[f('run.sources.sha256',sha256,sourceHas(sha256)?sha256:undefined,hasData?sourceHas(sha256):null),f('run.sources.manifest_sha256',manifest,sourceHas(manifest)?manifest:undefined,hasData?sourceHas(manifest):null)]);

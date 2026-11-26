@@ -1192,7 +1192,7 @@ test('--open says who judged: the report and the reply carry the line of the jud
 });
 
 // What the open record says about the booking, and what the delivery then does with it (decision 195).
-const openWith = async (extra: Record<string, unknown>) => { const dir = await mkdtemp(join(tmpdir(), 'cc-open-')); const path = join(dir, 'open-compile.json'); await writeFile(path, JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: BOOKING, recompose_run: RECOMPOSE, plan_run: PLAN1, ...extra })); return path; };
+const openWith = async (extra: Record<string, unknown>) => { const dir = await mkdtemp(join(tmpdir(), 'cc-open-')); const path = join(dir, 'open-compile.json'); await writeFile(path, JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: BOOKING, inventory: 'doc:doc:bed-topology', recompose_run: RECOMPOSE, plan_run: PLAN1, ...extra })); return path; };
 const RELEASE_CALL = { name: 'start_run', arguments: { pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:bed-topology' } }, predecessor: BOOKING, parameters: { action: 'release', booking: BOOKING } } };
 const ALL_FILES = ['case.xlsx', 'delivery.json', 'delivery_report.md', 'unsuccessful_cases.md', 'unsuccessful_cases.xlsx'];
 const PLAIN_MESSAGE = '交付目录已组好：最后回复原样用 reply，不另加表格或逐条重述';

@@ -15,7 +15,7 @@ import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 import { afterDelivery } from '../functions/next-step.ts';
-import { DEFAULT_DOCS, hubTools, NotReady, refusalWords, type CallTool } from './open-compile.ts';
+import { hubTools, NotReady, refusalWords, type CallTool } from './open-compile.ts';
 
 const OPTIONS = { hub: true, runs: true, notes: true, out: true, open: true, recompose: false, name: false, 'keep-booking': false, 'release-booking': false } as const;
 const BOOKING_OPTIONS = '；预订另有可选的 --keep-booking yes（保留）和 --release-booking yes（释放），不能一起写';
@@ -184,7 +184,10 @@ function openedBooking(record: unknown): OpenedBooking | null {
   if (!isRecord(record)) return null;
   const acquired = record.booking_acquired;
   if (acquired !== undefined && acquired !== true) failCall('invalid_parameters', `--open 里的 booking_acquired 是 ${JSON.stringify(acquired).slice(0, 40)}，只能是 true（没有这一项就是这次编译没有自己预订测试环境）`, '--open 写 open-compile.ts 写的文件，不手改');
-  if (typeof record.booking === 'string' && RUN_ID.test(record.booking)) return { run: record.booking, acquired: acquired === true, inventory: typeof record.inventory === 'string' && record.inventory ? record.inventory : DEFAULT_DOCS.inventory };
+  if (typeof record.booking === 'string' && RUN_ID.test(record.booking)) {
+    if (typeof record.inventory !== 'string' || !record.inventory) failCall('invalid_parameters', '开编译记录没有绑定的设备清单', '使用带本次预订清单的开编译记录');
+    return { run: record.booking, acquired: acquired === true, inventory: record.inventory };
+  }
   if (acquired === true) failCall('invalid_parameters', '--open 说这次编译自己预订了测试环境，却没有写预订的运行编号（booking）', '--open 写 open-compile.ts 写的文件，不手改');
   return null;
 }

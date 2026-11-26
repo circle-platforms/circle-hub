@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.26.12",
+  "version": "3.27.0",
   "kind": "workflow",
   "dependencies": [
     {
@@ -48,8 +48,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "087ad174aa997d988733cabf210d0b3c67111c24f15c563a83a620cb1a9b4737",
-      "size": 17743
+      "sha256": "3c05423aa9ac13c2fe2f00e5d6c5a48634f5c47a4e4dcd1bf7d9f85c7f221680",
+      "size": 18063
     },
     {
       "path": "agents/compile-attributor.md",
@@ -503,8 +503,8 @@
     },
     {
       "path": "functions/profile.ts",
-      "sha256": "bc3ee5ee81c966980bb9f53261cc95d49d7059469c38c249008337352fb6fc47",
-      "size": 19370
+      "sha256": "039cc40cabb7cdfa6f6b9374562e8e69a37559d61bf0292fc5541b4828fbdd28",
+      "size": 19225
     },
     {
       "path": "functions/project.ts",
@@ -738,8 +738,8 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "c6bef79e200020fab293f30ca3513b12c4171578fbbbdf50cd1f23ee42c5dade",
-      "size": 202562
+      "sha256": "c1cc0edd1b0dd8fc04bf76e224e243c6a2ecc13ffec00fe4283ca6528d04ef31",
+      "size": 202559
     },
     {
       "path": "samples/negative/typed-effect-budget.json",
@@ -783,8 +783,8 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "1882ffc4c18d27bb23f8ff11e3198bda269674b029d641e32219acc7976d756a",
-      "size": 202566
+      "sha256": "7f48ac8b1bd35f1ef3b17d60127550f3268ff520f5d428b27f6820e653c4e31b",
+      "size": 202563
     },
     {
       "path": "samples/positive/quote.json",
@@ -873,8 +873,8 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "0c6660e187023247f56de70928beaa63ca6f01832f47c4ad14b827ab5a5692b8",
-      "size": 202516
+      "sha256": "b877ee5fc294e379c46d2bdf8ecc522e1556964491cd4e8ea26787d8070bd22b",
+      "size": 202513
     },
     {
       "path": "samples/positive/typed-effect-budget.json",
@@ -918,8 +918,8 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "76c8a783fcf09ed0fbe6c0fb2f82b32008711939df4ec5a9bf768feaca503a01",
-      "size": 202520
+      "sha256": "42c1a106c4326b8e832087af11d9ba93663114c72d9d3dfe1080b15fe1713866",
+      "size": 202517
     },
     {
       "path": "slots.schema.json",
@@ -1018,8 +1018,8 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "3a4ea55dae4e74da88dda4aea00f59e843a5fa5a609d5292d7a85551e7d0e02a",
-      "size": 407
+      "sha256": "d64015d1407cdba48a93910c87b9a4dcaf70a558608a940e1c28a54d3da9cdfe",
+      "size": 406
     },
     {
       "path": "tools/assemble-delivery.cli.json",
@@ -1028,8 +1028,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "0633538c47aaa787c7051c3381036e17763b4e67a48836e98abce3bf34a76b6a",
-      "size": 57593
+      "sha256": "4d0d2284e467cb5184722d396d1023b93177c3a840bf63495ee3b0ee17ca4275",
+      "size": 57699
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -1223,8 +1223,8 @@
     },
     {
       "path": "tools/open-compile.ts",
-      "sha256": "bf312150d488d5153dbc5ec9ba8dd7a7b1d2e549679f00ac3c1bb5e955ac7d30",
-      "size": 20531
+      "sha256": "b5bcca12e37f6dee093e5b748c6b1f824d5f2a0b143cbaad0318699ff4e1aad0",
+      "size": 22365
     },
     {
       "path": "tools/open-merge.cli.json",
@@ -1233,8 +1233,8 @@
     },
     {
       "path": "tools/open-merge.ts",
-      "sha256": "dc3a5af30d698f1aef95c60341dd31004a4434cbbcab52ace4da7653c3102c17",
-      "size": 11415
+      "sha256": "355a116870eca5bbd038285fcab6af2584f721f911e96f11437bb0741c17096f",
+      "size": 11454
     },
     {
       "path": "tools/pipeline.cli.json",
@@ -1243,8 +1243,8 @@
     },
     {
       "path": "tools/pipeline.ts",
-      "sha256": "0475e8346667b214b13928f12637f439fe8d532774dc667104b60b21f3e2dbf3",
-      "size": 85680
+      "sha256": "1c3983424e09f2d9194547dc3099435fc1b27049141d5ea8e0d841c978a9b3ca",
+      "size": 85882
     },
     {
       "path": "tools/plan-fields.md",
@@ -1303,8 +1303,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "134a9af7dbaadd4d5b7463ecdfa9f6d0c852fd3832ae19f35ad44323793aba3e",
-      "size": 8517
+      "sha256": "ae249b6f5bfba47d456e8cacdc9b5f01e5a6a3076d99c4da779235f2b4ed6640",
+      "size": 8529
     },
     {
       "path": "workflows/compile-loop.js",

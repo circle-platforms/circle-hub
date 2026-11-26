@@ -26,6 +26,8 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stage } from '../../packs/workflow/case-compile/pack-files.ts';
+import { CallFailure } from '../../packs/workflow/case-compile/functions/text.ts';
+import { hubTools, openCompile } from '../../packs/workflow/case-compile/tools/open-compile.ts';
 import { stageRecompose } from '../../packs/workflow/case-compile/testing/stage-recompose.ts';
 import { attachRecompositionFields } from '../../packs/workflow/case-compile/testing/recompose-hub-helper.ts';
 import { recordFor } from '../../packs/workflow/case-compile/recompose/tools/submit-records.ts';
@@ -66,8 +68,8 @@ const startInputs = () => ({ subject: { reference: subject }, contract: { extern
 async function start(args: Record<string, unknown>): Promise<z.infer<typeof StartRunOutput>> {
   const answer = await client.call('start_run', args); assert.equal(answer.isError, false, JSON.stringify(answer.out.errors)); assert.ok(answer.out.run); if (args.pack === 'case-compile') itemIds.set(answer.out.run.run, answer.out.run.items[0].id); return answer.out;
 }
-async function booking(): Promise<string> {
-  const booked = (await start({ pack: 'test-bed', inputs: { inventory: startInputs().inventory }, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 2 }, { type: 'router', count: 1 }, { type: 'client', count: 1 }, { type: 'server', count: 1 }, { type: 'console', count: 1 }] } } })).run!.run;
+async function booking(target = 'bed-a', inventory = startInputs().inventory.external): Promise<string> {
+  const booked = (await start({ pack: 'test-bed', inputs: { inventory: {external:inventory} }, parameters: { action: 'acquire', bed: target, need: { devices: [{ type: 'load-balancer', count: 2 }, { type: 'router', count: 1 }, { type: 'client', count: 1 }, { type: 'server', count: 1 }, { type: 'console', count: 1 }] } } })).run!.run;
   const held = (await bed.hub.leases.view('bed/')).entries;
   assert.ok(held.length > 0);
   assert.ok(held.every(row => row.until === null), 'bookings last until the owning lineage releases them');
@@ -209,6 +211,7 @@ before(async () => {
     allowed_tools:[...raw.allowed_tools,'inspect_seat'],refused_tools:['synthetic_admin_reset'],conditions:raw.conditions.map(condition=>condition.pointer==='/seats'?{...condition,at_least:PROFILE_DOC.device_count}:condition),
     probes:{devices:'/beds/0/devices',command_pattern:'^inspect (?:version|interfaces)$',call:{tool:'inspect_seat',arguments:{seat:{$value:'seat_index'},command:{$value:'command'},ticket:{$value:'lease_id'}}},output:'/output',
       seats:MANIFEST_DOC.beds[0].devices.map((device,index)=>({seat:device.name,index,manifest:{device:`/beds/0/devices/${index}`,addresses:'/interfaces',address:''},version:{command:'inspect version',pattern:'^version: (?<value>.+)$'},interfaces:{command:'inspect interfaces',pattern:'^address: (?<value>.+)$'}}))},
+    input_documents:{contract:'runner-contract',profile:'runtime-profile'},
     result:{...raw.result,request_id:'/request'},proof:{...raw.proof,package:'case-compile',slot:'workbook',warrant_id:`case-compile.workbook_verified@${CASE_COMPILE_PACK.version}`} });
   assert.equal(staleWarrant(configured.proof.warrant_id,'case-compile',CASE_COMPILE_PACK.version),null);
   assert.deepEqual(staleWarrant(configured.proof.warrant_id,'case-compile','999.0.0'),{named:configured.proof.warrant_id,wanted:'case-compile.workbook_verified@999.0.0'});
@@ -220,11 +223,48 @@ after(async () => { await client?.close(); await endpoint?.close(); await opened
 beforeEach(async () => { aliasEcho = false; if (!skip && bed) { const keys = (await bed.hub.leases.view('bed/')).entries.map(e => e.key); if (keys.length) await bed.hub.leases.forceRelease({ keys, by: bed.hub.admin.principal.id, reason: '合成测试失败后的隔离清理' }); } });
 
 describe('scenario 28: published documents to real Hub workbook dispatch and release', { skip }, () => {
+  test('the compile tool binds each active booking’s declared documents using the Hub response', async t => {
+    const admin = bed.hub.admin.principal;
+    const originalExecutor = await dispatch().registry.readSource(executor);
+    assert.ok(originalExecutor);
+    const other = 'bed-other';
+    const alternate = {...MANIFEST_DOC, beds:[{...MANIFEST_DOC.beds[0],name:other}]};
+    for (const [name, value] of [['other-contract',CONTRACT_DOC],['other-profile',{...PROFILE_DOC,bed:other}],['other-inventory',alternate]] as const) {
+      await bed.hub.hub.docs.put(admin,name,bytes(value),{fileName:name+'.json'});
+    }
+    const second = await dispatch().registry.add(admin,{...originalExecutor.source,target:other,
+      resources:alternate.beds[0].devices.map(d => `bed/${other}/${d.name}`),manifest_sha256:sha256Hex(bytes(alternate)),
+      input_documents:{contract:'other-contract',profile:'other-profile'}});
+    t.after(() => dispatch().registry.disable(admin,second.id).then(() => {}));
+    const call = hubTools(new URL(bed.hub.url).origin, bed.reviewer.token);
+    for (const [target, inventory, rules, profile] of [
+      ['bed-a','bed-topology','runner-contract','runtime-profile'],
+      [other,'other-inventory','other-contract','other-profile'],
+    ] as const) {
+      const held = await booking(target,'doc:doc:'+inventory);
+      const options = {subject,product:bed.product.names[0],build:bed.site.RELEASED,booking:held};
+      await assert.rejects(openCompile(call,{...options,contract:'doc:doc:wrong'},staged), error =>
+        error instanceof CallFailure && error.category === 'invalid_parameters' && error.next_action.includes('doc:doc:'+rules+'@'));
+      const opened = await openCompile(call,options,staged);
+      const detail = await bed.hub.deps.runs.getRun(bed.reviewer.principal,opened.planRun);
+      assert.ok(detail);
+      for (const [slot,doc] of [['contract',rules],['inventory',inventory],['profile',profile]] as const) {
+        assert.ok(opened.documents[slot].startsWith('doc:doc:'+doc+'@'));
+        assert.equal(detail.run.sources.find(source => source.slot === slot)?.external,opened.documents[slot]);
+      }
+    }
+  });
+
   test('two authored cases use independent bookings, different S, terminal results and qualified reports', async () => {
     const checked = await dispatch().precheck(bed.hub.admin.principal, executor); assert.equal(checked.frozen, false);
     const hashes: string[] = []; const bookings: string[] = [];
     for (let index = 0; index < 2; index++) {
       const booked = await booking(); bookings.push(booked);
+      const listing = await client.call('list_task_packs', {booking:{run:booked, workflow:'case-compile'}});
+      assert.deepEqual(listing.out.booking_documents, [{
+        inputs:{contract:'doc:doc:runner-contract@' + sha256Hex(bytes(CONTRACT_DOC)), profile:'doc:doc:runtime-profile@' + sha256Hex(bytes(PROFILE_DOC))},
+        manifest:'doc:doc:bed-topology@' + sha256Hex(bytes(MANIFEST_DOC)),
+      }]);
       const p = await plan(booked, index, index === 0); const v = await verify(p, index);
       assert.ok(v.result!.result!.partitions.delivered[0].requirements.every(r => r.status === 'satisfied'));
       const state = await settled(v); const job = state.job;

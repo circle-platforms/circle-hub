@@ -1091,6 +1091,8 @@ const base = z.strictObject({
   credential: SecretReference.optional(),
   schema: z.literal('executor@1'), id: z.string().regex(/^exe_[0-9a-hjkmnp-tv-z]{26}$/).optional(), enabled: z.boolean().default(true),
   environment:EnvironmentSchema.optional(),
+  input_documents: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), z.string().regex(/^[a-z][a-z0-9-]{0,63}$/)).optional()
+    .describe('Named document assigned to each workflow input slot, by literal document name'),
   retry_safety: RetrySafetySchema.default('unsafe'),
   target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.url().max(2048), ca: z.string().max(65536),
   premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional(),read_only:certificate.optional().describe('the target\'s help tool never presses Enter on the asked line and always clears it (D02 R[4]: read-only enforced by the target); certified per target version'),retry_safety:certificate.optional(),conditional_write:certificate.optional(),window_resend:certificate.extend({window_ms:z.number().int().min(1).max(86400000000)}).optional() }).default({}),

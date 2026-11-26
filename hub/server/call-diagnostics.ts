@@ -34,6 +34,7 @@ function involvesPersonalSpace(tool: string, args: unknown): boolean {
 }
 
 function* boundObjects(name: string, args: Row): Generator<[string, unknown]> {
+  if (name === 'list_task_packs' && object(args.booking)) yield ['run', args.booking.run];
   if (name === 'get_nodes' || name === 'resolve_reference') yield ['record', args.root];
   if (name === 'get_nodes') yield ['reference', args.reference];
   if (name === 'get_nodes' || name === 'resolve_reference' || name === 'submit_result') yield ['run', args.run];

@@ -111,7 +111,7 @@ test('the merge goes through in one command: plans, workbook, upload as a workbo
   assert.deepEqual([start.pack, start.product, start.build, start.predecessor, start.version], ['case-compile', 'widget', 'Fixture_Build_A', PLAN, undefined], 'product and build beside the pack, no version line of its own');
   assert.deepEqual(start.parameters, { exclude: ['990000000000000009'], plan_run: PLAN }, 'the plan run\'s own parameters and the plan run');
   assert.deepEqual(start.inputs, {
-    subject: { external: 'agile:mindmap:900001' }, contract: { external: 'doc:doc:runner-contract' }, inventory: { external: 'doc:doc:bed-topology' }, profile: { external: 'doc:doc:runtime-profile' },
+    subject: { external: 'agile:mindmap:900001' }, contract: { external: 'doc:doc:runner-contract@' + '2'.repeat(64) }, inventory: { external: 'doc:doc:bed-topology@' + '3'.repeat(64) }, profile: { external: 'doc:doc:runtime-profile@' + '4'.repeat(64) },
     recomposition_run: { reference: 'rec:' + 'a'.repeat(64) }, recomposition_result: { run: RECOMPOSE }, plan_result: { run: PLAN }, workbook: { reference: 'src:' + DIGEST },
   });
   assert.deepEqual(JSON.parse(await readFile(join(dir, 'merge', 'open-merge.json'), 'utf8')), { schema: 'open-merge@1', plan_run: PLAN, merge_run: MERGE, workbook: 'src:' + DIGEST, xlsx: join('merge', 'case.xlsx'), items: 2 });

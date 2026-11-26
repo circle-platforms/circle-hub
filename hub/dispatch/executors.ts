@@ -1,4 +1,8 @@
 import { isAdmin } from '../records/api.ts';
+import { docPointerName, parseDocId } from '../refs/api.ts';
+import type { RunRecord } from '../../contracts/src/run.ts';
+import type { BookingDocuments } from '../../contracts/src/tools.ts';
+import type { LeaseService } from '../leases/api.ts';
 import { VariableError, WHOLE_HUB, canonicalBytes, canonicalize, newId, scanForCredentials, sha256Hex, type Principal, type RecordsKit, type VariableSnapshot, type AuthorizationRecord, type ActionBody, type RecordStore, type Transaction, type SecretWrite } from '../records/api.ts';
 import { VariableInputError, secretNameOf, referencesIn, resolve as maskReferences } from '../../contracts/src/variables.ts';
 import { Journal, isDone, isFrozen } from './journal.ts';
@@ -154,6 +158,35 @@ export class ExecutorRegistry {
         entries[resolved.id]=object.sha256;
       }
       return (await this.records.objects.put(canonicalBytes(entries),'application/json')).sha256;
+    }
+    async bookingDocuments(by: Principal, booking: RunRecord, workflow: string, leases: Pick<LeaseService, 'holderSnapshot'>, now: Date): Promise<BookingDocuments[]> {
+      if (booking.runner !== by.id) return [];
+      const grants = new Map((booking.leases ?? []).flatMap(grant =>
+        grant.op === undefined || grant.op === 'acquire' ? grant.keys.map(key => [key, grant.lease] as const) : []));
+      if (!grants.size) return [];
+      const holders = await leases.holderSnapshot([...grants.keys()]);
+      const keys = new Set(holders.filter(h => !h.released && h.user === by.id && h.run === booking.run
+        && h.lease === grants.get(h.key) && (h.expires_at === null || Date.parse(h.expires_at) > now.getTime())).map(h => h.key));
+      const configurations = new Map<string, BookingDocuments>();
+      for (const entry of await this.internalSources()) {
+        const source = entry.source;
+        if (!source.enabled || source.proof.package !== workflow || !source.resources.length || !source.resources.every(key => keys.has(key))) continue;
+        const { definition } = await resolveExecutor(this.records, source);
+        const originals = new Set(booking.sources.flatMap(bound => {
+          const doc = bound.external ? parseDocId(bound.external) : null;
+          return doc?.sha256 && doc.sha256 === definition.manifest_sha256 && bound.reference === 'src:' + doc.sha256 ? [bound.external!] : [];
+        }));
+        const inputs: Record<string,string> = {};
+        for (const [slot, name] of Object.entries(definition.input_documents ?? {})) {
+          const head = await this.records.pointers.get(docPointerName(name));
+          inputs[slot] = 'doc:doc:' + name + (head ? '@' + head.target : '');
+        }
+        const row = { inputs, manifest: originals.size === 1 ? [...originals][0]! : null };
+        configurations.set(canonicalize(row), row);
+      }
+      const candidates = [...configurations.values()];
+      const matching = candidates.filter(row => row.manifest !== null);
+      return matching.length ? matching : candidates;
     }
     async list(by: Principal): Promise<RegisteredExecutor[]> { const sources = await this.sources(by); const entries = await Promise.all(sources.map(e => this.get(e.id))); return entries.filter((e): e is RegisteredExecutor => e !== null); }
     async material(id: string, definition: ExecutorDefinition) { const current = await this.readSource(id); if (!current?.source.enabled)

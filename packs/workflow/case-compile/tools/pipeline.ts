@@ -45,7 +45,7 @@ export interface PipelineState {
   judge?: 'model' | 'jev';
   plan_history?: Array<{ run: string; dir: string }>;
   volume?: { n: number; result?: 'passed' | 'failed' };
-  device_reads?: { booking: string; device: string; bed?: string; lines: Record<string, string>; asked: Record<string, number> };
+  device_reads?: { booking: string; inventory: string; device: string; bed?: string; lines: Record<string, string>; asked: Record<string, number> };
 }
 export interface Action { label: string; subagent_type: string; description: string }
 export interface Step {
@@ -144,12 +144,12 @@ export async function initState(recomposeDir: string, planDir: string, open: Rec
   return { schema: 'compile-pipeline@1', width, max_attempts: maxAttempts, model, recompose_run: open.recompose_run, plan_run: open.plan_run, recompose_dir: recomposeDir, plan_dir: planDir, records_dir: 'records', cases, ...(open.judge === 'model' || open.judge === 'jev' ? { judge: open.judge } : {}), ...(reads ? { device_reads: reads } : {}) };
 }
 async function deviceReadsOf(planDir: string, open: Record<string, unknown>): Promise<PipelineState['device_reads']> {
-  if (typeof open.booking !== 'string' || !open.booking) return undefined;
+  if (typeof open.booking !== 'string' || !open.booking || typeof open.inventory !== 'string' || !open.inventory) return undefined;
   try {
     const profile: unknown = JSON.parse(await readFile(join(planDir, 'sources', 'profile.json'), 'utf8'));
     const seat = isRecord(profile) && Array.isArray(profile.seats) ? profile.seats.find(isRecord) : undefined;
     if (!isRecord(profile) || !seat || typeof seat.device !== 'string' || !seat.device) return undefined;
-    return { booking: open.booking, device: seat.device, ...(typeof profile.bed === 'string' && profile.bed ? { bed: profile.bed } : {}), lines: {}, asked: {} };
+    return { booking: open.booking, inventory: open.inventory, device: seat.device, ...(typeof profile.bed === 'string' && profile.bed ? { bed: profile.bed } : {}), lines: {}, asked: {} };
   } catch { return undefined; }
 }
 
@@ -192,7 +192,7 @@ async function deviceReadReference(state: PipelineState, c: CaseState, gates: Pi
       if (none || !gates.start || !gates.hub || !gates.token || Object.keys(reads.lines).length >= READS_PER_COMPILE) continue;
       const target = join(READS_DIRECTORY, readFileName(line));
       await mkdir(READS_DIRECTORY, { recursive: true }); await rm(target, { force: true });
-      gates.start('case-compile', 'device-read.ts', ['--hub', gates.hub, '--booking', reads.booking, '--device', reads.device, '--line', line, '--out', target, ...(reads.bed ? ['--bed', reads.bed] : [])], `${gates.token}\n`);
+      gates.start('case-compile', 'device-read.ts', ['--hub', gates.hub, '--booking', reads.booking, '--inventory', reads.inventory, '--device', reads.device, '--line', line, '--out', target, ...(reads.bed ? ['--bed', reads.bed] : [])], `${gates.token}\n`);
       reads.lines[line] = target; asked[line] = now; coming.push({ line, file: target });
       continue;
     }
@@ -765,7 +765,7 @@ function recordedNames(open: Record<string, unknown>): string[] {
     const value = open[name];
     if (value === undefined) continue;
     if (typeof value !== 'string' || !value) throw new Error(`--open 里的 ${name} 不是${name === 'version' ? '版本线' : '命名文档'}的名字；--open 写 open-compile.ts 写的文件，不手改`);
-    options.push(`--${name}`, value);
+    options.push(`--${name}`, name === 'contract' || name === 'profile' ? value.split('@')[0]! : value);
   }
   return options;
 }
