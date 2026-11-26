@@ -6,7 +6,7 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { osIsolationAvailable } from '../../hub/rules/api.ts';
 import { recognize } from '../../hub/refs/api.ts';
-import { sha256Hex, type ActionBody } from '../../hub/records/api.ts';
+import { newId, sha256Hex, type ActionBody } from '../../hub/records/api.ts';
 import { ExecutorDefinition, readRunJobs, staleWarrant, type JobStatus, type DispatchNote } from '../../hub/dispatch/api.ts';
 import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
@@ -223,6 +223,30 @@ after(async () => { await client?.close(); await endpoint?.close(); await opened
 beforeEach(async () => { aliasEcho = false; if (!skip && bed) { const keys = (await bed.hub.leases.view('bed/')).entries.map(e => e.key); if (keys.length) await bed.hub.leases.forceRelease({ keys, by: bed.hub.admin.principal.id, reason: '合成测试失败后的隔离清理' }); } });
 
 describe('scenario 28: published documents to real Hub workbook dispatch and release', { skip }, () => {
+  test('booking lookup distinguishes an absent run, another runner and unavailable dispatch', async t => {
+    const admin = bed.hub.admin.principal;
+    const request = (run:string) => ({booking:{run,workflow:'case-compile'}});
+    const absent = await client.call('list_task_packs',request(newId('run')));
+    assert.equal(absent.out.errors[0].code,'SOURCE_ABSENT');
+    const held = await booking();
+    const other = await bed.hub.createUser('合成预订文档读取者');
+    await bed.hub.assignPack(other.principal,'case-compile');
+    const otherClient = await connect(bed.hub,other.token); t.after(()=>otherClient.close());
+    const foreign = await otherClient.call('list_task_packs',request(held));
+    assert.equal(foreign.out.errors[0].code,'SOURCE_UNAVAILABLE');
+    const notes = async (traceId:string) => (await bed.hub.records.callLog.query(admin,{traceId})).items.flatMap(row=>row.admin_reasons ?? []);
+    assert.ok((await notes(foreign.out.trace)).some(note=>note.includes(held) && note.includes('持有')));
+    const view = bed.hub.deps.dispatch;
+    try {
+      delete bed.hub.deps.dispatch;
+      const missing = await client.call('list_task_packs',request(held));
+      assert.equal(missing.out.errors[0].code,'SOURCE_UNAVAILABLE');
+      assert.ok((await notes(missing.out.trace)).some(note=>note.includes('派发服务')));
+      assert.deepEqual(missing.out.errors,foreign.out.errors);
+    } finally { bed.hub.deps.dispatch = view; }
+    await release(held);
+  });
+
   test('the compile tool binds each active booking’s declared documents using the Hub response', async t => {
     const admin = bed.hub.admin.principal;
     const originalExecutor = await dispatch().registry.readSource(executor);
