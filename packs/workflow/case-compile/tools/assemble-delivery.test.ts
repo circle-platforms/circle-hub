@@ -1217,6 +1217,7 @@ test('a retained booking needs no inventory; releasing the same booking requires
   assert.equal(missing.code,1);
   assert.match(missing.stderr,/没有绑定的设备清单/);
   assert.deepEqual(missing.h.mcp.calls,[]);
+  await assert.rejects(readdir(missing.out),{code:'ENOENT'});
 });
 
 test('a compile that took its booking itself has it released when the delivery is complete: one test-bed release call after the files are written, and the reply and the message say so', async () => {

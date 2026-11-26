@@ -205,11 +205,14 @@ async function releaseBooking(call: CallTool, run: string, inventory: string): P
     return { run, state: 'unknown', reason: (error instanceof NotReady ? error.message.replace(CLIENT_ADVICE, '') : `释放没有做成：${error instanceof Error ? error.message : String(error)}`).slice(0, 300) };
   }
 }
-async function settleBooking(booking: OpenedBooking, args: Record<string, string>, call: CallTool): Promise<Settled> {
-  if (args['keep-booking'] !== undefined) return { run: booking.run, state: 'kept', asked: true };
-  if (!booking.acquired && args['release-booking'] === undefined) return { run: booking.run, state: 'kept', asked: false };
-  if (typeof booking.inventory !== 'string' || !booking.inventory) failCall('invalid_parameters', '开编译记录没有绑定的设备清单', '使用带本次预订清单的开编译记录');
-  return releaseBooking(call, booking.run, booking.inventory);
+function bookingSettlement(booking: OpenedBooking, args: Record<string, string>, call: CallTool): () => Promise<Settled> {
+  const keep = args['keep-booking'] !== undefined;
+  if (keep || (!booking.acquired && args['release-booking'] === undefined)) {
+    return async () => ({ run: booking.run, state: 'kept', asked: keep });
+  }
+  const { run, inventory } = booking;
+  if (typeof inventory !== 'string' || !inventory) failCall('invalid_parameters', '开编译记录没有绑定的设备清单', '使用带本次预订清单的开编译记录');
+  return () => releaseBooking(call, run, inventory);
 }
 const bookingJson = (settled: Settled) => ({ run: settled.run, state: settled.state, ...('reason' in settled && settled.reason ? { reason: settled.reason } : {}) });
 function bookingReply(settled: Settled): string {
@@ -602,13 +605,14 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     };
     outputs.push({ name: REPORT_FILES.summary, bytes: json(summary) });
 
+    const settleBooking = booking && !hints.length ? bookingSettlement(booking, args, hubTools(origin, bearer, RELEASE_TIMEOUT_MS)) : null;
     await emptyOrAbsent(args.out);
     await mkdir(args.out, { recursive: true, mode: 0o700 });
     const written: string[] = []; const files: Record<string, string> = {};
     try { for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }); written.push(path); files[name] = sha256(bytes); } if (canonicalJson(Object.keys(files).sort()) !== canonicalJson(input.artifacts.slice().sort())) failCall('invalid_parameters', '实际写出的文件与报告清单不一致，交付目录已撤回', '请核对运行、范围、产物身份和原始输入，修正后重试'); }
     catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
     const out = resolve(args.out);
-    const bookingOutcome = booking && !hints.length ? await settleBooking(booking, args, hubTools(origin, bearer, RELEASE_TIMEOUT_MS)) : null;
+    const bookingOutcome = settleBooking ? await settleBooking() : null;
     process.stdout.write(JSON.stringify({
       out,
       totals: assembly.totals,
