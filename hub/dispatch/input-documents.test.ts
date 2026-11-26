@@ -28,9 +28,12 @@ test('each active booking selects the documents of the executor whose resources 
       sources:c.detail.run.sources.map(source => source.reference === 'src:'+digest ? {...source,external:'doc:doc:inventory@'+digest} : source) };
     const result = await c.registry.bookingDocuments(c.owner, detail, pack, c.leases,c.now(),()=>{});
     assert.deepEqual(result,[{inputs:{rules:'doc:doc:'+definition.input_documents.rules+'@'+current,profile:'doc:doc:'+definition.input_documents.profile+'@'+current},manifest:'doc:doc:inventory@'+digest}]);
-    assert.deepEqual(await c.registry.bookingDocuments(c.admin,detail,pack,c.leases,c.now(),()=>{}),[]);
+    const noLease = {code:'SOURCE_ABSENT',path:'/booking/run',message:'这次预订没有当前账户持有的有效租约',fix:'请重新预订测试环境'};
+    assert.deepEqual(await c.registry.bookingDocuments(c.admin,detail,pack,c.leases,c.now(),()=>{}),noLease);
+    const expired = new Date(Date.parse(holders[0]!.expires_at!));
+    assert.deepEqual(await c.registry.bookingDocuments(c.owner,detail,pack,c.leases,expired,()=>{}),noLease);
     await c.leases.release({keys:definition.resources, holder:{user:c.owner.id,run}});
-    assert.deepEqual(await c.registry.bookingDocuments(c.owner,detail,pack,c.leases,c.now(),()=>{}),[]);
+    assert.deepEqual(await c.registry.bookingDocuments(c.owner,detail,pack,c.leases,c.now(),()=>{}),noLease);
   }
 });
 

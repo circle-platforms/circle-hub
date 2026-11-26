@@ -276,6 +276,27 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     await release(held);
   });
 
+  test('an active booking with no covering executor and a released booking have different next actions', async t => {
+    const admin = bed.hub.admin.principal, registry = dispatch().registry;
+    const base = await registry.readSource(executor); assert.ok(base);
+    const held = await booking(), query = {booking:{run:held, workflow:'case-compile'}};
+    const options = {subject,product:bed.product.names[0],build:bed.site.RELEASED,booking:held};
+    const call = hubTools(new URL(bed.hub.url).origin,bed.reviewer.token);
+    t.after(()=>registry.update(admin,executor,base.source).then(()=>{}));
+    await registry.disable(admin,executor);
+    const uncovered = await client.call('list_task_packs',query);
+    assert.equal(uncovered.isError,false);
+    assert.deepEqual(uncovered.out.booking_documents,[]);
+    await assert.rejects(openCompile(call,options,staged),error => error instanceof CallFailure
+      && error.category === 'temporarily_unavailable' && error.fact.includes('覆盖本次预订'));
+    await release(held);
+    const released = await client.call('list_task_packs',query);
+    assert.equal(released.out.errors[0].code,'SOURCE_ABSENT');
+    assert.match(released.out.errors[0].fix ?? '',/重新预订/);
+    await assert.rejects(openCompile(call,options,staged),error => error instanceof CallFailure
+      && error.category === 'not_found' && error.next_action.includes('重新预订'));
+  });
+
   test('the compile tool binds each active booking’s declared documents using the Hub response', async t => {
     const admin = bed.hub.admin.principal;
     const originalExecutor = await dispatch().registry.readSource(executor);

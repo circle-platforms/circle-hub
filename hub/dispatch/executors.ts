@@ -163,13 +163,15 @@ export class ExecutorRegistry {
       return (await this.records.objects.put(canonicalBytes(entries),'application/json')).sha256;
     }
     async bookingDocuments(by: Principal, booking: RunRecord, workflow: string, leases: Pick<LeaseService, 'holderSnapshot'>, now: Date, adminNote: (note: string) => void): Promise<BookingDocumentLookup> {
-      if (booking.runner !== by.id) return [];
+      const noLease: ProtocolError = {code:'SOURCE_ABSENT', path:'/booking/run', message:'这次预订没有当前账户持有的有效租约', fix:'请重新预订测试环境'};
+      if (booking.runner !== by.id) return noLease;
       const grants = new Map((booking.leases ?? []).flatMap(grant =>
         grant.op === undefined || grant.op === 'acquire' ? grant.keys.map(key => [key, grant.lease] as const) : []));
-      if (!grants.size) return [];
+      if (!grants.size) return noLease;
       const holders = await leases.holderSnapshot([...grants.keys()]);
       const keys = new Set(holders.filter(h => !h.released && h.user === by.id && h.run === booking.run
         && h.lease === grants.get(h.key) && (h.expires_at === null || Date.parse(h.expires_at) > now.getTime())).map(h => h.key));
+      if (!keys.size) return noLease;
       const configurations = new Map<string, BookingDocuments>();
       let unresolved = false;
       for (const entry of await this.internalSources()) {
