@@ -9,7 +9,7 @@
 - `contracts/src/{resources,pack,tools}.ts`、相关合约测试、`contracts/generated/`（生成器输出），涉及工具或工作流声明的现有形状按模型裁定实施。
 - `hub/dispatch/` 的执行器登记、按预订选择与效果前核对，`hub/server/`、`hub/runs/` 和 `hub/ports.ts` 中对应的运行或文档读取接线及相关测试。
 - `packs/workflow/case-compile/` 中开编译、后续沿用输入的工具、包内说明、包版本与发布清单、合成测试；`tests/acceptance/` 中受影响的合成验收。
-- 16:19 复核授权修改 `scripts/real/accept/device-run.ts` 的文档身份核对与同目录合成测试。
+- 16:19 复核授权修改 `scripts/real/accept/device-run.ts` 的文档身份核对、同目录合成测试与 `scripts/real/convert/README.md` 中对应的脚本说明。
 - 本任务页、`.github/checks/doc-set.json` 中本页的条目、`hub/dispatch/README.md`、`docs/admin-guide.md`、中英文兼容性记录和 `CHANGELOG.md`。
 
 验证包括类型、生成合约、受影响包的测试、UTC 全量单元测试、相关验收和文档检查。实际部署配置由集成者维护。
