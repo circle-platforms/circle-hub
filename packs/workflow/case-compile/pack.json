@@ -48,8 +48,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "3c05423aa9ac13c2fe2f00e5d6c5a48634f5c47a4e4dcd1bf7d9f85c7f221680",
-      "size": 18063
+      "sha256": "8928beb8df205d39e334ac33e8ffee6b5a12c8e52e78b259489dc5c281c50b20",
+      "size": 18156
     },
     {
       "path": "agents/compile-attributor.md",

@@ -29,7 +29,7 @@ node '<技能目录>/tools/open-compile.ts' --hub %HUB_URL% --plumb %PLUMB_URL% 
 EOF
 ```
 
-输出第一行是“就绪：…”就往下走；开编译工具以错误退出时，把它给出的事实和下一步原样告诉使用者，然后停止。部分用例加 `--scope '<范围文件>'`（`{"words":"<范围原话>","cases":[...]}`）；返工加 `--recompose-run` 与 `--recompose-record` 沿用重组。重组运行和脚本编写运行只经此工具开，`start_run` 只开 test-bed。
+输出第一行是“就绪：…”就往下走；是“无法编译：…”时把这一行原样告诉使用者，然后停止，不分析、不提问、不换参数重试。文档核对出错时同样原样说明原因和下一步，然后停止。部分用例加 `--scope '<范围文件>'`（`{"words":"<范围原话>","cases":[...]}`）；返工加 `--recompose-run` 与 `--recompose-record` 沿用重组。重组运行和脚本编写运行只经此工具开，`start_run` 只开 test-bed。
 
 判断方式默认是 Plumb。使用者明确说这次用 Jev，才在这条命令上加 `--judge jev`；明确说这次不经 Plumb，才加 `--judge model`；都可不写 `--plumb`，标准输入照旧三行（Jev 密钥是第三行；不用装 `jev-judge` 技能，Jev 只经本工作流自带的客户端去问，它的命令行守卫不放行）。Jev 是 TypeSafe 的线上判断服务，原始用例的步骤、写出的命令和手册片段会发给它；它的回答是模型的判断，未经确认，一律只作参考：命令核验每一步标需人工复核，命令树核对不通过的照样挡住，场景保真逐条交独立盲审。model 的命令核验只做命令树的程序核对（`--tree-only` 由 `pipeline.ts` 运行，主代理不手敲：命令行声明仍要求 Plumb 地址和密钥，守卫会拒绝不带它们的直接调用），场景保真由独立盲审判断。之后的 `pipeline.ts` 照 `open-compile.json` 办。Plumb 没就绪时不自行改用 jev 或 model，照上一段停下。最后报告写明判断方式（`assemble-delivery.ts --open` 写这一行），并照录 collect 输出的 `reviewed`。
 
