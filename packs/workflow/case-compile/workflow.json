@@ -15,17 +15,18 @@
     {
       "slot": "contract",
       "role": "expected",
-      "description": "运行器原格式函数合约命名文档（doc:doc），按完整原文重算身份并与 runtime-profile 的期望身份核对；不转换格式、不补参数类型或默认值。缺省写 doc:doc:runner-contract",
+      "description": "运行器原格式函数合约命名文档（doc:doc），按完整原文重算身份并与 runtime-profile 的期望身份核对；不转换格式、不补参数类型或默认值。按测试环境预订绑定。",
       "accepts": [
         "doc:doc"
       ],
       "required": true,
-      "many": false
+      "many": false,
+      "executor_document": true
     },
     {
       "slot": "inventory",
       "role": "expected",
-      "description": "自动化测试环境清单命名文档（doc:doc:<名字>，json@1 解析，形状 test-bed-manifest@1，与 test-bed 包同一份）：设备、类型、接口地址、服务、保留段。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
+      "description": "自动化测试环境清单命名文档（doc:doc:<名字>，json@1 解析，形状 test-bed-manifest@1，与 test-bed 包同一份）：设备、类型、接口地址、服务、保留段。按测试环境预订绑定。",
       "accepts": [
         "doc:doc"
       ],
@@ -35,12 +36,13 @@
     {
       "slot": "profile",
       "role": "expected",
-      "description": "发布的 runtime-profile@1 命名文档（doc:doc）：期望运行时和合约身份、工作簿字面格式、座位和主机映射、本轮允许组合及参数角色、设备和主机拒绝表、synthetic 声明。缺省写 doc:doc:runtime-profile",
+      "description": "发布的 runtime-profile@1 命名文档（doc:doc）：期望运行时和合约身份、工作簿字面格式、座位和主机映射、本轮允许组合及参数角色、设备和主机拒绝表、synthetic 声明。按测试环境预订绑定。",
       "accepts": [
         "doc:doc"
       ],
       "required": true,
-      "many": false
+      "many": false,
+      "executor_document": true
     },
     {
       "slot": "workbook",

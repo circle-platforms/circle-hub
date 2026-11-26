@@ -12,7 +12,8 @@ import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, Ru
 import type { Principal, RecordsKit, MemberCapabilities } from '../records/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
 import type { RunsEngine } from '../runs/api.ts';
-import type { PackSummary } from '../../contracts/src/run.ts';
+import type { PackSummary, RunRecord } from '../../contracts/src/run.ts';
+import type { BookingDocumentLookup } from '../dispatch/api.ts';
 
 export { createApp } from './app.ts';
 export { main, registerCommand, registeredCommands, RESERVED_COMMANDS } from './cli.ts';
@@ -102,6 +103,7 @@ export interface JobView {
 }
 
 export interface DispatchView {
+  bookingDocuments?(by: Principal, booking: RunRecord, workflow: string, adminNote: (note: string) => void): Promise<BookingDocumentLookup>;
   executors(by: Principal): Promise<ExecutorView[]>;
   jobs(by: Principal, run: string): Promise<JobView[]>;
   readiness?(by: Principal, target: string): Promise<EnvironmentReadiness>;

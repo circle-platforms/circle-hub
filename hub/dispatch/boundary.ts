@@ -1,4 +1,5 @@
 import {releaseFailure,type ReleaseCheck} from './release-diagnostics.ts';
+import { DECLARE_INPUT_DOCUMENT, REOPEN_WITH_DECLARED_DOCUMENTS, undeclaredInputDocument, wrongInputDocument } from './refusal-text.ts';
 // One ordered, fail-closed P11 boundary. The callbacks reuse their owning packages rather than duplicate their logic.
 import type {AllowedEffect} from '../../contracts/src/pack.ts';
 import type {WriteDeclaration} from '../../contracts/src/resources.ts';
@@ -44,7 +45,11 @@ export async function checkEffectBoundary(ctx:BoundaryContext):Promise<{ok:true;
  if(failed.length)return unavailable(failed[0].error,failed[0].row);
  if(!matches.length)return deny(2,'EFFECT_PARAMETER_OUT_OF_RANGE','参数未落在唯一的允许范围；请按该行范围重新核验',hint);
  const row=matches[0];let input:VerifiedInput;
- try{input=await ctx.release(row);}catch(error){return {...deny(3,'EFFECT_RELEASE_UNMET','缺少该行要求的有效核验事实或绑定产物；请重新核验',row),admin_checks:releaseFailure(error)};}
+ try{input=await ctx.release(row);}catch(error){
+   const checks=releaseFailure(error);
+   return {...deny(3,'EFFECT_RELEASE_UNMET','缺少该行要求的有效核验事实或绑定产物；请重新核验',row),
+     ...(checks.some(undeclaredInputDocument)?{fix:DECLARE_INPUT_DOCUMENT}:checks.some(wrongInputDocument)?{fix:REOPEN_WITH_DECLARED_DOCUMENTS}:{}),admin_checks:checks};
+ }
  let consumed;try{consumed=await ctx.budget(row);}catch{return deny(4,'EFFECT_BUDGET_EXHAUSTED','无法回读该效果行的意图预算；请管理员恢复原意图记录后重核',row);}
  if(ctx.now().getTime()>=Date.parse(ctx.started_at)+row.deadline_ms || consumed.count+1>row.budget.count || consumed.duration_ms+ctx.duration_ms>durationBudget(row,ctx.duration_ms))return deny(4,'EFFECT_BUDGET_EXHAUSTED',`效果行 ${row.id} 的次数、时长或期限预算用完；请开始新修订或缩小范围`,row);
  if(ctx.until===4)return {ok:true,row,input,checked:4};

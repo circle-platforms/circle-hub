@@ -14,7 +14,7 @@ const hash = 'a'.repeat(64), reference = 'src:' + hash;
 function fixture(bytes: Uint8Array | null = Buffer.from(JSON.stringify(definition('http://127.0.0.1/mcp')))) {
   const reads: unknown[][] = [], lines: string[] = [];
   const records = { artifacts: { source: async (...args: unknown[]) => { reads.push(args); return bytes === null ? null : { bytes } as ArtifactSource; } }, objects: { get: () => { throw new Error('raw objects are forbidden'); } } } as unknown as RecordsKit;
-  const session: JobCommandSession = { ctx: { io: { cwd: tmpdir() } }, options: { readSecret: async () => { throw new Error('stdin is forbidden'); } }, out: line => lines.push(line), err: line => lines.push(line), admin: async () => admin, records: async () => records, hub: async () => ({ dispatch: null, records }) };
+  const session: JobCommandSession = { ctx: { io: { cwd: tmpdir() } }, options: { readSecret: async () => { throw new Error('stdin is forbidden'); } }, out: line => lines.push(line), err: line => lines.push(line), admin: async () => admin, records: async () => records, hub: async () => ({ dispatch: null, records, executorRegistry: new ExecutorRegistry(records) }) };
   return { session, records, reads, lines };
 }
 function registered(input: unknown): RegisteredExecutor {

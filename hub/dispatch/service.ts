@@ -51,6 +51,7 @@ function retrySafeOutcome(value:unknown):boolean {
 const projectedResult=(events:readonly Event[])=>{const intent=events.findLastIndex(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent');return events.findLast((event,index)=>index>intent&&event.body.detail.phase==='result'&&typeof event.body.detail.reference==='string');};
 const roundRecords=(events:readonly Event[])=>[...new Map(events.filter(event=>event.body.detail.phase==='round'&&typeof event.body.detail.round==='number').map(event=>[Number(event.body.detail.round),event])).values()];
 export interface DispatchOptions {
+  executorRegistry?: ExecutorRegistry;
   adminLog?:(entry:AdminLogEntry)=>void;
   recheckChecks?:import('../ports.ts').EffectCheckReplay;
   redactor?:Redactor;
@@ -167,7 +168,7 @@ export class DispatchService {
     this.redactor=options.redactor??new Redactor();
     this.options = options; this.now = options.now ?? (() => new Date());
     this.sleep = options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
-    this.registry = new ExecutorRegistry(options.records); this.journal = new Journal(options.records, this.now);
+    this.registry = options.executorRegistry ?? new ExecutorRegistry(options.records); this.journal = new Journal(options.records, this.now);
   }
   async close(): Promise<void> { await (this.#closing ??= this.options.close?.() ?? Promise.resolve()); }
   async status(by: Principal, job: string): Promise<JobStatus> {

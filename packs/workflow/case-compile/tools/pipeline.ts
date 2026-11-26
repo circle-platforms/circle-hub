@@ -45,7 +45,7 @@ export interface PipelineState {
   judge?: 'model' | 'jev';
   plan_history?: Array<{ run: string; dir: string }>;
   volume?: { n: number; result?: 'passed' | 'failed' };
-  device_reads?: { booking: string; device: string; bed?: string; lines: Record<string, string>; asked: Record<string, number> };
+  device_reads?: { booking: string; inventory: string; device: string; bed?: string; lines: Record<string, string>; asked: Record<string, number> };
 }
 export interface Action { label: string; subagent_type: string; description: string }
 export interface Step {
@@ -144,12 +144,12 @@ export async function initState(recomposeDir: string, planDir: string, open: Rec
   return { schema: 'compile-pipeline@1', width, max_attempts: maxAttempts, model, recompose_run: open.recompose_run, plan_run: open.plan_run, recompose_dir: recomposeDir, plan_dir: planDir, records_dir: 'records', cases, ...(open.judge === 'model' || open.judge === 'jev' ? { judge: open.judge } : {}), ...(reads ? { device_reads: reads } : {}) };
 }
 async function deviceReadsOf(planDir: string, open: Record<string, unknown>): Promise<PipelineState['device_reads']> {
-  if (typeof open.booking !== 'string' || !open.booking) return undefined;
+  if (typeof open.booking !== 'string' || !open.booking || typeof open.inventory !== 'string' || !open.inventory) return undefined;
   try {
     const profile: unknown = JSON.parse(await readFile(join(planDir, 'sources', 'profile.json'), 'utf8'));
     const seat = isRecord(profile) && Array.isArray(profile.seats) ? profile.seats.find(isRecord) : undefined;
     if (!isRecord(profile) || !seat || typeof seat.device !== 'string' || !seat.device) return undefined;
-    return { booking: open.booking, device: seat.device, ...(typeof profile.bed === 'string' && profile.bed ? { bed: profile.bed } : {}), lines: {}, asked: {} };
+    return { booking: open.booking, inventory: open.inventory, device: seat.device, ...(typeof profile.bed === 'string' && profile.bed ? { bed: profile.bed } : {}), lines: {}, asked: {} };
   } catch { return undefined; }
 }
 
@@ -192,7 +192,7 @@ async function deviceReadReference(state: PipelineState, c: CaseState, gates: Pi
       if (none || !gates.start || !gates.hub || !gates.token || Object.keys(reads.lines).length >= READS_PER_COMPILE) continue;
       const target = join(READS_DIRECTORY, readFileName(line));
       await mkdir(READS_DIRECTORY, { recursive: true }); await rm(target, { force: true });
-      gates.start('case-compile', 'device-read.ts', ['--hub', gates.hub, '--booking', reads.booking, '--device', reads.device, '--line', line, '--out', target, ...(reads.bed ? ['--bed', reads.bed] : [])], `${gates.token}\n`);
+      gates.start('case-compile', 'device-read.ts', ['--hub', gates.hub, '--booking', reads.booking, '--inventory', reads.inventory, '--device', reads.device, '--line', line, '--out', target, ...(reads.bed ? ['--bed', reads.bed] : [])], `${gates.token}\n`);
       reads.lines[line] = target; asked[line] = now; coming.push({ line, file: target });
       continue;
     }
@@ -714,7 +714,8 @@ async function newPlanRun(state: PipelineState, open: Record<string, unknown>, b
   // The scope is the user's own words and cases, written as the record has them; the cases left out are the record's and the ones this pipeline dropped, each once, in the order met.
   const scope = recordedScope(open), left = [...new Set([...recordedExclude(open), ...exclude])];
   if (scope) { await mkdir(base, { recursive: true }); await writeFile(scopeFile, JSON.stringify(scope, null, 2) + '\n'); }
-  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' || state.judge === 'jev' ? ['--judge', state.judge] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...recordedBooking(open), ...recordedNames(open), ...(scope ? ['--scope', scopeFile] : []), ...(left.length ? ['--exclude', left.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], standardInput(state, g));
+  const names = recordedNames(open);
+  const opened = await g.run('case-compile', 'open-compile.ts', ['--hub', g.hub, ...(state.judge === 'model' || state.judge === 'jev' ? ['--judge', state.judge] : ['--plumb', g.plumb]), '--subject', String(open.subject), '--product', String(open.product), '--build', String(open.build), '--booking', String(open.booking), ...recordedBooking(open), ...names, ...(scope ? ['--scope', scopeFile] : []), ...(left.length ? ['--exclude', left.join(',')] : []), '--recompose-run', String(open.recompose_run), '--recompose-record', String(open.recompose_record), '--out', openFile], standardInput(state, g));
   if (opened.code !== 0 || !existsSync(openFile)) throw new Error(`${what}没有开成：${words(opened) || '没有输出'}`);
   const target = String(((await readJson(openFile)) as Record<string, unknown>).plan_run ?? '');
   if (!target || target === state.plan_run) throw new Error(`open-compile.ts 没有给出新的脚本编写运行（看到 ${target || '空'}）`);
@@ -749,9 +750,7 @@ function checkOpen(state: PipelineState, open: Record<string, unknown>): void {
   recordedScope(open); recordedExclude(open); recordedNames(open); recordedBooking(open);
 }
 
-// What the first open was given and a later plan run must be given again: open-compile.ts writes the scope (the user's words and the cases they
-// name, which the recomposition run froze), the cases left out, the version line and the three named documents into its record when it has
-// them, and whether this compile took the booking itself (the delivery releases only that one). A record without them has none.
+// Carry the original scope and exclusions into the next round.
 function recordedScope(open: Record<string, unknown>): { words: string; cases: string[] } | null {
   const scope = open.scope;
   if (scope === undefined) return null;
@@ -763,8 +762,9 @@ function recordedNames(open: Record<string, unknown>): string[] {
   const options: string[] = [];
   for (const name of RECORDED_NAMES) {
     const value = open[name];
-    if (value === undefined) continue;
-    if (typeof value !== 'string' || !value) throw new Error(`--open 里的 ${name} 不是${name === 'version' ? '版本线' : '命名文档'}的名字；--open 写 open-compile.ts 写的文件，不手改`);
+    if (name === 'version' && value === undefined) continue;
+    if (name !== 'version' && (typeof value !== 'string' || !/^doc:doc:[a-z][a-z0-9-]{0,63}@[0-9a-f]{64}$/.test(value))) throw new Error(`--open 里的 ${name} 缺少冻结的文档修订，请使用本次开编译记录`);
+    if (typeof value !== 'string' || !value) throw new Error(`--open 里的 ${name} 不是版本线的名字；--open 写 open-compile.ts 写的文件，不手改`);
     options.push(`--${name}`, value);
   }
   return options;

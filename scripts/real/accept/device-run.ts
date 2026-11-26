@@ -10,6 +10,7 @@ import { EffectOutcomeSchema, DynamicTerminalSchema, labelOf } from '../../../co
 import { canonicalBytes, sha256Hex, parseStrictJson } from '../../../hub/records/api.ts';
 import { ExecutorDefinition, ExecutorSource, resolveExecutorValues, type JobStatus } from '../../../hub/dispatch/api.ts';
 import {referencesIn} from '../../../contracts/src/variables.ts';
+import { parseDocId } from '../../../hub/refs/api.ts';
 import { staging, FactError, requireFact } from '../convert/io.ts';
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const text = (v: unknown): string => typeof v === 'string' ? v : '';
@@ -113,8 +114,21 @@ export async function runCases(ids: string[], priorBookings: string[], p: CasePo
 export function checkedRunId(value: string): string {
   requireFact(runId.safeParse(value).success, '核验运行号不合式；请 Circle 完成第 4 到 6 步后从回执原样复制'); return value;
 }
+function boundDocument(sources: unknown, slot: string) {
+  const rows = Array.isArray(sources) ? sources.filter(s => object(s) && s.slot === slot) : [];
+  const external = rows.length === 1 ? text(rows[0].external) : '';
+  const doc = parseDocId(external);
+  requireFact(doc?.sha256 && rows[0].reference === 'src:' + doc.sha256,
+    `运行缺少 ${slot} 槽位唯一且与来源摘要一致的命名文档修订，请核对该运行的冻结来源`);
+  return {name:doc.name, digest:doc.sha256, external};
+}
+function documentName(definition: Pick<ExecutorDefinition,'input_documents'>, slot: 'contract' | 'profile'): string {
+  const name = definition.input_documents?.[slot];
+  requireFact(name,`执行器没有声明 ${slot} 槽位的命名文档，请管理员核对执行器登记`);
+  return name;
+}
 /** The CLI exports full RunDetail. Never infer an automation identity from its display text. */
-export function verification(value: unknown, autoid: string, manifest: string): { run: string; predecessor: string; sha256: string } {
+export function verification(value: unknown, autoid: string, definition: Pick<ExecutorDefinition,'input_documents' | 'manifest_sha256'>): { run: string; predecessor: string; sha256: string; inventory: string } {
   requireFact(object(value) && object(value.run) && object(value.latest) && object(value.latest.result), '缺完整核验运行及结果；请 Circle 读回原记录并完成核验');
   const run = value.run, result = value.latest.result;
   requireFact(text(run.pack).startsWith('case-compile@') && Array.isArray(run.items) && run.items.length === 1 && object(run.items[0]) && object(run.items[0].fields) && run.items[0].fields.autoid === autoid, '核验运行不是本例的唯一目标条目；请 Circle 按所选编号重开核验');
@@ -122,11 +136,15 @@ export function verification(value: unknown, autoid: string, manifest: string): 
   const parts = result.partitions; const rows = Object.values(parts).flatMap(v => Array.isArray(v) ? v : []);
   requireFact(Array.isArray(parts.delivered) && parts.delivered.length === 1 && rows.length === 1 && object(rows[0]) && Array.isArray(rows[0].requirements) && rows[0].requirements.length > 0 && rows[0].requirements.every(r => object(r) && r.status === 'satisfied'), '核验仍有未满足要求；请 Circle 补齐事实、重新生成上传并核验');
   const sources = Array.isArray(run.sources) ? run.sources.filter(object) : [];
-  for (const [slot, name] of [['contract', 'runner-contract'], ['profile', 'runtime-profile'], ['inventory', 'bed-topology']]) requireFact(sources.some(s => s.slot === slot && text(s.external).startsWith(`doc:doc:${name}@`)), '核验未绑定固定部署文档名；请 Circle 用 runner-contract、runtime-profile、bed-topology 重开运行');
-  requireFact(sources.some(s => s.slot === 'inventory' && s.reference === `src:${manifest}`), '核验绑定的清单与执行器期望不同；请用当前清单重跑计划和核验');
+  for (const slot of ['contract','profile'] as const) {
+    const name = documentName(definition,slot);
+    requireFact(boundDocument(sources,slot).name === name,`核验绑定的 ${slot} 文档与执行器声明不符，请按 doc:doc:${name} 重新开始运行`);
+  }
+  const inventory = boundDocument(sources,'inventory');
+  requireFact(inventory.digest === definition.manifest_sha256, '核验绑定的清单与执行器期望不同；请按预订清单重新开始运行');
   const workbook = sources.filter(s => s.slot === 'workbook' && s.role === 'artifact_under_verification');
   requireFact(workbook.length === 1 && /^src:[a-f0-9]{64}$/.test(text(workbook[0].reference)), '核验缺唯一工作簿原件；请 Circle 生成、上传并重开核验');
-  return { run: checkedRunId(text(run.run)), predecessor: checkedRunId(text(run.predecessor)), sha256: text(workbook[0].reference).slice(4) };
+  return { run: checkedRunId(text(run.run)), predecessor: checkedRunId(text(run.predecessor)), sha256: text(workbook[0].reference).slice(4), inventory: inventory.external };
 }
 
 const checkpointSchema = z.strictObject({
@@ -170,8 +188,9 @@ export async function main(argv: string[]): Promise<number> {
     };
     const checked = await stageZero();
     requireFact(checked.definition.manifest_sha256 === sha256Hex(read(config.inventory)), '本地清单不是执行器期望的那份；请用当前清单重跑计划及核验');
-    // Administrative script prints the fixed publication commands; the integrator publishes explicitly.
-    for (const [name, file] of [['runner-contract', config.contract], ['bed-topology', config.inventory], ['runtime-profile', config.profile]]) {
+    say('部署清单原件', { sha256:checked.definition.manifest_sha256, next_action:'请按预订使用的命名文档发布这份设备清单' });
+    for (const slot of ['contract','profile'] as const) {
+      const name = documentName(checked.definition,slot), file = config[slot];
       say('部署文档原件', { document: name, sha256: sha256Hex(read(file)) });
       process.stdout.write(`circle-hub doc put ${name} ${quote(path(file))}\n`);
     }
@@ -238,10 +257,12 @@ export async function main(argv: string[]): Promise<number> {
       async prepare(id) {
         say('等待 Circle 完成本例', { case_index: state.completed.length + 1, note: 'Circle 经 test-bed 独立占自动化测试环境，按 SKILL 完成填槽、生成、上传和核验；本脚本不调 MCP、不生成内容' });
         const run = checkedRunId((await rl.question('输入这个用例的核验运行号：')).trim());
-        const verified = verification(await show(run), id, checked.definition.manifest_sha256!);
+        const verified = verification(await show(run), id, checked.definition);
         const plan = (await show(verified.predecessor)).run as Record<string, unknown>;
         requireFact(text(plan.pack).startsWith('case-compile@') && runId.safeParse(plan.predecessor).success, '计划没有占自动化测试环境前驱；请 Circle 独立占自动化测试环境后重开计划及核验');
         const booked = (await show(text(plan.predecessor))).run as Record<string, unknown>;
+        requireFact(boundDocument(booked.sources,'inventory').external === verified.inventory,
+          '核验绑定的清单与预订冻结的命名文档修订不符，请按本次预订重新开始运行');
         const groups = Array.isArray(booked.groups) ? booked.groups.filter(object) : [];
         requireFact(text(booked.pack).startsWith('test-bed@') && groups.some(g => g.action === 'acquire' && g.bed === checked.definition.target), '计划前驱不是本自动化测试环境占用；请 Circle 重新占自动化测试环境并在本例谱系完成计划及核验');
         return { run: verified.run, sha256: verified.sha256, booking: text(booked.run) };

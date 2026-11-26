@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ExecutorNames } from '../dispatch/api.ts';
+import { ExecutorNames, ExecutorRegistry } from '../dispatch/api.ts';
 import { executorCommand, type JobCommandSession } from './cli-job.ts';
 import { UsageError } from './errors.ts';
 import type { RecordsKit, Principal } from '../records/api.ts';
@@ -11,7 +11,7 @@ function fixture(){
   let reads=0;const lines:string[]=[];
   const records={} as RecordsKit;
   const session:JobCommandSession={ctx:{io:{cwd:'.'}},options:{readSecret:async()=>{reads++;throw new Error('secret reads forbidden');}},
-    admin:async()=>actor,records:async()=>records,hub:async()=>({dispatch:null,records}),out:line=>lines.push(line),err:line=>lines.push(line)};
+    admin:async()=>actor,records:async()=>records,hub:async()=>({dispatch:null,records,executorRegistry:new ExecutorRegistry(records)}),out:line=>lines.push(line),err:line=>lines.push(line)};
   return {session,lines,get reads(){return reads;}};
 }
 test('administrator adoption passes the exact explicit name and never reads a definition or secret',async t=>{

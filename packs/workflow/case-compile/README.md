@@ -6,7 +6,7 @@
 
 每条原始用例独立推进，关口都由 `tools/pipeline.ts` 跑，子代理由编写循环 `workflows/compile-loop.js` 派发：
 
-1. 开运行：`tools/open-compile.ts` 先由代码判定技能版本、Plumb 或 Jev 的配置、命名文档、test-bed 预订和脑图是否就绪，再开用例重组运行（子包 `recompose`）和脚本编写运行，写 `open-compile.json`；给了 `--scope`、`--exclude`、`--version`、`--contract`、`--inventory` 或 `--profile` 的，记录里另有同名的可选字段（`scope` 是 `{words, cases}`，原话照录；`exclude` 是 autoid 列表；`version` 是版本线；`contract`、`inventory`、`profile` 是命名文档），`pipeline.ts` 以后新开脚本编写运行（返工、重新开、交付卷）时照它们带上，新的 `open-compile.json` 再记一遍，记录的 schema 仍是 `open-compile@1`。给了 `--booking-acquired yes`（`--booking` 是这次编译自己取得的预订，不是使用者已有的）的，记录里另有 `booking_acquired: true`，`pipeline.ts` 新开脚本编写运行时同样带上，交付工具据此释放预订。
+1. 开运行：`tools/open-compile.ts` 按 `--booking` 查询当前账户的有效预订。开用例重组和脚本编写前，工具核对执行器的规则和运行环境配置，以及预订绑定的清单。省略 `--contract`、`--inventory`、`--profile` 即自动选择，显式给出的名字或修订必须与本次选择一致。选定的三份文档以 `doc:doc:名字@摘要` 写入 `open-compile.json`。返工、重新开启和交付卷沿用首次开编译记录里的规则、配置和清单修订。缺少完整修订时，返工会报出对应槽位。脚本合并同样沿用编写运行冻结的修订。同名文档后来发布的新修订由新编译使用。范围、排除用例及产品版本线照常传给后续运行；本次编译自己取得预订时，`--booking-acquired yes` 让交付工具在完成后释放预订。
 2. 用例重组：每条原始用例由 `compile-recomposer` 写成重组后的用例，离线自检（`recompose/tools/check-record.ts`）后单条提交，受理后即可编写。
 3. 脚本编写：`compile-writer` 按任务文件、同构建手册和命令树写计划；计划自检（`tools/check-plan.ts`）、命令核验（`tools/cmd-verify-plumb.ts`）和场景保真审计（`tools/fidelity-plumb.ts`，判不了的交 `compile-fidelity` 盲审）都过了才算就绪。
 4. 脚本合并：`pipeline.ts collect` 收拢就绪的计划，`tools/open-merge.ts` 交计划、生成并上传工作簿、开脚本合并运行并提交。

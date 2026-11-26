@@ -11,7 +11,7 @@ import { scrubInternalIds } from '../server/console/manage.ts';
 function session(c: Awaited<ReturnType<typeof setup>>) {
   const lines: string[] = [];
   return { lines, out: (s: string) => lines.push(s), err: (s: string) => lines.push(s), admin: async () => c.admin,
-    records: async () => c.kit, hub: async () => ({ dispatch: c.service, records: c.kit }), options: { readSecret: async () => {throw new Error('stdin must not be read');} }, ctx: { io: { cwd: c.kit.dataDir } } };
+    records: async () => c.kit, hub: async () => ({ dispatch: c.service, executorRegistry: c.registry, records: c.kit }), options: { readSecret: async () => {throw new Error('stdin must not be read');} }, ctx: { io: { cwd: c.kit.dataDir } } };
 }
 test('executor registration never reads stdin and accepts named credential references and prints no endpoint or secret', async t => {
   const c = await setup(); t.after(() => c.close()); const s = session(c);
@@ -27,7 +27,7 @@ test('executor list and the lines after a publication name an enabled executor w
   const c = await setup(); t.after(() => c.close());
   const base = session(c);
   const asked: string[] = [];
-  const s = { ...base, hub: async () => ({ dispatch: c.service, records: c.kit, registry: { latestVersion: async (pack: string) => { asked.push(pack); return pack === 'synthetic-workflow' ? { version: '1.1.0' } : null; } } }) };
+  const s = { ...base, hub: async () => ({ dispatch: c.service, executorRegistry: c.registry, records: c.kit, registry: { latestVersion: async (pack: string) => { asked.push(pack); return pack === 'synthetic-workflow' ? { version: '1.1.0' } : null; } } }) };
   // The fixture's own identity is no pack function, so nothing is said about it.
   assert.equal(await executorCommand(s, ['list']), 0);
   assert.doesNotMatch(base.lines.join('\n'), /指定的核验函数/);
@@ -49,7 +49,7 @@ test('executor list and the lines after a publication name an enabled executor w
   assert.equal(staleWarrantLine(c.executor.id, undefined, '1.1.0'), null);
   assert.doesNotMatch(staleWarrantLine(c.executor.id, { package: 'synthetic-workflow', warrant_id: 'synthetic-workflow.sheet_verified@1.0.0' }, '1.1.0', '${var:SYNTHETIC_TARGET}')!, /测试环境|\$\{/, 'a target that is still a reference is not printed');
   // The version in use cannot be read: the list is whole, and one line says what was not checked.
-  const failing = { ...base, hub: async () => ({ dispatch: c.service, records: c.kit, registry: { latestVersion: async () => { throw new Error('synthetic registry failure'); } } }) };
+  const failing = { ...base, hub: async () => ({ dispatch: c.service, executorRegistry: c.registry, records: c.kit, registry: { latestVersion: async () => { throw new Error('synthetic registry failure'); } } }) };
   base.lines.length = 0;
   assert.equal(await executorCommand(failing, ['list']), 0);
   assert.ok(base.lines.some(text => text.startsWith(`执行器编号 ${c.executor.id}；`)));

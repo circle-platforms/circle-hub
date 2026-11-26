@@ -160,7 +160,7 @@ async function setupResidue(t: { after: (fn: () => unknown) => void }, answer: (
 }
 const reads = (c: Harness) => c.endpoint.calls.filter(e => e.params.name === 'inspect_bound_seat').map(e => e.params.arguments as Record<string, unknown>);
 const probeEvents = async (c: Harness, job: string) => (await c.service.journal.events(job)).filter(e => e.body.detail.phase === 'device_probe');
-const cli = (c: Harness, lines: string[]) => ({ out: (s: string) => lines.push(s), err: (s: string) => lines.push(s), admin: async () => c.admin, records: async () => c.kit, hub: async () => ({ dispatch: c.service, records: c.kit }), options: {}, ctx: { io: { cwd: c.kit.dataDir } } });
+const cli = (c: Harness, lines: string[]) => ({ out: (s: string) => lines.push(s), err: (s: string) => lines.push(s), admin: async () => c.admin, records: async () => c.kit, hub: async () => ({ dispatch: c.service, executorRegistry: c.registry, records: c.kit }), options: {}, ctx: { io: { cwd: c.kit.dataDir } } });
 
 test('a clean bed passes the residue probes: the headers never count and an empty answer is empty only with its closing line', async t => {
   const c = await setupResidue(t, () => undefined);

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { main as openCompile } from './open-compile.ts';
 import { makeSkills } from '../testing/tool-skills.ts';
-import { compileProjection } from '../testing/tool-projection.ts';
+import { OTHER_BED_DOCS, bookingRow, compileProjection } from '../testing/tool-projection.ts';
 import { expandText } from '../functions/length-literals.ts';
 import { JEV_ASK_SPACING_MS, JEV_UNANSWERED_LIMIT, collect, forLead, initState, main, next, recordStatus, reopen, resume, retry, rework, summary, type CaseState, type Gates, type PipelineState, type RunTool, type ToolRun } from './pipeline.ts';
 
@@ -139,7 +139,7 @@ async function readWorld(onStart: (line: string, out: string) => void) {
   const run: RunTool = async (skill, tool, args, stdin) => { const got = await t.run(skill, tool, args, stdin); if (tool === 'refresh-late.ts') await writeFile(join('plan-run', 'briefs', '00.md'), READ_BRIEF); return got; };
   const started: Array<{ tool: string; args: string[]; stdin?: string }> = [];
   const start = (skill: string, tool: string, args: string[], stdin?: string) => { started.push({ tool: `${skill}/${tool}`, args, stdin }); onStart(args[args.indexOf('--line') + 1]!, args[args.indexOf('--out') + 1]!); };
-  const state: PipelineState = await initState('recompose-run', 'plan-run', { ...OPEN, booking: 'run_01bookingbookingbooking0' }, 'synthetic-model');
+  const state: PipelineState = await initState('recompose-run', 'plan-run', { ...OPEN, booking: 'run_01bookingbookingbooking0', inventory: 'doc:doc:selected-inventory' }, 'synthetic-model');
   for (const c of state.cases.slice(0, 6)) { c.stage = 'recomposing'; c.attempts.recompose = 1; }
   await writeFile(join('records', '00.json'), '{}');
   const noteOf = () => { const task = t.calls.filter((c) => c.tool === 'case-compile/task-brief.ts').at(-1)!; return task.args.includes('--note') ? task.args[task.args.indexOf('--note') + 1]! : null; };
@@ -148,11 +148,11 @@ async function readWorld(onStart: (line: string, out: string) => void) {
 }
 test('before a case is written the booked device is asked, without waiting, for each read-only command of its brief that needs no parameter, and the task says where the outputs are', async () => {
   const w = await readWorld((line, out) => { if (line === 'show widget name') writeFileSync(out, '# 合成\n# 合成\nwidget-a 1\nwidget-b 2\n'); });
-  assert.deepEqual({ ...w.state.device_reads }, { booking: 'run_01bookingbookingbooking0', device: 'dev0', bed: 'bed-a', lines: {}, asked: {} });
+  assert.deepEqual({ ...w.state.device_reads }, { booking: 'run_01bookingbookingbooking0', inventory: 'doc:doc:selected-inventory', device: 'dev0', bed: 'bed-a', lines: {}, asked: {} });
   const step = await next(w.state, '重组 00', { ...gates(w.run), start: w.start });
   assert.deepEqual(step.actions.map((a) => a.label), ['编写 00']);
   assert.equal(w.calls.some((c) => c.tool === 'case-compile/device-read.ts'), false, 'no read is waited for: the dispatch is not held');
-  assert.deepEqual(w.started.map((s) => [s.tool, s.args, s.stdin]), ['show widget name', 'show widget size'].map((line) => ['case-compile/device-read.ts', ['--hub', 'http://127.0.0.1:9/mcp', '--booking', 'run_01bookingbookingbooking0', '--device', 'dev0', '--line', line, '--out', join('device-reads', line.replaceAll(' ', '-') + '.txt'), '--bed', 'bed-a'], 'synthetic-token-1234\n']), 'the command with only optional parameters is asked for as its words alone; the token goes on standard input');
+  assert.deepEqual(w.started.map((s) => [s.tool, s.args, s.stdin]), ['show widget name', 'show widget size'].map((line) => ['case-compile/device-read.ts', ['--hub', 'http://127.0.0.1:9/mcp', '--booking', 'run_01bookingbookingbooking0', '--inventory', 'doc:doc:selected-inventory', '--device', 'dev0', '--line', line, '--out', join('device-reads', line.replaceAll(' ', '-') + '.txt'), '--bed', 'bed-a'], 'synthetic-token-1234\n']), 'the command with only optional parameters is asked for as its words alone; the token goes on standard input');
   assert.match(w.noteOf()!, /供参考：设备 dev0 对本条简报里这些只读命令的输出，“show widget name”读到后在 device-reads\/show-widget-name\.txt，“show widget size”读到后在 device-reads\/show-widget-size\.txt；刚发出读取的，稍后没有这个文件就是没读成。/);
   await mkdir(join('cases', '00', 'plan'), { recursive: true }); await writeFile(join('cases', '00', 'plan', '00.json'), '{}');
   const later = await w.again({ ...gates(w.run), start: w.start });
@@ -473,8 +473,8 @@ test('the record status is read from the answer partitions, and a refused submis
 });
 
 const NEXT_PLAN = 'run_01planplanplanplanplan01';
-const OPENED = { ...OPEN, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01bookingbookingbooking0', recompose_record: 'rec:' + 'a'.repeat(64) };
-async function afterDevice(rows: (autoids: string[]) => unknown[], options: { originalAutoids?: string[]; judge?: 'model' | 'jev'; more?: (tool: string, args: string[]) => ToolRun | undefined } = {}) {
+const OPENED = { ...OPEN, ...OTHER_BED_DOCS, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01bookingbookingbooking0', recompose_record: 'rec:' + 'a'.repeat(64) };
+async function afterDevice(rows: (autoids: string[]) => unknown[], options: { originalAutoids?: string[]; bookingDocuments?: () => typeof OTHER_BED_DOCS; judge?: 'model' | 'jev'; more?: (tool: string, args: string[]) => ToolRun | undefined } = {}) {
   await world(3);
   const state = await initState('recompose-run', 'plan-run', options.judge === undefined ? OPEN : { ...OPEN, judge: options.judge }, 'synthetic-model');
   for (const c of state.cases) {
@@ -483,6 +483,8 @@ async function afterDevice(rows: (autoids: string[]) => unknown[], options: { or
   }
   await mkdir('returns-1'); await mkdir('notes'); await writeFile(join('notes', '01.json'), '{}');
   await writeFile(join('returns-1', 'index.json'), JSON.stringify({ schema: 'device-returns@1', jobs: [{ outcome: 'effective', rows: rows(state.cases.map((c) => c.autoid)) }] }));
+  const sources = Object.entries(OTHER_BED_DOCS).map(([slot,external])=>({slot,external,reference:'src:'+external.split('@')[1]}));
+  await writeFile(join(state.plan_dir,'run.json'),JSON.stringify({run:state.plan_run,sources}));
   let opens = 0;
   const uncarried: string[] = [];
   const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' });
@@ -495,7 +497,7 @@ async function afterDevice(rows: (autoids: string[]) => unknown[], options: { or
       process.stdout.write = ((s: string) => { stdout += s; return true; }) as typeof write;
       try {
         const code = await openCompile(args, async () => stdin!.split('\n'), () => async (name, params) => {
-          if (name === 'list_task_packs') return { failed: false, text: '', envelope: { packs: [{ id: 'case-compile', version: '3.22.0' }, { id: 'recompose', version: '1.3.0' }] } };
+          if (name === 'list_task_packs') return { failed: false, text: '', envelope: { booking_documents: [bookingRow(options.bookingDocuments?.() ?? OTHER_BED_DOCS)], packs: [{ id: 'case-compile', version: '3.22.0' }, { id: 'recompose', version: '1.3.0' }] } };
           assert.equal(name, 'start_run');
           assert.equal(params.pack, 'case-compile');
           const items = project(params);
@@ -507,7 +509,7 @@ async function afterDevice(rows: (autoids: string[]) => unknown[], options: { or
         process.stdout.write = write;
       }
     }
-    if (tool === 'download-run.ts') { mkdirSync(join(at('--out'), 'briefs'), { recursive: true }); writeFileSync(join(at('--out'), 'run.json'), JSON.stringify({ run: NEXT_PLAN })); for (const k of ['00', '01', '02']) writeFileSync(join(at('--out'), 'briefs', `${k}.md`), '合成简报'); return ok(); }
+    if (tool === 'download-run.ts') { mkdirSync(join(at('--out'), 'briefs'), { recursive: true }); writeFileSync(join(at('--out'), 'run.json'), JSON.stringify({ run: at('--run'), sources })); for (const k of ['00', '01', '02']) writeFileSync(join(at('--out'), 'briefs', `${k}.md`), '合成简报'); return ok(); }
     if (tool === 'carry-plans.ts') {
       mkdirSync(at('--plans'), { recursive: true });
       const again = (args.includes('--rework') ? at('--rework') : args.includes('--exclude') ? at('--exclude') : '').split(',').filter(Boolean);
@@ -532,7 +534,7 @@ test('a device round is reworked by code: a new plan run, what passed carried, w
   const downloaded = t.calls.filter((c) => c.tool === 'case-compile/download-run.ts');
   assert.deepEqual(downloaded.map((c) => c.args.slice(c.args.indexOf('--run'))), [['--run', NEXT_PLAN, '--out', join('rework-2', 'plan-run'), '--history-reuse', 'history']]);
   const opened = t.calls.find((c) => c.tool === 'case-compile/open-compile.ts')!;
-  assert.deepEqual([opened.args.slice(opened.args.indexOf('--subject')), opened.stdin], [['--subject', 'agile:mindmap:900001', '--product', 'widget', '--build', 'Fixture_Build_A', '--booking', 'run_01bookingbookingbooking0', '--recompose-run', OPEN.recompose_run, '--recompose-record', OPENED.recompose_record, '--out', join('rework-2', 'open-compile.json')], 'synthetic-token-1234\nsynthetic-plumb-key\n%JEV_API_KEY%\n'], 'the same mind map, build, booking and recompose run, and the three stdin lines: the Plumb key of a Plumb compile, the placeholder where a Jev key would be');
+  assert.deepEqual([opened.args.slice(opened.args.indexOf('--subject')), opened.stdin], [['--subject', 'agile:mindmap:900001', '--product', 'widget', '--build', 'Fixture_Build_A', '--booking', 'run_01bookingbookingbooking0', '--contract', OTHER_BED_DOCS.contract, '--inventory', OTHER_BED_DOCS.inventory, '--profile', OTHER_BED_DOCS.profile, '--recompose-run', OPEN.recompose_run, '--recompose-record', OPENED.recompose_record, '--out', join('rework-2', 'open-compile.json')], 'synthetic-token-1234\nsynthetic-plumb-key\n%JEV_API_KEY%\n'], 'the same mind map, build, booking and recompose run, and the three stdin lines: the Plumb key of a Plumb compile, the placeholder where a Jev key would be');
   const task = t.calls.filter((c) => c.tool === 'case-compile/task-brief.ts').at(-1)!.args, at = (name: string) => task[task.indexOf(name) + 1];
   assert.deepEqual([at('--round'), at('--prior-plans'), at('--prior-returns'), at('--prior-notes'), at('--run'), at('--brief'), at('--task-file')], ['2', join('rework-2', 'prior-plans'), 'returns-1', 'notes', join('rework-2', 'plan-run'), join('rework-2', 'plan-run', 'briefs', '01.md'), join('tasks', 'write', '01-r2-1.md')]);
   assert.match(at('--note')!, /^停下前最后一次没有通过：上机第 1 轮没有通过（判定 no_verdict）/);
@@ -807,7 +809,7 @@ const SCOPE = { words: '只编这三条：“登录后改密码”、"退出" �
 const outsideScope = (call: string[]) => flagOf(call, '--exclude')!.split(',').filter((autoid) => !(JSON.parse(readFileSync(flagOf(call, '--scope')!, 'utf8')) as typeof SCOPE).cases.includes(autoid));
 // The version line and the three named documents the first open may have been given instead of the defaults.
 const NAMES = ['version', 'contract', 'inventory', 'profile'] as const;
-const NAMED = { version: '3.2', contract: 'doc:doc:other-contract', inventory: `doc:doc:other-inventory@${'d'.repeat(64)}`, profile: 'doc:doc:other-profile' } as const;
+const NAMED = { version: '3.2', ...OTHER_BED_DOCS } as const;
 const namedFlags = (args: string[]) => NAMES.map((name) => flagOf(args, `--${name}`));
 const flagOf = (args: string[], name: string): string | undefined => args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
 const openCalls = (calls: Array<{ tool: string; args: string[] }>) => calls.filter((call) => call.tool === 'case-compile/open-compile.ts').map((call) => call.args);
@@ -877,53 +879,64 @@ test('a reopen and a delivery volume keep the scope too, and merge the left-out 
   assert.equal(volume.state.volume?.n, 1);
 });
 
-test('a record without what the first open was given opens the next plan run as it always did, and a record whose entries are malformed is refused before anything is opened', async () => {
+test('rework preserves absent optional parameters and refuses malformed opening records before starting', async () => {
   const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
-  for (const [broken, said] of [[{ scope: { words: 1, cases: [] } }, /--open 里的 scope 不是 \{"words":"…","cases":\[…\]\} 的形状/], [{ scope: { words: '范围', cases: [7] } }, /--open 里的 scope 不是/], [{ exclude: LEFT_OUT }, /--open 里的 exclude 不是 autoid 的列表/], [{ exclude: [LEFT_OUT, 5] }, /--open 里的 exclude 不是 autoid 的列表/], [{ version: 3.2 }, /--open 里的 version 不是版本线的名字/], [{ contract: '' }, /--open 里的 contract 不是命名文档的名字/], [{ inventory: ['doc:doc:x'] }, /--open 里的 inventory 不是命名文档的名字/], [{ profile: null }, /--open 里的 profile 不是命名文档的名字/]] as const) {
+  for (const [broken, said] of [[{ scope: { words: 1, cases: [] } }, /--open 里的 scope 不是 \{"words":"…","cases":\[…\]\} 的形状/], [{ scope: { words: '范围', cases: [7] } }, /--open 里的 scope 不是/], [{ exclude: LEFT_OUT }, /--open 里的 exclude 不是 autoid 的列表/], [{ exclude: [LEFT_OUT, 5] }, /--open 里的 exclude 不是 autoid 的列表/], [{ version: 3.2 }, /--open 里的 version 不是版本线的名字/], [{ contract: '' }, /--open 里的 contract 缺少冻结的文档修订/], [{ inventory: ['doc:doc:x'] }, /--open 里的 inventory 缺少冻结的文档修订/], [{ profile: null }, /--open 里的 profile 缺少冻结的文档修订/]] as const) {
     await assert.rejects(rework(state, { ...OPENED, ...broken }, 'returns-1', undefined, gates(t.run)), said);
   }
   assert.deepEqual([openCalls(t.calls), existsSync('rework-2')], [[], false], 'nothing was opened and no directory was made');
   await rework(state, OPENED, 'returns-1', 'notes', gates(t.run));
   const [opened] = openCalls(t.calls);
   assert.deepEqual([opened!.includes('--scope'), opened!.includes('--exclude'), existsSync(join('rework-2', 'compile-scope.json'))], [false, false, false]);
-  assert.deepEqual(namedFlags(opened!), [undefined, undefined, undefined, undefined], 'no version line and no named document is passed: the defaults are the open\'s own');
+  assert.deepEqual(namedFlags(opened!), [undefined, OTHER_BED_DOCS.contract, OTHER_BED_DOCS.inventory, OTHER_BED_DOCS.profile], 'the open record supplies its three revisions');
   const recorded = JSON.parse(readFileSync(state.open!, 'utf8'));
-  assert.deepEqual(['scope', 'exclude', ...NAMES].filter((field) => field in recorded), []);
+  assert.deepEqual(['scope', 'exclude', ...NAMES].filter((field) => field in recorded), ['contract','inventory','profile']);
 });
 
-test('a rework opens the next plan run with the version line or the named document the compile was opened with, in every round, and with none of them when it was opened with none', async () => {
+test('rework refuses a missing or unpinned document even when a prior download exists', async () => {
+  const { state, t } = await afterDevice(([a,b,c]) => [{item:a,verdict:'pass'},{item:b,verdict:'fail'},{item:c,verdict:'pass'}]);
+  for (const value of [undefined, OTHER_BED_DOCS.contract.split('@')[0]]) {
+    await assert.rejects(rework(state,{...OPENED,contract:value},'returns-1','notes',gates(t.run)),/contract.*修订/);
+  }
+  assert.deepEqual(openCalls(t.calls),[]);
+});
+
+test('a rework opens each round with the frozen documents from the opening record', async () => {
   for (const name of NAMES) {
-    const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
+    let head = OTHER_BED_DOCS;
+    const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }], {bookingDocuments: () => head});
     const only = (other: string) => other === name ? NAMED[name] : undefined;
     await rework(state, { ...OPENED, [name]: NAMED[name] }, 'returns-1', 'notes', gates(t.run));
-    assert.deepEqual(namedFlags(openCalls(t.calls)[0]!), NAMES.map(only), `${name}: only the one given is passed`);
+    assert.deepEqual(namedFlags(openCalls(t.calls)[0]!), [only('version'),OTHER_BED_DOCS.contract,OTHER_BED_DOCS.inventory,OTHER_BED_DOCS.profile]);
     const recorded = JSON.parse(readFileSync(state.open!, 'utf8'));
-    assert.deepEqual(NAMES.filter((other) => other in recorded), [name], `${name}: the next open wrote it down`);
-    // The round after it starts from that record.
+    assert.deepEqual(NAMES.map(field => recorded[field]), [only('version'),OTHER_BED_DOCS.contract,OTHER_BED_DOCS.inventory,OTHER_BED_DOCS.profile]);
+    head = { ...OTHER_BED_DOCS, contract: 'doc:doc:other-contract@' + '9'.repeat(64), profile: 'doc:doc:other-profile@' + '8'.repeat(64) };
     await writeFile(join('cases', '01', 'plan', '01.json'), '{"plan":"01 round 2"}');
     await next(state, '编写 01', gates(t.run));
     await returned('returns-2', state.cases.map((c) => ({ item: c.autoid, verdict: c.k === '01' ? 'fail' : 'pass' })));
     await rework(state, recorded, 'returns-2', undefined, gates(t.run));
-    assert.deepEqual(namedFlags(openCalls(t.calls)[1]!), NAMES.map(only), `${name}: the second round`);
+    assert.deepEqual(namedFlags(openCalls(t.calls)[1]!), [only('version'),OTHER_BED_DOCS.contract,OTHER_BED_DOCS.inventory,OTHER_BED_DOCS.profile], `${name}: the second round forwards all three frozen revisions`);
+    const nextOpen = JSON.parse(readFileSync(state.open!, 'utf8'));
+    assert.deepEqual([nextOpen.contract,nextOpen.profile],[OTHER_BED_DOCS.contract,OTHER_BED_DOCS.profile]);
   }
 });
 
 test('a reopen and a delivery volume open the next plan run with the version line and the named documents too', async () => {
-  const given = NAMES.map((name) => NAMED[name]);
+  const pinned = [NAMED.version,OTHER_BED_DOCS.contract,OTHER_BED_DOCS.inventory,OTHER_BED_DOCS.profile];
   const reopened = await afterDevice(() => []);
   reopened.state.open = 'open-compile.json';
   const stopped = reopened.state.cases[1]!;
   stopped.stage = 'stopped'; stopped.attempts = { recompose: 1, write: 5 }; stopped.stopped = '脚本编写 5 次仍未通过：合成原因'; stopped.retried = OPEN.plan_run;
   await reopen(reopened.state, { ...OPENED, ...NAMED }, undefined, gates(reopened.t.run));
-  assert.deepEqual(namedFlags(openCalls(reopened.t.calls)[0]!), given);
-  assert.deepEqual(NAMES.map((name) => JSON.parse(readFileSync(reopened.state.open!, 'utf8'))[name]), given, 'and the record of that open says so');
+  assert.deepEqual(namedFlags(openCalls(reopened.t.calls)[0]!), pinned);
+  assert.deepEqual(NAMES.map((name) => JSON.parse(readFileSync(reopened.state.open!, 'utf8'))[name]), pinned, 'the record keeps the selected revisions');
   const volume = await afterDevice(([x, y, z]) => [{ item: x, verdict: 'pass' }, { item: y, verdict: 'fail' }, { item: z, verdict: 'pass' }], { originalAutoids: SCOPE.cases });
   volume.state.cases[1]!.device_rounds = 2;
   await rework(volume.state, { ...OPENED, ...NAMED, scope: SCOPE, exclude: [LEFT_OUT] }, 'returns-1', undefined, gates(volume.t.run));
   const [deliver] = openCalls(volume.t.calls);
-  assert.deepEqual(namedFlags(deliver!), given);
+  assert.deepEqual(namedFlags(deliver!), pinned);
   assert.deepEqual([flagOf(deliver!, '--scope'), volume.state.volume?.n], [join('deliver-1', 'compile-scope.json'), 1], 'beside the scope and the left-out cases, which are passed as before');
-  assert.deepEqual(NAMES.map((name) => JSON.parse(readFileSync(volume.state.open!, 'utf8'))[name]), given);
+  assert.deepEqual(NAMES.map((name) => JSON.parse(readFileSync(volume.state.open!, 'utf8'))[name]), pinned);
 });
 
 const withoutPlumb = (run: RunTool): Gates => ({ run, hub: 'http://127.0.0.1:9/mcp', plumb: '', token: 'synthetic-token-1234', plumbKey: '', jevKey: '' });

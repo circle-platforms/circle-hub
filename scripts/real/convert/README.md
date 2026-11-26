@@ -69,7 +69,7 @@ node scripts/real/accept/device-run.ts --config <暂存配置> --out <仓库外�
 }
 ```
 
-CLI 必须指向待验收的同一部署，管理员身份由集成者按现有 CLI 方式提供；配置不接受密钥或模型参数。三份文档只打印 `doc put` 行，固定发布名 runner-contract、bed-topology、runtime-profile；集成者先发布检查通过的原件，再由 Circle 按这三个名字绑定。不要发布带 pending 的 profile 草稿。执行器先由管理员登记；其证明声明须填写 `proof.warrant_id` 为当前包核验函数的完整身份（从已发布包的检查声明及回执核对），不把目录或引文函数当工作簿证明。
+CLI 必须指向待验收的同一部署，管理员身份由集成者按现有 CLI 方式提供；配置不接受密钥或模型参数。脚本按执行器 `input_documents.contract` 和 `input_documents.profile` 打印对应原件的 `doc put` 命令。设备清单以登记的 `manifest_sha256` 核对本地字节，文档名由预订给出；核验运行必须绑定该预订冻结的同名、同修订清单。由集成者发布检查通过的原件。不要发布带 pending 的 profile 草稿。执行器先由管理员登记；其证明声明须填写 `proof.warrant_id` 为当前包核验函数的完整身份（从已发布包的检查声明及回执核对），不把目录或引文函数当工作簿证明。
 
 第零步按 `ExecutorDefinition` 补默认值后用核心 RFC 8785 算摘要，与 `executor list` 对给定编号打印的摘要逐字比较，并要求 HTTPS、固定 CA、启用且登记齐全。每次更新执行器后重跑；派发前再核一次，过程中变更就停止。本脚本不自称机械核过“只有运行权限”，该核对由 Hub 派发模块（`hub/dispatch`）承担。
 

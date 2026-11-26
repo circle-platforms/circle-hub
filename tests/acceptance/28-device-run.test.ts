@@ -6,7 +6,7 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { osIsolationAvailable } from '../../hub/rules/api.ts';
 import { recognize } from '../../hub/refs/api.ts';
-import { sha256Hex, type ActionBody } from '../../hub/records/api.ts';
+import { newId, sha256Hex, type ActionBody } from '../../hub/records/api.ts';
 import { ExecutorDefinition, readRunJobs, staleWarrant, type JobStatus, type DispatchNote } from '../../hub/dispatch/api.ts';
 import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
@@ -20,12 +20,15 @@ import { generateWorkbook } from '../../packs/workflow/case-compile/functions/ge
 import { reportLines, batchQualifications } from '../../scripts/real/accept/device-run.ts';
 import { createScriptedModel } from '../../scripts/real/scripted-model.ts';
 import { createTestHub, type TestHub, type TestUser } from '../../hub/server/testing-real.ts';
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { executorCommand } from '../../hub/server/cli-job.ts';
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stage } from '../../packs/workflow/case-compile/pack-files.ts';
+import { CallFailure } from '../../packs/workflow/case-compile/functions/text.ts';
+import { hubTools, openCompile } from '../../packs/workflow/case-compile/tools/open-compile.ts';
 import { stageRecompose } from '../../packs/workflow/case-compile/testing/stage-recompose.ts';
 import { attachRecompositionFields } from '../../packs/workflow/case-compile/testing/recompose-hub-helper.ts';
 import { recordFor } from '../../packs/workflow/case-compile/recompose/tools/submit-records.ts';
@@ -66,8 +69,8 @@ const startInputs = () => ({ subject: { reference: subject }, contract: { extern
 async function start(args: Record<string, unknown>): Promise<z.infer<typeof StartRunOutput>> {
   const answer = await client.call('start_run', args); assert.equal(answer.isError, false, JSON.stringify(answer.out.errors)); assert.ok(answer.out.run); if (args.pack === 'case-compile') itemIds.set(answer.out.run.run, answer.out.run.items[0].id); return answer.out;
 }
-async function booking(): Promise<string> {
-  const booked = (await start({ pack: 'test-bed', inputs: { inventory: startInputs().inventory }, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 2 }, { type: 'router', count: 1 }, { type: 'client', count: 1 }, { type: 'server', count: 1 }, { type: 'console', count: 1 }] } } })).run!.run;
+async function booking(target = 'bed-a', inventory = startInputs().inventory.external): Promise<string> {
+  const booked = (await start({ pack: 'test-bed', inputs: { inventory: {external:inventory} }, parameters: { action: 'acquire', bed: target, need: { devices: [{ type: 'load-balancer', count: 2 }, { type: 'router', count: 1 }, { type: 'client', count: 1 }, { type: 'server', count: 1 }, { type: 'console', count: 1 }] } } })).run!.run;
   const held = (await bed.hub.leases.view('bed/')).entries;
   assert.ok(held.length > 0);
   assert.ok(held.every(row => row.until === null), 'bookings last until the owning lineage releases them');
@@ -209,6 +212,7 @@ before(async () => {
     allowed_tools:[...raw.allowed_tools,'inspect_seat'],refused_tools:['synthetic_admin_reset'],conditions:raw.conditions.map(condition=>condition.pointer==='/seats'?{...condition,at_least:PROFILE_DOC.device_count}:condition),
     probes:{devices:'/beds/0/devices',command_pattern:'^inspect (?:version|interfaces)$',call:{tool:'inspect_seat',arguments:{seat:{$value:'seat_index'},command:{$value:'command'},ticket:{$value:'lease_id'}}},output:'/output',
       seats:MANIFEST_DOC.beds[0].devices.map((device,index)=>({seat:device.name,index,manifest:{device:`/beds/0/devices/${index}`,addresses:'/interfaces',address:''},version:{command:'inspect version',pattern:'^version: (?<value>.+)$'},interfaces:{command:'inspect interfaces',pattern:'^address: (?<value>.+)$'}}))},
+    input_documents:{contract:'runner-contract',profile:'runtime-profile'},
     result:{...raw.result,request_id:'/request'},proof:{...raw.proof,package:'case-compile',slot:'workbook',warrant_id:`case-compile.workbook_verified@${CASE_COMPILE_PACK.version}`} });
   assert.equal(staleWarrant(configured.proof.warrant_id,'case-compile',CASE_COMPILE_PACK.version),null);
   assert.deepEqual(staleWarrant(configured.proof.warrant_id,'case-compile','999.0.0'),{named:configured.proof.warrant_id,wanted:'case-compile.workbook_verified@999.0.0'});
@@ -220,11 +224,192 @@ after(async () => { await client?.close(); await endpoint?.close(); await opened
 beforeEach(async () => { aliasEcho = false; if (!skip && bed) { const keys = (await bed.hub.leases.view('bed/')).entries.map(e => e.key); if (keys.length) await bed.hub.leases.forceRelease({ keys, by: bed.hub.admin.principal.id, reason: '合成测试失败后的隔离清理' }); } });
 
 describe('scenario 28: published documents to real Hub workbook dispatch and release', { skip }, () => {
+  test('booking lookup skips an unreadable registration, records its reason privately and refuses when none can be resolved', async t => {
+    const admin = bed.hub.admin.principal, registry = dispatch().registry;
+    const held = await booking(), args = {booking:{run:held,workflow:'case-compile'}};
+    const base = await registry.readSource(executor); assert.ok(base);
+    const key = 'SYNTHETIC_BOOKING_MANIFEST';
+    await bed.hub.records.variables.setVariable(admin,key,base.source.manifest_sha256,'synthetic test');
+    const bad = await registry.add(admin,{...base.source,manifest_sha256:'${var:SYNTHETIC_BOOKING_MANIFEST}'});
+    t.after(async () => {
+      await bed.hub.records.variables.setVariable(admin,key,base.source.manifest_sha256,'synthetic restore');
+      await registry.disable(admin,bad.id);
+      await registry.update(admin,executor,base.source);
+    });
+    await bed.hub.records.variables.setVariable(admin,key,'invalid-digest','synthetic drift');
+    const good = await client.call('list_task_packs',args);
+    assert.equal(good.isError,false,JSON.stringify(good.out.errors));
+    assert.equal(good.out.booking_documents?.length,1);
+    const log = (await bed.hub.records.callLog.query(admin,{traceId:good.out.trace})).items;
+    assert.ok(log.some(row=>row.admin_reasons?.some(note=>note.includes(bad.id) && note.includes(key))));
+    assert.ok(!good.text.includes(bad.id) && !good.text.includes(key));
+    await registry.disable(admin,executor);
+    const none = await client.call('list_task_packs',args);
+    assert.equal(none.isError,true);
+    assert.equal(none.out.errors[0].code,'SOURCE_READ_FAILED');
+    assert.equal(none.text.split('供模型引用')[0].trim(),'暂时不可用：本次预订没有可用的执行器登记。请管理员核对执行器登记。');
+    assert.match(none.out.errors[0].message,/执行器登记/);
+    assert.equal(none.out.errors[0].fix,'请管理员核对执行器登记');
+    assert.ok(!none.text.includes(bad.id) && !none.text.includes(key));
+  });
+
+  test('booking lookup distinguishes an absent run, another runner and unavailable dispatch', async t => {
+    const admin = bed.hub.admin.principal;
+    const request = (run:string) => ({booking:{run,workflow:'case-compile'}});
+    const absent = await client.call('list_task_packs',request(newId('run')));
+    assert.equal(absent.out.errors[0].code,'SOURCE_ABSENT');
+    const held = await booking();
+    const other = await bed.hub.createUser('合成预订文档读取者');
+    await bed.hub.assignPack(other.principal,'case-compile');
+    const otherClient = await connect(bed.hub,other.token); t.after(()=>otherClient.close());
+    const foreign = await otherClient.call('list_task_packs',request(held));
+    assert.equal(foreign.out.errors[0].code,'SOURCE_UNAVAILABLE');
+    const notes = async (traceId:string) => (await bed.hub.records.callLog.query(admin,{traceId})).items.flatMap(row=>row.admin_reasons ?? []);
+    assert.ok((await notes(foreign.out.trace)).some(note=>note.includes(held) && note.includes('持有')));
+    const view = bed.hub.deps.dispatch;
+    try {
+      delete bed.hub.deps.dispatch;
+      const missing = await client.call('list_task_packs',request(held));
+      assert.equal(missing.out.errors[0].code,'SOURCE_UNAVAILABLE');
+      assert.ok((await notes(missing.out.trace)).some(note=>note.includes('派发服务')));
+      assert.deepEqual(missing.out.errors,foreign.out.errors);
+    } finally { bed.hub.deps.dispatch = view; }
+    await release(held);
+  });
+
+  test('an active booking with no covering executor and a released booking have different next actions', async t => {
+    const admin = bed.hub.admin.principal, registry = dispatch().registry;
+    const base = await registry.readSource(executor); assert.ok(base);
+    const held = await booking(), query = {booking:{run:held, workflow:'case-compile'}};
+    const options = {subject,product:bed.product.names[0],build:bed.site.RELEASED,booking:held};
+    const call = hubTools(new URL(bed.hub.url).origin,bed.reviewer.token);
+    t.after(()=>registry.update(admin,executor,base.source).then(()=>{}));
+    await registry.disable(admin,executor);
+    const uncovered = await client.call('list_task_packs',query);
+    assert.equal(uncovered.isError,false);
+    assert.deepEqual(uncovered.out.booking_documents,[]);
+    await assert.rejects(openCompile(call,options,staged),error => error instanceof CallFailure
+      && error.category === 'temporarily_unavailable' && error.fact.includes('覆盖本次预订'));
+    await release(held);
+    const released = await client.call('list_task_packs',query);
+    assert.equal(released.out.errors[0].code,'SOURCE_ABSENT');
+    assert.match(released.out.errors[0].fix ?? '',/重新预订/);
+    await assert.rejects(openCompile(call,options,staged),error => error instanceof CallFailure
+      && error.category === 'not_found' && error.next_action.includes('重新预订'));
+  });
+
+  test('the assembled registry checks input document slots against the published workflow before registration', async t => {
+    const registry = dispatch().registry, admin = bed.hub.admin.principal;
+    const original = await registry.readSource(executor); assert.ok(original);
+    const invalid = {...original.source, input_documents:{inventory:'not-a-declared-slot'}};
+    const showsSlots = (error:unknown) => error instanceof Error && ['inventory','contract','profile'].every(slot=>error.message.includes(slot));
+    await assert.rejects(registry.add(admin,invalid),showsSlots);
+    await assert.rejects(registry.update(admin,executor,invalid),showsSlots);
+    const dir = await mkdtemp(join(tmpdir(),'executor-slot-check-'));
+    t.after(()=>rm(dir,{recursive:true,force:true}));
+    await writeFile(join(dir,'definition.json'),JSON.stringify(invalid));
+    const session = {ctx:{io:{cwd:dir}},options:{},admin:async()=>admin,records:async()=>bed.hub.records,
+      hub:async()=>bed.hub.hub,out:()=>{},err:()=>{}};
+    await assert.rejects(executorCommand(session,['add','--name=synthetic-bad-slot','definition.json']),showsSlots);
+    await assert.rejects(executorCommand(session,['update',executor,'definition.json']),showsSlots);
+    assert.equal((await registry.readSource(executor))?.digest,original.digest);
+  });
+
+  test('the compile tool binds each active booking’s declared documents using the Hub response', async t => {
+    const admin = bed.hub.admin.principal;
+    const originalExecutor = await dispatch().registry.readSource(executor);
+    assert.ok(originalExecutor);
+    const other = 'bed-other';
+    const alternate = {...MANIFEST_DOC, beds:[{...MANIFEST_DOC.beds[0],name:other}]};
+    for (const [name, value] of [['other-contract',CONTRACT_DOC],['other-profile',{...PROFILE_DOC,bed:other}],['other-inventory',alternate]] as const) {
+      await bed.hub.hub.docs.put(admin,name,bytes(value),{fileName:name+'.json'});
+    }
+    const second = await dispatch().registry.add(admin,{...originalExecutor.source,target:other,
+      resources:alternate.beds[0].devices.map(d => `bed/${other}/${d.name}`),manifest_sha256:sha256Hex(bytes(alternate)),
+      input_documents:{contract:'other-contract',profile:'other-profile'}});
+    t.after(() => dispatch().registry.disable(admin,second.id).then(() => {}));
+    const call = hubTools(new URL(bed.hub.url).origin, bed.reviewer.token);
+    for (const [target, inventory, rules, profile] of [
+      ['bed-a','bed-topology','runner-contract','runtime-profile'],
+      [other,'other-inventory','other-contract','other-profile'],
+    ] as const) {
+      const held = await booking(target,'doc:doc:'+inventory);
+      const options = {subject,product:bed.product.names[0],build:bed.site.RELEASED,booking:held};
+      await assert.rejects(openCompile(call,{...options,contract:'doc:doc:wrong'},staged), error =>
+        error instanceof CallFailure && error.category === 'invalid_parameters' && error.next_action.includes('doc:doc:'+rules+'@'));
+      const opened = await openCompile(call,options,staged);
+      const detail = await bed.hub.deps.runs.getRun(bed.reviewer.principal,opened.planRun);
+      assert.ok(detail);
+      for (const [slot,doc] of [['contract',rules],['inventory',inventory],['profile',profile]] as const) {
+        assert.ok(opened.documents[slot].startsWith('doc:doc:'+doc+'@'));
+        assert.equal(detail.run.sources.find(source => source.slot === slot)?.external,opened.documents[slot]);
+      }
+    }
+  });
+
+  test('a rework keeps the original revisions after named documents are republished and actually carries the source plan', async t => {
+    const admin = bed.hub.admin.principal;
+    const call = hubTools(new URL(bed.hub.url).origin, bed.reviewer.token);
+    const options = {subject, product:bed.product.names[0], build:bed.site.RELEASED, booking:await booking()};
+    const first = await openCompile(call, options, staged);
+    const docs = [['runner-contract', CONTRACT_DOC], ['runtime-profile', PROFILE_DOC]] as const;
+    t.after(async () => {
+      for (const [name, value] of docs) await bed.hub.hub.docs.put(admin,name,bytes(value),{fileName:name+'.json'});
+    });
+    for (const [name, value] of docs) {
+      await bed.hub.hub.docs.put(admin,name,Buffer.from(JSON.stringify(value,null,2)),{fileName:name+'.json'});
+    }
+    const fresh = await openCompile(call,options,staged);
+    assert.notEqual(fresh.documents.contract,first.documents.contract);
+    assert.notEqual(fresh.documents.profile,first.documents.profile);
+    await assert.rejects(openCompile(call,{...options, contract:first.documents.contract},staged), error =>
+      error instanceof CallFailure && error.next_action.includes(fresh.documents.contract));
+
+    const reopened = await openCompile(call,{...options,...first.documents,
+      reuse:{run:first.recomposeRun,record:first.recomposeRecord}},staged);
+    assert.deepEqual(reopened.documents,first.documents);
+    const run = async (id: string) => {
+      const detail = await bed.hub.deps.runs.getRun(bed.reviewer.principal,id);
+      assert.ok(detail);
+      return detail.run;
+    };
+    const source = await run(first.planRun);
+    const target = await run(reopened.planRun);
+    const directory = await mkdtemp(join(tmpdir(),'carry-frozen-docs-'));
+    t.after(() => rm(directory,{recursive:true,force:true}));
+    for (const [name,data] of [['source',source],['target',target]] as const) {
+      await mkdir(join(directory,name));
+      await writeFile(join(directory,name,'run.json'),JSON.stringify(data));
+      for (const slot of ['contract','inventory','profile'] as const) {
+        assert.equal(data.sources.find(s=>s.slot===slot)?.external,first.documents[slot]);
+      }
+    }
+    const plan = planItem(0,source.items[0]!.id);
+    await mkdir(join(directory,'plans'));
+    const originalPlan = JSON.stringify(plan);
+    await writeFile(join(directory,'plans','00.json'),originalPlan);
+    const carry = (targetDir: string, output: string) => promisify(execFile)(process.execPath,[
+      join(staged,'case-compile/tools/carry-plans.ts'), '--source','source','--target',targetDir,'--source-plans','plans','--plans',output,
+    ],{cwd:directory,encoding:'utf8'});
+    const carried = await carry('target','carried');
+    const manifest = JSON.parse(carried.stdout.slice(carried.stdout.indexOf('{')));
+    assert.deepEqual(manifest.carried.map((row:{item:string})=>row.item),[plan.item]);
+    assert.equal(await readFile(join(directory,'carried','00.json'),'utf8'),originalPlan);
+    await mkdir(join(directory,'fresh'));
+    await writeFile(join(directory,'fresh','run.json'),JSON.stringify(await run(fresh.planRun)));
+    await assert.rejects(carry('fresh','wrong-revision'), /绑定的输入（subject\/contract\/inventory\/profile）不一致/);
+  });
+
   test('two authored cases use independent bookings, different S, terminal results and qualified reports', async () => {
     const checked = await dispatch().precheck(bed.hub.admin.principal, executor); assert.equal(checked.frozen, false);
     const hashes: string[] = []; const bookings: string[] = [];
     for (let index = 0; index < 2; index++) {
       const booked = await booking(); bookings.push(booked);
+      const listing = await client.call('list_task_packs', {booking:{run:booked, workflow:'case-compile'}});
+      assert.deepEqual(listing.out.booking_documents, [{
+        inputs:{contract:'doc:doc:runner-contract@' + sha256Hex(bytes(CONTRACT_DOC)), profile:'doc:doc:runtime-profile@' + sha256Hex(bytes(PROFILE_DOC))},
+        manifest:'doc:doc:bed-topology@' + sha256Hex(bytes(MANIFEST_DOC)),
+      }]);
       const p = await plan(booked, index, index === 0); const v = await verify(p, index);
       assert.ok(v.result!.result!.partitions.delivered[0].requirements.every(r => r.status === 'satisfied'));
       const state = await settled(v); const job = state.job;

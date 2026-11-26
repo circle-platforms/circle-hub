@@ -3,7 +3,17 @@ import { projectItems } from '../functions/project.ts';
 import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-support.ts';
 import projectRecompose from '../recompose/functions/project.ts';
 import recompose from '../recompose/pack.json' with { type: 'json' };
-import { DEFAULT_DOCS } from '../tools/open-compile.ts';
+export const BED_DOCS = {
+  contract: 'doc:doc:runner-contract@' + '2'.repeat(64),
+  inventory: 'doc:doc:bed-topology@' + '3'.repeat(64),
+  profile: 'doc:doc:runtime-profile@' + '4'.repeat(64),
+};
+export const OTHER_BED_DOCS = {
+  contract: 'doc:doc:other-contract@' + 'a'.repeat(64),
+  inventory: 'doc:doc:other-inventory@' + 'd'.repeat(64),
+  profile: 'doc:doc:other-profile@' + 'e'.repeat(64),
+};
+export const bookingRow = (docs = BED_DOCS) => ({ inputs: { contract: docs.contract, profile: docs.profile }, manifest: docs.inventory });
 import { boundRecord } from './late-binding.ts';
 import { mindmapSubject } from './parsed-mindmap.ts';
 
@@ -20,9 +30,9 @@ export function compileProjection(autoids: string[], extra: Record<string, Row> 
   const subject = compileMindmap(autoids);
   const documents: Record<string, Row> = {
     [SUBJECT]: { ...subject, external: SUBJECT }, [`src:${subject.sha256}`]: subject,
-    [DEFAULT_DOCS.contract]: { model: CONTRACT_DOC }, 'doc:doc:other-contract': { model: CONTRACT_DOC },
-    [DEFAULT_DOCS.inventory]: { model: MANIFEST_DOC }, [`doc:doc:other-inventory@${'d'.repeat(64)}`]: { model: MANIFEST_DOC },
-    [DEFAULT_DOCS.profile]: { model: PROFILE_DOC }, 'doc:doc:other-profile': { model: PROFILE_DOC },
+    [BED_DOCS.contract]: { model: CONTRACT_DOC }, [OTHER_BED_DOCS.contract]: { model: CONTRACT_DOC },
+    [BED_DOCS.inventory]: { model: MANIFEST_DOC }, [`doc:doc:other-inventory@${'d'.repeat(64)}`]: { model: MANIFEST_DOC },
+    [BED_DOCS.profile]: { model: PROFILE_DOC }, [OTHER_BED_DOCS.profile]: { model: PROFILE_DOC },
     ...extra,
   };
   const context = { product: 'widget', root: 'b'.repeat(64), product_pack_digest: 'c'.repeat(64) };

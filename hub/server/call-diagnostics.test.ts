@@ -64,6 +64,7 @@ test('personal modes, implicit spaces, and original calls inside call_query disc
   for (const [tool, args] of [
     ['start_run', {pack:'synthetic',inputs:{subject:{reference:'src:'+source.body.sha256}}}],
     ['submit_result', {run}],
+    ['list_task_packs', {booking:{run,workflow:'synthetic'}}],
     ['get_nodes', {call_query:{get_nodes:{reference:'rec:'+frozen.digest}}}],
   ] as const) assert.equal(await privateDiagnosticScope(deps, member, tool, args), true, tool);
   const notes = rejectedDiagnostics('submit_result', {run:'run_'+'a'.repeat(26)}, [denied], true);

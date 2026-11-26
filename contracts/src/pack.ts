@@ -668,11 +668,15 @@ export const WorkflowInput = z.strictObject({
   accepts: z.array(z.string().min(1)).min(1).describe('media types, or external object types written system:type'),
   required: z.boolean(),
   many: z.boolean(),
+  executor_document: z.literal(true).optional().describe('The executor must declare the named document for this slot before dispatch'),
   default_from_predecessor: PredecessorInputDefault.optional().describe('When predecessor is supplied and this slot is absent: without slot, bind that workflow’s latest accepted submitted validation record; with slot, copy that frozen input. An explicit value for a named slot must be the same object'),
   from_runs: RunResultSource.optional().describe('Bindings may be run ids of this workflow. Without after_start the Hub replaces each run id with that run’s latest accepted submitted validation record at start_run; with after_start it freezes the run id only and every evaluation and run export reads that run’s latest accepted submitted validation record then. An explicit rec: binding is frozen either way. An omitted required slot walks the predecessor lineage for runs of this workflow'),
   index_default: IndexBindingDefault.optional().describe('When a knowledge index omits only or fields, the Hub fills them from only_from and fields. An only or fields the caller already wrote stays'),
   unknown_entries: z.literal('disclose').optional().describe('For a knowledge:facets or knowledge:index input: bind a view whose last page is truncated only because some entries are unknown (the view says unknown_only and carries unknown_entries), still marked truncated and carrying the count. The pack’s functions must state the unknown entries as unknown, never as zero or as a failure. Absent: every truncated last page is refused'),
 }).superRefine((slot,ctx)=>{
+  if (slot.executor_document && (slot.many || !slot.accepts.includes('doc:doc'))) {
+    ctx.addIssue({code:'custom',path:['executor_document'],message:'an executor document slot must accept one named document'});
+  }
   if(slot.unknown_entries!==undefined&&!slot.accepts.some(type=>type==='knowledge:facets'||type==='knowledge:index'))ctx.addIssue({code:'custom',path:['unknown_entries'],message:'unknown_entries applies to a knowledge:facets or knowledge:index input'});
   if(slot.default_from_predecessor!==undefined&&slot.from_runs!==undefined)ctx.addIssue({code:'custom',path:['from_runs'],message:'a slot defaults from a predecessor input or from run ids, not both'});
   if(slot.default_from_predecessor!==undefined&&slot.default_from_predecessor.slot===undefined){

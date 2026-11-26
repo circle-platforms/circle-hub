@@ -1,4 +1,11 @@
-import { isAdmin } from '../records/api.ts';
+import { isAdmin, RecordsError } from '../records/api.ts';
+import type { WorkflowInput } from '../../contracts/src/pack.ts';
+import { packWarrant } from './warrant-version.ts';
+import { docPointerName, parseDocId } from '../refs/api.ts';
+import type { RunRecord } from '../../contracts/src/run.ts';
+import type { BookingDocuments } from '../../contracts/src/tools.ts';
+import type { ProtocolError } from '../../contracts/src/common.ts';
+import type { LeaseService } from '../leases/api.ts';
 import { VariableError, WHOLE_HUB, canonicalBytes, canonicalize, newId, scanForCredentials, sha256Hex, type Principal, type RecordsKit, type VariableSnapshot, type AuthorizationRecord, type ActionBody, type RecordStore, type Transaction, type SecretWrite } from '../records/api.ts';
 import { VariableInputError, secretNameOf, referencesIn, resolve as maskReferences } from '../../contracts/src/variables.ts';
 import { Journal, isDone, isFrozen } from './journal.ts';
@@ -7,6 +14,8 @@ import { ExecutorStableName } from '../../contracts/api.ts';
 import { ExecutorNames } from './executor-names.ts';
 import { ExecutorSource, resolveExecutor, checkedReferences } from './source.ts';
 export { ExecutorSource } from './source.ts';
+export type BookingDocumentLookup = BookingDocuments[] | ProtocolError;
+
 export type RegisteredExecutor = {
     id: string;
     digest: string;
@@ -64,12 +73,36 @@ async function assertUnused(store: RecordStore, tx: Transaction, id: string, gua
     if (blocked.length)
         throw new Error(`执行器身份或资源仍被作业 ${blocked.join('、')} 占用；先 circle-hub job dispose ${blocked[0]} … 完成具名处置`);
 }
+type WorkflowInputsReader = (ref: string) => Promise<readonly Pick<WorkflowInput, 'slot' | 'executor_document'>[] | null>;
+
 export class ExecutorRegistry {
     readonly records: RecordsKit;
-    constructor(records: RecordsKit) { this.records = records; }
+    private readonly workflowInputs?: WorkflowInputsReader;
+    constructor(records: RecordsKit, workflowInputs?: WorkflowInputsReader) {
+      this.records = records;
+      this.workflowInputs = workflowInputs;
+    }
+    private async checkDocumentSlots(source: ExecutorSource): Promise<void> {
+      const named = Object.keys(source.input_documents ?? {});
+      if (!named.length) return;
+      const warrant = packWarrant(source.proof.warrant_id);
+      const ref = warrant?.pack === source.proof.package ? warrant.pack + '@' + warrant.version : source.proof.package;
+      const inputs = await this.workflowInputs?.(ref);
+      if (!inputs) throw new RecordsError(`未找到：没有已发布的工作流 ${ref}。请先发布这个版本，再登记执行器。`, {code:'SOURCE_ABSENT'});
+      const allowed = inputs.filter(input => input.executor_document === true).map(input => input.slot);
+      const invalid = named.filter(slot => !allowed.includes(slot));
+      if (invalid.length) throw new RecordsError(`参数无效：input_documents 中的 ${invalid.join('、')} 未被工作流 ${ref} 声明为执行器文档槽。可声明的槽位：${allowed.join('、') || '无'}。`, {code:'SUBMISSION_SCHEMA_VIOLATION'});
+    }
     async admin(by: Principal) { const user = await this.records.principals.get(by.id); if (!user || user.disabled || !isAdmin(user))
         throw new Error('只有启用中的管理员能操作执行器和作业'); }
-    async add(by: Principal, input: unknown, name?:string): Promise<RegisteredExecutor> { await this.admin(by); refuseBuildBaseline(input); const explicit=name===undefined?undefined:ExecutorStableName.parse(name);return this.configure(by, this.validate({ ...input as object, id: newId('exe') }),undefined,undefined,explicit); }
+    async add(by: Principal, input: unknown, name?: string): Promise<RegisteredExecutor> {
+      await this.admin(by);
+      refuseBuildBaseline(input);
+      const explicit = name === undefined ? undefined : ExecutorStableName.parse(name);
+      const source = this.validate({ ...input as object, id: newId('exe') });
+      await this.checkDocumentSlots(source);
+      return this.configure(by,source,undefined,undefined,explicit);
+    }
     async update(by: Principal, id: string, input: unknown): Promise<RegisteredExecutor> {
         await this.admin(by);
         const current = await this.readSource(id);
@@ -77,6 +110,7 @@ export class ExecutorRegistry {
             throw new Error('执行器对当前账户不可用');
         refuseBuildBaseline(input);
         const source = this.validate({ ...input as object, id });
+        await this.checkDocumentSlots(source);
         const rebind = current.source.target !== source.target || current.source.endpoint !== source.endpoint || current.source.ca !== source.ca || canonicalize([...current.source.resources].sort()) !== canonicalize([...source.resources].sort());
         let previousTarget = current.source.target;
         if (rebind) {
@@ -154,6 +188,47 @@ export class ExecutorRegistry {
         entries[resolved.id]=object.sha256;
       }
       return (await this.records.objects.put(canonicalBytes(entries),'application/json')).sha256;
+    }
+    async bookingDocuments(by: Principal, booking: RunRecord, workflow: string, leases: Pick<LeaseService, 'holderSnapshot'>, now: Date, adminNote: (note: string) => void): Promise<BookingDocumentLookup> {
+      const noLease: ProtocolError = {code:'SOURCE_ABSENT', path:'/booking/run', message:'这次预订没有当前账户持有的有效租约', fix:'请重新预订测试环境'};
+      if (booking.runner !== by.id) return noLease;
+      const grants = new Map((booking.leases ?? []).flatMap(grant =>
+        grant.op === undefined || grant.op === 'acquire' ? grant.keys.map(key => [key, grant.lease] as const) : []));
+      if (!grants.size) return noLease;
+      const holders = await leases.holderSnapshot([...grants.keys()]);
+      const keys = new Set(holders.filter(h => !h.released && h.user === by.id && h.run === booking.run
+        && h.lease === grants.get(h.key) && (h.expires_at === null || Date.parse(h.expires_at) > now.getTime())).map(h => h.key));
+      if (!keys.size) return noLease;
+      const configurations = new Map<string, BookingDocuments>();
+      let unresolved = false;
+      for (const entry of await this.internalSources()) {
+        const source = entry.source;
+        if (!source.enabled || source.proof.package !== workflow || !source.resources.length || !source.resources.every(key => keys.has(key))) continue;
+        let definition: ExecutorDefinition;
+        try {
+          ({ definition } = await resolveExecutor(this.records, source));
+        } catch (error) {
+          unresolved = true;
+          const variables = referencesIn(source).filter(ref => ref.kind === 'var').map(ref => ref.name+'（'+ref.at+'）');
+          adminNote(`执行器 ${entry.id} 缺少可用的解析后定义：${error instanceof Error ? error.message : '解析失败'}${variables.length ? '；引用的普通变量 '+[...new Set(variables)].join('、') : ''}`);
+          continue;
+        }
+        const originals = new Set(booking.sources.flatMap(bound => {
+          const doc = bound.external ? parseDocId(bound.external) : null;
+          return doc?.sha256 && doc.sha256 === definition.manifest_sha256 && bound.reference === 'src:' + doc.sha256 ? [bound.external!] : [];
+        }));
+        const inputs: Record<string,string> = {};
+        for (const [slot, name] of Object.entries(definition.input_documents ?? {})) {
+          const head = await this.records.pointers.get(docPointerName(name));
+          inputs[slot] = 'doc:doc:' + name + (head ? '@' + head.target : '');
+        }
+        const row = { inputs, manifest: originals.size === 1 ? [...originals][0]! : null };
+        configurations.set(canonicalize(row), row);
+      }
+      const candidates = [...configurations.values()];
+      const matching = candidates.filter(row => row.manifest !== null);
+      if (!matching.length && unresolved) return {code:'SOURCE_READ_FAILED',path:'/booking/run',message:'本次预订没有可用的执行器登记',fix:'请管理员核对执行器登记'};
+      return matching.length ? matching : candidates;
     }
     async list(by: Principal): Promise<RegisteredExecutor[]> { const sources = await this.sources(by); const entries = await Promise.all(sources.map(e => this.get(e.id))); return entries.filter((e): e is RegisteredExecutor => e !== null); }
     async material(id: string, definition: ExecutorDefinition) { const current = await this.readSource(id); if (!current?.source.enabled)

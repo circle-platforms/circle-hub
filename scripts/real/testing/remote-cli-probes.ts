@@ -59,7 +59,13 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
   await writeFile(join(records, '01.json'), JSON.stringify({ item: item.id, method: { kind: 'declared', text: '合成方法', sources: ['synthetic-reference'], basis: '合成依据' } }));
   const notes = join(workRoot, 'notes.json'); await writeFile(notes, '{"cases":{}}');
   // The record that opened the compile (a plain one: no judge field, which means Plumb); the delivery tool reads it before it reads the Hub.
-  const opened = join(workRoot, 'opened.json'); await writeFile(opened, JSON.stringify({ schema: 'open-compile@1', ready: true }));
+  const opened = join(workRoot, 'opened.json');
+  await writeFile(opened, JSON.stringify({
+    schema: 'open-compile@1', ready: true,
+    contract: `doc:doc:synthetic-rules@${digest(originals.contract)}`,
+    profile: `doc:doc:synthetic-profile@${digest(originals.profile)}`,
+    inventory: `doc:doc:synthetic-inventory@${digest(originals.inventory)}`,
+  }));
   const child = fork(fileURLToPath(new URL('./remote-cli-worker.ts', import.meta.url)), [], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'], env: { NODE_NO_WARNINGS: '1' } });
   const origin = await new Promise<string>((resolve, reject) => {
     child.once('error', reject); child.once('exit', code => reject(new Error(`Synthetic CLI responder exited before ready: ${code}`)));
@@ -136,7 +142,7 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
       'tools/open-compile.ts': [openProbe],
     },
     readCaseCompile: {
-      'tools/device-read.ts': probe(['--hub', origin + '/mcp', '--booking', PLAN, '--device', 'dev0', '--line', 'show widget name', '--out', join(workRoot, 'device-read.txt')], { status: 0, stdout: JSON.stringify({ read: false, why: 'Hub 答复 400' }) + '\n', stderr: '' }),
+      'tools/device-read.ts': probe(['--hub', origin + '/mcp', '--booking', PLAN, '--device', 'dev0', '--line', 'show widget name', '--inventory', 'doc:doc:bed-topology', '--out', join(workRoot, 'device-read.txt')], { status: 0, stdout: JSON.stringify({ read: false, why: 'Hub 答复 400' }) + '\n', stderr: '' }),
     },
     lateCaseCompile: {
       'tools/refresh-late.ts': probe(['--hub', origin + '/mcp', '--run', LATE, '--dir', 'late-run'], { status: 0, stdout: JSON.stringify(lateReport) + '\n', stderr: '' }),

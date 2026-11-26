@@ -212,3 +212,11 @@ test('SkillDeclaration accepts both published v1 parsers with optional migration
   );
   assert.ok(!SkillDeclaration.safeParse({ schema: 'skill@1', parsers: [{ ...parser, unexpected_key: 'x' }] }).success);
 });
+
+
+test('an executor document declaration belongs to a single named document slot', () => {
+  const slot = {slot:'rules', role:'expected', description:'Synthetic rules', accepts:['doc:doc'], required:true, many:false, executor_document:true};
+  assert.ok(WorkflowInput.safeParse(slot).success);
+  assert.ok(!WorkflowInput.safeParse({...slot, many:true}).success);
+  assert.ok(!WorkflowInput.safeParse({...slot, accepts:['application/json']}).success);
+});

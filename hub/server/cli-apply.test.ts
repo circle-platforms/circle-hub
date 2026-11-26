@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { exportProtectedConfiguration, applyProtectedConfiguration, createResetConfigurationPorts, type ProtectedConfigurationDomain, applyCommand, applyDeployment, deploymentOrder, differentFields, exactName, exportCommand, exportDeployment, parseDeployment } from './cli-apply.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import { ExecutorNames, ExecutorRegistry } from '../dispatch/api.ts';
-import { canonicalBytes, sha256Hex, type Principal } from '../records/api.ts';
+import { canonicalBytes, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
 import type { Session } from './cli-session.ts';
 import { ExecutorSource } from '../../contracts/src/resources.ts';
 import type { ExecutorNameBinding, DeploymentDefinition } from '../../contracts/src/deployment.ts';
@@ -51,6 +51,7 @@ function fake(t: TestContext) {
     variables: { list: async () => [] },
   };
   const hub = {
+    executorRegistry: new ExecutorRegistry(records as unknown as RecordsKit),
     records,
     resources: { list: async () => resources },
     docs: { list: async () => [] },
@@ -377,7 +378,7 @@ test('[PG] real product variables, named document bytes and booking registration
   const workflows = createWorkflowStore(registry), docs = createDocs({ records: kit, workflows });
   const leases = new LeaseService(database, { records: kit.store });
   const output: string[] = [];
-  const hub = { records: kit, registry, workflows, docs, resources: { list: async () => [] } };
+  const hub = { records: kit, executorRegistry: new ExecutorRegistry(kit), registry, workflows, docs, resources: { list: async () => [] } };
   const session = { ctx: { io: { cwd: kit.dataDir, env: {}, stdout: (line: string) => output.push(line) } }, options: {},
     config: () => ({ ...kit.config, database: kit.database, host: '127.0.0.1', port: 0 }),
     admin: async () => by, viewer: async () => by, records: async () => kit, hub: async () => hub, leases: async () => leases,

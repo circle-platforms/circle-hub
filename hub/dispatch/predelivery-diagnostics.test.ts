@@ -11,7 +11,7 @@ for(const cause of ['version','declaration','snapshot']) {
     assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.includes('send_blob'),false);
     assert.match(state.reason!,cause==='version'?/会话版本/:cause==='declaration'?/字段声明/:/日志身份|主体|边界/);
     assert.match(state.next_action!,cause==='version'?/版本|协议/:cause==='declaration'?/字段|声明/:/日志|原件|边界/);
-    const lines:string[]=[];const s={out:(s:string)=>lines.push(s),err:(s:string)=>lines.push(s),admin:async()=>c.admin,records:async()=>c.kit,hub:async()=>({dispatch:c.service,records:c.kit}),options:{},ctx:{io:{cwd:c.kit.dataDir}}};
+    const lines:string[]=[];const s={out:(s:string)=>lines.push(s),err:(s:string)=>lines.push(s),admin:async()=>c.admin,records:async()=>c.kit,hub:async()=>({dispatch:c.service,executorRegistry:c.registry,records:c.kit}),options:{},ctx:{io:{cwd:c.kit.dataDir}}};
     await jobCommand(s,['status',state.job]);assert.ok(lines.some(line=>line.includes(state.reason!)));assert.ok(lines.some(line=>line.includes(state.next_action!)));
   });
 }

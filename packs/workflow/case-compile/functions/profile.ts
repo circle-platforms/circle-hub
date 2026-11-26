@@ -51,7 +51,7 @@ export function bookingProblem(value: unknown, leases: unknown): Problem | null 
   return {
     pointer: '/bed',
     message: `运行环境配置属于自动化测试环境 ${value.bed}，本谱系预订的是 ${booked.join('、')}`,
-    fix: `绑定属于 ${booked.join('、')} 的运行环境配置命名文档；缺省名 doc:doc:runtime-profile 指向哪一份由管理员发布时决定，属于别的测试环境时请管理员把 ${booked[0]} 的配置发布到这个名字，或改为预订 ${value.bed}`,
+    fix: `绑定属于 ${booked.join('、')} 的运行环境配置命名文档；请按本次预订的执行器登记重新开编译`,
   };
 }
 export function templateProblem(value: unknown): Problem | null {

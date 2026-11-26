@@ -94,6 +94,7 @@ export interface AssembledHub {
   records: RecordsKit;
   parsers: ParserRegistry;
   registry: PackRegistry;
+  executorRegistry: ExecutorRegistry;
   packs: PacksPort;
   workflows: WorkflowStore;
   catalog: PackCatalogPort;
@@ -167,6 +168,12 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   const packs = createPacksPort(registry);
   const workflows = createWorkflowStore(registry);
   const catalog = createPackCatalog(registry);
+  const executorRegistry = new ExecutorRegistry(records, async ref => {
+    const version = await registry.resolve(ref);
+    if (version?.kind !== 'workflow') return null;
+    const declaration = await registry.declarations(version.digest);
+    return declaration?.kind === 'workflow' ? declaration.workflow.inputs : null;
+  });
 
   // 4. Connectors: resources, logins and read plugins over the published system packs.
   const connectors = createConnectors({
@@ -252,7 +259,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   };
   const engine=createRunsService(engineDeps);
   const runs = withCallNotes(engine, notes);
-  dispatch = leases ? new DispatchService({ records, leases, runs, workflows, knowledge, adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  dispatch = leases ? new DispatchService({ records, executorRegistry, leases, runs, workflows, knowledge, adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
     startupSecretIssues: () => startupSecretIssues,
@@ -292,6 +299,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     systems: { trial: (by, input) => connectors.admin.trial(by, input), forgetTrialLogin: (by, input) => connectors.admin.forgetTrialLogin(by, input) },
     // The console's read-only view of dispatch: the registry and readRunJobs recheck the administrator themselves.
     dispatch: {
+      ...(dispatch && leases ? { bookingDocuments: (by, booking, workflow, adminNote) => executorRegistry.bookingDocuments(by, booking, workflow, leases, now?.() ?? new Date(), adminNote) } : {}),
       ...(dispatch && leases ? { readiness: createEnvironmentReadiness(records, new ExecutorRegistry(records), dispatch, leases, (actor, id) => canUseEnvironment(records, actor, id), now) } : {}),
       executors: async (by) => {
         const views: ExecutorView[] = [];
@@ -313,7 +321,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     },
     ...(leases !== undefined ? { leases: { view: (prefix: string, withHolder?: true) => withHolder === true ? leases.view(prefix, true) : leases.view(prefix) } } : {}),
   };
-  return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, docs, knowledge, runs, leases: leases as LeaseService, dispatch, notes, notices };
+  return { deps, config, records, parsers, registry, executorRegistry, packs, workflows, catalog, connectors, external, runsExternal, resources, docs, knowledge, runs, leases: leases as LeaseService, dispatch, notes, notices };
 }
 
 /**

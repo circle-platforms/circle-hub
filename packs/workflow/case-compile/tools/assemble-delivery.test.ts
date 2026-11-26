@@ -1192,7 +1192,7 @@ test('--open says who judged: the report and the reply carry the line of the jud
 });
 
 // What the open record says about the booking, and what the delivery then does with it (decision 195).
-const openWith = async (extra: Record<string, unknown>) => { const dir = await mkdtemp(join(tmpdir(), 'cc-open-')); const path = join(dir, 'open-compile.json'); await writeFile(path, JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: BOOKING, recompose_run: RECOMPOSE, plan_run: PLAN1, ...extra })); return path; };
+const openWith = async (extra: Record<string, unknown>) => { const dir = await mkdtemp(join(tmpdir(), 'cc-open-')); const path = join(dir, 'open-compile.json'); await writeFile(path, JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: BOOKING, inventory: 'doc:doc:bed-topology', recompose_run: RECOMPOSE, plan_run: PLAN1, ...extra })); return path; };
 const RELEASE_CALL = { name: 'start_run', arguments: { pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:bed-topology' } }, predecessor: BOOKING, parameters: { action: 'release', booking: BOOKING } } };
 const ALL_FILES = ['case.xlsx', 'delivery.json', 'delivery_report.md', 'unsuccessful_cases.md', 'unsuccessful_cases.xlsx'];
 const PLAIN_MESSAGE = '交付目录已组好：最后回复原样用 reply，不另加表格或逐条重述';
@@ -1205,6 +1205,20 @@ const bookingOf = async (extra: string[], openExtra: Record<string, unknown>, se
     return { h, out, ...result, answer: result.stdout ? JSON.parse(result.stdout) as Record<string, any> : {} };
   } finally { await h.close(); }
 };
+
+test('a retained booking needs no inventory; releasing the same booking requires its inventory', async () => {
+  for (const [args, fields] of [[[], {}], [['--keep-booking','yes'], {booking_acquired:true}]] as const) {
+    const kept = await bookingOf([...args], {...fields, inventory:undefined});
+    assert.equal(kept.code,0,kept.stderr);
+    assert.equal(kept.answer.booking.state,'kept');
+    assert.deepEqual(kept.h.mcp.calls,[]);
+  }
+  const missing = await bookingOf(['--release-booking','yes'], {inventory:undefined});
+  assert.equal(missing.code,1);
+  assert.match(missing.stderr,/没有绑定的设备清单/);
+  assert.deepEqual(missing.h.mcp.calls,[]);
+  await assert.rejects(readdir(missing.out),{code:'ENOENT'});
+});
 
 test('a compile that took its booking itself has it released when the delivery is complete: one test-bed release call after the files are written, and the reply and the message say so', async () => {
   const done = await bookingOf([], { booking_acquired: true });

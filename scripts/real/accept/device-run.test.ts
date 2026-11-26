@@ -59,17 +59,24 @@ test('per case reports always carry the local operation qualifier and preserve o
   const lines = reportLines({ rows: [{ dynamic_terminal: 'no_verdict', reported_terminal: 'pass', qualifier, limits, missing_fact: '合成完整性缺口', reason: 'integrity_unproven', next_action: '合成管理员补取原件', accepted_as_fact: false }], side_effects: observations });
   assert.deepEqual(JSON.parse(lines[0]).qualifier, qualifier); assert.deepEqual(JSON.parse(lines[0]).limits, limits); assert.deepEqual(JSON.parse(lines[1]).side_effects, observations);
 });
+const expectedDocuments = {input_documents:{contract:'synthetic-rules',profile:'synthetic-settings'}, manifest_sha256:hash};
 function verified() {
   return { run: { run, predecessor: run, pack: 'case-compile@2.1.0', items: [{ fields: { autoid: 'synthetic-case' } }], sources: [
-    ...[['contract', 'runner-contract'], ['profile', 'runtime-profile'], ['inventory', 'bed-topology']].map(([slot, name]) => ({ slot, external: `doc:doc:${name}@${hash}`, reference: `src:${hash}` })),
+    ...[['contract', 'synthetic-rules'], ['profile', 'synthetic-settings'], ['inventory', 'synthetic-inventory']].map(([slot, name]) => ({ slot, external: `doc:doc:${name}@${hash}`, reference: `src:${hash}` })),
     { slot: 'workbook', role: 'artifact_under_verification', reference: `src:${hash}` },
   ] }, latest: { result: { acceptance: 'accepted', errors: [], partitions: { delivered: [{ requirements: [{ status: 'satisfied' }] }], incomplete: [] } } } };
 }
-test('administrative preflight checks exact autoid fixed document bindings and completed verification', () => {
-  assert.equal(verification(verified(), 'synthetic-case', hash).sha256, hash);
-  assert.throws(() => verification(verified(), 'another-case', hash));
-  const wrongDoc = verified(); (wrongDoc.run.sources[0] as { external: string }).external = `doc:doc:other@${hash}`; assert.throws(() => verification(wrongDoc, 'synthetic-case', hash));
-  const incomplete = verified(); incomplete.latest.result.partitions.delivered[0].requirements[0].status = 'pending'; assert.throws(() => verification(incomplete, 'synthetic-case', hash));
+test('administrative preflight checks exact autoid and executor-declared document bindings and completed verification', () => {
+  assert.equal(verification(verified(), 'synthetic-case', expectedDocuments).sha256, hash);
+  assert.throws(() => verification(verified(), 'another-case', expectedDocuments));
+  const wrongDoc = verified(); (wrongDoc.run.sources[0] as { external: string }).external = `doc:doc:other@${hash}`; assert.throws(() => verification(wrongDoc, 'synthetic-case', expectedDocuments));
+  const wrongBytes = verified(); wrongBytes.run.sources[1].reference = 'src:'+'b'.repeat(64);
+  assert.throws(()=>verification(wrongBytes,'synthetic-case',expectedDocuments));
+  const missingName = {...expectedDocuments,input_documents:{contract:'synthetic-rules'}};
+  assert.throws(()=>verification(verified(),'synthetic-case',missingName));
+  const wrongManifest = {...expectedDocuments,manifest_sha256:'b'.repeat(64)};
+  assert.throws(()=>verification(verified(),'synthetic-case',wrongManifest));
+  const incomplete = verified(); incomplete.latest.result.partitions.delivered[0].requirements[0].status = 'pending'; assert.throws(() => verification(incomplete, 'synthetic-case', expectedDocuments));
 });
 test('real entry point contains no MCP calls generation booking or duration policy', () => {
   const source = readFileSync(new URL('./device-run.ts', import.meta.url), 'utf8');

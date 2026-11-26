@@ -69,7 +69,7 @@ test('unknown key names the key and legal fields', () => {
   assertSchemaError(
     'list_task_packs',
     errors[0],
-    '请去掉 /knd；合法字段见 inputSchema（kind、pack_id、offset）。规则见 list_task_packs 输入格式',
+    '请去掉 /knd；合法字段见 inputSchema（booking、kind、pack_id、offset）。规则见 list_task_packs 输入格式',
   );
   assert.equal(errors[0].path, '/knd');
   assert.equal(errors[0].message, '参数无效：不认识的参数 knd');
@@ -120,8 +120,8 @@ test('every crafted parameter error path resolves and fix is specific', () => {
       tool: 'list_task_packs',
       args: { knd: 'x', 'a/b': 1 },
       expectedFixes: [
-        '请去掉 /knd；合法字段见 inputSchema（kind、pack_id、offset）。规则见 list_task_packs 输入格式',
-        '请去掉 /a~1b；合法字段见 inputSchema（kind、pack_id、offset）。规则见 list_task_packs 输入格式',
+        '请去掉 /knd；合法字段见 inputSchema（booking、kind、pack_id、offset）。规则见 list_task_packs 输入格式',
+        '请去掉 /a~1b；合法字段见 inputSchema（booking、kind、pack_id、offset）。规则见 list_task_packs 输入格式',
       ],
     },
     {

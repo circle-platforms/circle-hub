@@ -33,7 +33,7 @@ test('a profile of another bed than the booked one is a problem at /bed that nam
   assert.equal(problem?.pointer, '/bed');
   assert.equal(problem?.message, '运行环境配置属于自动化测试环境 bed-a，本谱系预订的是 bed-b');
   assert.match(problem?.fix ?? '', /绑定属于 bed-b 的运行环境配置命名文档/);
-  assert.match(problem?.fix ?? '', /请管理员把 bed-b 的配置发布到这个名字，或改为预订 bed-a/);
+  assert.match(problem?.fix ?? '', /请按本次预订的执行器登记重新开编译/);
 });
 
 test('the start refuses a profile of another bed than the booked one, at /inputs/profile, before any item is built', () => {

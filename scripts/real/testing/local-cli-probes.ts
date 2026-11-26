@@ -14,6 +14,15 @@ import type { CliProbe } from '../verify-tool-cli.ts';
 const sha256 = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 const RUN_ID = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', RUN_ID_2 = 'run_01bbbbbbbbbbbbbbbbbbbbbbbb';
 
+const contractBytes = Buffer.from(JSON.stringify(CONTRACT_DOC));
+const profileBytes = Buffer.from(JSON.stringify(PROFILE_DOC));
+const inventoryBytes = Buffer.from(JSON.stringify(MANIFEST_DOC));
+const frozenDocuments = {
+  contract: `doc:doc:synthetic-rules@${sha256(contractBytes)}`,
+  profile: `doc:doc:synthetic-profile@${sha256(profileBytes)}`,
+  inventory: `doc:doc:synthetic-inventory@${sha256(inventoryBytes)}`,
+};
+
 async function fixtureInvocations(
   workRoot: string, stagedCaseDir: string,
 ): Promise<Record<string, {argv:string[];cwd?:string}>> {
@@ -70,9 +79,6 @@ async function fixtureInvocations(
   const recipe = generationFixture();
   const wbDir = join(work, 'wb');
   await mkdir(wbDir);
-  const contractBytes = Buffer.from(JSON.stringify(CONTRACT_DOC));
-  const profileBytes = Buffer.from(JSON.stringify(PROFILE_DOC));
-  const inventoryBytes = Buffer.from(JSON.stringify(MANIFEST_DOC));
   const submission = { run: recipe.plan_run, model: 'synthetic-model', items: [{ item: 'fixture-case', handling: 'handled', slots: { plan: [{ data: recipe.slots }] } }] };
   const wbRun = {
     run: recipe.plan_run,
@@ -179,7 +185,7 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
   for (const run of ['recompose-run', 'plan-run']) await mkdir(join(dirs.init, run, 'items'), { recursive: true });
   await writeFile(join(dirs.init, 'recompose-run', 'items', '00.json'), JSON.stringify({ id: 'n/r00', fields: { case_id: autoid(0), node: 'n/00' } }));
   await writeFile(join(dirs.init, 'plan-run', 'items', '00.json'), JSON.stringify({ id: 'doc:00', fields: { autoid: autoid(0), title: '合成用例 00' }, location: { selector: 'n/00' } }));
-  await writeFile(join(dirs.init, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, recompose_run: RUN_ID, plan_run: RUN_ID_2 }));
+  await writeFile(join(dirs.init, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, ...frozenDocuments, recompose_run: RUN_ID, plan_run: RUN_ID_2 }));
   await writeFile(join(dirs.init, 'scope.md'), `整份合成脑图，共 1 条用例（${autoid(0)}）。\n`);
   await cp(dirs.init, dirs.retry, { recursive: true });
   await writeFile(join(dirs.retry, 'pipeline.json'), state([row(0, 'stopped', { recompose: 3, write: 0 }, { stopped: '用例重组 3 次仍未通过：合成原因' })]));
@@ -194,7 +200,7 @@ async function pipelineProbes(workRoot: string): Promise<CliProbe[]> {
   await writeFile(join(dirs.collect, 'pipeline.json'), state([row(0, 'ready', { recompose: 1, write: 1 }), row(1, 'stopped', { recompose: 1, write: 3 }, { stopped: STOPPED })]));
   await mkdir(join(dirs.rework, 'returns-1'), { recursive: true });
   await writeFile(join(dirs.rework, 'pipeline.json'), state([row(0, 'ready', { recompose: 1, write: 1 })]));
-  await writeFile(join(dirs.rework, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: RUN_ID, recompose_run: RUN_ID, recompose_record: 'rec:' + 'a'.repeat(64), plan_run: RUN_ID_2 }));
+  await writeFile(join(dirs.rework, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, ...frozenDocuments, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: RUN_ID, recompose_run: RUN_ID, recompose_record: 'rec:' + 'a'.repeat(64), plan_run: RUN_ID_2 }));
   await writeFile(join(dirs.rework, 'returns-1', 'index.json'), JSON.stringify({ schema: 'device-returns@1', jobs: [{ outcome: 'not_dispatched', missing_facts: [{ fact: '合成原因' }], rows: [] }] }));
   await mkdir(dirs.judge, { recursive: true });
   await writeFile(join(dirs.judge, 'pipeline.json'), JSON.stringify({ ...JSON.parse(state([row(0, 'ready', { recompose: 1, write: 1 })])), judge: 'model' }));
@@ -249,7 +255,7 @@ export async function buildLocalCliProbes(stagedCaseDir: string, workRoot: strin
   caseCompile['tools/pipeline.ts'] = await pipelineProbes(workRoot);
   const mergeDir = join(workRoot, 'open-merge');
   await mkdir(join(mergeDir, 'plans'), { recursive: true });
-  await writeFile(join(mergeDir, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01cccccccccccccccccccccccc', recompose_run: RUN_ID, recompose_record: `rec:${'a'.repeat(64)}`, plan_run: RUN_ID_2 }));
+  await writeFile(join(mergeDir, 'open-compile.json'), JSON.stringify({ schema: 'open-compile@1', ready: true, ...frozenDocuments, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01cccccccccccccccccccccccc', recompose_run: RUN_ID, recompose_record: `rec:${'a'.repeat(64)}`, plan_run: RUN_ID_2 }));
   caseCompile['tools/open-merge.ts'] = [{
     argv: ['--hub', 'https://hub.example.invalid/mcp', '--open', 'open-compile.json', '--plans', 'plans', '--model', 'synthetic-model', '--out', 'merge'], cwd: mergeDir, subcommand: null, stdinValues: ['synthetic-hub-token'],
     complete: { status: 1, stdout: '合并不了：计划没有交上去：不存在：--plans 目录里没有 .json 文件。请先写入自动化用例 JSON 文件再再做脚本合并。位置：plans。\n', stderr: '' },

@@ -68,7 +68,14 @@ const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 type Path = (string | number)[];
 const issue = <T>(ctx: z.core.$RefinementCtx<T>, path: Path, message: string): void => ctx.addIssue({ code: 'custom', path, message });
 
+export const BookingDocuments = z.strictObject({
+  inputs: z.record(z.string(), ExternalObjectId),
+  manifest: ExternalObjectId.nullable(),
+});
+export type BookingDocuments = z.infer<typeof BookingDocuments>;
 export const ListTaskPacksInput = z.strictObject({
+  booking: z.strictObject({ run: RunId, workflow: PackId }).optional()
+    .describe('Read the named inputs declared by executors covered by this account’s active booking for the specified team workflow'),
   kind: PackKindSchema.optional().describe('Only packs of this kind'),
   pack_id: PackId.optional().describe('Only the pack with this exact ID'),
   offset: z.number().int().nonnegative().optional().describe('Continue at this zero-based position in the same filtered list'),
@@ -98,6 +105,7 @@ export const PackContextView = z.strictObject({
 export type PackContextView = z.infer<typeof PackContextView>;
 export const ListTaskPacksOutput = Envelope.extend({
   packs: z.array(PackSummary),
+  booking_documents: z.array(BookingDocuments).optional().describe('Document bindings for the requested booking; distinct configurations are separate candidates'),
   index: z.array(PackIndexRow).optional().describe('Every pack of the same filter, one row each, whatever the offset'),
   context: PackContextView.optional(),
 }).superRefine((o, ctx) => {

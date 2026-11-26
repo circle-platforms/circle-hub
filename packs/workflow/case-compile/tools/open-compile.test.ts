@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { envelopeOf, main, NotReady, plumbProblem, plumbStatusVia, type CallTool, type PlumbStatus, type ToolAnswer } from './open-compile.ts';
-import { compileMindmap, compileProjection } from '../testing/tool-projection.ts';
+import { BED_DOCS, OTHER_BED_DOCS, bookingRow, compileMindmap, compileProjection } from '../testing/tool-projection.ts';
 import { makeSkills } from '../testing/tool-skills.ts';
 import { SCOPED_REOPEN } from '../testing/scoped-reopen.ts';
 
@@ -31,7 +31,7 @@ function hub(answers: Partial<Record<string, ToolAnswer>>, autoids = SCOPED_REOP
   };
   return { calls, connect: () => call };
 }
-const packs = (cc = '3.22.0', rc = '1.3.0') => said({ call_result: 'ok', packs: [{ pack: `case-compile@${cc}`, id: 'case-compile', version: cc }, { pack: `recompose@${rc}`, id: 'recompose', version: rc }] });
+const packs = (cc = '3.22.0', rc = '1.3.0', rows: unknown[] = [bookingRow()]) => said({ call_result: 'ok', booking_documents: rows, packs: [{ pack: `case-compile@${cc}`, id: 'case-compile', version: cc }, { pack: `recompose@${rc}`, id: 'recompose', version: rc }] });
 const RECOMPOSED = said({ call_result: 'ok', record: 'rec:' + 'a'.repeat(64), run: { run: RECOMPOSE } });
 const PLANNED = said({ call_result: 'ok', record: 'rec:' + 'b'.repeat(64), run: { run: PLAN } });
 const READY = { status: 'ready', phase: 'ready', models_status: { 'judge-a': { model: 'judge-a', step: 'ready', state: '可用', self_check_passed: true } } };
@@ -53,7 +53,7 @@ test('ready: both runs open in order, the plan run binds the recompose run after
   assert.equal(plan.predecessor, BOOKING);
   assert.deepEqual(plan.inputs.recomposition_run, { reference: 'rec:' + 'a'.repeat(64) });
   assert.deepEqual(plan.inputs.recomposition_result, { run: RECOMPOSE }, 'bound by run id: the Hub binds its result after the start');
-  assert.deepEqual([plan.inputs.contract, plan.inputs.inventory, plan.inputs.profile], [{ external: 'doc:doc:runner-contract' }, { external: 'doc:doc:bed-topology' }, { external: 'doc:doc:runtime-profile' }]);
+  assert.deepEqual([plan.inputs.contract, plan.inputs.inventory, plan.inputs.profile], [BED_DOCS.contract, BED_DOCS.inventory, BED_DOCS.profile].map(external => ({external})));
   const written = JSON.parse(await readFile(join(dir, 'open-compile.json'), 'utf8'));
   assert.equal(written.ready, true); assert.equal(written.plan_run, PLAN); assert.equal(written.recompose_run, RECOMPOSE);
 });
@@ -87,8 +87,8 @@ test('not ready: a refused recompose start and a bad argument are one line each 
   const again = hub({});
   const out = await run(argv(existing), again.connect, root);
   assert.equal(out.code, 1); assert.match(out.out, /^无法编译：--out .+ 已经存在，不覆盖/); assert.equal(again.calls.length, 0);
-  const badDoc = await run(argv(join(dir, 'n.json'), ['--profile', 'runtime-profile']), again.connect, root);
-  assert.match(badDoc.out, /^无法编译：--profile 不是命名文档；写 doc:doc:<名字>/);
+  const badDoc = await run(argv(join(dir, 'n.json'), ['--profile', 'runtime-profile']), hub({list_task_packs:packs()}).connect, root);
+  assert.match(badDoc.out, /^参数无效：--profile/); assert.ok(badDoc.out.includes(BED_DOCS.profile));
 });
 
 test('the machine part of a tool answer is the JSON after the marker', () => {
@@ -177,41 +177,51 @@ test('the record keeps what the compile was opened with: the scope as it was rea
   assert.equal(existsSync(join(dir, 'bad.json')), false);
 });
 
-test('the record keeps the version line and each named document when the compile was opened with them, and nothing of them when it was not', async () => {
-  const root = await makeSkills({ 'case-compile': '3.22.0', recompose: '1.3.0' }), dir = await mkdtemp(join(tmpdir(), 'open-compile-'));
-  const answers = { list_task_packs: packs(), 'start_run:recompose': RECOMPOSED, 'start_run:case-compile': PLANNED };
-  const named = ['version', 'contract', 'inventory', 'profile'] as const;
-  const DEFAULT_DOCS = { contract: 'doc:doc:runner-contract', inventory: 'doc:doc:bed-topology', profile: 'doc:doc:runtime-profile' };
-  const given = { version: '3.2', contract: 'doc:doc:other-contract', inventory: `doc:doc:other-inventory@${'d'.repeat(64)}`, profile: 'doc:doc:other-profile' };
-  const fromHub = (h: ReturnType<typeof hub>) => { const [recompose, plan] = h.calls.filter((c) => c.name === 'start_run').map((c) => c.args as { version?: string; inputs: Record<string, unknown> }); return { recompose: recompose!, plan: plan! }; };
-  for (const name of named) {
-    const h = hub(answers), out = join(dir, `${name}.json`);
-    const result = await run(argv(out, [`--${name}`, given[name]]), h.connect, root);
+test('each booking supplies its own three documents and explicit names only confirm the selection', async () => {
+  const root = await makeSkills({ 'case-compile':'3.22.0', recompose:'1.3.0' });
+  const dir = await mkdtemp(join(tmpdir(), 'booking-docs-'));
+  for (const [i, docs] of [BED_DOCS, OTHER_BED_DOCS].entries()) {
+    const booking = i ? 'run_01bookingbookingbooking1' : BOOKING;
+    const h = hub({list_task_packs:packs(undefined, undefined, [bookingRow(docs)]), 'start_run:recompose':RECOMPOSED, 'start_run:case-compile':PLANNED});
+    const out = join(dir, String(i));
+    const flags = i ? ['--contract', docs.contract.split('@')[0]!, '--profile', docs.profile, '--version', '3.2'] : [];
+    const result = await run(argv(out, flags).map(v => v === BOOKING ? booking : v), h.connect, root);
     assert.equal(result.code, 0, result.out);
+    assert.deepEqual(h.calls[0]!.args, {booking:{run:booking,workflow:'case-compile'}});
+    const plan = h.calls.at(-1)!.args;
     const record = JSON.parse(await readFile(out, 'utf8'));
-    assert.deepEqual(named.filter((field) => field in record), [name], `only ${name} is recorded, as it was given`);
-    assert.equal(record[name], given[name]);
-    assert.deepEqual(JSON.parse(result.out.trimEnd().split('\n').at(-1)!), record, 'the line printed is the record');
-    const { recompose, plan } = fromHub(h);
-    // what the Hub was given: the version line for both runs, a named document for the plan run in place of its default
-    assert.deepEqual([recompose.version, plan.version], name === 'version' ? [given.version, given.version] : [undefined, undefined], name);
-    for (const doc of ['contract', 'inventory', 'profile'] as const) assert.deepEqual(plan.inputs[doc], { external: name === doc ? given[doc] : DEFAULT_DOCS[doc] }, `${name}: ${doc}`);
+    for (const slot of ['contract','inventory','profile'] as const) {
+      assert.deepEqual((plan.inputs as Record<string,unknown>)[slot], {external:docs[slot]});
+      assert.equal(record[slot], docs[slot]);
+    }
+    if (i) assert.equal(plan.version, '3.2');
   }
-  // None given: none recorded, and the Hub is given the defaults and no version line.
-  const h = hub(answers);
-  assert.equal((await run(argv(join(dir, 'plain.json')), h.connect, root)).code, 0);
-  const plain = JSON.parse(await readFile(join(dir, 'plain.json'), 'utf8'));
-  assert.deepEqual(named.filter((field) => field in plain), []);
-  assert.deepEqual([fromHub(h).plan.version, fromHub(h).plan.inputs.contract], [undefined, { external: DEFAULT_DOCS.contract }]);
-  // All four on a plan run that reuses the recomposition (a rework): the plan run is given them and the record keeps them.
-  const again = hub(answers);
-  const reopened = await run(argv(join(dir, 'all.json'), ['--version', given.version, '--contract', given.contract, '--inventory', given.inventory, '--profile', given.profile, '--recompose-run', RECOMPOSE, '--recompose-record', 'rec:' + 'c'.repeat(64)]), again.connect, root);
-  assert.equal(reopened.code, 0, reopened.out);
-  const all = JSON.parse(await readFile(join(dir, 'all.json'), 'utf8'));
-  assert.deepEqual(named.map((field) => all[field]), named.map((field) => given[field]));
-  const starts = again.calls.filter((c) => c.name === 'start_run').map((c) => c.args as { pack: string; version?: string; inputs: Record<string, unknown> });
-  assert.deepEqual(starts.map((s) => s.pack), ['case-compile'], 'no recomposition is started');
-  assert.deepEqual([starts[0]!.version, starts[0]!.inputs.contract, starts[0]!.inputs.inventory, starts[0]!.inputs.profile], [given.version, { external: given.contract }, { external: given.inventory }, { external: given.profile }]);
+});
+
+test('wrong documents, absent declarations and ambiguous bookings stop before either start', async () => {
+  const root = await makeSkills({ 'case-compile':'3.22.0', recompose:'1.3.0' });
+  const out = join(await mkdtemp(join(tmpdir(), 'booking-refused-')), 'open.json');
+  for (const slot of ['contract','inventory','profile'] as const) {
+    const h = hub({list_task_packs:packs()});
+    const result = await run(argv(out, ['--' + slot, OTHER_BED_DOCS[slot]]), h.connect, root);
+    assert.equal(result.code,1); assert.match(result.out,/^参数无效：/); assert.ok(result.out.includes(BED_DOCS[slot]));
+    assert.deepEqual(h.calls.map(c=>c.name), ['list_task_packs']);
+  }
+  for (const [slot, value] of [
+    ['contract', OTHER_BED_DOCS.contract], ['profile','doc:doc:runtime-profile@short'],
+    ['inventory','doc:doc:bed-topology@' + '9'.repeat(64)],
+  ] as const) {
+    const h = hub({list_task_packs:packs()});
+    const result = await run(argv(out, ['--recompose-run',RECOMPOSE,'--recompose-record','rec:'+'c'.repeat(64),'--'+slot,value]),h.connect,root);
+    assert.equal(result.code,1); assert.match(result.out,/^参数无效：/); assert.ok(result.out.includes(BED_DOCS[slot]));
+    assert.deepEqual(h.calls.map(c=>c.name),['list_task_packs']);
+  }
+  for (const rows of [[], [{inputs:{},manifest:BED_DOCS.inventory}], [bookingRow(), bookingRow(OTHER_BED_DOCS)]]) {
+    const h = hub({list_task_packs:packs(undefined,undefined,rows)});
+    const result = await run(argv(out), h.connect, root);
+    assert.equal(result.code,1); assert.match(result.out,/^暂时不可用：/);
+    assert.deepEqual(h.calls.map(c=>c.name), ['list_task_packs']);
+  }
 });
 
 test('judge model: the user chose to compile without Plumb, so no Plumb address, key or status is needed and the choice is written into open-compile.json', async () => {

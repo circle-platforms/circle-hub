@@ -381,7 +381,8 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
   const lead = allUnknown ? '资料尚未取得。' : null;
   const lines = v.errors.map((error): CallErrorParts | string => {
     const escalated = isEscalatedError(error);
-    const fix = escalated ? error.fix : fixByRole(error.code, role, error.fix, account);
+    const registrationRead = error.code === 'SOURCE_READ_FAILED' && error.path === '/booking/run';
+    const fix = escalated || registrationRead ? error.fix : fixByRole(error.code, role, error.fix, account);
     const presentation = errorPresentationOf(error.code);
     if (presentation.kind === 'unavailable') {
       return conclusionErrorLine(error, error.message, fix);

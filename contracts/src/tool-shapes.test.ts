@@ -38,12 +38,15 @@ const node = {
 const CASES: Record<string, { input: Sides; output: Sides }> = {
   list_task_packs: {
     input: {
-      valid: [{ why: 'no filter', value: {} }, { why: 'by kind', value: { kind: 'workflow' } }],
-      invalid: [{ why: 'kind outside the vocabulary', value: { kind: 'plugin' } }, { why: 'misspelled key', value: { knd: 'workflow' } }],
+      valid: [{ why: 'no filter', value: {} }, { why: 'by kind', value: { kind: 'workflow' } },
+        { why: 'document bindings for a booking', value: { booking: { run: RUN, workflow: 'demo-review' } } }],
+      invalid: [{ why: 'kind outside the vocabulary', value: { kind: 'plugin' } }, { why: 'misspelled key', value: { knd: 'workflow' } },
+        { why: 'booking without its workflow', value: { booking: { run: RUN } } }],
     },
     output: {
       valid: [
         { why: 'extra key', value: { ...ok, packs: [], total: 1 } },
+        { why: 'bound named documents', value: { ...ok, packs: [packSummary], booking_documents: [{ inputs: { rules: 'doc:doc:rules@' + H }, manifest: 'doc:doc:inventory@' + H2 }] } },
         { why: 'packs', value: { ...ok, packs: [packSummary] } }, { why: 'error with the empty list', value: { ...failed(), packs: [] } }],
       invalid: [
         { why: 'an error answer that lists packs', value: { ...failed(), packs: [packSummary] }, refinement: true },
@@ -316,13 +319,13 @@ describe('tool shapes: zod and the published schema agree', () => {
     const input = { ...submission, items: [{ ...submission.items[0], future_item: true }] };
     assert.equal(TOOLS.find(t => t.name === 'submit_result')!.input.safeParse(input).success, false);
   });
-  test('the C7 baseline includes authorized E4 descriptions and run30 T1/T6 and run31 T8 dispatch presentation', () => {
+  test('the C7 baseline includes the booking query alongside the authorized tool shapes and dispatch presentation', () => {
     const hash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
-    assert.equal(hash(JSON.stringify(published.map(({ name, inputSchema }) => ({ name, inputSchema })))), 'add0560b5800e34133a3347ece40df319269c509805d97db2938f02e9799e727');
+    assert.equal(hash(JSON.stringify(published.map(({ name, inputSchema }) => ({ name, inputSchema })))), '9b70bbc2869cc43512a914fcb3d920110ce985a9ab281fce7d0f3a7d9c4748d1');
     assert.deepEqual(TOOLS.map(({ name, input }) => ({ name, inputSchema: z.toJSONSchema(input, { target: 'draft-2020-12', io: 'input', unrepresentable: 'throw' }) })), published.map(({ name, inputSchema }) => ({ name, inputSchema })));
     assert.equal(hash(JSON.stringify(TOOLS.map(({ name, title, description }) => ({ name, title, description })))), '1cb501e66426544276347082f42c4003cadd4264c5ce3fe291cf7b2fd127b83b');
     assert.equal(hash(SERVER_INSTRUCTIONS), '735c07c7ebbf5df506b7bea6e32b86994c7486c047b77783a29ceb7c81b229a3');
-    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), '9d6b6dd717ec71a66c7fd62237a3a62643660ff461d08e9800039d251e4cea2a');
+    assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), 'ad97250c8ed52e73d3bc324237d2ee7ae4980a8a3a5e1b35ae405fe6c774d513');
   });
   test('a protocol error never needs invented run, lock or digest values (D05 R[3], T03 R[3])', () => {
     const submit = TOOLS.find((t) => t.name === 'submit_result');

@@ -166,7 +166,23 @@ export function hasSupersededManifest(check?: RefusedCheck): boolean {
     && check.fields?.some(field => field.field === 'manifest_sha256.current_doc_revision' && field.matches === false) === true;
 }
 
+export const REOPEN_WITH_DECLARED_DOCUMENTS = '按测试环境声明的文档重新开始运行';
+export const DECLARE_INPUT_DOCUMENT = '请管理员给这个测试环境的执行器补上文档声明，再发起上机验证';
+export function wrongInputDocument(check: RefusedCheck): boolean {
+  return check.satisfied === false && check.condition.startsWith('proof.input_document.');
+}
+export function undeclaredInputDocument(check: RefusedCheck): boolean {
+  return check.satisfied === false && check.condition.startsWith('proof.input_document_declared.');
+}
+
 export function releaseNextStep(check: RefusedCheck, input: NextInput): string {
+  if (undeclaredInputDocument(check)) {
+    const slot = check.condition.slice('proof.input_document_declared.'.length);
+    return input.callerIsAdmin
+      ? withExplain(input, `用 circle-hub executor update 在执行器的 input_documents 里补上槽位 ${slot} 的文档名，再发起上机验证`)
+      : DECLARE_INPUT_DOCUMENT;
+  }
+  if (wrongInputDocument(check)) return REOPEN_WITH_DECLARED_DOCUMENTS;
   if (hasSupersededManifest(check)) {
     return input.callerIsAdmin
       ? withExplain(input, '用 circle-hub executor update 按清单的现行修订重新登记执行器；清单由普通变量指定时更新该变量，再发起上机验证')
