@@ -1206,6 +1206,19 @@ const bookingOf = async (extra: string[], openExtra: Record<string, unknown>, se
   } finally { await h.close(); }
 };
 
+test('a retained booking needs no inventory; releasing the same booking requires its inventory', async () => {
+  for (const [args, fields] of [[[], {}], [['--keep-booking','yes'], {booking_acquired:true}]] as const) {
+    const kept = await bookingOf([...args], {...fields, inventory:undefined});
+    assert.equal(kept.code,0,kept.stderr);
+    assert.equal(kept.answer.booking.state,'kept');
+    assert.deepEqual(kept.h.mcp.calls,[]);
+  }
+  const missing = await bookingOf(['--release-booking','yes'], {inventory:undefined});
+  assert.equal(missing.code,1);
+  assert.match(missing.stderr,/没有绑定的设备清单/);
+  assert.deepEqual(missing.h.mcp.calls,[]);
+});
+
 test('a compile that took its booking itself has it released when the delivery is complete: one test-bed release call after the files are written, and the reply and the message say so', async () => {
   const done = await bookingOf([], { booking_acquired: true });
   assert.equal(done.code, 0, done.stderr);

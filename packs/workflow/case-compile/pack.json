@@ -1028,8 +1028,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "4d0d2284e467cb5184722d396d1023b93177c3a840bf63495ee3b0ee17ca4275",
-      "size": 57699
+      "sha256": "d064956d8ffbb451d85cb3148ff587b798ed722291b267afa0d8df958533d7c7",
+      "size": 57700
     },
     {
       "path": "tools/authoring-brief.ts",
