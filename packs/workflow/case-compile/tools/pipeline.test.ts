@@ -473,7 +473,7 @@ test('the record status is read from the answer partitions, and a refused submis
 });
 
 const NEXT_PLAN = 'run_01planplanplanplanplan01';
-const OPENED = { ...OPEN, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01bookingbookingbooking0', recompose_record: 'rec:' + 'a'.repeat(64) };
+const OPENED = { ...OPEN, ...OTHER_BED_DOCS, subject: 'agile:mindmap:900001', product: 'widget', build: 'Fixture_Build_A', booking: 'run_01bookingbookingbooking0', recompose_record: 'rec:' + 'a'.repeat(64) };
 async function afterDevice(rows: (autoids: string[]) => unknown[], options: { originalAutoids?: string[]; bookingDocuments?: () => typeof OTHER_BED_DOCS; judge?: 'model' | 'jev'; more?: (tool: string, args: string[]) => ToolRun | undefined } = {}) {
   await world(3);
   const state = await initState('recompose-run', 'plan-run', options.judge === undefined ? OPEN : { ...OPEN, judge: options.judge }, 'synthetic-model');
@@ -809,7 +809,7 @@ const SCOPE = { words: '只编这三条：“登录后改密码”、"退出" �
 const outsideScope = (call: string[]) => flagOf(call, '--exclude')!.split(',').filter((autoid) => !(JSON.parse(readFileSync(flagOf(call, '--scope')!, 'utf8')) as typeof SCOPE).cases.includes(autoid));
 // The version line and the three named documents the first open may have been given instead of the defaults.
 const NAMES = ['version', 'contract', 'inventory', 'profile'] as const;
-const NAMED = { version: '3.2', contract: 'doc:doc:other-contract', inventory: `doc:doc:other-inventory@${'d'.repeat(64)}`, profile: 'doc:doc:other-profile' } as const;
+const NAMED = { version: '3.2', ...OTHER_BED_DOCS } as const;
 const namedFlags = (args: string[]) => NAMES.map((name) => flagOf(args, `--${name}`));
 const flagOf = (args: string[], name: string): string | undefined => args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
 const openCalls = (calls: Array<{ tool: string; args: string[] }>) => calls.filter((call) => call.tool === 'case-compile/open-compile.ts').map((call) => call.args);
@@ -879,32 +879,29 @@ test('a reopen and a delivery volume keep the scope too, and merge the left-out 
   assert.equal(volume.state.volume?.n, 1);
 });
 
-test('a record without what the first open was given opens the next plan run as it always did, and a record whose entries are malformed is refused before anything is opened', async () => {
+test('rework preserves absent optional parameters and refuses malformed opening records before starting', async () => {
   const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }]);
-  for (const [broken, said] of [[{ scope: { words: 1, cases: [] } }, /--open 里的 scope 不是 \{"words":"…","cases":\[…\]\} 的形状/], [{ scope: { words: '范围', cases: [7] } }, /--open 里的 scope 不是/], [{ exclude: LEFT_OUT }, /--open 里的 exclude 不是 autoid 的列表/], [{ exclude: [LEFT_OUT, 5] }, /--open 里的 exclude 不是 autoid 的列表/], [{ version: 3.2 }, /--open 里的 version 不是版本线的名字/], [{ contract: '' }, /--open 里的 contract 不是命名文档的名字/], [{ inventory: ['doc:doc:x'] }, /--open 里的 inventory 不是命名文档的名字/], [{ profile: null }, /--open 里的 profile 不是命名文档的名字/]] as const) {
+  for (const [broken, said] of [[{ scope: { words: 1, cases: [] } }, /--open 里的 scope 不是 \{"words":"…","cases":\[…\]\} 的形状/], [{ scope: { words: '范围', cases: [7] } }, /--open 里的 scope 不是/], [{ exclude: LEFT_OUT }, /--open 里的 exclude 不是 autoid 的列表/], [{ exclude: [LEFT_OUT, 5] }, /--open 里的 exclude 不是 autoid 的列表/], [{ version: 3.2 }, /--open 里的 version 不是版本线的名字/], [{ contract: '' }, /--open 里的 contract 缺少冻结的文档修订/], [{ inventory: ['doc:doc:x'] }, /--open 里的 inventory 缺少冻结的文档修订/], [{ profile: null }, /--open 里的 profile 缺少冻结的文档修订/]] as const) {
     await assert.rejects(rework(state, { ...OPENED, ...broken }, 'returns-1', undefined, gates(t.run)), said);
   }
   assert.deepEqual([openCalls(t.calls), existsSync('rework-2')], [[], false], 'nothing was opened and no directory was made');
   await rework(state, OPENED, 'returns-1', 'notes', gates(t.run));
   const [opened] = openCalls(t.calls);
   assert.deepEqual([opened!.includes('--scope'), opened!.includes('--exclude'), existsSync(join('rework-2', 'compile-scope.json'))], [false, false, false]);
-  assert.deepEqual(namedFlags(opened!), [undefined, OTHER_BED_DOCS.contract, OTHER_BED_DOCS.inventory, OTHER_BED_DOCS.profile], 'an older open record recovers its revisions from the downloaded run');
+  assert.deepEqual(namedFlags(opened!), [undefined, OTHER_BED_DOCS.contract, OTHER_BED_DOCS.inventory, OTHER_BED_DOCS.profile], 'the open record supplies its three revisions');
   const recorded = JSON.parse(readFileSync(state.open!, 'utf8'));
   assert.deepEqual(['scope', 'exclude', ...NAMES].filter((field) => field in recorded), ['contract','inventory','profile']);
 });
 
-test('rework stops if an older opening record has no matching frozen source in the previous plan run', async () => {
+test('rework refuses a missing or unpinned document even when a prior download exists', async () => {
   const { state, t } = await afterDevice(([a,b,c]) => [{item:a,verdict:'pass'},{item:b,verdict:'fail'},{item:c,verdict:'pass'}]);
-  const file = join(state.plan_dir,'run.json');
-  const downloaded = JSON.parse(readFileSync(file,'utf8'));
-  const rules = downloaded.sources.find((s:{slot:string}) => s.slot === 'contract');
-  rules.reference = 'src:' + '0'.repeat(64);
-  await writeFile(file,JSON.stringify(downloaded));
-  await assert.rejects(rework(state,OPENED,'returns-1','notes',gates(t.run)),/contract 槽位的冻结文档修订/);
+  for (const value of [undefined, OTHER_BED_DOCS.contract.split('@')[0]]) {
+    await assert.rejects(rework(state,{...OPENED,contract:value},'returns-1','notes',gates(t.run)),/contract.*修订/);
+  }
   assert.deepEqual(openCalls(t.calls),[]);
 });
 
-test('a rework opens each round with the frozen documents, including older records of unversioned names', async () => {
+test('a rework opens each round with the frozen documents from the opening record', async () => {
   for (const name of NAMES) {
     let head = OTHER_BED_DOCS;
     const { state, t } = await afterDevice(([a, b, c]) => [{ item: a, verdict: 'pass' }, { item: b, verdict: 'fail' }, { item: c, verdict: 'pass' }], {bookingDocuments: () => head});
