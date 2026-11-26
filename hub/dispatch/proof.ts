@@ -98,6 +98,11 @@ export async function inspectInput(by:Principal,id:string,d:ExecutorDefinition,r
  const requiredDocuments = workflow?.workflow?.inputs.filter(input => input.executor_document).map(input => input.slot) ?? [];
  for (const slot of new Set([...requiredDocuments, ...Object.keys(d.input_documents ?? {})])) {
    const name = d.input_documents?.[slot];
+   if (name === undefined) {
+     // A slot the workflow requires but the registration leaves undeclared is the administrator's to fix; no new run can bind it.
+     add('proof.input_document_declared.' + slot, `执行器声明了槽位 ${slot} 的文档`, false, [f(slot, 'declared', undefined, false)]);
+     continue;
+   }
    const sources = detail?.run.sources.filter(source => source.slot === slot) ?? [];
    const source = sources[0];
    const doc = source?.external ? parseDocId(source.external) : null;

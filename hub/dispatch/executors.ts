@@ -88,7 +88,7 @@ export class ExecutorRegistry {
       const warrant = packWarrant(source.proof.warrant_id);
       const ref = warrant?.pack === source.proof.package ? warrant.pack + '@' + warrant.version : source.proof.package;
       const inputs = await this.workflowInputs?.(ref);
-      if (!inputs) throw new RecordsError(`无法读取已发布工作流 ${ref} 的输入槽，请先发布对应工作流再登记执行器`, {code:'SOURCE_UNAVAILABLE'});
+      if (!inputs) throw new RecordsError(`未找到：没有已发布的工作流 ${ref}。请先发布这个版本，再登记执行器。`, {code:'SOURCE_ABSENT'});
       const allowed = inputs.filter(input => input.executor_document === true).map(input => input.slot);
       const invalid = named.filter(slot => !allowed.includes(slot));
       if (invalid.length) throw new RecordsError(`参数无效：input_documents 中的 ${invalid.join('、')} 未被工作流 ${ref} 声明为执行器文档槽。可声明的槽位：${allowed.join('、') || '无'}。`, {code:'SUBMISSION_SCHEMA_VIOLATION'});

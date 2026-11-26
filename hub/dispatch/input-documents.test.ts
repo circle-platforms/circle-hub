@@ -88,3 +88,25 @@ test('the effect boundary checks the frozen document name even when the bytes ma
   assert.equal(refusal.body.detail.correctable,undefined);
   assert.equal(c.submitted.length,0);
 });
+
+test('a slot the workflow requires but the registration does not declare is the administrator\'s to fix, not a reason to restart the run', async t => {
+  const c = await setup();
+  t.after(() => c.close());
+  assert.equal(c.executor.definition.input_documents, undefined);
+  const workflows = { byDigest: async (...args: Parameters<typeof c.workflows.byDigest>) => ({ ...(await c.workflows.byDigest(...args)), workflow: { inputs: [{ slot: 'rules', executor_document: true }] } }) } as unknown as typeof c.workflows;
+  const result = await inspectInput(c.admin, c.run, c.executor.definition, c.kit, c.runs, workflows, c.now());
+  assert.equal(result.input, undefined);
+  assert.equal(result.checks.some(check => check.condition === 'proof.input_document.rules'), false);
+  const check = result.checks.find(check => check.condition === 'proof.input_document_declared.rules')!;
+  assert.equal(check.satisfied, false);
+  assert.equal(releaseNextStep(check, { callerIsAdmin: false }), '请管理员给这个测试环境的执行器补上文档声明，再发起上机验证');
+  assert.match(releaseNextStep(check, { callerIsAdmin: true }), /circle-hub executor update 在执行器的 input_documents 里补上槽位 rules 的文档名/);
+});
+
+test('registering document bindings against a workflow version that is not published answers that it is absent', async t => {
+  const c = await setup();
+  t.after(() => c.close());
+  const registry = new ExecutorRegistry(c.kit, async () => null);
+  await assert.rejects(registry.add(c.admin, { ...c.executor.source, input_documents: { rules: 'rules-a' } }),
+    (error: unknown) => error instanceof Error && (error as { code?: string }).code === 'SOURCE_ABSENT' && error.message.startsWith('未找到：'));
+});
